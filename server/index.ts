@@ -383,7 +383,7 @@ import {
 import { RETRY_MAX_ATTEMPTS } from "./drivers/retry.ts";
 import { recoveryCapabilityError } from "./automatic-recovery.ts";
 import { LimitFailoverStore } from "./limit-failover.ts";
-import { createLimitFailoverHost } from "./limit-failover-host.ts";
+import { createLimitFailoverHost, limitBackupRefusedText } from "./limit-failover-host.ts";
 import { limitFailoverText, resetClockText } from "../shared/limit-failover.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
 import { turnRunFor, type TurnRun } from "./turn-run.ts";
@@ -1239,7 +1239,7 @@ import { SANDBOX_CONTROL_REFUSAL, SandboxControlHolds } from "./sandbox-control.
 import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type WorkplaceDecision } from "./desktop-bridge.ts";
 import { DesktopLocalModels } from "./desktop-local-models.ts";
 import { withDesktopModelPerson } from "./desktop-model-grant.ts";
-import { isDesktopInjectModel, setDesktopInjectModels } from "./drivers/local-inject.ts";
+import { isDesktopInjectModel, isLocalModelId, setDesktopInjectModels } from "./drivers/local-inject.ts";
 import { defaultTurnPayerMode, effectiveTurnPayerMode, type TurnPayerMode } from "../shared/turn-payer.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
@@ -12853,6 +12853,20 @@ const limitFailover = createLimitFailoverHost({
     return Boolean(routine?.enabled && routines?.runNow(routineId));
   },
 });
+/** A backup the usage-limit failover moved this thread to could not run
+ * for this person (signed out, no key, no access): the thread is back on
+ * its own engine and the backup's "continuing on" line turns into one plain
+ * error, with no sign-in card for an engine the person never picked. The
+ * error's words, or null when the thread is not on such a backup. */
+function limitBackupRefusedInThread(botId: string, threadId: string, speaker?: unknown): string | null {
+  const back = limitFailover.backupRefused(botId, threadId, speaker);
+  if (!back) return null;
+  const text = limitBackupRefusedText(back);
+  const line = store.messagesFor(threadId).findLast((message) => message.kind === "activity" && message.tool?.limitFailover?.kind === "switched");
+  if (line) store.patchMessage(threadId, line.id, { tool: failedTurnTool(text, { terminal: true }) });
+  else store.appendMessage(threadId, { role: "bot", kind: "activity", tool: failedTurnTool(text, { terminal: true }) });
+  return text;
+}
 /** A reset as the English line says it, in this server's zone. */
 function limitClockText(at: number): string {
   return resetClockText(at, "en-US", hostTimeZone());
@@ -15962,6 +15976,10 @@ bus.subscribe((event: RuntimeEvent) => {
       }) : null;
       // A turn on a person's own key (slice 4) also counts: that key is dropped at once.
       if (keyRefused && keyVia(ranOn?.via) && ranOn?.payerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.payerSub, ranOn.provider);
+      // The engine refusing is a backup the usage-limit failover picked, not
+      // one the person chose: no sign-in card for it. The thread goes back
+      // and its "continuing on" line becomes the one error the person reads.
+      if ((keyRefused || event.setup) && bot && limitBackupRefusedInThread(bot.id, event.threadId) !== null) break;
       if (keyRefused && bot) {
         pushMessage({ role: "bot", kind: "access", access: keyRefused });
         notifyAccess(deliverableNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }), keyRefused);
@@ -19818,13 +19836,17 @@ async function startTurn(
       return userMessage;
     }
     const engine = engineDisplayName(instance);
+    // A backup the usage-limit failover picked: one plain error, no card.
+    const backupRefused = limitBackupRefusedInThread(botId, threadId, speaker);
     const card = accessCardFor(bot, accessRefusal, engine);
-    store.appendMessage(threadId, {
-      role: "bot",
-      kind: "access",
-      access: card,
-    });
-    const notice = engineAccessNotice(accessRefusal.reason, engine, accessRefusal);
+    if (!backupRefused) {
+      store.appendMessage(threadId, {
+        role: "bot",
+        kind: "access",
+        access: card,
+      });
+    }
+    const notice = backupRefused ?? engineAccessNotice(accessRefusal.reason, engine, accessRefusal);
     const refusedRun = routineLineage(speaker) ? activeRoutineRunForThread(threadId)?.id : undefined;
     notifyAccess(deliverableNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }), card, refusedRun);
     console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal.reason}${accessRefusal.cause ? `/${accessRefusal.cause}` : ""} (${instance.instanceId})`);
@@ -21020,6 +21042,7 @@ async function startTurn(
       if (!warmOnly) limitFailover.noteDispatch(threadId, {
         botId: bot.id, engine: { instanceId: instance.instanceId, driverKind: instance.driverKind }, selection: bot.modelSelection,
         payer: autoPayerKey(bot, speaker), ...(ownerPaysForMember(bot, speaker, opts?.trigger?.kind === "user" ? opts.trigger.principalId : opts?.sender?.id) ? { owner: true } : {}), speaker, ...(opts?.trigger ? { trigger: opts.trigger } : {}), at: Date.now(),
+        ...(isLocalModelId(bot.modelSelection.model) ? { local: true } : {}),
       });
       idleEngines.noteBusy(threadId);
       // The prompt carries the soul as saved now. If it changed during setup,
@@ -21400,7 +21423,9 @@ async function startTurn(
           }
         } else if (refusal) message = `Automatic recovery unavailable: ${refusal} Original error: ${message}`;
       }
-      if (e instanceof EngineAccessLost) {
+      const backupRefused = e instanceof EngineAccessLost ? limitBackupRefusedInThread(bot.id, threadId, speaker) : null;
+      if (backupRefused) message = backupRefused;
+      else if (e instanceof EngineAccessLost) {
         // The owner key went away between admission and dispatch: the same
         // card and notice a refusal at admission gives.
         const engine = engineDisplayName(instance);

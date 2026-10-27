@@ -82,3 +82,23 @@ describe("limitResetOrEstimate", () => {
     expect(limitResetOrEstimate("rate_limited", NOW - 1, NOW)).toEqual({ resetsAt: NOW + UNKNOWN_RATE_RESET_MS, estimated: true });
   });
 });
+
+describe("limitKindOf on a local model", () => {
+  it("is never a limit from a status, a stop token or a loose word", () => {
+    for (const cause of ["402 Payment Required", "429 Too Many Requests", "subscription", "quota", "503 Service Unavailable", "Connection error."]) {
+      expect(limitKindOf(cause, "quota", { local: true })).toBeNull();
+      expect(limitKindOf(cause, "rate_limit", { local: true })).toBeNull();
+    }
+  });
+
+  it("is a quota only when the server says so plainly", () => {
+    expect(limitKindOf("insufficient_quota: You exceeded your current quota", null, { local: true })).toBe("quota");
+    expect(limitKindOf("Quota exceeded for this key", null, { local: true })).toBe("quota");
+    expect(limitKindOf("401 invalid api key, quota exceeded", null, { local: true })).toBeNull();
+  });
+
+  it("leaves hosted engines as they were", () => {
+    expect(limitKindOf("402 Payment Required")).toBe("quota");
+    expect(limitKindOf("429 Too Many Requests")).toBe("rate_limited");
+  });
+});

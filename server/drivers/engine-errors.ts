@@ -107,3 +107,30 @@ export function stopCause(stopReason: string | null | undefined): string | undef
   if (!reason) return undefined;
   return /^[a-z][a-z0-9_]*$/i.test(reason) ? `The engine stopped without saying why (stop reason: ${reason}).` : reason;
 }
+
+/** A local or computer-shared model failing, in plain words with what to do
+ * (2026-10-27): it has no usage limit, so its errors never read as one. Null
+ * when the text is none of these (the caller keeps it). */
+export function localModelFailureMessage(text: string): string | null {
+  const raw = text.replace(/\s+/g, " ").trim();
+  if (!raw) return null;
+  const leading = Number(/^(\d{3})\b/.exec(raw)?.[1]);
+  const status = httpStatusOf(raw) ?? (Number.isInteger(leading) ? leading : null);
+  if (/\btoo large to send to the local model\b/i.test(raw)) return null; // already says what to do
+  if (/\bcontext (?:length|window)\b|\bmaximum context\b|\btoo many tokens\b|\bprompt is too long\b|\bexceeds? (?:the )?(?:model'?s? )?context\b/i.test(raw)) {
+    return "This conversation is too long for the local model's context. Start a new conversation or compact this one, then try again.";
+  }
+  if (status === 401 || (status === 403 && !/\blocal model is unavailable\b/i.test(raw)) || /\bapi key (?:required|invalid|missing)\b|\binvalid api key\b|\bunauthorized\b/i.test(raw)) {
+    return "The local model server refused the request: its API key is missing or wrong. Check the key set for that server, then try again.";
+  }
+  if (/\bmodel (?:not found|not loaded|is not loaded)\b|\bno model (?:is )?loaded\b|\bunknown model\b/i.test(raw) || status === 404) {
+    return "The local model server does not have this model loaded. Load it there, or pick another model, then try again.";
+  }
+  if (status === 429 || /\btoo many requests\b|\bserver is busy\b/i.test(raw)) {
+    return "The local model server is busy with another request. Try again in a moment.";
+  }
+  if (/\blocal model is unavailable\b|\bcomputer is offline\b|\blocal model request failed\b|\bconnection (?:error|refused|reset)\b|\bECONN(?:REFUSED|RESET)\b|\bETIMEDOUT\b|\bfetch failed\b|\bsocket hang up\b|\btimed? ?out\b|\binjoignable\b/i.test(raw) || (status !== null && status >= 500)) {
+    return "The local model is not answering: the computer that serves it is offline or asleep, or its model server is stopped. Check that Sagax is open on that computer and the model server runs, then try again.";
+  }
+  return null;
+}

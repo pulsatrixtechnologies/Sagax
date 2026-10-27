@@ -60,11 +60,13 @@ import { newEventId, newId } from "../contracts.ts";
 import { parseAskQuestions, parseChoices, questionAnswersByQuestion } from "../../shared/ask-question.ts";
 import {
   decodeInjectId,
+  isLocalModelId,
   encodeInjectId,
   hostApiKey,
   localHost,
   mergeLocalInject,
 } from "./local-inject.ts";
+import { localModelFailureMessage, providerReason } from "./engine-errors.ts";
 import { appendNative } from "./native.ts";
 import { piHostToolArgs } from "./host-tools.ts";
 import { canUseMcpServer, parseToolScope } from "../../shared/tool-scope.ts";
@@ -970,10 +972,15 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       const finishRun = () => {
         const sr = endStopReason;
         if (sr === "error" || sr === "failed") {
+          const raw = String(endErrorMessage ?? "pi turn failed");
+          // A local or computer-shared model has no usage limit: its failure
+          // says what is wrong and what to do, with the server's own words.
+          const local = isLocalModelId(turn.model) ? localModelFailureMessage(raw) : null;
+          const said = local ? providerReason(raw.replace(/^\d{3}\s+/, "")) : null;
           emit({
             ...base(threadId, turnId),
             type: "runtime.error",
-            message: String(endErrorMessage ?? "pi turn failed").slice(0, 2_000),
+            message: (local ? `${local}${said ? ` (the local server said: "${said}")` : ""}` : raw).slice(0, 2_000),
           });
           settle(false, "failed", endUsage);
           return;

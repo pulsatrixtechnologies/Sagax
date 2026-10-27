@@ -21,6 +21,7 @@ import {
   encodeInjectId,
   contextWindowsFromPs,
   loadedIdsFromPayloads,
+  isLocalModelId,
   LOCAL_HOSTS,
   mergeLocalInject,
   modelFactsFromPayload,
@@ -44,6 +45,17 @@ describe("inject ids", () => {
   it("rejects official cloud slugs", () => {
     expect(decodeInjectId("claude-sonnet-5")).toBeNull();
     expect(decodeInjectId("gpt-5.6-sol")).toBeNull();
+  });
+});
+
+describe("isLocalModelId", () => {
+  it("knows a local or computer-shared model, registered or not", () => {
+    expect(isLocalModelId("omlx::Qwen3.8-27B")).toBe(true);
+    expect(isLocalModelId("deskab12cd::Qwen3.8-27B")).toBe(true);
+    expect(isLocalModelId("claude-opus-4-7")).toBe(false);
+    expect(isLocalModelId("anthropic/claude-opus")).toBe(false);
+    expect(isLocalModelId("nothere::model")).toBe(false);
+    expect(isLocalModelId(undefined)).toBe(false);
   });
 });
 

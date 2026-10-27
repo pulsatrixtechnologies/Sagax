@@ -9,6 +9,7 @@
 //                  | turn-error | no-models | exit-early | compaction | compaction-recovery
 //                  | compaction-recovery-upstream | prompt-reject | omp-chunk
 //   FAKE_PI_MODELS comma-separated provider/model pairs (default "ollama-cloud/glm-5.2,openai/gpt-4o")
+//   FAKE_PI_ERROR  the turn-error mode's errorMessage
 //   FAKE_PI_DUMP   path to append {argv, env} JSON, so a test can assert argv shape
 //                  and env hygiene (no leaked secrets into the pi child).
 //   FAKE_PI_STEER_REFUSE script an explicit success:false steer refusal
@@ -150,7 +151,7 @@ const streamErrorTurn = () => {
     type: "turn_end",
     message: {
       stopReason: "error",
-      errorMessage: "Invalid schema for function 'computer_browser_prepare'",
+      errorMessage: process.env.FAKE_PI_ERROR ?? "Invalid schema for function 'computer_browser_prepare'",
       usage: { input: 0, output: 0 },
     },
     usage: { input: 0, output: 0 },

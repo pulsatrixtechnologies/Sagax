@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { LimitFailoverLine } from "../shared/limit-failover.ts";
 import type { ModelSelection } from "../shared/wire.ts";
 import { LimitFailoverStore, type LimitCandidate } from "./limit-failover.ts";
-import { createLimitFailoverHost, type LimitFailoverHostDeps, type LimitRequest } from "./limit-failover-host.ts";
+import { createLimitFailoverHost, limitBackupRefusedText, type LimitFailoverHostDeps, type LimitRequest } from "./limit-failover-host.ts";
 
 const A: ModelSelection = { instanceId: "claude", model: "opus" };
 const B: ModelSelection = { instanceId: "codex", model: "gpt" };
@@ -282,5 +282,59 @@ describe("the next turn", () => {
     w.state.selection = { ...A, auto: true };
     w.store.block("server", "claude", w.clock.now + 60_000);
     expect(w.host.beforeTurn("bot", "thread", undefined)).toBeNull();
+  });
+});
+
+// 2026-10-27 (a bot on pi with a model on its owner's computer): a local model's failure
+// read as a usage limit sent the turn to Claude, which the person had not
+// connected, and a sign-in card followed.
+describe("a local model and a backup the person cannot use", () => {
+  const localDispatch = (w: ReturnType<typeof world>) => w.host.noteDispatch("thread", {
+    botId: "bot", engine: { instanceId: "claude", driverKind: "claudeAgent" }, selection: w.state.selection, payer: "server", at: w.clock.now, local: true,
+  });
+
+  it("never treats a local model's failure as a usage limit, whatever its words", async () => {
+    for (const cause of ["402 Payment Required", "429 Too Many Requests", "subscription required", "billing", "503 This local model is unavailable."]) {
+      const w = world();
+      localDispatch(w);
+      expect(w.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause, stopReason: "quota" })).toBe(false);
+      await w.host.idle();
+      expect(w.state.switches).toEqual([]);
+      expect(w.state.lines).toEqual([]);
+      expect(w.store.blockedUntil("server", "claude")).toBeNull();
+    }
+  });
+
+  it("still takes over when a local server says plainly that its quota is spent", async () => {
+    const w = world();
+    localDispatch(w);
+    expect(w.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: "insufficient_quota: you exceeded your current quota" })).toBe(true);
+    await w.host.idle();
+    expect(w.state.switches).toEqual([B]);
+  });
+
+  it("sends the thread back and skips a backup that could not run for the person", async () => {
+    const w = world();
+    w.dispatch();
+    w.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: LIMIT });
+    await w.host.idle();
+    expect(w.state.selection).toEqual(B);
+    expect(w.host.backupRefused("bot", "thread")).toEqual({ from: "Claude", to: "Codex" });
+    expect(w.state.selection).toEqual(A);
+    expect(w.store.failover("bot", "thread")).toBeUndefined();
+    expect(w.store.blockedUntil("server", "codex")).not.toBeNull();
+    // Not on a backup any more: nothing to undo, so the caller shows its own error.
+    expect(w.host.backupRefused("bot", "thread")).toBeNull();
+  });
+
+  it("is not a backup refusal when the person picked the engine", () => {
+    const w = world();
+    expect(w.host.backupRefused("bot", "thread")).toBeNull();
+  });
+
+  it("says one plain error with no sign-in step", () => {
+    const text = limitBackupRefusedText({ from: "pi", to: "Claude" });
+    expect(text).toContain("Claude is not connected for you");
+    expect(text).not.toMatch(/sign in/i);
   });
 });

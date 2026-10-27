@@ -22,6 +22,9 @@ export interface LimitDispatch {
   trigger?: unknown;
   /** When the turn was dispatched: its failure row is written after. */
   at: number;
+  /** The turn ran on a local or computer-shared model: it has no usage
+   * limit, so its failure is never one (limitKindOf's `local`). */
+  local?: boolean;
 }
 
 /** The request a person's own message started (directRequestOwners). */
@@ -75,6 +78,13 @@ export interface LimitFailoverHost {
   /** A runtime.error: keeps the reset the engine said, if any, and whether
    * the refusal binds only the turn's model (`scope`), not the engine. */
   noteError(threadId: string, message: string, limitResetsAt?: number, scope?: "model"): void;
+  /** A backup this module moved the thread to could not run for this
+   * person (signed out, no key, refused access). The thread goes back to
+   * the engine it started on, the backup is not offered again for a while,
+   * and the caller shows one plain error instead of a sign-in card: the
+   * person never picked that engine. Null when the thread is not on a
+   * backup. */
+  backupRefused(botId: string, threadId: string, speaker?: unknown): { from: string; to: string } | null;
   /** A failed turn. True when its failure is a usage limit this module
    * takes over (no incident: the turn continues, or waits for the reset). */
   turnFailed(input: {
@@ -98,7 +108,15 @@ export interface LimitFailoverHost {
   idle(): Promise<void>;
 }
 
+/** The one error a person reads when the backup a usage limit picked
+ * cannot run for them: no sign-in card for an engine they never chose. */
+export function limitBackupRefusedText(back: { from: string; to: string }): string {
+  return `Limit reached on ${back.from}, and ${back.to} is not connected for you, so nothing took over. This conversation stays on ${back.from}: wait for its limit to reset, or connect another engine in Settings.`;
+}
+
 const RETRY_BUSY_MS = 60_000;
+/** A backup that refused this person is skipped this long. */
+export const BACKUP_REFUSED_MS = 60 * 60_000;
 /** How long a failed turn's own settling may hold its thread before the
  * backup gives up waiting (the turn.completed handler releases it). */
 const SETTLE_WAIT_MS = 10_000;
@@ -214,13 +232,29 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
       if (dispatch) store.unblock(dispatch.payer, dispatch.engine.instanceId);
     },
 
+    backupRefused(botId, threadId, speaker) {
+      try {
+        const row = store.failover(botId, threadId);
+        if (!row || !same(deps.threadSelection(botId, threadId), row.to)) return null;
+        const payer = deps.payer(botId, speaker);
+        store.block(payer, row.to.instanceId, deps.now() + BACKUP_REFUSED_MS);
+        const refused = deps.switchThread(botId, threadId, row.from);
+        if (refused) console.warn(`[limit-failover] ${threadId}: could not go back to ${row.from.instanceId}: ${refused}`);
+        store.forget(threadId);
+        return { from: deps.engineName(row.from.instanceId), to: deps.engineName(row.to.instanceId) };
+      } catch (failure) {
+        console.warn(`[limit-failover] ${threadId}: ${failure instanceof Error ? failure.message : String(failure)}`);
+        return null;
+      }
+    },
+
     turnFailed({ threadId, turnId, cause, stopReason, routineRun }) {
       const dispatch = dispatches.get(threadId);
       const error = errors.get(threadId);
       dispatches.delete(threadId);
       errors.delete(threadId);
       try {
-        const kind = limitKindOf(cause ?? error?.message, stopReason);
+        const kind = limitKindOf(cause ?? error?.message, stopReason, { local: dispatch?.local === true });
         if (!kind || !dispatch) return false;
         const now = deps.now();
         const said = error?.resetsAt ?? limitResetFromText(cause, now) ?? limitResetFromText(error?.message, now);
