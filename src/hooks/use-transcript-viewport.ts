@@ -29,6 +29,21 @@ import { useStore } from "@/state/store";
 
 export const AUTO_EXPAND_TOP_THRESHOLD = 250;
 
+/** True when the gesture started inside a scrollable box nested in the
+ * transcript (code block, table, pre) that can still move up: the box eats the
+ * gesture, the transcript itself does not move. */
+function nestedCanScrollUp(target: EventTarget | null, root: HTMLElement | null): boolean {
+  let node = target instanceof Element ? target : null;
+  while (node && node !== root) {
+    if (node instanceof HTMLElement && node.scrollHeight > node.clientHeight + 1 && node.scrollTop > 0) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if (overflowY === "auto" || overflowY === "scroll") return true;
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
+
 export function useTranscriptViewport<T extends { id: string; role?: string }>({
   ownerId,
   threadId,
@@ -114,6 +129,13 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
     followRef.current = next;
     setFollow(next);
   }, []);
+  // The pane can only move up when it overflows AND is not already at the
+  // top. A short chat has nothing to scroll, so an upward gesture there must
+  // not switch follow off (the "Jump to latest" pill would show for nothing).
+  const canScrollUp = () => {
+    const el = scrollRef.current;
+    return Boolean(el && el.scrollHeight - el.clientHeight > BOTTOM_FOLLOW_THRESHOLD && el.scrollTop > 0);
+  };
   useBottomFollowResize(scrollRef, transcriptRef, followRef, transcriptShown ? transcriptKey : null);
 
   // A thread switch keeps the same owner, so the key is the transcript.
@@ -135,6 +157,25 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
     setTranscriptWindow({ key: transcriptKey, start: range.start, end: range.end });
   }, [threadId, messages, setBottomFollow, state.focusMessage, transcriptKey]);
   useFocusMessage(threadId, messages.length > 0);
+
+  // Sending a message re-arms follow: the person wants the reply in view, even
+  // if an earlier stray gesture switched follow off. Declared before the pin
+  // effect so that effect already sees follow on. Only a NEW last user row
+  // counts, never the first load of a thread.
+  const lastRow = messages.at(-1);
+  const lastUserRowId = lastRow?.role === "user" ? lastRow.id : null;
+  const seenUserRow = useRef<{ key: string; id: string | null }>({ key: transcriptKey, id: lastUserRowId });
+  if (seenUserRow.current.key !== transcriptKey) {
+    seenUserRow.current = { key: transcriptKey, id: lastUserRowId };
+  } else if (lastUserRowId !== null && lastUserRowId !== seenUserRow.current.id) {
+    seenUserRow.current.id = lastUserRowId;
+    if (transcriptShown && !followRef.current) {
+      followRef.current = true;
+      queueMicrotask(() => setFollow(true));
+    }
+  } else if (lastUserRowId === null) {
+    seenUserRow.current.id = null;
+  }
 
   // deps track the FULL messages.length, so expanding the window (which only
   // changes windowedMessages) can never re-trigger this bottom scrollTo.
@@ -244,13 +285,23 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
   // ArrowUp only counts outside inputs — in the composer it edits, not scrolls.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const typing = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement;
-      if (e.key === "PageUp" || ((e.key === "Home" || e.key === "ArrowUp") && !typing)) {
-        setBottomFollow(false);
+      if (e.key !== "PageUp" && e.key !== "Home" && e.key !== "ArrowUp") return;
+      // Only a key that scrolls the transcript counts: not while typing, nor
+      // inside a menu, listbox, dialog or editable region, where the key
+      // moves a selection or the caret.
+      const target = e.target instanceof Element ? e.target : null;
+      if (
+        target?.closest(
+          'textarea, input, select, [contenteditable=""], [contenteditable="true"], [role="menu"], [role="listbox"], [role="combobox"], [role="dialog"], [role="tablist"], [role="slider"]',
+        )
+      ) {
+        return;
       }
+      if (canScrollUp()) setBottomFollow(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- canScrollUp reads refs only
   }, [setBottomFollow]);
 
   const atEnd = () => {
@@ -274,8 +325,10 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
       if (el && e.target === el && e.nativeEvent.offsetX >= el.clientWidth) setBottomFollow(false);
     },
     onWheel: (e: WheelEvent<HTMLDivElement>) => {
-      if (e.deltaY < 0) {
-        setBottomFollow(false);
+      // A real upward move: not a mostly horizontal swipe, not momentum noise,
+      // not a nested scroller (code block, table) that can still move up.
+      if (e.deltaY < -1 && Math.abs(e.deltaY) >= Math.abs(e.deltaX) && !nestedCanScrollUp(e.target, scrollRef.current)) {
+        if (canScrollUp()) setBottomFollow(false);
         const el = scrollRef.current;
         if (el && el.scrollTop <= AUTO_EXPAND_TOP_THRESHOLD) {
           triggerAutoEarlier();
@@ -290,7 +343,7 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
     onTouchMove: (e: TouchEvent<HTMLDivElement>) => {
       const y = e.touches[0]?.clientY ?? 0;
       if (y > touchY.current + 4) {
-        setBottomFollow(false);
+        if (canScrollUp() && !nestedCanScrollUp(e.target, scrollRef.current)) setBottomFollow(false);
         const el = scrollRef.current;
         if (el && el.scrollTop <= AUTO_EXPAND_TOP_THRESHOLD) {
           triggerAutoEarlier();
@@ -303,6 +356,7 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
       const el = scrollRef.current;
       if (!el) return;
       const scrollTop = el.scrollTop;
+      const prevScrollTop = previousScrollTop.current;
       const resume = shouldResumeBottomFollow({
         following: followRef.current,
         previousScrollTop: previousScrollTop.current,
@@ -310,7 +364,10 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
         distanceFromBottom: el.scrollHeight - scrollTop - el.clientHeight,
       });
       previousScrollTop.current = scrollTop;
-      if (resume) {
+      // At the rest position with follow off (stale state): arm it again. No
+      // scroll is issued, so this never moves the viewport.
+      const atRest = el.scrollHeight - scrollTop - el.clientHeight < BOTTOM_FOLLOW_THRESHOLD;
+      if (resume || (!followRef.current && atRest && scrollTop >= prevScrollTop)) {
         setBottomFollow(true);
       } else if (!followRef.current && scrollTop <= AUTO_EXPAND_TOP_THRESHOLD) {
         triggerAutoEarlier();
