@@ -18,9 +18,12 @@ describe("the level a new bot starts on", () => {
   beforeEach(() => rmSync(DATA_DIR, { recursive: true, force: true }));
 
   it("is Approve for me by default (a solo server), bot and first thread", () => {
-    const created = new Store(selection).createBot({}, { seedMessages: false });
+    const store = new Store(selection);
+    const created = store.createBot({}, { seedMessages: false });
     expect(created).toMatchObject({ approvalMode: "auto", autoApprove: true });
-    expect(created.tasks?.[0]).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    // #1207: the first thread stores no copy of the level; it reads the bot's.
+    expect(created.tasks?.[0].approvalMode).toBeUndefined();
+    expect(store.projectBotForTask(created.id, created.threadId)).toMatchObject({ approvalMode: "auto", autoApprove: true });
     // The zero-choice default is the safe level, never Full access: making the
     // engine/model Auto must never weaken the approval safeguard.
     expect(created.approvalMode).not.toBe("full");
@@ -31,7 +34,8 @@ describe("the level a new bot starts on", () => {
     const store = new Store(selection, identity, () => policy);
     const asked = store.createBot({}, { seedMessages: false });
     expect(asked).toMatchObject({ approvalMode: "ask", autoApprove: false });
-    expect(asked.tasks?.[0]).toMatchObject({ approvalMode: "ask", autoApprove: false });
+    expect(asked.tasks?.[0].approvalMode).toBeUndefined();
+    expect(store.projectBotForTask(asked.id, asked.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false });
     policy = "auto";
     const auto = store.createBot({}, { seedMessages: false });
     expect(auto).toMatchObject({ approvalMode: "auto", autoApprove: true });
@@ -50,13 +54,15 @@ describe("the level a new bot starts on", () => {
     ]));
     const org = new Store(selection, identity, () => "ask");
     expect(org.bot("ask-bot")?.approvalMode).toBe("ask");
-    expect(org.taskByThread("ask-bot", "t1")?.approvalMode).toBe("ask");
+    // #1207: the thread's stored copy goes; it follows its Ask bot
+    expect(org.taskByThread("ask-bot", "t1")?.approvalMode).toBeUndefined();
+    expect(org.projectBotForTask("ask-bot", "t1")?.approvalMode).toBe("ask");
     expect(org.bot("plain-bot")?.approvalMode).toBeUndefined();
     expect(existsSync(join(DATA_DIR, "approval-default-auto.v1"))).toBe(true);
     // the admin later sets the policy to Approve for me: existing bots stay
     const later = new Store(selection, identity, () => "auto");
     expect(later.bot("ask-bot")?.approvalMode).toBe("ask");
-    expect(later.taskByThread("ask-bot", "t1")?.approvalMode).toBe("ask");
+    expect(later.projectBotForTask("ask-bot", "t1")?.approvalMode).toBe("ask");
     expect(later.createBot({}, { seedMessages: false })).toMatchObject({ approvalMode: "auto" });
   });
 });

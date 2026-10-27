@@ -3337,8 +3337,11 @@ export class Store {
         const keptOff = botKeptOff || (narrower(task.surface) && task.surfaceSource !== "auto");
         // its own level, else the bot's that it follows (a pin alone held it
         // off, so the bot keeps its own level and this conversation asks)
+        // An exception may store only part of a level (autoApprove alone,
+        // or nothing): read it as the turn runs it (threadApprovalFields),
+        // so a thread that falls back to an Auto bot still asks.
         const ownLevel = isApprovalException(task.approvalOwn);
-        const level = ownLevel ? approvalModeFor(task) : approvalModeFor(bot);
+        const level = ownLevel ? approvalModeFor(threadApprovalFields(bot, task)) : approvalModeFor(bot);
         if (keptOff && level !== "ask") {
           Object.assign(task, structuredClone(askNow), { approvalOwn: "safety" as const });
           asked++;

@@ -27,58 +27,69 @@ describe("independent bot task state", () => {
     store.setResumeCursor(bot.id, "codex", "keep-session", archived.threadId);
     const history = store.messagesFor(first);
     store.setAllThreadApprovalMode(bot.id, "full");
-    expect(store.tasks(bot.id).every(task => task.approvalMode === "full")).toBe(true);
+    // #1207: every thread reads the bot's level live; none keeps a copy.
+    const level = (s: Store, threadId: string) => s.projectBotForTask(bot.id, threadId)?.approvalMode;
+    expect(store.tasks(bot.id).every(task => task.approvalMode === undefined && task.approvalOwn === undefined)).toBe(true);
+    expect(store.tasks(bot.id).every(task => level(store, task.threadId) === "full")).toBe(true);
     const restarted = new Store(selection);
     expect(restarted.bot(bot.id)?.approvalMode).toBe("full");
-    expect(restarted.tasks(bot.id).every(task => task.approvalMode === "full")).toBe(true);
+    expect(restarted.tasks(bot.id).every(task => level(restarted, task.threadId) === "full")).toBe(true);
     expect(restarted.taskByThread(bot.id, archived.threadId)).toMatchObject({
       archivedAt: archived.archivedAt, modelSelection: { instanceId: "codex", model: "different" }, resumeCursors: { codex: "keep-session" },
     });
     expect(restarted.messagesFor(first)).toEqual(history);
-    expect(restarted.createTask(bot.id)?.approvalMode).toBe("full");
+    expect(level(restarted, restarted.createTask(bot.id)!.threadId)).toBe("full");
     expect(approvalModeFor(restarted.bot(other.id)!)).toBe("auto");
     restarted.setAllThreadApprovalMode(bot.id, "ask");
-    expect(new Store(selection).tasks(bot.id).every(task => task.approvalMode === "ask")).toBe(true);
+    const asked = new Store(selection);
+    expect(asked.tasks(bot.id).every(task => level(asked, task.threadId) === "ask")).toBe(true);
   });
 
   it("refreshes one thread's permissions from the bot default and leaves the rest", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });
     const first = bot.threadId;
-    // The opening thread inherits until it has its own copy. A later thread,
-    // and any thread whose level was chosen in the composer, keeps that copy.
     store.patchBot(bot.id, { approvalMode: "ask", autoApprove: false });
-    store.patchTask(bot.id, first, { approvalMode: "ask", autoApprove: false, alwaysAllow: ["Read"] });
     const model = store.projectBotForTask(bot.id, first)?.modelSelection;
     store.appendMessage(first, { role: "user", kind: "text", text: "Keep this conversation" });
     const history = store.messagesFor(first);
     const sibling = store.createTask(bot.id, "Sibling", false)!;
     store.patchBot(bot.id, { approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
-    expect(store.taskByThread(bot.id, first)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: ["Read"] });
+    // #1207: the level belongs to the bot. A thread keeps its own only as a
+    // stated exception, chosen in that thread after the bot's level was set.
+    store.patchTask(bot.id, first, { approvalMode: "ask", autoApprove: false, alwaysAllow: ["Read"] });
+    store.patchTask(bot.id, sibling.threadId, { approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+    expect(store.taskByThread(bot.id, first)?.approvalOwn).toBe("thread");
+    expect(store.projectBotForTask(bot.id, first)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: ["Read"] });
     expect(store.projectBotForTask(bot.id, first)?.modelSelection).toEqual(model);
-    expect(store.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", alwaysAllow: [] });
+    expect(store.projectBotForTask(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", alwaysAllow: [] });
 
     const refreshed = store.refreshTaskPermissions(bot.id, first);
-    expect(refreshed).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
+    // caught up: no exception left, the thread follows its bot
+    expect(refreshed?.approvalOwn).toBeUndefined();
+    expect(refreshed?.approvalMode).toBeUndefined();
+    expect(store.projectBotForTask(bot.id, first)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
     expect(store.projectBotForTask(bot.id, first)?.modelSelection).toEqual(model);
-    expect(store.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+    expect(store.projectBotForTask(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
     expect(store.bot(bot.id)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
     expect(store.messagesFor(first)).toEqual(history);
     expect(store.refreshTaskPermissions(bot.id, "missing")).toBeNull();
 
     const reloaded = new Store(selection);
-    expect(reloaded.taskByThread(bot.id, first)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
-    expect(reloaded.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", alwaysAllow: [] });
+    expect(reloaded.projectBotForTask(bot.id, first)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
+    expect(reloaded.projectBotForTask(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", alwaysAllow: [] });
     expect(reloaded.messagesFor(first)).toEqual(history);
 
+    // Setting the bot's level reaches every thread and ends each exception.
     reloaded.patchBot(bot.id, {
       approvalMode: "full",
       approvalGrant: { requestId: "grant-1", mode: "full", phase: "prepared", threadId: first, threadOnly: true, refreshPermissions: true },
     });
     expect(approvalModeFor(reloaded.bot(bot.id)!)).toBe("ask");
+    expect(reloaded.taskByThread(bot.id, sibling.threadId)?.approvalOwn).toBeUndefined();
     const caughtUp = reloaded.refreshTaskPermissions(bot.id, sibling.threadId);
-    expect(caughtUp).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: ["Read", "Bash"] });
-    expect(reloaded.taskByThread(bot.id, first)?.approvalMode).toBe("auto");
+    expect(caughtUp?.approvalOwn).toBeUndefined();
+    expect(reloaded.projectBotForTask(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "full", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
     expect(reloaded.bot(bot.id)?.approvalMode).toBe("full");
   });
 
@@ -141,7 +152,10 @@ describe("independent bot task state", () => {
     store.setResumeCursor(bot.id, "claude", "first-session", first.threadId);
     const reloaded = new Store(selection);
     expect(reloaded.taskByThread(bot.id, first.threadId)).toMatchObject({ routineRunId: "run-1", resumeCursors: { claude: "first-session" } });
-    expect(reloaded.taskByThread(bot.id, second.threadId)).toMatchObject({ routineRunId: "run-2", resumeCursors: {}, approvalMode: "auto", autoApprove: true });
+    expect(reloaded.taskByThread(bot.id, second.threadId)).toMatchObject({ routineRunId: "run-2", resumeCursors: {} });
+    // #1207: a run keeps no copy of the level; it runs at the bot's
+    expect(reloaded.taskByThread(bot.id, second.threadId)?.approvalMode).toBeUndefined();
+    expect(reloaded.projectBotForTask(bot.id, second.threadId)).toMatchObject({ approvalMode: "auto", autoApprove: true });
     reloaded.patchTask(bot.id, first.threadId, { routineRunId: undefined });
     expect(new Store(selection).taskByThread(bot.id, first.threadId)?.routineRunId).toBeUndefined();
   });
@@ -207,9 +221,6 @@ describe("independent bot task state", () => {
     const first = bot.threadId;
     store.patchTask(bot.id, first, {
       modelSelection: { instanceId: "codex", model: "first", effort: "high" },
-      approvalMode: "auto",
-      autoApprove: true,
-      alwaysAllow: ["Bash:git"],
       rewound: true,
       pinnedMessageId: "first-pin",
     });
@@ -220,12 +231,13 @@ describe("independent bot task state", () => {
       approvalMode: "ask",
       alwaysAllow: ["Read"],
     });
+    // #1207: a level chosen in one thread after the bot's is its own
+    // exception (setting the bot's level ends every exception).
+    store.patchTask(bot.id, first, { approvalMode: "auto", autoApprove: true, alwaysAllow: ["Bash:git"] });
     const second = store.createTask(bot.id)!;
-    expect(second).toMatchObject({
-      approvalMode: "ask",
-      alwaysAllow: ["Read"],
-      resumeCursors: {},
-    });
+    expect(second).toMatchObject({ resumeCursors: {} });
+    expect(second.approvalMode).toBeUndefined();
+    expect(store.projectBotForTask(bot.id, second.threadId)).toMatchObject({ approvalMode: "ask", alwaysAllow: ["Read"] });
     expect(second.modelSelection).toBeUndefined();
     expect(store.projectBotForTask(bot.id, second.threadId)?.modelSelection).toEqual({ instanceId: "claude", model: "second-default" });
     expect(bot.rewound).toBeUndefined();
@@ -248,10 +260,11 @@ describe("independent bot task state", () => {
       approvalMode: "auto",
       alwaysAllow: ["Bash:git"],
     });
-    // No model of its own: it moved with the bot's.
+    // No model or level of its own: it moved with the bot's.
     expect(store.projectBotForTask(bot.id, second.threadId)).toMatchObject({
       modelSelection: selection(),
-      alwaysAllow: ["Read"],
+      approvalMode: "ask",
+      alwaysAllow: ["Other"],
     });
     store.deleteTask(bot.id, detached.threadId);
     store.deleteTask(bot.id, first);
@@ -261,7 +274,7 @@ describe("independent bot task state", () => {
     expect(reloaded.projectBotForTask(bot.id, second.threadId)).toMatchObject({
       modelSelection: selection(),
       approvalMode: "ask",
-      alwaysAllow: ["Read"],
+      alwaysAllow: ["Other"],
       resumeCursors: { claude: "second-session" },
       pinnedMessageId: "second-pin",
     });
@@ -445,31 +458,38 @@ describe("independent bot task state", () => {
         ] },
     ]));
     const store = new Store(selection);
+    // #1207: a thread's stored copy of the level (no stated exception) is
+    // dropped at startup, and the thread reads its bot's level live.
+    const level = (s: Store, botId: string, threadId: string) => s.projectBotForTask(botId, threadId);
+    expect(store.tasks("ask-bot").every(task => task.approvalMode === undefined && task.autoApprove === undefined)).toBe(true);
     expect(store.bot("ask-bot")).toMatchObject({ approvalMode: "auto", autoApprove: true });
-    expect(store.taskByThread("ask-bot", "t1")).toMatchObject({ approvalMode: "auto", autoApprove: true });
-    expect(store.taskByThread("ask-bot", "t2")).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(level(store, "ask-bot", "t1")).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(level(store, "ask-bot", "t2")).toMatchObject({ approvalMode: "auto", autoApprove: true });
     expect(store.bot("plain-bot")).toMatchObject({ approvalMode: "auto", autoApprove: true });
-    expect(store.taskByThread("plain-bot", "p1")).toMatchObject({ approvalMode: "auto" });
+    expect(level(store, "plain-bot", "p1")).toMatchObject({ approvalMode: "auto" });
     expect(store.bot("full-bot")?.approvalMode).toBe("full");
-    expect(store.taskByThread("full-bot", "f1")?.approvalMode).toBe("full");
-    expect(store.taskByThread("full-bot", "f2")?.approvalMode).toBe("auto");
+    expect(level(store, "full-bot", "f1")?.approvalMode).toBe("full");
+    // an Ask copy with no exception was a copy: it follows the Full bot now
+    expect(level(store, "full-bot", "f2")?.approvalMode).toBe("full");
     expect(store.bot("local-bot")).toMatchObject({ approvalMode: "ask" });
-    expect(store.taskByThread("local-bot", "l1")?.approvalMode).toBe("ask");
+    expect(level(store, "local-bot", "l1")?.approvalMode).toBe("ask");
     expect(store.bot("edits-bot")?.approvalMode).toBe("edits");
-    expect(store.taskByThread("edits-bot", "e1")?.approvalMode).toBe("edits");
+    expect(level(store, "edits-bot", "e1")?.approvalMode).toBe("edits");
     expect(store.bot("revoked-bot")).toMatchObject({ approvalMode: "ask", autoApprove: false });
     expect(store.bot("revoked-bot")).not.toHaveProperty("approvalGrant");
-    expect(store.taskByThread("revoked-bot", "r1")?.approvalMode).toBe("ask");
-    expect(store.taskByThread("revoked-bot", "r2")?.approvalMode).toBe("ask");
+    expect(level(store, "revoked-bot", "r1")?.approvalMode).toBe("ask");
+    expect(level(store, "revoked-bot", "r2")?.approvalMode).toBe("ask");
     store.patchBot("ask-bot", { approvalMode: "ask", autoApprove: false });
     store.patchTask("ask-bot", "t1", { approvalMode: "ask", autoApprove: false });
     const again = new Store(selection);
     expect(again.bot("ask-bot")?.approvalMode).toBe("ask");
-    expect(again.taskByThread("ask-bot", "t1")?.approvalMode).toBe("ask");
+    expect(again.taskByThread("ask-bot", "t1")).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
+    expect(level(again, "ask-bot", "t1")?.approvalMode).toBe("ask");
+    expect(level(again, "ask-bot", "t2")?.approvalMode).toBe("ask");
     expect(again.bot("plain-bot")?.approvalMode).toBe("auto");
     const created = again.createBot({}, { seedMessages: false });
     expect(created).toMatchObject({ approvalMode: "auto", autoApprove: true });
-    expect(created.tasks?.[0]).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(level(again, created.id, created.threadId)).toMatchObject({ approvalMode: "auto", autoApprove: true });
   });
 
   it("revokes elevated task snapshots along with a stale bot elevation grant", () => {
@@ -483,7 +503,10 @@ describe("independent bot task state", () => {
     });
     expect(approvalModeFor(store.projectBotForTask(bot.id, task.threadId)!)).toBe("ask");
     const reloaded = new Store(selection);
-    expect(reloaded.taskByThread(bot.id, task.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false });
+    // #1207: the thread keeps no elevated copy; it follows the revoked bot
+    expect(reloaded.taskByThread(bot.id, task.threadId)?.approvalMode).toBeUndefined();
+    expect(reloaded.bot(bot.id)).toMatchObject({ approvalMode: "ask", autoApprove: false });
+    expect(reloaded.projectBotForTask(bot.id, task.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false });
     expect(approvalModeFor(reloaded.projectBotForTask(bot.id, task.threadId)!)).toBe("ask");
   });
 

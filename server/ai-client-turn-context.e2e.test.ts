@@ -1,8 +1,8 @@
 // What a one-word ping from an AI client puts in front of the engine, through
 // the two member API doors Perspicax uses: the deprecated `sagax_send`
-// (POST bots/{id}/messages, continues the hidden conversation of #291) and the
-// recommended `send_prompt` (POST agents/send_prompt), which opens a fresh
-// hidden conversation unless `thread_id` names one to continue.
+// (POST bots/{id}/messages) and the recommended `send_prompt` (POST
+// agents/send_prompt). Since #1170 both land in the person's single chat
+// with the bot, never a hidden conversation; `thread_id` names one on purpose.
 //
 // The fake Claude CLI exits after each turn (FAKE_CLAUDE_EXIT_AFTER_TURN), so
 // every turn launches again and the dump holds that turn's own launch files:
@@ -191,8 +191,8 @@ posixOnly("AI client ping: what the engine is handed (sagax_send vs send_prompt)
     return { door, threadId, resumed, system, message, history, mcpServers, tokens: Math.ceil((system + message + history) / 4) };
   }
 
-  it("a ping through send_prompt opens a fresh conversation; only an explicit thread_id continues the long one", async () => {
-    // The AI client's earlier work in its hidden conversation.
+  it("a ping through send_prompt lands in the bot's single chat, as sagax_send does; an explicit thread_id names it too (#1170)", async () => {
+    // The AI client's earlier work in the person's chat with the bot.
     let threadId = "";
     for (let i = 0; i < EARLIER; i += 1) {
       const sent = await member("POST", `bots/${botId}/messages`, BOB, { text: `job ${i} ${"x".repeat(EARLIER_TEXT)}`, wait: 30 });
@@ -207,14 +207,15 @@ posixOnly("AI client ping: what the engine is handed (sagax_send vs send_prompt)
     expect(viaSend.body.threadId).toBe(threadId);
     const send = await measure("sagax_send", threadId, viaSend.body.messageId);
 
-    // send_prompt by default: a new hidden conversation, nothing earlier read again
+    // send_prompt by default: the same single chat (#1170), its history resumed
     const viaPrompt = await member("POST", "agents/send_prompt", BOB, { agent_id: botId, prompt: "ping", mode: "blocking", timeout_ms: 30_000 });
     expect(viaPrompt.status, viaPrompt.text).toBe(200);
     expect(viaPrompt.body.finished).toBe(true);
-    expect(viaPrompt.body.thread_id).not.toBe(threadId);
-    const promptRows = await api("GET", `/api/threads/${viaPrompt.body.thread_id}/messages?limit=500`, bob);
-    const promptPing = (promptRows.body.messages as Array<{ id: string; role: string; text?: string }>).find((row) => row.role === "user" && row.text === "ping");
-    const prompt = await measure("send_prompt", viaPrompt.body.thread_id, promptPing!.id);
+    expect(viaPrompt.body.thread_id).toBe(threadId);
+    const promptRows = await api("GET", `/api/threads/${threadId}/messages?limit=500`, bob);
+    const promptPing = (promptRows.body.messages as Array<{ id: string; role: string; text?: string }>).filter((row) => row.role === "user" && row.text === "ping").at(-1);
+    expect(promptPing?.id).not.toBe(viaSend.body.messageId);
+    const prompt = await measure("send_prompt", threadId, promptPing!.id);
 
     // send_prompt with thread_id: the long conversation, on purpose
     const viaContinue = await member("POST", "agents/send_prompt", BOB, { agent_id: botId, prompt: "ping", mode: "blocking", timeout_ms: 30_000, thread_id: threadId });
@@ -229,12 +230,13 @@ posixOnly("AI client ping: what the engine is handed (sagax_send vs send_prompt)
     }
 
     expect(send.resumed).toBe(true);
-    expect(continued.resumed).toBe(true);
-    expect(continued.history).toBeGreaterThanOrEqual(send.history);
-    // the default send_prompt carries no history at all, and the same servers
-    expect(prompt.resumed).toBe(false);
-    expect(prompt.history).toBe(0);
+    // the default send_prompt continues the same conversation: every earlier
+    // exchange, the sagax_send ping included, and the same servers
+    expect(prompt.resumed).toBe(true);
+    expect(prompt.history).toBeGreaterThan(send.history);
     expect(prompt.mcpServers).toEqual(send.mcpServers);
-    expect(prompt.tokens).toBeLessThan(send.tokens * 0.7);
+    expect(continued.resumed).toBe(true);
+    expect(continued.history).toBeGreaterThan(prompt.history);
+    expect(continued.mcpServers).toEqual(send.mcpServers);
   }, 240_000);
 });
