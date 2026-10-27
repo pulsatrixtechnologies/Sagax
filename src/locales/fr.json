@@ -6655,6 +6655,7 @@
   "routines.results.label": "Envoyer les résultats vers",
   "routines.results.main": "Le fil principal du bot",
   "routines.results.mainHelp": "Chaque exécution repart d'un contexte vierge. Les résultats datés s'accumulent ici, dans le fil principal du bot, sauf si vous en choisissez un autre ; les détails complets d'exécution restent dans les journaux d'exécution.",
+  "routines.results.mainHelpOne": "Chaque exécution repart d'un contexte vierge. Les résultats datés s'accumulent ici, dans le fil principal du bot ; les détails complets d'exécution restent dans les journaux d'exécution.",
   "routines.results.missing": "Un fil qui n'existe plus",
   "routines.results.new": "Créer un fil de résultats dédié",
   "routines.results.open": "Ouvrir le fil de résultats",

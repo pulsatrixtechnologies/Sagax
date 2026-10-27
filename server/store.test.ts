@@ -48,6 +48,24 @@ describe("Store", () => {
     expect(store.activityOf(bot.id, () => true)).toEqual({ activity: "idle", busy: false });
   });
 
+  it("runs a routine's threads at the bot's current approval level (#1169)", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({ name: "Dispatch" }, { seedMessages: false });
+    store.patchBot(bot.id, { approvalMode: "ask", autoApprove: false });
+    const run = store.createTask(bot.id, "Routine run", false)!;
+    store.patchTask(bot.id, run.threadId, { routineRunId: "run-1" });
+    const results = store.createTask(bot.id, "Report · Results", false)!;
+    store.patchTask(bot.id, results.threadId, { routineResults: true });
+    // set after the threads exist: nothing was copied when they were made
+    store.patchBot(bot.id, { approvalMode: "full", autoApprove: false });
+    expect(store.projectBotForTask(bot.id, run.threadId)?.approvalMode).toBe("full");
+    expect(store.projectBotForTask(bot.id, results.threadId)?.approvalMode).toBe("full");
+    store.patchBot(bot.id, { approvalMode: "auto", autoApprove: true });
+    const reloaded = new Store(selection);
+    expect(reloaded.projectBotForTask(bot.id, run.threadId)?.approvalMode).toBe("auto");
+    expect(reloaded.projectBotForTask(bot.id, results.threadId)?.approvalMode).toBe("auto");
+  });
+
   it("retains tool selection across restarts and distinguishes clearing from no tools", () => {
     const store = new Store(selection);
     const bot = store.createBot({ name: "Scoped drafter" });

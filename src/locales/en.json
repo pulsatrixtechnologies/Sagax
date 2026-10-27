@@ -5562,6 +5562,7 @@
   "routines.results.label": "Post results to",
   "routines.results.main": "The bot's main thread",
   "routines.results.mainHelp": "Each run starts with fresh context. Dated results collect here, in the bot's main thread unless you choose another; full execution details stay in Run logs.",
+  "routines.results.mainHelpOne": "Each run starts with fresh context. Dated results collect here, in the bot's main thread; full execution details stay in Run logs.",
   "routines.results.missing": "A thread that no longer exists",
   "routines.results.new": "Create a dedicated results thread",
   "routines.results.open": "Open results thread",

@@ -2,7 +2,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { Bot } from "@/state/store";
-import { ResultsDestination } from "./ResultsDestination";
+
+const threads = vi.hoisted(() => ({ show: true }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => threads.show }));
+
+const { ResultsDestination } = await import("./ResultsDestination");
 
 const bot = {
   id: "pepper", projects: [{ id: "management", name: "OMB management" }],
@@ -23,6 +27,21 @@ describe("routine result destination", () => {
     expect(html).toContain("Everyday chat");
     expect(html).not.toContain("Internal run");
     expect(html).not.toContain("Keep current destination");
+    expect(html).toContain("unless you choose another");
+  });
+
+  it("in one conversation (threads hidden) offers only the bot's main thread", () => {
+    threads.show = false;
+    try {
+      const html = renderToStaticMarkup(createElement(ResultsDestination, { bot, value: null, onChange: vi.fn() }));
+      expect(html).toContain("The bot&#x27;s main thread");
+      expect(html).not.toContain("Fleet health");
+      expect(html).not.toContain("Everyday chat");
+      expect(html).not.toContain("unless you choose another");
+      expect(html).toContain("Run logs");
+    } finally {
+      threads.show = true;
+    }
   });
 
   it("preserves a legacy destination on unrelated edits", () => {

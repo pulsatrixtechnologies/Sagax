@@ -1,6 +1,27 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "The bot's main thread": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The bot's main thread" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le fil principal du bot" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A conversa principal do bot" } }
+      }
+    },
+    "Each run starts with fresh context. Dated results collect in the bot's main thread unless you choose another; full execution details stay in Run logs.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Each run starts with fresh context. Dated results collect in the bot's main thread unless you choose another; full execution details stay in Run logs." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque exécution repart d'un contexte vierge. Les résultats datés s'accumulent dans le fil principal du bot, sauf si vous en choisissez un autre ; les détails complets d'exécution restent dans les journaux d'exécution." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cada execução começa com contexto novo. Os resultados datados ficam na conversa principal do bot, a menos que você escolha outra; os detalhes completos da execução ficam nos registros de execução." } }
+      }
+    },
+    "Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque exécution repart d'un contexte vierge. Les résultats datés s'accumulent dans le fil principal du bot ; les détails complets d'exécution restent dans les journaux d'exécution." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cada execução começa com contexto novo. Os resultados datados ficam na conversa principal do bot; os detalhes completos da execução ficam nos registros de execução." } }
+      }
+    },
     "Journal of actions": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Journal of actions" } },
