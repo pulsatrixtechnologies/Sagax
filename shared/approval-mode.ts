@@ -116,13 +116,35 @@ export function isEmergencyApprovalDowngrade(
   return next === "ask" && (current === "full" || current === "custom");
 }
 
+/** A rule that can hold a Full-access turn at Ask. `org` is an
+ * organization admin rule. `enabled: false` is a custom rule the person
+ * turned off. An owner rule omits both. */
+export type FullAccessHoldRule = {
+  behavior: "allow" | "ask" | "deny";
+  org?: boolean;
+  enabled?: boolean;
+};
+
+/** At Full access, whether the engine must run natively at Ask so a rule
+ * sees every call. A person's own Ask rule does not: Full stays Full, and
+ * that Ask rule still cards the call it matches once the call reaches
+ * Sagax. An organization Ask or Deny, and any Deny, still hold the engine
+ * at Ask. */
+export function fullAccessRulesHold(rules: readonly FullAccessHoldRule[]): boolean {
+  return rules.some((rule) => {
+    if (rule.enabled === false) return false;
+    if (rule.behavior === "deny") return true;
+    return rule.behavior === "ask" && rule.org === true;
+  });
+}
+
 /** 2026-10-26 (one approval level): the level an engine runs natively
- * for one turn. Full access with an Ask or Deny rule in force (the
- * person's own, the bot's or the organization's) runs the engine at Ask, so
- * every call it would have made unasked reaches Sagax: the rule decides
- * the calls it covers and Sagax answers the rest as Full access
- * (auto-approve.ts autoVerdict "full-access"). The server keeps judging
- * with the bot's own level; only the engine's native mode changes. */
+ * for one turn. `rulesHold` is `fullAccessRulesHold`: Full access then
+ * runs the engine at Ask, so every call it would have made unasked reaches
+ * Sagax. The holding rule decides the calls it covers and Sagax answers
+ * the rest as Full access (auto-approve.ts autoVerdict "full-access"). A
+ * person's own Ask rule is not a hold. The server keeps judging with the
+ * bot's own level; only the engine's native mode changes. */
 export function engineApprovalMode(level: ApprovalMode, rulesHold: boolean): ApprovalMode {
   return level === "full" && rulesHold ? "ask" : level;
 }

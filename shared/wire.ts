@@ -559,8 +559,9 @@ export type CardAnswerer = (
   /** "call": decided by voice on a Live call, not tapped. "ai-client": answered
    * from an AI client attached to Perspicax (Claude Code, claude.ai), through
    * the member API, by the person named (lot C.3). "primary-bot": answered
-   * by the person's Primary Bot (`bot`, its name) at the person's own
-   * request in their conversation with it (sagax_approvals, 2026-10-20).
+   * by a bot the person owns (`bot`, its name) at the person's own request
+   * (sagax_approvals). The field name stays "primary-bot" (2026-10-20);
+   * since 2026-10-27 any owned bot, not only the Primary Bot.
    * "auto-review": the model reviewer applied the person's rule (2026-10-21,
    * server/custom-rules-model.ts; the card's customRule says which and why). */
   via?: "call" | "ai-client" | "primary-bot" | "auto-review" | "reach-me";

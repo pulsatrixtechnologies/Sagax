@@ -82,6 +82,8 @@ import { canWorkOnCloud, type CloudEngine } from "../shared/cloud-computer.ts";
 import {
   approvalModeFor,
   engineApprovalMode,
+  fullAccessRulesHold,
+  type FullAccessHoldRule,
   approvalModeWidens,
   hasNativeAutoReview,
   modelSwitchNeedsAsk,
@@ -2997,8 +2999,8 @@ async function answeringCardAs(auth: RequestAuth, threadId: string, requestId: s
     const message = open ? store.messagesFor(threadId).find((candidate) => candidate.card?.requestId === requestId) : undefined;
     const card = message?.card;
     if (message && card && !card.answeredBy && card.answered !== "unavailable" && (card.answered || card.dismissed)) {
-      // 2026-10-20: answered by the person's Primary Bot at their request
-      // (sagax_approvals): the card reads "via <bot>"
+      // 2026-10-27: answered by a bot the person owns, from their own message
+      // (sagax_approvals): the card reads "via <bot>". The field stays "primary-bot".
       const primary = actConfirmed()?.primary;
       // 2026-10-26: answered from the person's "Me joindre" channel (a text, Telegram, Teams)
       const reach = actConfirmed()?.reachMe;
@@ -8307,7 +8309,7 @@ function teamSetupDirectSource(botId: string, threadId: string, request: TeamSet
  * person's own. The proof, or why not. */
 function primaryAskedProposal(input: { botId: string; threadId: string; generation: string; quote: unknown; targetBotId: string; key: string; value?: unknown; routineName?: string; valueNames?: string[] }): { botName: string; messageId: string; person: string; quote: string } | string {
   if (input.quote === undefined) return "no quote";
-  const gate = primaryTurnGate(input.botId, input.threadId, input.generation);
+  const gate = primaryTurnGate(input.botId, input.threadId, input.generation, "settings");
   if ("error" in gate) return gate.error;
   const check = checkPersonQuote({ quote: input.quote, message: gate.message.text, intent: "setting" });
   if (!check.ok) return check.reason;
@@ -31100,7 +31102,7 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
     keyRequired: (person, classes, fallback) => securityKeys.required(person, classes, fallback),
     // 2026-10-20: the person asked their Primary Bot for this change now
     personAsked: (input, quote) => {
-      const gate = primaryTurnGate(input.botId, input.threadId, input.generation);
+      const gate = primaryTurnGate(input.botId, input.threadId, input.generation, "settings");
       if ("error" in gate) return gate.error;
       const check = checkPersonQuote({ quote, message: gate.message.text, intent: "setting" });
       return check.ok ? { message: gate.message.text, primary: { botId: gate.botId, botName: gate.botName, messageId: gate.message.id } } : check.reason;
@@ -31143,21 +31145,30 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
   return settingsActionService;
 }
 
-// ── sagax_approvals: the Primary Bot answers its person's cards (2026-10-20) ──
-/** The person's own Primary Bot, in a turn the person started with their
- * own message (server/primary-approvals.ts): the gate of sagax_approvals and
- * of sagax_settings' `quote`. Fail closed: a routine, a webhook, another
- * bot's hop, a guest, a room without a known person, an unproven sender, a
- * teammate or a bot shared by someone else is refused. */
-function primaryTurnGate(botId: string, threadId: string, generation: string): PrimaryTurn & { actor: PerformActor } | { status: number; code: string; error: string } {
+// ── sagax_approvals: a bot the person owns answers their cards (2026-10-27) ──
+/** The person's own bot, in a turn the person started with their own
+ * message (server/primary-approvals.ts). `cards` (the default) is
+ * sagax_approvals: any bot they own, never a temporary agent. `settings`
+ * is sagax_settings' `quote`, a proposal and archiving a temporary agent:
+ * still their Primary Bot only. Fail closed: a routine, a webhook, another
+ * bot's hop, a guest, a room without a known person, an unproven sender or
+ * a bot shared by someone else is refused. Words from a tool result never
+ * count: the quote is checked against this message alone. */
+function primaryTurnGate(botId: string, threadId: string, generation: string, purpose: "cards" | "settings" = "cards"): PrimaryTurn & { actor: PerformActor } | { status: number; code: string; error: string } {
   const bot = store.bot(botId);
   if (!bot) return { status: 404, code: "no_bot", error: "No such bot." };
-  if (!bot.chiefOfStaff || bot.temporary) return { status: 403, code: "not_primary", error: "Only the person's Primary Bot answers their cards. Tell them a card is waiting for them." };
+  if (bot.temporary) return { status: 403, code: "not_primary", error: "A temporary agent does not answer the person's cards." };
+  if (purpose === "settings" && !bot.chiefOfStaff) return { status: 403, code: "not_primary", error: "Only the person's Primary Bot changes their settings from their words. Tell them a card is waiting for them." };
   const facts = actTurnFacts(threadId, generation);
   const actor = actorForTurn(facts);
   const person = actor.kind === "person" ? actor.personKey : actor.kind === "operator" ? localPrincipalId() : null;
   const owner = effectiveBotOwner(bot) || (IDENTITY.kind === "perspicax" ? "" : localPrincipalId());
-  if (!person || !owner || person !== owner) return { status: 403, code: "not_owner_turn", error: "Only the person who owns this Primary Bot, in their own message, can have it answer their cards." };
+  if (!person || !owner || person !== owner) {
+    const whose = purpose === "settings"
+      ? "Only the person who owns this Primary Bot, in their own message, can have it change their settings."
+      : "Only the person who owns this bot, in their own message, can have it answer their cards.";
+    return { status: 403, code: "not_owner_turn", error: whose };
+  }
   if (ownEnvironmentOrigin(bot, threadId) !== "owner") return { status: 403, code: "not_owner_turn", error: "This turn is not the person's own message (a routine, a webhook, another bot or someone else): it answers no card." };
   const request = directRequestOwners.get(threadId);
   const message = request?.messageId ? store.messagesFor(threadId).find((row) => row.id === request.messageId) : undefined;
@@ -32962,24 +32973,26 @@ function auditApprovalModeChange(auth: RequestAuth | null, botId: string, before
   });
 }
 /** Audit: one turn ran with Full access. */
-/** 2026-10-26 (one approval level): whether an Ask or Deny rule could
- * decide a call of this bot's turn: the owner's (or the conversation's
- * person's) own rules for this bot, their rules in their own words, and the
- * organization's rules. */
+/** 2026-10-27: at Full access, whether the engine must run natively at Ask.
+ * An organization Ask or Deny, and any Deny, hold it so those rules see
+ * every call. A person's own Ask rule does not (shared/approval-mode.ts
+ * fullAccessRulesHold): Full stays Full, and that Ask rule still cards the
+ * matching call once it reaches Sagax. */
 function rulesHoldTurn(bot: BotRecord, threadId: string): boolean {
   const people = new Set<string>([approvalOwnerId(bot, threadId)]);
   const speaker = turnSpeakerPrincipals.get(threadId);
   if (speaker && isPrincipalId(speaker)) people.add(speaker);
+  const held: FullAccessHoldRule[] = [];
   for (const person of people) {
     if (!person) continue;
-    if (ownerApprovals.rulesOf(person, bot.id).some((rule) => rule.behavior !== "allow")) return true;
-    if (customRules.rulesOf(person, bot.id).some((rule) => rule.enabled && rule.behavior !== "allow")) return true;
+    for (const rule of ownerApprovals.rulesOf(person, bot.id)) held.push({ behavior: rule.behavior });
+    for (const rule of customRules.rulesOf(person, bot.id)) held.push({ behavior: rule.behavior, org: rule.org === true, enabled: rule.enabled });
   }
-  return false;
+  return fullAccessRulesHold(held);
 }
 /** The level the engine runs natively (shared/approval-mode.ts
- * engineApprovalMode): Full with a rule in force runs it at Ask so the rule
- * sees every call; Sagax answers the rest as Full. */
+ * engineApprovalMode): Full with a holding rule runs it at Ask so that
+ * rule sees every call; Sagax answers the rest as Full. */
 function engineTurnLevel(bot: BotRecord, threadId: string, level: ApprovalMode): ApprovalMode {
   return engineApprovalMode(level, level === "full" && rulesHoldTurn(bot, threadId));
 }
@@ -37304,7 +37317,7 @@ async function temporaryAgentSetting(input: { args: Record<string, unknown>; bot
   // as archive_bot does for any bot (askedBotChange); its creator, at once
   if (!creator) {
     const quote = typeof args.quote === "string" ? args.quote : "";
-    const gate = quote ? primaryTurnGate(input.botId, input.threadId, input.generation) : null;
+    const gate = quote ? primaryTurnGate(input.botId, input.threadId, input.generation, "settings") : null;
     const proved = gate && !("error" in gate) && checkPersonQuote({ quote, message: gate.message.text, intent: "setting" }).ok
       ? askedBotChange({ key, family: "bot", value: true, quote, names: [bot.name], speakingBot: false, message: gate.message.text })
       : "pass quote, the person's own words asking to archive or delete this agent";

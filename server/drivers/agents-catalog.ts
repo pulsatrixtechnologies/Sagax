@@ -1735,9 +1735,9 @@ const GITHUB_CONNECT_TOOL_NAMES = new Set(["connect_github"]);
 // bot that can reach that peer, so it stays.)
 const CHIEF_ONLY_TOOL_NAMES = new Set([
   "create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "archive_bot", "create_room", "manage_room", "retry_thread",
-  // 2026-10-20: the person's approval cards, answered at their request
-  "sagax_approvals",
 ]);
+// sagax_approvals is offered to every owned bot (2026-10-27). The server
+// gate still requires the person's own message; settings stay the Primary Bot's.
 const CHIEF_TARGET_TOOL_NAMES = new Set(["propose_profile", "propose_model"]);
 /** create_bot as a bot that is not a Primary Bot sees it (server/bot-creation.ts):
  * the same tool and route, the person's own request only, no suggestion. */

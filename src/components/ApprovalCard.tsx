@@ -422,7 +422,7 @@ export function ApprovalCard({
     : card.answeredBy?.via === "ai-client" ? <span className="text-ink-tertiary">· {t("approval.status.byAiClient")}</span>
       // decided by the model reviewer under the person's rule (lot A1)
       : card.answeredBy?.via === "auto-review" ? <span className="text-ink-tertiary" data-answered-via="auto-review">· {t("approval.status.byAutoReview")}</span>
-      // answered by the person's Primary Bot at their request (sagax_approvals)
+      // answered by a bot the person owns, from their own message (sagax_approvals)
       : card.answeredBy?.via === "primary-bot" ? <span className="text-ink-tertiary" data-answered-via="primary-bot">· {t("approval.status.viaBot", { name: card.answeredBy.bot ?? t("approval.someone") })}</span>
       // answered from the person's "Me joindre" channel (a text, Telegram, Teams)
       : card.answeredBy?.via === "reach-me" ? <span className="text-ink-tertiary" data-answered-via="reach-me">· {t("approval.status.viaChannel", { name: reachChannelName(card.answeredBy.channel) })}</span> : null;

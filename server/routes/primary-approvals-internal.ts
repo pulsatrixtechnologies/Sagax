@@ -1,6 +1,7 @@
 // POST /api/internal/approvals: sagax_approvals (server/primary-approvals.ts).
-// A person's Primary Bot lists, answers or cancels the cards waiting on that
-// person, at their request. Behind the agents capability (internal-route.ts).
+// A bot the person owns lists, answers or cancels the cards waiting on that
+// person, from their own message. Settings stay with the Primary Bot.
+// Behind the agents capability (internal-route.ts).
 import type { PrimaryResult } from "../primary-approvals.ts";
 import type { InternalRouteHandler } from "./internal-route.ts";
 import { PASS } from "./table.ts";

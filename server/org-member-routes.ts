@@ -412,7 +412,7 @@ const APPROVAL_CLOSE_POLL_MS = 100;
 /** The most threads one pending list reads. */
 export const PENDING_THREADS_MAX = 50;
 
-const YES_LABELS = new Set(["yes", "oui", "allow", "ok", "okay", "confirm", "confirmer", "approve", "approuver", "continue", "continuer", "go", "proceed", "accept", "accepter"]);
+const YES_LABELS = new Set(["yes", "yeah", "yep", "yup", "oui", "ouais", "allow", "ok", "okay", "oké", "oke", "confirm", "confirmer", "approve", "approuver", "continue", "continuer", "go", "proceed", "accept", "accepter", "vas-y", "vas y", "allez-y", "allez y"]);
 const NO_LABELS = new Set(["no", "non", "deny", "refuser", "cancel", "annuler", "stop", "decline", "reject", "rejeter"]);
 const normalLabel = (label: string) => label.trim().toLocaleLowerCase().replace(/[.!?]+$/, "");
 

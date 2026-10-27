@@ -7,7 +7,9 @@
 //              card reads via Quasar, the journal names bot and message
 //   no ask     words that do not ask, a quote not in the message, a card
 //              raised after the person spoke: refused, nothing answered
-//   teammate   a bot that is not the Primary Bot: refused
+//   owned bot  a bot that is not the Primary Bot answers the card from the
+//              person's own yes; it cannot turn cards off (that stays the
+//              Primary Bot, and the change waits)
 //   always     "toujours permettre": the person's rule is saved, the same
 //              command then runs with no card
 //   cancel     "annule-la": Ottoline's turn stops
@@ -137,19 +139,25 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     expect((await approvals(main.comms, { action: "answer", card: laterRef, decision: "allow", quote: "approuve-la" })).body.code).toBe("card_after_request");
     await stop(quasar.id, quasar.threadId);
 
-    // ── teammate: never ─────────────────────────────────────────────────
-    const mate = await turn(helper.id, helper.threadId, "Oui vas-y, approuve-la.");
-    const refused = await approvals(mate.comms, { action: "answer", card: laterRef, decision: "allow", quote: "approuve-la" });
-    expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe("not_primary");
-    expect(later.answer()).toBeUndefined();
+    // ── any owned bot answers a card; settings stay the Primary Bot's ──
+    await api("PATCH", `/api/bots/${helper.id}`, { approvalMode: "ask" });
+    await api("PATCH", `/api/bots/${helper.id}/tasks/${helper.threadId}`, { approvalMode: "ask" });
+    const mate = await turn(helper.id, helper.threadId, "Oui vas-y, approuve-la. Mets Ottoline en auto.");
+    const allowed = await approvals(mate.comms, { action: "answer", card: laterRef, decision: "allow", quote: "approuve-la" });
+    expect(allowed.status, JSON.stringify(allowed.body)).toBe(200);
+    await expect.poll(() => later.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
+    const heldByMate = await settings(mate.comms, { action: "set", key: "bot.approvalMode", target: ottoline.id, value: "auto", quote: "Mets Ottoline en auto" });
+    expect(heldByMate.body.text, JSON.stringify(heldByMate.body)).toContain("Approval needed.");
     await stop(helper.id, helper.threadId);
 
     // ── always: the person's rule, then no card for the same command ────
+    const fresh = await ask(kat.socket, "printf primary-always");
+    await shown(fresh.id);
     main = await turn(quasar.id, quasar.threadId, "Toujours permettre ça pour Ottoline.");
-    const always = await approvals(main.comms, { action: "answer", card: laterRef, decision: "always_allow", quote: "Toujours permettre ça pour Ottoline" });
+    const alwaysRef = /card (c[0-9a-f]{7})/.exec((await approvals(main.comms, { action: "list" })).body.text)?.[1];
+    const always = await approvals(main.comms, { action: "answer", card: alwaysRef, decision: "always_allow", quote: "Toujours permettre ça pour Ottoline" });
     expect(always.status, JSON.stringify(always.body)).toBe(200);
-    await expect.poll(() => later.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
+    await expect.poll(() => fresh.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     const rules = (await api("GET", "/api/approval-rules")).rules as any[];
     // the card's own Always allow: the program, as the click keeps it
     expect(rules.find((row) => row.botId === ottoline.id && row.scope?.program === "printf")).toMatchObject({ behavior: "allow" });

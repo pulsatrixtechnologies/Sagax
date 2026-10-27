@@ -1,19 +1,21 @@
-// sagax_approvals: a person's Primary Bot answers or cancels the approval
+// sagax_approvals: a bot the person owns answers or cancels the approval
 // cards that wait on that person, when the person asks for it in this turn
-// (2026-10-20, the reference design parity: "le bot principal doit pouvoir
-// absolument tout faire"). Exactly what a click does: the answer is the
-// same POST /api/threads/:id/respond (or Cancel turn's interrupt, or Always
-// allow this's custom rule) replayed with the person's own session, so every
-// check of the click applies (whose card, an admin's card, a security key).
-// A card of the person's own confidential thread is theirs too (the maintainer
-// 2026-10-20): answered like any other, its content never shown to the
-// Primary Bot. Three rules are this module's:
-// - only the person's own Primary Bot (never a teammate, another bot or a
-//   bot shared by someone else), in a turn the person started themselves;
+// (2026-10-20, the reference design parity; since 2026-10-27 any owned bot,
+// not only the Primary Bot, so a voice yes reaches a card). Exactly what a
+// click does: the answer is the same POST /api/threads/:id/respond (or
+// Cancel turn's interrupt, or Always allow this's custom rule) replayed
+// with the person's own session, so every check of the click applies
+// (whose card, an admin's card, a security key). A card of the person's
+// own confidential thread is theirs too (the maintainer 2026-10-20):
+// answered like any other, its content never shown to the answering bot.
+// Turning cards off stays the Primary Bot (purpose "settings" on the same
+// gate). Three rules are this module's:
+// - a bot the person owns (never a temporary agent, never a bot shared by
+//   someone else), in a turn the person started themselves;
 // - only on the person's explicit request in that turn's message, proved by
 //   a quote of their words (shared/primary-request.ts) written after the
 //   card appeared (a card raised later was never seen by them);
-// - the card and the audit journal say "via <bot>".
+// - the card and the audit journal say "via <bot>" (field "primary-bot").
 // Nothing here answers a card itself.
 
 import { createHash } from "node:crypto";
@@ -24,7 +26,7 @@ export type PrimaryDecision = "allow" | "always_allow" | "always_allow_this" | "
 export const PRIMARY_DECISIONS: readonly PrimaryDecision[] = ["allow", "always_allow", "always_allow_this", "deny", "always_deny", "answer"];
 
 /** The turn a call comes from, once the gate said it is the person's own
- * request to their own Primary Bot. */
+ * request to a bot they own. */}
 export type PrimaryTurn = {
   botId: string;
   botName: string;
@@ -66,7 +68,8 @@ export type PrimaryCard = {
 export type PrimaryResult = { status: number; body: Record<string, unknown> };
 
 export type PrimaryApprovalsDeps = {
-  /** The gate: the person's own Primary Bot, in a turn they started. */
+  /** The gate: a bot the person owns, in a turn they started. Settings stay
+   * with the Primary Bot (purpose "settings" on the same gate). */}
   turn: (botId: string, threadId: string, generation: string) => PrimaryTurn | { status: number; code: string; error: string };
   /** The cards waiting on this person that they may answer. */
   pending: (turn: PrimaryTurn) => PrimaryCard[];

@@ -1,13 +1,13 @@
 // The person's own request, proved from their words (2026-10-20: "le bot
-// principal doit pouvoir absolument tout faire", the reference design parity). A
-// person's Primary Bot answers or cancels their approval cards, and turns
-// their cards off (approval levels, rules), only when the person asked for
-// it in the message that started this turn. The bot passes `quote`: the
-// person's own words that ask for it. The server checks that the quote is
-// in that message (never a tool result, an email, a web page, a teammate's
-// line or a note: those are not the person's message) and that it says the
-// kind of thing asked. This is the defense against prompt injection: the
-// rest is the click's own code.
+// principal doit pouvoir absolument tout faire", the reference design parity).
+// Any bot the person owns answers or cancels their approval cards when the
+// person asked for it in the message that started this turn. Turning the
+// cards off (approval levels, rules) stays their Primary Bot. The bot passes
+// `quote`: the person's own words that ask for it. The server checks that
+// the quote is in that message (never a tool result, an email, a web page,
+// a teammate's line or a note: those are not the person's message) and that
+// it says the kind of thing asked. This is the defense against prompt
+// injection: the rest is the click's own code.
 
 export type PrimaryIntent = "allow" | "always" | "deny" | "cancel" | "answer" | "setting";
 
@@ -26,8 +26,8 @@ export function normalizeWords(text: string): string {
 // and plain; a quote must carry one of its decision's words.
 const WORDS: Readonly<Record<Exclude<PrimaryIntent, "answer">, readonly string[]>> = {
   allow: [
-    "oui", "ok", "okay", "vas y", "go", "approuv", "autoris", "permet", "permis", "accept", "confirm", "valid", "d'accord", "dac",
-    "fais le", "fais la", "lance", "roule", "laisse passer", "laisse la", "yes", "yep", "sure", "allow", "approv", "accept", "authoriz", "authoris", "go ahead", "do it", "proceed",
+    "oui", "ouais", "ok", "okay", "oke", "vas y", "allez y", "go", "approuv", "autoris", "permet", "permis", "accept", "confirm", "valid", "d'accord", "dac",
+    "fais le", "fais la", "lance", "roule", "laisse passer", "laisse la", "yes", "yeah", "yep", "yup", "sure", "allow", "approv", "accept", "authoriz", "authoris", "go ahead", "do it", "proceed",
   ],
   always: [
     "toujours", "automatiquement", "auto=", "dorenavant", "desormais", "a l'avenir", "chaque fois", "tout le temps", "plus besoin", "sans me demander", "sans demander",
@@ -46,7 +46,7 @@ const WORDS: Readonly<Record<Exclude<PrimaryIntent, "answer">, readonly string[]
  * longer message ("ok, résume ce courriel"). A card's answer takes them in
  * any message (`anyLength`, 2026-10-20: "oui" answers the latest card). */
 const WEAK: Readonly<Partial<Record<PrimaryIntent, readonly string[]>>> = {
-  allow: ["oui", "ok", "okay", "go", "vas y", "d'accord", "dac", "fais le", "fais la", "lance", "roule", "laisse la", "yes", "yep", "sure", "go ahead", "do it", "proceed"],
+  allow: ["oui", "ouais", "ok", "okay", "oke", "go", "vas y", "allez y", "d'accord", "dac", "fais le", "fais la", "lance", "roule", "laisse la", "yes", "yeah", "yep", "yup", "sure", "go ahead", "do it", "proceed"],
   deny: ["non", "no", "nope"],
 };
 const SHORT_REPLY_WORDS = 8;

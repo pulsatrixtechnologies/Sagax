@@ -39,14 +39,17 @@ parties hors tableau du script.
   d'organisation (2026-10-20), aux règles de la route : l'organisation
   permet Full, la personne possède le bot et a `bots.fullAccess`. Un niveau
   change même pendant que ce bot travaille (« mets-toi en Full ») ; le tour
-  suivant part avec. Les cartes en attente se répondent avec
-  `sagax_approvals` (`server/primary-approvals.ts`) : un « oui » qui ne
-  nomme aucune carte répond à la plus récente que la personne voyait,
-  quelle que soit la longueur du message (le bot dit laquelle ; une
-  carte par message ; dans un long message, il doit parler d'une carte) ; une carte
-  d'un fil confidentiel de la personne se répond aussi, sans que ses mots
-  passent au bot principal ; une carte qui exige la clé de sécurité
-  physique de la personne reste à la personne.
+  suivant part avec.   Les cartes en attente se répondent avec
+  `sagax_approvals` (`server/primary-approvals.ts`), par n'importe quel
+  bot que la personne possède, depuis son propre message (un « oui », y
+  compris transcrit à la voix) : un « oui » qui ne nomme aucune carte
+  répond à la plus récente que la personne voyait, quelle que soit la
+  longueur du message (le bot dit laquelle ; une carte par message ; dans
+  un long message, il doit parler d'une carte) ; une carte d'un fil
+  confidentiel de la personne se répond aussi, sans que ses mots passent
+  au bot qui répond ; une carte qui exige la clé de sécurité physique de
+  la personne reste à la personne. Éteindre les cartes reste au bot
+  principal.
 - Le bot principal fait tout (2026-10-20) : sur la même preuve (`quote`),
   tout réglage d'un bot ou d'une routine de la personne passe tout de
   suite, sans carte : modèle, instance, effort, persona, profil, routines,
@@ -382,7 +385,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Export et import du coffre | Réglages > Identifiants | la personne seule (données en clair) ; les éléments du coffre restent modifiables (`credentials.*`) |
 | Full ou Custom sur un serveur personnel | Éditeur du bot > Permissions | canal de confirmation de l'app de bureau ; sur un serveur d'organisation `bot.approvalMode` full passe tout de suite à la demande de la personne à son bot principal (`quote`), sinon par une carte |
 | Mode serveur, mises à jour, icône, diagnostics | Réglages > Système, Mises à jour | IPC de l'app de bureau, pas de route |
-| Répondre à une carte | conversation | la personne, ou son bot principal à sa demande (`sagax_approvals`), fil confidentiel compris ; jamais un autre bot ; une carte à clé de sécurité reste à la personne |
+| Répondre à une carte | conversation | la personne, ou un bot qu'elle possède à sa demande (`sagax_approvals`), fil confidentiel compris ; jamais le texte d'un autre agent ou d'un outil ; une carte à clé de sécurité reste à la personne |
 
 ## Console Perspicax (exposée à Sagax)
 

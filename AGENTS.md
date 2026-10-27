@@ -368,10 +368,16 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
 
 Decision: "le bot principal doit pouvoir absolument tout faire" (the reference design
 parity). A person's Primary Bot answers, cancels and turns off the
-approval cards that wait on that person, when the person asks for it:
+approval cards that wait on that person, when the person asks for it.
+Since 2026-10-27 any bot the person owns answers, cancels and lists those
+cards from the person's own message, including a bare yes and a voice
+transcription (oui, ouais, ok, oke, vas-y, allez-y, go, yeah, yup). Turning
+cards off stays the Primary Bot. A temporary agent does not answer cards.
+The answer never comes from another agent's text or a tool result: the
+quote must be in the person's own message.
 
 - `sagax_approvals` (agents catalog, `server/drivers/agents-approvals-tools.ts`,
-  Primary Bot only, `CHIEF_ONLY_TOOL_NAMES`; route `/api/internal/approvals`,
+  every owned bot, not in `CHIEF_ONLY_TOOL_NAMES`; route `/api/internal/approvals`,
   `server/primary-approvals.ts`): `list` (the person's Approvals screen,
   `inboxPending`, kept by `primaryAnswerable`; a short handle `c` + 7 hex,
   never an id), `answer` (allow, always_allow, always_allow_this, deny,
@@ -388,8 +394,10 @@ approval cards that wait on that person, when the person asks for it:
   `list` and the answer give the bot "<bot>'s card in a confidential
   conversation", never its title, command or thread. A card that needs the
   person's security key stays theirs (the key is physical).
-- Gate (`primaryTurnGate`): the speaking bot is `chiefOfStaff`, owned by
-  the turn's proven person, and the turn is that person's own message
+- Gate (`primaryTurnGate`, purpose `cards` or `settings`): for cards the
+  speaking bot is any bot the person owns (not a temporary agent); for
+  settings it is still `chiefOfStaff`. The bot is owned by the turn's
+  proven person, and the turn is that person's own message
   (`ownEnvironmentOrigin`: never a routine, webhook, another bot's hop, a
   guest). Proof (`shared/primary-request.ts`): `quote`, the person's words,
   must be in that message and carry a word of the decision (allow, always,
@@ -2423,9 +2431,12 @@ rules, covered by `server/owner-approval.test.ts`,
   refuses, an ask keeps its card even in Full access, an allow goes without
   a card even at Ask), then the level for what no rule covers
   (`ownerVerdictOver`, matrix in `server/owner-approval-levels.test.ts`).
-  At Full with an Ask or Deny rule in force, the engine runs at Ask so the
-  rule sees every call (`engineApprovalMode`); Sagax answers the rest as
-  Full. The old `GET/PUT /api/bots/:id/permission-mode` is gone; stored
+  At Full access the engine stays at Full when the only holding rules are
+  the person's own Ask rules (`fullAccessRulesHold`): those still card the
+  matching call once it reaches Sagax. An organization Ask or Deny, and any
+  Deny, still run the engine at Ask so those rules see every call
+  (`engineApprovalMode`); Sagax answers the rest as Full. The old
+  `GET/PUT /api/bots/:id/permission-mode` is gone; stored
   modes were carried into the level once (`approval-level-migration.ts`).
   No level or rule answers an admin card, a safety hold, a sandbox
   widening, a question, a guest's turn or a teammate tool.

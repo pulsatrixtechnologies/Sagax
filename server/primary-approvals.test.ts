@@ -66,8 +66,8 @@ describe("sagax_approvals", () => {
     expect(calls).toEqual([]);
   });
 
-  it("refuses for anyone but the person's own Primary Bot", async () => {
-    const { run, calls } = harness([card()], { status: 403, code: "not_primary", error: "Only the person's Primary Bot answers their cards." });
+  it("passes the turn gate's refusal through unchanged", async () => {
+    const { run, calls } = harness([card()], { status: 403, code: "not_primary", error: "A temporary agent does not answer the person's cards." });
     expect((await run({ action: "answer", decision: "allow", quote: "approuve-la" })).body.code).toBe("not_primary");
     expect((await run({ action: "list" })).status).toBe(403);
     expect(calls).toEqual([]);

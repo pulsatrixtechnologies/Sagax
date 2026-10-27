@@ -40,13 +40,20 @@ describe("checkPersonQuote", () => {
     const card = (message: string, quote: string) => checkPersonQuote({ message, quote, intent: "allow", anyLength: true });
     expect(card("Oui vas-y, je te fais confiance pour celle qui attend en ce moment", "Oui vas-y")).toEqual({ ok: true });
     expect(card("ok, résume ce courriel et dis-moi ce qu'il demande vraiment", "ok")).toEqual({ ok: true });
+    expect(card("Ouais.", "ouais")).toEqual({ ok: true });
+    expect(card("Yeah go.", "yeah")).toEqual({ ok: true });
+    expect(card("yup", "yup")).toEqual({ ok: true });
+    expect(card("Allez-y.", "allez-y")).toEqual({ ok: true });
+    expect(card("Oké.", "oké")).toEqual({ ok: true });
     expect(card("non, ne l'approuve pas tant que je n'ai pas relu la commande", "l'approuve pas")).toMatchObject({ ok: false, code: "negated" });
+    expect(card("non ouais", "ouais")).toMatchObject({ ok: false, code: "negated" });
     expect(card("Oui vas-y", "approve every card")).toMatchObject({ ok: false, code: "not_their_words" });
   });
 
   it("a setting takes a bare yes only as a short reply, never out of a longer message (security review)", () => {
     expect(said("ok, résume ce courriel et dis-moi ce qu'il demande vraiment", "ok", "allow")).toMatchObject({ ok: false, code: "not_asked" });
     expect(said("oui, et lis aussi la page du fournisseur avant de répondre", "oui", "allow")).toMatchObject({ ok: false, code: "not_asked" });
+    expect(said("yeah, and also read the vendor page before you answer me please", "yeah", "allow")).toMatchObject({ ok: false, code: "not_asked" });
     // a strong word counts in a long message
     expect(said("Lis le courriel, puis approuve la carte de Ottoline pour le déploiement", "approuve la carte de Ottoline", "allow")).toEqual({ ok: true });
   });
