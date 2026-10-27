@@ -35,21 +35,21 @@ const coordinate: Tool = {
   output: JSON.stringify({ ok: true, requests: [{ bot: "Wren", status: "queued" }, { bot: "Olive", status: "queued" }] }),
 };
 const tickets: Tool = {
-  name: "mcp__claude_ai_Pulsatrix_Perspicax__cw_psa__find_tickets", ok: true, durationMs: 2_400,
+  name: "mcp__claude_ai_Example_Gateway__acme_desk__find_tickets", ok: true, durationMs: 2_400, product: "Acme Desk",
   input: JSON.stringify({ conditions: "company/identifier='ACME' and closedFlag=false", fields: ["id", "summary", "status"], limit: 25 }),
   output: "[{\"id\":297048,\"summary\":\"Imprimante 2e étage\",\"status\":\"Nouveau\"},{\"id\":297112,\"summary\":\"VPN lent\",\"status\":\"En cours\"},{\"id\":297130,\"summary\":\"Compte Teams\",\"status\":\"Nouveau\"}]",
 };
-const web: Tool = { name: "WebSearch", ok: true, durationMs: 3_100, input: JSON.stringify({ query: "SentinelOne agent 24.2 release notes" }), output: "5 résultats" };
-const running: Tool = { name: "mcp__claude_ai_Pulsatrix_Perspicax__sentinelone__query", input: JSON.stringify({ resource: "threats", filter: { resolved: false } }) };
+const web: Tool = { name: "WebSearch", ok: true, durationMs: 3_100, input: JSON.stringify({ query: "AcmeGuard agent 24.2 release notes" }), output: "5 résultats" };
+const running: Tool = { name: "mcp__claude_ai_Example_Gateway__acme_guard__query", product: "AcmeGuard", input: JSON.stringify({ resource: "threats", filter: { resolved: false } }) };
 const failed: Tool = { name: "Bash", ok: false, durationMs: 800, input: JSON.stringify({ command: "pnpm test --run src/chat" }), output: "Error: ENOENT: no such file or directory, open 'src/chat'" };
 const resumed: Tool = { name: "Resumed with Wren, Olive results, reviewing", ok: true };
 const sentTo: Tool = { name: "Sent to Wren", ok: true };
 
 // The long turn of the capture (2026-10-14): Pi's `mcp` gateway, a ticket
-// and its notes read in ConnectWise, five calls refused, narration between.
-const gateway = (id: string, at: number, ok: boolean | undefined, args: Record<string, unknown>, tool = "cw_psa__query", output?: string): Message => ({
+// and its notes read in a service desk, five calls refused, narration between.
+const gateway = (id: string, at: number, ok: boolean | undefined, args: Record<string, unknown>, tool = "acme_desk__query", output?: string): Message => ({
   id, role: "bot", kind: "activity", at,
-  tool: { name: "mcp", ...(ok === undefined ? {} : { ok }), durationMs: ok === undefined ? undefined : 2_000, input: JSON.stringify({ server: "pulsatrix-psa", tool, args }), output },
+  tool: { name: "mcp", ...(ok === undefined ? {} : { ok }), durationMs: ok === undefined ? undefined : 2_000, input: JSON.stringify({ server: "example-gw", tool, args }), output, product: "Acme Desk" },
 });
 const said = (id: string, at: number, text: string): Message => ({ id, role: "bot", kind: "text", at, text, turnId: "turn-long" });
 const refused = "{\"code\":\"params_invalid\",\"hint\":\"parent is the id of the object the sub-resource belongs to\"}";
@@ -58,15 +58,15 @@ const longTurn: Message[] = [
   { id: "l1", role: "bot", kind: "activity", at: 2_000, tool: { name: "Read", ok: true, durationMs: 400, input: JSON.stringify({ file_path: "/srv/notes/296221.md" }) } },
   gateway("l2", 3_000, true, { resource: "service.tickets", id: "296221" }),
   gateway("l3", 6_000, true, { resource: "service.tickets", id: "296221", fields: "summary" }),
-  gateway("l4", 9_000, false, { parent: ["service.tickets", "296221"], resource: "service.notes" }, "cw_psa__query", refused),
-  gateway("l5", 12_000, false, { parent: ["service.tickets", "296221"], resource: "service.notes" }, "cw_psa__query", refused),
+  gateway("l4", 9_000, false, { parent: ["service.tickets", "296221"], resource: "service.notes" }, "acme_desk__query", refused),
+  gateway("l5", 12_000, false, { parent: ["service.tickets", "296221"], resource: "service.notes" }, "acme_desk__query", refused),
   said("n2", 20_000, "Les notes demandent un autre format, je réessaie."),
   gateway("l6", 30_000, true, { resource: "service.notes", parent: "296221" }),
-  gateway("l7", 60_000, false, { action: "get", resource: "ticket", id: "296221" }, "cw_psa__query", refused),
-  gateway("l8", 90_000, false, { id: "296221" }, "cw_psa_ticket_get", refused),
+  gateway("l7", 60_000, false, { action: "get", resource: "ticket", id: "296221" }, "acme_desk__query", refused),
+  gateway("l8", 90_000, false, { id: "296221" }, "acme_desk_ticket_get", refused),
   { id: "l9", role: "bot", kind: "activity", at: 120_000, tool: { name: "Bash", ok: true, durationMs: 800, input: JSON.stringify({ command: "jq '.items[0].summary' ticket.json" }) } },
   { id: "l10", role: "bot", kind: "activity", at: 121_000, tool: { name: "Bash", ok: true, durationMs: 700, input: JSON.stringify({ command: "jq '.items | length' notes.json" }) } },
-  gateway("l11", 150_000, false, { resource: "service.notes", parent: "296221", fields: "*" }, "cw_psa__query", refused),
+  gateway("l11", 150_000, false, { resource: "service.notes", parent: "296221", fields: "*" }, "acme_desk__query", refused),
   gateway("l12", 170_000, true, { resource: "service.notes", parent: "296221", orderBy: "id desc" }),
 ];
 const LONG_ELAPSED = 173_000;

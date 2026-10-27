@@ -734,6 +734,11 @@ export interface WireMessage {
     name: string; ok?: boolean; spoken?: string; setup?: boolean; terminal?: boolean; summary?: string; input?: string; output?: string;
     /** how long the call ran, set when it settles (the step row's duration) */
     durationMs?: number;
+    /** The product this tool serves, as the connector or the server
+     * declared it at run time (a Perspicax API's display name or title);
+     * the step row names it. Absent: the row reads a generic name from the
+     * tool id. */
+    product?: string;
     /** error rows: the installed Claude Code is too old for the model, and
      * the UI can offer to update it in place. */
     claudeUpdate?: boolean;

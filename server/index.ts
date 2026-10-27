@@ -1707,6 +1707,32 @@ let egressProxy: EgressProxy | null = null;
 function samePerson(a: string | null | undefined, b: string | null | undefined): boolean {
   return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
 }
+/** 2026-10-27: the product a tool serves, as the server that serves it
+ * declared it (a Perspicax API's display name or title, api_list), for the
+ * step row. The API id is a segment of the tool id before its verb
+ * (`mcp__<server>__<api>__query`, or the `mcp` gateway's `tool`). Undefined
+ * when nothing declared one: the row then reads a generic name. */
+function declaredToolProduct(botId: string | undefined, name: string, input?: string): string | undefined {
+  if (!botId || !perspicaxMcp) return undefined;
+  let inner = name.replace(/^mcp__/, "");
+  // pi's `mcp` gateway and Grok's use_tool name the tool in their input
+  const meta = name.trim().toLowerCase().replace(/\s+/g, "_");
+  if ((meta === "mcp" || meta === "use_tool") && input) {
+    try {
+      const args = JSON.parse(input) as { tool?: unknown; tool_name?: unknown };
+      const tool = meta === "mcp" ? args.tool : args.tool_name;
+      if (typeof tool === "string") inner = tool;
+    } catch {
+      // not JSON: the name alone
+    }
+  }
+  const parts = inner.split("__").filter(Boolean);
+  for (const candidate of parts.slice(0, -1).reverse()) {
+    const declared = perspicaxMcp.apiName(botId, candidate);
+    if (declared) return declared;
+  }
+  return undefined;
+}
 function personSpeaker(principal: string | null): TurnSpeaker | undefined {
   return principal ? { origin: "person", principalId: principal } : undefined;
 }
@@ -5820,6 +5846,9 @@ async function perspicaxTurnIntegration(input: {
     ...(routine ? { routine: true } : {}),
   });
   if (plan.mounted.length && !input.quiet) recordPerspicaxWork(live, input.threadId, input.speaker, speakerPrincipalId, plan.mounted.map((profile) => profile.name));
+  // 2026-10-27: the product names Perspicax declares, for the step rows
+  // (declaredToolProduct); never awaited
+  if (plan.mounted.length) void perspicaxMcp?.refreshApiNames({ threadId: input.threadId, generation: input.generation, botId: live.id });
   const custom: Record<string, McpServerSpec> = {};
   const taken = new Set(input.taken);
   for (const profile of plan.mounted) {
@@ -14923,6 +14952,7 @@ bus.subscribe((event: RuntimeEvent) => {
           role: "bot",
           kind: "activity",
           tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}),
+            ...((() => { const product = declaredToolProduct(bot?.id, name, event.input); return product ? { product } : {}; })()),
             ...(event.parentItemId ? { parentItemId: event.parentItemId } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,

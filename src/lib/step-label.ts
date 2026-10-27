@@ -1,12 +1,14 @@
 // What a step row in the chat says: a plain sentence for each tool call
 // ("Read a file", "Coordinated Wren and Olive", "Viewed tickets in
-// ConnectWise PSA") in the tense of its state, never the raw tool id. The
+// <product>") in the tense of its state, never the raw tool id. The
 // id stays in the row's detail for whoever needs it.
 //
 // Three phases, three forms: running ("Reading a file"), done ("Read a
 // file") and failed ("Could not read a file"). Tools served by an MCP
 // product reuse the approval reading (shared/approval-describe.ts) for the
 // verb, the resource and the product, with the step's own verb forms.
+// The product's name is the one the server declared for the tool at run
+// time (StepTool.product); no product name is written here.
 import { activeLocale, t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import * as shared from "../../shared/approval-describe";
@@ -22,6 +24,9 @@ export type StepTool = {
   summary?: string;
   output?: string;
   durationMs?: number;
+  /** The product this tool serves, as the connector or the server declared
+   * it at run time (shared/wire.ts Message.tool.product). */
+  product?: string;
 };
 
 /** A teammate's display name from the id a coordination tool was given. */
@@ -104,15 +109,8 @@ const BARE: Record<string, Kind> = {
 /** Servers that are Sagax itself: their tools name no product. */
 const INTERNAL = /^(?:mcp__)?(?:agents|sagax|sagax-[a-z-]+|maus|ogb|harness)(?:__|_|\.)/i;
 
-/** Products whose tools ride on a gateway server (Perspicax serves
- * `sentinelone__query`): the inner prefix names the product. */
-const GATEWAY_PRODUCTS: Array<[RegExp, string]> = [
-  [/^sentinelone(?:_|$)/i, "SentinelOne"],
-  [/^tailscale(?:_|$)/i, "Tailscale"],
-  [/^twilio(?:_[a-z]+)?(?:_|$)/i, "Twilio"],
-  [/^x360recover(?:_|$)/i, "Axcient x360Recover"],
-  [/^bookstack(?:_|$)/i, "BookStack"],
-];
+/** A gateway tool's inner product prefix (`<product>__query`). */
+const GATEWAY_TOOL = /^([a-z0-9][a-z0-9_-]*?)__(.+)$/i;
 
 const TARGET_MAX = 80;
 
@@ -236,24 +234,24 @@ function kindTarget(kind: Kind, args: Record<string, unknown> | undefined, tool:
   }
 }
 
-/** A gateway tool (`<gateway>__sentinelone__query`) read as its product's
- * own: the describe sees `mcp__<product>__query`. */
-function productTool(name: string): { tool: string; product?: string } {
-  const parsed = parseToolId(name);
-  if (!parsed.server) return { tool: name };
-  for (const [prefix, product] of GATEWAY_PRODUCTS) {
-    const match = prefix.exec(parsed.name);
-    if (!match) continue;
-    const rest = parsed.name.slice(match[0].length).replace(/^_+/, "");
-    return { tool: `mcp__${parsed.server}__${rest || parsed.name}`, product };
-  }
-  return { tool: name };
+/** A gateway tool (`<gateway>__<product>__query`) read as its product's
+ * own: the describe sees `mcp__<gateway>__query`. The product is the name
+ * the server declared for the tool (StepTool.product), else the prefix's
+ * words titled (`acme_desk` reads "Acme Desk"). A prefix the shared reading
+ * already knows keeps its own reading. */
+function productTool(tool: StepTool): { tool: string; product?: string } {
+  const declared = tool.product?.trim() || undefined;
+  const parsed = parseToolId(tool.name);
+  if (!parsed.server) return { tool: tool.name, ...(declared ? { product: declared } : {}) };
+  const split = GATEWAY_TOOL.exec(parsed.name);
+  if (!split || shared.productFor({ name: parsed.name }).product) return { tool: tool.name, ...(declared ? { product: declared } : {}) };
+  return { tool: `mcp__${parsed.server}__${split[2]}`, product: declared ?? shared.titleCase(split[1]!) };
 }
 
 function mcpLabel(tool: StepTool, phase: StepPhase): { label: string; target?: string } | undefined {
   const parsed = parseToolId(tool.name);
   if (!parsed.server) return undefined;
-  const { tool: described, product: override } = productTool(tool.name);
+  const { tool: described, product: override } = productTool(tool);
   const words: shared.ApprovalWords = {
     locale: activeLocale(),
     t: (key, vars) => {
@@ -268,12 +266,12 @@ function mcpLabel(tool: StepTool, phase: StepPhase): { label: string; target?: s
   const product = override ?? (internal ? undefined : reading.product);
   // A failed call names where it went, never the raw tool id: the verb the
   // reading guessed from its arguments may be what failed, and the id
-  // (twilio_api__query) stays in the opened row's detail.
+  // (acme_api__query) stays in the opened row's detail.
   if (phase === "failed" && !internal) {
     return { label: t("step.use.failed", { name: product ?? serverName(parsed.server) }), target: reading.summary };
   }
   // A tool named for itself (flow, query) reads as the product it serves:
-  // "Used Twilio", not "Used query in Twilio".
+  // "Used Acme", not "Used query in Acme".
   if (!reading.action || reading.verbless) {
     const name = product ?? (reading.action ?? parsed.name).replace(/_+/g, " ").trim();
     return { label: capitalize(t(`step.use.${phase}` as LocaleKey, { name })), target: reading.summary };
@@ -283,9 +281,8 @@ function mcpLabel(tool: StepTool, phase: StepPhase): { label: string; target?: s
   return { label: capitalize(label), target: reading.summary };
 }
 
-/** A server id as a person reads it: its product when one is known
- * (pulsatrix-psa is Pulsatrix), else its words titled (twilio_api reads
- * "Twilio API"). Never the raw id. */
+/** A server id as a person reads it: its product when one is known, else
+ * its words titled (acme_api reads "Acme API"). Never the raw id. */
 function serverName(server: string): string {
   return shared.productFor({ server, name: "" }).product ?? shared.titleCase(server);
 }
