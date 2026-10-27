@@ -1230,7 +1230,7 @@ import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAtt
 import { OFFICE_IMAGE_MAX_COUNT, OFFICE_IMAGES_MAX_TOTAL_BYTES, officeKind, officeMediaFolder, officeNote, readOfficeMedia } from "./office-media.ts";
 import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -6602,7 +6602,7 @@ try {
     })));
     for (const patch of patches) {
       if (patch.level) store.patchBot(patch.botId, { approvalMode: patch.level, autoApprove: false });
-      for (const task of patch.tasks) store.patchTask(patch.botId, task.threadId, { approvalMode: task.level, autoApprove: false });
+      for (const task of patch.tasks) if (task.level) store.patchTask(patch.botId, task.threadId, { approvalMode: task.level, autoApprove: false });
       console.info(`[approval] permission mode carried into the approval level of one bot (${patch.level ?? "conversations only"})`);
     }
     ownerApprovals.dropLegacyModes();
@@ -8189,7 +8189,7 @@ function applyDelegatedLevel(from: BotRecord, fromThreadId: string, target: BotR
     });
     return;
   }
-  store.patchTask(target.id, threadId, { approvalMode: level, autoApprove: false, alwaysAllow: [] });
+  store.patchTask(target.id, threadId, { approvalMode: level, autoApprove: false, alwaysAllow: [], approvalOwn: "delegated" });
   const name = DELEGATED_LEVEL_NAMES[level] ?? level;
   store.appendMessage(threadId, {
     role: "bot",
@@ -8276,8 +8276,11 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
         store.setAllThreadApprovalMode(botId, mode);
       } else if (grant.refreshPermissions && grant.threadId) {
         store.refreshTaskPermissions(botId, grant.threadId);
-      } else if (grant.threadId) {
+      } else if (grant.threadId && grant.threadOnly) {
         store.patchTask(botId, grant.threadId, { approvalMode: mode, autoApprove: false });
+      } else if (grant.threadId) {
+        // the bot's own level: its open thread follows it, like every other (#1169)
+        store.patchTask(botId, grant.threadId, { approvalOwn: undefined });
       }
       // The person confirmed the warning in the desktop app: remember it for
       // this bot, so the next grant asks no more (org-full-access.ts).
@@ -14991,8 +14994,11 @@ bus.subscribe((event: RuntimeEvent) => {
       const ownComputerChoice = Boolean(permission && asker && event.requestId && !foreignToolSpelling(event.mcpTool ?? event.tool, foreignServers)
         && ownComputerChoiceRequest(asker, event.threadId, event.mcpTool ?? event.tool, cardAnswerer, guestDriven));
       const serverLevelCard = Boolean(memberAsker && asker && memberBotAdminApproval({
-        tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
+        tool: event.mcpTool ?? event.tool, command: event.command,
+        // #1169: a file view names its path in its arguments
+        paths: event.paths?.length ? event.paths : fileViewToolPaths(event.mcpTool ?? event.tool, typeof event.input === "string" ? event.input : undefined),
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
+        readRoots: [workspaceDir(asker.id)],
         ownerScopedMcpServer: ownerScopedMcpServerFor(asker, event.threadId),
         ownEnvironment,
         ownDestination,
@@ -17999,11 +18005,16 @@ async function startParallelTask(input: {
   }
   const title = input.title?.trim() || parallelTaskTitle(input.text);
   const inherited = parentThreadModel(bot.id, input.threadId);
+  // #1169/#1170: it follows the bot's level like its conversation, unless
+  // that conversation holds an exception (a delegated Full), which it shares.
+  const parentOwnFull = parentTask.approvalOwn !== undefined && approvalModeFor(parentTask) === "full";
+  const childLevel = input.approvalMode ?? inherited.approvalMode ?? (parentOwnFull ? "full" : undefined);
   const child = store.createTask(bot.id, title, false, parentTask.projectId, undefined,
-    input.approvalMode ?? inherited.approvalMode ?? (approvalModeFor(parentTask) === "full" ? "full" : undefined),
+    childLevel,
     parentTask.ownerPrincipalId, inherited.modelSelection ?? parentTask.modelSelection,
     // a parallel task of a confidential conversation is confidential too, its owner's
-    false, undefined, parentTask.confidential === true);
+    false, undefined, parentTask.confidential === true,
+    input.approvalMode ? "thread" : inherited.approvalMode ? "engine" : parentOwnFull ? parentTask.approvalOwn : undefined);
   if (!child) throw Object.assign(new Error("couldn't create the parallel task"), { status: 500 });
   // Where it works: a worktree of the conversation's repository, else the
   // same folder (the brief says it is shared), else its own task folder.
@@ -21437,7 +21448,7 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
   if (!bot) return;
   for (const task of store.tasks(botId)) {
     if (task.approvalMode === "full" || task.approvalMode === "custom") {
-      store.patchTask(botId, task.threadId, { approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+      store.patchTask(botId, task.threadId, { approvalMode: "ask", autoApprove: false, alwaysAllow: [], approvalOwn: "safety" });
     }
   }
   const directStop = interruptAllDirectThreads(botId);
@@ -35794,7 +35805,7 @@ function resetMemberAutoLevelsOnce(): void {
   if (!memberAutoResetPending(IDENTITY.kind, cfg.organization)) return;
   const reset = memberAutoLevelResets(store.bots, (bot) => memberOwnedInOrg(bot as BotRecord));
   const ask = { approvalMode: "ask" as const, autoApprove: false };
-  for (const thread of reset.threads) store.patchTask(thread.botId, thread.threadId, ask);
+  for (const thread of reset.threads) store.patchTask(thread.botId, thread.threadId, { ...ask, approvalOwn: "safety" });
   for (const botId of reset.bots) store.patchBot(botId, ask);
   const total = reset.bots.length + reset.threads.length;
   console.log(`organization: ${total} saved Auto or Auto-accept edits level(s) of members' bots set back to Ask (${reset.bots.length} bot default(s), ${reset.threads.length} thread(s)); automatic levels are off for members' bots`);
@@ -35816,7 +35827,7 @@ function settleMemberAutoLevels(botIds: readonly string[]): MemberAutoReset {
   const bots = botIds.map((id) => store.bot(id)).filter((bot): bot is BotRecord => Boolean(bot));
   const reset = memberAutoSettle({ identity: IDENTITY.kind, organization: cfg.organization, bots, memberOwned: (bot) => memberOwnedInOrg(bot as BotRecord) });
   const ask = { approvalMode: "ask" as const, autoApprove: false };
-  for (const thread of reset.threads) store.patchTask(thread.botId, thread.threadId, ask);
+  for (const thread of reset.threads) store.patchTask(thread.botId, thread.threadId, { ...ask, approvalOwn: "safety" });
   for (const botId of reset.bots) store.patchBot(botId, ask);
   return reset;
 }
@@ -36388,9 +36399,13 @@ function agentApiStageFiles(caller: AgentCaller, target: BotRecord, files: FileI
   }
   return written;
 }
-const agentPromptWithFiles = (prompt: string, staged: string[]) =>
+/** #1169: the files' full paths, read with the bot's own file tools. Before,
+ * the line said "host file tools", which on an organization server (host
+ * tools withheld) pushed the bot onto a file view that asked an admin. A
+ * read of the bot's own workspace is its owner's at the bot's level. */
+const agentPromptWithFiles = (prompt: string, staged: string[], target: BotRecord) =>
   staged.length
-    ? `${prompt}\n\n[Files sent with this message, now in your Sagax workspace folder: ${staged.join(", ")}. Read them with your host file tools; if you work on a VM or cloud computer, they are not there until you copy them over (read here, then write them there).]`
+    ? `${prompt}\n\n[Files sent with this message, now in your Sagax workspace folder: ${staged.map((rel) => join(workspaceDir(target.id), rel)).join(", ")}. Read them with your file tools at those paths; if you work on a VM or cloud computer, they are not there until you copy them over (read here, then write them there).]`
     : prompt;
 /** A bot's prompt to a peer's hidden conversation: runs now when the peer
  * has a free slot, else waits in its queue; the line records the sender. */
@@ -36670,8 +36685,11 @@ const agentApi = createAgentApi({
   threads(caller, agentId) {
     const agent = store.bot(agentId);
     if (!agent) return [];
+    // #1170: a bot continues the agent's single chat it sends into, and the
+    // conversations it opened before.
+    const unified = caller.kind === "bot" ? agentUnifiedThreadForBot(caller, agent) : undefined;
     const tasks = caller.kind === "bot"
-      ? store.tasks(agentId).filter((task) => task.openedBy?.botId === caller.id && task.confidential !== true)
+      ? store.tasks(agentId).filter((task) => (task.openedBy?.botId === caller.id || task.threadId === unified) && task.confidential !== true)
       : personAgentThreads(caller.id, agent);
     return tasks.map((task) => ({ threadId: task.threadId, title: task.title, hidden: task.hidden === true }));
   },
@@ -36688,21 +36706,22 @@ const agentApi = createAgentApi({
     }));
   },
   turnState: agentTurnState,
-  async conversation(caller, agentId, options) {
+  // #1170 (2026-10-26): one chat per bot, like the reference design. A prompt from a
+  // person's AI client or from another bot lands in the bot's single
+  // conversation with that person (the one they last wrote in), never in a
+  // hidden thread of its own the person cannot see, close or set a level
+  // on. The sender rides on the line (peerAsk for a bot, aiClient for an AI
+  // client) and the chat folds the exchange into one chip whose sheet keeps
+  // it all (#291). The turn runs at the bot's own level, live (#1169): one
+  // level to reason about.
+  async conversation(caller, agentId) {
     const target = store.bot(agentId);
     if (!target) return agentRefuse(404, "unknown_agent", "No such agent.");
-    const newest = (tasks: TaskRecord[]) => tasks.filter((task) => task.hidden === true && task.archivedAt === undefined && !task.closedBy)
-      .sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))[0];
     if (caller.kind === "person") {
-      // an AI client's conversation is never a confidential one (it reads it back)
-      // 2026-10-19 (owner setup): never a conversation a bot opened (an
-      // "@Name · agent" thread): the person's words landed there under that
-      // bot's name and their bots took them for another agent's relay.
-      // `fresh` (send_prompt without thread_id): never reuse, so the engine
-      // does not read the whole earlier history again on every ping.
-      const existing = options?.fresh ? undefined : newest(store.tasks(agentId).filter((task) => task.ownerPrincipalId === caller.id && task.confidential !== true && !task.openedBy?.botId));
-      if (existing) return { threadId: existing.threadId };
-      const created = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/tasks`, body: { hidden: true, title: "AI client", confidential: false } });
+      const existing = agentUnifiedThread(target, caller.id);
+      if (existing) return { threadId: existing };
+      // their first conversation with the bot: an ordinary one, never confidential
+      const created = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/tasks`, body: { confidential: false } });
       const threadId = (created.body as { task?: { threadId?: unknown } })?.task?.threadId;
       if (created.status >= 300 || typeof threadId !== "string") return agentRefuse(created.status >= 400 ? created.status : 502, "not_started", "A conversation with this agent could not be opened.");
       return { threadId };
@@ -36710,13 +36729,11 @@ const agentApi = createAgentApi({
     const from = agentApiCallerBot(caller);
     if (!from || !caller.sourceThreadId) return agentRefuse(403, "forbidden", "This bot cannot open a conversation.");
     if (store.isConfidentialThread(caller.sourceThreadId)) return agentRefuse(403, "confidential_thread", CONFIDENTIAL_PEER_REFUSED);
-    const existing = newest(store.tasks(agentId).filter((task) => task.openedBy?.botId === from.id));
-    if (existing) return { threadId: existing.threadId };
-    const task = store.createTask(target.id, `@${from.name} · agent`, false, undefined, { botId: from.id, name: from.name, at: Date.now() }, undefined,
-      openedThreadOwner(from, caller.sourceThreadId, target), undefined, true);
+    const existing = agentUnifiedThreadForBot(caller, target);
+    if (existing) return { threadId: existing };
+    // the person has no conversation with this bot yet: their first one
+    const task = store.createTask(target.id, undefined, false, undefined, undefined, undefined, openedThreadOwner(from, caller.sourceThreadId, target));
     if (!task) return agentRefuse(500, "server_error", "The conversation could not be created.");
-    threadStarters.set(task.threadId, openerFrom(caller.sourceThreadId));
-    applyDelegatedLevel(from, caller.sourceThreadId, target, task.threadId);
     return { threadId: task.threadId };
   },
   async post(caller, agentId, threadId, prompt, files, wake) {
@@ -36730,10 +36747,13 @@ const agentApi = createAgentApi({
     if (caller.kind === "person") {
       const staged = agentApiStageFiles(caller, target, files);
       if ("code" in staged) return staged;
-      const sent = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/messages`, body: { text: agentPromptWithFiles(prompt, staged), threadId } });
+      const sent = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/messages`, body: { text: agentPromptWithFiles(prompt, staged, target), threadId } });
       const body = (sent.body ?? {}) as { message?: { id?: unknown }; error?: unknown; message_?: unknown };
       if (sent.status >= 300) return agentRefuse(sent.status >= 400 ? sent.status : 502, "not_sent", String((sent.body as { error?: unknown })?.error ?? "The prompt could not be sent."));
-      return { messageId: typeof body.message?.id === "string" ? body.message.id : null };
+      const messageId = typeof body.message?.id === "string" ? body.message.id : null;
+      // #291: not the person typing: the chat folds it with the bot's answer
+      if (messageId) markAiClientLine(threadId, messageId);
+      return { messageId };
     }
     const from = agentApiCallerBot(caller);
     const capability = caller.depth;
@@ -36754,7 +36774,7 @@ const agentApi = createAgentApi({
     }
     const staged = agentApiStageFiles(caller, target, files);
     if ("code" in staged) return staged;
-    return startAgentPrompt(from, target, threadId, agentPromptWithFiles(prompt, staged), caller.sourceThreadId, capability, wake);
+    return startAgentPrompt(from, target, threadId, agentPromptWithFiles(prompt, staged, target), caller.sourceThreadId, capability, wake);
   },
   async interrupt(agentId, threadId) {
     await interruptDirectThread(agentId, threadId);
@@ -36774,6 +36794,31 @@ const agentApi = createAgentApi({
     }
   },
 });
+/** #1170: the one conversation a bot has with a person, where work sent
+ * to it over the agent API lands: the open one they last wrote in
+ * (main-thread.ts), never a hidden, confidential, bot-opened, parallel or
+ * routine thread. Undefined when they have none yet. */
+function agentUnifiedThread(target: BotRecord, principalId: string | undefined): string | undefined {
+  const person = principalId?.trim().toLowerCase() || undefined;
+  const own = threadsShownTo(target, store.tasks(target.id), person)
+    .filter((task) => isStreamSegment(task) && task.archivedAt === undefined && !task.closedBy);
+  if (!own.length) return undefined;
+  return mainThread(own, person && privateThreads() ? viewerThreadOf(target, person) : target.threadId);
+}
+/** The same for a bot caller: the conversation of the person its work is for. */
+function agentUnifiedThreadForBot(caller: AgentCaller, target: BotRecord): string | undefined {
+  const from = agentApiCallerBot(caller);
+  if (!from || !caller.sourceThreadId) return undefined;
+  return agentUnifiedThread(target, openedThreadOwner(from, caller.sourceThreadId, target));
+}
+/** #291: a line a person's AI client sent (send_prompt, sagax_send) is not
+ * the person typing. Stamped on the stored line: the chat folds it with the
+ * bot's answer into one chip, the exchange sheet keeps every word. */
+function markAiClientLine(threadId: string, messageId: string): void {
+  const line = store.messagesFor(threadId).find((message) => message.id === messageId);
+  if (!line || line.role !== "user" || line.aiClient) return;
+  store.patchMessage(threadId, messageId, { aiClient: true });
+}
 function memberForAgentCaller(caller: AgentCaller): MemberPerson {
   return {
     principalId: caller.id,
@@ -36851,14 +36896,12 @@ const orgMember = createOrgMemberRoutes({
       return null;
     }
   },
+  // #1170: an AI client continues the person's single chat with the bot
   hiddenThreadOf: (botId, principalId) => {
-    const person = principalId.trim().toLowerCase();
-    const at = (task: TaskRecord) => task.updatedAt ?? task.createdAt;
-    const open = store.tasks(botId)
-      .filter((task) => task.hidden === true && task.confidential !== true && task.archivedAt === undefined && !task.closedBy && task.ownerPrincipalId === person)
-      .sort((a, b) => at(b) - at(a));
-    return open[0]?.threadId ?? null;
+    const bot = store.bot(botId);
+    return bot ? agentUnifiedThread(bot, principalId) ?? null : null;
   },
+  markAiClientLine,
   approvalAnswerer: (threadId, requestId) => {
     const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
     if (!message?.card) return null;
@@ -44228,8 +44271,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           approvalMode: "full", autoApprove: false, alwaysAllow: [],
           fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() },
         })!;
+        // #1169: every thread of the bot, hidden ones included, now follows
+        // it to Full (store.patchBot); the open one is recorded too.
         if (follow) {
-          store.patchTask(updated.id, follow, { approvalMode: "full", autoApprove: false, alwaysAllow: [] });
+          store.patchTask(updated.id, follow, { approvalOwn: undefined, alwaysAllow: [] });
           auditApprovalModeChange(auth, target.id, threadBefore!, "full", follow);
         }
         auditApprovalModeChange(auth, target.id, before, "full");
@@ -46544,10 +46589,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (body.hidden !== undefined && body.hidden !== true) return json(res, 400, { error: "hidden must be true when given" });
       if (body.stream !== undefined && typeof body.stream !== "boolean") return json(res, 400, { error: "stream must be a boolean when given" });
-      // An AI client's hidden conversation (#291, the member API's
-      // sagax_send): started beside the person's chat, never selected, so
+      // #1170: `hidden` (an older AI client's hidden conversation, #291) is
+      // accepted and ignored: no conversation is hidden from its person any
+      // more. Still started beside the person's chat, never selected, so
       // nothing on their screens moves to it.
-      const hidden = body.hidden === true;
+      const startedAside = body.hidden === true;
+      const hidden = false;
       // A confidential thread (server/confidential-threads.ts): the person's
       // choice, else the organization's default. Its files stay in its own
       // folder, so no other working folder is taken with it.
@@ -46563,11 +46610,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // selection moves (the bot's own selection is its owner's).
       const creator = scopedThreadViewer();
       const ownerCreates = !creator || viewerBotLevel(auth, bot) === "owner";
-      const task = store.createTask(bot.id, typeof body.title === "string" ? body.title : undefined, ownerCreates && !hidden, body.projectId, undefined, body.approvalMode, creator && isPrincipalId(creator) ? creator : undefined, undefined, hidden, cwd, confidentialChoice.confidential);
+      const task = store.createTask(bot.id, typeof body.title === "string" ? body.title : undefined, ownerCreates && !startedAside, body.projectId, undefined, body.approvalMode, creator && isPrincipalId(creator) ? creator : undefined, undefined, hidden, cwd, confidentialChoice.confidential);
       if (!task) return json(res, 500, { error: "couldn't create that task" });
       // Settings > Bot > Auto-review: a new conversation starts reviewed.
       if (body.approvalMode === undefined) applyAutoReviewDefault(auth, bot.id, task.threadId);
-      if (creator && !hidden) selectViewerThread(bot.id, creator, task.threadId);
+      if (creator && !startedAside) selectViewerThread(bot.id, creator, task.threadId);
       // "New topic" in a single stream (threads off): a stream segment from
       // the start, and the topic it closes gets its digest written now, in
       // the background, while the person types (server/single-stream.ts).
@@ -46579,7 +46626,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (auth.kind === "session") threadStarters.set(task.threadId, actorKey(auth));
       // A non-owner's new thread is not the bot's selection: answer with
       // the bot as seen from that thread.
-      const fresh = publicBot(ownerCreates && !hidden ? store.bot(bot.id)! : store.projectBotForTask(bot.id, task.threadId) ?? store.bot(bot.id)!);
+      const fresh = publicBot(ownerCreates && !startedAside ? store.bot(bot.id)! : store.projectBotForTask(bot.id, task.threadId) ?? store.bot(bot.id)!);
       return json(res, 201, { bot: projectBotTranscript(fresh, viewerForApproval(auth)), task: wireTask(store.taskByThread(bot.id, task.threadId) ?? task, store.bot(bot.id)!.modelSelection) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/tasks\/([\w-]+)$/);

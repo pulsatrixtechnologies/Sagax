@@ -21,7 +21,7 @@ names, parameters and limits as the reference design's agent tools, plus `get_ag
 | `get_agent` | read | `agents.read` | `agent_id`: the full profile for an audit (see below) |
 | `create_agent` | admin | `agents.create` | one temporary agent per call (see below), `name` (≤ 80 chars, one line), optional `description` and `idle_hours` (1 to 720, default 24); it greets the person itself. Only on the person's explicit ask |
 | `delete_agent` | admin | `agents.create` | `agent_id` of a temporary agent: archives it (see below). A lasting agent answers 409 `not_temporary` |
-| `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `queue` (default since 2026-10-17: waits its turn) / `reject` / `supersede` (stops the running turn and the approval it waits on), optional `priority` `now` or `normal` (default `normal`), up to 8 `files` (workspace-relative, 25 MiB each), optional `thread_id` (one of the caller's own conversations, 404 `unknown_thread` otherwise). A person's AI client starts a fresh hidden conversation on every send, so the engine does not read earlier history again; `thread_id` continues one. A bot keeps one conversation per agent. Answers a `handle` and a short `label` (the agent's name and the prompt's first words). `now` wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn. Past 10 `now` sends an hour the answer is `priority: "normal"` with `downgraded: true` and `priority_note` |
+| `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `queue` (default since 2026-10-17: waits its turn) / `reject` / `supersede` (stops the running turn this caller started and the approval it waits on; never the person's own turn or another caller's), optional `priority` `now` or `normal` (default `normal`), up to 8 `files` (workspace-relative, 25 MiB each), optional `thread_id` (one of the caller's own conversations, 404 `unknown_thread` otherwise). Every send lands in the agent's single chat with the person the caller works for (#1170); `thread_id` continues one of the caller's conversations instead. Answers a `handle` and a short `label` (the agent's name and the prompt's first words). `now` wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn. Past 10 `now` sends an hour the answer is `priority: "normal"` with `downgraded: true` and `priority_note` |
 | `await_turn` | read | `agents.read` | `agent_id`, `handle`, `timeout_ms`. The handle is the one `send_prompt` returned, or the `{threadId, handle}` a one-way `send_to_bot` included. Never send the prompt again: wait again with the same handle |
 | `read_transcript` | read | `agents.read` | the whole transcript (the newest 2,000 entries; `truncated` says when there were more) |
 | `read_transcript_page` | read | `agents.read` | one bounded page: `limit` (1 to 200) and `before_ms` required, `after_ms` optional (inclusive unix ms), `cursor` for the next older page |
@@ -97,10 +97,16 @@ reads the entries just before it.
 
 ## Guarantees
 
-- **Hidden conversations**: every prompt lands in a hidden conversation owned
-  by the caller (#291/#302), never in the person's own chat with the agent. A
-  bot caller's later sends continue the same conversation; a person's AI client starts a new one each send unless it passes `thread_id`. `supersede` interrupts
-  only that conversation.
+- **One chat per agent** (#1170, 2026-10-26, like the reference design): every prompt
+  lands in the agent's single conversation with the person the caller works
+  for (the open one they last wrote in, else their first one), never a hidden
+  conversation the person cannot see, close or set a level on. The sender
+  rides on the line (`peerAsk` for a bot, `aiClient` for a person's AI
+  client), and the chat folds each exchange into one chip whose sheet keeps
+  every word (#291): it is not shown as the person typing. The turn runs at
+  the agent's own approval level, read live (#1169). `supersede` interrupts
+  only a turn this caller started. Hidden conversations made before this
+  version are shown again on the next start, nothing deleted.
 - **Isolation**: a bot reaches only its peers. That means the same team and
   scope, the per-pair allow-list, and never a hidden bot. A person reaches
   what `GET /api/bots` shows them, and nothing else exists for them (404
@@ -109,7 +115,7 @@ reads the entries just before it.
   and bound to the caller and the agent. They expire after 7 days. A one-way
   `send_to_bot` answer includes the same kind of handle (`{threadId, handle}`).
   `await_turn` accepts it for that caller and agent. The fresh thread stays
-  visible to the recipient; it is not the hidden conversation `send_prompt` uses.
+  visible to the recipient.
 - **One hop**: a prompt a bot received from another agent cannot be passed on
   (409 `too_deep`).
 - **Approval gate**: a bot whose peer contact needs review raises the

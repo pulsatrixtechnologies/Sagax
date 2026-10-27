@@ -4,6 +4,7 @@ import type { Action, AppState, Bot, Group, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { taskHiddenFromSidebar } from "@/lib/bot-unread";
+import { parallelTaskInStream } from "./parallel-approvals";
 import { isArchived, orderedSidebarThreads, orderedThreadList, threadRecency, threadUpdatedLabel } from "./SidebarThreadRow";
 import type { SidebarDensity } from "@/lib/sidebar-preferences";
 
@@ -29,7 +30,9 @@ export function sidebarBotActivityTasks(bot: Bot, queued: Record<string, unknown
  * needs the person, plus a pin, in pin-then-update order. The bell does not
  * use this — it stays on attention order. */
 export function threadsWhenTreeHidden(bot: Bot, queued: Record<string, unknown[]>) {
-  const attention = sidebarBotActivityTasks(bot, queued);
+  // #1145: a parallel task of the one conversation is no row of its own:
+  // its approvals and questions join that conversation (parallel-approvals.ts)
+  const attention = sidebarBotActivityTasks(bot, queued).filter((task) => !parallelTaskInStream(bot, task));
   const seen = new Set(attention.map((task) => task.threadId));
   const pinned = (bot.tasks ?? [])
     // an automatic routine results thread never surfaces here either, even

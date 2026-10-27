@@ -1,9 +1,12 @@
 // Bot-to-bot lines leave the main transcript as one chip per contiguous run.
+// So do the lines a person's AI client sent (send_prompt, #291) and the
+// bot's answer to them: the person did not type them.
 // A reply to the person stays inline. A later summary for the person has no
 // request of its own, so this never scans backward past requestMessageId.
 import type { Message } from "@/state/store";
 import { isStatusActivity } from "@/lib/activity-runs";
 import { peerLine } from "@/lib/peer-message";
+import { t } from "@/lib/i18n";
 import { localDay } from "@/lib/transcript-derivations";
 
 /** Same gap the phone uses before a quiet date stamp starts a new cluster. */
@@ -95,6 +98,8 @@ function absorbable(message: Message): boolean {
 function audienceParty(message: Message, options: CollapseOptions): ExchangeParty | null {
   if (blocksExchange(message) || quietRow(message)) return null;
   const peer = peerLine(message);
+  // #291: a person's AI client: its exchange folds like a bot's
+  if (peer?.delivery === "ai_client") return { name: t("chat.peer.aiClientName") };
   if (peer) return { id: peer.botId, name: peer.name };
   const extra = wire(message);
   if (options.pairChannel && message.role === "bot" && message.from?.name) {

@@ -881,7 +881,7 @@
   "botPanel.permissions.applyFull": "Appliquer l'accès complet à toutes les conversations",
   "botPanel.permissions.approval": "Niveau d'approbation",
   "botPanel.permissions.approvalDraft": "Valeur par défaut des conversations, des routines et du travail délégué du nouveau bot.",
-  "botPanel.permissions.approvalHelp": "Valeur par défaut des nouvelles conversations, des routines et du travail délégué. En activant l'accès complet, vous pouvez aussi l'appliquer à chaque conversation existante. Utilisez Actualiser les permissions sur une conversation pour y appliquer le niveau actuel.",
+  "botPanel.permissions.approvalHelp": "S'applique à toutes les conversations de ce bot d'un coup : routines, travail délégué et travail qu'un autre bot ou un client IA envoie ici. Une conversation garde son propre niveau seulement si vous l'y avez choisi ; Actualiser les permissions la ramène à ce niveau.",
   "botPanel.permissions.proactive": "Proactif",
   "botPanel.permissions.proactiveHelp": "Si ce bot peut agir de lui-même : remarquer quelque chose (un nouveau courriel, une réunion à venir, une exécution terminée) et commencer du travail sans qu'on le lui demande. Une écriture, un envoi, un paiement ou le contact d'une vraie personne passe toujours d'abord par une carte d'approbation avec essai à blanc; l'observation en lecture seule est libre. Désactivé par défaut.",
   "botPanel.permissions.proactive.off": "Désactivé",
@@ -4846,7 +4846,7 @@
   "task.otherActivity": "Autre activité ({count})",
   "task.queued": "En file d'attente",
   "task.refreshPermissions": "Actualiser les autorisations",
-  "task.refreshPermissionsHint": "Appliquer le niveau d'approbation actuel de ce bot et les approbations enregistrées à ce fil. Les autres fils ne changent pas.",
+  "task.refreshPermissionsHint": "Ramener ce fil au niveau d'approbation de ce bot : il suit alors le bot, comme tous les autres fils.",
   "task.regenerateTitle": "Régénérer le titre",
   "task.regeneratingTitle": "Régénération…",
   "task.renameAria": "Renommer le fil",
@@ -11079,5 +11079,8 @@
   "pair.signIn.codeLabel": "Code reçu par courriel",
   "pair.signIn.newCode": "Envoyer un nouveau code",
   "pair.signIn.havePairing": "Vous avez plutôt un code de jumelage ?",
-  "pair.signIn.useEmail": "Se connecter plutôt avec votre courriel"
+  "pair.signIn.useEmail": "Se connecter plutôt avec votre courriel",
+  "chat.peer.aiClientName": "Client IA",
+  "chat.peer.viaAiClient": "envoyé depuis un client IA",
+  "composer.parallelQuestion": "Question de la tâche parallèle {title}"
 }

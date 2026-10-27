@@ -131,10 +131,13 @@ export function orgFullAccessHolds(input: { policyAllowed: boolean; ownerPrincip
 const FULL_BODY_ERROR = "send { approvalMode: \"full\", confirmFullAccess } alone";
 
 /** The Full grant body on an organization server. `threadId` names the open
- * conversation so that conversation takes the same level. Anything else
- * riding along is refused. */
+ * conversation (audited; every thread follows the bot's level). Anything
+ * else riding along is refused. */
 export function parseOrgFullAccessBody(body: Record<string, unknown>): { confirm: boolean; threadId?: string } | { error: string } {
-  const extra = Object.keys(body).filter((key) => key !== "approvalMode" && key !== "confirmFullAccess" && key !== "threadId");
+  // applyToAllThreads (older apps): every thread follows its bot's level now
+  // (#1169), so it changes nothing and is accepted.
+  const extra = Object.keys(body).filter((key) => key !== "approvalMode" && key !== "confirmFullAccess" && key !== "threadId" && key !== "applyToAllThreads");
+  if (body.applyToAllThreads !== undefined && typeof body.applyToAllThreads !== "boolean") return { error: FULL_BODY_ERROR };
   if (body.approvalMode !== "full" || extra.length) return { error: FULL_BODY_ERROR };
   if (body.confirmFullAccess !== undefined && typeof body.confirmFullAccess !== "boolean") return { error: FULL_BODY_ERROR };
   if (body.threadId !== undefined && (typeof body.threadId !== "string" || !/^[\w-]{1,128}$/.test(body.threadId))) return { error: FULL_BODY_ERROR };

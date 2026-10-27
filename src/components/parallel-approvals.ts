@@ -10,16 +10,41 @@
 // listed, so its cards were nowhere the person could find them while the
 // bot stayed busy (its model locked). They join the box too, naming the bot
 // that asked.
+//
+// #1145 (2026-10-26): with threads hidden ("One conversation"), the person
+// never leaves the one conversation. The parallel tasks of every segment of
+// the stream join it, not only the open segment's, and their questions too
+// (parallelQuestions): answered here, sent to the task's own thread.
 import { useEffect, useState } from "react";
 
-import { api, type Bot } from "@/state/store";
+import { api, type Bot, type Message } from "@/state/store";
+import { isStreamSegment } from "@/lib/single-stream";
+import { pendingQuestions } from "@/lib/pending-question";
 import { pendingApprovals, type Pending } from "./PendingApproval";
 
-/** The parallel tasks of `threadId` that wait for the person. */
-export function waitingParallelTasks(bot: Pick<Bot, "tasks"> | undefined, threadId: string | undefined) {
+/** The parallel tasks of `threadId` that wait for the person. With `stream`
+ * (threads hidden), those of every segment of the bot's one conversation. */
+export function waitingParallelTasks(bot: Pick<Bot, "tasks"> | undefined, threadId: string | undefined, stream = false) {
   if (!bot || !threadId) return [];
-  return (bot.tasks ?? []).filter((task) => task.parallelOf?.threadId === threadId
+  const sources = new Set([threadId]);
+  if (stream) for (const task of bot.tasks ?? []) if (isStreamSegment(task)) sources.add(task.threadId);
+  return (bot.tasks ?? []).filter((task) => task.parallelOf !== undefined && sources.has(task.parallelOf.threadId)
     && task.parallelOf.reportedAt === undefined && task.activity === "waiting-on-you");
+}
+
+/** #1145: with threads hidden, a parallel task asked from the one
+ * conversation gets no row of its own: its approvals and questions join
+ * that conversation, and its answer is posted there. */
+export function parallelTaskInStream(bot: Pick<Bot, "tasks">, task: { parallelOf?: { threadId: string } }): boolean {
+  const source = task.parallelOf ? (bot.tasks ?? []).find((candidate) => candidate.threadId === task.parallelOf!.threadId) : undefined;
+  return Boolean(source && isStreamSegment(source));
+}
+
+/** A parallel task's open question, answered from the conversation it serves. */
+export interface ParallelQuestion {
+  message: Message;
+  threadId: string;
+  parallelTitle: string;
 }
 
 /** Tag a parallel task's open approvals with that task. */
@@ -35,19 +60,25 @@ export function interBotPendings(messages: Parameters<typeof pendingApprovals>[0
 /** The conversations whose cards join the open one's box: its parallel
  * tasks, then the bot's bot-to-bot conversations waiting on the person
  * (never the open conversation itself). */
-export function approvalSources(bot: Pick<Bot, "tasks" | "threadId" | "waitingApprovals"> | undefined): { threadId: string; title?: string; askedBy?: string; stamp: number | string }[] {
+export function approvalSources(bot: Pick<Bot, "tasks" | "threadId" | "waitingApprovals"> | undefined, stream = false): { threadId: string; title?: string; askedBy?: string; stamp: number | string }[] {
   if (!bot) return [];
-  const parallel = waitingParallelTasks(bot, bot.threadId).map((task) => ({ threadId: task.threadId, title: task.title, stamp: task.updatedAt ?? 0 }));
+  const parallel = waitingParallelTasks(bot, bot.threadId, stream).map((task) => ({ threadId: task.threadId, title: task.title, stamp: task.updatedAt ?? 0 }));
   const seen = new Set([bot.threadId, ...parallel.map((row) => row.threadId)]);
   const interBot = (bot.waitingApprovals ?? []).filter((row) => !seen.has(row.threadId))
     .map((row) => ({ threadId: row.threadId, askedBy: row.openedByName?.trim() || "", stamp: row.updatedAt ?? 0 }));
   return [...parallel, ...interBot];
 }
 
-export function useParallelApprovals(bot: Bot | undefined): Pending[] {
-  const waiting = approvalSources(bot);
+export function useParallelApprovals(bot: Bot | undefined, stream = false): Pending[] {
+  return useParallelCards(bot, stream).pendings;
+}
+
+/** The approvals and, #1145, the questions of the conversations whose cards
+ * join the open one (approvalSources). */
+export function useParallelCards(bot: Bot | undefined, stream = false): { pendings: Pending[]; questions: ParallelQuestion[] } {
+  const waiting = approvalSources(bot, stream);
   const key = waiting.map((task) => `${task.threadId}:${task.stamp}`).join("|");
-  const [found, setFound] = useState<{ key: string; pendings: Pending[] }>({ key: "", pendings: [] });
+  const [found, setFound] = useState<{ key: string; pendings: Pending[]; questions: ParallelQuestion[] }>({ key: "", pendings: [], questions: [] });
   useEffect(() => {
     if (!key) return;
     let live = true;
@@ -55,9 +86,12 @@ export function useParallelApprovals(bot: Bot | undefined): Pending[] {
     void Promise.allSettled(waiting.map(async (task) => {
       const page = await api(`/api/threads/${task.threadId}/messages?limit=60`) as { messages?: Parameters<typeof pendingApprovals>[0] };
       const messages = page.messages ?? [];
-      return task.askedBy !== undefined ? interBotPendings(messages, { threadId: task.threadId, openedByName: task.askedBy }) : parallelPendings(messages, { threadId: task.threadId, title: task.title ?? "" });
+      const pendings = task.askedBy !== undefined ? interBotPendings(messages, { threadId: task.threadId, openedByName: task.askedBy }) : parallelPendings(messages, { threadId: task.threadId, title: task.title ?? "" });
+      const questions = task.askedBy !== undefined ? [] : pendingQuestions(messages).map((message) => ({ message, threadId: task.threadId, parallelTitle: task.title ?? "" }));
+      return { pendings, questions };
     })).then((lists) => {
-      if (live) setFound({ key, pendings: lists.flatMap((list) => list.status === "fulfilled" ? list.value : []) });
+      const done = lists.flatMap((list) => list.status === "fulfilled" ? [list.value] : []);
+      if (live) setFound({ key, pendings: done.flatMap((list) => list.pendings), questions: done.flatMap((list) => list.questions) });
     }).catch(() => {});
     return () => {
       live = false;
@@ -65,5 +99,5 @@ export function useParallelApprovals(bot: Bot | undefined): Pending[] {
     // `waiting` is derived from `key`'s inputs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  return key && found.key === key ? found.pendings : [];
+  return key && found.key === key ? { pendings: found.pendings, questions: found.questions } : { pendings: [], questions: [] };
 }

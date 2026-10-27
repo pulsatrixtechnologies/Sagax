@@ -154,9 +154,12 @@ export interface OrgMemberRouteDeps {
    * never reads, streams, writes or answers a card in one; it reads as
    * missing. */
   confidential?(threadId: string): boolean;
-  /** The person's open hidden conversation with this bot (#291), the one an
-   * AI client continues when it names no thread; null when they have none. */
+  /** The person's single chat with this bot (#1170), the one an AI client
+   * continues when it names no thread; null when they have none yet. */
   hiddenThreadOf?(botId: string, principalId: string): string | null;
+  /** #291: stamp a line an AI client sent, so the chat folds it with the
+   * bot's answer instead of showing it as the person typing. */
+  markAiClientLine?(threadId: string, messageId: string): void;
   /** MEMORY.md of a bot the caller already owns. Null when it cannot be
    * read. The admin memory route is not used: it has no owner check. */
   readBotMemory?(botId: string): { text: string } | null;
@@ -1113,15 +1116,16 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const botId = params.id!;
         let threadId = input.threadId as string | undefined;
         if (threadId && deps.confidential?.(threadId)) return fail(404, "not_found", "No such conversation.");
-        // An AI client works in a hidden conversation (#291), the way the reference
-        // design keeps its subagents out of the chat: never the person's open
-        // chat, never their sidebar, unread or notifications. A named
-        // threadId is honored as given. The Perspicax console is the person
-        // typing, so it keeps their own conversation.
+        // An AI client works in the person's single chat with the bot
+        // (#1170, like the reference design): never a hidden thread they cannot see,
+        // close or set a level on. Its lines are stamped (#291) so the chat
+        // folds them with the bot's answer into one chip; the exchange
+        // sheet keeps every word. A named threadId is honored as given. The
+        // Perspicax console is the person typing, so nothing is stamped.
         const hidden = person.actor !== "console";
         if (!threadId && hidden && input.newThread !== true) threadId = deps.hiddenThreadOf?.(botId, person.principalId) ?? undefined;
         if (input.newThread === true || (hidden && !threadId)) {
-          const created = await deps.perform(person, { method: "POST", path: `/api/bots/${encodeURIComponent(botId)}/tasks`, body: hidden ? { hidden: true, confidential: false } : { confidential: false } });
+          const created = await deps.perform(person, { method: "POST", path: `/api/bots/${encodeURIComponent(botId)}/tasks`, body: { confidential: false } });
           if (!okStatus(created)) return passThrough(created, "A new conversation could not be started.");
           threadId = str(objectOf(objectOf(created.body)?.task)?.threadId) ?? undefined;
           if (!threadId) return fail(502, "server_error", "The new conversation has no id.");
@@ -1135,6 +1139,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const receipt = objectOf(sent.body) ?? {};
         const finalThread = str(receipt.threadId) ?? threadId ?? null;
         const messageId = str(objectOf(receipt.message)?.id);
+        if (hidden && finalThread && messageId) deps.markAiClientLine?.(finalThread, messageId);
         deps.record(person, { action: "client.message", target: { kind: "bot", id: botId }, after: { threadId: finalThread, waited: wait > 0, ...(input.newThread ? { newThread: true } : {}), ...(hidden && !input.threadId ? { hidden: true } : {}) } });
         if (!finalThread) return answer({ botId, threadId: null, messageId, status: "working", pending: true, reply: null, approvals: [], cursor: null, summary: null });
         if (input.stream === true) {

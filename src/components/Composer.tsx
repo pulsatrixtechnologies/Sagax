@@ -10,6 +10,7 @@ import { viewerActorId } from "@/lib/viewer";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { composerPlaceholder } from "@/lib/composer-placeholder";
 import { pendingQuestions } from "@/lib/pending-question";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
@@ -87,7 +88,8 @@ import {
   doubleEnterSteerWindowExpiresAt,
   doubleEnterSteersQueue,
 } from "./ComposerQueuedMessages";
-import { useParallelApprovals } from "./parallel-approvals";
+import { useParallelCards } from "./parallel-approvals";
+import { QuestionCard } from "./QuestionCard";
 import { useOnCall } from "@/lib/call";
 import { browserAvailable, builtInBrowserEnabled, dataWindowEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { requestBrowserTeach } from "@/lib/teach-request";
@@ -214,7 +216,12 @@ export function Composer({
   // the VISIBLE branch only — an approval left on a branch you edited away
   // from must not keep blocking the composer
   // this conversation's own, then those its parallel tasks wait on
-  const parallelApprovals = useParallelApprovals(group ? undefined : bot);
+  // #1145: with threads hidden, every parallel task of the one conversation,
+  // its questions included: the person never leaves it to answer
+  const showThreadsHere = useShowThreads();
+  const parallelCards = useParallelCards(group ? undefined : bot, !showThreadsHere);
+  const parallelApprovals = parallelCards.pendings;
+  const parallelQuestions = parallelCards.questions;
   const approvals = [...pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []), ...parallelApprovals];
   const approval = approvals[0];
   // A bot's question waits in the chat; the composer stays free. Writing
@@ -1240,6 +1247,14 @@ export function Composer({
             })}
           </div>
         )}
+        {/* #1145: a parallel task's question, answered here and sent to
+            its own thread, so nobody has to open the task to reply. */}
+        {bot && parallelQuestions.map((question) => (
+          <div key={`${question.threadId}:${question.message.id}`} data-parallel-question={question.threadId} className="mb-2">
+            <div className="mb-1 px-1 text-[11px] text-ink-tertiary">{t("composer.parallelQuestion", { title: question.parallelTitle || t("task.newShort") })}</div>
+            <QuestionCard threadId={question.threadId} bot={{ name: bot.name }} message={question.message} />
+          </div>
+        ))}
         {/* An approval takes over the composer: you answer it before you
             can type again, so a waiting bot is impossible to miss. */}
         {approval && (

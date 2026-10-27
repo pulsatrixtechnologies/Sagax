@@ -1099,7 +1099,7 @@
   "botPanel.permissions.applyFull": "Apply Full access to all threads",
   "botPanel.permissions.approval": "Approval level",
   "botPanel.permissions.approvalDraft": "Default for the new bot's threads, routines and delegated work.",
-  "botPanel.permissions.approvalHelp": "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread. Use Refresh permissions on a thread to apply the current level to that conversation.",
+  "botPanel.permissions.approvalHelp": "Applies to every thread of this bot at once: routines, delegated work and work another bot or an AI client sends here. A thread keeps its own level only when you chose one in it; Refresh permissions brings it back to this level.",
   "botPanel.permissions.proactive": "Proactive",
   "botPanel.permissions.proactiveHelp": "Whether this bot may act on its own: notice something (a new email, an upcoming meeting, a finished run) and start work without being asked. A write, a send, a payment or contacting a real person always goes through an approval card with a dry run first; read-only observation is free. Off is the default.",
   "botPanel.permissions.proactive.off": "Off",
@@ -6469,7 +6469,7 @@
   "task.otherActivity": "Other activity ({count})",
   "task.queued": "Queued",
   "task.refreshPermissions": "Refresh permissions",
-  "task.refreshPermissionsHint": "Apply this bot's current approval level and saved approvals to this thread. Other threads stay as they are.",
+  "task.refreshPermissionsHint": "Bring this thread back to this bot's approval level: it then follows the bot again, like every other thread.",
   "task.regenerateTitle": "Regenerate title",
   "task.regeneratingTitle": "Regenerating…",
   "task.renameAria": "Rename thread",
@@ -11079,5 +11079,8 @@
   "pair.signIn.codeLabel": "Code from the email",
   "pair.signIn.newCode": "Send a new code",
   "pair.signIn.havePairing": "Have a pairing code instead?",
-  "pair.signIn.useEmail": "Sign in with your email instead"
+  "pair.signIn.useEmail": "Sign in with your email instead",
+  "chat.peer.aiClientName": "AI client",
+  "chat.peer.viaAiClient": "sent from an AI client",
+  "composer.parallelQuestion": "Question from the parallel task {title}"
 }

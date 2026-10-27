@@ -70,9 +70,19 @@ Full allowed: the first start of this version writes `allowFullAccess:
 true` once (an `org.settings` row in the admin activity log), so no bot
 changes level.
 
-The effective setting belongs to the source conversation. An existing Ask
-thread remains Ask even if the bot default is Full; a Full thread works without
-these extra prompts even if the bot default is Ask. Ask, Auto, and Custom retain
+The approval level belongs to the bot (#1169/#1170, 2026-10-26: "that
+setting is the bot's, every thread always inherits"). Every thread, hidden or
+visible, started by a person, `send_prompt`, delegation or a routine, reads
+the bot's current level at the start of each turn: nothing is copied when a
+thread is made, and setting the bot's level reaches every thread at once.
+A thread keeps a level of its own only as a stated exception
+(`approvalOwn`): a level a person chose in that thread (`thread`), a
+Primary Bot's delegated level (`delegated`), Ask again after an engine
+change (`engine`), or a safety revocation (`safety`). The thread's chip
+shows it, Refresh permissions ends it, and any change of the bot's level
+ends every one. Threads saved before this version kept a copy of the bot's
+level from the day they were made; that copy is dropped on start, and they
+follow their bot. Ask, Auto, and Custom retain
 their existing OMB configuration review cards. Full actions return an applied
 result and leave a settled receipt, so the bot continues in the same turn.
 Invalid input, unavailable services, or failed writes return errors, not a

@@ -205,6 +205,20 @@ Release note text:
   the bot keeps the whole history and earlier topics stay one click away,
   under Earlier topics."
 
+## Parallel tasks and agent work stay in the stream (2026-10-26, #1145, #1170)
+
+- A parallel task asked from any segment of the stream gets no row under
+  the bot with threads hidden (`threadsWhenTreeHidden`,
+  `parallelTaskInStream`). Its approvals join the composer's approval box
+  and its questions are answered above the composer, each sent to the
+  task's own thread (`useParallelCards`), so the person never leaves the
+  conversation. Its answer is posted in the conversation, as before. With
+  threads shown, every thread stays listed and reachable.
+- Work sent over the agent API (`send_prompt`, `sagax_send`) lands in the
+  bot's single chat with that person, folded into one exchange chip
+  (`aiClient`, `peerAsk`; `src/lib/bot-exchange.ts`). There is no hidden
+  AI-client conversation any more; old ones are shown again on start.
+
 ## Tests
 
 - `shared/single-stream.test.ts`: segment rule and order, exclusions.

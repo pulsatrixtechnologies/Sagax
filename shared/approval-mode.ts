@@ -6,6 +6,37 @@ export const APPROVAL_MODES = ["ask", "edits", "auto", "full", "custom"] as cons
 
 export type ApprovalMode = (typeof APPROVAL_MODES)[number];
 
+/** Why a thread keeps its own approval level instead of its bot's
+ * (WireTask.approvalOwn, #1169/#1170). Every other thread follows its bot's
+ * current level at the start of each turn: nothing is copied at creation. */
+export const APPROVAL_EXCEPTIONS = ["thread", "delegated", "engine", "safety"] as const;
+export type ApprovalException = (typeof APPROVAL_EXCEPTIONS)[number];
+export function isApprovalException(value: unknown): value is ApprovalException {
+  return typeof value === "string" && (APPROVAL_EXCEPTIONS as readonly string[]).includes(value);
+}
+
+/** The level a thread runs at as stored: its own while it holds an
+ * exception, else its bot's, live. Standing approvals: an exception keeps
+ * only its own; a thread that follows the bot gets the bot's and those
+ * saved in the thread. Server (projectBotForTask) and clients share it. */
+export function threadApprovalFields<B extends { approvalMode?: unknown; autoApprove?: boolean; alwaysAllow?: string[] }>(
+  bot: B,
+  task: { approvalOwn?: unknown; approvalMode?: unknown; autoApprove?: boolean; alwaysAllow?: string[] },
+): Pick<B, "approvalMode" | "autoApprove" | "alwaysAllow"> {
+  if (isApprovalException(task.approvalOwn)) {
+    return {
+      approvalMode: (task.approvalMode ?? (task.autoApprove === undefined ? bot.approvalMode : undefined)) as B["approvalMode"],
+      autoApprove: task.autoApprove ?? bot.autoApprove,
+      alwaysAllow: [...(task.alwaysAllow ?? bot.alwaysAllow ?? [])],
+    };
+  }
+  return {
+    approvalMode: bot.approvalMode as B["approvalMode"],
+    autoApprove: bot.autoApprove,
+    alwaysAllow: [...new Set([...(bot.alwaysAllow ?? []), ...(task.alwaysAllow ?? [])])],
+  };
+}
+
 /** Only providers with an implemented permission mapping may expose a level.
  * `edits` (auto-accept edits) exists where the engine has such a mode:
  * Claude and Grok `acceptEdits`, Antigravity `auto_edit`, Qwen `auto-edit`,

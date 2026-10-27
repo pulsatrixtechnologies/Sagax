@@ -48,6 +48,8 @@ const PERMISSION_FIELDS = ["approvalMode", "autoApprove", "alwaysAllow"] as cons
 export function keptRevocation(task: TaskRecord, patch: TaskPatch): TaskPatch | undefined {
   const fields = PERMISSION_FIELDS.filter((key) => Object.hasOwn(patch, key));
   if (!fields.length) return undefined;
+  // Following the bot again may widen the level: never kept unsaved.
+  if (Object.hasOwn(patch, "approvalOwn") && patch.approvalOwn === undefined) return undefined;
   const next = { ...task, ...patch };
   const allowed = task.alwaysAllow ?? [];
   if (approvalModeWidens(approvalModeFor(task), approvalModeFor(next))) return undefined;

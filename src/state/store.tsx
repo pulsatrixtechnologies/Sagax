@@ -35,7 +35,7 @@ import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-even
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
-import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
+import { approvalModeFor, threadApprovalFields, type ApprovalMode } from "../../shared/approval-mode";
 import type { ProactiveMode } from "../../shared/proactive-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
 import { onNudgeReceived, onNudgeSent, onNudgeSentEcho } from "@/lib/desktop-nudge";
@@ -330,6 +330,9 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
    * (ask_bot, delegate_bot, start_thread): the words are that bot's, not
    * the person's. Rendered as the peer speaking — see lib/peer-message. */
   peerAsk?: { botId: string; name: string; unattended?: boolean };
+  /** #291: a line a person's AI client sent (send_prompt): not the person
+   * typing. Folded with the bot's answer into one exchange chip. */
+  aiClient?: true;
   /** Auto: the model this delivered work ran on (the delegation card and the
    * worker's activity row). */
   autoModel?: AutoModelRecord;
@@ -511,9 +514,12 @@ export interface Task {
   /** true: runs on its bot's model and moves with it; false: a model a person
    * picked in this thread. Absent from servers older than the field. */
   followsBotModel?: boolean;
+  /** Present only with approvalOwn: the thread follows its bot's level, live (#1169). */
   approvalMode?: ApprovalMode;
   autoApprove?: boolean;
   alwaysAllow?: string[];
+  /** Why this thread keeps its own approval level (WireTask.approvalOwn). */
+  approvalOwn?: import("../../shared/approval-mode").ApprovalException;
   activity?: Bot["activity"];
   busy?: boolean;
   /** Epoch ms when this task's current turn became busy; the chat's elapsed
@@ -771,9 +777,8 @@ export function currentTaskBot(bot: Bot, threadId = bot.threadId): Bot {
     ...bot,
     threadId,
     modelSelection: task.modelSelection ?? bot.modelSelection,
-    approvalMode: task.approvalMode ?? (task.autoApprove === undefined ? bot.approvalMode : undefined),
-    autoApprove: task.autoApprove ?? bot.autoApprove,
-    alwaysAllow: task.alwaysAllow ?? bot.alwaysAllow,
+    // the bot's level, live, unless this thread holds an exception (#1169)
+    ...threadApprovalFields(bot, task),
     activity: task.activity ?? bot.activity,
     busy: task.busy ?? (task.activity === "working" || task.activity === "waiting-on-you"),
     unread: task.unread ?? bot.unread,
@@ -3171,16 +3176,14 @@ export function reducer(state: AppState, action: Action): AppState {
         ...rest
       } = action.patch;
       const botPatch: Partial<Bot> = { ...rest };
-      const followThread = typeof action.patch.threadId === "string" ? action.patch.threadId : undefined;
       const followMode = action.patch.approvalMode;
       if (computer === null) botPatch.computer = undefined;
       else if (computer !== undefined) botPatch.computer = computer;
       return updateBot(next, action.botId, (b) => {
         const updated: Bot = { ...b, ...botPatch };
-        if (followThread && followMode && updated.tasks) {
-          updated.tasks = updated.tasks.map((task) => task.threadId === followThread
-            ? { ...task, approvalMode: followMode, autoApprove: followMode === "auto" }
-            : task);
+        // #1169: a new bot level reaches every thread; none keeps its own
+        if (followMode && updated.tasks) {
+          updated.tasks = updated.tasks.map(({ approvalMode: _mode, autoApprove: _auto, approvalOwn: _own, ...task }) => task);
         }
         return updated;
       });
