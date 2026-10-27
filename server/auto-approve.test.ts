@@ -73,6 +73,12 @@ describe("autoVerdict", () => {
     });
   });
 
+  it("keeps an Ask every time or Deny rule ahead of Full access (#1169)", () => {
+    expect(autoVerdict("full", "Read", { customRule: { behavior: "ask", id: "r" } })).toEqual({ approve: null, source: "custom-rule-ask" });
+    expect(autoVerdict("full", "Read", { customRule: { behavior: "deny", id: "r" } })).toEqual({ approve: null, source: "custom-rule-deny" });
+    expect(autoVerdict("ask", "Read")).toEqual({ approve: null, source: "no-grant" });
+  });
+
   it("leaves an Auto or Custom request with the person as the provider's own reviewer did", () => {
     expect(autoVerdict("auto", "Bash")).toEqual({ approve: null, source: "native-approval" });
     expect(autoVerdict("custom", "Bash")).toEqual({ approve: null, source: "native-approval" });

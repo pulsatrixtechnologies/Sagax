@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -196,6 +196,29 @@ describe("the admin gate on a member's bot", () => {
   });
   it("sends every MCP tool to an admin when nothing says which servers are the owner's", () => {
     expect(gate("mcp__perspicax_quasar__cw_psa__query")).toBe(true);
+  });
+
+  it("keeps Sagax's file views of the bot's own workspace and inbox with the owner, and nothing else (#1169)", () => {
+    const workspace = join(data, "workspaces", "bot-1");
+    mkdirSync(join(workspace, "inbox", "nova"), { recursive: true });
+    const inbox = join(workspace, "inbox", "nova", "note.txt");
+    writeFileSync(inbox, "hi");
+    const own = (tool: string, paths?: string[], command?: unknown) => memberBotAdminApproval({ tool, paths, command, workspaceRoot: root, readRoots: [workspace] });
+    expect(own("mcp__sagax-desktop__read_file", [inbox])).toBe(false);
+    expect(own("sagax-environment__list_files", [workspace])).toBe(false);
+    expect(own("mcp__files__search_files", [join(workspace, "inbox")])).toBe(false);
+    expect(own("Read", [inbox])).toBe(false);
+    expect(own("mcp__sagax-desktop__read_file", [join(root, "thread-1", "src")])).toBe(false);
+    // another bot's inbox, a dot folder, a write or a command in the workspace, an unknown server
+    expect(own("mcp__sagax-desktop__read_file", [join(data, "workspaces", "bot-2", "inbox", "x.txt")])).toBe(true);
+    expect(own("mcp__sagax-desktop__read_file", [join(workspace, "inbox", ".ssh", "id")])).toBe(true);
+    expect(own("Write", [inbox])).toBe(true);
+    expect(own("Read", [inbox], { command: "cat note.txt" })).toBe(true);
+    expect(own("mcp__other__read_file", [inbox])).toBe(true);
+    expect(own("mcp__sagax-desktop__read_file")).toBe(true);
+    expect(fileViewToolPaths("mcp__sagax-desktop__read_file", JSON.stringify({ path: inbox }))).toEqual([inbox]);
+    expect(fileViewToolPaths("mcp__sagax-desktop__read_file", JSON.stringify({ path: "inbox/nova/note.txt" }))).toEqual([]);
+    expect(fileViewToolPaths("mcp__other__read_file", JSON.stringify({ path: inbox }))).toEqual([]);
   });
 });
 
