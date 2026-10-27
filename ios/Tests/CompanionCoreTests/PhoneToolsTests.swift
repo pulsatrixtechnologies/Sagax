@@ -23,9 +23,11 @@ final class PhoneToolsTests: XCTestCase {
     func testTheCardOffersRefuserToujoursPermettreUneFois() throws {
         XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "location")), [.deny, .always, .once])
         XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "location", allowAlways: false)), [.deny, .once])
-        // never Toujours permettre for a shortcut, the clipboard or photos, whatever the server says
+        // never Toujours permettre for a shortcut or photos, whatever the server says
         XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "shortcut")), [.deny, .once])
-        XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "clipboard")), [.deny, .once])
+        XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "photos")), [.deny, .once])
+        // the clipboard is the person's own phone: one bot may be allowed to read it (#1138)
+        XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "clipboard")), [.deny, .always, .once])
         XCTAssertEqual(PhoneToolRules.decision(.always), .always)
     }
 
@@ -35,7 +37,8 @@ final class PhoneToolsTests: XCTestCase {
         XCTAssertFalse(PhoneToolRules.runsWithoutCard(granted, appActive: false, offered: [.status]))
         XCTAssertFalse(PhoneToolRules.runsWithoutCard(granted, appActive: true, offered: [.location]))
         XCTAssertFalse(PhoneToolRules.runsWithoutCard(try wire(tool: "status"), appActive: true, offered: [.status]))
-        XCTAssertFalse(PhoneToolRules.runsWithoutCard(try wire(tool: "clipboard", preApproved: true), appActive: true, offered: [.clipboard]))
+        XCTAssertTrue(PhoneToolRules.runsWithoutCard(try wire(tool: "clipboard", preApproved: true), appActive: true, offered: [.clipboard]))
+        XCTAssertFalse(PhoneToolRules.runsWithoutCard(try wire(tool: "shortcut", preApproved: true), appActive: true, offered: [.shortcut]))
         let expired = try wire(tool: "status", preApproved: true, expiresAt: 1_000)
         XCTAssertFalse(PhoneToolRules.runsWithoutCard(expired, appActive: true, offered: [.status]))
         XCTAssertTrue(PhoneToolRules.isExpired(expired))

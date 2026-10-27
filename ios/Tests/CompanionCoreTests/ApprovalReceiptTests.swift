@@ -63,8 +63,12 @@ final class ApprovalReceiptTests: XCTestCase {
             let base = #"{"title":"t","subtitle":"ls","options":["Allow"],"requestId":"r","tool":"Bash","held":"Note","heldCode":"CODE""#
             return try card(base.replacingOccurrences(of: "CODE", with: code) + extra + "}")
         }
-        XCTAssertTrue(ApprovalHeldNote.shows(try held("approval.held.customRule")))
-        for code in ["approval.held.native", "approval.held.gate", "approval.held.outbound", "approval.held.sandbox", "approval.held.safety", "approval.held.undelivered"] {
+        // #1221 (issue #426): a waiting ask shows why it was held, as on the
+        // desktop; only the provider's own note and the routine gate stay silent.
+        for code in ["approval.held.customRule", "approval.held.outbound", "approval.held.sandbox", "approval.held.safety", "approval.held.undelivered"] {
+            XCTAssertTrue(ApprovalHeldNote.shows(try held(code)), code)
+        }
+        for code in ["approval.held.native", "approval.held.gate"] {
             XCTAssertFalse(ApprovalHeldNote.shows(try held(code)), code)
         }
         // a receipt keeps the note it was held with, never the provider's own

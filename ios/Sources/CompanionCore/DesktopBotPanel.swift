@@ -466,6 +466,9 @@ public enum WebhookPublicURL {
         "issue.removed": "Issue removed",
         "comment.created": "Comment added",
         "cycle.completed": "Cycle completed",
+        "sms.received": "Text received",
+        "call.requested": "Request during a call",
+        "call.summary": "Call summary",
     ]
 
     public static func eventLabel(_ kind: String) -> String? {
