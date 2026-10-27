@@ -9,7 +9,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
 import { ReleaseNotesPrompt } from "../components/ReleaseNotesPrompt";
 import { UpdateBanner } from "../components/UpdateBanner";
-import { AchievementsModal } from "../components/achievements/AchievementsModal";
+import { AchievementsScreen } from "../components/achievements/AchievementsScreen";
 import { ACHIEVEMENTS } from "../../shared/achievements-catalog";
 import { resetAchievementsForTests } from "../lib/achievements";
 import { setLocale } from "../lib/i18n";
@@ -61,7 +61,7 @@ resetAchievementsForTests({
   } as never,
 });
 
-const store = { state: { config: null, selectedId: null }, dispatch: () => {} } as never;
+const store = { state: { config: null, selectedId: null, achievementsFocus: { category: "all", nonce: 0 } }, dispatch: () => {} } as never;
 let requested = false;
 
 function Gallery() {
@@ -88,7 +88,7 @@ function Gallery() {
           />
         )}
         {view === "shortcuts" && <KeyboardShortcutsModal open onClose={() => {}} />}
-        {view === "achievements" && <AchievementsModal />}
+        {view === "achievements" && <div className="flex h-screen"><AchievementsScreen /></div>}
       </div>
     </BotEditorStore>
   );

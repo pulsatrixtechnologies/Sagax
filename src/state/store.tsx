@@ -30,6 +30,7 @@ import type { MessageReaction } from "../../shared/reactions";
 import type { AutoModelRecord } from "../../shared/auto-model";
 import type { BusySendRequest, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ToolScope } from "../../shared/tool-scope";
+import type { AchievementCategory } from "../../shared/achievements";
 import type { ViewerCapabilities } from "../../shared/viewer-capabilities";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
@@ -1214,6 +1215,9 @@ export interface InstanceInfo {
   freeUpSpace?: boolean;
 }
 
+/** A category of the Achievements page: one of the catalog, All, or the shared settings. */
+export type AchievementsCategory = AchievementCategory | "all" | "settings";
+
 export type AppSettingsSection =
   /** Who is signed in, with Security keys and the vault under it (2026-10-26). */
   | "account"
@@ -1316,7 +1320,7 @@ export interface AppState {
   /** The person's sidebar hidden keys (src/lib/sidebar-hidden.ts): a
    * restored or fallback selection never lands on one of them. */
   sidebarHiddenKeys: ReadonlySet<string>;
-  activeView: "chat" | "team-map" | "routines" | "code" | "approvals" | "remote-sessions";
+  activeView: "chat" | "team-map" | "routines" | "code" | "approvals" | "remote-sessions" | "achievements";
   routines: Routine[];
   routineRuns: RoutineRun[];
   routinesLoadState: "loading" | "ready" | "error";
@@ -1366,9 +1370,11 @@ export interface AppState {
   activityOpen: boolean;
   appSettingsOpen: boolean;
   appSettingsSection: AppSettingsSection;
-  /** The achievements modal (src/components/achievements/AchievementsModal.tsx),
-   * its own window beside Settings: one or the other is open, never both. */
-  achievementsOpen: boolean;
+  /** Where the Achievements page opens (activeView "achievements",
+   * src/components/achievements/AchievementsScreen.tsx): the category a link
+   * names, "all" otherwise. `nonce` changes on every open, so a second link
+   * to another category re-selects it on a page already showing. */
+  achievementsFocus: { category: AchievementsCategory; nonce: number };
   /** The organisation bot catalogue ("Browse Bots"), opened from the sidebar
    * row (Settings > Experimental features), New bot and Connect apps. Use dispatch(openBotCatalog()) and
    * dispatch(closeBotCatalog()). */
@@ -1580,6 +1586,8 @@ export type Action =
   /** The Approvals screen (src/components/approvals/ApprovalsPage.tsx). */
   | { type: "showApprovals" }
   | { type: "showRemoteSessions" }
+  /** The Achievements page, on `category` when a link names one. */
+  | { type: "showAchievements"; category?: AchievementsCategory }
   | { type: "showChat" }
   | { type: "routinesHydrated"; routines: Routine[]; runs: RoutineRun[] }
   | { type: "routinesLoadFailed" }
@@ -1790,7 +1798,6 @@ export type Action =
   | { type: "focusMessageConsumed"; nonce: number }
   | { type: "unreadDividerDone"; threadId: string }
   | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; subPage?: string; phonePairing?: boolean }
-  | { type: "toggleAchievements"; open?: boolean }
   | { type: "openBotCatalog"; section?: "templates"; installUrl?: string }
   | { type: "closeBotCatalog" }
   | { type: "openPersonaEditor"; botId: string; section?: BotSettingsSection }
@@ -2352,7 +2359,6 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: false,
         activityOpen: false,
         appSettingsOpen: false,
-        achievementsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
       };
@@ -2368,7 +2374,6 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: false,
         activityOpen: false,
         appSettingsOpen: false,
-        achievementsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
       };
@@ -2381,7 +2386,6 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: false,
         activityOpen: false,
         appSettingsOpen: false,
-        achievementsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
       };
@@ -2394,9 +2398,26 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: false,
         activityOpen: false,
         appSettingsOpen: false,
-        achievementsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
+      };
+    case "showAchievements":
+      return {
+        ...state,
+        activeView: "achievements",
+        achievementsFocus: { category: action.category ?? "all", nonce: state.achievementsFocus.nonce + 1 },
+        settingsOpen: false,
+        personPanelId: null,
+        computerOpen: false,
+        inspectorOpen: false,
+        activityOpen: false,
+        appSettingsOpen: false,
+        appSettingsSubPage: null,
+        pluginsOpen: false,
+        triggersOpen: false,
+        newBotOpen: false,
+        shortcutsOpen: false,
+        personaEditor: null,
       };
     case "showTeamMap":
       return {
@@ -2407,7 +2428,6 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: false,
         activityOpen: false,
         appSettingsOpen: false,
-        achievementsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
       };
@@ -2972,7 +2992,7 @@ export function reducer(state: AppState, action: Action): AppState {
         pluginsBotId: !open ? null : action.page === "pages" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
         pluginsPage: open ? action.page ?? null : null,
         pluginsFocusApps: !open ? null : action.focusApps?.length ? action.focusApps : state.pluginsOpen ? state.pluginsFocusApps : null,
-        ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
+        ...(open ? { settingsOpen: false, appSettingsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
     case "toggleTriggers": {
@@ -2980,7 +3000,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         triggersOpen: open,
-        ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, pluginsOpen: false } : {}),
+        ...(open ? { settingsOpen: false, appSettingsOpen: false, newBotOpen: false, shortcutsOpen: false, pluginsOpen: false } : {}),
       };
     }
     case "botCreationPending":
@@ -2990,7 +3010,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         botWizard: { botId: action.botId ?? null, ...(action.redo ? { redo: true } : {}) },
-        newBotOpen: false, settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, pluginsOpen: false, shortcutsOpen: false, triggersOpen: false,
+        newBotOpen: false, settingsOpen: false, appSettingsOpen: false, pluginsOpen: false, shortcutsOpen: false, triggersOpen: false,
       };
     case "closeBotWizard":
       return { ...state, botWizard: null };
@@ -2998,7 +3018,7 @@ export function reducer(state: AppState, action: Action): AppState {
       const open = (action.open ?? !state.newBotOpen) && state.config?.viewer?.canCreateBots !== false;
       return {
         ...state, newBotOpen: open,
-        ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, pluginsOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
+        ...(open ? { settingsOpen: false, appSettingsOpen: false, pluginsOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
     case "notice":
@@ -3086,16 +3106,7 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: open ? false : state.inspectorOpen,
         pluginsOpen: open ? false : state.pluginsOpen,
         triggersOpen: open ? false : state.triggersOpen,
-        achievementsOpen: open ? false : state.achievementsOpen,
         personaEditor: open ? null : state.personaEditor,
-      };
-    }
-    case "toggleAchievements": {
-      const open = action.open ?? !state.achievementsOpen;
-      return {
-        ...state,
-        achievementsOpen: open,
-        ...(open ? { appSettingsOpen: false, appSettingsSubPage: null, settingsOpen: false, personPanelId: null, pluginsOpen: false, triggersOpen: false, newBotOpen: false, shortcutsOpen: false, personaEditor: null } : {}),
       };
     }
     case "openBotCatalog":
@@ -3112,7 +3123,6 @@ export function reducer(state: AppState, action: Action): AppState {
         personaEditor: { botId: action.botId, section: action.section ?? "overview" },
         appSettingsOpen: false,
         appSettingsSubPage: null,
-        achievementsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
         newBotOpen: false,
@@ -3572,6 +3582,7 @@ export const initialState: AppState = {
   routinesLoadState: "loading",
   routinesFocus: { nonce: 0 },
   codeFocus: { nonce: 0 },
+  achievementsFocus: { category: "all", nonce: 0 },
   webhooks: [],
   webhookAttempts: [],
   webhookIngress: null,
@@ -3593,7 +3604,6 @@ export const initialState: AppState = {
   activityOpen: false,
   appSettingsOpen: false,
   appSettingsSection: "account",
-  achievementsOpen: false,
   botCatalogOpen: false,
   botCatalogTarget: null,
   personaEditor: null,
@@ -4278,7 +4288,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const wrapped: React.Dispatch<Action> = (action) => {
       // Deferred folder creation may select its bot only while it is still
       // the latest navigation intent, even if the person went away and back.
-      if (["select", "newTask", "switchTask", "newGroupTask", "switchGroupTask", "showChat", "showRoutines", "showTeamMap", "showCode", "showApprovals", "showRemoteSessions"].includes(action.type)) selectionRevision++;
+      if (["select", "newTask", "switchTask", "newGroupTask", "switchGroupTask", "showChat", "showRoutines", "showTeamMap", "showCode", "showApprovals", "showRemoteSessions", "showAchievements"].includes(action.type)) selectionRevision++;
       // Pin before any await or optimistic state change, including legacy
       // callers such as keyboard shortcuts and voice controls.
       action = pinBotThreadAction(action, stateRef.current.bots);

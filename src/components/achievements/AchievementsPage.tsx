@@ -1,10 +1,10 @@
-// The Achievements modal's content pane (AchievementsModal.tsx): the
+// The Achievements page's content pane (AchievementsScreen.tsx): the
 // person's trophies for one category. Total points and level, the current
 // streak, recent unlocks (on All only), then every achievement of the
 // category (unlocked, locked with its progress, secret until found), each
 // with its points, its rarity (or the share of this server's people who have
 // it, when there are enough people to say so) and what it unlocks. The
-// modal's left column picks the category; unlocked or locked, reward and
+// page's left column picks the category; unlocked or locked, reward and
 // search narrow the list together. The settings that hide the points or the
 // toasts are their own entry in the left column (AchievementSettingsPage).
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";

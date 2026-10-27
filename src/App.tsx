@@ -20,7 +20,7 @@ import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { BotWizard } from "@/components/bot-wizard/BotWizard";
 import { PluginsPanel } from "@/components/PluginsPanel";
 import {
-  AchievementsModal, ActivityPanel, ApprovalsPage, BotCatalogModal, BotSettingsDialog, CodePage, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
+  AchievementsScreen, ActivityPanel, ApprovalsPage, BotCatalogModal, BotSettingsDialog, CodePage, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
   PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RemoteSessionsAdminPage, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 } from "@/components/lazy-screens";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
@@ -364,6 +364,7 @@ function Shell() {
   const mainIsCode = state.activeView === "code";
   const mainIsApprovals = state.activeView === "approvals";
   const mainIsRemoteSessions = state.activeView === "remote-sessions";
+  const mainIsAchievements = state.activeView === "achievements";
   const calendarFillsMain = calendarOpen;
 
   useEffect(() => {
@@ -405,7 +406,6 @@ function Shell() {
     state.inspectorOpen ||
     state.activityOpen ||
     state.appSettingsOpen ||
-    state.achievementsOpen ||
     state.personaEditor !== null ||
     state.pluginsOpen ||
     state.triggersOpen;
@@ -486,7 +486,7 @@ function Shell() {
       <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col" data-sidebar-follower="">
       {/* nothing answers this person on an organization server: say so above
           the conversation, with the way back to the first-run step */}
-      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && !mainIsRemoteSessions && <OrgEngineNotice />}
+      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && !mainIsRemoteSessions && !mainIsAchievements && <OrgEngineNotice />}
       {composeOpen && (group || bot) ? (
         group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (
@@ -499,6 +499,8 @@ function Shell() {
         <ApprovalsPage />
       ) : mainIsRemoteSessions && org ? (
         <RemoteSessionsAdminPage />
+      ) : mainIsAchievements ? (
+        <AchievementsScreen />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace
           primaryBotId={localVmWorkspaceBotId}
@@ -574,7 +576,6 @@ function Shell() {
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
       {!remoteClient && state.activityOpen && bot && <ActivityPanel key={`activity:${bot.id}`} bot={bot} />}
       {state.appSettingsOpen && <SettingsModal />}
-      {state.achievementsOpen && <AchievementsModal />}
       {!remoteClient && state.personaEditor && <PersonaEditorModal />}
       {!remoteClient && <ModelWindowHost />}
       {/* the bot creation wizard: its own screen, under Connect apps (opened from its Tools step) */}

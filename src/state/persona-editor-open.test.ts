@@ -25,7 +25,7 @@ describe("Persona editor state", () => {
     expect(opened.personaEditor?.section).toBe("model");
     expect(reducer(panel, { type: "openPersonaEditor", botId: "pepper" }).settingsOpen).toBe(true);
     expect(reducer(opened, { type: "toggleAppSettings", open: true }).personaEditor).toBeNull();
-    expect(reducer(opened, { type: "toggleAchievements", open: true }).personaEditor).toBeNull();
+    expect(reducer(opened, { type: "showAchievements" }).personaEditor).toBeNull();
   });
 
   it("reroutes a settings deep link that used to land on More to the persona editor", () => {

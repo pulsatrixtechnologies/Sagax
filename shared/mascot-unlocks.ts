@@ -6,7 +6,7 @@
 // character module, so it holds before the characters land (feat/mascot-shiba,
 // feat/mascot-grump, feat/mascot-ogre, feat/mascot-frog) and keeps holding
 // after. A character this build does not draw yet is still locked, still
-// listed as a reward, and shown greyed in the achievements modal.
+// listed as a reward, and shown greyed in the achievements page.
 //
 // Skins of a Mastery character come in three kinds:
 //   - its base skin (plain, or classic): free with the character;

@@ -29,8 +29,24 @@ describe("view hash", () => {
     expect(historyApi.replaceState).toHaveBeenCalledWith({ k: 1 }, "", "/app?x=1");
   });
 
+  it("opens Achievements on All or on the category the address names, and clears the hash", () => {
+    const cases: Array<[string, unknown]> = [
+      ["#achievements", { type: "showAchievements" }],
+      ["#achievements/mastery", { type: "showAchievements", category: "mastery" }],
+      ["#achievements/settings", { type: "showAchievements", category: "settings" }],
+      ["#achievements/nope", { type: "showAchievements" }],
+    ];
+    for (const [hash, action] of cases) {
+      const dispatch = vi.fn();
+      const historyApi = { state: null, replaceState: vi.fn() };
+      expect(followViewHash(dispatch, { hash, pathname: "/app", search: "" }, historyApi), hash).toBe(true);
+      expect(dispatch).toHaveBeenCalledWith(action);
+      expect(historyApi.replaceState).toHaveBeenCalledWith(null, "", "/app");
+    }
+  });
+
   it("leaves other hashes alone", () => {
-    for (const hash of ["#inbox", "#code=abc", "#thread=t&bot=b", ""]) {
+    for (const hash of ["#inbox", "#code=abc", "#achievementsx", "#thread=t&bot=b", ""]) {
       const dispatch = vi.fn();
       const historyApi = { state: null, replaceState: vi.fn() };
       expect(followViewHash(dispatch, { hash, pathname: "/pair", search: "" }, historyApi)).toBe(false);

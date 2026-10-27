@@ -89,7 +89,7 @@ function ScreenUnavailable() {
   );
 }
 
-export const AchievementsModal = lazyScreen("AchievementsModal", async () => (await import("./achievements/AchievementsModal")).AchievementsModal);
+export const AchievementsScreen = lazyScreen("AchievementsScreen", async () => (await import("./achievements/AchievementsScreen")).AchievementsScreen);
 export const BotCatalogModal = lazyScreen("BotCatalogModal", async () => (await import("./bot-catalog/BotCatalogModal")).BotCatalogModal);
 /** Browse Bots inside Connect apps' window (the same chunk as the modal). */
 export const BotCatalogPane = lazyScreen("BotCatalogPane", async () => (await import("./bot-catalog/BotCatalogModal")).BotCatalogPane);
@@ -112,7 +112,7 @@ export const TeamMapPage = lazyScreen("TeamMapPage", async () => (await import("
 export const TriggersPanel = lazyScreen("TriggersPanel", async () => (await import("./TriggersPanel")).TriggersPanel);
 
 const SCREENS = [
-  AchievementsModal, ActivityPanel, ApprovalsPage, BotCatalogModal, BotCatalogPane, BotSettingsDialog, CodePage, ComputerPanel, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
+  AchievementsScreen, ActivityPanel, ApprovalsPage, BotCatalogModal, BotCatalogPane, BotSettingsDialog, CodePage, ComputerPanel, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
   PersonaEditorModal, RemoteAgentSettingsPanel, RemoteDesktopPanel, RemoteSessionsAdminPage, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 ];
 
