@@ -26,7 +26,7 @@ export type PrimaryDecision = "allow" | "always_allow" | "always_allow_this" | "
 export const PRIMARY_DECISIONS: readonly PrimaryDecision[] = ["allow", "always_allow", "always_allow_this", "deny", "always_deny", "answer"];
 
 /** The turn a call comes from, once the gate said it is the person's own
- * request to a bot they own. */}
+ * request to a bot they own. */
 export type PrimaryTurn = {
   botId: string;
   botName: string;
@@ -69,7 +69,7 @@ export type PrimaryResult = { status: number; body: Record<string, unknown> };
 
 export type PrimaryApprovalsDeps = {
   /** The gate: a bot the person owns, in a turn they started. Settings stay
-   * with the Primary Bot (purpose "settings" on the same gate). */}
+   * with the Primary Bot (purpose "settings" on the same gate). */
   turn: (botId: string, threadId: string, generation: string) => PrimaryTurn | { status: number; code: string; error: string };
   /** The cards waiting on this person that they may answer. */
   pending: (turn: PrimaryTurn) => PrimaryCard[];
