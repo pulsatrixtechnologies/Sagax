@@ -166,3 +166,90 @@ curl -X POST https://<your-host>/hooks/<endpoint-id> \
   server starts, and its old URL (the secret used to be part of the path) stops
   working. Open the webhook in the editor and copy the token once ("This
   webhook now needs a bearer token; copy it here"), then update each sender.
+
+## Only when something changes (2026-10-26)
+
+A routine can watch something and start its run only when it changes. On
+each due time of its schedule, Sagax reads the watch **without any model
+turn**; when nothing changed, the run is recorded as `nothing_to_report`
+(no message, no notification, "Nothing to report" in Automations > Logs).
+Set it in the routine modal ("Only when something changes", with
+**Check now** to read it once), with `sagax_settings` (`routine.precheck`)
+or with `propose_routine` (`watch`). The person does it on their own bots;
+no admin is involved.
+
+What a watch reads (`shared/routine-watch.ts`, `server/routine-watch.ts`):
+
+- **Files**: a file or a folder of the bot's own folder, optionally with its
+  subfolders: names, sizes and modification times, never the contents.
+  A path never leaves the bot's folder (no `..`, no absolute path, no link
+  followed out). `.git` and `node_modules` are skipped.
+- **Command**: the output and exit code of a shell line run where the bot
+  works: on a solo server the bot's folder on this machine (the scrubbed
+  environment of plugin hooks, no Sagax token), its Local VM or its cloud
+  computer; on an organization server the person's server environment or
+  their computer (the place a run of the routine gets; never the Sagax
+  server itself).
+- **Tool**: the result of an MCP tool called with fixed arguments: one of
+  the bot's remote MCP servers (its own sign-in) or a Perspicax read tool,
+  in the name of the person the routine runs as (their routine delegation).
+  Only read tools are accepted, when saved and again at every check: a
+  Perspicax tool reviewed as read-only, else a name with a read verb and no
+  action, no draft, no send (`connectorCallReads`, `isOutboundTool`,
+  `connectorWriteKind`, `perspicaxWriteOnceTool`;
+  `server/routine-watch-tools.ts`). A personal stdio server and an engine's
+  own connectors are reachable only inside a turn.
+
+When the run starts:
+
+- `wakeOn: change` (default): the fingerprint changed, and the condition
+  holds when there is one. `wakeOn: match`: on every check where the
+  condition holds.
+- Conditions: `json_path` (`$.items.length gt 0`, `$.state eq "down"`;
+  for files `exists`, `count`, `bytes`), `contains` (or not) a text, a
+  command's `exit_code`.
+- `track` narrows the comparison of a JSON result to the list at `items`,
+  each item named by `key` (default `id`) and compared on `fields` only.
+  Without it a text output compares line by line; files compare entry by
+  entry.
+- `firstRun`: `baseline` (default) records the first reading without
+  running; `wake` runs once with the whole result.
+
+The woken run reads a note of what is new, changed and gone (at most 4 000
+characters), fenced as untrusted data like a trigger's event
+(`[UNTRUSTED ROUTINE WATCH DATA <boundary>]`, marker words defanged).
+
+Bounds: one check at most every 5 minutes per routine (whatever the
+schedule), 15 s per check in all, 256 KB of output read, 5 000 entries and
+8 levels walked, 500 items compared. The check runs **beside** the
+scheduler pass, never inside it: a slow watch never delays another routine.
+The last fingerprint and a small snapshot stay in
+`<data dir>/routine-watch/<routine>.json` (mode 0600, at most 64 KB: the
+excerpts go first, then the items). Deleting the routine deletes it; a new
+source starts a new baseline.
+
+A cloud computer that is asleep (the AKS server environments,
+`server/sandbox-k8s-wake.ts`, or a solo cloud computer) is **not woken** by
+a watch: with `whenAsleep: skip` (default) the check reads only while it is
+awake and says "asleep: not checked" otherwise; the routine is not pre-woken
+before its due times either. With `whenAsleep: wake` (the person's choice,
+with its cost written under it) the check starts it in the background and
+the next check reads it; the routine is pre-woken like any routine, which
+keeps a cluster running for a routine that checks often. A tool watch
+never touches the computer. No engine is pre-warmed for a watch: its turn
+starts cold when something changed.
+
+Cost, measured with `pnpm bench:routine-watch` (one full check: read,
+fingerprint, compare, write the state; Apple M3 Max, Node 26, 30 samples):
+
+| Case | Wall p50 | Wall p95 | CPU p50 |
+|---|---:|---:|---:|
+| Folder of 1 000 files | 27 ms | 62 ms | 19 ms |
+| Tree, 5 000 entries (bound), recursive | 168 ms | 346 ms | 101 ms |
+| One file | 0.8 ms | 2.7 ms | 0.8 ms |
+| Command `ls -la` on 1 000 files | 47 ms | 64 ms | 10 ms |
+| Command, 256 KB of output (bound) | 31 ms | 68 ms | 6 ms |
+| Mocked MCP tool, 500 items with `track` | 16 ms | 70 ms | 12 ms |
+
+Memory kept after the checks stays under 300 KB; no model turn is paid
+while nothing changes.

@@ -57,6 +57,7 @@ import { useRoutineScope } from "@/lib/use-routine-scope";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { ResultsDestination } from "@/components/routines/ResultsDestination";
 import { RunAsField, useRunAsOptions } from "@/components/routines/RunAsField";
+import { WatchFields, draftFromWatch, watchFromDraft } from "@/components/routines/WatchFields";
 import { RoutineAwayBanner } from "@/components/routines/RoutineAwayBanner";
 import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunNowButton";
 import { CronScheduleFields, CronSchedulePreview } from "@/components/routines/CronScheduleFields";
@@ -394,6 +395,12 @@ function EventEditor({
   const [continuity, setContinuity] = useState(Boolean(existingRoutine?.continuity));
   // Only when I'm here (server/routine-away.ts): off unless chosen.
   const [onlyWhenPresent, setOnlyWhenPresent] = useState(existingRoutine?.onlyWhenPresent === true);
+  // Only when something changes (2026-10-26, shared/routine-watch.ts): off
+  // unless chosen. A condition pre-check set elsewhere is left as it is.
+  const existingWatch = existingRoutine?.precheck?.kind === "watch" ? existingRoutine.precheck : undefined;
+  const [watchDraft, setWatchDraft] = useState(() => draftFromWatch(existingWatch));
+  const watchResult = watchFromDraft(watchDraft);
+  const watchBuilt = "watch" in watchResult ? watchResult : { watch: null, error: watchResult.error };
   // Post results in the conversation (2026-10-22): the routine's own
   // choice, else the installation default. Off keeps a run in the background.
   const [postResults, setPostResults] = useState(existingRoutine?.postResults ?? routinesInConversationEnabled(state.config));
@@ -453,6 +460,8 @@ function EventEditor({
   const selectedRoom = rooms.find((group) => group.id === groupId);
   const roomMembers = activeRoomMembers(selectedRoom, state.bots);
   const isRoomGoal = kind === "routine" && routineTarget === "room-goal";
+  // A watch checks on a repeating schedule, for one bot.
+  const watchAllowed = kind === "routine" && !isRoomGoal && recurrence !== "none";
   const at = fromLocalDateAndTime(date, startTime, existingRoutine || existingCall ? initialAt : undefined);
   const endAt = at + durationMinutes * 60_000;
   const selectedBots = botIds.flatMap((id) => bots.find((bot) => bot.id === id) ?? []);
@@ -594,6 +603,8 @@ function EventEditor({
           continuity: routineTarget === "bot" && recurrence !== "none" && continuity,
           onlyWhenPresent,
           postResults: routineTarget === "bot" ? postResults : undefined,
+          // Sent when on, or to remove a watch the routine had.
+          ...(watchAllowed && watchBuilt.watch ? { precheck: watchBuilt.watch } : existingWatch ? { precheck: null } : {}),
           attachments: routineTarget === "room-goal" ? [] : attachments as RoutineContextAttachment[],
           ...(routineTarget === "bot" ? { resultsThreadId } : {}),
           // Sent only when the person was changed in the dropdown.
@@ -642,7 +653,8 @@ function EventEditor({
     && !intervalDaysInvalid
     && !intervalWindowInvalid
     && !intervalEndInvalid
-    && !cron?.error,
+    && !cron?.error
+    && !("error" in watchBuilt && watchAllowed),
   );
   const canSwitchKind = !routinesOnly && !existingRoutine && !existingCall && !lockedBotId;
 
@@ -913,6 +925,9 @@ function EventEditor({
                     </div>}
                   </div>
                 </details>
+              )}
+              {watchAllowed && (
+                <WatchFields draft={watchDraft} onChange={setWatchDraft} botId={lockedBotId ?? botIds[0] ?? ""} routineId={existingRoutine?.id} runOn={runOn} />
               )}
             </div>
           </div>

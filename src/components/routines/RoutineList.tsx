@@ -109,6 +109,8 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                     {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className={`truncate rounded-md ${PILL_INFO} px-1.5 text-[11.5px] leading-[18px]`}>{routineSuspendedText(routine.suspended.reason)}</span>}
                   </span>
                 )}
+                {/* 2026-10-26: runs only when something changes (shared/routine-watch.ts). */}
+                {routine.precheck?.kind === "watch" && <span className="mt-0.5 flex"><span data-routine-watch className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routineWatch.badge")}</span></span>}
               </button>
               {toggle && !upcoming && <Switch
                 checked={routine.enabled}

@@ -8,6 +8,7 @@
  * app restart without asking the model to interpret the request again.
  */
 
+import type { RoutineWatchPrecheck } from "./routine-watch.ts";
 import type { RoutineCronSchedule } from "./routine-schedule.ts";
 import type { RoutineWindowTiming } from "./routine-timing.ts";
 
@@ -63,14 +64,18 @@ export interface RoutineRequestDefinition {
   continuity?: boolean;
   /** Skip by default, or keep at most one scheduled run waiting. */
   overlap?: "skip" | "queue";
+  /** 2026-10-26: run only when something changes (shared/routine-watch.ts). */
+  watch?: RoutineWatchPrecheck;
 }
 
 export type RoutineRequestChanges =
-  & Omit<Partial<RoutineRequestDefinition>, "schedule" | "timeoutMinutes">
+  & Omit<Partial<RoutineRequestDefinition>, "schedule" | "timeoutMinutes" | "watch">
   & {
     schedule?: RoutineRequestScheduleChanges;
     /** `null` removes an existing safety cap. */
     timeoutMinutes?: number | null;
+    /** `null` removes the watch: every due run starts its turn again. */
+    watch?: RoutineWatchPrecheck | null;
   };
 
 /** Another bot in the proposer's section that this proposal targets: a
@@ -100,6 +105,8 @@ export type RoutineRequestOperation =
  * a routine that has any is not offered an Undo for its update or delete. */
 export interface RoutineRequestSnapshot extends RoutineRequestDefinition {
   enabled: boolean;
+  /** The routine's pre-check as it stood (a watch or a condition). */
+  precheck?: unknown;
   target?: "room-goal";
   groupId?: string;
   resultsThreadId?: string;

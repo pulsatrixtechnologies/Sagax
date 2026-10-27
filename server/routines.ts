@@ -12,6 +12,7 @@ import { routineReportOutcome } from "./routine-report.ts";
 import { stopCause } from "./drivers/engine-errors.ts";
 import {
   evaluateRoutinePrecheck,
+  isWatchPrecheck,
   loadRoutinePrecheck,
   parseRoutinePrecheck,
   runRoutinePrecheck,
@@ -19,6 +20,8 @@ import {
   type RoutinePrecheckFacts,
   type RoutinePrecheckVerdict,
 } from "./routine-precheck.ts";
+import { ROUTINE_WATCH_LIMITS, type RoutineWatchPrecheck } from "../shared/routine-watch.ts";
+import { watchNoteBlock } from "./routine-watch.ts";
 import { awayDecision, awayReportDue, loadAwaySkips, recordAwaySkip, type AwayVerdict, type RoutineAwaySkips } from "./routine-away.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { RoutineRequestOperation } from "../shared/routine-request.ts";
@@ -318,6 +321,10 @@ export interface RoutineRun {
   error?: string;
   cost?: number | null;
   denials?: string[];
+  /** 2026-10-26: what the routine's watch saw change (bounded, data), read
+   * by the run's turn inside its fence (server/routine-watch.ts). Set when
+   * the watch woke the run, so a restart before the turn keeps the wake. */
+  watchNote?: string;
   /** 2026-10-11: what the organization memory (Perspicax's duplicate
    * detector) said before the run started, when it found similar work. */
   memoryHint?: RoutineMemoryHint;
@@ -554,6 +561,13 @@ export interface RoutineManagerOptions {
   /** Replaces the pure pre-check evaluator (tests, later wired checks). It
    * runs under ROUTINE_PRECHECK_TIMEOUT_MS; a throw or timeout fails the run. */
   evaluatePrecheck?: (precheck: RoutinePrecheck, facts: RoutinePrecheckFacts) => Promise<RoutinePrecheckVerdict> | RoutinePrecheckVerdict;
+  /** 2026-10-26: reads a watch pre-check (server/routine-watch.ts). Runs
+   * beside the scheduler pass, never awaited by it, under
+   * ROUTINE_WATCH_LIMITS.timeoutMs; a throw or timeout fails the run.
+   * Absent: a watch fails its run (nothing can read it). */
+  evaluateWatch?: (routine: Routine, watch: RoutineWatchPrecheck, run: RoutineRun) => Promise<RoutinePrecheckVerdict>;
+  /** A routine with a watch was deleted: its kept state goes too. */
+  forgetWatch?: (routineId: string) => void;
   memoryHint?: (run: RoutineRun, prompt: string) => Promise<{ hint: RoutineMemoryHint; note: string } | null>;
   /** 2026-10-15: a routine turned on or off from a conversation (a routine
    * card, its Undo, the person's switch while the conversation is open).
@@ -612,7 +626,7 @@ export interface RoutineChangeNote {
 }
 
 /** Slice 6: routine fields whose edit moves runAs to the editor. */
-const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments"] as const;
+const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments", "precheck"] as const;
 
 /** Fields whose edit is a definition change worth an "Updated routine" line
  * (everything the editor exposes but the bare enabled flip). */
@@ -829,8 +843,11 @@ function composeExecutionPrompt(
   attachments: readonly RoutineContextAttachment[] | undefined,
   carry?: RoutineContinuityCarry | null,
   retried?: RoutineRetryCause,
+  watchNote?: string,
 ): string {
   const parts = [prompt, retried ? retryNote(retried) : ""];
+  // What the watch saw change: data, fenced like a trigger's event.
+  if (watchNote) parts.push(watchNoteBlock(watchNote));
   if (carry) {
     parts.push(
       [
@@ -1196,6 +1213,13 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
   if (continuity && target === "room-goal") {
     throw new Error("Room goals do not carry continuity yet");
   }
+  if ((input.precheck as { kind?: unknown } | null | undefined)?.kind === "watch") {
+    const kind = (input.schedule as { type?: unknown } | undefined)?.type;
+    if (kind === "once" || kind === "webhook" || kind === "event" || isTriggerSchedule(input.schedule as RoutineSchedule)) {
+      throw new RoutineInputError("A watch checks on a repeating schedule: choose every N minutes, daily or a custom schedule");
+    }
+    if (target === "room-goal") throw new RoutineInputError("Room goals do not watch for changes yet");
+  }
   const precheck = input.precheck == null ? undefined : parseRoutinePrecheck(input.precheck);
   const autoPauseAfter = cleanRoutineAutoPauseAfter(input.autoPauseAfter);
   return {
@@ -1258,6 +1282,12 @@ export class RoutineManager {
   private readonly failureFacts = new Map<string, RoutineFailureFacts>();
   /** Scheduled runs whose pre-check woke them this process (server/routine-precheck.ts). */
   private readonly precheckPassed = new Set<string>();
+  /** 2026-10-26: run ids whose watch is being read beside the pass, and the
+   * answers waiting for the next pass (server/routine-watch.ts). */
+  private readonly watchInFlight = new Set<string>();
+  private readonly watchSettled = new Map<string, { ok: true; verdict: RoutinePrecheckVerdict } | { ok: false; error: string }>();
+  /** A watch answered while a pass was going: one more pass after it. */
+  private passAgain = false;
   /** routine id -> the occurrence (nextRunAt) already pre-woken. */
   private readonly prewoken = new Map<string, number>();
   /** routine id -> the task reserved and warmed for its next occurrence. */
@@ -1957,6 +1987,9 @@ export class RoutineManager {
     });
     for (const run of changedRuns) this.emitRun(run);
     this.options.emit?.({ kind: "routine.deleted", routineId: id });
+    if (removed.precheck?.kind === "watch") {
+      try { this.options.forgetWatch?.(id); } catch { /* best effort */ }
+    }
     this.noteRoutineChanged("deleted", removed, request);
     if (isTriggerSchedule(removed.schedule)) this.notifyTriggerRemoved(removed);
     return true;
@@ -2303,6 +2336,9 @@ export class RoutineManager {
       if (this.prewoken.get(routine.id) === dueAt) continue;
       // An occurrence skipped while the person is away wakes nothing.
       if (routine.onlyWhenPresent && awayDecision(routine, this.presenceOf(routine)) === "skip") continue;
+      // A watch wakes its computer only when the person chose it
+      // (whenAsleep: wake); by default it checks only while it is awake.
+      if (isWatchPrecheck(routine.precheck) && routine.precheck.whenAsleep !== "wake") continue;
       this.prewoken.set(routine.id, dueAt);
       try { prewake(cloneRoutine(routine), dueAt); } catch { /* best effort */ }
     }
@@ -2328,6 +2364,9 @@ export class RoutineManager {
       if (dueAt - now > PREWARM_ENGINE_LEAD_MS || dueAt < now) continue;
       if (this.reserved.get(routine.id)?.dueAt === dueAt) continue;
       if (routine.onlyWhenPresent && awayDecision(routine, this.presenceOf(routine)) === "skip") continue;
+      // A watch starts a turn only on a change: no engine warmed for every
+      // check that will most often read nothing new.
+      if (isWatchPrecheck(routine.precheck)) continue;
       // Already running or queued: its run has its thread, or will wait.
       if (this.runs.some((run) => run.routineId === routine.id && (run.status === "queued" || run.status === "running" || run.status === "waiting"))) continue;
       const pseudoRun = { routineId: routine.id, routineName: routine.name, botId: routine.botId, target: routine.target, runOn: routine.runOn ?? "maus",
@@ -2376,6 +2415,28 @@ export class RoutineManager {
    * rejection would take the server down. */
   private tickInBackground(): void {
     this.tick().catch((error) => console.error("routines: a scheduler pass failed", error));
+  }
+
+  /** Read a run's watch beside the pass: the pass goes on with the other
+   * runs, and the answer starts (or quiets) the run on the next pass. */
+  private startWatch(run: RoutineRun, routine: Routine, watch: RoutineWatchPrecheck): void {
+    if (this.watchInFlight.has(run.id)) return;
+    this.watchInFlight.add(run.id);
+    const evaluate = this.options.evaluateWatch;
+    const reading = evaluate
+      ? runRoutinePrecheck(() => evaluate(cloneRoutine(routine), structuredClone(watch), cloneRun(run)), ROUTINE_WATCH_LIMITS.timeoutMs)
+      : Promise.reject(new Error("Watching for changes is not available on this server"));
+    void reading.then(
+      (verdict) => ({ ok: true as const, verdict }),
+      (error: unknown) => ({ ok: false as const, error: `Pre-check failed, the run did not start: ${error instanceof Error ? error.message : String(error)}` }),
+    ).then((settled) => {
+      this.watchInFlight.delete(run.id);
+      const live = this.runs.find((candidate) => candidate.id === run.id);
+      if (!live || live.status !== "queued") return;
+      this.watchSettled.set(run.id, settled);
+      if (this.ticking) this.passAgain = true;
+      else this.tickInBackground();
+    });
   }
 
   async tick(): Promise<void> {
@@ -2588,8 +2649,21 @@ export class RoutineManager {
         // Only scheduled runs: a person's Run now and a webhook always wake.
         if (triggerSource === "schedule" && run.retryAt === undefined) {
           const routine = this.routines.find((candidate) => candidate.id === run.routineId);
-          if (routine?.precheck && !this.precheckPassed.has(run.id)) {
-            const verdict = await this.precheckRun(routine, routine.precheck);
+          if (routine?.precheck && !this.precheckPassed.has(run.id) && run.watchNote === undefined) {
+            let verdict: { ok: true; verdict: RoutinePrecheckVerdict } | { ok: false; error: string };
+            if (isWatchPrecheck(routine.precheck)) {
+              // A watch reads a file, a command or a tool: never inside the
+              // pass. Its answer comes back for a later pass.
+              const settled = this.watchSettled.get(run.id);
+              if (!settled) {
+                this.startWatch(run, routine, routine.precheck);
+                continue;
+              }
+              this.watchSettled.delete(run.id);
+              verdict = settled;
+            } else {
+              verdict = await this.precheckRun(routine, routine.precheck);
+            }
             // The run may have been cancelled while the pre-check ran.
             if (run.status !== "queued") continue;
             if (!verdict.ok) {
@@ -2601,6 +2675,10 @@ export class RoutineManager {
               continue;
             }
             this.precheckPassed.add(run.id);
+            if (verdict.verdict.note) {
+              run.watchNote = verdict.verdict.note.slice(0, ROUTINE_WATCH_LIMITS.maxNoteChars);
+              this.save();
+            }
           }
         }
         if (this.options.admit) {
@@ -2707,7 +2785,7 @@ export class RoutineManager {
             await this.options.startTurn(
               run.botId,
               task.threadId,
-              withMemoryNote(composeExecutionPrompt(prompt, run.attachments, this.continuityCarry(run), run.retried), memoryNote),
+              withMemoryNote(composeExecutionPrompt(prompt, run.attachments, this.continuityCarry(run), run.retried, run.watchNote), memoryNote),
               run.runOn ?? "maus",
               triggerSource,
               (message) => this.failThread(task.threadId, message),
@@ -2732,6 +2810,10 @@ export class RoutineManager {
     } finally {
       this.ticking = false;
       this.armDueWake();
+      if (this.passAgain) {
+        this.passAgain = false;
+        this.tickInBackground();
+      }
     }
   }
 
@@ -3342,7 +3424,7 @@ export class RoutineManager {
   private awaitingPrecheck(run: RoutineRun): boolean {
     if (run.status !== "queued" && run.status !== "cancelled") return false;
     if ((run.triggerSource ?? (run.manual ? "manual" : "schedule")) !== "schedule" || run.retryAt !== undefined) return false;
-    if (this.precheckPassed.has(run.id)) return false;
+    if (this.precheckPassed.has(run.id) || run.watchNote !== undefined) return false;
     return this.routines.some((routine) => routine.id === run.routineId && routine.precheck !== undefined);
   }
 
