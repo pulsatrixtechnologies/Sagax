@@ -200,3 +200,16 @@ describe("appendDecision / readDecisions", () => {
     );
   });
 });
+
+describe("the call a rule test replays (2026-10-26, Journal)", () => {
+  it("keeps what a rule reads, bounded, and drops it with the summary in a confidential thread", async () => {
+    const { decisionCall, metadataOnly, DECISION_CALL_INPUT_MAX } = await import("./decision-log.ts");
+    expect(decisionCall({ input: "{\"file_path\":\"/srv/demo/a.txt\"}", cwd: "/srv/demo" })).toEqual({ input: "{\"file_path\":\"/srv/demo/a.txt\"}", cwd: "/srv/demo" });
+    // nothing a rule could read: no call kept
+    expect(decisionCall({ cwd: "/srv/demo" })).toBeUndefined();
+    expect(decisionCall(null)).toBeUndefined();
+    // too long to keep: no arguments, the replay reads the summary instead
+    expect(decisionCall({ input: "x".repeat(DECISION_CALL_INPUT_MAX + 1), command: "ls" })).toEqual({ command: "ls" });
+    expect(metadataOnly({ threadId: "t", summary: "s", call: { input: "{}" } })).toEqual({ threadId: "t" });
+  });
+});

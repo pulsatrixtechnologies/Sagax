@@ -56,9 +56,17 @@ Admin scope only (gate + handler). Policy rows are `tool-grants:admin`, never de
 
 Per bot (2026-10-15, the bot editor's Permissions page; `server/routes/bot-runtime-settings.ts`): the bot's owner (with `bots.tools` on an organization server) or an admin.
 - `GET /api/bots/<id>/tool-grants`: that bot's rows only, with `state` and `mayGrantAdmin`.
-- `POST /api/bots/<id>/tool-grants` `{scope, expiresAt?}`: the subject is the bot in the path. An admin-tier grant is an admin's only (403 `admin_tier_admin_only`) and ends within 30 days.
+- `POST /api/bots/<id>/tool-grants` `{scope, expiresAt?}`: the subject is the bot in the path. 2026-10-26: the owner grants every tier, admin included, for a scope that stays in their own environment; a scope whose area reaches past it (`shared/grant-reach.ts` `ORG_REACH_AREAS`: org, members, people, teams, admin, config, engines, keys, workers, fleet, billing, usage, tool-grants...) stays an admin's (403 `org_scope_admin_only`). An admin-tier grant ends within 30 days. The GET answers `mayGrantAdmin: true` and, for a member, `adminOnlyAreas`.
 - `POST /api/bots/<id>/tool-grants/<grantId>/revoke`: only a grant of that bot (another bot's or a person's is 404). Both writes are audited as above.
-Their policy rows are `tool-grants:admin`, never default-enabled. A person's grants stay on the admin routes above, reviewed in Settings > General > Advanced ("People's tool access", shown only when some exist).
+Their policy rows are `tool-grants:admin`, never default-enabled. An admin still reviews every person's grants in Settings > General > Advanced ("People's tool access", shown only when some exist).
+
+A person's own grants (2026-10-26, `server/routes/my-tool-grants.ts`, Settings > "Mes accès aux outils"): the subject is always the signed-in person (`{kind: "user", id: <their principal>}`), the grant the guard checks as the speaker of their bots' turns.
+- `GET /api/me/tool-grants`: their rows with `state`, `mayGrantAdmin` and `adminOnlyAreas`.
+- `POST /api/me/tool-grants` `{scope, expiresAt?}`: no admin needed for a scope of their own environment, any tier; past it, 403 `org_scope_admin_only` (an admin keeps `/api/tool-grants`). An admin-tier grant ends within 30 days.
+- `POST /api/me/tool-grants/<id>/revoke`: their own grant only (anyone else's, or a bot's, is 404).
+No person (a local service, a bot's act session, an AI client): 403. Policy rows `tool-grants:admin`, never default-enabled, so no agent grants itself or its speaker anything. Every write goes to the admin activity log (category `rights`).
+
+The guard's mode stays `shadow` by default. The Journal (Approvals > Journal, `docs/approval-levels.md`) shows each agent tool call with the guard's verdict, including what enforcing would refuse.
 
 ## B2.1: guard before the card
 An `agents__<tool>` (or `mcp__agents__<tool>`) permission request is checked before the card or Full access answers it: the bot's grant, then the grant of the person its turn speaks for. Audit rows (`agents.<tool>`, admin activity): `card` (pre_card, with guard decision and `speakerPrincipalId`), then `declined`/`expired` when nobody approves; an approved call is audited by the call itself (now with `speakerPrincipalId`). Enforce: `refused` and denied without a card. Shadow (default): recorded only.

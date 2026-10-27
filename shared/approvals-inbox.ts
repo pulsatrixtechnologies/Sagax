@@ -100,7 +100,8 @@ export function inboxKey(threadId: string, requestId: string): string {
 
 export type InboxScopeFilter = "all" | InboxScope;
 export type InboxKindFilter = "permission" | "question";
-export type InboxTab = "pending" | "history";
+/** 2026-10-26: the Journal tab, beside the History (shared/action-journal.ts). */
+export type InboxTab = "pending" | "history" | "journal";
 
 export interface InboxFilters {
   tab: InboxTab;
@@ -163,7 +164,7 @@ export function inboxHash(filters: InboxFilters): string {
   if (filters.bot) params.set("bot", filters.bot);
   if (filters.kind) params.set("kind", filters.kind);
   if (filters.risky) params.set("risky", "1");
-  if (filters.tab === "history" && filters.q.trim()) params.set("q", filters.q.trim().slice(0, 200));
+  if (filters.tab !== "pending" && filters.q.trim()) params.set("q", filters.q.trim().slice(0, 200));
   const query = params.toString();
   return query ? `#approvals?${query}` : "#approvals";
 }
@@ -183,7 +184,7 @@ export function parseInboxHash(hash: string): InboxFilters {
   const kind = params.get("kind");
   const bot = params.get("bot") ?? "";
   return {
-    tab: params.get("tab") === "history" ? "history" : "pending",
+    tab: params.get("tab") === "history" ? "history" : params.get("tab") === "journal" ? "journal" : "pending",
     scope: scope && SCOPES.includes(scope) ? scope : "all",
     bot: /^[\w-]{1,80}$/.test(bot) ? bot : "",
     kind: kind === "permission" || kind === "question" ? kind : "",

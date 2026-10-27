@@ -133,7 +133,7 @@ import * as checkpoints from "./checkpoints.ts";
 import { commandReceipt } from "./commands.ts";
 import { buildTurnDigest, coverageForDriver, digestPromptLine, renderDigest, toolEvidence } from "./digest.ts";
 import { expireApprovalsAfterRestart } from "./approval-restart.ts";
-import { appendDecision, bindConfidentialDecisions, bindDecisionRetention, boundRetentionDays, decisionRetentionDays, decisionsCsv, flushDecisionLog, pruneDecisions, readDecisionRange, readDecisions, scrubThreadDecisions, withDecisionActor, type DecisionActor } from "./decision-log.ts";
+import { actorLabel, appendDecision, decisionCall, bindConfidentialDecisions, bindDecisionRetention, boundRetentionDays, decisionRetentionDays, decisionsCsv, flushDecisionLog, pruneDecisions, readDecisionRange, readDecisions, scrubThreadDecisions, withDecisionActor, type DecisionActor } from "./decision-log.ts";
 import { validateBotCwd, validateBotCwdFor } from "./bot-cwd.ts";
 import {
   ATTACHMENTS_DIR,
@@ -358,7 +358,7 @@ import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
 import { createCustomRulesModelReviewer } from "./custom-rules-model.ts";
-import { modelReviewCardEligible } from "../shared/custom-rules.ts";
+import { compileRule, modelReviewCardEligible, type CustomRule } from "../shared/custom-rules.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
@@ -715,7 +715,9 @@ import { TeamMemory, TEAM_MEMORY_KINDS, type TeamMemoryKind } from "./team-memor
 import { teamMemoryReviewRefusal } from "./team-memory-review.ts";
 import { teamMemoryCardSettled, teamMemoryLateAnswer } from "./team-memory-cards.ts";
 import { isTeamMemorySharing, storedTeamMemorySharing, teamMemoryCardReachesMember, teamMemorySharingOf } from "../shared/team-memory-sharing.ts";
-import { readBotActivity } from "./activity.ts";
+import { readBotActivity, readToolRuns } from "./activity.ts";
+import { buildJournal, journalWire, replayable, testRuleOnJournal, type JournalRow } from "./action-journal.ts";
+import { JOURNAL_SELF, RULE_TEST_DAYS, type JournalPayload, type RuleTestDraft, type RuleTestResult } from "../shared/action-journal.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
 import { OutboundRequestService } from "./outbound-requests.ts";
 import { DEFAULT_OUTBOUND_POLICY, isOutboundTool, normalizeOutboundPolicy } from "../shared/outbound.ts";
@@ -1060,6 +1062,7 @@ import { lockedLookChange, masteryDelegationFacts, masteryFrameFacts, masteryReq
 import { grandfatheredFromBots, migratedCrabFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createToolGrantRoutes } from "./routes/tool-grants.ts";
+import { createMyToolGrantRoutes } from "./routes/my-tool-grants.ts";
 import { createBotRuntimeSettingsRoutes } from "./routes/bot-runtime-settings.ts";
 import { createGroupBotPayerRoutes } from "./routes/group-bot-payer.ts";
 import {
@@ -15295,6 +15298,7 @@ bus.subscribe((event: RuntimeEvent) => {
         appendDecision(DATA_DIR, {
           threadId: event.threadId, requestId: event.requestId, botId: asker.id, botName: asker.name,
           tool: event.tool, summary: event.summary, decision: "auto-denied", source: "custom-rule-deny", rule: customDecision.rule.id,
+          ...(customCall ? { call: decisionCall(customCall) } : {}),
         });
         break;
       }
@@ -15468,6 +15472,7 @@ bus.subscribe((event: RuntimeEvent) => {
         appendDecision(DATA_DIR, {
           threadId: event.threadId, requestId: event.requestId, botId: asker.id, botName: asker.name,
           tool: event.tool, summary: event.summary, decision: "auto-denied", source: "owner-rule-deny", rule: owner.rule.id,
+          ...(customCall ? { call: decisionCall(customCall) } : {}),
         });
         break;
       }
@@ -15596,6 +15601,7 @@ bus.subscribe((event: RuntimeEvent) => {
             decision: "auto-approved",
             source: verdict.source,
             ...("rule" in verdict && typeof verdict.rule === "string" ? { rule: verdict.rule } : {}),
+            ...(customCall ? { call: decisionCall(customCall) } : {}),
           });
         })().catch(() => {
           // A receipt failure must neither crash the server nor manufacture
@@ -15714,6 +15720,11 @@ bus.subscribe((event: RuntimeEvent) => {
         summary: event.summary,
         decision: "card-shown",
         source: !permission ? "question" : verdict ? verdict.source : "no-grant",
+        // 2026-10-26 (Journal): the rule that kept the card, and what a
+        // rule test reads of the call
+        ...(verdict && "rule" in verdict && typeof verdict.rule === "string" ? { rule: verdict.rule }
+          : verdict?.source === "custom-rule-ask" && customDecision?.kind === "ask" ? { rule: customDecision.rule.id } : {}),
+        ...(customCall ? { call: decisionCall(customCall) } : {}),
         origin: !permission && event.origin === "output" ? "output" : undefined,
         unattended: unattended || undefined,
       });
@@ -29987,10 +29998,128 @@ function cloudAgentRecordVisible(record: CloudAgentRecord, viewerId: string | un
   return Boolean(bot && record.threadId) && botThreadReadable(bot!, record.threadId!, viewerId, "thread.read");
 }
 
+// 2026-10-26 (Journal, server/action-journal.ts): every action of the
+// person's own bots with what decided it, read from the decision log, the
+// tool runs of their threads and the agent tools' audit. Read only when the
+// tab is open; one read per person and window is kept a few seconds so the
+// screen's poll and a rule test cost one pass.
+const JOURNAL_CACHE_MS = 15_000;
+/** Threads whose tool runs are read, newest first: a bound on the work. */
+const JOURNAL_THREADS_MAX = 80;
+const journalCache = new Map<string, { at: number; rows: JournalRow[]; truncated: boolean }>();
+function journalRowsFor(viewer: InboxViewer, days: number): { rows: JournalRow[]; truncated: boolean } {
+  const cacheKey = `${viewer.principalId}|${days}`;
+  const cached = journalCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < JOURNAL_CACHE_MS) return cached;
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 24 * 60 * 60_000);
+  const owned = new Map<string, boolean>();
+  // the person's own bots and their own confidential threads, never anyone
+  // else's (no multi-person view here: that stays in Perspicax)
+  const owns = (botId: string | undefined, threadId: string) => {
+    if (!botId) return false;
+    const key = `${botId}|${threadId}`;
+    let mine = owned.get(key);
+    if (mine === undefined) {
+      const bot = store.bot(botId);
+      mine = Boolean(bot) && cardAnswererId(bot!, threadId || undefined, undefined) === viewer.principalId;
+      owned.set(key, mine);
+    }
+    return mine;
+  };
+  const threads: Array<{ botId: string; threadId: string; mtime: number }> = [];
+  for (const bot of store.bots) {
+    if (effectiveBotOwner(bot) !== viewer.principalId) continue;
+    for (const threadId of new Set([bot.threadId, ...store.tasks(bot.id).map((task) => task.threadId)])) {
+      if (!threadId) continue;
+      try {
+        const mtime = statSync(join(EVENTS_DIR, `${threadId}.ndjson`)).mtimeMs;
+        if (mtime >= from.getTime()) threads.push({ botId: bot.id, threadId, mtime });
+      } catch {
+        /* no events yet */
+      }
+    }
+  }
+  threads.sort((a, b) => b.mtime - a.mtime);
+  const fromIso = from.toISOString();
+  const runs = threads.slice(0, JOURNAL_THREADS_MAX).map(({ botId, threadId }) => ({
+    botId,
+    runs: readToolRuns(EVENTS_DIR, threadId).filter((run) => run.at >= fromIso),
+  }));
+  const own = customRules.rulesOf(viewer.principalId);
+  const built = buildJournal({
+    decisions: readDecisionRange(DATA_DIR, { from, to }),
+    agentAudit: readAdminActivityRange(DATA_DIR, { from, to }).filter((row) => row.action.startsWith("agents.")),
+    runs,
+    owns,
+    botName: (botId) => store.bot(botId)?.name,
+    rule: (source, ruleId, botId) => {
+      if (source.startsWith("custom-rule") || source === "auto-review") {
+        const rule = own.find((row) => row.id === ruleId);
+        return rule ? { text: rule.when, behavior: rule.behavior, ...(rule.org ? { org: true } : {}) } : undefined;
+      }
+      if (source.startsWith("owner-rule")) {
+        const rule = ownerApprovals.rulesOf(viewer.principalId, botId).find((row) => row.id === ruleId);
+        return rule ? { text: rule.description, behavior: rule.behavior } : undefined;
+      }
+      return undefined;
+    },
+    answeredBy: (actor) => {
+      if (!actor || actor.kind === "loopback") return JOURNAL_SELF;
+      if (actor.kind === "worker") return actorLabel(actor);
+      if (actor.userId === viewer.principalId) return JOURNAL_SELF;
+      return actor.userId ? inboxPersonName(actor.userId) : undefined;
+    },
+    deletedBot: "Deleted bot",
+  });
+  const kept = { at: Date.now(), ...built };
+  journalCache.set(cacheKey, kept);
+  if (journalCache.size > 200) journalCache.delete(journalCache.keys().next().value!);
+  return kept;
+}
+function inboxJournal(_auth: RequestAuth, viewer: InboxViewer, days: number): JournalPayload {
+  const { rows, truncated } = journalRowsFor(viewer, days);
+  return { entries: rows.map(journalWire), days, ...(truncated ? { truncated: true as const } : {}) };
+}
+/** "Tester cette règle": the draft among the person's rules (it replaces
+ * the saved rule it edits), each past action read by the real matcher. */
+function inboxTestRule(_auth: RequestAuth, viewer: InboxViewer, draft: RuleTestDraft): RuleTestResult | { error: string; status: number } {
+  if (draft.botId && effectiveBotOwner(store.bot(draft.botId) ?? {}) !== viewer.principalId) return { error: "no such bot of yours", status: 404 };
+  const saved = draft.id ? customRules.ownRulesOf(viewer.principalId).find((rule) => rule.id === draft.id) : undefined;
+  if (draft.id && !saved) return { error: "no such rule of yours", status: 404 };
+  const draftId = saved?.id ?? "rule-test-draft";
+  const rule: CustomRule = {
+    id: draftId, ownerId: viewer.principalId, botId: draft.botId, when: draft.when, behavior: draft.behavior,
+    riskScope: draft.riskScope, enabled: true, ...(saved?.binding ? { binding: saved.binding } : {}),
+    createdAt: saved?.createdAt ?? Date.now(), updatedAt: Date.now(),
+  };
+  const home = serverHome();
+  const unreadable = !compileRule(draft.when, home).recognized;
+  const { rows } = journalRowsFor(viewer, RULE_TEST_DAYS);
+  return testRuleOnJournal(rows, draftId, (row) => {
+    if (!replayable(row)) return null;
+    if (draft.botId && draft.botId !== row.botId) return null;
+    const rules = [...customRules.rulesOf(viewer.principalId, row.botId).filter((other) => other.id !== draftId), rule];
+    const call = row.call;
+    return reviewCustomRules(rules, {
+      tool: row.tool,
+      ...(call?.mcpTool ? { mcpTool: call.mcpTool } : {}),
+      ...(call?.input !== undefined ? { input: call.input } : {}),
+      ...(call?.command !== undefined ? { command: call.command } : {}),
+      ...(call?.cwd ? { cwd: call.cwd } : {}),
+      ...(call?.providerInstanceId ? { providerInstanceId: call.providerInstanceId } : {}),
+      ...(call?.paths?.length ? { paths: call.paths } : {}),
+      ...(row.summary ? { summary: row.summary } : {}),
+    }, row.botId, home).decision;
+  }, RULE_TEST_DAYS, unreadable);
+}
+
 ROUTES.push(createApprovalsInboxRoutes({
   viewer: inboxViewer,
   pending: inboxPending,
   history: inboxHistory,
+  journal: inboxJournal,
+  testRule: inboxTestRule,
   scopes: (_auth, viewer) => ({
     org: IDENTITY.kind === "perspicax",
     team: managedTeamIds(viewer.principalId).size > 0,
@@ -37041,6 +37170,19 @@ ROUTES.push(createToolGrantRoutes({
   audit: (action, auth, req, detail) => appendAdminAction(DATA_DIR, {
     category: "rights", action,
     ...(detail.subject && (detail.subject as { kind: string }).kind === "bot" ? { target: { kind: "bot", id: (detail.subject as { id: string }).id } } : {}),
+    after: detail, actor: adminActorFor(auth, req),
+  }),
+}));
+// 2026-10-26: a person's own tool access (the guard's "speaker" grants),
+// theirs to manage without an admin within their own environment
+// (server/routes/my-tool-grants.ts).
+ROUTES.push(createMyToolGrantRoutes({
+  person: (auth) => inboxViewer(auth)?.principalId ?? null,
+  isAdmin: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  grants: toolGrants,
+  audit: (action, auth, req, detail) => appendAdminAction(DATA_DIR, {
+    category: "rights", action,
+    target: { kind: "person", id: (detail.subject as { id: string }).id },
     after: detail, actor: adminActorFor(auth, req),
   }),
 }));

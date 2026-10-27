@@ -49,6 +49,7 @@ import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { ImportSettings } from "./settings/ImportSettings";
 import { SecurityKeySettings } from "./SecurityKeySettings";
 import { MyApprovalRules } from "./settings/MyApprovalRules";
+import { MyToolGrants } from "./settings/MyToolGrants";
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
@@ -802,6 +803,8 @@ export function SettingsModal() {
                 <SecurityKeySettings />
                 {/* every Always allow and Always deny the person saved, revocable (2026-10-19) */}
                 <MyApprovalRules />
+                {/* the person's own tool access, theirs without an admin (2026-10-26) */}
+                <MyToolGrants />
                 <CredentialsSettings />
                 <SettingsGroup title={t("settings.group.system")} groupId="system">
                   {!remoteActive && <ServerRow />}

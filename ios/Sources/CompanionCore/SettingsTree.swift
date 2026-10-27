@@ -21,7 +21,7 @@ public enum SettingsItem: String, CaseIterable, Hashable, Sendable {
     case helpCenter, sendFeedback, about
     case signOut
     // Bots
-    case autoReview, autoReviewRules, approvalRules, timeZoneAuto, timeZone, botComputer
+    case autoReview, autoReviewRules, approvalRules, actionJournal, timeZoneAuto, timeZone, botComputer
     case quickReplies, callVoice, experimental
     // Privacy and security
     case securityKeys, vault, presence, readReceipts
@@ -104,7 +104,7 @@ public enum SettingsTree {
             ]
         case .bots:
             all = [
-                [(.autoReview, c.connected), (.autoReviewRules, c.connected), (.approvalRules, c.connected)],
+                [(.autoReview, c.connected), (.autoReviewRules, c.connected), (.approvalRules, c.connected), (.actionJournal, c.connected)],
                 [(.timeZoneAuto, c.connected), (.timeZone, c.connected)],
                 [(.botComputer, c.connected && c.computer)],
                 [(.quickReplies, true), (.callVoice, true)],

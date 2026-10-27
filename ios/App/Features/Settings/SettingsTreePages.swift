@@ -135,6 +135,8 @@ struct SettingsTreeRow: View {
             }
         case .approvalRules:
             SettingsRow(title: "Approval rules", accessory: .chevron, height: 43.33, identifier: "settings-approval-grants") { navigator.push(.approvalGrants) }
+        case .actionJournal:
+            SettingsRow(title: "Journal of actions", accessory: .chevron, height: 43.33, identifier: "settings-action-journal") { navigator.push(.actionJournal) }
         case .timeZoneAuto:
             SettingsRow(
                 title: "Set Time Zone Automatically",

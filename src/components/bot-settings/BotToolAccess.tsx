@@ -1,8 +1,10 @@
 // Tool access of this bot (2026-10-15, formerly Settings > General >
 // Advanced with a bot picker): its grants beyond the default tool access,
-// with Grant and Revoke, for the bot that is open. Owner or admin; an
-// admin-tier grant stays an admin's and always ends within 30 days
-// (server/routes/bot-runtime-settings.ts, docs/tool-policy.md).
+// with Grant and Revoke, for the bot that is open. Owner or admin. 2026-10-26:
+// the owner grants every tier within their own environment; a scope that
+// reaches past it (adminOnlyAreas) stays an admin's. An admin-tier grant
+// always ends within 30 days (server/routes/bot-runtime-settings.ts,
+// docs/tool-policy.md).
 import { useCallback, useEffect, useState } from "react";
 
 import { t, activeLocale } from "@/lib/i18n";
@@ -21,14 +23,16 @@ const STATE_KEY = {
 export function BotToolAccess({ bot }: { bot: Bot }) {
   const [rows, setRows] = useState<ToolGrantRow[] | null>(null);
   const [mayGrantAdmin, setMayGrantAdmin] = useState(false);
+  const [adminOnlyAreas, setAdminOnlyAreas] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const body = await api<{ grants: ToolGrantRow[]; mayGrantAdmin?: boolean }>(botToolGrantsPath(bot.id));
+      const body = await api<{ grants: ToolGrantRow[]; mayGrantAdmin?: boolean; adminOnlyAreas?: string[] }>(botToolGrantsPath(bot.id));
       setRows(sortGrants(body.grants));
       setMayGrantAdmin(body.mayGrantAdmin === true);
+      setAdminOnlyAreas(Array.isArray(body.adminOnlyAreas) ? body.adminOnlyAreas : []);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("settings.toolAccess.error"));
@@ -56,6 +60,7 @@ export function BotToolAccess({ bot }: { bot: Bot }) {
           : (
             <div className="flex flex-col gap-3">
               <GrantForm botId={bot.id} mayGrantAdmin={mayGrantAdmin} onGranted={load} />
+              {adminOnlyAreas.length > 0 && <p className="text-[12px] text-ink-secondary" data-tool-access-org-areas="">{t("botPanel.toolAccess.orgAreas", { areas: adminOnlyAreas.join(", ") })}</p>}
               {error && <p className="text-[13px] text-danger">{error}</p>}
               {!rows.length ? <p className="text-[13px] text-ink-secondary">{t("botPanel.toolAccess.empty")}</p> : (
                 <ul className="-mx-3.5 flex flex-col divide-y divide-hairline/40 border-t border-hairline/40" aria-label={t("settings.toolAccess.title")}>

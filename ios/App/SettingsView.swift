@@ -14,7 +14,7 @@ import MessageUI
 
 /// The sheet's pages.
 enum SettingsRoute: String, Hashable {
-    case account, usage, plugins, rules, approvalGrants, timeZone, botComputer, pages, appearance, language, haptics, general, experimental, notifications, privacy, vault, securityKeys
+    case account, usage, plugins, rules, approvalGrants, actionJournal, timeZone, botComputer, pages, appearance, language, haptics, general, experimental, notifications, privacy, vault, securityKeys
     // The Grok Bot layout's pages (SettingsTree)
     case bots, privacySecurity, about
 }
@@ -253,6 +253,7 @@ struct SettingsRouteView: View {
         case .plugins: ConnectAppsPage()
         case .rules: AutoReviewRulesView()
         case .approvalGrants: ApprovalGrantsPage()
+        case .actionJournal: ActionJournalPage()
         case .timeZone: TimeZonePickerView()
         case .botComputer: BotComputerSettingsView()
         case .pages: PublishedPagesPage()

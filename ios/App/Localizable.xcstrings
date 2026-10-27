@@ -1,6 +1,528 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Journal of actions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Journal of actions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Journal des actions" } }
+      }
+    },
+    "Refused": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Refused" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Refusées" } }
+      }
+    },
+    "Not known": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not known" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Inconnu" } }
+      }
+    },
+    "It would allow it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "It would allow it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Elle l'autoriserait" } }
+      }
+    },
+    "It would ask first": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "It would ask first" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Elle demanderait d'abord" } }
+      }
+    },
+    "It would refuse it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "It would refuse it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Elle le refuserait" } }
+      }
+    },
+    "The card would stay": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The card would stay" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La carte resterait" } }
+      }
+    },
+    "Search the journal": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search the journal" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rechercher dans le journal" } }
+      }
+    },
+    "7 days": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "7 days" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "7 jours" } }
+      }
+    },
+    "30 days": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "30 days" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "30 jours" } }
+      }
+    },
+    "Nothing here yet.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nothing here yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rien ici pour l'instant." } }
+      }
+    },
+    "More actions happened than the list shows. Narrow the period or search.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "More actions happened than the list shows. Narrow the period or search." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Il y a eu plus d'actions que la liste n'en montre. Réduisez la période ou cherchez." } }
+      }
+    },
+    "Actions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Actions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actions" } }
+      }
+    },
+    "What your bots did, and what decided it: your rules, your organization's rules, a card you answered, or the bot's approval level.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What your bots did, and what decided it: your rules, your organization's rules, a card you answered, or the bot's approval level." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce que vos bots ont fait, et ce qui l'a décidé : vos règles, celles de votre organisation, une carte à laquelle vous avez répondu ou le niveau d'approbation du bot." } }
+      }
+    },
+    "Decided by: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Decided by: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Décidé par : %@" } }
+      }
+    },
+    "Test a rule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Test a rule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tester une règle" } }
+      }
+    },
+    "When the bot wants to:": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "When the bot wants to:" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quand le bot veut :" } }
+      }
+    },
+    "Replays a rule on what your bots really did, without saving it or changing anything.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Replays a rule on what your bots really did, without saving it or changing anything." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rejoue une règle sur ce que vos bots ont vraiment fait, sans l'enregistrer ni rien changer." } }
+      }
+    },
+    "Action": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Action" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Action" } }
+      }
+    },
+    "When": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "When" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quand" } }
+      }
+    },
+    "Nobody was at the keyboard.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nobody was at the keyboard." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Personne n'était au clavier." } }
+      }
+    },
+    "Summary": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Summary" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Résumé" } }
+      }
+    },
+    "Decided by": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Decided by" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Décidé par" } }
+      }
+    },
+    "A card was shown because: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A card was shown because: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une carte a été montrée parce que : %@" } }
+      }
+    },
+    "Tool guard": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tool guard" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Garde d'outils" } }
+      }
+    },
+    "Test on the last 7 days": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Test on the last 7 days" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tester sur les 7 derniers jours" } }
+      }
+    },
+    "This rule names nothing the matcher can read, so it would match nothing. Name an action (read, write, send...), a folder or a tool in backticks.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This rule names nothing the matcher can read, so it would match nothing. Name an action (read, write, send...), a folder or a tool in backticks." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette règle ne nomme rien que le détecteur puisse lire : elle ne toucherait rien. Nommez une action (lire, écrire, envoyer...), un dossier ou un outil entre accents graves." } }
+      }
+    },
+    "%lld of %lld actions touched": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld of %lld actions touched" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%1$lld actions touchées sur %2$lld" } }
+      }
+    },
+    "Would allow %lld, ask %lld, refuse %lld, card stays %lld, would change %lld": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Would allow %lld, ask %lld, refuse %lld, card stays %lld, would change %lld" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Autoriserait %1$lld, demanderait %2$lld, refuserait %3$lld, carte conservée %4$lld, changerait %5$lld" } }
+      }
+    },
+    "Would change": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Would change" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Changerait" } }
+      }
+    },
+    "It happened: %@. %@.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "It happened: %@. %@." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce qui s'est passé : %1$@. %2$@." } }
+      }
+    },
+    "The rule leaves these unticked: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The rule leaves these unticked: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La règle laisse ceci décoché : %@" } }
+      }
+    },
+    "Read from its one line: this action's details were not kept.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read from its one line: this action's details were not kept." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lu à partir de sa ligne : les détails de cette action n'ont pas été conservés." } }
+      }
+    },
+    "Read": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lecture" } }
+      }
+    },
+    "Write": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Write" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écriture" } }
+      }
+    },
+    "No access granted yet.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No access granted yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun accès accordé pour l'instant." } }
+      }
+    },
+    "Area, e.g. files": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Area, e.g. files" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Zone, p. ex. files" } }
+      }
+    },
+    "Days (optional)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Days (optional)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Jours (facultatif)" } }
+      }
+    },
+    "Grant access": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Grant access" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Accorder l'accès" } }
+      }
+    },
+    "These areas stay with an administrator: %@.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "These areas stay with an administrator: %@." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ces zones restent à un administrateur : %@." } }
+      }
+    },
+    "My tool access": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "My tool access" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mes accès aux outils" } }
+      }
+    },
+    "What your own bots may use beyond the defaults. You grant and revoke it yourself.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What your own bots may use beyond the defaults. You grant and revoke it yourself." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce que vos propres bots peuvent utiliser en plus des valeurs par défaut. Vous l'accordez et le révoquez vous-même." } }
+      }
+    },
+    "Active until %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Active until %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actif jusqu'au %@" } }
+      }
+    },
+    "Active, no end": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Active, no end" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actif, sans fin" } }
+      }
+    },
+    "Revoke": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Revoke" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Révoquer" } }
+      }
+    },
+    "Name the area with letters, digits and dashes.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Name the area with letters, digits and dashes." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nommez la zone avec des lettres, des chiffres et des tirets." } }
+      }
+    },
+    "Days: a whole number from 1 to 365.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Days: a whole number from 1 to 365." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Jours : un nombre entier de 1 à 365." } }
+      }
+    },
+    "An admin-tier access needs an end, 30 days at most.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "An admin-tier access needs an end, 30 days at most." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un accès de niveau admin doit avoir une fin, 30 jours au plus." } }
+      }
+    },
+    "Your rule: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your rule: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Votre règle : %@" } }
+      }
+    },
+    "One of your rules": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "One of your rules" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une de vos règles" } }
+      }
+    },
+    "Organization rule: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Organization rule: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Règle de l'organisation : %@" } }
+      }
+    },
+    "An organization rule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "An organization rule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une règle de l'organisation" } }
+      }
+    },
+    "Always allow: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Always allow: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toujours permettre : %@" } }
+      }
+    },
+    "An Always allow rule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "An Always allow rule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une règle Toujours permettre" } }
+      }
+    },
+    "Admin rule: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Admin rule: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Règle d'un administrateur : %@" } }
+      }
+    },
+    "An admin rule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "An admin rule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une règle d'un administrateur" } }
+      }
+    },
+    "The bot's approval level": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The bot's approval level" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le niveau d'approbation du bot" } }
+      }
+    },
+    "A tool access grant": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A tool access grant" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un accès aux outils accordé" } }
+      }
+    },
+    "Allowed by default": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Allowed by default" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Permis par défaut" } }
+      }
+    },
+    "Automatic review, rule: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Automatic review, rule: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Examen automatique, règle : %@" } }
+      }
+    },
+    "Automatic review": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Automatic review" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Examen automatique" } }
+      }
+    },
+    "A safety hold": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A safety hold" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une retenue de sécurité" } }
+      }
+    },
+    "Sagax's own allowance": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sagax's own allowance" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une permission propre à Sagax" } }
+      }
+    },
+    "You answered": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You answered" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous avez répondu" } }
+      }
+    },
+    "Nobody answered in time": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nobody answered in time" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Personne n'a répondu à temps" } }
+      }
+    },
+    "Something broke": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Something broke" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quelque chose a échoué" } }
+      }
+    },
+    "Run without a card at this level": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Run without a card at this level" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Exécuté sans carte à ce niveau" } }
+      }
+    },
+    "Read a file": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read a file" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lire un fichier" } }
+      }
+    },
+    "Change a file": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Change a file" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Modifier un fichier" } }
+      }
+    },
+    "Use the web": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Use the web" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Utiliser le web" } }
+      }
+    },
+    "Start a helper": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Start a helper" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lancer un assistant" } }
+      }
+    },
+    "An action": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "An action" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une action" } }
+      }
+    },
+    "The guard would have refused (observation mode)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The guard would have refused (observation mode)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La garde aurait refusé (mode observation)" } }
+      }
+    },
+    "The guard refused": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The guard refused" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La garde a refusé" } }
+      }
+    },
+    "The guard is off": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The guard is off" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La garde est désactivée" } }
+      }
+    },
+    "The guard allowed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The guard allowed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La garde a permis" } }
+      }
+    },
+    "deletions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "deletions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "suppressions" } }
+      }
+    },
+    "irreversible actions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "irreversible actions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "actions irréversibles" } }
+      }
+    },
+    "money": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "money" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "argent" } }
+      }
+    },
+    "external sends": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "external sends" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "envois externes" } }
+      }
+    },
+    "Ask first": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ask first" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demander d'abord" } }
+      }
+    },
+    "Refuse": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Refuse" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Refuser" } }
+      }
+    },
+    "All my bots": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "All my bots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tous mes bots" } }
+      }
+    },
+    "This rule may also approve:": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This rule may also approve:" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette règle peut aussi approuver :" } }
+      }
+    },
+    "It should:": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "It should:" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Elle doit :" } }
+      }
+    },
+    "Applies to": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Applies to" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "S'applique à" } }
+      }
+    },
+    "e.g. read files in ~/Documents": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "e.g. read files in ~/Documents" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "p. ex. lire des fichiers dans ~/Documents" } }
+      }
+    },
     "Personal account": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Personal account" } },

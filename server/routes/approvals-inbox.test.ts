@@ -24,12 +24,16 @@ let pending: InboxApproval[] = [];
 let person: string | null = "pr_ada";
 let answered: Array<{ requestId: string; decision: string; rule?: string }> = [];
 let historyCalls = 0;
+let journalDaysAsked: number[] = [];
+let testedDrafts: unknown[] = [];
 
 beforeEach(async () => {
   pending = [entry("r1"), entry("r2"), entry("q1", { kind: "question", bulk: "question" }), entry("k1", { needsKey: true, bulk: "needs-key" })];
   person = "pr_ada";
   answered = [];
   historyCalls = 0;
+  journalDaysAsked = [];
+  testedDrafts = [];
   const deps: ApprovalsInboxDeps = {
     viewer: () => (person ? { principalId: person } : null),
     pending: () => pending,
@@ -42,6 +46,14 @@ beforeEach(async () => {
       answered.push({ requestId: item.requestId, decision, ...(rule ? { rule } : {}) });
       pending = pending.filter((row) => row.requestId !== item.requestId);
       return { ok: true };
+    },
+    journal: (_auth, viewer, days) => {
+      journalDaysAsked.push(days);
+      return { days, entries: [{ key: "r1", at: "2026-10-26T12:00:00.000Z", botId: "b1", botName: viewer.principalId === "pr_ada" ? "Nova" : "?", threadId: "t1", tool: "Bash", outcome: "allowed", decider: "full-access" }] };
+    },
+    testRule: (_auth, _viewer, draft) => {
+      testedDrafts.push(draft);
+      return { days: 7, scanned: 1, matched: 0, counts: { allowed: 0, asked: 0, denied: 0, cardStays: 0, changed: 0 }, hits: [] };
     },
   };
   const handler = createApprovalsInboxRoutes(deps);
@@ -160,5 +172,31 @@ describe("inboxSpecialCard", () => {
     expect(inboxSpecialCard({ ...(plain as object), outboundRequest: { tool: "send_email", app: null } } as never)).toBe(true);
     expect(inboxSpecialCard({ ...(plain as object), adminApproval: true } as never)).toBe(true);
     expect(inboxSpecialCard({ ...(plain as object), teamMemoryRequest: { section: "s", entryId: "e" } } as never)).toBe(true);
+  });
+});
+
+describe("the Journal and Tester cette règle (2026-10-26)", () => {
+  it("reads the person's journal over 7 or 30 days, 7 by default", async () => {
+    expect((await get("/api/approvals/journal")).body.days).toBe(7);
+    expect((await get("/api/approvals/journal?days=30")).body.days).toBe(30);
+    expect((await get("/api/approvals/journal?days=999")).body.days).toBe(7);
+    expect(journalDaysAsked).toEqual([7, 30, 7]);
+    person = null;
+    expect((await get("/api/approvals/journal")).status).toBe(403);
+  });
+
+  it("tests a draft rule, saving nothing, and refuses a malformed one", async () => {
+    const test = async (body: unknown) => {
+      const res = await fetch(`${base}/api/approvals/journal/test`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      return { status: res.status, body: await res.json() as any };
+    };
+    const ok = await test({ rule: { when: "supprimer des fichiers", behavior: "deny", botId: null, riskScope: [] } });
+    expect(ok.status).toBe(200);
+    expect(testedDrafts).toEqual([{ when: "supprimer des fichiers", behavior: "deny", botId: null, riskScope: [] }]);
+    expect((await test({ rule: { when: "", behavior: "deny" } })).status).toBe(400);
+    expect((await test({ rule: { when: "x", behavior: "maybe" } })).status).toBe(400);
+    expect((await test({ rule: { when: "x", behavior: "allow", riskScope: ["everything"] } })).status).toBe(400);
+    expect((await test({ rule: { when: "x", behavior: "allow", botId: "../etc" } })).status).toBe(400);
+    expect(testedDrafts).toHaveLength(1);
   });
 });

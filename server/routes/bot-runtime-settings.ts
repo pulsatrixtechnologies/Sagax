@@ -17,9 +17,13 @@
 //
 // Who: the bot's owner or an admin (`mayManage`, the server's gate: a member
 // owner also needs the permission of their profiles, bots.behaviour for the
-// settings and bots.tools for the grants). An admin-tier grant stays an
-// admin's (`isAdmin`) and always ends within 30 days (docs/tool-policy.md §6);
-// revoking only narrows, so the owner may revoke any of the bot's grants.
+// settings and bots.tools for the grants). 2026-10-26: an admin-tier grant
+// is the owner's too when its scope stays in their own environment
+// (shared/grant-reach.ts); a scope that reaches other people, the whole
+// organization, the shared server or its billing stays an admin's
+// (`isAdmin`, 403 `org_scope_admin_only`). An admin-tier grant always ends
+// within 30 days (docs/tool-policy.md §6); revoking only narrows, so the
+// owner may revoke any of the bot's grants.
 // Every change is one row in the admin activity log. Member scope:
 // request-auth.ts CLIENT_ALLOW lists these paths; the handler decides.
 import type { IncomingMessage } from "node:http";
@@ -35,6 +39,7 @@ import {
   type GlobalRuntimeSettings,
 } from "../bot-runtime-settings.ts";
 import { PASS, type RouteHandler } from "./table.ts";
+import { grantStaysInOwnEnvironment, ORG_REACH_AREAS } from "../../shared/grant-reach.ts";
 import type { TurnPayerMode } from "../../shared/turn-payer.ts";
 
 const SETTINGS = /^\/api\/bots\/([\w-]+)\/runtime-settings$/;
@@ -52,7 +57,7 @@ export interface BotRuntimeSettingsRouteDeps {
   global(): GlobalRuntimeSettings;
   /** The bot's owner or an admin, with the permission of `area`. */
   mayManage(auth: RequestAuth, bot: RuntimeBot, area: "behaviour" | "tools"): boolean;
-  /** An admin (admin-tier grants stay theirs). */
+  /** An admin (grants whose scope reaches past the person stay theirs). */
   isAdmin(auth: RequestAuth): boolean;
   /** A backup model the server can run: the checked selection, or why not. */
   checkBackup(selection: NonNullable<BotAutomaticRecovery["backup"]>): { ok: true; selection: NonNullable<BotAutomaticRecovery["backup"]> } | { ok: false; status: number; error: string; code?: string };
@@ -138,7 +143,9 @@ export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps
       const rows = deps.grants.all()
         .filter((g) => g.subject.kind === "bot" && g.subject.id === bot.id)
         .map((g) => ({ ...g, state: g.revokedAt !== undefined ? "revoked" : g.expiresAt !== undefined && g.expiresAt <= at ? "expired" : "active" }));
-      return json(res, 200, { grants: rows, mayGrantAdmin: deps.isAdmin(auth) });
+      const admin = deps.isAdmin(auth);
+      // the owner grants the admin tier too, within their own environment
+      return json(res, 200, { grants: rows, mayGrantAdmin: true, ...(admin ? {} : { adminOnlyAreas: ORG_REACH_AREAS }) });
     }
     if (grants && method === "POST") {
       const parsed = grantBody.safeParse(await readBody(req));
@@ -146,7 +153,9 @@ export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps
       const { scope, expiresAt } = parsed.data;
       if (expiresAt !== undefined && expiresAt <= now()) return json(res, 400, { error: "expiresAt is in the past" });
       if (scope.endsWith(":admin")) {
-        if (!deps.isAdmin(auth)) return json(res, 403, { error: "only an admin can grant admin access", code: "admin_tier_admin_only" });
+        if (!deps.isAdmin(auth) && !grantStaysInOwnEnvironment(scope)) {
+          return json(res, 403, { error: "this access reaches past your own environment: only an admin can grant it", code: "org_scope_admin_only" });
+        }
         if (expiresAt === undefined || expiresAt - now() > MAX_ADMIN_DAYS * 86_400_000) {
           return json(res, 400, { error: `an admin grant needs an expiry within ${MAX_ADMIN_DAYS} days`, code: "admin_expiry" });
         }
