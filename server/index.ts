@@ -1209,7 +1209,7 @@ import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type P
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentSensitiveRead, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
-import { planPermissionModeMigration } from "./approval-level-migration.ts";
+import { runPermissionModeMigration } from "./approval-level-migration.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
@@ -6727,33 +6727,6 @@ for (const pending of startupCatalogs) {
 }
 store.seedIfEmpty();
 hostedModels?.reconcile(store);
-// 2026-10-26 (one approval level): the owner's permission mode was a
-// second setting beside the approval level. A mode someone chose is carried
-// into the level once (approval-level-migration.ts), then dropped.
-try {
-  const legacyModes = ownerApprovals.legacyModes();
-  if (Object.keys(legacyModes).length) {
-    const patches = planPermissionModeMigration(legacyModes, store.bots.map((bot) => ({
-      id: bot.id,
-      ownerId: effectiveBotOwner(bot),
-      level: approvalModeFor(bot),
-      fullSupported: supportsApprovalMode(bot.modelSelection, "full"),
-      tasks: store.tasks(bot.id).map((task) => ({
-        threadId: task.threadId,
-        level: isApprovalMode(task.approvalMode) ? task.approvalMode : undefined,
-        fullSupported: supportsApprovalMode(task.modelSelection ?? bot.modelSelection, "full"),
-      })),
-    })));
-    for (const patch of patches) {
-      if (patch.level) store.patchBot(patch.botId, { approvalMode: patch.level, autoApprove: false });
-      for (const task of patch.tasks) if (task.level) store.patchTask(patch.botId, task.threadId, { approvalMode: task.level, autoApprove: false });
-      console.info(`[approval] permission mode carried into the approval level of one bot (${patch.level ?? "conversations only"})`);
-    }
-    ownerApprovals.dropLegacyModes();
-  }
-} catch (error) {
-  console.warn(`[approval] carrying permission modes into approval levels failed: ${error instanceof Error ? error.message : String(error)}`);
-}
 // 2026-10-11, once per data directory: Full access on an organization
 // server is off until an admin turns it on. An organization that never saved
 // the setting and already runs bots on Full keeps it, as an explicit true.
@@ -6825,6 +6798,34 @@ principals.onDisabledChanged((person, disabled) => orgAudit({
   actor: { kind: "worker" },
 }));
 principals.localOperator(cfg.profile?.email);
+// 2026-10-26 (one approval level): the owner's permission mode was a
+// second setting beside the approval level. A mode someone chose is carried
+// into the level once (approval-level-migration.ts), then dropped. It runs
+// here, after the principal registry exists: a bot with no recorded owner
+// resolves to the local operator (effectiveBotOwner), and run earlier it
+// read `principals` before it was built and failed at every start.
+try {
+  runPermissionModeMigration({
+    legacyModes: ownerApprovals.legacyModes(),
+    bots: () => store.bots.map((bot) => ({
+      id: bot.id,
+      ownerId: effectiveBotOwner(bot),
+      level: approvalModeFor(bot),
+      fullSupported: supportsApprovalMode(bot.modelSelection, "full"),
+      tasks: (store.tasks(bot.id) ?? []).map((task) => ({
+        threadId: task.threadId,
+        level: isApprovalMode(task.approvalMode) ? task.approvalMode : undefined,
+        fullSupported: supportsApprovalMode(task.modelSelection ?? bot.modelSelection, "full"),
+      })),
+    })),
+    patchBot: (botId, level) => store.patchBot(botId, { approvalMode: level, autoApprove: false }),
+    patchTask: (botId, threadId, level) => store.patchTask(botId, threadId, { approvalMode: level, autoApprove: false }),
+    dropLegacyModes: () => ownerApprovals.dropLegacyModes(),
+    log: (message) => console.info(message),
+  });
+} catch (error) {
+  console.warn(`[approval] carrying permission modes into approval levels failed: ${error instanceof Error ? error.message : String(error)}`);
+}
 // One Primary Bot per person: the store learns who owns each bot (an
 // unrecorded owner is the operator), then the one-time migration from one
 // Chief of Staff per section runs (idempotent, so at every boot).

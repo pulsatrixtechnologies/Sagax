@@ -53,7 +53,11 @@ export function planPermissionModeMigration(
   const patches: MigrationPatch[] = [];
   for (const [botId, row] of Object.entries(modes)) {
     const bot = bots.find((candidate) => candidate.id === botId);
-    if (!bot || bot.ownerId.trim().toLowerCase() !== row.ownerId.trim().toLowerCase()) continue;
+    if (!bot) continue;
+    // A row without an owner is from before owners were recorded: the bot's
+    // current owner is the one who chose it.
+    const rowOwner = typeof row.ownerId === "string" ? row.ownerId.trim().toLowerCase() : "";
+    if (rowOwner && (bot.ownerId ?? "").trim().toLowerCase() !== rowOwner) continue;
     const level = migratedApprovalLevel(bot.level, row.mode, bot.fullSupported);
     const tasks = bot.tasks.flatMap((task) => {
       if (task.level === undefined) return [];
@@ -63,4 +67,26 @@ export function planPermissionModeMigration(
     if (level || tasks.length) patches.push({ botId, ...(level ? { level } : {}), tasks });
   }
   return patches;
+}
+
+export interface PermissionModeMigrationDeps {
+  legacyModes: Readonly<Record<string, { mode: LegacyPermissionMode; ownerId: string }>>;
+  /** Read only when a mode is stored, so a fresh install reads nothing. */
+  bots: () => ReadonlyArray<MigrationBot>;
+  patchBot: (botId: string, level: ApprovalMode) => void;
+  patchTask: (botId: string, threadId: string, level: ApprovalMode) => void;
+  dropLegacyModes: () => void;
+  log: (message: string) => void;
+}
+
+/** Carries every stored mode into its approval level, then drops the modes.
+ * Throws before dropping when a patch fails, so a retry loses nothing. */
+export function runPermissionModeMigration(deps: PermissionModeMigrationDeps): void {
+  if (!Object.keys(deps.legacyModes).length) return;
+  for (const patch of planPermissionModeMigration(deps.legacyModes, deps.bots())) {
+    if (patch.level) deps.patchBot(patch.botId, patch.level);
+    for (const task of patch.tasks) deps.patchTask(patch.botId, task.threadId, task.level);
+    deps.log(`[approval] permission mode carried into the approval level of one bot (${patch.level ?? "conversations only"})`);
+  }
+  deps.dropLegacyModes();
 }
