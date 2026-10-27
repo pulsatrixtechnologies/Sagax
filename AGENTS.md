@@ -516,6 +516,17 @@ the guided first run (#1035). Desktop `src/components/bot-wizard/`, iOS
 - Mode switch, skip and resume never lose anything (one field of the draft).
   Entries: the creation menu (ComposeToPicker, iOS "+"), New bot's Wizard
   button, the "Redo the wizard" entry of the iOS bot "..." menu (resumes an open draft).
+- 2026-10-27 (v2): New bot (empty state, palette, routines, Hibou 98) opens
+  this screen ("Create a bot") directly. New bot's old dialog stays one
+  click away under "Other ways to start": Start from a template (the full
+  form, `toggleNewBot`), Browse templates, Import (Grok Bot or Claude Code,
+  zip), Quick create (server defaults). Guided never needs a bot the person
+  lacks: the guide is their Bot designer (found by name, either language),
+  else the Primary Bot, else another bot; with none, choosing Guided creates
+  the Bot designer (`createDesignerBot`, POST /api/bots with member fields
+  only), which leads. With no engine ready, the guided card says so and opens
+  Settings > Engines. The wizard's bot starts with no MCP server when the
+  person may set the field.
 - Captures: `node --experimental-strip-types scripts/testing/capture-bot-wizard.ts <outDir> [skin] [lang]`
   (headless; `SAGAX_CAPTURE_CHROME` names another headless shell).
 

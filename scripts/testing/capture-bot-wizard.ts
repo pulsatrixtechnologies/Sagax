@@ -77,6 +77,20 @@ try {
   await page.waitForTimeout(2500);
   await shot("08-guided");
   await assertNoError(page);
+
+  // 2026-10-27: a person with no bot at all. Guided creates the Bot
+  // designer, which leads.
+  for (const each of (await fetch(`${fixture.info.url}/api/bots`).then((r) => r.json()) as { bots: Array<{ id: string }> }).bots) {
+    await fetch(`${fixture.info.url}/api/bots/${each.id}`, { method: "DELETE" });
+  }
+  await page.goto(`${ui.previewUrl}?skin=${encodeURIComponent(skin)}&lang=${encodeURIComponent(lang)}`, { waitUntil: "load" });
+  await page.waitForSelector('[data-wizard-mode-choice] [data-wizard-guided-state="designer"]', { timeout: 15_000 });
+  await shot("09-mode-choice-no-bot");
+  await page.click('[data-wizard-choose="guided"]');
+  await page.waitForSelector("[data-wizard-guided-chat] [data-wizard-conversation]", { timeout: 15_000 });
+  await page.waitForTimeout(2500);
+  await shot("10-guided-designer");
+  await assertNoError(page);
 } finally {
   await browser.close();
   await ui?.close();

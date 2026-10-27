@@ -15,7 +15,8 @@ setLocale(params.get("lang") ?? "fr");
 
 function Fixture() {
   const { state, dispatch } = useStore();
-  const ready = state.bots.length > 0;
+  // connected, with or without bots (a person with none opens it too)
+  const ready = state.connected;
   useEffect(() => {
     if (ready && !state.botWizard) dispatch({ type: "openBotWizard" });
   // eslint-disable-next-line react-hooks/exhaustive-deps

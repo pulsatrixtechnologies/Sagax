@@ -528,7 +528,7 @@ function Shell() {
               <div className="mt-1 text-[13px]">{t("app.empty.body")}</div>
             </div>
             {viewerCanCreateBots(state.config) ? (
-              <button type="button" className="ui-button mt-1 inline-flex items-center gap-1.5" onClick={() => dispatch({ type: "toggleNewBot", open: true })}>
+              <button type="button" className="ui-button mt-1 inline-flex items-center gap-1.5" onClick={() => dispatch({ type: "openBotWizard" })}>
                 <Plus size={14} aria-hidden />
                 {t("app.empty.create")}
               </button>

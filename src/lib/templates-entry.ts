@@ -9,6 +9,8 @@ export type TemplatesEntry =
   | "connectApps"
   /** New bot: "Browse templates" beside Starting role (it closes New bot). */
   | "newBot"
+  /** The bot creation wizard: "Browse templates" under Other ways to start (it closes the wizard). */
+  | "botWizard"
   /** An install link from outside (openmaus://, a team's address). */
   | "installLink";
 
@@ -18,5 +20,6 @@ export function templatesEntryActions(entry: TemplatesEntry, installUrl?: string
   const open = openBotCatalog({ section: "templates", ...(entry === "installLink" && installUrl ? { installUrl } : {}) });
   if (entry === "connectApps") return [{ type: "togglePlugins", open: false }, open];
   if (entry === "newBot") return [{ type: "toggleNewBot", open: false }, open];
+  if (entry === "botWizard") return [{ type: "closeBotWizard" }, open];
   return [open];
 }
