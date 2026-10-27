@@ -6,7 +6,7 @@
 // /api/custom-rules and its routines through /api/routines when the person
 // finishes. Pure helpers are exported for tests.
 import { api as defaultApi, type Bot } from "@/state/store";
-import { autoSelectionReady } from "@/lib/first-bot";
+import { autoSelectionReady, readBotDefaults } from "@/lib/first-bot";
 import {
   kitSuggestions,
   ruleSuggestion,
@@ -58,16 +58,11 @@ export async function deleteWizardDraft(botId: string, request: Request = defaul
   await request(`/api/bot-wizard/${encodeURIComponent(botId)}`, { method: "DELETE" });
 }
 
-interface BotDefaultsResponse {
-  modelSelection?: { instanceId: string; model: string; auto?: boolean; effort?: string; variant?: string };
-  suggestedName?: string;
-}
-
 /** The wizard's bot: created at once on the server's Auto defaults, as New
  * bot and the first run do, under the suggested name the person changes in
  * step 1. It stays a draft (its wizard draft says so) until they finish. */
 export async function createWizardBot(request: Request = defaultApi): Promise<Bot> {
-  const defaults = await request<BotDefaultsResponse>("/api/bot-defaults");
+  const defaults = await readBotDefaults(request);
   const selection = defaults.modelSelection;
   const body = {
     ...(defaults.suggestedName?.trim() ? { name: defaults.suggestedName.trim() } : {}),

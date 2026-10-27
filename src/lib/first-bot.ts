@@ -18,12 +18,24 @@ export function autoSelectionReady(selection: BotDefaultsResponse["modelSelectio
   return Boolean(selection && selection.instanceId.trim() && selection.model.trim());
 }
 
+/** The server's Auto defaults, or none. `/api/bot-defaults` is the server's
+ * own template (it needs the right to change the server's settings): a member
+ * of an organization server is refused it, and creates their bot all the same
+ * on the model the server picks for them (#1149). Never throws. */
+export async function readBotDefaults(request: typeof defaultApi = defaultApi): Promise<BotDefaultsResponse & { suggestedName?: string }> {
+  try {
+    return await request<BotDefaultsResponse & { suggestedName?: string }>("/api/bot-defaults");
+  } catch {
+    return {};
+  }
+}
+
 /** Create the first bot on Auto. The engine and model come from the server's
  * Auto default; the approval level is deliberately not sent, so the server's
  * own default (Approve for me, never Full) stands. Returns the created bot so
  * the caller can drop the person into its chat. */
 export async function createAutoFirstBot(request: typeof defaultApi = defaultApi): Promise<Bot> {
-  const defaults = await request<BotDefaultsResponse>("/api/bot-defaults");
+  const defaults = await readBotDefaults(request);
   const selection = defaults.modelSelection;
   // Pass the Auto selection when the server resolved one; otherwise let the
   // server pick, rather than posting an empty selection that would pin nothing.
