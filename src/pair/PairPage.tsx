@@ -321,7 +321,7 @@ export function PairPage({ initialCode: handedCode, initialEmail = null, reason,
             {sent ? (
               <>
                 <label className={fieldLabel} htmlFor="signin-code">
-                  Code from the email
+                  {t("pair.signIn.codeLabel")}
                 </label>
                 <input
                   id="signin-code"
@@ -345,11 +345,11 @@ export function PairPage({ initialCode: handedCode, initialEmail = null, reason,
             </button>
             {sent ? (
               <button type="button" onClick={() => setSent(false)} className="mt-3 w-full text-[13px] text-ink-secondary underline">
-                Send a new code
+                {t("pair.signIn.newCode")}
               </button>
             ) : null}
             <button type="button" onClick={() => switchMode("code")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
-              Have a pairing code instead?
+              {t("pair.signIn.havePairing")}
             </button>
           </form>
         ) : (
@@ -384,7 +384,7 @@ export function PairPage({ initialCode: handedCode, initialEmail = null, reason,
               </button>
             ) : emailOffered ? (
               <button type="button" onClick={() => switchMode("email")} className="mt-3 w-full text-[13px] text-ink-secondary underline">
-                Sign in with your email instead
+                {t("pair.signIn.useEmail")}
               </button>
             ) : null}
           </form>

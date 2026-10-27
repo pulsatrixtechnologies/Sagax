@@ -414,7 +414,7 @@ function RoomTextMessage({
                 }}
               />}
               {m.via === "api" && (
-                <div className="mt-1 text-[11px] text-ink-secondary">Sent through the API, not typed here</div>
+                <div className="mt-1 text-[11px] text-ink-secondary">{t("group.viaApi")}</div>
               )}
               {collapsible && (
                 <button type="button" onClick={() => setExpanded(true)} className="mt-1 text-[12.5px] text-ink-secondary hover:text-ink">
@@ -1764,7 +1764,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                   />
                 )}
               </PanelSection>
-              <PanelSection title="Bots">
+              <PanelSection title={t("sidebar.section.bots")}>
                 <ChannelMembers
                   part="bots"
                   humans={[]}
@@ -1775,7 +1775,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                     return bot ? { ...botPublicProfile(bot), name: botLabel(bot.name, id), removable } : { id, name: botLabel(null, id), removable };
                   })}
                   {...roster}
-                  addBotLabel={ownsRoom ? undefined : "Ajouter mon robot"}
+                  addBotLabel={ownsRoom ? undefined : t("channelMembers.addMyBot")}
                   onRemoveBot={(id) => {
                     dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
                   }}

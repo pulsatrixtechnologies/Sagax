@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { useState, type FormEvent } from "react";
 import { ExternalLink, KeyRound, Loader2, LockKeyhole, RefreshCw, X } from "lucide-react";
 
@@ -132,7 +133,7 @@ function ApiKeyRequestCard({
     const retry = !secret.resumed && error ? (
       <button type="button" onClick={() => void retryResume()} disabled={saving} className={cn(ASK_QUIET_BUTTON, "text-accent-text")}>
         {saving ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-        Try again
+        {t("secretRequest.tryAgain")}
       </button>
     ) : undefined;
     return (
@@ -165,7 +166,7 @@ function ApiKeyRequestCard({
     >
       {remoteClient ? (
         <div className="text-[12.5px] leading-relaxed text-ink-secondary">
-          This key must be saved on the host computer. Open this conversation on the host to continue securely.
+          {t("secretRequest.hostOnly")}
         </div>
       ) : (
         <form onSubmit={(event) => void save(event)}>

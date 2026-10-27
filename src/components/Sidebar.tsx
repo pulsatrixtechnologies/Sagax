@@ -3766,7 +3766,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label="Resize sidebar"
+        aria-label={t("sidebar.resize")}
         aria-description={t("sidebar.compact.edgeHint")}
         aria-valuemin={SIDEBAR_RAIL_WIDTH}
         aria-valuemax={SIDEBAR_MAX_WIDTH}
