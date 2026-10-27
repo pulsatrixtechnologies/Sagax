@@ -15,6 +15,7 @@ import {
   Menu,
   CalendarClock,
   CalendarDays,
+  Check,
   CheckCheck,
   CheckCircle2,
   ChevronLeft,
@@ -29,13 +30,13 @@ import {
   Laptop,
   List,
   Loader2,
-  Network,
   Paperclip,
   Pause,
   Play,
   Plus,
   Repeat2,
   Search,
+  SlidersHorizontal,
   Target,
   Trash2,
   UserRound,
@@ -68,7 +69,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { copyText } from "@/lib/copy-text";
 import { t, activeLocale } from "@/lib/i18n";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
-import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
+import { useCaptionChrome, useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { WebhooksPanel } from "@/components/WebhooksPanel";
 import type { CalendarCall, CalendarCallAttachment, CalendarCallInput } from "@/lib/calendar-calls";
 import { cn } from "@/lib/cn";
@@ -1805,6 +1806,8 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   const routinesOnly = window.ogb?.remoteClient?.active === true;
   const newMenuRef = useRef<HTMLDetailsElement>(null);
   const navMenuRef = useRef<HTMLDetailsElement>(null);
+  const filtersMenuRef = useRef<HTMLDetailsElement>(null);
+  const { controlsShiftStyle } = useCaptionChrome();
   const [section, setSection] = useState<"calendar" | "logs" | "webhooks">(state.routinesFocus?.section === "logs" ? "logs" : "calendar");
   const [scheduleView, setScheduleView] = useState<"calendar" | "list">(state.routinesFocus?.view ?? "calendar");
   // Mine, My teams or Everyone and the filters (src/lib/use-routine-scope.ts).
@@ -1857,7 +1860,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   }, [loadCalls, routinesOnly]);
   useEffect(() => {
     const closeMenus = (event: PointerEvent) => {
-      for (const menu of [newMenuRef.current, navMenuRef.current]) {
+      for (const menu of [newMenuRef.current, navMenuRef.current, filtersMenuRef.current]) {
         if (menu?.open && !menu.contains(event.target as Node)) menu.removeAttribute("open");
       }
     };
@@ -1942,7 +1945,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select, [contenteditable=true]")) return;
-      if (event.key === "Escape") { newMenuRef.current?.removeAttribute("open"); setQuick(null); setEditor(null); setSelected(null); return; }
+      if (event.key === "Escape") { for (const menu of [newMenuRef.current, navMenuRef.current, filtersMenuRef.current]) menu?.removeAttribute("open"); setQuick(null); setEditor(null); setSelected(null); return; }
       if (section !== "calendar" || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key.toLowerCase() === "c") { event.preventDefault(); openCreate(); }
       if (event.key.toLowerCase() === "t") goToday();
@@ -1990,24 +1993,88 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     }
   };
 
-  // The menu and New sit beside the bot and range filters; on Webhooks, which
-  // has no filter row, they stay on the title row.
+  // The header (2026-10-27): one row. On the left the title, the view (List
+  // or Calendar) and, in Calendar, ‹ Today › and the range; on the right the
+  // run indicators (active, problem runs), Filters, the ☰ menu and New.
+  // Filters holds the scope (Mine, My teams, Everyone), Team, Owner, Status,
+  // the bot and the calendar's range (Day, 3 days, Week); its badge counts
+  // what narrows the page. ☰ holds the sections (Schedule, Run logs,
+  // Webhooks), Paused routines and Mark all as read. Team map moved to the
+  // avatar menu's Tools (2026-10-27). Under 60rem of header the labels of
+  // the view switch and Filters fold to their icons (a tooltip keeps the
+  // name); under 44rem the view and dates take a second line. The right
+  // group clears the Windows caption buttons (useCaptionChrome, #1204).
+  const scopeShown = section !== "webhooks" && scoped.available;
+  const calendarGrid = section === "calendar" && scheduleView === "calendar";
+  const hideStatus = calendarGrid;
+  const scopeFilters = scopeShown
+    ? (scoped.scope !== "mine" ? 1 : 0)
+      + (scoped.scope !== "mine" && scoped.prefs.teamId ? 1 : 0)
+      + (scoped.scope !== "mine" && scoped.prefs.ownerId ? 1 : 0)
+      + (advanced && !hideStatus && scoped.prefs.status ? 1 : 0)
+    : 0;
+  const activeFilters = scopeFilters + (botFilter !== "all" ? 1 : 0);
+  const clearFilters = () => {
+    setBotFilterState("all");
+    scoped.setPrefs({ scope: "mine" });
+    setRoutineFilter(undefined);
+  };
+  const closeNavMenu = () => navMenuRef.current?.removeAttribute("open");
+  const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover";
+  const HEADER_BUTTON = "flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 [&::-webkit-details-marker]:hidden";
+  const FIELD_LABEL = "mb-1 block text-[11px] font-medium uppercase tracking-[0.04em] text-ink-secondary";
+  const SELECT = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong";
+  const filtersLabel = activeFilters > 0 ? t("routineCalendar.filtersActive", { count: activeFilters }) : t("routineCalendar.filters");
+
+  const filtersMenu = section !== "webhooks" && (
+    <details ref={filtersMenuRef} data-automations-filters className="relative">
+      <summary
+        role="button"
+        aria-label={filtersLabel}
+        title={filtersLabel}
+        className={cn(HEADER_BUTTON, "px-2.5 text-[12px] font-medium", activeFilters > 0 && "border-accent/40 text-accent")}
+      >
+        <SlidersHorizontal size={15} aria-hidden="true" />
+        <span className="@max-[60rem]/automations-header:sr-only">{t("routineCalendar.filters")}</span>
+        {activeFilters > 0 && <span data-automations-filter-count className="min-w-[18px] rounded-full bg-accent px-1.5 text-center text-[10.5px] font-semibold leading-[18px] text-white">{activeFilters}</span>}
+      </summary>
+      <div role="group" aria-label={t("routineCalendar.filters")} className="absolute right-0 top-full z-40 mt-1.5 flex w-[280px] flex-col gap-3 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-3 text-[13px] leading-[18px]">
+        {scopeShown && <div>
+          <span className={FIELD_LABEL}>{t("routines.scope.label")}</span>
+          <RoutineScopeBar stacked prefs={scoped.prefs} allowed={scoped.allowed} teams={scoped.facets.teams} owners={scoped.facets.owners} advanced={advanced} hideStatus={hideStatus} onChange={(next) => { scoped.setPrefs(next); setRoutineFilter(undefined); }} />
+        </div>}
+        <label className="block">
+          <span className={FIELD_LABEL}>{t("routineCalendar.filterBot")}</span>
+          <select aria-label={t("routineCalendar.filterByBot")} value={botFilter} onChange={(event) => { setBotFilter(event.target.value); setRoutineFilter(undefined); }} className={SELECT}><option value="all">{t("usage.allBots")}</option>{botChoices.map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select>
+        </label>
+        {calendarGrid && <label className="block">
+          <span className={FIELD_LABEL}>{t("routineCalendar.scheduleRange")}</span>
+          <select aria-label={t("routineCalendar.scheduleRange")} value={viewDays} onChange={(event) => setView(Number(event.target.value) as 1 | 3 | 7)} className={SELECT}><option value={1}>{t("routines.view.day")}</option><option value={3}>{t("routineCalendar.threeDays")}</option><option value={7}>{t("routines.view.week")}</option></select>
+        </label>}
+        {activeFilters > 0 && <button type="button" data-routine-filter-reset onClick={clearFilters} className="self-start rounded-md text-[12px] text-accent hover:underline">{t("routines.scope.reset")}</button>}
+      </div>
+    </details>
+  );
+
   const automationActions = (
     <>
           <details ref={navMenuRef} className="group relative">
-            <summary aria-label={t("routineCalendar.automationMenu")} className="flex size-9 cursor-pointer list-none items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink hover:bg-raised [&::-webkit-details-marker]:hidden">
+            <summary aria-label={t("routineCalendar.automationMenu")} title={paused.length > 0 ? `${t("routineCalendar.automationMenu")} (${t("routineCalendar.pausedMenu")} ${paused.length})` : t("routineCalendar.automationMenu")} className={cn(HEADER_BUTTON, "relative w-9 justify-center")}>
               <Menu size={16} />
+              {paused.length > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 min-w-[16px] rounded-full border border-app bg-raised px-1 text-center text-[9.5px] leading-[14px] text-ink-secondary">{paused.length}</span>}
             </summary>
-            <div role="menu" className="absolute right-0 top-full z-40 mt-1.5 w-[220px] flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]">
-              <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("calendar"); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"><CalendarDays size={16} className="text-ink" />{routinesOnly ? t("routineCalendar.scheduledRoutines") : t("routines.drawer.schedule")}</button>
-              <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("logs"); setRoutineFilter(undefined); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"><FileText size={16} className="text-ink" />{t("routines.logs")}{unseenFailures > 0 && <span className="ml-auto rounded-full bg-danger/10 px-1.5 text-[10px] text-danger">{unseenFailures}</span>}</button>
-              {!routinesOnly && <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("webhooks"); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"><Webhook size={16} className="text-ink" />{t("routines.webhooks")}{state.webhooks.length > 0 && <span className="ml-auto rounded-full bg-raised px-1.5 text-[10px] text-ink-secondary">{state.webhooks.length}</span>}</button>}
-              <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); dispatch({ type: "markAllRoutineRunsSeen" }); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"><CheckCheck size={16} className="text-ink" />{t("routines.markAllSeen")}</button>
+            <div role="menu" className="absolute right-0 top-full z-40 mt-1.5 flex w-[240px] min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]">
+              <button type="button" role="menuitem" aria-current={section === "calendar" ? "page" : undefined} onClick={() => { closeNavMenu(); setSection("calendar"); }} className={MENU_ITEM}><CalendarDays size={16} className="text-ink" />{routinesOnly ? t("routineCalendar.scheduledRoutines") : t("routines.drawer.schedule")}{section === "calendar" && <Check size={14} className="ml-auto text-ink-secondary" aria-hidden="true" />}</button>
+              <button type="button" role="menuitem" aria-current={section === "logs" ? "page" : undefined} onClick={() => { closeNavMenu(); setSection("logs"); setRoutineFilter(undefined); }} className={MENU_ITEM}><FileText size={16} className="text-ink" />{t("routines.logs")}{unseenFailures > 0 ? <span className="ml-auto rounded-full bg-danger/10 px-1.5 text-[10px] text-danger">{unseenFailures}</span> : section === "logs" && <Check size={14} className="ml-auto text-ink-secondary" aria-hidden="true" />}</button>
+              {!routinesOnly && <button type="button" role="menuitem" aria-current={section === "webhooks" ? "page" : undefined} onClick={() => { closeNavMenu(); setSection("webhooks"); }} className={MENU_ITEM}><Webhook size={16} className="text-ink" />{t("routines.webhooks")}{state.webhooks.length > 0 ? <span className="ml-auto rounded-full bg-raised px-1.5 text-[10px] text-ink-secondary">{state.webhooks.length}</span> : section === "webhooks" && <Check size={14} className="ml-auto text-ink-secondary" aria-hidden="true" />}</button>}
+              <div role="separator" className="mx-1 my-1 h-px bg-hairline/50" />
+              {paused.length > 0 && <button type="button" role="menuitem" aria-label={t("routineCalendar.viewPaused")} onClick={() => { closeNavMenu(); setPausedOpen(true); }} className={MENU_ITEM}><Pause size={16} className="text-ink" />{t("routineCalendar.pausedMenu")}<span className="ml-auto rounded-full bg-raised px-1.5 text-[10px] text-ink-secondary">{paused.length}</span></button>}
+              <button type="button" role="menuitem" onClick={() => { closeNavMenu(); dispatch({ type: "markAllRoutineRunsSeen" }); }} className={MENU_ITEM}><CheckCheck size={16} className="text-ink" />{t("routines.markAllSeen")}</button>
             </div>
           </details>
           <details ref={newMenuRef} className="group relative">
-            <summary role="button" aria-label={t("routineCalendar.createAutomation")} className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 text-[12px] font-medium text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 [&::-webkit-details-marker]:hidden">
-              <Plus size={15} aria-hidden="true" />{t("sidebar.new")}
+            <summary role="button" aria-label={t("routineCalendar.createAutomation")} title={t("routineCalendar.createAutomation")} className={cn(HEADER_BUTTON, "border-transparent bg-accent px-3 text-[12px] font-medium text-white hover:bg-accent/90")}>
+              <Plus size={15} aria-hidden="true" /><span className="@max-[30rem]/automations-header:sr-only">{t("sidebar.new")}</span>
             </summary>
             <div role="group" aria-label={t("routineCalendar.newAutomation")} className="absolute right-0 top-full z-40 mt-1.5 w-[280px] flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]">
               <button type="button" aria-label={t("routineCalendar.createTaskAria")} onClick={() => { newMenuRef.current?.removeAttribute("open"); setSection("calendar"); openCreate({ kind: "routine" }); }} className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover">
@@ -2026,63 +2093,50 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           </details>
     </>
   );
+  const sectionName = section === "logs" ? t("routines.logs") : section === "webhooks" ? t("routines.webhooks") : null;
 
   return (
     <main className={cn("flex h-full min-w-0 flex-col bg-app", fill ? "flex-1" : embedded ? "w-[min(820px,48vw)] min-w-[420px] shrink-0 border-l border-hairline/40" : "flex-1 animate-workspace-in")}>
       {fill && (macInset || browser) && <div className="content-topbar-strip" />}
       <header
-        className={cn(fill && "content-topbar", "shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-4")}
+        data-automations-header
+        className={cn(fill && "content-topbar", "@container/automations-header shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-4")}
         style={embedded || fill ? undefined : windowDragStyle}
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <div data-tour="automations-page" className="mr-2 flex items-center gap-2">
-            <span className="flex size-9 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink"><CalendarDays size={16} /></span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div data-tour="automations-page" className="flex min-w-0 shrink-0 items-center gap-2">
+            <CalendarDays size={18} className="shrink-0 text-ink-secondary" aria-hidden="true" />
             <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">{t("sidebar.nav.automations")}</h1>
+            {sectionName && <span data-automations-section className="flex min-w-0 items-center gap-1 text-[14px] text-ink-secondary"><ChevronRight size={14} aria-hidden="true" /><span className="truncate">{sectionName}</span></span>}
           </div>
-          <div className="ml-auto flex items-center gap-2" style={windowNoDragStyle}>
-            {/* Team map left the avatar menu's neighbourhood of Automations
-                (2026-10-16): it opens from here too */}
-            {!routinesOnly && (
-              <button
-                type="button"
-                data-routines-team-map
-                onClick={() => dispatch({ type: "showTeamMap" })}
-                className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 py-1.5 text-[12px] text-ink hover:bg-raised"
-              >
-                <Network size={13} aria-hidden="true" />
-                {t("sidebar.nav.teamMap")}
-              </button>
-            )}
-            {section === "webhooks" && automationActions}
-          </div>
-        </div>
-        {section !== "webhooks" && scoped.available && <div className="mt-2" style={windowNoDragStyle}>
-          <RoutineScopeBar prefs={scoped.prefs} allowed={scoped.allowed} teams={scoped.facets.teams} owners={scoped.facets.owners} advanced={advanced} hideStatus={section === "calendar" && scheduleView === "calendar"} onChange={(next) => { scoped.setPrefs(next); setRoutineFilter(undefined); }} />
-          {scoped.error && <p role="alert" className="mt-1 text-[11.5px] text-danger">{t("routines.scope.loadError")}</p>}
-        </div>}
-        {section !== "webhooks" && <div className="mt-2 flex flex-wrap items-center gap-2" style={windowNoDragStyle}>
-          {section === "calendar" && <div className="flex items-center rounded-lg border border-hairline/50 bg-panel p-0.5" aria-label={t("routines.view.label")}>
-            <button type="button" aria-pressed={scheduleView === "list"} onClick={() => setScheduleView("list")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px]", scheduleView === "list" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><List size={13} />{t("routines.view.list")}</button>
-            <button type="button" aria-pressed={scheduleView === "calendar"} onClick={() => setScheduleView("calendar")} className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px]", scheduleView === "calendar" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><CalendarDays size={13} />{t("connectApps.capabilities.calendar")}</button>
+          {section === "calendar" && <div data-automations-primary className="flex min-w-0 items-center gap-2 @max-[44rem]/automations-header:order-last @max-[44rem]/automations-header:basis-full" style={windowNoDragStyle}>
+            <div role="group" className="flex shrink-0 items-center rounded-lg border border-hairline/50 bg-panel p-0.5" aria-label={t("routines.view.label")}>
+              <button type="button" aria-pressed={scheduleView === "list"} title={t("routines.view.list")} onClick={() => setScheduleView("list")} className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px]", scheduleView === "list" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><List size={14} aria-hidden="true" /><span className="@max-[60rem]/automations-header:sr-only">{t("routines.view.list")}</span></button>
+              <button type="button" aria-pressed={scheduleView === "calendar"} title={t("connectApps.capabilities.calendar")} onClick={() => setScheduleView("calendar")} className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px]", scheduleView === "calendar" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><CalendarDays size={14} aria-hidden="true" /><span className="@max-[60rem]/automations-header:sr-only">{t("connectApps.capabilities.calendar")}</span></button>
+            </div>
+            {scheduleView === "calendar" && <>
+              <div className="flex shrink-0 items-center">
+                <button type="button" onClick={() => setAnchor((current) => addDays(current, -viewDays))} className="rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink" aria-label={t("routines.previous")} title={t("routines.previous")}><ChevronLeft size={16} /></button>
+                <button type="button" onClick={goToday} className="rounded-md border border-hairline/50 px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-raised">{t("routines.today")}</button>
+                <button type="button" onClick={() => setAnchor((current) => addDays(current, viewDays))} className="rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink" aria-label={t("routines.next")} title={t("routines.next")}><ChevronRight size={16} /></button>
+              </div>
+              <div data-automations-range className="min-w-0 truncate text-[14px] font-medium text-ink">{calendarRangeLabel(rangeStart, viewDays)}</div>
+            </>}
           </div>}
-          {section === "calendar" && scheduleView === "calendar" && <><div className="flex items-center rounded-lg border border-hairline/50 bg-panel p-0.5">
-            <button onClick={() => setAnchor((current) => addDays(current, -viewDays))} className="rounded-md p-2 text-ink-secondary hover:bg-raised hover:text-ink" aria-label={t("routines.previous")}><ChevronLeft size={16} /></button>
-            <button onClick={goToday} className="rounded-md px-3 py-1.5 text-[12px] font-medium text-ink hover:bg-raised">{t("routines.today")}</button>
-            <button onClick={() => setAnchor((current) => addDays(current, viewDays))} className="rounded-md p-2 text-ink-secondary hover:bg-raised hover:text-ink" aria-label={t("routines.next")}><ChevronRight size={16} /></button>
-          </div>
-          <div className="min-w-[220px] px-2 text-[15px] font-medium text-ink">{calendarRangeLabel(rangeStart, viewDays)}</div></>}
-          <div className="ml-auto flex items-center gap-2">
-            {running > 0 && <span className="hidden items-center gap-1.5 rounded-full bg-accent/10 px-2.5 py-1.5 text-[10.5px] text-accent sm:flex"><Loader2 size={11} className="animate-spin" />{t("routineCalendar.activeCount", { count: running })}</span>}
-            {unseenFailures > 0 && <button type="button" onClick={() => dispatch({ type: "showRoutines", section: "logs", runStatus: "problems" })} className="hidden items-center gap-1.5 rounded-full bg-danger/10 px-2.5 py-1.5 text-[10.5px] text-danger sm:flex" title={t("routineCalendar.openProblemLogs")} aria-label={t("routineCalendar.openProblemLogs")}><CircleAlert size={11} />{unseenFailures}</button>}
-            {paused.length > 0 && <button onClick={() => setPausedOpen(true)} aria-label={t("routineCalendar.viewPaused")} className="hidden items-center gap-1.5 rounded-full border border-hairline/50 px-2.5 py-1.5 text-[10.5px] text-ink-secondary hover:bg-raised sm:flex"><Pause size={11} />{paused.length}</button>}
-            <select aria-label={t("routineCalendar.filterByBot")} value={botFilter} onChange={(event) => { setBotFilter(event.target.value); setRoutineFilter(undefined); }} className="max-w-[180px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong"><option value="all">{t("usage.allBots")}</option>{botChoices.map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}</select>
-            {section === "calendar" && scheduleView === "calendar" && <select aria-label={t("routineCalendar.scheduleRange")} value={viewDays} onChange={(event) => setView(Number(event.target.value) as 1 | 3 | 7)} className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong"><option value={1}>{t("routines.view.day")}</option><option value={3}>{t("routineCalendar.threeDays")}</option><option value={7}>{t("routines.view.week")}</option></select>}
+          <div data-automations-actions className="ml-auto flex shrink-0 items-center gap-1.5" style={{ ...windowNoDragStyle, ...controlsShiftStyle }}>
+            {section !== "webhooks" && running > 0 && <span role="status" data-automations-running title={t("routineCalendar.activeCount", { count: running })} aria-label={t("routineCalendar.activeCount", { count: running })} className="flex h-9 items-center gap-1 px-1.5 text-[11.5px] text-accent"><Loader2 size={13} className="animate-spin" aria-hidden="true" />{running}</span>}
+            {unseenFailures > 0 && <button type="button" data-automations-problems onClick={() => dispatch({ type: "showRoutines", section: "logs", runStatus: "problems" })} className="flex h-9 items-center gap-1 rounded-lg px-2 text-[11.5px] font-medium text-danger hover:bg-danger/10" title={t("routineCalendar.openProblemLogs")} aria-label={t("routineCalendar.openProblemLogs")}><CircleAlert size={14} aria-hidden="true" />{unseenFailures}</button>}
+            {filtersMenu}
             {automationActions}
           </div>
+        </div>
+        {scopeShown && scoped.error && <p role="alert" className="mt-1 text-[11.5px] text-danger">{t("routines.scope.loadError")}</p>}
+        {section !== "webhooks" && (error || (calendarGrid && state.routinesLoadState !== "ready")) && <div className="mt-2 flex flex-wrap items-center gap-2" style={windowNoDragStyle}>
           {error && <button onClick={() => setError("")} className="flex items-center gap-1.5 rounded-lg bg-danger/10 px-2.5 py-1.5 text-[10.5px] text-danger"><CircleAlert size={11} />{error}<X size={11} /></button>}
-          {section === "calendar" && scheduleView === "calendar" && state.routinesLoadState === "error" && <p role="alert" className="w-full text-[11.5px] text-danger">{t("routines.loadError")}</p>}
-          {section === "calendar" && scheduleView === "calendar" && state.routinesLoadState === "loading" && state.routines.length === 0 && <p role="status" className="w-full text-[11.5px] text-ink-secondary">{t("routines.loading")}</p>}
+          {calendarGrid && state.routinesLoadState === "error" && <p role="alert" className="w-full text-[11.5px] text-danger">{t("routines.loadError")}</p>}
+          {calendarGrid && state.routinesLoadState === "loading" && state.routines.length === 0 && <p role="status" className="w-full text-[11.5px] text-ink-secondary">{t("routines.loading")}</p>}
         </div>}
+        {section === "webhooks" && error && <div className="mt-2"><button onClick={() => setError("")} className="flex items-center gap-1.5 rounded-lg bg-danger/10 px-2.5 py-1.5 text-[10.5px] text-danger"><CircleAlert size={11} />{error}<X size={11} /></button></div>}
       </header>
       <RoutineAwayBanner routines={state.routines} dispatch={dispatch} />
       {/* `display: contents` outside `fill` mode: the wrapper takes no part

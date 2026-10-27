@@ -31,7 +31,7 @@ const STATUS_LABEL = {
 
 const SELECT = "max-w-[180px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong";
 
-export function RoutineScopeBar({ prefs, allowed, teams, owners, advanced, hideStatus = false, onChange }: {
+export function RoutineScopeBar({ prefs, allowed, teams, owners, advanced, hideStatus = false, stacked = false, onChange }: {
   prefs: RoutineScopePrefs;
   allowed: Record<RoutineScope, boolean>;
   teams: readonly RoutineScopeChoice[];
@@ -40,13 +40,16 @@ export function RoutineScopeBar({ prefs, allowed, teams, owners, advanced, hideS
   advanced: boolean;
   /** Calendar view: it shows plans, not run results, so no status filter. */
   hideStatus?: boolean;
+  /** Inside the Automations Filters popover: one control per line, full
+   * width; the popover carries the one Clear filters. */
+  stacked?: boolean;
   onChange: (next: RoutineScopePrefs) => void;
 }) {
   const scope = allowed[prefs.scope] ? prefs.scope : "mine";
   const filtered = Boolean(prefs.teamId || prefs.ownerId || (!hideStatus && prefs.status));
   return (
-    <div data-routine-scope-bar className="flex flex-wrap items-center gap-2">
-      <div role="radiogroup" aria-label={t("routines.scope.label")} className="flex items-center rounded-lg border border-hairline/50 bg-panel p-0.5">
+    <div data-routine-scope-bar className={cn("flex gap-2", stacked ? "flex-col items-stretch" : "flex-wrap items-center")}>
+      <div role="radiogroup" aria-label={t("routines.scope.label")} className={cn("flex items-center rounded-lg border border-hairline/50 bg-panel p-0.5", stacked && "w-full")}>
         {ROUTINE_SCOPES.map((value) => {
           const permitted = allowed[value];
           const missing = value === "mine" || permitted ? undefined : permissionMissingText(ROUTINE_SCOPE_PERMISSION[value]);
@@ -62,6 +65,7 @@ export function RoutineScopeBar({ prefs, allowed, teams, owners, advanced, hideS
               onClick={() => permitted && onChange({ ...prefs, scope: value, ...(value === "mine" ? { teamId: undefined, ownerId: undefined } : {}) })}
               className={cn(
                 "rounded-md px-3 py-1.5 text-[12px] disabled:cursor-not-allowed disabled:opacity-45",
+                stacked && "flex-1 whitespace-nowrap px-2",
                 scope === value ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink",
               )}
             >
@@ -73,22 +77,22 @@ export function RoutineScopeBar({ prefs, allowed, teams, owners, advanced, hideS
       {advanced && (
         <>
           {scope !== "mine" && teams.length > 0 && (
-            <select aria-label={t("routines.scope.teamFilter")} data-routine-filter="team" value={prefs.teamId ?? ""} onChange={(event) => onChange({ ...prefs, teamId: event.target.value || undefined })} className={SELECT}>
+            <select aria-label={t("routines.scope.teamFilter")} data-routine-filter="team" value={prefs.teamId ?? ""} onChange={(event) => onChange({ ...prefs, teamId: event.target.value || undefined })} className={cn(SELECT, stacked && "w-full max-w-none")}>
               <option value="">{t("routines.scope.allTeams")}</option>
               {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
             </select>
           )}
           {scope !== "mine" && owners.length > 0 && (
-            <select aria-label={t("routines.scope.ownerFilter")} data-routine-filter="owner" value={prefs.ownerId ?? ""} onChange={(event) => onChange({ ...prefs, ownerId: event.target.value || undefined })} className={SELECT}>
+            <select aria-label={t("routines.scope.ownerFilter")} data-routine-filter="owner" value={prefs.ownerId ?? ""} onChange={(event) => onChange({ ...prefs, ownerId: event.target.value || undefined })} className={cn(SELECT, stacked && "w-full max-w-none")}>
               <option value="">{t("routines.scope.allOwners")}</option>
               {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.name}</option>)}
             </select>
           )}
-          {!hideStatus && <select aria-label={t("routines.scope.statusFilter")} data-routine-filter="status" value={prefs.status ?? ""} onChange={(event) => onChange({ ...prefs, status: (event.target.value || undefined) as RoutineScopePrefs["status"] })} className={SELECT}>
+          {!hideStatus && <select aria-label={t("routines.scope.statusFilter")} data-routine-filter="status" value={prefs.status ?? ""} onChange={(event) => onChange({ ...prefs, status: (event.target.value || undefined) as RoutineScopePrefs["status"] })} className={cn(SELECT, stacked && "w-full max-w-none")}>
             <option value="">{t("routines.scope.anyStatus")}</option>
             {ROUTINE_SCOPE_STATUSES.map((status) => <option key={status} value={status}>{t(STATUS_LABEL[status])}</option>)}
           </select>}
-          {filtered && (
+          {filtered && !stacked && (
             <button type="button" data-routine-filter-reset onClick={() => onChange({ scope: prefs.scope, ...(prefs.botId ? { botId: prefs.botId } : {}) })} className="rounded-lg px-2 py-1.5 text-[12px] text-accent hover:underline">
               {t("routines.scope.reset")}
             </button>

@@ -169,7 +169,7 @@ describe("outward links", () => {
 describe("profileMenuItems (the reference design's account menu, 2026-10-16)", () => {
   const noop = () => {};
   const handlers = {
-    onAutomations: noop, onRemoteSessions: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
+    onAutomations: noop, onTeamMap: noop, onRemoteSessions: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
     onViewUsage: noop, onSwitch: noop, onRename: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
@@ -194,17 +194,17 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "tools"]);
   });
 
-  it("puts Automations, Remote sessions and Achievements under Tools, in that order", () => {
+  it("puts Automations, Team map, Remote sessions and Achievements under Tools, in that order", () => {
     const tools = toolsOf(items());
     expect(tools.label).toBe("Tools");
-    expect(tools.submenu!.map((entry) => entry.key)).toEqual(["routines", "remote-sessions", "achievements"]);
-    expect(toolsOf(items({ achievementsLabel: null })).submenu!.map((entry) => entry.key)).toEqual(["routines", "remote-sessions"]);
+    expect(tools.submenu!.map((entry) => entry.key)).toEqual(["routines", "team-map", "remote-sessions", "achievements"]);
+    expect(toolsOf(items({ achievementsLabel: null })).submenu!.map((entry) => entry.key)).toEqual(["routines", "team-map", "remote-sessions"]);
   });
 
   it("shows Remote sessions only on an organization server", () => {
     const keys = (remoteSessions: boolean) => toolsOf(items({ remoteSessions })).submenu!.map((entry) => entry.key);
-    expect(keys(false)).toEqual(["routines", "achievements"]);
-    expect(keys(true)).toEqual(["routines", "remote-sessions", "achievements"]);
+    expect(keys(false)).toEqual(["routines", "team-map", "achievements"]);
+    expect(keys(true)).toEqual(["routines", "team-map", "remote-sessions", "achievements"]);
   });
 
   it("opens the Remote sessions page from Tools", () => {
@@ -223,8 +223,21 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     expect(SOURCE.match(/showApprovals/g)).toHaveLength(1);
   });
 
-  it("has no Team map: it opens from the Automations header and the palette (JC, 2026-10-18)", () => {
-    expect(items().some((entry) => entry.key === "team-map" || entry.label === "Team map")).toBe(false);
+  it("opens Team map from Tools, right after Automations (JC, 2026-10-27)", () => {
+    let opened = 0;
+    const tools = toolsOf(items({ teamMapActive: true, handlers: { ...handlers, onTeamMap: () => { opened += 1; } } }));
+    const entry = tools.submenu!.find((item) => item.key === "team-map")!;
+    expect(entry.label).toBe("Team map");
+    expect(entry.active).toBe(true);
+    expect(tools.active).toBe(true);
+    entry.onSelect!();
+    expect(opened).toBe(1);
+    // one place in the menu: Tools only, never the top level
+    expect(items().some((item) => item.key === "team-map")).toBe(false);
+  });
+
+  it("leaves Team map out of Tools in the remote client", () => {
+    expect(toolsOf(items({ teamMap: false })).submenu!.some((entry) => entry.key === "team-map")).toBe(false);
   });
 
   it("opens Automations from Tools and keeps the tour anchor, with no dot (JC, 2026-10-18)", () => {
