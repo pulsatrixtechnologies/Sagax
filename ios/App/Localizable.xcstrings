@@ -1,6 +1,20 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Your number: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your number: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Votre numéro : %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Seu número: %@" } }
+      }
+    },
+    "A code went to %@ on WhatsApp: enter it on your computer, on the bot's page.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A code went to %@ on WhatsApp: enter it on your computer, on the bot's page." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un code est parti vers %@ sur WhatsApp : entrez-le sur votre ordinateur, dans la page du bot." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Um código foi enviado para %@ no WhatsApp: digite-o no computador, na página do bot." } }
+      }
+    },
     "With your own WhatsApp Business number. Reply with the code.": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "With your own WhatsApp Business number. Reply with the code." } },

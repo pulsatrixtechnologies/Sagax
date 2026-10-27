@@ -356,11 +356,18 @@ struct ReachMeSettingsPage: View {
             if status.connected == true {
                 Text("\(name) connected.").foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("reach-me-whatsapp-connected")
+                if let number = status.number {
+                    Text("Your number: \(number)").foregroundStyle(Theme.textSecondary)
+                }
                 if !status.ready, let reason = status.reason {
                     Text(verbatim: reason).foregroundStyle(Theme.warning)
                 }
             } else if status.linking == true {
-                Text("Send the code from your WhatsApp to finish.").foregroundStyle(Theme.textSecondary)
+                if let sentTo = status.codeSentTo, status.whatsAppLink == nil {
+                    Text("A code went to \(sentTo) on WhatsApp: enter it on your computer, on the bot's page.").foregroundStyle(Theme.textSecondary)
+                } else {
+                    Text("Send the code from your WhatsApp to finish.").foregroundStyle(Theme.textSecondary)
+                }
                 if let link = status.whatsAppLink {
                     Link(destination: link) {
                         Text("Open WhatsApp").fontWeight(.medium).foregroundStyle(Theme.blue)

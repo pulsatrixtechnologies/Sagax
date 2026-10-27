@@ -129,9 +129,14 @@ public struct ReachChannelView: Codable, Equatable, Hashable, Sendable {
     public var displayNumber: String?
     public var verifiedName: String?
     public var linkUrl: String?
+    /// WhatsApp: the person's own number once proven, and the number a code
+    /// went to by template, both masked (`***0123`).
+    public var number: String?
+    public var codeSentTo: String?
 
     public init(ready: Bool = false, reason: String? = nil, devices: Int? = nil, connected: Bool? = nil, username: String? = nil, linking: Bool? = nil,
-                webhookPublic: Bool? = nil, displayNumber: String? = nil, verifiedName: String? = nil, linkUrl: String? = nil) {
+                webhookPublic: Bool? = nil, displayNumber: String? = nil, verifiedName: String? = nil, linkUrl: String? = nil,
+                number: String? = nil, codeSentTo: String? = nil) {
         self.ready = ready
         self.reason = reason
         self.devices = devices
@@ -142,9 +147,11 @@ public struct ReachChannelView: Codable, Equatable, Hashable, Sendable {
         self.displayNumber = displayNumber
         self.verifiedName = verifiedName
         self.linkUrl = linkUrl
+        self.number = number
+        self.codeSentTo = codeSentTo
     }
 
-    private enum Keys: String, CodingKey { case ready, reason, devices, connected, username, linking, webhookPublic, displayNumber, verifiedName, linkUrl }
+    private enum Keys: String, CodingKey { case ready, reason, devices, connected, username, linking, webhookPublic, displayNumber, verifiedName, linkUrl, number, codeSentTo }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -158,6 +165,8 @@ public struct ReachChannelView: Codable, Equatable, Hashable, Sendable {
         displayNumber = try? c.decodeIfPresent(String.self, forKey: .displayNumber)
         verifiedName = try? c.decodeIfPresent(String.self, forKey: .verifiedName)
         linkUrl = try? c.decodeIfPresent(String.self, forKey: .linkUrl)
+        number = try? c.decodeIfPresent(String.self, forKey: .number)
+        codeSentTo = try? c.decodeIfPresent(String.self, forKey: .codeSentTo)
     }
 
     /// WhatsApp's answer comes from a server that wires it: its own fields,

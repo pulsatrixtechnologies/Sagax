@@ -244,6 +244,14 @@ final class ReachMeTests: XCTestCase {
         XCTAssertEqual(linking.channel(.whatsapp).verifiedName, "Example Shop")
         XCTAssertNil(ReachChannelView(linkUrl: "https://example.com/x").whatsAppLink)
         XCTAssertTrue(try decode(#"{"settings":{"channels":[]},"channels":{"whatsapp":{"ready":true,"connected":true}}}"#).offers(.whatsapp))
+        // the shape #1247 merged: the view always carries webhookPublic, plus hasBusinessAccount and templateCheck
+        let merged = try decode(#"{"settings":{"channels":["whatsapp"]},"channels":{"whatsapp":{"ready":false,"reason":"Set your approved message template.","connected":true,"linking":false,"webhookPublic":true,"replies":true,"hasAppSecret":true,"hasBusinessAccount":true,"templateCheck":{"state":"pending"},"number":"***0123","verifiedName":"Example Shop"}}}"#)
+        XCTAssertTrue(merged.offers(.whatsapp))
+        XCTAssertEqual(merged.channel(.whatsapp).number, "***0123")
+        XCTAssertEqual(merged.channel(.whatsapp).reason, "Set your approved message template.")
+        let fresh = try decode(#"{"settings":{"channels":["push"]},"channels":{"whatsapp":{"ready":false,"reason":"Connect your own WhatsApp Business number first.","connected":false,"linking":false,"webhookPublic":false,"replies":false,"hasAppSecret":false,"hasBusinessAccount":false,"windowOpen":false}}}"#)
+        XCTAssertTrue(fresh.offers(.whatsapp), "offered before it is connected")
+        XCTAssertEqual(try decode(#"{"settings":{"channels":[]},"channels":{"whatsapp":{"ready":false,"linking":true,"webhookPublic":true,"codeSentTo":"***0123"}}}"#).channel(.whatsapp).codeSentTo, "***0123")
     }
 
     // MARK: Calls
