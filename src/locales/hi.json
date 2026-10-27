@@ -1350,8 +1350,6 @@
   "botPanel.permissions.makePrimary": "इस bot को अपना मुख्य bot बनाएँ, जो आपके अन्य bots का समन्वय करता है।",
   "botPanel.permissions.ask": "अन्य bots से संपर्क से पहले मुझसे पूछें",
   "botPanel.permissions.approval": "अनुमोदन स्तर",
-  "botPanel.permissions.approvalDraft": "नए bot की बातचीत, रूटीन और सौंपे गए काम का डिफ़ॉल्ट।",
-  "botPanel.permissions.applyFull": "सभी बातचीत पर पूर्ण पहुँच लागू करें",
   "botPanel.permissions.outbound": "आपकी ओर से भेजना",
   "botPanel.permissions.outboundHelp": "जुड़े ऐप्स से ईमेल, संदेश, पोस्ट, निमंत्रण और भुगतान। पढ़ना और मसौदा कभी नहीं गिने जाते। यह हर अनुमोदन स्तर पर लागू होता है, पूर्ण पहुँच सहित।",
   "botPanel.permissions.askEvery": "हर बार पूछें",

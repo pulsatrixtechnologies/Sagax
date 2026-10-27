@@ -2159,8 +2159,6 @@
   "botPanel.permissions.makePrimary": "把這個 bot 設為主要 bot，由它協調你的其他 bot。",
   "botPanel.permissions.ask": "聯絡其他 bot 之前先問我",
   "botPanel.permissions.approval": "核准層級",
-  "botPanel.permissions.approvalDraft": "新 bot 的對話、例程和委派工作的預設值。",
-  "botPanel.permissions.applyFull": "對所有對話套用完整存取",
   "botPanel.permissions.outbound": "代你傳送",
   "botPanel.permissions.outboundHelp": "透過已連線應用程式傳送的電子郵件、訊息、貼文、邀請和付款。閱讀和起草從不計入。這適用於每個核准層級，包括完整存取。",
   "botPanel.permissions.askEvery": "每次都問",

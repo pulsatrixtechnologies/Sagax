@@ -227,7 +227,7 @@ struct BotPanelPermissions: View {
             }
             PanelCard {
                 Text("Approval level").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
-                Text("Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread.")
+                Text("Applies to every thread of this bot at once: routines, delegated work and work another bot or an AI client sends here. A thread keeps its own level only when you chose one in it.")
                     .panelText(13, 19.5)
                     .foregroundStyle(theme.inkSecondary)
                     .padding(.top, 2)

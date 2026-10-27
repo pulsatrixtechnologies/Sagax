@@ -2148,8 +2148,6 @@
   "botPanel.permissions.makePrimary": "把这个 bot 设为主 bot，由它协调你的其他 bot。",
   "botPanel.permissions.ask": "联系其他 bot 之前先问我",
   "botPanel.permissions.approval": "批准级别",
-  "botPanel.permissions.approvalDraft": "新 bot 的对话、例程和委派工作的默认值。",
-  "botPanel.permissions.applyFull": "对所有对话应用完全访问",
   "botPanel.permissions.outbound": "代你发送",
   "botPanel.permissions.outboundHelp": "通过已连接应用发送的电子邮件、消息、帖子、邀请和付款。阅读和起草从不计入。这适用于每个批准级别，包括完全访问。",
   "botPanel.permissions.askEvery": "每次都问",
