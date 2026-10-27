@@ -453,11 +453,18 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(sent.status, sent.text).toBe(202);
     // Yves lists no profile: the only exchange is Xavier's, for the hop
     await waitFor(async () => idp.exchanges.length > exchangesBefore, 60_000);
+    // wait for the hop's Perspicax call itself, not only for the exchange: the
+    // token is minted when the turn starts (and again for the engine warm-up
+    // and the follow-up turn), the call comes after
+    await waitFor(async () => idp.mcpRequests.slice(callsBefore).some((r) => r.method === "POST"), 60_000);
     // the hop runs in bob's threads (private threads): only bob sees them work
     await allIdle(bob);
     await allIdle(alice);
+    // every exchange of the hop is Bob's, for his profile: how many turns
+    // (the hop, its warm-up, the follow-up) mint one is not the point
     const exchanges = idp.exchanges.slice(exchangesBefore);
-    expect(exchanges.map((e) => ({ sub: e.sub, profile: e.profile, ok: e.ok }))).toEqual([{ sub: BOB.sub, profile: PROFILE.id, ok: true }]);
+    expect(exchanges.length).toBeGreaterThan(0);
+    expect(exchanges.map((e) => ({ sub: e.sub, profile: e.profile, ok: e.ok }))).toEqual(exchanges.map(() => ({ sub: BOB.sub, profile: PROFILE.id, ok: true })));
     const calls = idp.mcpRequests.slice(callsBefore).filter((r) => r.method === "POST");
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((r) => r.sub === BOB.sub && r.profile === PROFILE.id)).toBe(true);

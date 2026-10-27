@@ -3,22 +3,27 @@
 // the experiments is given both keys in Perspicax.
 import { describe, expect, it } from "vitest";
 
-import { can } from "../shared/permissions.ts";
+import { can, MEMBER_ALWAYS_PERMISSIONS, PERMISSION_KEYS, type PermissionKey } from "../shared/permissions.ts";
 import { effectivePermissions, permissionList } from "./org-permissions.ts";
+
+// Since 2026-10-26 every non-service principal also holds the keys about a
+// person's own things (MEMBER_ALWAYS_PERMISSIONS), whatever the directory sends.
+const withMemberAlways = (...keys: PermissionKey[]) =>
+  PERMISSION_KEYS.filter((key) => keys.includes(key) || MEMBER_ALWAYS_PERMISSIONS.includes(key));
 
 describe("server.experimental is a separate right", () => {
   it("a server.settings delegate does NOT gain server.experimental", () => {
     const effective = effectivePermissions({ admin: false, fromDirectory: ["server.settings"] });
     expect(can(effective, "server.settings")).toBe(true);
     expect(can(effective, "server.experimental")).toBe(false);
-    expect(permissionList(effective)).toEqual(["server.settings"]);
+    expect(permissionList(effective)).toEqual(withMemberAlways("server.settings"));
   });
 
   it("a server.experimental delegate does NOT gain server.settings", () => {
     const effective = effectivePermissions({ admin: false, fromDirectory: ["server.experimental"] });
     expect(can(effective, "server.experimental")).toBe(true);
     expect(can(effective, "server.settings")).toBe(false);
-    expect(permissionList(effective)).toEqual(["server.experimental"]);
+    expect(permissionList(effective)).toEqual(withMemberAlways("server.experimental"));
   });
 
   it("both keys are granted only when both are in the directory list", () => {

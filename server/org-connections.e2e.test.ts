@@ -18,9 +18,8 @@
 //   OC-6  skills: a member adds a skill to their own bot
 //   OC-7  Perspicax sagax_integrations manage (the default): a member does
 //         the whole flow with no admin, on a bot someone shared at manage
-//   OC-8  sagax_integrations off: the member's changes answer 403
-//         org_integrations_admin_only, the viewer and the listings say an
-//         admin manages them, and what they saved stops being usable
+//   OC-8  sagax_integrations off (ignored since 2026-10-26): the member
+//         still manages everything and what they saved stays usable
 //   OC-9  an organization admin lists and revokes a person's connections;
 //         a member and an unsigned loopback are refused; no secret is returned
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
@@ -165,9 +164,10 @@ async function startFakeGithub(): Promise<void> {
       return send(200, { login: "bob-gh", name: "Bob GitHub" }, { "x-oauth-scopes": "repo, read:org, gist, workflow" });
     }
     // Before a clone Sagax asks the API which credential reads the repository (github-access.ts, #271).
-    if (req.method === "GET" && req.url === "/repos/acme/tools") {
+    const repoRoute = /^\/repos\/acme\/(tools|uma-tools|rita-tools)$/.exec(req.url ?? "");
+    if (req.method === "GET" && repoRoute) {
       // readable without a credential (a person with no GitHub connection), as the local git marketplace is
-      return send(200, { full_name: "acme/tools", private: false });
+      return send(200, { full_name: `acme/${repoRoute[1]}`, private: false });
     }
     send(404, { message: "Not Found" });
   });
@@ -177,13 +177,13 @@ async function startFakeGithub(): Promise<void> {
 
 /** A Claude Code marketplace in a local git repository, reached as
  * https://github.com/acme/tools through git's insteadOf. */
-function marketplaceRepo(root: string): string {
-  const repo = join(root, "acme-tools");
+function marketplaceRepo(root: string, name = "acme-tools"): string {
+  const repo = join(root, name);
   const write = (path: string, content: string) => {
     mkdirSync(dirname(join(repo, path)), { recursive: true });
     writeFileSync(join(repo, path), content);
   };
-  write(".claude-plugin/marketplace.json", JSON.stringify({ name: "acme-tools", plugins: [{ name: "reviewer", source: "./plugins/reviewer", description: "Reviews code", version: "1.0.0" }] }));
+  write(".claude-plugin/marketplace.json", JSON.stringify({ name, plugins: [{ name: "reviewer", source: "./plugins/reviewer", description: "Reviews code", version: "1.0.0" }] }));
   write("plugins/reviewer/.claude-plugin/plugin.json", JSON.stringify({ name: "reviewer", hooks: "./hooks/hooks.json" }));
   write("plugins/reviewer/skills/review/SKILL.md", "---\nname: review\ndescription: Review a diff\n---\nReview it.");
   write("plugins/reviewer/hooks/hooks.json", JSON.stringify({ hooks: { PreToolUse: [] } }));
@@ -225,8 +225,13 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     }), { mode: 0o640 });
     writeFileSync(join(home, "sandboxd-key"), `${SANDBOXD_KEY}\n`, { mode: 0o400 });
     const repo = marketplaceRepo(home);
+    // A marketplace a member adds is private to her (#989): another member
+    // adding the same one is told the name is taken, so each member who adds
+    // one in this file has her own.
+    const umaRepo = marketplaceRepo(home, "uma-tools");
+    const ritaRepo = marketplaceRepo(home, "rita-tools");
     const gitConfig = join(home, "gitconfig");
-    writeFileSync(gitConfig, `[url "file://${repo}"]\n\tinsteadOf = https://github.com/acme/tools.git\n`);
+    writeFileSync(gitConfig, [repo, umaRepo, ritaRepo].map((dir, index) => `[url "file://${dir}"]\n\tinsteadOf = https://github.com/acme/${["tools", "uma-tools", "rita-tools"][index]}.git\n`).join(""));
     mcpDump = join(home, "mcp-dump.json");
     engineDump = join(home, "claude-dump.json");
     writeFileSync(join(data, "config.json"), JSON.stringify({
@@ -321,7 +326,9 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     const written = await waitFor(async () => docker.execs.find((entry) => entry.exec.Env.includes(`SAGAX_GH_TOKEN=${GITHUB_TOKEN}`)) ?? null);
     expect(written.name).toBe(bobContainer);
     expect(written.exec.Cmd.join(" ")).not.toContain(GITHUB_TOKEN);
-    expect(written.exec.Cmd.join(" ")).toContain(".config/gh/hosts.yml");
+    // the script builds the path from $HOME/.config/gh and hosts.yml
+    expect(written.exec.Cmd.join(" ")).toContain("$HOME/.config/gh");
+    expect(written.exec.Cmd.join(" ")).toContain("hosts.yml");
     // a pasted token that GitHub refuses is refused
     expect((await api("POST", "/api/me/github/token", alice, { token: "nope" })).body.code).toBe("token_refused");
   }, 60_000);
@@ -451,9 +458,9 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     // Bob lets Uma manage his bot: she adds the marketplace, installs, adds a skill
     expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.uma}`, level: "manage" })).status).toBe(200);
     expect((await api("GET", `/api/bots/${bobBot.id}/plugins`, uma)).body.canChange).toBe(true);
-    const market = await api("POST", `/api/bots/${bobBot.id}/plugins/marketplaces`, uma, { source: "acme/tools" });
+    const market = await api("POST", `/api/bots/${bobBot.id}/plugins/marketplaces`, uma, { source: "acme/uma-tools" });
     expect(market.status, market.text).toBe(201);
-    const installed = await api("POST", `/api/bots/${bobBot.id}/plugins/install`, uma, { marketplace: "acme-tools", plugin: "reviewer" });
+    const installed = await api("POST", `/api/bots/${bobBot.id}/plugins/install`, uma, { marketplace: "uma-tools", plugin: "reviewer" });
     expect(installed.status, installed.text).toBe(201);
     const text = "---\nname: triage\ndescription: Triage issues\n---\nTriage.";
     const skill = await api("POST", `/api/bots/${bobBot.id}/skill-template`, uma, { name: "triage", description: "Triage issues", text, source: "template", enabled: true });
@@ -463,15 +470,19 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.uma}`, level: "use" })).status).toBe(200);
   }, 120_000);
 
-  it("OC-8: sagax_integrations off: 403 org_integrations_admin_only, a notice, and what she saved stops being usable", async () => {
-    // while she may: her own bot, a server of her own, a skill and a plugin
+  // 2026-10-26 (JC, no admin gating): a person's own plugins, skills, MCP
+  // servers and GitHub account work in their own environment. The Perspicax
+  // person sheet's `sagax_integrations: off` no longer takes them (it was a 403
+  // `org_integrations_admin_only` before): she keeps managing everything, and
+  // what she saved stays usable.
+  it("OC-8: sagax_integrations off changes nothing: she still manages her own connections, and they stay usable", async () => {
     const ritaBot = await createBot(rita, "Rita's");
     const own = await api("POST", "/api/me/mcp/servers", rita, { name: "ritas", url: `${oauth.base}/rita-mcp`, auth: "token", token: "t-rita-000" });
     expect(own.status, own.text).toBe(201);
     const text = "---\nname: notes\ndescription: Take notes\n---\nTake notes.";
     expect((await api("POST", `/api/bots/${ritaBot.id}/skill-template`, rita, { name: "notes", description: "Take notes", text, source: "template", enabled: true })).status).toBe(201);
-    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/marketplaces`, rita, { source: "acme/tools" })).status).toBe(201);
-    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/install`, rita, { marketplace: "acme-tools", plugin: "reviewer" })).status).toBe(201);
+    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/marketplaces`, rita, { source: "acme/rita-tools" })).status).toBe(201);
+    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/install`, rita, { marketplace: "rita-tools", plugin: "reviewer" })).status).toBe(201);
     await turn(rita, ritaBot, "before");
     const before = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
     expect(before.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
@@ -479,61 +490,27 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
 
     // an admin turns it off in Perspicax; the directory brings it here
     idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === RITA.sub ? { ...person, sagax_integrations: "off" as const } : person));
-    await waitFor(async () => (await api("GET", "/api/config", rita)).body.viewer?.integrationsManagedByAdmin === true, 30_000);
-
-    // Mes connexions: listed, read-only; every change refused
+    // the directory is read again (a few seconds): the field is ignored, so
+    // nothing visible changes; wait for a sync before asserting
+    await sleep(6_000);
+    const config = await api("GET", "/api/config", rita);
+    expect(config.body.viewer.integrationsManagedByAdmin).toBeUndefined();
     const listed = await api("GET", "/api/me/connections", rita);
     expect(listed.status).toBe(200);
-    expect(listed.body.managedByAdmin).toBe(true);
+    expect(listed.body.managedByAdmin).toBe(false);
     expect(listed.body.servers.map((server: { name: string }) => server.name)).toEqual(["ritas"]);
-    for (const [method, path, body] of [
-      ["POST", "/api/me/mcp/servers", { name: "github", url: `${oauth.base}/github-mcp`, auth: "github" }],
-      ["PATCH", "/api/me/mcp/servers/ritas", { enabled: false }],
-      ["DELETE", "/api/me/mcp/servers/ritas", undefined],
-      ["POST", "/api/me/github/device", {}],
-      ["POST", "/api/me/github/token", { token: GITHUB_TOKEN }],
-    ] as const) {
-      const refused = await api(method, path, rita, body);
-      expect(refused.status, `${method} ${path}: ${refused.text}`).toBe(403);
-      expect(refused.body.code).toBe("org_integrations_admin_only");
-    }
-    // plugins and skills on her own bot: read, never changed
-    const plugins = await api("GET", `/api/bots/${ritaBot.id}/plugins`, rita);
-    expect(plugins.body).toMatchObject({ canChange: false, managedByAdmin: true });
-    for (const [method, path, body] of [
-      ["POST", `/api/bots/${ritaBot.id}/plugins/marketplaces`, { source: "acme/tools" }],
-      ["POST", `/api/bots/${ritaBot.id}/plugins/install`, { marketplace: "acme-tools", plugin: "reviewer" }],
-      ["POST", `/api/bots/${ritaBot.id}/skill-template`, { name: "more", description: "More", text: "---\nname: more\ndescription: More\n---\nMore.", source: "template", enabled: true }],
-      ["POST", `/api/bots/${ritaBot.id}/skills`, { source: "acme/tools" }],
-      ["PATCH", `/api/bots/${ritaBot.id}/skills/notes`, { enabled: false }],
-      ["DELETE", `/api/bots/${ritaBot.id}/skills/notes`, undefined],
-    ] as const) {
-      const refused = await api(method, path, rita, body);
-      expect(refused.status, `${method} ${path}: ${refused.text}`).toBe(403);
-      expect(refused.body.code).toBe("org_integrations_admin_only");
-    }
-    expect((await api("GET", `/api/bots/${ritaBot.id}/skills`, rita)).body.skills.map((entry: { name: string }) => entry.name)).toContain("notes");
-    // saved, not usable: her server is not mounted and her plugin is not loaded
-    await turn(rita, ritaBot, "anything");
-    const engine = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
-    expect(engine.mcpConfig.mcpServers.ritas).toBeUndefined();
-    expect(JSON.stringify(engine)).not.toContain("t-rita-000");
-    expect(engine.argv).not.toContain("--plugin-dir");
-    // an organization admin is never narrowed by the field
-    idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === ALICE.sub ? { ...person, sagax_integrations: "off" as const } : person));
-    await sleep(6_000);
-    expect((await api("GET", "/api/me/connections", alice)).body.managedByAdmin).toBe(false);
-    expect((await api("GET", "/api/config", alice)).body.viewer.integrationsManagedByAdmin).toBeUndefined();
-
-    // manage again: the saved server and plugin are usable, and she can change them
-    idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === RITA.sub ? { ...person, sagax_integrations: "manage" as const } : person));
-    await waitFor(async () => (await api("GET", "/api/config", rita)).body.viewer && !(await api("GET", "/api/config", rita)).body.viewer.integrationsManagedByAdmin, 30_000);
-    await turn(rita, ritaBot, "back");
-    const restored = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
-    expect(restored.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
-    expect(restored.argv).toContain("--plugin-dir");
+    expect(await api("GET", `/api/bots/${ritaBot.id}/plugins`, rita).then((res) => res.body)).toMatchObject({ canChange: true });
+    expect((await api("PATCH", "/api/me/mcp/servers/ritas", rita, { enabled: true })).status).toBe(200);
+    const more = "---\nname: more\ndescription: More\n---\nMore.";
+    expect((await api("POST", `/api/bots/${ritaBot.id}/skill-template`, rita, { name: "more", description: "More", text: more, source: "template", enabled: true })).status).toBe(201);
+    expect((await api("DELETE", `/api/bots/${ritaBot.id}/skills/more`, rita)).status).toBe(200);
+    // what she saved stays usable: her server is mounted and her plugin loaded
+    await turn(rita, ritaBot, "after");
+    const after = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
+    expect(after.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
+    expect(after.argv).toContain("--plugin-dir");
     expect((await api("DELETE", "/api/me/mcp/servers/ritas", rita)).status).toBe(200);
-    expect((await api("PATCH", `/api/bots/${ritaBot.id}/plugins/reviewer@acme-tools`, rita, { enabled: false })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${ritaBot.id}/plugins/reviewer@rita-tools`, rita, { enabled: false })).status).toBe(200);
   }, 180_000);
 
   it("OC-9: an admin lists and revokes a person's connections; a member cannot; nothing secret is returned", async () => {

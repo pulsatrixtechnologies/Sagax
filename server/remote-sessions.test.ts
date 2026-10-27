@@ -491,11 +491,19 @@ describe("pairing", () => {
       for (const key of ["cli", "cliCandidates", "install", "authentication", "claudeAccount"]) expect(instance).not.toHaveProperty(key);
     }
     expect((await call("/api/instances/claude", { method: "PATCH", headers: h(), body: "{}" })).status).toBe(403);
-    for (const [method, path] of [["POST", "/api/cli-test"], ["POST", "/api/webhooks"], ["GET", "/api/mcp/servers"], ["POST", "/api/local-computer/run"]] as const) {
+    for (const [method, path] of [["POST", "/api/cli-test"], ["POST", "/api/mcp/servers"], ["POST", "/api/local-computer/run"]] as const) {
       const r = await call(path, { method, headers: h(), body: method === "POST" ? "{}" : undefined });
       expect(r.status, `${method} ${path}`).toBe(403);
       expect(r.body.error, `${method} ${path}`).toContain("admin scope");
     }
+    // Webhooks are a bot feature its owner uses (client scope since 2026-10-22):
+    // the scope gate lets the request through and the handler judges the body.
+    const webhook = await call("/api/webhooks", { method: "POST", headers: h(), body: "{}" });
+    expect(webhook.status, "POST /api/webhooks").not.toBe(403);
+    // The MCP list is names and state only for a client session without the admin scope.
+    const mcp = await call("/api/mcp/servers", { headers: h() });
+    expect(mcp.status).toBe(200);
+    for (const row of mcp.body.servers ?? []) for (const key of ["command", "args", "url", "headers", "env"]) expect(row, key).not.toHaveProperty(key);
     const created = await call("/api/bots", { method: "POST", body: JSON.stringify({ name: "Scoped" }) });
     const botId = created.body?.id ?? created.body?.bot?.id;
     if (botId) {

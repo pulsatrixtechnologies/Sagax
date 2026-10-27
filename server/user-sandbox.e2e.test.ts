@@ -266,11 +266,18 @@ posixOnly("organization server environments (user-sandbox)", () => {
       await waitFor(async () => own.answer()?.behavior === "allow");
       const rows = (await api("GET", `/api/threads/${moss.threadId}/messages?limit=200`, bob)).body.messages as Array<{ card?: any; tool?: { name?: string } }>;
       expect(rows.some((m) => m.card?.requestId === own.id)).toBe(false);
+      // since 2026-10-26 the owner's Auto level answers it first ("automatic
+      // approval"); the own-environment rule is the fallback, so the chip
+      // names the call, not which of the two answered
       await waitFor(async () => ((await api("GET", `/api/threads/${moss.threadId}/messages?limit=200`, bob)).body.messages as Array<{ tool?: { name?: string } }>)
-        .some((m) => m.tool?.name?.includes("your own environment")));
-      // a command on the server itself still waits for an admin
+        .some((m) => m.tool?.name?.startsWith("approved mcp__sagax-environment__run_command")));
+      // a command on the server itself is an admin's (2026-10-22, #990): his
+      // bot has its own computer, so the shell is refused with the way out
+      // (use its own computer) instead of an admin card nobody could use
       const shell = await ask("Bash", { command: "cat /etc/hostname" });
-      expect((await cardOf(shell.id)).adminApproval).toBe(true);
+      await waitFor(async () => shell.answer()?.behavior === "deny");
+      expect(String(shell.answer().message)).toContain("own computer");
+      expect(((await api("GET", `/api/threads/${moss.threadId}/messages?limit=200`, bob)).body.messages as Array<{ card?: any }>).some((m) => m.card?.requestId === shell.id)).toBe(false);
       // 2026-10-26 (JC): no admin switch; a saved false changes nothing in his environment
       const off = await api("PATCH", "/api/org/settings", alice, { memberEnvironmentAutonomy: false });
       expect(off.status, off.text).toBe(200);
