@@ -266,7 +266,7 @@ export function SectionContextDialog({ section, label, onClose }: { section: str
 
 export function TeamMapPage() {
   const { state, dispatch } = useStore();
-  const { dragProps } = useCaptionChrome();
+  const { dragProps, controlsShiftStyle } = useCaptionChrome();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   // Pulsatrix Light's navy top band mirrors the sidebar's own macOS-inset
   // strip, so the two stay vertically aligned; every other skin ignores it.
@@ -347,7 +347,7 @@ export function TeamMapPage() {
           </div>
           <p className="mt-1 text-[12px] text-ink-secondary">{t("canvas.description")}</p>
         </div>
-        {!remoteClient && <div className="flex items-center gap-2">
+        {!remoteClient && <div style={controlsShiftStyle} className="flex items-center gap-2">
           <button onClick={() => setComputersOpen((value) => !value)} aria-label={t("settings.group.computers")} aria-expanded={computersOpen} className="flex size-9 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink-secondary hover:bg-raised hover:text-ink"><Monitor size={16} /></button>
           <details className="relative" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }} onKeyDown={(event) => {
             if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); }
