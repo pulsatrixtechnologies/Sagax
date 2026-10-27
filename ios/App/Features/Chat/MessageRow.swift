@@ -287,7 +287,7 @@ struct MessageRow: View {
             }
         case .activity:
             if let widget = message.tool?.widget, widget.isKnown, CwWidgets.isViewTool(message.tool?.name) {
-                CwWidgetCard(widget: widget, threadId: chat.threadId, botId: message.from?.botId) { action in
+                CwWidgetCard(widget: widget, threadId: chat.threadId, botId: message.from?.botId, brand: message.tool?.product) { action in
                     Task { await session.requestCwAction(action, threadId: chat.threadId, botId: message.from?.botId) }
                 }
             } else if let ref = message.parallelTask, ref.isCard {

@@ -897,7 +897,7 @@ export const Transcript = memo(function Transcript({
             </div>
           ) : m.kind === "activity" && shownCwWidget(m.tool) ? (
             <div className="flex flex-col gap-2">
-              <CwWidgetView widget={m.tool!.widget!} threadId={group.threadId} botId={m.from?.botId} />
+              <CwWidgetView widget={m.tool!.widget!} brand={m.tool!.product} threadId={group.threadId} botId={m.from?.botId} />
               {roomActivityVisible(m, showToolCalls) ? <RoomToolChip message={m} roomId={group.id} /> : null}
             </div>
           ) : m.kind === "activity" && m.tool ? (

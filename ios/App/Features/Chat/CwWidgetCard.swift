@@ -1,5 +1,5 @@
-// ConnectWise records in the conversation. A change asks Sagax for an
-// approval card. The view never calls ConnectWise.
+// Service desk records in the conversation. A change asks Sagax for an
+// approval card. The view never calls the service desk.
 import SwiftUI
 import CompanionCore
 
@@ -9,6 +9,9 @@ struct CwWidgetCard: View {
     let widget: CwWidget
     var threadId: String?
     var botId: String?
+    /// The product name the server declared for the tool (`tool.product`);
+    /// absent, the header reads a neutral label.
+    var brand: String?
     var ask: ((CwActionBody) -> Void)?
     @State private var openId: Int?
 
@@ -53,7 +56,7 @@ struct CwWidgetCard: View {
                 .frame(width: 28, height: 28)
                 .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.cardRaised))
             VStack(alignment: .leading, spacing: 1) {
-                Text("ConnectWise")
+                Text(brandLabel)
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(1.2)
                     .foregroundStyle(Theme.textSecondary)
@@ -78,6 +81,11 @@ struct CwWidgetCard: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(Theme.cardRaised.opacity(0.45))
+    }
+
+    private var brandLabel: String {
+        let declared = brand?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return declared.isEmpty ? "Service desk" : declared
     }
 
     private var title: String {

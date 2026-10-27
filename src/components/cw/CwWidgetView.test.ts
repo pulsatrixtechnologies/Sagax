@@ -25,6 +25,12 @@ describe("ConnectWise widget", () => {
     expect(html).toContain("Open only");
     expect(html).not.toContain("myconnectwise.net/v4_6_release/apis");
     expect(html).not.toContain("<form");
+    // no declared name: a neutral label, never a product
+    expect(html).toContain("Service desk");
+
+    const named = renderToStaticMarkup(createElement(CwWidgetView, { widget: tickets, brand: "Acme Desk" }));
+    expect(named).toContain("Acme Desk");
+    expect(named).not.toContain("Service desk");
 
     const card = cwWidgetFromToolCall(
       "cw_psa__query",

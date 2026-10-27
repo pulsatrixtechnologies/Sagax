@@ -1394,7 +1394,7 @@ const MessagesList = memo(function MessagesList({
               if (shownCwWidget(m.tool)) {
                 return (
                   <>
-                    <CwWidgetView widget={m.tool!.widget!} threadId={threadId} botId={botId} />
+                    <CwWidgetView widget={m.tool!.widget!} brand={m.tool!.product} threadId={threadId} botId={botId} />
                     {showToolCalls ? <ActivityChip message={m} place={place} /> : null}
                   </>
                 );
