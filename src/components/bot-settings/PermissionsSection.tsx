@@ -216,12 +216,18 @@ export function PermissionsSection({
       )}
       {showRecipientsUi && <AllowedRecipientsRow key={bot.id} bot={bot} />}
       {showDrafts && (
-        <SwitchRow
+        <DescribedRow
           label={t("botPanel.emailDrafts")}
-          description={bot.emailDrafts === false ? t("botPanel.emailDrafts.off") : t("botPanel.emailDrafts.help")}
-          checked={bot.emailDrafts !== false}
-          onChange={() => patch({ emailDrafts: bot.emailDrafts === false })}
-        />
+          help={t("botPanel.emailDrafts.help")}
+          description={bot.emailDrafts === false ? t("botPanel.emailDrafts.off") : undefined}
+          rowId="emailDrafts"
+        >
+          <Switch
+            checked={bot.emailDrafts !== false}
+            aria-label={t("botPanel.emailDrafts")}
+            onClick={() => patch({ emailDrafts: bot.emailDrafts === false })}
+          />
+        </DescribedRow>
       )}
       {showHooks && <LifecycleHooksRow key={`hooks:${bot.id}`} botId={bot.id} />}
     </>
