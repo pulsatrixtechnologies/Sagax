@@ -33,6 +33,7 @@ describe("the templates entry points", () => {
   it("close what they sit in, then open Browse Bots on Templates", () => {
     expect(templatesEntryActions("connectApps")).toEqual([{ type: "togglePlugins", open: false }, templates]);
     expect(templatesEntryActions("newBot")).toEqual([{ type: "toggleNewBot", open: false }, templates]);
+    expect(templatesEntryActions("botWizard")).toEqual([{ type: "closeBotWizard" }, templates]);
     expect(templatesEntryActions("installLink", "https://github.com/acme/team")).toEqual([{ ...templates, installUrl: "https://github.com/acme/team" }]);
   });
 

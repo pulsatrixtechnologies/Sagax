@@ -249,7 +249,8 @@ export function CommandPalette({
         onNewConversation?.();
         return;
       case "newBot":
-        dispatch({ type: "toggleNewBot", open: true });
+        // 2026-10-27: New bot opens Create a bot (the wizard's first screen)
+        dispatch({ type: "openBotWizard" });
         return;
       case "routines":
         dispatch({ type: "showRoutines" });

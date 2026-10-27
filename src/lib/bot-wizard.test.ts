@@ -5,6 +5,9 @@ import {
   createWizardBot,
   finishWizard,
   guideBot,
+  isDesignerBot,
+  createDesignerBot,
+  designerProfile,
   pendingRules,
   routineBody,
   ruleBody,
@@ -68,6 +71,33 @@ describe("the wizard's calls", () => {
     expect(guideBot(bots, "new")?.id).toBe("p");
     expect(guideBot([{ id: "new" }, { id: "a" }], "new")?.id).toBe("a");
     expect(guideBot([{ id: "new" }], "new")).toBeNull();
+  });
+
+  it("a Bot designer leads first, in either language, and never the one being made", () => {
+    const bots = [{ id: "p", chiefOfStaff: true }, { id: "d", name: "  Concepteur de  bots " }, { id: "x", name: "Bot Designer", hidden: true }];
+    expect(guideBot(bots, "new")?.id).toBe("d");
+    expect(guideBot([{ id: "new", name: "Bot designer" }, { id: "p", chiefOfStaff: true }], "new")?.id).toBe("p");
+    expect(isDesignerBot({ name: "BOT DESIGNER" })).toBe(true);
+    expect(isDesignerBot({ name: "Designer" })).toBe(false);
+  });
+
+  it("creates the Bot designer with the person's own rights, on the Auto model, in their language", async () => {
+    const request = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === "/api/bot-defaults") return { modelSelection: { instanceId: "claude", model: "auto", auto: true } };
+      return { bot: { id: "d", ...JSON.parse(String(init?.body)) } };
+    });
+    const bot = await createDesignerBot("fr-CA", request as never);
+    expect(bot.name).toBe("Concepteur de bots");
+    const body = JSON.parse(String(request.mock.calls[1]![1]!.body));
+    expect(Object.keys(body).sort()).toEqual(["description", "modelSelection", "name", "soul", "title"]);
+    expect(body.soul).toContain("bot.wizard");
+    expect(designerProfile("en").name).toBe("Bot designer");
+  });
+
+  it("the wizard's bot starts with no MCP server when asked", async () => {
+    const request = vi.fn(async (path: string, init?: RequestInit) => path === "/api/bot-defaults" ? {} : { bot: JSON.parse(String(init?.body)) });
+    expect(await createWizardBot(request as never, { noMcp: true })).toEqual({ mcpServers: [] });
+    expect(await createWizardBot(request as never)).toEqual({});
   });
 
   it("names a schedule", () => {

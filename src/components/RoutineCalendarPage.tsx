@@ -971,7 +971,7 @@ function EventEditor({
                   <div className="mt-2 text-[11.5px] text-ink-secondary">{kind === "routine" ? t("routineCalendar.botOwnsRun") : selectedBots.length === 0 ? t("routineCalendar.noBotsInvited") : selectedBots.length === 1 ? t("routineCalendar.oneBotInvited") : t("routineCalendar.botsInvited", { count: selectedBots.length })}</div>
                 </>
               ) : viewerCanCreateBots(state.config) && (
-                <button type="button" onClick={() => { dispatch({ type: "toggleNewBot", open: true }); onClose(); }} className="w-full rounded-xl border border-dashed border-accent/45 bg-accent/[0.06] px-4 py-4 text-left hover:bg-accent/10">
+                <button type="button" onClick={() => { dispatch({ type: "openBotWizard" }); onClose(); }} className="w-full rounded-xl border border-dashed border-accent/45 bg-accent/[0.06] px-4 py-4 text-left hover:bg-accent/10">
                   <div className="text-[12.5px] font-medium text-accent">{t("onboarding.firstRun.bot.title")}</div>
                   <div className="mt-1 text-[11.5px] text-ink-secondary">{t("routineCalendar.needsOneBot")}</div>
                 </button>
@@ -1194,7 +1194,7 @@ export function QuickComposer({
         <div className="flex items-start gap-3">
           <UserRoundPlus size={16} className="mt-2.5 shrink-0 text-ink-secondary" />
           {bots.length === 0 ? viewerCanCreateBots(state.config) && (
-            <button type="button" onClick={() => { dispatch({ type: "toggleNewBot", open: true }); onClose(); }} className="min-w-0 flex-1 rounded-xl border border-dashed border-accent/45 bg-accent/[0.06] px-3 py-3 text-left hover:bg-accent/10">
+            <button type="button" onClick={() => { dispatch({ type: "openBotWizard" }); onClose(); }} className="min-w-0 flex-1 rounded-xl border border-dashed border-accent/45 bg-accent/[0.06] px-3 py-3 text-left hover:bg-accent/10">
               <div className="text-[12px] font-medium text-accent">{t("onboarding.firstRun.bot.title")}</div>
               <div className="mt-0.5 text-[10.5px] text-ink-secondary">{t("routineCalendar.thenComeBack")}</div>
             </button>

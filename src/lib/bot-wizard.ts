@@ -60,14 +60,76 @@ export async function deleteWizardDraft(botId: string, request: Request = defaul
 
 /** The wizard's bot: created at once on the server's Auto defaults, as New
  * bot and the first run do, under the suggested name the person changes in
- * step 1. It stays a draft (its wizard draft says so) until they finish. */
-export async function createWizardBot(request: Request = defaultApi): Promise<Bot> {
+ * step 1. It stays a draft (its wizard draft says so) until they finish.
+ * `noMcp` (2026-10-27): the wizard's own default is no MCP server (the
+ * Tools step is optional now; its Workspace stays on Auto, the server's
+ * default, and apps connect later), sent only when this person may set the
+ * field on a new bot. */
+export async function createWizardBot(request: Request = defaultApi, options: { noMcp?: boolean } = {}): Promise<Bot> {
   const defaults = await readBotDefaults(request);
   const selection = defaults.modelSelection;
   const body = {
     ...(defaults.suggestedName?.trim() ? { name: defaults.suggestedName.trim() } : {}),
     ...(autoSelectionReady(selection) ? { modelSelection: selection } : {}),
+    ...(options.noMcp ? { mcpServers: [] } : {}),
   };
+  return (await request<{ bot: Bot }>("/api/bots", { method: "POST", body: JSON.stringify(body) })).bot;
+}
+
+// ── the Bot designer (2026-10-27) ───────────────────────────────────────
+// Guided mode never waits on a bot the person does not have: when no bot can
+// guide (none yet, or only the one being made), choosing Guided creates the
+// Bot designer, an ordinary bot of the person's own (their rights, no admin
+// step), which then leads the wizard. One that exists already (a Built-in
+// "Bot Designer", one the wizard made earlier) is found by its name in
+// either language and leads first.
+
+const DESIGNER_NAMES = new Set(["bot designer", "concepteur de bots", "concepteur de bot"]);
+
+const normalizedName = (value: string | undefined) => (value ?? "").normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+
+/** A bot named Bot designer (or Concepteur de bots). Pure. */
+export function isDesignerBot(bot: { name?: string }): boolean {
+  return DESIGNER_NAMES.has(normalizedName(bot.name));
+}
+
+/** The Bot designer's profile, in the person's language. Pure. */
+export function designerProfile(language: string): { name: string; title: string; description: string; soul: string } {
+  return {
+    name: pick({ en: "Bot designer", fr: "Concepteur de bots" }, language),
+    title: pick({ en: "Designs your bots", fr: "Conçoit vos bots" }, language),
+    description: pick({
+      en: "Sets up a new bot with you in the creation wizard: one question at a time, each step filled in live.",
+      fr: "Configure un nouveau bot avec vous dans l'assistant de création : une question à la fois, chaque étape remplie en direct.",
+    }, language),
+    soul: pick({
+      en: [
+        "You are the Bot designer. You help the person you speak with create and set up their own bots in Sagax's bot creation wizard.",
+        "",
+        "- Ask one short question at a time, in the person's language, in the wizard's order: identity (name, role, description), soul (tone, language, what it does, what it never does, how it talks), rules, routines. Tools and apps are optional: offer them once, and only open them if the person wants.",
+        "- Fill each answer in at once: the new bot's own fields with sagax_settings (bot.name, bot.description, bot.persona, bot.approvalMode...), and the wizard's answers, rules and routines with bot.wizard. Read the suggestions with get first and use their ids.",
+        "- Everything you set is the person's own bot, in their own environment: never ask an administrator, never add a limit they did not ask for.",
+        "- Say in one line what you filled in, then ask the next question. When everything is set, tell them to try it from the recap and press Finish.",
+      ].join("\n"),
+      fr: [
+        "Tu es le Concepteur de bots. Tu aides la personne avec qui tu parles à créer et régler ses propres bots dans l'assistant de création de Sagax.",
+        "",
+        "- Pose une question courte à la fois, dans la langue de la personne, dans l'ordre de l'assistant : identité (nom, rôle, description), soul (ton, langue, ce qu'il fait, ce qu'il ne fait jamais, sa façon de parler), règles, routines. Les outils et apps sont optionnels : propose-les une fois, et ouvre-les seulement si la personne le veut.",
+        "- Remplis chaque réponse tout de suite : les champs du nouveau bot avec sagax_settings (bot.name, bot.description, bot.persona, bot.approvalMode...), et les réponses, règles et routines de l'assistant avec bot.wizard. Lis d'abord les suggestions avec get et utilise leurs ids.",
+        "- Tout ce que tu règles est le bot de la personne, dans son propre environnement : ne demande jamais à un administrateur, n'ajoute aucune limite qu'elle n'a pas demandée.",
+        "- Dis en une ligne ce que tu as rempli, puis pose la question suivante. Quand tout est réglé, dis-lui de l'essayer depuis le récap et d'appuyer sur Terminer.",
+      ].join("\n"),
+    }, language),
+  };
+}
+
+/** Create the Bot designer on the server's Auto defaults (POST /api/bots,
+ * the person's own right to create a bot: nothing an admin must do). Its
+ * fields are the ones a member may set on a new bot. */
+export async function createDesignerBot(language: string, request: Request = defaultApi): Promise<Bot> {
+  const defaults = await readBotDefaults(request);
+  const selection = defaults.modelSelection;
+  const body = { ...designerProfile(language), ...(autoSelectionReady(selection) ? { modelSelection: selection } : {}) };
   return (await request<{ bot: Bot }>("/api/bots", { method: "POST", body: JSON.stringify(body) })).bot;
 }
 
@@ -141,11 +203,12 @@ export async function sendWizardMessage(botId: string, threadId: string, text: s
   await request(`/api/bots/${encodeURIComponent(botId)}/messages`, { method: "POST", body: JSON.stringify({ text, threadId, sendId: crypto.randomUUID() }) });
 }
 
-/** The bot that guides: the person's Primary Bot, else their first other
- * bot (never the one being made). Pure. */
-export function guideBot<T extends Pick<Bot, "id" | "hidden" | "chiefOfStaff">>(bots: readonly T[], draftBotId: string | null): T | null {
+/** The bot that guides: the person's Bot designer when they have one, else
+ * their Primary Bot, else their first other bot (never the one being made).
+ * Null: the wizard creates the Bot designer when Guided is chosen. Pure. */
+export function guideBot<T extends Pick<Bot, "id" | "hidden" | "chiefOfStaff"> & { name?: string }>(bots: readonly T[], draftBotId: string | null): T | null {
   const others = bots.filter((bot) => !bot.hidden && bot.id !== draftBotId);
-  return others.find((bot) => bot.chiefOfStaff) ?? others[0] ?? null;
+  return others.find((bot) => isDesignerBot(bot)) ?? others.find((bot) => bot.chiefOfStaff) ?? others[0] ?? null;
 }
 
 /** "Do it for me" chips: the role's answer, only when the field is empty

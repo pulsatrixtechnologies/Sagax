@@ -13,6 +13,12 @@ describe("the bot creation wizard's screen", () => {
     expect(reducer(opened, { type: "closeBotWizard" }).botWizard).toBeNull();
   });
 
+  it("New bot's screen needs the right to create a bot; a bot's own Redo does not", () => {
+    const readOnly = { ...initialState, config: { viewer: { canCreateBots: false } } } as typeof initialState;
+    expect(reducer(readOnly, { type: "openBotWizard" }).botWizard).toBeNull();
+    expect(reducer(readOnly, { type: "openBotWizard", botId: "bot-1", redo: true }).botWizard).toEqual({ botId: "bot-1", redo: true });
+  });
+
   it("Connect apps opens over it without closing it (its Tools step)", () => {
     const opened = reducer(initialState, { type: "openBotWizard", botId: "bot-1" });
     const apps = reducer(opened, { type: "togglePlugins", open: true, surface: "apps", botId: "bot-1" });

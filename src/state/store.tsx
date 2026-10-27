@@ -3007,6 +3007,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, botCreationPending: action.on };
     case "openBotWizard":
       // Its own screen over the app: what was open closes, as New bot does.
+      // A new bot needs the right to create one (a bot's own Redo does not).
+      if (!action.botId && state.config?.viewer?.canCreateBots === false) return state;
       return {
         ...state,
         botWizard: { botId: action.botId ?? null, ...(action.redo ? { redo: true } : {}) },

@@ -75,7 +75,7 @@ export function RetroTop({ onNewBot }: { onNewBot?: () => void }) {
         id: "file",
         label: t("retro.chrome.file"),
         items: [
-          { id: "newBot", label: t("retro.cmd.newBot"), hint: "", run: () => dispatch({ type: "toggleNewBot", open: true }) },
+          { id: "newBot", label: t("retro.cmd.newBot"), hint: "", run: () => dispatch({ type: "openBotWizard" }) },
           ...(onNewBot ? [{ id: "newMessage", label: t("retro.cmd.newMessage"), hint: "Ctrl+N", run: onNewBot }] : []),
           { id: "s1", separator: true },
           { id: "export", label: t("retro.cmd.export"), disabled: !bot, run: () => void clickByLabel("Export conversation") },
@@ -119,7 +119,7 @@ export function RetroTop({ onNewBot }: { onNewBot?: () => void }) {
             run: () => dispatch({ type: "select", id: item.id }),
           })),
           ...(visibleBots.length ? [{ id: "s1", separator: true as const }] : []),
-          { id: "newBot", label: t("retro.cmd.newBot"), run: () => dispatch({ type: "toggleNewBot", open: true }) },
+          { id: "newBot", label: t("retro.cmd.newBot"), run: () => dispatch({ type: "openBotWizard" }) },
           { id: "profile", label: t("retro.cmd.profile"), disabled: !bot, run: () => dispatch({ type: "toggleSettings", open: true }) },
         ],
       },
@@ -139,7 +139,7 @@ export function RetroTop({ onNewBot }: { onNewBot?: () => void }) {
   }, [appName, assistantOn, bot, dispatch, onNewBot, state.activeView, state.bots, state.config, state.inspectorOpen, state.selectedId, state.settingsOpen]);
 
   const toolbar: Array<{ id: string; icon: PixelIconName; label: string; pressed?: boolean; disabled?: boolean; run: () => void } | { id: string; sep: true }> = [
-    { id: "newBot", icon: "newBot", label: t("retro.cmd.newBot"), run: () => dispatch({ type: "toggleNewBot", open: true }) },
+    { id: "newBot", icon: "newBot", label: t("retro.cmd.newBot"), run: () => dispatch({ type: "openBotWizard" }) },
     { id: "search", icon: "search", label: t("retro.cmd.search"), run: () => void clickByLabel(t("sidebar.searchAria")) },
     { id: "sep1", sep: true },
     { id: "export", icon: "share", label: t("retro.cmd.export"), disabled: !bot, run: () => void clickByLabel("Export conversation") },

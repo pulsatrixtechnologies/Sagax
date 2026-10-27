@@ -21,6 +21,7 @@ const fixture = vi.hoisted(() => ({
     sendWizardMessage: vi.fn(),
     finishWizard: vi.fn(),
     deleteWizardDraft: vi.fn(),
+    createDesignerBot: vi.fn(),
   },
 }));
 vi.mock("@/state/store", async (importOriginal) => ({
@@ -37,10 +38,14 @@ vi.mock("./WizardConversation", () => ({
   WizardConversation: ({ botId, threadId }: { botId: string; threadId: string }) => createElement("div", { "data-stub-chat": `${botId}:${threadId}` }),
 }));
 vi.mock("../Avatar", () => ({ BotAvatar: () => null }));
+vi.mock("../BotZipImport", () => ({ BotZipImportDialog: () => createElement("div", { "data-stub-import": "zip" }) }));
+vi.mock("../AgentImport", () => ({ AgentImportDialog: () => createElement("div", { "data-stub-import": "agent" }) }));
 
 const { BotWizard } = await import("./BotWizard");
 
 const newBot = { id: "bot-new", name: "Nova", title: "", description: "", color: "green", messages: [], threadId: "t-new", modelSelection: { instanceId: "", model: "" } };
+const designer = { id: "bot-designer", name: "Concepteur de bots", title: "", description: "", color: "blue", messages: [], threadId: "t-d", modelSelection: { instanceId: "", model: "" } };
+const readyEngine = { id: "claude", install: true, access: "default", snapshot: { state: "available", authenticated: true } };
 const primary = { id: "bot-primary", name: "Chef", chiefOfStaff: true, title: "", description: "", color: "blue", messages: [], threadId: "t-p", modelSelection: { instanceId: "", model: "" } };
 
 let server: WizardDraft | null;
@@ -66,6 +71,10 @@ beforeEach(() => {
   });
   fixture.lib.readWizardDraft.mockImplementation(async () => ({ draft: server, suggestions: { rules: [], routines: [], tools: [], apps: [] } }));
   fixture.lib.openWizardThread.mockResolvedValue("thread-guided");
+  fixture.lib.createDesignerBot.mockImplementation(async () => {
+    fixture.state = { ...fixture.state, bots: [...(fixture.state.bots as unknown[]), designer] };
+    return designer;
+  });
   fixture.lib.sendWizardMessage.mockResolvedValue(undefined);
   fixture.lib.finishWizard.mockImplementation(async (draft: WizardDraft) => ({ draft: { ...draft, status: "done" }, failed: [] }));
   container = document.createElement("div");
@@ -138,6 +147,47 @@ describe("the bot creation wizard", () => {
     expect(container.querySelector("[data-wizard-guided-chat]")).not.toBeNull();
   });
 
+  it("with no bot to guide, Guided creates the Bot designer, which leads, with no admin step", async () => {
+    fixture.state = { bots: [], botWizard: { botId: null }, instances: [readyEngine] };
+    await render();
+    expect(container.querySelector('[data-wizard-choose="guided"]')?.getAttribute("data-wizard-guided-state")).toBe("designer");
+    await click('[data-wizard-choose="guided"]');
+    expect(fixture.lib.createDesignerBot).toHaveBeenCalledTimes(1);
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "botAdded", bot: designer, preserveSelection: true });
+    expect(fixture.lib.openWizardThread).toHaveBeenCalledWith("bot-designer", expect.any(String));
+    expect(fixture.lib.sendWizardMessage).toHaveBeenCalledWith("bot-designer", "thread-guided", expect.stringContaining("Nova"));
+    expect(server).toMatchObject({ guidedBotId: "bot-designer", mode: "guided" });
+  });
+
+  it("with no bot and no engine, the guided card says so and opens the engines, never a dead button", async () => {
+    fixture.state = { bots: [], botWizard: { botId: null }, instances: [{ ...readyEngine, snapshot: { state: "missing" } }] };
+    await render();
+    const card = container.querySelector('[data-wizard-choose="guided"]')!;
+    expect(card.getAttribute("data-wizard-guided-state")).toBe("needs-engine");
+    expect(container.querySelector("[data-wizard-connect-engine]")).not.toBeNull();
+    await click("[data-wizard-connect-engine]");
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "closeBotWizard" });
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "toggleAppSettings", open: true }));
+    expect(fixture.lib.createDesignerBot).not.toHaveBeenCalled();
+    expect(fixture.lib.createWizardBot).not.toHaveBeenCalled();
+  });
+
+  it("keeps every way New bot's old dialog offered, as other ways to start", async () => {
+    fixture.state = { bots: [primary], botWizard: { botId: null }, config: { viewer: { canCreateBots: true } } };
+    await render();
+    expect([...container.querySelectorAll("[data-wizard-other]")].map((node) => node.getAttribute("data-wizard-other")))
+      .toEqual(["template", "browse", "import-agent", "import-zip", "quick"]);
+    await click('[data-wizard-other="template"]');
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "closeBotWizard" });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleNewBot", open: true });
+    await click('[data-wizard-other="browse"]');
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "openBotCatalog", section: "templates" }));
+    await click('[data-wizard-other="quick"]');
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "newBot", settings: {} }));
+    await click('[data-wizard-other="import-agent"]');
+    expect(container.querySelector('[data-stub-import="agent"]')).not.toBeNull();
+  });
+
   it("resumes an open draft of a bot straight on its step and mode", async () => {
     fixture.state = { bots: [primary, newBot], botWizard: { botId: "bot-new" } };
     server = applyWizardPatch(newWizardDraft({ botId: "bot-new", owner: "pr_me", origin: "new", mode: "manual", now: 1 }), { step: "routines" }, 2);
@@ -151,6 +201,7 @@ describe("the bot creation wizard", () => {
     fixture.lib.readWizardDraft.mockRejectedValue(new Error("none"));
     await render();
     expect(container.querySelector("[data-wizard-mode-choice]")?.textContent).toContain("Nova");
+    expect(container.querySelector("[data-wizard-other-starts]")).toBeNull();
     await click('[data-wizard-choose="manual"]');
     expect(fixture.lib.createWizardBot).not.toHaveBeenCalled();
     expect(fixture.lib.startWizardDraft).toHaveBeenCalledWith("bot-new", { origin: "redo", mode: "manual", restart: true });
