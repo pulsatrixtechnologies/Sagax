@@ -26,6 +26,7 @@ export function BotProfileAvatarCard({
   mascotMotion,
   onPatch,
   onContextMenu,
+  size = 144,
 }: {
   bot: Bot;
   activeState: MausState;
@@ -35,6 +36,9 @@ export function BotProfileAvatarCard({
    * there). The pencil badge is gone (2026-10-14): a click on the mascot
    * opens the editor, and the "..." menu has Edit bot. */
   onContextMenu?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  /** The mascot's size: 144 in the panel; the bot wizard's Identity step
+   * draws it smaller beside the name (2026-10-27). */
+  size?: number;
 }) {
   const { dispatch } = useStore();
   const { draft } = useBotEditor();
@@ -49,7 +53,7 @@ export function BotProfileAvatarCard({
   return (
     <div className="relative">
       {/* room above for a move's jump and effects: the panel scrolls, so anything past its top is cut by a straight edge */}
-      <div className="flex justify-center pb-0 pt-5">
+      <div className={cn("flex justify-center pb-0", size >= 144 ? "pt-5" : "pt-3")}>
         <button
           type="button"
           aria-label={t("botPanel.avatar.edit")}
@@ -88,7 +92,7 @@ export function BotProfileAvatarCard({
           <BotAvatar
             bot={bot}
             state={activeState}
-            size={144}
+            size={size}
             motion={mascotMotion?.kind ?? "none"}
             motionKey={mascotMotion?.nonce ?? 0}
           />

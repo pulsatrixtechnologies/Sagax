@@ -527,6 +527,11 @@ the guided first run (#1035). Desktop `src/components/bot-wizard/`, iOS
   only), which leads. With no engine ready, the guided card says so and opens
   Settings > Engines. The wizard's bot starts with no MCP server when the
   person may set the field.
+- Identity (v2): the avatar beside the name, the role as one menu, the
+  description with one short help. Rules (v2): one row per suggestion with
+  an effect selector (Off, Allow, Ask, Deny; the suggested one named under
+  it): Off deletes the custom rule, another effect PATCHes it in place
+  (`setSuggestedRuleEffect`, effects read back by `appliedRuleEffects`).
 - Captures: `node --experimental-strip-types scripts/testing/capture-bot-wizard.ts <outDir> [skin] [lang]`
   (headless; `SAGAX_CAPTURE_CHROME` names another headless shell).
 

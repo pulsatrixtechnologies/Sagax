@@ -137,11 +137,45 @@ export async function createDesignerBot(language: string, request: Request = def
   return (await request<{ bot: Bot }>("/api/bots", { method: "POST", body: JSON.stringify(body) })).bot;
 }
 
-/** The custom rule a suggestion becomes (POST /api/custom-rules). Pure. */
-export function ruleBody(suggestionId: string, botId: string, language: string): { when: string; behavior: "allow" | "ask" | "deny"; botId: string; riskScope: string[] } | null {
+export type RuleEffect = "allow" | "ask" | "deny";
+
+/** The custom rule a suggestion becomes (POST /api/custom-rules), on its
+ * suggested effect or the one the person picked. Pure. */
+export function ruleBody(suggestionId: string, botId: string, language: string, behavior?: RuleEffect): { when: string; behavior: RuleEffect; botId: string; riskScope: string[] } | null {
   const suggestion = ruleSuggestion(suggestionId);
   if (!suggestion) return null;
-  return { when: pick(suggestion.when, language), behavior: suggestion.behavior, botId, riskScope: [] };
+  return { when: pick(suggestion.when, language), behavior: behavior ?? suggestion.behavior, botId, riskScope: [] };
+}
+
+/** The effect of each applied suggestion now: its custom rule's own (the
+ * person may have changed it here or in the bot's rules). */
+export async function appliedRuleEffects(draft: Pick<WizardDraft, "botId" | "rules">, request: Request = defaultApi): Promise<Record<string, RuleEffect>> {
+  const applied = Object.entries(draft.rules).filter(([, ruleId]) => ruleId && ruleId !== PENDING_RULE);
+  if (!applied.length) return {};
+  const { rules } = await request<{ rules?: Array<{ id: string; behavior?: string }> }>(`/api/custom-rules?botId=${encodeURIComponent(draft.botId)}`);
+  const byId = new Map((rules ?? []).map((rule) => [rule.id, rule.behavior]));
+  const effects: Record<string, RuleEffect> = {};
+  for (const [id, ruleId] of applied) {
+    const behavior = byId.get(ruleId);
+    if (behavior === "allow" || behavior === "ask" || behavior === "deny") effects[id] = behavior;
+  }
+  return effects;
+}
+
+/** Set one suggestion's effect (2026-10-27: one selector per rule instead
+ * of a box and a badge). null removes the rule; another effect changes the
+ * applied rule in place (PATCH) or makes it. Returns the draft's patch. */
+export async function setSuggestedRuleEffect(draft: WizardDraft, suggestionId: string, effect: RuleEffect | null, language: string, request: Request = defaultApi): Promise<Record<string, string | null>> {
+  if (!effect) return setSuggestedRule(draft, suggestionId, false, language, request);
+  const existing = draft.rules[suggestionId];
+  if (existing && existing !== PENDING_RULE) {
+    await request(`/api/custom-rules/${encodeURIComponent(existing)}`, { method: "PATCH", body: JSON.stringify({ behavior: effect }) });
+    return {};
+  }
+  const body = ruleBody(suggestionId, draft.botId, language, effect);
+  if (!body) return {};
+  const created = await request<{ rule?: { id: string } }>("/api/custom-rules", { method: "POST", body: JSON.stringify(body) });
+  return created.rule?.id ? { [suggestionId]: created.rule.id } : {};
 }
 
 /** Apply or remove one suggested rule; returns the draft's rules patch. */

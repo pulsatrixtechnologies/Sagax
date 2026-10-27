@@ -40,7 +40,9 @@ try {
 
   await page.click('[data-wizard-choose="manual"]');
   await step("identity");
-  await page.click('[data-wizard-role="inbox"]');
+  // the role menu (2026-10-27): the inbox role, second in the list
+  await page.click("[data-wizard-role-select] [data-pill-select]");
+  await page.locator('[role="listbox"] [role="option"]').nth(1).click();
   await shot("02-identity");
 
   await page.click("[data-wizard-next]");
@@ -51,7 +53,9 @@ try {
 
   await page.click("[data-wizard-next]");
   await step("rules");
-  await page.click('[data-wizard-rule="ask-send-mail"] input');
+  await page.click('[data-wizard-rule-choice="ask-send-mail:ask"]');
+  await page.waitForTimeout(300);
+  await page.click('[data-wizard-rule-choice="deny-payment:deny"]');
   await page.waitForTimeout(500);
   await shot("04-rules");
 

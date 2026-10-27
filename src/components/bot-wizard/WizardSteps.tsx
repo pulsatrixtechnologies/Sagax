@@ -4,8 +4,8 @@
 // the wizard's suggestions around them (role, answers, rules, routines). The
 // manual form and the guided panel draw the same steps; the recap draws them
 // all on one page.
-import { useState, type ReactNode } from "react";
-import { Check, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { Loader2, Sparkles, Wand2 } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { BOT_ROLES, botRole } from "@/lib/bot-roles";
@@ -14,22 +14,27 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import {
+  PENDING_RULE,
   answerSuggestion,
+  appliedRuleEffects,
   scheduleLabel,
-  setSuggestedRule,
+  setSuggestedRuleEffect,
+  type RuleEffect,
   writeSoulForMe,
   type WireWizardDraft,
   type WizardSuggestions,
 } from "@/lib/bot-wizard";
 import { WIZARD_ANSWER_KEYS, WIZARD_TOOLS, type WizardAnswers, type WizardPatch, type WizardStep, type WizardTool } from "../../../shared/bot-wizard";
-import { IdentitySection } from "../bot-settings/IdentitySection";
+import { BotProfileAvatarCard } from "../BotProfileAvatarCard";
+import { inputCls } from "../bot-settings/field";
+import { BOT_PROFILE_LIMITS } from "../../../shared/bot-profile";
 import { SoulSection } from "../bot-settings/SoulSection";
 import { PermissionsSection } from "../bot-settings/PermissionsSection";
 import { AccessSection } from "../bot-settings/AccessSection";
 import { PaneSection } from "../bot-settings/PaneSection";
 import { useBotSettingsDerived } from "../bot-settings/useBotSettingsDerived";
 import { WorksOnSetting } from "../computer/WorksOnSetting";
-import { PILL, SwitchRow } from "../SettingsPrimitives";
+import { HelpTip, PILL, PillSelect, SwitchRow } from "../SettingsPrimitives";
 
 export interface StepProps {
   bot: Bot;
@@ -55,17 +60,6 @@ const ANSWER_ROWS: Record<keyof WizardAnswers, { rows: number }> = {
 };
 
 const textArea = "w-full resize-y rounded-lg border-[0.5px] border-border bg-inset px-3 py-2 text-[13px] leading-[19px] text-ink placeholder:text-ink-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
-
-function Chip({ children, onClick, selected, ...rest }: { children: ReactNode; onClick: () => void; selected?: boolean } & Record<`data-${string}`, string | undefined>) {
-  return (
-    <button type="button" {...rest} onClick={onClick} aria-pressed={selected}
-      className={cn("inline-flex min-h-[32px] items-center gap-1.5 rounded-full border-[0.5px] px-3 text-[12.5px] transition-colors motion-reduce:transition-none",
-        selected ? "border-accent-border bg-selected text-ink" : "border-border text-ink-secondary hover:bg-hover hover:text-ink")}>
-      {selected && <Check size={13} aria-hidden="true" />}
-      {children}
-    </button>
-  );
-}
 
 // ── 1 Identity ──────────────────────────────────────────────────────────
 
@@ -95,20 +89,49 @@ export function IdentityStep({ bot, draft, patch }: StepProps) {
       .catch((error: unknown) => setPrimaryError(error instanceof Error ? error.message : String(error)));
   };
   const showPrimary = canEditBotField(state.config, bot, "chiefOfStaff");
+  const nameId = useId();
+  const descriptionId = useId();
+  const roleLabelId = useId();
+  // 2026-10-27, Grok Bot's layout: the avatar beside the name and a compact
+  // role menu, then the one-sentence description with one short help.
   return (
-    <div className="flex flex-col gap-5" data-wizard-step-body="identity">
-      <PaneSection title={t("botWizard.identity.role")} help={t("botWizard.identity.roleHelp")}>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("botWizard.identity.role")}>
-          {BOT_ROLES.map((role) => (
-            <Chip key={role.id} data-wizard-role={role.id} selected={draft.roleId === role.id} onClick={() => chooseRole(role.id)}>
-              {t(`botWizard.role.${role.id}` as LocaleKey)}
-            </Chip>
-          ))}
-          <Chip data-wizard-role="" selected={draft.roleId === ""} onClick={() => void patch({ roleId: "" })}>{t("botWizard.role.custom")}</Chip>
+    <div className="flex flex-col gap-6" data-wizard-step-body="identity">
+      <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center sm:gap-6">
+        <div className="shrink-0" data-wizard-avatar="">
+          <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} size={104} />
         </div>
-      </PaneSection>
-      <IdentitySection bot={bot} patch={derived.patch} activeState={derived.activeState} mascotMotion={derived.mascotMotion} part="main" />
-      <p className="-mt-3 px-1 text-[12px] text-ink-secondary">{t("botWizard.identity.descriptionHint")}</p>
+        <div className="flex w-full min-w-0 flex-1 flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={nameId} className="px-1 text-[13px] text-ink-secondary">{t("botPanel.identity.name")}</label>
+            <input id={nameId} className={cn(inputCls, "min-h-[38px]")} maxLength={BOT_PROFILE_LIMITS.name} value={bot.name}
+              onChange={(event) => derived.patch({ name: event.target.value })} data-wizard-name="" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5 px-1">
+              <span id={roleLabelId} className="text-[13px] text-ink-secondary">{t("botWizard.identity.role")}</span>
+              <HelpTip label={t("settings.moreAbout", { title: t("botWizard.identity.role") })}>{t("botWizard.identity.roleHelp")}</HelpTip>
+            </div>
+            <div className={cn(inputCls, "flex min-h-[38px] items-center px-1 py-0.5")} data-wizard-role-select={draft.roleId || "custom"} aria-labelledby={roleLabelId} role="group">
+              <PillSelect<string>
+                value={draft.roleId}
+                ariaLabel={t("botWizard.identity.role")}
+                options={[
+                  ...BOT_ROLES.map((role) => ({ value: role.id, label: t(`botWizard.role.${role.id}` as LocaleKey) })),
+                  { value: "", label: t("botWizard.role.custom") },
+                ]}
+                onChange={(roleId) => roleId ? chooseRole(roleId) : void patch({ roleId: "" })}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={descriptionId} className="px-1 text-[13px] text-ink-secondary">{t("botPanel.identity.description")}</label>
+        <textarea id={descriptionId} rows={2} className={cn(inputCls, "min-h-[64px] resize-y leading-relaxed")}
+          maxLength={BOT_PROFILE_LIMITS.description} placeholder={t("botPanel.identity.blurbPlaceholder")}
+          value={bot.description} onChange={(event) => derived.patch({ description: event.target.value })} data-wizard-description="" />
+        <p className="px-1 text-[12px] leading-relaxed text-ink-secondary" data-wizard-description-help="">{t("botWizard.identity.descriptionHelp")}</p>
+      </div>
       {showPrimary && (
         <div className="rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3">
           <SwitchRow
@@ -194,22 +217,90 @@ export function SoulStep({ bot, draft, suggestions, patch, language, compact }: 
 
 // ── 3 Rules ─────────────────────────────────────────────────────────────
 
-const BEHAVIOR: Record<"allow" | "ask" | "deny", LocaleKey> = {
+const BEHAVIOR: Record<RuleEffect, LocaleKey> = {
   allow: "botPanel.rules.allow",
   ask: "botPanel.rules.ask",
   deny: "botPanel.rules.deny",
 };
+const EFFECTS: readonly (RuleEffect | "off")[] = ["off", "allow", "ask", "deny"];
+const EFFECT_LABEL: Record<RuleEffect | "off", LocaleKey> = {
+  off: "botWizard.rules.effect.off", allow: "botWizard.rules.effect.allow", ask: "botWizard.rules.effect.ask", deny: "botWizard.rules.effect.deny",
+};
+const EFFECT_ON: Record<RuleEffect, string> = {
+  allow: "border-success/40 bg-success/15 text-success",
+  ask: "border-warning/40 bg-warning/15 text-warning",
+  deny: "border-danger/40 bg-danger/15 text-danger",
+};
+
+/** The effect each applied suggestion has now (its custom rule's own), read
+ * once and kept while the person changes them. A rule the guide marked
+ * "pending" shows its suggested effect until the app makes it. */
+export function useRuleEffects(draft: WireWizardDraft, suggestions: WizardSuggestions): [Record<string, RuleEffect>, (id: string, effect: RuleEffect | null) => void] {
+  const [effects, setEffects] = useState<Record<string, RuleEffect>>({});
+  const applied = Object.entries(draft.rules).filter(([, ruleId]) => ruleId && ruleId !== PENDING_RULE).map(([id, ruleId]) => `${id}=${ruleId}`).sort().join(",");
+  useEffect(() => {
+    if (!applied) return;
+    let cancelled = false;
+    void appliedRuleEffects(draft).then((found) => { if (!cancelled) setEffects((shown) => ({ ...found, ...pickKnown(shown, found) })); }).catch(() => {});
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applied, draft.botId]);
+  const current: Record<string, RuleEffect> = {};
+  for (const rule of suggestions.rules) {
+    const ruleId = draft.rules[rule.id];
+    if (!ruleId) continue;
+    current[rule.id] = effects[rule.id] ?? rule.behavior;
+  }
+  return [current, (id, effect) => setEffects((shown) => {
+    const next = { ...shown };
+    if (effect) next[id] = effect; else delete next[id];
+    return next;
+  })];
+}
+const pickKnown = (shown: Record<string, RuleEffect>, found: Record<string, RuleEffect>) =>
+  Object.fromEntries(Object.entries(shown).filter(([id]) => !(id in found)));
+
+/** One effect per rule, in one small segmented control (2026-10-27): Off,
+ * Allow, Ask, Deny. The suggested effect stays named under the rule. */
+function EffectSelect({ value, suggested, disabled, label, onChange, ruleId }: {
+  value: RuleEffect | "off"; suggested: RuleEffect; disabled?: boolean; label: string; onChange: (effect: RuleEffect | "off") => void; ruleId: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex shrink-0 gap-0.5 rounded-lg bg-control p-0.5" data-wizard-rule-effect={value}>
+      {EFFECTS.map((effect) => {
+        const selected = effect === value;
+        return (
+          <button key={effect} type="button" role="radio" aria-checked={selected} disabled={disabled}
+            title={effect === "off" ? t("botWizard.rules.effect.offHint") : t(BEHAVIOR[effect])}
+            data-wizard-rule-choice={`${ruleId}:${effect}`}
+            onClick={() => { if (!selected) onChange(effect); }}
+            className={cn("min-h-[30px] whitespace-nowrap rounded-md border px-2.5 text-[12px] transition-colors disabled:opacity-50 motion-reduce:transition-none md:min-h-[26px]",
+              selected
+                ? effect === "off" ? "border-accent-border bg-selected font-medium text-ink shadow-sm" : cn("font-medium shadow-sm", EFFECT_ON[effect])
+                : "border-transparent text-ink-secondary hover:bg-raised-hover hover:text-ink",
+              !selected && effect === suggested && "underline decoration-dotted underline-offset-4")}>
+            {t(EFFECT_LABEL[effect])}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const sentence = (text: string) => text ? text.charAt(0).toLocaleUpperCase() + text.slice(1) : text;
 
 export function RulesStep({ bot, draft, suggestions, patch, language }: StepProps) {
   const derived = useBotSettingsDerived(bot);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const toggle = async (id: string) => {
+  const [effects, remember] = useRuleEffects(draft, suggestions);
+  const change = async (id: string, effect: RuleEffect | "off") => {
     setBusy(id);
     setError(null);
     try {
-      const on = !draft.rules[id];
-      const rules = await setSuggestedRule(draft, id, on, language);
+      const chosen = effect === "off" ? null : effect;
+      const rules = await setSuggestedRuleEffect(draft, id, chosen, language);
+      remember(id, chosen);
       if (Object.keys(rules).length) await patch({ rules });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -220,22 +311,22 @@ export function RulesStep({ bot, draft, suggestions, patch, language }: StepProp
   return (
     <div className="flex flex-col gap-5" data-wizard-step-body="rules">
       <PermissionsSection bot={bot} derived={derived} part="approval" />
-      <PaneSection title={t("botWizard.rules.suggested")} help={t("botWizard.rules.help")}>
-        <div className="flex flex-col divide-y divide-hairline/40 rounded-xl border-[0.5px] border-border bg-elevated">
+      <PaneSection title={t("botWizard.rules.suggested")} help={t("botWizard.rules.help")} plain>
+        <ul className="flex flex-col divide-y divide-hairline/40 rounded-xl border-[0.5px] border-border bg-elevated">
           {suggestions.rules.map((rule) => {
-            const on = Boolean(draft.rules[rule.id]);
+            const value = effects[rule.id] ?? "off";
             return (
-              <label key={rule.id} data-wizard-rule={rule.id} className="flex min-h-[44px] cursor-pointer items-center gap-3 px-3.5 py-2">
-                <input type="checkbox" checked={on} disabled={busy === rule.id} onChange={() => void toggle(rule.id)} className="size-4 accent-[var(--accent)]" />
-                <span className="min-w-0 flex-1 text-[13px] text-ink">{rule.when}</span>
-                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11.5px]",
-                  rule.behavior === "deny" ? "bg-danger/10 text-danger" : rule.behavior === "ask" ? "bg-warning/10 text-warning" : "bg-success/10 text-success")}>
-                  {t(BEHAVIOR[rule.behavior])}
+              <li key={rule.id} data-wizard-rule={rule.id} className="flex min-h-[52px] flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-2.5">
+                <span className="flex min-w-0 flex-1 basis-[180px] flex-col">
+                  <span className="text-[13px] text-ink">{sentence(rule.when)}</span>
+                  <span className="text-[11.5px] text-ink-tertiary">{t("botWizard.rules.suggestedEffect", { effect: t(BEHAVIOR[rule.behavior]) })}</span>
                 </span>
-              </label>
+                <EffectSelect value={value} suggested={rule.behavior} disabled={busy === rule.id} ruleId={rule.id}
+                  label={t("botWizard.rules.effectFor", { rule: rule.when })} onChange={(effect) => void change(rule.id, effect)} />
+              </li>
             );
           })}
-        </div>
+        </ul>
       </PaneSection>
       {error && <p role="alert" className="text-[12.5px] text-danger">{error}</p>}
     </div>
