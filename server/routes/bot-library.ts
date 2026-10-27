@@ -50,7 +50,7 @@ export function createBotLibraryRoutes<B extends BotLibraryBot>(deps: BotLibrary
     res.setHeader("cache-control", "private, no-store");
 
     if (action === "export") {
-      if (!deps.mayExport(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can share it as a template" });
+      if (!deps.mayExport(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can share it as a template", code: "bot_share_owner_only" });
       try {
         return json(res, 200, deps.exportBot(bot));
       } catch (error) {

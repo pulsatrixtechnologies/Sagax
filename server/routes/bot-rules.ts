@@ -59,7 +59,7 @@ export interface BotRulesRouteDeps {
   audit?(auth: RequestAuth, req: IncomingMessage, row: BotRulesAuditRow): void;
 }
 
-const FORBIDDEN = { error: "forbidden: only this bot's owner or an admin can change its rules" };
+const FORBIDDEN = { error: "forbidden: only this bot's owner or an admin can change its rules", code: "bot_rules_owner_only" };
 
 const nameSchema = z.string().max(RULE_SET_NAME_MAX * 4);
 

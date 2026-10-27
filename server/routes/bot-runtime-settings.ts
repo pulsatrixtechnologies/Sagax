@@ -100,7 +100,7 @@ export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps
 
     if (settings) {
       if (method !== "GET" && method !== "PATCH") return json(res, 405, { error: "GET or PATCH" });
-      if (!deps.mayManage(auth, bot, "behaviour")) return json(res, 403, { error: "forbidden: only the bot's owner or an admin can change its settings" });
+      if (!deps.mayManage(auth, bot, "behaviour")) return json(res, 403, { error: "forbidden: only the bot's owner or an admin can change its settings", code: "bot_settings_owner_only" });
       const answer = (current: RuntimeBot) => json(res, 200, {
         settings: { ...effectiveBotRuntimeSettings(current, deps.global()), turnPayer: current.turnPayer ?? deps.turnPayerDefault?.(current) ?? "speaker" },
         stored: stored(current),
@@ -137,7 +137,7 @@ export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps
       return answer(saved);
     }
 
-    if (!deps.mayManage(auth, bot, "tools")) return json(res, 403, { error: "forbidden: only the bot's owner or an admin can change its tool access" });
+    if (!deps.mayManage(auth, bot, "tools")) return json(res, 403, { error: "forbidden: only the bot's owner or an admin can change its tool access", code: "bot_tool_access_owner_only" });
     if (grants && method === "GET") {
       const at = now();
       const rows = deps.grants.all()

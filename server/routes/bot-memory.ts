@@ -91,7 +91,7 @@ export function createBotMemoryRoutes(deps: BotMemoryRouteDeps): RouteHandler {
     const write = <T>(botId: string, change: () => T): T => deps.ownersWrite ? deps.ownersWrite(auth, botId, change) : change();
     const gate = path.match(/^\/api\/bots\/([\w-]+)\/memory(?:\/|$)/);
     if (gate && deps.mayEdit && deps.bot(gate[1]) && !deps.mayEdit(auth, gate[1])) {
-      return json(res, 403, { error: "forbidden: only this bot's owner or an admin can read or change its memory" });
+      return json(res, 403, { error: "forbidden: only this bot's owner or an admin can read or change its memory", code: "bot_memory_owner_only" });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/memory$/);
     if (m && method === "GET") {

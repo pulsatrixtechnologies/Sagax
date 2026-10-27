@@ -85,7 +85,7 @@ export function createPluginRoutes(deps: PluginRouteDeps): RouteHandler {
     if (path === "/api/plugins/install") {
       if (method !== "POST") return json(res, 405, { error: "POST only" });
       if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return json(res, 415, { error: "content-type must be application/json" });
-      if (!deps.mayInstall(auth)) return json(res, 403, { error: "forbidden: only an admin or this computer's owner can add plugins" });
+      if (!deps.mayInstall(auth)) return json(res, 403, { error: "forbidden: only an admin or this computer's owner can add plugins", code: "plugins_install_owner_only" });
       const body = await readBody(req) as Record<string, unknown> | null;
       const id = typeof body?.id === "string" ? body.id.trim() : "";
       if (!id || id.length > 300) return json(res, 400, { error: "id must name a plugin from the catalog or the registry" });

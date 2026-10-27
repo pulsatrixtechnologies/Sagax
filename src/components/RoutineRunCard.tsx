@@ -102,7 +102,7 @@ export function RoutineRunCard({
 
   return (
     <section
-      aria-label={`${run.routineName} routine run: ${copy.label}`}
+      aria-label={t("routineRun.ariaLabel", { name: run.routineName, status: copy.label })}
       className="flex w-full max-w-[680px] flex-col items-start"
     >
       {/* the bot's own bubble, as its other messages beside it */}

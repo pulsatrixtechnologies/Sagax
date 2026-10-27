@@ -43,7 +43,7 @@ export function createBotVersionRoutes(deps: BotVersionRouteDeps): RouteHandler 
     const body = await readBody(req);
     if (!deps.exists(botId)) return json(res, 404, { error: "no such bot" });
     if (!deps.ownerOrAdmin(auth, botId)) {
-      return json(res, 403, { error: "forbidden: only the bot owner or an admin can restore a version", code: "not_bot_owner" });
+      return json(res, 403, { error: "forbidden: only the bot owner or an admin can restore a version", code: "bot_restore_owner_only" });
     }
     const versionId = typeof body?.id === "string" ? body.id : "";
     if (!versionId) return json(res, 400, { error: "id is required" });

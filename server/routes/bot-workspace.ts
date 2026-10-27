@@ -51,7 +51,7 @@ export interface BotWorkspaceRouteDeps {
   ownersWrite?: <T>(auth: RequestAuth, botId: string, write: () => T) => T;
 }
 
-const FORBIDDEN = { error: "forbidden: only this bot's owner or an admin can change its rules and documents" };
+const FORBIDDEN = { error: "forbidden: only this bot's owner or an admin can change its rules and documents", code: "bot_documents_owner_only" };
 
 /** RULES.md, rules/<set>.md or docs/<name>.md, nothing else: this route is reachable by a
  * member, and memory files stay an admin's. */

@@ -34,7 +34,7 @@ export function createTtsProviderRoutes(deps: TtsProviderRouteDeps): RouteHandle
     if (path !== "/api/tts/provider") return PASS;
     if (method !== "PUT") return json(res, 405, { error: "PUT only" });
     if (auth.kind === "loopback" ? auth.trust === "service" : !auth.scopes.includes("admin") && !deps.delegate?.(auth)) {
-      return json(res, 403, { error: "forbidden: only this computer's owner or an admin can change the voice engine" });
+      return json(res, 403, { error: "forbidden: only this computer's owner or an admin can change the voice engine", code: "voice_engine_owner_only" });
     }
     const body = await readBody(req) as unknown;
     const keys = body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body) : null;

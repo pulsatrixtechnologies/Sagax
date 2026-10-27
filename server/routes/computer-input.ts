@@ -77,7 +77,7 @@ export function createComputerInputRoutes<B>(deps: ComputerInputRouteDeps<B>): R
     res.setHeader("cache-control", "private, no-store");
     const bot = deps.bot(botId!);
     if (!bot) return json(res, 404, { error: "no such bot" });
-    if (!deps.mayDrive(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can control its computer" });
+    if (!deps.mayDrive(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can control its computer", code: "bot_computer_control_owner_only" });
 
     let body: Record<string, unknown> = {};
     if (method !== "GET") {
@@ -159,7 +159,7 @@ export function createVmScreenshotRoute<B>(deps: VmScreenshotRouteDeps<B>): Rout
     if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
       return json(res, 415, { error: "content-type must be application/json" });
     }
-    if (!deps.mayDrive(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can see its computer" });
+    if (!deps.mayDrive(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can see its computer", code: "bot_computer_view_owner_only" });
     const refusal = deps.refusal();
     if (refusal) return json(res, 404, { error: refusal, code: "no_computer" });
     res.setHeader("cache-control", "private, no-store");
