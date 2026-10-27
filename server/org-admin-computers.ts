@@ -7,6 +7,13 @@
 //   POST computers/{id}/start|stop|pause|resume|update  admin, {confirm?}
 //   POST computers/{id}/reset|delete                  admin, {confirm: true}
 //
+// A person reaches their own server environment without the admin role
+// (2026-10-26): the list, the detail and start, stop, pause, resume and
+// reset declare the `own-computer` grant (server/oidc-rp.ts), which
+// Perspicax signs for that one request with the person's own role. The
+// route then answers only the person's own computers; anyone else's is not
+// found. Update and delete stay an admin's.
+//
 // A server environment is the organization's: an admin starts, stops,
 // pauses, resumes, updates, resets or deletes it with the same calls the
 // person's own Computer tab makes (server/user-sandbox-manager.ts). A
@@ -46,6 +53,9 @@ export const COMPUTER_ACTIONS = ["start", "stop", "pause", "resume", "update", "
 export type ComputerAction = (typeof COMPUTER_ACTIONS)[number];
 /** Actions that erase the environment's /workspace: always confirmed. */
 const DESTRUCTIVE: ReadonlySet<ComputerAction> = new Set(["reset", "delete"]);
+/** What a person does on their own environment with the `own-computer`
+ * grant: power and reset. Update and delete stay an admin's. */
+export const OWNER_COMPUTER_ACTIONS: ReadonlySet<ComputerAction> = new Set(["start", "stop", "pause", "resume", "reset"]);
 /** Actions that cut short a command running there: confirmed while one runs. */
 const INTERRUPTING: ReadonlySet<ComputerAction> = new Set(["stop", "pause", "update"]);
 export const COMPUTER_STATUS_TIMEOUT_MS = 3_000;
@@ -276,13 +286,14 @@ function action(deps: ComputersDeps, name: ComputerAction): ConsoleRoute {
     method: "POST",
     path: `computers/{id}/${name}`,
     min: "admin",
+    ...(OWNER_COMPUTER_ACTIONS.has(name) ? { ownerGrant: "own-computer" as const } : {}),
     async handle(ctx: ConsoleContext): Promise<ConsoleAnswer> {
       const body = objectBody(ctx.body ?? {});
       if (!body || onlyKeys(body, ["confirm"]) || (body.confirm !== undefined && typeof body.confirm !== "boolean")) return badRequest("Send {} or { \"confirm\": true }.");
       const id = ctx.params.id!;
       const parsed = parseId(id);
       const item = parsed ? await find(deps, id) : null;
-      if (!parsed || !item) return notFound("No such computer.");
+      if (!parsed || !item || !ownedOrAny(ctx, item)) return notFound("No such computer.");
       if (item.kind === "desktop") return fail(409, "personal_computer", "This is a person's own computer: the console lists it and never acts on it.");
       const sandbox = deps.environments;
       if (!sandbox) return fail(409, "not_configured", "This server has no server environments.");
@@ -322,12 +333,18 @@ function action(deps: ComputersDeps, name: ComputerAction): ConsoleRoute {
   };
 }
 
+/** Under the `own-computer` grant, only the viewer's own computer. */
+function ownedOrAny(ctx: ConsoleContext, item: ComputerItem): boolean {
+  return !ctx.ownOnly || item.owner.principalId === ctx.viewer.principalId;
+}
+
 export function computersRoutes(deps: ComputersDeps): ConsoleRoute[] {
   return [
     {
       method: "GET",
       path: "computers",
       min: "admin",
+      ownerGrant: "own-computer",
       async handle(ctx) {
         const params = ctx.url.searchParams;
         const page = parsePage(params);
@@ -338,7 +355,7 @@ export function computersRoutes(deps: ComputersDeps): ConsoleRoute[] {
         if (isAnswer(state)) return state;
         const owner = params.get("owner") || null;
         const { items, environments } = await inventory(deps);
-        const filtered = items.filter((item) => (!kind || item.kind === kind) && (!state || item.state === state)
+        const filtered = items.filter((item) => ownedOrAny(ctx, item) && (!kind || item.kind === kind) && (!state || item.state === state)
           && (!owner || item.owner.principalId === owner || item.owner.sub === owner)
           && matchesQuery(page.q, item.name, item.owner.name, item.image, item.platform));
         return ok({ ...pageOf(filtered, page), environments });
@@ -348,10 +365,11 @@ export function computersRoutes(deps: ComputersDeps): ConsoleRoute[] {
       method: "GET",
       path: "computers/{id}",
       min: "admin",
+      ownerGrant: "own-computer",
       async handle(ctx) {
         const id = ctx.params.id!;
         const item = await find(deps, id);
-        if (!item) return notFound("No such computer.");
+        if (!item || !ownedOrAny(ctx, item)) return notFound("No such computer.");
         const activity = deps.activity({ computerId: id, principalId: item.owner.principalId, kind: item.kind, limit: COMPUTER_ACTIVITY_MAX });
         return ok({ computer: item, activity });
       },

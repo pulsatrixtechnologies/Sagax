@@ -521,6 +521,40 @@ export interface ConsoleAssertion {
    * of 2026-10-21, and Perspicax Voice too; the route compares it). Absent
    * otherwise. */
   bodySha256?: string;
+  /** `grant`: a narrow capability bound to one request, for a person below
+   * a route's role who reaches something of their own. `own-computer`
+   * (2026-10-26): the person's own server environment, on the routes that
+   * declare it (server/org-admin-computers.ts), for that method and path
+   * below /api/org/admin/ only; the route then answers only what the person
+   * owns. Absent otherwise. */
+  grant?: ConsoleGrant;
+}
+
+/** The capabilities a console assertion's `grant` may name. */
+export const CONSOLE_GRANT_KINDS = ["own-computer"] as const;
+export type ConsoleGrantKind = typeof CONSOLE_GRANT_KINDS[number];
+
+/** One request a `grant` covers: its kind, its method and its path below
+ * /api/org/admin/ (no query). */
+export interface ConsoleGrant {
+  kind: ConsoleGrantKind;
+  method: "GET" | "POST";
+  path: string;
+}
+
+/** A `grant` claim as signed, or null when it is not one. Strict: exactly
+ * `kind`, `method` and `path`, a known kind, GET or POST, a path of id
+ * characters at most 256 long. */
+export function parseGrantClaim(value: unknown): ConsoleGrant | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const claim = value as Record<string, unknown>;
+  const keys = Object.keys(claim).sort();
+  if (keys.length !== 3 || keys[0] !== "kind" || keys[1] !== "method" || keys[2] !== "path") return null;
+  const { kind, method, path } = claim;
+  if (typeof kind !== "string" || !(CONSOLE_GRANT_KINDS as readonly string[]).includes(kind)) return null;
+  if (method !== "GET" && method !== "POST") return null;
+  if (typeof path !== "string" || path.length < 1 || path.length > 256 || !/^[A-Za-z0-9_.:@%/-]+$/.test(path) || path.includes("..")) return null;
+  return { kind: kind as ConsoleGrantKind, method, path };
 }
 
 /** The actors a console assertion may name. The admin API accepts only the
@@ -583,7 +617,9 @@ export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput)
     throw new OidcError(`${kind}_body`, "The assertion's body digest is not a SHA-256.");
   }
   const bodySha256 = typeof claims.body_sha256 === "string" ? claims.body_sha256 : undefined;
-  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor, ...(bodySha256 ? { bodySha256 } : {}) };
+  const grant = claims.grant === undefined ? undefined : parseGrantClaim(claims.grant);
+  if (grant === null) throw new OidcError(`${kind}_grant`, "The assertion's grant is not one this server knows.");
+  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor, ...(bodySha256 ? { bodySha256 } : {}), ...(grant ? { grant } : {}) };
 }
 
 /** An issuer URL the server may talk to: https, or http on this machine

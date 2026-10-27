@@ -51,6 +51,10 @@ export interface ConsoleContext {
   /** Writes one admin activity row with this console person as the actor. */
   record(entry: ConsoleAuditEntry): void;
   now(): number;
+  /** Set when the call passed below the route's role by the assertion's
+   * `grant` (the route's `ownerGrant`): the handler answers only what the
+   * viewer owns, anyone else's as not found. */
+  ownOnly?: boolean;
 }
 
 export interface ConsoleAnswer {
@@ -69,6 +73,10 @@ export interface ConsoleRoute {
   /** Relative to /api/org/admin/, parameters in braces: `bots/{id}`. */
   path: string;
   min: ConsoleRole;
+  /** The `grant` kind that lets a person below `min` through on this route
+   * for their own thing (server/oidc-rp.ts `ConsoleGrant`), bound to this
+   * method and path; the handler then sees `ctx.ownOnly`. */
+  ownerGrant?: import("./oidc-rp.ts").ConsoleGrantKind;
   /** Largest POST body read, in bytes (default 16 KiB). */
   maxBody?: number;
   /** A POST that is not JSON (a file upload) reaches the handler unread as
