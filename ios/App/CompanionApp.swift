@@ -147,7 +147,7 @@ struct RootView: View {
                     // the terms of use, once per account (App Store 1.2);
                     // never over the screenshot harness
                     .sheet(isPresented: Binding(
-                        get: { session.termsPending && ParityLaunch.current == nil },
+                        get: { session.termsPending && !parityHarnessActive },
                         set: { if !$0 { session.termsPending = false } }
                     )) {
                         TermsAcceptanceSheet().environmentObject(session)
@@ -386,4 +386,14 @@ final class SagaxAppDelegate: UIResponder, UIApplicationDelegate {
     @objc func openDesktopSettings() {
         NotificationCenter.default.post(name: .desktopOpenSettings, object: nil)
     }
+}
+
+/// The visual-parity harness (ParityLaunch, DEBUG only) is never in a
+/// Release build, so the terms sheet always shows there.
+private var parityHarnessActive: Bool {
+    #if DEBUG
+    return ParityLaunch.current != nil
+    #else
+    return false
+    #endif
 }
