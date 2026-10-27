@@ -702,7 +702,7 @@ describe("Toujours permettre: ce fichier ou tout le dossier (#1065)", () => {
     expect(folderRuleCandidate({ tool: "mcp__sagax-desktop__search_files", input: search }, {})?.scope).toEqual({ [FOLDER_KEY]: "/repo/docs" });
   });
 
-  it("covers the folder, its subfolders and the same tool only", () => {
+  it("covers the folder, its subfolders and the same server's reads", () => {
     const rule = folderRule("/repo/docs/TODO.md");
     for (const path of ["/repo/docs/TODO.md", "/repo/docs/other.md", "/repo/docs/deep/er/x.md", "/repo/docs"]) {
       expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read(path))), path).toBeDefined();
@@ -710,6 +710,9 @@ describe("Toujours permettre: ce fichier ou tout le dossier (#1065)", () => {
     for (const path of ["/repo/README.md", "/repo/docs-old/x.md", "/repo/docsx", "/other/docs/x.md"]) {
       expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read(path))), path).toBeUndefined();
     }
+    expect(matchOwnerRule([rule], desktop(DESKTOP_LIST, read("/repo/docs")))).toBeDefined();
+    expect(matchOwnerRule([rule], desktop("mcp__sagax-desktop__search_files", read("/repo/docs/deep")))).toBeDefined();
+    expect(matchOwnerRule([rule], desktop("Read", read("/repo/docs/x.md")))).toBeUndefined();
     expect(matchOwnerRule([rule], desktop(DESKTOP_WRITE, read("/repo/docs/x.md")))).toBeUndefined();
     expect(matchOwnerRule([rule], { ...desktop(DESKTOP_READ, read("/repo/docs/x.md")), botId: "bot-b" })).toBeUndefined();
     expect(pathInFolder("/repo/docs/../secret", "/repo/docs")).toBe(false);
@@ -749,7 +752,34 @@ describe("Toujours permettre: ce fichier ou tout le dossier (#1065)", () => {
     expect(folderRuleCandidate({ tool: "mcp__mail__send_email", input: JSON.stringify({ to: ["a@b.ca"], body: "x" }) }, {})).toBeUndefined();
     const input = read("/repo/docs/TODO.md");
     expect(folderRuleCandidate({ tool: DESKTOP_READ, input }, { held: true })).toBeUndefined();
-    for (const from of ["admin", "hold", "origin"] as const) expect(folderRuleCandidate({ tool: DESKTOP_READ, input }, { from })).toBeUndefined();
+    for (const from of ["hold", "origin"] as const) expect(folderRuleCandidate({ tool: DESKTOP_READ, input }, { from })).toBeUndefined();
+    expect(folderRuleCandidate({ tool: DESKTOP_READ, input }, { from: "admin" })).toBeUndefined();
+    const roots = ["/data/workspaces/bot-1", "/data/task-workspaces/bot-1/thread-1"];
+    expect(folderRuleCandidate({ tool: "Bash", input: JSON.stringify({ command: "ls /data/workspaces/bot-1" }), command: "ls /data/workspaces/bot-1", roots }, { from: "admin" })).toBeUndefined();
+    expect(folderRuleCandidate({ tool: DESKTOP_WRITE, input: JSON.stringify({ path: "/data/workspaces/bot-1/inbox/nova/a.txt", content: "x" }), roots }, { from: "admin" })).toBeUndefined();
+    expect(folderRuleCandidate({ tool: DESKTOP_READ, input: read("/etc/passwd"), roots }, { from: "admin" })).toBeUndefined();
+    const inbox = folderRuleCandidate({ tool: DESKTOP_READ, input: read("/data/workspaces/bot-1/inbox/nova/a.txt"), roots }, { from: "admin" });
+    expect(inbox?.scope).toEqual({ [FOLDER_KEY]: "/data/workspaces/bot-1" });
+    expect(inbox?.from).toBe("admin");
+    expect(inbox?.writes).toBeUndefined();
+    const thread = folderRuleCandidate({ tool: DESKTOP_READ, input: read("/data/task-workspaces/bot-1/thread-1/notes.md"), roots }, { from: "admin" });
+    expect(thread?.scope).toEqual({ [FOLDER_KEY]: "/data/task-workspaces/bot-1/thread-1" });
+    expect(folderRuleCandidate({
+      tool: DESKTOP_READ,
+      input: JSON.stringify({ path: "/data/workspaces/bot-1/inbox/a.txt", file_path: "/data/task-workspaces/bot-1/thread-1/b.md" }),
+      roots,
+    }, { from: "admin" })).toBeUndefined();
+    const rule: OwnerRule = {
+      id: "f-admin", ownerId: ALICE, botId: "bot-a", tool: inbox!.tool, scope: inbox!.scope,
+      behavior: "allow", description: inbox!.description, createdAt: 1, updatedAt: 1, from: "admin",
+    };
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read("/data/workspaces/bot-1/inbox/nova/b.txt")))).toBeDefined();
+    expect(matchOwnerRule([rule], desktop(DESKTOP_LIST, read("/data/workspaces/bot-1/inbox")))).toBeDefined();
+    expect(matchOwnerRule([rule], desktop("mcp__sagax-desktop__search_files", read("/data/workspaces/bot-1/inbox/nova")))).toBeDefined();
+    expect(matchOwnerRule([rule], desktop(DESKTOP_WRITE, JSON.stringify({ path: "/data/workspaces/bot-1/inbox/x.txt", content: "x" })))).toBeUndefined();
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read("/data/workspaces/bot-1/inbox/.ssh/id")))).toBeUndefined();
+    expect(matchOwnerRule([rule], desktop("Read", read("/data/workspaces/bot-1/inbox/a.txt")))).toBeUndefined();
+    expect(matchOwnerRule([rule], { ...desktop(DESKTOP_READ, read("/data/workspaces/bot-1/inbox/a.txt")), botId: "bot-b" })).toBeUndefined();
   });
 
   const write = (path: string) => JSON.stringify({ path, content: "x" });
