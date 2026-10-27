@@ -15,6 +15,45 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Web search with the person's own key (2026-10-26)
+
+Decision: an engine with no web search of its own (OpenAI-compatible
+endpoints and the local models served through them, Groq, Mistral,
+Cerebras, MiniMax, the xAI API, pi, Cline, a custom ACP agent) searches with
+the person's own provider: Brave Search, Exa, Parallel, Firecrawl, or their
+SearXNG (base URL, optional key).
+
+- Settings > Models and voice > Web search (`WebSearchSettings`): provider,
+  key, Verify. The person's own setting, no admin right, also on an
+  organization server (`/api/me/web-search`, `server/routes/web-search.ts`).
+- The key is sealed with the vault key (AES-256-GCM, AAD `sagax web-search v1`,
+  `server/web-search/store.ts`): `<data>/web-search.enc` solo,
+  `principals/<id>/web-search.enc` per person on an organization server;
+  left out of workspace backups. An answer carries `keyConfigured` and the
+  last four characters, never the key.
+- The tool is `sagax_web_search` (agents catalog,
+  `server/drivers/agents-web-search-tools.ts`). It is shown only when the
+  turn's engine has no native search (`server/web-search/native.ts`:
+  Claude Code, Codex, Cursor, Antigravity keep theirs everywhere; Grok Build,
+  Gemini, Qwen, Kimi, OpenCode, Droid and Hermes keep theirs unless an
+  organization turn withholds their host tools) and the turn's person
+  (speaker, or a routine's payer) saved a ready provider
+  (`SAGAX_WEB_SEARCH`, a local file read, no network). An engine with its
+  own search is never given it.
+- `/api/internal/web-search` (`server/routes/web-search-internal.ts`) reads
+  the key from the store and adds it to the HTTP request
+  (`server/web-search/providers.ts`). The key is never in the tool's
+  arguments, its result, an error, a log line, the prompt or the transcript.
+  Results come back in `wrapUntrusted("web search", ...)`.
+- `sagax_settings` `connections.webSearch` reads it (configured or not) and
+  sets the provider or the SearXNG address, or forgets it; it refuses a key:
+  the person pastes it in Settings.
+- On an organization server a SearXNG address must resolve to public
+  addresses (the server's own network is not a member's to reach); a solo
+  server may use one on localhost or the LAN.
+- Tests: `server/web-search/*.test.ts`, `server/routes/web-search*.test.ts`,
+  `server/drivers/agents-catalog-web-search.test.ts`.
+
 ## Bots' browser keeps its own Chrome profile: port of OpenMausBot #3141 (2026-10-20)
 
 A saved session (a bot's own browser, a shared profile) runs Chrome on

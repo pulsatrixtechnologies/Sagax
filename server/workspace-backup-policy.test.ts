@@ -76,6 +76,13 @@ describe("workspace backup data boundary", () => {
     ]) expect(excludedWorkspaceAuthPath(path)).toBe(false);
   });
 
+  it("never exports a person's web search key", () => {
+    for (const path of ["web-search.enc", "principals/pr_ada/web-search.enc", "web-search.enc.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp"]) {
+      expect(excludedWorkspaceAuthPath(path)).toBe(true);
+    }
+    for (const path of ["notes/web-search.enc", "web-search.enc.md"]) expect(excludedWorkspaceAuthPath(path)).toBe(false);
+  });
+
   it("never exports or restores the organization GitHub access tokens", () => {
     for (const path of [
       "org-github-tokens.enc",
