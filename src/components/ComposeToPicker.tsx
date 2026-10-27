@@ -17,6 +17,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
 import { PersonLabelTag } from "./LabelTag";
 import { botsReadOnlyText } from "@/lib/permissions";
+import { popoverClosesOnPointer } from "@/hooks/use-popover-dismiss";
 
 type ComposeMode = "browse" | "group";
 type ComposeRow = { kind: "create-bot" } | { kind: "create-bot-wizard" } | { kind: "create-group" } | { kind: "bot"; bot: Bot } | { kind: "person"; person: OrgDirectoryPerson };
@@ -248,6 +249,18 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [mode, rows, active]);
+
+  // A press outside the picker closes it, like the other popovers. The + button
+  // is left to its own toggle (pressing it would close, then reopen).
+  useEffect(() => {
+    const onDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-sidebar-new]")) return;
+      if (popoverClosesOnPointer(target, rootRef.current)) onCloseRef.current();
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, []);
 
   const groupLabel = mode === "group" && picked.size > 1
     ? t("sidebar.newChannel.createMany", { count: picked.size })
