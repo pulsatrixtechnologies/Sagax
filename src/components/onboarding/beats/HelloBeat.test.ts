@@ -104,13 +104,13 @@ describe("the managed identity block", () => {
   });
 
   it("shows the Perspicax avatar, else the letters", () => {
-    expect(markup({ ...JC, avatarUrl: "/api/people/pr_1/avatar?v=0a1b" })).toContain('src="/api/people/pr_1/avatar?v=0a1b"');
+    expect(markup({ ...Owner, avatarUrl: "/api/people/pr_1/avatar?v=0a1b" })).toContain('src="/api/people/pr_1/avatar?v=0a1b"');
     expect(markup(Owner)).not.toContain("<img");
   });
 
   it("keeps the note without a usable link", () => {
     setLocale("en");
-    const html = markup({ ...JC, url: null });
+    const html = markup({ ...Owner, url: null });
     expect(html).toContain("Managed by your organization (Pulsatrix Perspicax)");
     expect(html).not.toContain("Edit in Perspicax");
   });
