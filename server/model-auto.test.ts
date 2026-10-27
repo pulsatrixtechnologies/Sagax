@@ -377,3 +377,38 @@ describe("with the shipped catalogue and the drivers' own model lists", () => {
     expect(pickWorkerModel({ base: claudeBase, engines: [claudeReal], catalog: real, task: { text: "rename these files" } }).selection.model).toBe("claude-haiku-4-5");
   });
 });
+
+describe("the fast model (#1209)", () => {
+  const fastLocal: AutoEngine = {
+    ...local,
+    fast: { id: "local-fast", label: "Local Fast" },
+    models: { default: "local-small", options: [{ id: "local-fast", label: "Local Fast", custom: true }] },
+  };
+  const base = { ...claudeBase, fast: { instanceId: "ollama", model: "local-fast" } };
+  const request = { base, engines: [claude, fastLocal], catalog };
+
+  it("runs a quick turn on the fast model and keeps the larger one behind it", () => {
+    const pick = pickOrchestrationModel(request, { text: "hello there" });
+    expect(pick.selection).toEqual({ instanceId: "ollama", model: "local-fast" });
+    expect(pick.reason).toBe("fast");
+    expect(pick.chain[0]).toEqual({ instanceId: "ollama", model: "local-fast" });
+    expect(pick.chain.length).toBeGreaterThan(1);
+    expect(explainPick(pick)).toContain("Local Fast");
+  });
+  it("keeps reasoning on the larger model", () => {
+    const pick = pickOrchestrationModel(request, { text: "Design the architecture for the new billing flow and weigh the trade-offs of each option before we decide." });
+    expect(pick.selection.instanceId).toBe("claude");
+    expect(pickOrchestrationModel(request).selection.instanceId).toBe("claude");
+  });
+  it("runs light parallel subtasks on the fast model and heavy ones on the tier's model", () => {
+    const light = pickWorkerModel({ ...request, task: { text: "Sync the tickets from ConnectWise, export them, then upload the backup to the shared drive." } });
+    expect(light.selection.model).toBe("local-fast");
+    expect(light.role).toBe("worker");
+    const heavy = pickWorkerModel({ ...request, task: { text: "Refactor the session store so the tests stop flaking, then fix the bug in server/store.ts." } });
+    expect(heavy.selection.instanceId).toBe("claude");
+  });
+  it("falls back when the engine does not offer it or a refusal took it out", () => {
+    expect(pickOrchestrationModel({ ...request, engines: [claude] }, { text: "hello there" }).selection.instanceId).toBe("claude");
+    expect(pickOrchestrationModel({ ...request, skip: [{ instanceId: "ollama", model: "local-fast" }] }, { text: "hello there" }).selection.instanceId).toBe("claude");
+  });
+});

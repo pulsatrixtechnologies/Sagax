@@ -23,7 +23,7 @@ export type AutoTier = "top" | "coding" | "fast" | "long" | "vision";
  * strongest-other: the bot's own engine is not usable for this turn; the
  * next engine in the order. tier-fallback: no engine had the tier; a
  * nearby one stood in. base: nothing matched; the bot's own model. */
-export type AutoReason = "strongest-own" | "strongest-other" | "tier-fallback" | "base";
+export type AutoReason = "strongest-own" | "strongest-other" | "tier-fallback" | "base" | "fast";
 
 /** How the payer pays on the picked engine (server AccessVia). */
 export type AutoPayerVia = "subscription" | "owner-key" | "speaker-key" | "server" | "org-key";

@@ -475,6 +475,7 @@ export interface ModelSelection {
   /** Auto (docs/plans/2026-10-08-auto-model.md): each turn picks its model;
    * instanceId and model stay the bot's engine and fallback. */
   auto?: true;
+  fast?: { instanceId: string; model: string };
 }
 
 /** One of a bot's separate contexts: its own thread, transcript and

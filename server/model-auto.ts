@@ -135,6 +135,9 @@ export interface AutoEngine {
   models: { default: string; options: ReadonlyArray<{ id: string; label: string; contextWindow?: number; custom?: boolean }> };
   effortLevels?: readonly EffortLevel[];
   via?: AutoPayerVia;
+  /** The bot's fast model (ModelSelection.fast) when this engine lists it,
+   * custom or local rows included (they are never ranked by tier). */
+  fast?: { id: string; label: string };
 }
 
 export interface AutoChainEntry {
@@ -536,15 +539,55 @@ function pickTier(request: AutoRequest, tier: Tier, role: AutoPick["role"], task
   };
 }
 
+/** Classes of work the bot's fast model takes (#1209). Reasoning, coding,
+ * long reading, large context and vision stay on the model Auto picks. */
+export const FAST_CLASSES: readonly TaskClass[] = ["quick", "automation", "general"];
+
+/** The bot's fast model for this work, or null when it has none, the engine
+ * does not offer it for this turn or a refusal took it out. The chain goes
+ * on to what Auto would have picked, so a refusal climbs to the larger model. */
+function pickFast(request: AutoRequest, role: AutoPick["role"], tier: Tier, taskClass?: TaskClass): AutoPick | null {
+  const wanted = request.base.fast;
+  if (!wanted) return null;
+  const engine = request.engines.find((candidate) => candidate.instanceId === wanted.instanceId);
+  if (!engine?.fast || engine.fast.id !== wanted.model) return null;
+  if ((request.skip ?? []).some((entry) => entry.instanceId === engine.instanceId && entry.model === wanted.model)) return null;
+  const normal = pickTier(request, tier, role, taskClass);
+  const own = request.engines.find((candidate) => candidate.instanceId === request.base.instanceId);
+  const first: AutoChainEntry = { instanceId: engine.instanceId, model: wanted.model };
+  return {
+    role,
+    selection: { instanceId: engine.instanceId, model: wanted.model },
+    engineLabel: engine.displayName,
+    modelLabel: engine.fast.label,
+    tier: "fast",
+    ...(taskClass ? { taskClass } : {}),
+    reason: "fast",
+    ...(engine.via ? { via: engine.via } : {}),
+    ...(engine.instanceId !== request.base.instanceId ? { fromEngineLabel: own?.displayName ?? request.base.instanceId } : {}),
+    chain: [first, ...normal.chain.filter((entry) => !(entry.instanceId === first.instanceId && entry.model === first.model))].slice(0, MAX_CHAIN),
+  };
+}
+
 /** The bot's own turns: the strongest general model the payer can use,
- * on the bot's own engine when it can. */
-export function pickOrchestrationModel(request: AutoRequest): AutoPick {
+ * on the bot's own engine when it can. With a fast model set, a quick turn
+ * (a short message with nothing heavier in it) runs on that model. */
+export function pickOrchestrationModel(request: AutoRequest, task?: TaskInput): AutoPick {
+  if (task && request.base.fast && classifyTask(task).taskClass === "quick") {
+    const fast = pickFast(request, "orchestration", "top");
+    if (fast) return fast;
+  }
   return pickTier(request, "top", "orchestration");
 }
 
-/** Work the bot hands out: classify it, then the tier's model. */
+/** Work the bot hands out: classify it, then the tier's model; the fast
+ * model for the light classes when the bot has one. */
 export function pickWorkerModel(request: AutoRequest & { task: TaskInput }): AutoPick {
   const { taskClass } = classifyTask(request.task);
+  if (request.base.fast && FAST_CLASSES.includes(taskClass)) {
+    const fast = pickFast(request, "worker", CLASS_TIER[taskClass], taskClass);
+    if (fast) return fast;
+  }
   return pickTier(request, CLASS_TIER[taskClass], "worker", taskClass);
 }
 
@@ -600,6 +643,8 @@ export function explainPick(pick: AutoPick): string {
     return `Auto: worker ${pick.engineLabel} · ${pick.modelLabel} (${cls}), the ${pick.tier} tier ${payer}${pick.reason === "tier-fallback" ? ", no closer tier was available" : ""}.`;
   }
   switch (pick.reason) {
+    case "fast":
+      return `Auto: ${pick.modelLabel} for this quick turn, the fast model set for this bot on ${pick.engineLabel}; the larger model stays for reasoning.`;
     case "strongest-own":
       return `Auto: ${pick.modelLabel} for this bot, because it is the strongest general model ${payer} on ${pick.engineLabel}, the engine this bot runs on.`;
     case "strongest-other":

@@ -36,6 +36,7 @@ export function autoReasonSentence(record: AutoModelRecord): string {
   switch (record.reason) {
     case "strongest-own": return t("model.auto.why.strongestOwn", params);
     case "strongest-other": return t("model.auto.why.strongestOther", params);
+    case "fast": return t("model.auto.why.fast", params);
     case "tier-fallback": return t("model.auto.why.tierFallback", params);
     default: return t("model.auto.why.base", params);
   }
