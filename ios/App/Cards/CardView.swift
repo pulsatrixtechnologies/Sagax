@@ -152,10 +152,12 @@ struct CardView: View {
                     }
                 }
 
-                if let held = card.held {
-                    Label(held, systemImage: "exclamationmark.shield")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.warning)
+                if let held = ApprovalWords.held(card) {
+                    Text(verbatim: held)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.attentionSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("approval-held-note")
                 }
 
                 if card.isPending && answeredInDock {
