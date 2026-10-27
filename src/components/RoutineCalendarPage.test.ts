@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +25,7 @@ vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 
 const { initialState } = await import("@/state/store");
 const { RoutinesPage, RoutineEditor, EventDetails } = await import("./RoutineCalendarPage");
+const SOURCE = readFileSync(join(process.cwd(), "src/components/RoutineCalendarPage.tsx"), "utf8");
 
 const bot: Bot = {
   id: "runner", threadId: "execution", name: "Runner", title: "", description: "", color: "green",
@@ -173,12 +176,57 @@ describe("the routine details modal (JC, 2026-10-08: larger, less vertical)", ()
   });
 });
 
-describe("the Team map button (2026-10-16)", () => {
-  it("opens the team map from the Automations header", () => {
+describe("the Automations header (JC, 2026-10-27: one row, secondary controls grouped)", () => {
+  function header() {
+    const html = markupOf();
+    return html.slice(html.indexOf("<header"), html.indexOf("</header>"));
+  }
+
+  it("has no Team map button: it lives under the avatar menu's Tools", () => {
     const buttons = page();
-    const teamMap = [...buttons.entries()].find(([label]) => label === "Team map" || label === "Carte de l'équipe");
-    expect(teamMap).toBeDefined();
-    teamMap![1].onClick!();
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "showTeamMap" });
+    expect([...buttons.keys()].some((label) => label === "Team map" || label === "Carte de l'équipe")).toBe(false);
+    expect(markupOf()).not.toContain("data-routines-team-map");
+  });
+
+  it("keeps the view, the dates and New visible, and folds scope, bot and range into Filters", () => {
+    const html = header();
+    expect(html).toContain('aria-label="Schedule view"');
+    expect(html).toContain('aria-label="Previous dates"');
+    expect(html).toContain(">Today</button>");
+    expect(html).toContain("data-automations-range");
+    expect(html).toContain('aria-label="Create an automation"');
+    // the bot and range selects sit inside the Filters popover, not on the row
+    const filters = html.slice(html.indexOf("data-automations-filters"));
+    expect(filters).toContain('aria-label="Filter schedule by bot"');
+    expect(filters).toContain('aria-label="Schedule range"');
+    expect(html.indexOf('aria-label="Filter schedule by bot"')).toBeGreaterThan(html.indexOf("data-automations-filters"));
+  });
+
+  it("counts the active filters on the Filters button and clears them in one action", () => {
+    expect(header()).toContain('aria-label="Filters"');
+    fixture.state = { ...fixture.state!, routinesFocus: { section: "schedule", botId: bot.id, nonce: 2 } };
+    const html = header();
+    expect(html).toContain('aria-label="Filters, 1 active"');
+    expect(html).toContain("data-automations-filter-count");
+    expect(html).toContain("data-routine-filter-reset");
+  });
+
+  it("puts Paused routines in the menu with its count, and keeps the run indicators", () => {
+    const paused = { id: "p1", name: "Paused digest", prompt: "", target: "bot", botId: bot.id, runOn: "maus", enabled: false,
+      schedule: { type: "daily", time: "06:00", weekdays: [1] }, durationMinutes: 30, createdAt: 1, updatedAt: 1 } as unknown as import("@/lib/routines").Routine;
+    fixture.state = { ...fixture.state!, routines: [paused], routineRuns: [failed, { ...completed, id: "busy", status: "running" }] };
+    const buttons = page();
+    expect(buttons.has("View paused routines")).toBe(true);
+    expect(textOf(buttons.get("Open problem run logs")!.children)).toBe("1");
+    const html = header();
+    expect(html).toContain("data-automations-running");
+    expect(html).toContain('title="1 active"');
+  });
+
+  it("labels every icon-only control and clears the Windows caption buttons", () => {
+    const html = header();
+    for (const label of ["Previous dates", "Next dates", "Create an automation", "Filters"]) expect(html).toContain(`title="${label}"`);
+    expect(html).toContain("@container/automations-header");
+    expect(SOURCE).toMatch(/data-automations-actions[^\n]*controlsShiftStyle/);
   });
 });

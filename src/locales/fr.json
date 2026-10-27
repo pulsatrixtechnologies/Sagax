@@ -11393,5 +11393,9 @@
   "remote.status.pairedOne": "1 appareil jumelé",
   "remote.status.pairedMany": "{count} appareils jumelés",
   "routineRun.ariaLabel": "Exécution de la routine {name} : {status}",
-  "serverError.pluginsInstallOwnerOnly": "Seul un admin ou le propriétaire de cet ordinateur peut ajouter des plugins."
+  "serverError.pluginsInstallOwnerOnly": "Seul un admin ou le propriétaire de cet ordinateur peut ajouter des plugins.",
+  "routineCalendar.filters": "Filtres",
+  "routineCalendar.filtersActive": "Filtres, {count} actifs",
+  "routineCalendar.filterBot": "Bot",
+  "routineCalendar.pausedMenu": "Routines en pause"
 }

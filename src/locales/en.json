@@ -11393,5 +11393,9 @@
   "remote.status.pairedOne": "1 device paired",
   "remote.status.pairedMany": "{count} devices paired",
   "routineRun.ariaLabel": "{name} routine run: {status}",
-  "serverError.pluginsInstallOwnerOnly": "Only an admin or this computer's owner can add plugins."
+  "serverError.pluginsInstallOwnerOnly": "Only an admin or this computer's owner can add plugins.",
+  "routineCalendar.filters": "Filters",
+  "routineCalendar.filtersActive": "Filters, {count} active",
+  "routineCalendar.filterBot": "Bot",
+  "routineCalendar.pausedMenu": "Paused routines"
 }

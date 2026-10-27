@@ -9,9 +9,10 @@
 // (icon and count of active routines) sits at the right edge of the row and
 // opens Automations. Other people's rows never show title or points: those
 // live in a person's detail and on Settings > Achievements. The menu leads with
-// Usage, Help and Settings, then Tools (Automations, Remote sessions,
-// Achievements), then a hairline (Team map opens from the Automations
-// header and the command palette, 2026-10-18). Archived bots, when there
+// Usage, Help and Settings, then Tools (Automations, Team map, Remote
+// sessions, Achievements), then a hairline. Team map left the Automations
+// header for Tools (JC, 2026-10-27); the command palette opens it too.
+// Archived bots, when there
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
 // the collapsed rail, and docs stay on About. Connected apps and Browse Bots
@@ -46,6 +47,7 @@ import {
   Loader2,
   LogOut,
   Monitor as MonitorIcon,
+  Network,
   Plus,
   RefreshCw,
   ScrollText,
@@ -284,6 +286,7 @@ export function footerMenuItems(places: SidebarMenuItem[], profileItems: Sidebar
 
 export interface ProfileMenuHandlers {
   onAutomations: () => void;
+  onTeamMap: () => void;
   onRemoteSessions: () => void;
   onSettings: () => void;
   onAchievements: () => void;
@@ -301,12 +304,12 @@ export interface ProfileMenuHandlers {
 
 /** The reference design's account menu (2026-10-16; src/lib/account-menu.ts):
  * Usage ›, Get Sagax on mobile, Help ›, Settings, Tools › (Automations,
- * Remote sessions, Achievements), a hairline, Switch organization ›
- * (a business session: Switch account ›), Sign out. Automations came
- * back here from the settings nav (2026-10-16) and sits under Tools
- * with Remote sessions and Achievements. Team map left the menu (the
- * maintainer, 2026-10-18: one option, one place): it opens from the
- * Automations header and the command palette. */
+ * Team map, Remote sessions, Achievements), a hairline, Switch
+ * organization › (a business session: Switch account ›), Sign out.
+ * Automations came back here from the settings nav (2026-10-16) and sits
+ * under Tools with Remote sessions and Achievements. Team map moved from
+ * the Automations header to Tools (JC, 2026-10-27); the command palette
+ * opens it too. */
 export function profileMenuItems(input: {
   /** null: no plan reports a window, so Usage carries no percent */
   usagePercent: number | null;
@@ -316,6 +319,10 @@ export function profileMenuItems(input: {
   mobile: boolean;
   achievementsLabel: string | null;
   automationsActive: boolean;
+  /** Team map is the page on screen */
+  teamMapActive?: boolean;
+  /** false in the remote client (it has no Team map): no Team map row. */
+  teamMap?: boolean;
   remoteSessionsActive: boolean;
   /** false on a solo server (no Perspicax organization): no remote sessions row. */
   remoteSessions?: boolean;
@@ -418,6 +425,15 @@ export function profileMenuItems(input: {
       active: input.automationsActive,
       onSelect: input.handlers.onAutomations,
     },
+    ...(input.teamMap !== false
+      ? [{
+          key: "team-map",
+          label: t("sidebar.nav.teamMap"),
+          icon: <Network size={18} />,
+          active: input.teamMapActive === true,
+          onSelect: input.handlers.onTeamMap,
+        }]
+      : []),
     // Remote sessions need Perspicax: not offered on a solo server.
     ...(input.remoteSessions !== false
       ? [{
@@ -638,6 +654,8 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     automationsActive: state.activeView === "routines",
+    teamMapActive: state.activeView === "team-map",
+    teamMap: window.ogb?.remoteClient?.active !== true,
     remoteSessionsActive: state.activeView === "remote-sessions",
     remoteSessions: perspicaxOrg !== null,
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
@@ -648,6 +666,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     signOut: lockedServer,
     handlers: {
       onAutomations: () => dispatch({ type: "showRoutines" }),
+      onTeamMap: () => dispatch({ type: "showTeamMap" }),
       onRemoteSessions: () => dispatch({ type: "showRemoteSessions" }),
       onSettings: () => dispatch({ type: "toggleAppSettings" }),
       onAchievements: openAchievements,
