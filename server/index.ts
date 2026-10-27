@@ -1184,7 +1184,7 @@ import {
 } from "./temporary-agents.ts";
 import { createTemporaryAgentRoutes } from "./routes/temporary-agents.ts";
 import { botCreationDepth, botCreationOffered, botCreationRefusal, createdByBotMark, recentBotCreations, type BotCreationRefusal } from "./bot-creation.ts";
-import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, signTurnHandle, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
+import { agentPromptWithFiles, createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, signTurnHandle, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
 import { parseWakePriority, planPriorityWake, releasePriorityNow, type PriorityDelivery } from "./priority-wake.ts";
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
@@ -15566,12 +15566,15 @@ bus.subscribe((event: RuntimeEvent) => {
         }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(languageOfPerson(cardAnswerer)))
         : undefined;
       // 2026-10-26 (#1065): the second "Toujours permettre", the whole
-      // folder of the file this card reads, beside the exact path
-      const ownerRuleFolderCandidate = ownerRuleCandidate && !strictCall
+      // folder of the file this card reads, beside the exact path.
+      // An admin card offers it only for a read inside one agent root
+      // (this bot's workspace, or this conversation's task folder).
+      const ownerRuleFolderCandidate = ownerRuleCandidate && (!strictCall || (ruleFrom === "admin" && !heldCard))
         ? folderRuleCandidate({
           tool: ownerTool,
           ...(typeof event.input === "string" ? { input: event.input } : {}),
           ...(event.command?.command ? { command: event.command.command } : {}),
+          ...(asker ? { roots: [workspaceDir(asker.id), join(TASK_WORKSPACES_DIR, asker.id, event.threadId)] } : {}),
         }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
@@ -32608,10 +32611,16 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   if (ruleScope !== undefined && ruleScope !== null && ruleScope !== "exact" && ruleScope !== "folder") return { status: 400, error: "ruleScope must be exact or folder" };
   // 2026-10-26 (#1065): "folder" keeps the card's folder rule (every file
   // of the folder and its subfolders), only an allow, only where the card
-  // offered it; never an admin's or a held card (none offers it)
+  // offered it. An ordinary card has no `from`. An admin card offers the
+  // folder only for a read of one agent root (`from: "admin"`, no writes).
   const wholeFolder = ruleScope === "folder";
-  if (wholeFolder && (rule !== "allow" || !card.ownerRuleFolder || card.ownerRule?.from !== undefined)) {
-    return { status: 409, error: "This approval cannot be remembered for the whole folder." };
+  if (wholeFolder) {
+    const folder = card.ownerRuleFolder;
+    const ordinary = rule === "allow" && Boolean(folder) && card.ownerRule?.from === undefined;
+    const adminRead = rule === "allow" && folder?.from === "admin" && folder.writes !== true && card.ownerRule?.from === "admin";
+    if (!ordinary && !adminRead) {
+      return { status: 409, error: "This approval cannot be remembered for the whole folder." };
+    }
   }
   if (!card.ownerRule || card.answered || card.dismissed || card.expired) {
     return { status: 409, error: "This approval cannot be remembered as a rule." };
@@ -37149,14 +37158,6 @@ function agentApiStageFiles(caller: AgentCaller, target: BotRecord, files: FileI
   }
   return written;
 }
-/** #1169: the files' full paths, read with the bot's own file tools. Before,
- * the line said "host file tools", which on an organization server (host
- * tools withheld) pushed the bot onto a file view that asked an admin. A
- * read of the bot's own workspace is its owner's at the bot's level. */
-const agentPromptWithFiles = (prompt: string, staged: string[], target: BotRecord) =>
-  staged.length
-    ? `${prompt}\n\n[Files sent with this message, now in your Sagax workspace folder: ${staged.map((rel) => join(workspaceDir(target.id), rel)).join(", ")}. Read them with your file tools at those paths; if you work on a VM or cloud computer, they are not there until you copy them over (read here, then write them there).]`
-    : prompt;
 /** A bot's prompt to a peer's hidden conversation: runs now when the peer
  * has a free slot, else waits in its queue; the line records the sender. */
 async function startAgentPrompt(from: BotRecord, target: BotRecord, threadId: string, text: string, sourceThreadId: string, depth: number, wake?: PriorityDelivery): Promise<{ messageId: string | null } | Refusal> {
@@ -37518,7 +37519,7 @@ const agentApi = createAgentApi({
     if (caller.kind === "person") {
       const staged = agentApiStageFiles(caller, target, files);
       if ("code" in staged) return staged;
-      const sent = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/messages`, body: { text: agentPromptWithFiles(prompt, staged, target), threadId } });
+      const sent = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/messages`, body: { text: agentPromptWithFiles(prompt, staged, workspaceDir(target.id)), threadId } });
       const body = (sent.body ?? {}) as { message?: { id?: unknown }; error?: unknown; message_?: unknown };
       if (sent.status >= 300) return agentRefuse(sent.status >= 400 ? sent.status : 502, "not_sent", String((sent.body as { error?: unknown })?.error ?? "The prompt could not be sent."));
       const messageId = typeof body.message?.id === "string" ? body.message.id : null;
@@ -37545,7 +37546,7 @@ const agentApi = createAgentApi({
     }
     const staged = agentApiStageFiles(caller, target, files);
     if ("code" in staged) return staged;
-    return startAgentPrompt(from, target, threadId, agentPromptWithFiles(prompt, staged, target), caller.sourceThreadId, capability, wake);
+    return startAgentPrompt(from, target, threadId, agentPromptWithFiles(prompt, staged, workspaceDir(target.id)), caller.sourceThreadId, capability, wake);
   },
   async interrupt(agentId, threadId) {
     await interruptDirectThread(agentId, threadId);

@@ -1871,8 +1871,6 @@
   "botPanel.permissions.makePrimary": "Зробіть цей bot головним, контактом, який координує інших bots.",
   "botPanel.permissions.ask": "Питати мене перед зв'язком з іншими bots",
   "botPanel.permissions.approval": "Рівень схвалення",
-  "botPanel.permissions.approvalDraft": "Типове значення розмов, процедур і дорученої роботи нового bot.",
-  "botPanel.permissions.applyFull": "Застосувати повний доступ до всіх розмов",
   "botPanel.permissions.outbound": "Надсилання від вашого імені",
   "botPanel.permissions.outboundHelp": "Листи, повідомлення, дописи, запрошення й платежі через підключені застосунки. Читання і чернетки ніколи не рахуються. Це діє на кожному рівні схвалення, включно з повним доступом.",
   "botPanel.permissions.askEvery": "Питати щоразу",

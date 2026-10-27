@@ -62,7 +62,6 @@ export function PermissionsSection({
   const { draft } = useBotEditor();
   const [localAutoWarning, setLocalAutoWarning] = useState<string | null>(null);
   const [fullAccessTarget, setFullAccessTarget] = useState<string | null>(null);
-  const [allThreads, setAllThreads] = useState(true);
   const [commandAllowlistTarget, setCommandAllowlistTarget] = useState<{ botId: string; botName: string } | null>(null);
   const [primaryError, setPrimaryError] = useState<string | null>(null);
   // Taking the role and leaving it go through the owner's own route (one
@@ -105,7 +104,6 @@ export function PermissionsSection({
       return;
     }
     if (mode === "full") {
-      setAllThreads(true);
       setFullAccessTarget(bot.id);
       return;
     }
@@ -300,8 +298,6 @@ export function PermissionsSection({
       <FullAccessWarning
         open={fullAccessTarget !== null}
         scope={orgFullAccess !== undefined ? "organization" : "bot"}
-        allThreads={allThreads}
-        onAllThreadsChange={undefined}
         onCancel={() => setFullAccessTarget(null)}
         onConfirm={() => {
           const target = fullAccessTarget;

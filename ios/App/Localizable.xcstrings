@@ -1,6 +1,27 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "The bot's main thread": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The bot's main thread" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le fil principal du bot" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A conversa principal do bot" } }
+      }
+    },
+    "Each run starts with fresh context. Dated results collect in the bot's main thread unless you choose another; full execution details stay in Run logs.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Each run starts with fresh context. Dated results collect in the bot's main thread unless you choose another; full execution details stay in Run logs." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque exécution repart d'un contexte vierge. Les résultats datés s'accumulent dans le fil principal du bot, sauf si vous en choisissez un autre ; les détails complets d'exécution restent dans les journaux d'exécution." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cada execução começa com contexto novo. Os resultados datados ficam na conversa principal do bot, a menos que você escolha outra; os detalhes completos da execução ficam nos registros de execução." } }
+      }
+    },
+    "Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque exécution repart d'un contexte vierge. Les résultats datés s'accumulent dans le fil principal du bot ; les détails complets d'exécution restent dans les journaux d'exécution." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cada execução começa com contexto novo. Os resultados datados ficam na conversa principal do bot; os detalhes completos da execução ficam nos registros de execução." } }
+      }
+    },
     "Journal of actions": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Journal of actions" } },
@@ -48831,24 +48852,24 @@
         }
       }
     },
-    "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread.": {
+    "Applies to every thread of this bot at once: routines, delegated work and work another bot or an AI client sends here. A thread keeps its own level only when you chose one in it.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread."
+            "value": "Applies to every thread of this bot at once: routines, delegated work and work another bot or an AI client sends here. A thread keeps its own level only when you chose one in it."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Par défaut pour les nouveaux fils, les routines et le travail délégué. En activant l'Accès complet, vous pouvez aussi l'appliquer à tous les fils existants."
+            "value": "S'applique à toutes les conversations de ce bot d'un coup : routines, travail délégué et travail qu'un autre bot ou un client IA envoie ici. Une conversation garde son propre niveau seulement si vous l'y avez choisi."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Padrão para novas conversas, rotinas e trabalho delegado. Ao ativar o Acesso total, você também pode aplicá-lo a todas as conversas existentes."
+            "value": "Vale para todas as conversas deste bot de uma vez: rotinas, trabalho delegado e trabalho que outro bot ou um cliente de IA envia para cá. Uma conversa mantém o próprio nível só quando você escolheu um nela."
           }
         }
       }

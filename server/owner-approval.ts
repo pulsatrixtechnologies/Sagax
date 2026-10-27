@@ -253,14 +253,33 @@ export function fileChangeTool(tool: string): boolean {
   return words.some((word) => CHANGE_WORDS.has(word)) && words.some((word) => FILE_WORDS.has(word) || word === "multiedit" || word === "notebookedit");
 }
 
-/** Whether a folder rule saved for `ruleTool` also answers `callTool`: the
- * same tool, or two file-changing tools of the same server. */
-function folderToolCovers(ruleTool: string, callTool: string): boolean {
-  if (normalizeRuleTool(ruleTool) === normalizeRuleTool(callTool)) return true;
-  if (!fileChangeTool(ruleTool) || !fileChangeTool(callTool)) return false;
+/** Leaves of a file tool that only reads. A change is never one of these. */
+const READ_ONLY_FILE_LEAVES: ReadonlySet<string> = new Set([
+  "read", "notebookread", "glob", "grep", "ls", "readfile", "listfiles", "searchfiles",
+]);
+
+/** Whether a tool only reads files (Read, Glob, list_files, search_files). */
+function readOnlyFileTool(tool: string): boolean {
+  if (fileChangeTool(tool)) return false;
+  const name = parseToolId(tool).name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+  const leaf = name.split(/[^a-z]+/).filter(Boolean).join("");
+  return READ_ONLY_FILE_LEAVES.has(leaf);
+}
+
+function sameServer(ruleTool: string, callTool: string): boolean {
   const a = parseToolId(normalizeRuleTool(ruleTool)).server ?? "";
   const b = parseToolId(normalizeRuleTool(callTool)).server ?? "";
   return a.toLowerCase() === b.toLowerCase();
+}
+
+/** Whether a folder rule saved for `ruleTool` also answers `callTool`: the
+ * same tool, two read-only file tools of the same server, or two
+ * file-changing tools of the same server. A read never covers a write. */
+function folderToolCovers(ruleTool: string, callTool: string): boolean {
+  if (normalizeRuleTool(ruleTool) === normalizeRuleTool(callTool)) return true;
+  if (readOnlyFileTool(ruleTool) && readOnlyFileTool(callTool)) return sameServer(ruleTool, callTool);
+  if (!fileChangeTool(ruleTool) || !fileChangeTool(callTool)) return false;
+  return sameServer(ruleTool, callTool);
 }
 
 /** A path as text that can be compared by prefix: slashes, no `.` part, no
@@ -741,21 +760,40 @@ function commonFolder(paths: string[], tool: string): string | undefined {
   return folderOfPath(`${common}/x`, "");
 }
 
+/** The one root every path sits in, or undefined when they span two roots
+ * or one path sits in none or in more than one. */
+function singleContainingRoot(paths: readonly string[], roots: readonly string[]): string | undefined {
+  const normalized = [...new Set(roots.map((root) => normalizeFolderPath(root)).filter((root): root is string => root !== undefined))];
+  let chosen: string | undefined;
+  for (const path of paths) {
+    const hits = normalized.filter((root) => pathInFolder(path, root));
+    if (hits.length !== 1) return undefined;
+    if (chosen === undefined) chosen = hits[0];
+    else if (chosen !== hits[0]) return undefined;
+  }
+  return chosen;
+}
+
 /** 2026-10-26 (#1065): the second choice of "Toujours permettre", every
  * file of the folder of the one this card reads or changes (and its
- * subfolders), or undefined when it is not offered: only an ordinary card
- * (no `from`, not held) of a call that reads files or changes them (write,
- * create, rename, move, delete, recursive or in a batch), whose paths all
- * have a common folder that is not the root, a drive or the home folder and
- * hold no sensitive name. Never a command or an outward send. A rule made on
- * a change covers every file-changing tool of that server in the folder;
- * `writes` says so on the card. */
+ * subfolders), or undefined when it is not offered. An ordinary card
+ * (no `from`, not held) of a call that reads files or changes them
+ * offers the common parent, when that parent is not the root, a drive
+ * or the home folder and holds no sensitive name. An admin card
+ * (`from: "admin"`) offers one agent root only, and only for a read
+ * whose every path sits in that one root (`call.roots`: the bot
+ * workspace or this conversation's task folder). Never a command, a
+ * write on an admin card, a held card or an outward send. A rule made
+ * on a change covers every file-changing tool of that server in the
+ * folder; a rule made on a read covers the other read-only file tools
+ * of that server. `writes` says a change rule on the card. */
 export function folderRuleCandidate(
-  call: { tool: string; input?: string; command?: string; cwd?: string; app?: ScreenAppIdentity },
+  call: { tool: string; input?: string; command?: string; cwd?: string; app?: ScreenAppIdentity; roots?: readonly string[] },
   situation: { from?: RuleSituation; held?: boolean },
   words: ApprovalWords = ENGLISH_WORDS,
-): (RuleCandidate & { writes?: true }) | undefined {
-  if (situation.held === true || situation.from !== undefined || call.app) return undefined;
+): (RuleCandidate & { writes?: true; from?: "admin" }) | undefined {
+  if (situation.held === true || call.app) return undefined;
+  if (situation.from !== undefined && situation.from !== "admin") return undefined;
   if (call.command?.trim()) return undefined;
   const input = ruleInputFor(call.input, call.command);
   if (!input) return undefined;
@@ -771,8 +809,19 @@ export function folderRuleCandidate(
   const scope = callScopeFor({ input });
   if (Object.keys(scope).some((key) => !FILE_KEYS.has(key))) return undefined;
   if (paths.some((path) => sensitiveReadPath(path))) return undefined;
-  const folder = commonFolder(paths, call.tool);
-  if (!folder || sensitiveReadPath(folder)) return undefined;
+  const admin = situation.from === "admin";
+  let folder: string | undefined;
+  if (admin) {
+    // An admin read keeps one agent root, never a write and never a
+    // parent that would cover a sibling conversation.
+    if (changes || risk !== "read" || !call.roots?.length) return undefined;
+    const root = singleContainingRoot(paths, call.roots);
+    folder = root ? normalizeFolderPath(root) : undefined;
+    if (!folder || sensitiveReadPath(folder) || folderOfPath(`${folder}/x`, "") !== folder) return undefined;
+  } else {
+    folder = commonFolder(paths, call.tool);
+    if (!folder || sensitiveReadPath(folder)) return undefined;
+  }
   const key = changes ? "approval.rule.folderChanges" : "approval.rule.folder";
   const action = capitalize(approvalAction(call.tool, input, undefined, words));
   const worded = words.t(key, { action, folder });
@@ -783,6 +832,7 @@ export function folderRuleCandidate(
     tool: normalizeRuleTool(call.tool),
     scope: { [FOLDER_KEY]: folder },
     ...(changes ? { writes: true as const } : {}),
+    ...(admin ? { from: "admin" as const } : {}),
     description: (worded === key ? fallback : worded).slice(0, 500),
   };
 }

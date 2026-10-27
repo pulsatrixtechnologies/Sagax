@@ -1352,8 +1352,6 @@
   "botPanel.permissions.makePrimary": "この bot を、ほかの bot をまとめるメインの連絡先にしてください。",
   "botPanel.permissions.ask": "ほかの bot に連絡する前に確認する",
   "botPanel.permissions.approval": "承認レベル",
-  "botPanel.permissions.approvalDraft": "新しい bot の会話、ルーチン、委任された作業の既定です。",
-  "botPanel.permissions.applyFull": "すべての会話にフルアクセスを適用",
   "botPanel.permissions.outbound": "あなたに代わって送信",
   "botPanel.permissions.outboundHelp": "接続したアプリ経由のメール、メッセージ、投稿、招待、支払いです。閲覧と下書きは数えません。フルアクセスを含むすべての承認レベルで適用されます。",
   "botPanel.permissions.askEvery": "毎回確認",

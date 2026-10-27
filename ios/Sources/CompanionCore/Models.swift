@@ -2124,7 +2124,7 @@ public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
 public enum RoutineResultsDestination: Hashable, Sendable {
     /// "Keep current destination": the field is left out.
     case keep
-    /// "Create a dedicated results thread": null.
+    /// "The bot's main thread": null (the server posts there).
     case newThread
     /// An existing conversation of the bot.
     case thread(String)

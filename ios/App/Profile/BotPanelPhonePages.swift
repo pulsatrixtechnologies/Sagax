@@ -322,7 +322,7 @@ struct BotPermissionsSection: View {
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(DesktopApprovalButton.detail(level))
-                Text("Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread.")
+                Text("Applies to every thread of this bot at once: routines, delegated work and work another bot or an AI client sends here. A thread keeps its own level only when you chose one in it.")
             }
         }
         .task(id: bot.id) { viewerId = PrimaryBotRules.viewerId(config: await session.configStatus()) }

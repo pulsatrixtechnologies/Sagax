@@ -1011,9 +1011,10 @@ export interface OptionCardData {
     from?: "admin" | "hold" | "origin";
   };
   /** 2026-10-26 (#1065): the second choice of "Toujours permettre", every
-   * file of the folder of the one this card reads (and its subfolders),
-   * offered only on an ordinary read-only card of a file or a folder. */
-  ownerRuleFolder?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; /** the folder rule covers changing files (write, delete), not only reading */ writes?: boolean };
+   * file of the folder of the one this card reads (and its subfolders).
+   * An ordinary card names the file's folder. An admin card names one
+   * agent root for a read (`from: "admin"`). */
+  ownerRuleFolder?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; /** the folder rule covers changing files (write, delete), not only reading */ writes?: boolean; /** set when this folder rule answers an admin card */ from?: "admin" | "hold" | "origin" };
   /** The owner's rule saved when answering this card. */
   ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule (an allowKey) the person saved when answering this card:

@@ -106,14 +106,20 @@ The final startup JSON includes the server `url`, `previewUrl`, `pepperId`,
    **Back to results**. **Run logs** retains the full execution history.
    A user follow-up sent in a completed execution makes it an ordinary visible
    thread; marking the older run seen must not hide that conversation again.
-10. In the routine editor, **Post results to** offers visible threads grouped by
-    folder or **The bot's main thread** (the default). Save to Fleet health
-    reports, reload, and confirm the selection persists. In quick create,
+10. In the routine editor, **Post results to** defaults to **The bot's main
+    thread**. With conversation threads shown it also offers the bot's visible
+    threads grouped by folder. In one conversation (threads hidden, the
+    default) the menu is only **The bot's main thread**, plus **Keep current
+    destination** on an existing routine, on the desktop and on iPhone. With
+    threads shown, save to Fleet health reports, reload, and confirm the
+    selection persists. In quick create,
     **More options** must preserve the chosen destination. Changing the owning
     bot, including via Call/Team goal selectors, must reset a foreign destination.
     Run a new routine twice: both reports use the chosen thread, while Run logs
     links to two different executions. The default reports every run into the
-    bot's main thread and never creates a "· Results" thread.
+    bot's main thread and never creates a "· Results" thread. Every run, and
+    the thread its results go to, uses the bot's current approval level: set
+    Full after the routine exists and the next run runs at Full.
 
 Every routine reports into its bot's main thread unless the user chooses another
 destination, whether it was made in a chat, the editor or the API, and whether a

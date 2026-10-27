@@ -175,7 +175,7 @@ export interface OptionCardData {
    * read from the arguments, the destructive kind and plain words. */
   ownerRule?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; from?: "admin" | "hold" | "origin" };
   /** 2026-10-26 (#1065): the second "Always allow", the whole folder of the file this card reads (and its subfolders). */
-  ownerRuleFolder?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; writes?: boolean };
+  ownerRuleFolder?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; writes?: boolean; from?: "admin" | "hold" | "origin" };
   /** The owner's rule saved when answering this card. */
   ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule saved when this card was answered (server/index.ts) */
