@@ -33,6 +33,9 @@ final class ComposerModel: ObservableObject {
     /// skill authoring is on. Nil until read.
     @Published private(set) var engines: [String: EngineAbilities]?
     @Published private(set) var skillAuthoring = true
+    /// Each bot's enabled skills (`useSlashSkills`), read again each time the
+    /// menu opens so a skill switched on or off in settings shows the right way.
+    @Published private(set) var skillLists: [String: [SlashSkill]] = [:]
     private var loadedAt: [String: Date] = [:]
 
     /// `TTL_MS`: an engine list is kept a few minutes.
@@ -97,6 +100,13 @@ final class ComposerModel: ObservableObject {
             if answer.available || commandLists[key] == nil { commandLists[key] = answer }
             loadedAt[key] = Date()
         }
+    }
+
+    func skills(botId: String) -> [SlashSkill] { skillLists[botId] ?? [] }
+
+    /// Read a bot's skills for the menu. A failed read lists none.
+    func loadSkills(botId: String, session: Session) async {
+        skillLists[botId] = await session.slashSkills(botId: botId) ?? []
     }
 
     /// The engine instance's abilities, when known.

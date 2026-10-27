@@ -95,6 +95,26 @@ final class ComposerCommandsTests: XCTestCase {
         XCTAssertEqual(prefix.first?.label, "/setup")
     }
 
+    func testMenuListsTheBotsSkillsBetweenSagaxAndTheEngine() {
+        let engine = [
+            HarnessCommand(name: "compact", description: "Compact the context"),
+            HarnessCommand(name: "presentation", description: "An engine command a skill shadows"),
+        ]
+        let skills = SlashSkill.menu([
+            ManagedSkill(name: "presentation", description: "Give your name", enabled: true),
+            ManagedSkill(name: "draft", description: "Off for now", enabled: false),
+            ManagedSkill(name: "setup", description: "Cannot shadow a built-in", enabled: true),
+        ])
+        XCTAssertEqual(skills.map(\.name), ["presentation"])
+        let all = ComposerCommandMenu.items(sagax: [.setup], skills: skills, engine: engine, query: "")
+        XCTAssertEqual(all.map(\.label), ["/setup", "/presentation", "/compact"])
+        XCTAssertEqual(all.map(\.group), [.sagax, .skills, .engine])
+        XCTAssertEqual(all[1].insertion, "/presentation ")
+        XCTAssertEqual(ComposerCommandMenu.items(sagax: [.setup], skills: skills, engine: engine, query: "p").map(\.label), ["/presentation"])
+        // one letter never matches a description or the inside of a name
+        XCTAssertEqual(ComposerCommandMenu.items(sagax: [.setup], skills: skills, engine: engine, query: "o").map(\.label), [])
+    }
+
     func testRoomMenuGroupsEngineCommandsUnderEachBot() {
         let members = [RoomCommandMember(id: "a", name: "Scout"), RoomCommandMember(id: "b", name: "Atlas")]
         let everyone = GroupResponder(kind: "everyone", botId: nil)

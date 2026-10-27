@@ -8,6 +8,7 @@ import {
   type HarnessCommandUnavailable,
 } from "../../shared/harness-commands";
 import type { GroupGoalRunStatus } from "../../shared/group-goal-run";
+import { offersSkillCommand } from "../../shared/skill-command";
 
 /** What /goal does besides starting one: typed after it (`/goal stop`). */
 export const GOAL_SUBCOMMANDS = ["status", "pause", "resume", "stop"] as const;
@@ -103,10 +104,13 @@ export function replaceComposerSlashTrigger(
   return { text: next, caret: trigger.start + replacement.length };
 }
 
-/** One row of the "/" menu: a Sagax command, or one of the engine's own
- * (shared/harness-commands.ts), grouped Objective, Sagax, Engine, Plugins, MCP. */
+/** One row of the "/" menu: a Sagax command, one of the bot's enabled skills
+ * (run for one turn by sending `/name`, shared/skill-command.ts), or one of
+ * the engine's own (shared/harness-commands.ts), grouped Objective, Sagax,
+ * Skills, Engine, Plugins, MCP. */
 export type ComposerMenuItem =
   | { kind: "sagax"; key: string; group: ComposerSagaxGroup; label: string; description: string; command: ComposerSlashCommand }
+  | { kind: "skill"; key: string; group: "skills"; label: string; description: string; skill: SlashSkill }
   | {
     kind: "engine";
     key: string;
@@ -122,7 +126,7 @@ export type ComposerMenuItem =
     mentionPrefix?: string;
   };
 
-export const COMPOSER_MENU_GROUPS = ["goal", "sagax", "engine", "plugins", "mcp"] as const;
+export const COMPOSER_MENU_GROUPS = ["goal", "sagax", "skills", "engine", "plugins", "mcp"] as const;
 export type ComposerMenuGroup = (typeof COMPOSER_MENU_GROUPS)[number];
 const MENU_LIMIT = 80;
 
@@ -131,20 +135,40 @@ function matchRank(query: string, names: readonly string[], description: string)
   if (names.some((name) => name.startsWith(query))) return 0;
   // a plugin command by its short name (`using-px-flow` for `pulsatrix-flow:using-px-flow`)
   if (names.some((name) => name.split(":").pop()?.startsWith(query))) return 1;
-  if (names.some((name) => name.includes(query))) return 2;
-  // `goal s` is a subcommand being typed, never words of a description
-  if (!query.includes(" ") && description.toLowerCase().includes(query)) return 3;
+  // One typed letter ("/p") is the start of a name: a name that merely
+  // contains it, or a description that does, is not what was asked for.
+  if (query.length >= 2 && names.some((name) => name.includes(query))) return 2;
+  // Words of a description only as a fallback, after every name match, and
+  // only from the start of a word of at least three letters typed. `goal s`
+  // is a subcommand being typed.
+  if (query.length >= 3 && !query.includes(" ") && descriptionWords(description).some((word) => word.startsWith(query))) return 3;
   return null;
 }
 
+function descriptionWords(description: string): string[] {
+  return description.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/** The bot's enabled skills a `/name` can reach, as menu rows, by name. */
+export function skillMenuItems(skills: readonly SlashSkill[]): Array<Extract<ComposerMenuItem, { kind: "skill" }>> {
+  const seen = new Set<string>();
+  return skills
+    .filter((skill) => offersSkillCommand(skill.name) && !seen.has(skill.name) && Boolean(seen.add(skill.name)))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((skill) => ({ kind: "skill", key: `skill:${skill.name}`, group: "skills", label: `/${skill.name}`, description: skill.description, skill }));
+}
+
 /** The "/" menu for a query: Sagax's commands first (the goal's, then the
- * others), then the engine's by
+ * others), then the bot's skills, then the engine's by
  * group; within a group the closest names first, what the chat cannot run
- * last. An engine command a Sagax one shadows is offered as /engine:<name>. */
+ * last. An engine command a Sagax one shadows is offered as /engine:<name>;
+ * one a skill shadows is left out, since `/name` runs the skill (the server
+ * expands it before the engine sees the turn). */
 export function composerCommandMenu(
   sagax: readonly ComposerSlashCommand[],
   engine: readonly HarnessCommand[],
   queryInput: string,
+  skills: readonly SlashSkill[] = [],
 ): ComposerMenuItem[] {
   const query = queryInput.toLowerCase();
   const ranked: Array<{ item: ComposerMenuItem; rank: number; order: number }> = [];
@@ -152,7 +176,14 @@ export function composerCommandMenu(
     const rank = matchRank(query, [command.label.slice(1).toLowerCase(), command.id], command.description);
     if (rank !== null) ranked.push({ item: { kind: "sagax", key: `sagax:${command.id}`, group: sagaxCommandGroup(command.id), label: command.label, description: command.description, command }, rank, order });
   });
+  const skillRows = skillMenuItems(skills);
+  const skillNames = new Set(skillRows.map((item) => item.skill.name));
+  skillRows.forEach((item, order) => {
+    const rank = matchRank(query, [item.skill.name], item.description);
+    if (rank !== null) ranked.push({ item, rank, order });
+  });
   engine.forEach((command, order) => {
+    if (skillNames.has(engineCommandLabel(command).slice(1))) return;
     const label = engineCommandLabel(command);
     const names = [label.slice(1).toLowerCase(), command.name.toLowerCase(), ...(command.aliases ?? []).map((alias) => alias.toLowerCase())];
     const rank = matchRank(query, names, command.description);
@@ -270,6 +301,11 @@ export function composerGroupCommandMenu(
     }
   }
   return items;
+}
+
+/** What picking a skill row puts in the draft: `/name ` and room for a request. */
+export function skillCommandInsertion(item: Extract<ComposerMenuItem, { kind: "skill" }>): string {
+  return `${item.label} `;
 }
 
 /** The heading a menu row starts under: its bot in a group, else its group. */

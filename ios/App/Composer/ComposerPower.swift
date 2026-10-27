@@ -55,7 +55,12 @@ extension ChatView {
             let engine = session.surfaceGate.allows(.engineCommands)
                 ? power.commands(botId: bot.id, threadId: bot.threadId)?.commands ?? []
                 : []
-            return ComposerCommandMenu.items(sagax: sagax, sagaxDescription: ComposerCommandMenuView.description, engine: engine, query: query)
+            // the bot's own commands (`useSlashSkills`): a 1:1 chat only, as
+            // in a room a command would reach several bots
+            return ComposerCommandMenu.items(
+                sagax: sagax, sagaxDescription: ComposerCommandMenuView.description,
+                skills: power.skills(botId: bot.id), engine: engine, query: query
+            )
         case let .room(room):
             let members = room.memberIds.compactMap { session.state.bot($0) }
             let sagax = SagaxSlashCommand.offered(
@@ -88,7 +93,9 @@ extension ChatView {
         let ids = commandTargets.map(\.member.id)
         switch current {
         case let .bot(bot):
+            async let skills: Void = power.loadSkills(botId: bot.id, session: session)
             await power.load(botIds: ids, threadId: bot.threadId, groupId: nil, refresh: refresh, session: session)
+            await skills
         case let .room(room):
             await power.load(botIds: ids, threadId: room.threadId, groupId: room.id, refresh: refresh, session: session)
         }

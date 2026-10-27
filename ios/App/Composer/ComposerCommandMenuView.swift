@@ -256,6 +256,7 @@ struct ComposerCommandMenuView: View {
     static func icon(_ item: ComposerMenuItem) -> String {
         switch item.kind {
         case let .sagax(command): return command == .goal ? "target" : "book"
+        case .skill: return "sparkles"
         case .engine:
             switch item.group {
             case .plugins: return "puzzlepiece"
@@ -268,6 +269,7 @@ struct ComposerCommandMenuView: View {
     static func groupTitle(_ group: ComposerMenuItem.Group) -> LocalizedStringKey {
         switch group {
         case .sagax: return "Sagax"
+        case .skills: return "Skills"
         case .engine: return "Engine"
         case .plugins: return "Plugins"
         case .mcp: return "MCP"

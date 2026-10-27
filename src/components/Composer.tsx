@@ -101,6 +101,7 @@ import { mentionChoicesForQuery, mentionRowDescription } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
 import {
   composerCommandMenu,
+  skillCommandInsertion,
   composerGroupCommandMenu,
   composerGroupSlashTrigger,
   composerSlashTrigger,
@@ -117,6 +118,7 @@ import {
   type GroupEngineCommands,
 } from "@/lib/composer-commands";
 import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
+import { useSlashSkills } from "@/lib/use-slash-skills";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
 import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, VoiceNoteChip, type PlusMenuItem } from "./ComposerControls";
@@ -410,6 +412,10 @@ export function Composer({
   // cache is theirs too.
   const commandViewerId = config?.viewer?.principalId ?? null;
   const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group, commandViewerId);
+  // The bot's own enabled skills, each run for one turn with `/name`
+  // (shared/skill-command.ts). A 1:1 chat only: in a room the command would
+  // reach several bots, each with its own skills.
+  const slashSkills = useSlashSkills(!group ? bot?.id : undefined, Boolean(slash) && slash?.start !== dismissedSlashAt && !group);
   // In a group: the commands of the bot(s) the command would reach, per bot.
   const groupSlashOpen = Boolean(groupSlash);
   const groupSlashBotId = groupSlash?.botId;
@@ -491,8 +497,8 @@ export function Composer({
         commands: groupEngineCommands.lists.find((list) => list.botId === target.bot.id)?.answer.commands ?? [],
         mention: target.mention,
       })), slash.query)
-      : composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
-  }, [slash, dismissedSlashAt, group, members, bot, config, instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, learnAvailable, goalStatus]);
+      : composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query, slashSkills);
+  }, [slash, dismissedSlashAt, group, members, bot, config, instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, learnAvailable, goalStatus, slashSkills]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot. In a room, tag a
@@ -611,6 +617,7 @@ export function Composer({
     const command = item.kind === "sagax" ? item.command : null;
     const replacement = item.kind === "engine"
       ? engineCommandInsertion(item)
+      : item.kind === "skill" ? skillCommandInsertion(item)
       : command?.id === "learn" ? "/learn " : command?.id === "setup" ? "/setup " : "";
     const next = replaceComposerSlashTrigger(text, slash, replacement);
     editText(next.text);

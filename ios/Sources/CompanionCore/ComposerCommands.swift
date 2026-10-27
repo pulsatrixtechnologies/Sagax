@@ -203,17 +203,48 @@ public enum SagaxSlashCommand: String, CaseIterable, Hashable, Sendable {
     }
 }
 
+// MARK: - The bot's skills
+
+/// `SlashSkill`: one of the bot's enabled skills, run for one turn by sending
+/// `/name` (shared/skill-command.ts; the server expands it on every engine).
+public struct SlashSkill: Hashable, Sendable {
+    public var name: String
+    public var description: String
+    public init(name: String, description: String = "") {
+        self.name = name
+        self.description = description
+    }
+
+    /// `offersSkillCommand`: a valid skill name that no Sagax command owns.
+    public static func offered(_ name: String) -> Bool {
+        guard (1...64).contains(name.count), SagaxSlashCommand(rawValue: name) == nil else { return false }
+        return name.split(separator: "-", omittingEmptySubsequences: false).allSatisfy { part in
+            !part.isEmpty && part.allSatisfy { ($0.isASCII && $0.isLowercase) || ($0.isASCII && $0.isNumber) }
+        }
+    }
+
+    /// `enabledSlashSkills`: the enabled skills a `/name` can reach, by name.
+    public static func menu(_ skills: [ManagedSkill]) -> [SlashSkill] {
+        var seen = Set<String>()
+        return skills
+            .filter { $0.enabled && offered($0.name) && seen.insert($0.name).inserted }
+            .sorted { $0.name < $1.name }
+            .map { SlashSkill(name: $0.name, description: $0.description) }
+    }
+}
+
 // MARK: - The menu
 
 /// One row of the "/" menu (`ComposerMenuItem`).
 public struct ComposerMenuItem: Hashable, Identifiable, Sendable {
     public enum Kind: Hashable, Sendable {
         case sagax(SagaxSlashCommand)
+        case skill(SlashSkill)
         case engine(HarnessCommand)
     }
 
     public enum Group: String, CaseIterable, Hashable, Sendable {
-        case sagax, engine, plugins, mcp
+        case sagax, skills, engine, plugins, mcp
     }
 
     public var kind: Kind
@@ -247,6 +278,7 @@ public struct ComposerMenuItem: Hashable, Identifiable, Sendable {
     public var insertion: String? {
         switch kind {
         case let .sagax(command): return command.insertion
+        case .skill: return "\(label) "
         case .engine:
             if unavailable != nil { return nil }
             return "\(mentionPrefix ?? "")\(label) "
@@ -263,17 +295,25 @@ public enum ComposerCommandMenu {
         if query.isEmpty { return 0 }
         if names.contains(where: { $0.hasPrefix(query) }) { return 0 }
         if names.contains(where: { ($0.split(separator: ":").last.map(String.init) ?? $0).hasPrefix(query) }) { return 1 }
-        if names.contains(where: { $0.contains(query) }) { return 2 }
-        if description.lowercased().contains(query) { return 3 }
+        // one typed letter is the start of a name, never a name or a
+        // description that merely contains it
+        if query.count >= 2, names.contains(where: { $0.contains(query) }) { return 2 }
+        // a description only after the names, from the start of a word, three letters or more
+        if query.count >= 3, !query.contains(" "),
+           description.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains(where: { $0.hasPrefix(query) }) {
+            return 3
+        }
         return nil
     }
 
-    /// `composerCommandMenu`: Sagax's commands first, then the engine's by
-    /// group; within a group the closest names first, what the chat cannot
-    /// run last.
+    /// `composerCommandMenu`: Sagax's commands first, then the bot's skills,
+    /// then the engine's by group; within a group the closest names first,
+    /// what the chat cannot run last. An engine command a skill shadows is
+    /// left out: `/name` runs the skill.
     public static func items(
         sagax: [SagaxSlashCommand],
         sagaxDescription: (SagaxSlashCommand) -> String = { _ in "" },
+        skills: [SlashSkill] = [],
         engine: [HarnessCommand],
         query rawQuery: String
     ) -> [ComposerMenuItem] {
@@ -287,8 +327,17 @@ public enum ComposerCommandMenu {
                 label: command.label, description: description
             ), rank, order))
         }
+        var skillNames = Set<String>()
+        for (order, skill) in skills.enumerated() where SlashSkill.offered(skill.name) && skillNames.insert(skill.name).inserted {
+            guard let rank = rank(query, names: [skill.name], description: skill.description) else { continue }
+            ranked.append((ComposerMenuItem(
+                kind: .skill(skill), key: "skill:\(skill.name)", group: .skills,
+                label: "/\(skill.name)", description: skill.description
+            ), rank, order))
+        }
         for (order, command) in engine.enumerated() {
             let label = ComposerCommandNames.label(command)
+            if skillNames.contains(String(label.dropFirst())) { continue }
             let names = [String(label.dropFirst()).lowercased(), command.name.lowercased()]
                 + (command.aliases ?? []).map { $0.lowercased() }
             guard let rank = rank(query, names: names, description: command.description) else { continue }

@@ -20206,12 +20206,17 @@ async function startTurn(
       // which also depends on the bot's soul/description — is decided below,
       // from the same bot snapshot the prompt's soul is built from.
       // A `/name` turn for one of the bot's enabled skills reads as a plain
-      // request to follow that SKILL.md (shared/skill-command.ts). Only where
-      // the skills index rides the prompt: an engine without workspace files
-      // never sees the skill, so it keeps the person's literal text.
-      const skillCommandText = supportsWorkspaceFiles(instance.driverKind)
-        ? expandSkillCommandTurnText(bot.id, providerText, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined)
-        : providerText;
+      // request to follow that SKILL.md (shared/skill-command.ts), on every
+      // engine: one with workspace files is pointed at the file, one without
+      // (Grok, OpenAI-compatible and the other API engines) gets the skill's
+      // instructions in the turn, since it can neither see the skills index
+      // nor open the file.
+      const skillCommandText = expandSkillCommandTurnText(
+        bot.id,
+        providerText,
+        skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined,
+        { inline: !supportsWorkspaceFiles(instance.driverKind) },
+      );
       const setupText = agentsMounted ? expandSetupTurnText(skillCommandText) : skillCommandText;
       const userTurnText = promptWithReply(
         skillAuthoring ? expandLearnTurnText(setupText) : setupText,

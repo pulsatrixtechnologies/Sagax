@@ -1773,6 +1773,7 @@
   "composer.commands.group.mcp": "MCP",
   "composer.commands.group.plugins": "Plugiciels",
   "composer.commands.group.sagax": "Sagax",
+  "composer.commands.group.skills": "Compétences",
   "composer.commands.loading": "Chargement des commandes du moteur…",
   "composer.commands.refresh": "Actualiser les commandes du moteur",
   "composer.commands.title": "Commandes",
