@@ -648,6 +648,7 @@ import {
   WEBHOOK_PROMPT,
   resolveComputerPromptKind,
   teamAvailabilityPart,
+  modelPrompt,
 } from "./system-prompt.ts";
 import { shellTimeoutHookResult } from "./shell-timeout-hint.ts";
 import { readCuaConnection, readCuaUnavailableReason, gatedLocalComputer } from "./local-computer.ts";
@@ -1393,6 +1394,8 @@ function liveSessionPerson(sessionId: string): string | null {
 // search, fetch, browser, computer use and Local VM there, and their network
 // traffic leaves through it (server/desktop-egress.ts).
 const desktopBridges = new DesktopBridges(liveSessionPerson, Date.now, join(DATA_DIR, "desktop-computer-names.json"));
+/** The last model fallback per thread (session.model-fallback). */
+const modelFallbackByThread = new Map<string, { requested: string; actual: string }>();
 const desktopLocalModels = new DesktopLocalModels(DATA_DIR, desktopBridges, (person) => personDisplayName(principals.byId(person)) || "");
 setDesktopInjectModels(() => desktopLocalModels.modelsFor(null));
 const desktopTunnels = new DesktopTunnels(liveSessionPerson);
@@ -15912,6 +15915,11 @@ bus.subscribe((event: RuntimeEvent) => {
         tool: { name: `retrying — attempt ${event.attempt + 1}/${RETRY_MAX_ATTEMPTS} in ${Math.round(event.delayMs / 1000)}s — ${event.reason}`, ok: true },
       });
       break;
+    case "session.model-fallback":
+      // #1154: the model the engine really ran, kept so the next turn's
+      // prompt tells the bot (modelPrompt) instead of the pick it keeps.
+      modelFallbackByThread.set(event.threadId, { requested: event.requested, actual: event.actual });
+      break;
     case "runtime.notice":
       // An engine's technical note (an MCP server skipped, a session
       // rebuilt, a model fallback, a quiet engine, a Codex slot): the turn
@@ -20922,6 +20930,7 @@ async function startTurn(
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         { id: "ai-client", label: "AI client", text: aiClientThreadPerson(bot, threadId, commsDepth, userMessage) },
+        { id: "model", label: "Model", text: onCall ? "" : modelPrompt({ engine: engineDisplayName(instance), model: String(model ?? ""), actual: modelFallbackByThread.get(threadId)?.requested === model ? modelFallbackByThread.get(threadId)?.actual : undefined }) },
         // first after the soul: the block names agent tools, so it only goes
         // to a turn whose engine actually mounted them (setupMode is already
         // false when they are not — see agentsMounted above)
@@ -33999,6 +34008,13 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         };
       });
       return json(res, 200, { engines, ...(perspicaxKeysUrl() ? { keysUrl: perspicaxKeysUrl() } : {}) });
+    }
+    const modelsOf = /^\/api\/me\/engines\/([\w.-]+)\/models$/.exec(path);
+    if (modelsOf && method === "GET") {
+      // #1154: what this person's own session can run, so the model menu
+      // never lists a model their turns would silently replace.
+      const models = await logins.accountModels(principalId, modelsOf[1]).catch(() => null);
+      return json(res, 200, { models });
     }
     const status = /^\/api\/me\/engines\/([\w.-]+)\/login\/status$/.exec(path);
     const action = /^\/api\/me\/engines\/([\w.-]+)\/login\/(start|complete|cancel|sign-out)$/.exec(path);

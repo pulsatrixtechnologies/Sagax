@@ -291,6 +291,29 @@ export function useMyEngines(): MyEngine[] | null {
   return engines;
 }
 
+/** #1154: the model ids the person's own subscription offers on an engine
+ * (GET /api/me/engines/<id>/models), per engine. An engine with no answer is
+ * absent: its menu keeps the server's list. Asked again each time the picker
+ * opens (`reload`), since a sign-in or a plan change alters it. */
+export function useMyEngineModels(engines: MyEngine[] | null, reload: unknown): Map<string, ReadonlySet<string>> {
+  const [byEngine, setByEngine] = useState<Map<string, ReadonlySet<string>>>(new Map());
+  const wanted = (engines ?? []).filter((engine) => engine.driver === "grokAgent" && engine.myTurns === "subscription").map((engine) => engine.instanceId).join("\n");
+  useEffect(() => {
+    if (!wanted) { setByEngine((current) => (current.size ? new Map() : current)); return; }
+    let alive = true;
+    void Promise.all(wanted.split("\n").map((id) => api<{ models: string[] | null }>(`/api/me/engines/${encodeURIComponent(id)}/models`)
+      .then((body) => [id, body.models] as const, () => [id, null] as const)))
+      .then((rows) => {
+        if (!alive) return;
+        const next = new Map<string, ReadonlySet<string>>();
+        for (const [id, models] of rows) if (models?.length) next.set(id, new Set(models));
+        setByEngine(next);
+      });
+    return () => { alive = false; };
+  }, [wanted, reload]);
+  return byEngine;
+}
+
 /** The one line saying what the person's own turns on this engine use. */
 export function myTurnsText(engine: Pick<MyEngine, "myTurns" | "installed" | "notAvailable">): string {
   if (!engine.installed) return engine.notAvailable ? t("myEngines.notAvailable") : t("myEngines.notInstalled");

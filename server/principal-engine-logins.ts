@@ -24,6 +24,7 @@ import type { ProviderAuthenticationStart, ProviderAuthenticationStatus } from "
 import { ClaudeLoginController } from "./drivers/claude-login-auth.ts";
 import { CodexDeviceAuthController } from "./drivers/codex-device-auth.ts";
 import { DeviceLoginController } from "./drivers/device-login.ts";
+import { probeGrokModels, readGrokModelsCache } from "./drivers/acp/grok.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import { isPrincipalId } from "./principals.ts";
 
@@ -208,6 +209,21 @@ export class PrincipalEngineLogins {
         },
       },
     };
+  }
+
+  /** The model ids this person's own subscription offers on an engine
+   * (#1154): what their own Grok session lists, not the server's catalog.
+   * Null when it is not known (not signed in, no CLI answer, an engine that
+   * lists nothing per person): the picker then keeps the server's list. */
+  async accountModels(principalId: string, instanceId: string): Promise<string[] | null> {
+    const facts = this.options.instance(instanceId);
+    if (!facts || facts.driver !== "grokAgent" || !facts.cli.trim() || !this.signedIn(principalId, "grokAgent")) return null;
+    const dir = this.loginDir(principalId, "grokAgent");
+    const env: Record<string, string | undefined> = { ...process.env, ...facts.environment, HOME: dir, GROK_HOME: join(dir, ".grok") };
+    delete env.XAI_API_KEY;
+    const models = await probeGrokModels(facts.cli, env) ?? readGrokModelsCache(env);
+    const ids = models?.map((model) => model.id) ?? [];
+    return ids.length ? ids : null;
   }
 
   async start(principalId: string, instanceId: string, sessionId: string): Promise<ProviderAuthenticationStart> {
