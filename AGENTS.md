@@ -7078,3 +7078,23 @@ A turn with Perspicax tools mounted also gets
 `set` with `action`, `parent`/`id`, `expect`, dry run first, ids and flags,
 local times without an offset, one projection for a big result, totals by
 aggregate. The server's own instructions win if they differ.
+
+## Content encryption at rest (2026-10-26)
+
+Transcripts in `messages.db` are sealed (AES-256-GCM, additional data =
+key, owner, thread, message id) under a content key per person (the
+workspace's for rooms and unowned threads) and a key of its own per
+confidential thread, wrapped by the local vault key (keychain on the
+desktop, 0600 file on a server) or Azure Key Vault
+(`SAGAX_CONTENT_KEY_PROVIDER=azure-keyvault`). On by default;
+`SAGAX_CONTENT_ENCRYPTION=off` opens everything back to plain in the
+background. Rows of both kinds read everywhere; never read `messages.text`
+or `json` raw for content in new code: go through `server/message-db.ts`
+(a sealed row's `json` is only a projection). Search and recall use a blind
+index (keyed Bloom filters, keyed words in a contentless FTS5 table). A
+person's erasure (`eraseContentOwner`) and a confidential thread's deletion
+destroy their keys. The workspace backup exports transcripts in the clear
+inside its password-encrypted archive. Tests run with it off unless they
+turn it on (`server/testing/setup.ts`); its own:
+`server/content-encryption.test.ts`. Benchmark:
+`scripts/bench-content-encryption.ts`. See `docs/content-encryption.md`.

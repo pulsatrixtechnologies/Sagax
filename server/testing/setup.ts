@@ -36,6 +36,12 @@ process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ||= `t${process.pid.toString(36)}-solo
 // dedicated i18n tests explicitly select every translated pack they exercise.
 Object.defineProperty(globalThis.navigator, "language", { value: "en", configurable: true });
 
+// Content encryption at rest (docs/content-encryption.md) is on by default
+// for a real server. The suite's servers read their message database raw in
+// places, so it stays off there unless a run asks for it; its own tests
+// (server/content-encryption.test.ts) turn it on explicitly.
+process.env.SAGAX_CONTENT_ENCRYPTION ??= "off";
+
 // SQLite keeps the database file open for the lifetime of its handle.
 // Windows will not remove a directory containing an open database, so close
 // the per-test handle before the next test resets its throwaway data dir.

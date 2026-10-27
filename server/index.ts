@@ -426,7 +426,9 @@ import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { orgWithholdHostTools } from "./org-engine-admission.ts";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
 import { getOrCreateChannel, mirrorActivity, mirrorExchange, mirrorReply, type CommsBus } from "./comms-visibility.ts";
-import { openApprovalCardMessages, readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing } from "./message-db.ts";
+import { openApprovalCardMessages, readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing, configureContentEncryption, unlockContentKeys, eraseContentOwner, vacuumAfterSealing } from "./message-db.ts";
+import { WORKSPACE_OWNER } from "./content-keys.ts";
+import { contentEncryptionFromEnv } from "./content-encryption-env.ts";
 import { briefCrossingLabel, claimRecallCrossings, recallCrossingLabel } from "./recall-disclosure.ts";
 import { parseSince, parseUntil, recentWork, recentWorkPrompt, turnOutcomeLine } from "./recent-work.ts";
 import { chiefForBot, INCIDENTS_THREAD_TITLE, IncidentLedger, incidentChip, incidentRequest, incidentText, type Incident, type IncidentKind } from "./incidents.ts";
@@ -6643,6 +6645,24 @@ let bootSelection = { instanceId: "", model: "" };
 let enginesRead: Promise<void> | null = null;
 /** Preset bots for New bot, from shared files and the organization (presets.ts). */
 const presetStore = createPresetStore();
+// Content encryption at rest (docs/content-encryption.md): on unless
+// SAGAX_CONTENT_ENCRYPTION=off; keys unwrapped before the store reads a
+// transcript (Key Vault is asynchronous); the migration seals or opens
+// rows in the background.
+configureContentEncryption({ ...contentEncryptionFromEnv(process.env), resolveOwner: contentOwnerOf });
+await unlockContentKeys();
+{
+  const vacuumMs = vacuumAfterSealing();
+  if (vacuumMs !== null) console.log(`content encryption: message database compacted after sealing (${Math.round(vacuumMs)} ms)`);
+}
+/** Whose content key a thread's rows take: the thread's person, else on an
+ * organization server the bot's owner, else the workspace (rooms, solo). */
+function contentOwnerOf(threadId: string): { owner: string; confidential: boolean } | null {
+  const bot = store.botByThread(threadId);
+  const task = bot?.tasks?.find((entry) => entry.threadId === threadId);
+  const owner = task?.ownerPrincipalId ?? (bot && IDENTITY.kind === "perspicax" ? recordedBotOwner(bot) : undefined) ?? WORKSPACE_OWNER;
+  return { owner, confidential: task?.confidential === true };
+}
 const store = new Store(
   () => bootSelection,
   (selection) => withNewBotEffort(selection, cfg.newBotDefaults?.profile.modelSelection?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
@@ -29790,6 +29810,8 @@ async function erasePersonDataNow(principalId: string): Promise<{ bots: number; 
   userPreferenceStore.remove(principalId);
   moderationStore.forgetPerson(principalId);
   try { credentialVault.drop(person); } catch (error) { console.warn(`account deletion: credential vault not removed: ${String(error)}`); }
+  // their content keys: whatever is still sealed under them never opens again
+  try { eraseContentOwner(person); } catch (error) { console.warn(`account deletion: content keys not destroyed: ${error instanceof Error ? error.message : "unknown"}`); }
   presence.forget(principalId);
   viewerBotOverrideStore.remove(principalId);
   achievementStore.remove(principalId);
