@@ -403,15 +403,15 @@ const definitions = [
       fr: "Créer un nouveau bot à eux depuis un client relié à Perspicax (create_agent), un par appel, seulement à leur demande. Eux seuls peuvent le supprimer, dans Sagax.",
     },
   },
-  // Defensive security work (SentinelOne triage and the like). Not a member
+  // Defensive security work (EDR triage and the like). Not a member
   // default and not admin-only: Perspicax grants it on a profile. It does not
   // lift the misuse blocks for escape, malware, destruction or platform files.
   {
     key: "security.triage", group: "security", memberDefault: false, adminOnly: false,
     label: { en: "Do defensive security work", fr: "Faire le travail de défense" },
     description: {
-      en: "Review and handle the organization's security alerts (for example SentinelOne triage) through a bot. Does not allow an attack, malware, or reading the platform's own files.",
-      fr: "Examiner et traiter les alertes de sécurité de l'organisation (par exemple le triage SentinelOne) par un bot. N'autorise pas une attaque, un programme malveillant, ni la lecture des fichiers internes de la plateforme.",
+      en: "Review and handle the organization's security alerts (for example EDR triage) through a bot. Does not allow an attack, malware, or reading the platform's own files.",
+      fr: "Examiner et traiter les alertes de sécurité de l'organisation (par exemple le triage EDR) par un bot. N'autorise pas une attaque, un programme malveillant, ni la lecture des fichiers internes de la plateforme.",
     },
   },
 ] as const satisfies readonly PermissionDefinition[];

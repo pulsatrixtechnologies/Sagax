@@ -64,8 +64,8 @@ describe("safety review", () => {
     const wiped = reviewSafety(call({ text: "rm -rf /", triage: true }));
     expect(wiped.action).toBe("block");
     expect(wiped.code).toBe("misuse");
-    expect(reviewSafety(call({ text: "sentinelctl status", triage: false })).action).toBe("confirm");
-    expect(reviewSafety(call({ text: "sentinelctl status", triage: true })).action).toBe("allow");
+    expect(reviewSafety(call({ text: "edr status", triage: false })).action).toBe("confirm");
+    expect(reviewSafety(call({ text: "edr status", triage: true })).action).toBe("allow");
   });
 
   it("treats untrusted content as data and confirms a consequential action", () => {

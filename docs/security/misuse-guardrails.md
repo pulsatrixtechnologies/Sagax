@@ -35,12 +35,12 @@ and it is not admin-only, so a profile can grant it. An organization admin
 already holds every key. On a solo server the operator at this computer
 holds it, because their turn speaks as `operator`.
 
-The permission allows one category, `security_operations`: SentinelOne,
-CrowdStrike, Microsoft Defender, threat hunting, quarantine, isolating a
+The permission allows one category, `security_operations`: an EDR or XDR,
+endpoint protection, Microsoft Defender, threat hunting, quarantine, isolating a
 host. Without the permission that category is refused until an administrator
 grants the key in Perspicax. With the permission it is allowed.
 
-The permission does not lift a block. Disabling SentinelOne, turning off
+The permission does not lift a block. Disabling an EDR, turning off
 tamper protection, scanning a third party with `nmap`, reading `bots.json`,
 and every other block category stay refused. A sentence that names both a
 defensive product and an attack is a block.
