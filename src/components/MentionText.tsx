@@ -1,5 +1,5 @@
 import { Fragment, type CSSProperties } from "react";
-import { mentionRanges, type MentionPeer } from "@/lib/mentions";
+import { mentionClassName, mentionRanges, type MentionPeer } from "@/lib/mentions";
 
 /** Plain text stays plain text; only known mentions acquire decoration. */
 export function MentionText({ text, peers, everyone = false }: {
@@ -10,7 +10,7 @@ export function MentionText({ text, peers, everyone = false }: {
     const prefix = text.slice(end, range.start);
     end = range.end;
     const style = range.color ? { "--mention-color": range.color } as CSSProperties : undefined;
-    return <Fragment key={range.start}>{prefix}<span className="mention-highlight" style={style}>{text.slice(range.start, range.end)}</span></Fragment>;
+    return <Fragment key={range.start}>{prefix}<span className={mentionClassName(range)} data-mention-me={range.me ? "" : undefined} style={style}>{text.slice(range.start, range.end)}</span></Fragment>;
   });
   return <>{parts}{text.slice(end)}</>;
 }

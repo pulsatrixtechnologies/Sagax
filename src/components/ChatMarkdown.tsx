@@ -1654,7 +1654,7 @@ export function samePeers(previous: readonly MentionPeer[], next: readonly Menti
   if (previous.length !== next.length) return false;
   return previous.every((peer, index) => {
     const other = next[index]!;
-    return peer.name === other.name && peer.hidden === other.hidden && peer.color === other.color;
+    return peer.name === other.name && peer.hidden === other.hidden && peer.color === other.color && peer.person === other.person && peer.me === other.me;
   });
 }
 

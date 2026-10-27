@@ -131,6 +131,8 @@ import { pendingApprovals } from "./PendingApproval";
 import { DataResultChip } from "./DataResultChip";
 import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
 import { channelHumanRow, useOrgPeople } from "@/lib/perspicax-org";
+import { type MentionPeer } from "@/lib/mentions";
+import { personMentionPeers } from "@/lib/person-mentions";
 import { Switch } from "./SettingsPrimitives";
 import { groupMemberBots } from "@/lib/group-members";
 import { botPublicProfile } from "../../shared/bot-public-profile";
@@ -233,6 +235,7 @@ function RoomTextMessage({
   group,
   message: m,
   members,
+  mentionPeers,
   transcript,
   emerging,
   eager,
@@ -245,6 +248,8 @@ function RoomTextMessage({
   group: Group;
   message: Message;
   members: Bot[];
+  /** Who an @ can name here: the room's bots, then its people (chips). */
+  mentionPeers: readonly MentionPeer[];
   transcript: Message[];
   emerging: boolean;
   eager: boolean;
@@ -403,7 +408,7 @@ function RoomTextMessage({
                 data-citation-owner={group.id}
                 data-citation-thread={group.threadId}
               >
-                <ThreadRefText text={display} peers={members} everyone={!group.dm} />
+                <ThreadRefText text={display} peers={mentionPeers} everyone={!group.dm} />
               </div>
               {cited && <SentCitations
                 citations={cited.citations}
@@ -445,7 +450,7 @@ function RoomTextMessage({
                     text={botText}
                     botId={m.from?.botId}
                     emailDrafts={speakerBot?.emailDrafts !== false}
-                    mentionPeers={members}
+                    mentionPeers={mentionPeers}
                     everyone={!group.dm}
                     message={{ threadId: group.threadId, messageId: m.id }}
                     youtubeSendToBot={(body) => dispatch({ type: "sendGroup", groupId: group.id, threadId: group.threadId, text: body })}
@@ -537,6 +542,10 @@ export const Transcript = memo(function Transcript({
   const owners = useMemo(() => ({ bots: state.bots, groups: state.groups }), [state.bots, state.groups]);
   const showThreads = useShowThreads();
   const memberOf = (id?: string) => members.find((b) => b.id === id);
+  const mentionPeers = useMemo<MentionPeer[]>(
+    () => [...members, ...personMentionPeers(group, people ?? new Map(), viewerActorId(state.config))],
+    [members, group, people, state.config],
+  );
   const pairChannel = Boolean(group.dm) && !group.peopleDm;
   // Bot-to-bot lines become one chip per run first. A shared room's replies
   // to people stay inline; only a pair channel, a peer line, or a room
@@ -914,6 +923,7 @@ export const Transcript = memo(function Transcript({
                 group={group}
                 message={m}
                 members={members}
+                mentionPeers={mentionPeers}
                 transcript={transcript}
                 emerging={m.id === emergingId}
                 eager={m.id === newestMessageId || m.id === newestUserMessageId}

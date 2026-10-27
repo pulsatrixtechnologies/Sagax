@@ -2,8 +2,15 @@ import { t } from "./i18n";
 import { MAUS_COLORS, type MausColor } from "./mascot";
 import { isMentionBoundary, isMentionNameContinuation } from "../../shared/mention-boundary";
 
-export type MentionPeer = { name: string; hidden?: boolean; color?: MausColor };
-export type MentionRange = { start: number; end: number; color?: string };
+/** `person`: a person of the room, not a bot (#1130): the tag is drawn as a
+ * chip. `me`: that person is the viewer, so the chip stands out. */
+export type MentionPeer = { name: string; hidden?: boolean; color?: MausColor; person?: boolean; me?: boolean };
+export type MentionRange = { start: number; end: number; color?: string; person?: boolean; me?: boolean };
+
+/** The class list of one decorated mention. */
+export function mentionClassName(range: Pick<MentionRange, "person" | "me">): string {
+  return range.person ? `mention-highlight mention-person${range.me ? " mention-me" : ""}` : "mention-highlight";
+}
 
 /** Filter the composer's mention roster without silently truncating it.
  * Large rooms stay fully reachable; the picker itself owns scrolling. */
@@ -64,7 +71,13 @@ export function mentionRanges(text: string, peers: readonly MentionPeer[], every
     if (length === undefined) continue;
     // Only palette values enter CSS. @everyone has no individual bot identity.
     const color = !all && peer?.color && Object.hasOwn(MAUS_COLORS, peer.color) ? MAUS_COLORS[peer.color] : undefined;
-    ranges.push({ start: at, end: at + length + 1, ...(color ? { color } : {}) });
+    ranges.push({
+      start: at,
+      end: at + length + 1,
+      ...(color ? { color } : {}),
+      ...(!all && peer?.person ? { person: true } : {}),
+      ...(!all && peer?.person && peer.me ? { me: true } : {}),
+    });
     at += length;
   }
   return ranges;
@@ -92,7 +105,7 @@ export function remarkMentions({ peers, everyone = false }: { peers: readonly Me
         for (const range of ranges) {
           if (range.start > end) result.push({ type: "text", value: text.slice(end, range.start) });
           result.push({ type: "mention", data: { hName: "span", hProperties: {
-            className: "mention-highlight",
+            className: mentionClassName(range),
             ...(range.color ? { style: `--mention-color:${range.color}` } : {}),
           } },
             children: [{ type: "text", value: text.slice(range.start, range.end) }] });

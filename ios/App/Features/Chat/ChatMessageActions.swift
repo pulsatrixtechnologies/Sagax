@@ -61,7 +61,20 @@ extension ChatView {
         case let .bot(bot):
             return session.state.bots.filter { $0.id != bot.id }.map { MentionPeer(name: $0.name, color: $0.color) }
         case let .room(room):
-            return room.memberIds.compactMap { session.state.bot($0) }.map { MentionPeer(name: $0.name, color: $0.color) }
+            let bots = room.memberIds.compactMap { session.state.bot($0) }.map { MentionPeer(name: $0.name, color: $0.color) }
+            guard room.dm != true, room.peopleDm != true else { return bots }
+            // The people of the room, as chips; the viewer's own stands out (#1130).
+            let me = People.norm(session.roomViewer.actorId)
+            let directory = PeopleDirectory.shared.directory
+            var seen = Set<String>()
+            let people: [MentionPeer] = (room.humanIds ?? []).compactMap { raw in
+                let id = People.norm(raw.hasPrefix("user:") ? String(raw.dropFirst(5)) : raw)
+                guard !id.isEmpty, !id.hasPrefix("team:"), seen.insert(id).inserted else { return nil }
+                let label = People.label(directory?.person(id), fallback: "")
+                guard !label.isEmpty else { return nil }
+                return MentionPeer(name: label, person: true, me: id == me)
+            }
+            return bots + people
         }
     }
 

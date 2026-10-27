@@ -3,6 +3,7 @@
 // server/room-mentions.ts), against the names the room's People list shows.
 import { MENTION_ALL, mentionedPeople } from "../../shared/person-mentions";
 import { channelHumanRow, type OrgDirectoryPerson } from "./perspicax-org";
+import type { MentionPeer } from "./mentions";
 
 export { MENTION_ALL };
 
@@ -52,3 +53,12 @@ export function roomMentionedPeople(text: string, room: MentionRoom, people: Rea
   const candidates = roomMentionPeople(room, people, viewerId).map((person) => ({ id: person.id, names: [person.name] }));
   return mentionedPeople(text, candidates, { allowAll: roomAllowsMentionAll(room) });
 }
+
+/** The people of a room as mention peers for the transcript and the composer
+ * (src/lib/mentions.ts): drawn as a chip, and the viewer's own as the one
+ * that stands out. The viewer is part of the list so a tag of them shows. */
+export function personMentionPeers(room: MentionRoomLike, people: ReadonlyMap<string, OrgDirectoryPerson>, viewerId: string | null | undefined): MentionPeer[] {
+  const viewer = viewerId ? key(viewerId) : "";
+  return roomMentionPeople(room, people, null).map((person) => ({ name: person.name, person: true, ...(viewer && key(person.id) === viewer ? { me: true } : {}) }));
+}
+type MentionRoomLike = Parameters<typeof roomMentionPeople>[0];
