@@ -251,7 +251,12 @@ spec:
                 - kubectl
                 - scale
                 - deployment/sagax-sandbox-warmer
-                - --replicas={{ .Values.warmNode.upReplicas }}
+                {{- /* --reuse-values from a release older than upReplicas leaves it unset: 1, the chart default (0 must stay 0, so no `default`). */}}
+                {{- $up := 1 }}
+                {{- if and (hasKey .Values.warmNode "upReplicas") (not (kindIs "invalid" .Values.warmNode.upReplicas)) }}
+                {{- $up = int .Values.warmNode.upReplicas }}
+                {{- end }}
+                - --replicas={{ $up }}
                 - -n
                 - {{ .Values.systemNamespace | quote }}
               securityContext:
