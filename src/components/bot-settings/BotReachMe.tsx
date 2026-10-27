@@ -2,17 +2,19 @@
 // the person outside the app when a question or an approval waits on them,
 // and when. Each person chooses for themself, no admin. Channels: phone
 // notifications, a text message (their Perspicax Voice line, to their own
-// verified number), their own Teams chat, their own Telegram bot; WhatsApp
-// later. Hours: any time, or ranges of days and times in a time zone.
-// No id on screen: the Telegram bot is named by its @username.
+// verified number), their own Teams chat, their own Telegram bot, their own
+// WhatsApp Business number (./BotReachMeWhatsApp.tsx). Hours: any time, or
+// ranges of days and times in a time zone. No id on screen: the Telegram bot
+// is named by its @username, the WhatsApp number by its display number.
 import { useState } from "react";
 
 import { normalizePhone, type ReachChannelId, type ReachHoursRange, type ReachMeSettings } from "../../../shared/reach-me";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { connectReachTelegram, disconnectReachTelegram, localTimeZone, saveReachMe, useReachMe, type ReachMeView } from "@/lib/reach-me";
+import { connectReachTelegram, disconnectReachTelegram, localTimeZone, reachWhatsApp, saveReachMe, useReachMe, type ReachMeView } from "@/lib/reach-me";
 import type { LocaleKey } from "@/locales";
 import { SettingsGroup, Switch } from "../SettingsPrimitives";
+import { ReachWhatsAppSetup, type ReachWhatsAppAction } from "./BotReachMeWhatsApp";
 
 const CHANNELS: ReachChannelId[] = ["push", "sms", "teams", "telegram", "whatsapp"];
 /** Monday first, as the week reads in French and English calendars here. */
@@ -25,6 +27,8 @@ export type ReachMeActions = {
   onSave: (settings: ReachMeSettings) => Promise<{ ok: true } | { ok: false; error: string }>;
   onTelegramConnect: (token: string) => Promise<{ ok: true; link?: string } | { ok: false; error: string }>;
   onTelegramDisconnect: () => Promise<unknown>;
+  /** One step of the WhatsApp setup (absent: the fields show, nothing is sent). */
+  onWhatsApp?: ReachWhatsAppAction;
 };
 
 function channelHelp(id: ReachChannelId, view: ReachMeView): string {
@@ -74,20 +78,20 @@ export function BotReachMeCard({ view, actions, initialTelegramLink }: { view: R
         <p className="px-3.5 pb-1 pt-0.5 text-[12px] leading-4 text-ink-secondary">{t("botPanel.reachMe.help")}</p>
         {CHANNELS.map((id) => {
           const on = current.channels.includes(id);
-          const later = id === "whatsapp";
           const status = view.channels[id];
           return (
             <div key={id} data-reach-channel={id} className="flex flex-col gap-1.5 px-3.5 py-2">
-              <label className={cn("flex min-w-0 items-center justify-between gap-4 text-[13px] text-ink", later ? "cursor-not-allowed" : "cursor-pointer")}>
+              <label className="flex min-w-0 cursor-pointer items-center justify-between gap-4 text-[13px] text-ink">
                 <span className="min-w-0">
                   <span className="block leading-[18px]">{t(`botPanel.reachMe.${id}.label` as LocaleKey)}</span>
-                  <span className="mt-0.5 block text-[12px] leading-4 text-ink-secondary">{later ? t("botPanel.reachMe.whatsapp.later") : channelHelp(id, view)}</span>
+                  <span className="mt-0.5 block text-[12px] leading-4 text-ink-secondary">{channelHelp(id, view)}</span>
                 </span>
-                <Switch checked={on && !later} disabled={later || busy} onClick={() => toggle(id, !on)} aria-label={t(`botPanel.reachMe.${id}.label` as LocaleKey)} />
+                <Switch checked={on} disabled={busy} onClick={() => toggle(id, !on)} aria-label={t(`botPanel.reachMe.${id}.label` as LocaleKey)} />
               </label>
-              {on && !later && !status.ready && status.reason && id !== "telegram" && (
+              {on && !status.ready && status.reason && id !== "telegram" && (id !== "whatsapp" || (status.connected && (!status.templateCheck || status.templateCheck.state === "approved"))) && (
                 <p data-reach-not-ready="" title={status.reason} className="text-[12px] leading-4 text-warning">{t(`botPanel.reachMe.${id}.notReady` as LocaleKey)}</p>
               )}
+              {on && id === "whatsapp" && <ReachWhatsAppSetup status={status} busy={busy} {...(actions.onWhatsApp ? { act: actions.onWhatsApp } : {})} />}
               {on && id === "sms" && (
                 <input className={inputCls} value={phone} inputMode="tel" autoComplete="tel" placeholder="+1 514 555 0123" aria-label={t("botPanel.reachMe.sms.number")} onChange={(event) => { setNumber(event.target.value); setError(undefined); }} />
               )}
@@ -181,6 +185,12 @@ export function BotReachMe({ botId }: { botId: string }) {
     onTelegramDisconnect: async () => {
       const result = await disconnectReachTelegram(botId);
       if (result.ok) setView(result.view);
+    },
+    onWhatsApp: async (step) => {
+      const result = await reachWhatsApp(botId, step);
+      if (!result.ok) return { ok: false, error: result.error };
+      setView(result.view);
+      return { ok: true };
     },
   };
   return <BotReachMeCard view={view} actions={actions} />;

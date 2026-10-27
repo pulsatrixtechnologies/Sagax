@@ -236,6 +236,7 @@ export class ReachMe {
         sent.push(channel);
         const patch: Partial<ReachCode> = { channels: [...sent] };
         if (channel === "sms" && settings.smsNumber) patch.smsTo = settings.smsNumber;
+        if (channel === "whatsapp" && typeof result.detail?.to === "string") patch.whatsappTo = result.detail.to;
         if (channel === "teams") patch.teamsSentAt = this.now();
         this.deps.codes.update(code.code, person, patch);
         this.deps.audit({ person, botId: card.botId, threadId: card.threadId, channel, action: "sent" });
@@ -270,7 +271,10 @@ export class ReachMe {
       if (!split) return { handled: false, outcome: "no_code" };
       if (this.limited(person, inbound.channel)) return { handled: true, outcome: "rate_limited" };
       const code = this.deps.codes.find(person, split.code);
-      const fromOk = (entry: ReachCode) => inbound.channel !== "sms" || (Boolean(entry.smsTo) && entry.smsTo === inbound.from);
+      // a text or a WhatsApp message counts only from the number its code went to
+      const fromOk = (entry: ReachCode) => inbound.channel === "sms" ? Boolean(entry.smsTo) && entry.smsTo === inbound.from
+        : inbound.channel === "whatsapp" ? Boolean(entry.whatsappTo) && entry.whatsappTo === inbound.from
+          : true;
       if (!code || !code.channels.includes(inbound.channel) || !fromOk(code)) {
         this.failed(person, inbound.channel);
         // four letters that are no code of theirs: not a reply, the channel keeps its usual way

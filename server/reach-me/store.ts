@@ -6,7 +6,8 @@
 //
 // A person's settings are keyed by the person who answers the cards
 // (principal id, or this computer's operator) and the bot. Telegram's bot
-// token is not here: it is sealed apart (./secrets.ts).
+// token and WhatsApp's access token are not here: they are sealed apart
+// (./secrets.ts).
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomInt } from "node:crypto";
@@ -35,11 +36,61 @@ export interface ReachTelegramLink {
   linkExpiresAt?: number;
 }
 
+/** WhatsApp's link to the person's own number (no token: that is sealed). */
+export interface ReachWhatsAppLink {
+  /** The business number's Phone Number ID at Meta (never shown). */
+  phoneNumberId: string;
+  /** What Meta says the business number is (display number, verified name). */
+  displayNumber: string;
+  verifiedName?: string;
+  /** The webhook path id (`/reach-me/whatsapp/<id>` on the webhook receiver). */
+  endpointId: string;
+  /** What the person pastes as "Verify token" in their Meta app's webhook. */
+  verifyToken: string;
+  /** The person's own WhatsApp number, E.164, once proven by the code. */
+  number?: string;
+  /** The code waiting for the person, until linked. */
+  linkCode?: string;
+  linkExpiresAt?: number;
+  /** The number the code went to by template (the person typed it). */
+  pendingNumber?: string;
+  /** The person's last message: WhatsApp's 24 hour window for free text. */
+  lastInboundAt?: number;
+  /** The approved message template for a card outside that window, with one
+   * body parameter ({{1}}): its name and language code at Meta. */
+  templateName?: string;
+  templateLanguage?: string;
+  /** The WhatsApp Business Account the template lives in (never shown). */
+  businessAccountId?: string;
+  /** What Meta said of that template, last time Sagax read it. */
+  templateCheck?: ReachWhatsAppTemplateCheck;
+}
+
+/** The template check (server/reach-me/whatsapp.ts `checkTemplate`). */
+export type ReachWhatsAppTemplateState = "approved" | "missing_account" | "wrong_account" | "not_found" | "wrong_language" | "not_approved" | "wrong_parameters" | "forbidden" | "unreachable";
+
+export interface ReachWhatsAppTemplateCheck {
+  state: ReachWhatsAppTemplateState;
+  /** The template name and language this check read. */
+  name: string;
+  language: string;
+  checkedAt: number;
+  /** Meta's status of that version (APPROVED, PENDING, REJECTED, PAUSED, DISABLED). */
+  status?: string;
+  /** MARKETING, UTILITY or AUTHENTICATION. */
+  category?: string;
+  /** The parameters its body and header ask for. */
+  parameters?: number;
+  /** The languages Meta has for that name, when the asked one is missing. */
+  languages?: string[];
+}
+
 interface StoredEntry {
   person: string;
   botId: string;
   settings: ReachMeSettings;
   telegram?: ReachTelegramLink;
+  whatsapp?: ReachWhatsAppLink;
   updatedAt: number;
 }
 
@@ -53,6 +104,10 @@ export interface ReachMeStore {
   setTelegram(person: string, botId: string, link: ReachTelegramLink | undefined): void;
   /** Every saved entry with a Telegram link (the poller's list). */
   telegramLinks(): Array<{ person: string; botId: string; link: ReachTelegramLink }>;
+  whatsapp(person: string, botId: string): ReachWhatsAppLink | undefined;
+  setWhatsApp(person: string, botId: string, link: ReachWhatsAppLink | undefined): void;
+  /** The entry a WhatsApp webhook path names. */
+  whatsappByEndpoint(endpointId: string): { person: string; botId: string; link: ReachWhatsAppLink } | undefined;
   /** Every saved entry of a person (the sms reply: which number is theirs). */
   entriesOf(person: string): Array<{ botId: string; settings: ReachMeSettings }>;
   /** A bot deleted: its settings go for everyone. */
@@ -79,11 +134,17 @@ export function createReachMeStore(dataDir: string, now: () => number = Date.now
           const telegram = item.telegram && typeof item.telegram === "object" && typeof (item.telegram as { username?: unknown }).username === "string"
             ? item.telegram as ReachTelegramLink
             : undefined;
+          const whatsapp = item.whatsapp && typeof item.whatsapp === "object"
+            && typeof (item.whatsapp as { phoneNumberId?: unknown }).phoneNumberId === "string"
+            && typeof (item.whatsapp as { endpointId?: unknown }).endpointId === "string"
+            ? item.whatsapp as ReachWhatsAppLink
+            : undefined;
           entries.set(entryKey(item.person, item.botId), {
             person: personKey(item.person),
             botId: item.botId,
             settings: parsed.settings,
             ...(telegram ? { telegram } : {}),
+            ...(whatsapp ? { whatsapp } : {}),
             updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : 0,
           });
         }
@@ -112,7 +173,7 @@ export function createReachMeStore(dataDir: string, now: () => number = Date.now
     set(person, botId, settings) {
       const key = entryKey(person, botId);
       const existing = load().get(key);
-      load().set(key, { person: personKey(person), botId, settings: structuredClone(settings), ...(existing?.telegram ? { telegram: existing.telegram } : {}), updatedAt: now() });
+      load().set(key, { person: personKey(person), botId, settings: structuredClone(settings), ...(existing?.telegram ? { telegram: existing.telegram } : {}), ...(existing?.whatsapp ? { whatsapp: existing.whatsapp } : {}), updatedAt: now() });
       save();
       return structuredClone(settings);
     },
@@ -132,6 +193,24 @@ export function createReachMeStore(dataDir: string, now: () => number = Date.now
     },
     telegramLinks() {
       return [...load().values()].filter((entry) => entry.telegram).map((entry) => ({ person: entry.person, botId: entry.botId, link: { ...entry.telegram! } }));
+    },
+    whatsapp(person, botId) {
+      const link = load().get(entryKey(person, botId))?.whatsapp;
+      return link ? { ...link } : undefined;
+    },
+    setWhatsApp(person, botId, link) {
+      const key = entryKey(person, botId);
+      const existing = load().get(key);
+      const base: StoredEntry = existing ?? { person: personKey(person), botId, settings: structuredClone(DEFAULT_REACH_ME), updatedAt: now() };
+      const next: StoredEntry = { ...base, updatedAt: now() };
+      if (link) next.whatsapp = { ...link };
+      else delete next.whatsapp;
+      load().set(key, next);
+      save();
+    },
+    whatsappByEndpoint(endpointId) {
+      const entry = [...load().values()].find((row) => row.whatsapp?.endpointId === endpointId);
+      return entry ? { person: entry.person, botId: entry.botId, link: { ...entry.whatsapp! } } : undefined;
     },
     entriesOf(person) {
       const who = personKey(person);
@@ -163,6 +242,8 @@ export interface ReachCode {
   channels: ReachChannelId[];
   /** sms: the number it was texted to (a reply must come from it). */
   smsTo?: string;
+  /** whatsapp: the number it went to (a reply must come from it). */
+  whatsappTo?: string;
   /** teams: when the message went (the reply check reads what came after). */
   teamsSentAt?: number;
   createdAt: number;
@@ -173,7 +254,7 @@ export interface ReachCodeStore {
   /** A new code for this card, unique among the person's open codes. The
    * same card asks again: its open code is reused. */
   issue(input: Omit<ReachCode, "code" | "createdAt" | "expiresAt" | "channels"> & { channels?: ReachChannelId[] }): ReachCode;
-  update(code: string, person: string, patch: Partial<Pick<ReachCode, "channels" | "smsTo" | "teamsSentAt">>): void;
+  update(code: string, person: string, patch: Partial<Pick<ReachCode, "channels" | "smsTo" | "whatsappTo" | "teamsSentAt">>): void;
   find(person: string, code: string): ReachCode | undefined;
   forCard(threadId: string, requestId: string): ReachCode | undefined;
   /** A card settled: its code goes. */

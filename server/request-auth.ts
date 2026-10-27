@@ -499,6 +499,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // person chooses for themself, no admin); Telegram's token is write only
   { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/reach-me$/ },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/reach-me\/telegram$/ },
+  { methods: ["POST", "PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/reach-me\/whatsapp$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/reach-me\/whatsapp\/link$/ },
   // Watch and take over the bot's saved browser. The handler checks the
   // viewer may use the bot. Install and restart stay admin.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/browser\/live$/ },

@@ -1,9 +1,10 @@
 /** Isolated gallery for headless screenshots of "Me joindre" (2026-10-26):
  * the bot panel's Overview with the Reach me group between the bot's email
  * address and the overview, in three states (default, text + Telegram
- * linking + hours, Telegram connected + Teams). The capture script
- * (scripts/capture-reach-me.mjs) answers /api itself. Not shipped.
- * ?skin=<id>&lang=<code>&state=default|setup|connected */
+ * linking + hours, Telegram connected + Teams, and WhatsApp's three steps).
+ * The capture script (scripts/capture-reach-me.mjs) answers /api itself.
+ * Not shipped. ?skin=<id>&lang=<code>&state=default|setup|connected|
+ * whatsapp-connect|whatsapp-linking|whatsapp-connected */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BotEmailAddress } from "../components/bot-settings/BotEmailAddress";
