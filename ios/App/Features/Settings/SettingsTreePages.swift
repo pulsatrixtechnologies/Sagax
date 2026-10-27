@@ -137,6 +137,9 @@ struct SettingsTreeRow: View {
             SettingsRow(title: "Approval rules", accessory: .chevron, height: 43.33, identifier: "settings-approval-grants") { navigator.push(.approvalGrants) }
         case .actionJournal:
             SettingsRow(title: "Journal of actions", accessory: .chevron, height: 43.33, identifier: "settings-action-journal") { navigator.push(.actionJournal) }
+        case .reachMe:
+            SettingsRow(title: "Reach me", subtitle: "How each bot reaches you outside the app, and when.", accessory: .chevron,
+                        identifier: "settings-reach-me", textTop: 13.4) { navigator.push(.reachMe) }
         case .timeZoneAuto:
             SettingsRow(
                 title: "Set Time Zone Automatically",
@@ -198,7 +201,7 @@ struct SettingsTreeRow: View {
 
 // MARK: - Sub-pages
 
-/// Settings > Bots: approvals, the time zone, the bots' computer, the chat's
+/// Settings > Bots: approvals, Reach me, the time zone, the bots' computer, the chat's
 /// quick replies and call voice, and the early features.
 struct BotsSettingsView: View {
     @Environment(\.themePalette) var themePalette

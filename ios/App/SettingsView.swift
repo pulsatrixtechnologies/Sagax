@@ -17,6 +17,8 @@ enum SettingsRoute: String, Hashable {
     case account, usage, plugins, rules, approvalGrants, actionJournal, timeZone, botComputer, pages, appearance, language, haptics, general, experimental, notifications, privacy, vault, securityKeys
     // The Grok Bot layout's pages (SettingsTree)
     case bots, privacySecurity, about
+    // Settings > Bots > Reach me (#1187)
+    case reachMe
 }
 
 struct SettingsView: View {
@@ -267,6 +269,7 @@ struct SettingsRouteView: View {
         case .vault: VaultSettingsView()
         case .securityKeys: SecurityKeysSettingsView()
         case .bots: BotsSettingsView()
+        case .reachMe: ReachMeSettingsPage()
         case .privacySecurity: PrivacySecuritySettingsView()
         case .about: AboutSettingsView()
         }

@@ -1,6 +1,300 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Reach me": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reach me" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Me joindre" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fale comigo" } }
+      }
+    },
+    "How each bot reaches you outside the app, and when.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "How each bot reaches you outside the app, and when." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Comment chaque bot vous joint hors de l'app, et quand." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Como cada bot fala com você fora do app, e quando." } }
+      }
+    },
+    "When this bot has a question or an approval for you, it reaches you here. Answer from there and it continues.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "When this bot has a question or an approval for you, it reaches you here. Answer from there and it continues." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quand ce bot a une question ou une approbation pour vous, il vous joint ici. Répondez de là et il reprend." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Quando este bot tem uma pergunta ou aprovação para você, ele fala com você aqui. Responda de lá e ele continua." } }
+      }
+    },
+    "No bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun bot" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhum bot" } }
+      }
+    },
+    "Phone notifications": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Phone notifications" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Notifications du téléphone" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Notificações do telefone" } }
+      }
+    },
+    "Text message": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Text message" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Texto" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mensagem de texto" } }
+      }
+    },
+    "Microsoft Teams": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Microsoft Teams" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Microsoft Teams" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Microsoft Teams" } }
+      }
+    },
+    "Telegram": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Telegram" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Telegram" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Telegram" } }
+      }
+    },
+    "WhatsApp": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "WhatsApp" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "WhatsApp" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "WhatsApp" } }
+      }
+    },
+    "On your paired phone.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On your paired phone." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sur votre téléphone jumelé." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "No seu telefone pareado." } }
+      }
+    },
+    "On your %lld paired phones (iPhone and Android).": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On your %lld paired phones (iPhone and Android)." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sur vos %lld téléphones jumelés (iPhone et Android)." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nos seus %lld telefones pareados (iPhone e Android)." } }
+      }
+    },
+    "Pair the Sagax app on your phone to get them.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pair the Sagax app on your phone to get them." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Jumelez l'app Sagax sur votre téléphone pour les recevoir." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pareie o app Sagax no seu telefone para recebê-las." } }
+      }
+    },
+    "From your Perspicax Voice line to your own verified number. Reply with the code.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "From your Perspicax Voice line to your own verified number. Reply with the code." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "De votre ligne Perspicax Voice vers votre propre numéro vérifié. Répondez avec le code." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Da sua linha Perspicax Voice para o seu próprio número verificado. Responda com o código." } }
+      }
+    },
+    "In your own Teams chat, through your engine's connector. Your reply is read for 40 minutes.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In your own Teams chat, through your engine's connector. Your reply is read for 40 minutes." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dans votre propre clavardage Teams, par le connecteur de votre moteur. Votre réponse est lue pendant 40 minutes." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "No seu próprio chat do Teams, pelo conector do seu motor. Sua resposta é lida por 40 minutos." } }
+      }
+    },
+    "With your own Telegram bot, made with BotFather.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "With your own Telegram bot, made with BotFather." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Avec votre propre bot Telegram, créé avec BotFather." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Com o seu próprio bot do Telegram, criado com o BotFather." } }
+      }
+    },
+    "Coming later.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Coming later." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "À venir." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Em breve." } }
+      }
+    },
+    "No phone gets notifications yet.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No phone gets notifications yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun téléphone ne reçoit encore les notifications." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhum telefone recebe notificações ainda." } }
+      }
+    },
+    "Needs your Perspicax Voice line and your own number, verified on it.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs your Perspicax Voice line and your own number, verified on it." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demande votre ligne Perspicax Voice et votre propre numéro, vérifié sur celle-ci." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Precisa da sua linha Perspicax Voice e do seu próprio número, verificado nela." } }
+      }
+    },
+    "Needs a bot of your own whose engine has a Teams connector.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs a bot of your own whose engine has a Teams connector." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demande un bot à vous dont le moteur a un connecteur Teams." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Precisa de um bot seu cujo motor tenha um conector do Teams." } }
+      }
+    },
+    "Connect your own Telegram bot.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect your own Telegram bot." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connectez votre propre bot Telegram." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Conecte o seu próprio bot do Telegram." } }
+      }
+    },
+    "Your phone number": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your phone number" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Votre numéro de téléphone" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Seu número de telefone" } }
+      }
+    },
+    "Enter your number in international form, like +1 514 555 0123.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Enter your number in international form, like +1 514 555 0123." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Entrez votre numéro en format international, comme +1 514 555 0123." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Digite seu número no formato internacional, como +1 514 555 0123." } }
+      }
+    },
+    "Text messages need your own phone number.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Text messages need your own phone number." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les textos demandent votre propre numéro de téléphone." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mensagens de texto precisam do seu próprio número de telefone." } }
+      }
+    },
+    "%@ connected.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ connected." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ connecté." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%@ conectado." } }
+      }
+    },
+    "Open %@ in Telegram and press Start to finish.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open %@ in Telegram and press Start to finish." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrez %@ dans Telegram et appuyez sur Démarrer pour terminer." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abra %@ no Telegram e toque em Iniciar para concluir." } }
+      }
+    },
+    "Open Telegram": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open Telegram" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir Telegram" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir o Telegram" } }
+      }
+    },
+    "Token from BotFather": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Token from BotFather" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Jeton de BotFather" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Token do BotFather" } }
+      }
+    },
+    "Telegram bot token": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Telegram bot token" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Jeton du bot Telegram" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Token do bot do Telegram" } }
+      }
+    },
+    "Only during my hours": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Only during my hours" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Seulement pendant mes heures" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Só no meu horário" } }
+      }
+    },
+    "Any time.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Any time." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En tout temps." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A qualquer hora." } }
+      }
+    },
+    "Outside these hours, the card waits and goes out when they start.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Outside these hours, the card waits and goes out when they start." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Hors de ces heures, la carte attend et part à leur début." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fora desse horário, o cartão espera e sai quando ele começa." } }
+      }
+    },
+    "Add hours": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add hours" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter des heures" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Adicionar horário" } }
+      }
+    },
+    "reachMe.day.0": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Su" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "D" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "D" } }
+      }
+    },
+    "reachMe.day.1": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mo" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "S" } }
+      }
+    },
+    "reachMe.day.2": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tu" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ma" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "T" } }
+      }
+    },
+    "reachMe.day.3": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "We" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Me" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Q" } }
+      }
+    },
+    "reachMe.day.4": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Th" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "J" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Q" } }
+      }
+    },
+    "reachMe.day.5": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Fr" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "V" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "S" } }
+      }
+    },
+    "reachMe.day.6": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sa" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "S" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "S" } }
+      }
+    },
+    "reachMe.start": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Start" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Début" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Início" } }
+      }
+    },
+    "reachMe.end": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "End" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fin" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fim" } }
+      }
+    },
+    "reachMe.to": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "to" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "à" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "até" } }
+      }
+    },
     "Approvals" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Approvals" } },

@@ -22,6 +22,8 @@ public enum SettingsItem: String, CaseIterable, Hashable, Sendable {
     case signOut
     // Bots
     case autoReview, autoReviewRules, approvalRules, actionJournal, timeZoneAuto, timeZone, botComputer
+    /// "Reach me" (#1187): how each bot reaches the person outside the app.
+    case reachMe
     case quickReplies, callVoice, experimental
     // Privacy and security
     case securityKeys, vault, presence, readReceipts
@@ -105,6 +107,7 @@ public enum SettingsTree {
         case .bots:
             all = [
                 [(.autoReview, c.connected), (.autoReviewRules, c.connected), (.approvalRules, c.connected), (.actionJournal, c.connected)],
+                [(.reachMe, c.connected)],
                 [(.timeZoneAuto, c.connected), (.timeZone, c.connected)],
                 [(.botComputer, c.connected && c.computer)],
                 [(.quickReplies, true), (.callVoice, true)],

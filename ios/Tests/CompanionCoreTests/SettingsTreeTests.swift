@@ -42,6 +42,7 @@ final class SettingsTreeTests: XCTestCase {
         XCTAssertEqual(root.first?.first, .profile, "the profile heads the list")
         XCTAssertLessThanOrEqual(root.joined().count, 16)
         XCTAssertEqual(SettingsTree.path(to: .autoReview), [.bots])
+        XCTAssertEqual(SettingsTree.path(to: .reachMe), [.bots], "Reach me sits with the bots' settings")
         XCTAssertEqual(SettingsTree.path(to: .vault), [.privacySecurity])
         XCTAssertEqual(SettingsTree.path(to: .termsOfService), [.about])
         XCTAssertEqual(SettingsTree.path(to: .switchAccount), [.account])
@@ -62,6 +63,7 @@ final class SettingsTreeTests: XCTestCase {
         let member = SettingsContext(gate: SurfaceGate(scope: .serverClient, organization: true), connected: true)
         let rows = Set(SettingsTree.reachable(member).map(\.item))
         XCTAssertTrue(rows.contains(.bots))
+        XCTAssertTrue(rows.contains(.reachMe), "a member sets Reach me without an admin")
         XCTAssertTrue(rows.contains(.securityKeys))
         XCTAssertTrue(rows.contains(.presence), "an organization server shows presence")
     }
@@ -71,6 +73,8 @@ final class SettingsTreeTests: XCTestCase {
         let label: (SettingsDestination) -> String = { $0.rawValue }
         XCTAssertTrue(SettingsSearch.results("security", available: all, label: label).contains(.privacySecurity))
         XCTAssertTrue(SettingsSearch.results("fuseau", available: all, label: label).contains(.bots))
+        XCTAssertTrue(SettingsSearch.results("telegram", available: all, label: label).contains(.bots))
+        XCTAssertTrue(SettingsSearch.results("me joindre", available: all, label: label).contains(.bots))
         XCTAssertTrue(SettingsSearch.results("terms", available: all, label: label).contains(.about))
     }
 }

@@ -603,3 +603,21 @@ describe("browser control", () => {
     expect(isBrowserControlAccess("GET", "/api/bots/b1/browser/live/extra")).toBe(false);
   });
 });
+
+describe("Reach me on the phone (#1187)", () => {
+  it("crosses the person's own reach-me routes, method by method", () => {
+    for (const [method, path] of [
+      ["GET", "/api/bots/bot_1/reach-me"], ["PUT", "/api/bots/bot_1/reach-me"],
+      ["POST", "/api/bots/bot_1/reach-me/telegram"], ["DELETE", "/api/bots/bot_1/reach-me/telegram"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(true);
+  });
+
+  it("keeps every other method and path beside them refused", () => {
+    for (const [method, path] of [
+      ["POST", "/api/bots/bot_1/reach-me"], ["DELETE", "/api/bots/bot_1/reach-me"], ["PATCH", "/api/bots/bot_1/reach-me"],
+      ["GET", "/api/bots/bot_1/reach-me/telegram"], ["PUT", "/api/bots/bot_1/reach-me/telegram"],
+      ["GET", "/api/bots/bot_1/reach-me/extra"], ["GET", "/api/bots/bot_1/reach-me/telegram/token"],
+      ["GET", "/api/bots/../reach-me"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
+  });
+});
