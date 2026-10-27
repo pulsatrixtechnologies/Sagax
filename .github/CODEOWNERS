@@ -1,11 +1,11 @@
 # Maintainer review is required on the open-core boundary, the cloud seam and
 # the licensing files. Enforced when the ruleset requires code-owner review.
-/server/enterprise.ts           @jencryzthers
-/server/enterprise.test.ts      @jencryzthers
-/server/brand.ts                @jencryzthers
-/server/tunnel.ts               @jencryzthers
-/cloudflare/control-plane/      @jencryzthers
-/LICENSE                        @jencryzthers
-/LICENSING.md                   @jencryzthers
-/CLA.md                         @jencryzthers
-/.github/                       @jencryzthers
+/server/enterprise.ts           @pulsatrixtechnologies/maintainers
+/server/enterprise.test.ts      @pulsatrixtechnologies/maintainers
+/server/brand.ts                @pulsatrixtechnologies/maintainers
+/server/tunnel.ts               @pulsatrixtechnologies/maintainers
+/cloudflare/control-plane/      @pulsatrixtechnologies/maintainers
+/LICENSE                        @pulsatrixtechnologies/maintainers
+/LICENSING.md                   @pulsatrixtechnologies/maintainers
+/CLA.md                         @pulsatrixtechnologies/maintainers
+/.github/                       @pulsatrixtechnologies/maintainers
