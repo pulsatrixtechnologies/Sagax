@@ -26,7 +26,7 @@ export function createTemporaryAgentRoutes(deps: TemporaryAgentRouteDeps): Route
     const temporary = deps.temporary(botId);
     if (!temporary) return void json(res, 404, { error: "no such temporary agent" });
     if (temporary.archived) return void json(res, 410, { error: "This agent was archived.", code: "agent_archived" });
-    if (auth.kind === "loopback" && auth.trust === "service") return void json(res, 403, { error: "forbidden: a person pins a temporary agent" });
+    if (auth.kind === "loopback" && auth.trust === "service") return void json(res, 403, { error: "forbidden: a person pins a temporary agent", code: "temp_agent_person_only" });
     const principalId = deps.personId(auth);
     if (!principalId || !mayPin(temporary, { principalId, admin: deps.orgAdmin(auth) })) {
       return void json(res, 403, { error: "forbidden: only this agent's owner or an organization admin pins it", code: "forbidden_owner" });

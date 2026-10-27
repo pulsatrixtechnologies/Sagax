@@ -93,7 +93,7 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandle
     /** A private marketplace that is not this viewer's does not exist to them. */
     const unreachable = (name: string) => method !== "GET" && typeof deps.store.canAccess === "function" && !deps.store.canAccess(name, viewer);
     if (method !== "GET" && !deps.mayManage(auth)) {
-      return json(res, 403, { error: "forbidden: only an admin or this computer's owner can change marketplaces" });
+      return json(res, 403, { error: "forbidden: only an admin or this computer's owner can change marketplaces", code: "marketplaces_owner_only" });
     }
     if (method !== "GET" && method !== "DELETE" && !/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
       return json(res, 415, { error: "content-type must be application/json" });

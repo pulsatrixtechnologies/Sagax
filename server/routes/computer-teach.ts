@@ -64,7 +64,7 @@ export function createComputerTeachRoutes<B extends { id: string }>(deps: Comput
     res.setHeader("cache-control", "private, no-store");
     const bot = deps.bot(m[1]!);
     if (!bot) return json(res, 404, { error: "no such bot" });
-    if (!deps.mayDrive(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can teach on its computer" });
+    if (!deps.mayDrive(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can teach on its computer", code: "bot_computer_teach_owner_only" });
     const owner = ownerOf(auth);
 
     if (method === "GET") {

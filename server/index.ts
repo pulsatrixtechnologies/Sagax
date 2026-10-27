@@ -15578,7 +15578,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(typeof event.input === "string" ? { input: event.input } : {}),
           ...(event.command?.command ? { command: event.command.command } : {}),
           ...(asker ? { roots: [workspaceDir(asker.id), join(TASK_WORKSPACES_DIR, asker.id, event.threadId)] } : {}),
-        }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
+        }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(languageOfPerson(cardAnswerer)))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
       // auto` for any model and starts in Manual without a word when auto is
@@ -15847,7 +15847,7 @@ bus.subscribe((event: RuntimeEvent) => {
               instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId,
               rules: customRules.rulesOf(cardAnswerer, asker.id), local: customDecision, facts: customReview.facts,
               call: { tool: event.mcpTool ?? event.tool, ...(typeof event.input === "string" ? { input: event.input } : {}), summary: event.summary },
-              language: cfg.language,
+              language: languageOfPerson(cardAnswerer),
             }).then(finishReview, () => finishReview({ kind: "none" }));
           }
         }
@@ -29399,7 +29399,7 @@ ROUTES.push(createComputerStatusRoutes({
 const localComputerManagementRefusal = (auth: RequestAuth): WorkingBotsRefusal | null =>
   (auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin") || adminOrDelegate(auth, "host.shell"))
     ? null
-    : { status: 403, body: { error: "forbidden: only this computer's owner can manage its computer" } };
+    : { status: 403, body: { error: "forbidden: only this computer's owner can manage its computer", code: "computer_manage_owner_only" } };
 function computerManagementPrincipal(auth: RequestAuth): string | undefined {
   return auth.kind === "session" ? auth.session.principalId?.trim() || undefined : undefined;
 }
@@ -43444,13 +43444,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       if (Array.isArray(body?.memberIds)) {
         const placed = refusePlacedBots(auth, body.memberIds, new Set());
-        if (placed) return json(res, 403, { error: placed });
+        if (placed) return json(res, 403, { error: placed, code: "bot_place_owner_only" });
       }
       // On an organization server the creator owns the new room, so a member
       // may name coworkers they can see in the directory (#1061).
       const memberCreates = IDENTITY.kind === "perspicax" && auth.kind === "session" && channelActorRole(auth) === "member";
       const humans = refuseHumanEdit(auth, body, [], memberCreates);
-      if (humans) { const bad = humans.startsWith("unknown team") || humans.startsWith("unknown person"); return json(res, bad ? 400 : 403, bad ? { error: humans } : { error: humans, code: "not_channel_editor" }); }
+      if (humans) { const bad = humans.startsWith("unknown team") || humans.startsWith("unknown person"); return json(res, bad ? 400 : 403, { error: humans, code: humans.startsWith("unknown team") ? "unknown_team" : bad ? "unknown_person" : "not_channel_editor" }); }
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -43735,7 +43735,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (memberImport) {
         if (!botCreationAllowed(auth) || !memberOwner) {
           if (personBotsReadOnly(auth.session.principalId)) return json(res, 403, botsReadOnlyRefusal(auth.session.principalId));
-          return json(res, 403, { error: "forbidden: only a member of the organization can import bots" });
+          return json(res, 403, { error: "forbidden: only a member of the organization can import bots", code: "import_bots_members_only" });
         }
         if (url.searchParams.get("cwd") !== null) return json(res, 403, { error: "Choosing a folder of the server for imported bots stays an admin's.", code: "admin_only" });
         if (url.searchParams.get("visibility") !== null) return json(res, 403, { error: "Choosing who sees imported bots stays an admin's; your imported bots are yours.", code: "admin_only" });
@@ -44053,7 +44053,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // apply only when this patch adds a bot to a channel.
       if (existingGroup && !existingGroup.dm && Array.isArray(body?.memberIds)) {
         const placed = refusePlacedBots(auth, body.memberIds, new Set(existingGroup.memberIds));
-        if (placed) return json(res, 403, { error: placed });
+        if (placed) return json(res, 403, { error: placed, code: "bot_place_owner_only" });
       }
       // Organization server: only the group's owner changes its settings;
       // anyone listed may still leave it (server/group-ownership.ts).
@@ -44066,7 +44066,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
       }
       const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);
-      if (humans) return json(res, humans.startsWith("unknown team") || humans.startsWith("unknown person") ? 400 : 403, { error: humans });
+      if (humans) { const code = humans.startsWith("unknown team") ? "unknown_team" : humans.startsWith("unknown person") ? "unknown_person" : "not_channel_editor"; return json(res, code === "not_channel_editor" ? 403 : 400, { error: humans, code }); }
       // A paired phone's companion edits a room like a member session does.
       if ((auth.kind === "session" && !auth.scopes.includes("admin")) || companionRequest(req, auth)) {
         // The owner of an organization group also picks its default responder,
@@ -44127,7 +44127,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // The owner, or an organization admin moderating.
         if (!mayDeleteGroup(group, groupActor(auth))) return json(res, 403, { error: "forbidden: only the group's owner can delete it", code: "not_group_owner" });
       } else if (auth.kind === "session" && !auth.scopes.includes("admin")) {
-        return json(res, 403, { error: "forbidden: deleting a channel needs the admin scope" });
+        return json(res, 403, { error: "forbidden: deleting a channel needs the admin scope", code: "channel_delete_admin_only" });
       }
       if (phoneSecretSubmissions.hasGroup(group.id)) {
         return json(res, 409, { error: "this channel is securely saving a credential — try again when it finishes" });
@@ -44636,7 +44636,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const memberCreate = auth.kind === "session" && !auth.scopes.includes("admin");
       if (memberCreate && !botCreationAllowed(auth)) {
         if (personBotsReadOnly(auth.session.principalId)) return json(res, 403, botsReadOnlyRefusal(auth.session.principalId));
-        return json(res, 403, { error: "forbidden: only a member of the organization can create bots" });
+        return json(res, 403, { error: "forbidden: only a member of the organization can create bots", code: "create_bots_members_only" });
       }
       const template = memberCreate
         ? resolveBotCreationDefaults(undefined, { ...body, useDefaults: false })
@@ -44835,7 +44835,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A chat-scoped session (a phone) generates only for a bot it owns or
       // may edit; admins and the owner at this computer for any.
       if (!ownerOrAdminOf(auth, existing)) {
-        return json(res, 403, { error: "forbidden: only the bot owner or an admin can change its picture" });
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can change its picture", code: "bot_picture_owner_only" });
       }
       // Generation is slow and both desktop and companion clients may edit or
       // delete this bot while it is in flight. Snapshot the two fields this
@@ -44875,7 +44875,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "PATCH") {
       const target = store.bot(m[1]);
       if (target && botEditsNeedOwner(auth) && !memberOwnsBot(auth, target) && !atLeast(viewerBotLevel(auth, target), "edit")) {
-        return json(res, 403, { error: "forbidden: only the bot owner can change its profile" });
+        return json(res, 403, { error: "forbidden: only the bot owner can change its profile", code: "bot_profile_owner_only" });
       }
       const parsed = parseBotProfilePatch(await readBody(req), true);
       if (!parsed.ok) return json(res, 400, { error: parsed.error });
@@ -45183,7 +45183,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           });
         }
         if (!own && !editor && target && botEditsNeedOwner(auth) && Object.keys(body).some((key) => key === "color" || key.startsWith("mascot") || key.startsWith("avatar"))) {
-          return json(res, 403, { error: "forbidden: only the bot owner can change how it looks" });
+          return json(res, 403, { error: "forbidden: only the bot owner can change how it looks", code: "bot_look_owner_only" });
         }
       }
       const existingBot = store.bot(m[1]);
@@ -45847,7 +45847,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
         const target = store.bot(m[1]);
         if (!target) return json(res, 404, { error: "no such bot" });
-        if (!memberOwnsBot(auth, target)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can delete it" });
+        if (!memberOwnsBot(auth, target)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can delete it", code: "bot_delete_owner_only" });
       }
       const result = await deleteBotWithLifecycle(m[1]);
       return json(res, result.status, result.body);
@@ -46003,7 +46003,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && (method === "PUT" || method === "DELETE")) {
       if (!skillsLibraryEnabled(cfg)) return json(res, 404, { error: "skills library is not enabled" });
       if (!computerOwner(auth) && !(IDENTITY.kind === "perspicax" && callerCan(auth, "skills.library"))) {
-        return json(res, 403, IDENTITY.kind === "perspicax" ? permissionRefusal("skills.library") : { error: "forbidden: only this computer's owner or an admin can change the skills library" });
+        return json(res, 403, IDENTITY.kind === "perspicax" ? permissionRefusal("skills.library") : { error: "forbidden: only this computer's owner or an admin can change the skills library", code: "skills_library_owner_only" });
       }
       const name = m[1]!;
       const plugin = pluginMarketplaces.installed().find((entry) => entry.skills.includes(name) && readSkillLibraryIndex()[name]?.source === entry.marketplace);
@@ -46165,7 +46165,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "GET") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
-      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can read its instructions here" });
+      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can read its instructions here", code: "bot_instructions_owner_only" });
       const soul = bot.soul ?? "";
       const drift = readSoulDrift(bot.id, soul, bot.soulHash ?? "");
       return json(res, 200, {
@@ -46230,7 +46230,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!bot) return json(res, 404, { error: "no such bot" });
       // A client session (iOS parity) previews the prompt of a bot it owns.
       if (!ownerOrAdminOf(auth, bot) && !computerOwner(auth)) {
-        return json(res, 403, { error: "forbidden: only the bot owner or an admin can read its prompt", code: "not_bot_owner" });
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can read its prompt", code: "bot_prompt_owner_only" });
       }
       return json(res, 200, previewSystemPrompt(bot));
     }
@@ -46240,7 +46240,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!bot) return json(res, 404, { error: "no such bot" });
       // A client session (iOS parity) reads it for a bot it owns.
       if (!ownerOrAdminOf(auth, bot) && !computerOwner(auth)) {
-        return json(res, 403, { error: "forbidden: only the bot owner or an admin can read what it does", code: "not_bot_owner" });
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can read what it does", code: "bot_activity_owner_only" });
       }
       return json(res, 200, await botOverview(bot));
     }
@@ -46249,7 +46249,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // bots (request-auth.ts lets a session through; the owner rule is here).
     m = path.match(/^\/api\/bots\/([\w-]+)\/history(?:\/rollback)?$/);
     if (m && (method === "GET" || method === "POST") && store.bot(m[1]) && !ownerOrAdminOf(auth, store.bot(m[1])!)) {
-      return json(res, 403, { error: "forbidden: only the bot owner or an admin can read or undo its history", code: "not_bot_owner" });
+      return json(res, 403, { error: "forbidden: only the bot owner or an admin can read or undo its history", code: "bot_history_owner_only" });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/history$/);
     if (m && method === "GET") {
@@ -47390,7 +47390,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!bot) return json(res, 404, { error: "no such bot" });
       // A client session organizes the folders of a bot it owns (its own
       // threads), never another person's bot.
-      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can organize its folders", code: "not_bot_owner" });
+      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can organize its folders", code: "bot_folders_owner_only" });
       const order = parseFolderOrder(await readBody(req));
       if (!order.ok) return json(res, 400, { error: order.error });
       const projects = store.reorderProjects(bot.id, order.projectIds);
@@ -47401,7 +47401,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && ((method === "POST" && !m[2]) || (method === "PATCH" && m[2]) || (method === "DELETE" && m[2]))) {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
-      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can organize its folders", code: "not_bot_owner" });
+      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can organize its folders", code: "bot_folders_owner_only" });
       if (m[2] && !store.project(bot.id, m[2])) return json(res, 404, { error: "no such folder" });
       if (method === "DELETE") {
         const updated = store.deleteProject(bot.id, m[2]!);
@@ -49900,7 +49900,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // bot it owns, or of this computer's own person. Never another
       // person's bot; starting, stopping and running stay admin scope.
       if (auth.kind === "session" && !auth.scopes.includes("admin") && !(previewOnly && (computerOwner(auth) || memberOwnsBot(auth, bot)))) {
-        return json(res, 403, { error: "forbidden: only the bot owner or an admin can open its computer", code: "not_bot_owner" });
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can open its computer", code: "bot_computer_open_owner_only" });
       }
       const orgComputer = orgAccountComputerRefusal();
       if (orgComputer) return json(res, 409, orgComputer);

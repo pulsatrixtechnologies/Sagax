@@ -89,14 +89,16 @@ function ErrorLine({ error }: { error: string }) {
 /** The line under a preview's name: what kind of file it is. */
 export function previewSubtitle(pending: PendingTeamImport): string {
   if (pending.kind === "backup") {
-    return `${pending.members.length} ${pending.members.length === 1 ? "bot" : "bots"} · ${pending.conversations} ${pending.conversations === 1 ? "conversation" : "conversations"} · portable backup`;
+    const bots = pending.members.length === 1 ? t("teamImport.botsOne") : t("teamImport.botsMany", { count: pending.members.length });
+    const conversations = pending.conversations === 1 ? t("teamImport.conversationsOne") : t("teamImport.conversationsMany", { count: pending.conversations ?? 0 });
+    return t("teamImport.backupSubtitleOne", { bots, conversations });
   }
   if (pending.kind === "package") {
     if (pending.library) return t("teamImport.library");
     if (pending.version === 2) return t("teamImport.sharedTeam", { count: pending.members.length });
-    return `${pending.members.length} bots · portable Markdown playbook`;
+    return t("teamImport.playbookSubtitle", { count: pending.members.length });
   }
-  return `${pending.members.length} ready-to-load bots`;
+  return t("teamImport.readySubtitle", { count: pending.members.length });
 }
 
 /** The preview of a team, a backup or a library package, and its Add

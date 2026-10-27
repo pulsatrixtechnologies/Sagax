@@ -131,7 +131,7 @@ export function createComputerStatusRoutes(deps: ComputerStatusRouteDeps): Route
         const view = action === "status" ? await manager.status(principalId) : action === "update" ? await manager.update(principalId) : await manager.reset(principalId);
         return json(res, 200, sandboxStatus(view));
       }
-      if (!deps.mayManageLocal(auth)) return json(res, 403, { error: "forbidden: only this computer's owner can manage its computer" });
+      if (!deps.mayManageLocal(auth)) return json(res, 403, { error: "forbidden: only this computer's owner can manage its computer", code: "computer_manage_owner_only" });
       if (action !== "status") {
         const refused = await hold("local");
         if (refused) return json(res, 409, refused);

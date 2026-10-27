@@ -58,7 +58,7 @@ export function createGroupBotPayerRoutes(deps: GroupBotPayerRouteDeps): RouteHa
     const { botId, turnPayer } = parsed.data;
     const bot = deps.bot(botId);
     if (!bot || !group.memberIds.includes(botId)) return json(res, 404, { error: "this bot is not in this group" });
-    if (!deps.mayChoose(auth, botId)) return json(res, 403, { error: "forbidden: only the bot's owner can choose who pays for its replies", code: "not_bot_owner" });
+    if (!deps.mayChoose(auth, botId)) return json(res, 403, { error: "forbidden: only the bot's owner can choose who pays for its replies", code: "bot_payer_owner_only" });
     const before = group.botPayers?.[botId] ?? null;
     const next: Record<string, TurnPayerMode> = { ...group.botPayers };
     if (turnPayer) next[botId] = turnPayer;

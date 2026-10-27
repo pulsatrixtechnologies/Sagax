@@ -148,7 +148,7 @@ export function createBotCatalogRoutes(deps: BotCatalogRouteDeps): RouteHandler 
     const [, botId, action] = m;
     res.setHeader("cache-control", "private, no-store");
     const viewer = deps.viewer(auth);
-    if (!viewer) return json(res, 403, { error: "forbidden: the catalogue is for a person" });
+    if (!viewer) return json(res, 403, { error: "forbidden: the catalogue is for a person", code: "catalog_person_only" });
     const organization = deps.organization();
 
     if (!botId) {
@@ -233,7 +233,7 @@ export function createBotCatalogRoutes(deps: BotCatalogRouteDeps): RouteHandler 
     // import
     if (method !== "POST") return json(res, 405, { error: "POST only" });
     if (viewer.botsReadOnly) return json(res, 403, { error: "org_bots_read_only", message: "Your administrator lets you use shared bots only." });
-    if (!viewer.canCreate) return json(res, 403, { error: "forbidden: you cannot create bots on this server" });
+    if (!viewer.canCreate) return json(res, 403, { error: "forbidden: you cannot create bots on this server", code: "create_bots_not_allowed" });
     const raw = await readBody(req, 4_096);
     const body = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
     const extra = Object.keys(body).find((key) => key !== "name");

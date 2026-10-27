@@ -147,7 +147,7 @@ export function createBotZipRoutes(deps: BotZipRouteDeps): RouteHandler {
     }
 
     const importer = deps.importer(auth);
-    if (!importer) return json(res, 403, { error: "forbidden: importing a bot is for a person" });
+    if (!importer) return json(res, 403, { error: "forbidden: importing a bot is for a person", code: "import_bot_person_only" });
     if (!importer.canCreate) return json(res, 403, { error: "You cannot create bots on this server.", code: "bots_read_only" });
 
     if (importId === "agent" && !preview) {

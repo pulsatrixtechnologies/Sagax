@@ -27,7 +27,7 @@ export function createBotSettingsRoutes(deps: BotSettingsRouteDeps): RouteHandle
     if (path !== BOT_SETTINGS_PATH) return PASS;
     if (method !== "GET" && method !== "PUT") return json(res, 405, { error: "GET or PUT" });
     res.setHeader("cache-control", "no-store");
-    if (auth.kind === "loopback" && auth.trust === "service") return json(res, 403, { error: "forbidden: sign in to change these settings" });
+    if (auth.kind === "loopback" && auth.trust === "service") return json(res, 403, { error: "forbidden: sign in to change these settings", code: "bot_settings_sign_in" });
     const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
     const scope = deps.organization() && principalId ? { kind: "person" as const, principalId } : { kind: "server" as const };
     // On an organization server only a signed-in person has settings here,
@@ -41,7 +41,7 @@ export function createBotSettingsRoutes(deps: BotSettingsRouteDeps): RouteHandle
     if (method === "GET") return answer(scope.kind === "person" ? deps.store.person(scope.principalId) : deps.store.server());
 
     if (scope.kind === "server" && auth.kind === "session" && !auth.scopes.includes("admin")) {
-      return json(res, 403, { error: "forbidden: only this server's owner can change its bot settings" });
+      return json(res, 403, { error: "forbidden: only this server's owner can change its bot settings", code: "bot_settings_server_owner_only" });
     }
     if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) {
       return json(res, 415, { error: "send the settings as JSON (content-type: application/json)" });
