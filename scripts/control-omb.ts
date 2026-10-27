@@ -391,6 +391,10 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
     // FAKE_CLAUDE_DUMP stays the launcher's: assertions read fixtureDumpPath.
     if (key.startsWith("FAKE_CLAUDE_") && key !== "FAKE_CLAUDE_DUMP" && value) childEnv[key] = value;
   }
+  // A suite that checks how a failed turn reads (a rate limit, a refused key)
+  // turns the automatic backup engine off, or the same message would simply
+  // continue on another engine and never fail (server/limit-failover-host.ts).
+  if (parentEnv.SAGAX_LIMIT_FAILOVER === "0") childEnv.SAGAX_LIMIT_FAILOVER = "0";
   // Content encryption (docs/content-encryption.md) is on unless the caller
   // says otherwise: the test suite turns it off (server/testing/setup.ts)
   // for the fixtures whose checks read the message database raw.

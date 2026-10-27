@@ -225,7 +225,11 @@ it("withholds a cross-team result if the owner revokes access while it runs", ()
   f.plan[f.target.id] = { gateFile, reply: "PRIVATE_RESULT_AFTER_REVOCATION" };
   await f.start();
   await expect.poll(() => f.nodes().find((n: any) => n.parentId)?.status, { timeout: 30_000 }).toBe("running");
-  await f.api(`/api/bots/${f.sender.id}`, { managedSections: [] }, "PATCH");
+  // A Primary Bot covers every bot its person owns whatever the team (#897),
+  // so taking back the managed team alone no longer cuts the access: the
+  // owner demotes the bot, which also clears its saved grants.
+  await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: false }, "PATCH");
+  expect((await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.sender.id).managedSections ?? []).toEqual([]);
   await releaseAfterWithhold(f, gateFile);
   expect((await f.wait()).status).toBe("settled");
   expect(f.nodes().find((n: any) => n.parentId).status).toBe("failed");
@@ -257,6 +261,9 @@ it.each(["rename", "delete"])("withholds an in-flight result after team %s and r
   await move("Engineering");
   const chief = (await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.sender.id);
   expect(chief.managedSections).toEqual([]);
+  // The saved grant is gone, but a Primary Bot still covers every bot its
+  // person owns (#897): the owner demotes it to cut the access.
+  await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: false }, "PATCH");
   await releaseAfterWithhold(f, gateFile);
   expect((await f.wait()).status).toBe("settled");
   expect(f.nodes().find((n: any) => n.parentId).status).toBe("failed");

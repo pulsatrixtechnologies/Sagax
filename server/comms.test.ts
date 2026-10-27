@@ -555,31 +555,20 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
 
       const send = await startRoutine(chief.id, "Create the specialist team and start the design review.");
       expect(send.status).toBe(201);
-      // Below Full access create_bot shows the team setup card and creates
-      // nothing. Applying it resumes the Chief, which then delegates.
+      // The owner's own routine on Approve for me applies team setup and
+      // create_bot at once, without a card, when every bot it touches is
+      // theirs (2026-10-26, teamSetupDirectApply). The Chief creates Pixel
+      // and goes on to delegate.
       const threadId = send.body.run.threadId;
-      let card: any;
-      await waitUntil(async () => {
-        const messages = (await api("GET", `/api/threads/${threadId}/messages?limit=50`)).body.messages ?? [];
-        card = messages.find((message: any) => message.card?.requestId && message.card?.title?.includes("Apply setup"))?.card;
-        return Boolean(card);
-      }, 30_000, "create_bot never showed the team setup card");
-      expect((await api("GET", "/api/bots")).body.bots.some((bot: any) => bot.name === "Pixel")).toBe(false);
-      await waitUntil(async () => (await api("GET", "/api/bots")).body.bots.every((bot: any) => !bot.busy), 15_000, "bots never went idle");
-      // The person applies it from the local app, which sends its own origin.
-      const applied = await fetch(`${BASE}/api/threads/${threadId}/respond`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin: BASE },
-        body: JSON.stringify({ requestId: card.requestId, behavior: "allow" }),
-      });
-      expect(applied.status, await applied.clone().text()).toBe(200);
+      expect(((await api("GET", `/api/threads/${threadId}/messages?limit=50`)).body.messages ?? [])
+        .some((message: any) => message.card?.title?.includes("Apply setup"))).toBe(false);
 
-      // The resumed Chief hands Pixel the review in its own work thread.
+      // The Chief hands Pixel the review in its own work thread.
       let operator: any;
       let work: any[] = [];
       await waitUntil(async () => {
         const sent = (await api("GET", `/api/threads/${threadId}/messages?limit=50`)).body.messages ?? [];
-        if (!sent.some((message: any) => message.kind === "activity" && message.tool?.name === "Sent to Pixel")) return false;
+        if (!sent.some((message: any) => message.kind === "activity" && message.tool?.name?.startsWith("Delegated to @Pixel"))) return false;
         operator = (await api("GET", "/api/bots")).body.bots.find((bot: any) => bot.name === "Pixel" && bot.section === "Launch");
         work = [];
         for (const task of operator?.tasks ?? []) {
@@ -1486,12 +1475,14 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
   );
 
   it(
-    "mirrors a delegation that could not start into the channel",
+    "refuses a delegation to a bot whose engine is gone, before anything is sent or mirrored",
     async () => {
       const seeded = (await api("GET", "/api/bots")).body.bots[0];
       await api("PATCH", `/api/bots/${seeded.id}`, { hidden: true });
       const helper = (await api("POST", "/api/bots")).body.bot;
-      // no such instance — startTurn rejects, so B's turn never starts
+      // no such instance. Since #819 delegate_bot refuses a teammate that
+      // cannot run before queueing anything, so the delegator hears why at
+      // once instead of a "could not start" chip mirrored later.
       await api("PATCH", `/api/bots/${helper.id}`, {
         name: "Helper",
         modelSelection: { instanceId: "missing-instance", model: "fake-model" },
@@ -1505,33 +1496,20 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
       const send = await startRoutine(asker.id, "hey @Helper please pick this up");
       expect(send.status).toBe(201);
 
-      const deadline = Date.now() + 30_000;
-      let channel: any;
-      let sourceChip: any;
-      for (;;) {
-        const state = (await api("GET", "/api/bots")).body;
+      let reply: any;
+      let state: any;
+      await waitUntil(async () => {
+        state = (await api("GET", "/api/bots")).body;
         const askerBot = state.bots.find((b: any) => b.id === asker.id);
-        const note = askerBot.messages.find(
-          (m: any) => m.kind === "activity" && m.tool?.name === "Messaged @Helper",
-        );
-        sourceChip = askerBot.messages.find(
-          (m: any) => m.kind === "activity" && m.tool?.ok === false && m.tool?.name?.includes("could not start"),
-        );
-        channel = note?.comm?.groupId
-          ? state.groups.find((g: any) => g.id === note.comm.groupId)
-          : undefined;
-        const terminal = channel?.messages.some(
-          (m: any) => m.kind === "activity" && m.tool?.ok === false && m.tool?.name?.includes("could not start"),
-        );
-        if (sourceChip && terminal) break;
-        if (Date.now() > deadline) {
-          throw new Error(
-            `could-not-start not mirrored. sourceChip=${JSON.stringify(sourceChip)}\n` +
-              `channel tail: ${JSON.stringify(channel?.messages?.slice(-6))}\nstderr: ${stderr.slice(-2000)}`,
-          );
-        }
-        await new Promise((r) => setTimeout(r, 250));
-      }
+        reply = askerBot.messages.find((m: any) => m.kind === "text" && m.role === "bot" && m.text?.includes("Helper ne peut pas travailler"));
+        return Boolean(reply) && !askerBot.busy;
+      }, 30_000, "the asker was never told that Helper cannot work");
+      expect(reply.text).toContain("Choisis un autre coéquipier");
+      // nothing was queued: no delegation chip, no bot-to-bot channel, no turn for Helper
+      const askerBot = state.bots.find((b: any) => b.id === asker.id);
+      expect(askerBot.messages.some((m: any) => m.kind === "activity" && /^(Delegated to|Messaged) @Helper/.test(m.tool?.name ?? ""))).toBe(false);
+      expect(state.groups.some((g: any) => JSON.stringify(g.memberIds ?? g.members ?? []).includes(helper.id))).toBe(false);
+      expect(state.bots.find((b: any) => b.id === helper.id).messages.some((m: any) => m.role === "user")).toBe(false);
     },
     45_000,
   );

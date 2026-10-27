@@ -1411,8 +1411,9 @@ function handle(msg: any) {
         return;
       }
       if (mode === "create-peer" && agentsMcp) {
-        // Below Full access create_bot only shows the team setup card. Once
-        // the person applies it the Chief resumes, finds Pixel and delegates.
+        // create_bot applies at once on the owner's own turn at Approve for
+        // me; where a team setup card is shown instead, applying it resumes
+        // the Chief, which finds Pixel and delegates.
         let listed = "";
         void driveMcp(agentsMcp, [
           { name: "list_bots", args: () => ({}) },

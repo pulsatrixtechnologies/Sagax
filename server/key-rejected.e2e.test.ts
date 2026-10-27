@@ -42,7 +42,9 @@ it("a key the provider rejects stops showing Ready until it changes or works aga
   await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve));
   const address = provider.address();
   if (!address || typeof address === "string") throw new Error("fixture provider has no port");
-  const fixture = await launchVerificationServer();
+  // The automatic backup engine would continue a rate-limited message on
+  // another engine; this test is about the failed turn itself.
+  const fixture = await launchVerificationServer({ ...process.env, SAGAX_LIMIT_FAILOVER: "0" });
   const api = fixtureApi(fixture.info.url);
   const sse = await openSse(`${fixture.info.url}/api/events`);
   const control = (args: string[]) => runControlOmb([...args, "--url", fixture.info.url]) as Promise<any>;

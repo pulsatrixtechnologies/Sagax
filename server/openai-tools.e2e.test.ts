@@ -196,7 +196,10 @@ it.each(["openaiCompat", "groq"] as const)("%s runs structured MCP calls through
           expect(messages.messages.some((message: any) => message.text?.includes("The artifact was created."))).toBe(true);
           if (mode === "selected") expect(requests[before]!.tools?.map((tool) => tool.function.name)).toEqual(["selected_write_file"]);
         } else {
-          expect(settled.status).toBe("failed");
+          // A denied call still ends the turn, but the thread no longer gets
+          // a runtime error row for it (#1108): the detail is the tool line.
+          expect(settled.status).toBe("settled");
+          expect(messages.messages.some((message: any) => message.tool?.ok === false)).toBe(true);
           expect(result?.content).toMatch(/denied/i);
           expect(existsSync(artifact)).toBe(false);
         }
