@@ -475,8 +475,9 @@ it("returns nested results after Claude rejects the source's prior resume cursor
   expect(f.nodes().every((node: any) => node.status === "completed")).toBe(true);
   expect(f.evidence().map((turn: any) => turn.botId)).toEqual([f.chief.id, f.chief.id, f.lead.id, f.specialist.id, f.lead.id, f.chief.id]);
   const transcript = await f.messages(f.chief.activeTaskId);
-  // the refused resume went on in a new session started from the chat, and said so
-  expect(transcript.some((message: any) => message.tool?.name === `notice: ${rebuiltSessionNotice("Claude Code")}`)).toBe(true);
+  // the refused resume went on in a new session started from the chat; that
+  // technical note stays in the log, never in the chat (the maintainer, 2026-10-26)
+  expect(transcript.some((message: any) => message.tool?.name === `notice: ${rebuiltSessionNotice("Claude Code")}`)).toBe(false);
 }, { FAKE_CLAUDE_MODE: "dead-session", FAKE_CLAUDE_EXIT_AFTER_TURN: "1" }), 45_000);
 
 it("uses recipient bot defaults for its new task, never the sender's or its selected old thread's settings", () => fixture(async f => {

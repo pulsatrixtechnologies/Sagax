@@ -286,8 +286,21 @@ public func isStatusNotice(_ message: Message) -> Bool {
 /// browser and Local VM lines and every "moved to" line stay.
 public let quietWorkspaceLine = "notice: Workspace: On your computer"
 
+/// Also every technical notice (`ChatNotices`, the desktop's
+/// shared/chat-notices.ts): stored, never drawn.
 public func isHiddenStatusNotice(_ message: Message) -> Bool {
-    message.kind == .activity && message.tool?.name == quietWorkspaceLine
+    guard message.kind == .activity, let name = message.tool?.name else { return false }
+    return name == quietWorkspaceLine || ChatNotices.isTechnical(name)
+}
+
+/// Bookkeeping the desktop chat never draws (ChatView.tsx): a stop the
+/// person asked for, stored by an older build as `error: turn stopped`, and
+/// Sagax's own context fold (`compaction.by == "harness"`).
+public func isHiddenReceipt(_ message: Message) -> Bool {
+    if message.kind == .compaction { return message.compaction?.by == "harness" }
+    guard message.kind == .activity, let name = message.tool?.name else { return false }
+    return name.replacingOccurrences(of: #"^error:\s*"#, with: "", options: .regularExpression)
+        .trimmingCharacters(in: .whitespaces) == "turn stopped"
 }
 
 /// A tool step, running, done or failed, such as
@@ -424,7 +437,7 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail, showTh
         case .keep:
             break
         }
-        if isHiddenStatusNotice(message) { continue }
+        if isHiddenStatusNotice(message) || isHiddenReceipt(message) { continue }
         // A failed routine run and a routine's access card pass as a
         // banner (TransientNotices), never a row.
         if TransientNotices.isTransient(message) { continue }

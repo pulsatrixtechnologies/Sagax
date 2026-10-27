@@ -140,17 +140,17 @@ final class ChatPreferencesTests: XCTestCase {
     }
 
     func testStatusNoticeIsNeverHiddenOrFolded() {
-        // "Qwen hit a rate limit and is retrying" is the answer to "is it
-        // stuck?", not tool noise.
+        // A notice that asks something of the person (approve in 1Password)
+        // is not tool noise; technical notices leave no row (ChatNoticesTests).
         var notice = Message(id: "n", role: .bot, kind: .activity, at: 1)
-        notice.tool = ToolActivity(name: "notice: Qwen is waiting on its model", ok: true)
+        notice.tool = ToolActivity(name: "notice: Waiting for 1Password: approve the request in 1Password on your computer.", ok: true)
         let messages = [activity("a"), activity("b"), notice, activity("c"), activity("d")]
         XCTAssertEqual(transcriptRows(messages, detail: .hidden).map(\.id), ["n"])
         XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["run.a", "n", "run.c"])
         XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["run.a", "n", "run.c"])
     }
 
-    func testOnYourComputerLineIsNeverDrawnAndOtherWorkspaceLinesStay() {
+    func testNoWorkspaceLineIsDrawn() {
         var here = Message(id: "w", role: .bot, kind: .activity, at: 1)
         here.tool = ToolActivity(name: "notice: Workspace: On your computer", ok: true)
         var cloud = Message(id: "c", role: .bot, kind: .activity, at: 2)
@@ -158,11 +158,10 @@ final class ChatPreferencesTests: XCTestCase {
         let messages = [activity("a"), here, activity("b"), cloud]
         for detail in [ActivityDetail.full, .reduced, .hidden] {
             let ids = transcriptRows(messages, detail: detail).map(\.id)
-            XCTAssertFalse(ids.contains("w"), "\(detail)")
-            XCTAssertTrue(ids.contains("c"), "\(detail)")
+            XCTAssertFalse(ids.contains("w") || ids.contains("c"), "\(detail)")
         }
-        // nor does it split the stretch of work in two
-        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["run.a", "c"])
+        // nor does one split the stretch of work in two
+        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["run.a"])
     }
 
     func testAFailedToolCallFoldsWithTheOtherSteps() {
@@ -208,7 +207,7 @@ final class ChatPreferencesTests: XCTestCase {
         let running = try decode(#"{"id":"run","role":"bot","kind":"activity","at":2,"tool":{"name":"Bash"}}"#)
         let ok = try decode(#"{"id":"ok","role":"bot","kind":"activity","at":3,"tool":{"name":"Read","ok":true}}"#)
         let receipt = try decode(#"{"id":"bad","role":"bot","kind":"activity","at":4,"tool":{"name":"Write","ok":false}}"#)
-        let notice = try decode(#"{"id":"n","role":"bot","kind":"activity","at":5,"tool":{"name":"notice: waiting","ok":true}}"#)
+        let notice = try decode(#"{"id":"n","role":"bot","kind":"activity","at":5,"tool":{"name":"notice: Waiting for 1Password: approve the request in 1Password on your computer.","ok":true}}"#)
         let failed = try decode(#"{"id":"err","role":"bot","kind":"activity","at":6,"tool":{"name":"error: boom","ok":false}}"#)
         let parallel = try decode(#"""
         {"id":"par","role":"bot","kind":"activity","at":7,"tool":{"name":"Parallel task"},

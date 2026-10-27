@@ -317,9 +317,13 @@ public struct ToolActivity: Codable, Hashable, Sendable {
 public struct Compaction: Codable, Hashable, Sendable {
     public var summary: String
     public var tokensBefore: Int
-    public init(summary: String, tokensBefore: Int) {
+    /// "harness" for Sagax's own fold, which the chat never draws (desktop
+    /// ChatView); absent or "person" for one the person asked for.
+    public var by: String?
+    public init(summary: String, tokensBefore: Int, by: String? = nil) {
         self.summary = summary
         self.tokensBefore = tokensBefore
+        self.by = by
     }
 
     public var chipText: String {

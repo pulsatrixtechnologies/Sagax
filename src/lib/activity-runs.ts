@@ -16,6 +16,7 @@ import { localDay } from "@/lib/transcript-derivations";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
 import { ONE_PASSWORD_WAITING } from "../../shared/credential-vault";
 import { isQuietWorkspaceLine, parseWorkspaceLine, type WorkspaceLine } from "../../shared/workspace-line";
+import { isTechnicalNoticeName } from "../../shared/chat-notices";
 import type { SelectedComputer } from "../../shared/execution-target";
 import type { LocaleKey } from "@/locales";
 
@@ -81,10 +82,15 @@ export function workspaceLineText(line: WorkspaceLine): string {
   return t("workspaceLine.fallbackUnavailable", { place, wanted: t(WORKSPACE_PLACE[line.fallback.wanted]) });
 }
 
-/** A status row the thread keeps but never draws: the "On your computer"
- * Workspace line (shared/workspace-line.ts isQuietWorkspaceLine). */
+/** A status row the thread keeps but never draws: a technical notice
+ * (shared/chat-notices.ts, the list iOS reads too: Auto's pick, the
+ * Workspace line, an automatic recovery, a stored engine notice such as an
+ * MCP server skipped) and the "On your computer" Workspace line
+ * (shared/workspace-line.ts isQuietWorkspaceLine). */
 export function isHiddenStatusActivity(message: Message): boolean {
-  return message.kind === "activity" && isQuietWorkspaceLine(message.tool?.name);
+  if (message.kind !== "activity") return false;
+  const name = message.tool?.name;
+  return isQuietWorkspaceLine(name) || isTechnicalNoticeName(name);
 }
 
 /** Recovery changes this conversation's engine and must remain visible. */

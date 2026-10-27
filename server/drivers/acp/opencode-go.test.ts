@@ -1116,12 +1116,14 @@ describe("OpenCode session variants", () => {
     },
   );
 
-  // The app hid an unprefixed notice with the tool steps (Tool calls is off
-  // by default); `notice:` makes it a status row (src/lib/activity-runs.ts).
-  it("is stored as a status row the person always sees", () => {
+  // An engine's notice is technical: it goes to the server log and the
+  // Events lens, never into the chat (the maintainer, 2026-10-26, shared/chat-notices.ts).
+  it("goes to the log, never into the chat", () => {
     const source = readFileSync(new URL("../../index.ts", import.meta.url), "utf8");
     const handler = source.slice(source.indexOf('case "runtime.notice":'), source.indexOf('case "runtime.error":'));
-    expect(handler).toContain("name: `notice: ${event.message.slice(0, 240)}`");
+    expect(handler).toContain("console.info(");
+    expect(handler).not.toContain("pushMessage(");
+    expect(handler).not.toContain("appendMessage(");
   });
 
   it("still switches to a model the session offers", async () => {

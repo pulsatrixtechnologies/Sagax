@@ -250,9 +250,9 @@ describe("thread control placement", () => {
     messages.push({ id: "next", role: "user", kind: "text", at: 4, text: "A different request" });
     expect(render()).not.toContain("Retry</button>");
   });
-  it.each([false, true])("keeps recovery visible and outside tool folds when tool calls are %s", (showToolCalls) => {
+  it.each([false, true])("keeps a usage-limit line visible and outside tool folds when tool calls are %s", (showToolCalls) => {
     fixture.showToolCalls = showToolCalls;
-    const explanation = "Automatic recovery: Qwen could not start. Trying Backup · fixture-model once in this thread.";
+    const explanation = "Limit reached on Qwen and no other engine is available: your message will be sent again when it resets (around 2:05 PM).";
     const messages: Bot["messages"] = [
       { id: "read", role: "bot", kind: "activity", at: 1, tool: { name: "Read", ok: true } },
       { id: "edit", role: "bot", kind: "activity", at: 2, tool: { name: "Edit", ok: true } },
@@ -265,29 +265,34 @@ describe("thread control placement", () => {
       expect(markup).toContain('data-mid="recovery"><div role="status"');
       expect(markup).toContain(explanation);
       expect(markup).not.toContain(`recovery: ${explanation}`);
-      expect(markup.match(/Automatic recovery:/g)).toHaveLength(1);
+      expect(markup.match(/Limit reached on Qwen/g)).toHaveLength(1);
       if (!showToolCalls) expect(markup).not.toContain('data-testid="tool-activity"');
     } finally {
       fixture.showToolCalls = false;
     }
   });
-  // A bot saved on a retired model runs another one; with Tool calls off
-  // (the default) the notice saying so was dropped with the tool steps.
-  it.each([false, true])("shows a model notice as a status row when tool calls are %s", (showToolCalls) => {
+  // the maintainer, 2026-10-26: an engine's technical notice (a model fallback, an MCP
+  // server skipped, an automatic recovery, the Workspace line) leaves no
+  // row in the chat, whatever Tool calls says (shared/chat-notices.ts).
+  it.each([false, true])("draws no technical notice when tool calls are %s", (showToolCalls) => {
     fixture.showToolCalls = showToolCalls;
-    const explanation = "OpenCode no longer offers opencode/x-preview-f-free, so this conversation uses opencode/big-pickle.";
+    const notices = [
+      "notice: OpenCode no longer offers opencode/x-preview-f-free, so this conversation uses opencode/big-pickle.",
+      'notice: MCP server "slack" was skipped for this turn: 401 Unauthorized',
+      "recovery: Automatic recovery: Qwen could not start. Trying Backup · fixture-model once in this thread.",
+      "notice: Workspace: In the cloud",
+    ];
     const messages: Bot["messages"] = [
       { id: "read", role: "bot", kind: "activity", at: 1, tool: { name: "Read", ok: true } },
-      { id: "notice", role: "bot", kind: "activity", at: 2, tool: { name: `notice: ${explanation}`, ok: true } },
-      { id: "bash", role: "bot", kind: "activity", at: 3, tool: { name: "Bash", ok: true } },
-      { id: "reply", role: "bot", kind: "text", at: 4, text: "ok" },
+      ...notices.map((name, index) => ({ id: `notice-${index}`, role: "bot" as const, kind: "activity" as const, at: 2 + index, tool: { name, ok: true } })),
+      { id: "bash", role: "bot", kind: "activity", at: 10, tool: { name: "Bash", ok: true } },
+      { id: "reply", role: "bot", kind: "text", at: 11, text: "ok" },
     ];
     try {
       const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false, messages } }));
-      expect(markup).toContain('data-mid="notice"><div role="status"');
-      expect(markup.match(/no longer offers/g)).toHaveLength(1);
-      expect(markup).not.toContain(`notice: ${explanation}`);
-      if (!showToolCalls) expect(markup).not.toContain('data-testid="tool-activity"');
+      expect(markup).not.toContain('data-mid="notice-');
+      for (const words of ["no longer offers", "was skipped", "Automatic recovery", "In the cloud"]) expect(markup).not.toContain(words);
+      expect(markup).toContain('data-mid="reply"');
     } finally {
       fixture.showToolCalls = false;
     }
@@ -320,7 +325,7 @@ describe("thread control placement", () => {
       { id: "ok", role: "bot", kind: "activity", at: 1, tool: { name: "Read", ok: true } },
       { id: "run", role: "bot", kind: "activity", at: 2, tool: { name: "Bash" } },
       { id: "bad", role: "bot", kind: "activity", at: 3, tool: { name: "Write", ok: false } },
-      { id: "notice", role: "bot", kind: "activity", at: 4, tool: { name: "notice: waiting on the model", ok: true } },
+      { id: "notice", role: "bot", kind: "activity", at: 4, tool: { name: "notice: Waiting for 1Password: approve the request in 1Password on your computer.", ok: true } },
       { id: "err", role: "bot", kind: "activity", at: 5, tool: { name: "error: boom", ok: false } },
       { id: "comm", role: "bot", kind: "activity", at: 6, tool: { name: "Messaged @Ada" }, comm: { groupId: "g", withBotId: "ada", withName: "Ada", withColor: "teal" } },
       { id: "ask", role: "bot", kind: "options", at: 7, card: { title: "Approval needed", subtitle: "ls", options: ["Allow", "Deny"], requestId: "r-ask", tool: "Bash" } },
@@ -334,7 +339,7 @@ describe("thread control placement", () => {
       expect(markup).not.toContain('data-mid="run"');
       expect(markup).not.toContain('data-mid="bad"');
       expect(markup).toContain('data-mid="notice"');
-      expect(markup).toContain("waiting on the model");
+      expect(markup).toContain("1Password");
       expect(markup).toContain("boom");
       expect(markup).toContain("Messaged @Ada");
       expect(markup).toContain("Allow once");

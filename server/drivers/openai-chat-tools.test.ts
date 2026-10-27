@@ -1273,18 +1273,20 @@ describe("structured tool execution boundaries", () => {
 });
 
 describe("a configured MCP server that cannot mount", () => {
-  it("is skipped with a notice, and the turn runs with the remaining servers", async () => {
+  it("is skipped (logged, no notice in the chat), and the turn runs with the remaining servers", async () => {
     const f = await fixture((_body, response) => answer(response));
     const broken = join(f.directory, "broken-mcp.mjs");
     // Answers initialize with an error, as a server needing sign-in or refusing its credential (401) does.
     writeFileSync(broken, `process.stdin.setEncoding("utf8");let b="";process.stdin.on("data",(c)=>{b+=c;let n;while((n=b.indexOf("\\n"))!==-1){const m=JSON.parse(b.slice(0,n));b=b.slice(n+1);if(m.id!==undefined)process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:m.id,error:{code:-32001,message:"401 Unauthorized"}})+"\\n");}});`);
     const warn = console.warn;
-    console.warn = () => {};
+    const warned: string[] = [];
+    console.warn = (...args: unknown[]) => { warned.push(args.map(String).join(" ")); };
     try {
       await f.start({ integrations: { custom: { ...f.integrations!.custom, slack: { command: process.execPath, args: [broken], env: {} } } } });
       expect(await f.completed()).toMatchObject({ ok: true });
     } finally { console.warn = warn; }
-    expect(f.recorder.events).toContainEqual(expect.objectContaining({ type: "runtime.notice", message: expect.stringContaining(`MCP server "slack" was skipped`) }));
+    expect(warned.some((line) => line.includes(`MCP server "slack" was skipped`))).toBe(true);
+    expect(f.recorder.events.some((event) => event.type === "runtime.notice")).toBe(false);
     expect(f.recorder.events.some((event) => event.type === "runtime.error")).toBe(false);
     const names = f.requests[0].tools!.map((tool) => tool.function.name);
     expect(names).toContain("audit_write");

@@ -4,6 +4,7 @@ import { describeRun, groupActivityRuns, groupTranscript, isHiddenStatusActivity
 import type { Message } from "@/state/store";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
 import { workspaceLineName } from "../../shared/workspace-line";
+import { ONE_PASSWORD_WAITING } from "../../shared/credential-vault";
 
 let seq = 0;
 const tool = (name: string, ok = true): Message =>
@@ -70,8 +71,8 @@ describe("groupActivityRuns", () => {
     expect(items.map((i) => i.kind)).toEqual(["message", "message"]);
   });
 
-  it("keeps recovery visible between successful tool runs", () => {
-    const recovery = tool("recovery: Automatic recovery: trying a backup once.");
+  it("keeps a usage-limit line visible between successful tool runs", () => {
+    const recovery = tool("recovery: Limit reached on Claude and no other engine is available: your message will be sent again when it resets (around 2:05 PM).");
     const messages = [tool("Read"), tool("Edit"), recovery, tool("Bash"), tool("Write")];
     expect(isRecoveryActivity(recovery)).toBe(true);
     expect(isRecoveryActivity(text("recovery: ordinary text"))).toBe(false);
@@ -79,6 +80,14 @@ describe("groupActivityRuns", () => {
       const items = group(messages);
       expect(items.map(item => item.kind)).toEqual(["run", "message", "run"]);
       expect(items[1]).toEqual({ kind: "message", message: recovery });
+    }
+  });
+
+  it("never draws an automatic recovery, nor lets it split a stretch of work (the maintainer, 2026-10-26)", () => {
+    const recovery = tool("recovery: Automatic recovery: trying a backup once.");
+    expect(isHiddenStatusActivity(recovery)).toBe(true);
+    for (const group of [groupActivityRuns, groupTranscript]) {
+      expect(group([tool("Read"), recovery, tool("Bash")]).map(item => item.kind)).toEqual(["run"]);
     }
   });
 
@@ -113,29 +122,39 @@ describe("groupActivityRuns", () => {
     expect(isToolStep(tool(workspaceLineName({ target: "cloud" })))).toBe(false);
   });
 
-  it("never draws the On your computer line, and keeps every other Workspace line", () => {
+  it("never draws a Workspace line, nor lets one split a stretch of work (the maintainer, 2026-10-26)", () => {
     const here = tool(workspaceLineName({ target: "this_computer" }));
     const cloud = tool(workspaceLineName({ target: "cloud" }));
     const moved = tool(workspaceLineName({ target: "cloud", fallback: { wanted: "this_computer", reason: "offline" } }));
     const back = tool(workspaceLineName({ target: "this_computer", fallback: { wanted: "browser", reason: "unavailable" } }));
-    expect(isHiddenStatusActivity(here)).toBe(true);
-    for (const kept of [cloud, moved, back]) expect(isHiddenStatusActivity(kept)).toBe(false);
+    for (const line of [here, cloud, moved, back]) expect(isHiddenStatusActivity(line)).toBe(true);
     const answer = text("ok");
     for (const group of [groupTranscript, groupActivityRuns]) {
-      expect(group([here, answer])).toEqual([{ kind: "message", message: answer }]);
-      // nor does it split a stretch of work in two
-      const steps = group([tool("Read"), here, tool("Edit")]);
-      expect(steps.map(item => item.kind)).toEqual(["run"]);
-      expect(group([moved, answer]).map(item => item.kind === "message" ? item.message.id : item.id)).toEqual([moved.id, answer.id]);
+      for (const line of [here, cloud, moved, back]) {
+        expect(group([line, answer])).toEqual([{ kind: "message", message: answer }]);
+        expect(group([tool("Read"), line, tool("Edit")]).map(item => item.kind)).toEqual(["run"]);
+      }
     }
   });
 
-  it("keeps a model notice visible between successful tool runs", () => {
-    const notice = tool("notice: OpenCode no longer offers opencode/x, so this conversation uses opencode/big-pickle.");
+  it("never draws an engine's technical notice (an MCP server skipped, a model fallback)", () => {
+    for (const name of [
+      'notice: MCP server "slack" was skipped for this turn: 401 Unauthorized',
+      "notice: OpenCode no longer offers opencode/x, so this conversation uses opencode/big-pickle.",
+    ]) {
+      const notice = tool(name);
+      expect(isHiddenStatusActivity(notice)).toBe(true);
+      for (const group of [groupActivityRuns, groupTranscript]) {
+        expect(group([tool("Read"), notice, tool("Bash")]).map(item => item.kind)).toEqual(["run"]);
+      }
+    }
+  });
+
+  it("keeps a notice that asks something of the person visible between successful tool runs", () => {
+    const notice = tool(ONE_PASSWORD_WAITING);
     const messages = [tool("Read"), tool("Edit"), notice, tool("Bash"), tool("Write")];
-    expect(statusActivity(notice)).toEqual({
-      kind: "notice", text: "OpenCode no longer offers opencode/x, so this conversation uses opencode/big-pickle.",
-    });
+    expect(statusActivity(notice)?.kind).toBe("notice");
+    expect(isHiddenStatusActivity(notice)).toBe(false);
     expect(isRecoveryActivity(notice)).toBe(false);
     expect(statusActivity(text("notice: ordinary text"))).toBeNull();
     for (const group of [groupActivityRuns, groupTranscript]) {
