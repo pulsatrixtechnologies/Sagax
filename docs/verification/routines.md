@@ -106,17 +106,24 @@ The final startup JSON includes the server `url`, `previewUrl`, `pepperId`,
    **Back to results**. **Run logs** retains the full execution history.
    A user follow-up sent in a completed execution makes it an ordinary visible
    thread; marking the older run seen must not hide that conversation again.
-10. In the routine editor, **Post results to** offers visible threads grouped by
-    folder or **The bot's main thread** (the default). Save to Fleet health
-    reports, reload, and confirm the selection persists. In quick create,
+10. In the routine editor, **Post results to** defaults to **The bot's main
+    thread**. With conversation threads shown it also offers the bot's visible
+    threads grouped by folder. With threads hidden (the default, one
+    conversation) the menu is only **The bot's main thread**, plus **Keep
+    current destination** on an existing routine. Save to Fleet health
+    reports while threads are shown, reload, and confirm the selection persists. In quick create,
     **More options** must preserve the chosen destination. Changing the owning
     bot, including via Call/Team goal selectors, must reset a foreign destination.
     Run a new routine twice: both reports use the chosen thread, while Run logs
     links to two different executions. The default reports every run into the
-    bot's main thread and never creates a "· Results" thread.
+    bot's main thread and does not create a results thread while that
+    conversation exists. A Cloud home guest, or a run for a person who has no
+    conversation the server can open, still gets a thread titled with the
+    routine's name. That thread is listed, can be closed, and runs at the
+    bot's current approval level.
 
 Every routine reports into its bot's main thread unless the user chooses another
-destination, whether it was made in a chat, the editor or the API, and whether a
+destination (that extra choice is offered only while conversation threads are shown), whether it was made in a chat, the editor or the API, and whether a
 teammate (such as a Chief) asked for it. The main thread is the open
 conversation a person last wrote in (until anyone has, the selected one, then
 the oldest); a bot with hidden threads opens there too. Conversations from

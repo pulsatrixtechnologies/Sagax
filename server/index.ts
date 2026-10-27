@@ -21561,8 +21561,10 @@ routines = new RoutineManager({
     if (mainAllowed) return { threadId: main, main: true };
     if (!CLOUD_HOME && !runAs) return undefined;
     const threadId = store.createTask(routine.botId, `${routine.name} · Results`, false, undefined, undefined, undefined, runAs)?.threadId;
-    // never a segment of the single stream nor a row under the bot
-    if (threadId) store.patchTask(routine.botId, threadId, { routineResults: true });
+    // Listed, with the routine's name in the title, so the owner can open
+    // and close it. It follows the bot's current approval level. The title
+    // still ends in " · Results", so once a real main thread exists the next
+    // run moves there (legacyResultsThread) and this one stays as history.
     if (threadId && opener) threadStarters.set(threadId, opener);
     return threadId ? { threadId } : undefined;
   },

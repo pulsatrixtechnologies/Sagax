@@ -27,6 +27,7 @@ struct RoutineEditorView: View {
 
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var threadPrefs = SidebarPrefsModel.shared
     @State private var name: String
     @State private var prompt: String
     @State private var botId: String
@@ -246,14 +247,16 @@ struct RoutineEditorView: View {
         return Section {
             Picker(String(localized: "Post results to"), selection: $results) {
                 if routine != nil { Text("Keep current destination").tag(RoutineResultsDestination.keep) }
-                Text("Create a dedicated results thread").tag(RoutineResultsDestination.newThread)
-                if RoutineResults.isMissing(results, bot: bot) {
-                    Text("Thread unavailable. Choose another").tag(results).rowSelectionDisabled()
-                }
-                ForEach(RoutineResults.groups(for: bot), id: \.self) { group in
-                    Section(group.folder ?? String(localized: "No folder")) {
-                        ForEach(group.threads, id: \.threadId) { thread in
-                            Text(verbatim: thread.title).tag(RoutineResultsDestination.thread(thread.threadId))
+                Text("The bot's main thread").tag(RoutineResultsDestination.newThread)
+                if threadPrefs.threads.shown {
+                    if RoutineResults.isMissing(results, bot: bot) {
+                        Text("Thread unavailable. Choose another").tag(results).rowSelectionDisabled()
+                    }
+                    ForEach(RoutineResults.groups(for: bot), id: \.self) { group in
+                        Section(group.folder ?? String(localized: "No folder")) {
+                            ForEach(group.threads, id: \.threadId) { thread in
+                                Text(verbatim: thread.title).tag(RoutineResultsDestination.thread(thread.threadId))
+                            }
                         }
                     }
                 }
@@ -261,7 +264,11 @@ struct RoutineEditorView: View {
             .disabled(bot == nil)
             .accessibilityIdentifier("routine-editor-results")
         } footer: {
-            Text("Each run starts with fresh context. Dated results collect here; full execution details stay in Run logs. A dedicated results thread is reused for every run and can be moved into a folder.")
+            if threadPrefs.threads.shown {
+                Text("Each run starts with fresh context. Dated results collect in the bot's main thread unless you choose another; full execution details stay in Run logs.")
+            } else {
+                Text("Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs.")
+            }
         }
     }
 

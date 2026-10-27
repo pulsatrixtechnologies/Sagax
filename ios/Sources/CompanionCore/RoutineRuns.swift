@@ -152,7 +152,11 @@ public enum RoutineResults {
     /// execution thread), by folder, the unfiled ones last.
     public static func groups(for bot: Bot?) -> [Group] {
         guard let bot else { return [] }
-        let tasks = (bot.tasks ?? []).filter { !$0.isHiddenFromPerson }
+        let tasks = (bot.tasks ?? []).filter { task in
+            guard !task.isHiddenFromPerson, task.hidden != true else { return false }
+            if let opener = task.openedBy?.botId, opener != bot.id { return false }
+            return true
+        }
         let projects = bot.projects ?? []
         var out: [Group] = projects.compactMap { project in
             let members = tasks.filter { $0.projectId == project.id }
