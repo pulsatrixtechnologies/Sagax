@@ -159,3 +159,24 @@ export function memberOwnScopeTool(name: string | undefined): MemberToolFamily |
   if (!tool || HOST_LEVEL_AGENT_TOOLS.has(tool)) return null;
   return Object.hasOwn(MEMBER_OWN_SCOPE_AGENT_TOOLS, tool) ? MEMBER_OWN_SCOPE_AGENT_TOOLS[tool]! : null;
 }
+
+const OWN_BOT_SKILLS_ROUTE = /^\/api\/bots\/[\w-]+\/skills(?:\/[a-z0-9-]+)?$/;
+
+/** #1090: `act` on a bot's skills (list, read, edit, remove) is the person's
+ * own setup, as skill_manage is: the route checks that the person owns or
+ * manages that bot, and act runs it with the person's own session, so no
+ * admin has to approve it. Any other `act` stays host level. `input` is the
+ * tool's raw JSON input. */
+export function ownBotSkillsAct(name: string | undefined, input: unknown): boolean {
+  if (builtinAgentToolName(name) !== "act") return false;
+  let raw: unknown = input;
+  if (typeof input === "string") {
+    try { raw = JSON.parse(input); } catch { return false; }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const record = raw as Record<string, unknown>;
+  if (Object.keys(record).some((key) => !["method", "path", "query", "body"].includes(key))) return false;
+  if (typeof record.method !== "string" || typeof record.path !== "string") return false;
+  if (!["GET", "HEAD", "POST", "PATCH", "DELETE"].includes(record.method.toUpperCase())) return false;
+  return OWN_BOT_SKILLS_ROUTE.test(record.path);
+}

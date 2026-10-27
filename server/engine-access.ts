@@ -9,7 +9,7 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { memberOwnScopeTool } from "./member-tool-scope.ts";
+import { memberOwnScopeTool, ownBotSkillsAct } from "./member-tool-scope.ts";
 import { READABLE_HIDDEN_SEGMENTS } from "../shared/readable-hidden.ts";
 import { dataToolName, foreignToolSpelling } from "./sagax-internal-tools.ts";
 
@@ -209,6 +209,8 @@ export function memberBotAdminApproval(input: {
   /** 2026-10-19: the owner holds `host.commands` (given in Perspicax): the
    * server commands of their own bots are theirs to approve. */
   ownerRunsServerCommands?: boolean;
+  /** #1090: the raw input of the call, read only for `act` on a bot's skills. */
+  rawInput?: unknown;
 }): boolean {
   if (input.ownEnvironment || input.ownDestination || input.ownComputerChoice || input.ownerRunsServerCommands) return false;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
@@ -217,6 +219,7 @@ export function memberBotAdminApproval(input: {
   // `agents__offer_shell_terminal` (a card the person approves) as a shell
   // command and sent the member's terminal offer to an admin.
   if (!input.command && builtin && memberOwnScopeTool(input.tool?.trim())) return false;
+  if (!input.command && builtin && ownBotSkillsAct(input.tool?.trim(), input.rawInput)) return false;
   if (serverCommandApproval(input)) return true;
   // 2026-10-16: the Data tools are the bot's own database, confined to its
   // own folders on an organization server (sagax-internal-tools.ts).
