@@ -1,5 +1,9 @@
-// iPad I-sync: Settings > My connections (`settings/MyConnectionsSettings.tsx`),
-// organization servers only: the person's own GitHub account (a code to
+// iPad I-sync: the person's own connections (`settings/MyConnectionsSettings.tsx`),
+// organization servers only. Since 2026-10-27 they live in Connect apps,
+// one place each: `part: .github` in Sources, `part: .servers` in My
+// accounts (the large layout keeps these cards there, with the token field
+// and Add an MCP server). Settings > My connections only links there
+// (`DesktopMyConnectionsLinks`). What they hold: the person's own GitHub account (a code to
 // type at GitHub, or a token) and their own MCP servers (an address with no
 // sign-in, a token, OAuth, or their GitHub account; or a command that runs
 // in their server environment). When an admin manages them, the section is
@@ -47,6 +51,10 @@ final class MyConnectionsModel: ObservableObject {
 }
 
 struct DesktopMyConnectionsSettings: View {
+    enum Part { case github, servers }
+
+    /// which card this draws (Connect apps > Sources, or > My accounts)
+    var part: Part
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
     @StateObject private var model = MyConnectionsModel()
@@ -70,8 +78,10 @@ struct DesktopMyConnectionsSettings: View {
     private var content: some View {
         if let data = model.data {
             VStack(alignment: .leading, spacing: 16) {
-                DesktopText(Text("Your own accounts and MCP servers. Only your conversations and your routines use them; nobody else's turn ever gets them."),
-                            line: 21, color: \.inkSecondary)
+                if part == .servers {
+                    DesktopText(Text("Your own accounts and MCP servers. Only your conversations and your routines use them; nobody else's turn ever gets them."),
+                                line: 21, color: \.inkSecondary)
+                }
                 if data.managedByAdmin == true {
                     DesktopText(Text("Your administrator manages plugins and MCP servers."), size: 12.5, line: 20, color: \.inkSecondary)
                         .padding(.horizontal, 12)
@@ -79,13 +89,49 @@ struct DesktopMyConnectionsSettings: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                AnyView(MyConnectionsGitHubCard(data: data, model: model))
-                AnyView(MyConnectionsServersCard(data: data, model: model))
+                if part == .github {
+                    AnyView(MyConnectionsGitHubCard(data: data, model: model))
+                } else {
+                    AnyView(MyConnectionsServersCard(data: data, model: model))
+                }
             }
         } else if let error = model.error {
             DesktopText(verbatim: error, size: 12.5, line: 18, color: \.danger)
         } else {
             DesktopText(Text("Loading your connections…"), size: 12.5, line: 18, color: \.inkSecondary)
+        }
+    }
+}
+
+/// Settings > My connections (2026-10-27): one place per option, so this
+/// page only says where each one is and opens Connect apps on that tab.
+struct DesktopMyConnectionsLinks: View {
+    @Environment(\.desktopTheme) private var theme
+    @EnvironmentObject private var session: Session
+    @State private var opening: ConnectAppsTab?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            DesktopText(Text("Your own accounts and MCP servers. Only your conversations and your routines use them; nobody else's turn ever gets them."),
+                        line: 21, color: \.inkSecondary)
+            link(Text("GitHub"), Text("Connect GitHub or a token: Connect apps > Sources."), tab: .sources, identifier: "desktop-my-connections.github")
+            link(Text("My MCP servers"), Text("Add, sign in, turn on or off: Connect apps > My accounts."), tab: .accounts, identifier: "desktop-my-connections.servers")
+        }
+        .sheet(item: $opening) { tab in
+            ConnectAppsPage(initialTab: tab)
+                .environmentObject(session)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("desktop-settings-my-connections")
+    }
+
+    private func link(_ title: Text, _ detail: Text, tab: ConnectAppsTab, identifier: String) -> some View {
+        DesktopSettingsCard(title, subtitle: detail, identifier: identifier) {
+            Button { opening = tab } label: {
+                Text(String(localized: "Open in Connect apps"))
+            }
+            .buttonStyle(DesktopButtonStyle(kind: .control))
+            .accessibilityIdentifier("\(identifier).open")
         }
     }
 }

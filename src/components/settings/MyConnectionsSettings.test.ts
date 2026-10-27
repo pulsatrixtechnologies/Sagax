@@ -1,5 +1,7 @@
-// Connect apps > Manage > Your connections (organization server): what each
-// state draws, in English and in French. A bot's plugins: see
+// A person's own connections (organization server), since 2026-10-27 in two
+// places of Connect apps: GitHub in Sources (MyGithubConnection), their MCP
+// servers in My accounts (MyMcpServers). What each state draws, in English
+// and in French. A bot's plugins: see
 // src/components/plugins/BotPluginCard.test.ts.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,7 +10,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import { parseArgsLine, parseEnvLines, suggestServerName, type MyConnections } from "@/lib/my-connections";
 import { SECTIONS, organizationHidesSection } from "../SettingsModal";
-import { MyConnectionsSettings } from "./MyConnectionsSettings";
+import { MyGithubConnection, MyMcpServers } from "./MyConnectionsSettings";
+
+/** Both parts, as a person sees them across the two tabs. */
+function MyConnectionsSettings({ initial }: { initial: MyConnections }) {
+  return createElement("div", null, createElement(MyGithubConnection, { initial }), createElement(MyMcpServers, { initial }));
+}
 
 afterEach(() => setLocale("en"));
 
@@ -19,6 +26,16 @@ describe("Mes connexions", () => {
     expect(SECTIONS.map((section) => section.id)).not.toContain("myConnections");
     expect(organizationHidesSection("mail", true)).toBe(true);
     expect(organizationHidesSection("privacy", false)).toBe(true);
+  });
+
+  it("GitHub alone in Sources, the servers alone in My accounts", () => {
+    const github = renderToStaticMarkup(createElement(MyGithubConnection, { initial: base }));
+    expect(github).toContain("Connect GitHub");
+    expect(github).not.toContain("Add an MCP server");
+    const servers = renderToStaticMarkup(createElement(MyMcpServers, { initial: base }));
+    expect(servers).toContain("Add an MCP server");
+    expect(servers).not.toContain("Connect GitHub");
+    expect(servers).not.toContain("data-github-state");
   });
 
   it("offers Connect GitHub and a token, and Add an MCP server", () => {

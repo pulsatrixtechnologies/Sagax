@@ -206,12 +206,14 @@ final class SettingsUITests: XCTestCase {
             let plugins = self.api("GET", "/api/plugins/installed").1["plugins"] as? [[String: Any]] ?? []
             return plugins.contains { ($0["url"] as? String)?.contains("deepwiki") == true }
         })
-        // added: the row shows its status, no button
+        // added: no Add button any more
         XCTAssertTrue(eventually(15) { !app.element("connect-apps-action.featured:deepwiki").exists })
         // its page, as the reference design iOS 1.14 draws the plugin sheet: the header,
         // Added in the floating capsule, Uninstall in the "..." menu
+        // added, it leaves Discover for Installed ("N connected" opens it)
+        app.element("connect-apps-manage").tap()
         let row = app.descendants(matching: .any).matching(NSPredicate(
-            format: "identifier BEGINSWITH 'connect-apps-row.' AND identifier CONTAINS 'deepwiki'"
+            format: "identifier BEGINSWITH 'connect-apps-installed.' AND identifier CONTAINS 'deepwiki'"
         )).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), app.debugDescription)
         row.tap()

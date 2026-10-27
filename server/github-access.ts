@@ -2,7 +2,7 @@
 //
 // Which credential, in order: the token saved for this marketplace on this
 // bot (server/marketplace-tokens.ts), the acting person's own GitHub
-// connection (Connect apps > Personal, server/github-connect.ts), then the
+// connection (Connect apps > Sources, server/github-connect.ts), then the
 // organization's GitHub tokens (Settings > Organization > Plugins and
 // GitHub). Before a clone, GET /repos/{owner}/{repo} on api.github.com
 // tells which one reads the repository and, when none does, why: GitHub

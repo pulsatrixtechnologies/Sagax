@@ -2,10 +2,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildPluginItems } from "@/lib/plugins-model";
+import { buildPluginItems, type PluginItem } from "@/lib/plugins-model";
 import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
 import { grokConnectorDetail, grokRowAction, openGrokConnectors } from "./PluginsPanel";
-import { ConnectAppsView } from "./plugins/ConnectAppsView";
+import { ConnectAppsView, type ConnectAppsViewProps } from "./plugins/ConnectAppsView";
+import { DiscoverView, type DiscoverViewProps } from "./plugins/DiscoverView";
+import { discoverItems } from "@/lib/installed-model";
 import { PluginDetailView } from "./plugins/PluginDetailView";
 import { SkillPage } from "./plugins/SkillPage";
 
@@ -21,63 +23,63 @@ beforeEach(() => vi.stubGlobal("window", { addEventListener: noop, removeEventLi
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Plugins panel views", () => {
-  it("main view: Grok's layout: title with N connected, category pills, the search, sections of two-column rows", () => {
-    const html = renderToStaticMarkup(createElement(ConnectAppsView, {
-      items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop,
-      onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop, extraConnected: 1,
-      renderAction: (item) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
-    }));
-    expect(html).toContain("Connect Apps");
-    expect(html).not.toContain("Apps, MCP servers and skills your bots can use.");
+  const discoverProps: DiscoverViewProps = {
+    items, search: "", onSearch: noop, filter: "all", onFilter: noop, type: "any", onType: noop,
+    sourceLabel: (source: string) => source, onOpenItem: noop,
+    renderAction: (item: PluginItem) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
+  };
+  const page = (overrides: Partial<ConnectAppsViewProps> = {}) => renderToStaticMarkup(createElement(ConnectAppsView, {
+    tab: "discover", onTab: noop, items, extraConnected: 1, onOpenConnected: noop, refreshing: false, onRefresh: noop,
+    discover: createElement(DiscoverView, discoverProps), installed: "INSTALLED", accounts: "ACCOUNTS", sources: "SOURCES", ...overrides,
+  }));
+
+  it("one page: Connect Apps with N connected in its title row, then the four tabs, Discover open", () => {
+    const html = page();
     expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>[\s\S]*?data-plugins-connected/);
-    // the home page has no breadcrumb
+    // no breadcrumb and no "Manage plugins and skills" page
     expect(html).not.toContain("data-breadcrumb");
+    expect(html).not.toContain("Manage plugins and skills");
     // the glitcho server and one Claude connector
     expect(html).toContain("2 connected");
+    const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*>([^<]+)</g)].map((match) => [match[1], match[2]]);
+    expect(tabs).toEqual([["installed", "Installed"], ["discover", "Discover"], ["accounts", "My accounts"], ["sources", "Sources"]]);
+    expect(html).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
+    expect(html).toMatch(/data-plugins-connected[\s\S]*?role="tablist"[\s\S]*?placeholder="Search across apps and skills"/);
+    expect(html).not.toContain("INSTALLED");
+    expect(page({ tab: "sources" })).toContain("SOURCES");
+    // a tab left out is not drawn; a tab not offered falls back to Discover
+    const noSources = page({ tabs: ["discover", "installed", "accounts"], tab: "sources" });
+    expect(noSources).not.toContain('data-plugins-tab="sources"');
+    expect(noSources).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
+  });
+
+  it("Discover: the search with Browse Bots beside it, every category pill, sections of two-column rows", () => {
+    const html = renderToStaticMarkup(createElement(DiscoverView, discoverProps));
     expect(html).toContain('placeholder="Search across apps and skills"');
     expect(html).not.toContain("Browse Bots");
-    // connected sits in the title row, above the pills and the search
-    expect(html).toMatch(/data-plugins-connected[\s\S]*?data-plugins-chips[\s\S]*?placeholder="Search across apps and skills"/);
-    const chips = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((match) => match[1]);
-    expect(chips[0]).toBe("All");
-    expect(chips).toContain("More");
-    expect(html).toContain('aria-haspopup="menu"');
-    expect(html).not.toContain('aria-label="Refresh');
-    expect(html).not.toContain('role="tab"');
+    const chips = [...html.matchAll(/data-plugins-chip="([^"]+)"/g)].map((match) => match[1]);
+    expect(chips[0]).toBe("all");
+    expect(html).not.toContain("data-plugins-more");
     expect(html).toContain('data-plugins-section="recommended"');
     expect(html).toContain("Recommended for you");
-    expect(html).toContain('data-plugins-section="mcp"');
-    expect(html).toContain('data-plugins-section="skills"');
     expect(html).toContain("md:grid-cols-2");
     expect(html).toMatch(/data-plugin-row="featured:linear"[\s\S]*?>Connect</);
-    expect(html).toContain('data-plugin-row="mcp:glitcho"');
+    const withBots = renderToStaticMarkup(createElement(DiscoverView, { ...discoverProps, onBrowseBots: noop }));
+    expect(withBots).toMatch(/placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse bots/);
   });
 
-  it("main view: Browse bots sits beside the search, and N connected stays in the title row", () => {
-    const props = {
-      items, loading: false, search: "", onSearch: noop, filter: "all" as const, onFilter: noop,
-      onOpenManage: noop, onOpenItem: noop, type: "any" as const, onType: noop,
-      renderAction: () => null,
-    };
-    expect(renderToStaticMarkup(createElement(ConnectAppsView, props))).not.toContain("data-plugins-browse-bots");
-    const html = renderToStaticMarkup(createElement(ConnectAppsView, { ...props, onBrowseBots: noop }));
-    expect(html).toMatch(/data-plugins-connected[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse bots/);
-    const header = html.slice(0, html.indexOf("</header>"));
-    expect(header).not.toContain("data-plugins-browse-bots");
-  });
-
-  it("a section opened alone: breadcrumb Connect apps > the section, its title, no pills, no Browse Bots", () => {
-    const html = renderToStaticMarkup(createElement(ConnectAppsView, {
-      items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop,
-      onOpenManage: noop, onOpenItem: noop, type: "mcp", onBrowseBots: noop,
-      renderAction: () => null,
-      subpage: { title: "MCP servers", trail: [{ label: "Connect apps", onSelect: noop }], onBack: noop },
-    }));
-    expect(html).toMatch(/data-breadcrumb[\s\S]*?aria-label="Back"[\s\S]*?>Connect apps<[\s\S]*?aria-current="page"[^>]*>MCP servers</);
-    expect(html).toMatch(/id="plugins-title"[^>]*>MCP servers</);
-    expect(html).not.toContain("data-plugins-chips");
-    expect(html).not.toContain("data-plugins-browse-bots");
-    expect(html).toContain("data-plugins-connected");
+  it("Discover leaves out what is installed and the engines' connectors, keeps an app a conversation needs until it connects", () => {
+    const rows = buildPluginItems({
+      servers: [{ name: "glitcho", enabled: true, url: "https://qc1.example.net/mcp", auth: "connected" }],
+      featured: [
+        { id: "linear", name: "Linear", description: "Issues", url: "https://mcp.linear.app/mcp", domain: "linear.app", auth: "oauth" },
+      ],
+      grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" },
+    });
+    const keys = discoverItems(rows).map((item) => item.key);
+    expect(keys).toContain("featured:linear");
+    expect(keys).not.toContain("mcp:glitcho");
+    expect(keys.some((key) => key.startsWith("grok:"))).toBe(false);
   });
 
   it("skill page: header, Delete Skill in red, the description, then Name, Description, Instructions and Save", () => {
@@ -120,9 +122,9 @@ describe("Plugins panel views", () => {
     const withGrok = buildPluginItems({
       grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" },
     });
-    const html = renderToStaticMarkup(createElement(ConnectAppsView, {
-      items: withGrok, loading: false, search: "gmail", onSearch: noop, filter: "all", onFilter: noop,
-      onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop,
+    const html = renderToStaticMarkup(createElement(DiscoverView, {
+      items: withGrok, search: "gmail", onSearch: noop, filter: "all", onFilter: noop, type: "any", onType: noop,
+      sourceLabel: (source) => source, onOpenItem: noop,
       renderAction: (item) => grokRowAction(item) ?? (item.action ? createElement("button", { type: "button" }, "Connect") : null),
     }));
     const row = (key: string) => {

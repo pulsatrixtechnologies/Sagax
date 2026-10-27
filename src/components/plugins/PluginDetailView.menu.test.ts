@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Connect apps, simplified (2026-10-14): a plugin's Update, Test, Edit and
-// Uninstall sit in one "..." menu. Since 2026-10-16 the main view filters
-// with Browse Bots' pills (All, then each category), and View all, Manage, a
+// Uninstall sit in one "..." menu. Discover (the view Connect apps opens on
+// since 2026-10-27) filters with Browse Bots' pills (All, then each
+// category, every one on the row) and View all filters it in place; a
 // detail and Browse Bots open in the same window under a breadcrumb, with
 // Escape and Cmd+[ to go back.
 import { createElement } from "react";
@@ -12,7 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import { buildPluginItems, CATEGORY_ORDER } from "@/lib/plugins-model";
 import { PluginDetailView } from "./PluginDetailView";
-import { ConnectAppsView, categoryPills, moreCategoryPills } from "./ConnectAppsView";
+import { categoryPills, moreCategoryPills } from "./ConnectAppsView";
+import { DiscoverView, type DiscoverViewProps } from "./DiscoverView";
 import { Breadcrumb } from "../Breadcrumb";
 import { isBackShortcut, pageKeyAction } from "@/lib/back-shortcut";
 
@@ -35,6 +37,10 @@ afterEach(() => {
 });
 
 const click = (element: Element | null) => flushSync(() => (element as HTMLElement).click());
+const discover = (overrides: Partial<DiscoverViewProps>): DiscoverViewProps => ({
+  items, search: "", onSearch: noop, filter: "all", onFilter: noop, type: "any", onType: noop,
+  sourceLabel: (source) => source, onOpenItem: noop, renderAction: () => null, ...overrides,
+});
 
 describe("plugin detail menu", () => {
   it("opens on the \"...\" button and runs the chosen action", () => {
@@ -73,13 +79,10 @@ describe("Category pills", () => {
         { id: "figma", name: "Figma", description: "Files", url: "https://mcp.figma.com/mcp", domain: "figma.com", auth: "oauth", category: "design" },
       ],
     });
-    flushSync(() => root.render(createElement(ConnectAppsView, {
-      items: rows, loading: false, search: "", onSearch: noop, filter: "all", onFilter,
-      onOpenManage: noop, onOpenItem: noop, renderAction: () => null,
-    })));
+    flushSync(() => root.render(createElement(DiscoverView, discover({ items: rows, onFilter }))));
     const pills = [...host.querySelectorAll("[data-plugins-chip]")].map((node) => node.getAttribute("data-plugins-chip"));
     expect(pills[0]).toBe("all");
-    expect(pills).toEqual(categoryPills(rows, "all"));
+    expect(pills).toEqual([...categoryPills(rows, "all"), ...moreCategoryPills(rows, "all")]);
     expect(pills).toContain("productivity");
     expect(pills).toContain("design");
     expect(pills).not.toContain("finance");
@@ -88,38 +91,27 @@ describe("Category pills", () => {
     expect(onFilter).toHaveBeenCalledWith("design");
   });
 
-  it("keeps a chosen More category out of the row and marks More pressed", () => {
-    flushSync(() => root.render(createElement(ConnectAppsView, {
-      items, loading: false, search: "", onSearch: noop, filter: "finance", onFilter: noop,
-      onOpenManage: noop, onOpenItem: noop, renderAction: () => null,
-    })));
-    expect(host.querySelector('[data-plugins-chip="finance"]')).toBeNull();
-    expect(host.querySelector("[data-plugins-more]")?.getAttribute("aria-pressed")).toBe("true");
-    expect(moreCategoryPills(items, "finance")).toContain("finance");
-    click(host.querySelector("[data-plugins-more]"));
+  it("puts every category on the row, a chosen one pressed", () => {
+    flushSync(() => root.render(createElement(DiscoverView, discover({ filter: "finance" }))));
+    expect(host.querySelector("[data-plugins-more]")).toBeNull();
     expect(host.querySelector('[data-plugins-chip="finance"]')?.getAttribute("aria-pressed")).toBe("true");
   });
 });
 
 describe("View all and the breadcrumb", () => {
-  it("View all hands the section to the panel, which opens it as a page", () => {
-    const onViewAll = vi.fn();
+  it("View all filters Discover in place: no page of its own", () => {
     const onFilter = vi.fn();
     const many = buildPluginItems({
       featured: Array.from({ length: 12 }, (_, index) => ({
         id: `app${index}`, name: `App ${index}`, description: "", url: `https://mcp${index}.example.net/mcp`, domain: `app${index}.example.net`, auth: "oauth", category: "productivity",
       })),
     });
-    flushSync(() => root.render(createElement(ConnectAppsView, {
-      items: many, loading: false, search: "", onSearch: noop, filter: "all", onFilter,
-      onOpenManage: noop, onOpenItem: noop, renderAction: () => null, onViewAll,
-    })));
+    flushSync(() => root.render(createElement(DiscoverView, discover({ items: many, onFilter }))));
     const viewAll = host.querySelector("[data-plugins-view-all]");
     expect(viewAll).not.toBeNull();
     click(viewAll);
-    expect(onViewAll).toHaveBeenCalledTimes(1);
-    expect(onViewAll.mock.calls[0]![0].filter).toEqual({ filter: "productivity" });
-    expect(onFilter).not.toHaveBeenCalled();
+    expect(onFilter).toHaveBeenCalledWith("productivity");
+    expect(host.querySelector("[data-breadcrumb]")).toBeNull();
   });
 
   it("the back button and a crumb go back; the current page is not a link", () => {

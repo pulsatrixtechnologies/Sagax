@@ -160,7 +160,7 @@ export function cardsMatching(query: string): string[] {
  * sends its own sign-in codes and invitations. */
 export function organizationHidesSection(id: AppSettingsSection, organization: boolean): boolean {
   // Privacy holds read receipts between people, which exist there only.
-  // (A person's own GitHub and MCP servers are in Connect apps > Manage.)
+  // (A person's own GitHub is in Connect apps > Sources, their MCP servers in My accounts.)
   return organization ? id === "mail" : id === "privacy";
 }
 
@@ -193,7 +193,7 @@ export function orgMemoryAvailable(): boolean {
   return typeof window !== "undefined" && Boolean(window.ogb?.orgMemory);
 }
 
-/** Published pages left Settings for Connect apps > Manage (2026-10-26). A
+/** Published pages left Settings for Connect apps > My accounts (2026-10-26). A
  * search still finds them, as one entry that opens them there. */
 export const PUBLISHED_PAGES_KEYWORDS = ["pages", "published", "publiées", "canvas", "canevas", "share", "partager", "link", "lien", "revoke", "révoquer", "expiry", "expiration", "site", "html", "markdown"];
 

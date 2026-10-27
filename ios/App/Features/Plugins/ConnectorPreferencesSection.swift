@@ -8,6 +8,8 @@ struct SlackConnectionsSection: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: Session
     @State private var links: [(bot: Bot, url: URL)] = []
+    /// told whether any bot has a Slack link (My accounts shows its pill then)
+    var onAvailable: ((Bool) -> Void)? = nil
 
     var body: some View {
         Group {
@@ -43,6 +45,7 @@ struct SlackConnectionsSection: View {
     private func load() async {
         guard session.surfaceGate.allows(.botSlack), let client = session.profileClient else {
             links = []
+            onAvailable?(false)
             return
         }
         var found: [(bot: Bot, url: URL)] = []
@@ -53,5 +56,6 @@ struct SlackConnectionsSection: View {
             }
         }
         links = found
+        onAvailable?(!found.isEmpty)
     }
 }

@@ -1,38 +1,18 @@
-// Connect apps > Manage plugins and skills (2026-10-26, JC's redesign): four
-// tabs instead of one long page.
-//
-//   - Installed: one line per thing the person has (installedEntries folds
-//     a server added by hand, the same address brought by a plugin and the
-//     plugin itself into one), its real logo, a readable name, what it
-//     brings, its state and a "..." menu (Update, For which bots, Remove);
-//     then the private skills, only when there are some.
-//   - Discover: the catalog and its search (what can still be added).
-//   - My accounts: the person's own connections and the connectors of their
-//     engine accounts (Claude and Grok, grouped by engine).
-//   - Sources: the marketplaces, add or remove one.
-//
-// Every section with nothing in it is hidden. Nothing here is for an admin
-// only: what is organization-wide lives in Settings > Organization.
+// Connect apps > Installed (2026-10-26, a tab of the one Connect apps page
+// since 2026-10-27): one line per thing the person has (installedEntries
+// folds a server added by hand, the same address brought by a plugin and
+// the plugin itself into one), its real logo, a readable name, what it
+// brings, its state and a "..." menu (Update, For which bots, Remove); then
+// the private skills, only when there are some. Every empty section is
+// hidden.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BookOpen, ClipboardPaste, MoreHorizontal, Plus, RefreshCw, RotateCw, Trash2, Users } from "lucide-react";
+import { BookOpen, ClipboardPaste, MoreHorizontal, Plus, RotateCw, Trash2, Users } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { InstalledBrings, InstalledEntry } from "@/lib/installed-model";
 import type { PluginItem } from "@/lib/plugins-model";
-import type { Crumb } from "../Breadcrumb";
-import { categoryChipClass } from "../category-modal";
-import { PluginIcon, PluginPageHeader, PluginStatusLabel } from "./PluginParts";
-
-export type ManageTab = "installed" | "discover" | "accounts" | "sources";
-export const MANAGE_TABS: readonly ManageTab[] = ["installed", "discover", "accounts", "sources"];
-
-const TAB_KEY = {
-  installed: "connectApps.manage.tab.installed",
-  discover: "connectApps.manage.tab.discover",
-  accounts: "connectApps.manage.tab.accounts",
-  sources: "connectApps.manage.tab.sources",
-} as const;
+import { PluginIcon, PluginStatusLabel } from "./PluginParts";
 
 /** What an entry brings, in one short line: "app + 2 connectors",
  * "plugin (claude-plugins-official) · 3 skills", "1 connector". */
@@ -55,17 +35,7 @@ export interface EntryActions {
   remove?: () => void;
 }
 
-export interface ManageViewProps {
-  tab: ManageTab;
-  onTab: (tab: ManageTab) => void;
-  /** tabs with nothing to show are left out (Sources when no route reads
-   * the marketplaces) */
-  tabs?: readonly ManageTab[];
-  onBack: () => void;
-  trail?: readonly Crumb[];
-  /** the install scope (everyone, or one bot) above the tabs */
-  scope?: ReactNode;
-  notices?: ReactNode;
+export interface InstalledViewProps {
   entries: InstalledEntry[];
   skills: PluginItem[];
   sourceLabel: (source: string) => string;
@@ -79,59 +49,9 @@ export interface ManageViewProps {
   onNewSkill?: () => void;
   /** the add and paste forms, reserved-name warnings and messages */
   forms?: ReactNode;
-  refreshing: boolean;
-  onRefresh: () => void;
   loading?: boolean;
-  discover?: ReactNode;
-  accounts?: ReactNode;
-  sources?: ReactNode;
-}
-
-export function ManageView(props: ManageViewProps) {
-  const { tab, onTab, tabs = MANAGE_TABS, onBack, trail, scope, notices, refreshing, onRefresh } = props;
-  const shown = tabs.includes(tab) ? tab : tabs[0] ?? "installed";
-  return (
-    <>
-      <PluginPageHeader titleId="plugins-title" title={t("connectApps.manage.title")} trail={trail} onBack={onBack} plainBack />
-      <div className="flex flex-wrap items-center gap-2 px-6 pb-1 pt-1 sm:px-8" data-plugins-manage-bar>
-        <div role="tablist" aria-label={t("connectApps.manage.tabsAria")} className="flex min-w-0 flex-1 flex-wrap gap-1.5" data-plugins-manage-tabs>
-          {tabs.map((id) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              id={`plugins-tab-${id}`}
-              aria-selected={shown === id}
-              aria-controls={`plugins-tabpanel-${id}`}
-              data-plugins-tab={id}
-              onClick={() => onTab(id)}
-              className={categoryChipClass(shown === id)}
-            >
-              {t(TAB_KEY[id])}
-            </button>
-          ))}
-        </div>
-        <button type="button" onClick={onRefresh} disabled={refreshing} className="ui-icon-button disabled:opacity-50" aria-label={t("connectors.refreshTitle")} title={t("connectors.refreshTitle")}>
-          <RefreshCw size={15} className={cn(refreshing && "animate-spin")} />
-        </button>
-      </div>
-      {notices}
-      <div
-        role="tabpanel"
-        id={`plugins-tabpanel-${shown}`}
-        aria-labelledby={`plugins-tab-${shown}`}
-        className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-3 sm:px-8"
-        data-plugins-manage={shown}
-      >
-        {/* the install scope is about plugins: My accounts is the person's own */}
-        {scope && shown !== "accounts" && <div className="mb-4">{scope}</div>}
-        {shown === "installed" && <InstalledTab {...props} />}
-        {shown === "discover" && props.discover}
-        {shown === "accounts" && (props.accounts ?? <EmptyLine>{t("connectApps.manage.accountsEmpty")}</EmptyLine>)}
-        {shown === "sources" && props.sources}
-      </div>
-    </>
-  );
+  /** "Discover" on the empty line (absent: no link) */
+  onDiscover?: () => void;
 }
 
 function EmptyLine({ children, action }: { children: ReactNode; action?: ReactNode }) {
@@ -143,10 +63,10 @@ function EmptyLine({ children, action }: { children: ReactNode; action?: ReactNo
   );
 }
 
-function InstalledTab({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, entryActions, onAddServer, onPasteConfig, addDisabled, onNewSkill, forms, onTab, tabs = MANAGE_TABS, loading }: ManageViewProps) {
+export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, entryActions, onAddServer, onPasteConfig, addDisabled, onNewSkill, forms, loading, onDiscover }: InstalledViewProps) {
   const tools = onAddServer || onPasteConfig || onNewSkill;
   return (
-    <>
+    <div data-plugins-installed-tab>
       {tools && (
         <div className="mb-3 flex flex-wrap items-center gap-2" data-plugins-installed-tools>
           {onAddServer && (
@@ -168,8 +88,8 @@ function InstalledTab({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, 
       )}
       {forms}
       {entries.length === 0 && skills.length === 0 && !loading && (
-        <EmptyLine action={tabs.includes("discover") ? (
-          <button type="button" onClick={() => onTab("discover")} className="text-[12.5px] font-medium text-accent-text hover:underline">{t("connectApps.manage.tab.discover")}</button>
+        <EmptyLine action={onDiscover ? (
+          <button type="button" data-plugins-go-discover onClick={onDiscover} className="text-[12.5px] font-medium text-accent-text hover:underline">{t("connectApps.manage.tab.discover")}</button>
         ) : undefined}>
           {t("connectApps.manage.nothingInstalled")}
         </EmptyLine>
@@ -207,7 +127,7 @@ function InstalledTab({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, 
           </ul>
         </section>
       )}
-    </>
+    </div>
   );
 }
 

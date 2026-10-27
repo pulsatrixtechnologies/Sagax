@@ -4386,7 +4386,7 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   mounted (`withoutHostCommands`) on an organization server.
 - Connecter GitHub (`server/github-connect.ts`): the device flow of the
   organization's GitHub OAuth App (`SAGAX_GITHUB_CLIENT_ID`, or
-  `organization.githubClientId` from Settings > Organization), else a pasted
+  `organization.githubClientId` from Connect apps > Sources), else a pasted
   token. The token goes into the person's environment for gh and git
   (`githubSandboxArgv`, through `SAGAX_GH_TOKEN`, never the argv), into their
   personal servers with auth `github`, and into Sagax's own fetches for them
@@ -4395,9 +4395,9 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 - Organization access tokens (`server/org-github-tokens.ts`,
   `DATA_DIR/org-github-tokens.enc`, the mcp-oauth vault key, left out of
   workspace backups): an admin keeps up to 20 labeled GitHub access tokens
-  in Settings > Organization > Organization sources and access
-  (OrgSourcesAccess, admins only; card `organization.plugins`, back in
-  Settings since 2026-10-26). They are access tokens,
+  in Connect apps > Sources > Organization sources and access
+  (OrgSourcesAccess, admins only; since 2026-10-27, Settings > Organization
+  keeps one link there on card `organization.plugins`). They are access tokens,
   not extra OAuth App client ids. `PATCH /api/org/settings` applies one
   change (`add`, `remove`, `rename`, `replace`). A rename carries no secret
   and a replace is its own step. `GET /api/org` lists the label and a last-4
@@ -4424,7 +4424,7 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   a bot (422 `manifest_only`). Added or fetched again through a bot, a
   private marketplace reads with that bot's token for it first
   (`server/marketplace-tokens.ts`, keyed by bot and source, the token field
-  of Connect apps > Manage > Marketplaces in the bot scope), then the
+  of Connect apps > Sources > Marketplaces in the bot scope), then the
   person's GitHub connection, then the organization's GitHub tokens; the
   bot listing says `hasToken`, never the token, and `updateAvailable` when
   the marketplace offers another version or other files (Install again
@@ -4500,34 +4500,50 @@ A change under `server/` needs the server image redeployed (sandboxd is the
 same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox
 image rebuilt.
 
-## Manage plugins and skills: four tabs (2026-10-26)
+## Connect apps: one page, one place per subject (2026-10-27)
 
-JC's redesign of Connect apps > Manage (`src/components/plugins/ManageView.tsx`,
-wired in `PluginsPanel.tsx`). Tests: `src/lib/installed-model.test.ts`,
-`src/components/plugins/ManageView.test.ts`; captures:
-`scripts/capture-connect-apps-manage.mjs` (gallery `connect-apps.html?view=manage`).
+JC's redesign (after #1153 and #1194): "Manage plugins and skills" moved up
+into Connect apps, which is now one page (`src/components/plugins/ConnectAppsView.tsx`,
+wired in `PluginsPanel.tsx`; iOS `ConnectAppsPage.swift`): the title with
+"N connected", the install scope, then four tabs. No sub-page repeats a tab
+(the old home, Manage and a section opened alone with View all are gone).
+Tests: `src/components/plugins/ConnectAppsView.test.ts`,
+`src/components/PluginsPanel.layout.test.ts`, `src/lib/installed-model.test.ts`,
+`src/components/plugins/OrgSourcesAccess.test.ts`,
+`src/components/settings/MyConnectionsSettings.test.ts`; captures:
+`scripts/capture-connect-apps-manage.mjs` (`--role admin`, `--scheme light`;
+gallery `connect-apps.html?view=manage|org-settings`).
 
-- Installed: one line per thing (`installedEntries`, `src/lib/installed-model.ts`):
-  rows with the same readable name (`readableName`: "github-github" is
-  "GitHub"), the same MCP address or a parent plugin fold into one entry
-  with its logo (`providerMark`), what it brings ("app + 2 connectors",
-  "plugin (marketplace) · 3 skills"), its state and a "..." menu: Update
-  (an update waits), For which bots (the entry's servers on each of the
-  person's bots, the same list as the bot's Access), Remove (the plugin and
-  every server of the entry, one confirmation). Private skills follow, only
-  when there are some.
-- Discover: the catalog and its search (`discoverItems`: not installed, no
-  engine connector).
-- My accounts: the connectors of the person's engine accounts grouped by
-  engine (Claude from `/api/me/harness-connectors`, Grok's cloud
-  connectors), one row each with its logo and state
-  (`HarnessConnectorGroups`), then Your connections (organization server),
-  then the person's published pages (only when there are some).
-- Sources: the marketplaces.
-- Every empty section is hidden. Nothing is for an admin only: the
-  organization's sources and access and every published page are in
-  Settings > Organization; no "Your administrator has not set up..." line
-  (without an OAuth App, GitHub simply offers Use a token).
+- Discover (where a person lands; `DiscoverView`): the catalog that can
+  still be added (`discoverItems`: not installed, no engine connector; an
+  app a conversation needs stays until it connects), its search with
+  Browse Bots beside it, every category pill, View all in place.
+- Installed (`InstalledView`): one line per thing (`installedEntries`,
+  `src/lib/installed-model.ts`): rows with the same readable name
+  (`readableName`: "github-github" is "GitHub"), the same MCP address or a
+  parent plugin fold into one entry with its logo (`providerMark`), what it
+  brings ("app + 2 connectors", "plugin (marketplace) · 3 skills"), its
+  state and a "..." menu: Update, For which bots, Remove. Private skills
+  follow, only when there are some. The MCP surface opens here.
+- My accounts (`AccountsView`): a pill per service (All, then each engine
+  with connectors: Claude, Grok, ChatGPT once the server lists Codex's, and
+  My MCP servers; fewer than two services, no pills). The engines'
+  connectors grouped by engine (`HarnessConnectorGroups`), each card naming
+  its service; the person's own MCP servers (`MyMcpServers`, organization
+  server); Claude Code on this computer (solo); the published pages (All
+  only). The "What your engines reach" panel is gone.
+- Sources (`SourcesView`): every GitHub setting. The person's own GitHub
+  connection (`MyGithubConnection`: Connect GitHub or a fine-grained token,
+  organization server), the marketplaces with their token per marketplace,
+  then for an organization admin only the organization's sources and access
+  (`OrgSourcesAccess`: allowed marketplaces, GitHub access tokens, GitHub
+  OAuth App). Settings > Organization shows one link there
+  (`togglePlugins` page `sources`, also an old link to `organization.plugins`).
+  Same routes and storage as before; no right changed.
+- "N connected" (`connectedTab`) opens Installed, or My accounts when only
+  engine connectors are connected (#1194).
+- Every empty section is hidden. iOS has the same tabs (segmented) and
+  pills (All, Claude, Slack, My MCP servers); its GitHub card is in Sources.
 
 ## Reserved MCP server names (2026-10-17)
 
@@ -4540,7 +4556,7 @@ again under that name. It is not silent:
 - the start and the first mount log `MCP server "<name>" is not mounted:
   its name is reserved by Sagax...` once per name (`warnReservedMcpServers`);
 - `GET /api/mcp/servers` lists it apart (`reserved: [{ name,
-  suggestedName }]`), and Settings > Plugins > Manage shows a warning on it
+  suggestedName }]`), and Connect apps > Installed shows a warning on it
   with a rename field (a free name offered) and Remove
   (`McpReservedServers`);
 - `POST /api/mcp/servers/:name/rename {to}` (`server/routes/mcp-server-rename.ts`,
@@ -4603,7 +4619,7 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
   capabilities `mail`, `calendar`, `teams`, `sharepoint` (and `files`), by
   claude.ai connector name (Microsoft 365, Gmail, Google Calendar, ...) and
   by Grok cloud connector id (`shared/grok-cloud-connectors.ts`). Codex and
-  Gemini bring none. Connect apps > Manage > Providers and the engine cards
+  Gemini bring none. Connect apps > My accounts and the engine cards
   (Settings > Engines) show it; the names stay read-only ("Manage on ...").
 - A turn is told what its own engine reaches (`engineConnectorsPrompt` in
   `server/harness-connectors.ts`, the "claude-ai" prompt section).

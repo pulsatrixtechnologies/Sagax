@@ -23,14 +23,13 @@ import { ExternalLink } from "lucide-react";
 import { t } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { setOrgApprovalsCount, useOrgApprovalsVersion } from "@/lib/org-approvals";
-import { api } from "@/state/store";
+import { api, useStore } from "@/state/store";
 import { CountPill, DescribedRow, PILL, SettingsGroup } from "./SettingsPrimitives";
 import { InterimPeople } from "./settings/InterimPeople";
 
 import { OrgVaultExportPolicy } from "./settings/OrgVaultExportPolicy";
 import { OrgConfidentialThreadsDefault } from "./settings/OrgConfidentialThreadsDefault";
 import { OrgTeamSecrets } from "./settings/OrgTeamSecrets";
-import { OrgSourcesAccess } from "./plugins/OrgSourcesAccess";
 import { OrganizationPages } from "./PublishedPages";
 
 interface PendingAdminApproval {
@@ -79,6 +78,7 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
   after?: React.ReactNode;
 }) {
   const admin = org.viewerRole === "admin";
+  const { dispatch } = useStore();
   const [approvals, setApprovals] = useState<PendingAdminApproval[] | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const [showApprovals, setShowApprovals] = useState(false);
@@ -183,13 +183,17 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
         {admin && <OrgTeamSecrets />}
         {botRows}
       </SettingsGroup>
-      {/* 2026-10-26: what Connect apps > Manage used to show an admin (where
-          plugins come from, the organization's GitHub tokens and OAuth App,
-          every published page) is organization-wide, so it lives here. */}
+      {/* 2026-10-27 (JC: one place per subject): where plugins come from,
+          the organization's GitHub tokens and its OAuth App are managed in
+          Connect apps > Sources, in its admin part. Here, one link. */}
       {admin && (
         <SettingsGroup title={t("connectApps.orgAccess.title")} groupId="organizationPlugins">
-          <div data-settings-card="organization.plugins" className="px-3.5 py-3">
-            <OrgSourcesAccess initial={org.settings} flat />
+          <div data-settings-card="organization.plugins" data-org-sources-moved>
+            <DescribedRow label={t("connectApps.orgAccess.title")} description={t("organization.plugins.moved")}>
+              <button type="button" className={PILL} onClick={() => dispatch({ type: "togglePlugins", open: true, page: "sources" })}>
+                {t("organization.plugins.open")}
+              </button>
+            </DescribedRow>
           </div>
         </SettingsGroup>
       )}

@@ -1,6 +1,7 @@
-// Settings > Organization > Organization sources and access (back from
-// Connect apps > Manage on 2026-10-26: organization-wide, so not on the
-// person's own page). An organization admin only. A saved token is a label and a hint; the secret
+// Organization sources and access: since 2026-10-27 in Connect apps >
+// Sources, its admin part (JC: one place per subject, every GitHub setting
+// together); Settings > Organization keeps one link there. An organization
+// admin only, as before. A saved token is a label and a hint; the secret
 // field is empty until the person types one.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -40,11 +41,15 @@ const org = (viewerRole: "admin" | "member"): PerspicaxOrg => ({
 });
 
 describe("Organization sources and access", () => {
-  it("is a card of Settings > Organization for an admin, never for a member", () => {
+  it("is no longer in Settings > Organization: an admin finds one link to Connect apps > Sources, a member nothing", () => {
     const admin = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: org("admin"), onChanged: () => {} }));
     expect(admin).toContain('data-settings-card="organization.plugins"');
-    expect(admin).toContain("Allowed marketplaces");
-    expect(admin).toContain("data-org-plugin-policy");
+    expect(admin).toContain("data-org-sources-moved");
+    expect(admin).toContain("managed in Connect Apps &gt; Sources");
+    expect(admin).toContain("Open Sources");
+    expect(admin).not.toContain("data-org-plugin-policy");
+    expect(admin).not.toContain("data-github-token-add");
+    expect(admin).not.toContain("Ov23li");
     const member = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: org("member"), onChanged: () => {} }));
     expect(member).not.toContain("Allowed marketplaces");
     expect(member).not.toContain('data-settings-card="organization.plugins"');
@@ -103,9 +108,9 @@ describe("Organization sources and access", () => {
     });
   });
 
-  it("an old link to the card opens Settings > Organization", () => {
-    const actions: Array<{ type: string; section?: string }> = [];
+  it("an old link to the card opens Connect apps on Sources", () => {
+    const actions: unknown[] = [];
     openSettings((action) => actions.push(action), "organization", "organization.plugins");
-    expect(actions).toEqual([{ type: "toggleAppSettings", open: true, section: "organization" }]);
+    expect(actions).toEqual([{ type: "togglePlugins", open: true, page: "sources" }]);
   });
 });

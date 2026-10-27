@@ -1,17 +1,19 @@
 // Connect apps on the phone (#203, #206, #207, #218; matrix DC35 to DC39):
-// the desktop's Plugins panel in its three views, with the same routes and
-// the same rows (`ConnectApps` in CompanionCore, a port of plugins-model.ts):
+// the desktop's Plugins panel, with the same routes and the same rows
+// (`ConnectApps` in CompanionCore, a port of plugins-model.ts):
 //
-// - Connect apps (main): search across apps and skills, one filter button
-//   (the reference iOS app's marketplace) whose menu holds All, the desktop's
-//   categories in its order and the type filter, a section per category
-//   with View all, one row per app with Add or Connect, and "N connected >"
-//   to Manage.
-// - Manage (2026-10-26, the desktop's four tabs): Installed (one line per
-//   thing, deduplicated, with a "..." menu; the private skills when there
-//   are some) | Discover (what can still be added) | My accounts (the
-//   engines' connectors, the person's own connections) | Sources (the
-//   marketplaces). Empty sections are hidden.
+// - Connect apps (2026-10-27, the desktop's one page): "N connected >" and
+//   the four tabs Installed | Discover | My accounts | Sources, Discover
+//   open. Discover: search across what can still be added, one filter
+//   button (the reference iOS app's marketplace) whose menu holds All, the
+//   desktop's categories in its order and the type filter, a section per
+//   category with View all, one row per app with Add or Connect, Browse
+//   Bots. Installed: one line per thing, deduplicated, with a "..." menu;
+//   the private skills when there are some. My accounts: a pill per
+//   service (All, Claude, Slack, My MCP servers), the engines' connectors,
+//   the person's own MCP servers. Sources: the person's GitHub connection
+//   and the marketplaces. Empty sections are hidden. There is no "Manage
+//   plugins and skills" page any more: it repeated these tabs.
 // - A plugin's page: its accounts, its tools with a switch each (applied to
 //   every bot), its details, Uninstall; a private skill's page.
 //
@@ -42,8 +44,9 @@ final class ConnectAppsModel: ObservableObject {
     private var featured: [PluginListing] = []
     private var skills: [LibrarySkill] = []
 
+    /// Discover: what can still be added (installed rows live in Installed).
     var sections: [ConnectApps.Section] {
-        ConnectApps.sections(items, query: query, filter: filter, type: type, extraSources: marketplaces.map(\.name))
+        ConnectApps.sections(ConnectApps.discover(items), query: query, filter: filter, type: type, extraSources: marketplaces.map(\.name))
     }
 
     var summary: (count: Int, icons: [ConnectAppItem]) { ConnectApps.connected(items, extra: claudeConnectors) }
@@ -192,13 +195,14 @@ final class ConnectAppsModel: ObservableObject {
 // MARK: - Routes
 
 enum ConnectAppsRoute: Hashable {
-    case manage
     case detail(String)
     case skill(String)
 }
 
 /// The whole panel: the main view and what it pushes.
 struct ConnectAppsPage: View {
+    /// the tab to open on (Settings > My connections' links); nil: Discover
+    var initialTab: ConnectAppsTab? = nil
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @StateObject private var model = ConnectAppsModel()
@@ -213,7 +217,7 @@ struct ConnectAppsPage: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ConnectAppsMain(model: model, botTemplates: botTemplates.map { destination in
+            ConnectAppsMain(model: model, initialTab: initialTab, botTemplates: botTemplates.map { destination in
                 {
                     // Connect apps closes, then Browse Bots opens
                     if let settingsPop { settingsPop() } else { dismiss() }
@@ -232,7 +236,6 @@ struct ConnectAppsPage: View {
                 }
                 .navigationDestination(for: ConnectAppsRoute.self) { route in
                     switch route {
-                    case .manage: ConnectAppsManage(model: model) { path.append($0) }
                     case let .detail(key): ConnectAppDetail(model: model, key: key) { path.append($0) }
                     case let .skill(name): LibrarySkillPage(model: model, name: name)
                     }
@@ -389,70 +392,116 @@ struct ConnectAppsMain: View {
     var botTemplates: (() -> Void)? = nil
     let push: (ConnectAppsRoute) -> Void
     @State private var expanded: Set<ConnectApps.SectionID> = []
+    @State private var tab: ConnectAppsTab
+
+    init(model: ConnectAppsModel, initialTab: ConnectAppsTab? = nil, botTemplates: (() -> Void)? = nil, push: @escaping (ConnectAppsRoute) -> Void) {
+        _model = ObservedObject(wrappedValue: model)
+        self.botTemplates = botTemplates
+        self.push = push
+        _tab = State(initialValue: initialTab ?? ConnectAppsTab.launch)
+    }
+
+    /// Sources shows when the marketplaces can be read or changed from this
+    /// pairing, or the person has a GitHub connection to manage.
+    private var shownTabs: [ConnectAppsTab] {
+        [.installed, .discover, .accounts]
+            + (session.canAdminister || !model.marketplaces.isEmpty || session.surfaceGate.allows(.myConnections) ? [.sources] : [])
+    }
 
     var body: some View {
+        if tab == .discover {
+            list.searchable(text: $model.query, prompt: Text(String(localized: "Search across apps and skills")))
+        } else {
+            list
+        }
+    }
+
+    private var list: some View {
         ThemedList {
             Section {
                 connectedLink
-                filterBar
-                if let botTemplates {
-                    // the desktop's button beside the search field: the
-                    // phone's search sits in the bar, so it heads the list
-                    Button(action: botTemplates) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "square.grid.2x2")
-                                .foregroundStyle(Theme.textSecondary)
-                            Text(String(localized: "Browse Bots"))
-                                .foregroundStyle(Theme.textPrimary)
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.footnote)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("connect-apps-bot-templates")
+                Picker(String(localized: "Connect apps"), selection: $tab) {
+                    ForEach(shownTabs, id: \.self) { Text(verbatim: $0.title).tag($0) }
                 }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("connect-apps-tabs")
             }
-            if model.loading && model.items.isEmpty {
-                Section { HStack { Spacer(); ProgressView(); Spacer() } }
-            }
-            ForEach(model.sections) { section in
-                Section {
-                    let shown = expanded.contains(section.id) || section.viewAll == nil ? section.items : Array(section.items.prefix(ConnectApps.sectionPreview))
-                    ForEach(shown) { item in
-                        Button { open(item) } label: {
-                            ConnectAppRow(item: item, busy: model.busy == item.key) { act(item) }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if let viewAll = section.viewAll, section.total > section.items.count {
-                        Button(String(localized: "View all")) {
-                            switch viewAll {
-                            case let .filter(filter): model.filter = filter
-                            case let .type(type): model.type = type
-                            }
-                        }
-                        .accessibilityIdentifier("connect-apps-view-all")
-                    }
-                } header: {
-                    Text(verbatim: ConnectAppsWords.section(section.id))
-                }
-            }
-            if !model.loading, model.sections.isEmpty {
-                Section { Text(String(localized: "Nothing matches")).foregroundStyle(Theme.textSecondary) }
+            if tab == .discover {
+                discover
+            } else {
+                ConnectAppsManage(model: model, tab: $tab, push: push)
             }
         }
-        .searchable(text: $model.query, prompt: Text(String(localized: "Search across apps and skills")))
         .refreshable { await model.load(session) }
         .accessibilityIdentifier("connect-apps")
     }
 
-    /// "N connected >" with up to four icons: opens Manage.
+    @ViewBuilder
+    private var discover: some View {
+        Section {
+            filterBar
+            if let botTemplates {
+                // the desktop's button beside the search field: the
+                // phone's search sits in the bar, so it heads the list
+                Button(action: botTemplates) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.grid.2x2")
+                            .foregroundStyle(Theme.textSecondary)
+                        Text(String(localized: "Browse Bots"))
+                            .foregroundStyle(Theme.textPrimary)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("connect-apps-bot-templates")
+            }
+        }
+        if model.loading && model.items.isEmpty {
+            Section { HStack { Spacer(); ProgressView(); Spacer() } }
+        }
+        ForEach(model.sections) { section in
+            Section {
+                let shown = expanded.contains(section.id) || section.viewAll == nil ? section.items : Array(section.items.prefix(ConnectApps.sectionPreview))
+                ForEach(shown) { item in
+                    Button { open(item) } label: {
+                        ConnectAppRow(item: item, busy: model.busy == item.key) { act(item) }
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let viewAll = section.viewAll, section.total > section.items.count {
+                    Button(String(localized: "View all")) {
+                        switch viewAll {
+                        case let .filter(filter): model.filter = filter
+                        case let .type(type): model.type = type
+                        }
+                    }
+                    .accessibilityIdentifier("connect-apps-view-all")
+                }
+            } header: {
+                Text(verbatim: ConnectAppsWords.section(section.id))
+            }
+        }
+        if !model.loading, model.sections.isEmpty {
+            Section {
+                Text(model.query.isEmpty && model.filter == .all && model.type == .any
+                    ? String(localized: "Everything in the catalog is already installed.")
+                    : String(localized: "Nothing matches"))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+
+    /// "N connected >" with up to four icons: Installed, or My accounts when
+    /// only the Claude account's connectors are connected (#1194).
     private var connectedLink: some View {
         let summary = model.summary
-        return Button { push(.manage) } label: {
+        return Button {
+            tab = model.claudeConnectors > 0 && summary.count == model.claudeConnectors ? .accounts : .installed
+        } label: {
             HStack(spacing: 8) {
                 HStack(spacing: -8) {
                     ForEach(summary.icons) { ConnectAppIcon(item: $0, size: 24) }
@@ -541,28 +590,14 @@ struct ConnectAppsMain: View {
 
 // MARK: - Manage
 
-struct ConnectAppsManage: View {
-    @Environment(\.themePalette) var themePalette
-    @EnvironmentObject private var session: Session
-    @ObservedObject var model: ConnectAppsModel
-    let push: (ConnectAppsRoute) -> Void
-    @State private var tab = Tab.installed
-    @State private var marketSource = ""
-    @State private var marketRef = ""
-    @State private var removingMarket: String?
-    @State private var removing: InstalledEntry?
-    @State private var discoverQuery = ""
+/// The four tabs of Connect apps, as the desktop names them.
+enum ConnectAppsTab: Hashable, Identifiable {
+    case installed, discover, accounts, sources
 
-    /// The desktop's four tabs (2026-10-26). Sources shows when the
-    /// marketplaces can be read or changed from this pairing.
-    enum Tab: Hashable { case installed, discover, accounts, sources }
+    var id: Self { self }
 
-    private var shownTabs: [Tab] {
-        [.installed, .discover, .accounts] + (session.canAdminister || !model.marketplaces.isEmpty ? [.sources] : [])
-    }
-
-    private func title(_ tab: Tab) -> String {
-        switch tab {
+    var title: String {
+        switch self {
         case .installed: String(localized: "Installed")
         case .discover: String(localized: "Discover")
         case .accounts: String(localized: "My accounts")
@@ -570,26 +605,60 @@ struct ConnectAppsManage: View {
         }
     }
 
-    private var tabs: some View {
-        Picker(String(localized: "Manage"), selection: $tab) {
-            ForEach(shownTabs, id: \.self) { Text(verbatim: title($0)).tag($0) }
+    /// Discover, or a DEBUG launch argument's tab (`-parityConnectAppsTab
+    /// accounts`, for the parity captures).
+    static var launch: ConnectAppsTab {
+        #if DEBUG
+        switch UserDefaults.standard.string(forKey: "parityConnectAppsTab") {
+        case "installed": return .installed
+        case "accounts": return .accounts
+        case "sources": return .sources
+        default: return .discover
         }
-        .pickerStyle(.segmented)
-        .accessibilityIdentifier("connect-apps-manage-tabs")
+        #else
+        return .discover
+        #endif
     }
+}
+
+/// My accounts' pills: one service at a time.
+enum ConnectAccountsService: Hashable {
+    case all, claude, slack, servers
+
+    var title: String {
+        switch self {
+        case .all: String(localized: "All")
+        case .claude: "Claude"
+        case .slack: "Slack"
+        case .servers: String(localized: "My MCP servers")
+        }
+    }
+}
+
+/// Installed, My accounts and Sources: the sections each tab adds to the
+/// Connect apps list (Discover is the main view's own).
+struct ConnectAppsManage: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    @ObservedObject var model: ConnectAppsModel
+    @Binding var tab: ConnectAppsTab
+    let push: (ConnectAppsRoute) -> Void
+    @State private var marketSource = ""
+    @State private var marketRef = ""
+    @State private var removingMarket: String?
+    @State private var removing: InstalledEntry?
+    @State private var service = ConnectAccountsService.all
+    @State private var slackAvailable = false
 
     var body: some View {
-        ThemedList {
-            Section { tabs }
+        Group {
             switch tab {
             case .installed: installed
-            case .discover: discover
             case .accounts: accounts
             case .sources: sources
+            case .discover: EmptyView()
             }
         }
-        .navigationTitle(String(localized: "Manage plugins and skills"))
-        .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
             String(localized: "Remove the \(removingMarket ?? "") marketplace?"),
             isPresented: Binding(get: { removingMarket != nil }, set: { if !$0 { removingMarket = nil } }),
@@ -701,54 +770,71 @@ struct ConnectAppsManage: View {
         return counts.isEmpty ? String(localized: "1 connector") : counts.joined(separator: " · ")
     }
 
-    // MARK: Discover: what can still be added
-
-    @ViewBuilder
-    private var discover: some View {
-        let available = ConnectApps.discover(model.items)
-        let sections = ConnectApps.sections(available, query: discoverQuery, extraSources: model.marketplaces.map(\.name))
-        Section {
-            TextField(String(localized: "Search across apps and skills"), text: $discoverQuery)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .accessibilityIdentifier("connect-apps-discover-search")
-        }
-        if sections.allSatisfy({ $0.items.isEmpty }) {
-            Section {
-                Text(discoverQuery.isEmpty ? String(localized: "Everything in the catalog is already installed.") : String(localized: "Nothing matches"))
-                    .font(.footnote)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-        }
-        ForEach(sections.filter { !$0.items.isEmpty }) { section in
-            Section {
-                ForEach(section.items) { item in
-                    ConnectAppRow(item: item, busy: model.busy == item.key) {
-                        Task { await model.act(item, alias: nil, session: session) }
-                    }
-                }
-            } header: {
-                Text(verbatim: ConnectAppsWords.section(section.id))
-            }
-        }
-    }
-
     // MARK: My accounts: the engines' connectors, then the person's own
+
+    /// All, Claude, Slack (when a bot has a Slack link), and the person's
+    /// own MCP servers on an organization server (#218); fewer than two
+    /// services, no pills. GitHub is in Sources.
+    private var services: [ConnectAccountsService] {
+        let shown: [ConnectAccountsService] = [.claude] + (slackAvailable ? [.slack] : []) + (session.surfaceGate.allows(.myConnections) ? [.servers] : [])
+        return shown.count >= 2 ? [.all] + shown : []
+    }
 
     @ViewBuilder
     private var accounts: some View {
-        Section { ConnectAppsProviders() }
-        // Your connections (#218): the person's own, on an organization server
-        if session.surfaceGate.allows(.myConnections) {
-            YourConnectionsSection()
+        if !services.isEmpty {
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(services, id: \.self) { option in
+                            Button {
+                                Haptics.selection()
+                                service = option
+                            } label: {
+                                Text(verbatim: option.title)
+                                    .font(.footnote.weight(.medium))
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 12)
+                                    .frame(height: 30)
+                                    .foregroundStyle(service == option ? Theme.accentInk : Theme.textPrimary)
+                                    .background(service == option ? Theme.accent : Theme.chip, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(service == option ? .isSelected : [])
+                            .accessibilityIdentifier("connect-apps-service.\(option)")
+                        }
+                    }
+                }
+            }
         }
-        SlackConnectionsSection()
+        if service == .all || service == .claude {
+            Section { ConnectAppsProviders() }
+        }
+        if service == .all || service == .servers, session.surfaceGate.allows(.myConnections) {
+            // the large layout keeps its cards (a token field, Add an MCP server)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                Section { DesktopMyConnectionsSettings(part: .servers) }
+            } else {
+                YourConnectionsSection(part: .servers)
+            }
+        }
+        if service == .all || service == .slack {
+            SlackConnectionsSection { slackAvailable = $0 }
+        }
     }
 
     // MARK: Sources: the marketplaces
 
     @ViewBuilder
     private var sources: some View {
+        // the person's own GitHub (#218): every GitHub setting is in Sources
+        if session.surfaceGate.allows(.myConnections) {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                Section { DesktopMyConnectionsSettings(part: .github) }
+            } else {
+                YourConnectionsSection(part: .github)
+            }
+        }
         Section {
             ForEach(model.marketplaces) { market in
                 HStack {

@@ -1,7 +1,8 @@
-// Manage > Your connections on the phone (#218; matrix DC39, P2-4): the
-// desktop's `connectApps.manage.personal` section, which draws
-// `MyConnectionsSettings.tsx` after the private skills on an organization
-// server. The person's own GitHub account and their own MCP servers, read
+// The person's own connections on the phone (#218; matrix DC39, P2-4), on an
+// organization server. Since 2026-10-27 each has one place, as on the
+// desktop (`MyConnectionsSettings.tsx`): `part: .github` in Connect apps >
+// Sources, `part: .servers` in My accounts. The person's own GitHub account
+// and their own MCP servers, read
 // from `GET /api/me/connections` (the server never sends a token back):
 // GitHub connected as @login with Disconnect, a code to type at GitHub while
 // it waits, Connect GitHub when the server offers the device flow; each
@@ -17,6 +18,10 @@ import SwiftUI
 import UIKit
 
 struct YourConnectionsSection: View {
+    enum Part { case github, servers }
+
+    /// which half this section draws
+    var part: Part
     @Environment(\.themePalette) var themePalette
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: Session
@@ -28,9 +33,11 @@ struct YourConnectionsSection: View {
         Section {
             content
         } header: {
-            Text(String(localized: "Your connections"))
+            Text(part == .github ? "GitHub" : String(localized: "My MCP servers"))
         } footer: {
-            Text(String(localized: "Your own accounts and MCP servers. Only your conversations and your routines use them; nobody else's turn ever gets them."))
+            if part == .servers {
+                Text(String(localized: "Your own accounts and MCP servers. Only your conversations and your routines use them; nobody else's turn ever gets them."))
+            }
         }
         .task(id: session.connection?.id) {
             model.client = session.profileClient
@@ -73,15 +80,18 @@ struct YourConnectionsSection: View {
                     .foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("your-connections-managed")
             }
-            github(data, locked: locked)
-            if data.servers.isEmpty {
-                Text(String(localized: "No MCP server of your own yet."))
-                    .font(.footnote)
-                    .foregroundStyle(Theme.textSecondary)
-                    .accessibilityIdentifier("your-connections-none")
-            }
-            ForEach(data.servers) { server in
-                row(server, locked: locked)
+            if part == .github {
+                github(data, locked: locked)
+            } else {
+                if data.servers.isEmpty {
+                    Text(String(localized: "No MCP server of your own yet."))
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("your-connections-none")
+                }
+                ForEach(data.servers) { server in
+                    row(server, locked: locked)
+                }
             }
             if let error = model.error {
                 Text(verbatim: error)

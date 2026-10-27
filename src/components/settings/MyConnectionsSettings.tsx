@@ -1,14 +1,16 @@
-// Connect apps > Manage > Your connections (organization server only; it
-// was Settings > Mes connexions): the person's own
-// GitHub account ("Connecter GitHub": a code to type at GitHub, or a token)
-// and their own MCP servers ("Ajouter un serveur MCP": an address with no
-// sign-in, a token, OAuth through this server, or their GitHub account; or
-// a command that runs in their server environment). Only for them: no other
-// person's bot turn ever gets these (server/routes/person-connections.ts).
-// When an admin manages them (Perspicax `sagax_integrations: off`), the
-// section is read-only under a short notice: what the person has stays
-// saved and is not usable, and only a sign-in again to one of their
-// servers is offered.
+// A person's own connections on an organization server (it was Settings >
+// Mes connexions, then Connect apps > Manage > Your connections). Since
+// 2026-10-27 each has one place in Connect apps: their GitHub account
+// ("Connecter GitHub": a code to type at GitHub, or a token) is in Sources,
+// with everything else GitHub, and their own MCP servers ("Ajouter un
+// serveur MCP": an address with no sign-in, a token, OAuth through this
+// server, or their GitHub account; or a command that runs in their server
+// environment) are in My accounts. Same routes, same storage. Only for them:
+// no other person's bot turn ever gets these
+// (server/routes/person-connections.ts). When an admin manages them
+// (Perspicax `sagax_integrations: off`), each part is read-only under a short
+// notice: what the person has stays saved and is not usable, and only a
+// sign-in again to one of their servers is offered.
 import { copyText } from "@/lib/copy-text";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -24,7 +26,9 @@ import { Card, Switch } from "../SettingsPrimitives";
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const inputClass = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none";
 
-export function MyConnectionsSettings({ initial }: { initial?: MyConnections }) {
+/** GET /api/me/connections, asked again every two seconds while `waiting`
+ * says a code or a sign-in is pending. */
+function useMyConnections(initial: MyConnections | undefined, waiting: (data: MyConnections) => boolean) {
   const [data, setData] = useState<MyConnections | null>(initial ?? null);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(async () => {
@@ -40,24 +44,41 @@ export function MyConnectionsSettings({ initial }: { initial?: MyConnections }) 
     if (preloaded.current) { preloaded.current = false; return; }
     void refresh();
   }, [refresh]);
-  // While a GitHub code or a sign-in waits, ask again every two seconds.
-  const waiting = data?.github.state === "pending" || data?.servers.some((server) => server.kind === "remote" && server.authPending);
+  const pending = data ? waiting(data) : false;
   useEffect(() => {
-    if (!waiting) return;
+    if (!pending) return;
     const timer = setInterval(() => { void refresh(); }, 2_000);
     return () => clearInterval(timer);
-  }, [waiting, refresh]);
+  }, [pending, refresh]);
+  return { data, error, refresh };
+}
 
-  if (!data) {
-    return error
-      ? <p role="alert" className="text-[12.5px] text-danger">{error}</p>
-      : <p className="text-[12.5px] text-ink-secondary">{t("myConnections.loading")}</p>;
-  }
+function Loading({ error }: { error: string | null }) {
+  return error
+    ? <p role="alert" className="text-[12.5px] text-danger">{error}</p>
+    : <p className="text-[12.5px] text-ink-secondary">{t("myConnections.loading")}</p>;
+}
+
+/** Connect apps > Sources: the person's own GitHub connection. */
+export function MyGithubConnection({ initial }: { initial?: MyConnections }) {
+  const { data, error, refresh } = useMyConnections(initial, (value) => value.github.state === "pending");
+  if (!data) return <Loading error={error} />;
   return (
-    <div className="flex flex-col gap-4" data-my-connections>
-      <p className="text-[13px] leading-relaxed text-ink-secondary">{t("myConnections.intro")}</p>
+    <div className="flex flex-col gap-3" data-my-github>
       {data.managedByAdmin && <IntegrationsManagedNotice />}
       <GithubCard data={data} onChanged={refresh} />
+    </div>
+  );
+}
+
+/** Connect apps > My accounts: the person's own MCP servers. */
+export function MyMcpServers({ initial }: { initial?: MyConnections }) {
+  const { data, error, refresh } = useMyConnections(initial, (value) => value.servers.some((server) => server.kind === "remote" && server.authPending));
+  if (!data) return <Loading error={error} />;
+  return (
+    <div className="flex flex-col gap-3" data-my-connections>
+      <p className="text-[13px] leading-relaxed text-ink-secondary">{t("myConnections.intro")}</p>
+      {data.managedByAdmin && <IntegrationsManagedNotice />}
       <ServersCard data={data} onChanged={refresh} />
     </div>
   );

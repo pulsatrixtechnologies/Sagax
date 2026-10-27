@@ -373,7 +373,7 @@ export function OrganizationPages() {
 
 /** Settings > Pages publiées. */
 export function PublishedPagesSettings({ personal = false }: {
-  /** Connect apps > Manage (2026-10-26): the person's own pages only, and
+  /** Connect apps > My accounts (2026-10-26): the person's own pages only, and
    * nothing at all while they have none (the organization's pages are in
    * Settings > Organization) */
   personal?: boolean;
