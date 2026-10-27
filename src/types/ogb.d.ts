@@ -366,6 +366,13 @@ const __BASE_VERSION__: string;
       dataWindow?: {
         open(request: { botId: string; title: string; cardId?: string }): Promise<"created" | "focused" | "refused">;
       };
+      /** A popped-out artifact in a desktop window of its own, outside the
+       * app's frame (electron/artifact-window.mjs). Absent in a browser. */
+      artifactWindow?: {
+        open(request: { botId: string; artifactId: string; title: string; width?: number; height?: number }): Promise<"created" | "focused" | "refused">;
+        close(artifactId: string): Promise<boolean>;
+        onClosed(cb: (detail: { botId: string; artifactId: string }) => void): () => void;
+      };
       /** The renderer-drawn Windows caption buttons; absent outside the
        * frameless Windows shell (macOS/Linux/browser keep native chrome). */
       windowControls?: {

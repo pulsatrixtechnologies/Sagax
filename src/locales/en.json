@@ -9330,6 +9330,7 @@
   "artifacts.refreshNow": "Refresh now",
   "artifacts.popOut": "Pop out",
   "artifacts.dock": "Dock back",
+  "artifacts.ownWindow": "Open in its own window",
   "stream.newTopic": "New topic",
   "stream.newTopicAria": "Start a new topic with {name}",
   "stream.divider": "New topic: {title}",

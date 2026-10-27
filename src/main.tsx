@@ -106,7 +106,10 @@ async function chooseRoot(): Promise<React.ReactNode> {
   }
   // The experimental Data window: one bot's Data results on their own
   // (src/components/data/DataWindow.tsx, electron/data-window.mjs).
-  const dataWindow = location.pathname === "/data-window";
+  // An artifact in a window of its own (src/components/artifacts/ArtifactStandaloneWindow.tsx,
+  // electron/artifact-window.mjs) is a page beside the app in the same way.
+  const artifactWindow = location.pathname === "/artifact-window";
+  const dataWindow = location.pathname === "/data-window" || artifactWindow;
   // A signed-in person on an organization server: their preferences come
   // from the server before the app draws (src/lib/user-preferences-sync.ts).
   if (session.kind === "session") {
@@ -131,6 +134,10 @@ async function chooseRoot(): Promise<React.ReactNode> {
   // "Only when I'm here" routines on a solo server (src/lib/routine-away-beat.ts;
   // an organization server answers 404 and its presence is the signal).
   if ((session.kind === "loopback" || session.kind === "session") && !dataWindow) void startRoutineAwayBeat();
+  if (artifactWindow) {
+    const { ArtifactStandaloneWindow } = await import("./components/artifacts/ArtifactStandaloneWindow");
+    return <ArtifactStandaloneWindow />;
+  }
   if (dataWindow) {
     const { DataWindow } = await import("./components/data/DataWindow");
     return <DataWindow />;

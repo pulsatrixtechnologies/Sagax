@@ -42,6 +42,41 @@ function setOf(map: WeakMap<FloatingWindows, Set<string>>, manager: FloatingWind
   return set;
 }
 
+/** Artifacts shown in a desktop window of their own, outside the app's frame
+ * (#1140, electron/artifact-window.mjs). They stay popped out on the server;
+ * only the place that draws them changes, so reconcile leaves their floating
+ * window closed. Closing the desktop window docks the artifact, like closing a
+ * floating one. */
+const ownWindows = new Set<string>();
+
+export function artifactHasOwnWindow(artifactId: string): boolean {
+  return ownWindows.has(artifactId);
+}
+
+/** Whether this page can open an artifact in a window of its own (the desktop app). */
+export function canOpenArtifactInOwnWindow(): boolean {
+  return typeof window !== "undefined" && typeof window.ogb?.artifactWindow?.open === "function";
+}
+
+/** Move a popped-out artifact from its floating window to a window of its
+ * own. Resolves false (and leaves the floating window) when the desktop app
+ * refuses or is not there. */
+export async function openArtifactInOwnWindow(artifact: { id: string; botId: string; title: string }): Promise<boolean> {
+  const bridge = typeof window !== "undefined" ? window.ogb?.artifactWindow : undefined;
+  if (!bridge) return false;
+  const result = await bridge.open({ botId: artifact.botId, artifactId: artifact.id, title: artifact.title }).catch(() => "refused" as const);
+  if (result === "refused") return false;
+  ownWindows.add(artifact.id);
+  closeArtifactWindow(artifact.id);
+  return true;
+}
+
+/** The person closed an artifact's own window: the artifact is docked. */
+export function ownArtifactWindowClosed(data: ArtifactWindowData): void {
+  if (!ownWindows.delete(data.artifactId)) return;
+  dockArtifact(data);
+}
+
 type Artifactish = Pick<ArtifactSummary, "id" | "botId" | "title"> & { bounds?: ArtifactBounds };
 
 /** Open (or bring forward) an artifact's window. `onDock` runs when the
@@ -84,7 +119,14 @@ export function closeArtifactWindow(artifactId: string, manager: FloatingWindows
 
 /** Make the open windows match the server's list of artifacts. */
 export function reconcileArtifactWindows(list: readonly ArtifactSummary[], onDock: (artifact: ArtifactWindowData) => void, manager: FloatingWindows = floatingWindows()): void {
-  const popped = new Map(list.filter((artifact) => artifact.popped).map((artifact) => [artifactWindowId(artifact.id), artifact]));
+  // An artifact docked (or deleted) while it has a window of its own: that window goes.
+  const stillPopped = new Set(list.filter((artifact) => artifact.popped).map((artifact) => artifact.id));
+  for (const artifactId of ownWindows) {
+    if (stillPopped.has(artifactId)) continue;
+    ownWindows.delete(artifactId);
+    void window.ogb?.artifactWindow?.close(artifactId).catch(() => {});
+  }
+  const popped = new Map(list.filter((artifact) => artifact.popped && !ownWindows.has(artifact.id)).map((artifact) => [artifactWindowId(artifact.id), artifact]));
   for (const entry of manager.snapshot().windows) {
     if (entry.kind !== ARTIFACT_WINDOW_KIND || popped.has(entry.id)) continue;
     const data = artifactWindowData(entry.data);
@@ -115,6 +157,11 @@ export function dockArtifact(data: ArtifactWindowData): void {
 /** Pop an artifact out: its window opens now and comes back at its place
  * when Sagax starts again, until it is docked. */
 export function popOutArtifact(artifact: { id: string; botId: string; title: string; bounds?: { x: number; y: number; width: number; height: number } }): Promise<void> {
+  // One with a window of its own already: asking again brings that one forward.
+  if (ownWindows.has(artifact.id)) {
+    void window.ogb?.artifactWindow?.open({ botId: artifact.botId, artifactId: artifact.id, title: artifact.title }).catch(() => {});
+    return Promise.resolve();
+  }
   openArtifactWindow(artifact, dockArtifact);
   return setArtifactFlags(artifact.botId, artifact.id, { popped: true }).then(() => undefined).catch((reason: unknown) => {
     closeArtifactWindow(artifact.id);
@@ -125,5 +172,6 @@ export function popOutArtifact(artifact: { id: string; botId: string; title: str
 /** Dock a popped-out artifact from anywhere (the Files tab's menu). */
 export function dockArtifactWindow(artifact: { id: string; botId: string }): Promise<void> {
   closeArtifactWindow(artifact.id);
+  if (ownWindows.delete(artifact.id)) void window.ogb?.artifactWindow?.close(artifact.id).catch(() => {});
   return setArtifactFlags(artifact.botId, artifact.id, { popped: false }).then(() => undefined);
 }

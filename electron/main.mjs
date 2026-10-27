@@ -81,6 +81,7 @@ import { isKnownSkin, skinChrome } from "./skin-overlay.cjs";
 import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-window.mjs";
 import { createFloatingBotWindows, FLOATING_QUERY, waitForPage as waitForFloatingPage } from "./floating-bot-window.mjs";
 import { createDataWindows } from "./data-window.mjs";
+import { createArtifactWindows } from "./artifact-window.mjs";
 import { createBotHotkeys, createMascotHotkey, createModifierProbe } from "./mascot-hotkey.mjs";
 import { captureAccelerator, capturePermission, captureThumbnailSize, createCaptureHotkey, pickCaptureSource } from "./screen-capture-hotkey.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
@@ -3438,7 +3439,10 @@ function createWindow({ deferNavigation = false } = {}) {
   applyUnreadBadge(win);
   if (restored.maximized && !startupScreen) win.maximize();
   // Another server in this window: the previous server's Data windows go.
-  win.webContents.on("did-navigate", (_event, url) => dataWindows.mainNavigated(url));
+  win.webContents.on("did-navigate", (_event, url) => {
+    dataWindows.mainNavigated(url);
+    artifactWindows.mainNavigated(url);
+  });
   win.once("closed", () => {
     if (mainWindow === win) mainWindow = null;
     // the detached Hibou 98 assistant is driven by this window's page
@@ -4151,6 +4155,25 @@ const dataWindows = createDataWindows({
     }
     return status.features.dataWindow === true;
   },
+  openExternal: (url) => {
+    try {
+      void shell.openExternal(externalOpenUrl(url)).catch(() => {});
+    } catch {
+      // not a web link, or one with embedded credentials: never opened
+    }
+  },
+  icon: () => currentWindowIcon(),
+  log: (line) => slog(line),
+});
+
+// A popped-out artifact in a window of its own, outside the app's frame
+// (#1140), one per artifact, on the asking page's /artifact-window route. See
+// electron/artifact-window.mjs.
+const artifactWindows = createArtifactWindows({
+  BrowserWindow,
+  ipcMain,
+  getMainWindow: () => mainWindow,
+  isTrustedMain: (event) => isDesktopUiSender(event),
   openExternal: (url) => {
     try {
       void shell.openExternal(externalOpenUrl(url)).catch(() => {});
@@ -5323,6 +5346,7 @@ app.on("before-quit", (e) => {
   retroAssistantWindow.close();
   floatingBotWindows.closeAll();
   dataWindows.closeAll();
+  artifactWindows.closeAll();
   mascotHotkey.dispose();
   botHotkeys.dispose();
   captureHotkey.dispose();
