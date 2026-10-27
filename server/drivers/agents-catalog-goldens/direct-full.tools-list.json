@@ -2133,6 +2133,13 @@
             ],
             "description": "While this routine is still working, skip scheduled occurrences (default) or queue at most one run. Queue skips further occurrences until the pending run starts; it never builds an unlimited backlog. Manual and webhook requests are separate."
           },
+          "watch": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Run only when something changes: on each due time Sagax checks, with no model turn, and starts the run only on a change (or when condition holds). The run gets a note of what is new, changed or gone. {kind:\"watch\", source:{type:\"files\",path,recursive?} | {type:\"command\",command} (run where you work) | {type:\"tool\",tool:\"server__tool\",args} (read tools only), condition?:{test:\"json_path\",path,op:eq|ne|gt|gte|lt|lte|contains|exists,value} | {test:\"contains\",text,negate?} | {test:\"exit_code\",op:eq|ne,value}, wakeOn?:change|match, track?:{items,key,fields}, firstRun?:baseline|wake, whenAsleep?:skip|wake}. Needs a repeating schedule (checks at most every 5 min). null in an update removes it."
+          },
           "trigger": {
             "type": "object",
             "additionalProperties": false,
@@ -2350,6 +2357,13 @@
                   "queue"
                 ],
                 "description": "While this routine is still working, skip scheduled occurrences (default) or queue at most one run. Queue skips further occurrences until the pending run starts; it never builds an unlimited backlog. Manual and webhook requests are separate."
+              },
+              "watch": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Run only when something changes: on each due time Sagax checks, with no model turn, and starts the run only on a change (or when condition holds). The run gets a note of what is new, changed or gone. {kind:\"watch\", source:{type:\"files\",path,recursive?} | {type:\"command\",command} (run where you work) | {type:\"tool\",tool:\"server__tool\",args} (read tools only), condition?:{test:\"json_path\",path,op:eq|ne|gt|gte|lt|lte|contains|exists,value} | {test:\"contains\",text,negate?} | {test:\"exit_code\",op:eq|ne,value}, wakeOn?:change|match, track?:{items,key,fields}, firstRun?:baseline|wake, whenAsleep?:skip|wake}. Needs a repeating schedule (checks at most every 5 min). null in an update removes it."
               }
             },
             "description": "Fields to change when action is update. Omit for every other action."
