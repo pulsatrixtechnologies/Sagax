@@ -39,7 +39,7 @@ import { canEditBotField } from "@/lib/bot-capabilities";
 import { canEditConfig } from "@/lib/viewer";
 import { discoverItems, installedEntries, privateSkills, type InstalledEntry } from "@/lib/installed-model";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
-import { WHOP_KEY, buildPluginItems, isGrokConnector, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
+import { WHOP_KEY, buildPluginItems, connectedSummary, isGrokConnector, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
 import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "../../shared/grok-cloud-connectors";
 import { grokProviderConfigured } from "@/lib/providers-model";
 import { openExternalLink } from "@/lib/app-links";
@@ -951,7 +951,10 @@ export function PluginsPanel() {
         sourceLabel={pluginSourceLabel}
         extraSources={(shownMarketplaces ?? []).map((market) => market.name)}
         extraConnected={scope === "bot" ? 0 : claudeConnectors}
-        onOpenManage={() => push({ page: "manage" })}
+        // #1132: the number counts the engine accounts' connectors too, and
+        // those are listed under My accounts: with no app of its own
+        // installed, the button opens there instead of an empty Installed.
+        onOpenManage={() => push(scope !== "bot" && claudeConnectors > 0 && connectedSummary(scopedItems).count === 0 ? { page: "manage", tab: "accounts" } : { page: "manage" })}
         onBrowseBots={remoteClient ? undefined : () => push({ page: "bots" })}
         onViewAll={(section) => {
           if (!section.filter) return;
