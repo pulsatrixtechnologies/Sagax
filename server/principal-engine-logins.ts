@@ -88,6 +88,8 @@ export interface PrincipalEngineLoginsOptions {
   now?: () => number;
   /** Own Claude login succeeded for this person. */
   onClaudeLinked?: (principalId: string) => void;
+  /** Tests pass a fake; the default asks the person's own Grok CLI. */
+  probeModels?: (cli: string, env: Record<string, string | undefined>) => Promise<Array<{ id: string }> | null>;
 }
 
 const failure = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -105,6 +107,7 @@ export class PrincipalEngineLogins {
   private readonly controllers = new Map<string, LoginController>();
   /** #1154: the last model list each person's own session gave, per engine. */
   private readonly knownModels = new Map<string, { at: number; ids: string[] }>();
+  private readonly warming = new Set<string>();
   private readonly now: () => number;
 
   constructor(options: PrincipalEngineLoginsOptions) {
@@ -224,7 +227,7 @@ export class PrincipalEngineLogins {
   async accountModels(principalId: string, instanceId: string): Promise<string[] | null> {
     const env = this.accountEnv(principalId, instanceId);
     if (!env) return null;
-    const models = await probeGrokModels(env.cli, env.env) ?? readGrokModelsCache(env.env);
+    const models = await (this.options.probeModels ?? probeGrokModels)(env.cli, env.env) ?? readGrokModelsCache(env.env);
     const ids = models?.map((model) => model.id) ?? [];
     const answer = ids.length ? ids : null;
     if (answer) this.knownModels.set(this.flowKey(principalId, instanceId), { at: this.now(), ids: answer });
@@ -241,6 +244,17 @@ export class PrincipalEngineLogins {
     if (memo && this.now() - memo.at < ACCOUNT_MODELS_TTL_MS) return memo.ids;
     const ids = readGrokModelsCache(env.env)?.map((model) => model.id) ?? [];
     return ids.length ? ids : memo?.ids ?? null;
+  }
+
+  /** #1154: a turn never waits on the engine. Nothing known yet: ask the
+   * person's own session in the background (once at a time per person and
+   * engine) so a later turn and the model menu read the answer. */
+  warmAccountModels(principalId: string, instanceId: string): void {
+    if (!this.accountEnv(principalId, instanceId) || this.knownAccountModels(principalId, instanceId)) return;
+    const key = this.flowKey(principalId, instanceId);
+    if (this.warming.has(key)) return;
+    this.warming.add(key);
+    void this.accountModels(principalId, instanceId).catch(() => null).finally(() => this.warming.delete(key));
   }
 
   private accountEnv(principalId: string, instanceId: string): { cli: string; env: Record<string, string | undefined> } | null {

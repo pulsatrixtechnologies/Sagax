@@ -19453,7 +19453,7 @@ async function startTurn(
     // #1137, #1154: the bot's model cannot run for the person who pays (no
     // credentials of theirs for its engine, or their session does not offer
     // it), so it answers with a model they can run, for this turn only.
-    if (!opts?.warmOnly && !opts?.cardContinuation) await warmPayerAccountModels(bot, earlySpeaker);
+    if (!opts?.warmOnly && !opts?.cardContinuation) warmPayerAccountModels(bot, earlySpeaker);
     const switched = speakerTurnSelection(bot, earlySpeaker);
     if (switched && !opts?.warmOnly) {
       bot = { ...bot, modelSelection: switched.selection };
@@ -23715,7 +23715,7 @@ async function runGroupMemberTurn(
   // credentials of theirs for its engine, or their session does not offer
   // it), so the bot answers with a model they can run, for this turn only.
   if (!roomAuto && roomAutoSpeakerId && !cardContinuation) {
-    await warmPayerAccountModels(bot, { origin: "person", principalId: roomAutoSpeakerId, groupId });
+    warmPayerAccountModels(bot, { origin: "person", principalId: roomAutoSpeakerId, groupId });
   }
   const roomSwitch = !roomAuto && roomAutoSpeakerId
     ? speakerTurnSelection(bot, { origin: "person", principalId: roomAutoSpeakerId, groupId })
@@ -27349,22 +27349,16 @@ function payerAccountModels(bot: BotRecord, instance: { instanceId: string; driv
   if (!plan.ok || plan.via !== "subscription" || !plan.payerPrincipalId) return null;
   return engineLogins.knownAccountModels(plan.payerPrincipalId, instance.instanceId);
 }
-/** #1154: before a person's turn, ask their own session which models it
- * offers when nothing is known yet (one engine start, then cached), so the
- * first turn after a pick already runs, and names, the model that answers. */
-async function warmPayerAccountModels(bot: BotRecord, speaker: TurnSpeaker): Promise<void> {
+/** #1154: a turn never waits on the payer's session. When their model list
+ * is not known yet, it is asked in the background (the turn runs on the
+ * bot's model, as before; an engine fallback is kept per person). */
+function warmPayerAccountModels(bot: BotRecord, speaker: TurnSpeaker): void {
   if (IDENTITY.kind !== "perspicax" || !engineLogins || speaker.origin !== "person" || bot.modelSelection.auto === true) return;
   const instance = registry.get(bot.modelSelection.instanceId);
   if (!instance || instance.driverKind !== "grokAgent") return;
   const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
   if (!plan.ok || plan.via !== "subscription" || !plan.payerPrincipalId) return;
-  if (engineLogins.knownAccountModels(plan.payerPrincipalId, instance.instanceId)) return;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([
-    engineLogins.accountModels(plan.payerPrincipalId, instance.instanceId).catch(() => null),
-    new Promise((done) => { timer = setTimeout(done, 8_000); timer.unref?.(); }),
-  ]);
-  if (timer) clearTimeout(timer);
+  engineLogins.warmAccountModels(plan.payerPrincipalId, instance.instanceId);
 }
 /** #1137, #1154: the model a person's turn runs on, so every turn of a bot
  * (a group included) runs on an engine the person who pays can pay for

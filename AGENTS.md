@@ -1936,8 +1936,10 @@ keep the owner's credentials and model.
   Nothing runs: the access card (connect a subscription, add a key).
 - The payer's session list is `knownAccountModels` (the last
   `accountModels` answer for 10 min, else the person's Grok
-  `models_cache.json`); a turn with nothing known asks once first
-  (`warmPayerAccountModels`, 8 s at most). Unknown means nothing is replaced.
+  `models_cache.json`). A turn never waits on it: with nothing known it runs
+  on the bot's model at once and the list is asked in the background
+  (`warmAccountModels`, one probe at a time per person and engine); an
+  engine fallback is still kept per person. Unknown means nothing is replaced.
 - Seen: the reply's turn line carries `turnRun.requested` and shows at all
   times ("Grok 4.6 · effort High · instead of Grok 4.7"); the model menu
   gets a `session.model-fallback` (with `actualInstanceId` when the engine
