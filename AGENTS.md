@@ -71,6 +71,19 @@ ones. Deleting a bot or profile deletes its kept profile
 profile kept, no lock handling. #3182 (identity-check retry) does not apply:
 Sagax has no Chrome identity launcher.
 
+## iPhone: switching accounts keeps each account's state (2026-10-27)
+
+Decision: switching between Personal and an organization server, or between
+two saved servers, never signs out and shows at once. `Session.switchComputer`
+(`ios/App/Session.swift`) keeps each saved connection's last `CompanionState`
+(its bots, conversations and cursor) in memory, three at most, and shows it
+the moment the account is picked; the stream resumes from that account's own
+cursor instead of an empty screen and a full hydrate. Tokens stay one per
+connection in the Keychain (never re-asked). A state is handed back to the
+same saved connection only; forgetting, signing out or re-pairing it drops
+it. Bot pictures are cached under each account's own key, so one server's
+never shows on another's.
+
 ## Tailcat remote sessions
 
 A connected Tailcat session is a first-class card (`remoteSession` on the message) and a Sessions à distance section in the bot panel. The address and the client key stay in the Flow session folder on this host. Never accept them as tool arguments, never put them in an API answer, a log line, or visible text. The support code is the label. The 12-hex folder id stays off the screen. Screenshot in the Computer tab is read-only. Shell reuses the in-chat terminal (`provider: tailcat`). Sagax ships tailcat 0.7.0 beside the app (`dist-native/tailcat`, then the app resources) and in the server image at `/usr/local/bin/tailcat`. Do not tell a bot to install it onto the system PATH. The panel section always renders (empty state when none). A session the bot opened with `remote_support_open` registers itself through `PerspicaxMcp.relay` -> `server/remote-session-register.ts` when the status says connected; its tunnel is in `<data dir>/remote-support/sessions/<CODE>/`, and resolves only for the person and bot named in that folder's `open.json` (the speaker whose Perspicax credentials opened it; never the conversation owner, never the 12-hex id alone). Prendre le contrôle opens the Computer tab in every mode (`startRemoteControl`, `visiblePanelTabs`); the screen stays read-only until live control lands over `RemoteSessionScreen`. Bot guidance (standard rights, three calls, script in the first reply, no jpg, no Preview) lives in the tool descriptions and the `remote-support` guide. See `docs/remote-sessions.md`.

@@ -232,6 +232,14 @@ final class Session: ObservableObject {
     /// for the same attachment path.
     private var avatarFetches: [String: (id: UUID, task: Task<Data?, Never>)] = [:]
     private var avatarCacheGeneration = 0
+    /// Each saved account's last state (its conversations, bots, cursor),
+    /// kept in memory while another account is on screen. Switching back
+    /// shows it at once and its stream resumes from its own cursor: no
+    /// sign-in, no empty screen, no full reload. Only ever handed back to the
+    /// same saved connection; forgetting or re-pairing it drops it.
+    private var parkedStates: [String: CompanionState] = [:]
+    private var parkedOrder: [String] = []
+    private static let parkedLimit = 3
     /// Voice-note bytes for the transcript bubbles. Clips are short but a
     /// busy thread can carry several; a small cost-bounded window keeps
     /// replay from refetching without pinning the whole transcript.
@@ -774,7 +782,12 @@ final class Session: ObservableObject {
             SagaxSharedConnectionStore.saveRegistry(updatedRegistry)
         }
 
-        stopActiveRuntime()
+        // The account on screen is kept for a switch back; a re-paired one
+        // starts afresh, never from a state of its earlier pairing.
+        if let previous = connection?.id, previous != stored.id, status != .unauthorized { parkState(of: previous) }
+        forgetParkedState(stored.id)
+        for duplicate in duplicates { forgetParkedState(duplicate) }
+        stopActiveRuntime(keepingAvatars: true)
         pairingInvite = CompanionPairingInvitePolicy.nextInvite(
             current: pairingInvite,
             after: .pairingSucceeded
@@ -1000,12 +1013,49 @@ final class Session: ObservableObject {
             return
         }
 
-        stopActiveRuntime()
+        // The account on screen is kept as it is; the one shown comes back as
+        // it was left, its stream resuming from its own cursor.
+        let started = Date()
+        if let previous = connection?.id, status != .unauthorized { parkState(of: previous) }
+        stopActiveRuntime(keepingAvatars: true)
         registry.select(id: id)
         persistRegistry()
         connections = registry.connections
         configureActiveConnection(saved, token: stored)
+        let parked = takeParkedState(for: id)
+        if let parked {
+            state = parked
+            NotificationCoordinator.shared.setBadge(state.unreadCount)
+        }
         connect()
+        log.info("switched accounts in \(Int(Date().timeIntervalSince(started) * 1000), privacy: .public) ms (\(parked == nil ? "first visit" : "its last state shown", privacy: .public))")
+    }
+
+    // MARK: - Each account's last state
+
+    private func parkState(of id: String) {
+        guard !isDemo, state.cursor != nil || !state.bots.isEmpty else { return }
+        parkedStates[id] = state
+        parkedOrder.removeAll { $0 == id }
+        parkedOrder.append(id)
+        while parkedOrder.count > Self.parkedLimit {
+            parkedStates.removeValue(forKey: parkedOrder.removeFirst())
+        }
+    }
+
+    private func takeParkedState(for id: String) -> CompanionState? {
+        parkedOrder.removeAll { $0 == id }
+        return parkedStates.removeValue(forKey: id)
+    }
+
+    private func forgetParkedState(_ id: String) {
+        parkedOrder.removeAll { $0 == id }
+        parkedStates.removeValue(forKey: id)
+    }
+
+    private func forgetParkedStates() {
+        parkedOrder.removeAll()
+        parkedStates.removeAll()
     }
 
     func forgetConnection(id: String) {
@@ -1027,6 +1077,9 @@ final class Session: ObservableObject {
             }
         }
         if wasActive { stopActiveRuntime() }
+        // Nothing of that account stays in memory: its last state and pictures.
+        forgetParkedState(id)
+        if !wasActive { resetAvatarCache() }
         preparedPhoneCredentials = preparedPhoneCredentials.filter { $0.value.connectionID != id }
         Keychain.remove(id)
         BrandMascotCache.forget(id)
@@ -1091,6 +1144,7 @@ final class Session: ObservableObject {
         token = nil
         rotation = CandidateRotation(hosts: [])
         state = CompanionState()
+        forgetParkedStates()
         showAccount(of: nil)
         resetAvatarCache()
         resetAttachmentCache()
@@ -1116,7 +1170,9 @@ final class Session: ObservableObject {
         status = .connecting
     }
 
-    private func stopActiveRuntime() {
+    /// `keepingAvatars`: a switch between accounts keeps each account's
+    /// pictures (the cache is keyed by account), only in-flight downloads stop.
+    private func stopActiveRuntime(keepingAvatars: Bool = false) {
         resetCredentialEntry()
         streamGeneration += 1
         streamTask?.cancel()
@@ -1131,7 +1187,7 @@ final class Session: ObservableObject {
         client = nil
         token = nil
         state = CompanionState()
-        resetAvatarCache()
+        if keepingAvatars { cancelAvatarFetches() } else { resetAvatarCache() }
         resetAttachmentCache()
         attachmentSendIDs.removeAll()
         NotificationCoordinator.shared.setBadge(0)
@@ -2869,25 +2925,38 @@ final class Session: ObservableObject {
 
     func avatarData(for bot: Bot) async -> Data? {
         guard let path = bot.avatarUrl, let client else { return nil }
-        let key = path as NSString
+        // Each account's pictures under its own key: one server's never shows on another's.
+        let account = "\(connection?.id ?? "-")|\(path)"
+        let key = account as NSString
         if let cached = avatarCache.object(forKey: key) { return cached as Data }
         let generation = avatarCacheGeneration
         let fetch: (id: UUID, task: Task<Data?, Never>)
-        if let pending = avatarFetches[path] {
+        if let pending = avatarFetches[account] {
             fetch = pending
         } else {
             let pending = (
                 id: UUID(),
                 task: Task<Data?, Never> { try? await client.avatar(path: path) }
             )
-            avatarFetches[path] = pending
+            avatarFetches[account] = pending
             fetch = pending
         }
         let data = await fetch.task.value
-        if avatarFetches[path]?.id == fetch.id { avatarFetches.removeValue(forKey: path) }
+        if avatarFetches[account]?.id == fetch.id { avatarFetches.removeValue(forKey: account) }
         guard !Task.isCancelled, generation == avatarCacheGeneration, let data else { return nil }
         avatarCache.setObject(data as NSData, forKey: key, cost: data.count)
         return data
+    }
+
+    /// Stop the downloads in flight; what is cached stays (keyed by account).
+    private func cancelAvatarFetches() {
+        avatarCacheGeneration += 1
+        for fetch in avatarFetches.values { fetch.task.cancel() }
+        avatarFetches.removeAll()
+        voiceNoteCacheGeneration += 1
+        for fetch in voiceNoteFetches.values { fetch.task.cancel() }
+        voiceNoteFetches.removeAll()
+        voiceNoteCache.removeAllObjects()
     }
 
     private func resetAvatarCache() {
