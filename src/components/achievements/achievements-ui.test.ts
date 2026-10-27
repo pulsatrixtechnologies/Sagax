@@ -182,7 +182,9 @@ describe("achievements page", () => {
     expect(html).toContain("2 of");
     expect(html).toContain("4-day streak");
     // the shared settings have their own entry in the left column, not this page
-    expect(html).not.toContain("data-settings-group");
+    // (Recent unlocks is a plain group of its own; the settings group is gone)
+    expect(html).not.toContain('data-settings-group="achievements.settings"');
+    expect([...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1])).toEqual(["achievements.recent"]);
     expect(html).not.toMatch(/data-settings-row="achievements.title"/);
     // recent unlocks, a horizontal row of cards
     expect(html).toContain(">Recent unlocks</h3>");
@@ -203,8 +205,8 @@ describe("achievements page", () => {
     // a secret stays a secret until found
     expect(html).toMatch(/data-achievement="konami" data-secret=""/);
     expect(html).not.toContain("Up Up Down Down");
-    // the switches that hide the points and the toasts sit at the bottom
-    expect(html.indexOf("Show my points")).toBeGreaterThan(html.indexOf('data-achievement="konami"'));
+    // the switches that hide the points and the toasts live on the Settings entry (#1206)
+    expect(html).not.toContain("Show my points");
   });
 
   it("shows one category's cards, keeps the header card, and leaves recent unlocks to All", () => {
@@ -288,6 +290,7 @@ describe("achievements modal", () => {
     // the title picker, every switch of the card and of the notifications
     expect(html).toMatch(/data-settings-row="achievements.title"/);
     expect(html).toMatch(/aria-label="Title" aria-haspopup="listbox"/);
+    expect(html).toContain("Show my points");
     expect(html).not.toContain("data-achievements-page");
     expect(html).not.toContain('data-achievement="hello-bot"');
     for (const category of ["all", "secrets"] as const) {

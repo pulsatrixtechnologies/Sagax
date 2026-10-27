@@ -66,7 +66,10 @@ describe("cron routine editor", () => {
 
   it("labels paused dates as a preview, not scheduled runs", () => {
     const markup = renderToStaticMarkup(createElement(CronSchedulePreview, { schedule, paused: true }));
-    expect(markup).toContain("Paused — schedule preview");
+    // the label comes from the catalogue since #1196, written without a dash
+    expect(markup).toContain("Paused: schedule preview");
+    expect(markup).toContain('aria-label="Paused schedule preview"');
+    expect(markup).not.toMatch(/[\u2013\u2014]/);
     expect(markup).not.toContain("Next runs");
     expect(markup).not.toContain("Next scheduled runs");
     expect(markup.match(/<time /g)).toHaveLength(3);

@@ -3,8 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/state/store", () => ({ api: vi.fn() }));
+import { t } from "@/lib/i18n";
 import { channelHumanRow } from "@/lib/perspicax-org";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
+
+// The add button reads the app catalogue (#1196), so the label follows the active language.
+const ADD = t("common.add");
 
 describe("ChannelMembers", () => {
   it("hides add controls from a member who cannot edit", () => {
@@ -16,7 +20,7 @@ describe("ChannelMembers", () => {
     }));
     expect(html).toContain("Aurora");
     expect(html).toContain("morgan@example.test");
-    expect(html).not.toContain("Ajouter");
+    expect(html).not.toContain(ADD);
   });
 
   it("shows Ajouter only on the list whose boolean is true", () => {
@@ -35,13 +39,13 @@ describe("ChannelMembers", () => {
     expect(humans).toContain("Gens");
     expect(humans).toContain("Bots");
     const humanCut = humans.indexOf("Bots");
-    expect(humans.slice(0, humanCut)).toContain("Ajouter");
-    expect(humans.slice(humanCut)).not.toContain("Ajouter");
+    expect(humans.slice(0, humanCut)).toContain(ADD);
+    expect(humans.slice(humanCut)).not.toContain(ADD);
     const botCut = bots.indexOf("Bots");
-    expect(bots.slice(0, botCut)).not.toContain("Ajouter");
-    expect(bots.slice(botCut)).toContain("Ajouter");
-    expect(humans.match(/aria-label="Ajouter"/g)).toHaveLength(1);
-    expect(bots.match(/aria-label="Ajouter"/g)).toHaveLength(1);
+    expect(bots.slice(0, botCut)).not.toContain(ADD);
+    expect(bots.slice(botCut)).toContain(ADD);
+    expect(humans.match(new RegExp(`aria-label="${ADD}"`, "g"))).toHaveLength(1);
+    expect(bots.match(new RegExp(`aria-label="${ADD}"`, "g"))).toHaveLength(1);
   });
 
   it("calls onAddHuman when Ajouter is clicked", () => {
@@ -101,7 +105,7 @@ function findAjouter(tree: ReactNode): { props: { onClick?: (event: MouseEvent<H
   if (!tree || typeof tree !== "object" || !("props" in tree)) return;
   const props = tree.props as { children?: ReactNode; onClick?: (event: MouseEvent<HTMLButtonElement>) => void };
   const aria = (tree as { props?: { "aria-label"?: string } }).props?.["aria-label"];
-  if ((tree as { type?: unknown }).type === "button" && aria === "Ajouter") {
+  if ((tree as { type?: unknown }).type === "button" && aria === ADD) {
     return { props };
   }
   const nested = Array.isArray(props.children) ? props.children : [props.children];
@@ -150,8 +154,8 @@ describe("a room's people on an organization server", () => {
       onAddBot: () => {},
       part: "bots",
     }));
-    expect(html).toContain('aria-label="Retirer Yuki"');
-    expect(html).not.toContain('aria-label="Retirer Scout"');
+    expect(html).toContain(`aria-label="${t("channelMembers.remove", { name: "Yuki" })}"`);
+    expect(html).not.toContain(`aria-label="${t("channelMembers.remove", { name: "Scout" })}"`);
     expect(html).toContain("Ajouter mon robot");
   });
 });
