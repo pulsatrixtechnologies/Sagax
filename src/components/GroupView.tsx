@@ -102,6 +102,7 @@ import { ManageMembersPanel } from "./ManageMembersPanel";
 import { GroupAvatarStack, GroupPanel, PanelSection } from "./GroupPanel";
 import { NudgeLine } from "./NudgeLine";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
+import { repeatedFailureIds } from "../../shared/failure-dedup";
 import { groupActivityRuns, isHiddenStatusActivity, isStatusActivity, type ActivityTranscriptItem } from "@/lib/activity-runs";
 import { collapseBotExchanges, commIsBotDm, startsNewStretch, visibleEdge, type ExchangeRun } from "@/lib/bot-exchange";
 import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
@@ -555,7 +556,9 @@ export const Transcript = memo(function Transcript({
     const seen = new Set<string>();
     // a failed routine run and a routine's access card pass as a banner
     // (TransientNotice), never a row (shared/transient-notices.ts)
-    const visible = withoutDeadThreadChips(messages, owners).filter((message) => !isTransientChatNotice(message) && (
+    // one row per bot and failure since that bot last answered (shared/failure-dedup.ts)
+    const repeats = repeatedFailureIds(messages);
+    const visible = withoutDeadThreadChips(messages, owners).filter((message) => !repeats.has(message.id) && !isTransientChatNotice(message) && (
       message.kind !== "activity" || (!isHiddenStatusActivity(message) && roomActivityVisible(message, showToolCalls))));
     const collapsed = collapseBotExchanges(visible, {
       pairChannel,

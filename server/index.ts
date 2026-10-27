@@ -384,6 +384,8 @@ import { RETRY_MAX_ATTEMPTS } from "./drivers/retry.ts";
 import { recoveryCapabilityError } from "./automatic-recovery.ts";
 import { LimitFailoverStore } from "./limit-failover.ts";
 import { createLimitFailoverHost, limitBackupRefusedText } from "./limit-failover-host.ts";
+import { sendBlockFor, type SendBlock } from "../shared/send-state.ts";
+import { repeatsShownFailure } from "../shared/failure-dedup.ts";
 import { limitFailoverText, resetClockText } from "../shared/limit-failover.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
 import { turnRunFor, type TurnRun } from "./turn-run.ts";
@@ -16019,14 +16021,20 @@ bus.subscribe((event: RuntimeEvent) => {
       // one the person chose: no sign-in card for it. The thread goes back
       // and its "continuing on" line becomes the one error the person reads.
       if ((keyRefused || event.setup) && bot && limitBackupRefusedInThread(bot.id, event.threadId) !== null) break;
+      // One error per bot and cause (shared/failure-dedup.ts): sending again
+      // while the bot cannot answer does not write the same row twice.
+      const failureFrom = group ? speaker : undefined;
       if (keyRefused && bot) {
-        pushMessage({ role: "bot", kind: "access", access: keyRefused });
-        notifyAccess(deliverableNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }), keyRefused);
-      } else pushMessage({
-        role: "bot",
-        kind: "activity",
-        tool: failedTurnTool(event.message, event),
-      });
+        if (!repeatsShownFailure(store.messagesFor(event.threadId), { role: "bot", kind: "access", access: keyRefused, from: failureFrom }, bot.id)) {
+          pushMessage({ role: "bot", kind: "access", access: keyRefused });
+          notifyAccess(deliverableNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }), keyRefused);
+        }
+      } else {
+        const tool = failedTurnTool(event.message, event);
+        if (!repeatsShownFailure(store.messagesFor(event.threadId), { role: "bot", kind: "activity", tool, from: failureFrom }, bot?.id ?? "")) {
+          pushMessage({ role: "bot", kind: "activity", tool });
+        }
+      }
       // a setup error means the engine could not even start: the bot is
       // dead until something changes, not merely idle. The next successful
       // dispatch moves it to working; turn.completed (which follows a setup
@@ -19888,7 +19896,7 @@ async function startTurn(
     // A backup the usage-limit failover picked: one plain error, no card.
     const backupRefused = limitBackupRefusedInThread(botId, threadId, speaker);
     const card = accessCardFor(bot, accessRefusal, engine);
-    if (!backupRefused) {
+    if (!backupRefused && !repeatsShownFailure(store.messagesFor(threadId), { role: "bot", kind: "access", access: card }, bot.id)) {
       store.appendMessage(threadId, {
         role: "bot",
         kind: "access",
@@ -27363,6 +27371,27 @@ function ownerModelOfflineRefusal(bot: BotRecord, instance: { instanceId: string
     ...(ownerName ? { ownerName } : {}),
     ...(speaker.origin === "person" && speaker.principalId ? { speakerPrincipalId: speaker.principalId } : {}),
   };
+}
+/** The composer's send state for this person (shared/send-state.ts). Any
+ * doubt, or a failure to judge, is no block: the message sends as before. */
+function sendStateFor(bot: BotRecord, speaker: TurnSpeaker): SendBlock | null {
+  try {
+    const selection = bot.modelSelection;
+    const instance = registry.get(selection.instanceId);
+    if (selection.auto === true || !instance?.enabled) return null;
+    const engine = { instanceId: instance.instanceId, name: engineDisplayName(instance) };
+    const ownerOffline = ownerModelOfflineRefusal(bot, instance, speaker, selection.model);
+    const refused = IDENTITY.kind === "perspicax" && !ownerOffline && orgEngineRefusal(bot, instance, speaker) !== null &&
+      speakerTurnSelection(bot, speaker) === null;
+    return sendBlockFor({
+      auto: false, engine, accessRefused: refused,
+      ownerComputerOffline: ownerOffline ? { ownerName: ownerOffline.ownerName ?? "" } : null,
+      local: desktopLocalModels.reach(selection.model),
+    });
+  } catch (error) {
+    console.warn(`[send-state] ${bot.id}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 /** #1154: the model ids the session that pays for this turn on this engine
  * offers, when they are known without starting the engine: the payer's own
@@ -45116,6 +45145,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (bot.modelSelection.auto !== true) return json(res, 200, { auto: false });
       const turn = autoPickForTurn({ bot, threadId: bot.threadId, speaker: speakerFor(auth), role: "orchestration", text: "" });
       return json(res, 200, { auto: true, pick: turn ? autoModelRecord(turn.pick, Date.now()) : null, explanation: turn ? explainPick(turn.pick) : "" });
+    }
+    // The maintainer, 2026-10-27: whether this person's message can be answered now. A
+    // certain no (the engine not connected for them, the computer or local
+    // server behind the model down) keeps the composer from sending, with one
+    // line and the one thing to do; anything uncertain sends as before.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/send-state$/);
+    if (m && method === "GET") {
+      res.setHeader("cache-control", "no-store");
+      const bot = requestedTaskBot(m[1], url.searchParams.get("threadId") ?? undefined);
+      return json(res, 200, { block: sendStateFor(bot, speakerFor(auth)) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/command-allowlist(?:\/([\w-]+))?$/);
     if (m && ["GET", "POST", "DELETE"].includes(method)) {

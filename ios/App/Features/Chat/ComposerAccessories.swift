@@ -191,6 +191,8 @@ extension ChatView {
 
         replyStrip
 
+        // The bot cannot answer now: why, and the one thing to do.
+        sendBlockLine
     }
 
     /// How far the phone composer's scrolling strips reach past its margin:

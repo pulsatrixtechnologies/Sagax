@@ -248,6 +248,7 @@ extension ChatView {
 
     func retry(_ failure: FailedSend) {
         guard !power.retrying.contains(failure.id), current.threadId == failure.threadId else { return }
+        if activeSendBlock != nil { sendBlockTick += 1; return }
         power.retrying.insert(failure.id)
         let chat = current
         Task {

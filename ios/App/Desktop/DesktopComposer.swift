@@ -22,6 +22,8 @@ struct DesktopComposerPill: View {
     let prompt: String
     var focused: FocusState<Bool>.Binding
     let canSend: Bool
+    /// The bot cannot answer now (SendState.swift): send and voice wait.
+    var blocked = false
     let busy: Bool
     let listening: Bool
     let inputLocked: Bool
@@ -222,6 +224,8 @@ struct DesktopComposerPill: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .disabled(blocked)
+        .opacity(blocked ? 0.45 : 1)
         .hoverEffect(.highlight)
         .accessibilityLabel(Text("Voice mode"))
         .accessibilityIdentifier("desktop-composer-voice")
@@ -246,7 +250,8 @@ struct DesktopComposerPill: View {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .disabled(!canSend)
+        .disabled(!canSend || blocked)
+        .opacity(blocked ? 0.45 : 1)
         .accessibilityLabel(Text("Send"))
         .accessibilityIdentifier("desktop-composer-send")
     }

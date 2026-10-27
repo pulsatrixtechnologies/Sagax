@@ -375,8 +375,11 @@ public func settledPermissionLeavesChat(_ message: Message) -> Bool {
 /// that opens another conversation (a thread chip, "Go to conversation")
 /// leaves the chat, as the desktop's unified chat drops it (ChatView.tsx,
 /// #1026).
-public func transcriptRows(_ messages: [Message], detail: ActivityDetail, showThreads: Bool = true) -> [TranscriptRow] {
+public func transcriptRows(_ messages: [Message], detail: ActivityDetail, showThreads: Bool = true, threadBotId: String = "") -> [TranscriptRow] {
     let voice = makeVoiceCallPlan(messages)
+    // The same failure of the same bot, repeated since it last answered,
+    // draws once: the last row (FailureDedup, desktop repeatedFailureIds).
+    let repeatedFailures = FailureDedup.repeatedIds(messages, threadBotId: threadBotId)
     // Fold only explicitly completed turns; never guess that the last reply
     // is final on an older server or while the bot is still working.
     // Spoken call lines are already in the voice card, so they are not a
@@ -438,6 +441,7 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail, showTh
             break
         }
         if isHiddenStatusNotice(message) || isHiddenReceipt(message) { continue }
+        if repeatedFailures.contains(message.id) { continue }
         // A failed routine run and a routine's access card pass as a
         // banner (TransientNotices), never a row.
         if TransientNotices.isTransient(message) { continue }
