@@ -41,6 +41,50 @@ export interface K8sSandboxConfig {
   nodeSelector?: Record<string, string>;
   /** Taints of that pool the sandbox pods tolerate. */
   tolerations?: K8sToleration[];
+  /** Per-person kernel isolation for the people it lists (see
+   * dedicatedFromEnv). Absent: every pod keeps the shared spec. */
+  dedicated?: K8sDedicatedConfig;
+}
+
+/** One node (so one kernel) per person, and user namespaces.
+ * `hostUsers: false` maps uid 1000 in the container to an unprivileged
+ * uid on the node; the required pod anti-affinity keeps two people's
+ * sandboxes off the same node; the selector and tolerations pick the pool
+ * built for it. Only the keys listed get it, so a cluster moves one
+ * person at a time and moves back by removing a key. */
+export interface K8sDedicatedConfig {
+  /** `*` or the sandbox keys that get the options below. */
+  keys: "*" | string[];
+  /** `hostUsers: false` on the pod. */
+  userNamespace: boolean;
+  /** Required anti-affinity against every other sandbox pod, per node. */
+  ownNode: boolean;
+  /** Added to the shared selector for those people. */
+  nodeSelector?: Record<string, string>;
+  /** Added to the shared tolerations for those people. */
+  tolerations?: K8sToleration[];
+  /** CPU and memory for those people (the node is theirs). Absent: the
+   * shared SAGAX_SANDBOX_CPUS / SAGAX_SANDBOX_MEMORY_MB sizes. */
+  nanoCpus?: number;
+  memoryBytes?: number;
+  /** The reserve Deployment the provisioner scales (warmNode.spare). */
+  spare?: K8sSpareConfig;
+}
+
+export interface K8sSpareConfig {
+  namespace: string;
+  deployment: string;
+  /** Reserve nodes at most. */
+  max: number;
+}
+
+/** One reserve per active person, up to max; none when nobody is active.
+ * With max 2: nobody active costs nothing, the first person's arrival
+ * starts one reserve, a second at the same time starts the second, and
+ * every later arrival still finds a warm node while two are held. */
+export function spareReplicas(active: number, max: number): number {
+  if (!Number.isFinite(active) || active <= 0) return 0;
+  return Math.min(max, Math.floor(active));
 }
 
 export interface K8sToleration {
@@ -112,6 +156,79 @@ export function parseTolerations(raw: string | undefined): K8sToleration[] | und
   return out;
 }
 
+/** `SAGAX_SANDBOX_K8S_DEDICATED_KEYS`: `*` or sandbox keys separated by
+ * commas. Unset: `*` (everyone). Set but empty: nobody, which is the global
+ * way back. A malformed key refuses the start. */
+export function parseDedicatedKeys(raw: string | undefined): "*" | string[] {
+  if (raw === undefined) return "*";
+  const text = raw.trim();
+  if (text === "*") return "*";
+  const keys = text.split(",").map((part) => part.trim()).filter(Boolean);
+  for (const key of keys) {
+    if (!SANDBOX_KEY_RE.test(key)) throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_KEYS must be * or sandbox keys separated by commas");
+  }
+  return [...new Set(keys)];
+}
+
+/** The dedicated options, or undefined when neither is on. */
+export function dedicatedFromEnv(env: NodeJS.ProcessEnv): K8sDedicatedConfig | undefined {
+  const userNamespace = !namedFlag(env.SAGAX_SANDBOX_K8S_HOST_USERS, "SAGAX_SANDBOX_K8S_HOST_USERS", true);
+  const ownNode = namedFlag(env.SAGAX_SANDBOX_K8S_DEDICATED_NODE, "SAGAX_SANDBOX_K8S_DEDICATED_NODE", false);
+  if (!userNamespace && !ownNode) return undefined;
+  const keys = parseDedicatedKeys(env.SAGAX_SANDBOX_K8S_DEDICATED_KEYS);
+  const nodeSelector = parseNodeSelector(env.SAGAX_SANDBOX_K8S_DEDICATED_NODE_SELECTOR);
+  const tolerations = parseTolerations(env.SAGAX_SANDBOX_K8S_DEDICATED_TOLERATION);
+  if (ownNode && !nodeSelector) {
+    throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_NODE needs SAGAX_SANDBOX_K8S_DEDICATED_NODE_SELECTOR (the label of the pool with one node per person)");
+  }
+  const cpus = env.SAGAX_SANDBOX_K8S_DEDICATED_CPUS?.trim();
+  const memoryMb = env.SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB?.trim();
+  let nanoCpus: number | undefined;
+  let memoryBytes: number | undefined;
+  if (cpus) {
+    const value = Number(cpus);
+    if (!Number.isFinite(value) || value <= 0 || value > 64) throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_CPUS must be a positive number up to 64");
+    nanoCpus = Math.floor(value * 1e9);
+  }
+  if (memoryMb) {
+    const value = Number(memoryMb);
+    if (!Number.isInteger(value) || value <= 0 || value > 65536) throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB must be a whole number of MiB up to 65536");
+    memoryBytes = value * MiB;
+  }
+  const spareRaw = env.SAGAX_SANDBOX_K8S_SPARE?.trim();
+  let spare: K8sSpareConfig | undefined;
+  if (spareRaw) {
+    const [spareNs, spareName, extra] = spareRaw.split("/");
+    if (extra !== undefined || !spareNs || !spareName || !DNS_NAME.test(spareNs) || !DNS_NAME.test(spareName)) {
+      throw new Error("SAGAX_SANDBOX_K8S_SPARE must be namespace/deployment");
+    }
+    const maxRaw = env.SAGAX_SANDBOX_K8S_SPARE_MAX?.trim() || "2";
+    const max = Number(maxRaw);
+    if (!Number.isInteger(max) || max < 0 || max > 64) throw new Error("SAGAX_SANDBOX_K8S_SPARE_MAX must be a whole number from 0 to 64");
+    spare = { namespace: spareNs, deployment: spareName, max };
+  }
+  return {
+    keys,
+    userNamespace,
+    ownNode,
+    ...(spare ? { spare } : {}),
+    ...(nodeSelector ? { nodeSelector } : {}),
+    ...(tolerations ? { tolerations } : {}),
+    ...(nanoCpus ? { nanoCpus } : {}),
+    ...(memoryBytes ? { memoryBytes } : {}),
+  };
+}
+
+/** The dedicated options that apply to this person, if any. */
+export function dedicatedFor(k8s: Pick<K8sSandboxConfig, "dedicated">, key: string): K8sDedicatedConfig | undefined {
+  const dedicated = k8s.dedicated;
+  if (!dedicated) return undefined;
+  if (dedicated.keys === "*" || dedicated.keys.includes(key)) return dedicated;
+  return undefined;
+}
+
+export const HOSTNAME_TOPOLOGY = "kubernetes.io/hostname";
+
 export interface K8sGuards {
   /** Operator attestation that etcd encryption covers Secret resources. */
   secretsEncryptedAttested: boolean;
@@ -158,6 +275,7 @@ export function kubernetesSandboxConfigFromEnv(env: NodeJS.ProcessEnv, sandbox: 
   }
   const nodeSelector = parseNodeSelector(env.SAGAX_SANDBOX_K8S_NODE_SELECTOR);
   const tolerations = parseTolerations(env.SAGAX_SANDBOX_K8S_TOLERATION);
+  const dedicated = dedicatedFromEnv(env);
   const quotaName = dnsLabel(env.SAGAX_SANDBOX_K8S_QUOTA_NAME?.trim() || SANDBOX_QUOTA_NAME, "SAGAX_SANDBOX_K8S_QUOTA_NAME");
   const requireDigest = namedFlag(env.SAGAX_SANDBOX_K8S_REQUIRE_SIGNED, "SAGAX_SANDBOX_K8S_REQUIRE_SIGNED", true);
   const imageProblems = imageAdmissionProblems(sandbox.image, { registry, requireDigest });
@@ -189,6 +307,7 @@ export function kubernetesSandboxConfigFromEnv(env: NodeJS.ProcessEnv, sandbox: 
       quotaName,
       ...(nodeSelector ? { nodeSelector } : {}),
       ...(tolerations ? { tolerations } : {}),
+      ...(dedicated ? { dedicated } : {}),
     },
     guards: {
       secretsEncryptedAttested,
@@ -263,8 +382,13 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
   if (!SANDBOX_KEY_RE.test(key)) throw new Error("sandbox pod is missing its person key");
   const names = sandboxNames(key);
   const host = asObj(spec.HostConfig);
-  const memory = Number(host.Memory);
-  const nanoCpus = Number(host.NanoCpus);
+  const dedicated = dedicatedFor(k8s, key);
+  const memory = dedicated?.memoryBytes ?? Number(host.Memory);
+  const nanoCpus = dedicated?.nanoCpus ?? Number(host.NanoCpus);
+  const nodeSelector = k8s.nodeSelector || dedicated?.nodeSelector
+    ? { ...k8s.nodeSelector, ...(dedicated ? dedicated.nodeSelector : {}) }
+    : undefined;
+  const tolerations = [...(k8s.tolerations ?? []), ...(dedicated?.tolerations ?? [])];
   const tmpfs = asObj(host.Tmpfs) as Record<string, string>;
   const tmpBytes = Number(/size=(\d+)/.exec(tmpfs["/tmp"] ?? "")?.[1] ?? 0);
   const shmBytes = Number(/size=(\d+)/.exec(tmpfs["/dev/shm"] ?? "")?.[1] ?? 0);
@@ -280,7 +404,11 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
       name: names.container,
       namespace: k8s.namespace,
       labels,
-      annotations: { [PIDS_ANNOTATION]: String(pids || 0) },
+      annotations: {
+        [PIDS_ANNOTATION]: String(pids || 0),
+        // Aggressive node scale-down never takes a node from under a person.
+        ...(dedicated?.ownNode ? { "cluster-autoscaler.kubernetes.io/safe-to-evict": "false" } : {}),
+      },
     },
     spec: {
       restartPolicy: "Never",
@@ -303,8 +431,22 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
       ...(k8s.pullSecret ? { imagePullSecrets: [{ name: k8s.pullSecret }] } : {}),
       // A dedicated node pool: its label selects it, its taint keeps every
       // other workload off it and these pods tolerate that taint.
-      ...(k8s.nodeSelector ? { nodeSelector: { ...k8s.nodeSelector } } : {}),
-      ...(k8s.tolerations ? { tolerations: k8s.tolerations.map((toleration) => ({ ...toleration })) } : {}),
+      ...(nodeSelector ? { nodeSelector } : {}),
+      ...(tolerations.length ? { tolerations: tolerations.map((toleration) => ({ ...toleration })) } : {}),
+      // One kernel per person: no other sandbox pod on this node. The
+      // label matches every person, so the scheduler gives each its own node.
+      ...(dedicated?.ownNode ? {
+        affinity: {
+          podAntiAffinity: {
+            requiredDuringSchedulingIgnoredDuringExecution: [{
+              labelSelector: { matchExpressions: [{ key: SANDBOX_USER_LABEL, operator: "Exists" }] },
+              topologyKey: HOSTNAME_TOPOLOGY,
+            }],
+          },
+        },
+      } : {}),
+      // User namespace: uid 1000 here is an unprivileged uid on the node.
+      ...(dedicated?.userNamespace ? { hostUsers: false } : {}),
       securityContext: {
         runAsNonRoot: true,
         runAsUser: SANDBOX_UID,
@@ -353,11 +495,33 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
   };
 }
 
-/** Restricted-style isolation for the Pod we send. A failure refuses the create. */
-export function podIsolationProblems(pod: Obj, key: string): string[] {
+/** True when the pod keeps every other sandbox pod off its node. */
+export function podHasOwnNode(spec: Obj): boolean {
+  const anti = asObj(asObj(spec.affinity).podAntiAffinity);
+  const terms = Array.isArray(anti.requiredDuringSchedulingIgnoredDuringExecution) ? anti.requiredDuringSchedulingIgnoredDuringExecution as Obj[] : [];
+  return terms.some((term) => {
+    if (term.topologyKey !== HOSTNAME_TOPOLOGY) return false;
+    const selector = asObj(term.labelSelector);
+    if (selector.matchLabels && Object.keys(asObj(selector.matchLabels)).length > 0) return false;
+    const expressions = Array.isArray(selector.matchExpressions) ? selector.matchExpressions as Obj[] : [];
+    return expressions.length === 1 && expressions[0]?.key === SANDBOX_USER_LABEL && expressions[0]?.operator === "Exists";
+  });
+}
+
+/** Restricted-style isolation for the Pod we send. A failure refuses the
+ * create. With `k8s`, the dedicated options this person must have are
+ * checked too. */
+export function podIsolationProblems(pod: Obj, key: string, k8s?: Pick<K8sSandboxConfig, "dedicated">): string[] {
   const names = sandboxNames(key);
   const problems: string[] = [];
   const spec = asObj(pod.spec);
+  const dedicated = k8s ? dedicatedFor(k8s, key) : undefined;
+  if (dedicated?.userNamespace && spec.hostUsers !== false) problems.push("user namespace missing (hostUsers)");
+  if (dedicated?.ownNode && !podHasOwnNode(spec)) problems.push("own node missing (pod anti-affinity)");
+  if (dedicated?.ownNode && dedicated.nodeSelector) {
+    const selector = asObj(spec.nodeSelector);
+    if (Object.entries(dedicated.nodeSelector).some(([name, value]) => selector[name] !== value)) problems.push("dedicated pool selector missing");
+  }
   const podSec = asObj(spec.securityContext);
   const containers = Array.isArray(spec.containers) ? spec.containers as Obj[] : [];
   const container = asObj(containers[0]);

@@ -102,6 +102,60 @@ spec:
     objectSelector:
       {{- toYaml . | nindent 6 }}
     {{- end }}
+{{- if .Values.admission.dedicated.enabled }}
+---
+# One node and one user namespace per person (SAGAX_SANDBOX_K8S_HOST_USERS=false,
+# SAGAX_SANDBOX_K8S_DEDICATED_NODE=1). Warn while people move one at a time,
+# then Deny once the provisioner gives it to everyone.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sandboxes-dedicated
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+    objectSelector:
+      matchExpressions:
+        - key: com.pulsatrix.sagax.sandbox.user
+          operator: Exists
+  validations:
+    - expression: "has(object.spec.hostUsers) && object.spec.hostUsers == false"
+      message: "Sandbox pods must run in a user namespace (hostUsers: false)."
+    - expression: |
+        has(object.spec.affinity) && has(object.spec.affinity.podAntiAffinity) &&
+        has(object.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution) &&
+        object.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution.exists(t,
+          t.topologyKey == 'kubernetes.io/hostname' &&
+          has(t.labelSelector) && has(t.labelSelector.matchExpressions) &&
+          t.labelSelector.matchExpressions.exists(e,
+            e.key == 'com.pulsatrix.sagax.sandbox.user' && e.operator == 'Exists'
+          )
+        )
+      message: "Sandbox pods must keep every other sandbox off their node (required pod anti-affinity on kubernetes.io/hostname)."
+    - expression: {{ printf "has(object.spec.nodeSelector) && %s in object.spec.nodeSelector && object.spec.nodeSelector[%s] == %s" (squote .Values.admission.dedicated.nodeLabelKey) (squote .Values.admission.dedicated.nodeLabelKey) (squote .Values.admission.dedicated.nodeLabelValue) | quote }}
+      message: "Sandbox pods must select the pool with one node per person."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sandboxes-dedicated
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  policyName: sandboxes-dedicated
+  validationActions: {{ .Values.admission.dedicated.validationActions | toJson }}
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Values.sandboxNamespace | quote }}
+{{- end }}
 {{- end }}
 {{- if .Values.admission.kyverno.enabled }}
 ---
@@ -131,8 +185,10 @@ spec:
         any:
           - resources:
               selector:
-                matchLabels:
-                  app.kubernetes.io/name: sagax-sandbox-warmer
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values: ["sagax-sandbox-warmer", "sagax-sandbox-spare"]
       verifyImages:
         - imageReferences:
             - ghcr.io/pulsatrixtechnologies/*

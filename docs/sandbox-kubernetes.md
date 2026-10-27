@@ -60,6 +60,44 @@ value (missing `=` in a selector, an effect other than `NoSchedule`,
 `PreferNoSchedule` or `NoExecute`, a key that is not a label key) refuses
 the start. The provisioner itself stays off that pool.
 
+### One kernel per person
+
+runc shares the node's kernel between the sandboxes on that node. To give each
+person their own kernel without the I/O cost of a microVM runtime, give each
+person their own node, which is a VM of its own on every cloud:
+
+1. A node pool sized for one sandbox (for example 2 vCPU, 8 GiB), labeled and
+   tainted on its own (example: label `sagax.io/isolation=dedicated`, taint
+   `sagax.io/dedicated=true:NoSchedule`), in the zone of the workspace disks
+   when they are zonal, with the cluster autoscaler on.
+2. `SAGAX_SANDBOX_K8S_HOST_USERS=false`, `SAGAX_SANDBOX_K8S_DEDICATED_NODE=1`,
+   `SAGAX_SANDBOX_K8S_DEDICATED_NODE_SELECTOR` and
+   `SAGAX_SANDBOX_K8S_DEDICATED_TOLERATION` set to that label and taint. The
+   node is the person's, so `SAGAX_SANDBOX_K8S_DEDICATED_CPUS` and
+   `SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB` can size the sandbox to it.
+3. `warmNode.spare.enabled=true` in the chart, with
+   `warmNode.spare.nodeSelector` and `warmNode.spare.tolerations` on that pool,
+   and `SAGAX_SANDBOX_K8S_SPARE=<system namespace>/sagax-sandbox-spare`.
+   Each reserve pod holds a node; a person who arrives evicts one at once
+   instead of waiting for a new node, and the autoscaler refills the reserve.
+   The provisioner keeps one reserve per active person, up to
+   `SAGAX_SANDBOX_K8S_SPARE_MAX` (default 2), and none when nobody is active,
+   so the first arrival on an idle pool waits for a node and every later
+   one does not. Size `warmNode.spare.cpu` so that node allocatable minus it
+   is less than one sandbox request. Sandbox pods on that pool carry
+   `cluster-autoscaler.kubernetes.io/safe-to-evict: "false"`, so a short
+   `scale-down-unneeded-time` removes idle nodes quickly and never a
+   person's node.
+4. Move people one at a time with `SAGAX_SANDBOX_K8S_DEDICATED_KEYS`, then `*`.
+   A person moves on their next start (pause and resume). Removing a key moves
+   that person back to the shared spec; the workspace volume is the same.
+5. `admission.dedicated.enabled=true` with `validationActions: ["Warn", "Audit"]`
+   while people move, `["Deny"]` once the key list is `*`.
+
+`hostUsers: false` needs Kubernetes 1.33 or later with a runtime and kernel
+that support idmapped mounts (containerd 2, Linux 6.3 or later). Inside the
+sandbox nothing changes: uid 1000, the same image and the same volume.
+
 The namespace default deny also selects the provisioner. Apply
 `deploy/k8s/provisioner/networkpolicy-provisioner.yaml` first. That policy is
 only the provisioner label: TCP 443 and 6443 out, TCP 8791 in. Set
@@ -86,6 +124,14 @@ emptyDir, because that policy allows no other egress.
 | `SAGAX_SANDBOX_K8S_QUOTA_NAME` | no | default `sagax-sandbox-quota` |
 | `SAGAX_SANDBOX_K8S_NODE_SELECTOR` | no | `key=value[,key=value]`, Kubernetes label syntax, for example `sagax.io/pool=sandboxes`; becomes the Pod `nodeSelector` |
 | `SAGAX_SANDBOX_K8S_TOLERATION` | no | `key=value:Effect` (operator Equal) or `key:Effect` (operator Exists), comma separated, for example `sagax.io/pool=sandboxes:NoSchedule`; becomes the Pod `tolerations` |
+| `SAGAX_SANDBOX_K8S_HOST_USERS` | no | default `true`; `false` runs each sandbox Pod in a user namespace (`hostUsers: false`) |
+| `SAGAX_SANDBOX_K8S_DEDICATED_NODE` | no | default off; `1` adds a required pod anti-affinity so no two sandboxes share a node |
+| `SAGAX_SANDBOX_K8S_DEDICATED_KEYS` | no | `*` (default when unset) or sandbox keys, comma separated: who gets the two options above; empty moves everyone back |
+| `SAGAX_SANDBOX_K8S_DEDICATED_NODE_SELECTOR` | with `DEDICATED_NODE` | label of the pool with one node per person, added to `SAGAX_SANDBOX_K8S_NODE_SELECTOR` |
+| `SAGAX_SANDBOX_K8S_DEDICATED_TOLERATION` | no | that pool's taint, added to `SAGAX_SANDBOX_K8S_TOLERATION` |
+| `SAGAX_SANDBOX_K8S_DEDICATED_CPUS` / `SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB` | no | CPU (fractions allowed) and MiB for those people; default the shared `SAGAX_SANDBOX_CPUS` / `SAGAX_SANDBOX_MEMORY_MB` |
+| `SAGAX_SANDBOX_K8S_SPARE` | no | reserve Deployment as `namespace/name` (chart `warmNode.spare`, `sagax-sandbox-system/sagax-sandbox-spare`); the provisioner scales it |
+| `SAGAX_SANDBOX_K8S_SPARE_MAX` | no | default `2`: reserve nodes = people active on the dedicated pool, capped here; 0 when nobody is active |
 | `SAGAX_SANDBOX_K8S_API` | no | default `https://kubernetes.default.svc` |
 | `SAGAX_SANDBOX_K8S_KUBECONFIG` | no | out-of-cluster auth; otherwise the Pod's ServiceAccount. `SAGAX_SANDBOX_K8S_USE_KUBECONFIG=1` uses `KUBECONFIG`, or `~/.kube/config` when that is unset |
 | `SAGAX_SANDBOX_AUDIT_LOG` | no | default `/var/log/sagax/sandbox-audit.jsonl` |

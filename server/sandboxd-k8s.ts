@@ -17,6 +17,7 @@ import {
   PAUSED_ANNOTATION,
   SANDBOX_DEFAULT_DENY_NAME,
   SUBNET_ANNOTATION,
+  dedicatedFor,
   defaultDenyNetworkPolicy,
   imageAdmissionProblems,
   k8sLabels,
@@ -24,6 +25,7 @@ import {
   kubernetesSandboxConfigFromEnv,
   podFromDockerSpec,
   podIsolationProblems,
+  spareReplicas,
   pvcSpec,
   sandboxKeyFromContainerName,
   sandboxNetworkPolicy,
@@ -37,6 +39,7 @@ import { runsConfigFromEnv } from "./sandboxd-runs-spec.ts";
 import type { ContainerStats, ContainerSummary, DockerApi, ExecRequest, ExecResult, TtyExec, TtySize } from "./sandboxd-docker.ts";
 import { createSandboxdHandler, createSandboxdUpgradeHandler } from "./sandboxd.ts";
 import {
+  SANDBOX_INSTANCE_LABEL,
   SANDBOX_KEY_RE,
   SANDBOX_LABEL,
   SANDBOX_USER_LABEL,
@@ -135,7 +138,7 @@ export interface KubernetesApiOptions {
 }
 
 /** DockerApi backed by the Kubernetes API. */
-export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, client: K8sClient, audit: SandboxAudit, options: KubernetesApiOptions = {}): DockerApi {
+export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, client: K8sClient, audit: SandboxAudit, options: KubernetesApiOptions = {}): DockerApi & { syncSpare(): Promise<void> } {
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => { setTimeout(resolve, ms); }));
   const now = options.now ?? Date.now;
   const ns = k8s.namespace;
@@ -187,6 +190,43 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
     if (response.status !== 200 && response.status !== 201) throw new Error(`kubernetes patch failed (${response.status})`);
   }
 
+  // The reserve (warmNode.spare): one warm node per active person on the
+  // dedicated pool, up to its max, none when nobody is active. Best effort:
+  // a failure is logged and never blocks a sandbox.
+  let spareWanted: number | null = null;
+  let spareChain: Promise<void> = Promise.resolve();
+  function syncSpare(): Promise<void> {
+    const spare = k8s.dedicated?.spare;
+    if (!spare) return Promise.resolve();
+    spareChain = spareChain.then(async () => {
+      try {
+        const selector = encodeURIComponent(`${SANDBOX_LABEL}=1,${SANDBOX_INSTANCE_LABEL}=${sandbox.instance}`);
+        const response = await client.request("GET", `/api/v1/namespaces/${ns}/pods?labelSelector=${selector}`);
+        if (response.status !== 200) throw new Error(`list ${response.status}`);
+        const pods = (asObj(response.body).items ?? []) as Obj[];
+        const active = pods.filter((pod) => {
+          const meta = asObj(pod.metadata);
+          if (meta.deletionTimestamp) return false;
+          const phase = String(asObj(pod.status).phase ?? "");
+          if (phase === "Succeeded" || phase === "Failed") return false;
+          const key = metaOf(pod).labels[SANDBOX_USER_LABEL] ?? "";
+          return SANDBOX_KEY_RE.test(key) && dedicatedFor(k8s, key) !== undefined;
+        }).length;
+        const wanted = spareReplicas(active, spare.max);
+        if (wanted === spareWanted) return;
+        const path = `/apis/apps/v1/namespaces/${spare.namespace}/deployments/${spare.deployment}/scale`;
+        const patched = await client.request("PATCH", path, { spec: { replicas: wanted } }, "application/merge-patch+json");
+        if (patched.status !== 200 && patched.status !== 201) throw new Error(`scale ${patched.status}`);
+        spareWanted = wanted;
+        audit.record({ action: "spare.scale", outcome: "ok", detail: { active, replicas: wanted } });
+      } catch (error) {
+        spareWanted = null;
+        console.error(`sandboxd: reserve scale failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+    return spareChain;
+  }
+
   function summaryFrom(name: string, labels: Record<string, string>, annotations: Record<string, string>, phase: string | null, pausedFlag: boolean): ContainerSummary {
     const running = phase === "Running";
     const paused = pausedFlag && !running;
@@ -230,7 +270,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
   function podBody(key: string): Obj {
     const spec = sandboxContainerSpec(sandbox, key);
     const pod = podFromDockerSpec(spec, k8s);
-    const problems = podIsolationProblems(pod, key);
+    const problems = podIsolationProblems(pod, key, k8s);
     if (problems.length) throw new Error(`sandbox spec refused: ${problems.join(", ")}`);
     const image = String(spec.Image ?? "");
     const imageProblems = imageAdmissionProblems(image, { registry: k8s.registry, requireDigest: k8s.requireDigest });
@@ -244,6 +284,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
   async function createPod(key: string): Promise<void> {
     await create(`/api/v1/namespaces/${ns}/pods`, podBody(key));
     audit.record({ action: "sandbox.pod.create", outcome: "ok", key });
+    void syncSpare();
   }
 
   async function waitRunning(key: string): Promise<void> {
@@ -358,10 +399,11 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
         throw new Error(`image refused: ${imageProblems.join(", ")}`);
       }
       const pod = podFromDockerSpec(spec, k8s);
-      const problems = podIsolationProblems(pod, key);
+      const problems = podIsolationProblems(pod, key, k8s);
       if (problems.length) throw new Error(`sandbox spec refused: ${problems.join(", ")}`);
       await create(`/api/v1/namespaces/${ns}/pods`, pod);
       audit.record({ action: "sandbox.pod.create", outcome: "ok", key });
+      void syncSpare();
     },
     async startContainer(name: string) {
       const key = sandboxKeyFromContainerName(name);
@@ -379,6 +421,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       }
       await remove(podPath(names.container));
       emit("sandbox.pod.stop", key);
+      void syncSpare();
     },
     async pauseContainer(name: string) {
       const key = sandboxKeyFromContainerName(name);
@@ -386,6 +429,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       await merge(pvcPath(names.volume), { metadata: { annotations: { [PAUSED_ANNOTATION]: "true" } } });
       await remove(podPath(names.container));
       emit("sandbox.pod.pause", key);
+      void syncSpare();
     },
     async unpauseContainer(name: string) {
       const key = sandboxKeyFromContainerName(name);
@@ -395,7 +439,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       emit("sandbox.pod.resume", key);
     },
     async containerStats(name: string): Promise<ContainerStats> {
-      const limit = sandbox.limits.memoryBytes;
+      const limit = dedicatedFor(k8s, sandboxKeyFromContainerName(name))?.memoryBytes ?? sandbox.limits.memoryBytes;
       const metrics = await client.metrics(ns, name).catch(() => null);
       if (!metrics) return { cpus: 0, memoryBytes: 0, memoryLimitBytes: limit };
       return { cpus: metrics.cpu, memoryBytes: metrics.memoryBytes, memoryLimitBytes: limit };
@@ -404,6 +448,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       const key = sandboxKeyFromContainerName(name);
       await remove(podPath(name));
       emit("sandbox.pod.delete", key);
+      void syncSpare();
     },
     async inspectNetwork(name: string) {
       const policy = await read(netPath(name));
@@ -491,7 +536,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       return { exitCode: 0, output: "sagax-egress-ok\n" };
     },
   };
-  return api;
+  return { ...api, syncSpare };
 }
 
 async function collectReadiness(client: K8sClient, k8s: K8sSandboxConfig, guards: K8sGuards, sandbox: SandboxdConfig, auditWritable: boolean): Promise<string[]> {
@@ -582,6 +627,12 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
     }, (error: unknown) => console.error(`sandboxd: idle sweep failed: ${error instanceof Error ? error.message : String(error)}`));
   }, 60_000);
   sweep.unref();
+  if (k8s.dedicated?.spare) {
+    // Catches pods that ended outside the provisioner (node loss, eviction).
+    void backend.syncSpare();
+    const spareSweep = setInterval(() => { void backend.syncSpare(); }, 30_000);
+    spareSweep.unref();
+  }
   let runsServer: { close(callback?: () => void): unknown } | null = null;
   if (runs) {
     const { RunService, createRunsServer } = await import("./sandboxd-runs.ts");
