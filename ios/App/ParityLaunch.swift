@@ -44,6 +44,9 @@ enum ParityScreen: String, CaseIterable {
     /// Not a reference: New bot's Import from Grok Bot, a reply pasted and previewed.
     case createBotImport = "create-bot-import"
     case botComputer = "21-bot-computer"
+    /// Not a reference: the bot creation wizard (`-parityWizardStep` picks
+    /// the screen: choose, choose-bottom, identity, rules, tools, recap, guided).
+    case botWizard = "bot-wizard"
     /// Not a reference: Settings > Appearance, for the theme captures.
     case appearance = "22-appearance"
     case themeGallery = "theme-gallery"
@@ -78,7 +81,7 @@ enum ParityScreen: String, CaseIterable {
     var opensFromHome: Bool {
         switch self {
         case .home, .homePlusMenu, .search, .searchTyped, .newChat, .newGroupChat, .createBot, .createBotImport,
-             .settingsTop, .settingsBottom, .plugins, .account, .botComputer, .appearance: true
+             .settingsTop, .settingsBottom, .plugins, .account, .botComputer, .appearance, .botWizard: true
         default: false
         }
     }

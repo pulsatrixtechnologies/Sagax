@@ -2,6 +2,10 @@
 // identity and look, the soul and its answers, the one approval level and
 // the suggested rules, only the tools of the role, the suggested routines,
 // and the recap with Try it. Each field saves through the bot's own route.
+// 2026-10-27 (desktop v2): Identity puts the avatar beside the name and the
+// role in one menu; Rules gives each suggestion one effect (Off, Allow, Ask,
+// Deny) and asks whether the bot uses apps or a computer; the recap is a
+// compact read-only summary with one Edit per step.
 import SwiftUI
 import CompanionCore
 
@@ -64,36 +68,46 @@ struct WizardIdentityStep: View {
     @State private var description = ""
     @State private var look = CharacterDraft()
     @State private var loaded = false
+    /// The values the fields last showed from the bot: a field the person
+    /// did not touch follows the bot (the guide fills it live) and is never
+    /// sent back stale when the step closes.
+    @State private var shownName = ""
+    @State private var shownDescription = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            WizardCard(title: String(localized: "Role")) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(WizardRole.allCases, id: \.self) { role in chip(role) }
-                        chip(nil)
+            // Grok Bot's layout: the avatar beside the name and the role
+            HStack(alignment: .center, spacing: 16) {
+                MascotCharacterView(look: look.complete, color: look.color, skin: look.skin, size: 96, animated: true)
+                    .frame(width: 96, height: 96)
+                    .accessibilityHidden(true)
+                    .accessibilityIdentifier("wizard-avatar")
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Name").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                        TextField("Name your Bot", text: $name)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { saveText() }
+                            .accessibilityIdentifier("wizard-name")
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Role").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                        rolePicker
                     }
                 }
             }
-            HStack {
-                Spacer()
-                MascotCharacterView(look: look.complete, color: look.color, skin: look.skin, size: 110, animated: true)
-                    .frame(width: 110, height: 110)
-                    .accessibilityHidden(true)
-                Spacer()
-            }
-            WizardCard(title: String(localized: "Name")) {
-                TextField("Name your Bot", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { saveText() }
-                    .accessibilityIdentifier("wizard-name")
-            }
-            WizardCard(title: String(localized: "Its role in one sentence")) {
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            WizardCard(title: String(localized: "Description")) {
                 TextField("What it does for you", text: $description, axis: .vertical)
                     .lineLimit(2...4)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { saveText() }
                     .accessibilityIdentifier("wizard-description")
+                Text("Its role in one sentence, shown in rosters, on the phone and to other bots. Longer instructions go in the Soul step.")
+                    .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("wizard-description-help")
             }
             WizardCard(title: String(localized: "Mascot and skin")) {
                 CharacterEditor(draft: Binding(get: { look }, set: { saveLook($0) }), metrics: .profileCard, unlocks: session.isDemo ? .demo : .nothingLocked)
@@ -114,43 +128,76 @@ struct WizardIdentityStep: View {
             loaded = true
             name = bot.name
             description = bot.description
+            shownName = bot.name
+            shownDescription = bot.description
             look = CharacterDraft(bot: bot)
+        }
+        .onChange(of: bot.name) { fresh in
+            if name == shownName { name = fresh }
+            shownName = fresh
+        }
+        .onChange(of: bot.description) { fresh in
+            if description == shownDescription { description = fresh }
+            shownDescription = fresh
         }
         .onDisappear { saveText() }
     }
 
-    private func chip(_ role: WizardRole?) -> some View {
-        let selected = draft.roleId == (role?.rawValue ?? "")
-        return Button {
-            Task {
-                await patch(WizardPatch(roleId: role?.rawValue ?? ""))
-                guard let role else { return }
-                // the role fills what is still empty; the person's words stay
-                var change = BotProfilePatch()
-                if bot.title.isEmpty { change.title = role.defaults.title }
-                if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    description = role.defaults.description
-                    change.description = role.defaults.description
+    /// The role as one compact menu (no wrapping chips).
+    private var rolePicker: some View {
+        Menu {
+            Picker("Role", selection: Binding(get: { WizardRole(rawValue: draft.roleId) }, set: { choose($0) })) {
+                ForEach(WizardRole.allCases, id: \.self) { role in
+                    Text(roleTitle(role)).tag(WizardRole?.some(role))
                 }
-                if change.title != nil || change.description != nil { _ = await session.updateProfile(change, for: bot) }
+                Text(roleTitle(nil)).tag(WizardRole?.none)
             }
         } label: {
-            Text(roleTitle(role))
-                .font(Theme.Font.preview)
-                .foregroundStyle(selected ? Theme.primaryInk : Theme.textPrimary)
-                .padding(.horizontal, 12)
-                .frame(height: 32)
-                .background(selected ? Theme.primaryFill : Theme.cardRaised, in: Capsule())
+            HStack(spacing: 6) {
+                Text(roleTitle(WizardRole(rawValue: draft.roleId)))
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(Theme.cardRaised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("wizard-role-\(role?.rawValue ?? "custom")")
+        .accessibilityHint(Text("A role fills in the role sentence, a starting soul and the suggestions of the next steps. Everything stays editable."))
+        .accessibilityIdentifier("wizard-role")
+    }
+
+    private func choose(_ role: WizardRole?) {
+        let previous = WizardRole(rawValue: draft.roleId)
+        guard role != previous else { return }
+        Task {
+            await patch(WizardPatch(roleId: role?.rawValue ?? ""))
+            guard let role else { return }
+            // the role fills what is still empty or still the previous
+            // role's; the person's own words stay
+            func replaceable(_ value: String, _ before: String?) -> Bool {
+                value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || value == before
+            }
+            var change = BotProfilePatch()
+            if replaceable(bot.title, previous?.defaults.title) { change.title = role.defaults.title }
+            if replaceable(description, previous?.defaults.description) {
+                description = role.defaults.description
+                change.description = role.defaults.description
+            }
+            if change.title != nil || change.description != nil { _ = await session.updateProfile(change, for: bot) }
+        }
     }
 
     private func saveText() {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var change = BotProfilePatch()
-        if !trimmed.isEmpty, trimmed != bot.name { change.name = trimmed }
-        if description != bot.description { change.description = description }
+        // only what the person changed here
+        if !trimmed.isEmpty, name != shownName, trimmed != bot.name { change.name = trimmed }
+        if description != shownDescription, description != bot.description { change.description = description }
         guard change.name != nil || change.description != nil else { return }
         Task { _ = await session.updateProfile(change, for: bot) }
     }
@@ -307,15 +354,19 @@ struct WizardRulesStep: View {
     @EnvironmentObject private var session: Session
     @State private var confirmingFull = false
     @State private var working: String?
+    /// The applied rules' own effects, read back (the person may have
+    /// changed one here or in the bot's rules).
+    @State private var read: [String: WizardRuleEffect] = [:]
 
     private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: nil) }
+    private var effects: [String: WizardRuleEffect] { BotWizardRules.currentEffects(draft: draft, suggestions: suggestions, read: read) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             WizardCard(title: String(localized: "Approval level")) {
                 Picker("Approval level", selection: Binding(get: { level }, set: { choose($0) })) {
                     ForEach([ApprovalLevel.ask, .edits, .auto, .full], id: \.self) { item in
-                        Text(levelTitle(item)).tag(item)
+                        Text(approvalLevelTitle(item)).tag(item)
                     }
                 }
                 .pickerStyle(.menu)
@@ -323,21 +374,18 @@ struct WizardRulesStep: View {
                 Text(LocalizedStringKey(level.detail)).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
             }
             WizardCard(title: String(localized: "Suggested rules")) {
-                Text("Rules apply before the approval level, whatever the level. Each one ticked is saved at once for this bot; untick it to remove it.")
+                Text("Rules apply before the approval level, whatever the level. An effect you pick is saved at once for this bot; Off removes the rule.")
                     .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
                 ForEach(suggestions.rules) { rule in
-                    Toggle(isOn: Binding(get: { draft.rules[rule.id] != nil }, set: { on in Task { await toggle(rule, on: on) } })) {
-                        HStack {
-                            Text(rule.when).font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
-                            Spacer(minLength: 6)
-                            Text(behaviorTitle(rule.behavior)).font(Theme.Font.preview)
-                                .foregroundStyle(rule.behavior == "deny" ? Theme.danger : rule.behavior == "ask" ? Color.orange : Color.green)
-                        }
-                    }
-                    .disabled(working == rule.id)
-                    .accessibilityIdentifier("wizard-rule-\(rule.id)")
+                    ruleRow(rule)
+                    if rule.id != suggestions.rules.last?.id { Divider() }
                 }
             }
+            toolsQuestion
+        }
+        .task(id: draft.rules) {
+            guard let client = session.profileClient, let found = try? await client.wizardRuleEffects(draft: draft) else { return }
+            read.merge(found) { _, fresh in fresh }
         }
         .alert("Full access", isPresented: $confirmingFull) {
             Button("Cancel", role: .cancel) {}
@@ -347,21 +395,57 @@ struct WizardRulesStep: View {
         }
     }
 
-    private func levelTitle(_ level: ApprovalLevel) -> String {
-        switch level {
-        case .ask: String(localized: "Ask for approval")
-        case .edits: String(localized: "Auto-accept edits")
-        case .auto: String(localized: "Approve for me")
-        case .full: String(localized: "Full access")
-        case .custom: String(localized: "Custom")
+    /// One row per suggestion: the rule, its suggested effect under it, and
+    /// one small selector (Off, Allow, Ask, Deny).
+    private func ruleRow(_ rule: WizardRuleSuggestion) -> some View {
+        let suggested = WizardRuleEffect(rawValue: rule.behavior) ?? .ask
+        let label = VStack(alignment: .leading, spacing: 2) {
+            Text(sentence(rule.when)).font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
+            Text("Suggested: \(effectTitle(suggested))").font(Theme.Font.preview).foregroundStyle(Theme.textTertiary)
         }
+        let selector = Picker(String(localized: "Effect of the rule: \(rule.when)"), selection: Binding(
+            get: { effects[rule.id].map(EffectChoice.on) ?? .off },
+            set: { choice in Task { await change(rule, to: choice.effect) } }
+        )) {
+            // its own key: "Non" in French, where Off elsewhere reads "Désactivé"
+            Text(String(localized: "botWizard.rules.effect.off", defaultValue: "Off")).tag(EffectChoice.off)
+            ForEach(WizardRuleEffect.allCases, id: \.self) { effect in
+                Text(effectTitle(effect)).tag(EffectChoice.on(effect))
+            }
+        }
+        .pickerStyle(.segmented)
+        .disabled(working == rule.id)
+        .accessibilityIdentifier("wizard-rule-\(rule.id)")
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                label.frame(minWidth: 140, alignment: .leading)
+                Spacer(minLength: 0)
+                selector.fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                label
+                selector
+            }
+        }
+        .padding(.vertical, 2)
     }
 
-    private func behaviorTitle(_ behavior: String) -> String {
-        switch behavior {
-        case "allow": String(localized: "Allow automatically")
-        case "deny": String(localized: "Deny")
-        default: String(localized: "Ask every time")
+    /// "Should this bot use apps or a computer?": Yes puts Tools and apps
+    /// next, Later keeps the defaults.
+    private var toolsQuestion: some View {
+        WizardCard(title: nil) {
+            Text("Should this bot use apps or a computer?").font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
+            Text("Yes adds the Tools and apps step next. Later keeps the defaults: Workspace on Auto, no MCP server, apps connected later.")
+                .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+            Picker("Should this bot use apps or a computer?", selection: Binding(
+                get: { draft.tools ?? .later },
+                set: { choice in Task { await patch(WizardPatch(tools: choice)) } }
+            )) {
+                Text("Later").tag(WizardToolsChoice.later)
+                Text("Yes").tag(WizardToolsChoice.yes)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("wizard-tools-question")
         }
     }
 
@@ -371,21 +455,65 @@ struct WizardRulesStep: View {
         Task { _ = await sendPanelPatch(.approval(next), bot: bot, session: session) }
     }
 
-    private func toggle(_ rule: WizardRuleSuggestion, on: Bool) async {
+    /// Off deletes the custom rule; another effect changes the applied rule
+    /// in place, or makes it (desktop `setSuggestedRuleEffect`).
+    private func change(_ rule: WizardRuleSuggestion, to effect: WizardRuleEffect?) async {
         guard let client = session.profileClient else { return }
         working = rule.id
         defer { working = nil }
+        let existing = draft.rules[rule.id].flatMap { $0.isEmpty || $0 == "pending" ? nil : $0 }
         do {
-            if on {
-                if let id = try await client.addWizardRule(botId: bot.id, suggestion: rule) { await patch(WizardPatch(rules: [rule.id: id])) }
+            if let effect {
+                if let existing {
+                    try await client.setWizardRuleEffect(ruleId: existing, effect: effect)
+                } else if let made = try await client.addWizardRule(botId: bot.id, suggestion: rule, effect: effect) {
+                    await patch(WizardPatch(rules: [rule.id: made]))
+                }
+                read[rule.id] = effect
             } else {
-                if let existing = draft.rules[rule.id], existing != "pending" { try? await client.removeWizardRule(ruleId: existing) }
+                // already removed by hand: the draft forgets it all the same
+                if let existing { try? await client.removeWizardRule(ruleId: existing) }
                 await patch(WizardPatch(rules: [rule.id: nil]))
+                read[rule.id] = nil
             }
         } catch {
             session.actionError = error.localizedDescription
         }
     }
+}
+
+/// A rule's selector value: Off, or one effect.
+private enum EffectChoice: Hashable {
+    case off
+    case on(WizardRuleEffect)
+
+    var effect: WizardRuleEffect? {
+        if case let .on(effect) = self { return effect }
+        return nil
+    }
+}
+
+func effectTitle(_ effect: WizardRuleEffect) -> String {
+    switch effect {
+    case .allow: String(localized: "Allow")
+    case .ask: String(localized: "Ask")
+    case .deny: String(localized: "Deny")
+    }
+}
+
+func approvalLevelTitle(_ level: ApprovalLevel) -> String {
+    switch level {
+    case .ask: String(localized: "Ask for approval")
+    case .edits: String(localized: "Auto-accept edits")
+    case .auto: String(localized: "Approve for me")
+    case .full: String(localized: "Full access")
+    case .custom: String(localized: "Custom")
+    }
+}
+
+private func sentence(_ text: String) -> String {
+    guard let first = text.first else { return text }
+    return first.uppercased() + text.dropFirst()
 }
 
 // MARK: 4 Tools and apps
@@ -410,8 +538,15 @@ struct WizardToolsStep: View {
             }
             if tools.contains("mcp") {
                 WizardCard(title: String(localized: "MCP servers")) {
-                    Text("This bot uses every MCP server that is turned on. Pick them one by one in its Access settings.")
-                        .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                    if bot.mcpServers == nil {
+                        Text("This bot uses every MCP server that is turned on. Pick them one by one in its Access settings.")
+                            .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                    } else {
+                        // the wizard's default: no MCP server (2026-10-27)
+                        Text(mcpSummaryText(bot.mcpServers)).font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
+                        Text("Pick the MCP servers one by one in its Access settings.")
+                            .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                    }
                 }
                 .accessibilityIdentifier("wizard-tool-mcp")
             }
@@ -479,6 +614,23 @@ struct WizardRoutinesStep: View {
 
 // MARK: 6 Recap and try
 
+func mcpSummaryText(_ servers: [String]?) -> String {
+    switch BotWizardRules.mcpSummary(servers) {
+    case .all: String(localized: "Every MCP server")
+    case .none: String(localized: "No MCP server")
+    case let .some(names): String(localized: "MCP: \(names.joined(separator: ", "))")
+    }
+}
+
+private struct RecapLine {
+    let step: WizardStep
+    let text: String
+}
+
+/// The last step (2026-10-27): a compact read-only summary. The bot in one
+/// card (avatar, name, role, description) with Try it, then one line per
+/// step with Edit, which opens that step; the test conversation under it.
+/// Finish stays in the footer.
 struct WizardRecapStep: View {
     let bot: Bot
     let draft: WizardDraft
@@ -488,24 +640,35 @@ struct WizardRecapStep: View {
     let goTo: (WizardStep) -> Void
     @EnvironmentObject private var session: Session
     @State private var sending = false
+    @State private var soul: String?
+    @State private var read: [String: WizardRuleEffect] = [:]
+
+    private var roleName: String { roleTitle(WizardRole(rawValue: draft.roleId)) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                BotMascotView(bot: bot, size: 48, state: .idle, animated: false)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(bot.name).font(Theme.Font.bodyMedium).foregroundStyle(Theme.textPrimary)
-                    Text(bot.description.isEmpty ? bot.title : bot.description).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary).lineLimit(2)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 14) {
+                    BotMascotView(bot: bot, size: 56, state: .happy, animated: false)
+                        .frame(width: 56, height: 56)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(bot.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                        Text(roleName).font(Theme.Font.preview).foregroundStyle(Theme.accent).lineLimit(1)
+                            .accessibilityIdentifier("wizard-recap-role")
+                        Text(bot.description.isEmpty ? (bot.title.isEmpty ? String(localized: "No description yet") : bot.title) : bot.description)
+                            .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
                 Button { Task { await tryIt() } } label: {
                     HStack(spacing: 6) {
-                        if sending { ProgressView() } else { Image(systemName: "paperplane") }
+                        if sending { ProgressView().tint(Theme.primaryInk) } else { Image(systemName: "paperplane") }
                         Text("Try it")
                     }
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.primaryInk)
-                    .padding(.horizontal, 14).frame(height: 36)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
                     .background(Theme.primaryFill, in: Capsule())
                 }
                 .buttonStyle(.plain)
@@ -514,23 +677,72 @@ struct WizardRecapStep: View {
             }
             .padding(14)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("wizard-recap-card")
+            VStack(spacing: 0) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                    if index > 0 { Divider().padding(.leading, 14) }
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(stepTitle(line.step))
+                            .font(Theme.Font.bodyMedium).foregroundStyle(Theme.textPrimary)
+                            .frame(width: 96, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(line.text).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                                .accessibilityIdentifier("wizard-recap-summary-\(line.step.rawValue)")
+                            if draft.skipped.contains(line.step) {
+                                Text("skipped").font(Theme.Font.preview).foregroundStyle(Theme.textTertiary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Button("Edit") { goTo(line.step) }
+                            .font(Theme.Font.bodyMedium)
+                            .foregroundStyle(Theme.accent)
+                            .accessibilityLabel(Text("Edit \(stepTitle(line.step))"))
+                            .accessibilityIdentifier("wizard-recap-edit-\(line.step.rawValue)")
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                }
+            }
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             if let threadId = draft.testThreadId {
                 WizardChatView(botId: bot.id, threadId: threadId)
                     .frame(height: 320)
                     .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            ForEach(WizardStep.allCases.filter { $0 != .recap }, id: \.self) { step in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(stepTitle(step)).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
-                        if draft.skipped.contains(step) { Text("skipped").font(Theme.Font.preview).foregroundStyle(Theme.textTertiary) }
-                        Spacer()
-                        Button("Open the step") { goTo(step) }.font(Theme.Font.preview)
-                    }
-                    WizardStepBody(step: step, bot: bot, draft: draft, suggestions: suggestions, language: language, patch: patch, goTo: goTo)
-                }
-            }
         }
+        .task {
+            guard let client = session.profileClient else { return }
+            if let found = try? await client.soul(botId: bot.id) { soul = found.soul }
+            if let found = try? await client.wizardRuleEffects(draft: draft) { read = found }
+        }
+    }
+
+    /// One line of words per step, read only (desktop `recapLines`).
+    private var lines: [RecapLine] {
+        let identity = [roleName, bot.chiefOfStaff == true ? String(localized: "Primary Bot") : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+        let answered = BotWizardRules.answeredCount(draft.answers)
+        let soulLine = (soul ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? String(localized: "Not written yet")
+            : String(localized: "Written · \(answered.answered) of \(answered.total) answers")
+        let counts = BotWizardRules.ruleCounts(BotWizardRules.currentEffects(draft: draft, suggestions: suggestions, read: read))
+        let parts = [
+            counts.ask > 0 ? String(localized: "\(counts.ask) asked") : "",
+            counts.deny > 0 ? String(localized: "\(counts.deny) denied") : "",
+            counts.allow > 0 ? String(localized: "\(counts.allow) allowed") : "",
+        ].filter { !$0.isEmpty }
+        let level = bot.approvalMode == nil ? "" : approvalLevelTitle(ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: nil))
+        let rules = [level, parts.isEmpty ? String(localized: "No rule") : parts.joined(separator: ", ")].filter { !$0.isEmpty }.joined(separator: " · ")
+        let place = bot.computer == "off" ? String(localized: "Off") : String(localized: "Auto")
+        let tools = [
+            String(localized: "Workspace: \(place)"),
+            mcpSummaryText(bot.mcpServers),
+            suggestions.apps.isEmpty ? String(localized: "Apps connected later") : String(localized: "Apps to connect: \(suggestions.apps.joined(separator: ", "))"),
+        ].joined(separator: " · ")
+        let picked = BotWizardRules.pickedRoutineNames(draft: draft, suggestions: suggestions)
+        let routines = picked.isEmpty ? String(localized: "No routine") : picked.joined(separator: ", ")
+        return [RecapLine(step: .identity, text: identity), RecapLine(step: .soul, text: soulLine), RecapLine(step: .rules, text: rules),
+                RecapLine(step: .tools, text: tools), RecapLine(step: .routines, text: routines)]
     }
 
     private func tryIt() async {

@@ -3,8 +3,17 @@
 // over the same server draft (`/api/bot-wizard`), so a draft started on one
 // device resumes on the other.
 //
-// - First screen: "Guided with my bot" and "I'll fill it in myself", and the
-//   drafts left to resume. Choosing one makes the bot and its draft.
+// - First screen ("Create a bot"): "Guided with my bot" and "I'll fill it in
+//   myself", and the drafts left to resume. Choosing one makes the bot and
+//   its draft. 2026-10-27: the "+" menus' Create new Bot opens this screen
+//   directly; what Create New Bot offered stays under "Other ways to start"
+//   (the full form, Browse templates, the two imports, Quick create).
+// - Guided never needs a bot the person lacks: the guide is their Bot
+//   designer, else their Primary Bot, else another bot; with none, choosing
+//   Guided creates the Bot designer (their own bot, no admin step), which
+//   leads. With no engine ready, the card says so and opens the engines.
+// - Tools and apps is off the main path (the draft's `tools`): Rules asks,
+//   the recap's Edit opens it at any time.
 // - Guided: the conversation with the person's Primary Bot, which fills the
 //   steps live (it writes the draft through sagax_settings); the steps stay
 //   editable. The phone switches between the two, the iPad shows both.
@@ -68,9 +77,18 @@ struct BotWizardView: View {
     @State private var busy: String?
     @State private var error: String?
     @State private var pane: GuidedPane = .chat
+    /// The engines the computer lists (nil: not read yet, no verdict).
+    @State private var instances: [Instance]?
+    @State private var other: OtherStart?
+    @State private var showingForm = false
 
     enum Phase { case loading, choose, steps }
     enum GuidedPane: Hashable { case chat, steps }
+    /// "Other ways to start" and the engines, over the first screen.
+    enum OtherStart: String, Identifiable {
+        case browse, importAgent, importZip, engines
+        var id: String { rawValue }
+    }
 
     private var french: Bool { (locale.language.languageCode?.identifier ?? Locale.current.language.languageCode?.identifier ?? "en") == "fr" }
     private var language: String { french ? "fr" : "en" }
@@ -80,6 +98,9 @@ struct BotWizardView: View {
         return BotWizardRules.guide(bots: session.state.bots, draftBotId: botId)
     }
     private var client: CompanionClient? { session.profileClient }
+    private var engineReady: Bool { BotWizardRules.engineReady(instances) }
+    /// No bot can guide and no engine can run the Bot designer.
+    private var needsEngine: Bool { guide == nil && !engineReady }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -111,7 +132,44 @@ struct BotWizardView: View {
             }
         }
         .background(Theme.bg.ignoresSafeArea())
+        .overlay {
+            // Other ways to start: the full form (Create New Bot), over the
+            // first screen; closing it comes back here
+            if showingForm {
+                CreateBotSheet(close: { showingForm = false }, showsWizard: false) { created in
+                    showingForm = false
+                    close(created.id)
+                }
+                .transition(.move(edge: .bottom))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.9), value: showingForm)
+        .sheet(item: $other) { sheet in
+            switch sheet {
+            case .browse:
+                BrowseBotsSheet { other = nil }
+                    .environmentObject(session)
+            case .importAgent:
+                AgentImportSheet(close: { other = nil }, imported: { created in
+                    other = nil
+                    if let created { close(created.id) }
+                })
+                .environmentObject(session)
+            case .importZip:
+                BotZipImportSheet(close: { other = nil }) { created in
+                    other = nil
+                    if let created { close(created.id) }
+                }
+                .environmentObject(session)
+            case .engines:
+                WizardEnginesSheet { other = nil }
+                    .environmentObject(session)
+            }
+        }
+        // back from the engines: read them again
+        .onChange(of: other) { if $0 == nil { Task { await readInstances() } } }
         .task { await load() }
+        .task { await readInstances() }
         .task(id: guidedPollKey) { await pollGuided() }
     }
 
@@ -153,6 +211,7 @@ struct BotWizardView: View {
     // MARK: Mode choice
 
     private var modeChoice: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if request.botId != nil, let bot {
@@ -162,13 +221,21 @@ struct BotWizardView: View {
                     Text("How do you want to set up your new bot? You can switch at any time without losing anything.")
                         .font(Theme.Font.body).foregroundStyle(Theme.textSecondary)
                 }
-                modeCard(mode: .guided, icon: "bubble.left.and.bubble.right", title: String(localized: "Guided with my bot"),
-                         body: guide.map { String(localized: "\($0.name) asks you the questions and fills in each step live, right beside the conversation. You can correct any field.") }
-                            ?? String(localized: "Your bot asks you the questions and fills in each step live. You can correct any field."))
+                if needsEngine {
+                    needsEngineCard
+                } else {
+                    modeCard(mode: .guided, icon: "bubble.left.and.bubble.right", title: String(localized: "Guided with my bot"),
+                             body: guide.map { String(localized: "\($0.name) asks you the questions and fills in each step live, right beside the conversation. You can correct any field.") }
+                                ?? String(localized: "Your Bot designer asks you the questions and fills in each step live. It is created for you, as your own bot, the moment you choose this."))
+                }
                 modeCard(mode: .manual, icon: "list.bullet.clipboard", title: String(localized: "I'll fill it in myself"),
                          body: String(localized: "The same steps as a form, page by page, with suggestions ready to pick."))
                 Text("Same draft in both modes: switch from the top of the wizard whenever you like.")
                     .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                if request.botId == nil, session.surfaceGate.allows(.createBot) {
+                    otherStarts
+                }
+                Color.clear.frame(height: 1).id("wizard-choose-end")
                 if !drafts.isEmpty {
                     Text("Drafts to finish")
                         .font(Theme.Font.bodyMedium).foregroundStyle(Theme.textPrimary)
@@ -198,6 +265,106 @@ struct BotWizardView: View {
             .frame(maxWidth: 720)
             .frame(maxWidth: .infinity)
         }
+        #if DEBUG
+        .task {
+            guard Self.parityStep == "choose-bottom" else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            proxy.scrollTo("wizard-choose-end", anchor: .bottom)
+        }
+        #endif
+        }
+    }
+
+    /// Guided with no bot to guide and no engine: what to do, not a grey card.
+    private var needsEngineCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 44, height: 44)
+                .background(Theme.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Text("Guided with my bot").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+            needsEngineText
+        }
+        .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+        .padding(18)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("wizard-choose-guided-needs-engine")
+    }
+
+    private var needsEngineText: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Connect an engine first: the bot that guides you needs one to answer. You can also fill it in yourself right now.")
+                .font(Theme.Font.body).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.leading)
+            Button { other = .engines } label: {
+                Label("Connect an engine", systemImage: "powerplug")
+                    .font(Theme.Font.bodyMedium)
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+                    .background(Theme.cardRaised, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("wizard-connect-engine")
+        }
+    }
+
+    /// What Create New Bot offered, as secondary options: nothing is lost.
+    private var otherStarts: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Other ways to start")
+                .font(Theme.Font.bodyMedium).foregroundStyle(Theme.textPrimary)
+                .padding(.top, 8)
+            VStack(spacing: 0) {
+                otherRow("Start from a template", hint: String(localized: "The full form: a preset or a built-in role, then every setting under More options."),
+                         icon: "rectangle.stack", id: "template") { showingForm = true }
+                if BotTemplatesEntry.destination(gate: session.surfaceGate) != nil {
+                    Divider().padding(.leading, 46)
+                    otherRow("Browse templates", hint: nil, icon: "books.vertical", id: "browse") { other = .browse }
+                }
+                Divider().padding(.leading, 46)
+                otherRow("Import from Grok Bot or Claude Code", hint: nil, icon: "square.and.arrow.down", id: "import-agent") { other = .importAgent }
+                Divider().padding(.leading, 46)
+                otherRow("Import a zip file", hint: nil, icon: "doc.zipper", id: "import-zip") { other = .importZip }
+                Divider().padding(.leading, 46)
+                otherRow("Quick create", hint: String(localized: "Creates the bot at once with this server's defaults. You can change everything afterwards."),
+                         icon: "bolt", id: "quick", busy: busy == "quick") { Task { await quickCreate() } }
+            }
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("wizard-other-starts")
+    }
+
+    private func otherRow(_ title: LocalizedStringKey, hint: String?, icon: String, id: String, busy working: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Group {
+                    if working { ProgressView() } else { Image(systemName: icon) }
+                }
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
+                    if let hint {
+                        Text(hint).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy != nil)
+        .accessibilityIdentifier("wizard-other-\(id)")
     }
 
     private func modeCard(mode: WizardMode, icon: String, title: String, body: String) -> some View {
@@ -262,9 +429,11 @@ struct BotWizardView: View {
                 if let guide {
                     ProgressView()
                     Text("Starting the conversation with \(guide.name)…").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                } else if needsEngine {
+                    needsEngineText
                 } else {
-                    Text("No other bot can guide you yet. Fill in the steps, they are the same.")
-                        .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                    ProgressView()
+                    Text("Creating your Bot designer…").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer()
             }
@@ -291,18 +460,21 @@ struct BotWizardView: View {
     }
 
     private func footer(draft: WizardDraft) -> some View {
-        VStack(spacing: 10) {
-            ProgressView(value: Double(draft.step.index + 1), total: Double(WizardStep.allCases.count))
+        // the draft's own path: Tools and apps only when it is on it
+        let path = draft.path
+        let current = (path.firstIndex(of: draft.step) ?? 0) + 1
+        return VStack(spacing: 10) {
+            ProgressView(value: Double(current), total: Double(path.count))
                 .tint(Theme.accent)
-                .accessibilityLabel(Text("Step \(draft.step.index + 1) of \(WizardStep.allCases.count)"))
+                .accessibilityLabel(Text("Step \(current) of \(path.count)"))
             HStack {
-                if let previous = draft.step.previous {
+                if let previous = draft.previousStep {
                     Button("Back") { Task { await patch(WizardPatch(step: previous)) } }
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("wizard-back")
                 }
                 Spacer()
-                Text("Step \(draft.step.index + 1) of \(WizardStep.allCases.count)")
+                Text("Step \(current) of \(path.count)")
                     .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
                 Spacer()
                 if draft.step != .recap {
@@ -310,7 +482,7 @@ struct BotWizardView: View {
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("wizard-skip")
                     Button {
-                        if let next = draft.step.next { Task { await patch(WizardPatch(step: next)) } }
+                        if let next = draft.nextStep() { Task { await patch(WizardPatch(step: next)) } }
                     } label: {
                         Text("Continue").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.primaryInk)
                             .padding(.horizontal, 18).frame(height: 38)
@@ -354,8 +526,44 @@ struct BotWizardView: View {
         } else {
             drafts = (try? await client.wizardDrafts()) ?? []
             phase = .choose
+            #if DEBUG
+            if let step = Self.parityStep, step != "choose", step != "choose-bottom" { await parityWalk(step) }
+            #endif
         }
     }
+
+    #if DEBUG
+    /// The parity harness's wizard captures (`-parityWizardStep rules`).
+    static var parityStep: String? {
+        ParityLaunch.current == nil ? nil : UserDefaults.standard.string(forKey: "parityWizardStep")
+    }
+
+    /// A new bot on the Email triage role, walked to one step, as a person
+    /// would fill it in.
+    private func parityWalk(_ step: String) async {
+        await choose(step == "guided" ? .guided : .manual)
+        await patch(WizardPatch(roleId: WizardRole.inbox.rawValue))
+        if let bot {
+            var change = BotProfilePatch()
+            change.title = WizardRole.inbox.defaults.title
+            change.description = WizardRole.inbox.defaults.description
+            _ = await session.updateProfile(change, for: bot)
+        }
+        if step == "rules" || step == "recap", let client, let id = botId {
+            for (ruleId, effect) in [("ask-send-mail", WizardRuleEffect.ask), ("deny-payment", .deny)] {
+                guard let rule = suggestions.rules.first(where: { $0.id == ruleId }),
+                      let made = try? await client.addWizardRule(botId: id, suggestion: rule, effect: effect) else { continue }
+                await patch(WizardPatch(rules: [ruleId: made]))
+            }
+        }
+        switch step {
+        case "rules": await patch(WizardPatch(step: .rules))
+        case "tools": await patch(WizardPatch(step: .tools))
+        case "recap": await patch(WizardPatch(step: .recap, routines: ["inbox-triage"]))
+        default: break
+        }
+    }
+    #endif
 
     private func choose(_ mode: WizardMode, resume: WizardDraft? = nil) async {
         guard busy == nil, let client else { return }
@@ -366,7 +574,8 @@ struct BotWizardView: View {
             var target: Bot? = resume.flatMap { session.state.bot($0.botId) } ?? bot
             var origin = resume?.origin ?? (request.botId != nil ? "redo" : "new")
             if target == nil {
-                let created = try await client.createWizardBot()
+                // no MCP server by default, where this person may set it
+                let created = try await client.createWizardBot(noMcp: session.surfaceGate.canEditBotField(ownerUserId: nil, "mcpServers", draft: true))
                 session.applyProfileBot(created)
                 target = created
                 origin = "new"
@@ -407,15 +616,42 @@ struct BotWizardView: View {
     }
 
     /// The guided conversation: a new topic with the guide, opened by the
-    /// person's own request naming the bot. Once per draft.
+    /// person's own request naming the bot. Once per draft. With no bot to
+    /// guide, the Bot designer is created first (the person's own bot).
     private func ensureGuided(_ current: WizardDraft, name: String) async {
-        guard current.guidedThreadId == nil, let guide, let client else { return }
+        guard current.guidedThreadId == nil, let client else { return }
         do {
-            let threadId = try await client.openWizardThread(botId: guide.id, title: String(localized: "Setting up \(name)"))
-            await patch(WizardPatch(guidedBotId: guide.id, guidedThreadId: threadId))
-            _ = try await client.send(text: BotWizardRules.kickoff(botName: name, french: french), toBot: guide.id, threadId: threadId)
+            var leader = guide
+            if leader == nil {
+                guard engineReady else { return }
+                let designer = try await client.createDesignerBot(french: french)
+                session.applyProfileBot(designer)
+                leader = designer
+            }
+            guard let leader else { return }
+            let threadId = try await client.openWizardThread(botId: leader.id, title: String(localized: "Setting up \(name)"))
+            await patch(WizardPatch(guidedBotId: leader.id, guidedThreadId: threadId))
+            _ = try await client.send(text: BotWizardRules.kickoff(botName: name, french: french), toBot: leader.id, threadId: threadId)
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// The engines the computer lists, for the guided card's verdict. A
+    /// failed read gives no verdict (never a block on a guess).
+    private func readInstances() async {
+        guard let client else { return }
+        if let read = try? await client.instances() { instances = read }
+    }
+
+    /// Other ways to start's Quick create: the server's defaults, no step.
+    private func quickCreate() async {
+        guard busy == nil else { return }
+        busy = "quick"
+        defer { busy = nil }
+        if let created = await session.createBot() {
+            Haptics.success()
+            close(created.id)
         }
     }
 
@@ -489,9 +725,35 @@ func stepIntro(_ step: WizardStep) -> String {
     switch step {
     case .identity: String(localized: "Its name, its look, its role in one sentence, and whether it is your Primary Bot.")
     case .soul: String(localized: "How it talks and what it does. Answer what you like, then let it write its soul from your answers.")
-    case .rules: String(localized: "One approval level, and the rules that come first. Tick the ones that suit this bot.")
-    case .tools: String(localized: "Only what this role uses: apps, MCP servers, the computer and the browser.")
+    case .rules: String(localized: "One approval level, and the rules that come first. Pick an effect for the ones that suit this bot.")
+    case .tools: String(localized: "Optional: apps, MCP servers, the computer and the browser. By default the Workspace is on Auto, no MCP server is used, and apps connect later.")
     case .routines: String(localized: "Optional: a few routines suggested for this role. Tick the ones you want.")
-    case .recap: String(localized: "Everything on one page, still editable. Try it with a first message before you finish.")
+    case .recap: String(localized: "A summary of your bot. Edit opens a step; try it with a first message before you finish.")
+    }
+}
+
+/// "Connect an engine": the computer's model providers, over the wizard,
+/// so the person comes back to it once one is signed in.
+struct WizardEnginesSheet: View {
+    let close: () -> Void
+    @StateObject private var shell = DesktopShellModel()
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    DesktopEnginesSettings()
+                }
+                .padding(20)
+            }
+            .background(Theme.bg.ignoresSafeArea())
+            .navigationTitle(String(localized: "Model providers and accounts"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done", action: close) }
+            }
+        }
+        .environmentObject(shell)
+        .accessibilityIdentifier("wizard-engines")
     }
 }

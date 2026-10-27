@@ -194,9 +194,6 @@ struct DesktopComposePicker: View {
         case .createBot:
             actionRow(icon: .plus, title: String(localized: "Create new Bot"), shortcut: shortcut, selected: selected,
                       disabled: false, id: "create-bot") { activate(row) }
-        case .createBotWizard:
-            actionRow(icon: .plus, title: String(localized: "Create a bot with the wizard"), shortcut: shortcut, selected: selected,
-                      disabled: false, id: "create-bot-wizard") { activate(row) }
         case .createGroup:
             actionRow(icon: .users, title: groupLabel, shortcut: shortcut, selected: selected,
                       disabled: mode == .group && picked.isEmpty, id: "create-group") { activate(row) }
@@ -317,9 +314,8 @@ struct DesktopComposePicker: View {
     private func activate(_ row: DesktopComposeTo.Row) {
         switch row {
         case .createBot:
-            model.menu = nil
-            model.modal = .newBot
-        case .createBotWizard:
+            // 2026-10-27: Create a bot, the wizard's first screen (the full
+            // form stays under its Other ways to start)
             model.menu = nil
             BotWizardPresenter.shared.open()
         case .createGroup:

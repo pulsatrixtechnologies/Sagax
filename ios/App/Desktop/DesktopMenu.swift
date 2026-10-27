@@ -627,8 +627,9 @@ struct DesktopSidebarMenus {
     func new() -> [DesktopMenuEntry] {
         var out: [DesktopMenuEntry] = []
         if gate.allows(.createBot) {
+            // 2026-10-27: Create a bot, the wizard's first screen
             out.append(DesktopMenuEntry(id: "new-bot", title: String(localized: "Create new Bot"), icon: .plus, kind: .action {
-                model.modal = .newBot
+                BotWizardPresenter.shared.open()
             }))
         }
         out.append(DesktopMenuEntry(id: "new-group", title: String(localized: "Create group chat"), icon: .users, kind: .action {
