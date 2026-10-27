@@ -37,11 +37,21 @@ on:
         required: false
         type: boolean
         default: false
+      server_image_tag:
+        description: "Only (re)publish the public server image for this published release tag (pulsa-vX.Y.Z); nothing else runs"
+        required: false
+        type: string
   push:
     branches:
       - main
     paths:
       - package.json
+  # A Sagax release is published from the build Mac (`gh release create
+  # pulsa-vX.Y.Z`, docs/releasing.md). That publish is the one moment the
+  # public server image is built: once per release, never on a push or a PR
+  # (JC 2026-10-14). Every other job skips this event.
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -55,21 +65,29 @@ jobs:
       sha: ${{ steps.pin.outputs.sha }}
       version: ${{ steps.pin.outputs.version }}
       should_release: ${{ steps.pin.outputs.should_release }}
+      server_image: ${{ steps.image.outputs.server_image }}
+      image_version: ${{ steps.image.outputs.image_version }}
+      image_latest: ${{ steps.image.outputs.image_latest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ inputs.server_image_tag || inputs.ref || github.sha }}
           persist-credentials: false
           fetch-depth: 0
       - id: pin
         env:
           BEFORE: ${{ github.event.before }}
+          SERVER_IMAGE_TAG: ${{ inputs.server_image_tag }}
         run: |
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           current=$(node -p "require('./package.json').version")
           echo "version=$current" >> "$GITHUB_OUTPUT"
           should_release=true
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
+          # A published release, or a dispatch that names an image tag, builds
+          # the server image only (job server-image), never the installers.
+          if [ "$GITHUB_EVENT_NAME" = release ] || [ -n "$SERVER_IMAGE_TAG" ]; then
+            should_release=false
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
             git cat-file -e "$BEFORE:package.json" 2>/dev/null || {
               echo "::error::cannot verify the version before this push; refusing to start a release"
               exit 1
@@ -81,6 +99,39 @@ jobs:
             fi
           fi
           echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+      - id: image
+        name: Decide whether this run publishes the public server image
+        # Sagax tags are pulsa-vX.Y.Z (docs/releasing.md). The image is tagged
+        # X.Y.Z, X.Y and sha-<commit>; `latest` only for the repository's
+        # latest full release, so a pre-release never becomes the default.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          SERVER_IMAGE_TAG: ${{ inputs.server_image_tag }}
+        run: |
+          tag="${SERVER_IMAGE_TAG:-$EVENT_TAG}"
+          server_image=false
+          image_version=
+          image_latest=false
+          if [[ "$tag" =~ ^pulsa-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            image_version="${BASH_REMATCH[1]}"
+            fork=$(node -p "require('./package.json').forkVersion")
+            if [ "$fork" != "$image_version" ]; then
+              echo "::error::$tag checks out forkVersion $fork, not $image_version"
+              exit 1
+            fi
+            server_image=true
+            latest=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null || true)
+            if [ "$PRERELEASE" != true ] && [ "$latest" = "$tag" ]; then image_latest=true; fi
+          elif [ -n "$tag" ]; then
+            echo "$tag is not a Sagax release tag (pulsa-vX.Y.Z); no server image"
+          fi
+          {
+            echo "server_image=$server_image"
+            echo "image_version=$image_version"
+            echo "image_latest=$image_latest"
+          } >> "$GITHUB_OUTPUT"
       - name: Refuse to overwrite a published canonical release
         if: steps.pin.outputs.should_release == 'true'
         env:
@@ -715,3 +766,144 @@ jobs:
             GH_TOKEN="$CANONICAL_TOKEN" gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "v$VERSION"
           done
           echo "dispatched the npm package and Docker image publishes on v$VERSION"
+
+  server-image:
+    # The public, multi-arch Sagax server image that install.sh and
+    # `sagax update` pull (docs/install.md). Built once per published release
+    # from the tagged commit, with the repository's own Dockerfile and no
+    # deployment's configuration: no domain, no keys, no organization. The
+    # same gates as docker.yml's publish: push by digest to staging, scan both
+    # platforms, zero critical and high findings, keyless signature and
+    # vulnerability attestation, then the public tags move to that digest.
+    # It never blocks or slows the installers: nothing here depends on it.
+    name: Public server image (GHCR, amd64 + arm64)
+    needs: prepare
+    if: needs.prepare.outputs.server_image == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: server-image-${{ needs.prepare.outputs.image_version }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - name: Name the image
+        # GHCR refuses a mixed-case path; github.repository keeps Sagax.
+        run: |
+          {
+            echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}"
+            echo "STAGING=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/sagax-staging"
+            echo "SAGAX_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_ENV"
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+      - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.75.0
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.image_version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.image_version }}
+            type=raw,value=sha-${{ needs.prepare.outputs.sha }}
+            type=raw,value=latest,enable=${{ needs.prepare.outputs.image_latest == 'true' }}
+          flavor: |
+            latest=false
+          labels: |
+            org.opencontainers.image.title=Sagax server
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.image_version }}
+      - id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          outputs: type=image,name=${{ env.STAGING }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            io.sagax.engine-set=all
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.sha }}
+            org.opencontainers.image.created=${{ env.SAGAX_BUILD_TIME }}
+          build-args: |
+            ENGINE_SET=all
+            SAGAX_REQUIRE_ENGINES=1
+            SAGAX_COMMIT_SHA=${{ needs.prepare.outputs.sha }}
+            SAGAX_BUILD_TIME=${{ env.SAGAX_BUILD_TIME }}
+          cache-from: type=gha,scope=server-image
+          cache-to: type=gha,mode=max,scope=server-image
+      - name: Assemble exception list
+        env:
+          TRIVYIGNORE_PRIVATE: ${{ secrets.TRIVYIGNORE_PRIVATE }}
+        run: |
+          set -euo pipefail
+          node scripts/combine-trivyignore.mjs \
+            --private-env TRIVYIGNORE_PRIVATE \
+            --out /tmp/trivyignore.ci
+      - name: Scan both platforms
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          for platform in linux/amd64 linux/arm64; do
+            name="${platform#linux/}"
+            trivy image \
+              --format cosign-vuln \
+              --scanners vuln \
+              --ignorefile /tmp/trivyignore.ci \
+              --timeout 30m \
+              --platform "$platform" \
+              --output "vuln-${name}.json" \
+              "${STAGING}@${DIGEST}"
+          done
+      - name: Require zero critical and high findings
+        run: node scripts/vuln-attestation.mjs vuln.json vuln-amd64.json vuln-arm64.json
+      - name: Sign the image by digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${STAGING}@${DIGEST}"
+      - name: Attest the vulnerability scan
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign attest --yes --type vuln --predicate vuln.json "${STAGING}@${DIGEST}"
+      - name: Promote the signed image to its public tags
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          first=
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            if [ -z "$first" ]; then
+              first=$tag
+              # Copies the manifest, the signature and the attestation.
+              cosign copy "${STAGING}@${DIGEST}" "$tag"
+            else
+              docker buildx imagetools create -t "$tag" "${IMAGE}@${DIGEST}"
+            fi
+          done <<< "$TAGS"
+          [ -n "$first" ]
+          got=$(docker buildx imagetools inspect "$first" | awk '/^Digest:/ {print $2; exit}')
+          [ "$got" = "$DIGEST" ]
+          inspect=$(docker buildx imagetools inspect "$first")
+          for platform in linux/amd64 linux/arm64; do
+            grep -q "Platform: *${platform}\$" <<<"$inspect" || { echo "::error::$first has no ${platform} image"; exit 1; }
+          done
+          echo "published ${IMAGE}:${{ needs.prepare.outputs.image_version }} (${DIGEST})"

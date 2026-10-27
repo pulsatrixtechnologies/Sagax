@@ -257,6 +257,27 @@ The npm package is published separately (below). It is not a desktop
 updater artifact and is not attached to the GitHub release: releases are
 immutable once published, and their body is the desktop update notes.
 
+## Public server image: `ghcr.io/pulsatrixtechnologies/sagax`
+
+Publishing the release (`gh release create pulsa-vX.Y.Z`, step 5) fires
+`release.yml` on its `release: published` event. Only the `server-image` job
+runs for that event (every installer job skips it), so this is the one CI
+run of the release. It builds the repository's `Dockerfile` at the tagged
+commit for `linux/amd64` and `linux/arm64`, pushes it by digest to
+`sagax-staging`, scans both platforms (zero critical and high findings,
+exceptions from the `TRIVYIGNORE_PRIVATE` secret as in `docker.yml`), signs it
+keyless, attests the scan, then points `X.Y.Z`, `X.Y`, `sha-<commit>` and,
+for the latest full release, `latest` at that digest. No job waits for it,
+so it never holds up the desktop release. It carries no deployment's
+configuration. `install.sh` and `sagax update` pull it (docs/install.md).
+
+- To publish or republish the image of an already published release: Actions
+  > Release > Run workflow with `server_image_tag` = `pulsa-vX.Y.Z`. Nothing
+  else runs.
+- One-time setup: after the first publish, set the `sagax` package to
+  **Public** in the organization's Packages settings, and link it to this
+  repository, so anyone can pull it without signing in.
+
 ## npm package: `@pulsatrixtechnologies/sagax`
 
 The CLI and server are published to npm as `@pulsatrixtechnologies/sagax` (command

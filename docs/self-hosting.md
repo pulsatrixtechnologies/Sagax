@@ -15,6 +15,9 @@ The npm CLI supports a managed public tunnel, Tailscale, or your own proxy.
 > session. If several people use one server, read
 > [Loopback trust](#loopback-trust-owner-or-service) below.
 
+Quickest with Docker: one line installs the public image and prints a
+sign-in link ([Install the Sagax server in one line](install.md)).
+
 Step by step, for a server you do not have yet: [Deploy Sagax on a
 VPS](deploy-vps.md) walks through the three ways in (public address, own
 domain, Tailscale), signing engines in, pairing, keeping it running,
@@ -220,9 +223,11 @@ docker compose up -d --build
 ```
 
 The compose file builds the image from your checkout (the repository root is
-the build context) and names it `sagax:local`. There is no public prebuilt
-Sagax image to pull yet. To stay on one release, check out its tag before you
-build (`git checkout pulsa-v<version>`).
+the build context) and names it `sagax:local`. To stay on one release, check
+out its tag before you build (`git checkout pulsa-v<version>`). Without a
+checkout, the public prebuilt image `ghcr.io/pulsatrixtechnologies/sagax`
+(amd64 and arm64, one per release) is what the one-line installer runs:
+see [Install the Sagax server in one line](install.md).
 
 Then sign the engine CLIs in **inside the container** (their logins live on
 the `data` volume, so they survive restarts and image upgrades) and mint a
@@ -1734,9 +1739,14 @@ stopped, then start it again. A foreground server runs whatever the checkout
 holds: `git checkout vX.Y.Z`, build, then `pnpm omb serve`.
 
 ```sh
-git pull && docker compose -f deploy/docker-compose.yml up -d --build   # Docker
+sagax update                                                            # one-line install (docs/install.md)
+git pull && docker compose -f deploy/docker-compose.yml up -d --build   # Docker from a checkout
 git pull && pnpm install && pnpm build && sudo systemctl restart openmausbot   # from source
 ```
+
+`sagax update [X.Y.Z]` pulls that release of the public image (the latest by
+default), restarts, and waits until the server answers; the server applies
+its data migrations when it starts. `sagax update <previous>` goes back.
 
 Routines and queued work survive restarts. A teammate turn in flight runs
 again once at the next start, told to check what it already did, and the bot

@@ -20,8 +20,9 @@ services:
         NATIVE_ENGINES: ${NATIVE_ENGINES:-}
         SAGAX_COMMIT_SHA: ${SAGAX_COMMIT_SHA:-}
         SAGAX_BUILD_TIME: ${SAGAX_BUILD_TIME:-}
-    # Built from this checkout (build.context is the repository root); there
-    # is no published image to pull yet. The local name only labels the build.
+    # Built from this checkout (build.context is the repository root). The
+    # local name only labels the build. The published image is what the
+    # one-line installer runs instead (install.sh, docs/install.md).
     image: sagax:local
     restart: unless-stopped
     # The bots' browsers (docs/browser-packaging.md, "Process hygiene"): an
