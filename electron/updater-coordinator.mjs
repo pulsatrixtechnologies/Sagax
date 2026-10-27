@@ -6,6 +6,11 @@
 // describing what is left to do, which the card renders.
 import { updateErrorMessage, updateErrorNeedsPerson } from "./update-errors.mjs";
 
+/** Idle deadline for the native macOS staging pass. Every download-progress
+ * resets it, so a transfer that is still moving bytes is never a hang.
+ * Large staging needs more than the old five minutes. */
+export const NATIVE_PREPARE_TIMEOUT_MS = 20 * 60 * 1000;
+
 // The feed's releaseNotes: a string (the latest GitHub release body) or one
 // { version, note } per skipped version when fullChangelog is on. Anything
 // else is dropped so the renderer only ever sees text.
@@ -84,7 +89,7 @@ export function createUpdaterCoordinator(
     // needs far more than the old five minutes. The watchdog is reset by every
     // download-progress, so this is an idle deadline, never a wall clock on a
     // transfer that is still moving bytes.
-    prepareTimeoutMs = 20 * 60 * 1000,
+    prepareTimeoutMs = NATIVE_PREPARE_TIMEOUT_MS,
   } = {},
 ) {
   // The update the state shows, and the body the release API gave for it.

@@ -43,10 +43,6 @@ export const ALLOWED = [
     test: (match, around) => /^milind-soni$/i.test(match) && /BLOCKED_GITHUB_OWNERS = Object\.freeze\(\["milind-soni"\]\)/.test(around),
   },
   {
-    why: "Grok import's toolkit slug map (shared/grok-import.ts): the word PostHog as a slug, no host",
-    test: (match, around) => /^posthog$/i.test(match) && /sentry:\s*["`]sentry["`],\s*posthog:\s*["`]posthog["`]/.test(around),
-  },
-  {
     // Server side only: the push hub of an organization server (server/push/)
     // sends to the person's own phones, and only when SAGAX_APNS_* is set.
     // The same text in dist/ (the desktop renderer) or electron/ fails.
