@@ -15,8 +15,10 @@ import {
   modelForTier,
   nextInChain,
   orderEngines,
+  pickEquivalentModel,
   pickOrchestrationModel,
   pickWorkerModel,
+  tierOfModel,
   type AutoEngine,
   type CatalogFacts,
   type CatalogLookup,
@@ -410,5 +412,25 @@ describe("the fast model (#1209)", () => {
   it("falls back when the engine does not offer it or a refusal took it out", () => {
     expect(pickOrchestrationModel({ ...request, engines: [claude] }, { text: "hello there" }).selection.instanceId).toBe("claude");
     expect(pickOrchestrationModel({ ...request, skip: [{ instanceId: "ollama", model: "local-fast" }] }, { text: "hello there" }).selection.instanceId).toBe("claude");
+  });
+});
+
+describe("#1154: the same tier on another engine", () => {
+  it("reads the tier a model stands for", () => {
+    expect(tierOfModel("grokAgent", "grok-4.7")).toBe("top");
+    expect(tierOfModel("grokAgent", "grok-4-fast")).toBe("fast");
+    expect(tierOfModel("claudeAgent", "claude-opus-5")).toBe("top");
+    expect(tierOfModel("claudeAgent", "claude-sonnet-5")).toBe("coding");
+    expect(tierOfModel("claudeAgent", "claude-haiku-4-5")).toBe("fast");
+    expect(tierOfModel("openai-compat", "local-big")).toBeNull();
+  });
+
+  it("picks the payer's engine model of that tier, or nothing", () => {
+    const base = { instanceId: "grok-build", model: "grok-4.7" };
+    const top = pickEquivalentModel({ base, engines: [claude], catalog }, "top");
+    expect(top?.selection).toEqual({ instanceId: "claude", model: "claude-fable-5-1" });
+    const fast = pickEquivalentModel({ base, engines: [claude], catalog }, "fast");
+    expect(fast?.selection.model).toBe("claude-haiku-4-5");
+    expect(pickEquivalentModel({ base, engines: [], catalog }, "top")).toBeNull();
   });
 });

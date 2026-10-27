@@ -591,6 +591,29 @@ export function pickWorkerModel(request: AutoRequest & { task: TaskInput }): Aut
   return pickTier(request, CLASS_TIER[taskClass], "worker", taskClass);
 }
 
+/** #1154: the tier a model stands for on its engine (the first pattern of
+ * TIER_TABLE it matches; on a tie, top before coding before fast), or null
+ * for a family or a model the table does not know. */
+export function tierOfModel(driverKind: string, modelId: string): Tier | null {
+  const family = familyOfModel(driverKind, modelId);
+  if (!family) return null;
+  const id = bareModelId(modelId);
+  let best: { tier: Tier; index: number } | null = null;
+  for (const tier of ["top", "coding", "fast"] as const) {
+    const index = TIER_TABLE[family][tier].findIndex((pattern) => pattern.test(id));
+    if (index >= 0 && (!best || index < best.index)) best = { tier, index };
+  }
+  return best?.tier ?? null;
+}
+
+/** #1154: the model of the same tier as the bot's on the engines the paying
+ * person can use (the bot's own first, then ENGINE_ORDER), for a turn whose
+ * own model cannot run for that person. Null when no engine has one. */
+export function pickEquivalentModel(request: AutoRequest, tier: Tier): AutoPick | null {
+  const pick = pickTier(request, tier, "orchestration");
+  return pick.reason === "base" ? null : pick;
+}
+
 /** The next entry of a pick's chain after a refusal, or null when the chain
  * is spent. Auto climbs once; the caller marks the retry. */
 export function nextInChain(pick: Pick<AutoPick, "chain">, refused: AutoChainEntry): AutoChainEntry | null {

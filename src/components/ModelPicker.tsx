@@ -24,6 +24,7 @@ import { EngineGroupLabel } from "./EngineGroupLabel";
 import { ModelMenuItem, ModelSearchList, type ModelMenuRow, type ModelMenuSection } from "./ModelMenu";
 import { ChatGptPlanStatus } from "./ChatGptPlanStatus";
 import { cn } from "@/lib/cn";
+import { equivalentOfferedModel } from "../../shared/payable-model";
 import { DescribedRow, PillSelect } from "./SettingsPrimitives";
 import { useMenuMotion } from "./MenuMotion";
 import { useAdvancedMode } from "@/lib/interface-mode";
@@ -999,8 +1000,14 @@ export function ModelPicker({
   // The model the engine really ran, when it is not the pick (the person's own session does not offer it).
   const fallback = state.modelFallbacks?.[threadId ?? bot.threadId];
   const fallbackNow = fallback && fallback.instanceId === selection.instanceId && fallback.requested === selection.model ? fallback : undefined;
+  /** The model a fallback ran on, with its engine when it is another one (#1154). */
+  const ranOnName = (ran: { instanceId: string; actual: string; actualInstanceId?: string }): string => {
+    const engine = state.instances.find((candidate) => candidate.instanceId === (ran.actualInstanceId ?? ran.instanceId));
+    const label = engine?.models.options.find((o) => o.id === ran.actual)?.label ?? ran.actual;
+    return ran.actualInstanceId && engine ? `${engine.displayName} · ${label}` : label;
+  };
   const fallbackLine = fallbackNow
-    ? `\n${t("model.ranOn", { model: active?.models.options.find((o) => o.id === fallbackNow.actual)?.label ?? fallbackNow.actual })}`
+    ? `\n${t("model.ranOn", { model: ranOnName(fallbackNow) })}`
     : "";
 
   const closeAll = () => {
@@ -1149,9 +1156,12 @@ export function ModelPicker({
     const current = !autoOn && follows !== true && sameEngine && selection.model === runs.id;
     const variant = sameEngine && selection.model === runs.id ? selectedVariantLabel : undefined;
     // The engine ran the last turn on another model than this pick: say so on the row.
-    const ranOn = sameEngine && fallback?.requested === runs.id ? fallback.actual : undefined;
+    const ranOn = sameEngine && fallback?.requested === runs.id ? fallback : undefined;
     const mine = orgMode ? accountModels.get(instance.instanceId) : undefined;
     const notMine = Boolean(mine && !option.custom && !mine.has(runs.id));
+    // #1154: the model the person's turns use instead (the server's same rule).
+    const insteadId = notMine && mine ? equivalentOfferedModel(runs.id, [...mine]) : null;
+    const instead = insteadId ? instance.models.options.find((o) => o.id === insteadId)?.label ?? insteadId : null;
     const levels = instance.capabilities?.effortLevels;
     const effortLevel = instance.capabilities?.modelVariants ? undefined
       : effortForModel(sameEngine ? selection.effort : undefined, runs, levels) ?? modelDefaultEffort(runs, levels);
@@ -1172,8 +1182,8 @@ export function ModelPicker({
       ].filter((tag): tag is string => Boolean(tag)),
       current,
       unavailable,
-      ...(ranOn ? { warning: t("model.ranOn", { model: instance.models.options.find((o) => o.id === ranOn)?.label ?? ranOn }) }
-        : notMine ? { warning: t("model.notOnAccount") } : {}),
+      ...(ranOn ? { warning: t("model.ranOn", { model: ranOnName(ranOn) }) }
+        : notMine ? { warning: instead ? t("model.notOnAccountRunsOn", { model: instead }) : t("model.notOnAccount") } : {}),
       keywords: [instance.displayName, twin?.label, twin?.id].filter(Boolean).join(" "),
     };
   };

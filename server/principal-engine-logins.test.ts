@@ -1,5 +1,5 @@
 // Slice 4 (D10): each person's own engine sign-in, in their own directory.
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -125,6 +125,20 @@ describe("PrincipalEngineLogins", () => {
     await originalFinish();
     expect(await logins.status(A, "codex", "s", started.flowId!)).toMatchObject({ phase: "succeeded" });
     expect(logins.signedIn(A, "codex")).toBe(true);
+  });
+});
+
+describe("knownAccountModels (#1154)", () => {
+  it("reads the catalog the person's own Grok wrote in their home, never someone else's", () => {
+    const { logins } = harness();
+    expect(logins.knownAccountModels(A, "grok")).toBeNull();
+    const dir = logins.loginDir(A, "grokAgent");
+    mkdirSync(join(dir, ".grok"), { recursive: true });
+    writeFileSync(join(dir, LOGIN_MARKER), "{}");
+    writeFileSync(join(dir, ".grok", "models_cache.json"), JSON.stringify({ models: { "grok-4.6": { info: { name: "Grok 4.6" } }, "grok-4.5": { info: { name: "Grok 4.5" } } } }));
+    expect(logins.knownAccountModels(A, "grok")?.toSorted()).toEqual(["grok-4.5", "grok-4.6"]);
+    expect(logins.knownAccountModels(B, "grok")).toBeNull();
+    expect(logins.knownAccountModels(A, "claude")).toBeNull();
   });
 });
 

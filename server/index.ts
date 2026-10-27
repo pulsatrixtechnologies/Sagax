@@ -196,7 +196,7 @@ import { DataFailure } from "./data/types.ts";
 import { DATA_DOWNLOADS_DIR } from "./data/engine.ts";
 import { TeamComputers, teamComputerAssignment, teamComputerCreate, teamComputerOwner, type TeamComputerRecord } from "./team-computers.ts";
 import { instructionsLead } from "../shared/instructions-lead.ts";
-import { isEffortLevel, ROUTINE_CONVERSATION_HEADER, type BotVisibility, type CardAnswerer, type ResolvedSender, type SteerQueueReason, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
+import { isEffortLevel, ROUTINE_CONVERSATION_HEADER, type BotVisibility, type CardAnswerer, type EffortLevel, type ResolvedSender, type SteerQueueReason, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
 import { isPersistentQuestionCard, QUESTION_DISMISS_MESSAGE, shouldSettleRequestCard } from "../shared/ask-question.ts";
 import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts";
 import { resumeOpening, resumeRefusal, subagentRequest } from "./subagent-threads.ts";
@@ -387,7 +387,7 @@ import { createLimitFailoverHost } from "./limit-failover-host.ts";
 import { limitFailoverText, resetClockText } from "../shared/limit-failover.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
 import { turnRunFor, type TurnRun } from "./turn-run.ts";
-import { attachmentsInText, autoModelRecord, bareModelId, explainPick, familyOfModel, isModelRefusal, nextInChain, pickOrchestrationModel, pickWorkerModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
+import { attachmentsInText, autoModelRecord, bareModelId, concrete as concreteSelection, explainPick, familyOfModel, isModelRefusal, nextInChain, pickEquivalentModel, pickOrchestrationModel, pickWorkerModel, tierOfModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
 import type { AutoModelRecord } from "../shared/auto-model.ts";
 import { decodeGeneratedImage } from "./generated-image.ts";
 import {
@@ -858,6 +858,7 @@ import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { namedTeammates, prewarmWindowMs, ThreadPrewarm } from "./thread-prewarm.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
 import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
+import { routeTurnModel, type TurnModelSwitch } from "./turn-model-routing.ts";
 import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
 import { turnTrace } from "./turn-trace.ts";
@@ -1396,6 +1397,18 @@ function liveSessionPerson(sessionId: string): string | null {
 const desktopBridges = new DesktopBridges(liveSessionPerson, Date.now, join(DATA_DIR, "desktop-computer-names.json"));
 /** The last model fallback per thread (session.model-fallback). */
 const modelFallbackByThread = new Map<string, { requested: string; actual: string }>();
+/** #1154: the last model fallback per person, engine and picked model, so a
+ * new conversation's first turn names the model that really answers. */
+const modelFallbackByPayer = new Map<string, string>();
+const modelFallbackPayerKey = (threadId: string, instanceId: string | undefined, requested: string): string =>
+  `${turnMediaPrincipal(threadId) ?? "server"}\0${instanceId ?? ""}\0${requested}`;
+/** #1154: a turn moved off the bot's model because it cannot run for the
+ * person who pays (see speakerTurnSelection). Shown once the turn starts. */
+const turnModelSwitches = new Map<string, { botId: string; requested: ModelSelection; actual: ModelSelection; principalId?: string }>();
+/** #1154: what a room turn that left the bot's model ran on, for its reply. */
+const roomTurnRuns = new Map<string, { botId: string; run: TurnRun }>();
+/** #1154: the pick a direct turn left (speakerTurnSelection), for its reply's line. */
+const turnModelRequested = new Map<string, ModelSelection>();
 const desktopLocalModels = new DesktopLocalModels(DATA_DIR, desktopBridges, (person) => personDisplayName(principals.byId(person)) || "");
 setDesktopInjectModels(() => desktopLocalModels.modelsFor(null));
 const desktopTunnels = new DesktopTunnels(liveSessionPerson);
@@ -14909,7 +14922,8 @@ bus.subscribe((event: RuntimeEvent) => {
     // reaction stands alone and no bubble is written.
     const reactor = bot?.id ?? speaker?.botId;
     if (reactor && echoesOwnReaction(event.threadId, reactor, spoken.text)) return;
-    const ran = bot ? turnRunByThread.get(event.threadId) : undefined;
+    const roomRan = !bot && speaker ? roomTurnRuns.get(event.threadId) : undefined;
+    const ran = bot ? turnRunByThread.get(event.threadId) : roomRan && roomRan.botId === speaker?.botId ? roomRan.run : undefined;
     pushMessage({ role: "bot", kind: "text", text: spoken.text, turnId, ...(ran ? { turnRun: ran } : {}) });
     lastReply.set(event.threadId, spoken.text);
   };
@@ -14923,11 +14937,25 @@ bus.subscribe((event: RuntimeEvent) => {
       directTurnDispatchClaims.get(event.threadId)?.id === requestOwner.generation) requestOwner.turnId = event.turnId;
   const liveTurnId = event.turnId ?? liveTurnByThread.get(event.threadId);
   switch (event.type) {
-    case "turn.started":
+    case "turn.started": {
       turnStartedAt.set(event.threadId, Date.now());
+      // #1154: the turn left the bot's model for one its payer can run. The
+      // model menu and the composer show it as a fallback of this thread.
+      const switched = turnModelSwitches.get(event.threadId);
+      if (switched && event.turnId) {
+        turnModelSwitches.delete(event.threadId);
+        broadcast({ kind: "runtime", event: {
+          eventId: `${event.eventId}-model-switch`, provider: event.provider, providerInstanceId: switched.requested.instanceId,
+          threadId: event.threadId, turnId: event.turnId, createdAt: event.createdAt,
+          type: "session.model-fallback", requested: switched.requested.model, actual: switched.actual.model,
+          ...(switched.actual.instanceId !== switched.requested.instanceId ? { actualInstanceId: switched.actual.instanceId } : {}),
+          ...(switched.principalId ? { principalId: switched.principalId } : {}),
+        } });
+      }
       // A stop that never saw its turn.completed must not pass for this turn.
       stoppedTurns.delete(event.threadId);
       break;
+    }
     case "session.started":
       if (bot && event.sessionId && event.providerInstanceId) {
         store.setResumeCursor(bot.id, event.providerInstanceId, event.sessionId, event.threadId);
@@ -15927,6 +15955,17 @@ bus.subscribe((event: RuntimeEvent) => {
       // #1154: the model the engine really ran, kept so the next turn's
       // prompt tells the bot (modelPrompt) instead of the pick it keeps.
       modelFallbackByThread.set(event.threadId, { requested: event.requested, actual: event.actual });
+      modelFallbackByPayer.set(modelFallbackPayerKey(event.threadId, event.providerInstanceId, event.requested), event.actual);
+      // The reply's line names the model that wrote it, and the pick it replaced.
+      {
+        const room = bot ? undefined : roomTurnRuns.get(event.threadId);
+        const ran = bot ? turnRunByThread.get(event.threadId) : room?.run;
+        if (ran && ran.model === event.requested) {
+          const next: TurnRun = { ...ran, model: event.actual, requested: ran.requested ?? { instanceId: ran.instanceId, model: event.requested } };
+          if (bot) turnRunByThread.set(event.threadId, next);
+          else if (room) roomTurnRuns.set(event.threadId, { ...room, run: next });
+        }
+      }
       break;
     case "runtime.notice":
       // An engine's technical note (an MCP server skipped, a session
@@ -19411,11 +19450,21 @@ async function startTurn(
       );
       if (selection !== bot.modelSelection) bot = { ...bot, modelSelection: selection };
     }
-    // #1137 "each person pays": the bot's model cannot run for this person,
-    // so it answers with their default model (their first starred model
-    // they can run), for this turn only.
-    const ownDefault = speakerDefaultSelection(bot, earlySpeaker);
-    if (ownDefault) bot = { ...bot, modelSelection: ownDefault };
+    // #1137, #1154: the bot's model cannot run for the person who pays (no
+    // credentials of theirs for its engine, or their session does not offer
+    // it), so it answers with a model they can run, for this turn only.
+    if (!opts?.warmOnly && !opts?.cardContinuation) await warmPayerAccountModels(bot, earlySpeaker);
+    const switched = speakerTurnSelection(bot, earlySpeaker);
+    if (switched && !opts?.warmOnly) {
+      bot = { ...bot, modelSelection: switched.selection };
+      turnModelSwitches.set(threadId, { botId: bot.id, requested: switched.requested, actual: switched.selection, ...(person ? { principalId: person } : {}) });
+      turnModelRequested.set(threadId, switched.requested);
+    } else if (switched) {
+      bot = { ...bot, modelSelection: switched.selection };
+    } else {
+      turnModelSwitches.delete(threadId);
+      turnModelRequested.delete(threadId);
+    }
   }
   // Auto (docs/plans/2026-10-08-auto-model.md): this turn's model. A
   // person's turn runs on the orchestration model; work a bot handed out
@@ -19653,7 +19702,7 @@ async function startTurn(
   const variant = bot.modelSelection.variant;
   // What this turn runs on, kept for the bot text it writes (a quiet line
   // under the reply shows it). A warm-up writes no reply.
-  if (!warmOnly) turnRunByThread.set(threadId, turnRunFor(bot.modelSelection));
+  if (!warmOnly) turnRunByThread.set(threadId, turnRunFor(bot.modelSelection, turnModelRequested.get(threadId)));
   assertModelVariantSupported({ variant, effort: askedEffort }, instance.adapter.capabilities);
   // A selection can be persisted while its engine is offline. Re-check when
   // the engine returns so an old or unsupported value never reaches a CLI.
@@ -20938,7 +20987,7 @@ async function startTurn(
       const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         { id: "ai-client", label: "AI client", text: aiClientThreadPerson(bot, threadId, commsDepth, userMessage) },
-        { id: "model", label: "Model", text: onCall ? "" : modelPrompt({ engine: engineDisplayName(instance), model: String(model ?? ""), actual: modelFallbackByThread.get(threadId)?.requested === model ? modelFallbackByThread.get(threadId)?.actual : undefined }) },
+        { id: "model", label: "Model", text: onCall ? "" : modelPrompt({ engine: engineDisplayName(instance), model: String(model ?? ""), actual: modelFallbackByThread.get(threadId)?.requested === model ? modelFallbackByThread.get(threadId)?.actual : modelFallbackByPayer.get(modelFallbackPayerKey(threadId, instance.instanceId, String(model ?? ""))) }) },
         // first after the soul: the block names agent tools, so it only goes
         // to a turn whose engine actually mounted them (setupMode is already
         // false when they are not — see agentsMounted above)
@@ -23662,11 +23711,23 @@ async function runGroupMemberTurn(
     role: orchestration ? "worker" : "orchestration",
     text: [operation?.goalRun?.goal, orchestration?.turnInstructions].filter(Boolean).join("\n"),
   }) : null;
-  // #1137 "each person pays": the bot's model cannot run for the person who
-  // wrote, so the bot answers with their default model, for this turn only.
-  const roomOwnDefault = !roomAuto && roomAutoSpeakerId
-    ? speakerDefaultSelection(bot, { origin: "person", principalId: roomAutoSpeakerId, groupId })
+  // #1137, #1154: the bot's model cannot run for the person who wrote (no
+  // credentials of theirs for its engine, or their session does not offer
+  // it), so the bot answers with a model they can run, for this turn only.
+  if (!roomAuto && roomAutoSpeakerId && !cardContinuation) {
+    await warmPayerAccountModels(bot, { origin: "person", principalId: roomAutoSpeakerId, groupId });
+  }
+  const roomSwitch = !roomAuto && roomAutoSpeakerId
+    ? speakerTurnSelection(bot, { origin: "person", principalId: roomAutoSpeakerId, groupId })
     : null;
+  const roomOwnDefault = roomSwitch?.selection ?? null;
+  if (roomSwitch) {
+    turnModelSwitches.set(threadId, { botId: bot.id, requested: roomSwitch.requested, actual: roomSwitch.selection, principalId: roomAutoSpeakerId!.trim().toLowerCase() });
+    roomTurnRuns.set(threadId, { botId: bot.id, run: turnRunFor(roomSwitch.selection, roomSwitch.requested) });
+  } else {
+    turnModelSwitches.delete(threadId);
+    roomTurnRuns.delete(threadId);
+  }
   const roomSelection = roomAuto?.pick.selection ?? roomOwnDefault ?? bot.modelSelection;
   /** The selection this room turn runs: the Auto pick while the bot is still
    * on Auto, or the person's own default model (#1137). */
@@ -24347,8 +24408,12 @@ async function runGroupMemberTurn(
   }
   // a room turn carries no reach contributions (owner-only, turn-reach.ts)
   forgetTurnReach(threadId);
+  // #1154: the model this room turn really runs on (the person's own one
+  // when the bot's cannot run for them), so the bot never names another.
+  const roomModel = roomTurnSelection(readyBot).model;
   const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
+    { id: "model", label: "Model", text: modelPrompt({ engine: engineDisplayName(instance), model: roomModel, actual: modelFallbackByPayer.get(modelFallbackPayerKey(threadId, instance.instanceId, roomModel)) }) },
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE }) : "" },
     { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
@@ -27274,27 +27339,92 @@ function ownerModelOfflineRefusal(bot: BotRecord, instance: { instanceId: string
     ...(speaker.origin === "person" && speaker.principalId ? { speakerPrincipalId: speaker.principalId } : {}),
   };
 }
-/** #1137 "each person pays": the bot's model cannot run for this person
- * (no credentials of theirs for its engine, or a local model of someone
- * else's computer that is not shared with them), so the bot answers with
- * that person's default model: the first model they starred that they can
- * run. Null when the bot's own model runs for them, or nothing does. */
-function speakerDefaultSelection(bot: BotRecord, speaker: TurnSpeaker): ModelSelection | null {
+/** #1154: the model ids the session that pays for this turn on this engine
+ * offers, when they are known without starting the engine: the payer's own
+ * Grok subscription. Null when unknown (a key, the organization's account,
+ * an engine that lists nothing per person): nothing is replaced on a guess. */
+function payerAccountModels(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): string[] | null {
+  if (IDENTITY.kind !== "perspicax" || !engineLogins) return null;
+  const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+  if (!plan.ok || plan.via !== "subscription" || !plan.payerPrincipalId) return null;
+  return engineLogins.knownAccountModels(plan.payerPrincipalId, instance.instanceId);
+}
+/** #1154: before a person's turn, ask their own session which models it
+ * offers when nothing is known yet (one engine start, then cached), so the
+ * first turn after a pick already runs, and names, the model that answers. */
+async function warmPayerAccountModels(bot: BotRecord, speaker: TurnSpeaker): Promise<void> {
+  if (IDENTITY.kind !== "perspicax" || !engineLogins || speaker.origin !== "person" || bot.modelSelection.auto === true) return;
+  const instance = registry.get(bot.modelSelection.instanceId);
+  if (!instance || instance.driverKind !== "grokAgent") return;
+  const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+  if (!plan.ok || plan.via !== "subscription" || !plan.payerPrincipalId) return;
+  if (engineLogins.knownAccountModels(plan.payerPrincipalId, instance.instanceId)) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    engineLogins.accountModels(plan.payerPrincipalId, instance.instanceId).catch(() => null),
+    new Promise((done) => { timer = setTimeout(done, 8_000); timer.unref?.(); }),
+  ]);
+  if (timer) clearTimeout(timer);
+}
+/** #1137, #1154: the model a person's turn runs on, so every turn of a bot
+ * (a group included) runs on an engine the person who pays can pay for
+ * (server/turn-model-routing.ts has the order). Null when the bot's model
+ * runs as it is, or nothing does (the access card then says what to do).
+ * A routine never comes here: it runs on its owner's credentials. */
+function speakerTurnSelection(bot: BotRecord, speaker: TurnSpeaker): TurnModelSwitch | null {
   if (IDENTITY.kind !== "perspicax" || bot.modelSelection.auto === true || speaker.origin !== "person") return null;
   const person = speaker.principalId?.trim().toLowerCase() || "";
   const owner = effectiveBotOwner(bot).trim().toLowerCase();
-  if (!person || !isPrincipalId(person) || person === owner) return null;
-  if (speakerPayerMode(bot, speaker) !== "speaker") return null;
-  const runs = (selection: ModelSelection): boolean => {
-    const instance = registry.get(selection.instanceId);
-    if (!instance?.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance) || orgEngineAllowRefusal(instance.instanceId)) return false;
-    if (isDesktopInjectModel(selection.model) && !desktopLocalModels.available(person, selection.model)) return false;
-    return !orgEngineRefusal(bot, instance, speaker);
+  if (!person || !isPrincipalId(person)) return null;
+  const requested = bot.modelSelection;
+  const ownerSpeaks = person === owner;
+  const effortOk = (level: EffortLevel, instanceId: string): boolean => {
+    const levels = registry.get(instanceId)?.adapter.capabilities.effortLevels;
+    return Array.isArray(levels) && effortAcceptedByEngine(level, levels);
   };
-  if (runs(bot.modelSelection)) return null;
-  const starred = starredModelSelections(userPreferenceStore.get(person).preferences["sagax.modelFavorites.v1"]);
-  const pick = starred.find((selection) => !sameModelSelection(selection, bot.modelSelection) && runs(selection));
-  return pick ? { instanceId: pick.instanceId, model: pick.model } : null;
+  const ownPick = ownerSpeaks ? undefined : applyViewerModelOverride(requested, viewerBotOverrideStore.getOne(person, bot.id), effortOk);
+  return routeTurnModel({
+    requested,
+    ownerSpeaks,
+    speakerPays: speakerPayerMode(bot, speaker) === "speaker",
+    access: (selection) => {
+      const instance = registry.get(selection.instanceId);
+      if (!instance?.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance) || orgEngineAllowRefusal(instance.instanceId)) return false;
+      if (hostedModels && !hostedModels.allows({ instanceId: instance.instanceId, model: selection.model })) return false;
+      if (isDesktopInjectModel(selection.model) && !desktopLocalModels.available(person, selection.model)) return false;
+      return !orgEngineRefusal(bot, instance, speaker);
+    },
+    offered: (selection) => {
+      const instance = registry.get(selection.instanceId);
+      const ids = instance ? payerAccountModels(bot, instance, speaker) : null;
+      return ids && hostedModels ? ids.filter((model) => hostedModels!.allows({ instanceId: selection.instanceId, model })) : ids;
+    },
+    exempt: (selection) => isDesktopInjectModel(selection.model)
+      || registry.get(selection.instanceId)?.models.options.find((option) => option.id === selection.model)?.custom === true,
+    effortOn: (selection, model) => {
+      const instance = registry.get(selection.instanceId);
+      const levels = instance?.models.options.find((option) => option.id === model)?.effortLevels ?? instance?.adapter.capabilities.effortLevels ?? [];
+      return selection.effort && effortAcceptedByEngine(selection.effort, levels) ? selection.effort : undefined;
+    },
+    ...(ownPick && ownPick !== requested ? { ownPick: { instanceId: ownPick.instanceId, model: ownPick.model, ...(ownPick.effort ? { effort: ownPick.effort } : {}) } } : {}),
+    starred: starredModelSelections(userPreferenceStore.get(person).preferences["sagax.modelFavorites.v1"])
+      .map((selection) => ({ instanceId: selection.instanceId, model: selection.model })),
+    equivalent: () => {
+      // The same tier on another engine this person can pay for (Auto's
+      // table and candidates: the bot's approval level must hold there).
+      const base = registry.get(requested.instanceId);
+      const tier = (base ? tierOfModel(base.driverKind, requested.model) : null) ?? "top";
+      const engines = autoEnginesFor(bot, speaker).flatMap((engine) => {
+        if (engine.instanceId === requested.instanceId) return [];
+        const offered = payerAccountModels(bot, { instanceId: engine.instanceId, driverKind: engine.driverKind }, speaker);
+        if (!offered) return [engine];
+        const options = engine.models.options.filter((option) => offered.includes(option.id));
+        return options.length ? [{ ...engine, models: { ...engine.models, options } }] : [];
+      });
+      const pick = engines.length ? pickEquivalentModel({ base: concreteSelection(requested), engines, catalog: autoCatalogLookup }, tier) : null;
+      return pick ? concreteSelection(pick.selection) : null;
+    },
+  });
 }
 /** 2026-10-16 the people an organization's provided account serves.
  * An admin (and this server's own operator) runs every engine on it; a

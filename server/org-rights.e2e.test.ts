@@ -16,7 +16,8 @@
 //         their bots and on bots shared with them; for someone else only
 //         when its owner pays (#1137: the default on the owner's own
 //         subscription), and each person pays (with their own default
-//         model) once the owner chooses so
+//         model, else the same tier on an engine they can pay for, #1154)
+//         once the owner chooses so
 //   S4-10 a section shared with a team; a room with a team
 //   S4-12 a shared section opens only what its owners consented to; a
 //         read-only member changes nothing; moving rooms needs moderators
@@ -391,26 +392,51 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect((await botOf(bob, w.id))?.messages.some((m) => m.kind === "access")).toBe(false);
     // isolation: bob's conversation stays his; erin paying gives her no read of it
     expect(JSON.stringify((await botOf(erin, w.id))?.messages ?? [])).not.toContain("hi wendy");
-    // erin chooses that each person pays: bob's next message is his to pay,
-    // and the card says so, names the bot and offers to choose a model
+    // erin chooses that each person pays: bob's next message is his to pay.
+    // He cannot pay for Codex, so (#1154) the bot answers him on the model
+    // of the same tier on an engine he can pay for (Claude, his own key),
+    // and the reply names the pick it left. No card: one is shown only when
+    // nothing he can pay for runs (server/turn-model-routing.test.ts).
     expect((await api("PATCH", `/api/bots/${w.id}/runtime-settings`, erin, { turnPayer: "speaker" })).status).toBe(200);
+    const textReplies = async () => ((await botOf(bob, w.id))?.messages ?? []).filter((m) => m.role === "bot" && m.kind === "text" && m.text);
+    const firstReplies = (await textReplies()).length;
+    rmSync(dump, { force: true });
     expect((await api("POST", `/api/bots/${w.id}/messages`, bob, { text: "hi again wendy" })).status).toBe(202);
-    const card = await waitFor(async () => (await botOf(bob, w.id))?.messages.find((m) => m.kind === "access") ?? null);
-    expect(card.access).toMatchObject({ reason: "no_access", payer: "speaker", payerPrincipalId: ids.bob, cause: "no_credentials", subscriptionSignIn: true, keysUrl: `${idp.issuer}/console/credentials?kind=model`, botName: "Wendy", speakerPays: true });
-    expect(card.access).not.toHaveProperty("ownerPays");
+    await waitFor(async () => (await textReplies()).length > firstReplies, 30_000);
+    const moved = (await textReplies()).at(-1) as unknown as { turnRun?: { instanceId: string; requested?: { instanceId: string; model: string } } };
+    expect(moved.turnRun).toMatchObject({ instanceId: "claude", requested: { instanceId: "codex" } });
+    await waitFor(async () => existsSync(dump));
+    expect((JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env.ANTHROPIC_API_KEY).toBe(BOB_KEY);
+    expect((await botOf(bob, w.id))?.messages.some((m) => m.kind === "access")).toBe(false);
     // with a default model of his own (his first starred one: Claude, on his
-    // own key), the bot answers bob on it instead of the card
+    // own key), the bot answers bob on that one first
     const starred = await api("PATCH", "/api/me/preferences", bob, { set: { "sagax.modelFavorites.v1": JSON.stringify([["claude", "fake-model"]]) } });
     expect(starred.status, starred.text).toBe(200);
     const accessCards = async () => ((await botOf(bob, w.id))?.messages ?? []).filter((m) => m.kind === "access").length;
-    const repliesBefore = ((await botOf(bob, w.id))?.messages ?? []).filter((m) => m.role === "bot" && m.kind === "text" && m.text).length;
+    const repliesBefore = (await textReplies()).length;
     const cardsBefore = await accessCards();
     rmSync(dump, { force: true });
     expect((await api("POST", `/api/bots/${w.id}/messages`, bob, { text: "third time wendy" })).status).toBe(202);
-    await waitFor(async () => ((await botOf(bob, w.id))?.messages ?? []).filter((m) => m.role === "bot" && m.kind === "text" && m.text).length > repliesBefore, 30_000);
+    await waitFor(async () => (await textReplies()).length > repliesBefore, 30_000);
+    expect(((await textReplies()).at(-1) as unknown as { turnRun?: unknown }).turnRun).toMatchObject({ instanceId: "claude", model: "fake-model", requested: { instanceId: "codex" } });
     await waitFor(async () => existsSync(dump));
     expect((JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env.ANTHROPIC_API_KEY).toBe(BOB_KEY);
     expect(await accessCards()).toBe(cardsBefore);
+    // #1154 in a group: bob's turn there runs on a model he pays for too,
+    // and the reply names the bot's model it left
+    const room = await api("POST", "/api/groups", erin, { name: "Wendy room", memberIds: [w.id], humanIds: [ids.bob], setup: { bulletin: "", defaultResponder: { kind: "everyone" } } });
+    expect(room.status, room.text).toBe(201);
+    const roomThread = room.body.group.threadId as string;
+    rmSync(dump, { force: true });
+    const posted = await api("POST", `/api/groups/${room.body.group.id}/messages`, bob, { text: "hi room", threadId: roomThread });
+    expect(posted.status, posted.text).toBeLessThan(300);
+    const roomReply = await waitFor(async () => {
+      const read = await api("GET", `/api/threads/${roomThread}/messages`, bob);
+      return ((read.body.messages ?? []) as Array<{ role: string; kind: string; text?: string; turnRun?: unknown }>).find((m) => m.role === "bot" && m.kind === "text" && m.text) ?? null;
+    }, 30_000);
+    expect(roomReply.turnRun).toMatchObject({ instanceId: "claude", model: "fake-model", requested: { instanceId: "codex", model: "fake-model" } });
+    await waitFor(async () => existsSync(dump));
+    expect((JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env.ANTHROPIC_API_KEY).toBe(BOB_KEY);
     expect(log).not.toContain(BOB_KEY);
     expect((await api("POST", "/api/me/engines/codex/login/sign-out", erin, {})).status).toBe(200);
     expect(existsSync(join(dir, ".pulsabot-login.json"))).toBe(false);
