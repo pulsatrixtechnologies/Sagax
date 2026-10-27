@@ -432,6 +432,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/projects\\/order$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/queue\\/([\\w-]+)\\/steer$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"DELETE","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/queue\\/([\\w-]+)$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false,"destructive":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/reach-me(\\/telegram)?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/read$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/requests\\/([A-Za-z0-9_-]{16,80})(\\/interrupt)?$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/requests\\/([A-Za-z0-9_-]{16,80})(\\/interrupt)?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},

@@ -68,6 +68,14 @@ const PROFILE_FIELD_LABEL: Record<ProfileRequestField, LocaleKey> = {
  * so a chat that ends on the card never says one thing in each place. */
 /** What happens to a card waiting for an organization admin, naming the
  * admins when the server knows them. */
+/** A "Me joindre" channel's name on a settled card. */
+function reachChannelName(channel: string | undefined): string {
+  if (channel === "sms") return t("botPanel.reachMe.sms.label");
+  if (channel === "teams") return "Teams";
+  if (channel === "telegram") return "Telegram";
+  return t("botPanel.reachMe.label");
+}
+
 export function adminWillAnswerLine(adminNames: readonly string[] | undefined): string {
   const names = (adminNames ?? []).map((name) => name.trim()).filter(Boolean);
   return names.length
@@ -414,7 +422,9 @@ export function ApprovalCard({
       // decided by the model reviewer under the person's rule (lot A1)
       : card.answeredBy?.via === "auto-review" ? <span className="text-ink-tertiary" data-answered-via="auto-review">· {t("approval.status.byAutoReview")}</span>
       // answered by the person's Primary Bot at their request (sagax_approvals)
-      : card.answeredBy?.via === "primary-bot" ? <span className="text-ink-tertiary" data-answered-via="primary-bot">· {t("approval.status.viaBot", { name: card.answeredBy.bot ?? t("approval.someone") })}</span> : null;
+      : card.answeredBy?.via === "primary-bot" ? <span className="text-ink-tertiary" data-answered-via="primary-bot">· {t("approval.status.viaBot", { name: card.answeredBy.bot ?? t("approval.someone") })}</span>
+      // answered from the person's "Me joindre" channel (a text, Telegram, Teams)
+      : card.answeredBy?.via === "reach-me" ? <span className="text-ink-tertiary" data-answered-via="reach-me">· {t("approval.status.viaChannel", { name: reachChannelName(card.answeredBy.channel) })}</span> : null;
   const isRoutineRequest = Boolean(card.routineRequest);
   const isSkillRequest = Boolean(card.skillRequest);
   const isProfileRequest = Boolean(card.profileRequest);

@@ -493,6 +493,26 @@ add({
   key: "account.botOverride", family: "account", target: "bot", value: "object", label: "Your own model and notifications for a shared bot", where: "Shared bot > Model / Notifications",
   write: (ids, v) => ({ method: "PUT", path: `/api/me/bot-overrides/${enc(ids.target!)}`, body: v }),
 });
+// 2026-10-26 "Me joindre": how this bot reaches the person speaking outside
+// the app (push, sms with their own number, teams, telegram) and when (hours
+// in a time zone). The person's own setting: no admin. The Telegram token
+// is a secret: the policy's secret class asks on a card.
+add({
+  key: "notifications.reachMe", family: "notifications", target: "bot", value: "object",
+  label: "Reach me: how this bot reaches you outside the app when a card waits on you ({ channels: push|sms|teams|telegram|whatsapp, smsNumber?: your own E.164 number, hours: { always: true } or { always: false, timeZone, ranges: [{ days: 0-6, start: HH:MM, end: HH:MM }] } })",
+  where: "Bot panel > Overview > Reach me",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/reach-me`, field: "settings" }),
+  write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/reach-me`, body: v }),
+});
+add({
+  key: "notifications.reachMeTelegram", family: "notifications", target: "bot", value: "object",
+  label: "Reach me by Telegram: connect your own bot ({ token } from BotFather; the answer gives the t.me link to press Start), or { disconnect: true }",
+  where: "Bot panel > Overview > Reach me > Telegram",
+  write: (ids, v) => (v && typeof v === "object" && (v as { disconnect?: unknown }).disconnect === true)
+    ? { method: "DELETE", path: `/api/bots/${enc(ids.target!)}/reach-me/telegram` }
+    : { method: "POST", path: `/api/bots/${enc(ids.target!)}/reach-me/telegram`, body: v },
+  classes: (value, ctx) => carriesSecret(value) ? ["secret"] : serverWide(value, { ...ctx, organization: false }),
+});
 add({
   key: "account.timeZone", family: "account", target: "none", value: "string", label: "Your time zone (an IANA zone such as America/Toronto; turns automatic detection off)", where: "Settings > General > Appearance > Time zone",
   read: () => ({ path: "/api/settings/bot", field: "settings.timeZone" }),

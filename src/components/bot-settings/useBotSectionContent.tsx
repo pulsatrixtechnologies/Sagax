@@ -20,6 +20,7 @@ import { WorksOnSetting } from "../computer/WorksOnSetting";
 import { useBotSettingsDerived } from "./useBotSettingsDerived";
 import { OverviewSection } from "./OverviewSection";
 import { BotEmailAddress } from "./BotEmailAddress";
+import { BotReachMe } from "./BotReachMe";
 import { SlackSection } from "./SlackSection";
 import { SoulSection } from "./SoulSection";
 import { SkillsSection } from "./SkillsSection";
@@ -251,6 +252,8 @@ export function useBotSectionContent(bot: Bot, {
           <div className="flex flex-col gap-5">
             {/* B21 (2026-10-21): the bot's own address from the Perspicax relay; nothing when none */}
             <BotEmailAddress botId={bot.id} />
+            {/* 2026-10-26 "Me joindre": how this bot reaches the person outside the app, and when */}
+            <BotReachMe botId={bot.id} />
             <OverviewSection
               overview={overview}
               refreshError={overview !== null && overviewError}

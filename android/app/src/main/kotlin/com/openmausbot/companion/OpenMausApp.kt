@@ -128,6 +128,9 @@ class OpenMausApp : Application() {
             alwaysOn = { AlwaysOnConnectionState.active },
         )
 
+        // Closed-app pushes (FCM, 2026-10-26): only when the build carries Firebase's identifiers.
+        com.openmausbot.companion.push.FcmSetup.start(this)
+
         alwaysOn = AlwaysOnPreferences(this)
         // Covers the case where the process was relaunched (not booted) while
         // the setting was on — e.g. the OS killed the whole app under memory
