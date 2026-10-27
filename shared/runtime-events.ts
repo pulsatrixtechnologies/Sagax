@@ -48,6 +48,10 @@ export type RuntimeEvent = RuntimeEventBase &
         rebuilt?: boolean;
       }
     | { type: "session.model-variants"; model: string; variants: ModelVariantState }
+    /** The engine runs this turn on `actual`, not the model that was picked
+     * (`requested`): the person's own session does not offer the pick. Sent on
+     * every turn it happens, and kept out of the thread; the model menu shows it. */
+    | { type: "session.model-fallback"; requested: string; actual: string }
     | { type: "session.exited"; reason?: string }
     /** A model call took in input steered into the running turn (the
      * `steerId` the harness gave Adapter.steer). */

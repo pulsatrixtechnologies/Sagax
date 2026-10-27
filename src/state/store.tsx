@@ -1290,6 +1290,8 @@ export interface AppState {
   instances: InstanceInfo[];
   /** Session discoveries stay with their conversation and never enter persisted settings. */
   modelVariantSessions: Record<string, ModelVariantSession>;
+  /** Per thread: the model the engine really ran, when it is not the one picked (the person's own session does not offer the pick). Cleared when the next turn starts. */
+  modelFallbacks?: Record<string, { instanceId: string; requested: string; actual: string }>;
   config: ConfigStatus | null;
   /** The Live call the harness is running, including a call that has just
    * ended; null when no call is known. Follows `live.call` SSE frames and
@@ -2829,6 +2831,16 @@ export function reducer(state: AppState, action: Action): AppState {
     case "modelVariantRuntime": {
       const event = action.event;
       if (!event.turnId) return state;
+      if (event.type === "session.model-fallback") {
+        if (!event.providerInstanceId) return state;
+        return { ...state, modelFallbacks: { ...state.modelFallbacks, [event.threadId]: {
+          instanceId: event.providerInstanceId, requested: event.requested, actual: event.actual,
+        } } };
+      }
+      if (event.type === "turn.started" && state.modelFallbacks?.[event.threadId]) {
+        const { [event.threadId]: _gone, ...rest } = state.modelFallbacks;
+        state = { ...state, modelFallbacks: rest };
+      }
       const owner = state.bots.find((bot) => bot.threadId === event.threadId || bot.tasks?.some((task) => task.threadId === event.threadId));
       if (!owner) return state;
       const selection = currentTaskBot(owner, event.threadId).modelSelection;
@@ -3931,7 +3943,7 @@ export async function loadSnapshotBoundary<Key extends string>(
  * through the model-variant fold; streamed deltas go to the stream buffer
  * below, which only Sagax's Live call and floating bots read. */
 export function runtimeFrameAction(event: RuntimeEvent): Action | null {
-  return event.type === "turn.started" || event.type === "session.model-variants" || event.type === "turn.completed"
+  return event.type === "turn.started" || event.type === "session.model-variants" || event.type === "session.model-fallback" || event.type === "turn.completed"
     ? { type: "modelVariantRuntime", event }
     : null;
 }

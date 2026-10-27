@@ -994,6 +994,13 @@ export function ModelPicker({
     : profile.modelSelection.model;
   const ownModelThreads = threadsOnOwnModel(profile.modelSelection, profile.tasks ?? []).length;
 
+  // The model the engine really ran, when it is not the pick (the person's own session does not offer it).
+  const fallback = state.modelFallbacks?.[threadId ?? bot.threadId];
+  const fallbackNow = fallback && fallback.instanceId === selection.instanceId && fallback.requested === selection.model ? fallback : undefined;
+  const fallbackLine = fallbackNow
+    ? `\n${t("model.ranOn", { model: active?.models.options.find((o) => o.id === fallbackNow.actual)?.label ?? fallbackNow.actual })}`
+    : "";
+
   const closeAll = () => {
     setMenu(false);
     closeWindow();
@@ -1117,6 +1124,8 @@ export function ModelPicker({
     const runs = onTwin && twin ? twin : option;
     const current = !autoOn && follows !== true && sameEngine && selection.model === runs.id;
     const variant = sameEngine && selection.model === runs.id ? selectedVariantLabel : undefined;
+    // The engine ran the last turn on another model than this pick: say so on the row.
+    const ranOn = sameEngine && fallback?.requested === runs.id ? fallback.actual : undefined;
     const levels = instance.capabilities?.effortLevels;
     const effortLevel = instance.capabilities?.modelVariants ? undefined
       : effortForModel(sameEngine ? selection.effort : undefined, runs, levels) ?? modelDefaultEffort(runs, levels);
@@ -1137,6 +1146,7 @@ export function ModelPicker({
       ].filter((tag): tag is string => Boolean(tag)),
       current,
       unavailable,
+      ...(ranOn ? { warning: t("model.ranOn", { model: instance.models.options.find((o) => o.id === ranOn)?.label ?? ranOn }) } : {}),
       keywords: [instance.displayName, twin?.label, twin?.id].filter(Boolean).join(" "),
     };
   };
@@ -1285,7 +1295,7 @@ export function ModelPicker({
         modelProvider(active, selection.model) ? ` · ${modelProvider(active, selection.model)}` : ""
       }${selectedVariantLabel ? ` · ${selectedVariantLabel}` : advanced && selection.effort ? ` · ${t("model.effort.summary", { level: effortLabel(selection.effort) })}` : ""}`
     : selection.model;
-  const followLine = follows === true ? `\n${t("model.followsBot", { name: profile.name })}` : follows === false ? `\n${t("model.ownModel")}` : "";
+  const followLine = (follows === true ? `\n${t("model.followsBot", { name: profile.name })}` : follows === false ? `\n${t("model.ownModel")}` : "") + fallbackLine;
 
   // The composer chip reads the same in Simple and Advanced, effort included.
   const composerLabel = autoOn ? autoChipLabel(autoRecord) : [
