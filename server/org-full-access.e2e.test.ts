@@ -14,9 +14,9 @@
 //         on at once, with their own rights; without their words it waits
 //   FA-5  (PR #934 review) the Full grant from the bot's settings names the
 //         open conversation: the owner's own thread follows and is audited;
-//         another person's thread is never named or audited. Since #1169 the
-//         level is the bot's: every thread follows it, and the grant ends
-//         every thread's own exception
+//         another person's thread is never named or audited, and the level
+//         that person chose for their own conversation stays theirs. Since
+//         #1169 the level is the bot's: the owner's threads follow it
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -258,7 +258,7 @@ posixOnly("organization Full access", () => {
     await api("POST", `/api/bots/${ivy.id}/interrupt`, erin, { threadId: ivy.threadId });
   }, 60_000);
 
-  it("FA-5: the Full grant names and audits the owner's open thread, never another person's; every thread follows the bot (#1169)", async () => {
+  it("FA-5: the Full grant names and audits the owner's open thread, never another person's, whose own level stays (#1169)", async () => {
     await waitFor(async () => !(await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string; busy?: boolean }) => bot.id === zed.id)?.busy);
     // Alice (shared on Zed) has her own private thread on it
     const aliceThread = (await api("GET", `/api/bots`, alice)).body.bots.find((bot: { id: string }) => bot.id === zed.id)?.threadId as string;
@@ -276,14 +276,11 @@ posixOnly("organization Full access", () => {
     expect(await threadOf(alice, aliceThread)).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
 
     // the owner names another person's conversation: it is not named in the
-    // audit, and like every thread it follows the bot's new level (#1169)
+    // audit, and the level that person chose for it stays theirs
     const foreign = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full", threadId: aliceThread });
     expect(foreign.status, foreign.text).toBe(200);
     expect(await botMode(erin)).toBe("full");
-    const aliceAfter = await threadOf(alice, aliceThread);
-    expect(aliceAfter).toBeTruthy();
-    expect(aliceAfter?.approvalOwn).toBeUndefined();
-    expect(aliceAfter?.approvalMode).toBeUndefined();
+    expect(await threadOf(alice, aliceThread)).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
     expect(auditRows().some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === aliceThread)).toBe(false);
 
     // the owner's own open conversation follows and the change is audited with it

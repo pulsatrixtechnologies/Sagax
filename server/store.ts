@@ -2460,7 +2460,9 @@ export class Store {
     return bot;
   }
 
-  patchBot(id: string, patch: Partial<BotRecord>): BotRecord | null {
+  /** `actorPrincipalId`: the person changing the bot. A level another
+   * person chose for their own conversation on this bot stays theirs. */
+  patchBot(id: string, patch: Partial<BotRecord>, options: { actorPrincipalId?: string | null } = {}): BotRecord | null {
     const bot = this.bot(id);
     if (!bot) return null;
     if (Object.hasOwn(patch, "toolScope")) {
@@ -2484,7 +2486,12 @@ export class Store {
     // unavailable. Profile edits use the separate atomic path below.
     Object.assign(bot, patch);
     if (levelChanged) {
+      const actor = options.actorPrincipalId?.trim().toLowerCase();
       for (const task of bot.tasks ?? []) {
+        // Isolation between people (#934 review): the bot's new level never
+        // ends the level another person chose for their own conversation.
+        const threadOwner = task.ownerPrincipalId?.trim().toLowerCase();
+        if (actor && task.approvalOwn === "thread" && threadOwner && threadOwner !== actor) continue;
         delete task.approvalMode;
         delete task.autoApprove;
         delete task.approvalOwn;
