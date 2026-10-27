@@ -1,4 +1,4 @@
-// The picker's state dots (JC 2026-10-15): yellow while asleep or waking,
+// The picker's state dots (owner 2026-10-15): yellow while asleep or waking,
 // green when up, a quiet neutral grey when off, not started, or failed.
 import { afterEach, describe, expect, it } from "vitest";
 

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The bot panel's remote session row (JC 2026-10-22): computer name once,
+// The bot panel's remote session row (owner 2026-10-22): computer name once,
 // user / OS / end time under it, an X that asks twice, the chat card's
 // buttons, and a mini live picture that falls back to an icon.
 import { act, createElement } from "react";

@@ -48,7 +48,7 @@ posixOnly("a personal computer signed in to an organization", () => {
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "Local Name", email: "local@example.test" } }));
     writeFileSync(join(data, "owner-identity.json"), JSON.stringify({
-      origin: "https://sagax.example.test", principalId: "pr_org_person", name: "Alex Martin", email: "jc@example.test",
+      origin: "https://sagax.example.test", principalId: "pr_org_person", name: "Alex Martin", email: "owner@example.test",
       avatar: { version: VERSION, data: PNG.toString("base64") },
     }), { mode: 0o600 });
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
@@ -100,7 +100,7 @@ posixOnly("a personal computer signed in to an organization", () => {
 
   it("names the owner's organization identity and avatar in the session, and serves it", async () => {
     const session = await get(BASE, "/api/auth/session");
-    expect(session.body).toMatchObject({ kind: "loopback", name: "Alex Martin", email: "jc@example.test", computerName: expect.any(String) });
+    expect(session.body).toMatchObject({ kind: "loopback", name: "Alex Martin", email: "owner@example.test", computerName: expect.any(String) });
     expect(session.body.avatarUrl).toMatch(new RegExp(`^/api/people/[\\w-]+/avatar\\?v=${VERSION}$`));
     // the operator's own principal here, never the organization's id
     expect(session.body.avatarUrl).not.toContain("pr_org_person");
@@ -119,7 +119,7 @@ posixOnly("a personal computer signed in to an organization", () => {
   it("does the same through the companion sidecar, as the iPhone reaches this computer", async () => {
     const session = await get(SIDECAR, "/api/auth/session", DEVICE_TOKEN);
     expect(session.status).toBe(200);
-    expect(session.body).toMatchObject({ kind: "loopback", name: "Alex Martin", email: "jc@example.test" });
+    expect(session.body).toMatchObject({ kind: "loopback", name: "Alex Martin", email: "owner@example.test" });
     // the sidecar marks everything it relays private, no-store; the phone
     // keeps the image itself, keyed by the versioned URL
     await expectAvatar(SIDECAR, session.body.avatarUrl, DEVICE_TOKEN, "private, no-store");

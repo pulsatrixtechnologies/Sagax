@@ -38,7 +38,7 @@ describe("Full access delivery", () => {
 });
 
 describe("autoVerdict", () => {
-  it("answers a read-only command on the person's own computer at every level (JC 2026-10-20)", () => {
+  it("answers a read-only command on the person's own computer at every level (Owner 2026-10-20)", () => {
     const tool = "mcp__sagax-environment__run_command";
     for (const mode of ["ask", "edits", "auto", "custom"] as const) {
       expect(autoVerdict(mode, tool, { ownReadOnlyCommand: true }).source).toBe("own-read-only");
@@ -275,7 +275,7 @@ describe("delegatedApprovalMode", () => {
     expect(delegatedApprovalMode({ ...base, senderMode: "auto", recipientDriverKind: "codex" })).toBe("auto");
   });
   it("never passes Full access to a bot a member owns on an organization server", () => {
-    // JC rule until per-owner containers: an admin's Full Chief handing work
+    // Owner rule until per-owner containers: an admin's Full Chief handing work
     // to a member's bot, in a Direct or a room, leaves that bot on Ask.
     expect(delegatedApprovalMode({ ...base, recipientMemberOwned: true })).toBe("auto");
     expect(delegatedApprovalMode({ ...base, recipientMemberOwned: true, recipientMode: "auto" })).toBeNull();

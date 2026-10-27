@@ -1,4 +1,4 @@
-// "Toujours permettre" on every card (JC, 2026-10-19: "On doit avoir des
+// "Toujours permettre" on every card (owner, 2026-10-19: "On doit avoir des
 // cartes, mais avoir la possibilité de faire TOUJOURS le Toujours
 // permettre."), through a real isolated server and fake engines only:
 //
@@ -104,7 +104,7 @@ it("an engine's card: Always allow keeps the command's program, a security key s
     await expect.poll(() => existsSync(dump), { timeout: 15_000 }).toBe(true);
     socketPath = JSON.parse(readFileSync(dump, "utf8")).mcpConfig.mcpServers.ogb.args.at(-1) as string;
 
-    // ── the card offers Always allow with its scope: since 2026-10-20 (JC,
+    // ── the card offers Always allow with its scope: since 2026-10-20 (owner,
     // #875) a plain command line is kept as its one program in its folder
     const first = await ask("printf always-a");
     await shown(first.id);

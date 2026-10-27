@@ -22,7 +22,7 @@ describe("the settings registry", () => {
     for (const family of SETTING_FAMILIES) expect(SETTINGS.some((spec) => spec.family === family), family).toBe(true);
   });
 
-  it("covers what JC listed: model, effort, approval level, managed teams, title, persona, mascot, skin, routine schedule, conversation, on/off and engine", () => {
+  it("covers what Owner listed: model, effort, approval level, managed teams, title, persona, mascot, skin, routine schedule, conversation, on/off and engine", () => {
     for (const key of ["bot.model", "bot.effort", "bot.approvalMode", "bot.managedSections", "bot.title", "bot.persona", "bot.mascot", "bot.skin",
       "routine.schedule", "routine.thread", "routine.enabled", "routine.engine", "group.name", "section.bots", "org.allowFullAccess",
       "credentials.item", "connections.mcpServer", "notifications.sounds", "appearance.skin", "server.showToolCalls"]) {

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The composer's model menu nests (JC, 2026-10-14: "too many models
+// The composer's model menu nests (owner, 2026-10-14: "too many models
 // shown"): a short root (Auto, the bot's model, Favorites, one row per
 // provider), each provider's models in a submenu, a star on every model
 // row, and a search that lists every match flat.
@@ -209,7 +209,7 @@ describe("the nested model menu", () => {
   });
 });
 
-// Providers grouped (Simple since JC 2026-10-14, every mode since JC
+// Providers grouped (Simple since the owner 2026-10-14, every mode since the owner
 // 2026-10-18): one "Provider ›" row under Auto, the bot's model and the
 // favorites; the provider submenus stay inside it.
 describe("the nested model menu with the providers grouped", () => {

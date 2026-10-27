@@ -1,4 +1,4 @@
-// The sidebar head on Pulsatrix Light (JC, 2026-10-08): its round search and
+// The sidebar head on Pulsatrix Light (owner, 2026-10-08): its round search and
 // New buttons are painted from the rail's own tokens, so they read on the
 // navy rail the way the chat header's circles do, and its brand row is the
 // chat header's height, so both rows of 36px circles share one centre line.

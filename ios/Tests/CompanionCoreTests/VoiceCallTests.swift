@@ -224,10 +224,10 @@ final class TurnDetectorTests: XCTestCase {
 final class SentenceStreamTests: XCTestCase {
     func testSentencesComeOutWhileTheAnswerIsWritten() {
         let stream = SentenceStream()
-        XCTAssertEqual(stream.feed("Bonjour JC. Je regarde"), ["Bonjour JC."])
-        XCTAssertEqual(stream.feed("Bonjour JC. Je regarde ton agenda"), [])
-        XCTAssertEqual(stream.feed("Bonjour JC. Je regarde ton agenda pour demain matin. "), ["Je regarde ton agenda pour demain matin."])
-        XCTAssertEqual(stream.finish("Bonjour JC. Je regarde ton agenda pour demain matin. Rien de prévu."), ["Rien de prévu."])
+        XCTAssertEqual(stream.feed("Bonjour Owner. Je regarde"), ["Bonjour Owner."])
+        XCTAssertEqual(stream.feed("Bonjour Owner. Je regarde ton agenda"), [])
+        XCTAssertEqual(stream.feed("Bonjour Owner. Je regarde ton agenda pour demain matin. "), ["Je regarde ton agenda pour demain matin."])
+        XCTAssertEqual(stream.finish("Bonjour Owner. Je regarde ton agenda pour demain matin. Rien de prévu."), ["Rien de prévu."])
     }
 
     func testDecimalsAbbreviationsAndInitialsAreNotBoundaries() {

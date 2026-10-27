@@ -1,4 +1,4 @@
-// The automatic engine switch for a connector (JC 2026-10-21, review of
+// The automatic engine switch for a connector (owner 2026-10-21, review of
 // #943), end to end through the real server and fake engines. No provider,
 // mailbox or calendar is touched.
 //

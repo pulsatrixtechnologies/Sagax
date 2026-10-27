@@ -3,7 +3,7 @@ import { forgetTurnReach, noteTurnReach, reachContributions, reachSummaryPrompt,
 
 afterEach(() => resetReachProviders());
 
-const ME = { botId: "b1", ownerPrincipalId: "jc", speakerPrincipalId: "jc", payerPrincipalId: "jc", room: false };
+const ME = { botId: "b1", ownerPrincipalId: "owner", speakerPrincipalId: "owner", payerPrincipalId: "owner", room: false };
 
 describe("reachSummaryPrompt", () => {
   it("names what the turn mounted in one short line, with the no-tool rule", () => {

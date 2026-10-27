@@ -6,7 +6,7 @@ import { ToolGrantStore } from "./tool-grants.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
 
 const bot = { kind: "bot" as const, id: "bot-1" };
-const jc = { kind: "user" as const, id: "pr_jc" };
+const owner = { kind: "user" as const, id: "pr_owner" };
 const admin = { tier: "admin" as const, scope: "agents:admin", readOnly: false, defaultEnabled: false };
 
 describe("tool grants", () => {
@@ -14,7 +14,7 @@ describe("tool grants", () => {
     let t = 1_000;
     const file = join(mkdtempSync(join(tmpdir(), "grants-")), "tool-grants.json");
     const store = new ToolGrantStore(file, () => t);
-    const g = store.grant(bot, "routines:write", "pr_jc", 5_000);
+    const g = store.grant(bot, "routines:write", "pr_owner", 5_000);
     expect(store.holds(bot, "routines:read")).toBe(true);
     expect(store.holds(bot, "routines:write")).toBe(true);
     expect(store.holds(bot, "routines:admin")).toBe(false);
@@ -23,27 +23,27 @@ describe("tool grants", () => {
     t = 6_000;
     expect(store.holds(bot, "routines:write")).toBe(false);
     t = 1_000;
-    expect(store.revoke(g.id, "pr_jc")).toBe(true);
+    expect(store.revoke(g.id, "pr_owner")).toBe(true);
     expect(store.holds(bot, "routines:write")).toBe(false);
-    expect(JSON.parse(readFileSync(file, "utf8")).grants[0]).toMatchObject({ revokedBy: "pr_jc" });
-    expect(() => store.grant(bot, "Routines", "pr_jc")).toThrow();
+    expect(JSON.parse(readFileSync(file, "utf8")).grants[0]).toMatchObject({ revokedBy: "pr_owner" });
+    expect(() => store.grant(bot, "Routines", "pr_owner")).toThrow();
   });
 });
 
 describe("tool guard", () => {
   it("lets default-enabled reads and writes through; writes need approval", () => {
     const store = new ToolGrantStore(null);
-    expect(guardDecision({ tier: "read", scope: "agents:read", readOnly: true, defaultEnabled: true }, bot, jc, store)).toEqual({ allow: true, reason: "default", needsApproval: false });
-    expect(guardDecision({ tier: "write", scope: "agents:write", readOnly: false, defaultEnabled: true }, bot, jc, store)).toEqual({ allow: true, reason: "default", needsApproval: true });
+    expect(guardDecision({ tier: "read", scope: "agents:read", readOnly: true, defaultEnabled: true }, bot, owner, store)).toEqual({ allow: true, reason: "default", needsApproval: false });
+    expect(guardDecision({ tier: "write", scope: "agents:write", readOnly: false, defaultEnabled: true }, bot, owner, store)).toEqual({ allow: true, reason: "default", needsApproval: true });
   });
 
   it("keeps admin off without a grant, and a bot never past its speaker", () => {
     const store = new ToolGrantStore(null);
-    expect(guardDecision(admin, bot, jc, store)).toMatchObject({ allow: false, reason: "not_granted" });
-    store.grant(bot, "agents:admin", "pr_jc");
-    expect(guardDecision(admin, bot, jc, store)).toMatchObject({ allow: false, reason: "speaker_not_granted" });
-    store.grant(jc, "agents:admin", "pr_jc");
-    expect(guardDecision(admin, bot, jc, store)).toEqual({ allow: true, reason: "grant", needsApproval: true });
+    expect(guardDecision(admin, bot, owner, store)).toMatchObject({ allow: false, reason: "not_granted" });
+    store.grant(bot, "agents:admin", "pr_owner");
+    expect(guardDecision(admin, bot, owner, store)).toMatchObject({ allow: false, reason: "speaker_not_granted" });
+    store.grant(owner, "agents:admin", "pr_owner");
+    expect(guardDecision(admin, bot, owner, store)).toEqual({ allow: true, reason: "grant", needsApproval: true });
   });
 
   it("lets the owner delete their own resource without a grant, and nobody else", () => {

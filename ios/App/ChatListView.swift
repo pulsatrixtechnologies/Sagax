@@ -21,16 +21,16 @@ struct ChatListView: View {
     /// Search and + at the top (the Personalization switch "Search and + at
     /// top"). Never on an iPad: the avatar owns the top trailing corner
     /// there, so the chrome stays at the bottom as on the iPhone's default
-    /// (JC, 2026-10-15). The Updates pill never follows it: when the
+    /// (owner, 2026-10-15). The Updates pill never follows it: when the
     /// "Updates button" switch is on, the pill is anchored to the bottom
-    /// safe area in every state (JC, 2026-10-16).
+    /// safe area in every state (owner, 2026-10-16).
     private var rosterChromeAtTop: Bool {
         storedChromeAtTop && UIDevice.current.userInterfaceIdiom != .pad
     }
     /// The avatar sits in the top trailing corner on an iPad (the phone UI
     /// in Slide Over, Split View or a narrow window): the window controls
     /// (close, minimize, tile) live in the top leading corner, and an avatar
-    /// pushed after them read as part of them (JC, 2026-10-15). The iPhone
+    /// pushed after them read as part of them (owner, 2026-10-15). The iPhone
     /// keeps it leading, under the status bar.
     private var avatarAtTrailingCorner: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
@@ -317,7 +317,7 @@ struct ChatListView: View {
                 // The list scrolls beneath the floating bar, and its end is
                 // inset by the bar's measured height rather than a guess.
                 // The Updates pill stays here even when search and + go to
-                // the top (JC, 2026-10-16).
+                // the top (owner, 2026-10-16).
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if rosterChromeAtTop {
                         updatesButton
@@ -779,7 +779,7 @@ struct ChatListView: View {
 
     /// New (the desktop's compose-to picker): the search sheet as New
     /// chat, with Create new Bot, Create group chat, the bots and, on an
-    /// organization server, the members (JC, 2026-10-18).
+    /// organization server, the members (owner, 2026-10-18).
     private var newMenuButton: some View {
         GlassCircleButton(systemImage: "plus", accessibilityLabel: "Create") {
             showingNewChat = true
@@ -1317,7 +1317,7 @@ extension ChatListView {
                 AnyView(legacyHome)
             }
         }
-        // Settings open full screen (JC, 2026-10-26): the home (avatar, search,
+        // Settings open full screen (owner, 2026-10-26): the home (avatar, search,
         // bottom bar, island) hides at once, with no animation, so nothing of
         // it crosses the Settings header. It comes back when Settings closes.
         .opacity(showingSettings ? 0 : 1)
@@ -1393,7 +1393,7 @@ extension ChatListView {
         // One structure whatever the switches say: the bottom bar is always
         // the scroll's bottom safe-area inset, never a row of the header, so
         // the Updates pill cannot migrate to the top or float mid-screen
-        // (JC, 2026-10-16). With search and + at the top, the bar keeps the
+        // (owner, 2026-10-16). With search and + at the top, the bar keeps the
         // pill alone; with neither, it is empty and takes no height.
         return standardHomeScroll(headerClearance: headerClearance)
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1407,7 +1407,7 @@ extension ChatListView {
         // Search and New bot focus a field as they open. They ignore the
         // keyboard themselves, but the home under them did not: its bottom
         // bar (Updates pill, search, +) rode the keyboard up the screen
-        // (JC, 2026-10-15). The home has no field of its own, so it never
+        // (owner, 2026-10-15). The home has no field of its own, so it never
         // makes room for the keyboard.
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .overlay(alignment: .top) {
@@ -1497,7 +1497,7 @@ extension ChatListView {
 
     /// The avatar, taken out of the tree (not just hidden) while Settings is
     /// open: the account menu folds back into it, and that fold, drawn by the
-    /// system, would otherwise cross the Settings header (JC, 2026-10-26).
+    /// system, would otherwise cross the Settings header (owner, 2026-10-26).
     @ViewBuilder
     private var homeAccountButton: some View {
         if showingSettings {
@@ -1832,7 +1832,7 @@ extension ChatListView {
     private var homeOverlays: some View {
         ZStack {
             if showingSettings {
-                // Full screen on iPhone and iPad (JC, 2026-10-26): the whole
+                // Full screen on iPhone and iPad (owner, 2026-10-26): the whole
                 // surface, with the X of SettingsView to close.
                 SettingsView(close: {
                     showingSettings = false

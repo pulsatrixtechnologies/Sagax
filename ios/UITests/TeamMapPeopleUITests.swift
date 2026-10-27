@@ -251,7 +251,7 @@ final class TeamMapPeopleUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["person-role"].exists)
         let teams = app.descendants(matching: .any).matching(identifier: "person-teams").firstMatch
         XCTAssertTrue(teams.label.contains("Service Desk (manager)"), "teams: \(teams.label)")
-        // the sheet offers Message only, no Close conversation (JC 2026-10-14)
+        // the sheet offers Message only, no Close conversation (owner 2026-10-14)
         XCTAssertFalse(app.buttons["person-close-conversation"].exists)
         XCTAssertTrue(app.buttons["person-message"].waitForExistence(timeout: 5))
     }

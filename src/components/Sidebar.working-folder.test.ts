@@ -38,7 +38,7 @@ const render = () => flushSync(() => root.render(createElement(BotEditorStore, {
     flushBotPatches: async () => null, refreshInstances: async () => {}, refreshModels: async () => {} },
   children: createElement(Sidebar, { open: true, onClose: () => {} }),
 })));
-// The reference design's rows (JC, 2026-10-15): the thread list no longer unfolds
+// The reference design's rows (owner, 2026-10-15): the thread list no longer unfolds
 // under the bot, so New thread is in the bot's own menu (right click on the
 // row). New thread in a working folder left that menu for 0.5.7.
 const openMenu = () => {

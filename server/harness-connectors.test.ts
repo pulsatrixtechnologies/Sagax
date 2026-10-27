@@ -140,7 +140,7 @@ describe("what a turn is told about mail, Teams, calendar and SharePoint (paritÃ
       expect(text).not.toContain("mcp__claude_ai_");
     }
   });
-  it("to connect a connector: open_connector_setup, one call, never a tour of the settings (JC 2026-10-22)", () => {
+  it("to connect a connector: open_connector_setup, one call, never a tour of the settings (Owner 2026-10-22)", () => {
     for (const input of [
       { driver: "claudeAgent", claudeAi: true, grokCloud: false },
       { driver: "grokAgent", claudeAi: false, grokCloud: true },

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The goal card's "…" menu (JC, 2026-10-16): Show details and Copy goal
+// The goal card's "…" menu (owner, 2026-10-16): Show details and Copy goal
 // first, Stop last, in red, under a separator; the menu closes on choice.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";

@@ -14,7 +14,7 @@ import { viewerThread } from "./thread-privacy.ts";
 
 const selection = (): ModelSelection => ({ instanceId: "claude", model: "default" });
 const savedBots = (): BotRecord[] => JSON.parse(readFileSync(join(DATA_DIR, "bots.json"), "utf8"));
-const JC = "pr_00000000-0000-4000-8000-000000000001";
+const OWNER = "pr_00000000-0000-4000-8000-000000000001";
 
 describe("bot-to-bot threads are never shown to the person", () => {
   beforeEach(() => rmSync(DATA_DIR, { recursive: true, force: true }));
@@ -52,7 +52,7 @@ describe("a hidden conversation in the store", () => {
     const seen: Array<boolean | undefined> = [];
     store.onChange(() => seen.push(store.tasks(bot.id)[0]?.hidden));
     // activate=true is ignored for a hidden thread
-    const task = store.createTask(bot.id, "AI client", true, undefined, undefined, undefined, JC, undefined, true)!;
+    const task = store.createTask(bot.id, "AI client", true, undefined, undefined, undefined, OWNER, undefined, true)!;
     expect(task.hidden).toBe(true);
     expect(seen).toEqual([true]);
     expect(store.bot(bot.id)!.threadId).toBe(open);
@@ -63,7 +63,7 @@ describe("a hidden conversation in the store", () => {
   it("is never unread, so the bot's dot only answers to what the person can read", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });
-    const task = store.createTask(bot.id, "AI client", false, undefined, undefined, undefined, JC, undefined, true)!;
+    const task = store.createTask(bot.id, "AI client", false, undefined, undefined, undefined, OWNER, undefined, true)!;
     store.patchTask(bot.id, task.threadId, { unread: true });
     expect(store.taskByThread(bot.id, task.threadId)?.unread).toBe(false);
     expect(store.bot(bot.id)!.unread).toBe(false);
@@ -75,7 +75,7 @@ describe("a hidden conversation in the store", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });
     const older = bot.threadId;
-    const leaked = store.createTask(bot.id, "Test de latence", true, undefined, undefined, undefined, JC)!;
+    const leaked = store.createTask(bot.id, "Test de latence", true, undefined, undefined, undefined, OWNER)!;
     store.patchTask(bot.id, leaked.threadId, { unread: true });
     store.setTaskActivity(bot.id, leaked.threadId, "waiting-on-you");
     expect(store.bot(bot.id)!.threadId).toBe(leaked.threadId);
@@ -91,21 +91,21 @@ describe("a hidden conversation in the store", () => {
 
   it("is not where a person lands when they open the bot, unless they chose it", () => {
     const tasks = [
-      { threadId: "chat", ownerPrincipalId: JC, createdAt: 1, updatedAt: 5 },
-      { threadId: "agent", ownerPrincipalId: JC, createdAt: 2, updatedAt: 50, hidden: true },
+      { threadId: "chat", ownerPrincipalId: OWNER, createdAt: 1, updatedAt: 5 },
+      { threadId: "agent", ownerPrincipalId: OWNER, createdAt: 2, updatedAt: 50, hidden: true },
     ];
-    expect(viewerThread({ tasks, viewerId: JC, botOwnerPrincipalId: JC })).toBe("chat");
-    expect(viewerThread({ tasks, viewerId: JC, botOwnerPrincipalId: JC, current: "agent" })).toBe("chat");
-    expect(viewerThread({ tasks, viewerId: JC, botOwnerPrincipalId: JC, selected: "agent" })).toBe("agent");
+    expect(viewerThread({ tasks, viewerId: OWNER, botOwnerPrincipalId: OWNER })).toBe("chat");
+    expect(viewerThread({ tasks, viewerId: OWNER, botOwnerPrincipalId: OWNER, current: "agent" })).toBe("chat");
+    expect(viewerThread({ tasks, viewerId: OWNER, botOwnerPrincipalId: OWNER, selected: "agent" })).toBe("agent");
     // only a hidden one: the person has no conversation yet (the server starts one)
-    expect(viewerThread({ tasks: [tasks[1]!], viewerId: JC, botOwnerPrincipalId: JC })).toBeUndefined();
+    expect(viewerThread({ tasks: [tasks[1]!], viewerId: OWNER, botOwnerPrincipalId: OWNER })).toBeUndefined();
   });
 });
 
 describe("hiding the threads an AI client opened before #291", () => {
   const row = (after: Record<string, unknown>, extra: Partial<AdminActionRow> = {}): AdminActionRow => ({
     at: "2026-10-11T23:00:00.000Z", category: "client", action: "client.message", target: { kind: "bot", id: "b1" },
-    after, actor: { kind: "person", principalId: JC, via: "perspicax-mcp" }, ...extra,
+    after, actor: { kind: "person", principalId: OWNER, via: "perspicax-mcp" }, ...extra,
   });
 
   it("hides each thread the client opened with newThread, once; never the person's own chat it wrote into", () => {
@@ -116,7 +116,7 @@ describe("hiding the threads an AI client opened before #291", () => {
       row({ threadId: "t-chat", waited: true }),
       row({ threadId: "t-done", newThread: true }),
       row({ threadId: "t-gone", newThread: true }),
-      row({ threadId: "t-console", newThread: true }, { actor: { kind: "person", principalId: JC, via: "console" } }),
+      row({ threadId: "t-console", newThread: true }, { actor: { kind: "person", principalId: OWNER, via: "console" } }),
       row({ runId: "r1" }, { action: "client.routine_run", target: { kind: "routine", id: "r1" } }),
     ], (_botId, threadId) => stored.get(threadId));
     expect(plan).toEqual([{ botId: "b1", threadId: "t-new" }]);

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Bot folder is the memory's one interface (JC 2026-10-15): "Use memory"
+// The Bot folder is the memory's one interface (owner 2026-10-15): "Use memory"
 // heads it, "New" makes a memory topic as well as a document, MEMORY.md is
 // edited in place, memory files are deleted from their row, and the
 // memory's options are in the folder's "..." menu.

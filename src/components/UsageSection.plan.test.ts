@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings > Usage, 2026-10-16: the Plan card was gone from JC's desktop
+// Settings > Usage, 2026-10-16: the Plan card was gone from the owner's desktop
 // (0.5.7, after #583): only Cost was drawn. The card returned nothing while it
 // loaded, after a failed read and when no provider answered, so any of those
 // erased it. It is now always drawn under Cost, with the 5-hour session and

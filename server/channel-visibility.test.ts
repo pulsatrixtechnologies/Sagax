@@ -13,21 +13,21 @@ import {
 
 describe("channel visibility", () => {
   it("hides a channel from someone who was not added", () => {
-    expect(canSeeChannel({ humanIds: ["jc"], viewerId: "morgan@example.test" })).toBe(false);
-    expect(canSeeChannel({ humanIds: ["jc", "morgan@example.test"], viewerId: "morgan@example.test" })).toBe(true);
+    expect(canSeeChannel({ humanIds: ["owner"], viewerId: "morgan@example.test" })).toBe(false);
+    expect(canSeeChannel({ humanIds: ["owner", "morgan@example.test"], viewerId: "morgan@example.test" })).toBe(true);
   });
   it("shows another person's bot in Direct only after a grant", () => {
-    expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "morgan@example.test", directGrants: [] })).toBe(false);
-    expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "morgan@example.test", directGrants: ["morgan@example.test"] })).toBe(true);
-    expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "jc", directGrants: [] })).toBe(true);
+    expect(canSeeDirectBot({ ownerUserId: "owner", viewerId: "morgan@example.test", directGrants: [] })).toBe(false);
+    expect(canSeeDirectBot({ ownerUserId: "owner", viewerId: "morgan@example.test", directGrants: ["morgan@example.test"] })).toBe(true);
+    expect(canSeeDirectBot({ ownerUserId: "owner", viewerId: "owner", directGrants: [] })).toBe(true);
   });
   it("hides a channel from an admin who was not added", () => {
     const viewerId = channelViewerId({
       kind: "session",
       session: { email: "ada@example.test", principalId: "pr_ada" },
     });
-    expect(seesChannel({ humanIds: ["jc"] }, viewerId)).toBe(false);
-    expect(seesChannel({ humanIds: ["jc", "pr_ada"] }, viewerId)).toBe(true);
+    expect(seesChannel({ humanIds: ["owner"] }, viewerId)).toBe(false);
+    expect(seesChannel({ humanIds: ["owner", "pr_ada"] }, viewerId)).toBe(true);
   });
   it("filters live frames for a signed-in admin and not for loopback", () => {
     expect(liveFramesNeedChannelFilter("ada@example.test")).toBe(true);
@@ -39,31 +39,31 @@ describe("channel visibility", () => {
   });
   it("keeps a channel speaker visible even without a direct grant", () => {
     expect(seesChannelFrame({
-      humanIds: ["jc", "morgan@example.test"],
+      humanIds: ["owner", "morgan@example.test"],
       viewerId: "morgan@example.test",
-      speakingOwnerUserId: "jc",
+      speakingOwnerUserId: "owner",
       speakingDirectGrants: [],
     })).toBe(true);
-    expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "morgan@example.test", directGrants: [] })).toBe(false);
+    expect(canSeeDirectBot({ ownerUserId: "owner", viewerId: "morgan@example.test", directGrants: [] })).toBe(false);
     expect(seesBotForViewer({
       viewerId: "morgan@example.test",
-      ownerUserId: "jc",
+      ownerUserId: "owner",
       directGrants: [],
-      inChannels: [{ humanIds: ["jc", "morgan@example.test"] }],
+      inChannels: [{ humanIds: ["owner", "morgan@example.test"] }],
     })).toBe(true);
     expect(seesBotForViewer({
       viewerId: "morgan@example.test",
-      ownerUserId: "jc",
+      ownerUserId: "owner",
       directGrants: [],
-      inChannels: [{ humanIds: ["jc"] }],
+      inChannels: [{ humanIds: ["owner"] }],
     })).toBe(false);
   });
   it("in an organization a room opens the room, never its bots", () => {
     const viewer = { principalId: "pr_morgan", orgAdmin: false, teams: [], disabled: false };
-    const room = { humanIds: ["jc", "pr_morgan"] };
-    expect(seesBotForViewer({ viewerId: "pr_morgan", ownerUserId: "jc", directGrants: [], inChannels: [room], viewer, grants: [] })).toBe(true);
-    expect(seesBotForViewer({ viewerId: "pr_morgan", ownerUserId: "jc", directGrants: [], inChannels: [room], viewer, grants: [], channelsOpenBot: false })).toBe(false);
-    expect(seesBotForViewer({ viewerId: "pr_morgan", ownerUserId: "jc", directGrants: [], inChannels: [room], viewer, grants: [{ target: "user:pr_morgan", level: "use", by: "jc", at: 0 }], channelsOpenBot: false })).toBe(true);
+    const room = { humanIds: ["owner", "pr_morgan"] };
+    expect(seesBotForViewer({ viewerId: "pr_morgan", ownerUserId: "owner", directGrants: [], inChannels: [room], viewer, grants: [] })).toBe(true);
+    expect(seesBotForViewer({ viewerId: "pr_morgan", ownerUserId: "owner", directGrants: [], inChannels: [room], viewer, grants: [], channelsOpenBot: false })).toBe(false);
+    expect(seesBotForViewer({ viewerId: "pr_morgan", ownerUserId: "owner", directGrants: [], inChannels: [room], viewer, grants: [{ target: "user:pr_morgan", level: "use", by: "owner", at: 0 }], channelsOpenBot: false })).toBe(true);
   });
   it("hides a bot with no owner from a signed-in viewer who was not given it", () => {
     expect(seesBotForViewer({
@@ -85,23 +85,23 @@ describe("channel visibility", () => {
   it("drops search hits from a channel or bot the viewer was not given", () => {
     expect(searchHitVisible({
       viewerId: "morgan@example.test",
-      channel: { humanIds: ["jc"] },
+      channel: { humanIds: ["owner"] },
       bot: null,
     })).toBe(false);
     expect(searchHitVisible({
       viewerId: "morgan@example.test",
       channel: null,
-      bot: { ownerUserId: "jc", directGrants: [], inChannels: [{ humanIds: ["jc"] }] },
+      bot: { ownerUserId: "owner", directGrants: [], inChannels: [{ humanIds: ["owner"] }] },
     })).toBe(false);
     expect(searchHitVisible({
       viewerId: "morgan@example.test",
-      channel: { humanIds: ["jc", "morgan@example.test"] },
+      channel: { humanIds: ["owner", "morgan@example.test"] },
       bot: null,
     })).toBe(true);
     expect(searchHitVisible({
-      viewerId: "jc",
+      viewerId: "owner",
       channel: null,
-      bot: { ownerUserId: "jc", directGrants: [], inChannels: [] },
+      bot: { ownerUserId: "owner", directGrants: [], inChannels: [] },
     })).toBe(true);
   });
 });

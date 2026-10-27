@@ -11,7 +11,7 @@ const state = (over: Partial<OrgMemoryState> = {}): OrgMemoryState => ({
   connected: true,
   server: "https://px.example.com",
   mode: "auto",
-  vault: "/Users/jc/Library/Application Support/sagax/org-memory/vault",
+  vault: "/Users/example/Library/Application Support/sagax/org-memory/vault",
   cloned: true,
   obsidianConfigured: false,
   obsidianUrl: "obsidian://open?path=%2Fvault",

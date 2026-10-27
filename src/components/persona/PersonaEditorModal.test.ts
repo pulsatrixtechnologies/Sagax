@@ -1,5 +1,5 @@
 // The bot editor: the Achievements shell, groups in the left column whose
-// sections are each their own page (JC 2026-10-15), listed under the open
+// sections are each their own page (owner 2026-10-15), listed under the open
 // group, and locked sections shown with their reason instead of hidden.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";

@@ -24,7 +24,7 @@ describe("teach recording privacy", () => {
       "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
       "-----BEGIN RSA PRIVATE KEY-----",
     ]) expect(looksLikeSecret(value), value).toBe(true);
-    for (const value of ["blue shoes", "jc@example.com", "1234 Main Street", "Order 2026-10-16"]) expect(looksLikeSecret(value), value).toBe(false);
+    for (const value of ["blue shoes", "owner@example.com", "1234 Main Street", "Order 2026-10-16"]) expect(looksLikeSecret(value), value).toBe(false);
   });
 
   it("keeps a page's address, never its credentials", () => {
@@ -43,7 +43,7 @@ describe("teach recording privacy", () => {
 describe("a recording as a skill", () => {
   const steps: TeachStep[] = [
     { id: "1", kind: "open", url: "https://shop.example/login" },
-    { id: "2", kind: "type", url: "https://shop.example/login", target: { role: "textbox", name: "Email", tag: "input" }, text: "jc@example.com" },
+    { id: "2", kind: "type", url: "https://shop.example/login", target: { role: "textbox", name: "Email", tag: "input" }, text: "owner@example.com" },
     { id: "3", kind: "type", url: "https://shop.example/login", target: { role: "textbox", name: "Password", tag: "input" }, secret: true },
     { id: "4", kind: "click", url: "https://shop.example/login", target: { role: "button", name: "Sign in", tag: "button" } },
     { id: "5", kind: "note", text: "Check that the cart shows the order." },
@@ -55,7 +55,7 @@ describe("a recording as a skill", () => {
     const parsed = parseSkillMd(markdown);
     expect(parsed).toMatchObject({ name, description: "Place an order in the shop." });
     expect(markdown).toContain("1. Open https://shop.example/login.");
-    expect(markdown).toContain('2. In the text box "Email", type "jc@example.com".');
+    expect(markdown).toContain('2. In the text box "Email", type "owner@example.com".');
     expect(markdown).toContain('3. In the text box "Password", enter the secret value. It was not recorded: ask the person for it now');
     expect(markdown).toContain('4. Click the button "Sign in" on https://shop.example/login.');
     expect(markdown).toContain("5. Check that the cart shows the order.");
@@ -100,7 +100,7 @@ describe("a recording of the whole computer (parity R7, system 11)", () => {
     expect(cleanWindowName("Gmail\u0000 - Chrome")).toBe("Gmail - Chrome");
     expect(cleanWindowName(`token ${"aB3".repeat(15)}`)).toBe("");
     // a title that names a person's address or an account is never kept
-    expect(cleanWindowName("Inbox - jc@example.com - Outlook")).toBe("");
+    expect(cleanWindowName("Inbox - owner@example.com - Outlook")).toBe("");
     expect(cleanWindowName("Compte 4510 2233 8890 - Banque")).toBe("");
     expect(cleanWindowName("Client 00123456 - CRM")).toBe("");
     expect(cleanWindowName("Report 2026 - Calc")).toBe("Report 2026 - Calc");

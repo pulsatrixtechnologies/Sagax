@@ -1,6 +1,6 @@
 # Home / search / new group / create bot: measured specs
 
-> **Note (JC, 2026-10-01):** Sagax keeps its own mascots and palette. Use this file for frame sizes, positions, controls and type only. The 11 swatch hexes and §6 (mascot geometry and eyes) document the reference app and are **not** to be implemented.
+> **Note (owner, 2026-10-01):** Sagax keeps its own mascots and palette. Use this file for frame sizes, positions, controls and type only. The 11 swatch hexes and §6 (mascot geometry and eyes) document the reference app and are **not** to be implemented.
 
 Source: `ios/parity-refs/` 01, 17, 18, 19, 20 (1206x2622 px @3x, so 402x874 pt). All values are in pt (px/3) unless marked. Measured with PIL using coverage-weighted edges. Accuracy is about ±0.33 pt (1 px), and ±0.5 pt for font sizes. Fonts were fitted by rendering SF Pro (`SFNS.ttf`, opsz = size) and matching against the crops. Calibration check: the status-bar clock fits 18 pt semibold.
 Scripts: `scratchpad/home/*.py` (mh, eyes, iou, shp).

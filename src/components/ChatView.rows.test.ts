@@ -245,7 +245,7 @@ describe("chat transcript rows", () => {
       };
       const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
       // an answer that recorded its turn: model "m" labelled Model M, effort Medium
-      // JC, 2026-10-15: the line is laid out from the start and only fades
+      // Owner, 2026-10-15: the line is laid out from the start and only fades
       // in, so the answer above it never moves (same rows, same height)
       const line = () => document.querySelector("[data-turn-run]")!;
       const layout = () => [...rowOf("m2").children].map((child) => `${child.tagName}:${child.getAttribute("data-turn-run") ?? ""}`).join(",");

@@ -91,7 +91,7 @@ describe("SkinPicker", () => {
       [...host.querySelectorAll(`[data-settings-row="skinVariant-${group}"] [data-skin-variant]`)].map((el) => el.getAttribute("data-skin-variant"));
     expect(row("color")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
     expect(row("duo")).toEqual(["aurore", "ocean", "neon", "foret"]);
-    // dark mode: no light mood (Candy), JC 2026-10-22
+    // dark mode: no light mood (Candy), the owner 2026-10-22
     expect(row("ambiance")).toEqual(["cyberpunk", "sunset", "nordic"]);
     expect(swatch("candy")).toBeNull();
     const dot = swatch("yellow")!.querySelector("[data-skin]")!;

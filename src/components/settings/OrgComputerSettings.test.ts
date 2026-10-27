@@ -1,5 +1,5 @@
 // Settings > Computer on an organization server, laid out as the reference design's
-// Computer page (0.5.6, JC): "Your computer" with its name, rows with one
+// Computer page (0.5.6, the owner): "Your computer" with its name, rows with one
 // short grey line, the other computers behind a count pill, the activity
 // still hidden (#555), then "Bots' computer" with Reset as a red pill.
 import { createElement } from "react";

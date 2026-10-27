@@ -917,7 +917,7 @@ test("no update: the person's check lands back on idle, never installing", async
   assert.deepEqual(h.states.map((entry) => entry.status), ["checking", "idle"]);
 });
 
-// 2026-10-22 (JC, a 0.7.4 update on a slow disk): "Preparing the update took
+// 2026-10-22 (owner, a 0.7.4 update on a slow disk): "Preparing the update took
 // too long." The old deadline was a hardcoded five minutes that a large
 // (hundreds of MB) native staging pass could not meet, and it fired even while
 // bytes were still arriving. It is now generous, configurable, and reset by

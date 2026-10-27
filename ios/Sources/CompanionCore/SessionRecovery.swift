@@ -1,6 +1,6 @@
 import Foundation
 
-// Staying signed in (JC, 2026-10-20): a person leaves Sagax only when the
+// Staying signed in (owner, 2026-10-20): a person leaves Sagax only when the
 // server says the session is over (revoked, expired, Pulsatrix sign-in ended,
 // account disabled) or after 30 days of real inactivity, which the server
 // enforces. Never because of a deploy or restart, an app update, a transient

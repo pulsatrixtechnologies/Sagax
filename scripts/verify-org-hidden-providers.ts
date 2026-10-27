@@ -1,4 +1,4 @@
-// Real check of the providers an organization hides (2026-10-18, JC: "I have
+// Real check of the providers an organization hides (2026-10-18, the owner: "I have
 // hidden providers from the Perspicax menu, but they are still visible in a
 // lot of menus through Sagax"). An organization server with three engines
 // (Claude, Codex and Grok, all fakes) and an admin signed in through the

@@ -80,7 +80,7 @@ describe("browser installation opt-in", () => {
     expect(toggle).toContain('aria-checked="false"');
     expect(toggle).not.toContain("disabled=");
     const worksOn = renderToStaticMarkup(createElement(WorksOnSetting, { bot: { ...bot, browser: false } }));
-    // Workspace is always Auto (JC 2026-10-18): Browser is not a choice
+    // Workspace is always Auto (owner 2026-10-18): Browser is not a choice
     expect(worksOn).not.toContain('data-works-on-choice="browser"');
     expect(panel(false)).not.toContain("data-works-on-setting");
     expect(panel(false)).not.toContain("Install the browser engine");

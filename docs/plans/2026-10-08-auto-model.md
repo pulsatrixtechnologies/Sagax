@@ -1,6 +1,6 @@
 # Auto model: one default brain per bot, the right model per task
 
-Status: implemented on `feat/auto-model` (2026-10-08). Owner request (JC): "Add an auto mode for
+Status: implemented on `feat/auto-model` (2026-10-08). Owner request (owner): "Add an auto mode for
 models, so it simply picks the best model per task. Each bot should pick a default model for
 orchestration, and always spawn workers with the best model per task."
 

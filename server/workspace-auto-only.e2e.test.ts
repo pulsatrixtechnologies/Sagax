@@ -1,4 +1,4 @@
-// Workspace is always Auto (JC 2026-10-18), through the real server and its
+// Workspace is always Auto (owner 2026-10-18), through the real server and its
 // HTTP API: an app that still sends a place (an older desktop or iPhone
 // build) gets no error and no fixed place; Off stays a restriction.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

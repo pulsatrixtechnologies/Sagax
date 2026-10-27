@@ -1,6 +1,6 @@
 // Opening a bot chat that the phone cannot show from what it holds.
 //
-// Bug 2026-10-16 (iOS 0.5.9 to 0.5.11, JC: "I cannot open a chat"): a tap
+// Bug 2026-10-16 (iOS 0.5.9 to 0.5.11, the owner: "I cannot open a chat"): a tap
 // pushed the chat and the chat closed itself on its first frame, before any
 // request, because the bot's selected thread was missing from its thread
 // list. An organization server sends exactly that: a bot narrowed for the

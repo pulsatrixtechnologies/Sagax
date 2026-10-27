@@ -1,9 +1,9 @@
 # Sagax desktop mascot: voice call "mascot mode" and a virtual pointer
 
-Backlog design for the full "ChatGPT Pets + Voice + pointer" experience of the Sagax desktop mascot: a call rail beside the character with captions, task chips and a hotkey, then a virtual pointer and consented computer interaction from the mascot. Asked by JC on 2026-10-08. Sources: https://learn.chatgpt.com/docs/pets, https://learn.chatgpt.com/docs/whats-new, https://github.com/farzaa/clicky. The rest of this file is the design note as written.
+Backlog design for the full "ChatGPT Pets + Voice + pointer" experience of the Sagax desktop mascot: a call rail beside the character with captions, task chips and a hotkey, then a virtual pointer and consented computer interaction from the mascot. Asked by the owner on 2026-10-08. Sources: https://learn.chatgpt.com/docs/pets, https://learn.chatgpt.com/docs/whats-new, https://github.com/farzaa/clicky. The rest of this file is the design note as written.
 
 
-Research and design note, 2026-10-08. Asked by JC on 2026-10-08. No code changed.
+Research and design note, 2026-10-08. Asked by the owner on 2026-10-08. No code changed.
 Repo read: `pulsatrixtechnologies/sagax`, main clone `/Users/Repository/pti/Sagax/main` at `9d404a7cf`.
 
 ---
@@ -13,7 +13,7 @@ Repo read: `pulsatrixtechnologies/sagax`, main clone `/Users/Repository/pti/Saga
 ### A.1 What it actually is (public facts, dated)
 
 There is no OpenAI feature literally named "mascot mode". The closest thing, and almost certainly
-what JC saw, is **ChatGPT Pets** in the ChatGPT desktop app combined with **ChatGPT Voice on desktop**.
+what the owner saw, is **ChatGPT Pets** in the ChatGPT desktop app combined with **ChatGPT Voice on desktop**.
 
 | Date | Fact | Source |
 |---|---|---|
@@ -56,7 +56,7 @@ what JC saw, is **ChatGPT Pets** in the ChatGPT desktop app combined with **Chat
 - **One voice chat at a time** across the desktop app; another window's active chat blocks a new one.
 - Transcript: after the call ends, it is added to the chat history.
 
-### A.4 Not public (say so to JC)
+### A.4 Not public (say so to the owner)
 
 The exact pixel sizes and spacing of the pet controls; what is drawn beside the pet *during* a voice call
 (live captions or not, waveform or not); the per-phase voice animations (listening, thinking, speaking)
@@ -303,7 +303,7 @@ notice); battery if overlays stay alive.
 **Estimate.** 11 days (overlay + mapping 3, tools + bridge + locator 3, show_me guide/do 2, consent +
 audit 1, mascot point clip 0.5, verify + multi-display tests 1.5).
 
-### Open questions for JC
+### Open questions for the owner
 
 1. Must the pointer work over native fullscreen apps and games, or is "above normal windows and
    fullscreen Spaces where macOS allows it" enough?

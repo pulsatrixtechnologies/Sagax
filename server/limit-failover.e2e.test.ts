@@ -1,5 +1,5 @@
 // A usage limit, simulated end to end through the real server and fake
-// engines (port of OpenMausBot #3074 and #2754, JC's automatic backup of
+// engines (port of OpenMausBot #3074 and #2754, the owner's automatic backup of
 // 2026-10-19). No provider is called.
 //
 //   Primary fixture      the thread's engine (fake ACP): while a file exists

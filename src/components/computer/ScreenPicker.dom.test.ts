@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Computer tab's screen chooser is one drop-down (#518 menus, JC
+// The Computer tab's screen chooser is one drop-down (#518 menus, the owner
 // 2026-10-15): a button that names the screen shown and opens the list of
 // the same choices as before (Cloud, each computer, the bot's browser), by
 // pointer, keyboard and screen reader alike.

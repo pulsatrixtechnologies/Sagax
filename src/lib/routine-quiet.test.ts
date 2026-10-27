@@ -1,4 +1,4 @@
-// Routine runs work in the background (JC 2026-10-22): a run that ends with
+// Routine runs work in the background (owner 2026-10-22): a run that ends with
 // nothing to report leaves no unread dot and no sidebar change on this
 // client; Automations > Logs still lists it, as "Nothing to report".
 import { describe, expect, it } from "vitest";
@@ -56,7 +56,7 @@ describe("a quiet routine run on the client", () => {
   });
 });
 
-// JC 2026-10-22: "I am not in thread mode, everything should be unified in a
+// Owner 2026-10-22: "I am not in thread mode, everything should be unified in a
 // single chat page." An automatic "<routine> · Results" thread (routineResults)
 // is no row under the bot, no dot, no preview, never the chat's home.
 describe("a routine results thread with threads hidden", () => {

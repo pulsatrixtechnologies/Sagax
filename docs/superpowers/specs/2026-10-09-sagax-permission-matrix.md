@@ -1,9 +1,9 @@
 # Sagax permission matrix (organization mode)
 
-Date: 2026-10-09. Owner: JC. Status: implemented in `feat/permission-matrix`
+Date: 2026-10-09. Owner: Owner. Status: implemented in `feat/permission-matrix`
 (Sagax) and `feat/sagax-permission-matrix` (Perspicax).
 
-JC: "I need to have a full permission matrix editor per profile on Perspicax
+Owner: "I need to have a full permission matrix editor per profile on Perspicax
 for Sagax. I keep getting 'Admin required' for things I should be able to
 whitelist per user profiles."
 
@@ -132,7 +132,7 @@ MCP servers (`/api/mcp/servers`, `server/index.ts:33968`) are `host.shell`.
 Team managers keep reaching their teams' people (run as, labels) without a
 key, as before.
 
-The two view keys (2026-10-09, JC: "give any user the possibility to view
+The two view keys (2026-10-09, the owner: "give any user the possibility to view
 the automation schedule at large; admins see all of them") are read side
 only. `mine` (what the caller saw before: the routines of the bots and rooms
 they see, by the private-threads rule) is always allowed; `team` adds the

@@ -228,7 +228,7 @@ describe("a cloud computer that can't start, against the real server", () => {
     const { bot } = await apiOk("POST", "/api/bots", { name: "Pinned Bot" });
     await stop();
     // Where an earlier Auto turn landed: the machine's memory, which Auto
-    // no longer keeps (JC 2026-10-16), never a person's choice.
+    // no longer keeps (owner 2026-10-16), never a person's choice.
     editSavedBot(bot.id, saved => {
       Object.assign(saved.tasks.find((task: any) => task.threadId === bot.threadId), { surface: "cloud", surfaceSource: "auto" });
     });

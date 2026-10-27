@@ -4,14 +4,14 @@ import { managedProfile, personAvatarSrc } from "./profile-management";
 describe("managedProfile", () => {
   it("reads the config's viewer block of an organization server", () => {
     const viewer = {
-      operator: false, principalId: "pr_1", email: "jc@example.test", name: "Alex", role: "admin", canCreateBots: true,
+      operator: false, principalId: "pr_1", email: "owner@example.test", name: "Alex", role: "admin", canCreateBots: true,
       profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.example.test/console/me",
     };
-    expect(managedProfile(viewer)).toEqual({ by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "jc@example.test" });
+    expect(managedProfile(viewer)).toEqual({ by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "owner@example.test" });
   });
 
   it("keeps a solo server's and an older server's profile editable", () => {
-    expect(managedProfile({ operator: true, principalId: "pr_1", email: "jc@example.test", name: "JC", role: "owner", canCreateBots: true })).toBeNull();
+    expect(managedProfile({ operator: true, principalId: "pr_1", email: "owner@example.test", name: "Owner", role: "owner", canCreateBots: true })).toBeNull();
     expect(managedProfile(undefined)).toBeNull();
     expect(managedProfile(null)).toBeNull();
     expect(managedProfile({ profileManagedBy: true })).toBeNull();
@@ -23,7 +23,7 @@ describe("managedProfile", () => {
   });
 
   it("carries the Perspicax avatar this server serves, nothing from elsewhere", () => {
-    const base = { profileManagedBy: "perspicax", name: "JC" };
+    const base = { profileManagedBy: "perspicax", name: "Owner" };
     expect(managedProfile({ ...base, avatarUrl: "/api/people/pr_1/avatar?v=0a1b" })?.avatarUrl).toBe("/api/people/pr_1/avatar?v=0a1b");
     expect(managedProfile({ ...base, avatarUrl: "https://tracker.example.test/p.png" })?.avatarUrl).toBeUndefined();
     expect(managedProfile({ ...base, avatarUrl: "/api/attachments/x.png" })?.avatarUrl).toBeUndefined();

@@ -285,7 +285,7 @@ What Sagax does:
   (oldest first; only the count is logged). When the vault cannot seal, one
   attempt is made at once and the log says the entry was not kept. No token is
   ever logged.
-- **Routines act in their owner's name (2026-10-08, JC).** On an
+- **Routines act in their owner's name (2026-10-08, the owner).** On an
   organization server a routine always acts in its owner's name; there is no
   consent, no switch and no "Reconnect my routines". Sagax issues the
   routine delegation itself, through the link, by RFC 8693 token exchange of

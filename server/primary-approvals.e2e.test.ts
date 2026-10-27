@@ -1,4 +1,4 @@
-// The Primary Bot answers its person's cards at their request (JC,
+// The Primary Bot answers its person's cards at their request (owner,
 // 2026-10-20, the reference design parity: "le bot principal doit pouvoir absolument
 // tout faire"), through a real isolated server and fake engines only:
 //
@@ -16,7 +16,7 @@
 //   cards off  "mets Ottoline en auto": sagax_settings with the quote runs at
 //              once from a Primary Bot at Ask (no card); Ottoline's next call
 //              shows no card. Without the quote it waits on a card.
-//   latest     (JC 2026-10-20) two cards of a confidential thread wait; a long
+//   latest     (owner 2026-10-20) two cards of a confidential thread wait; a long
 //              "oui, vas-y" naming none answers the latest one, listed and
 //              answered without its words; the older one still waits
 import { randomBytes, randomUUID } from "node:crypto";

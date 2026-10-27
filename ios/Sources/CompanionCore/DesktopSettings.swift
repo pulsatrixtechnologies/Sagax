@@ -62,7 +62,7 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
     /// organization server); an admin session the served renderer's list.
     /// A section the pairing cannot use is left out, never drawn disabled.
     ///
-    /// Menus simplified (#518, JC 2026-10-14): API keys and Decision model
+    /// Menus simplified (#518, the owner 2026-10-14): API keys and Decision model
     /// are cards of Models and voice; Pair devices, Email and Activity are
     /// not in the app (this device's own pairing is a card of Organization;
     /// managing several people is Sagax Business's).

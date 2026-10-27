@@ -2,7 +2,7 @@
 
 ## Summary
 
-JC (2026-10-16): "add a category in Files, which will be Artifacts, which you
+Owner (2026-10-16): "add a category in Files, which will be Artifacts, which you
 can ask the bot to save interactive widget as artifact that will auto refresh
 automatically based on the interval you define while discussing with the bot.
 Those artifacts can be saved as favorite so they show up in a separate section
@@ -16,7 +16,7 @@ data source the server re-runs on an interval, without a model turn, and
 whose fresh JSON is handed to the widget. It lives in the Files tab of the bot
 that saved it.
 
-Decisions taken by JC:
+Decisions taken by the owner:
 
 - Refresh is a data source, never an LLM turn. The bot saves a source (one
   tool call with fixed arguments, or one command on its computer) and an

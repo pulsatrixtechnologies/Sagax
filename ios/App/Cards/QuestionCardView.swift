@@ -10,7 +10,7 @@ import SwiftUI
 /// tappable at all and the phone could only watch it time out.
 ///
 /// The desktop's `src/components/QuestionCard.tsx`, in SwiftUI, drawn with
-/// the shared `QuestionSheet` (JC's capture, 2026-10-20): the question in
+/// the shared `QuestionSheet` (owner's capture, 2026-10-20): the question in
 /// bold, one lettered row per option, an "Other" row that opens a field, a
 /// tab per question for a set. One question with one pick answers in one
 /// tap; a set or a choose-several question has a quiet send.

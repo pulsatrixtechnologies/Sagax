@@ -2,7 +2,7 @@
 // (`ComputerPicker` in OrgComputerTab.tsx). Electron names each host
 // (truncated 132px). iPhone chips overflow, so iOS shows Cloud, Other VMs
 // and Browser; the chosen host sits under the picker, with a menu when
-// there is more than one (JC 2026-10-11). A dot marks the screen the bot
+// there is more than one (owner 2026-10-11). A dot marks the screen the bot
 // works on. Picking one changes only what is shown, never the bot's Works
 // on. Browser mode is the last chip where the server has the built-in
 // browser. Shown only when there is more than one choice.

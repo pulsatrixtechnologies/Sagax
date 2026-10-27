@@ -1,6 +1,6 @@
 import Foundation
 
-/// JC 2026-10-19: "N'affiche JAMAIS des GUID, on ne comprend rien." Text on
+/// Owner 2026-10-19: "N'affiche JAMAIS des GUID, on ne comprend rien." Text on
 /// screen shows a name, never a UUID/GUID or another opaque id; the id may go
 /// in a Copy action for support. Same rules as the desktop's
 /// shared/human-id.ts.

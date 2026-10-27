@@ -1,6 +1,6 @@
 # Crab unlock and Claude achievements
 
-Date: 2026-10-12. Owner: JC. Status: design, sub-project 1 of 3, awaiting review.
+Date: 2026-10-12. Owner: Owner. Status: design, sub-project 1 of 3, awaiting review.
 Scope: catalog and unlock model, server-detected Claude link, hide locked characters, grandfather people already wearing the crab, desktop and iOS together. Branch: `feat/crab-claude-unlock`.
 
 Sub-project 2 (premium crab emotions and moves) and sub-project 3 (hats and effects layer) ship the art. This spec records the reward keys and hides a reward line until that registry entry exists.
@@ -77,7 +77,7 @@ Same keys on iOS `AchievementReward` (`Achievements.swift:48-62`).
 
 Registry (new small table next to the catalog, empty entries allowed): which emote, move, accessory and effect ids this build can draw. `rewardLineVisible(reward)` is false until the id is registered. Sub-projects 2 and 3 fill it. Common skins still come with the character (`skinUnlocked`, `shared/achievements.ts:489-494`). The four base crab faces already used for mood (`crabExpressionForMood` in `src/components/CrabMascot.tsx:19`, `src/components/crab.test.ts:122-129`) ship with `character:crab` the same way; their `emote:crab:*` keys are recorded so a later editor can require them.
 
-### Draft ladder (JC to confirm at review)
+### Draft ladder (owner to confirm at review)
 
 Points from the existing 5..300 scale (`shared/achievements.ts:118`). Category is `claude` for every row.
 
@@ -98,7 +98,7 @@ Points from the existing 5..300 scale (`shared/achievements.ts:118`). Category i
 
 Existing feeders: `subagent.used` (`server/achievements.ts:518-523`, catalog `delegator` at `shared/achievements-catalog.ts:261-268`), `routine.ran` (`:513-516`), `voice.call` (`:489-510`), `computer.control` (`:462`, that is the person taking the screen, catalog `hands-on` at `:270-277`). Claude rows do not reuse those events: they need the anthropic family on the same hook.
 
-Draft names (en / fr), JC to confirm with the table:
+Draft names (en / fr), the owner to confirm with the table:
 
 | id | name.en | name.fr |
 |---|---|---|
@@ -260,7 +260,7 @@ Unit (pure where possible):
 
 UITest: extend `ios/UITests/BotPanelDetailsUITests.swift` Character (BP6, `:346-383`) or `NewBotUITests.swift`: with empty rewards, crab is absent from the character row and owl is present; after the fixture's snapshot includes `character:crab`, crab is present. Optional: `AchievementToastUITests.swift` already drives client events (`:21-27`); `claude-linked` is server-side, so the toast assertion belongs on a fixture that records the server event, not a client POST.
 
-## Open questions for JC
+## Open questions for the owner
 
 1. Confirm the draft ladder table (ids, copy, points, reward ids). Ids freeze at ship.
 2. Four base emote ids: `neutral`, `happy`, `curious`, `sleepy` (today's mood faces). Rename now if the art direction in sub-project 2 will differ.

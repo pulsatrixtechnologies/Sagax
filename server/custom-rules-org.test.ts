@@ -36,7 +36,7 @@ function storeFile(): string {
   return join(dir, "custom-approval-rules.json");
 }
 
-const READ_DOCS = { tool: "Read", paths: ["/Users/jc/Documents/a.txt"] };
+const READ_DOCS = { tool: "Read", paths: ["/Users/example/Documents/a.txt"] };
 
 describe("organization rules in the store", () => {
   it("restrict only, apply to every person and bot, survive a restart", () => {
@@ -47,7 +47,7 @@ describe("organization rules in the store", () => {
     expect(rule).toMatchObject({ org: true, botId: null, behavior: "deny", enabled: true });
     store.add({ ownerId: "bob", botId: "bot-b", when: "la lecture de fichiers dans ~/Documents", behavior: "allow" });
     // bob's own allow loses to the organization's deny
-    const { decision } = reviewCustomRules(store.rulesOf("bob", "bot-b"), READ_DOCS, "bot-b", "/Users/jc");
+    const { decision } = reviewCustomRules(store.rulesOf("bob", "bot-b"), READ_DOCS, "bot-b", "/Users/example");
     expect(decision).toMatchObject({ kind: "deny", rule: { id: rule.id } });
     expect(customRuleNotice(decision)).toMatchObject({ outcome: "denied", org: true });
     // anyone's rules carry it; nobody owns it
@@ -69,7 +69,7 @@ describe("organization rules in the store", () => {
     const store = new CustomRuleStore(storeFile());
     store.add({ ownerId: "bob", botId: null, when: "la lecture de fichiers", behavior: "ask" });
     store.addOrgRule({ when: "la lecture de fichiers", behavior: "ask" });
-    const { decision } = reviewCustomRules(store.rulesOf("bob", "bot-b"), READ_DOCS, "bot-b", "/Users/jc");
+    const { decision } = reviewCustomRules(store.rulesOf("bob", "bot-b"), READ_DOCS, "bot-b", "/Users/example");
     expect(customRuleNotice(decision)).toMatchObject({ outcome: "held", org: true });
   });
 
@@ -170,7 +170,7 @@ async function serveRules(person: string | null) {
     manager: () => person,
     ownedBots: () => [{ id: "bot-b", name: "Beta" }],
     audit: () => {},
-    home: "/Users/jc",
+    home: "/Users/example",
   })];
   const auth: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] } as RequestAuth;
   const server = createServer(async (req, res) => {

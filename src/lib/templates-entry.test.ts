@@ -57,7 +57,7 @@ describe("the templates entry points", () => {
     const draft = new BotCreationDraft(EMPTY_BOT_DEFAULTS, () => {});
     let tree!: ReturnType<typeof StartingRole>;
     const html = renderToStaticMarkup(createElement(() => { tree = StartingRole({ draft, defaultsMode: false }); return tree; }));
-    // one of the ways to start, in the Start from menu (JC 2026-10-14),
+    // one of the ways to start, in the Start from menu (owner 2026-10-14),
     // a pill menu since the windows took Settings' look (2026-10-16)
     expect(html).toContain("data-new-bot-start");
     const browse = startOptions([], false, false).find((option) => option.label === "Template from the catalog…");
@@ -67,7 +67,7 @@ describe("the templates entry points", () => {
     expect(startOptions([], true, true).map((option) => option.label)).not.toContain("Template from the catalog…");
   });
 
-  it("Connect apps no longer offers Browse Bots (JC 2026-10-14)", () => {
+  it("Connect apps no longer offers Browse Bots (Owner 2026-10-14)", () => {
     vi.stubGlobal("window", { addEventListener: () => {}, removeEventListener: () => {} });
     let tree!: ReturnType<typeof PluginsPanel>;
     renderToStaticMarkup(createElement(() => { tree = PluginsPanel(); return null; }));

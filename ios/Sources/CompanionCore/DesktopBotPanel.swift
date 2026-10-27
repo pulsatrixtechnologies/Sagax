@@ -99,7 +99,7 @@ public enum DesktopPanelSection: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-/// The editor's six groups (`persona-sections.ts` `PERSONA_GROUPS`, JC
+/// The editor's six groups (`persona-sections.ts` `PERSONA_GROUPS`, the owner
 /// 2026-10-14): Profile, Instructions, Memory and files, Model and tools,
 /// Behavior, History and usage. A group's page shows its sections one under
 /// the other; a section folded into another on the desktop (Who can see
@@ -583,7 +583,7 @@ public enum DesktopWorksOnRules {
     }
 
     /// The choices, in the desktop's order: Auto and Off only. Workspace is
-    /// always Auto (JC 2026-10-18): the bot picks where each task runs among
+    /// always Auto (owner 2026-10-18): the bot picks where each task runs among
     /// the places it may use, so none is offered. Off stays: it gives the
     /// bot no computer and no browser at all.
     public static func choices(config: ConfigStatus?, organization: Bool) -> [DesktopWorksOn] {
@@ -712,7 +712,7 @@ public enum BotLibraryChip: Hashable, Sendable {
 
 // MARK: - The bot's one "..." menu
 
-/// One entry of the bot's one "..." menu (`BotActionsMenu.tsx`, JC
+/// One entry of the bot's one "..." menu (`BotActionsMenu.tsx`, the owner
 /// 2026-10-14): Edit bot, Rename, the Primary Bot entry; Export the
 /// conversation (copy, download) and the bot (.zip); Archive, and in the
 /// desktop's Advanced mode the Inspector. It replaced the mascot's menu,

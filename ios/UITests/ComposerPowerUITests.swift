@@ -213,7 +213,7 @@ final class ComposerPowerUITests: XCTestCase {
 
     // MARK: - Busy send (CO15)
 
-    /// While the bot works a send never asks (JC 2026-10-18): it goes at
+    /// While the bot works a send never asks (owner 2026-10-18): it goes at
     /// once as auto and the bot routes it (server/busy-routing.ts). The
     /// fixture's engine takes words live, so they join the running turn,
     /// marked for the bot to route.

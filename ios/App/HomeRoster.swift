@@ -160,7 +160,7 @@ struct HomeAccountButton: View {
                 .accessibilityIdentifier("admin-approvals-badge")
             }
         }
-        // No routines badge on the photo (JC, 2026-10-18: the reference design puts
+        // No routines badge on the photo (owner, 2026-10-18: the reference design puts
         // nothing there). The account menu's Automations entry keeps the
         // count (HomeAccountMenuItems).
     }

@@ -409,7 +409,7 @@ posixOnly("organization server: the desktop bridge", () => {
   }, 120_000);
 
   it("Auto stays Auto: a turn that had the built-in browser pins nothing, and the next one still has her computer", async () => {
-    // JC 2026-10-16: he chose Auto, the composer came back on Browser, and
+    // Owner 2026-10-16: he chose Auto, the composer came back on Browser, and
     // the bot lost sagax-desktop for the rest of the conversation.
     expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${aliceBot.id}/tasks/${aliceBot.threadId}`, alice, { surface: null })).status).toBe(200);

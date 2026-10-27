@@ -43,7 +43,7 @@ describe("member admin audit, section 1: bot tool calls", () => {
     expect(answerer(`mcp__${USER_SANDBOX_MCP_NAME}__${tool}`)).toBe("owner");
   });
   // Prod 0.5.27: a member's bot asked "Computer select dans Sagax Computer"
-  // and the card waited for an admin. JC (#810 follow-up): the bot decides
+  // and the card waited for an admin. Owner (#810 follow-up): the bot decides
   // where it works, so choosing among the person's own places has no card.
   const choice = (tool: string, mode: ApprovalMode, options: { mounted?: boolean; places?: string | null; persons?: readonly string[]; guest?: boolean } = {}): "none" | "owner" | "admin" => {
     const ownComputerChoice = ownComputerChoiceCall({

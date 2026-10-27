@@ -275,7 +275,7 @@ describe("ModelPicker with a signed-out or missing Claude", () => {
   });
 });
 
-describe("the way into model providers (Add a provider, JC 2026-10-16)", () => {
+describe("the way into model providers (Add a provider, Owner 2026-10-16)", () => {
   it("opens Settings on the API keys section from the picker footer", () => {
     fixture.instances = [codex];
     const opened = open(bot("codex", "gpt-5.6"));
@@ -806,7 +806,7 @@ describe("the model list in the window", () => {
 describe("the composer's model menu (2026-10-12)", () => {
   const composer = { inComposer: true };
 
-  // JC, 2026-10-18: no chip; the + menu's Model row opens the same menu
+  // Owner, 2026-10-18: no chip; the + menu's Model row opens the same menu
   it("headless: draws no chip, carries the label, opens from the + menu's row and calls back on a pick", () => {
     fixture.instances = [codex, signedIn()];
     const forBot = bot("claude", "claude-opus-5-5");
@@ -842,7 +842,7 @@ describe("the composer's model menu (2026-10-12)", () => {
     expect(opened.html).toContain(">Edit…<");
   });
 
-  // JC, 2026-10-14: too many models shown. The root lists the providers,
+  // Owner, 2026-10-14: too many models shown. The root lists the providers,
   // each opening its models in a submenu, and the stars.
   it("nests the providers behind Provider, in submenus with stars, the window keeps its flat list", () => {
     fixture.instances = [codex, signedIn()];
@@ -850,7 +850,7 @@ describe("the composer's model menu (2026-10-12)", () => {
     const opened = open(forBot, composer);
     const list = lists(opened)[0]! as unknown as ReactElement<{ submenus?: boolean; groupProviders?: boolean; favorites?: { keys: readonly string[] } }>;
     expect(list.props.submenus).toBe(true);
-    // JC, 2026-10-18: one "Provider ›" row in every mode
+    // Owner, 2026-10-18: one "Provider ›" row in every mode
     expect(list.props.groupProviders).toBe(true);
     expect(list.props.favorites!.keys).toEqual([]);
     // only the model in use, checked, sits in the root; the rest wait behind Provider
@@ -863,7 +863,7 @@ describe("the composer's model menu (2026-10-12)", () => {
     for (const each of lists(window)) expect((each.props as { submenus?: boolean }).submenus).toBeUndefined();
   });
 
-  // JC, 2026-10-14: hide the models that do not work (src/lib/model-health.ts).
+  // Owner, 2026-10-14: hide the models that do not work (src/lib/model-health.ts).
   describe("only the models that work", () => {
     const gemini = (authenticated: boolean): InstanceInfo => ({
       instanceId: "gemini", driverKind: "geminiAgent", displayName: "Gemini", access: "api",
@@ -933,7 +933,7 @@ describe("the composer's model menu (2026-10-12)", () => {
     expect(html).not.toContain("data-model-menu");
   });
 
-  // JC, 2026-10-14: no Model › (the provider submenus list the same models)
+  // Owner, 2026-10-14: no Model › (the provider submenus list the same models)
   // and no Context line.
   it("carries the model's settings below the list, its effort as Effort ›, without Model › or Context, Advanced only", () => {
     fixture.instances = [{ ...signedIn(), capabilities: { withholdsHostTools: true, effortLevels: ["low", "high"] } }];
@@ -944,7 +944,7 @@ describe("the composer's model menu (2026-10-12)", () => {
     expect(settings(opened)!.props.effort!.levels).toEqual(["low", "high", "ultracode"]);
   });
 
-  // JC, 2026-10-13: the Effort list offered levels the model does not take.
+  // Owner, 2026-10-13: the Effort list offered levels the model does not take.
   const grokEngine = (): InstanceInfo => ({
     instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", access: "subscription",
     snapshot: { state: "available", authenticated: true },
@@ -1120,7 +1120,7 @@ describe("the organization's allowed model providers", () => {
     expect(row(opened, "claude-opus-5-5")).toBeUndefined();
   });
 
-  // 2026-10-18 (JC): "hidden from the Perspicax menu, still visible in a lot
+  // 2026-10-18 (owner): "hidden from the Perspicax menu, still visible in a lot
   // of menus": a provider the admin hid is listed nowhere, even connected.
   it("never lists a provider the person connected once the organization hid it", () => {
     fixture.org = orgFixture;

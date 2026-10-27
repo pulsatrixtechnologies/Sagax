@@ -1,4 +1,4 @@
-// Sharing in the organization is hidden from the app (JC, 2026-10-15): the
+// Sharing in the organization is hidden from the app (owner, 2026-10-15): the
 // app shows the person signed in; the list of every bot of the organization
 // with its owner belongs to Sagax Business and the Perspicax console. The
 // component and its server routes stay, an old link to the card opens the

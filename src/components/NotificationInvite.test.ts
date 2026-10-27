@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Settings > Notifications: the one-line invite to turn notifications on
-// (JC 2026-10-21, #876: never in the chat).
+// (owner 2026-10-21, #876: never in the chat).
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

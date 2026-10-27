@@ -278,7 +278,7 @@ posixOnly("organization server environments (user-sandbox)", () => {
       await waitFor(async () => shell.answer()?.behavior === "deny");
       expect(String(shell.answer().message)).toContain("own computer");
       expect(((await api("GET", `/api/threads/${moss.threadId}/messages?limit=200`, bob)).body.messages as Array<{ card?: any }>).some((m) => m.card?.requestId === shell.id)).toBe(false);
-      // 2026-10-26 (JC): no admin switch; a saved false changes nothing in his environment
+      // 2026-10-26 (owner): no admin switch; a saved false changes nothing in his environment
       const off = await api("PATCH", "/api/org/settings", alice, { memberEnvironmentAutonomy: false });
       expect(off.status, off.text).toBe(200);
       expect(off.body.settings.memberEnvironmentAutonomy).toBe(true);
@@ -438,7 +438,7 @@ posixOnly("organization server environments (user-sandbox)", () => {
     expect(got.body).toMatchObject({ backend: "sandbox", configured: true });
   });
 
-  it("2026-10-26 (JC): a member's bot runs Auto, and a saved memberAutoApproval false changes nothing", async () => {
+  it("2026-10-26 (Owner): a member's bot runs Auto, and a saved memberAutoApproval false changes nothing", async () => {
     const configOf = () => (JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8")) as { organization?: { memberAutoResetAt?: unknown; memberAutoApproval?: unknown } }).organization;
     expect(log).not.toContain("set back to Ask");
     expect((await api("GET", "/api/org", alice)).body.settings.memberAutoApproval).toBe(true);
@@ -472,7 +472,7 @@ posixOnly("organization server environments (user-sandbox)", () => {
     }
   }, 120_000);
 
-  it("2026-10-26 (JC): a demoted admin's bots keep their Auto, a saved memberAutoApproval false changes nothing", async () => {
+  it("2026-10-26 (Owner): a demoted admin's bots keep their Auto, a saved memberAutoApproval false changes nothing", async () => {
     const CAROL: FakeOidcUser = { sub: "01J9S5CAROL0000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "admin" };
     idp.directoryPeople = [ALICE, BOB, CAROL].map((user) => idp.personOf(user));
     try {

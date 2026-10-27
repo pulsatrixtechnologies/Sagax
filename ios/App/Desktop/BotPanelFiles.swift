@@ -7,7 +7,7 @@
 // list and open in the widget sandbox. The grouping is `LibraryRules`
 // (CompanionCore); a pin is kept on the server (`setThreadFilePin`, the
 // artifact's favorite flag) so it is the same on the desktop. The bot's links
-// stay one more chip, Links (JC 2026-10-18).
+// stay one more chip, Links (owner 2026-10-18).
 import SwiftUI
 import UIKit
 import CompanionCore

@@ -68,7 +68,7 @@ posixOnly("org invite links", () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-invite-link-"));
     const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
-    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@example.com" } }));
+    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "Owner", email: "owner@example.com" } }));
     captureFile = join(home, "mail-capture.jsonl");
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
@@ -118,7 +118,7 @@ posixOnly("org invite links", () => {
     const listed = await api("GET", "/api/org/invites");
     expect(listed.body.org).toMatchObject({ name: "Example", host: { kind: "this-computer" } });
     expect(listed.body.pendingInvites).toEqual([expect.objectContaining({ email: ZARA, link: invite.body.link })]);
-    expect(listed.body.people).toEqual([expect.objectContaining({ role: "owner", email: "jc@example.com" })]);
+    expect(listed.body.people).toEqual([expect.objectContaining({ role: "owner", email: "owner@example.com" })]);
   });
 
   it("lets a remote browser with no session preview the invite, masked", async () => {

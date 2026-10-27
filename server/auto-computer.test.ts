@@ -226,7 +226,7 @@ describe("the browser as a place (per task)", () => {
   });
 });
 
-describe("where an Auto turn starts (JC 2026-10-15)", () => {
+describe("where an Auto turn starts (Owner 2026-10-15)", () => {
   const base = { routine: false, personAsked: true, desktopConnected: true, routinesAllowed: false, sandboxConfigured: true, browserAvailable: true };
 
   it("defaults to the person's computer when it is connected", () => {

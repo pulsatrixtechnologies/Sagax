@@ -1,4 +1,4 @@
-// Session 8F2NZU (JC, 2026-10-22): a Mac shown as "Windows", every fact n/a
+// Session 8F2NZU (owner, 2026-10-22): a Mac shown as "Windows", every fact n/a
 // and "The screen is not available". These cover what the card now does: it
 // asks the OS and never assumes Windows, reads the computer again until it
 // answers, says why when it cannot, and runs the bot's commands through the

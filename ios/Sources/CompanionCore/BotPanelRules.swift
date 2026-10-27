@@ -198,7 +198,7 @@ public struct MascotUnlocks: Hashable, Sendable {
         guard enforced else { return true }
         if Self.defaultCharacters.contains(character) || keys.contains("character:\(character.rawValue)") { return true }
         // An earned skin lets its character be worn in it (`characterUnlocked`,
-        // `masteryLock`, #475, JC 2026-10-14). Trombi stays the easter egg:
+        // `masteryLock`, #475, the owner 2026-10-14). Trombi stays the easter egg:
         // only its hidden command reveals it.
         if character == .trombi { return false }
         let prefix = "skin:\(character.rawValue):"

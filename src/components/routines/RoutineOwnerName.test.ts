@@ -1,4 +1,4 @@
-// A routine always acts in its owner's name (JC, 2026-10-08): no consent,
+// A routine always acts in its owner's name (owner, 2026-10-08): no consent,
 // no "Reconnect my routines", no switch. A routine the server paused (its
 // person is out or lost the right to run the bot) shows one neutral line; an
 // old card from a missing, ended or revoked delegation shows nothing.

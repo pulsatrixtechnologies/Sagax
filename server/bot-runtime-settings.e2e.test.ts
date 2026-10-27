@@ -1,4 +1,4 @@
-// Per-bot runtime settings on a real server (JC 2026-10-15): at start, the
+// Per-bot runtime settings on a real server (owner 2026-10-15): at start, the
 // global parallel conversations and recovery values of config.json become
 // each existing bot's own, once; a bot's own value then wins at runtime and
 // a later change of the global value never moves it.

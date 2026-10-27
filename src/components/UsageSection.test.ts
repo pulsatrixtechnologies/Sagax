@@ -189,7 +189,7 @@ describe("Plan card", () => {
     weekly: { available: true, remainingPercent: 60, usedPercent: 40, resetsAt: "2026-10-16T13:00:00Z" }, extra: [], models: [], ...patch,
   });
 
-  // 2026-10-16 (JC): the 5-hour session and the week both show, each with
+  // 2026-10-16 (owner): the 5-hour session and the week both show, each with
   // its gauge, its figures and its grey window line.
   it("shows the 5-hour session and the week, each with a gauge, its figures and its window line", () => {
     setLocale("fr");

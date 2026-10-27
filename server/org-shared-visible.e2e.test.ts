@@ -1,5 +1,5 @@
 // Shared with someone who owns no bot, on a Perspicax organization server,
-// through the real server, the fake provider and the fake Claude CLI (JC:
+// through the real server, the fake provider and the fake Claude CLI (owner:
 // "When I shared a bot, I need to create a bot in order for the group bot to
 // show up for the person I shared the bot to."):
 //

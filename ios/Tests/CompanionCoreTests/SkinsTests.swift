@@ -88,7 +88,7 @@ final class SkinsTests: XCTestCase {
         XCTAssertFalse(s.pinsAppearance)
         s.mode = .fixed
         s.fixedSkin = .black
-        XCTAssertEqual(s.skin(deviceDark: false), .black, "JC's case: a light phone keeps Black whole")
+        XCTAssertEqual(s.skin(deviceDark: false), .black, "Owner's case: a light phone keeps Black whole")
         XCTAssertTrue(s.pinsAppearance)
         s.mode = .computer
         XCTAssertEqual(s.skin(deviceDark: false), .pulsatrixLight, "no computer answer yet: follow the system pair")

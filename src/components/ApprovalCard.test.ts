@@ -28,7 +28,7 @@ const createRoutineOperation = {
 };
 
 /** An open tool request reads in full in the composer's box, its one card
- * (JC, 2026-10-15); the thread keeps a quiet waiting line. */
+ * (owner, 2026-10-15); the thread keeps a quiet waiting line. */
 function openRequestHtml(message: Message, bot?: Bot): string {
   const pending: Pending = pendingApprovals([message])[0]
     ?? { message, requestId: message.card!.requestId!, tool: message.card!.tool ?? "", detail: message.card!.subtitle };
@@ -685,8 +685,8 @@ describe("ApprovalCard for a change that applied on its own", () => {
 
 describe("a card waiting for an organization admin (2026-10-08)", () => {
   it("says what happens next and names the admins when known", () => {
-    expect(adminWillAnswerLine(["Alice", "JC"])).toBe(
-      "An admin (Alice, JC) sees it in Settings > Organization. Your bot continues as soon as it is approved, or skips this step if it is denied.",
+    expect(adminWillAnswerLine(["Alice", "Owner"])).toBe(
+      "An admin (Alice, Owner) sees it in Settings > Organization. Your bot continues as soon as it is approved, or skips this step if it is denied.",
     );
     expect(adminWillAnswerLine([" "])).toContain("The organization's admins see it in Settings > Organization.");
     expect(adminWillAnswerLine(undefined)).toContain("The organization's admins");

@@ -49,12 +49,12 @@ describe("workers", () => {
 
   it("replaces the worker with the same deviceId", () => {
     const first = registerWorker([], { deviceId: "laptop", userId: "morgan@example.test", online: true });
-    const replaced = registerWorker(first, { deviceId: "laptop", userId: "jc@example.test", online: false });
-    expect(replaced).toEqual([{ deviceId: "laptop", userId: "jc@example.test", online: false }]);
+    const replaced = registerWorker(first, { deviceId: "laptop", userId: "owner@example.test", online: false });
+    expect(replaced).toEqual([{ deviceId: "laptop", userId: "owner@example.test", online: false }]);
     expect(first).toEqual([{ deviceId: "laptop", userId: "morgan@example.test", online: true }]);
-    expect(registerWorker(replaced, { deviceId: "studio", userId: "jc@example.test", online: true })).toEqual([
-      { deviceId: "laptop", userId: "jc@example.test", online: false },
-      { deviceId: "studio", userId: "jc@example.test", online: true },
+    expect(registerWorker(replaced, { deviceId: "studio", userId: "owner@example.test", online: true })).toEqual([
+      { deviceId: "laptop", userId: "owner@example.test", online: false },
+      { deviceId: "studio", userId: "owner@example.test", online: true },
     ]);
   });
 
@@ -139,7 +139,7 @@ describe("workers", () => {
         { id: "desk", host: { kind: "machine", userId: "morgan@example.test", deviceId: "laptop" } },
         { id: "other", host: { kind: "machine", userId: "ada@example.test", deviceId: "studio" } },
       ],
-      workers: [{ deviceId: "laptop", userId: "jc@example.test", online: true }],
+      workers: [{ deviceId: "laptop", userId: "owner@example.test", online: true }],
       messageId: "m1",
       authorId: "p_morgan",
       queued: [],
@@ -272,16 +272,16 @@ describe("workers", () => {
       messages,
     };
     const human = failTurnOnMembershipRemoval({
-      beforeHumanIds: ["jc", "ada"],
-      afterHumanIds: ["jc"],
+      beforeHumanIds: ["owner", "ada"],
+      afterHumanIds: ["owner"],
       beforeMemberIds: ["bot"],
       afterMemberIds: ["bot"],
       inTurn: true,
       ...shared,
     });
     const bot = failTurnOnMembershipRemoval({
-      beforeHumanIds: ["jc"],
-      afterHumanIds: ["jc"],
+      beforeHumanIds: ["owner"],
+      afterHumanIds: ["owner"],
       beforeMemberIds: ["bot", "other"],
       afterMemberIds: ["bot"],
       inTurn: true,
@@ -298,8 +298,8 @@ describe("workers", () => {
     expect(human.messages[1]?.status).toBe("failed");
     expect(human.messages[1]?.text).toBe(partial);
     const idle = failTurnOnMembershipRemoval({
-      beforeHumanIds: ["jc", "ada"],
-      afterHumanIds: ["jc"],
+      beforeHumanIds: ["owner", "ada"],
+      afterHumanIds: ["owner"],
       beforeMemberIds: ["bot"],
       afterMemberIds: ["bot"],
       inTurn: false,
@@ -308,8 +308,8 @@ describe("workers", () => {
     expect(idle).toEqual({ queued: ["m1"], status: null, partial, messages });
     expect(idle.messages).toBe(messages);
     const added = failTurnOnMembershipRemoval({
-      beforeHumanIds: ["jc"],
-      afterHumanIds: ["jc", "ada"],
+      beforeHumanIds: ["owner"],
+      afterHumanIds: ["owner", "ada"],
       beforeMemberIds: ["bot"],
       afterMemberIds: ["bot", "other"],
       inTurn: true,
@@ -394,15 +394,15 @@ describe("workers", () => {
       messages,
     };
     const human = failTurnOnMembershipRemoval({
-      beforeHumanIds: ["jc", "ada"],
-      afterHumanIds: ["jc"],
+      beforeHumanIds: ["owner", "ada"],
+      afterHumanIds: ["owner"],
       beforeMemberIds: ["desk"],
       afterMemberIds: ["desk"],
       ...shared,
     });
     const bot = failTurnOnMembershipRemoval({
-      beforeHumanIds: ["jc"],
-      afterHumanIds: ["jc"],
+      beforeHumanIds: ["owner"],
+      afterHumanIds: ["owner"],
       beforeMemberIds: ["desk", "other"],
       afterMemberIds: ["desk"],
       ...shared,
@@ -506,7 +506,7 @@ describe("workers", () => {
     expect(registerWorkerBody({
       workers: [{ deviceId: "laptop", userId: "old@example.test", online: false }],
       userId: "morgan@example.test",
-      body: { deviceId: "laptop", userId: "jc@example.test" } as { deviceId?: unknown },
+      body: { deviceId: "laptop", userId: "owner@example.test" } as { deviceId?: unknown },
     })).toEqual({
       status: 200,
       worker: { deviceId: "laptop", userId: "morgan@example.test", online: true },

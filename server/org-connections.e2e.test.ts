@@ -470,7 +470,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.uma}`, level: "use" })).status).toBe(200);
   }, 120_000);
 
-  // 2026-10-26 (JC, no admin gating): a person's own plugins, skills, MCP
+  // 2026-10-26 (owner, no admin gating): a person's own plugins, skills, MCP
   // servers and GitHub account work in their own environment. The Perspicax
   // person sheet's `sagax_integrations: off` no longer takes them (it was a 403
   // `org_integrations_admin_only` before): she keeps managing everything, and

@@ -1,4 +1,4 @@
-// The Team Bot copy's choices (JC 2026-10-21: persona, rules, plugins and
+// The Team Bot copy's choices (owner 2026-10-21: persona, rules, plugins and
 // the team's memory, never a conversation nor the bot's private memory).
 import { describe, expect, it } from "vitest";
 

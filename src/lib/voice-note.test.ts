@@ -51,7 +51,7 @@ describe("voice notes", () => {
   });
 
   it("finds the word playing", () => {
-    const words = [{ text: "bonjour", start: 0, end: 0.6 }, { text: "JC", start: 0.7, end: 1.1 }];
+    const words = [{ text: "bonjour", start: 0, end: 0.6 }, { text: "Owner", start: 0.7, end: 1.1 }];
     expect(wordIndexAt(words, 0.3)).toBe(0);
     expect(wordIndexAt(words, 0.65)).toBe(-1);
     expect(wordIndexAt(words, 0.9)).toBe(1);

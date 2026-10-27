@@ -1,4 +1,4 @@
-// The sidebar's bot menu, one flat menu (JC, 2026-10-15): New thread |
+// The sidebar's bot menu, one flat menu (owner, 2026-10-15): New thread |
 // Pin, Move to › | Rename, Edit bot, Make primary bot, Put on the desktop |
 // Hide from sidebar, Archive, Delete. No More, no Copy conversation ID, and
 // (for 0.5.7) no New thread in a working folder, Mark as Unread, Mark all as
@@ -91,7 +91,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the sidebar's bot menu", () => {
-  it("lists every action in one menu, in JC's order", () => {
+  it("lists every action in one menu, in Owner's order", () => {
     const { html } = render();
     expect(items(html)).toEqual(["new-thread", "pin", "move", "rename", "edit", "put-on-desktop", "hide", "archive", "delete"]);
     for (const label of [">New thread<", ">Pin<", ">Move to<", ">Rename the bot<", ">Edit bot<", ">Hide from sidebar<", ">Archive<"]) expect(html).toContain(label);

@@ -30,7 +30,7 @@ const members = [lead, bot("juniper", "Juniper", "purple", "cat"), bot("moss", "
 
 const group = {
   id: "ops", threadId: "t-ops", name: "Operations", bulletin: "Restez concis.",
-  memberIds: members.map((m) => m.id), humanIds: ["jc@example.test"], messages: [],
+  memberIds: members.map((m) => m.id), humanIds: ["owner@example.test"], messages: [],
   defaultResponder: { kind: "auto" },
 } as unknown as Group;
 
@@ -74,7 +74,7 @@ function Parity() {
             details={
               <>
                 <PanelSection title={t("groupPanel.people")}>
-                  <ChannelMembers part="humans" humans={[{ id: "jc@example.test", label: "Jean-Baptiste" }]} bots={[]} canAddHuman canAddBot={false} onAddHuman={() => {}} />
+                  <ChannelMembers part="humans" humans={[{ id: "owner@example.test", label: "Jean-Baptiste" }]} bots={[]} canAddHuman canAddBot={false} onAddHuman={() => {}} />
                 </PanelSection>
                 <PanelSection title="Bots">
                   <ChannelMembers part="bots" humans={[]} bots={members.map((m) => ({ id: m.id, name: m.name, title: m.title, color: m.color, removable: true }))} canAddHuman={false} canAddBot onRemoveBot={() => {}} onAddBot={() => {}} addBotLabel="Ajouter mon robot" />

@@ -274,7 +274,7 @@ describe("Activity, live only", () => {
     expect(idle).not.toContain("No background work");
     expect(idle).not.toContain("data-activity-empty");
     // other work running (a routine, a bot-to-bot hop) is not shown here:
-    // it lives in the chat and in Automations (JC 2026-10-19)
+    // it lives in the chat and in Automations (owner 2026-10-19)
     const busy = sections({ items: [routine, chat], subagents: [] });
     expect(busy).not.toContain('data-bot-settings-section="activity"');
     expect(busy).not.toContain("data-activity-card");

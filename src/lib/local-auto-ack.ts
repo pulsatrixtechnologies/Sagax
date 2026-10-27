@@ -1,6 +1,6 @@
 // Auto on This computer: the warning is a notice the person reads once on
 // this computer, not a card on every bot and every conversation
-// (2026-10-26, JC: what happens on the person's own machine is theirs).
+// (2026-10-26, the owner: what happens on the person's own machine is theirs).
 // After the first OK the warning confirms itself; the server still gets
 // acknowledgeLocalAuto: true, and destructive and sensitive actions still
 // stop there. A renderer preference of this computer; nothing new goes to

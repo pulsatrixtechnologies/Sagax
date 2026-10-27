@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The bot's one "..." menu in the bot panel: it carries what the mascot
 // menu, the editor's quick actions and the header's Export and Inspector
-// buttons used to offer (JC 2026-10-14).
+// buttons used to offer (owner 2026-10-14).
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

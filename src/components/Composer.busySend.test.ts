@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// A message sent while the bot works (JC 2026-10-18): no chooser, the send
+// A message sent while the bot works (owner 2026-10-18): no chooser, the send
 // goes out at once as "auto" and the bot routes it (server/busy-routing.ts).
 import { createElement } from "react";
 import { flushSync } from "react-dom";

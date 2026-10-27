@@ -2,7 +2,7 @@ name: CI
 
 on:
   workflow_dispatch:
-  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
+  # CI runs once, on the release candidate (manual dispatch): Owner 2026-10-14.
 
 # least privilege: CI only reads the checkout, it never writes back
 permissions:

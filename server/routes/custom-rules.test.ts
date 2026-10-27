@@ -35,11 +35,11 @@ async function serve(options: Options) {
   const routes = [createCustomRuleRoutes({
     store,
     manager: () => options.person,
-    ownedBots: (person) => person === "jc" ? [{ id: "bot-a", name: "Alpha" }, { id: "bot-b", name: "Beta" }] : [{ id: "bot-z", name: "Zed" }],
+    ownedBots: (person) => person === "owner" ? [{ id: "bot-a", name: "Alpha" }, { id: "bot-b", name: "Beta" }] : [{ id: "bot-z", name: "Zed" }],
     ...(options.card ? { fromCard: options.card } : {}),
     ...(options.binding ? { bindingFor: options.binding } : {}),
     audit: (row) => audits.push(row.action),
-    home: "/Users/jc",
+    home: "/Users/example",
   })];
   const auth: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] } as RequestAuth;
   const server = createServer(async (req, res) => {
@@ -67,7 +67,7 @@ describe("custom rules routes", () => {
   });
 
   it("saves a sentence with its behavior, lists it for a bot, edits and removes it", async () => {
-    const { call, file, audits } = await serve({ person: "jc" });
+    const { call, file, audits } = await serve({ person: "owner" });
     const saved = await call("", "POST", { text: "toujours permettre la lecture de fichiers dans ~/Documents", botId: "bot-a" });
     expect(saved.status).toBe(201);
     expect(saved.body.rule).toMatchObject({ behavior: "allow", when: "la lecture de fichiers dans ~/Documents", botId: "bot-a", riskScope: [], enabled: true });
@@ -94,7 +94,7 @@ describe("custom rules routes", () => {
   });
 
   it("refuses another person's bot, an unknown risk kind, and empty words", async () => {
-    const { call } = await serve({ person: "jc" });
+    const { call } = await serve({ person: "owner" });
     expect((await call("", "POST", { when: "x", behavior: "allow", botId: "bot-z" })).status).toBe(400);
     expect((await call("", "POST", { when: "la lecture", behavior: "allow", botId: null, riskScope: ["everything"] })).status).toBe(400);
     expect((await call("", "POST", { when: "   ", behavior: "allow", botId: null })).status).toBe(400);
@@ -102,7 +102,7 @@ describe("custom rules routes", () => {
   });
 
   it("refuses a shell family allow, and accepts it as a deny or an exact command", async () => {
-    const { call } = await serve({ person: "jc" });
+    const { call } = await serve({ person: "owner" });
     const refused = await call("", "POST", { when: "exécuter des commandes", behavior: "allow", botId: null });
     expect(refused.status).toBe(400);
     expect(refused.body.code).toBe("shell_family_allow");
@@ -117,8 +117,8 @@ describe("custom rules routes", () => {
   });
 
   it("final review: an exact command is bound to its card's bot and launch folder, and its bot never changes", async () => {
-    const withCwd: CustomRuleBinding = { tool: "bash", command: "npm test", cwd: "/Users/jc/proj", botId: "bot-a" };
-    const { call } = await serve({ person: "jc", card: () => "covered", binding: (_person, card) => card.requestId === "no-cwd" ? { tool: "bash", command: "npm test", botId: "bot-a" } : withCwd });
+    const withCwd: CustomRuleBinding = { tool: "bash", command: "npm test", cwd: "/Users/example/proj", botId: "bot-a" };
+    const { call } = await serve({ person: "owner", card: () => "covered", binding: (_person, card) => card.requestId === "no-cwd" ? { tool: "bash", command: "npm test", botId: "bot-a" } : withCwd });
     const exact = { when: "la commande exacte `npm test`", behavior: "allow", fromCard: { threadId: "t1", requestId: "r1" } };
     const allBots = await call("", "POST", { ...exact, botId: null });
     expect(allBots.body.code).toBe("exact_command_one_bot");
@@ -136,19 +136,19 @@ describe("custom rules routes", () => {
   });
 
   it("final review: a card refusal never changes or removes a rule the person already had", async () => {
-    const { call, store } = await serve({ person: "jc", card: () => "not-covered" });
-    const existing = store.add({ ownerId: "jc", botId: "bot-a", when: "l'envoi de courriels", behavior: "ask" });
+    const { call, store } = await serve({ person: "owner", card: () => "not-covered" });
+    const existing = store.add({ ownerId: "owner", botId: "bot-a", when: "l'envoi de courriels", behavior: "ask" });
     const refused = await call("", "POST", { when: "l'envoi de courriels", behavior: "allow", botId: "bot-a", fromCard: { threadId: "t1", requestId: "r1" } });
     expect(refused.status).toBe(409);
-    expect(store.rulesOf("jc")).toEqual([existing]);
+    expect(store.rulesOf("owner")).toEqual([existing]);
   });
 
   it("one person never reads or edits another person's rules", async () => {
-    const jc = await serve({ person: "jc" });
-    const saved = await jc.call("", "POST", { when: "la lecture de fichiers", behavior: "allow", botId: null });
+    const owner = await serve({ person: "owner" });
+    const saved = await owner.call("", "POST", { when: "la lecture de fichiers", behavior: "allow", botId: null });
     const other = await serve({ person: "zed" });
     // a separate store per server: copy the rule across to prove ownership filtering
-    other.store.add({ ownerId: "jc", botId: null, when: "la lecture de fichiers", behavior: "allow" });
+    other.store.add({ ownerId: "owner", botId: null, when: "la lecture de fichiers", behavior: "allow" });
     expect((await other.call("")).body.rules).toEqual([]);
     expect((await other.call(`/${saved.body.rule.id}`, "PATCH", { behavior: "deny" })).status).toBe(404);
   });
@@ -156,7 +156,7 @@ describe("custom rules routes", () => {
   it("a rule made from a card is kept only when it covers that card", async () => {
     const decided: string[] = [];
     const { call, store } = await serve({
-      person: "jc",
+      person: "owner",
       card: (_person, card, rule) => {
         decided.push(`${card.requestId}:${rule.when}`);
         if (card.requestId === "gone") return null;
@@ -166,12 +166,12 @@ describe("custom rules routes", () => {
     const refused = await call("", "POST", { when: "l'envoi de courriels", behavior: "allow", botId: "bot-a", fromCard: { threadId: "t1", requestId: "r1" } });
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("rule_not_covering");
-    expect(store.rulesOf("jc")).toEqual([]);
+    expect(store.rulesOf("owner")).toEqual([]);
     const missing = await call("", "POST", { when: "l'envoi de courriels", behavior: "allow", botId: "bot-a", fromCard: { threadId: "t1", requestId: "gone" } });
     expect(missing.status).toBe(404);
     const kept = await call("", "POST", { when: "l'envoi de courriels", behavior: "allow", botId: "bot-a", riskScope: ["external-send"], fromCard: { threadId: "t1", requestId: "r1" } });
     expect(kept.status).toBe(201);
-    expect(store.rulesOf("jc")).toHaveLength(1);
+    expect(store.rulesOf("owner")).toHaveLength(1);
     expect(decided).toHaveLength(3);
   });
 });

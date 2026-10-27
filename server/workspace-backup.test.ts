@@ -376,7 +376,7 @@ describe("encrypted full workspace backups", () => {
     writeFileSync(join(source, "note.txt"), "from before principals");
     const exported = await createWorkspaceBackup(source, { password: PASSWORD });
     const target = directory();
-    const local = new PrincipalRegistry({ path: join(target, "principals.json") }).localOperator("jc@example.com");
+    const local = new PrincipalRegistry({ path: join(target, "principals.json") }).localOperator("owner@example.com");
     const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
     commitPendingWorkspaceRestore(target, staged.id);
     expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
@@ -394,7 +394,7 @@ describe("encrypted full workspace backups", () => {
     const exported = await createWorkspaceBackup(source, { password: PASSWORD });
     const target = directory();
     const targetRegistry = new PrincipalRegistry({ path: join(target, "principals.json") });
-    const local = targetRegistry.localOperator("jc@example.com");
+    const local = targetRegistry.localOperator("owner@example.com");
     const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
     commitPendingWorkspaceRestore(target, staged.id);
     expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
@@ -807,7 +807,7 @@ describe("encrypted full workspace backups", () => {
     for (const path of [`${home}/claude/.credentials.json`, `${home}/CODEX/Auth.json`, `${home}/kimi/credentials`]) expect(existsSync(join(target, path)), path).toBe(false);
   });
 
-  it("holds no secret anywhere: every byte of the archive, its staging and the restored folder is free of them (JC 2026-10-18 « Exclure tout »)", async () => {
+  it("holds no secret anywhere: every byte of the archive, its staging and the restored folder is free of them (Owner 2026-10-18 « Exclure tout »)", async () => {
     const source = directory();
     fixture(source).close();
     let n = 0;

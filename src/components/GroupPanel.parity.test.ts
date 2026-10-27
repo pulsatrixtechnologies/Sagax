@@ -1,5 +1,5 @@
 // The group's right panel and the bot's right panel must read as one design
-// (JC, 2026-10-21: "le panneau de droite d'un group chat doit respecter les
+// (owner, 2026-10-21: "le panneau de droite d'un group chat doit respecter les
 // memes criteres UX que le panneau du bot"). The panel shell, the resize
 // handle, the header avatar (sized by #977), the name spacing and the tab
 // body all come from the same primitives and carry the same classes. These

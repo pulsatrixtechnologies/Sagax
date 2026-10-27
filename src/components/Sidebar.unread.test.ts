@@ -41,7 +41,7 @@ beforeEach(() => {
 });
 
 describe("sidebar unread rows", () => {
-  // The reference design's rows (JC, 2026-10-15): an unread bot keeps its name's
+  // The reference design's rows (owner, 2026-10-15): an unread bot keeps its name's
   // weight and gets one blue dot at the row's end.
   it("marks an unread bot with one blue dot at the row's end, keeps the Unread label, and no bold name", () => {
     fixture.state = { bots: [bot("quiet"), bot("loud", { unread: true })], groups: [], sections: [] };

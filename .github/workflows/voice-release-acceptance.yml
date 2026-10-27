@@ -13,7 +13,7 @@ on:
         description: Commit to check out (defaults to the workflow sha)
         required: false
         type: string
-  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
+  # CI runs once, on the release candidate (manual dispatch): Owner 2026-10-14.
 
 permissions:
   contents: read

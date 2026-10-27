@@ -1,5 +1,5 @@
 // Surface-pin provenance end to end: a person's pin survives a Works on
-// change, Auto records no pin at all (JC 2026-10-16: Auto picks each turn),
+// change, Auto records no pin at all (owner 2026-10-16: Auto picks each turn),
 // the boot repair clears the auto pins an older build left, and it preserves
 // unknown pins from before provenance existed. Real server, fake engine, and a
 // restartable fixture home so tests can seed bots.json between boots — the

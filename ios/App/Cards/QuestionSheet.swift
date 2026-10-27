@@ -1,7 +1,7 @@
 import CompanionCore
 import SwiftUI
 
-/// The one look of every interactive question (JC 2026-10-20), the
+/// The one look of every interactive question (owner 2026-10-20), the
 /// desktop's `src/components/QuestionSheet.tsx` in SwiftUI: under the bot's
 /// bubble, a separate card in the bubble's own fill, 16 pt corners and
 /// padding, the question in bold, then one row per answer: a small rounded

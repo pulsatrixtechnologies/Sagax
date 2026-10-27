@@ -197,7 +197,7 @@ public struct PersonSheetModel: Hashable, Sendable {
     public var directRoom: Room?
     /// Message: off for yourself, a disabled or service account, and while
     /// the sheet was opened from inside their direct conversation (it would
-    /// only reopen it, JC 2026-10-26). From a group or a list it stays.
+    /// only reopen it, the owner 2026-10-26). From a group or a list it stays.
     public var canMessage: Bool
     /// "Manage in Perspicax": an admin only, http(s) only.
     public var manageURL: URL?

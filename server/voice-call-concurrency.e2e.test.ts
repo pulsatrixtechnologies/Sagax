@@ -119,7 +119,7 @@ posixOnly("voice call true concurrency e2e", () => {
   });
 
   it("a call with N utterances while the bot only thinks: no parallel task, one answered turn for the final words", async () => {
-    // JC 2026-10-13: a partial and its final each opened a "Tâche en
+    // Owner 2026-10-13: a partial and its final each opened a "Tâche en
     // parallèle" card ("And And Just wondering if you will be." / "... would be
     // able to ..."). The person's words are the call, never background work.
     const bot = await busyCall("thinkN", "think");

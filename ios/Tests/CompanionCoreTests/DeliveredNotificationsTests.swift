@@ -43,7 +43,7 @@ final class DeliveredNotificationsTests: XCTestCase {
         XCTAssertTrue(hidden.isHiddenFromPerson)
     }
 
-    /// 2026-10-22 (JC): a routine's automatic results thread is no row, no
+    /// 2026-10-22 (owner): a routine's automatic results thread is no row, no
     /// badge and never the single chat's home; reports go to the person's chat.
     func testRoutineResultsThreadsStayOutOfTheListBadgeAndStream() throws {
         var results = task("r", unread: true)

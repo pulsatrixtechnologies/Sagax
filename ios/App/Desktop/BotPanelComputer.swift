@@ -58,7 +58,7 @@ struct BotPanelComputer: View {
         return showsLocalVm
     }
 
-    /// The bots' browser is never offered on iOS (JC, 2026-10-15): no
+    /// The bots' browser is never offered on iOS (owner, 2026-10-15): no
     /// Browser entry in the chooser and no live browser in place of the
     /// screen. The desktop keeps its own.
     private var browserOffered: Bool { false }

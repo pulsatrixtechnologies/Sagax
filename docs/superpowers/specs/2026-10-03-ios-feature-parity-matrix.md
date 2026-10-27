@@ -1,12 +1,12 @@
 # iOS feature parity matrix (iPhone and iPad vs the Electron renderer)
 
-Date: 2026-10-03 (section 14 added 2026-10-08) · Status: inventory and plan, awaiting JC review · Scope: `ios/` (iPhone
+Date: 2026-10-03 (section 14 added 2026-10-08) · Status: inventory and plan, awaiting the owner review · Scope: `ios/` (iPhone
 and iPad), with the sidecar (`companion/src/routes.ts`) and server (`server/request-auth.ts`)
 gates · Branch: `feat/ipad-desktop-parity`
 
 ## Why
 
-JC (2026-10-02): "the iOS version lacks a lot of the features of the Electron version. Since
+Owner (2026-10-02): "the iOS version lacks a lot of the features of the Electron version. Since
 we are working on iPad, improve the iOS (iPhone) version too, as long as the look of the chat
 and interaction doesn't change. We need to be on parity with the features."
 
@@ -25,10 +25,10 @@ Two constraints frame every row below:
    remote-client renderer shows. Paired with a server, iOS shows what the served renderer shows
    for the session's scope (client: `CLIENT_ALLOW`; admin: everything).
 
-These two pull against JC's "parity with the features": much of the Electron app is hidden
+These two pull against the owner's "parity with the features": much of the Electron app is hidden
 in remote-client mode (full bot panel, Inspector, approval mode, room setup, templates, most
 Settings). The matrix therefore tags every feature with a **tier**, so the plan ships the
-uncontroversial part first and isolates the policy decisions (see "Decisions for JC").
+uncontroversial part first and isolates the policy decisions (see "Decisions for the owner").
 
 ## How to read the tables
 
@@ -153,7 +153,7 @@ Copy, Select Text, Edit and retry; branch switcher :1495), `SelectableTextSheet.
 | MS6 | Edit a user message (new branch) | ChatView:410 | POST .../messages/:m/edit | Y | Y | Y | DONE (alert "Edit and retry") | | inline editor | A | none |
 | MS7 | Branch switcher ‹ 2/3 › | ChatView:604 | POST /api/bots/:id/active-branch | Y | Y | Y | DONE | | = | A | none |
 | MS8 | Reply quote in the bubble, tap to jump | ReplyQuote.tsx | local | Y | n/a | n/a | MISSING (no `replyToId` decoded) | quote inside the bubble | = | A | none |
-| MS9 | Pin message, pinned banner | ChatView:433,577,1436 | PATCH tasks {pinnedMessageId} | **N** | Y | Y | MISSING | long-press > Pin; strip under the header (if JC lifts the RC rule, decision D2) | hover row (admin) | C | none |
+| MS9 | Pin message, pinned banner | ChatView:433,577,1436 | PATCH tasks {pinnedMessageId} | **N** | Y | Y | MISSING | long-press > Pin; strip under the header (if the owner lifts the RC rule, decision D2) | hover row (admin) | C | none |
 | MS10 | Reactions on people's and bots' messages (2026-10-09): smiley in the hover bar, picker (8 quick + search), chips with count, mine highlighted, names in the tooltip | Reactions.tsx, MessageBar.tsx, GroupView tray | POST /api/threads/:t/messages/:m/reactions (toggle for the caller), live `message.patch` | Y | Y | Y | PARTIAL (emoji row in the long-press menu; chips count `actors`; mine only for an older `by: "user"`) | long-press > reaction row; chips under the bubble | keep | P | iPhone: highlight mine by the config viewer's principal, names on long-press of a chip |
 | MS11 | Find in thread (⌘F) | ChatFindBar.tsx | GET /api/search?threadId= | Y | Y | Y | PARTIAL (global SearchSheet only) | "+" > Find in conversation (find bar over the header) | `chat-find` | A | none |
 | MS12 | Export conversation | ExportTranscriptMenu.tsx | local | Y | n/a | n/a | DONE ("+" > Share transcript, GET /api/threads/:t/export) | | `chat-export-menu` | A | none |
@@ -309,7 +309,7 @@ voice, notifications, the chat's files). The iPhone already exceeds that in seve
 
 ### 7c. Advanced sections (hidden in remote-client mode)
 
-All of these are **N** in RC. On a sidecar pairing they stay hidden unless JC lifts the rule
+All of these are **N** in RC. On a sidecar pairing they stay hidden unless the owner lifts the rule
 (decision D1). On an admin-scope server pairing they ship behind `canAdminister`.
 
 | ID | Feature | Desktop | Routes | SC | CS | iPhone | iPhone placement | iPad | T | Work |
@@ -460,7 +460,7 @@ this branch.
 
 ## 14. Desktop changes of 2026-10-08 (#143 to #223)
 
-Everything merged on `main` between 5ebd3dfda and fb1fe8308. JC's rule for iOS (2026-10-04,
+Everything merged on `main` between 5ebd3dfda and fb1fe8308. Owner's rule for iOS (2026-10-04,
 approved): **the iPhone takes the same usage paths as Electron** (names, groupings, order);
 only the presentation adapts, and the iPhone chat look stays. Brand stays Sagax, with our
 own mascots and skins.
@@ -487,7 +487,7 @@ rows and people, (b) Connect apps, (c) settings and approvals, (d) bot panel and
 | DC12 | People DMs close instead of hiding; never in Hidden (#219) | Sidebar member menu, sidebar-hidden.ts | synced pref `sagax.sidebarHidden.v1` (`person:` entry) | A people DM row's menu says Close (not Hide); a closed DM leaves the home and is never listed under Hidden; it comes back when selected (person sheet Message, New menu, search) or on a new message, whatever `unhideOnMessage.people` says. SB25 updated. | iOS UI | a |
 | DC13 | Person panel header order, Member hidden (#219) | PersonPanel.tsx | GET /api/org/directory | Person sheet header: name, then title and points, then label, then the buttons; the role line shows only for an admin or a disabled account. "Close conversation" replaces Hide/Show. | iOS UI | a |
 | DC14 | Own row shows title and points per switches; other rows never (#194) | SidebarProfileMenu.tsx | GET /api/me/achievements | The phone has no account row: the account menu's header line shows the person's name, title and points (each while its switch is on). People rows never show them. | iOS UI | a |
-| DC15 | Routines badge on the account row, bigger, accent, never red (#215, #194) | SidebarProfileMenu.tsx | GET /api/routines | No badge on the account photo (JC, 2026-10-18: the reference design puts nothing there); the account menu's Automations entry shows the active routines count and opens Automations. | iOS UI | a |
+| DC15 | Routines badge on the account row, bigger, accent, never red (#215, #194) | SidebarProfileMenu.tsx | GET /api/routines | No badge on the account photo (owner, 2026-10-18: the reference design puts nothing there); the account menu's Automations entry shows the active routines count and opens Automations. | iOS UI | a |
 | DC16 | Nudge reaches the person; sound, shake, notification (#164, #222) | src/lib/desktop-nudge.ts, electron/desktop-attention.mjs | frame `nudge` {open: {groupId, threadId}} | Receive: the wizz sound (bundled `nudge.mp3`), a haptic pattern, and a local notification when the app is in the background or another chat is open; tap opens the conversation. Sender never reacts; replays older than 2 min do nothing. | iOS UI | c |
 | DC17 | Window shake, Dock bounce, taskbar flash, red button hides (#222) | electron/desktop-attention.mjs, window-nudge | bridge | N/A (Electron window and Dock). iOS equivalent: haptics + local notification + app icon badge. | N/A | c (equivalent) |
 | DC18 | Settings > Notifications section (#222) | SettingsModal Notifications | local | Settings > Notifications, desktop order: notification sounds, keep notifications on screen (iOS: a note that the banner style is set in the iOS Settings app), unread count on the app icon, nudge sound, nudge haptic (the shake's iOS equivalent). The two sound rows leave Appearance. | iOS UI | c |
@@ -527,7 +527,7 @@ Not listed: releases and chores with no feature (#190 upstream sync, #192, #193,
 
 ## 15. Voice call bar on iOS (2026-10-09, branch `feat/ios-call-bar`)
 
-JC's ask: on iOS the bot call works exactly like Electron (0.4.10, #178): no full-screen
+Owner's ask: on iOS the bot call works exactly like Electron (0.4.10, #178): no full-screen
 page, the floating bar under the bot name. Presentation only: the call engine, the call
 machine states, CallKit and the server routes are unchanged. Sources:
 `ios/App/Call/CallViews.swift` (`CallBar`, `CallSettingsPanel`, `CallTranscriptPanel`),
@@ -557,7 +557,7 @@ Plan D.5 (Perspicax master plan 2026-10-09). Four items; each row says what matc
 | ID | Desktop behaviour | Desktop path | iOS now | State |
 |---|---|---|---|---|
 | P1-1 | Call card, Advanced: "Only my voice" (switch, enrollment row: Record my voice, progress, Your voice is enrolled, Record again, Forget my voice; turning it on without a voice records one) and "Soft tone while a slow answer is coming" | VoiceModeSettingsPanel.tsx, voice-mode/call.ts (`enroll`, `verify`, `armCue`), speaker-id.ts, call-settings.ts | Same rows, order, words and defaults; settings under `omb.voiceCall.v1` (`onlyMyVoice`, `thinkingCue`), the print under `omb.voiceCall.voiceprint.v1` in the desktop's shape, on the phone only. Enrollment: 6 s of voiced speech within 25 s while the bot is silent, as on the desktop (`CallEnrollmentRecorder`). Soft tone: the desktop's two notes (392, 523 Hz) 1.2 s after the person stopped when nothing is audible yet, its own switch, quieter than the call sounds. Engine hook: `LiveCallEngine.enroll`, `verifying`, `forgetVoice`. **Gap:** no speaker embedding on the phone (the desktop runs CAM++ in ONNX): the gate is the enrolled speaking level (frames under 22 % of it never start a turn, turns averaging under 35 % are dropped with the rejected tone, the level learns from accepted turns). A second voice as close and loud as the person passes; iOS voice processing may also level voices out. Tests: `CallAdvancedTests` (settings, print, gate, enrollment, soft tone), UITest `testTheAdvancedCardHasOnlyMyVoiceAndTheSoftTone`. | PARTIAL (no embedding) |
-| P1-2 | A room's call | GroupCallView.tsx (desktop: full overlay) | JC's ask: the bot call's floating bar under the room's name, no full-screen screen. `CallBar(subject: .room)`: up to three overlapping member faces (focused one ringed and in front, "+N" for more), each with its own state face; the room's status ("Nova is speaking", "Bringing the group in"); Settings card (language, Advanced, hold) and Transcript card with the room's hint. Same engine and turn-taking as before. Differs from the desktop on purpose (the desktop still draws its overlay). UITest `testARoomCallTakesTurns` now checks the bar and the faces. | DONE (iOS presentation) |
+| P1-2 | A room's call | GroupCallView.tsx (desktop: full overlay) | Owner's ask: the bot call's floating bar under the room's name, no full-screen screen. `CallBar(subject: .room)`: up to three overlapping member faces (focused one ringed and in front, "+N" for more), each with its own state face; the room's status ("Nova is speaking", "Bringing the group in"); Settings card (language, Advanced, hold) and Transcript card with the room's hint. Same engine and turn-taking as before. Differs from the desktop on purpose (the desktop still draws its overlay). UITest `testARoomCallTakesTurns` now checks the bar and the faces. | DONE (iOS presentation) |
 | P1-3 | Routine "Runs as" (organization server): the person a routine runs as, a dropdown for an admin or a team manager (people who cannot run the bot listed, not choosable, "(cannot run this bot's routines)"), a search past 8 people, "Will run once {name} signs in", the help line; the line alone for anyone else; nothing on a solo server | routines/RunAsField.tsx, RoutineCalendarPage.tsx, GET /api/routines/run-as-options, POST/PATCH /api/routines {runAs} | Editor section after the results thread, as on the desktop: a row with the person's initials and name that opens the list (search past 8, disabled rows with the reason, pending line, check on the chosen one), or the "Runs as {name}" line when the person cannot choose; options asked again when the bot, type or room changes; a choice that no longer stands falls back; the save sends `runAs` only when it differs from the routine's current person. Differs: initials only, no Perspicax picture (the phone does not fetch them yet). Tests: `RoutineRunAsTests`, UITest `testRunAsListsWhoMayRunTheRoutine` (org fixture). | DONE (initials, no picture) |
 | P1-4 | "Bot templates" beside the Connect apps search: closes Connect apps, opens the Templates library when Templates is on, else the new bot dialog | plugins/ConnectAppsView.tsx, PluginsPanel.tsx `openBotTemplates` | A "Bot templates" row heading the Connect apps list (the phone's search lives in the navigation bar, so the button cannot sit inside it): closes Connect apps (and Settings around it), then Templates (`features.templates` and an admin pairing, `BotTemplatesEntry`) or the new bot sheet. Differs: placement (list head, not beside the field); the iPad's desktop Plugins modal does not draw it yet. Tests: `BotTemplatesEntryTests`, UITest `testBotTemplatesBesideTheSearchOpensTheNewBotSheet`. | DONE (placement adapted) |
 | P1-5 | Browse Bots replaces the Templates library (2026-10-09, `feat/catalog-replaces-templates`): "Bot templates" in Connect apps, "Browse templates" in New bot, the sidebar's Templates place and install links open Browse Bots on its Templates section (organization packages, presets, community teams with their apps as chips and an app filter, built-in roles, then Import, From a folder and Share a team). Follow-up (`fix/browse-bots-swap-templates`): the swap is 1:1. The sidebar row is "Browse Bots" (catalogue icon, opens the catalogue's home view, hidden until Settings > Experimental features > Browse Bots is on, off by default, same `features.templates` key); Connect apps' row is "Browse Bots"; Browse Bots is gone from the composer To: menu, the mascot and "..." menus and the sidebar section menu. iOS mirrors this placement. | bot-catalog/BotCatalogModal.tsx, BotCatalogView.tsx, TemplateTools.tsx, src/lib/templates-entry.ts | Not done. iOS mirrors the placement above. iOS needs the catalogue (Browse Bots with its Templates section) to replace its "Bot templates" row of P1-4 (`BotTemplatesEntry`, which still opens Templates behind `features.templates` or the new bot sheet). Until then iOS keeps P1-4 as shipped. | DONE on iOS 2026-10-09, see DC49 |
@@ -582,7 +582,7 @@ RC: admin or organization pairings, or a policy decision), **H 1** (webhooks not
 iPad: every row is today in the iPhone state (phone UI). The desktop look for the iPad is the
 separate shell work of the 2026-10-02 spec; this document adds the feature work both share.
 
-## Top 10 iPhone gaps (by daily value for JC)
+## Top 10 iPhone gaps (by daily value for the owner)
 
 1. **Message actions**: Reply (with quote), Regenerate, Speak, View source (CO2, MS8, MS5,
    MS4, MS3). All routes open.
@@ -624,7 +624,7 @@ separate shell work of the 2026-10-02 spec; this document adds the feature work 
 - The remote client draws the room Memory tab, but the sidecar has no `/api/groups/:id/memory`
   route (RM8): a renderer bug on the desktop side too.
 
-## Decisions for JC
+## Decisions for the owner
 
 - **D1. Advanced bot panel on a sidecar pairing.** RC hides skills, memory, history, prompt
   preview, presets, achievements (BA2, BA4, BA5, BA18, NB2, ST9). Parity "with the features"
@@ -638,7 +638,7 @@ separate shell work of the 2026-10-02 spec; this document adds the feature work 
   picture, export bot): keep (proposed); the spec rule would remove them.
 
 
-**JC's answers (2026-10-03):** D1 yes: open the advanced panel on the sidecar for the owner (reads and edits, tested routes). D2 yes: message pin on iPhone and iPad. D3 open the room memory route (GET/PUT) on the sidecar. D4 keep the iPhone extras (pin bot, delete bot, framing), owner or admin only.
+**the owner's answers (2026-10-03):** D1 yes: open the advanced panel on the sidecar for the owner (reads and edits, tested routes). D2 yes: message pin on iPhone and iPad. D3 open the room memory route (GET/PUT) on the sidecar. D4 keep the iPhone extras (pin bot, delete bot, framing), owner or admin only.
 
 ## Build plan
 
@@ -660,7 +660,7 @@ separate shell work of the 2026-10-02 spec; this document adds the feature work 
   suggestion strip). Session gains extensions in their own files (`Session+Threads.swift`,
   `Session+Routines.swift`, ...), one per package.
 - **Gates in one place.** WP0a adds `Core/SurfaceGate.swift`: `allowed(_ feature)` from the
-  pairing kind (sidecar, server client, server admin, org), the RC rule and JC's decisions D1-D4.
+  pairing kind (sidecar, server client, server admin, org), the RC rule and the owner's decisions D1-D4.
   Every new row goes through it; nothing is drawn disabled.
 - **Tests:** CompanionCore logic and decoding get unit tests (`swift test` on the package, no
   simulator). UI rows get phone parity screens only when they change a captured surface (they
@@ -727,7 +727,7 @@ WP9, WP12, WP6, WP4, WP11, WP10, WP13, WP16, WP14, WP15, WP17.
 
 ## 16. Mascot looks and sidebar sync (2026-10-09, branch `fix/ios-desktop-state-sync`)
 
-JC's report (TestFlight 0.4.9 build 14 against the production organization server, 0.4.15): bots
+Owner's report (TestFlight 0.4.9 build 14 against the production organization server, 0.4.15): bots
 showed as the owl on the phone and not on Electron; sections deleted on the phone stayed on
 the desktop. Causes: the phone refused a look whose `skins` carried a key it did not know
 (the desktop's editor saves `skins.shape`, `skins.trombi` and `skins.bunbu` together, so

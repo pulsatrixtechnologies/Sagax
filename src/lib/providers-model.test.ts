@@ -34,7 +34,7 @@ describe("providers on this installation", () => {
   });
 
   it("says how each account is reached", () => {
-    expect(accountDetail(instance("a", "claudeAgent", "Claude", { account: { email: "jc@example.com" } }))).toBe("email");
+    expect(accountDetail(instance("a", "claudeAgent", "Claude", { account: { email: "owner@example.com" } }))).toBe("email");
     expect(accountDetail(instance("b", "codex", "Codex", {}, "api"))).toBe("apiKey");
     expect(accountDetail(instance("c", "grokAgent", "Grok", { authenticated: false }))).toBe("notSignedIn");
     expect(accountDetail({ ...instance("d", "geminiAgent", "Gemini"), snapshot: { state: "unavailable" } })).toBe("unavailable");

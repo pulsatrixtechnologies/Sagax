@@ -29,7 +29,7 @@ function thread(botId: string, threadId: string, title: string) {
   };
 }
 
-function jcStack(): GotoGroup {
+function ownerStack(): GotoGroup {
   const items = [
     exchange("ts", "Timesheets"),
     exchange("sales", "Sales"),
@@ -66,7 +66,7 @@ describe("GotoGroupChip", () => {
   const items = () => [...host.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
 
   it("draws one chip for six lines, three targets with three faces", async () => {
-    await render(jcStack(), () => true);
+    await render(ownerStack(), () => true);
     expect(host.textContent).toContain("3 conversations with");
     expect(host.textContent).toContain("3 agents");
     expect(host.textContent).not.toContain("Go to conversation");
@@ -78,14 +78,14 @@ describe("GotoGroupChip", () => {
 
   it("reads in French", async () => {
     setLocale("fr");
-    await render(jcStack(), () => true);
+    await render(ownerStack(), () => true);
     expect(host.textContent).toContain("3 conversations avec");
     expect(host.textContent).toContain("3 agents");
   });
 
   it("lists each target once and goes to the one picked", async () => {
     const onSelect = vi.fn((_target: GotoTarget) => true);
-    await render(jcStack(), onSelect);
+    await render(ownerStack(), onSelect);
     await act(async () => chip().click());
     expect(chip().getAttribute("aria-expanded")).toBe("true");
     expect(host.querySelector("[role=menu]")).not.toBeNull();
@@ -98,7 +98,7 @@ describe("GotoGroupChip", () => {
   });
 
   it("moves with the arrow keys and closes on Escape back to the chip", async () => {
-    await render(jcStack(), () => true);
+    await render(ownerStack(), () => true);
     await act(async () => chip().click());
     const menu = host.querySelector<HTMLElement>("[role=menu]")!;
     const key = async (name: string) => {
@@ -120,7 +120,7 @@ describe("GotoGroupChip", () => {
   });
 
   it("opens the exchange sheet in place when there is no conversation to go to", async () => {
-    await render(jcStack(), () => false);
+    await render(ownerStack(), () => false);
     await act(async () => chip().click());
     await act(async () => items()[0]!.click());
     const sheet = host.querySelector("[data-testid=bot-exchange-sheet]");

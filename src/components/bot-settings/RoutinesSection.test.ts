@@ -89,7 +89,7 @@ function render(routines: Routine[], runs: RoutineRun[]) {
 }
 
 describe("RoutinesSection", () => {
-  // JC, 2026-10-27: a bot without routines shows no section (no title, no +,
+  // Owner, 2026-10-27: a bot without routines shows no section (no title, no +,
   // no dashed box), one quiet line. Asking in chat and "New routine" stay.
   it("shows one quiet hint instead of the section when the bot has no routines", () => {
     const markup = render([], []);
@@ -166,7 +166,7 @@ describe("RoutinesSection", () => {
   });
 });
 
-// JC, 2026-10-08: the routine page's round back and close buttons did nothing
+// Owner, 2026-10-08: the routine page's round back and close buttons did nothing
 // (the panel's drag strip swallowed them) and did not look like the panel's
 // own top bar. The header is now the panel's .content-topbar row with the
 // shared CIRCLE_BUTTON, back returns to the list and close closes the panel.

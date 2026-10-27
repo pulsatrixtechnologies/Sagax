@@ -28,7 +28,7 @@ describe("single stream segments (thread mode off)", () => {
   });
 });
 
-// 2026-10-22 (JC: "everything should be unified in a single chat page").
+// 2026-10-22 (owner: "everything should be unified in a single chat page").
 describe("a routine results thread in the stream", () => {
   it("is not a segment, so it never becomes the stream's home", () => {
     const tasks = [

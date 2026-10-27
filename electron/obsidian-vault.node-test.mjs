@@ -28,7 +28,7 @@ const config = (dir) => JSON.parse(fs.readFileSync(path.join(dir, "obsidian.json
 test("an unknown folder is not a vault: obsidian://open alone would answer Vault not found", () => {
   const { base, folder } = setup();
   try {
-    assert.equal(isRegisteredVault({ vaults: { a: { path: "/Users/jc/Notes" } } }, folder), false);
+    assert.equal(isRegisteredVault({ vaults: { a: { path: "/Users/example/Notes" } } }, folder), false);
     assert.equal(isRegisteredVault({ vaults: { a: { path: path.dirname(folder) } } }, folder), true);
     assert.equal(isRegisteredVault({ vaults: { a: { path: `${folder}-other` } } }, folder), false);
   } finally {
@@ -39,12 +39,12 @@ test("an unknown folder is not a vault: obsidian://open alone would answer Vault
 test("Obsidian closed: the folder is added to its vaults, every other setting kept, then opened", async () => {
   const { base, appData, configDir, folder, opened, openUrl } = setup();
   try {
-    fs.writeFileSync(path.join(configDir, "obsidian.json"), JSON.stringify({ vaults: { abc: { path: "/Users/jc/Notes", ts: 1, open: true } }, frame: "hidden", cli: true }));
+    fs.writeFileSync(path.join(configDir, "obsidian.json"), JSON.stringify({ vaults: { abc: { path: "/Users/example/Notes", ts: 1, open: true } }, frame: "hidden", cli: true }));
     const result = await openFolderInObsidian({ folder, appData, installed: () => true, openUrl, platform: "darwin", now: () => 42, id: () => "0123456789abcdef" });
     assert.deepEqual(result, { ok: true });
     assert.deepEqual(opened, [obsidianOpenUrl(folder)]);
     assert.deepEqual(config(configDir), {
-      vaults: { abc: { path: "/Users/jc/Notes", ts: 1, open: true }, "0123456789abcdef": { path: folder, ts: 42, open: true } },
+      vaults: { abc: { path: "/Users/example/Notes", ts: 1, open: true }, "0123456789abcdef": { path: folder, ts: 42, open: true } },
       frame: "hidden",
       cli: true,
     });
@@ -73,7 +73,7 @@ test("Obsidian never started: its settings file is created with the vault", asyn
 test("Obsidian running: its settings are left alone and its vault chooser opens", async () => {
   const { base, appData, configDir, folder, opened, openUrl } = setup();
   try {
-    const original = JSON.stringify({ vaults: { abc: { path: "/Users/jc/Notes", ts: 1 } } });
+    const original = JSON.stringify({ vaults: { abc: { path: "/Users/example/Notes", ts: 1 } } });
     fs.writeFileSync(path.join(configDir, "obsidian.json"), original);
     fs.symlinkSync("host.local-4242", path.join(configDir, "SingletonLock"));
     const alive = (pid) => pid === 4242;

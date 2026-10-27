@@ -86,7 +86,7 @@ describe("the nested root of the composer's menu", () => {
   });
 });
 
-describe("groupedModelMenuEntries (Simple, JC 2026-10-14)", () => {
+describe("groupedModelMenuEntries (Simple, Owner 2026-10-14)", () => {
   const row = (key: string, extra: Partial<ModelMenuRow> = {}): ModelMenuRow => ({ key, kind: "model", label: key, current: false, ...extra });
   const sections: ModelMenuSection[] = [
     { key: "top", rows: [{ key: "auto", kind: "auto", label: "Auto", current: true }] },

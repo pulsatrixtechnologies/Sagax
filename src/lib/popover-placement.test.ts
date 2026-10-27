@@ -1,5 +1,5 @@
 // Where the reaction pill, the "…" menu and the reaction picker go beside a
-// chat message (JC, 2026-10-18): the first message at the top, the last one
+// chat message (owner, 2026-10-18): the first message at the top, the last one
 // at the bottom, a short window, a narrow one, bubbles on both sides.
 import { describe, expect, it } from "vitest";
 

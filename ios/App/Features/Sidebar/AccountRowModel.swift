@@ -1,6 +1,6 @@
 // The desktop sidebar's account row on the phone (#194, #215; matrix DC14,
 // DC15). The phone has no account row. The active routines count rides on
-// the account menu's Automations entry, not on the photo (JC, 2026-10-18),
+// the account menu's Automations entry, not on the photo (owner, 2026-10-18),
 // and the menu opens on a line with the person's own title and points, each
 // while its switch is on.
 import CompanionCore

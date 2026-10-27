@@ -44,7 +44,7 @@ async function serve(auth: RequestAuth) {
   return { grants, audits, send };
 }
 
-describe("a person's own tool access (JC 2026-10-26)", () => {
+describe("a person's own tool access (Owner 2026-10-26)", () => {
   it("grants themselves a scope of their own environment, every tier, lists and revokes it, audited", async () => {
     const { send, grants, audits } = await serve(member("pr_ada"));
     grants.grant({ kind: "user", id: "pr_other" }, "agents:read", "x");

@@ -11,17 +11,17 @@ import { afterAll, describe, expect, it } from "vitest";
 import { customRuleCandidate, factsForCall, realPath } from "./custom-rules-review.ts";
 import { callFacts, candidateWhen, compileRule, evaluateCustomRules, normalizePath, ruleCoversCall, shellProgram, type CustomRule } from "../shared/custom-rules.ts";
 
-const home = "/Users/jc";
+const home = "/Users/example";
 const rule = (when: string, behavior: CustomRule["behavior"] = "allow", riskScope: CustomRule["riskScope"] = []): CustomRule =>
   ({ id: `r-${when}`, ownerId: "o", botId: null, when, behavior, riskScope, enabled: true, createdAt: 1, updatedAt: 1 });
 /** An exact command rule as "Toujours permettre ceci" saves it: bound to its card. */
 const bound = (when: string, facts: { tool: string; command?: string; cwd?: string; providerInstanceId?: string }, riskScope: CustomRule["riskScope"] = []): CustomRule =>
   ({ ...rule(when, "allow", riskScope), botId: "bot-1", binding: { tool: facts.tool, botId: "bot-1", command: facts.command ?? "", ...(facts.cwd ? { cwd: facts.cwd } : {}), ...(facts.providerInstanceId ? { providerInstanceId: facts.providerInstanceId } : {}) } });
 const bash = (command: string) => factsForCall({ tool: "Bash", input: JSON.stringify({ command }) }, home);
-const readCard = factsForCall({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/a.txt" }) }, home);
+const readCard = factsForCall({ tool: "Read", input: JSON.stringify({ file_path: "/Users/example/Documents/a.txt" }) }, home);
 const readRule = candidateWhen(readCard);
 // factsForCall resolves each path on this disk (realPath). On Windows that
-// turns /Users/jc/... into D:\Users\jc\..., a path no rule reads: every
+// turns /Users/example/... into D:\Users\example\..., a path no rule reads: every
 // folder allow then fails closed (see "Windows paths" below), so the cases
 // that expect an allow inside the folder are POSIX only.
 const posixOnly = it.skipIf(process.platform === "win32");
@@ -59,9 +59,9 @@ const ATTACKS = [
   "cat ~/Documents/[l]ink",
   "cat ~/Documents/.?/.ssh/id_rsa",
   "cat ~/Documents/[.][.]/.ssh/id_rsa",
-  "file -f/Users/jc/.ssh/id_rsa ~/Documents/a.txt",
-  "file -C -m/Users/jc/Documents/a.txt ~/Documents/a.txt",
-  "wc --files0-from=/Users/jc/.ssh/id_rsa ~/Documents/a.txt",
+  "file -f/Users/example/.ssh/id_rsa ~/Documents/a.txt",
+  "file -C -m/Users/example/Documents/a.txt ~/Documents/a.txt",
+  "wc --files0-from=/Users/example/.ssh/id_rsa ~/Documents/a.txt",
   "cat $'~/Documents/a.txt'",
   "\\cat ~/Documents/a.txt",
   "/bin/r? -rf ~/Documents",
@@ -143,7 +143,7 @@ describe("round 2: deny sees real paths, servers do not decide their own risk", 
 
   it("a readOnly hint never makes a delete, an upload or a wipe a read", () => {
     for (const tool of ["mcp__evil__delete_file", "mcp__evil__upload_file", "mcp__evil_cw__wipe"]) {
-      const facts = factsForCall({ tool, input: JSON.stringify({ path: "/Users/jc/Documents/a.txt" }), hints: { readOnly: true } }, home);
+      const facts = factsForCall({ tool, input: JSON.stringify({ path: "/Users/example/Documents/a.txt" }), hints: { readOnly: true } }, home);
       expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], facts, { home, botId: "bot-1" }).kind, tool).toBe("none");
       expect(evaluateCustomRules([rule("lire avec ConnectWise")], facts, { home, botId: "bot-1" }).kind, tool).toBe("none");
     }
@@ -165,7 +165,7 @@ describe("round 3: a folder deny sees unplaced paths; a broad allow fails closed
     "cat ~/Documents/sub/x",
     "cat Documents/sub/x",
     "rm -r Documents/sub",
-    "tar -cf /tmp/o.tar --directory=/Users/jc/Documents/sub x",
+    "tar -cf /tmp/o.tar --directory=/Users/example/Documents/sub x",
     "ls -C",
     "grep -r k Documents/sub",
     "cp Documents/sub/x /tmp/",
@@ -179,14 +179,14 @@ describe("round 3: a folder deny sees unplaced paths; a broad allow fails closed
     expect(evaluateCustomRules([sub, everyCommand], relative, { home, botId: "bot-1" }).kind).toBe("deny");
     expect(evaluateCustomRules([rule("lire les fichiers dans ~/")], relative, { home, botId: "bot-1" }).kind).toBe("none");
     // a cwd in the tool's own arguments is never trusted
-    const spoof = callFacts({ tool: "Bash", input: JSON.stringify({ command: "cat .ssh/id_rsa", cwd: "/Users/jc/Documents" }), home });
+    const spoof = callFacts({ tool: "Bash", input: JSON.stringify({ command: "cat .ssh/id_rsa", cwd: "/Users/example/Documents" }), home });
     expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], spoof, { home, botId: "bot-1" }).kind).toBe("none");
   });
 
   it.each([
-    [{ path: "/Users/jc/Documents/sub/x" }],
-    [{ uri: "file:///Users/jc/Documents/sub/x" }],
-    [{ input_path: "/Users/jc/Documents/sub/x" }],
+    [{ path: "/Users/example/Documents/sub/x" }],
+    [{ uri: "file:///Users/example/Documents/sub/x" }],
+    [{ input_path: "/Users/example/Documents/sub/x" }],
     [{ options: { target: "~/Documents/sub/x" } }],
   ])("an MCP path under any key is seen by the deny: %j", (args) => {
     const facts = callFacts({ tool: "mcp__fs__read_text_file", input: JSON.stringify(args), home });
@@ -223,12 +223,12 @@ describe("round 3: a folder deny sees unplaced paths; a broad allow fails closed
   });
 
   it("an allow on a folder never covers a path that goes through a symbolic link", () => {
-    const facts = { ...callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/a.txt" }), home }), linked: true };
+    const facts = { ...callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/example/Documents/a.txt" }), home }), linked: true };
     expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], facts, { home, botId: "bot-1" }).kind).toBe("none");
   });
 
   it("a deny compares Unicode forms alike", () => {
-    const nfd = "/Users/jc/Documents/Re\u0301u/x";
+    const nfd = "/Users/example/Documents/Re\u0301u/x";
     const facts = callFacts({ tool: "Read", input: JSON.stringify({ file_path: nfd }), home });
     expect(evaluateCustomRules([rule("jamais lire les fichiers dans ~/Documents/R\u00e9u", "deny"), rule("lire des fichiers")], facts, { home, botId: "bot-1" }).kind).toBe("deny");
   });
@@ -242,16 +242,16 @@ describe("round 4: no family rule allows the shell; side effects are seen by den
   const shell = (command: string) => callFacts({ tool: "Bash", input: JSON.stringify({ command }), command, home });
 
   it.each([
-    "sort -o /Users/jc/.zshrc /Users/jc/Documents/a.txt", "sort -o/Users/jc/.zshrc a.txt", "uniq /Users/jc/Documents/a.txt /Users/jc/.zshrc", "tree -o /Users/jc/.zshrc", "tree -o x",
-    "fd . -x kill -9 1", "fd -X chmod 777", "fd --exec killall Finder", "rg --pre kill x", "rg --pre=/usr/bin/killall x", "less -o /Users/jc/.zshrc /Users/jc/Documents/a.txt", "less -O/Users/jc/x a",
-    "file -C -m /Users/jc/Documents/m", "date -s 0000", "date 0101000070", "hostname evil", "printf -v X y", "env", "which ls", "xargs", "yes", "test -f x", "true", "sleep 99999", "cd /Users/jc/.ssh", "cd ..",
-    "grep -r k /Users/jc/.ssh", "find / -newer x", "find /Users/jc -fls /Users/jc/.zshrc", "tr a b", "cut -f1 /Users/jc/.ssh/id_rsa", "diff /Users/jc/.ssh/id_rsa /dev/null", "more /Users/jc/.ssh/id_rsa",
-    "git log --output=/Users/jc/.zshrc", "git diff --output=/Users/jc/.zshrc", "git -c core.fsmonitor=/tmp/x status", "git -c core.pager=kill log", "git -c diff.external=/tmp/x diff", "git show --ext-diff",
+    "sort -o /Users/example/.zshrc /Users/example/Documents/a.txt", "sort -o/Users/example/.zshrc a.txt", "uniq /Users/example/Documents/a.txt /Users/example/.zshrc", "tree -o /Users/example/.zshrc", "tree -o x",
+    "fd . -x kill -9 1", "fd -X chmod 777", "fd --exec killall Finder", "rg --pre kill x", "rg --pre=/usr/bin/killall x", "less -o /Users/example/.zshrc /Users/example/Documents/a.txt", "less -O/Users/example/x a",
+    "file -C -m /Users/example/Documents/m", "date -s 0000", "date 0101000070", "hostname evil", "printf -v X y", "env", "which ls", "xargs", "yes", "test -f x", "true", "sleep 99999", "cd /Users/example/.ssh", "cd ..",
+    "grep -r k /Users/example/.ssh", "find / -newer x", "find /Users/example -fls /Users/example/.zshrc", "tr a b", "cut -f1 /Users/example/.ssh/id_rsa", "diff /Users/example/.ssh/id_rsa /dev/null", "more /Users/example/.ssh/id_rsa",
+    "git log --output=/Users/example/.zshrc", "git diff --output=/Users/example/.zshrc", "git -c core.fsmonitor=/tmp/x status", "git -c core.pager=kill log", "git -c diff.external=/tmp/x diff", "git show --ext-diff",
     "git grep -Okill x", "git grep --open-files-in-pager=kill x", "git cat-file --textconv HEAD:a", "git -c core.sshCommand=/tmp/x status", "git --exec-path=/tmp status", "git -C /tmp/evilrepo status", "git ls-remote ext::sh", "git fetch", "git config user.name", "git config core.pager kill",
-    "git log -p --ext-diff", "git -c alias.log=x log", "git --config-env=core.pager=X log", "git blame --contents /Users/jc/.ssh/id_rsa a",
+    "git log -p --ext-diff", "git -c alias.log=x log", "git --config-env=core.pager=X log", "git blame --contents /Users/example/.ssh/id_rsa a",
     "fd -1 --exec git push origin main", "fd -1 --exec-batch defaults write com.apple.x k v", "fd -1 -x launchctl bootout gui/501", "fd -1 -x pkill Finder",
-    "sort -o /Users/jc/.ssh/authorized_keys /Users/jc/Downloads/key.txt", "sort --compress-program=/Users/jc/x -S 1 big", "git -C /Users/jc/Documents/r status",
-    "rg --pre /Users/jc/Documents/x.sh k", "rg --pre=x k", "fd -x rm", "fd -1 -x git reset --hard", "cd a", "cat ../secrets/k", "cat secrets/k",
+    "sort -o /Users/example/.ssh/authorized_keys /Users/example/Downloads/key.txt", "sort --compress-program=/Users/example/x -S 1 big", "git -C /Users/example/Documents/r status",
+    "rg --pre /Users/example/Documents/x.sh k", "rg --pre=x k", "fd -x rm", "fd -1 -x git reset --hard", "cd a", "cat ../secrets/k", "cat secrets/k",
   ])("%s is never auto-allowed by a family rule", (command) => {
     const facts = shell(command);
     const all = ["destructive", "irreversible", "external-send", "money"] as CustomRule["riskScope"];
@@ -265,19 +265,19 @@ describe("round 4: no family rule allows the shell; side effects are seen by den
     ["fd -1 --exec git push origin main", "jamais envoyer de messages"],
     ["fd -1 --exec-batch defaults write com.apple.x k v", "jamais écrire des fichiers"],
     ["fd -1 -x launchctl bootout gui/501", "jamais écrire des fichiers"],
-    ["sort -o /Users/jc/.ssh/authorized_keys /Users/jc/Downloads/key.txt", "jamais écrire des fichiers"],
-    ["sort --compress-program=/Users/jc/x -S 1 big", "jamais écrire des fichiers"],
-    ["tree -o /Users/jc/.zshrc", "jamais écrire des fichiers"],
-    ["git log --output=/Users/jc/.zshrc", "jamais écrire des fichiers"],
-    ["rg --pre /Users/jc/Documents/x.sh k", "jamais écrire des fichiers"],
+    ["sort -o /Users/example/.ssh/authorized_keys /Users/example/Downloads/key.txt", "jamais écrire des fichiers"],
+    ["sort --compress-program=/Users/example/x -S 1 big", "jamais écrire des fichiers"],
+    ["tree -o /Users/example/.zshrc", "jamais écrire des fichiers"],
+    ["git log --output=/Users/example/.zshrc", "jamais écrire des fichiers"],
+    ["rg --pre /Users/example/Documents/x.sh k", "jamais écrire des fichiers"],
     ["fd -x rm", "jamais supprimer des fichiers"],
   ])("a deny rule sees the side effect of %s", (command, deny) => {
     expect(evaluateCustomRules([COMMANDS, rule(deny, "deny")], shell(command), { home, botId: "bot-1" }).kind).toBe("deny");
   });
 
   it("only cat, head, tail, wc, ls and stat with absolute paths are plain reads", () => {
-    expect(evaluateCustomRules([READ], shell("cat /Users/jc/Documents/a.txt"), { home, botId: "bot-1" }).kind).toBe("allow");
-    for (const command of ["more /Users/jc/Documents/a.txt", "less /Users/jc/Documents/a.txt", "sort /Users/jc/Documents/a.txt", "uniq /Users/jc/Documents/a.txt", "tree /Users/jc/Documents", "fd . /Users/jc/Documents", "rg k /Users/jc/Documents", "du /Users/jc/Documents", "file /Users/jc/Documents/a.txt", "git -C /Users/jc/Documents log"]) {
+    expect(evaluateCustomRules([READ], shell("cat /Users/example/Documents/a.txt"), { home, botId: "bot-1" }).kind).toBe("allow");
+    for (const command of ["more /Users/example/Documents/a.txt", "less /Users/example/Documents/a.txt", "sort /Users/example/Documents/a.txt", "uniq /Users/example/Documents/a.txt", "tree /Users/example/Documents", "fd . /Users/example/Documents", "rg k /Users/example/Documents", "du /Users/example/Documents", "file /Users/example/Documents/a.txt", "git -C /Users/example/Documents log"]) {
       expect(evaluateCustomRules([READ], shell(command), { home, botId: "bot-1" }).kind, command).toBe("none");
     }
   });
@@ -288,37 +288,37 @@ describe("round 4: no family rule allows the shell; side effects are seen by den
   });
 
   it.each([
-    ["deep", { path: "/Users/jc/Documents/a", o: { a: { b: { c: { d: { e: { f: { g: { h: { i: "/Users/jc/.ssh/id_rsa" } } } } } } } } } }],
-    ["many", { path: "/Users/jc/Documents/a", list: [...Array(300).keys()].map((i) => `/Users/jc/Documents/f${i}`).concat(["/Users/jc/.ssh/id_rsa"]) }],
-    ["FILE: upper", { path: "/Users/jc/Documents/a", uri: "FILE:///Users/jc/.ssh/id_rsa" }],
-    ["File: mixed", { path: "/Users/jc/Documents/a", uri: "File:///Users/jc/.ssh/id_rsa" }],
-    ["%2e%2e", { uri: "file:///Users/jc/Documents/%2e%2e/.ssh/id_rsa" }],
-    ["..%2f", { uri: "file:///Users/jc/Documents/..%2f.ssh/id_rsa" }],
-    ["%252e double", { uri: "file:///Users/jc/Documents/%252e%252e/.ssh/id_rsa" }],
-    ["file://host", { uri: "file://evil/Users/jc/Documents/a" }],
-    ["space in path", { path: "/Users/jc/Documents/a", other: "/Users/jc/.ssh/id rsa" }],
-    ["relative under a path key", { path: "/Users/jc/Documents/a", src: "../.ssh/id_rsa" }],
-    ["array of objects", { files: [{ path: "/Users/jc/.ssh/id_rsa" }] }],
+    ["deep", { path: "/Users/example/Documents/a", o: { a: { b: { c: { d: { e: { f: { g: { h: { i: "/Users/example/.ssh/id_rsa" } } } } } } } } } }],
+    ["many", { path: "/Users/example/Documents/a", list: [...Array(300).keys()].map((i) => `/Users/example/Documents/f${i}`).concat(["/Users/example/.ssh/id_rsa"]) }],
+    ["FILE: upper", { path: "/Users/example/Documents/a", uri: "FILE:///Users/example/.ssh/id_rsa" }],
+    ["File: mixed", { path: "/Users/example/Documents/a", uri: "File:///Users/example/.ssh/id_rsa" }],
+    ["%2e%2e", { uri: "file:///Users/example/Documents/%2e%2e/.ssh/id_rsa" }],
+    ["..%2f", { uri: "file:///Users/example/Documents/..%2f.ssh/id_rsa" }],
+    ["%252e double", { uri: "file:///Users/example/Documents/%252e%252e/.ssh/id_rsa" }],
+    ["file://host", { uri: "file://evil/Users/example/Documents/a" }],
+    ["space in path", { path: "/Users/example/Documents/a", other: "/Users/example/.ssh/id rsa" }],
+    ["relative under a path key", { path: "/Users/example/Documents/a", src: "../.ssh/id_rsa" }],
+    ["array of objects", { files: [{ path: "/Users/example/.ssh/id_rsa" }] }],
     ["tilde user", { path: "~root/.ssh/id_rsa" }],
-    ["leading white space", { uri: "  file:///Users/jc/.ssh/id_rsa" }],
+    ["leading white space", { uri: "  file:///Users/example/.ssh/id_rsa" }],
     ["$HOME", { target: "$HOME/.ssh/id_rsa" }],
-    ["${HOME}", { path: "/Users/jc/Documents/a", target: "${HOME}/.ssh/id_rsa" }],
-    ["~ alone", { path: "/Users/jc/Documents/a", target: "~" }],
-    ["windows", { path: "/Users/jc/Documents/a", target: "C:\\Users\\jc\\.ssh" }],
-    ["encoded without scheme", { path: "/Users/jc/Documents/%2e%2e/.ssh/id_rsa" }],
+    ["${HOME}", { path: "/Users/example/Documents/a", target: "${HOME}/.ssh/id_rsa" }],
+    ["~ alone", { path: "/Users/example/Documents/a", target: "~" }],
+    ["windows", { path: "/Users/example/Documents/a", target: "C:\\Users\\example\\.ssh" }],
+    ["encoded without scheme", { path: "/Users/example/Documents/%2e%2e/.ssh/id_rsa" }],
   ])("MCP %s: a folder read rule never allows it", (_name, args) => {
     const facts = callFacts({ tool: "mcp__fs__read_text_file", input: JSON.stringify(args), home });
     expect(evaluateCustomRules([READ], facts, { home, botId: "bot-1" }).kind).toBe("none");
   });
 
   it.each([
-    ["deep", { path: "/Users/jc/Documents/a", o: { a: { b: { c: { d: { e: { f: { g: { h: { i: "/Users/jc/.ssh/id_rsa" } } } } } } } } } }],
-    ["FILE: upper", { uri: "FILE:///Users/jc/.ssh/id_rsa" }],
-    ["space in path", { other: "/Users/jc/.ssh/id rsa" }],
+    ["deep", { path: "/Users/example/Documents/a", o: { a: { b: { c: { d: { e: { f: { g: { h: { i: "/Users/example/.ssh/id_rsa" } } } } } } } } } }],
+    ["FILE: upper", { uri: "FILE:///Users/example/.ssh/id_rsa" }],
+    ["space in path", { other: "/Users/example/.ssh/id rsa" }],
     ["relative under a path key", { src: "../.ssh/id_rsa" }],
     ["$HOME", { target: "$HOME/.ssh/id_rsa" }],
     ["${HOME}", { target: "${HOME}/.ssh/id_rsa" }],
-    ["%252e double", { uri: "file:///Users/jc/Documents/%252e%252e/.ssh/id_rsa" }],
+    ["%252e double", { uri: "file:///Users/example/Documents/%252e%252e/.ssh/id_rsa" }],
   ])("MCP %s: a deny on ~/.ssh catches it", (_name, args) => {
     const facts = callFacts({ tool: "mcp__fs__read_text_file", input: JSON.stringify(args), home });
     expect(evaluateCustomRules([READ, rule("lire des fichiers"), DENY_SSH], facts, { home, botId: "bot-1" }).kind).toBe("deny");
@@ -328,7 +328,7 @@ describe("round 4: no family rule allows the shell; side effects are seen by den
 describe("round 5: exact commands are bound to their card; folder rules never reach another machine", () => {
   const shellAt = (command: string, extra: { cwd?: string; providerInstanceId?: string } = {}) =>
     factsForCall({ tool: "Bash", input: JSON.stringify({ command }), command, ...extra }, home);
-  const asked = shellAt("ls ~/a", { cwd: "/Users/jc/proj", providerInstanceId: "claude" });
+  const asked = shellAt("ls ~/a", { cwd: "/Users/example/proj", providerInstanceId: "claude" });
   const exact = bound("la commande exacte `ls ~/a`", asked);
 
   it.each([
@@ -337,19 +337,19 @@ describe("round 5: exact commands are bound to their card; folder rules never re
     ["ls ~/a\rrm -rf ~", "none"], ["ls ~/a\u0000rm", "none"], ["ls ~/a\u00a0", "none"], ["\u00a0ls ~/a", "none"], ["ls\u00a0~/a", "none"], ["ls ~/a\u2028", "none"],
     ["ls ~/a\ufeff", "none"], ["ls ~/a\u200b", "none"], ["ls ~/a #x", "none"], ["ls ~/a\v", "none"], ["ls ~/a\f", "none"], ["\u000bls ~/a", "none"],
   ])("the bound exact rule against %j: %s", (command, expected) => {
-    expect(evaluateCustomRules([exact], shellAt(command, { cwd: "/Users/jc/proj", providerInstanceId: "claude" }), { home, botId: "bot-1" }).kind).toBe(expected);
+    expect(evaluateCustomRules([exact], shellAt(command, { cwd: "/Users/example/proj", providerInstanceId: "claude" }), { home, botId: "bot-1" }).kind).toBe(expected);
   });
 
   it("another folder, another engine instance, another tool or machine never use it", () => {
-    expect(evaluateCustomRules([exact], shellAt("ls ~/a", { cwd: "/Users/jc/other", providerInstanceId: "claude" }), { home, botId: "bot-1" }).kind).toBe("none");
-    expect(evaluateCustomRules([exact], shellAt("ls ~/a", { cwd: "/Users/jc/proj", providerInstanceId: "codex" }), { home, botId: "bot-1" }).kind).toBe("none");
+    expect(evaluateCustomRules([exact], shellAt("ls ~/a", { cwd: "/Users/example/other", providerInstanceId: "claude" }), { home, botId: "bot-1" }).kind).toBe("none");
+    expect(evaluateCustomRules([exact], shellAt("ls ~/a", { cwd: "/Users/example/proj", providerInstanceId: "codex" }), { home, botId: "bot-1" }).kind).toBe("none");
     for (const [tool, args] of [
       ["sagax_desktop__run_command", { command: "ls ~/a", cwd: "/" }],
       ["sandbox__run_command", { command: "ls ~/a" }],
       ["cloud__exec", { command: "ls ~/a" }],
       ["ssh__execute", { command: "ls ~/a", host: "prod-db" }],
     ] as const) {
-      const facts = factsForCall({ tool: `mcp__${tool}`, mcpTool: tool, input: JSON.stringify(args), cwd: "/Users/jc/proj", providerInstanceId: "claude" }, home);
+      const facts = factsForCall({ tool: `mcp__${tool}`, mcpTool: tool, input: JSON.stringify(args), cwd: "/Users/example/proj", providerInstanceId: "claude" }, home);
       expect(evaluateCustomRules([exact], facts, { home, botId: "bot-1" }).kind, tool).toBe("none");
     }
     const codex = factsForCall({ tool: "exec_command", input: JSON.stringify({ command: ["bash", "-lc", "ls ~/a"] }) }, home);
@@ -357,9 +357,9 @@ describe("round 5: exact commands are bound to their card; folder rules never re
   });
 
   it("final review: a bound exact command never applies to another bot, nor as an all-bots rule", () => {
-    expect(evaluateCustomRules([exact], shellAt("ls ~/a", { cwd: "/Users/jc/proj", providerInstanceId: "claude" }), { home, botId: "bot-1" }).kind).toBe("allow");
-    expect(evaluateCustomRules([exact], shellAt("ls ~/a", { cwd: "/Users/jc/proj", providerInstanceId: "claude" }), { home, botId: "bot-2" }).kind).toBe("none");
-    expect(evaluateCustomRules([{ ...exact, botId: null }], shellAt("ls ~/a", { cwd: "/Users/jc/proj", providerInstanceId: "claude" }), { home, botId: "bot-1" }).kind).toBe("none");
+    expect(evaluateCustomRules([exact], shellAt("ls ~/a", { cwd: "/Users/example/proj", providerInstanceId: "claude" }), { home, botId: "bot-1" }).kind).toBe("allow");
+    expect(evaluateCustomRules([exact], shellAt("ls ~/a", { cwd: "/Users/example/proj", providerInstanceId: "claude" }), { home, botId: "bot-2" }).kind).toBe("none");
+    expect(evaluateCustomRules([{ ...exact, botId: null }], shellAt("ls ~/a", { cwd: "/Users/example/proj", providerInstanceId: "claude" }), { home, botId: "bot-1" }).kind).toBe("none");
   });
 
   it("final review: the git warning reads the program word", () => {
@@ -384,7 +384,7 @@ describe("round 5: exact commands are bound to their card; folder rules never re
 
   it.each([
     "cat ~/Documents/a,/etc/passwd", "cat ~/Documents/a,C:/Users/x/.ssh/id_rsa", "tail -F ~/Documents/fifo", "tail -f ~/Documents/a",
-    "cat /System/Volumes/Data/Users/jc/Documents/x", "cat ~/documents/x", "cat ~/Documents/%USERPROFILE%", "cat ~/Documents/x@{u}",
+    "cat /System/Volumes/Data/Users/example/Documents/x", "cat ~/documents/x", "cat ~/Documents/%USERPROFILE%", "cat ~/Documents/x@{u}",
     "cat ~/Documents/x,$HOME/.ssh/id_rsa", "cat ~/Documents/a^",
   ])("a folder read rule does not cover %s", (command) => {
     expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], shellAt(command), { home, botId: "bot-1" }).kind).toBe("none");
@@ -398,7 +398,7 @@ describe("round 5: exact commands are bound to their card; folder rules never re
 
   it.each([
     ["fs__read_file", { path: "~/Documents/a" }],
-    ["fs__read_file", { path: "/System/Volumes/Data/Users/jc/Documents/a" }],
+    ["fs__read_file", { path: "/System/Volumes/Data/Users/example/Documents/a" }],
     ["sagax-desktop__read_file", { path: "~/Documents/maybe-a-link-on-the-PC" }],
     ["sagax-desktop__run_command", { command: "cat ~/Documents/a,~/.ssh/id_rsa" }],
     ["sagax-desktop__run_command", { command: "cat ~/Documents/a", cwd: "/" }],
@@ -412,8 +412,8 @@ describe("round 5: exact commands are bound to their card; folder rules never re
   });
 
   it.each([
-    ["second uri with a line break", { path: "~/Documents/a", uri: "file:///Users/jc/.ssh/\nid_rsa" }, "jamais lire les fichiers dans ~/.ssh"],
-    ["second input path with a line break", { path: "~/Documents/a", input_path: "/Users/jc/.ssh/id_rsa\n" }, "jamais lire les fichiers dans ~/.ssh"],
+    ["second uri with a line break", { path: "~/Documents/a", uri: "file:///Users/example/.ssh/\nid_rsa" }, "jamais lire les fichiers dans ~/.ssh"],
+    ["second input path with a line break", { path: "~/Documents/a", input_path: "/Users/example/.ssh/id_rsa\n" }, "jamais lire les fichiers dans ~/.ssh"],
     ["a tab inside a file URL", { path: "~/Documents/a", extra: "file:///etc/pa\tsswd" }, "jamais lire les fichiers dans /etc"],
     ["a JSON string", { path: "~/Documents/a", options: "{\"path\":\"/etc/passwd\"}" }, "jamais lire les fichiers dans /etc"],
     ["~root", { path: "~/Documents/a", other: "~root/.ssh/id_rsa" }, "jamais lire les fichiers dans ~/.ssh"],
@@ -429,7 +429,7 @@ describe("paths, tools and products", () => {
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   it("only this person's home is ~, and ~user, ~+ and ~- are refused", () => {
-    expect(normalizePath("/Users/jc/Documents", home)).toBe("~/Documents");
+    expect(normalizePath("/Users/example/Documents", home)).toBe("~/Documents");
     expect(normalizePath("/Users/other/Documents", home)).toBe("/Users/other/Documents");
     expect(normalizePath("~root/.ssh", home)).toBeNull();
     expect(normalizePath("~+/x", home)).toBeNull();
@@ -447,7 +447,7 @@ describe("paths, tools and products", () => {
   });
 
   it("deny and ask compare paths case-insensitively, allow does not", () => {
-    const upper = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/DOCUMENTS/a.txt" }), home });
+    const upper = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/example/DOCUMENTS/a.txt" }), home });
     expect(ruleCoversCall(compileRule("lire les fichiers dans ~/Documents", home), upper, "deny")).toBe(true);
     expect(ruleCoversCall(compileRule("lire les fichiers dans ~/Documents", home), upper, "allow")).toBe(false);
   });
@@ -471,8 +471,8 @@ describe("paths, tools and products", () => {
 // rule over every file. These run on every platform.
 describe("Windows paths fail closed", () => {
   const toDrive = (absolute: string) => `D:${absolute.replaceAll("/", "\\")}`;
-  const resolvedOnWindows = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/a.txt" }), home, resolve: toDrive });
-  const native = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "C:\\Users\\jc\\.ssh\\id_rsa" }), home: "C:\\Users\\jc" });
+  const resolvedOnWindows = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/example/Documents/a.txt" }), home, resolve: toDrive });
+  const native = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "C:\\Users\\example\\.ssh\\id_rsa" }), home: "C:\\Users\\example" });
   const unc = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "\\\\host\\share\\x" }), home });
 
   it("an allow over a folder never covers them", () => {

@@ -86,7 +86,7 @@ it("turns a ConnectWise query into a widget and a widget change into an approval
     expect(after.find((row) => row.card?.requestId === note.body.requestId)?.card?.answered).toBe("deny");
     expect(after.filter((row) => row.role === "user").length).toBe(before);
 
-    // 2026-10-19 (JC: "Toujours permettre" on every card): a widget's card
+    // 2026-10-19 (owner: "Toujours permettre" on every card): a widget's card
     // offers Always allow for this bot and this kind of change; kept, the
     // next status change of a ticket asks nothing; a note keeps its card;
     // revoked, the card comes back

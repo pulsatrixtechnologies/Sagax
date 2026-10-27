@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// One card per approval (JC, 2026-10-15): while a tool request waits, the box
+// One card per approval (owner, 2026-10-15): while a tool request waits, the box
 // above the composer holds it with its buttons and the thread shows one quiet
 // step line; once answered, the thread keeps a one-line receipt (#455) that
 // opens on the saved rule and the full request.

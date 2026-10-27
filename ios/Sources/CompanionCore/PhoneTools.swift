@@ -1,6 +1,6 @@
 import Foundation
 
-// Phone tools (audit row 81, JC 2026-10-21): a bot asks this iPhone for
+// Phone tools (audit row 81, the owner 2026-10-21): a bot asks this iPhone for
 // something only the phone knows. The wire contract is shared/phone-tools.ts;
 // the routes are server/routes/phone-tools.ts. Everything here is pure: the
 // requests, the card's choices, when a request may run, and the shaping of
@@ -152,7 +152,7 @@ public enum PhoneToolRules {
         request.expiresAt > 0 && now.timeIntervalSince1970 * 1000 >= request.expiresAt
     }
 
-    /// JC 2026-10-21: phone tools only over HTTPS or Tailscale. On plain
+    /// Owner 2026-10-21: phone tools only over HTTPS or Tailscale. On plain
     /// local Wi-Fi the answers would cross the network in clear, so the
     /// phone offers nothing and refuses with this reason (the bot reads it).
     public static func transportRefusal(protectedTransport: Bool) -> String? {

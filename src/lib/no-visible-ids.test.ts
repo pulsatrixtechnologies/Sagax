@@ -1,4 +1,4 @@
-// Guard for JC's rule (2026-10-19): "N'affiche JAMAIS des GUID, on ne
+// Guard for the owner's rule (2026-10-19): "N'affiche JAMAIS des GUID, on ne
 // comprend rien." Key screens and labels are rendered with fixtures whose
 // ids are UUIDs (bots, conversations, people, engines, accounts, folders);
 // the test fails when a UUID, whole or cut short, reaches visible text. An

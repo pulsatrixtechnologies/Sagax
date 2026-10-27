@@ -15,7 +15,7 @@ the request in real time. Sagax sends data to two kinds of destination:
 - **An organization's Sagax server** (Pulsatrix sign-in). Each client
   organization runs its own server, with its own keys (xAI, APNs) and its
   own policies: the organization is the controller of that data, not
-  Pulsatrix (decision of JC, 2026-10-16). Pulsatrix operates no relay, no
+  Pulsatrix (decision of the owner, 2026-10-16). Pulsatrix operates no relay, no
   push service and no server that receives data from the app.
 
 Data that only Apple processes (on-device or Apple server speech
@@ -94,4 +94,4 @@ app's manifest so both sources agree (recommended, not required for review).
 - Privacy policy:
   `https://github.com/pulsatrixtechnologies/sagax/blob/main/docs/ios-privacy.md`
   (public repository), also opened by the in-app Settings > Privacy Policy
-  row (JC, 2026-10-16).
+  row (owner, 2026-10-16).

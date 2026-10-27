@@ -70,21 +70,21 @@ describe("ChannelMembers", () => {
     })).toEqual({ canAddHuman: true, canAddBot: false });
     expect(channelRosterActions({
       actorRole: "owner",
-      actorId: "jc",
-      bots: [{ id: "aurora", ownerUserId: "JC" }],
+      actorId: "owner",
+      bots: [{ id: "aurora", ownerUserId: "Owner" }],
     })).toEqual({ canAddHuman: true, canAddBot: true });
     // Organization server: someone else owns the group. You still bring
     // your own bot, once.
     expect(channelRosterActions({
       actorRole: "admin",
-      actorId: "jc",
-      bots: [{ id: "aurora", ownerUserId: "JC" }],
+      actorId: "owner",
+      bots: [{ id: "aurora", ownerUserId: "Owner" }],
       ownsRoom: false,
     })).toEqual({ canAddHuman: false, canAddBot: true });
     expect(channelRosterActions({
       actorRole: "member",
-      actorId: "jc",
-      bots: [{ id: "aurora", ownerUserId: "JC" }],
+      actorId: "owner",
+      bots: [{ id: "aurora", ownerUserId: "Owner" }],
       ownsRoom: false,
       memberIds: ["aurora"],
     })).toEqual({ canAddHuman: false, canAddBot: false });
@@ -96,7 +96,7 @@ describe("ChannelMembers", () => {
     expect(channelRosterActions({
       actorRole: "member",
       actorId: "morgan@example.test",
-      bots: [{ id: "aurora", ownerUserId: "jc" }],
+      bots: [{ id: "aurora", ownerUserId: "owner" }],
     })).toEqual({ canAddHuman: true, canAddBot: false });
   });
 });
@@ -117,12 +117,12 @@ function findAjouter(tree: ReactNode): { props: { onClick?: (event: MouseEvent<H
 
 describe("a room's people on an organization server", () => {
   const PEOPLE = new Map([
-    ["pr_jc", { principalId: "pr_jc", name: "Alex Martin", login: "amartin", email: "amartin@example.test", role: "admin" as const, disabled: false, avatarUrl: "/api/people/pr_jc/avatar?v=0a1b2c" }],
+    ["pr_owner", { principalId: "pr_owner", name: "Alex Martin", login: "amartin", email: "amartin@example.test", role: "admin" as const, disabled: false, avatarUrl: "/api/people/pr_owner/avatar?v=0a1b2c" }],
     ["pr_sam", { principalId: "pr_sam", name: "sam.t", login: "samt", email: "sam.t@example.test", role: "member" as const, disabled: false, avatarUrl: "https://tracker.example.test/pixel.png" }],
   ]);
 
   it("reads each person as their display name with their Perspicax avatar", () => {
-    expect(channelHumanRow("PR_JC", PEOPLE)).toEqual({ id: "PR_JC", label: "Alex Martin", detail: "amartin@example.test", avatarUrl: "/api/people/pr_jc/avatar?v=0a1b2c" });
+    expect(channelHumanRow("PR_OWNER", PEOPLE)).toEqual({ id: "PR_OWNER", label: "Alex Martin", detail: "amartin@example.test", avatarUrl: "/api/people/pr_owner/avatar?v=0a1b2c" });
     // an image from anywhere else is never used
     expect(channelHumanRow("pr_sam", PEOPLE).avatarUrl).toBeUndefined();
     // a solo server (no directory) keeps the stored id
@@ -131,13 +131,13 @@ describe("a room's people on an organization server", () => {
 
   it("draws the avatar, or the letters when there is none", () => {
     const html = renderToStaticMarkup(createElement(ChannelMembers, {
-      humans: [channelHumanRow("pr_jc", PEOPLE), channelHumanRow("pr_sam", PEOPLE)],
+      humans: [channelHumanRow("pr_owner", PEOPLE), channelHumanRow("pr_sam", PEOPLE)],
       bots: [],
       canAddHuman: false,
       canAddBot: false,
       part: "humans",
     }));
-    expect(html).toContain('src="/api/people/pr_jc/avatar?v=0a1b2c"');
+    expect(html).toContain('src="/api/people/pr_owner/avatar?v=0a1b2c"');
     expect(html).toContain("Alex Martin");
     expect(html).not.toContain("amartin<");
     expect(html).not.toContain("tracker.example.test");

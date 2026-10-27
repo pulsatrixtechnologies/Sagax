@@ -91,7 +91,7 @@ describe("payment vault", () => {
     expect(purchaseCardText({ merchant: "Example Shop", amount: "12.50", currency: "CAD", last4: "4242", brand: "visa" }).line).not.toContain(PAN);
   });
 
-  it("refuses an always grant: every purchase asks again (JC 2026-10-22)", () => {
+  it("refuses an always grant: every purchase asks again (Owner 2026-10-22)", () => {
     const store = vault();
     const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
     const page = "https://shop.example.test/pay";

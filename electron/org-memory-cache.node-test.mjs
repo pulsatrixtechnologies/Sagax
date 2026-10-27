@@ -109,10 +109,10 @@ const encrypt = (text) => Buffer.from(`enc:${text}`);
 const decrypt = (data) => String(data).replace(/^enc:/, "");
 
 test("cloud folders are refused, Application Support is not", () => {
-  assert.equal(cloudFolderReason("/Users/jc/Library/Mobile Documents/com~apple~CloudDocs/x"), "iCloud Drive");
-  assert.equal(cloudFolderReason("/Users/jc/Library/CloudStorage/OneDrive-Example/x"), "a cloud storage folder");
-  assert.equal(cloudFolderReason("C:\\Users\\jc\\OneDrive - Example\\x"), "OneDrive");
-  assert.equal(cloudFolderReason("/Users/jc/Library/Application Support/sagax/org-memory/vault"), null);
+  assert.equal(cloudFolderReason("/Users/example/Library/Mobile Documents/com~apple~CloudDocs/x"), "iCloud Drive");
+  assert.equal(cloudFolderReason("/Users/example/Library/CloudStorage/OneDrive-Example/x"), "a cloud storage folder");
+  assert.equal(cloudFolderReason("C:\\Users\\example\\OneDrive - Example\\x"), "OneDrive");
+  assert.equal(cloudFolderReason("/Users/example/Library/Application Support/sagax/org-memory/vault"), null);
 });
 
 test("addresses, generated paths and the Obsidian link", () => {

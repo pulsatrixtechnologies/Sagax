@@ -67,7 +67,7 @@ extension ChatView {
     /// computer (it had its own button before), the threads the name's
     /// long press offers, then sharing and the bot's id.
     /// A bot's threads, one touch away from its chat while Show threads is
-    /// on, whatever the location (JC 2026-10-19: a new thread, one the bot
+    /// on, whatever the location (owner 2026-10-19: a new thread, one the bot
     /// opened in parallel, was announced but could not be reached). Threads
     /// off (TestFlight 79, 2026-10-26): no button, the single stream is
     /// all there is. Nil below two threads.

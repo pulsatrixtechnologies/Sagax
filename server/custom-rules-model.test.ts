@@ -6,11 +6,11 @@ import { createCustomRulesModelReviewer, type ModelReviewCard, type ModelReviewD
 let seq = 0;
 function rule(when: string, behavior: CustomRule["behavior"], extra: Partial<CustomRule> = {}): CustomRule {
   seq += 1;
-  return { id: `r${seq}`, ownerId: "jc", botId: null, when, behavior, riskScope: [], enabled: true, createdAt: seq, updatedAt: seq, ...extra };
+  return { id: `r${seq}`, ownerId: "owner", botId: null, when, behavior, riskScope: [], enabled: true, createdAt: seq, updatedAt: seq, ...extra };
 }
 
 const input = JSON.stringify({ resource: "tickets", id: 12, summary: "Sagax" });
-const facts = callFacts({ tool: "mcp__perspicax_quasar__cw_psa__write", input, home: "/Users/jc" });
+const facts = callFacts({ tool: "mcp__perspicax_quasar__cw_psa__write", input, home: "/Users/example" });
 const free = rule("tout ce qui touche au projet Sagax", "allow");
 const freeDeny = rule("toucher aux factures du client Acme", "deny");
 const freeAsk = rule("changer un billet fermé", "ask");

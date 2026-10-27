@@ -12,7 +12,7 @@ import {
 import { requiredScope } from "./request-auth.ts";
 import { dispatchRoutes } from "./routes/table.ts";
 
-const JC = "pr_00000000-0000-4000-8000-00000000000a";
+const OWNER = "pr_00000000-0000-4000-8000-00000000000a";
 
 function emptyOrgState(): OrgState {
   return { org: null, invites: [], signIn: { admins: [], members: [] } };
@@ -20,7 +20,7 @@ function emptyOrgState(): OrgState {
 
 function orgStateWithOwner(): OrgState {
   const state = emptyOrgState();
-  createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
+  createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
   return state;
 }
 
@@ -33,7 +33,7 @@ afterEach(async () => {
  * bot-presets.test.ts and the running server do, so `req` is a genuine
  * IncomingMessage and `requestOrigin(req)` sees real headers. */
 async function serveOrgRoutes(deps: Partial<OrgRouteDeps> & { state: OrgState }): Promise<string> {
-  const routes = [createOrgRoutes({ actorId: () => JC, actorEmail: () => "jc@example.com", ...deps })];
+  const routes = [createOrgRoutes({ actorId: () => OWNER, actorEmail: () => "owner@example.com", ...deps })];
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const handled = await dispatchRoutes(routes, {
@@ -62,15 +62,15 @@ describe("org routes", () => {
   });
   it("returns the stored org and people from signIn plus the owner", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
     state.signIn.admins = ["ada@example.test"];
     state.signIn.members = ["morgan@example.test"];
     expect(getOrgRoute(state)).toEqual({
       status: 200,
       body: {
-        org: { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } },
+        org: { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } },
         people: [
-          { id: JC, role: "owner" },
+          { id: OWNER, role: "owner" },
           { id: "ada@example.test", role: "admin", email: "ada@example.test" },
           { id: "morgan@example.test", role: "member", email: "morgan@example.test" },
         ],
@@ -82,26 +82,26 @@ describe("org routes", () => {
     const state = emptyOrgState();
     const owner = "pr_11111111-1111-4111-8111-111111111111";
     createOrgRoute(state, { name: "Example", ownerUserId: owner, host: { kind: "server", url: "https://server.example.com" } });
-    state.signIn.admins = ["JC@example.com", "ada@example.test"];
-    state.signIn.members = ["jc@example.com", "morgan@example.test"];
-    expect(getOrgRoute(state, 1_000, "jc@example.com").body?.people).toEqual([
-      { id: owner, role: "owner", email: "jc@example.com" },
+    state.signIn.admins = ["OWNER@example.com", "ada@example.test"];
+    state.signIn.members = ["owner@example.com", "morgan@example.test"];
+    expect(getOrgRoute(state, 1_000, "owner@example.com").body?.people).toEqual([
+      { id: owner, role: "owner", email: "owner@example.com" },
       { id: "ada@example.test", role: "admin", email: "ada@example.test" },
       { id: "morgan@example.test", role: "member", email: "morgan@example.test" },
     ]);
   });
   it("lists an open invite without treating it as a member", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
-    issueInviteRoute(state, { actorId: JC, email: "morgan@example.test", now: 1_000, token: "tok" });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
+    issueInviteRoute(state, { actorId: OWNER, email: "morgan@example.test", now: 1_000, token: "tok" });
     const body = getOrgRoute(state, 2_000).body;
-    expect(body?.people).toEqual([{ id: JC, role: "owner" }]);
+    expect(body?.people).toEqual([{ id: OWNER, role: "owner" }]);
     expect(body?.pendingInvites).toEqual([{ email: "morgan@example.test", expiresAt: 1_000 + 7 * 24 * 60 * 60 * 1000 }]);
   });
   it("joins once and reports already-member the second time", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
-    const issued = issueInviteRoute(state, { actorId: JC, email: "morgan@example.test", now: 1, token: "tok" });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
+    const issued = issueInviteRoute(state, { actorId: OWNER, email: "morgan@example.test", now: 1, token: "tok" });
     expect(issued.status).toBe(200);
     const joined = acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 2 });
     const used = acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 3 });
@@ -110,15 +110,15 @@ describe("org routes", () => {
   });
   it("forbids a member from issuing invites", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
-    issueInviteRoute(state, { actorId: JC, email: "morgan@example.test", now: 1, token: "tok" });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
+    issueInviteRoute(state, { actorId: OWNER, email: "morgan@example.test", now: 1, token: "tok" });
     acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 2 });
     expect(issueInviteRoute(state, { actorId: "morgan@example.test", email: "ada@example.test", now: 3, token: "tok-2" })).toEqual({ status: 403 });
   });
   it("refuses a mismatched userId and joins the invited email", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
-    issueInviteRoute(state, { actorId: JC, email: "morgan@example.test", now: 1, token: "tok" });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
+    issueInviteRoute(state, { actorId: OWNER, email: "morgan@example.test", now: 1, token: "tok" });
     expect(acceptInviteRoute(state, { token: "tok", userId: "stranger@example.test", now: 2 })).toEqual({ status: 403 });
     expect(state.signIn.members).toEqual([]);
     expect(state.invites[0]?.usedAt).toBeUndefined();
@@ -135,8 +135,8 @@ describe("org routes", () => {
   });
   it("adds the invited address on accept when they are not yet a member", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
-    issueInviteRoute(state, { actorId: JC, email: "Morgan@Example.test", now: 1, token: "tok" });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
+    issueInviteRoute(state, { actorId: OWNER, email: "Morgan@Example.test", now: 1, token: "tok" });
     expect(state.signIn.members).toEqual([]);
     const joined = acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 2 });
     expect(joined.body?.status ?? joined.status).toBe("joined");
@@ -150,8 +150,8 @@ describe("org routes", () => {
   });
   it("lets an open invite sign in before accept adds the address", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
-    issueInviteRoute(state, { actorId: JC, email: "morgan@example.test", now: 1, token: "tok" });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
+    issueInviteRoute(state, { actorId: OWNER, email: "morgan@example.test", now: 1, token: "tok" });
     expect(state.signIn.members.includes("morgan@example.test")).toBe(false);
     expect(signInListWithOpenInvites({
       admins: state.signIn.admins,
@@ -162,8 +162,8 @@ describe("org routes", () => {
   });
   it("lets an owner or an admin revoke an open invite", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
-    issueInviteRoute(state, { actorId: JC, email: "morgan@example.test", now: 1, token: "tok" });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
+    issueInviteRoute(state, { actorId: OWNER, email: "morgan@example.test", now: 1, token: "tok" });
     state.signIn.admins = ["Ada@Example.test"];
     expect(revokeInviteRoute(state, { actorId: "morgan@example.test", token: "tok", now: 2 })).toEqual({ status: 403 });
     expect(state.invites[0]?.revokedAt).toBeUndefined();
@@ -171,8 +171,8 @@ describe("org routes", () => {
     expect(revoked.status).toBe(200);
     if (revoked.status === 200) expect(revoked.body.status).toBe("revoked");
     expect(state.invites[0]?.revokedAt).toBe(3);
-    issueInviteRoute(state, { actorId: JC, email: "ada@example.test", now: 5, token: "tok-2" });
-    const byOwner = revokeInviteRoute(state, { actorId: JC.toUpperCase(), token: "tok-2", now: 6 });
+    issueInviteRoute(state, { actorId: OWNER, email: "ada@example.test", now: 5, token: "tok-2" });
+    const byOwner = revokeInviteRoute(state, { actorId: OWNER.toUpperCase(), token: "tok-2", now: 6 });
     expect(byOwner.status).toBe(200);
     if (byOwner.status === 200) expect(byOwner.body.status).toBe("revoked");
     const again = acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 4 });
@@ -182,8 +182,8 @@ describe("org routes", () => {
   });
   it("reloads the invitations and sign-in list from config, never an org (slice 8)", () => {
     const state = emptyOrgState();
-    createOrgRoute(state, { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } });
-    issueInviteRoute(state, { actorId: JC, email: "morgan@example.test", now: 1, token: "tok" });
+    createOrgRoute(state, { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://server.example.com" } });
+    issueInviteRoute(state, { actorId: OWNER, email: "morgan@example.test", now: 1, token: "tok" });
     acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 2 });
     const reloaded = parseStoredConfig(JSON.parse(JSON.stringify({
       org: state.org,
@@ -196,7 +196,7 @@ describe("org routes", () => {
   });
   it("assigns the organization only once it is saved", () => {
     const state = emptyOrgState();
-    const input = { name: "Example", ownerUserId: JC, host: { kind: "server" as const, url: "https://server.example.com" } };
+    const input = { name: "Example", ownerUserId: OWNER, host: { kind: "server" as const, url: "https://server.example.com" } };
     expect(() => createOrgRoute(state, input, () => { throw new Error("disk full"); })).toThrow(/disk full/);
     expect(state.org).toBeNull();
     const saved: unknown[] = [];
@@ -254,7 +254,7 @@ describe("invite mail", () => {
     });
     await postInvite(base, "morgan@example.test");
     expect(seen).toEqual([{
-      email: "morgan@example.test", token: expect.any(String), inviterEmail: "jc@example.com",
+      email: "morgan@example.test", token: expect.any(String), inviterEmail: "owner@example.com",
       origin: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/),
       link: expect.stringMatching(/^https:\/\/server\.example\.com\/join#token=[0-9a-f]{32}$/),
     }]);
@@ -263,9 +263,9 @@ describe("invite mail", () => {
 
 describe("invite mail text (inviteMailMessage)", () => {
   it("names the inviter and gives the invite link when both are known", () => {
-    expect(inviteMailMessage({ orgName: "Example", inviterEmail: "jc@example.com", link: "https://server.example.com/join#token=abc" })).toEqual({
+    expect(inviteMailMessage({ orgName: "Example", inviterEmail: "owner@example.com", link: "https://server.example.com/join#token=abc" })).toEqual({
       subject: "You are invited to Example on Sagax",
-      text: "jc@example.com invited you to Example. Open https://server.example.com/join#token=abc within 7 days to join Example.",
+      text: "owner@example.com invited you to Example. Open https://server.example.com/join#token=abc within 7 days to join Example.",
     });
   });
 
@@ -282,7 +282,7 @@ const TOKEN = "0123456789abcdef0123456789abcdef";
 
 function invitedState(token = TOKEN, email = "Zara@Example.com"): OrgState {
   const state = orgStateWithOwner();
-  issueInviteRoute(state, { actorId: JC, email, now: 1_000, token });
+  issueInviteRoute(state, { actorId: OWNER, email, now: 1_000, token });
   return state;
 }
 
@@ -303,7 +303,7 @@ describe("invite links", () => {
 
   it("returns the link when an invite is issued", () => {
     const state = orgStateWithOwner();
-    const issued = issueInviteRoute(state, { actorId: JC, email: "zara@example.com", now: 1, token: TOKEN, linkBase: "https://server.example.com" });
+    const issued = issueInviteRoute(state, { actorId: OWNER, email: "zara@example.com", now: 1, token: TOKEN, linkBase: "https://server.example.com" });
     expect(issued.body).toMatchObject({ link: `https://server.example.com/join#token=${TOKEN}` });
   });
 
@@ -348,7 +348,7 @@ describe("invite preview", () => {
     joinInviteRoute(state, { token: TOKEN, now: 2_000 });
     expect(invitePreviewRoute(state, { token: TOKEN, now: 3_000 }).body).toEqual({ status: "used" });
     const revoked = invitedState("fedcba9876543210fedcba9876543210");
-    revokeInviteRoute(revoked, { actorId: JC, token: "fedcba9876543210fedcba9876543210", now: 2_000 });
+    revokeInviteRoute(revoked, { actorId: OWNER, token: "fedcba9876543210fedcba9876543210", now: 2_000 });
     expect(invitePreviewRoute(revoked, { token: "fedcba9876543210fedcba9876543210", now: 3_000 }).body).toEqual({ status: "revoked" });
   });
 
@@ -373,7 +373,7 @@ describe("joining by link", () => {
   it("refuses an expired, revoked or unknown link", () => {
     expect(joinInviteRoute(invitedState(), { token: TOKEN, now: 1_000 + 7 * DAY })).toEqual({ status: 410, body: { status: "expired" } });
     const revoked = invitedState();
-    revokeInviteRoute(revoked, { actorId: JC, token: TOKEN, now: 2_000 });
+    revokeInviteRoute(revoked, { actorId: OWNER, token: TOKEN, now: 2_000 });
     expect(joinInviteRoute(revoked, { token: TOKEN, now: 3_000 })).toEqual({ status: 410, body: { status: "revoked" } });
     expect(revoked.signIn.members).toEqual([]);
     expect(joinInviteRoute(invitedState(), { token: "ffffffffffffffffffffffffffffffff", now: 2_000 })).toEqual({ status: 404, body: { status: "unknown" } });
@@ -387,7 +387,7 @@ describe("joining by link", () => {
     admin.signIn.admins = ["ZARA@example.com"];
     expect(joinInviteRoute(admin, { token: TOKEN, now: 2_000 }).status).toBe(409);
     expect(admin.signIn.members).toEqual([]);
-    expect(joinInviteRoute(invitedState(TOKEN, "jc@example.com"), { token: TOKEN, now: 2_000, ownerEmail: "jc@example.com" }).status).toBe(409);
+    expect(joinInviteRoute(invitedState(TOKEN, "owner@example.com"), { token: TOKEN, now: 2_000, ownerEmail: "owner@example.com" }).status).toBe(409);
   });
 });
 
@@ -487,8 +487,8 @@ describe("accepting invites on email sign-in", () => {
 describe("editing the organization's address", () => {
   it("lets the owner change it to a valid server address", () => {
     const state = orgStateWithOwner();
-    expect(updateOrgHostRoute(state, { actorId: JC, host: { kind: "server", url: " https://example.com " } })).toEqual({
-      status: 200, body: { org: { name: "Example", ownerUserId: JC, host: { kind: "server", url: "https://example.com" } } },
+    expect(updateOrgHostRoute(state, { actorId: OWNER, host: { kind: "server", url: " https://example.com " } })).toEqual({
+      status: 200, body: { org: { name: "Example", ownerUserId: OWNER, host: { kind: "server", url: "https://example.com" } } },
     });
   });
 
@@ -496,8 +496,8 @@ describe("editing the organization's address", () => {
     const state = orgStateWithOwner();
     state.signIn.members = ["ada@example.test"];
     expect(updateOrgHostRoute(state, { actorId: "pr_00000000-0000-4000-8000-00000000000b", actorEmail: "ada@example.test", host: { kind: "server", url: "https://x.example.test" } }).status).toBe(403);
-    expect(updateOrgHostRoute(state, { actorId: JC, host: { kind: "server", url: "http://10.0.0.5" } }).status).toBe(400);
-    expect(updateOrgHostRoute(state, { actorId: JC, host: { kind: "this-computer" } }).status).toBe(400);
+    expect(updateOrgHostRoute(state, { actorId: OWNER, host: { kind: "server", url: "http://10.0.0.5" } }).status).toBe(400);
+    expect(updateOrgHostRoute(state, { actorId: OWNER, host: { kind: "this-computer" } }).status).toBe(400);
     expect(state.org?.host).toEqual({ kind: "server", url: "https://server.example.com" });
   });
 
@@ -519,15 +519,15 @@ describe("people by email", () => {
   it("shows each principal's email and each sign-in entry as its email", () => {
     const state = orgStateWithOwner();
     state.signIn.members = ["Zara@example.com"];
-    const people = getOrgRoute(state, 1, undefined, { emailOf: (id) => (id === JC ? "jc@example.com" : undefined) }).body!.people;
+    const people = getOrgRoute(state, 1, undefined, { emailOf: (id) => (id === OWNER ? "owner@example.com" : undefined) }).body!.people;
     expect(people).toEqual([
-      { id: JC, role: "owner", email: "jc@example.com" },
+      { id: OWNER, role: "owner", email: "owner@example.com" },
       { id: "Zara@example.com", role: "member", email: "zara@example.com" },
     ]);
   });
 
   it("falls back to the owner email when the principal has none", () => {
     const state = orgStateWithOwner();
-    expect(getOrgRoute(state, 1, "jc@example.com", { emailOf: () => undefined }).body!.people).toEqual([{ id: JC, role: "owner", email: "jc@example.com" }]);
+    expect(getOrgRoute(state, 1, "owner@example.com", { emailOf: () => undefined }).body!.people).toEqual([{ id: OWNER, role: "owner", email: "owner@example.com" }]);
   });
 });

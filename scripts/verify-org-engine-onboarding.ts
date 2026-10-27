@@ -1,5 +1,5 @@
 // Real check of the first-run engine step on an organization server
-// (2026-10-18, JC: "Si aucun LLM/moteur fonctionnel n'est présent lors de la
+// (2026-10-18, the owner: "Si aucun LLM/moteur fonctionnel n'est présent lors de la
 // première connexion en organisation, il faut que le setup de ton premier
 // compte soit dans le setup initial, comme on fait en mode sans serveur").
 //

@@ -4190,7 +4190,7 @@ describe("routine watch: runs only when something changes (2026-10-26)", () => {
   });
 });
 
-describe("background runs: nothing to report (JC 2026-10-22)", () => {
+describe("background runs: nothing to report (Owner 2026-10-22)", () => {
   const at = new Date(2026, 7, 17, 8, 1).getTime();
   const runOnce = async (output: string, prompt = "Check the invoices") => {
     const h = harness();
@@ -4216,7 +4216,7 @@ describe("background runs: nothing to report (JC 2026-10-22)", () => {
     const withMarker = await runOnce(`${acme}\n\nNOTHING_TO_REPORT`);
     expect(withMarker.run).toMatchObject({ status: "completed", quiet: true, output: acme });
     // Without the marker, a whole message that is not a pure no-op is NOT
-    // auto-silenced (JC review 2026-10-22): the marker is the real mechanism.
+    // auto-silenced (owner review 2026-10-22): the marker is the real mechanism.
     const bare = await runOnce(acme);
     expect(bare.run.status).toBe("completed");
     expect(bare.run.quiet).toBeUndefined();
@@ -4256,7 +4256,7 @@ describe("background runs: nothing to report (JC 2026-10-22)", () => {
   });
 });
 
-describe("postResults migration and per-routine choice (JC 2026-10-22)", () => {
+describe("postResults migration and per-routine choice (Owner 2026-10-22)", () => {
   it("pins every existing routine to postResults=true once, then marks the file migrated", () => {
     const file = tempFile();
     writeFileSync(file, JSON.stringify({

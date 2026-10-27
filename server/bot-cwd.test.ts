@@ -42,7 +42,7 @@ describe("validateBotCwdFor (the bot's remote computer)", () => {
     return {
       asked,
       deps: {
-        principalId: "jc@x",
+        principalId: "owner@x",
         botId: "bot",
         sessions: {
           list: () => rows,

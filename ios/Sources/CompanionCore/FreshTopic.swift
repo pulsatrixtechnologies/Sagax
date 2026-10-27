@@ -1,4 +1,4 @@
-// Fresh topic on return (one conversation per bot, threads hidden; JC
+// Fresh topic on return (one conversation per bot, threads hidden; the owner
 // 2026-10-18), the phone's copy of shared/fresh-topic.ts. Coming back to a
 // bot after a while lands on a new, empty topic; the bot keeps the history
 // (the server's "Earlier topics" digest and recall_topic). The topic is a

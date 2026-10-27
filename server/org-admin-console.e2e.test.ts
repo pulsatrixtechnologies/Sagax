@@ -397,7 +397,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     const listed = ((await admin("GET", "bots", ALICE)).body.bots as Array<{ id: string; approvalMode: string }>).find((bot) => bot.id === bots.atlas!.id);
     expect(listed?.approvalMode).toBe("auto");
     expect((await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.atlas!.id], mode: "ask" })).body.results).toEqual([{ id: bots.atlas!.id, ok: true }]);
-    // 2026-10-26 (JC): no organization switch takes Auto from members' bots;
+    // 2026-10-26 (owner): no organization switch takes Auto from members' bots;
     // a saved false is ignored
     expect((await admin("POST", "settings", ALICE, { memberAutoApproval: false })).status).toBe(200);
     expect((await admin("GET", "settings", ALICE)).body.org).toMatchObject({ memberAutoApproval: true });
@@ -540,7 +540,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     const listed = (await api("GET", "/api/bots", alice)).body.bots as Array<any>;
     expect(listed.find((bot) => bot.id === bots.brittle!.id)?.modelSelection).toMatchObject({ instanceId: expect.stringMatching(/^(claude|hold)$/), auto: true });
     expect(listed.find((bot) => bot.id === bots.atlas!.id)?.modelSelection).toMatchObject({ instanceId: "claude", model: "fake-model" });
-    // 2026-10-18 (JC): an engine the organization does not offer is listed
+    // 2026-10-18 (owner): an engine the organization does not offer is listed
     // nowhere (shared/offered-engines.ts), and the moved bot says so in one line
     const offered = ((await api("GET", "/api/instances", alice)).body.instances as Array<{ instanceId: string }>).map((row) => row.instanceId);
     expect(offered).not.toContain("broken");

@@ -139,8 +139,8 @@ describe("a person's profile on an organization server", () => {
   });
 
   it("refuses a name or an email, never the about-me or the photo", () => {
-    expect(writesManagedProfile({ profile: { name: "JC" } })).toBe(true);
-    expect(writesManagedProfile({ profile: { email: "jc@example.test" } })).toBe(true);
+    expect(writesManagedProfile({ profile: { name: "Owner" } })).toBe(true);
+    expect(writesManagedProfile({ profile: { email: "owner@example.test" } })).toBe(true);
     expect(writesManagedProfile({ profile: { name: "", email: "" } })).toBe(true);
     expect(writesManagedProfile({ profile: { aboutMe: "Prefers French" } })).toBe(false);
     expect(writesManagedProfile({ profile: { avatarUrl: "" } })).toBe(false);

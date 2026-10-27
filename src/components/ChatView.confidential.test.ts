@@ -1,4 +1,4 @@
-// A confidential thread's classification band (JC 2026-10-16): top of the
+// A confidential thread's classification band (owner 2026-10-16): top of the
 // conversation and above the composer, in the main chat and a side thread,
 // whenever the open thread is confidential, never otherwise, and with no
 // way to dismiss it.

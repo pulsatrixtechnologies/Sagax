@@ -119,7 +119,7 @@ export function showServerSectionMove(
 
 /** Teach by demonstration in the bot's browser (Composer's "Show in the
  * browser"). The owner on this machine or an admin session, as before; and
- * 2026-10-26 (JC): an organization member on a bot they own, whose browser
+ * 2026-10-26 (owner): an organization member on a bot they own, whose browser
  * runs in their own server environment (/api/desktop-viewer/sandbox/me),
  * never on someone else's bot. */
 export function canTeachInBrowser(

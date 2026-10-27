@@ -3,7 +3,7 @@
 // button. It sits in a window of its own above every sheet, so a banner is
 // seen wherever the person is. While it shows, that window keeps every
 // touch: the card and its button take their own, a touch anywhere else
-// closes the banner, and nothing reaches the app under it (JC 2026-10-19:
+// closes the banner, and nothing reaches the app under it (owner 2026-10-19:
 // the close button and a touch on the card went through to what was
 // behind). Once the banner is gone the window lets everything through.
 //

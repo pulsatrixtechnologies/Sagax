@@ -48,8 +48,8 @@ final class ApprovalGrantsTests: XCTestCase {
         XCTAssertFalse(CustomRuleEditor.compile("blabla sans rien").recognized)
         XCTAssertEqual(CustomRuleEditor.compile("la lecture avec `cw_psa__query`").tools, ["cw_psa__query"])
         XCTAssertTrue(CustomRuleEditor.compile("utiliser github").recognized)
-        let home = "/Users/jc"
-        XCTAssertEqual(CustomRuleEditor.normalizePath("/Users/jc/Documents/../Documents/a", home: home), "~/Documents/a")
+        let home = "/Users/example"
+        XCTAssertEqual(CustomRuleEditor.normalizePath("/Users/example/Documents/../Documents/a", home: home), "~/Documents/a")
         XCTAssertEqual(CustomRuleEditor.normalizePath("$HOME/Documents", home: home), "~/Documents")
         XCTAssertNil(CustomRuleEditor.normalizePath("../etc/passwd", home: home))
         XCTAssertNil(CustomRuleEditor.normalizePath("relative/file", home: home))

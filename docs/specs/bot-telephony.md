@@ -1,8 +1,8 @@
 # Téléphonie des bots (Twilio) : appels et SMS
 
-Statut : BROUILLON, phase 1 (enquête et spécification). Décisions de JC du
+Statut : BROUILLON, phase 1 (enquête et spécification). Décisions de the owner du
 2026-10-15 intégrées (section 0, trois séries). Aucune implémentation.
-Demande de JC (2026-10-15) : l'équivalent de clawcall.dev pour chaque bot Sagax.
+Demande de the owner (2026-10-15) : l'équivalent de clawcall.dev pour chaque bot Sagax.
 « Les bots doivent pouvoir utiliser Twilio avec l'API voix de leur choix pour :
 recevoir des appels de leur bot (le bot appelle la personne), appeler le bot,
 texter le bot, se faire texter par le bot, avec une liste blanche, des
@@ -11,9 +11,9 @@ garde-fous, etc. »
 Ce document ne contient aucun secret. Aucun appel, SMS ni achat de numéro n'a
 été fait pour l'écrire.
 
-## 0. Décisions de JC (2026-10-15)
+## 0. Décisions de the owner (2026-10-15)
 
-Prises par JC après la première lecture. Elles priment sur toute
+Prises par the owner après la première lecture. Elles priment sur toute
 recommandation plus bas.
 
 1. **Compte Twilio : celui de l'utilisateur, par son profil Perspicax.** Les
@@ -234,7 +234,7 @@ Recherche faite sans toucher à la prod :
 
 **Conclusion de la recherche dans les dépôts** : `voicebridge` ne vient
 d'aucun dépôt connu ni d'aucun déploiement scripté. Son rôle a été précisé
-ensuite par JC : voir 2.7.
+ensuite par the owner : voir 2.7.
 
 ### 2.6 Voix temps réel possibles au téléphone
 
@@ -255,7 +255,7 @@ voix du catalogue de Twilio. Détail en 6.2.
 Un service maison, `voicebridge`, tourne sur la VM GOX, lancé à la main (hors
 de tout dépôt et de tout déploiement scripté). Il fait déjà une version
 réduite de cette spécification : un pont Twilio et xAI vers un seul bot
-(cryptic), avec un NIP haché, et des SMS vers le cellulaire de JC.
+(cryptic), avec un NIP haché, et des SMS vers le cellulaire de the owner.
 
 La téléphonie Sagax le **remplace**. Migration à prévoir (phase P2, section 7) :
 
@@ -264,7 +264,7 @@ La téléphonie Sagax le **remplace**. Migration à prévoir (phase P2, section 
 - le NIP : la personne en choisit un nouveau dans Sagax (un haché d'un autre
   système n'est repris que si l'algorithme et les paramètres sont
   compatibles, sans jamais faire transiter le NIP en clair) ;
-- le cellulaire de JC devient un numéro vérifié de sa liste (5.1) ;
+- le cellulaire de the owner devient un numéro vérifié de sa liste (5.1) ;
 - cryptic devient un bot joignable par téléphone, dans sa voix ;
 - `voicebridge` est arrêté après une période de validation, puis retiré de la
   VM.
@@ -688,7 +688,7 @@ avant, après, raison, horodatage, dans le journal d'activité (5.10).
 | Codes d'accès (NIP, phrase parlée, code SMS), leur réinitialisation | Facteur d'authentification : le bot ne doit ni le connaître ni le changer |
 | Vérification d'un numéro de la personne | Le code va au téléphone, c'est la personne qui le confirme |
 | Phrase de divulgation IA | Obligation légale et de confiance |
-| Rétention de 30 jours et purge | Décision de JC, Loi 25 |
+| Rétention de 30 jours et purge | Décision de the owner, Loi 25 |
 | Activation de l'enregistrement audio | Consentement de la personne (R6) |
 | Carte d'approbation par appel ou SMS à un tiers | Aucune règle « toujours permettre » ne peut être créée, même par le bot |
 | Achat, libération ou rebranchement d'un numéro, URL de webhook de la ligne | R9 et sécurité de la ligne |
@@ -863,10 +863,10 @@ production.
 
 ## 8. Décisions restantes
 
-Toutes les questions R1 à R16 ont une réponse de JC (section 0), sauf :
+Toutes les questions R1 à R16 ont une réponse de the owner (section 0), sauf :
 
 - **R14. Pilote ?** Ouvert.
-  (a) La ligne de JC (le numéro repris de `voicebridge`), JC seul sur la
+  (a) La ligne de the owner (le numéro repris de `voicebridge`), the owner seul sur la
   liste, cryptic comme premier bot joignable [recommandé] ; (b) une ligne
   d'équipe GOX ; (c) attendre P3.
 

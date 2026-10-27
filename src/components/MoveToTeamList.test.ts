@@ -1,4 +1,4 @@
-// The bot menu's "Move to ›" submenu (JC, 2026-10-15): the teams there are,
+// The bot menu's "Move to ›" submenu (owner, 2026-10-15): the teams there are,
 // a check on the bot's own, No team, then New team… typed in the menu.
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";

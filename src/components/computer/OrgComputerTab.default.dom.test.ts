@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Computer tab opens on the destination the bot uses now (JC 2026-10-19),
+// The Computer tab opens on the destination the bot uses now (owner 2026-10-19),
 // not the person's Mac; a manual pick holds until the bot moves.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -12,7 +12,7 @@ import { defaultScreen, OrgComputerTab, type InUsePlace } from "./OrgComputerTab
 
 const bridge: DesktopBridgeStatus = {
   connected: true, tunnel: false, activity: [], workplace: { place: "computer", routines: false, network: "all" },
-  desktops: [{ id: "d1", name: "Mac de JC", platform: "darwin", online: true, busy: false, lastSeenAt: 1, capabilities: { localVm: true }, system: { os: "macOS", arch: "arm64", cpus: 8, cpuModel: "M3", cpuPercent: 1, memoryGb: 16, memoryUsedGb: 8, diskGb: 500, diskFreeGb: 200 } }],
+  desktops: [{ id: "d1", name: "Mac de Owner", platform: "darwin", online: true, busy: false, lastSeenAt: 1, capabilities: { localVm: true }, system: { os: "macOS", arch: "arm64", cpus: 8, cpuModel: "M3", cpuPercent: 1, memoryGb: 16, memoryUsedGb: 8, diskGb: 500, diskFreeGb: 200 } }],
 };
 
 let host: HTMLDivElement;

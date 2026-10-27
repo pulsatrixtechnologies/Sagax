@@ -1,5 +1,5 @@
 // The docked bot panel and the chat column are two sibling panels in one
-// app frame (JC, 2026-10-08): the same header height above both, so their
+// app frame (owner, 2026-10-08): the same header height above both, so their
 // top edges and header circles line up in every skin; on Pulsatrix Light,
 // two light cards with the same top, bottom, radius and border, one gap
 // apart, the panel's right margin equal to the chat card's left margin; and
@@ -105,7 +105,7 @@ describe("Pulsatrix Light inset frame", () => {
 });
 
 describe("docked panel scrolling", () => {
-  // Short window (JC, 2026-10-08): the settings list was cut after "Model" and
+  // Short window (owner, 2026-10-08): the settings list was cut after "Model" and
   // could not be scrolled. The card scrolls, its children never shrink.
   const groupPanel = read("./GroupPanel.tsx");
   const body = (source: string) => source.match(/className="(content-card-body [^"]*)"/)?.[1] ?? "";

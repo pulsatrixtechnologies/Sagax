@@ -70,9 +70,9 @@ describe("principal registry", () => {
   it("has exactly one local operator and gives it the profile email", () => {
     const { reg } = registry();
     const a = reg.localOperator();
-    const b = reg.localOperator("jc@example.com");
+    const b = reg.localOperator("owner@example.com");
     expect(b.id).toBe(a.id);
-    expect(b).toMatchObject({ local: true, email: "jc@example.com" });
+    expect(b).toMatchObject({ local: true, email: "owner@example.com" });
     expect(reg.list().filter((p) => p.local)).toHaveLength(1);
   });
 
@@ -103,7 +103,7 @@ describe("principal registry", () => {
 
   it("skips an oversized or malformed entry and keeps the local operator across a restart", () => {
     const { path, reg } = registry();
-    const local = reg.localOperator("jc@example.com");
+    const local = reg.localOperator("owner@example.com");
     const morgan = reg.forAccount({ email: "morgan@example.com" });
     const file = JSON.parse(readFileSync(path, "utf8"));
     file.principals.push(
@@ -114,7 +114,7 @@ describe("principal registry", () => {
     writeFileSync(path, JSON.stringify(file));
     const again = new PrincipalRegistry({ path, now: () => 7 });
     expect(again.local()?.id).toBe(local.id);
-    expect(again.localOperator("jc@example.com").id).toBe(local.id);
+    expect(again.localOperator("owner@example.com").id).toBe(local.id);
     expect(again.byId(morgan.id)).toMatchObject({ email: "morgan@example.com" });
     expect(again.list()).toHaveLength(2);
     // The original is kept beside the rewritten file.

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings > Computer > Bots' computer > "Local VM (on your computer)" (JC,
+// Settings > Computer > Bots' computer > "Local VM (on your computer)" (owner,
 // 2026-10-16): opening the row checks, then runs the one-click setup by
 // itself once when a check is not ready and needs nothing from the person.
 // Never an install, never a foreign container, never twice per opening, and

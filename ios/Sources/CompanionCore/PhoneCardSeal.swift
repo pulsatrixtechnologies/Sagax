@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-// "Scanner avec l'iPhone" sealed end to end (JC 2026-10-21): the card read
+// "Scanner avec l'iPhone" sealed end to end (owner 2026-10-21): the card read
 // on this phone is encrypted for the computer's New card form that asked,
 // with the one-time key that form made for this scan. The server relays an
 // opaque envelope and never holds the number in clear. Same HPKE suite as

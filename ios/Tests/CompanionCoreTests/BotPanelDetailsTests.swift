@@ -233,9 +233,9 @@ final class BotPanelDetailsTests: XCTestCase {
     }
 
     func testOnlyAbsolutePathsAreOfferedToCopy() {
-        XCTAssertEqual(ThreadFileRules.copyablePath("/Users/jc/a.txt"), "/Users/jc/a.txt")
+        XCTAssertEqual(ThreadFileRules.copyablePath("/Users/example/a.txt"), "/Users/example/a.txt")
         XCTAssertEqual(ThreadFileRules.copyablePath("C:\\work\\a.txt"), "C:\\work\\a.txt")
-        XCTAssertEqual(ThreadFileRules.copyablePath("file:///Users/jc/My%20File.txt"), "/Users/jc/My File.txt")
+        XCTAssertEqual(ThreadFileRules.copyablePath("file:///Users/example/My%20File.txt"), "/Users/example/My File.txt")
         XCTAssertEqual(ThreadFileRules.copyablePath("file:///C:/work/a.txt"), "C:/work/a.txt")
         XCTAssertNil(ThreadFileRules.copyablePath("notes/a.txt"))
         XCTAssertEqual(ThreadFileRules.copyablePath(of: file("a", at: 0, path: "a", local: "/srv/a")), "/srv/a")

@@ -1,5 +1,5 @@
 // A member's own destinations through the real organization server
-// (2026-10-19, JC: "everyone should be able to run commands on their own
+// (2026-10-19, the owner: "everyone should be able to run commands on their own
 // VM, PC or cloud computer"). A member (Bob, not an admin) connects his
 // Windows desktop app; his bot (Auto: his computer, the cloud one switch
 // away) asks for permissions through its broker socket like an engine, and
@@ -289,7 +289,7 @@ posixOnly("organization server: a member's own destinations", () => {
       if (!(vm.answer()?.behavior === "allow")) expect((await turn.cardOf(vm.id)).adminApproval).not.toBe(true);
       // prod 0.5.27: choosing his own cloud computer (computer_select, Auto)
       // waited for an admin as "Computer select dans Sagax Computer". The
-      // bot decides where it works (JC): no card at all, even at Ask.
+      // bot decides where it works (owner): no card at all, even at Ask.
       expect(turn.mcpServers).toContain("sagax-computer");
       const choose = await turn.ask("mcp__sagax-computer__computer_select", { target: "cloud", reason: "Lancer la commande dans le nuage" });
       await waitFor(async () => choose.answer()?.behavior === "allow");
@@ -352,8 +352,8 @@ posixOnly("organization server: a member's own destinations", () => {
       await turn.end();
       await prefer("computer");
     }
-    // his real computer (2026-10-19, JC: "Toujours permettre" on every
-    // card): offered, bound to the command's one program (2026-10-20, JC,
+    // his real computer (2026-10-19, the owner: "Toujours permettre" on every
+    // card): offered, bound to the command's one program (2026-10-20, the owner,
     // #875), and his own; a chain keeps its card; revoked, the card comes
     // back
     turn = await heldTurn(bob, sage, "sur mon pc");
@@ -423,7 +423,7 @@ posixOnly("organization server: a member's own destinations", () => {
     }
   }, 150_000);
 
-  // 2026-10-21 (JC): "Toujours permettre" on a member's bot did not stick:
+  // 2026-10-21 (owner): "Toujours permettre" on a member's bot did not stick:
   // the engine writes its own `description` beside the command, so a rule
   // bound to every argument of the request never met the next one. It now
   // keeps the program for this bot (like a solo bot), for both who may

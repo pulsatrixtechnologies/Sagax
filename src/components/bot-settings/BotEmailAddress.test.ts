@@ -22,7 +22,7 @@ describe("Bot email address", () => {
     expect(html).toContain('data-bot-email-address=""');
   });
 
-  it("greys an address the administrator has not turned on yet (off by default, JC decision 1)", () => {
+  it("greys an address the administrator has not turned on yet (off by default, Owner decision 1)", () => {
     const html = render({ available: true, address: "ember@bots.example.org", enabled: false });
     expect(html).toContain("ember@bots.example.org");
     expect(html).toContain("Waiting for the administrator to turn it on");
@@ -30,7 +30,7 @@ describe("Bot email address", () => {
     expect(html).toContain("text-ink-tertiary");
   });
 
-  it("offers Change to the owner only (JC decision 4)", () => {
+  it("offers Change to the owner only (Owner decision 4)", () => {
     const onChange = async () => ({ ok: true as const });
     expect(render({ available: true, address: "a@b.example", enabled: true, canChange: true }, onChange)).toContain(">Change<");
     expect(render({ available: true, address: "a@b.example", enabled: true, canChange: false }, onChange)).not.toContain(">Change<");

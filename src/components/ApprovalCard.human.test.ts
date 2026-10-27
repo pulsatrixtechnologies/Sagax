@@ -58,7 +58,7 @@ describe("human approval card", () => {
     expect(html).not.toContain("mcp perspicax");
   });
 
-  it("leaves one quiet waiting line in the thread while the box above the composer asks (JC, 2026-10-15)", () => {
+  it("leaves one quiet waiting line in the thread while the box above the composer asks (Owner, 2026-10-15)", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message: ask("a", TOOL, ARGS) }));
     expect(html).toContain("En attente de votre autorisation");
@@ -145,7 +145,7 @@ describe("composer panel and stepper", () => {
     expect(html).toContain("Quasar veut consulter l&#x27;horaire dans Acme Desk");
     expect(html).toContain("1 sur 3");
     expect(html).toContain('aria-label="Demande précédente"');
-    // 2026-10-20 (JC): the details are folded under one short line
+    // 2026-10-20 (owner): the details are folded under one short line
     expect(html).toContain('data-approval-preview="closed"');
     expect(html).not.toContain("Voir la demande complète");
     expect(html).not.toContain("conditions");

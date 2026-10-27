@@ -35,7 +35,7 @@ final class MascotLookTests: XCTestCase {
         XCTAssertEqual(look("{\"character\":\"shape\",\"shape\":null}"), .owl)
     }
 
-    /// The bug JC saw (2026-10-09): the desktop's editor saves all three
+    /// The bug the owner saw (2026-10-09): the desktop's editor saves all three
     /// skins (`completeMascotLook`), so every look edited there carries
     /// `skins.bunbu`; the phone refused that key and drew the owl. A skin
     /// never costs the character (`botMascotLook` drops it and keeps the rest).

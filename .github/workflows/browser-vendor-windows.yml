@@ -5,7 +5,7 @@ name: Windows browser vendor build
 
 on:
   workflow_dispatch:
-  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
+  # CI runs once, on the release candidate (manual dispatch): Owner 2026-10-14.
 
 concurrency:
   group: browser-vendor-${{ github.event.pull_request.number || github.ref }}

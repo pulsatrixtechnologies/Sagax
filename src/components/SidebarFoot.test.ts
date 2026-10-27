@@ -1,4 +1,4 @@
-// The foot is the profile row of the reference design (JC, 2026-10-27): the
+// The foot is the profile row of the reference design (owner, 2026-10-27): the
 // avatar and the full name (normal weight, no background pill), then a
 // separate round button with the apps grid that opens Connect apps. No
 // overlapping logos, no hover animation, no stacked state. The connected

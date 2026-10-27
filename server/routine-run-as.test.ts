@@ -1,4 +1,4 @@
-// Who may choose whom a routine runs as (JC, 2026-10-08).
+// Who may choose whom a routine runs as (owner, 2026-10-08).
 import { describe, expect, it } from "vitest";
 
 import { runAsInScope, runAsOptions, runAsRefusal, runAsScope, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";

@@ -1,5 +1,5 @@
 // A message sent while the bot works, routed by the bot (server/busy-routing.ts,
-// JC 2026-10-18: no chooser). The real harness with two fake engines:
+// Owner 2026-10-18: no chooser). The real harness with two fake engines:
 // - the fake claude CLI in `slow` mode, which takes words live (steer); each
 //   prompt carrying [gate:NAME] holds its reply until the test drops that
 //   gate, and a steered message carrying a marker makes it call

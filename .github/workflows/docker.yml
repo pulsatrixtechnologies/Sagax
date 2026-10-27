@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
-  # CI runs once, on the release candidate (manual dispatch): JC 2026-10-14.
+  # CI runs once, on the release candidate (manual dispatch): Owner 2026-10-14.
 
 # One run per PR: a new push cancels the superseded run.
 concurrency:

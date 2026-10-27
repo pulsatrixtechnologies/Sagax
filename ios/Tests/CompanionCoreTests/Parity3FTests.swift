@@ -33,7 +33,7 @@ final class Parity3FTests: XCTestCase {
     func testWordIndexAndAlignedTranscript() {
         let words = [
             VoiceNoteWord(text: "Bonjour", start: 0, end: 0.5),
-            VoiceNoteWord(text: "JC", start: 0.6, end: 1),
+            VoiceNoteWord(text: "Owner", start: 0.6, end: 1),
         ]
         XCTAssertEqual(VoiceNoteWords.index(at: 0.3, in: words), 0)
         XCTAssertEqual(VoiceNoteWords.index(at: 0.55, in: words), -1)
@@ -48,10 +48,10 @@ final class Parity3FTests: XCTestCase {
     }
 
     func testVoiceNoteDecodesWordTimesWhenTheComputerSendsThem() throws {
-        let json = #"{"id":"m1","role":"bot","kind":"text","at":1,"text":"Bonjour JC","attachments":[{"kind":"audio","path":"note-1.mp3","mime":"audio/mpeg","durationMs":1000,"words":[{"text":"Bonjour","start":0,"end":0.4},{"text":"JC","start":0.5,"end":1}]}]}"#
+        let json = #"{"id":"m1","role":"bot","kind":"text","at":1,"text":"Bonjour Owner","attachments":[{"kind":"audio","path":"note-1.mp3","mime":"audio/mpeg","durationMs":1000,"words":[{"text":"Bonjour","start":0,"end":0.4},{"text":"Owner","start":0.5,"end":1}]}]}"#
         let message = try JSONDecoder().decode(Message.self, from: Data(json.utf8))
         let note = try XCTUnwrap(message.voiceNotes.first)
-        XCTAssertEqual(note.words?.map(\.text), ["Bonjour", "JC"])
+        XCTAssertEqual(note.words?.map(\.text), ["Bonjour", "Owner"])
     }
 
     func testPublishedPageRules() {

@@ -141,7 +141,7 @@ describe("ReactionChips", () => {
     expect(host.querySelector('[data-testid="reaction-chips"]')!.className).toContain("justify-end");
   });
 
-  it("draws the tooltip outside the row, above the chip, only while hovered or focused (JC, 2026-10-18)", async () => {
+  it("draws the tooltip outside the row, above the chip, only while hovered or focused (Owner, 2026-10-18)", async () => {
     await renderChips();
     expect(document.querySelector("[data-reaction-tip]")).toBeNull();
     const button = chip("👍");

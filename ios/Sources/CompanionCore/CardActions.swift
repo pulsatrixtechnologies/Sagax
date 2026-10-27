@@ -339,11 +339,11 @@ public enum ApprovalDockRules {
         let teamSetup = card.teamSetupRequest != nil
         let durable = routine || skill || profile || teamSetup
         let canRememberCommand = ownerOrAdmin && !durable && card.allowKey == nil && card.commandAllowlist != nil && card.ownerRule == nil
-        // 2026-10-20 (JC): the card offers Deny, Always allow, Allow once;
+        // 2026-10-20 (owner): the card offers Deny, Always allow, Allow once;
         // the composer's stop button ends a turn
         actions.cancelTurn = false
         actions.denyIsCancel = routine || profile || teamSetup
-        // 2026-10-20 (JC): one "Always allow", one click; the card's owner
+        // 2026-10-20 (owner): one "Always allow", one click; the card's owner
         // rule first (every card since #855), then the older grants
         actions.alwaysAllowRule = card.ownerRule != nil
         actions.alwaysAllowFolder = card.ownerRule != nil && card.ownerRuleFolder != nil && !durable

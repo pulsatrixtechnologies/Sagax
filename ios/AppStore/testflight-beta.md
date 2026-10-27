@@ -21,12 +21,12 @@ Nothing in this file has been sent to Apple.
 - Marketing URL: `https://github.com/pulsatrixtechnologies/sagax`.
 - Privacy policy URL:
   `https://github.com/pulsatrixtechnologies/sagax/blob/main/docs/ios-privacy.md`,
-  the same page the app's Settings > Privacy Policy row opens (JC,
+  the same page the app's Settings > Privacy Policy row opens (owner,
   2026-10-16).
 - App Privacy label: "Data Not Collected" (each client organization runs
   its own server; see `privacy-answers.md`).
 - Demo access: a dedicated reviewer account on a client organization's server,
-  created by JC, with one voice-ready bot and no client data. JC types the
+  created by the owner, with one voice-ready bot and no client data. Owner types the
   account in App Store Connect; it is never written in this repository.
 
 ### Beta app description, fr-CA
@@ -168,14 +168,14 @@ The app does not create accounts; organizations manage them in Pulsatrix Perspic
 | # | Item | Status on 2026-10-16 | How |
 | --- | --- | --- | --- |
 | 1 | Beta app localizations fr-CA and en-CA: description, feedback email, marketing URL, privacy policy URL | Texts and URLs ready above | `app-localizations create` or `update` (below) |
-| 2 | Beta App Review contact: first name, last name, phone, email | **Open**: JC enters them; never commit them | `asc testflight review edit` or the App Store Connect UI |
-| 3 | Demo account or access instructions | **Open**: JC creates a reviewer account on a client organization's server (one voice-ready bot, no client data) and types it in App Store Connect. The demo mode covers most screens without an account, but not calls with xAI voices, notifications or the share extension. Recommended: demo account required = true | `asc testflight review edit --demo-account-*` |
+| 2 | Beta App Review contact: first name, last name, phone, email | **Open**: Owner enters them; never commit them | `asc testflight review edit` or the App Store Connect UI |
+| 3 | Demo account or access instructions | **Open**: Owner creates a reviewer account on a client organization's server (one voice-ready bot, no client data) and types it in App Store Connect. The demo mode covers most screens without an account, but not calls with xAI voices, notifications or the share extension. Recommended: demo account required = true | `asc testflight review edit --demo-account-*` |
 | 4 | Review notes | Ready above (`beta-review-notes`) | `asc testflight review edit --notes` |
 | 5 | Build uploaded and processed (state VALID), not expired | **Open**: 0.5.9 build 38 | `asc builds list` |
 | 6 | Export compliance | `ITSAppUsesNonExemptEncryption` is false in `ios/App/Info.plist` (from `project.yml`); see the analysis below | Nothing to answer in App Store Connect while the key is false |
 | 7 | What to Test for the build, fr-CA and en-CA | Ready above | `asc builds test-notes create` |
 | 8 | Build added to "Bêta Sagax" | After 1 to 7 | `asc builds add-groups` (without `--submit`) |
-| 9 | Submit for Beta App Review | **DO NOT RUN without JC's GO** | `asc testflight review submit` |
+| 9 | Submit for Beta App Review | **DO NOT RUN without the owner's GO** | `asc testflight review submit` |
 | 10 | App Privacy answers and privacy policy published | `privacy-answers.md`, `docs/ios-privacy.md` (merge to main first so the GitHub URL shows them) | App Store Connect UI (App Privacy) |
 
 Other points a reviewer checks on a first external build:
@@ -212,7 +212,7 @@ covers HTTPS, Keychain and CryptoKit. The noVNC code is standard encryption
 outside the controlled encryption category, so it still qualifies for an
 exemption. `false` is accurate in our reading.
 
-Doubts for JC:
+Doubts for the owner:
 
 - If App Store Connect ever asks the encryption questions (for example if
   the key is removed), answer: proprietary algorithms No; standard
@@ -260,7 +260,7 @@ asc testflight app-localizations update --id "<LOCALIZATION_ID>" \
 # 3. Beta App Review details: notes and demo account flag. The contact
 #    (--contact-first-name, --contact-last-name, --contact-phone,
 #    --contact-email) and the demo account (--demo-account-name,
-#    --demo-account-password) are typed by JC at run time or in the
+#    --demo-account-password) are typed by the owner at run time or in the
 #    App Store Connect UI, never saved in this repository.
 asc testflight review edit --id "<REVIEW_DETAIL_ID>" \
   --notes "$(block beta-review-notes)" \
@@ -276,7 +276,7 @@ asc builds test-notes create --app "$APP" --build-number "<BUILD_NUMBER>" --vers
 asc builds add-groups --app "$APP" --build-number "<BUILD_NUMBER>" --version 0.5.9 --group "$GROUP"
 ```
 
-DO NOT RUN without JC's GO:
+DO NOT RUN without the owner's GO:
 
 ```sh
 # 6. Submit the build for Beta App Review

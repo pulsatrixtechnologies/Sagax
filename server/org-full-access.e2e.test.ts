@@ -8,7 +8,7 @@
 //         refused (org_full_access_disabled); Ask still works; members may
 //         not change the policy
 //   FA-3  mode changes and Full turns are in the admin activity log
-//   FA-4  (2026-10-20, JC: "le bot principal doit pouvoir absolument tout
+//   FA-4  (2026-10-20, the owner: "le bot principal doit pouvoir absolument tout
 //         faire") the owner asks their Primary Bot "mets Zed en Full" and
 //         also "mets-toi en Full": sagax_settings with their words turns it
 //         on at once, with their own rights; without their words it waits
@@ -159,7 +159,7 @@ posixOnly("organization Full access", () => {
   });
 
   it("FA-1: the owner confirms once, the turn bypasses prompts, host tools stay withheld", async () => {
-    // 2026-10-26 (JC): no organization switch, the owner's confirmation is the gate
+    // 2026-10-26 (owner): no organization switch, the owner's confirmation is the gate
     expect((await api("GET", "/api/org", alice)).body.settings.allowFullAccess).toBe(true);
     const thread = `/api/bots/${zed.id}/tasks/${zed.threadId}`;
     const unconfirmed = await api("PATCH", thread, erin, { approvalMode: "full" });

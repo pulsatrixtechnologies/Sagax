@@ -5,7 +5,7 @@
 // through a desktop's sidecar, the app shows what the remote-client renderer
 // shows; paired with a server, what the served renderer shows for the
 // session's scope (client: `CLIENT_ALLOW` in server/request-auth.ts; admin:
-// everything). JC's decisions of 2026-10-03 (matrix, "JC's answers") add to
+// everything). Owner's decisions of 2026-10-03 (matrix, "Owner's answers") add to
 // that: D1 the advanced bot panel on a sidecar for the owner, D2 message pin
 // everywhere, D3 room memory on the sidecar, D4 the phone's own extras (pin
 // bot, delete bot, framing) for the owner or an admin.
@@ -25,7 +25,7 @@ public enum PairingScope: String, Hashable, Sendable {
     case serverAdmin
 }
 
-/// Sidecar routes that JC approved but that a given desktop may not serve
+/// Sidecar routes that the owner approved but that a given desktop may not serve
 /// yet (package S1 adds them to `ALLOWED`). Until the app knows the paired
 /// sidecar has one, the feature behind it stays hidden on sidecar pairings.
 public struct SidecarRoutes: OptionSet, Hashable, Sendable {

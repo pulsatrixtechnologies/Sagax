@@ -117,7 +117,7 @@ final class CardActionsTests: XCTestCase {
         XCTAssertEqual(ApprovalDockRules.stepperIndex(after, requestId: "c"), 1)
     }
 
-    /// 2026-10-20 (JC): a card with an owner rule offers one Always allow
+    /// 2026-10-20 (owner): a card with an owner rule offers one Always allow
     /// that keeps that rule in one click, and no older grant beside it.
     func testOwnerRuleIsTheOneAlwaysAllow() throws {
         let pending = try XCTUnwrap(ApprovalDockRules.pendingApprovals([try ask("a", tool: "Bash", extra: #","allowSession":true,"ownerRule":{"description":"Run a command (git)"}"#)]).first)

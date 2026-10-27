@@ -253,7 +253,7 @@ describe("create_agent", () => {
     expect(String((await w.api.call(person("pr_1"), "create_agent", { name: "scratch" })).body.message)).toContain("delete_agent");
   });
 
-  it("gives a temporary agent its own Auto workspace (sub-agents, JC 2026-10-15)", async () => {
+  it("gives a temporary agent its own Auto workspace (sub-agents, Owner 2026-10-15)", async () => {
     const w = world();
     expect((await w.api.call(person("pr_1"), "create_agent", { name: "Cloud worker", workspace: "cloud" })).status).toBe(200);
     expect(w.created.at(-1)).toEqual({ name: "Cloud worker", workspace: "cloud" });
@@ -412,9 +412,9 @@ describe("send_prompt / await_turn", () => {
 
   it("async notify keeps the person the source turn spoke for (wake mounts their connectors)", async () => {
     const w = world();
-    await w.api.call({ ...bot("bot-x"), speakerPrincipalId: "person-jc" }, "send_prompt", { agent_id: "bot-a", prompt: "later", mode: "async" });
+    await w.api.call({ ...bot("bot-x"), speakerPrincipalId: "person-owner" }, "send_prompt", { agent_id: "bot-a", prompt: "later", mode: "async" });
     await w.settle();
-    expect(w.notified).toEqual(["bot-a:true:echo: later:as:person-jc"]);
+    expect(w.notified).toEqual(["bot-a:true:echo: later:as:person-owner"]);
   });
 
   it("on_busy: queue leaves the running turn (default, 2026-10-17), reject refuses, supersede interrupts", async () => {
@@ -715,12 +715,12 @@ describe("securable tool layer (B2)", () => {
 
   it("enforce refuses admin without grants, for the bot and its speaker", async () => {
     const { w, api, grants } = withGuard("enforce");
-    const caller = { ...bot("bot-x"), speakerPrincipalId: "pr_jc" };
+    const caller = { ...bot("bot-x"), speakerPrincipalId: "pr_owner" };
     expect((await api.call(caller, "create_agent", { name: "No" })).body).toMatchObject({ code: "not_granted" });
     expect(w.audits.at(-1)!.entry).toMatchObject({ outcome: "refused", code: "not_granted" });
-    grants.grant({ kind: "bot", id: "bot-x" }, "agents:admin", "pr_jc");
+    grants.grant({ kind: "bot", id: "bot-x" }, "agents:admin", "pr_owner");
     expect((await api.call(caller, "create_agent", { name: "No" })).body.message).toContain("person this turn speaks for");
-    grants.grant({ kind: "user", id: "pr_jc" }, "agents:admin", "pr_jc");
+    grants.grant({ kind: "user", id: "pr_owner" }, "agents:admin", "pr_owner");
     expect((await api.call(caller, "create_agent", { name: "Yes" })).status).toBe(200);
     expect((await api.call(caller, "list_agents", {})).status).toBe(200);
   });

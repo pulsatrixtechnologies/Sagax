@@ -31,7 +31,7 @@ describe("push token on a live stream", () => {
   });
 
   it("on a personal server, a stream without viewerId is the operator", () => {
-    expect(tokensOfConnectedDevices([{ pushToken: TOKEN_A }], "pr_jc", "pr_jc")).toEqual([TOKEN_A]);
-    expect(tokensOfConnectedDevices([{ pushToken: TOKEN_A }], "pr_jc", "pr_other")).toEqual([]);
+    expect(tokensOfConnectedDevices([{ pushToken: TOKEN_A }], "pr_owner", "pr_owner")).toEqual([TOKEN_A]);
+    expect(tokensOfConnectedDevices([{ pushToken: TOKEN_A }], "pr_owner", "pr_other")).toEqual([]);
   });
 });

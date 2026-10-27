@@ -74,7 +74,7 @@ describe("the one-shot pass after Allow", () => {
     expect(emailSendCallMatches(draft, ...send({ ...exact, body: undefined }), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send({ ...exact, replyTo: "evil@x.com" }), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send({ ...exact, from: "ceo@example.com" }), outlook)).toBe(false);
-    expect(emailSendCallMatches(draft, ...send({ ...exact, attachments: [{ path: "/Users/jc/.ssh/id_rsa" }] }), outlook)).toBe(false);
+    expect(emailSendCallMatches(draft, ...send({ ...exact, attachments: [{ path: "/Users/example/.ssh/id_rsa" }] }), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send({ ...exact, headers: { "X-Evil": "1" } }), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send({ ...exact, bcc: ["spy@evil.com"] }), outlook)).toBe(false);
   });
@@ -188,8 +188,8 @@ describe("the server's own mail sends the approved draft", () => {
   });
 
   it("a card starts pending, with a request id the answer route recognizes", () => {
-    const card = emailSendCard({ draft, draftKey: emailDraftKey(draft), connector: { kind: "smtp", label: "x" }, by: "jc", now: 5 });
-    expect(card).toMatchObject({ status: "pending", at: 5, by: "jc", draftKey: emailDraftKey(draft) });
+    const card = emailSendCard({ draft, draftKey: emailDraftKey(draft), connector: { kind: "smtp", label: "x" }, by: "owner", now: 5 });
+    expect(card).toMatchObject({ status: "pending", at: 5, by: "owner", draftKey: emailDraftKey(draft) });
     expect(card.id).toMatch(/^maildraft-[0-9a-f-]{36}$/);
   });
 });

@@ -103,7 +103,7 @@ describe("teach by demonstration: the recorder", () => {
     expect(await view.action({ type: "record-start" })).toEqual({ ok: true, recording: true });
     await view.action({ type: "navigate", url: "https://shop.example/login?next=%2Fcart&token=abc123" });
     await view.action(click(100, 50));
-    for (const letter of "jc@example.com") await view.action(key(letter));
+    for (const letter of "owner@example.com") await view.action(key(letter));
     await view.action(key("Tab"));
     focused = "100,90";
     for (const letter of "hunter2-super-secret") await view.action(key(letter));
@@ -112,7 +112,7 @@ describe("teach by demonstration: the recorder", () => {
     const steps = stopped.steps as Array<Record<string, unknown>>;
     expect(steps.map((step) => step.kind)).toEqual(["open", "click", "type", "press", "type", "click"]);
     expect(steps[0]!.url).toBe("https://shop.example/login?next=%2Fcart&token=REDACTED");
-    expect(steps[2]).toMatchObject({ kind: "type", text: "jc@example.com", target: { role: "textbox", name: "Email" } });
+    expect(steps[2]).toMatchObject({ kind: "type", text: "owner@example.com", target: { role: "textbox", name: "Email" } });
     expect(steps[3]).toMatchObject({ kind: "press", key: "Tab" });
     expect(steps[4]).toMatchObject({ kind: "type", secret: true, target: { name: "Password" } });
     expect(steps[4]).not.toHaveProperty("text");

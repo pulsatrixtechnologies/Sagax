@@ -106,7 +106,7 @@ final class DesktopBotPanelTests: XCTestCase {
     }
 
     func testWorksOnOffersAutoAndOffOnly() throws {
-        // Workspace is always Auto (JC 2026-10-18): the bot picks the place
+        // Workspace is always Auto (owner 2026-10-18): the bot picks the place
         // per task, so no place is offered; Off stays a restriction.
         let plain = try config("{}")
         let boat = try config(#"{"features":{"boatComputer":true}}"#)

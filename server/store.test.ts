@@ -993,8 +993,8 @@ describe("Store", () => {
     expect(dm.name).toBe("Pair");
 
     const room = store.createGroup("Channel", [first.id]);
-    expect(store.patchGroup(room.id, { humanIds: ["jc", "morgan@example.test"] })?.humanIds).toEqual(["jc", "morgan@example.test"]);
-    expect(new Store(selection).group(room.id)?.humanIds).toEqual(["jc", "morgan@example.test"]);
+    expect(store.patchGroup(room.id, { humanIds: ["owner", "morgan@example.test"] })?.humanIds).toEqual(["owner", "morgan@example.test"]);
+    expect(new Store(selection).group(room.id)?.humanIds).toEqual(["owner", "morgan@example.test"]);
     expect(new Store(selection).group(dm.id)?.humanIds).toBeUndefined();
   });
 

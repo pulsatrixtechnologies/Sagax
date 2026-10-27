@@ -128,7 +128,7 @@ describe("sidebar header", () => {
     },
   );
 
-  // The foot (JC, 2026-10-27): the profile row (avatar and name, no pill, the
+  // The foot (owner, 2026-10-27): the profile row (avatar and name, no pill, the
   // account menu) and the round apps grid button, whatever Sidebar
   // shortcuts said. No Browse Bots row: Browse Bots is in the account menu.
   it.each([true, false])("draws only the profile and the round apps grid button at the foot (shortcuts %s)", (shortcuts) => {

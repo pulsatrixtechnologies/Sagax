@@ -1,4 +1,4 @@
-// Fresh topic on return (single stream, JC 2026-10-18) against the real
+// Fresh topic on return (single stream, the owner 2026-10-18) against the real
 // server, the way both clients drive it: the shared rule
 // (shared/fresh-topic.ts) reads the bot's live snapshot; coming back after
 // the threshold lands on a fresh topic that the server creates only with its

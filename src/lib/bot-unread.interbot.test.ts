@@ -1,4 +1,4 @@
-// JC's rule: bot-to-bot threads are never shown to the person (sidebar,
+// Owner's rule: bot-to-bot threads are never shown to the person (sidebar,
 // typing dots, unread counts, notifications).
 import { describe, expect, it } from "vitest";
 import { botShowsUnread, isInterBotThread, taskHiddenFromSidebar } from "./bot-unread";

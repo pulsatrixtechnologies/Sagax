@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// The conversation's one "..." button (JC, 2026-10-14): Copy, Export ›
-// (JC, 2026-10-16), then the Inspector and the Data window when they are on. It replaces the
+// The conversation's one "..." button (owner, 2026-10-14): Copy, Export ›
+// (owner, 2026-10-16), then the Inspector and the Data window when they are on. It replaces the
 // header's separate Share, Inspector, Data and panel buttons.
 import { createElement } from "react";
 import { flushSync } from "react-dom";

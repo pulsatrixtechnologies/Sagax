@@ -92,8 +92,8 @@ describe("acceptInvite", () => {
 
 describe("roleOf", () => {
   it("gives the creator owner and keeps admins distinct from members", () => {
-    const lists = { ownerUserId: "jc", admins: ["jc", "ada@example.test"], members: ["morgan@example.test"] };
-    expect(roleOf({ ...lists, userId: "jc" })).toBe("owner");
+    const lists = { ownerUserId: "owner", admins: ["owner", "ada@example.test"], members: ["morgan@example.test"] };
+    expect(roleOf({ ...lists, userId: "owner" })).toBe("owner");
     expect(roleOf({ ...lists, userId: "ada@example.test" })).toBe("admin");
     expect(roleOf({ ...lists, userId: "morgan@example.test" })).toBe("member");
     expect(roleOf({ ...lists, userId: "stranger" })).toBeNull();
@@ -176,14 +176,14 @@ import { createOrg, issueInvite, memberListsAfterAccept } from "./org-record.ts"
 
 describe("org record", () => {
   it("records the creator as the only owner on this computer", () => {
-    expect(createOrg({ name: "Example", ownerUserId: "jc", host: { kind: "this-computer" } })).toEqual({
+    expect(createOrg({ name: "Example", ownerUserId: "owner", host: { kind: "this-computer" } })).toEqual({
       name: "Example",
-      ownerUserId: "jc",
+      ownerUserId: "owner",
       host: { kind: "this-computer" },
     });
   });
   it("rejects a blank name", () => {
-    expect(() => createOrg({ name: "  ", ownerUserId: "jc", host: { kind: "this-computer" } })).toThrow(/name/);
+    expect(() => createOrg({ name: "  ", ownerUserId: "owner", host: { kind: "this-computer" } })).toThrow(/name/);
   });
   it("issues a single-use invite that expires in 7 days", () => {
     expect(issueInvite({ email: "morgan@example.test", now: 50, token: "tok" }).expiresAt).toBe(50 + INVITE_TTL_MS);
@@ -272,8 +272,8 @@ Le test instancie les handlers avec un faux store en mémoire `{ org: null, invi
 ```ts
 it("joins once and reports already-member the second time", () => {
   const state = emptyOrgState();
-  createOrgRoute(state, { name: "Example", ownerUserId: "jc", host: { kind: "this-computer" } });
-  const issued = issueInviteRoute(state, { actorId: "jc", email: "morgan@example.test", now: 1, token: "tok" });
+  createOrgRoute(state, { name: "Example", ownerUserId: "owner", host: { kind: "this-computer" } });
+  const issued = issueInviteRoute(state, { actorId: "owner", email: "morgan@example.test", now: 1, token: "tok" });
   expect(issued.status).toBe(200);
   expect(acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 2 }).body.status).toBe("joined");
   expect(acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 3 }).body.status).toBe("used");
@@ -385,8 +385,8 @@ it("refuses a human list on a bot-to-bot dm", () => {
   expect(applyHumanIds({ dm: true, humanIds: ["morgan@example.test"] })).toEqual({ ok: false, error: "dm-has-no-humans" });
 });
 it("lets only the bot owner place it", () => {
-  expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId: "jc" })).toBe(false);
-  expect(canPlaceBot({ actorId: "jc", ownerUserId: "jc" })).toBe(true);
+  expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId: "owner" })).toBe(false);
+  expect(canPlaceBot({ actorId: "owner", ownerUserId: "owner" })).toBe(true);
 });
 it("lets an admin edit people and stops a member", () => {
   expect(canEditHumans("admin")).toBe(true);
@@ -433,13 +433,13 @@ git commit -m "feat: keep channel humans apart from bot members"
 
 ```ts
 it("hides a channel from someone who was not added", () => {
-  expect(canSeeChannel({ humanIds: ["jc"], viewerId: "morgan@example.test" })).toBe(false);
-  expect(canSeeChannel({ humanIds: ["jc", "morgan@example.test"], viewerId: "morgan@example.test" })).toBe(true);
+  expect(canSeeChannel({ humanIds: ["owner"], viewerId: "morgan@example.test" })).toBe(false);
+  expect(canSeeChannel({ humanIds: ["owner", "morgan@example.test"], viewerId: "morgan@example.test" })).toBe(true);
 });
 it("shows another person's bot in Direct only after a grant", () => {
-  expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "morgan@example.test", directGrants: [] })).toBe(false);
-  expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "morgan@example.test", directGrants: ["morgan@example.test"] })).toBe(true);
-  expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "jc", directGrants: [] })).toBe(true);
+  expect(canSeeDirectBot({ ownerUserId: "owner", viewerId: "morgan@example.test", directGrants: [] })).toBe(false);
+  expect(canSeeDirectBot({ ownerUserId: "owner", viewerId: "morgan@example.test", directGrants: ["morgan@example.test"] })).toBe(true);
+  expect(canSeeDirectBot({ ownerUserId: "owner", viewerId: "owner", directGrants: [] })).toBe(true);
 });
 ```
 
@@ -482,9 +482,9 @@ Seul `actorId === ownerUserId` ajoute. Un deuxième appel avec la même paire ne
 
 ```ts
 it("lets the owner open a direct and refuses anyone else", () => {
-  const opened = grantDirect({ actorId: "jc", ownerUserId: "jc", botId: "aurora", userId: "morgan@example.test", grants: [] });
+  const opened = grantDirect({ actorId: "owner", ownerUserId: "owner", botId: "aurora", userId: "morgan@example.test", grants: [] });
   expect(opened.ok).toBe(true);
-  expect(grantDirect({ actorId: "ada@example.test", ownerUserId: "jc", botId: "aurora", userId: "morgan@example.test", grants: [] })).toEqual({
+  expect(grantDirect({ actorId: "ada@example.test", ownerUserId: "owner", botId: "aurora", userId: "morgan@example.test", grants: [] })).toEqual({
     ok: false,
     error: "not-owner",
   });
@@ -727,13 +727,13 @@ git commit -m "feat: queue channel turns while a worker is offline"
 ```ts
 it("sends the card to the owner session on the executing machine", () => {
   expect(approvalAudience({
-    ownerUserId: "jc",
-    host: { kind: "machine", userId: "jc", deviceId: "studio" },
-  })).toEqual({ userId: "jc", deviceId: "studio" });
+    ownerUserId: "owner",
+    host: { kind: "machine", userId: "owner", deviceId: "studio" },
+  })).toEqual({ userId: "owner", deviceId: "studio" });
 });
 it("does not take channel members as an audience", () => {
-  const audience = approvalAudience({ ownerUserId: "jc", host: { kind: "fleet" } });
-  expect(audience.userId).toBe("jc");
+  const audience = approvalAudience({ ownerUserId: "owner", host: { kind: "fleet" } });
+  expect(audience.userId).toBe("owner");
   expect(Object.keys(audience)).toEqual(["userId", "deviceId"]);
 });
 ```

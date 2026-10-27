@@ -46,7 +46,7 @@ describe("the steps of a group, opened", () => {
   });
 
   it("folds every finished tool search into one row, so the calls between them merge", () => {
-    // JC 2026-10-21: "Used search tool ×5, Used use tool, Used search tool ×4, Used use tool ×15"
+    // Owner 2026-10-21: "Used search tool ×5, Used use tool, Used search tool ×4, Used use tool ×15"
     const use = (tool: string) => step("use_tool", true, { tool_name: tool, tool_input: { resource: "service.tickets" } });
     const entries = mergeSteps([
       step("search_tool", true, { query: "perspicax" }), step("search_tool", true, { query: "remote" }),

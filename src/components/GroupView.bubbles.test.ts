@@ -15,7 +15,7 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }))
 
 import { Transcript } from "./GroupView";
 
-const JC = "pr_jc";
+const Owner = "pr_owner";
 const SAM = "pr_sam";
 const members = [
   { id: "maya", name: "Maya", color: "green" },
@@ -54,18 +54,18 @@ function bubble(markup: string, text: string): string {
   return markup.slice(start, markup.indexOf('"', start));
 }
 
-const memberConfig = { viewer: { operator: false, principalId: JC, email: "jc@example.com", name: "JC", role: "member", canCreateBots: true, operatorName: "JC" } } as ConfigStatus;
+const memberConfig = { viewer: { operator: false, principalId: Owner, email: "owner@example.com", name: "Owner", role: "member", canCreateBots: true, operatorName: "Owner" } } as ConfigStatus;
 
 beforeAll(() => vi.stubGlobal("window", {}));
 afterAll(() => vi.unstubAllGlobals());
 
 describe("group chat bubbles", () => {
   const conversation = [
-    person("a", { name: "JC", id: JC }, "Test", t0),
+    person("a", { name: "Owner", id: Owner }, "Test", t0),
     person("b", { name: "Sam Taylor", id: SAM }, "Test sam", t0 + min),
     person("c", { name: "Sam Taylor", id: SAM }, "C'est sam", t0 + 2 * min),
-    person("d", { name: "JC", id: JC }, "test", t0 + 3 * min),
-    person("e", { name: "JC", id: JC }, "adawdawdawd", t0 + 4 * min),
+    person("d", { name: "Owner", id: Owner }, "test", t0 + 3 * min),
+    person("e", { name: "Owner", id: Owner }, "adawdawdawd", t0 + 4 * min),
     person("f", { name: "Marie Roy", id: "pr_marie" }, "Bonjour", t0 + 5 * min),
     bot("g", "maya", "Hello **team**", t0 + 6 * min),
     bot("h", "theo", "Hi", t0 + 7 * min),
@@ -95,7 +95,7 @@ describe("group chat bubbles", () => {
     expect(markup).toContain(">MR<");
     expect(markup.indexOf("Sam Taylor")).toBeLessThan(markup.indexOf("Test sam"));
     // Your own lines carry no name.
-    expect(markup).not.toContain(">JC<");
+    expect(markup).not.toContain(">Owner<");
   });
 
   it("tightens a run and starts a new one after five minutes", () => {
@@ -123,7 +123,7 @@ describe("group chat bubbles", () => {
     const samConfig = { viewer: { ...memberConfig.viewer!, principalId: SAM, email: "sam@example.com", name: "Sam Taylor" } } as ConfigStatus;
     const markup = render(conversation.slice(0, 3), samConfig);
     expect(rows(markup).map((row) => row.author)).toEqual(["person", "self", "self"]);
-    expect(markup).toContain(">JC<");
+    expect(markup).toContain(">Owner<");
   });
 
   it("solo server: the operator's lines are theirs and a paired guest is another person", () => {
@@ -147,9 +147,9 @@ describe("group chat bubbles", () => {
     try {
       const later = t0 + 40 * min;
       const markup = render([
-        person("a", { name: "JC", id: JC }, "Test", t0),
-        person("b", { name: "JC", id: JC }, "still going", t0 + min),
-        person("c", { name: "JC", id: JC }, "after the pause", later),
+        person("a", { name: "Owner", id: Owner }, "Test", t0),
+        person("b", { name: "Owner", id: Owner }, "still going", t0 + min),
+        person("c", { name: "Owner", id: Owner }, "after the pause", later),
       ], memberConfig);
       const stamps = [...markup.matchAll(/data-testid="transcript-date"[^>]*>([^<]+)</g)].map((match) => match[1]);
       expect(stamps).toEqual([`Today ${formatTime(t0)}`, `Today ${formatTime(later)}`]);

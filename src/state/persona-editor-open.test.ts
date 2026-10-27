@@ -33,7 +33,7 @@ describe("Persona editor state", () => {
     expect(open("access" as never).personaEditor).toEqual({ botId: "pepper", section: "access" });
     expect(open("voice" as never).personaEditor?.section).toBe("voice");
     expect(open("soul" as never).personaEditor?.section).toBe("soul");
-    // every section is its own page: the link keeps it (JC 2026-10-15)
+    // every section is its own page: the link keeps it (owner 2026-10-15)
     expect(open("worksOn" as never).personaEditor?.section).toBe("worksOn");
     expect(open("sharing" as never).personaEditor?.section).toBe("sharing");
     expect(open("appearance" as never).personaEditor?.section).toBe("appearance");

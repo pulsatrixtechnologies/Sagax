@@ -15,7 +15,7 @@ const ALLOWED = new Set([
   "serverEnvironment.reset.confirm", // the same /workspace path
   "orgComputer.confirmRunning", // the same /workspace path
   "sandboxDesktop.outdated", // the same /workspace path
-  // JC 2026-10-15 : the bot's work location is called Workspace
+  // Owner 2026-10-15 : the bot's work location is called Workspace
   "botPanel.access.browserOff",
   "botPanel.access.browserOffShort",
   "botWorkplace.help",

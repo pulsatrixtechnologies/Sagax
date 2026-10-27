@@ -4,7 +4,7 @@ import XCTest
 /// is anchored to the bottom safe area and never moves: not with "Search and
 /// + at top", not while the list scrolls, not under Settings, Search, +, New
 /// bot or New group (open, or closing), not with the keyboard up, not after a
-/// thread, a rotation, the background or a large text size (JC, 2026-10-15,
+/// thread, a rotation, the background or a large text size (owner, 2026-10-15,
 /// 2026-10-16). On an iPad the avatar sits in the top trailing corner, away
 /// from the window controls. Set SAGAX_SHOTS_DIR
 /// (TEST_RUNNER_SAGAX_SHOTS_DIR) to also write PNGs.
@@ -152,7 +152,7 @@ final class HomeChromeLayoutUITests: XCTestCase {
         save("home")
     }
 
-    /// The regression JC saw: "Search and + at top" carried the pill to the
+    /// The regression the owner saw: "Search and + at top" carried the pill to the
     /// header. Search and + go up; the pill stays down.
     @MainActor
     func testSearchAndPlusAtTopAddNoSpaceAboveThePinnedBots() {
