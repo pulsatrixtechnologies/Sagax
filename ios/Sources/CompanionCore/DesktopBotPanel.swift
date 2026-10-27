@@ -746,7 +746,7 @@ public enum BotLibraryChip: Hashable, Sendable {
 /// the editor Overview's quick actions and the Primary bot button. "Put on
 /// the desktop" floats a window: desktop only.
 public enum BotActionsMenuItem: String, CaseIterable, Hashable, Sendable {
-    case editBot, redoWizard, rename, makePrimary, replacePrimary
+    case editBot, redoWizard, rename, share, makePrimary, replacePrimary
     case copyConversation, downloadConversation, exportZip
     case archive, inspector
 }
@@ -781,6 +781,8 @@ public struct BotActionsMenuPlan: Hashable, Sendable {
         if gate.allows(.renameBot), gate.scope != .serverClient || viewerId.map({ PrimaryBotRules.viewerOwns(bot, viewerId: $0) }) == true {
             first.append(.rename)
         }
+        // Share: the Shared with page (organization servers), after Edit bot
+        if gate.allows(.botSharing) { first.append(.share) }
         if let viewerId, gate.allows(.primaryBot) {
             switch PrimaryBotRules.menuAction(for: bot, viewerId: viewerId) {
             case .make: first.append(.makePrimary)

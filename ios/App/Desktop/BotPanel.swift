@@ -222,6 +222,7 @@ private struct BotPanelContent: View {
             case .editBot: return ("person.crop.circle.badge.pencil", "Edit bot")
             case .redoWizard: return ("wand.and.stars", "Redo the wizard")
             case .rename: return ("pencil", "Rename the bot")
+            case .share: return ("person.badge.plus", "Share")
             case .makePrimary: return ("star", "Make primary bot")
             case .replacePrimary: return ("arrow.left.arrow.right", "Replace with different Bot")
             case .copyConversation: return ("doc.on.doc", "Copy as Markdown")
@@ -247,6 +248,7 @@ private struct BotPanelContent: View {
         case .rename:
             renameDraft = current.name
             renaming = true
+        case .share: model.showPersona(.sharing)
         case .makePrimary:
             Task { await PrimaryBotActions.make(current.id, session: session, done: { _ in }, working: $primaryWorking) }
         case .replacePrimary: pickingPrimary = true

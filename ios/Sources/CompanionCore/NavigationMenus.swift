@@ -24,7 +24,7 @@ import Foundation
 public enum BotMenuItem: String, Hashable, Sendable, CaseIterable {
     case newThread, newFolder
     case pin, unpin, moveTo, markUnread
-    case rename, copyConversationId
+    case rename, share, copyConversationId
     case hide, archive, delete
     case makePrimary, replacePrimary
 }
@@ -186,6 +186,10 @@ public enum NavigationMenus {
         if gate.allows(.renameBot), gate.scope != .serverClient || owns(bot, context.viewerId) {
             second.append(.rename)
         }
+        // Share (the desktop's, after Edit bot): the Shared with page, on an
+        // organization server. Every member shares their own bots; the
+        // server keeps its rules about other people's.
+        if gate.allows(.botSharing) { second.append(.share) }
         second.append(.copyConversationId)
         groups.append(second)
 
