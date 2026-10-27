@@ -111,7 +111,7 @@ final class ThreadActions: ObservableObject {
 
     func folderPlan(_ folder: BotProject, of bot: Bot, in session: Session) -> FolderMenuPlan {
         FolderMenuPlan(bot: session.state.bot(bot.id) ?? bot, folder: folder,
-                       canManage: session.surfaceGate.allows(.threadFolders))
+                       canManage: session.surfaceGate.allows(.threadFolders, bot: bot))
     }
 
     func loadFeatures(_ session: Session) async {

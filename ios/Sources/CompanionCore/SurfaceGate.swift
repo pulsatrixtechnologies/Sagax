@@ -121,8 +121,9 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// Skills, memory, history, presets (D1, WP16). An organization member
     /// reaches them on a bot they own (`allows(_:bot:)`, 2026-10-26).
     case advancedBotPanel
-    /// The prompt preview (`GET /api/bots/:id/system-prompt`): admin scope
-    /// on a server, the owner's sidecar with D1.
+    /// The prompt preview (`GET /api/bots/:id/system-prompt`): an admin
+    /// session, the owner's sidecar with D1, and an organization member on a
+    /// bot they own (`allows(_:bot:)`, #1098).
     case promptPreview
     /// The advanced panel's Access section with its switches (browser,
     /// connected apps, MCP servers, always allowed): an admin session, and
@@ -181,7 +182,8 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// 2026-10-26).
     case createBotTeam
     /// New bot's presets as starting roles (NB2): `GET /api/bot-presets` is
-    /// admin scoped on a server and opened on the sidecar by D1. The
+    /// client scope (an organization member who creates bots, #1098) and
+    /// opened on the sidecar by D1. The
     /// built-in roles need no route and show everywhere.
     case createBotPresets
     /// MCP servers, read-only, with their sign-in and its status (PL8, PL9):
@@ -401,7 +403,9 @@ public struct SurfaceGate: Hashable, Sendable {
         case .createBotPresets:
             switch scope {
             case .serverAdmin: return true
-            case .serverClient: return false
+            // GET /api/bot-presets is client scope: an organization member
+            // who creates bots starts from a preset (#1098).
+            case .serverClient: return isOrgMemberSession && !botsReadOnly && can("bots.create")
             case .sidecar: return sidecarRoutes.contains(.advancedPanel)
             }
         case .advancedBotPanel, .promptPreview:

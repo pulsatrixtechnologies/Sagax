@@ -428,7 +428,7 @@ struct DesktopSidebarRow: View {
                         }
                     }
                 }
-                if session.surfaceGate.allows(.threadFolders) {
+                if session.surfaceGate.allows(.threadFolders, bot: bot) {
                     hoverButton(.folderPlus, label: "New folder", id: "new-folder") {
                         model.openThreadLists.insert(bot.id)
                         model.threadActions.newFolder(for: bot)

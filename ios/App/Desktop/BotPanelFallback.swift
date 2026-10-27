@@ -2,7 +2,8 @@
 // (`bot-settings/ModelSection.tsx` FallbackChain): the explanation, a note
 // while Automatic recovery is off, the ordered list (number, engine, model,
 // remove) and the Add an engine menu (up to five, one per engine). An admin
-// session's field only (`SurfaceFeature.botFallback`).
+// session's field (`SurfaceFeature.botFallback`), and on an organization
+// server the owner's own bot's (bots.behaviour).
 import SwiftUI
 import CompanionCore
 

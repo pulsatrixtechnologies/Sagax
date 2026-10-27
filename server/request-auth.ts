@@ -427,6 +427,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // computer (their server environment, or this computer's local container,
   // which the handler keeps to the owner).
   { methods: ["GET"], path: /^\/api\/computer\/status$/ },
+  // the live view and capture of a bot's own cloud computer: the handler
+  // lets only that bot's owner (or this computer's own person) through
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/computer\/(?:join|screenshot)$/ },
   { methods: ["POST"], path: /^\/api\/computer\/(?:update|reset)$/ },
   // Its scheduled update, read and set from the phone (parity R7, O2). The
   // handler (routes/computer-care.ts) keys it to the person's own computer.
@@ -607,6 +610,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // What the bot does, can reach and won't do (the profile's "What this bot
   // does"): the handler lets a client session read it for a bot it owns.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/overview$/ },
+  // the prompt preview of a bot the session owns (the handler checks the owner)
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/system-prompt$/ },
+  // the presets New bot offers: a person who creates bots starts from one
+  // (read only; removing one stays admin)
+  { methods: ["GET"], path: /^\/api\/bot-presets$/ },
   // A bot's saved command rules: its owner (or this computer's own person)
   // reads and removes them; adding one stays admin (the handler decides).
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/command-allowlist$/ },
@@ -675,6 +683,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/ },
   // the folders of a conversation with a person's threads, its two people's
   // (server/routes/group-folders.ts; a room has none)
+  // the folders of a bot's threads: the handler lets only the bot's owner
+  // (or an admin) organize them, never another person's bot
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/projects$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/projects\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/projects$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/projects\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/groups\/[\w-]+$/ }, // display fields only: see clientGroupPatchViolation
@@ -788,6 +800,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "POST"], path: /^\/api\/me\/memory-sync-token$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/github\/(?:device|token)$/, feature: "orgDirectory" },
   { methods: ["DELETE"], path: /^\/api\/me\/github$/, feature: "orgDirectory" },
+  // the installation's MCP servers, read only: a person who does not manage
+  // them gets each name, kind and state for their own bot's MCP choice
+  // (the handler strips commands, URLs and every key name)
+  { methods: ["GET"], path: /^\/api\/mcp\/servers$/ },
   { methods: ["POST"], path: /^\/api\/me\/mcp\/servers$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/me\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}\/oauth\/(?:start|disconnect)$/, feature: "orgDirectory" },
