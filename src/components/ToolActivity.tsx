@@ -126,7 +126,7 @@ export function ToolStepDetail({ tool, status }: { tool: Tool; status: string })
             {result.cut && <p className="mt-0.5 text-[11px] text-ink-tertiary">{t("step.detail.truncated")}</p>}
           </>
         ) : (
-          <p className="text-[12px]">{phase === "running" ? t("toolDetail.waiting") : t("toolDetail.noOutput")}</p>
+          <p className="text-[12px]">{phase === "running" ? t("toolDetail.waiting") : phase === "failed" ? t("toolDetail.failedNoOutput") : t("toolDetail.noOutput")}</p>
         )}
       </div>
       <JsonFold json={stepJson(tool)} />

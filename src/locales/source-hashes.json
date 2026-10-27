@@ -5298,6 +5298,7 @@
       "chat.usage.turnsOne": "c4652fc24372b932458c88ff8d0276c8b0d570c4c89281443cdead53e67c81d7",
       "toolDetail.completed": "22a970d2e5b1cc233e462be7c7b64e135a275bb09d83d87683bf4236c43113a1",
       "toolDetail.failed": "031a8f0f659df890dfd53c92e45295b0f14c997185bae46e168831e403b273f7",
+      "toolDetail.failedNoOutput": "3b0a2b8b94bba711520e0b37ce8d8005a52c9a1368c000c105046daaea43e0cb",
       "toolDetail.input": "36ecb4f8669133ce744c21982ba4abe2ecd7086e1dc2226ccd6f266f3a5005f8",
       "toolDetail.label": "5d1046a2639d93af8944d66083195bce42a3407b15532bee799c4736c259a520",
       "toolDetail.noOutput": "18eaf34d527b6faa8ef42d5d08b4ee59be0d0e9e87790a4be7bb5fe44ca690b2",

@@ -1453,6 +1453,7 @@
   "chat.usage.turnsOne": "1 tour",
   "toolDetail.completed": "Terminé",
   "toolDetail.failed": "Échec",
+  "toolDetail.failedNoOutput": "L'outil a échoué sans renvoyer de message d'erreur.",
   "toolDetail.input": "Entrée",
   "toolDetail.label": "{name} · {status} · Détails de l'outil",
   "toolDetail.noOutput": "Aucun résultat n'a été enregistré pour cet appel.",

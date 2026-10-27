@@ -224,6 +224,8 @@ interface Entry {
   error: boolean;
   pace: Pace;
   transient: boolean;
+  /** The call failed and no error text came back with it. */
+  blank: boolean;
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -261,6 +263,7 @@ export class LoopDetector {
       error,
       pace: paceOf(tool, observation.input),
       transient: transientError(observation.result, error),
+      blank: error && resultText(observation.result).trim() === "",
     });
     if (this.history.length > this.keep) this.history.splice(0, this.history.length - this.keep);
     this.verdict = this.check();
@@ -283,7 +286,8 @@ export class LoopDetector {
       if (count >= limit) {
         return {
           stuck: true, kind: "same-error", count,
-          reason: `${last.tool} failed with the same error ${plural(count, "time")} in a row`,
+          reason: `${last.tool} failed with the same error ${plural(count, "time")} in a row`
+            + (last.blank ? " (no error text was received from the tool)" : ""),
         };
       }
       // A transient retry is not a stuck result. identical-result would
