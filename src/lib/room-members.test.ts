@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nextMemberIds } from "./room-members";
+import { nextHumanIds, nextMemberIds, rosterBotChoices } from "./room-members";
 
 const pick = (...ids: string[]) => new Set(ids);
 
@@ -27,5 +27,44 @@ describe("nextMemberIds", () => {
 
   it("returns nothing when every member is unticked", () => {
     expect(nextMemberIds(["lead"], pick(), ["lead"])).toEqual([]);
+  });
+});
+
+describe("nextHumanIds", () => {
+  it("keeps who stays in place and appends people added from the picker", () => {
+    expect(nextHumanIds(["pr_ada", "Bob@Example.test"], new Set(["pr_ada", "bob@example.test", "pr_cleo"]), ["pr_cleo"])).toEqual([
+      "pr_ada",
+      "bob@example.test",
+      "pr_cleo",
+    ]);
+  });
+
+  it("drops people unticked and never lists anyone twice", () => {
+    expect(nextHumanIds(["pr_ada", "pr_bob"], new Set(["pr_bob", "pr_cleo"]), ["PR_CLEO", "pr_cleo", "pr_bob"])).toEqual(["pr_bob", "pr_cleo"]);
+  });
+});
+
+describe("rosterBotChoices", () => {
+  const bots = [
+    { id: "mine", ownerUserId: "pr_me" },
+    { id: "mine-archived", ownerUserId: "PR_ME", hidden: true },
+    { id: "theirs", ownerUserId: "pr_ada" },
+    { id: "theirs-archived-member", ownerUserId: "pr_ada", hidden: true },
+  ];
+
+  it("offers the owner every bot, archived ones only while they are members", () => {
+    expect(rosterBotChoices(bots, { memberIds: ["theirs-archived-member"], ownsRoom: true, actorId: "pr_me" }).map((b) => b.id)).toEqual([
+      "mine",
+      "theirs",
+      "theirs-archived-member",
+    ]);
+  });
+
+  it("offers a member who does not own the room only their own bots (#1240)", () => {
+    expect(rosterBotChoices(bots, { memberIds: ["theirs", "mine-archived"], ownsRoom: false, actorId: "pr_me" }).map((b) => b.id)).toEqual([
+      "mine",
+      "mine-archived",
+    ]);
+    expect(rosterBotChoices(bots, { memberIds: [], ownsRoom: false, actorId: "" })).toEqual([]);
   });
 });

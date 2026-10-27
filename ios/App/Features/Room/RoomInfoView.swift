@@ -60,10 +60,8 @@ struct RoomInfoView: View {
     @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
     @State private var jevOn = false
     @State private var directory: OrgDirectory?
-    @State private var managingMembers = false
-    @State private var pickingPeople = false
-    @State private var addingEmail = false
-    @State private var emailDraft = ""
+    /// The roster sheet, open on the section that opened it (#1240, #1260).
+    @State private var roster: RoomRosterFocus?
 
     private var room: Room? { session.state.rooms.first { $0.id == roomId } }
 
@@ -159,10 +157,9 @@ struct RoomInfoView: View {
 
             RoomPeopleSection(
                 room: room, access: access, directory: directory,
-                pickPeople: { pickingPeople = true },
-                addEmail: { emailDraft = ""; addingEmail = true }
+                addPeople: { roster = .people }
             )
-            RoomBotsSection(room: room, access: access, manageMembers: { managingMembers = true })
+            RoomBotsSection(room: room, access: access, addBots: { roster = .bots }, manageMembers: { roster = .people })
             overview(room, access: access)
 
             if sidebarPrefs.threads.allows(.roomThreads) {
@@ -187,23 +184,8 @@ struct RoomInfoView: View {
             }
         }
         .accessibilityIdentifier("room-info")
-        .sheet(isPresented: $managingMembers) {
-            RoomManageMembersSheet(room: room).environmentObject(session)
-        }
-        .sheet(isPresented: $pickingPeople) {
-            RoomPeoplePickerSheet(roomId: roomId, directory: directory).environmentObject(session)
-        }
-        .alert(String(localized: "Add a person"), isPresented: $addingEmail) {
-            TextField(String(localized: "Email address"), text: $emailDraft)
-                .keyboardType(.emailAddress)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button(String(localized: "Cancel"), role: .cancel) {}
-            Button(String(localized: "Add")) {
-                let email = emailDraft.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                guard !email.isEmpty else { return }
-                Task { await session.patchRoom(room, RoomPatch(humanIds: RoomOwnership.humanIdsAdding(email, to: room))) }
-            }
+        .sheet(item: $roster) { focus in
+            RoomManageMembersSheet(room: room, access: access, directory: directory, focus: focus).environmentObject(session)
         }
     }
 

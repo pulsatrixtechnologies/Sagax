@@ -113,6 +113,26 @@ public enum RoomOwnership {
         return Set(bots.filter { (RoomViewer.norm($0.ownerUserId) ?? "") == actor && !actor.isEmpty }.map(\.id))
     }
 
+    /// `nextHumanIds` (src/lib/room-members.ts): who stays keeps their
+    /// place, people added land at the end; lowercased, never twice.
+    public static func nextHumanIds(current: [String], picked: Set<String>, added: [String]) -> [String] {
+        var seen = Set<String>()
+        return (current + added)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty && picked.contains($0) && seen.insert($0).inserted }
+    }
+
+    /// `rosterBotChoices` (src/lib/room-members.ts, #1240): the bots the
+    /// viewer may tick in the roster. The owner picks among every bot;
+    /// anyone else only their own. An archived bot stays while a member.
+    public static func rosterBotChoices(_ room: Room, bots: [Bot], viewer: RoomViewer, owns: Bool) -> [Bot] {
+        let own = ownBotIds(bots, viewer: viewer)
+        return bots.filter { bot in
+            if bot.hidden == true && !room.memberIds.contains(bot.id) { return false }
+            return owns || own.contains(bot.id)
+        }
+    }
+
     /// The first of the viewer's bots not yet in the room (`onAddBot`).
     public static func ownBotToAdd(_ room: Room, bots: [Bot], viewer: RoomViewer) -> Bot? {
         let own = ownBotIds(bots, viewer: viewer)
@@ -147,6 +167,12 @@ public struct RoomInfoAccess: Hashable, Sendable {
     public var canAddHuman: Bool
     /// Add one of the viewer's own bots (`canAddBot`).
     public var canAddOwnBot: Bool
+    /// "+ Add" under Bots: a bot the viewer may tick is not in the room
+    /// yet. It opens the roster, never adds on its own (#1240).
+    public var canAddBot: Bool
+    /// "Manage members": the viewer can change something in the roster
+    /// (the owner, someone who adds people, or anyone with a bot).
+    public var canManageRoster: Bool
     /// Remove any bot (the owner) or only the viewer's own.
     public var removableBotIds: Set<String>
     /// The owner removes people.
@@ -173,6 +199,9 @@ public struct RoomInfoAccess: Hashable, Sendable {
         canAddOwnBot = manages && RoomOwnership.ownBotToAdd(room, bots: bots, viewer: viewer) != nil
         let own = RoomOwnership.ownBotIds(bots, viewer: viewer)
         removableBotIds = manages ? Set(room.memberIds.filter { owns || own.contains($0) }) : []
+        canAddBot = manages && RoomOwnership.rosterBotChoices(room, bots: bots, viewer: viewer, owns: owns)
+            .contains { !room.memberIds.contains($0.id) }
+        canManageRoster = manages && (owns || canAddHuman || !own.isEmpty)
     }
 }
 
