@@ -11201,5 +11201,7 @@
   "botPanel.reachMe.save": "Save",
   "botPanel.reachMe.cancel": "Cancel",
   "approval.status.viaChannel": "via {name}",
-  "botPanel.reachMe.push.deviceOne": "On your paired phone."
+  "botPanel.reachMe.push.deviceOne": "On your paired phone.",
+  "voice.noDashes.title": "No em or en dashes in replies",
+  "voice.noDashes.short": "Replaces them in the final text of bot replies: a range word between times and numbers, a colon after a list label, a comma elsewhere. On by default in French."
 }
