@@ -28,14 +28,61 @@ export function writeEnginePolicy(name: string, content: string): string {
 /** Claude Code built-ins that run commands, read or write local files, or
  * fetch URLs from this machine (which could reach internal services).
  * Passed to --disallowedTools: deny rules, so they hold for subagents too.
- * Names an older or newer CLI lacks are ignored by the CLI. */
+ * Names an older or newer CLI lacks are ignored by the CLI. A withheld turn
+ * also names its built-ins (CLAUDE_ORG_TOOLS), so this list is the second
+ * layer there, and the classification the pinned inventory test reads
+ * (server/drivers/engine-native-tools.json). */
 export const CLAUDE_HOST_TOOLS: readonly string[] = [
   "Bash", "BashOutput", "KillShell", "KillBash", "PowerShell", "Monitor",
   "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "NotebookRead",
   "Glob", "Grep", "LS", "WebFetch",
   // git worktrees and local scripted workflows also act on this machine
   "EnterWorktree", "ExitWorktree", "Workflow", "DesignSync",
+  // 2.1.288: TaskStop and TaskOutput are the current names of KillShell and
+  // BashOutput (background commands); the Task* list keeps its tasks in the
+  // CLI's folder on this machine; Artifact and Projects upload a local file;
+  // Config rewrites the CLI's settings; LSP, REPL and JavaScript start a
+  // process; WebBrowser drives a browser here; TeamCreate and TeamDelete
+  // start and stop teammates; SendFeedback writes a local draft;
+  // ReadNotifications reads what other sessions on this machine queued;
+  // ShowOnboardingRolePicker installs a plugin. None is offered to a
+  // withheld turn today: naming one in --tools turns some of them on.
+  "TaskStop", "TaskOutput", "TaskCreate", "TaskGet", "TaskUpdate", "TaskList",
+  "Artifact", "Projects", "Config", "LSP", "REPL", "JavaScript", "WebBrowser",
+  "TeamCreate", "TeamDelete", "SendFeedback", "ReadNotifications", "ShowOnboardingRolePicker",
 ];
+
+/** The Claude Code built-ins an organization turn keeps, passed as
+ * `--tools` (an allowlist): a built-in a newer CLI adds stays off there
+ * until it is classified here or in CLAUDE_HOST_TOOLS, and the pinned
+ * inventory test (server/drivers/engine-tools.test.ts) names it.
+ *
+ * The first eight are exactly what a withheld turn of the pinned 2.1.288
+ * offered the model under the deny list alone (init event and model
+ * requests, subagents included; ToolSearch with tool search on).
+ * The rest only work on the conversation or on Sagax's MCP servers and
+ * the CLI turns them on under a condition of its own (an MCP server with
+ * resources, brief mode, a JSON schema, a goal); naming one in `--tools`
+ * does not turn it on (probed one by one on 2.1.288), so a turn keeps
+ * exactly what it had. `Agent` is the current name of `Task`; Sagax MCP
+ * tools (`mcp__*`) are not built-ins and `--tools` leaves them alone. */
+export const CLAUDE_ORG_TOOLS: readonly string[] = [
+  "Task", "Agent", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "SendMessage", "Skill", "ToolSearch", "WebSearch",
+  "TodoWrite", "ListMcpResourcesTool", "ReadMcpResourceTool", "ReadMcpResourceDirTool", "RefreshMcpTools",
+  "SendUserMessage", "StructuredOutput", "ProposeGoal",
+];
+const CLAUDE_ORG_TOOL_SET: ReadonlySet<string> = new Set(CLAUDE_ORG_TOOLS);
+const CLAUDE_ORG_TOOL_ARG = CLAUDE_ORG_TOOLS.join(",");
+
+/** The `--tools` value of a turn on an organization server: the requested
+ * built-ins (an owner's selection, a guest's set) that are on the
+ * allowlist, or the whole allowlist. Null off an organization server, where
+ * nothing changes. */
+export function claudeOrgTools(requested: readonly string[] | undefined, withhold: boolean): string | null {
+  if (!withhold) return null;
+  if (requested === undefined) return CLAUDE_ORG_TOOL_ARG;
+  return requested.filter((tool) => CLAUDE_ORG_TOOL_SET.has(tool)).join(",");
+}
 
 /** Claude Code built-ins a Sagax turn never uses, removed from every turn
  * (2026-10-19 perf parity: about 4,000 prompt tokens a turn). Each one
@@ -79,6 +126,24 @@ export function codexHostToolArgs(withhold: boolean): string[] {
     : [];
 }
 
+/** Codex 0.160.0 tools that act on this machine, as a solo turn offered them
+ * to the model, plus the older names of its shell. The flags above remove
+ * all but apply_patch, which stays offered: the read-only sandbox and a
+ * declined approval stop it. */
+export const CODEX_HOST_TOOLS: readonly string[] = [
+  "exec_command", "write_stdin", "shell", "local_shell", "view_image", "apply_patch",
+];
+
+/** What a withheld Codex 0.160.0 turn offers the model besides apply_patch:
+ * MCP resources and tool search (Sagax's MCP servers only), a question to
+ * the person, the goal, and OpenAI's hosted web search. Codex takes no tool
+ * allowlist, so the pinned inventory test (engine-tools.test.ts) catches a
+ * tool a new release adds. */
+export const CODEX_ORG_TOOLS: readonly string[] = [
+  "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource", "tool_search",
+  "request_user_input", "get_goal", "create_goal", "update_goal", "web_search",
+];
+
 /** Codex server requests that would act on this machine. Declined outright
  * when host tools are withheld, before any card or auto-accept. */
 export function codexHostToolRequest(method: string): boolean {
@@ -106,6 +171,11 @@ export const GROK_HOST_TOOL_NAMES: readonly string[] = [
 
 /** The only Grok tools an organization turn may keep. */
 export const GROK_MCP_TOOLS: readonly string[] = ["search_tool", "use_tool"];
+
+/** What a withheld Grok 1.0.46 turn offers a model: the MCP tools above,
+ * and `session_title` in the separate request that names the conversation
+ * (never offered to the agent, nothing of this machine). */
+export const GROK_ORG_TOOLS: readonly string[] = [...GROK_MCP_TOOLS, "session_title"];
 
 /** Permission classes `--deny` still gates. On `grok agent stdio` these do
  * not remove tools from the advertised list (verified 1.0.46); the ACP
@@ -234,6 +304,11 @@ export const QWEN_HOST_TOOLS: readonly string[] = [
  * (they reach Sagax's MCP servers only) and a question to the person. */
 export const QWEN_KEPT_TOOLS: readonly string[] = ["tool_search", "tool_call", "ask_user_question"];
 
+/** What a withheld Qwen 0.24.7 turn offers the model: the kept tools plus
+ * plan mode and the goal, which `--core-tools` does not gate (state of the
+ * conversation, not of this machine). */
+export const QWEN_ORG_TOOLS: readonly string[] = [...QWEN_KEPT_TOOLS, "enter_plan_mode", "exit_plan_mode", "get_goal", "update_goal"];
+
 /** `--core-tools` is an allowlist (a non-empty one enables nothing else);
  * `--exclude-tools` holds even if a later setting widens the list. Never
  * `--bare` or `--safe-mode`: both drop the core-tools allowlist.
@@ -272,7 +347,16 @@ export const GEMINI_HOST_TOOLS: readonly string[] = [
   "glob", "grep_search", "search_file_content", "list_directory",
   "web_fetch", "google_web_search", "save_memory", "write_todos",
   "invoke_agent", "codebase_investigator", "activate_skill",
+  // plan mode writes its plan to a file here; 0.62.0 already leaves it out
+  // of an organization turn (untrusted folder)
+  "enter_plan_mode", "exit_plan_mode",
 ];
+
+/** The only Gemini CLI built-in an organization turn keeps on 0.62.0: the
+ * conversation's topic line. Gemini takes no tool allowlist that leaves
+ * approvals as they are, so the admin policy denies by name and the pinned
+ * inventory test (engine-tools.test.ts) catches a tool a new release adds. */
+export const GEMINI_ORG_TOOLS: readonly string[] = ["update_topic"];
 
 /** Gemini admin policy for a withheld turn (`--admin-policy`, the top
  * policy tier, above YOLO's allow-all and any user or workspace rule). A
@@ -378,19 +462,35 @@ export const OPENCODE_HOST_PERMISSIONS: readonly string[] = [
   "webfetch", "websearch", "codesearch", "external_directory",
 ];
 
-/** OPENCODE_PERMISSION for a withheld turn: every host permission denied;
- * the rest (Sagax's MCP tools, the todo list) asks, or runs in Full. */
-export function opencodeOrgPermission(fullAuto: boolean): string {
+/** The only OpenCode built-ins an organization turn keeps: the todo list
+ * (state of the conversation, not of this machine). */
+export const OPENCODE_ORG_TOOLS: readonly string[] = ["todowrite", "todoread"];
+
+/** OpenCode's name of an MCP server's tools: `<server>_<tool>`, each part
+ * with anything but letters, digits, `_` and `-` replaced by `_`. */
+function opencodeMcpToolPattern(server: string): string {
+  return `${server.replace(/[^a-zA-Z0-9_-]/g, "_")}_*`;
+}
+
+/** OPENCODE_PERMISSION for a withheld turn, an allowlist: `*` denies every
+ * tool (a denied tool is not offered, verified 1.18.34), then the todo list
+ * and the tools of the MCP servers Sagax passed this turn are let back in,
+ * asking as before or running in Full, and every host permission is denied
+ * again by name (the last matching rule wins). */
+export function opencodeOrgPermission(fullAuto: boolean, mcpServerNames: readonly string[] = []): string {
+  const mcp = fullAuto ? "allow" : "ask";
   return JSON.stringify({
-    "*": fullAuto ? "allow" : "ask",
-    todoread: "allow", todowrite: "allow", doom_loop: fullAuto ? "allow" : "ask",
+    "*": "deny",
+    ...Object.fromEntries(OPENCODE_ORG_TOOLS.map((tool) => [tool, "allow"])),
+    doom_loop: mcp,
+    ...Object.fromEntries(mcpServerNames.map((server) => [opencodeMcpToolPattern(server), mcp])),
     ...Object.fromEntries(OPENCODE_HOST_PERMISSIONS.map((permission) => [permission, "deny"])),
   });
 }
 
-export function opencodeHostToolEnv(env: Record<string, string | undefined>, withhold: boolean, fullAuto: boolean): void {
+export function opencodeHostToolEnv(env: Record<string, string | undefined>, withhold: boolean, fullAuto: boolean, mcpServerNames: readonly string[] = []): void {
   if (!withhold) return;
-  env.OPENCODE_PERMISSION = opencodeOrgPermission(fullAuto);
+  env.OPENCODE_PERMISSION = opencodeOrgPermission(fullAuto, mcpServerNames);
   // no opencode.json, agent, command or plugin of a project folder loads
   env.OPENCODE_DISABLE_PROJECT_CONFIG = "1";
 }
@@ -422,6 +522,10 @@ export const HERMES_HOST_TOOLS: readonly string[] = [
   "browser_vault_list", "browser_vault_unlock", "browser_vault_fill", "browser_vault_save_login",
   "browser_vault_enter_code", "browser_exec", "computer_use", "image_generate", "text_to_speech",
 ];
+
+/** What a withheld Hermes 0.21.5 turn offers the model: its MCP gateway
+ * (search, describe and call Sagax's MCP tools), nothing of this machine. */
+export const HERMES_ORG_TOOLS: readonly string[] = ["tool_search", "tool_describe", "tool_call"];
 
 /** Hermes toolsets a withheld turn turns off (agent.disabled_toolsets),
  * beside the empty `platform_toolsets.acp` list that enables none. */
@@ -519,4 +623,33 @@ export const HOST_TOOL_NAMES_BY_ENGINE: Readonly<Record<string, readonly string[
   opencode: OPENCODE_HOST_TOOLS,
   droid: DROID_HOST_TOOLS,
   hermes: HERMES_HOST_TOOLS,
+};
+
+/** One engine's native tools on an organization server, by engine id of
+ * engines.lock.json: `allow` is every tool a withheld turn may be offered,
+ * `deny` every tool it must not use. Each tool the pinned CLI exposes is on
+ * exactly one of them (engine-tools.test.ts against engine-native-tools.json,
+ * captured by scripts/capture-engine-native-tools.ts). `enforced` says how
+ * a tool on neither stays off: the CLI takes the allowlist itself, or only
+ * the pinned inventory (the image installs exactly the lock's version, and
+ * bumping it fails the test until the new inventory is classified). */
+export interface OrgEngineTools {
+  allow: readonly string[];
+  deny: readonly string[];
+  /** Where the lists live, for the test's message. */
+  allowName: string;
+  denyName: string;
+  enforced: "allowlist" | "pinned inventory";
+}
+
+export const ORG_ENGINE_TOOLS: Readonly<Record<string, OrgEngineTools>> = {
+  claude: { allow: CLAUDE_ORG_TOOLS, deny: [...CLAUDE_HOST_TOOLS, ...CLAUDE_UNUSED_TOOLS], allowName: "CLAUDE_ORG_TOOLS", denyName: "CLAUDE_HOST_TOOLS or CLAUDE_UNUSED_TOOLS", enforced: "allowlist" },
+  codex: { allow: CODEX_ORG_TOOLS, deny: CODEX_HOST_TOOLS, allowName: "CODEX_ORG_TOOLS", denyName: "CODEX_HOST_TOOLS (and switch it off in codexHostToolArgs)", enforced: "pinned inventory" },
+  grok: { allow: GROK_ORG_TOOLS, deny: GROK_HOST_TOOL_NAMES, allowName: "GROK_ORG_TOOLS (GROK_MCP_TOOLS for the profile)", denyName: "GROK_HOST_TOOL_NAMES", enforced: "allowlist" },
+  pi: { allow: [], deny: PI_HOST_TOOLS, allowName: "(none: --no-builtin-tools)", denyName: "PI_HOST_TOOLS", enforced: "allowlist" },
+  gemini: { allow: GEMINI_ORG_TOOLS, deny: GEMINI_HOST_TOOLS, allowName: "GEMINI_ORG_TOOLS", denyName: "GEMINI_HOST_TOOLS", enforced: "pinned inventory" },
+  qwen: { allow: QWEN_ORG_TOOLS, deny: QWEN_HOST_TOOLS, allowName: "QWEN_ORG_TOOLS (and QWEN_KEPT_TOOLS for --core-tools)", denyName: "QWEN_HOST_TOOLS", enforced: "allowlist" },
+  kimi: { allow: KIMI_KEPT_TOOLS, deny: KIMI_HOST_TOOLS, allowName: "KIMI_KEPT_TOOLS", denyName: "KIMI_HOST_TOOLS", enforced: "allowlist" },
+  opencode: { allow: OPENCODE_ORG_TOOLS, deny: OPENCODE_HOST_TOOLS, allowName: "OPENCODE_ORG_TOOLS", denyName: "OPENCODE_HOST_TOOLS (and its permission in OPENCODE_HOST_PERMISSIONS)", enforced: "allowlist" },
+  hermes: { allow: HERMES_ORG_TOOLS, deny: HERMES_HOST_TOOLS, allowName: "HERMES_ORG_TOOLS", denyName: "HERMES_HOST_TOOLS (and its toolset in HERMES_HOST_TOOLSETS)", enforced: "allowlist" },
 };

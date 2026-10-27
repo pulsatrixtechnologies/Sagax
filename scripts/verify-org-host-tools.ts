@@ -18,8 +18,10 @@
 // pass is not an empty fixture.
 //
 //   node --experimental-strip-types scripts/verify-org-host-tools.ts <engine> [cli]
-//   engine: gemini | qwen | kimi | opencode | droid | hermes
+//   engine: gemini | qwen | kimi | opencode | droid | hermes | grok
 // Disposable HOME; nothing of the person running it is read or written.
+// SAGAX_TOOL_INVENTORY_OUT=<file> also writes the native tools each turn
+// offered (scripts/capture-engine-native-tools.ts reads it).
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -32,9 +34,9 @@ const home = mkdtempSync(join(tmpdir(), `sagax-org-${engine}-`));
 process.env.HOME = home; process.env.USERPROFILE = home; process.env.SAGAX_DATA_DIR = join(home, "data");
 const { ensureDirs } = await import("../server/config.ts"); ensureDirs();
 const { localHost } = await import("../server/drivers/local-inject.ts");
-const { HOST_TOOL_NAMES_BY_ENGINE } = await import("../server/drivers/host-tools.ts");
+const { HOST_TOOL_NAMES_BY_ENGINE, ORG_ENGINE_TOOLS } = await import("../server/drivers/host-tools.ts");
 
-type Spec = { driver: () => Promise<any>; cli: string; model: string; env?: Record<string, string>; setup?: (home: string, baseUrl: string) => void; shell: string; read: string; argsFor: (tool: string, target: string) => Record<string, unknown> };
+type Spec = { driver: () => Promise<any>; cli: string; cliArgs?: string; model: string; env?: Record<string, string>; setup?: (home: string, baseUrl: string) => void; shell: string; read: string; argsFor: (tool: string, target: string) => Record<string, unknown> };
 const shellArgs = (_tool: string, target: string) => ({ command: `touch '${target}'`, cmd: `touch '${target}'`, description: "fixture" });
 const readArgs = (_tool: string, target: string) => ({ path: target, file_path: target, absolute_path: target, filePath: target });
 const SPECS: Record<string, Spec> = {
@@ -46,11 +48,14 @@ const SPECS: Record<string, Spec> = {
   droid: { driver: async () => (await import("../server/drivers/acp/droid.ts")).DroidAgentDriver, cli: "droid", model: "omlx::fixture", shell: "Execute", read: "Read", argsFor: (tool, target) => tool === "Execute" ? shellArgs(tool, target) : readArgs(tool, target) },
   hermes: { driver: async () => (await import("../server/drivers/acp/hermes.ts")).HermesAgentDriver, cli: "hermes", model: "omlx::fixture",
     setup: (home, baseUrl) => { mkdirSync(join(home, ".hermes"), { recursive: true }); writeFileSync(join(home, ".hermes/config.yaml"), `model:\n  default: fixture\n  provider: custom\n  base_url: "${baseUrl}"\n  api_key: fixture-not-a-key\n`); }, shell: "terminal", read: "read_file", argsFor: (tool, target) => tool === "terminal" ? shellArgs(tool, target) : readArgs(tool, target) },
+  grok: { driver: async () => (await import("../server/drivers/acp/grok.ts")).GrokAgentDriver, cli: "grok", cliArgs: "--no-auto-update", model: "omlx::fixture", env: { GROK_HOME: join(home, ".grok") },
+    setup: (home) => { mkdirSync(join(home, ".grok"), { recursive: true }); writeFileSync(join(home, ".grok/config.toml"), "[cli]\nauto_update=false\n"); }, shell: "run_terminal_command", read: "read_file", argsFor: (tool, target) => tool === "run_terminal_command" ? shellArgs(tool, target) : readArgs(tool, target) },
 };
 const spec = SPECS[engine];
 if (!spec) { console.error(`usage: verify-org-host-tools.ts <${Object.keys(SPECS).join("|")}> [cli]`); process.exit(2); }
-const hostTools: readonly string[] = HOST_TOOL_NAMES_BY_ENGINE[engine] ?? [];
-const cli = cliArg ? resolve(cliArg) : spec.cli;
+const hostTools: readonly string[] = HOST_TOOL_NAMES_BY_ENGINE[engine] ?? ORG_ENGINE_TOOLS[engine]?.deny ?? [];
+const orgAllow = ORG_ENGINE_TOOLS[engine]?.allow;
+const cli = `${cliArg ? resolve(cliArg) : spec.cli}${spec.cliArgs ? ` ${spec.cliArgs}` : ""}`;
 
 // ---- fake model ---------------------------------------------------------
 const CANARY = `sagax-canary-${Math.random().toString(36).slice(2)}`;
@@ -95,6 +100,7 @@ function plan(names: string[], body: string): Array<{ name: string; args: Record
     if (direct) return [{ name: direct, args: {} }];
     const found = body.match(/[\w.-]*read_notes/g)?.sort((a, b) => b.length - a.length)[0];
     if (found && names.includes("tool_call")) return [{ name: "tool_call", args: { name: found, arguments: {} } }];
+    if (names.includes("use_tool")) return [{ name: "use_tool", args: { tool_name: found ?? "notes__read_notes", tool_input: {} } }];
   }
   return null;
 }
@@ -214,6 +220,16 @@ try {
   check("organization turn: an MCP server declared by a workspace file did not start", !org.workspaceMcpStarted);
   check("organization turn: a hook declared by a workspace file did not run", !org.workspaceHookRan);
   check("organization turn: completed", org.completed !== undefined, JSON.stringify(org.errors));
+  // The fixture's MCP tool is named after its read_notes tool, whatever the
+  // engine's prefix; everything else offered is a native tool.
+  const native = (names: string[]) => names.filter((name) => !/read_notes/.test(name));
+  if (orgAllow) {
+    const offTheList = native(org.allNames).filter((name) => !orgAllow.includes(name));
+    check("organization turn: every native tool offered is on the engine's allowlist (ORG_ENGINE_TOOLS)", offTheList.length === 0, offTheList.join(","));
+  }
+  if (process.env.SAGAX_TOOL_INVENTORY_OUT) {
+    writeFileSync(process.env.SAGAX_TOOL_INVENTORY_OUT, JSON.stringify({ engine, solo: native(control.allNames), org: native(org.allNames), mcpCalled: org.mcpCalled, failed }));
+  }
 } finally {
   await instance.dispose();
   provider.closeAllConnections(); await new Promise<void>((done) => provider.close(() => done()));

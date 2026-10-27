@@ -3,7 +3,7 @@
 // requests declined.
 import { describe, expect, it } from "vitest";
 
-import { CLAUDE_HOST_TOOLS, CLAUDE_UNUSED_COMMANDS, CLAUDE_UNUSED_TOOLS, CODEX_WITHHELD_APPROVAL, GROK_MCP_TOOLS, PI_HOST_TOOLS, claudeDisallowedTools, codexHostToolArgs, codexHostToolRequest, grokHostToolArgs, grokOrgAgentProfile, piHostToolArgs } from "./host-tools.ts";
+import { CLAUDE_HOST_TOOLS, CLAUDE_ORG_TOOLS, CLAUDE_UNUSED_COMMANDS, CLAUDE_UNUSED_TOOLS, CODEX_WITHHELD_APPROVAL, GROK_MCP_TOOLS, OPENCODE_HOST_PERMISSIONS, PI_HOST_TOOLS, claudeDisallowedTools, claudeOrgTools, codexHostToolArgs, codexHostToolRequest, grokHostToolArgs, grokOrgAgentProfile, opencodeOrgPermission, piHostToolArgs } from "./host-tools.ts";
 
 describe("Claude Code host tools", () => {
   it("denies shell, file and fetch built-ins, keeping configured denials", () => {
@@ -24,6 +24,39 @@ describe("Claude Code host tools", () => {
     for (const tool of ["Bash", "Read", "Write", "Edit", "Task", "WebSearch", "WebFetch", "Skill", "TodoWrite", "ToolSearch", "AskUserQuestion", "Monitor", "Workflow"]) expect(CLAUDE_UNUSED_TOOLS).not.toContain(tool);
     expect([...CLAUDE_UNUSED_COMMANDS].sort()).toEqual(["loop", "schedule"]);
     expect(CLAUDE_HOST_TOOLS.every((tool) => !tool.startsWith("mcp__"))).toBe(true);
+  });
+});
+
+describe("Claude Code organization allowlist", () => {
+  it("names the allowlist on an organization server and nothing on a solo one", () => {
+    expect(claudeOrgTools(undefined, true)).toBe(CLAUDE_ORG_TOOLS.join(","));
+    expect(claudeOrgTools(undefined, false)).toBeNull();
+    expect(claudeOrgTools(["Bash", "Read"], false)).toBeNull();
+  });
+
+  it("keeps only the allowlisted names of a selection", () => {
+    expect(claudeOrgTools(["Bash", "WebSearch", "Agent", "SomeFutureTool"], true)).toBe("WebSearch,Agent");
+    expect(claudeOrgTools([], true)).toBe("");
+  });
+
+  it("keeps the tools a withheld turn had under the deny list, and no host tool", () => {
+    for (const tool of ["Task", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "SendMessage", "Skill", "ToolSearch", "WebSearch"]) expect(CLAUDE_ORG_TOOLS).toContain(tool);
+    for (const tool of CLAUDE_ORG_TOOLS) {
+      expect(CLAUDE_HOST_TOOLS).not.toContain(tool);
+      expect(CLAUDE_UNUSED_TOOLS).not.toContain(tool);
+    }
+  });
+});
+
+describe("OpenCode organization allowlist", () => {
+  it("denies every tool, then lets the todo list and the turn's MCP servers back in", () => {
+    const ask = JSON.parse(opencodeOrgPermission(false, ["agents", "my server"]));
+    expect(Object.keys(ask)[0]).toBe("*");
+    expect(ask["*"]).toBe("deny");
+    expect(ask).toMatchObject({ todowrite: "allow", todoread: "allow", doom_loop: "ask", "agents_*": "ask", "my_server_*": "ask" });
+    for (const key of OPENCODE_HOST_PERMISSIONS) expect(ask[key]).toBe("deny");
+    const full = JSON.parse(opencodeOrgPermission(true, ["agents"]));
+    expect(full).toMatchObject({ "*": "deny", "agents_*": "allow", doom_loop: "allow" });
   });
 });
 
