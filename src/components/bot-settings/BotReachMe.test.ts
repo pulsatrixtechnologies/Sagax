@@ -55,6 +55,21 @@ describe("Reach me card", () => {
     expect(done).toContain("no public address for WhatsApp");
     expect(done).not.toContain("data-reach-not-ready");
   });
+  it("WhatsApp: a template Meta does not hold says why and what to do, with Check again; an approved one says so", () => {
+    const base = { ready: false, connected: true, displayNumber: "+1 555-010-0000", number: "***0123", templateName: "sagax_card", templateLanguage: "fr", webhookPublic: true, hasAppSecret: true, hasBusinessAccount: true };
+    const refused = render({ saved: true, settings: { channels: ["whatsapp"], hours: { always: true } }, channels: { whatsapp: { ...base, reason: "x", templateCheck: { state: "wrong_language", language: "fr", languages: ["en_US", "es"] } } } });
+    expect(refused).toContain('data-reach-whatsapp-check="wrong_language"');
+    expect(refused).toContain("Template sagax_card has no fr version (Meta has: en_US, es): set one of its languages.");
+    expect(refused).toContain("Check again");
+    // the detailed line, not the generic one
+    expect(refused).not.toContain("data-reach-not-ready");
+    const missing = render({ saved: true, settings: { channels: ["whatsapp"], hours: { always: true } }, channels: { whatsapp: { ...base, hasBusinessAccount: false, templateCheck: { state: "missing_account", language: "fr" } } } });
+    expect(missing).toContain("Add your WhatsApp Business Account ID");
+    expect(missing).toContain('aria-label="WhatsApp Business Account ID"');
+    const approved = render({ saved: true, settings: { channels: ["whatsapp"], hours: { always: true } }, channels: { whatsapp: { ...base, ready: true, templateCheck: { state: "approved", language: "fr", status: "APPROVED", category: "UTILITY", parameters: 1 } } } });
+    expect(approved).toContain("Template sagax_card (fr) is approved at Meta.");
+    expect(approved).not.toContain("Check again");
+  });
   it("hours: the zone and each range's days and times", () => {
     const html = render({ saved: true, settings: { channels: ["push"], hours: { always: false, timeZone: "America/Toronto", ranges: [{ days: [1, 2, 3, 4, 5], start: "08:00", end: "18:00" }] } }, channels: {} });
     expect(html).toContain('value="America/Toronto"');

@@ -516,7 +516,7 @@ add({
 });
 add({
   key: "notifications.reachMeWhatsApp", family: "notifications", target: "bot", value: "object",
-  label: "Reach me by WhatsApp: connect your own WhatsApp Business number ({ accessToken, phoneNumberId, appSecret?, templateName?, templateLanguage? } from your Meta app), change { templateName?, templateLanguage?, appSecret? } with { update: true }, prove your number with { link: {} } (a wa.me code), { link: { number } } (the code by your template) then { link: { code } }, or { disconnect: true }",
+  label: "Reach me by WhatsApp: connect your own WhatsApp Business number ({ accessToken, phoneNumberId, appSecret?, templateName?, templateLanguage?, businessAccountId? } from your Meta app; the template is checked with Meta), change { templateName?, templateLanguage?, appSecret?, businessAccountId? } or check the template again with { update: true }, prove your number with { link: {} } (a wa.me code), { link: { number } } (the code by your template) then { link: { code } }, or { disconnect: true }",
   where: "Bot panel > Overview > Reach me > WhatsApp",
   write: (ids, v) => {
     const value = (v && typeof v === "object" ? v : {}) as { disconnect?: unknown; update?: unknown; link?: unknown };

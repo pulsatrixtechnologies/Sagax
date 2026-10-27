@@ -1286,7 +1286,12 @@ for themself, for every bot they can see: no admin, no owner check.
     link, through the webhook) or the code by their template typed back
     (`POST .../reach-me/whatsapp/link`). Out: plain text inside the 24 h
     window (their last message), else their approved template (name and
-    language set by them, one body parameter). Back: webhook receiver path
+    language set by them, one body parameter). The template is read at Meta
+    (`checkTemplate`: GET `<WABA>/message_templates`, free, sends nothing;
+    WABA ID asked on the page) on save and after a send refused for its
+    template (codes 1320xx); `templateCheck` keeps state, status,
+    category, parameters. A template set but not `approved` keeps the
+    channel `ready: false` with a reason saying what to do. Back: webhook receiver path
     `/reach-me/whatsapp/<rmwa_...>` (`server/webhook-ingress.ts`
     `receivers`): GET answers the verify token, POST needs
     `X-Hub-Signature-256` with their app secret, their Phone Number ID and

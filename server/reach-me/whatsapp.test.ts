@@ -28,7 +28,14 @@ const OTHER_NUMBER = "+15145559876";
 
 type Call = { url: string; method: string; body?: Record<string, unknown>; authorization?: string };
 
-function setup(options: { publicWebhook?: boolean; refuse?: number; replyOutcome?: { handled: boolean; outcome: "allowed" | "unknown_code" | "no_code" } } = {}) {
+const WABA_ID = "102290129340398";
+const APPROVED = { name: "sagax_card", language: "fr", status: "APPROVED", category: "UTILITY", components: [{ type: "BODY", text: "Sagax : {{1}}" }] };
+
+type TemplatesAnswer = { status: number; body: unknown };
+
+function setup(options: { publicWebhook?: boolean; refuse?: number; replyOutcome?: { handled: boolean; outcome: "allowed" | "unknown_code" | "no_code" }; templates?: TemplatesAnswer; sendRefusal?: { status: number; code: number } } = {}) {
+  let templates: TemplatesAnswer = options.templates ?? { status: 200, body: { data: [APPROVED] } };
+  let sendRefusal = options.sendRefusal;
   const dir = mkdtempSync(join(tmpdir(), "sagax-reach-wa-"));
   dirs.push(dir);
   let now = Date.parse("2026-10-27T13:00:00Z");
@@ -38,6 +45,8 @@ function setup(options: { publicWebhook?: boolean; refuse?: number; replyOutcome
   const fetch = (async (url: string, init: { method: string; body?: string; headers?: Record<string, string> }) => {
     calls.push({ url, method: init.method, ...(init.body ? { body: JSON.parse(init.body) as Record<string, unknown> } : {}), ...(init.headers?.authorization ? { authorization: init.headers.authorization } : {}) });
     if (options.refuse) return new Response(JSON.stringify({ error: { message: "refused" } }), { status: options.refuse });
+    if (init.method === "GET" && url.includes("/message_templates?")) return new Response(JSON.stringify(templates.body), { status: templates.status });
+    if (init.method === "POST" && sendRefusal && (JSON.parse(init.body ?? "{}") as { type?: string }).type === "template") return new Response(JSON.stringify({ error: { code: sendRefusal.code, message: "template refused" } }), { status: sendRefusal.status });
     if (init.method === "GET") return new Response(JSON.stringify({ display_phone_number: "+1 555-010-0000", verified_name: "Example Shop", id: PHONE_NUMBER_ID }), { status: 200 });
     return new Response(JSON.stringify({ messages: [{ id: "wamid.fake" }] }), { status: 200 });
   }) as unknown as typeof globalThis.fetch;
@@ -54,7 +63,10 @@ function setup(options: { publicWebhook?: boolean; refuse?: number; replyOutcome
     log: (line) => logs.push(line),
   });
   const sends = () => calls.filter((call) => call.method === "POST");
-  return { dir, whatsapp, settings, secrets, calls, sends, replies, logs, setNow: (next: number) => { now = next; }, now: () => now };
+  return {
+    dir, whatsapp, settings, secrets, calls, sends, replies, logs, setNow: (next: number) => { now = next; }, now: () => now,
+    setTemplates: (next: TemplatesAnswer) => { templates = next; }, setSendRefusal: (next?: { status: number; code: number }) => { sendRefusal = next; },
+  };
 }
 
 const OUT: ReachOutbound = { person: "pr_a", botId: "b1", botName: "Cryptic", code: "KM3X", kind: "approval", title: "Run a command?", line: "npm test", confidential: false, needsKey: false, language: "fr" };
@@ -150,8 +162,8 @@ describe("Reach me by WhatsApp", () => {
     env.setNow(env.now() + WHATSAPP_WINDOW_MS + 1);
     expect(env.whatsapp.channel().status("pr_a", "b1").ready).toBe(false);
     expect(await env.whatsapp.channel().send(OUT)).toMatchObject({ ok: false });
-    expect(env.whatsapp.update("pr_a", "b1", { templateName: "sagax_card", templateLanguage: "French" })).toMatchObject({ ok: false, status: 400 });
-    expect(env.whatsapp.update("pr_a", "b1", { templateName: "sagax_card", templateLanguage: "fr" })).toEqual({ ok: true });
+    expect(await env.whatsapp.update("pr_a", "b1", { templateName: "sagax_card", templateLanguage: "French" })).toMatchObject({ ok: false, status: 400 });
+    expect(await env.whatsapp.update("pr_a", "b1", { templateName: "sagax_card", templateLanguage: "fr", businessAccountId: WABA_ID })).toEqual({ ok: true });
     expect(env.whatsapp.channel().status("pr_a", "b1").ready).toBe(true);
     expect(await env.whatsapp.channel().send(OUT)).toEqual({ ok: true, detail: { to: PERSON_NUMBER } });
     const message = env.sends().at(-1)!.body as { type: string; template: { name: string; language: { code: string }; components: Array<{ parameters: Array<{ text: string }> }> } };
@@ -163,11 +175,72 @@ describe("Reach me by WhatsApp", () => {
     expect(parameter).toContain("KM3X oui");
   });
 
+  it("reads the template at Meta (free, nothing sent) and keeps its status, category and parameters", async () => {
+    const env = setup();
+    await connect(env, { templateName: "sagax_card", templateLanguage: "fr", businessAccountId: WABA_ID });
+    const read = env.calls.find((call) => call.url.includes("/message_templates?"))!;
+    expect(read).toMatchObject({ method: "GET", url: `https://graph.facebook.com/v21.0/${WABA_ID}/message_templates?name=sagax_card&fields=name,language,status,category,components&limit=100`, authorization: `Bearer ${ACCESS_TOKEN}` });
+    expect(env.sends()).toEqual([]);
+    expect(env.settings.whatsapp("pr_a", "b1")!.templateCheck).toMatchObject({ state: "approved", name: "sagax_card", language: "fr", status: "APPROVED", category: "UTILITY", parameters: 1 });
+    expect(env.whatsapp.view("pr_a", "b1")).toMatchObject({ hasBusinessAccount: true, templateCheck: { state: "approved", status: "APPROVED", category: "UTILITY", parameters: 1 } });
+    expect(JSON.stringify(env.whatsapp.view("pr_a", "b1"))).not.toContain(WABA_ID);
+  });
+
+  it.each([
+    ["missing_account", undefined, { status: 200, body: { data: [APPROVED] } }, /WhatsApp Business Account ID/],
+    ["not_found", WABA_ID, { status: 200, body: { data: [] } }, /no template named sagax_card/],
+    ["wrong_language", WABA_ID, { status: 200, body: { data: [{ ...APPROVED, language: "en_US" }] } }, /no fr version \(Meta has en_US\)/],
+    ["not_approved", WABA_ID, { status: 200, body: { data: [{ ...APPROVED, status: "PENDING" }] } }, /is PENDING at Meta/],
+    ["wrong_parameters", WABA_ID, { status: 200, body: { data: [{ ...APPROVED, components: [{ type: "BODY", text: "{{1}} et {{2}}" }] }] } }, /asks for 2 parameters/],
+    ["forbidden", WABA_ID, { status: 403, body: { error: { code: 200, message: "no permission" } } }, /whatsapp_business_management/],
+    ["wrong_account", WABA_ID, { status: 400, body: { error: { code: 100, message: "bad id" } } }, /does not know this WhatsApp Business Account ID/],
+    ["unreachable", WABA_ID, { status: 500, body: {} }, /could not check your template/],
+  ] as Array<[string, string | undefined, TemplatesAnswer, RegExp]>)("a template that does not hold (%s): never ready, the reason says what to do", async (state, businessAccountId, templates, reason) => {
+    const env = setup({ templates });
+    const link = await connect(env, { templateName: "sagax_card", templateLanguage: "fr", ...(businessAccountId ? { businessAccountId } : {}) });
+    // linked, and inside the window: still not ready while the template is wrong
+    await post(env, link.endpointId, inbound(PERSON_NUMBER, `SAGAX ${link.linkCode}`));
+    expect(env.whatsapp.view("pr_a", "b1")).toMatchObject({ connected: true, windowOpen: true, templateCheck: { state } });
+    const status = env.whatsapp.channel().status("pr_a", "b1");
+    expect(status.ready).toBe(false);
+    expect(status.reason).toMatch(reason);
+    // fixed at Meta, checked again from the page: ready
+    env.setTemplates({ status: 200, body: { data: [APPROVED] } });
+    await env.whatsapp.update("pr_a", "b1", { businessAccountId: WABA_ID });
+    expect(env.whatsapp.channel().status("pr_a", "b1")).toEqual({ ready: true });
+  });
+
+  it("a template message refused by Meta for its template checks it again: the channel is then not ready", async () => {
+    const env = setup();
+    const link = await connect(env, { templateName: "sagax_card", templateLanguage: "fr", businessAccountId: WABA_ID });
+    await post(env, link.endpointId, inbound(PERSON_NUMBER, `SAGAX ${link.linkCode}`));
+    env.setNow(env.now() + WHATSAPP_WINDOW_MS + 1);
+    expect(env.whatsapp.channel().status("pr_a", "b1").ready).toBe(true);
+    env.setTemplates({ status: 200, body: { data: [{ ...APPROVED, status: "PAUSED" }] } });
+    env.setSendRefusal({ status: 400, code: 132015 });
+    const reads = () => env.calls.filter((call) => call.url.includes("/message_templates?")).length;
+    const before = reads();
+    expect(await env.whatsapp.channel().send(OUT)).toMatchObject({ ok: false });
+    expect(reads()).toBe(before + 1);
+    expect(env.whatsapp.channel().status("pr_a", "b1")).toMatchObject({ ready: false, reason: expect.stringMatching(/is PAUSED at Meta/) });
+    // a refusal for another cause reads nothing again
+    env.setSendRefusal({ status: 400, code: 131026 });
+    await env.whatsapp.channel().send(OUT);
+    expect(reads()).toBe(before + 1);
+  });
+
+  it("the code by template waits for an approved template", async () => {
+    const env = setup({ templates: { status: 200, body: { data: [{ ...APPROVED, status: "REJECTED" }] } } });
+    await connect(env, { templateName: "sagax_card", templateLanguage: "fr", businessAccountId: WABA_ID });
+    expect(await env.whatsapp.sendCode("pr_a", "b1", PERSON_NUMBER)).toMatchObject({ ok: false, status: 409, error: expect.stringMatching(/is REJECTED at Meta/) });
+    expect(env.sends()).toEqual([]);
+  });
+
   it("proves the number by a code sent with the template and typed back, with few tries", async () => {
     const env = setup({ publicWebhook: false });
     await connect(env);
     expect(await env.whatsapp.sendCode("pr_a", "b1", PERSON_NUMBER)).toMatchObject({ ok: false, status: 400 });
-    env.whatsapp.update("pr_a", "b1", { templateName: "sagax_card" });
+    await env.whatsapp.update("pr_a", "b1", { templateName: "sagax_card", businessAccountId: WABA_ID });
     expect(await env.whatsapp.sendCode("pr_a", "b1", "+1 514 555 0123")).toEqual({ ok: true });
     const code = env.settings.whatsapp("pr_a", "b1")!.linkCode!;
     expect(env.sends().at(-1)!.body).toMatchObject({ to: "15145550123", type: "template" });
@@ -180,7 +253,7 @@ describe("Reach me by WhatsApp", () => {
     // five wrong codes drop it
     const again = setup();
     await connect(again);
-    again.whatsapp.update("pr_a", "b1", { templateName: "sagax_card" });
+    await again.whatsapp.update("pr_a", "b1", { templateName: "sagax_card", businessAccountId: WABA_ID });
     await again.whatsapp.sendCode("pr_a", "b1", PERSON_NUMBER);
     const right = again.settings.whatsapp("pr_a", "b1")!.linkCode!;
     for (let i = 0; i < 5; i += 1) again.whatsapp.confirm("pr_a", "b1", "WRONG1");
@@ -197,7 +270,7 @@ describe("Reach me by WhatsApp", () => {
     expect(env.replies).toEqual([{ text: "KM3X oui", from: PERSON_NUMBER }]);
     expect(env.sends().at(-1)!.body).toMatchObject({ to: "15145550123", type: "text", text: { body: "Autorisé. Le bot reprend." } });
     // no app secret: the webhook refuses every message
-    env.whatsapp.update("pr_a", "b1", { appSecret: "" });
+    await env.whatsapp.update("pr_a", "b1", { appSecret: "" });
     expect(await post(env, link.endpointId, inbound(PERSON_NUMBER, "KM3X oui"))).toMatchObject({ status: 401 });
   });
 

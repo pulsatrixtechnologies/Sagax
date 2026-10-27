@@ -60,6 +60,29 @@ export interface ReachWhatsAppLink {
    * body parameter ({{1}}): its name and language code at Meta. */
   templateName?: string;
   templateLanguage?: string;
+  /** The WhatsApp Business Account the template lives in (never shown). */
+  businessAccountId?: string;
+  /** What Meta said of that template, last time Sagax read it. */
+  templateCheck?: ReachWhatsAppTemplateCheck;
+}
+
+/** The template check (server/reach-me/whatsapp.ts `checkTemplate`). */
+export type ReachWhatsAppTemplateState = "approved" | "missing_account" | "wrong_account" | "not_found" | "wrong_language" | "not_approved" | "wrong_parameters" | "forbidden" | "unreachable";
+
+export interface ReachWhatsAppTemplateCheck {
+  state: ReachWhatsAppTemplateState;
+  /** The template name and language this check read. */
+  name: string;
+  language: string;
+  checkedAt: number;
+  /** Meta's status of that version (APPROVED, PENDING, REJECTED, PAUSED, DISABLED). */
+  status?: string;
+  /** MARKETING, UTILITY or AUTHENTICATION. */
+  category?: string;
+  /** The parameters its body and header ask for. */
+  parameters?: number;
+  /** The languages Meta has for that name, when the asked one is missing. */
+  languages?: string[];
 }
 
 interface StoredEntry {

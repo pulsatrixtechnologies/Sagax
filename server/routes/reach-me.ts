@@ -10,12 +10,15 @@
 //   DELETE /api/bots/:id/reach-me/telegram  forget that bot and chat
 //   POST   /api/bots/:id/reach-me/whatsapp  { accessToken, phoneNumberId,
 //                                            appSecret?, templateName?,
-//                                            templateLanguage? } the person's
+//                                            templateLanguage?, businessAccountId? }
+//                                            the person's
 //                                            own WhatsApp Business number:
 //                                            checked with Meta, sealed, and a
 //                                            code to prove their own number
 //   PUT    /api/bots/:id/reach-me/whatsapp  { templateName?, templateLanguage?,
-//                                            appSecret? } without the token again
+//                                            appSecret?, businessAccountId? } without
+//                                            the token again; a template set is
+//                                            checked with Meta again (also {} alone)
 //   DELETE /api/bots/:id/reach-me/whatsapp  forget the token, app secret, number
 //   POST   /api/bots/:id/reach-me/whatsapp/link  {} a fresh wa.me code;
 //                                            { number } the code by template to
@@ -81,16 +84,18 @@ export function createReachMeRoutes(deps: ReachMeRouteDeps): RouteHandler {
           ...(text(body?.appSecret) ? { appSecret: text(body?.appSecret)! } : {}),
           ...(text(body?.templateName) ? { templateName: text(body?.templateName)! } : {}),
           ...(text(body?.templateLanguage) ? { templateLanguage: text(body?.templateLanguage)! } : {}),
+          ...(text(body?.businessAccountId) ? { businessAccountId: text(body?.businessAccountId)! } : {}),
         });
         if (!result.ok) return json(res, result.status, { error: result.error });
         return json(res, 200, { ok: true, ...view(person, bot.id) });
       }
       if (method === "PUT") {
         const body = await readBody(req) as Record<string, unknown> | null;
-        const result = deps.whatsapp.update(person, bot.id, {
+        const result = await deps.whatsapp.update(person, bot.id, {
           ...(text(body?.templateName) !== undefined ? { templateName: text(body?.templateName)! } : {}),
           ...(text(body?.templateLanguage) !== undefined ? { templateLanguage: text(body?.templateLanguage)! } : {}),
           ...(text(body?.appSecret) !== undefined ? { appSecret: text(body?.appSecret)! } : {}),
+          ...(text(body?.businessAccountId) !== undefined ? { businessAccountId: text(body?.businessAccountId)! } : {}),
         });
         if (!result.ok) return json(res, result.status, { error: result.error });
         return json(res, 200, { ok: true, ...view(person, bot.id) });

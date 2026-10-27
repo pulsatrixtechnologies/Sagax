@@ -29,6 +29,10 @@ export interface ReachChannelView {
   hasAppSecret?: boolean;
   templateName?: string;
   templateLanguage?: string;
+  /** The WhatsApp Business Account ID is set (never shown). */
+  hasBusinessAccount?: boolean;
+  /** Meta's answer about the template (server/reach-me/whatsapp.ts WhatsAppTemplateView). */
+  templateCheck?: { state: string; language: string; status?: string; category?: string; parameters?: number; languages?: string[] };
   windowOpen?: boolean;
 }
 
@@ -84,8 +88,8 @@ export const disconnectReachTelegram = (botId: string) => call(`/api/bots/${enco
 
 /** One step of the WhatsApp setup, as the bot page asks it. */
 export type ReachWhatsAppStep =
-  | { kind: "connect"; accessToken: string; phoneNumberId: string; appSecret?: string; templateName?: string; templateLanguage?: string }
-  | { kind: "update"; templateName?: string; templateLanguage?: string; appSecret?: string }
+  | { kind: "connect"; accessToken: string; phoneNumberId: string; appSecret?: string; templateName?: string; templateLanguage?: string; businessAccountId?: string }
+  | { kind: "update"; templateName?: string; templateLanguage?: string; appSecret?: string; businessAccountId?: string }
   | { kind: "link"; number?: string; code?: string }
   | { kind: "disconnect" };
 

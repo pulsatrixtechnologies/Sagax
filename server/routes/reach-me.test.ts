@@ -39,7 +39,7 @@ async function serve(person: string | null = "pr_member") {
     },
     whatsapp: {
       connect: async (_person, _bot, input) => { whatsapp.push({ call: "connect", args: input }); return { ok: true }; },
-      update: (_person, _bot, input) => { whatsapp.push({ call: "update", args: input }); return { ok: true }; },
+      update: async (_person, _bot, input) => { whatsapp.push({ call: "update", args: input }); return { ok: true }; },
       disconnect: () => { whatsapp.push({ call: "disconnect", args: null }); },
       renewLink: () => { whatsapp.push({ call: "renewLink", args: null }); return { ok: true }; },
       sendCode: async (_person, _bot, number) => { whatsapp.push({ call: "sendCode", args: number }); return { ok: true }; },

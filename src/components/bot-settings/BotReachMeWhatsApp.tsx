@@ -12,10 +12,22 @@ import { cn } from "@/lib/cn";
 import { useCopyFeedback } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import type { ReachChannelView, ReachWhatsAppStep } from "@/lib/reach-me";
+import type { LocaleKey } from "@/locales";
 
 const inputCls = "min-h-8 min-w-0 rounded-lg border border-hairline/40 bg-inset px-2.5 py-1.5 text-[13px] text-ink focus:border-focus";
 const buttonCls = "rounded-lg border border-hairline/50 px-3 py-1.5 text-[12px] font-medium text-ink hover:bg-raised disabled:opacity-40";
 const noteCls = "text-[12px] leading-4 text-ink-secondary";
+
+/** Meta's answer about the template, in the person's words, with what to do. */
+function templateLine(status: ReachChannelView): { text: string; ok: boolean } | null {
+  const check = status.templateCheck;
+  if (!check || !status.templateName) return null;
+  const params = {
+    name: status.templateName, language: check.language, languages: (check.languages ?? []).join(", "),
+    status: check.status ?? "", count: String(check.parameters ?? 0),
+  };
+  return { text: t(`botPanel.reachMe.whatsapp.check.${check.state}` as LocaleKey, params), ok: check.state === "approved" };
+}
 
 export type ReachWhatsAppAction = (step: ReachWhatsAppStep) => Promise<{ ok: true } | { ok: false; error: string }>;
 
@@ -36,6 +48,7 @@ export function ReachWhatsAppSetup({ status, busy, act }: { status: ReachChannel
   const [accessToken, setAccessToken] = useState("");
   const [phoneNumberId, setPhoneNumberId] = useState("");
   const [appSecret, setAppSecret] = useState("");
+  const [businessAccountId, setBusinessAccountId] = useState("");
   const [templateName, setTemplateName] = useState<string | null>(null);
   const [templateLanguage, setTemplateLanguage] = useState<string | null>(null);
   const [number, setNumber] = useState("");
@@ -67,11 +80,12 @@ export function ReachWhatsAppSetup({ status, busy, act }: { status: ReachChannel
           <input className={cn(inputCls, "flex-1")} value={name} spellCheck={false} placeholder={t("botPanel.reachMe.whatsapp.templatePlaceholder")} aria-label={t("botPanel.reachMe.whatsapp.template")} onChange={(event) => setTemplateName(event.target.value)} />
           <input className={cn(inputCls, "w-20")} value={language} spellCheck={false} placeholder="fr" aria-label={t("botPanel.reachMe.whatsapp.templateLanguage")} onChange={(event) => setTemplateLanguage(event.target.value)} />
         </div>
+        <input className={inputCls} value={businessAccountId} inputMode="numeric" autoComplete="off" spellCheck={false} placeholder={t("botPanel.reachMe.whatsapp.businessAccountPlaceholder")} aria-label={t("botPanel.reachMe.whatsapp.businessAccount")} onChange={(event) => setBusinessAccountId(event.target.value)} />
         <p className={noteCls}>{t("botPanel.reachMe.whatsapp.templateHelp")}</p>
         <div className="flex justify-end">
           <button type="button" className={buttonCls} disabled={disabled || !accessToken.trim() || !phoneNumberId.trim()}
-            onClick={() => void run({ kind: "connect", accessToken, phoneNumberId, ...(appSecret.trim() ? { appSecret } : {}), ...(name.trim() ? { templateName: name } : {}), ...(language.trim() ? { templateLanguage: language } : {}) },
-              () => { setAccessToken(""); setAppSecret(""); setTemplateName(null); setTemplateLanguage(null); })}
+            onClick={() => void run({ kind: "connect", accessToken, phoneNumberId, ...(appSecret.trim() ? { appSecret } : {}), ...(name.trim() ? { templateName: name } : {}), ...(language.trim() ? { templateLanguage: language } : {}), ...(businessAccountId.trim() ? { businessAccountId } : {}) },
+              () => { setAccessToken(""); setAppSecret(""); setBusinessAccountId(""); setTemplateName(null); setTemplateLanguage(null); })}
           >{t("botPanel.reachMe.whatsapp.connect")}</button>
         </div>
         {errorLine}
@@ -79,6 +93,7 @@ export function ReachWhatsAppSetup({ status, busy, act }: { status: ReachChannel
     );
   }
 
+  const check = templateLine(status);
   const business = status.verifiedName ? `${status.verifiedName} (${status.displayNumber})` : status.displayNumber;
   return (
     <div data-reach-whatsapp-setup="" className="flex flex-col gap-2">
@@ -122,6 +137,18 @@ export function ReachWhatsAppSetup({ status, busy, act }: { status: ReachChannel
           <input className={cn(inputCls, "w-20")} value={language} spellCheck={false} placeholder="fr" aria-label={t("botPanel.reachMe.whatsapp.templateLanguage")} onChange={(event) => setTemplateLanguage(event.target.value)} />
           {templateDirty && <button type="button" className={buttonCls} disabled={disabled} onClick={() => void run({ kind: "update", templateName: name, templateLanguage: language }, () => { setTemplateName(null); setTemplateLanguage(null); })}>{t("botPanel.reachMe.save")}</button>}
         </div>
+        {!status.hasBusinessAccount && (
+          <div className="flex gap-2">
+            <input className={cn(inputCls, "flex-1")} value={businessAccountId} inputMode="numeric" autoComplete="off" spellCheck={false} placeholder={t("botPanel.reachMe.whatsapp.businessAccountPlaceholder")} aria-label={t("botPanel.reachMe.whatsapp.businessAccount")} onChange={(event) => setBusinessAccountId(event.target.value)} />
+            <button type="button" className={buttonCls} disabled={disabled || !businessAccountId.trim()} onClick={() => void run({ kind: "update", businessAccountId }, () => setBusinessAccountId(""))}>{t("botPanel.reachMe.save")}</button>
+          </div>
+        )}
+        {check && (
+          <div data-reach-whatsapp-check={status.templateCheck?.state} className="flex items-start justify-between gap-2">
+            <p className={cn("text-[12px] leading-4", check.ok ? "text-ink-secondary" : "text-warning")}>{check.text}</p>
+            {!check.ok && <button type="button" className={cn(buttonCls, "shrink-0")} disabled={disabled} onClick={() => void run({ kind: "update" })}>{t("botPanel.reachMe.whatsapp.recheck")}</button>}
+          </div>
+        )}
         <p className={noteCls}>{status.windowOpen ? t("botPanel.reachMe.whatsapp.windowOpen") : t("botPanel.reachMe.whatsapp.templateHelp")}</p>
       </div>
       <div data-reach-whatsapp-replies="" className="flex flex-col gap-1">

@@ -88,7 +88,7 @@ export function BotReachMeCard({ view, actions, initialTelegramLink }: { view: R
                 </span>
                 <Switch checked={on} disabled={busy} onClick={() => toggle(id, !on)} aria-label={t(`botPanel.reachMe.${id}.label` as LocaleKey)} />
               </label>
-              {on && !status.ready && status.reason && id !== "telegram" && (id !== "whatsapp" || status.connected) && (
+              {on && !status.ready && status.reason && id !== "telegram" && (id !== "whatsapp" || (status.connected && (!status.templateCheck || status.templateCheck.state === "approved"))) && (
                 <p data-reach-not-ready="" title={status.reason} className="text-[12px] leading-4 text-warning">{t(`botPanel.reachMe.${id}.notReady` as LocaleKey)}</p>
               )}
               {on && id === "whatsapp" && <ReachWhatsAppSetup status={status} busy={busy} {...(actions.onWhatsApp ? { act: actions.onWhatsApp } : {})} />}

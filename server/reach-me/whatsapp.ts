@@ -32,7 +32,7 @@ import { maskNumber, normalizePhone, REACH_CODE_ALPHABET } from "../../shared/re
 import { composeReachText, reachAckText, type ReachChannel, type ReachOutbound, type ReachSendResult } from "./channel.ts";
 import type { ReachMeSecrets } from "./secrets.ts";
 import type { ReachReplyOutcome } from "./service.ts";
-import type { ReachMeStore, ReachWhatsAppLink } from "./store.ts";
+import type { ReachMeStore, ReachWhatsAppLink, ReachWhatsAppTemplateCheck, ReachWhatsAppTemplateState } from "./store.ts";
 
 export const WHATSAPP_GRAPH = "https://graph.facebook.com/v21.0";
 /** The code that proves the person's number lives this long. */
@@ -43,6 +43,11 @@ export const WHATSAPP_WINDOW_MS = 24 * 60 * 60_000 - 10 * 60_000;
 /** Wrong codes typed on the bot page before the code is dropped. */
 export const WHATSAPP_CONFIRM_TRIES = 5;
 export const WHATSAPP_PHONE_NUMBER_ID = /^\d{5,30}$/;
+/** A WhatsApp Business Account ID (WhatsApp > API Setup): digits. */
+export const WHATSAPP_BUSINESS_ACCOUNT_ID = /^\d{5,30}$/;
+/** Meta's error codes of a template message refused for its template
+ * (does not exist in that language, wrong parameters, paused, disabled). */
+const TEMPLATE_ERRORS = new Set([132000, 132001, 132005, 132007, 132012, 132015, 132016]);
 export const WHATSAPP_TEMPLATE_NAME = /^[a-z0-9_]{1,512}$/;
 export const WHATSAPP_TEMPLATE_LANGUAGE = /^[a-z]{2,3}(_[A-Z]{2})?$/;
 /** The webhook path id. */
@@ -68,6 +73,17 @@ export interface WhatsAppConnectInput {
   appSecret?: string;
   templateName?: string;
   templateLanguage?: string;
+  businessAccountId?: string;
+}
+
+/** What the screen and the iOS app read of the template check: never an id. */
+export interface WhatsAppTemplateView {
+  state: ReachWhatsAppTemplateState | "unchecked";
+  language: string;
+  status?: string;
+  category?: string;
+  parameters?: number;
+  languages?: string[];
 }
 
 export interface WhatsAppView {
@@ -93,8 +109,34 @@ export interface WhatsAppView {
   hasAppSecret: boolean;
   templateName?: string;
   templateLanguage?: string;
+  /** The WhatsApp Business Account ID is set (the id itself is never shown). */
+  hasBusinessAccount: boolean;
+  /** Meta's answer about the template, when one is set. */
+  templateCheck?: WhatsAppTemplateView;
   /** The person wrote less than a day ago: plain text goes out without the template. */
   windowOpen: boolean;
+}
+
+/** The channel's reason when the template does not hold, in plain words with what to do. */
+export function templateReason(check: WhatsAppTemplateView, name: string): string {
+  switch (check.state) {
+    case "approved": return "";
+    case "missing_account": return "Add your WhatsApp Business Account ID (Meta app > WhatsApp > API Setup) so Sagax can check your template.";
+    case "wrong_account": return "Meta does not know this WhatsApp Business Account ID for your token. Copy it again from WhatsApp > API Setup.";
+    case "not_found": return `Meta has no template named ${name}. Check its name in WhatsApp Manager > Message templates.`;
+    case "wrong_language": return `Your template ${name} has no ${check.language} version${check.languages?.length ? ` (Meta has ${check.languages.join(", ")})` : ""}. Set one of its languages.`;
+    case "not_approved": return `Your template ${name} is ${check.status ?? "not approved"} at Meta. Wait for its approval or choose an approved template.`;
+    case "wrong_parameters": return `Your template ${name} asks for ${check.parameters ?? 0} parameters. Sagax fills exactly one, in the body ({{1}}): choose or create such a template.`;
+    case "forbidden": return "Your access token cannot read your message templates. Give it the whatsapp_business_management permission, then check again.";
+    case "unreachable": return "Sagax could not check your template with Meta. Check again.";
+    default: return "Your template is not checked yet. Check again.";
+  }
+}
+
+/** The {{1}} or {{name}} parameters of a template component's text. */
+function parameterCount(text: unknown): number {
+  if (typeof text !== "string") return 0;
+  return new Set([...text.matchAll(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g)].map((match) => match[1])).size;
 }
 
 export type WhatsAppResult = { ok: true } | { ok: false; error: string; status: number };
@@ -177,6 +219,70 @@ export class ReachWhatsApp {
     return { ...(name ? { templateName: name } : {}), ...(language ? { templateLanguage: language } : {}) };
   }
 
+  private effectiveLanguage(person: string, link: ReachWhatsAppLink): string {
+    return link.templateLanguage ?? this.deps.language(person);
+  }
+
+  /** Reads the person's template at Meta (GET message_templates of their
+   * WhatsApp Business Account: free, sends nothing) and keeps the answer.
+   * The channel is ready only on an approved version in the language set,
+   * with the one body parameter Sagax fills. */
+  async checkTemplate(person: string, botId: string): Promise<ReachWhatsAppTemplateCheck | undefined> {
+    const link = this.deps.settings.whatsapp(person, botId);
+    const secret = this.deps.secrets.whatsApp(person, botId);
+    if (!link?.templateName || !secret) return undefined;
+    const name = link.templateName;
+    const language = this.effectiveLanguage(person, link);
+    const keep = (check: Omit<ReachWhatsAppTemplateCheck, "name" | "language" | "checkedAt">): ReachWhatsAppTemplateCheck => {
+      const result: ReachWhatsAppTemplateCheck = { ...check, name, language, checkedAt: this.now() };
+      // the person may have changed it meanwhile: keep only a check of what is set
+      const current = this.deps.settings.whatsapp(person, botId);
+      if (current && current.templateName === name && this.effectiveLanguage(person, current) === language) {
+        this.deps.settings.setWhatsApp(person, botId, { ...current, templateCheck: result });
+      }
+      return result;
+    };
+    if (!link.businessAccountId) return keep({ state: "missing_account" });
+    const answer = await this.graph(secret.token, `${link.businessAccountId}/message_templates?name=${encodeURIComponent(name)}&fields=name,language,status,category,components&limit=100`, { method: "GET" });
+    if (!answer.ok) {
+      const code = Number((answer.body.error as { code?: unknown } | undefined)?.code);
+      if (answer.status === 401 || answer.status === 403 || code === 10 || code === 190 || code === 200) return keep({ state: "forbidden" });
+      if (answer.status === 400 || answer.status === 404) return keep({ state: code === 100 || answer.status === 404 ? "wrong_account" : "forbidden" });
+      return keep({ state: "unreachable" });
+    }
+    const rows = (Array.isArray(answer.body.data) ? answer.body.data : []) as Array<{ name?: unknown; language?: unknown; status?: unknown; category?: unknown; components?: unknown }>;
+    const named = rows.filter((row) => row?.name === name);
+    if (!named.length) return keep({ state: "not_found" });
+    const row = named.find((entry) => entry.language === language);
+    if (!row) return keep({ state: "wrong_language", languages: [...new Set(named.map((entry) => String(entry.language ?? "")).filter(Boolean))].slice(0, 20) });
+    const status = typeof row.status === "string" ? row.status.toUpperCase().slice(0, 40) : "";
+    const category = typeof row.category === "string" ? row.category.toUpperCase().slice(0, 40) : undefined;
+    const components = (Array.isArray(row.components) ? row.components : []) as Array<{ type?: unknown; text?: unknown }>;
+    const body = components.filter((part) => String(part?.type).toUpperCase() === "BODY").reduce((total, part) => total + parameterCount(part.text), 0);
+    const header = components.filter((part) => String(part?.type).toUpperCase() === "HEADER").reduce((total, part) => total + parameterCount(part.text), 0);
+    const parameters = body + header;
+    const facts = { ...(status ? { status } : {}), ...(category ? { category } : {}), parameters };
+    if (status !== "APPROVED") return keep({ state: "not_approved", ...facts });
+    if (body !== 1 || header !== 0) return keep({ state: "wrong_parameters", ...facts });
+    return keep({ state: "approved", ...facts });
+  }
+
+  /** The template check as the view and the status read it: a check of
+   * another name or language is no check. */
+  private templateView(person: string, link: ReachWhatsAppLink): WhatsAppTemplateView | undefined {
+    if (!link.templateName) return undefined;
+    const language = this.effectiveLanguage(person, link);
+    const check = link.templateCheck;
+    if (!check || check.name !== link.templateName || check.language !== language) return { state: "unchecked", language };
+    return {
+      state: check.state, language,
+      ...(check.status ? { status: check.status } : {}),
+      ...(check.category ? { category: check.category } : {}),
+      ...(check.parameters !== undefined ? { parameters: check.parameters } : {}),
+      ...(check.languages?.length ? { languages: check.languages } : {}),
+    };
+  }
+
   /** The person pastes their access token and Phone Number ID: checked with
    * Meta, sealed, and a code to prove their own number. */
   async connect(person: string, botId: string, input: WhatsAppConnectInput): Promise<WhatsAppResult> {
@@ -186,6 +292,8 @@ export class ReachWhatsApp {
     const template = this.template(input);
     if ("error" in template) return { ok: false, status: 400, error: template.error };
     const appSecret = input.appSecret?.trim() || undefined;
+    const businessAccountId = input.businessAccountId?.trim() || undefined;
+    if (businessAccountId && !WHATSAPP_BUSINESS_ACCOUNT_ID.test(businessAccountId)) return { ok: false, status: 400, error: "The WhatsApp Business Account ID is the number Meta shows in WhatsApp > API Setup (digits only)." };
     const checked = await this.graph(token, `${phoneNumberId}?fields=display_phone_number,verified_name`, { method: "GET" });
     if (!checked.ok) {
       const refused = checked.status === 400 || checked.status === 401 || checked.status === 403 || checked.status === 404;
@@ -210,17 +318,23 @@ export class ReachWhatsApp {
       linkCode: linkCode(),
       linkExpiresAt: this.now() + WHATSAPP_LINK_TTL_MS,
       ...template,
+      ...(businessAccountId ?? previous?.businessAccountId ? { businessAccountId: businessAccountId ?? previous!.businessAccountId } : {}),
     });
+    if (template.templateName) await this.checkTemplate(person, botId);
     return { ok: true };
   }
 
-  /** The template, its language and the app secret, without pasting the token again. */
-  update(person: string, botId: string, input: { templateName?: string; templateLanguage?: string; appSecret?: string }): WhatsAppResult {
+  /** The template, its language, the WhatsApp Business Account ID and the
+   * app secret, without pasting the token again. A template set is checked
+   * with Meta again each time. */
+  async update(person: string, botId: string, input: { templateName?: string; templateLanguage?: string; appSecret?: string; businessAccountId?: string }): Promise<WhatsAppResult> {
     const link = this.deps.settings.whatsapp(person, botId);
     const secret = this.deps.secrets.whatsApp(person, botId);
     if (!link || !secret) return { ok: false, status: 409, error: "Connect your WhatsApp Business number first." };
     const template = this.template({ templateName: input.templateName ?? link.templateName, templateLanguage: input.templateLanguage ?? link.templateLanguage });
     if ("error" in template) return { ok: false, status: 400, error: template.error };
+    const businessAccountId = input.businessAccountId?.trim();
+    if (businessAccountId && !WHATSAPP_BUSINESS_ACCOUNT_ID.test(businessAccountId)) return { ok: false, status: 400, error: "The WhatsApp Business Account ID is the number Meta shows in WhatsApp > API Setup (digits only)." };
     if (input.appSecret !== undefined) {
       try {
         this.deps.secrets.setWhatsApp(person, botId, { token: secret.token, ...(input.appSecret.trim() ? { appSecret: input.appSecret.trim() } : {}) });
@@ -231,7 +345,9 @@ export class ReachWhatsApp {
     const next: ReachWhatsAppLink = { ...link };
     delete next.templateName;
     delete next.templateLanguage;
-    this.deps.settings.setWhatsApp(person, botId, { ...next, ...template });
+    if (businessAccountId !== undefined) delete next.businessAccountId;
+    this.deps.settings.setWhatsApp(person, botId, { ...next, ...template, ...(businessAccountId ? { businessAccountId } : {}) });
+    if (template.templateName) await this.checkTemplate(person, botId);
     return { ok: true };
   }
 
@@ -255,10 +371,15 @@ export class ReachWhatsApp {
     const number = normalizePhone(rawNumber);
     if (!number) return { ok: false, status: 400, error: "Enter your WhatsApp number in international form, like +1 514 555 0123." };
     if (!link.templateName) return { ok: false, status: 400, error: "Set your approved message template first: WhatsApp only lets a business write first with one." };
+    const check = await this.checkTemplate(person, botId);
+    if (check?.state !== "approved") return { ok: false, status: 409, error: templateReason(this.templateView(person, this.deps.settings.whatsapp(person, botId) ?? link) ?? { state: "unchecked", language: "" }, link.templateName) };
     const code = linkCode();
     const fr = this.deps.language(person) === "fr";
     const sent = await this.sendTemplate(secret.token, link, number, fr ? `Votre code Sagax : ${code}` : `Your Sagax code: ${code}`, fr ? "fr" : "en");
-    if (!sent.ok) return { ok: false, status: 502, error: `WhatsApp refused the message (${sent.status}). Check the template name and language in your Meta account.` };
+    if (!sent.ok) {
+      if (this.templateRefusal(sent.body)) await this.checkTemplate(person, botId);
+      return { ok: false, status: 502, error: `WhatsApp refused the message (${sent.status}). Check the template name and language in your Meta account.` };
+    }
     this.confirmTries.delete(`${person}\u0000${botId}`);
     this.deps.settings.setWhatsApp(person, botId, { ...link, linkCode: code, linkExpiresAt: this.now() + WHATSAPP_LINK_TTL_MS, pendingNumber: number });
     return { ok: true };
@@ -303,7 +424,8 @@ export class ReachWhatsApp {
   view(person: string, botId: string): WhatsAppView {
     const link = this.deps.settings.whatsapp(person, botId);
     const secret = this.deps.secrets.whatsApp(person, botId);
-    if (!link || !secret) return { connected: false, linking: false, webhookPublic: Boolean(this.deps.webhookBase()?.public), replies: false, hasAppSecret: false, windowOpen: false };
+    if (!link || !secret) return { connected: false, linking: false, webhookPublic: Boolean(this.deps.webhookBase()?.public), replies: false, hasAppSecret: false, hasBusinessAccount: false, windowOpen: false };
+    const templateCheck = this.templateView(person, link);
     const at = this.now();
     const linking = !link.number && Boolean(link.linkCode) && (link.linkExpiresAt ?? 0) > at;
     const webhook = this.webhookUrl(link);
@@ -322,8 +444,15 @@ export class ReachWhatsApp {
       hasAppSecret: Boolean(secret.appSecret),
       ...(link.templateName ? { templateName: link.templateName } : {}),
       ...(link.templateLanguage ? { templateLanguage: link.templateLanguage } : {}),
+      hasBusinessAccount: Boolean(link.businessAccountId),
+      ...(templateCheck ? { templateCheck } : {}),
       windowOpen: link.lastInboundAt !== undefined && at - link.lastInboundAt < WHATSAPP_WINDOW_MS,
     };
+  }
+
+  /** Meta refused a template message for its template. */
+  private templateRefusal(body: Record<string, unknown>): boolean {
+    return TEMPLATE_ERRORS.has(Number((body.error as { code?: unknown } | undefined)?.code));
   }
 
   private async sendText(token: string, link: ReachWhatsAppLink, to: string, text: string) {
@@ -345,6 +474,8 @@ export class ReachWhatsApp {
       id: "whatsapp",
       status: (person, botId) => {
         const view = this.view(person, botId);
+        // a template set must be the approved one Meta knows, window or not
+        if (view.connected && view.templateName && view.templateCheck && view.templateCheck.state !== "approved") return { ready: false, reason: templateReason(view.templateCheck, view.templateName) };
         if (view.connected && (view.windowOpen || view.templateName)) return { ready: true };
         if (view.connected) return { ready: false, reason: "Set your approved message template: outside WhatsApp's 24 hour window a business writes only with one." };
         return { ready: false, reason: view.linking ? "Send the code from your WhatsApp to finish." : "Connect your own WhatsApp Business number first." };
@@ -357,7 +488,11 @@ export class ReachWhatsApp {
         const inWindow = link.lastInboundAt !== undefined && this.now() - link.lastInboundAt < WHATSAPP_WINDOW_MS;
         if (!inWindow && !link.templateName) return { ok: false, reason: "outside WhatsApp's 24 hour window and no message template set" };
         const sent = inWindow ? await this.sendText(secret.token, link, link.number, text) : await this.sendTemplate(secret.token, link, link.number, text, out.language);
-        if (!sent.ok) return { ok: false, reason: `WhatsApp refused the message (${sent.status})` };
+        if (!sent.ok) {
+          // refused for its template: read it again, the page then says why
+          if (!inWindow && this.templateRefusal(sent.body)) await this.checkTemplate(out.person, out.botId);
+          return { ok: false, reason: `WhatsApp refused the message (${sent.status})` };
+        }
         return { ok: true, detail: { to: link.number } };
       },
     };

@@ -58,8 +58,13 @@ it and the chat.
 
 WhatsApp lets a business write plain text only within 24 hours of your last
 message. Outside that window Sagax uses your approved message template: set
-its name and language on the bot page; it needs one body parameter, which
-carries the card's text. Every message is billed by Meta to your account:
+its name and language, and your WhatsApp Business Account ID (WhatsApp >
+API Setup), on the bot page; it needs one body parameter, which carries the
+card's text. Sagax reads that template at Meta (a free read that sends
+nothing) each time you save it, and again when Meta refuses a message for
+its template. Until Meta says it is approved, in that language, with that
+one parameter, WhatsApp shows as not ready, with the reason and what to do
+(Check again on the page). Every message is billed by Meta to your account:
 Sagax never retries one. The token and app secret are sealed on the server
 and never shown again. Disconnect forgets them and your number.
 
