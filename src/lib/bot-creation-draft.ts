@@ -109,6 +109,7 @@ export class BotCreationDraft {
       enabled: input.enabled ?? previous?.enabled ?? true, target: "bot", botId: this.id,
       timeoutMinutes: input.timeoutMinutes ?? undefined,
       postResults: input.postResults ?? undefined,
+      autoPauseAfter: input.autoPauseAfter ?? undefined,
       durationMinutes: input.durationMinutes ?? previous?.durationMinutes ?? 30,
       schedule: normalizedSchedule,
     };

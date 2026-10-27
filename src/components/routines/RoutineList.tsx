@@ -3,7 +3,7 @@ import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
 import { scheduleLabelCompact, scheduleRawCron } from "@/lib/schedule-label";
-import { routineNextRunPhrase, routineScheduleState, routineUpcomingState, routineWhenLabel } from "@/lib/routine-display";
+import { routineAutoPausedText, routineNextRunPhrase, routineScheduleState, routineUpcomingState, routineWhenLabel } from "@/lib/routine-display";
 import type { Bot } from "@/state/store";
 import { BotAvatar } from "@/components/Avatar";
 import { PILL_INFO } from "@/lib/status-tones";
@@ -76,6 +76,8 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           // only when the job acts as someone other than the owner.
           const runAsOther = routine.runAs && routine.runAs.principalId.toLowerCase() !== routine.owner?.id?.toLowerCase() ? routine.runAs : null;
           const readOnly = routine.canEdit === false;
+          // 2026-10-26: paused by itself after failures in a row, until turned back on.
+          const autoPaused = !routine.enabled ? routine.autoPaused : undefined;
           // The line under the name is always when the routine runs, even
           // paused: with a switch, the switch says it is off (the state stays
           // in the tooltip). A finished one-shot keeps its word.
@@ -99,10 +101,11 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                     <span className="max-w-full shrink-0 truncate">{when}</span>
                   </span>
                 ) : <span data-routine-when={whenLine} title={whenTitle} className="block truncate text-[12px] leading-4 text-ink-secondary">{whenLine}</span>}
-                {(runAsOther || routine.suspended || otherOwner) && (
+                {(runAsOther || routine.suspended || otherOwner || autoPaused) && (
                   <span className="mt-0.5 flex flex-wrap gap-1.5">
                     {otherOwner && <RoutineOwnerBadge owner={otherOwner} size={14} className="max-w-full rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary" />}
                     {runAsOther && <span data-routine-run-as className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routines.runAs", { name: personLabel(runAsOther.name, runAsOther.principalId) })}</span>}
+                    {autoPaused && <span data-routine-auto-paused={autoPaused.failures} className="truncate rounded-md bg-warning/15 px-1.5 text-[11.5px] leading-[18px] text-warning">{routineAutoPausedText(autoPaused.failures)}</span>}
                     {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className={`truncate rounded-md ${PILL_INFO} px-1.5 text-[11.5px] leading-[18px]`}>{routineSuspendedText(routine.suspended.reason)}</span>}
                   </span>
                 )}

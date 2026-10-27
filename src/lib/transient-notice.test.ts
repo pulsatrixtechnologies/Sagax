@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickTransientNotice, transientNoticeSettled } from "./transient-notice";
+import { pickTransientNotice, routineAutoPauseSettled, transientNoticeSettled } from "./transient-notice";
 import type { Message } from "@/state/store";
 
 const NOW = 1_800_000_000_000;
@@ -21,5 +21,18 @@ describe("pickTransientNotice", () => {
     expect(pickTransientNotice(messages, NOW, new Set())).toBeNull();
     expect(transientNoticeSettled(notice, messages)).toBe(true);
     expect(transientNoticeSettled(notice, [notice])).toBe(false);
+  });
+});
+
+describe("routineAutoPauseSettled (2026-10-26)", () => {
+  const paused = { ...failed("p", NOW - 1000), routineRun: { runId: "p", routineId: "rt1", routineName: "Morning digest", status: "failed", autoPausedAfter: 5 } } as Message;
+  it("is picked like any failure, and settled once its routine is back on", () => {
+    expect(pickTransientNotice([paused], NOW, new Set())?.id).toBe("p");
+    expect(routineAutoPauseSettled(paused, [{ id: "rt1", enabled: false }])).toBe(false);
+    expect(routineAutoPauseSettled(paused, [{ id: "rt1", enabled: true }])).toBe(true);
+  });
+  it("is not settled while its routine is not loaded, and never settles another notice", () => {
+    expect(routineAutoPauseSettled(paused, [])).toBe(false);
+    expect(routineAutoPauseSettled(failed("f", NOW), [{ id: "rt1", enabled: true }])).toBe(false);
   });
 });

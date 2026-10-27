@@ -4200,3 +4200,171 @@ describe("postResults migration and per-routine choice (JC 2026-10-22)", () => {
     expect(h.manager.update(routine.id, { name: "R2" })?.postResults).toBe(true);
   });
 });
+
+describe("auto-pause after failures in a row (2026-10-26)", () => {
+  const start = Date.parse("2026-09-13T08:00:00Z");
+  const input = () => ({ name: "Health check", prompt: "Check the fixture", botId: "maus-1",
+    schedule: { type: "interval" as const, everyMinutes: 60, anchorAt: start } });
+  let threads = 0;
+  const fail = async (h: ReturnType<typeof harness>, id: string) => {
+    h.manager.runNow(id); await h.manager.tick();
+    const run = h.manager.listRuns().find(candidate => candidate.status === "running")!;
+    h.manager.handleRuntimeEvent({ eventId: `fail-${++threads}`, provider: "fake", threadId: run.threadId!, createdAt: new Date().toISOString(), type: "turn.completed", ok: false });
+  };
+
+  it("pauses the routine after 5 failures by default, keeps every failed run and its schedule, and says so on the run", async () => {
+    const h = harness(start);
+    const routine = h.manager.create(input());
+    for (let i = 0; i < 4; i++) await fail(h, routine.id);
+    expect(h.manager.listRoutines()[0]).toMatchObject({ enabled: true, failureStreak: 4 });
+    expect(h.manager.listRoutines()[0].autoPaused).toBeUndefined();
+    await fail(h, routine.id);
+    const paused = h.manager.listRoutines()[0];
+    const runs = h.manager.listRuns();
+    expect(paused).toMatchObject({ enabled: false, nextRunAt: null, failureStreak: 5, schedule: input().schedule });
+    expect(paused.autoPaused).toEqual({ at: start, failures: 5, runId: runs.at(-1)!.id });
+    expect(runs.map(run => run.status)).toEqual(["failed", "failed", "failed", "failed", "failed"]);
+    expect(runs.at(-1)!.autoPaused).toEqual({ failures: 5 });
+    expect(runs.slice(0, 4).every(run => run.autoPaused === undefined)).toBe(true);
+    expect(h.emitted.filter(event => event.kind === "routine").at(-1)?.routine).toMatchObject({ enabled: false, autoPaused: { failures: 5 } });
+    expect(h.emitted.filter(event => event.kind === "routine.run").at(-1)?.run.autoPaused).toEqual({ failures: 5 });
+    // persisted
+    const reloaded = new RoutineManager(h.options).listRoutines()[0];
+    expect(reloaded.autoPaused).toEqual(paused.autoPaused);
+    // no more scheduled runs while paused
+    h.setNow(start + 5 * 3_600_000); await h.manager.tick();
+    expect(h.manager.listRuns()).toHaveLength(5);
+  });
+
+  it("uses the routine's own count, and 0 never pauses", async () => {
+    const h = harness(start);
+    const two = h.manager.create({ ...input(), autoPauseAfter: 2 });
+    expect(two.autoPauseAfter).toBe(2);
+    await fail(h, two.id);
+    expect(h.manager.getRoutine(two.id)!.enabled).toBe(true);
+    await fail(h, two.id);
+    expect(h.manager.getRoutine(two.id)).toMatchObject({ enabled: false, autoPaused: { failures: 2 } });
+
+    const never = h.manager.create({ ...input(), name: "Never", autoPauseAfter: 0 });
+    for (let i = 0; i < 7; i++) await fail(h, never.id);
+    expect(h.manager.getRoutine(never.id)).toMatchObject({ enabled: true, autoPauseAfter: 0 });
+    expect(h.manager.getRoutine(never.id)!.autoPaused).toBeUndefined();
+  });
+
+  it("validates and stores the setting: the default is absent, null goes back to it, out of range is refused", () => {
+    const h = harness(start);
+    const routine = h.manager.create({ ...input(), autoPauseAfter: 5 });
+    expect(routine).not.toHaveProperty("autoPauseAfter");
+    expect(h.manager.update(routine.id, { autoPauseAfter: 10 })!.autoPauseAfter).toBe(10);
+    expect(new RoutineManager(h.options).getRoutine(routine.id)!.autoPauseAfter).toBe(10);
+    expect(h.manager.update(routine.id, { name: "Renamed" })!.autoPauseAfter).toBe(10);
+    expect(h.manager.update(routine.id, { autoPauseAfter: null })).not.toHaveProperty("autoPauseAfter");
+    for (const bad of [-1, 1.5, 101, "3"]) {
+      expect(() => h.manager.update(routine.id, { autoPauseAfter: bad as number })).toThrow("failures in a row");
+    }
+  });
+
+  it("Resume turns it back on and counts failures from zero; the failed runs stay", async () => {
+    const h = harness(start);
+    const routine = h.manager.create({ ...input(), autoPauseAfter: 2 });
+    await fail(h, routine.id); await fail(h, routine.id);
+    expect(h.manager.getRoutine(routine.id)!.enabled).toBe(false);
+    h.setNow(start + 60_000);
+    const resumed = h.manager.update(routine.id, { enabled: true })!;
+    expect(resumed.enabled).toBe(true);
+    expect(resumed.autoPaused).toBeUndefined();
+    expect(resumed.failureStreak).toBeUndefined();
+    expect(resumed.nextRunAt).toBeGreaterThan(start + 60_000);
+    expect(h.manager.listRuns().filter(run => run.status === "failed")).toHaveLength(2);
+    h.setNow(start + 120_000);
+    await fail(h, routine.id);
+    expect(h.manager.getRoutine(routine.id)!.enabled).toBe(true);
+    expect(h.manager.listRoutines()[0].failureStreak).toBe(1);
+    await fail(h, routine.id);
+    expect(h.manager.getRoutine(routine.id)).toMatchObject({ enabled: false, autoPaused: { failures: 2 } });
+  });
+
+  it("cancels the scheduled run waiting behind the failure that paused it", async () => {
+    const h = harness(start);
+    const routine = h.manager.create({ ...input(), autoPauseAfter: 1, overlap: "queue" });
+    h.setNow(routine.nextRunAt!); await h.manager.tick();
+    const first = h.manager.listRuns()[0];
+    h.setNow(routine.nextRunAt! + 3_600_000); await h.manager.tick();
+    const order = (runs: RoutineRun[]) => [...runs].sort((a, b) => a.scheduledFor - b.scheduledFor).map(run => run.status);
+    expect(order(h.manager.listRuns())).toEqual(["running", "queued"]);
+    h.manager.handleRuntimeEvent({ eventId: "x", provider: "fake", threadId: first.threadId!, createdAt: new Date().toISOString(), type: "turn.completed", ok: false });
+    expect(order(h.manager.listRuns())).toEqual(["failed", "cancelled"]);
+    expect(h.manager.getRoutine(routine.id)!.enabled).toBe(false);
+  });
+
+  it("counts a failure at restart toward the pause", async () => {
+    const h = harness(start);
+    const routine = h.manager.create({ ...input(), autoPauseAfter: 2 });
+    await fail(h, routine.id);
+    h.manager.runNow(routine.id); await h.manager.tick();
+    // first restart resumes the cut run in place, the second cut fails it
+    new RoutineManager(h.options);
+    const after = new RoutineManager(h.options);
+    expect(after.getRoutine(routine.id)).toMatchObject({ enabled: false, autoPaused: { failures: 2 } });
+    expect(after.listRuns().at(-1)).toMatchObject({ status: "failed", autoPaused: { failures: 2 } });
+  });
+});
+
+describe("back from an outage or a pause, a routine runs at most once (2026-10-26)", () => {
+  const start = Date.parse("2026-09-13T08:00:00Z");
+  const H = 3_600_000;
+
+  it.each<[string, RoutineSchedule, number]>([
+    ["every 5 minutes, 6 hours down", { type: "interval", everyMinutes: 5, anchorAt: start }, 6 * H],
+    ["hourly cron, 11 hours down", { type: "cron", expression: "0 * * * *", timeZone: "UTC" }, 11 * H],
+    ["daily, 3 days down", { type: "daily", time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6] }, 72 * H],
+  ])("%s: one receipt, at most one execution", async (_label, schedule, down) => {
+    const h = harness(start);
+    const routine = h.manager.create({ name: "Check", prompt: "Check", botId: "maus-1", schedule });
+    h.setNow(routine.nextRunAt! + down);
+    await h.manager.tick(); await h.manager.tick();
+    expect(h.manager.listRuns()).toHaveLength(1);
+    expect(h.started.length).toBeLessThanOrEqual(1);
+    expect(h.manager.getRoutine(routine.id)!.nextRunAt).toBeGreaterThan(routine.nextRunAt! + down);
+  });
+
+  it("a routine paused for a week resumes at its next occurrence, never in a burst", async () => {
+    const h = harness(start);
+    const routine = h.manager.create({ name: "Check", prompt: "Check", botId: "maus-1", schedule: { type: "interval", everyMinutes: 5, anchorAt: start } });
+    h.manager.update(routine.id, { enabled: false });
+    h.setNow(start + 7 * 24 * H);
+    const resumed = h.manager.update(routine.id, { enabled: true })!;
+    await h.manager.tick();
+    expect(h.manager.listRuns()).toHaveLength(0);
+    h.setNow(resumed.nextRunAt!); await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+  });
+
+  it("a scheduled run queued behind a run resumed at restart is kept as missed", async () => {
+    const h = harness(start);
+    const routine = h.manager.create({ name: "Check", prompt: "Check", botId: "maus-1", overlap: "queue", schedule: { type: "interval", everyMinutes: 60, anchorAt: start } });
+    h.setNow(routine.nextRunAt!); await h.manager.tick();
+    h.setNow(routine.nextRunAt! + H); await h.manager.tick();
+    const order = (runs: RoutineRun[]) => [...runs].sort((a, b) => a.scheduledFor - b.scheduledFor);
+    expect(order(h.manager.listRuns()).map(run => run.status)).toEqual(["running", "queued"]);
+    h.setNow(routine.nextRunAt! + 20 * H);
+    const after = new RoutineManager(h.options);
+    expect(after.takeRestartResumes()).toHaveLength(1);
+    expect(order(after.listRuns()).map(run => run.status)).toEqual(["running", "missed"]);
+    expect(order(after.listRuns())[1].error).toMatch(/at most once/);
+  });
+
+  it("keeps only the newest of several queued scheduled runs at restart; manual runs stay", async () => {
+    const h = harness(start);
+    const routine = h.manager.create({ name: "Check", prompt: "Check", botId: "maus-1", schedule: { type: "interval", everyMinutes: 60, anchorAt: start } });
+    h.manager.runNow(routine.id);
+    const disk = JSON.parse(readFileSync(h.options.file!, "utf8"));
+    const manual = disk.runs[0];
+    disk.runs.push({ ...manual, id: "old", manual: false, triggerSource: "schedule", scheduledFor: start + H },
+      { ...manual, id: "new", manual: false, triggerSource: "schedule", scheduledFor: start + 2 * H });
+    writeFileSync(h.options.file!, JSON.stringify(disk));
+    const after = new RoutineManager(h.options);
+    const byId = Object.fromEntries(after.listRuns().map(run => [run.id, run.status]));
+    expect(byId).toEqual({ [manual.id]: "queued", old: "missed", new: "queued" });
+  });
+});

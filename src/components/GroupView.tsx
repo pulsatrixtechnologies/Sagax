@@ -80,7 +80,8 @@ import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard, GoalRunHeaderChip, goalRunPlace } from "./GoalRunCard";
 import { AccessCard } from "./AccessCard";
 import { TransientNotice } from "./TransientNotice";
-import { isTransientChatNotice } from "../../shared/transient-notices";
+import { isRoutineAutoPausedNotice, isTransientChatNotice } from "../../shared/transient-notices";
+import { routineAutoPauseSettled } from "@/lib/transient-notice";
 import { AttachmentGallery, MessageAttachmentGallery, replyAttachmentGroup } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
@@ -1438,7 +1439,7 @@ export function GroupView({ group: stored }: { group: Group }) {
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
       <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />
       <ChatNotice notice={state.notice} />
-      <TransientNotice messages={group.messages} render={(m, close) => {
+      <TransientNotice messages={group.messages} settled={(m) => routineAutoPauseSettled(m, state.routines)} render={(m, close) => {
         if (m.kind === "access" && m.access) return (
           <AccessCard
             access={m.access}
@@ -1449,7 +1450,12 @@ export function GroupView({ group: stored }: { group: Group }) {
         const owner = state.bots.find((candidate) => candidate.id === m.from?.botId);
         const runThread = m.routineRun?.executionThreadId;
         const target = owner && hasRoutineExecutionTask(owner.tasks, runThread) ? { botId: owner.id, threadId: runThread } : undefined;
-        return <RoutineRunCard message={m} onOpen={target ? () => { close(); openNotificationTarget(dispatch, target, state, roomShowThreads); } : undefined} />;
+        // 2026-10-26: the failure that paused its routine offers Resume.
+        const paused = isRoutineAutoPausedNotice(m) ? state.routines.find((candidate) => candidate.id === m.routineRun?.routineId) : undefined;
+        const onResume = paused && !paused.enabled && paused.canEdit !== false
+          ? () => { close(); dispatch({ type: "updateRoutine", routineId: paused.id, patch: { enabled: true } }); }
+          : undefined;
+        return <RoutineRunCard message={m} onResume={onResume} onOpen={target ? () => { close(); openNotificationTarget(dispatch, target, state, roomShowThreads); } : undefined} />;
       }} />
       <ChatStaleBanner />
       {!remoteClient && <><GroupCostNotice group={group} /><WeeklyLimitNotice /></>}

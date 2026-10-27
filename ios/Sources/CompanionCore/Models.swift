@@ -2045,6 +2045,11 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var skippedRuns: Int? = nil
     public var lastSkippedAt: Double? = nil
     public var failureStreak: Int? = nil
+    /// Failed runs in a row that pause this routine (RoutineAutoPause).
+    /// Absent: the default (5); 0 never pauses.
+    public var autoPauseAfter: Int? = nil
+    /// The routine paused itself after this many failures in a row.
+    public var autoPaused: RoutineAutoPauseState? = nil
     public var attachments: [RoutineAttachment]? = nil
     public var sourceThreadId: String? = nil
     public var resultsThreadId: String? = nil
@@ -2106,6 +2111,8 @@ public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
     public var attachments: [RoutineAttachment]? = nil
     /// Someone else's run (AU20): status and timing only.
     public var redacted: Bool? = nil
+    /// This failure paused its routine (failed runs in a row).
+    public var autoPaused: RoutineRunAutoPause? = nil
 }
 
 /// Where a routine posts its dated results (`ResultsDestination.tsx`).
@@ -2152,6 +2159,9 @@ public struct RoutineInput: Encodable, Sendable {
     /// Post results in the conversation. Nil leaves the stored value alone on
     /// an edit and inherits the installation default on a create.
     public var postResults: Bool? = nil
+    /// Failed runs in a row that pause it (0 never). Nil leaves the stored
+    /// value alone on an edit and keeps the default (5) on a create.
+    public var autoPauseAfter: Int? = nil
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",

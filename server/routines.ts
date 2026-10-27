@@ -34,6 +34,7 @@ import {
   type RoutineWindowTiming,
 } from "../shared/routine-timing.ts";
 import { isRoutineProblemRun, isTriggerSchedule, type RoutineRetryCause } from "../shared/routines.ts";
+import { cleanRoutineAutoPauseAfter, routineAutoPauseDue, type RoutineAutoPause } from "../shared/routine-auto-pause.ts";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
 import {
@@ -140,6 +141,15 @@ export interface Routine {
   lastSkippedAt?: number;
   /** Derived from retained terminal receipts, not another persisted authority. */
   failureStreak?: number;
+  /** 2026-10-26 (shared/routine-auto-pause.ts): failed runs in a row that
+   * pause this routine. Absent: the default (5); 0 never pauses. */
+  autoPauseAfter?: number;
+  /** Set when the routine paused itself after that many failures; cleared
+   * when it is turned back on. */
+  autoPaused?: RoutineAutoPause;
+  /** Failures that finished before this no longer count toward the streak:
+   * turning the routine back on starts the count again from zero. */
+  failuresClearedAt?: number;
   /** Runs that finished in the last seven days, and how many of them completed. */
   weekRuns?: { ok: number; total: number };
   /** Conversation that created this routine in chat. Calendar/import-created
@@ -311,6 +321,8 @@ export interface RoutineRun {
   /** 2026-10-11: what the organization memory (Perspicax's duplicate
    * detector) said before the run started, when it found similar work. */
   memoryHint?: RoutineMemoryHint;
+  /** 2026-10-26: this failure paused its routine (failed runs in a row). */
+  autoPaused?: { failures: number };
   createdAt: number;
   seenAt?: number;
 }
@@ -378,6 +390,9 @@ export interface RoutineInput {
   postResults?: boolean | null;
   /** Omission preserves it; null removes it. */
   precheck?: RoutinePrecheck | null;
+  /** Failed runs in a row that pause the routine (0 never). Omission
+   * preserves it; null goes back to the default. */
+  autoPauseAfter?: number | null;
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;
 }
@@ -604,10 +619,14 @@ const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments"] as c
 const ROUTINE_DEFINITION_FIELDS = [
   "name", "prompt", "target", "botId", "groupId", "runOn", "schedule",
   "durationMinutes", "timeoutMinutes", "attachments", "continuity", "overlap",
-  "onlyWhenPresent", "precheck",
+  "onlyWhenPresent", "precheck", "autoPauseAfter",
 ] as const;
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+/** 2026-10-26: a queued run cancelled because its routine paused itself. */
+export const ROUTINE_AUTO_PAUSED_BEFORE_START = "The routine paused itself after failing several times in a row before this run started";
+/** 2026-10-26: back from a restart, a routine runs at most once. */
+export const ROUTINE_ONE_RUN_AFTER_RESTART = "Skipped after a restart: a routine runs at most once when the server comes back";
 const CATCH_UP_MS = 12 * 60 * 60_000;
 /** How long before a due routine the computer is asked to stay awake. */
 const WAKE_HORIZON_MS = 60 * 60_000;
@@ -766,6 +785,7 @@ function cloneRoutine(routine: Routine): Routine {
     ...(routine.suspended ? { suspended: { ...routine.suspended } } : {}),
     ...(routine.awaySkips ? { awaySkips: { ...routine.awaySkips } } : {}),
     ...(routine.precheck ? { precheck: { ...routine.precheck } } : {}),
+    ...(routine.autoPaused ? { autoPaused: { ...routine.autoPaused } } : {}),
   };
 }
 
@@ -1177,6 +1197,7 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     throw new Error("Room goals do not carry continuity yet");
   }
   const precheck = input.precheck == null ? undefined : parseRoutinePrecheck(input.precheck);
+  const autoPauseAfter = cleanRoutineAutoPauseAfter(input.autoPauseAfter);
   return {
     name,
     prompt,
@@ -1194,7 +1215,25 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     ...(input.onlyWhenPresent === true ? { onlyWhenPresent: true } : {}),
     ...(typeof input.postResults === "boolean" ? { postResults: input.postResults } : {}),
     ...(precheck ? { precheck } : {}),
+    ...(autoPauseAfter === undefined ? {} : { autoPauseAfter }),
   };
+}
+
+function loadAutoPauseAfter(value: unknown): number | undefined {
+  try {
+    return cleanRoutineAutoPauseAfter(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function loadAutoPaused(value: unknown): RoutineAutoPause | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { at, failures, runId } = value as Partial<RoutineAutoPause>;
+  if (typeof at !== "number" || !Number.isFinite(at) || at < 0 || at > MAX_DATE_MS) return undefined;
+  if (typeof failures !== "number" || !Number.isSafeInteger(failures) || failures < 1) return undefined;
+  if (typeof runId !== "string" || !runId || runId.length > 100) return undefined;
+  return { at, failures, runId };
 }
 
 export class RoutineManager {
@@ -1279,8 +1318,14 @@ export class RoutineManager {
               postResults: typeof routine.postResults === "boolean" ? routine.postResults : undefined,
               awaySkips: loadAwaySkips(routine.awaySkips),
               precheck: loadRoutinePrecheck(routine.precheck),
+              autoPauseAfter: loadAutoPauseAfter(routine.autoPauseAfter),
+              autoPaused: routine.enabled ? undefined : loadAutoPaused(routine.autoPaused),
+              failuresClearedAt: Number.isSafeInteger(routine.failuresClearedAt) && routine.failuresClearedAt! >= 0 && routine.failuresClearedAt! <= MAX_DATE_MS ? routine.failuresClearedAt : undefined,
             };
             if (loaded.precheck === undefined) delete loaded.precheck;
+            if (loaded.autoPauseAfter === undefined) delete loaded.autoPauseAfter;
+            if (loaded.autoPaused === undefined) delete loaded.autoPaused;
+            if (loaded.failuresClearedAt === undefined) delete loaded.failuresClearedAt;
             if (loaded.onlyWhenPresent === undefined) delete loaded.onlyWhenPresent;
             if (loaded.postResults === undefined) delete loaded.postResults;
             if (loaded.awaySkips === undefined) delete loaded.awaySkips;
@@ -1424,14 +1469,33 @@ export class RoutineManager {
         run.error = ROUTINE_RESTARTED;
         run.attention = undefined;
         run.finishedAt = this.now();
+        // A restart failure counts like any other toward the auto-pause.
+        const paused = this.autoPauseAfterFailure(run);
+        if (paused) recovered.push(...paused.cancelled.map(cloneRun));
         recovered.push(cloneRun(run));
       }
+    }
+    // 2026-10-26: back from a restart or a long outage, a routine runs at
+    // most once. A scheduled run queued behind the run being resumed, or
+    // behind another queued scheduled run, would make a second one: it is
+    // kept in the history as missed. Manual and webhook runs were asked
+    // for one by one and stay.
+    const resuming = new Set(this.runs.filter(run => this.restartResumes.includes(run.id)).map(run => run.routineId));
+    const keptQueued = new Set<string>();
+    for (const run of [...this.runs].sort((a, b) => b.scheduledFor - a.scheduledFor || b.createdAt - a.createdAt)) {
+      if (run.status !== "queued" || (run.triggerSource ?? (run.manual ? "manual" : "schedule")) !== "schedule") continue;
+      if (!resuming.has(run.routineId) && !keptQueued.has(run.routineId)) { keptQueued.add(run.routineId); continue; }
+      run.status = "missed";
+      run.attention = undefined;
+      run.error = ROUTINE_ONE_RUN_AFTER_RESTART;
+      run.finishedAt = this.now();
+      recovered.push(cloneRun(run));
     }
     if (recovered.length > 0 || resumable) {
       this.save();
       for (const run of recovered) {
         this.notifyRunChanged(run);
-        this.options.onRunFailed?.(run);
+        if (run.status !== "cancelled") this.options.onRunFailed?.(run);
       }
     }
   }
@@ -1467,10 +1531,45 @@ export class RoutineManager {
     return last?.status === "failed" && run.error !== undefined && last.error === run.error;
   }
 
-  private routineWithHealth(routine: Routine): Routine {
-    const outcomes = this.outcomesNewestFirst(routine.id);
+  /** Failed runs in a row since the last completed one, counting only
+   * those that finished after the routine was last turned back on. */
+  private failureStreakOf(routine: Routine): number {
+    const cleared = routine.failuresClearedAt ?? -Infinity;
+    const outcomes = this.outcomesNewestFirst(routine.id).filter(run => (run.finishedAt ?? run.createdAt) > cleared);
     const success = outcomes.findIndex(run => run.status === "completed");
-    const failures = success < 0 ? outcomes.length : success;
+    return success < 0 ? outcomes.length : success;
+  }
+
+  /** 2026-10-26 (shared/routine-auto-pause.ts): when this failure makes the
+   * routine's streak reach its own limit, the routine pauses itself, like
+   * the person's own Pause (no next run, its queued runs cancelled), and
+   * the run records why. Mutates only; the caller saves and emits. */
+  private autoPauseAfterFailure(run: RoutineRun): { routine: Routine; cancelled: RoutineRun[] } | null {
+    const routine = this.routines.find(candidate => candidate.id === run.routineId);
+    if (!routine || !routine.enabled) return null;
+    const failures = this.failureStreakOf(routine);
+    if (!routineAutoPauseDue(routine, failures)) return null;
+    const now = this.now();
+    routine.enabled = false;
+    routine.nextRunAt = null;
+    delete routine.nominalRunAt;
+    routine.autoPaused = { at: now, failures, runId: run.id };
+    routine.updatedAt = Math.max(now, routine.updatedAt + 1);
+    run.autoPaused = { failures };
+    const cancelled: RoutineRun[] = [];
+    for (const queued of this.runs) {
+      if (queued.routineId !== routine.id || queued.status !== "queued") continue;
+      queued.status = "cancelled";
+      queued.attention = undefined;
+      queued.finishedAt = now;
+      queued.error = ROUTINE_AUTO_PAUSED_BEFORE_START;
+      cancelled.push(queued);
+    }
+    return { routine, cancelled };
+  }
+
+  private routineWithHealth(routine: Routine): Routine {
+    const failures = this.failureStreakOf(routine);
     const { installedPackage: _installedPackage, ...visible } = cloneRoutine(routine);
     const week = weekRuns(this.runs, routine.id, this.now());
     return { ...visible, ...(failures ? { failureStreak: failures } : {}), ...(week ? { weekRuns: week } : {}) };
@@ -1689,6 +1788,7 @@ export class RoutineManager {
       // null clears it back to the installation default; omission preserves it.
       postResults: Object.hasOwn(patch, "postResults") ? (patch.postResults ?? undefined) : routine.postResults,
       precheck: Object.hasOwn(patch, "precheck") ? patch.precheck : routine.precheck,
+      autoPauseAfter: Object.hasOwn(patch, "autoPauseAfter") ? patch.autoPauseAfter : routine.autoPauseAfter,
     }, now);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
@@ -1747,6 +1847,14 @@ export class RoutineManager {
       // goes back to inheriting the installation default.
       if (clean.postResults === undefined) delete routine.postResults;
       if (!clean.precheck) delete routine.precheck;
+      if (clean.autoPauseAfter === undefined) delete routine.autoPauseAfter;
+      // Turned back on (Resume on the notice, the switch, the editor): the
+      // auto-pause is over and the failure count starts again from zero.
+      // Its failed runs stay in the history.
+      if (enabledChanged && clean.enabled) {
+        delete routine.autoPaused;
+        routine.failuresClearedAt = now;
+      }
       if (Object.hasOwn(patch, "timeoutMinutes") && patch.timeoutMinutes == null) {
         delete routine.timeoutMinutes;
       }
@@ -2979,8 +3087,14 @@ export class RoutineManager {
     run.attention = undefined;
     run.error = redactSecretsInText(message).slice(0, 500);
     run.finishedAt = this.now();
+    const paused = this.autoPauseAfterFailure(run);
     this.save();
     this.emitRun(run);
+    if (paused) {
+      for (const cancelled of paused.cancelled) this.emitRun(cancelled);
+      this.emitRoutine(paused.routine);
+      if (isTriggerSchedule(paused.routine.schedule)) this.notifyTriggerUpdated(paused.routine);
+    }
     // Port of OpenMausBot #3052: the same failure as the last outcome is
     // reported once per streak (null = the owner was already told).
     this.options.onRunFailed?.(cloneRun(run), alert === undefined && this.failsLikeLastOutcome(run) ? null : alert);

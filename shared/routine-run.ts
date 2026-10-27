@@ -19,4 +19,7 @@ export interface RoutineRunCardData {
   executionThreadId?: string;
   summary?: string;
   error?: string;
+  /** 2026-10-26: this failure paused the routine after this many failed
+   * runs in a row (shared/routine-auto-pause.ts); the notice offers Resume. */
+  autoPausedAfter?: number;
 }

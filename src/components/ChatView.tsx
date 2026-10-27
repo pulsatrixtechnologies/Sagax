@@ -181,7 +181,8 @@ import { OtherAuthorLabel } from "./MessageAuthor";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
 import { AccessCard } from "./AccessCard";
 import { TransientNotice } from "./TransientNotice";
-import { isTransientChatNotice } from "../../shared/transient-notices";
+import { isRoutineAutoPausedNotice, isTransientChatNotice } from "../../shared/transient-notices";
+import { routineAutoPauseSettled } from "@/lib/transient-notice";
 import { transcriptLookups, type TranscriptLookups } from "@/lib/transcript-derivations";
 import { citationPreviewText, splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
 import { highlightCitationSource } from "@/lib/citations-dom";
@@ -955,7 +956,7 @@ const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { m
 
 /** A routine run's receipt. It opens the run's own thread, so it follows
  * the bots to know whether that thread is still there. */
-function RoutineRunRow({ message, botId }: { message: Message; botId: string }) {
+function RoutineRunRow({ message, botId, onResume }: { message: Message; botId: string; onResume?: () => void }) {
   "use memo";
   const dispatch = useStoreDispatch();
   const getState = useStoreGetter();
@@ -967,6 +968,7 @@ function RoutineRunRow({ message, botId }: { message: Message; botId: string }) 
   return (
     <RoutineRunCard
       message={message}
+      onResume={onResume}
       onOpen={canOpen && executionThreadId
         ? () => openNotificationTarget(dispatch, { botId, threadId: executionThreadId }, getState(), showThreads)
         : undefined}
@@ -1840,6 +1842,15 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const remoteClient = useRemoteClient();
+  // 2026-10-26: the failure that paused its routine offers Resume, and its
+  // banner leaves once the routine is back on.
+  const routinesNow = state.routines;
+  const autoPauseSettled = useCallback((m: Message) => routineAutoPauseSettled(m, routinesNow), [routinesNow]);
+  const resumeAutoPaused = (m: Message, close: () => void) => {
+    const routine = isRoutineAutoPausedNotice(m) ? routinesNow.find((candidate) => candidate.id === m.routineRun?.routineId) : undefined;
+    if (!routine || routine.enabled || routine.canEdit === false) return undefined;
+    return () => { close(); dispatch({ type: "updateRoutine", routineId: routine.id, patch: { enabled: true } }); };
+  };
   // Without a native title bar (macOS inset lights, frameless Windows) this
   // header is the window drag region. On Windows the icon row also shifts
   // below the 26px-tall corner the renderer-drawn caption buttons occupy.
@@ -2291,13 +2302,13 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
 
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
       {!side && <ChatNotice notice={state.notice} />}
-      {!side && <TransientNotice messages={messages} render={(m, close) => m.kind === "access" && m.access ? (
+      {!side && <TransientNotice messages={messages} settled={autoPauseSettled} render={(m, close) => m.kind === "access" && m.access ? (
         <AccessCard
           access={m.access}
           viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
           onSignIn={() => { close(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}
         />
-      ) : <RoutineRunRow message={m} botId={bot.id} />} />}
+      ) : <RoutineRunRow message={m} botId={bot.id} onResume={resumeAutoPaused(m, close)} />} />}
       {!side && <ChatStaleBanner />}
       {!side && !remoteClient && <WeeklyLimitNotice />}
 

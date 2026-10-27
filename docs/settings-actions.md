@@ -195,6 +195,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Time limit | Automations > routine > Advanced | `sagax_settings` get, set `routine.timeoutMinutes` | simple |
 | When a run is still going | Automations > routine > Advanced | `sagax_settings` get, set `routine.overlap` | simple |
 | Only when present | Automations > routine > Advanced | `sagax_settings` get, set `routine.onlyWhenPresent` | simple |
+| Pause after this many failures in a row (0 never, null the default 5) | Automations > routine > Advanced | `sagax_settings` get, set `routine.autoPauseAfter` | simple |
 | Runs as (a person) | Automations > routine > Runs as | `sagax_settings` get, set `routine.runAs` | autrui |
 | New routine ({name, prompt, botId, schedule, ...}) | Automations > New routine | `sagax_settings` set `routine.create` | simple |
 | Run now (true) | Automations > routine > Run now | `sagax_settings` set `routine.run` | simple |

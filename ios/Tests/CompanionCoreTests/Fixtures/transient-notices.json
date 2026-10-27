@@ -3,11 +3,14 @@
   "routineGoalStatuses": ["failed"],
   "visibleMs": 8000,
   "freshMs": 120000,
+  "autoPaused": ["auto-paused", "goal-auto-paused"],
   "transient": [
     {"id":"failed","role":"bot","kind":"routine.run","at":1000,"text":"Morning digest failed","routineRun":{"runId":"r1","routineId":"rt1","routineName":"Morning digest","status":"failed","error":"engine unavailable"}},
     {"id":"missed","role":"bot","kind":"routine.run","at":1000,"routineRun":{"runId":"r2","routineId":"rt1","routineName":"Morning digest","status":"missed"}},
     {"id":"goal-failed","role":"bot","kind":"routine.run","at":1000,"routineRun":{"runId":"r3","routineId":"rt2","routineName":"Weekly summary","status":"completed","goalStatus":"failed"}},
-    {"id":"access","role":"bot","kind":"access","at":1000,"text":"Your routine can't run","access":{"reason":"no_access","engine":"Claude","botId":"b1","ownerPrincipalId":"p1","routine":true,"subscriptionSignIn":true}}
+    {"id":"access","role":"bot","kind":"access","at":1000,"text":"Your routine can't run","access":{"reason":"no_access","engine":"Claude","botId":"b1","ownerPrincipalId":"p1","routine":true,"subscriptionSignIn":true}},
+    {"id":"auto-paused","role":"bot","kind":"routine.run","at":1000,"text":"Routine failed and was paused after 5 failures in a row","routineRun":{"runId":"r6","routineId":"rt1","routineName":"Morning digest","status":"failed","error":"engine unavailable","autoPausedAfter":5}},
+    {"id":"goal-auto-paused","role":"bot","kind":"routine.run","at":1000,"routineRun":{"runId":"r7","routineId":"rt2","routineName":"Weekly summary","status":"failed","goalStatus":"blocked","autoPausedAfter":3}}
   ],
   "rows": [
     {"id":"done","role":"bot","kind":"routine.run","at":1000,"routineRun":{"runId":"r4","routineId":"rt1","routineName":"Morning digest","status":"completed","summary":"All good"}},

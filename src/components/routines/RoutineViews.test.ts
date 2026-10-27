@@ -173,3 +173,23 @@ describe("central routine logs", () => {
     expect(logs({ runs: [] })).toContain("No runs recorded yet");
   });
 });
+
+describe("a routine that paused itself (2026-10-26)", () => {
+  it("keeps its schedule on the row and says it paused after N failures", () => {
+    const paused = { ...routine, enabled: false, nextRunAt: null, failureStreak: 5, autoPaused: { at: 100, failures: 5, runId: "run" } };
+    const markup = list({ routines: [paused] });
+    expect(markup).toContain('data-routine-when="Every hour"');
+    expect(markup).toContain('data-routine-auto-paused="5"');
+    expect(markup).toContain("Paused after 5 failures in a row");
+    expect(markup).toContain('aria-label="Resume"');
+    // turned back on: the badge leaves
+    expect(list({ routines: [{ ...paused, enabled: true }] })).not.toContain("data-routine-auto-paused");
+  });
+
+  it("keeps the failed run in the history with the pause it caused", () => {
+    const markup = logs({ runs: [{ ...run, status: "failed", error: "engine unavailable", autoPaused: { failures: 5 } }, { ...run, id: "older", status: "failed", error: "engine unavailable", createdAt: 50 }] });
+    expect(markup).toContain("data-run-auto-paused");
+    expect(markup).toContain("Paused after 5 failures in a row");
+    expect(markup.match(/engine unavailable/g)).toHaveLength(2);
+  });
+});

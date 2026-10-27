@@ -19,6 +19,9 @@ struct RoutineRunCardView: View {
     let tint: Color
     /// Opens the execution thread; nil when this phone cannot reach it.
     var openRun: (() -> Void)? = nil
+    /// 2026-10-26: the failure paused its routine (RoutineAutoPause): turn
+    /// it back on in one click. Nil: no button.
+    var resume: (() -> Void)? = nil
 
     @State private var expanded = false
 
@@ -95,6 +98,32 @@ struct RoutineRunCardView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.danger.opacity(0.10))
                 )
+            }
+
+            if let failures = card.autoPausedAfter {
+                HStack(spacing: 12) {
+                    Label {
+                        Text(verbatim: RoutineWording.autoPaused(failures))
+                    } icon: {
+                        Image(systemName: "pause.circle.fill")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.warning)
+                    .accessibilityIdentifier("routine-run-auto-paused")
+                    if let resume {
+                        Button {
+                            Haptics.selection()
+                            resume()
+                        } label: {
+                            Label(String(localized: "Resume (routine paused after failures)"), systemImage: "play.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(tint)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Resume \(card.routineName)"))
+                        .accessibilityIdentifier("routine-run-resume")
+                    }
+                }
             }
 
             if let openRun {

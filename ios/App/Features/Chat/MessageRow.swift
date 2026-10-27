@@ -13,6 +13,8 @@ struct MessageRow: View {
     let openLink: (URL, Message) -> OpenURLAction.Result
     /// Where an "Opened thread" chip goes; nil leaves the chip a receipt.
     var openThread: ((ThreadRef) -> Void)? = nil
+    /// After Resume on a routine that paused itself (the passing banner closes).
+    var afterResume: (() -> Void)? = nil
     @EnvironmentObject private var session: Session
     @State private var editingText = ""
     @State private var showingEdit = false
@@ -311,7 +313,13 @@ struct MessageRow: View {
                     card: card,
                     at: message.date,
                     tint: MausPalette.color(chat.color),
-                    openRun: routineRunOpener(card)
+                    openRun: routineRunOpener(card),
+                    resume: card.autoPausedAfter == nil ? nil : {
+                        // 2026-10-26: back on, the failure count from zero
+                        Task {
+                            if await session.resumeRoutine(id: card.routineId) != nil { afterResume?() }
+                        }
+                    }
                 )
             } else if let text = message.text, !text.isEmpty {
                 // A computer that sent the kind without its card: the text

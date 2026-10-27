@@ -77901,6 +77901,54 @@
           }
         }
       }
+    },
+    "Paused after a failure": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paused after a failure" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En pause après un échec" } }
+      }
+    },
+    "Paused after %lld failures in a row": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paused after %lld failures in a row" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En pause après %lld échecs de suite" } }
+      }
+    },
+    "After 1 failed run": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "After 1 failed run" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Après 1 exécution échouée" } }
+      }
+    },
+    "After %lld failed runs in a row": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "After %lld failed runs in a row" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Après %lld exécutions échouées de suite" } }
+      }
+    },
+    "Pause automatically": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pause automatically" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mettre en pause automatiquement" } }
+      }
+    },
+    "When this many runs fail in a row, the routine pauses itself and tells you. Resume turns it back on and starts the count again. Failed runs stay in the history.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "When this many runs fail in a row, the routine pauses itself and tells you. Resume turns it back on and starts the count again. Failed runs stay in the history." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quand autant d'exécutions échouent de suite, la routine se met en pause et vous le dit. Relancer la réactive et remet le compte à zéro. Les exécutions échouées restent dans l'historique." } }
+      }
+    },
+    "Resume (routine paused after failures)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Resume" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Relancer" } }
+      }
+    },
+    "Resume %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Resume %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Relancer %@" } }
+      }
     }
   },
   "version": "1.0"

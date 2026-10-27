@@ -600,6 +600,42 @@ lui-même." On every server (solo and organization):
   `server/host-lazy-claim.e2e.test.ts`, `server/group-local-vm.e2e.test.ts`,
   `server/place-view.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
 
+## Routines pause themselves after failures in a row (2026-10-26)
+
+- After N failed runs in a row a routine pauses itself (`RoutineManager.failRun`
+  -> `autoPauseAfterFailure`, `server/routines.ts`; rules in
+  `shared/routine-auto-pause.ts`). N is the routine's own `autoPauseAfter`,
+  set by the person in the routine editor (desktop Advanced, iOS
+  `RoutineEditorView`), never an admin or an organization permission: absent
+  is the default 5, 0 never pauses, 0 to 100 accepted
+  (`PATCH /api/routines/:id`, `sagax_settings routine.autoPauseAfter`). A
+  restart failure counts too.
+- The pause is the person's own Pause: `enabled: false`, no next run, its
+  queued runs cancelled. The routine keeps `autoPaused {at, failures, runId}`
+  and its schedule stays shown (#1164); the run that tipped it keeps
+  `autoPaused {failures}`, so Automations > Logs, the run detail and the list
+  row say "Paused after N failures in a row". Every failed run stays.
+- Notice: the failure card carries `routineRun.autoPausedAfter`; it is a
+  passing notice (`isRoutineAutoPausedNotice`, shared/transient-notices.ts,
+  iOS `TransientNotices.isRoutineAutoPaused`, fixture `autoPaused`) with a
+  Resume button (desktop `RoutineRunCard onResume`, iOS
+  `RoutineRunCardView resume`). Turning the routine back on in any way
+  clears `autoPaused` and sets `failuresClearedAt`: the streak counts from
+  zero, the failed runs stay.
+- At most one run when coming back: a routine resumed after a pause is
+  placed from now (no catch-up); after an outage a routine makes one receipt
+  (over 12 h late it is missed, not run); at restart a scheduled run queued
+  behind a resumed run, or behind another queued scheduled run, becomes
+  missed (`ROUTINE_ONE_RUN_AFTER_RESTART`). Manual and webhook runs stay.
+- Not copied: no interval floor, no routine cap, no admin permission.
+- Tests: `server/routines.test.ts` ("auto-pause after failures in a row",
+  "runs at most once"), `shared/routine-auto-pause.test.ts`,
+  `shared/transient-notices.test.ts`, `src/lib/transient-notice.test.ts`,
+  `src/components/RoutineRunCard.test.ts`,
+  `src/components/routines/RoutineViews.test.ts`,
+  `RoutineAutoPauseTests.swift`, `TransientNoticesTests.swift`. Gallery:
+  `src/gallery/routine-auto-pause.html?view=notice|list|logs|editor`.
+
 ## Routine runs work in the background (2026-10-22)
 
 Decision: "when routine runs you don't need to show something within the chat or
