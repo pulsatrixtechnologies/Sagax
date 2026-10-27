@@ -55,6 +55,7 @@ import { z } from "zod";
 import type { NormalizedTriggerEvent } from "../shared/trigger-sources.ts";
 import type { ConsoleAssertion, ConsoleAssertionActor } from "./oidc-rp.ts";
 import { AssertionReplayCache } from "./org-admin-routes.ts";
+import { reachMeSmsReply } from "./reach-me/inbound.ts";
 import { maskedCaller, type WebhookReceiveResult } from "./webhooks.ts";
 
 export const TELEPHONY_PATH = "/api/org/telephony/inbound";
@@ -312,6 +313,16 @@ export function createBotInboundTelephonyRoute(deps: TelephonyRouteDeps): (req: 
     const seenKey = `${bot.id}\n${event.eventId}`;
     if (seen.has(seenKey, now())) {
       return send(res, 202, { event: event.event, notice, triggers: 0, delivered: 0, duplicate: 1, ignored: 0, reason: "duplicate" });
+    }
+
+    // 2026-10-26: a text that answers a "Reach me" card (server/reach-me/inbound.ts)
+    // resumes that card and never reaches the bot's phone triggers.
+    if (event.event === "sms" && event.content?.text) {
+      const reply = await reachMeSmsReply({ ownerPrincipalId: owner.principalId, from: event.from, text: event.content.text });
+      if (reply.handled) {
+        seen.add(seenKey, now());
+        return send(res, 202, { event: event.event, notice, triggers: 0, delivered: 0, duplicate: 0, ignored: 0, reachMe: reply.outcome });
+      }
     }
 
     let triggers: string[] = [];
