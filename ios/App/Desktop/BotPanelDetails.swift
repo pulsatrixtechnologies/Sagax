@@ -469,6 +469,7 @@ struct BotPanelRoutines: View {
                 .font(theme.font(12))
                 .foregroundStyle(theme.inkTertiary)
                 .multilineTextAlignment(.center)
+                .tint(theme.inkSecondary)
                 .environment(\.openURL, OpenURLAction { _ in
                     session.openChat(threadId: bot.threadId)
                     return .handled
