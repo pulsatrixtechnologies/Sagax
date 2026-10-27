@@ -13,6 +13,7 @@ import { localModelLabels, localModelUnavailable, withServerHints } from "../sha
 import { writeFileAtomic } from "./atomic.ts";
 import { personForDesktopGrant } from "./desktop-model-grant.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
+import type { LocalReach } from "../shared/send-state.ts";
 import {
   decodeInjectId,
   encodeInjectId,
@@ -426,6 +427,23 @@ export class DesktopLocalModels {
     const who = owner?.trim().toLowerCase() || "";
     if (!person || !who || person !== who) return false;
     return !this.bridges.connected(person);
+  }
+
+  /** How the computer-shared server behind this model is doing, as its
+   * computer last said: offline (not connected), its server down (no longer
+   * published, or probed offline), or fine. "unknown" for any other model,
+   * or a host this server does not know. */
+  reach(modelId: string | null | undefined): LocalReach {
+    if (!isDesktopInjectModel(modelId)) return "unknown";
+    this.load();
+    const decoded = decodeInjectId(modelId ?? "");
+    const meta = decoded && isDesktopHostId(decoded.host) ? this.hostMeta.get(decoded.host) : undefined;
+    if (!meta) return "unknown";
+    if (!this.bridges.connected(meta.person)) return "computer_offline";
+    if (this.probes.get(meta.person)?.find((row) => row.id === meta.endpointId)?.status === "offline") return "server_offline";
+    const published = this.published.get(meta.person);
+    if (!published) return "unknown";
+    return published.endpoints.some((row) => row.id === meta.endpointId) ? "ok" : "server_offline";
   }
 
   available(person: string | null, modelId: string): boolean {

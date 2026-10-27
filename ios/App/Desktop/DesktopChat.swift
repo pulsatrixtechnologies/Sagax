@@ -24,6 +24,8 @@ struct DesktopChatChrome {
     var showAllowlist: () -> Void = {}
     var toggleInspector: () -> Void = {}
     var openModelPicker: () -> Void = {}
+    /// Settings > Models and voice, where an engine is connected.
+    var openEngines: () -> Void = {}
 }
 
 private struct DesktopChatKey: EnvironmentKey {
@@ -123,7 +125,11 @@ struct DesktopChatColumn: View {
             showPanel: { tab in model.showPanel(tab) },
             showAllowlist: { model.showPersona(.permissions) },
             toggleInspector: { toggleInspector() },
-            openModelPicker: { model.modelPickerOpen = true }
+            openModelPicker: { model.modelPickerOpen = true },
+            openEngines: {
+                model.settingsSection = .engines
+                model.modal = .settings
+            }
         ))
         return stack
     }
@@ -227,6 +233,7 @@ extension ChatView {
                 prompt: desktopPrompt,
                 focused: $composerFocused,
                 canSend: canSend,
+                blocked: activeSendBlock != nil,
                 busy: preparingAttachments || sendingMessage,
                 listening: dictation.isListening,
                 inputLocked: dictation.isListening || dictation.isStarting || preparingAttachments || sendingMessage,

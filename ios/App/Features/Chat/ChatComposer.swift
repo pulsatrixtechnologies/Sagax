@@ -25,6 +25,13 @@ extension ChatView {
               !preparingAttachments,
               !sendingMessage
         else { return }
+        // The bot cannot answer now (SendState.swift): nothing goes out, the
+        // draft stays, and the state is asked again.
+        if activeSendBlock != nil {
+            Haptics.selection()
+            sendBlockTick += 1
+            return
+        }
         // The hidden composer line toggles Hibou 98 and is never sent, as on
         // the desktop (src/lib/retro98.ts).
         if outgoingAttachments.isEmpty, pastesAtSend.isEmpty, citationsAtSend.isEmpty, text.lowercased() == "/hibou98" {
@@ -235,6 +242,7 @@ extension ChatView {
                             canSend: canSend,
                             busy: preparingAttachments || sendingMessage,
                             onCall: call.isOnCall(current),
+                            blocked: activeSendBlock != nil,
                             send: { submit() },
                             voice: startVoiceMode
                         )

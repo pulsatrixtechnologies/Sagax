@@ -112,6 +112,14 @@ struct ChatView: View {
     @State var threadDrafts: [String: ComposerSnapshot] = [:]
     @State var preparingAttachments = false
     @State var sendingMessage = false
+    /// Whether this bot can answer the person now (SendState.swift): a
+    /// block keeps the send back and draws one line above the field.
+    @State var sendBlockState = SendBlockState()
+    /// Bumped to ask the send state again (Try again, back to the app, a
+    /// refused send).
+    @State var sendBlockTick = 0
+    /// "Connect <engine>" on a phone: the settings sheet.
+    @State var showingEngineSettings = false
     @State var attachmentError: String?
     @State var openingFileName: String?
     @State var fileOpenError: String?
@@ -223,7 +231,10 @@ struct ChatView: View {
     /// The transcript as the reader has asked to see it: every chip, folded
     /// runs, or none at all.
     var rows: [TranscriptRow] {
-        transcriptRows(messages, detail: toolCalls.detail, showThreads: threadPrefs.threads.allows(.transcriptReceipts))
+        transcriptRows(
+            messages, detail: toolCalls.detail, showThreads: threadPrefs.threads.allows(.transcriptReceipts),
+            threadBotId: current.isBot ? current.id : ""
+        )
     }
 
     /// The composer's chip row, as edited in Settings.
@@ -416,6 +427,8 @@ struct ChatView: View {
                 dictation.stop()
                 voiceNote.cancel()
             }
+            // Back in the app while blocked: ask again, the cause may be fixed.
+            if phase == .active, activeSendBlock != nil { sendBlockTick += 1 }
             // Fresh topic on return: away while the app is in the background;
             // back after the threshold, a fresh topic over the topic at rest.
             if case let .bot(bot) = current {
@@ -425,6 +438,13 @@ struct ChatView: View {
                     session.noteBackAtBot(bot.id)
                 }
             }
+        }
+        // Can this bot answer the person now? Asked on opening, on a bot,
+        // thread or model change, then every 15 s while it cannot.
+        .task(id: sendBlockTaskKey) { await runSendStateChecks() }
+        .fullScreenCover(isPresented: $showingEngineSettings) {
+            SettingsView(close: { showingEngineSettings = false })
+                .background(Theme.bg.ignoresSafeArea())
         }
         .onValueChange(of: topicUnderFreshAlive) { alive in
             // the topic under a fresh one came alive (a turn, an approval, an

@@ -154,6 +154,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
 import { viewerActorId } from "@/lib/viewer";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
+import { repeatedFailureIds } from "../../shared/failure-dedup";
 import { groupTranscript, isHiddenStatusActivity, isStatusActivity, isTurnStoppedNotice, type TranscriptItem } from "@/lib/activity-runs";
 import { collapseBotExchanges, exchangeJumpStays, startsNewStretch, visibleEdge, type ExchangeRun } from "@/lib/bot-exchange";
 import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
@@ -1099,8 +1100,11 @@ const MessagesList = memo(function MessagesList({
     // receipt, so a lone chip never renders and a run of them never folds
     // into a "N conversations" group (2026-10-22). ThreadChip also hides
     // each one; dropping them here keeps the go-to grouping clean.
+    // The same failure of this bot, repeated since it last answered, is
+    // drawn once: the last one (shared/failure-dedup.ts).
+    const repeats = repeatedFailureIds(messages, botId);
     const shown = withoutDeadThreadChips(messages, owners).filter((message) =>
-      !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message)
+      !repeats.has(message.id) && !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message)
       // a failed routine run and a routine's access card pass as a banner
       // (TransientNotice), never a row (shared/transient-notices.ts)
       && !isTransientChatNotice(message)

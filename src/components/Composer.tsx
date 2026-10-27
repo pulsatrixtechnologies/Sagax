@@ -1,6 +1,8 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { ArrowUp, Clock, Target, Users, X } from "lucide-react";
+import { ComposerSendBlock } from "@/components/ComposerSendBlock";
+import { useSendBlock } from "@/lib/send-state";
 import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
 import { api, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { orgFullAccessFor } from "@/lib/full-access";
@@ -198,6 +200,13 @@ export function Composer({
   // offers members plus @everyone; explicit mentions override the room's
   // configured default responder.
   const threadId = group?.threadId ?? bot?.threadId ?? "";
+  // The maintainer, 2026-10-27: a bot that certainly cannot answer this person (its
+  // engine not connected for them, the computer or local server behind its
+  // model down) does not take the message; one line says why and what to do,
+  // and the draft stays. Asked again when the bot or its engines change.
+  const sendStateKey = bot ? `${bot.modelSelection.instanceId}\u0000${bot.modelSelection.model}\u0000${bot.activity ?? ""}\u0000${instances.map((instance) => `${instance.instanceId}:${instance.snapshot?.authenticated ?? ""}`).join(",")}` : "";
+  const sendState = useSendBlock(!group ? bot?.id : undefined, !group ? bot?.threadId : undefined, sendStateKey);
+  const sendBlock = sendState.block;
   const currentGroupTask = group?.tasks?.find((task) => task.threadId === threadId);
   const groupBusyBotId = currentGroupTask?.busyBotId ?? (currentGroupTask?.working ? group?.busyBotId : (group?.threadId === threadId ? group?.busyBotId : null));
   const groupWorking = group ? openTaskWorking(group) : false;
@@ -836,6 +845,8 @@ export function Composer({
       return;
     }
     if (locked || attachmentPending) return;
+    // the bot cannot answer now: the draft stays, the line above says why
+    if (sendBlock) { sendState.recheck(); return; }
     // `/goal stop` typed whole runs the subcommand, never a goal named "stop"
     const typedGoalSub = group && !group.dm ? goalSubcommandFromComposer(text) : null;
     if (typedGoalSub) {
@@ -1290,6 +1301,13 @@ export function Composer({
           }}
           onEdit={locked ? undefined : editQueued}
         />
+        {sendBlock && !locked && (
+          <ComposerSendBlock
+            block={sendBlock}
+            onConnect={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
+            onRetry={sendState.recheck}
+          />
+        )}
         <div className="relative">
           {/* App-ground from the pill midline down, full-bleed. Bubbles may
               tuck into the top half of the radius; they must not show below
@@ -1553,7 +1571,7 @@ export function Composer({
           const sendButton = !retroSkin && !locked ? (
             <ComposerSendButton
               onClick={() => send()}
-              disabled={attachmentPending || !hasContent}
+              disabled={attachmentPending || !hasContent || Boolean(sendBlock)}
               tone={ctaTone}
               queued={busy && !canSteer}
               label={sendLabelFor()}

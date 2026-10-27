@@ -1,6 +1,42 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ is not connected for you. Connect %@ to talk to this bot.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ is not connected for you. Connect %2$@ to talk to this bot." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%1$@ n'est pas connecté pour vous. Connectez %2$@ pour parler à ce bot." } }
+      }
+    },
+    "The computer that serves this bot's local model is offline or asleep. Open Sagax on it, then try again.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The computer that serves this bot's local model is offline or asleep. Open Sagax on it, then try again." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L'ordinateur qui sert le modèle local de ce bot est hors ligne ou en veille. Ouvrez Sagax sur cet ordinateur, puis réessayez." } }
+      }
+    },
+    "The local model is not responding: its server on that computer is stopped. Start it, then try again.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The local model is not responding: its server on that computer is stopped. Start it, then try again." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le modèle local ne répond pas : son serveur est arrêté sur cet ordinateur. Démarrez-le, puis réessayez." } }
+      }
+    },
+    "%@'s computer, which serves this bot's model, is offline. Try again once it is back.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@'s computer, which serves this bot's model, is offline. Try again once it is back." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L'ordinateur de %@, qui sert le modèle de ce bot, est hors ligne. Réessayez quand il sera de retour." } }
+      }
+    },
+    "The bot owner's computer, which serves this bot's model, is offline. Try again once it is back.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The bot owner's computer, which serves this bot's model, is offline. Try again once it is back." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L'ordinateur du propriétaire du bot, qui sert son modèle, est hors ligne. Réessayez quand il sera de retour." } }
+      }
+    },
+    "Connect %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connecter %@" } }
+      }
+    },
     "The bot's main thread": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "The bot's main thread" } },

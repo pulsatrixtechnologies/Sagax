@@ -456,4 +456,27 @@ describe("desktop local models", () => {
     expect(service.ownerComputerOffline(owner, "claude-sonnet-5")).toBe(false);
     expect(() => service.assertAvailable(owner, modelId)).toThrow(DESKTOP_MODEL_UNAVAILABLE);
   });
+  // The maintainer, 2026-10-27: the composer does not send while the computer or the
+  // local server behind a bot's model is down, and comes back with it.
+  it("says how the computer-shared server behind a model is doing", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "oMLX", models: ["qwen3"] }] }).ok).toBe(true);
+    const modelId = encodeInjectId(injectHostId(owner, "desk8002"), "qwen3");
+    expect(service.reach(modelId)).toBe("ok");
+    // the local server stops: the desktop publishes without it, probed offline
+    expect(service.publish(owner, { endpoints: [], probes: [{ id: "desk8002", status: "offline" }] }).ok).toBe(true);
+    expect(service.reach(modelId)).toBe("server_offline");
+    // the computer goes away
+    bridge.online.delete(owner);
+    expect(service.reach(modelId)).toBe("computer_offline");
+    // both come back
+    bridge.online.add(owner);
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "oMLX", models: ["qwen3"] }], probes: [{ id: "desk8002", status: "answered" }] }).ok).toBe(true);
+    expect(service.reach(modelId)).toBe("ok");
+    // any other model is unknown, never a block
+    expect(service.reach("claude-sonnet-5")).toBe("unknown");
+    expect(service.reach("omlx::qwen3")).toBe("unknown");
+  });
 });

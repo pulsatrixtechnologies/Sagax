@@ -153,8 +153,13 @@ struct ComposerVoiceSendButton: View {
     /// This chat is on a call: the capsule hangs up (the desktop's red
     /// call button).
     var onCall = false
+    /// The bot cannot answer now (SendState.swift): send and voice mode
+    /// wait, hanging up a call still works.
+    var blocked = false
     let send: () -> Void
     let voice: () -> Void
+
+    private var held: Bool { blocked && !(onCall && !canSend) }
 
     var body: some View {
         Button {
@@ -179,11 +184,11 @@ struct ComposerVoiceSendButton: View {
             .foregroundStyle(Theme.primaryInk)
             .frame(width: Theme.Chat.voiceCapsule.width, height: Theme.Chat.voiceCapsule.height)
             .background(onCall && !canSend ? AnyShapeStyle(Color(red: 0.89, green: 0.27, blue: 0.27)) : Theme.primaryFillStyle, in: Capsule())
-            .opacity(busy ? 0.5 : 1)
+            .opacity(busy || held ? 0.45 : 1)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(busy)
+        .disabled(busy || held)
         .animation(.snappy(duration: 0.2), value: canSend)
         .animation(.snappy(duration: 0.2), value: onCall)
         .accessibilityLabel(canSend ? Text(String(localized: "Send")) : onCall ? Text(String(localized: "End call")) : Text(String(localized: "Start voice mode")))
