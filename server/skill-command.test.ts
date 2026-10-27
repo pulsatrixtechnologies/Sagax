@@ -60,3 +60,24 @@ describe("expandSkillCommandTurnText", () => {
     expect(expandSkillCommandTurnText(on, "standup please")).toBe("standup please");
   });
 });
+
+describe("expandSkillCommandTurnText for an engine without file tools", () => {
+  it("carries the skill's instructions in the turn instead of a path", () => {
+    const bot = botWith("standup");
+    const text = expandSkillCommandTurnText(bot, "/standup the billing work", undefined, { inline: true });
+    expect(text).not.toContain("SKILL.md\"");
+    expect(text).not.toContain("file tools");
+    expect(text).toContain("Summarize {input} as three bullets.");
+    expect(text).not.toContain("description: Writes the weekly standup note.");
+    expect(text).toContain("Request: the billing work");
+    expect(expandSkillCommandTurnText(bot, "/standup", undefined, { inline: true })).toContain("There is no further request");
+  });
+
+  it("still passes a disabled skill, an unknown name and plain text through", () => {
+    const off = botWith("standup", false);
+    expect(expandSkillCommandTurnText(off, "/standup now", undefined, { inline: true })).toBe("/standup now");
+    const on = botWith("standup");
+    expect(expandSkillCommandTurnText(on, "/review now", undefined, { inline: true })).toBe("/review now");
+    expect(expandSkillCommandTurnText(on, "standup please", undefined, { inline: true })).toBe("standup please");
+  });
+});

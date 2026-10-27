@@ -51,7 +51,7 @@ import { writeFileAtomic, writeFileAtomicIfChanged } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { LEARN_SOURCE_PREFIX } from "./skill-learn.ts";
-import { librarySkillFilePath, listLibrarySkills, type LibrarySkillListing } from "./skill-library.ts";
+import { librarySkillFilePath, listLibrarySkills, readLibrarySkillFile, type LibrarySkillListing } from "./skill-library.ts";
 import { workspaceDir } from "./workspace.ts";
 import { isSkillName, parseSkillMd, scanSkillText, SKILL_FILE_MAX_BYTES, type ParsedSkill } from "../shared/skill-md.ts";
 import { parseSkillCommand } from "../shared/skill-command.ts";
@@ -1467,20 +1467,45 @@ export function enabledSkillFile(botId: string, name: string, assignedLibrary?: 
   return entry ? join(skillTarget(workspaceDir(botId), name, entry), "SKILL.md") : librarySkillFilePath(name);
 }
 
+/** The reviewed SKILL.md text of one enabled skill (the bot's own copy, or
+ * the assigned library file), or null when it cannot be read intact. */
+export function enabledSkillText(botId: string, name: string, assignedLibrary?: readonly string[]): string | null {
+  const skill = resolveBotSkills(botId, assignedLibrary).find((entry) => entry.name === name && entry.enabled);
+  if (!skill) return null;
+  return readManifest(botId)[name] ? readSkillFile(botId, name) : readLibrarySkillFile(name);
+}
+
 /** The text the engine reads for a `/name` turn (shared/skill-command.ts).
  * Any other message, or a name that is not an enabled skill of this bot,
- * passes through unchanged, so an engine's own slash commands still work. */
-export function expandSkillCommandTurnText(botId: string, text: string, assignedLibrary?: readonly string[]): string {
+ * passes through unchanged, so an engine's own slash commands still work.
+ * An engine with file tools is pointed at the SKILL.md; one without them
+ * (`inline`: Grok, OpenAI-compatible and the other API engines) gets the
+ * skill's instructions in the turn itself, since it could not open the file. */
+export function expandSkillCommandTurnText(
+  botId: string,
+  text: string,
+  assignedLibrary?: readonly string[],
+  options: { inline?: boolean } = {},
+): string {
   if (!text.trimStart().startsWith("/")) return text;
   const names = resolveBotSkills(botId, assignedLibrary).filter((skill) => skill.enabled).map((skill) => skill.name);
   const command = parseSkillCommand(text, names);
   if (!command) return text;
+  const request = command.request
+    ? ` Where the skill says {input}, use the request.\n\nRequest: ${command.request}`
+    : " There is no further request, so run it as the skill describes.";
+  if (options.inline) {
+    const raw = enabledSkillText(botId, command.name, assignedLibrary);
+    if (raw === null) return text;
+    const parsed = parseSkillMd(raw);
+    const body = ("error" in parsed ? raw : parsed.body).trim();
+    const lead = `The user ran your ${command.name} skill with /${command.name}. Follow its instructions below for this turn.`;
+    return `${lead}${request}\n\nSkill instructions (${command.name}):\n<skill>\n${body}\n</skill>`;
+  }
   const file = enabledSkillFile(botId, command.name, assignedLibrary);
   if (!file) return text;
   const lead = `The user ran your ${command.name} skill with /${command.name}. Read ${JSON.stringify(file)} with your file tools and follow it for this turn.`;
-  return command.request
-    ? `${lead} Where the skill says {input}, use the request.\n\nRequest: ${command.request}`
-    : `${lead} There is no further request, so run it as the skill describes.`;
+  return `${lead}${request}`;
 }
 
 // --- Skills library composition (features.skillsLibrary) ---

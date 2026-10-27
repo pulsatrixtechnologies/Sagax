@@ -29,6 +29,22 @@ describe("ComposerCommandMenu", () => {
     expect(markup).toContain("Refresh engine commands");
   });
 
+  it("lists the bot's own commands under Skills, between Sagax and the engine", () => {
+    const items = composerCommandMenu(
+      [{ id: "setup", label: "/setup", description: "Set this bot up" }],
+      [{ name: "compact", description: "Free up context", group: "engine" }],
+      "",
+      [{ name: "presentation", description: "Give your name" }],
+    );
+    const markup = renderToStaticMarkup(createElement(ComposerCommandMenu, {
+      items, highlight: 0, loading: false, onPick: () => {}, onHighlight: () => {},
+    }));
+    expect(markup.indexOf(">Sagax<")).toBeLessThan(markup.indexOf(">Skills<"));
+    expect(markup.indexOf(">Skills<")).toBeLessThan(markup.indexOf("/presentation"));
+    expect(markup.indexOf("/presentation")).toBeLessThan(markup.indexOf(">Engine<"));
+    expect(markup).toContain("Give your name");
+  });
+
   it("lists /goal and its subcommands under Goal, a blocked one dimmed with its reason", () => {
     const items = composerCommandMenu([
       { id: "goal", label: "/goal", description: "Keep a team working", argumentHint: "<goal>" },

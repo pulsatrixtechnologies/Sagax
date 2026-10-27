@@ -13,6 +13,7 @@ import {
   goalSubcommandFromComposer,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
+  skillCommandInsertion,
   type ComposerSlashCommand,
   type ComposerSlashCommandId,
 } from "./composer-commands";
@@ -144,6 +145,35 @@ describe("composer command menu (Sagax and the engine)", () => {
     expect(composerCommandMenu(sagax, engine, "engine:g").map((item) => item.label)).toEqual(["/engine:goal"]);
     expect(composerCommandMenu(sagax, engine, "go").map((item) => item.label)).toEqual(["/goal", "/engine:goal"]);
     expect(composerCommandMenu(sagax, engine, "review").map((item) => item.label)).toEqual(["/mcp__github__review_pr"]);
+  });
+
+  it("lists the bot's enabled skills under Skills, after Sagax and before the engine", () => {
+    const skills = [
+      { name: "presentation", description: "Introduce yourself" },
+      { name: "compact", description: "A skill that shadows the engine's /compact" },
+      { name: "setup", description: "Cannot shadow a built-in" },
+    ];
+    const menu = composerCommandMenu(sagax, engine, "", skills);
+    expect(menu.map((item) => [item.group, item.label])).toEqual([
+      ["goal", "/goal"], ["sagax", "/setup"],
+      ["skills", "/compact"], ["skills", "/presentation"],
+      ["engine", "/engine:goal"], ["engine", "/context"], ["engine", "/model"],
+      ["plugins", "/pulsatrix-flow:using-px-flow"],
+      ["mcp", "/mcp__github__review_pr"],
+    ]);
+    expect(composerCommandMenu(sagax, engine, "p", skills).map((item) => item.label)).toEqual(["/presentation", "/pulsatrix-flow:using-px-flow"]);
+    const item = composerCommandMenu(sagax, engine, "pres", skills)[0];
+    expect(item?.kind === "skill" && skillCommandInsertion(item)).toBe("/presentation ");
+    expect(composerMenuSection(item!)).toBe("skills");
+  });
+
+  it("matches a description only from a whole word of three letters or more, after the names", () => {
+    // one letter: names that start with it, never ones that only contain it
+    // or descriptions ("Set this bot up", "Show context usage")
+    expect(composerCommandMenu(sagax, engine, "s").map((item) => item.label)).toEqual(["/setup"]);
+    expect(composerCommandMenu(sagax, engine, "us").map((item) => item.label)).toEqual(["/pulsatrix-flow:using-px-flow"]);
+    expect(composerCommandMenu(sagax, engine, "usag").map((item) => item.label)).toEqual(["/context"]);
+    expect(composerCommandMenu(sagax, engine, "ntext").map((item) => item.label)).toEqual(["/context"]);
   });
 
   it("opens on names with colons and underscores, and inserts the label with a space", () => {

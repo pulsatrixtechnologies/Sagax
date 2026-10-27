@@ -59,6 +59,14 @@ extension Session {
         return started
     }
 
+    /// The bot's enabled skills for the "/" menu (`useSlashSkills`). Nil
+    /// when unreadable: the menu then lists none.
+    func slashSkills(botId: String) async -> [SlashSkill]? {
+        var skills: [SlashSkill]?
+        await perform(quietly: true) { skills = SlashSkill.menu(try await $0.botSkills(botId: botId).skills) }
+        return skills
+    }
+
     /// The engine's commands for the "/" menu. A refused or failed read is
     /// an unavailable list: Sagax's own commands still show.
     func harnessCommands(botId: String, threadId: String?, groupId: String? = nil, refresh: Bool = false) async -> HarnessCommandsAnswer {

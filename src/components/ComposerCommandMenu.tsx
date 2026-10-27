@@ -1,10 +1,10 @@
 // The composer's "/" menu: Sagax's own commands and the engine's (Claude
 // Code, Codex), grouped Objective (a room's /goal and its subcommands),
-// Sagax, Engine, Plugins, MCP (in a group: under each bot's name), each with
+// Sagax, Skills (the bot's own commands), Engine, Plugins, MCP (in a group: under each bot's name), each with
 // its argument hint. What the chat cannot run stays listed, dimmed, with the
 // reason. Esc closes it, said in the footer (the reference design's prompt editor).
 import type { RefObject } from "react";
-import { Activity, BookOpen, Pause, Play, Plug, Puzzle, RefreshCw, Square, Target, Terminal, Wand2 } from "lucide-react";
+import { Activity, BookOpen, Pause, Play, Plug, Puzzle, RefreshCw, Sparkles, Square, Target, Terminal, Wand2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { composerMenuSection, type ComposerMenuItem } from "@/lib/composer-commands";
@@ -35,6 +35,7 @@ function ItemIcon({ item }: { item: ComposerMenuItem }) {
       default: return <BookOpen size={15} aria-hidden="true" />;
     }
   }
+  if (item.kind === "skill") return <Sparkles size={15} aria-hidden="true" />;
   if (item.group === "plugins") return <Puzzle size={15} aria-hidden="true" />;
   if (item.group === "mcp") return <Plug size={15} aria-hidden="true" />;
   return <Terminal size={15} aria-hidden="true" />;
@@ -70,7 +71,7 @@ export function ComposerCommandMenu({ items, highlight, loading, onPick, onHighl
         const reason = unavailable
           ? t(`composer.commands.unavailable.${unavailable}`)
           : item.kind === "sagax" ? item.command.unavailableReason : undefined;
-        const argumentHint = item.kind === "engine" ? item.argumentHint : item.command.argumentHint;
+        const argumentHint = item.kind === "engine" ? item.argumentHint : item.kind === "sagax" ? item.command.argumentHint : undefined;
         const section = composerMenuSection(item);
         const previous = items[index - 1];
         const startsGroup = !previous || composerMenuSection(previous) !== section;
