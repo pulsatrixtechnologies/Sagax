@@ -1,8 +1,11 @@
-// Settings > Organization, admins only: the phone call pilot (parité R13,
+// Settings > Experimental, organization admins only (moved there 2026-10-27,
+// from Organization): the phone call pilot (parité R13,
 // ÉFVP 2026-10-22, server/outbound-calls.ts). Off until an admin turns it
 // on; every call says the callback number set here, so none is placed
 // without it; numbers on the do-not-call list are never called. Members do
-// not get this section, and the server answers them 403.
+// not get this section, and the server answers them 403. The callback number
+// and the do-not-call list show only while the switch is on; what was typed
+// or saved is kept (the rows are hidden, nothing is cleared).
 import { useCallback, useEffect, useState } from "react";
 
 import { t } from "@/lib/i18n";
@@ -10,7 +13,7 @@ import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { DescribedRow, FIELD, PILL, Switch } from "../SettingsPrimitives";
 
-interface PhoneCallSettings {
+export interface PhoneCallSettings {
   enabled: boolean;
   callbackNumber?: string;
   doNotCall: string[];
@@ -22,10 +25,10 @@ function shown(e164: string): string {
   return match ? `+1 ${match[1]} ${match[2]} ${match[3]}` : e164;
 }
 
-export function OrgPhoneCalls() {
-  const [settings, setSettings] = useState<PhoneCallSettings | null>(null);
+export function OrgPhoneCalls({ initial = null }: { initial?: PhoneCallSettings | null }) {
+  const [settings, setSettings] = useState<PhoneCallSettings | null>(initial);
   const [error, setError] = useState<string | null>(null);
-  const [callback, setCallback] = useState("");
+  const [callback, setCallback] = useState(initial?.callbackNumber ? shown(initial.callbackNumber) : "");
   const [blocked, setBlocked] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -39,7 +42,7 @@ export function OrgPhoneCalls() {
       setError(failure instanceof Error ? failure.message : String(failure));
     }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (!initial) void load(); }, [load, initial]);
 
   const save = async (patch: Record<string, unknown>) => {
     setBusy(true);
@@ -65,6 +68,7 @@ export function OrgPhoneCalls() {
       <DescribedRow
         label={t("orgCalls.title")}
         rowId="phoneCalls"
+        keywords={`${t("orgCalls.callback")} ${t("orgCalls.doNotCall")}`}
         description={(
           <>
             {t("orgCalls.intro")}
@@ -76,7 +80,7 @@ export function OrgPhoneCalls() {
           <Switch data-org-calls-enabled="" checked={settings.enabled} disabled={busy} aria-label={t("orgCalls.enabled")} title={t("orgCalls.enabled")} onClick={() => void save({ enabled: !settings.enabled })} />
         )}
       </DescribedRow>
-      {settings && (
+      {settings?.enabled && (
         <>
           <DescribedRow
             label={t("orgCalls.callback")}

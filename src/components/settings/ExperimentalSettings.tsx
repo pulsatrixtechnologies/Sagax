@@ -18,6 +18,8 @@ import { DescribedRow, HelpTip, SettingsGroup, Switch } from "../SettingsPrimiti
 import { DisclosurePill } from "./AppearanceSettings";
 import { setDevPodsEnabled, useDevPodPrefs } from "../dev-pods/prefs";
 import { canEditConfig } from "@/lib/viewer";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { OrgPhoneCalls } from "./OrgPhoneCalls";
 
 type ExperimentalFeature = "skillAuthoring" | "browser" | "decisionModel" | "dataWindow" | "meetingNotetaker" | "llmThreadTitles";
 
@@ -110,6 +112,10 @@ export function ExperimentalSettings() {
   // hand edit of config.json; they get their switch here.
   const llmThreadTitles = llmThreadTitlesEnabled(state.config);
   const llmThreadTitlesServed = typeof state.config?.features?.llmThreadTitles === "boolean";
+  // Phone calls (pilot) is the organization's, an admin's: the server answers
+  // members 403, so only an organization admin sees it (who may change it is
+  // unchanged by its move here).
+  const orgAdmin = usePerspicaxOrg()?.viewerRole === "admin";
   const [saving, setSaving] = useState<ExperimentalFeature | null>(null);
   const [error, setError] = useState("");
 
@@ -216,6 +222,7 @@ export function ExperimentalSettings() {
             <Switch checked={devPods} aria-label={t("settings.experimental.devPodsAria")} onClick={() => setDevPodsEnabled(!devPods)} />
           </DescribedRow>
         </div>
+        {orgAdmin && <OrgPhoneCalls />}
       </SettingsGroup>
       {error ? <p role="alert" className="px-1 text-[12px] text-danger">{error}</p> : null}
     </div>

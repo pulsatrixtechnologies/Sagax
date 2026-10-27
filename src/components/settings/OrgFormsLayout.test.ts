@@ -34,6 +34,22 @@ describe("organization forms layout", () => {
     expect(html).not.toContain('type="checkbox"');
   });
 
+  it("hides Callback number and Do not call while Phone calls is off, keeps the values, shows them when on", () => {
+    const saved = { callbackNumber: "+15145550100", doNotCall: ["+15145550142"] };
+    const off = renderToStaticMarkup(createElement(OrgPhoneCalls, { initial: { enabled: false, ...saved } }));
+    expect(off).toContain('data-settings-row="phoneCalls"');
+    expect(off).toContain("data-org-calls-enabled");
+    expect(off).not.toContain('data-settings-row="phoneCallsCallback"');
+    expect(off).not.toContain('data-settings-row="phoneCallsDoNotCall"');
+    // search still leads to the switch: the row carries the hidden rows' words
+    expect(off).toMatch(/data-settings-keywords="Callback number[^"]*Do not call"/);
+    const on = renderToStaticMarkup(createElement(OrgPhoneCalls, { initial: { enabled: true, ...saved } }));
+    expect(on).toContain('data-settings-row="phoneCallsCallback"');
+    expect(on).toContain('data-settings-row="phoneCallsDoNotCall"');
+    expect(on).toContain("+1 514 555 0100");
+    expect(on).toContain("+1 514 555 0142");
+  });
+
   it("lays an editor's fields out as label and control rows, with its actions under them", () => {
     const html = renderToStaticMarkup(createElement(EditorBox, {
       label: "Add a secret",
