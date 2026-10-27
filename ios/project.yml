@@ -172,8 +172,9 @@ targets:
           reach you here.
         NSCameraUsageDescription: >-
           Sagax uses the camera to scan a pairing QR code shown on your
-          computer and, when you choose it, to take your profile photo or a
-          photo to send to a bot.
+          computer and, when you choose it, to take your profile photo, a
+          photo to send to a bot, or a photo of a payment card you choose
+          to save.
         NSMicrophoneUsageDescription: >-
           Sagax listens while you dictate a message to a bot, record a
           voice note for one, or talk with one on a call.
@@ -194,7 +195,8 @@ targets:
           Sagax converts your speech into text so you can send it
           to a bot. Recognition runs on this phone when it can.
         # Phone tools (Features/PhoneTools): asked the first time a bot's
-        # request is approved on this phone. French in App/InfoPlist.xcstrings.
+        # request is approved on this phone. Every usage string above and
+        # below has its French in App/InfoPlist.xcstrings (same English).
         NSLocationWhenInUseUsageDescription: >-
           When you allow it on your phone, Sagax sends your position once to the bot that asked. Never in the background.
         NSContactsUsageDescription: >-

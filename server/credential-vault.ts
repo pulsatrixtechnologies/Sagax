@@ -47,8 +47,10 @@ import {
   parseContact,
   parseCurrency,
   publicCard,
+  inAppDigitalPurchaseRefusal,
   purchaseBotNote,
   purchaseCardText,
+  type PurchaseCategory,
   type PurchaseFlightLeg,
   type PurchaseItem,
   type PaymentFillField,
@@ -737,12 +739,15 @@ export class CredentialVault {
   openPurchase(principalId: string, input: {
     botId: string; threadId: string; merchant?: string; pageUrl: string;
     amount: unknown; currency: unknown; cardId: string; addressId?: string; contactId?: string;
-    items?: PurchaseItem[]; flights?: PurchaseFlightLeg[];
+    items?: PurchaseItem[]; flights?: PurchaseFlightLeg[]; category?: PurchaseCategory;
   }): { already: boolean; listing: PurchaseListing; note: string } {
     if (!BOT_ID.test(input.botId)) throw new CredentialVaultError("invalid bot", "invalid_bot");
     if (!THREAD_ID.test(input.threadId)) throw new CredentialVaultError("invalid conversation", "invalid_thread");
     const domain = domainOfPage(input.pageUrl);
     if (!domain) throw new CredentialVaultError("The page is not a site a card can be filled on.", "invalid_domains");
+    // App Store 3.1.5(a): never digital content used inside Sagax; real goods and services as before
+    const digital = inAppDigitalPurchaseRefusal({ category: input.category, merchant: input.merchant, pageUrl: input.pageUrl, items: input.items });
+    if (digital) throw new CredentialVaultError(digital, "in_app_digital", 422);
     const amount = parseAmount(input.amount);
     const currency = parseCurrency(input.currency);
     if (!amount || !currency) throw new CredentialVaultError("amount and currency are required", "invalid_amount");
@@ -1117,6 +1122,7 @@ export function fillResolverFor(
           ...(input.contactId ? { contactId: input.contactId } : {}),
           ...(input.items ? { items: input.items } : {}),
           ...(input.flights ? { flights: input.flights } : {}),
+          ...(input.category ? { category: input.category } : {}),
         });
         if (!opened.already) notify(opened.listing);
         return { ok: true as const, message: opened.note };
@@ -1149,5 +1155,5 @@ export function fillResolverFor(
 export interface PurchaseRequestInput {
   pageUrl: string; amount: string; currency: string; cardId: string;
   merchant?: string; addressId?: string; contactId?: string;
-  items?: PurchaseItem[]; flights?: PurchaseFlightLeg[];
+  items?: PurchaseItem[]; flights?: PurchaseFlightLeg[]; category?: PurchaseCategory;
 }

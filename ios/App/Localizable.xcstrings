@@ -50515,24 +50515,24 @@
         }
       }
     },
-    "The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `openmausbot browser install` on the server.": {
+    "The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `sagax browser install` on the server.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `openmausbot browser install` on the server."
+            "value": "The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `sagax browser install` on the server."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le moteur du navigateur n'est pas encore installé sur ce serveur. Activez les interrupteurs du navigateur dans Réglages → Expérimental et dans les réglages d'accès du bot, puis ouvrez Ordinateur du bot → Navigateur pour l'installer. Ou lancez `openmausbot browser install` sur le serveur."
+            "value": "Le moteur du navigateur n'est pas encore installé sur ce serveur. Activez les interrupteurs du navigateur dans Réglages → Expérimental et dans les réglages d'accès du bot, puis ouvrez Ordinateur du bot → Navigateur pour l'installer. Ou lancez `sagax browser install` sur le serveur."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O mecanismo do navegador ainda não está instalado neste servidor. Ative as chaves do navegador em Ajustes → Experimental e nos ajustes de acesso do bot, depois abra Computador do bot → Navegador para instalá-lo. Ou rode `openmausbot browser install` no servidor."
+            "value": "O mecanismo do navegador ainda não está instalado neste servidor. Ative as chaves do navegador em Ajustes → Experimental e nos ajustes de acesso do bot, depois abra Computador do bot → Navegador para instalá-lo. Ou rode `sagax browser install` no servidor."
           }
         }
       }

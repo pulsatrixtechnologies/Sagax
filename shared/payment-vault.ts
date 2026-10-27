@@ -278,8 +278,45 @@ export function purchaseBotNote(decision: "deny" | "once", ask: { merchant: stri
   return `Sagax purchase update: the person allowed the payment of ${ask.amount} ${ask.currency} at ${ask.merchant}${when}.${fill}`;
 }
 
+/** What a purchase buys, as the bot declares it on request_purchase.
+ * App Store 3.1.5(a): a bot may pay for real goods and services used
+ * outside the app (orders, meals, flights, tickets, services, a subscription
+ * to an outside service) with the person's own card. Digital content used
+ * inside Sagax (credits, tokens, plans or features of Sagax, Pulsatrix or
+ * Perspicax) is never bought this way: `in_app_digital` is refused, and so
+ * is a merchant, page or article that names one of them. A category rule,
+ * not a usage limit: every other purchase is asked exactly as before. */
+export const PURCHASE_CATEGORIES = [
+  "goods", "food", "travel", "tickets", "service", "external_subscription", "other", "in_app_digital",
+] as const;
+export type PurchaseCategory = (typeof PURCHASE_CATEGORIES)[number];
+
+export function isPurchaseCategory(value: unknown): value is PurchaseCategory {
+  return typeof value === "string" && (PURCHASE_CATEGORIES as readonly string[]).includes(value);
+}
+
+/** Sagax's own products: a merchant, a page or an article that names one. */
+const IN_APP_PRODUCT = /(?:^|[^a-z0-9])(?:sagax|pulsatrix|perspicax)(?:$|[^a-z0-9])/i;
+
+export const IN_APP_DIGITAL_REFUSAL =
+  "request_purchase refused: this pays for digital content used inside Sagax (credits, tokens, a plan or a feature of Sagax, Pulsatrix or Perspicax). A bot never buys those with a saved card; the person gets them through the app's own purchase flow or their organization. Nothing was asked or charged. Real goods and services (orders, meals, flights, tickets, services, a subscription to an outside service) are still asked as usual.";
+
+/** The refusal when a purchase buys digital content used inside Sagax,
+ * else null. Pure: the category the bot declared, then the merchant, the
+ * page's host and the articles. */
+export function inAppDigitalPurchaseRefusal(ask: {
+  category?: PurchaseCategory; merchant?: string; pageUrl?: string; items?: readonly PurchaseItem[];
+}): string | null {
+  if (ask.category === "in_app_digital") return IN_APP_DIGITAL_REFUSAL;
+  let host = "";
+  try { host = ask.pageUrl ? new URL(ask.pageUrl).hostname : ""; } catch { host = ""; }
+  const named = [ask.merchant ?? "", host, ...(ask.items ?? []).map((item) => item.name)];
+  return named.some((text) => IN_APP_PRODUCT.test(text)) ? IN_APP_DIGITAL_REFUSAL : null;
+}
+
 export interface PurchaseCall {
   credential: string;
+  category?: PurchaseCategory;
   amount: string;
   currency: string;
   merchant?: string;
@@ -300,6 +337,8 @@ export function parsePurchaseCall(params: unknown): PurchaseCall | string {
   if (!amount) return "amount must be a positive number, such as 12.50.";
   const currency = parseCurrency(row.currency);
   if (!currency) return "currency must be a three-letter code, such as CAD.";
+  if (row.category !== undefined && !isPurchaseCategory(row.category)) return `category must be one of ${PURCHASE_CATEGORIES.join(", ")}.`;
+  const category = row.category as PurchaseCategory | undefined;
   const merchant = clean(row.merchant, 80);
   const address = typeof row.address === "string" && row.address.trim() ? row.address.trim() : undefined;
   const contact = typeof row.contact === "string" && row.contact.trim() ? row.contact.trim() : undefined;
@@ -308,7 +347,7 @@ export function parsePurchaseCall(params: unknown): PurchaseCall | string {
   const flights = parsePurchaseFlights(row.flights);
   if (typeof flights === "string") return flights;
   return {
-    credential, amount, currency, ...(merchant ? { merchant } : {}), ...(address ? { address } : {}), ...(contact ? { contact } : {}),
+    credential, amount, currency, ...(category ? { category } : {}), ...(merchant ? { merchant } : {}), ...(address ? { address } : {}), ...(contact ? { contact } : {}),
     ...(items ? { items } : {}), ...(flights ? { flights } : {}),
   };
 }
@@ -318,13 +357,18 @@ export const REQUEST_PURCHASE_TOOL = "request_purchase";
 export const REQUEST_PURCHASE_TOOL_SPEC = {
   name: REQUEST_PURCHASE_TOOL,
   description:
-    "Ask the person to approve a payment with a card they saved in Sagax. credential is the card handle (cred_...). amount and currency are what the page charges (12.50, CAD): the total, taxes included. List the cart in items (or the flights) so the person sees what they pay for. The page you are on is the merchant. Optional address and contact are handles of a saved address or contact to fill with the card. You never receive the card number or the security code. Nothing is charged until the person allows it on the approval card (or their Primary Bot, when they ask). Then call fill_credential with field cardNumber, cardExpiry, cardCvc and cardholder, place the order, and call record_purchase on the confirmation page.",
+    "Ask the person to approve a payment with a card they saved in Sagax. credential is the card handle (cred_...). amount and currency are what the page charges (12.50, CAD): the total, taxes included. List the cart in items (or the flights) so the person sees what they pay for. The page you are on is the merchant. category says what it buys: goods, food, travel, tickets, service, external_subscription (a service used outside Sagax), other, or in_app_digital. Never use request_purchase for digital content used inside Sagax (credits, tokens, a plan or a feature of Sagax, Pulsatrix or Perspicax): it is refused. Optional address and contact are handles of a saved address or contact to fill with the card. You never receive the card number or the security code. Nothing is charged until the person allows it on the approval card (or their Primary Bot, when they ask). Then call fill_credential with field cardNumber, cardExpiry, cardCvc and cardholder, place the order, and call record_purchase on the confirmation page.",
   inputSchema: {
     type: "object",
     properties: {
       credential: { type: "string", description: "The card handle, cred_..." },
       amount: { type: "string", description: "The amount, such as 12.50" },
       currency: { type: "string", description: "Three-letter currency, such as CAD" },
+      category: {
+        type: "string",
+        enum: [...PURCHASE_CATEGORIES],
+        description: "What the purchase buys. in_app_digital (credits, tokens, plans or features of Sagax, Pulsatrix or Perspicax) is refused; every real good or service is asked as usual.",
+      },
       merchant: { type: "string", description: "The shop name, as shown on the page" },
       address: { type: "string", description: "Optional address handle, cred_..." },
       contact: { type: "string", description: "Optional contact handle, cred_..." },
