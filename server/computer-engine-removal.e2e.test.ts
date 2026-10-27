@@ -275,7 +275,9 @@ describe("removing the Computer engine", () => {
     // New bots get the replacement at once, not after another restart.
     const defaults = await server.api("GET", "/api/bot-defaults");
     expect(defaults.defaults.profile.modelSelection).toEqual(replacement);
-    expect(defaults.modelSelection).toEqual(replacement);
+    // A new bot opens on Auto (docs/plans/2026-10-08-auto-model.md): the
+    // engine is the replacement, the model is Auto.
+    expect(defaults.modelSelection).toEqual({ ...replacement, auto: true });
     const { bot: created } = await server.api("POST", "/api/bots", { name: "Nova" });
     expect(created.modelSelection).toEqual(replacement);
     expect(created.computer).toBeUndefined();
@@ -295,7 +297,8 @@ describe("removing the Computer engine", () => {
     // a tool; Boat's own agent is never asked.
     const cloudTurn = await server.turn(starter.id, main, "Take a screenshot of the cloud computer.");
     expect(cloudTurn.argv[cloudTurn.argv.indexOf("--model") + 1]).toBe(replacement.model);
-    expect(cloudTurn.mcpConfig.mcpServers.computer.args).toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js)$/), "computer"]);
+    // Claude reaches the computer tools over direct HTTP (#857), not a stdio proxy.
+    expect(cloudTurn.mcpConfig.mcpServers.computer).toMatchObject({ type: "http", url: expect.stringMatching(/\/api\/internal\/computer\/mcp-http$/) });
     expect(boxesCreated).toBe(1);
     expect(agentCalls).toEqual([]);
 
@@ -304,7 +307,7 @@ describe("removing the Computer engine", () => {
     // with select_computer when a task needs it. Boat's agent is never asked.
     const { task: atlasNew } = await server.api("POST", `/api/bots/${auto.id}/tasks`, {});
     const autoMovedTurn = await server.turn(auto.id, atlasNew.threadId, "Take a screenshot of the cloud computer.");
-    expect(autoMovedTurn.mcpConfig?.mcpServers?.computer?.args?.[1]).not.toBe("computer");
+    expect(autoMovedTurn.mcpConfig?.mcpServers?.computer).toBeUndefined();
     expect(boxesCreated).toBe(1);
     expect(agentCalls).toEqual([]);
 
@@ -313,7 +316,7 @@ describe("removing the Computer engine", () => {
     await server.api("PATCH", `/api/bots/${starter.id}`, { computer: null });
     const callsBeforeAuto = boatCalls;
     const autoTurn = await server.turn(starter.id, other, "what is 2+2?");
-    expect(autoTurn.mcpConfig?.mcpServers?.computer?.args?.[1]).not.toBe("computer");
+    expect(autoTurn.mcpConfig?.mcpServers?.computer).toBeUndefined();
     expect(boatCalls - callsBeforeAuto, "an Auto turn reached the Boat account").toBe(0);
     expect(agentCalls).toEqual([]);
     await server.stop();

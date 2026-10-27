@@ -15500,7 +15500,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // calls, ask rules, holds and security keys keep their card).
           mode: destinationAnswerer ? "approval" : ownerModeForTurn({
             approvalMode: effectiveApprovalMode,
-            lineage: ownerCall.ownerId.trim().toLowerCase() === effectiveBotOwner(asker).trim().toLowerCase() ? ownerLineageFor(asker, event.threadId) : "other",
+            lineage: ownerCall.ownerId.trim().toLowerCase() === effectiveBotOwner(asker).trim().toLowerCase() ? ownerModeLineageFor(asker, event.threadId) : "other",
             autoAllowed: !(memberOwnedInOrg(asker) && !memberAutoApprovalAllowed(cfg.organization)),
             bypassAllowed: ownerBypassAllowed(asker, ownerCall.ownerId),
           }),
@@ -32315,6 +32315,16 @@ function ownerLineageFor(bot: BotRecord, threadId: string): "owner" | "other" {
     ...(automation !== undefined ? { automation } : {}),
     unattended: automation === "webhook",
   });
+}
+/** The lineage the bot's one approval level is read under (ownerModeForTurn).
+ * The owner's own words at this computer (the operator, whose loopback
+ * request carries no signed-in person) are the owner's turn here: before the
+ * one-level decision (#1094) the explicit permission mode applied to that
+ * caller, and the level is now the same setting. Never a hop, a routine run
+ * or a webhook (ownEnvironmentOrigin judges those). */
+function ownerModeLineageFor(bot: BotRecord, threadId: string): "owner" | "other" {
+  if (ownerLineageFor(bot, threadId) === "owner") return "owner";
+  return turnSpeakers.get(threadId)?.origin === "operator" && ownEnvironmentOrigin(bot, threadId) === "owner" ? "owner" : "other";
 }
 /** The origin the owner's own environment judges a call by: the owner's own
  * turn, or the owner's own lineage (ownerLineageFor). Only for that

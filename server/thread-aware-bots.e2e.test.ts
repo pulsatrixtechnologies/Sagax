@@ -69,7 +69,13 @@ const promptsOf = (threadId: string): any[] => {
  * internal endpoints accept, and the one a real tool call would carry. */
 const liveToken = async (threadId: string): Promise<Record<string, string>> => {
   await expect.poll(() => dumpOf(threadId)?.mcpConfig?.mcpServers?.agents?.env?.SAGAX_COMMS_TOKEN, { timeout: 15_000 }).toBeTruthy();
-  return { authorization: `Bearer ${dumpOf(threadId)!.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN}` };
+  const env = dumpOf(threadId)!.mcpConfig.mcpServers.agents.env;
+  // A warm engine process keeps its first config for every later turn; the
+  // proxy reads the turn's current token from this file on each call (the way
+  // a real tool call does), so the file is the live token, not the env copy.
+  let token: string = env.SAGAX_COMMS_TOKEN;
+  try { token = readFileSync(env.SAGAX_COMMS_TOKEN_FILE, "utf8").trim() || token; } catch { /* no token file: the env copy */ }
+  return { authorization: `Bearer ${token}` };
 };
 /** Hold a fresh turn open on a bot's own thread and hand back its live
  * token. A wake that lands on that thread cannot start while this turn
@@ -133,6 +139,12 @@ const mintedToken = async (botId: string, threadId: string, depth = 0): Promise<
 const bots = async () => (await api("GET", "/api/bots?messages=0")).body.bots as any[];
 const botState = async (botId: string) => (await bots()).find((bot) => bot.id === botId);
 const taskOf = async (botId: string, threadId: string) => (await botState(botId))?.tasks.find((task: any) => task.threadId === threadId);
+/** The thread keeps no copy of the level and no stated exception: it reads
+ * its bot's current level at the start of each turn (#1207). */
+const followsBotLevel = async (botId: string, threadId: string) => {
+  const task = await taskOf(botId, threadId);
+  return Boolean(task) && task.approvalMode === undefined && task.approvalOwn === undefined;
+};
 const messages = async (threadId: string) => (await api("GET", `/api/threads/${threadId}/messages?limit=100`)).body.messages as any[];
 /** The coordinated tree as the job runtime records it (runtime.db), in the
  * node shape the server reads (coordinator.ts HandoffView). */
@@ -188,21 +200,29 @@ beforeAll(async () => {
     "const relay = new PassThrough();",
     "const real = process.stdin;",
     'Object.defineProperty(process, "stdin", { value: relay, configurable: true });',
+    "let held = \"\";",
     "let decided = false;",
-    'let held = "";',
-    'real.on("data", (chunk) => {',
-    "  if (decided) { relay.write(chunk); return; }",
-    "  held += chunk;",
-    '  const nl = held.indexOf("\\n");',
-    "  if (nl === -1) return;",
-    "  const marker = /\\[\\[gate:([\\w-]+)\\]\\]/.exec(held.slice(0, nl));",
-    '  const key = marker?.[1] ?? thread ?? "peer";',
+    // A warm engine process serves the next request of its thread on the
+    // same stdin (no new process), so the gate is read from every line, not
+    // once per process: a line with a [[gate:NAME]] marker holds that turn on
+    // its own gate; one without keeps the gate the process already has.
+    "const setKey = (key) => {",
     `  process.env.FAKE_CLAUDE_SLOW_FINISH_GATE = join(${JSON.stringify(gates)}, key + ".gate");`,
     `  process.env.FAKE_CLAUDE_DUMP = join(${JSON.stringify(gates)}, key + ".json");`,
     `  process.env.FAKE_CLAUDE_PROMPTS = join(${JSON.stringify(gates)}, key + ".prompts.jsonl");`,
-    "  decided = true;",
-    "  relay.write(held);",
-    '  held = "";',
+    "};",
+    'real.on("data", (chunk) => {',
+    "  held += chunk;",
+    '  let nl;',
+    '  while ((nl = held.indexOf("\\n")) !== -1) {',
+    "    const line = held.slice(0, nl + 1);",
+    "    held = held.slice(nl + 1);",
+    "    const marker = /\\[\\[gate:([\\w-]+)\\]\\]/.exec(line);",
+    '    if (marker) setKey(marker[1]);',
+    '    else if (!decided) setKey(thread ?? "peer");',
+    "    decided = true;",
+    "    relay.write(line);",
+    "  }",
     "});",
     'real.on("end", () => relay.end());',
     'process.env.FAKE_CLAUDE_MODE = "slow";',
@@ -404,7 +424,10 @@ describe("start_thread on yourself", () => {
 
       // a thread opened at the bot's level, resumed read-only, drops to Ask
       const wide = await api("POST", "/api/internal/threads", { title: "Wide", message: "Fix the typo." }, token);
-      expect(await taskOf(bot.id, wide.body.threadId)).toMatchObject({ approvalMode: "edits" });
+      // The level belongs to the bot (#1207): a thread opened at it keeps no
+      // copy and no exception, so it reads the bot's Edits on every turn.
+      expect(await followsBotLevel(bot.id, wide.body.threadId)).toBe(true);
+      expect(await botState(bot.id)).toMatchObject({ approvalMode: "edits" });
       release(wide.body.threadId);
       await expect.poll(async () => (await taskOf(bot.id, wide.body.threadId))?.busy, { timeout: 15_000 }).toBe(false);
       const narrowed = await api("POST", "/api/internal/threads", { message: "Only look this time.", resumeThreadId: wide.body.threadId, readOnly: true }, token);
@@ -433,7 +456,8 @@ describe("start_thread on yourself", () => {
       const opened = await api("POST", "/api/internal/threads", { title: "Same model", message: "go" }, token);
       expect(opened.status).toBe(201);
       release(opened.body.threadId);
-      expect(await taskOf(pm.id, opened.body.threadId)).toMatchObject({ modelSelection: opus, approvalMode: "edits" });
+      expect(await taskOf(pm.id, opened.body.threadId)).toMatchObject({ modelSelection: opus });
+      expect(await followsBotLevel(pm.id, opened.body.threadId)).toBe(true);
       expect((await botState(pm.id)).modelSelection).toMatchObject(sonnet);
       const handed = await coordinated(token, qa.id, "Check it.");
       release(handed.threadId);
@@ -446,7 +470,8 @@ describe("start_thread on yourself", () => {
       // the thread's first turn runs on the bot's model, which the thread
       // follows from then on, and says so once.
       const fresh = await api("POST", `/api/bots/${pm.id}/tasks`, { title: "From scratch" });
-      expect(fresh.body.task).toMatchObject({ modelSelection: sonnet, approvalMode: "edits" });
+      expect(fresh.body.task).toMatchObject({ modelSelection: sonnet });
+      expect(await followsBotLevel(pm.id, fresh.body.task.threadId)).toBe(true);
       const retired = { instanceId: "retired", model: "old-model" };
       expect((await api("PATCH", `/api/bots/${pm.id}/tasks/${fresh.body.task.threadId}`,
         { modelSelection: retired })).status).toBe(200);

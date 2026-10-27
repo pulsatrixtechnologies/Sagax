@@ -128,7 +128,7 @@ beforeAll(async () => {
       },
       // stops mid-turn to ask the person a question no rule may answer —
       // the card that has to reach a human even from a peer's turn
-      // asks before running a command: the approval an AI client's hidden
+      // asks before running a command: the approval an AI client's
       // conversation must still bring to the person
       asking: {
         driver: "grokAgent",
@@ -448,10 +448,10 @@ describe("bot-to-bot coordination is recorded, not announced", () => {
     let channelId: string | undefined;
     const stream = await openSse(`${base}/api/events`);
     try {
-      // Park the peer on an engine that is not there. startTurn classifies the
-      // turn and THEN refuses to run it, so this hop marks the thread and dies
-      // without ever reaching the completion fold — the one release the fold
-      // cannot perform for it.
+      // Park the peer on an engine that is not there. Since #819 a teammate
+      // that cannot run is refused before any work is sent (engineEligibility),
+      // so the hop never even reaches startTurn: nothing marks the peer's own
+      // thread, and nothing the fold would have to release is left behind.
       expect((await api("PATCH", `/api/bots/${peer.id}`, {
         modelSelection: { instanceId: "ghost", model: "ghost-1" },
       })).status).toBe(200);
@@ -461,8 +461,8 @@ describe("bot-to-bot coordination is recorded, not announced", () => {
         { fromBotId: asker.id, toBotId: peer.id, message: "Folio, still there?" },
         await capability(asker.id, asker.threadId),
       );
-      expect(asked.status).toBe(200);
-      expect(asked.body.text).toContain("couldn't start");
+      expect(asked.status).toBe(409);
+      expect(asked.body.error).toContain("Folio");
 
       expect((await api("PATCH", `/api/bots/${peer.id}`, {
         modelSelection: { instanceId: "quick", model: "claude-sonnet-5" },
@@ -571,22 +571,28 @@ describe("bot-to-bot coordination is recorded, not announced", () => {
   }, 45_000);
 });
 
-describe("an approval in an AI client's hidden conversation", () => {
+describe("an approval in an AI client's conversation", () => {
   const openCard = (bot: any) => bot?.messages?.findLast?.(
     (message: { kind: string; card?: { requestId?: string } }) => message.kind === "options" && Boolean(message.card?.requestId),
   )?.card;
-  const hiddenThread = async (botId: string) => {
-    const created = await api("POST", `/api/bots/${botId}/tasks`, { hidden: true, approvalMode: "ask", title: "AI client" });
-    expect(created.status).toBe(201);
-    expect(created.body.task.hidden).toBe(true);
-    return created.body.task.threadId as string;
+  /** The engine asks before running a command and the person wants to see
+   * it: a new bot starts on Approve for me, so these bots go to Ask. */
+  const askingBot = async (name: string) => {
+    const bot = await createBot(name, "asking", "grok-4.6");
+    expect((await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" })).status).toBe(200);
+    return bot;
   };
   const threadMessages = async (threadId: string) =>
     (await api("GET", `/api/threads/${threadId}/messages?limit=40`)).body;
 
-  it("reaches the person in plain words, and is declined when nobody answers", async () => {
-    const bot = await createBot("Warden", "asking", "grok-4.6");
-    const threadId = await hiddenThread(bot.id);
+  // An AI client's lines land in the bot's one chat since #1207 (#1170): no
+  // hidden conversation is made any more, so its approval is the person's own
+  // card in front of them. It reaches them in plain words and then waits for
+  // their answer; nothing declines it on a timer (that belonged to the hidden
+  // conversation, SAGAX_HIDDEN_APPROVAL_TTL_MS, which no thread can be in now).
+  it("reaches the person in plain words, and waits for their answer", async () => {
+    const bot = await askingBot("Warden");
+    const threadId = bot.threadId;
     const stream = await openSse(`${base}/api/events`);
     try {
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "run it", threadId })).status).toBe(202);
@@ -601,22 +607,20 @@ describe("an approval in an AI client's hidden conversation", () => {
       expect(`${frame.notification.title} ${frame.notification.body}`).not.toMatch(/__|mcp__|\{"/);
       expect(frame.notification.requestId).toBeTruthy();
       const requestId = frame.notification.requestId;
-      // nobody answers: the server declines it, takes the banner down, logs why
-      const withdrawn = await stream.until(
-        (candidate) => candidate.kind === "notify-withdraw" && candidate.requestId === requestId,
-        20_000,
-      );
-      expect(withdrawn.threadId).toBe(threadId);
-      await expect.poll(async () => {
-        const decisions = (await api("GET", "/api/decisions")).body.decisions as Array<{ requestId?: string; decision: string; source: string }>;
-        return decisions.find((row) => row.requestId === requestId && row.source === "expired")?.decision;
-      }, { timeout: 10_000 }).toBe("auto-denied");
-      await expect.poll(async () => {
-        const messages = await threadMessages(threadId);
-        const list = Array.isArray(messages) ? messages : messages?.messages ?? [];
-        const card = list.find((message: { card?: { requestId?: string } }) => message.card?.requestId === requestId)?.card;
-        return card ? { expired: card.expired, plain: Boolean(card.plain?.title), expiresAt: typeof card.expiresAt } : null;
-      }, { timeout: 10_000 }).toEqual({ expired: true, plain: true, expiresAt: "number" });
+      // nobody answers, well past the old four-second expiry of this fixture:
+      // the card stays open, the engine is not told no, nothing is logged as expired
+      await new Promise((resolve) => setTimeout(resolve, 6_000));
+      const messages = await threadMessages(threadId);
+      const list = Array.isArray(messages) ? messages : messages?.messages ?? [];
+      const card = list.find((message: { card?: { requestId?: string } }) => message.card?.requestId === requestId)?.card;
+      expect(card).toBeTruthy();
+      expect(card.expired).toBeFalsy();
+      expect(card.plain?.title).toBeTruthy();
+      expect(card.expiresAt).toBeUndefined();
+      const decisions = (await api("GET", "/api/decisions")).body.decisions as Array<{ requestId?: string; source: string }>;
+      expect(decisions.some((row) => row.requestId === requestId && row.source === "expired")).toBe(false);
+      // the person's own answer still settles it
+      expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId, behavior: "deny" })).status).toBe(200);
     } finally {
       stream.close();
       await cleanup([], [bot.id]);
@@ -624,7 +628,7 @@ describe("an approval in an AI client's hidden conversation", () => {
   }, 45_000);
 
   it("is withdrawn on every client once it is answered anywhere", async () => {
-    const bot = await createBot("Keeper", "asking", "grok-4.6");
+    const bot = await askingBot("Keeper");
     const stream = await openSse(`${base}/api/events`);
     try {
       // the person's own chat: approvals there buzz too, with the plain title
