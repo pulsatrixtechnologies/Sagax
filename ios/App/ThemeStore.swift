@@ -350,13 +350,18 @@ struct ThemeRoot: ViewModifier {
         ThemeRuntime.typeface = typeface
         ThemeRuntime.desktopFace = UIDevice.current.userInterfaceIdiom == .pad
             && DesktopTheme.of(palette).face == .geist && DesktopFonts.available
-        return content
+        // Hibou 98 and its Windows editions: the wallpaper in the status bar
+        // and the era's title bar above the app (RetroWindowChrome.swift);
+        // one VStack whatever the skin, so a change keeps the app's state
+        return VStack(spacing: 0) {
+            RetroWindowTop(palette: palette)
+            content
+        }
             .environment(\.themePalette, palette)
             .environment(\.mascotShadow, palette.mascotShadow)
             .environment(\.hdMascotsEnabled, prefs.hdMascots)
             .modifier(ThemeTint(palette: palette))
             .background(palette.desktop.color.ignoresSafeArea())
-            .overlay(alignment: .top) { if palette.bevelled { RetroDesktopStrip() } }
             .preferredColorScheme(store.pinnedScheme)
             .onAppear { ThemeUIKit.apply(palette) }
             .onValueChange(of: palette) { ThemeUIKit.apply($0) }
@@ -373,19 +378,6 @@ private struct ThemeTint: ViewModifier {
 
     func body(content: Content) -> some View {
         content.tint((palette.id == .black || palette.id == .dim) && palette.botAccent == nil ? nil : palette.accent.color)
-    }
-}
-
-/// Hibou 98: the teal desktop shows above the window, in the status bar.
-private struct RetroDesktopStrip: View {
-    var body: some View {
-        Color.clear
-            .frame(height: 0)
-            .background(alignment: .bottom) {
-                Color(hex: 0x008080).ignoresSafeArea(edges: .top)
-            }
-            .overlay(alignment: .bottom) { Color.white.frame(height: 1) }
-            .allowsHitTesting(false)
     }
 }
 

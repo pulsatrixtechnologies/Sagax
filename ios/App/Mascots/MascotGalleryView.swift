@@ -141,6 +141,13 @@ struct MascotGalleryView: View {
                 character(look, "orange", .none, 60, .sleeping)
                 character(look, "orange", .none, 42, .happy)
             }
+            // every loop the art ships, each playing (48 pt and up, Reduce Motion off)
+            row("HD loops, 56 pt: idle, walk, jump, turn, happy, sad") {
+                ForEach(HdLoop.allCases, id: \.self) { loop in
+                    HdOrVector(character: .shiba, key: .loop(loop), size: 56, animated: true) { Color.clear }
+                        .frame(width: 56, height: 56)
+                }
+            }
             row("HD: happy (loop), surprised, angry, 24 pt") {
                 let look = CompleteMascotLook(character: .shiba)
                 character(look, "orange", .none, 85, .happy, hd: true, animated: true)

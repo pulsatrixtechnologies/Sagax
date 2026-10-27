@@ -53,13 +53,16 @@ public struct SidecarRoutes: OptionSet, Hashable, Sendable {
     /// GET /api/me/achievements, POST events, PUT settings: the owner's own
     /// achievements (ST9, D1).
     public static let achievements = SidecarRoutes(rawValue: 1 << 9)
+    /// GET /api/bots/:id/artifacts[/:aid], PATCH its pin: the Library's
+    /// artifacts on the owner's phone (companion/src/routes.ts).
+    public static let artifacts = SidecarRoutes(rawValue: 1 << 10)
 
     /// What a sidecar of this release serves: all of the above (S1, D1, D3,
     /// and the voice engine route ship with this version of the desktop). An
     /// older desktop answers 403 and the view shows that error.
     public static let current: SidecarRoutes = [
         .parallelStop, .roomMemory, .advancedPanel, .voiceEngine, .harnessCommands, .botActivity, .primaryBot, .voiceNotes,
-        .harnessConnectors, .achievements,
+        .harnessConnectors, .achievements, .artifacts,
     ]
 }
 
@@ -199,8 +202,9 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// The open chat's files with search, kinds, sort, copy path and show
     /// in chat (BF1, BF3, BF4): both gates pass `GET /api/threads/:id/files`.
     case threadFiles
-    /// The bot's artifacts in the Library tab: read, open, pin. The sidecar
-    /// does not forward `/api/bots/:id/artifacts`.
+    /// The bot's artifacts in the Library tab: read, open, pin. A sidecar
+    /// forwards them since `SidecarRoutes.artifacts`; an older one answers
+    /// 403 and the Library shows the files only.
     case botArtifacts
     /// Delete a routine from the bot profile (BP12).
     case routineDelete
@@ -359,7 +363,7 @@ public struct SurfaceGate: Hashable, Sendable {
         case .routineRunCancel, .routineRunsSeen, .routineAdvancedEditor, .routineAttachments:
             return true
         case .botArtifacts:
-            return scope != .sidecar
+            return scope != .sidecar || sidecarRoutes.contains(.artifacts)
         case .botActivity:
             return scope != .sidecar || sidecarRoutes.contains(.botActivity)
         case .primaryBot:

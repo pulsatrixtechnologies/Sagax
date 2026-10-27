@@ -245,7 +245,7 @@ struct ChatView: View {
         // non-terminating type substitution") when archiving Release.
         AnyView(screen)
         // "Use bot color as accent": this bot's colour while its chat is open
-        .modifier(OpenBotAccent(color: current.isBot ? current.color : nil))
+        .modifier(OpenBotAccent(color: current.isBot ? current.color : nil, name: current.isBot ? current.name : nil))
         .sheet(item: $openBotConversation) { row in
             if case let .bot(bot) = current {
                 BotConversationPage(row: row, selfBot: bot).environmentObject(session)
@@ -1041,11 +1041,20 @@ struct ChatLiveTail: View {
 /// chat is on screen, the skin's own once it leaves.
 private struct OpenBotAccent: ViewModifier {
     let color: String?
+    /// The bot's name, for Hibou 98's title bar ("Sagax - Nova").
+    var name: String? = nil
 
     func body(content: Content) -> some View {
         content
-            .onAppear { ThemeStore.shared.setOpenBot(color) }
+            .onAppear {
+                ThemeStore.shared.setOpenBot(color)
+                RetroOpenBot.shared.set(name)
+            }
             .onValueChange(of: color) { ThemeStore.shared.setOpenBot($0) }
-            .onDisappear { if let color { ThemeStore.shared.setOpenBot(nil, leaving: color) } }
+            .onValueChange(of: name) { RetroOpenBot.shared.set($0) }
+            .onDisappear {
+                if let color { ThemeStore.shared.setOpenBot(nil, leaving: color) }
+                RetroOpenBot.shared.clear(name)
+            }
     }
 }

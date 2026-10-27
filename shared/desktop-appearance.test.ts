@@ -26,6 +26,12 @@ describe("desktop appearance keys", () => {
     expect(sameAppearance({ "omb-skin": "dusk" }, {})).toBe(false);
   });
 
+  it("carries the HD mascots switch, on or off only", () => {
+    expect(cleanDesktopAppearance({ "omb-skin": "midnight", "sagax.hdMascots.v1": "off" })).toEqual({ "omb-skin": "midnight", "sagax.hdMascots.v1": "off" });
+    expect(cleanDesktopAppearance({ "sagax.hdMascots.v1": "on" })).toEqual({ "sagax.hdMascots.v1": "on" });
+    expect(cleanDesktopAppearance({ "sagax.hdMascots.v1": "1" })).toEqual({});
+  });
+
   it("carries the colour or Windows edition laid over the skin, and drops an unknown one", () => {
     expect(cleanDesktopAppearance({ "omb-skin": "midnight", "omb-skin-tint": "red" })).toEqual({ "omb-skin": "midnight", "omb-skin-tint": "red" });
     expect(cleanDesktopAppearance({ "omb-skin": "retro98", "omb-skin-tint": "win11" })).toEqual({ "omb-skin": "retro98", "omb-skin-tint": "win11" });

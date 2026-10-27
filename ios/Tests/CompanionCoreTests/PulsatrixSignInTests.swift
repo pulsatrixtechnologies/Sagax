@@ -26,9 +26,11 @@ final class PulsatrixSignInTests: XCTestCase {
     }
 
     func testStartURLAsksForThePhoneReturn() {
-        XCTAssertEqual(PulsatrixSignIn.startURL(base: URL(string: "https://bot.acme.test")!)?.absoluteString, "https://bot.acme.test/auth/oidc/start?client=phone")
-        XCTAssertEqual(PulsatrixSignIn.startURL(base: URL(string: "http://127.0.0.1:18788/pair?x=1#y")!)?.absoluteString, "http://127.0.0.1:18788/auth/oidc/start?client=phone")
+        XCTAssertEqual(PulsatrixSignIn.startURL(base: URL(string: "https://bot.acme.test")!)?.absoluteString, "https://bot.acme.test/auth/oidc/start?client=phone&return=sagax")
+        XCTAssertEqual(PulsatrixSignIn.startURL(base: URL(string: "http://127.0.0.1:18788/pair?x=1#y")!)?.absoluteString, "http://127.0.0.1:18788/auth/oidc/start?client=phone&return=sagax")
         XCTAssertNil(PulsatrixSignIn.startURL(base: URL(string: "sagax://pair")!))
+        // #936: the phone always names its own scheme, so a refusal also ends on sagax://pair?error=
+        XCTAssertEqual(PulsatrixSignIn.startURL(base: URL(string: "https://bot.acme.test")!, returnScheme: "other")?.absoluteString, "https://bot.acme.test/auth/oidc/start?client=phone")
     }
 
     func testTheServersReturnLinkIsAnInvite() throws {

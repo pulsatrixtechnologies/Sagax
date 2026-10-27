@@ -71406,6 +71406,28 @@
         }
       }
     },
+    "Auto (follow the iPad)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto (follow the iPad)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto (suit l’iPad)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automático (segue o iPad)"
+          }
+        }
+      }
+    },
     "Auto (follow the phone)": {
       "localizations": {
         "en": {

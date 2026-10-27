@@ -559,6 +559,21 @@ describe("iOS feature parity (S1, D1, D3)", () => {
   });
 });
 
+describe("library artifacts", () => {
+  it("lists, opens and pins a bot's artifacts, and nothing else under artifacts/", () => {
+    for (const [method, path] of [
+      ["GET", "/api/bots/bot_1/artifacts"], ["GET", "/api/bots/bot_1/artifacts/art_AbC-d_12345x"],
+      ["PATCH", "/api/bots/bot_1/artifacts/art_AbC-d_12345x"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(true);
+    for (const [method, path] of [
+      ["DELETE", "/api/bots/bot_1/artifacts/art_AbC-d_12345x"], ["POST", "/api/bots/bot_1/artifacts/art_AbC-d_12345x/refresh"],
+      ["POST", "/api/bots/bot_1/artifacts"], ["PUT", "/api/bots/bot_1/artifacts/art_AbC-d_12345x"],
+      ["GET", "/api/bots/bot_1/artifacts/other"], ["GET", "/api/artifacts"], ["POST", "/api/artifacts/watch"],
+      ["POST", "/api/internal/artifacts"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
+  });
+});
+
 describe("browser control", () => {
   it("allows the live stream and the action channel, and nothing else under browser/", () => {
     expect(allowed("GET", "/api/bots/b1/browser/live")).toBe(true);

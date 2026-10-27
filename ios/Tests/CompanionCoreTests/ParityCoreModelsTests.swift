@@ -338,6 +338,13 @@ final class SurfaceGateTests: XCTestCase {
         XCTAssertFalse(SurfaceGate(connection: sidecar, account: account).organization)
     }
 
+    func testTheLibraryListsArtifactsOnASidecarThatForwardsThem() {
+        XCTAssertTrue(sidecar.allows(.botArtifacts))
+        XCTAssertTrue(client.allows(.botArtifacts))
+        // an older desktop: files only
+        XCTAssertFalse(SurfaceGate(scope: .sidecar, sidecarRoutes: []).allows(.botArtifacts))
+    }
+
     func testTheVoiceEngineIsNeverAConfigWriteOnASidecar() {
         XCTAssertTrue(sidecar.allows(.voiceEngineSettings), "this release's desktop serves PUT /api/tts/provider")
         XCTAssertFalse(SurfaceGate(scope: .sidecar, sidecarRoutes: []).allows(.voiceEngineSettings), "an older desktop does not")

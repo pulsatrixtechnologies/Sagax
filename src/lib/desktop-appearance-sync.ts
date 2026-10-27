@@ -133,11 +133,12 @@ export async function syncDesktopAppearance(): Promise<void> {
   } catch {
     return;
   }
-  const [{ applySkin, applySkinDepth, applySkinTexture, prefersDarkScheme, resolveStoredSkin, SKIN_IDS }, { isSkinTexture, isSkinTint, writeSkinAuto }, { applyFont, FONT_IDS }, retro] = await Promise.all([
+  const [{ applySkin, applySkinDepth, applySkinTexture, prefersDarkScheme, resolveStoredSkin, SKIN_IDS }, { isSkinTexture, isSkinTint, writeSkinAuto }, { applyFont, FONT_IDS }, retro, hd] = await Promise.all([
     import("./skins"),
     import("./skin-families"),
     import("./fonts"),
     import("./retro98"),
+    import("./hd-mascots-preference"),
   ]);
   await startDesktopAppearanceSync({
     fetch: window.fetch.bind(window),
@@ -162,6 +163,9 @@ export async function syncDesktopAppearance(): Promise<void> {
       applySkinTexture(isSkinTexture(texture) ? texture : "none");
       const font = FONT_IDS.find((id) => id === (next["omb-font"] ?? "skin"));
       if (font) applyFont(font);
+      // HD mascots: only a phone that sends the switch changes it (an older one leaves it as is)
+      const hdChoice = next[hd.HD_MASCOTS_KEY];
+      if (hdChoice !== undefined && hdChoice !== current[hd.HD_MASCOTS_KEY]) hd.setHdMascotsEnabled(hdChoice !== "off");
     },
   });
 }

@@ -74,6 +74,15 @@ describe("desktop appearance sync", () => {
     expect(h.puts.at(-1)).toEqual({ "omb-skin": "foundry" });
   });
 
+  it("hands the HD mascots switch to the phone and wears the phone's", async () => {
+    const h = harness({ local: { "omb-skin": "lagoon", "sagax.hdMascots.v1": "off" } });
+    const sync = await startDesktopAppearanceSync(h.deps);
+    expect(h.puts).toEqual([{ "omb-skin": "lagoon", "sagax.hdMascots.v1": "off" }]);
+    h.phoneWrites({ "omb-skin": "lagoon", "sagax.hdMascots.v1": "on" });
+    await sync!.pull();
+    expect(h.applied).toEqual([{ "omb-skin": "lagoon", "sagax.hdMascots.v1": "on" }]);
+  });
+
   it("reads only valid appearance keys", () => {
     const store = new Map([["omb-skin", "nope"], ["omb-font", "serif"], ["omb.retro98.on", "1"]]);
     expect(readDesktopAppearance({ getItem: (key) => store.get(key) ?? null })).toEqual({ "omb-font": "serif", "omb.retro98.on": "1" });
