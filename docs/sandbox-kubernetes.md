@@ -228,6 +228,91 @@ command still running is never stopped, and a voice call's heartbeat
 counts as use (`markUsed`). So the cluster stays up while anyone works,
 and the stop timer of the runbook starts when the last Pod is gone.
 
+### Cold start (2026-10-26)
+
+Where a cold start goes, measured on an AKS cluster in canadacentral
+(stopped while idle, sandbox pool at 0 nodes, 2026-10-27 00:55 UTC, from
+the start webhook; `node scripts/k8s-wake-timeline.mjs events.json --from
+<webhook time>` prints the same table from `kubectl get events -A -o json`):
+
+| Step | Seconds | Share |
+|---|---|---|
+| Cluster start, system node Ready | 246 | 58 % |
+| Provisioner image pull on the new system node | 67 | 16 % |
+| Provisioner start, first status | 6 | 1 % |
+| Autoscaler reaction | 11 | 3 % |
+| Sandbox node added (0 to 1) | 71 | 17 % |
+| Workspace volume attach | 7 | 2 % |
+| Sandbox image pull (about 480 MB) | 12 | 3 % |
+| Container start | 1 | 0 % |
+| **Total, webhook to a running sandbox** | **427** | |
+
+Four fifths of it is waiting for virtual machines (cluster start and a new
+node), and the cluster keeps stopping when nobody works (it costs nothing
+then). So the levers make each wait shorter, start it earlier, or keep a
+node only while it is useful:
+
+1. **A small provisioner image** (`deploy/k8s/provisioner/Dockerfile`,
+   `sagax-sandboxd`): only Node and the bundled `dist-server/sandboxd.js`,
+   353 MB unpacked (82 MB compressed) instead of the 1.6 GB server image.
+   A started cluster's system node is a new VM with an empty cache; this
+   cuts most of the 67 s pull, on every cold start.
+2. **Wake while the person types.** The composer already tells the server
+   when the person writes a message (`POST /api/bots/:id/warm` with
+   `typing: true`); the server then pre-wakes their cloud computer
+   (`UserSandboxManager.prewake`, once per person and bot every 2 minutes,
+   `server/sandbox-typing-prewake.ts`), only on Kubernetes with the cluster
+   wake and only for a bot that used it in the last 7 days. The cluster and
+   the node start while the message is being written. Opening a
+   conversation or the Computer tab never wakes anything. Scheduled
+   routines already pre-wake 12 minutes ahead (`PREWAKE_LEAD_MS`).
+3. **A reserve that follows the people at work.** With the reserve
+   placeholders of `warmNode.spare`, set
+   `SAGAX_SANDBOX_K8S_SPARE_DEPLOYMENT=<system namespace>/sagax-sandbox-spare`
+   on the provisioner and `provisioner.spareScaler.enabled: true` in the
+   chart (a Role on that one Deployment's scale). The provisioner counts
+   the sandbox Pods every 15 s (`server/sandboxd-k8s-spare.ts`): no reserve
+   while nobody works, `SAGAX_SANDBOX_K8S_SPARE_COUNT` (default 1) while
+   someone does, none once `SAGAX_SANDBOX_K8S_SPARE_MAX_ACTIVE` (default
+   the running limit) are at work. It overrides the warm schedule's
+   replicas; set them to 0 so a morning CronJob does not start a reserve
+   for nobody. The reserve's node then goes with the autoscaler's
+   scale-down delay (AKS default 10 minutes; `scale-down-unneeded-time` in
+   the cluster autoscaler profile shortens it).
+
+What a person then waits, measured on the same cluster (isolation trial of
+2026-10-26, image 0.8.3):
+
+| Case | Pod Ready |
+|---|---|
+| Cluster up, a node ready (a reserve, or a node already up) | 8 to 20 s |
+| Cluster up, a new workspace preempting a reserve | 27 s |
+| Cluster up, nobody at work, no reserve (new node) | 83 s |
+| Cluster stopped (outside office hours) | about 6 minutes, started at the first keystroke |
+
+Only the first person of a cold period waits for a node, and that wait
+overlaps with their message. Cost: a reserve node is billed only while
+someone works (one D4ps_v6 is about 0.16 USD an hour), and nothing while
+nobody does.
+
+Zones: Azure Premium_LRS disks are zonal. A person's workspace disk lives
+in the zone where it was first created, and its Pod can only run on a node
+of that zone. With a pool spread over three zones, the warm node may sit
+in another zone than a person's disk: that person's Pod then waits for a
+new node in the right zone (a cold start again), or stays Pending when the
+autoscaler cannot add one there. Pin the sandbox pool to the zone of the
+disks, or use a ZRS StorageClass (`skuName: Premium_ZRS`) for new
+workspaces. StorageClass parameters cannot change in place: a ZRS class is
+a new class, and existing disks move by snapshot.
+
+What the screen says, without starting anything: the Computer tab and the
+phone read the status with `peek` (never the webhook). A stopped cluster
+reads off (Start or the next bot turn starts it); a wake in progress reads
+starting with how long so far; and a Pod on its way up (a node being
+added, the volume attaching, the image pulling) reads `starting: true`
+beside `state: "stopped"`, shown as starting with no Start button, where
+it used to read off.
+
 What the runbook must do: count only sandbox Pods, those with the label
 `com.pulsatrix.sagax.sandbox.user` in the sandbox namespace, never the
 provisioner (`app=sagax-sandboxd`), which always runs. A paused

@@ -33,6 +33,8 @@ export interface ComputerStatus {
   /** The environments' cluster is waking (it was stopped outside office
    * hours): the screen says "starting" with a quiet hint, not an error. */
   waking?: { since: number; elapsedMs: number };
+  /** The environment's Pod is on its way up: starting, not off. */
+  starting?: true;
 }
 
 const GiB = 1024 ** 3;
@@ -91,6 +93,7 @@ export function sandboxStatus(view: UserSandboxView): ComputerStatus {
     ...(limitBytes ? { limitBytes } : {}),
     ...(view.error ? { problem: view.error } : {}),
     ...(view.waking ? { waking: { since: view.waking.since, elapsedMs: view.waking.elapsedMs } } : {}),
+    ...(view.starting ? { starting: true as const } : {}),
   };
 }
 

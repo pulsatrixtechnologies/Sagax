@@ -98,6 +98,19 @@ for want in "kind: PriorityClass" "preemptionPolicy: Never" "priorityClassName: 
   fi
 done
 
+# 2026-10-26: the reserve follows the people at work. The provisioner may
+# read and set the scale of the one reserve Deployment, nothing else.
+render "$tmp/spare.yaml" --set provisioner.spareScaler.enabled=true --set provisioner.spareScaler.serviceAccount.namespace=sandboxes
+if ! grep -A14 'name: sagax-sandboxd-spare$' "$tmp/spare.yaml" | grep -q 'resourceNames: \["sagax-sandbox-spare"\]' \
+  || grep -A16 'kind: Role$' "$tmp/spare.yaml" | grep -A12 'name: sagax-sandboxd-spare$' | grep -q '"delete"\|"create"\|"deployments"\]'; then
+  echo "the spare scaler Role must reach only the reserve Deployment's scale" >&2
+  exit 1
+fi
+if grep -q 'sagax-sandboxd-spare' "$tmp/default.yaml"; then
+  echo "the spare scaler Role is rendered while provisioner.spareScaler is off" >&2
+  exit 1
+fi
+
 # Cloud agent runs (off by default). Rendered with a sample digest: the
 # run Role has no exec, no log and no read of Secrets; the namespace has its
 # own quota, default deny and admission policy.

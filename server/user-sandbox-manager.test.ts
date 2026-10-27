@@ -150,6 +150,20 @@ describe("UserSandboxManager", () => {
     expect(await m.markUsed(BOB)).toBe(false);
   });
 
+  it("says starting while the environment's Pod is on its way up, and starts nothing to say it (2026-10-26)", async () => {
+    const base = inProcessClient();
+    let ensures = 0;
+    const client: SandboxdClient = {
+      ...base,
+      status: async (key) => ({ ...(await base.status(key)), state: "stopped", starting: true }),
+      ensure: (key) => { ensures += 1; return base.ensure(key); },
+    };
+    const m = new UserSandboxManager({ client, instance: "default", stateFile: join(dir, "x.json"), now: () => now });
+    expect(await m.status(ALICE)).toMatchObject({ state: "stopped", starting: true });
+    expect(ensures).toBe(0);
+    expect((await manager().status(ALICE)).starting).toBeUndefined();
+  });
+
   it("reports unavailable instead of throwing when the provisioner is down", async () => {
     const down: SandboxdClient = {
       info: () => Promise.reject(new Error("down")), status: () => Promise.reject(new Error("down")),

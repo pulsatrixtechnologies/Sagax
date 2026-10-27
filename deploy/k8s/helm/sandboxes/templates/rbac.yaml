@@ -110,3 +110,36 @@ subjects:
     apiGroup: rbac.authorization.k8s.io
     name: {{ .Values.admin.group | quote }}
 {{- end }}
+{{- if .Values.provisioner.spareScaler.enabled }}
+---
+# The reserve follows the people at work (server/sandboxd-k8s-spare.ts): the
+# provisioner reads and sets the scale of the one reserve Deployment.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sagax-sandboxd-spare
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: [{{ .Values.provisioner.spareScaler.deployment | quote }}]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sagax-sandboxd-spare
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sagax-sandboxd-spare
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.provisioner.spareScaler.serviceAccount.name | quote }}
+    namespace: {{ .Values.provisioner.spareScaler.serviceAccount.namespace | default .Values.systemNamespace | quote }}
+{{- end }}

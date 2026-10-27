@@ -517,6 +517,38 @@ right edge, same card. Both draw with `src/lib/side-card.ts` (`SIDE_CARD`,
 `railGeometry` (`src/components/dev-pods/DevPods.tsx`); the run card sits
 in `RailAligned`. No hard-coded width or radius on either side.
 
+## Cloud computers: faster cold start, honest starting and off (2026-10-26)
+
+Decision: the cluster still stops when nobody works (no always-on node).
+Make each wait shorter, start it at the first keystroke, keep a reserve node
+only while someone works (at most 4 people at once), and never wake a
+computer only to show its state.
+
+- Measured: 427 s from the start webhook to a running sandbox on a stopped
+  cluster (246 s cluster, 67 s provisioner image pull, 71 s new node, 7 s
+  volume, 12 s image). `node scripts/k8s-wake-timeline.mjs <events.json>
+  --from <time>` reads it again (read-only, never prints a person's key).
+  Levers and the isolation trial's figures: `docs/sandbox-kubernetes.md`.
+- `deploy/k8s/provisioner/Dockerfile`: the provisioner alone (Node and
+  `dist-server/sandboxd.js`), 353 MB unpacked instead of 1.6 GB.
+- Typing: `src/lib/prewarm.ts` sends `typing: true` from the composer on its
+  own refresh; `threadWarmRequest` calls `prewakeComputerWhileTyping`
+  (`server/sandbox-typing-prewake.ts` throttle, 2 min per person and bot),
+  which uses `UserSandboxManager.prewake` (Kubernetes with the wake only, a
+  bot that used it in 7 days only). Opening a conversation never wakes.
+- Reserve: `server/sandboxd-k8s-spare.ts` (provisioner, every 15 s) sets the
+  reserve Deployment from the sandbox Pods: 0 with nobody, `SPARE_COUNT`
+  while someone works, 0 from `SPARE_MAX_ACTIVE`. Env
+  `SAGAX_SANDBOX_K8S_SPARE_DEPLOYMENT`, chart `provisioner.spareScaler`
+  (Role on that Deployment's scale only). It drives the `warmNode.spare`
+  placeholders of the dedicated-node work.
+- States: status reads stay `peek`. A `Pending` Pod sets `starting` on the
+  container summary, `SandboxStatus`, `UserSandboxView` and
+  `/api/computer/status` (`state` stays `"stopped"`); the Computer tab and
+  iOS (`ServerEnvironmentStatus.isStarting`) show starting, no Start button.
+- Zonal disks: a workspace disk pins its Pod to its zone; keep sandbox
+  pools in that zone or use ZRS for new workspaces.
+
 ## Tests
 
 `pnpm test` runs every vitest file in one serial process (about 45 minutes),

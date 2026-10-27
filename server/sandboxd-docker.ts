@@ -40,6 +40,9 @@ export interface ContainerSummary {
   startedAt?: number;
   /** The image it was created from, as named at create (Config.Image). */
   image?: string;
+  /** Kubernetes only: the Pod exists but does not run yet (a node being
+   * added, the volume attaching, the image pulling). Never set by Docker. */
+  starting?: boolean;
 }
 
 export interface ContainerStats {

@@ -16,6 +16,9 @@ export interface ServerEnvironmentStatus {
   /** The environments' cluster is waking (it slept while idle):
    * since when on the server, and for how long so far. */
   waking?: { since: number; elapsedMs: number };
+  /** The environment's Pod is on its way up (a node being added, the
+   * volume attaching, the image pulling): starting, not off. */
+  starting?: true;
 }
 
 export function loadServerEnvironment(): Promise<ServerEnvironmentStatus> {

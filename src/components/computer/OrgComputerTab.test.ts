@@ -196,6 +196,9 @@ describe("the cloud screen while its cluster wakes", () => {
     expect(serverScreenState({ configured: true, state: "stopped" }, null)).toBe("off");
     expect(serverScreenState({ configured: true, state: "stopped", waking: { since: 1, elapsedMs: 0 } }, null)).toBe("starting");
     expect(serverScreenState({ configured: true, state: "running", waking: { since: 1, elapsedMs: 0 } }, null)).toBe("running");
+    // 2026-10-26: a Pod on its way up (node, volume, image) is starting, not off.
+    expect(serverScreenState({ configured: true, state: "stopped", starting: true }, null)).toBe("starting");
+    expect(serverDot({ configured: true, state: "stopped", starting: true }, null)).toBe("asleep");
     expect(serverScreenState(null, null)).toBe("starting");
   });
 
