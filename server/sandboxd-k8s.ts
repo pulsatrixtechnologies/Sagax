@@ -17,6 +17,7 @@ import {
   PAUSED_ANNOTATION,
   SANDBOX_DEFAULT_DENY_NAME,
   SUBNET_ANNOTATION,
+  dedicatedFor,
   defaultDenyNetworkPolicy,
   imageAdmissionProblems,
   k8sLabels,
@@ -230,7 +231,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
   function podBody(key: string): Obj {
     const spec = sandboxContainerSpec(sandbox, key);
     const pod = podFromDockerSpec(spec, k8s);
-    const problems = podIsolationProblems(pod, key);
+    const problems = podIsolationProblems(pod, key, k8s);
     if (problems.length) throw new Error(`sandbox spec refused: ${problems.join(", ")}`);
     const image = String(spec.Image ?? "");
     const imageProblems = imageAdmissionProblems(image, { registry: k8s.registry, requireDigest: k8s.requireDigest });
@@ -358,7 +359,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
         throw new Error(`image refused: ${imageProblems.join(", ")}`);
       }
       const pod = podFromDockerSpec(spec, k8s);
-      const problems = podIsolationProblems(pod, key);
+      const problems = podIsolationProblems(pod, key, k8s);
       if (problems.length) throw new Error(`sandbox spec refused: ${problems.join(", ")}`);
       await create(`/api/v1/namespaces/${ns}/pods`, pod);
       audit.record({ action: "sandbox.pod.create", outcome: "ok", key });
@@ -395,7 +396,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       emit("sandbox.pod.resume", key);
     },
     async containerStats(name: string): Promise<ContainerStats> {
-      const limit = sandbox.limits.memoryBytes;
+      const limit = dedicatedFor(k8s, sandboxKeyFromContainerName(name))?.memoryBytes ?? sandbox.limits.memoryBytes;
       const metrics = await client.metrics(ns, name).catch(() => null);
       if (!metrics) return { cpus: 0, memoryBytes: 0, memoryLimitBytes: limit };
       return { cpus: metrics.cpu, memoryBytes: metrics.memoryBytes, memoryLimitBytes: limit };

@@ -71,11 +71,11 @@ rules:
   # kubectl scale reads the Deployment before it writes the scale subresource.
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    resourceNames: ["sagax-sandbox-warmer"]
+    resourceNames: ["sagax-sandbox-warmer", "sagax-sandbox-spare"]
     verbs: ["get"]
   - apiGroups: ["apps"]
     resources: ["deployments/scale"]
-    resourceNames: ["sagax-sandbox-warmer"]
+    resourceNames: ["sagax-sandbox-warmer", "sagax-sandbox-spare"]
     verbs: ["get", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

@@ -2,11 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  dedicatedFor,
+  dedicatedFromEnv,
   defaultDenyNetworkPolicy,
   imageAdmissionProblems,
   kubernetesReadinessProblems,
   kubernetesSandboxConfigFromEnv,
   parseCpuQuantity,
+  parseDedicatedKeys,
   parseExecStatus,
   parseMemoryQuantity,
   parseNodeSelector,
@@ -159,6 +162,106 @@ describe("dedicated node pool", () => {
     expect(placed.nodeSelector).toEqual({ "example.com/pool": "sandboxes" });
     expect(placed.tolerations).toEqual([{ key: "example.com/sandboxes", operator: "Equal", value: "true", effect: "NoSchedule" }]);
     expect(podIsolationProblems(pod, key)).toEqual([]);
+  });
+});
+
+describe("one node and one user namespace per person", () => {
+  const other = sandboxKeyForPrincipal("default", "pr_00000000-0000-4000-8000-0000000000bb");
+  const dedicatedEnv = {
+    SAGAX_SANDBOX_K8S_HOST_USERS: "false",
+    SAGAX_SANDBOX_K8S_DEDICATED_NODE: "1",
+    SAGAX_SANDBOX_K8S_DEDICATED_NODE_SELECTOR: "example.com/isolation=dedicated",
+    SAGAX_SANDBOX_K8S_DEDICATED_TOLERATION: "example.com/dedicated=true:NoSchedule",
+    SAGAX_SANDBOX_K8S_NODE_SELECTOR: "example.com/pool=sandboxes",
+    SAGAX_SANDBOX_K8S_TOLERATION: "example.com/sandboxes=true:NoSchedule",
+  };
+
+  it("is off unless asked, and reads the key list", () => {
+    expect(dedicatedFromEnv({})).toBeUndefined();
+    expect(dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "true" })).toBeUndefined();
+    expect(parseDedicatedKeys(undefined)).toBe("*");
+    expect(parseDedicatedKeys("*")).toBe("*");
+    expect(parseDedicatedKeys("")).toEqual([]);
+    expect(parseDedicatedKeys(` ${key}, ${other},${key} `)).toEqual([key, other]);
+    expect(() => parseDedicatedKeys("not a key")).toThrow(/DEDICATED_KEYS/);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "maybe" })).toThrow(/HOST_USERS/);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_DEDICATED_NODE: "1" })).toThrow(/DEDICATED_NODE_SELECTOR/);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_DEDICATED_CPUS: "0" })).toThrow(/DEDICATED_CPUS/);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB: "1.5" })).toThrow(/DEDICATED_MEMORY_MB/);
+    const userOnly = dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false" });
+    expect(userOnly).toEqual({ keys: "*", userNamespace: true, ownNode: false });
+  });
+
+  it("gives a listed person a user namespace, an own node on the dedicated pool and its sizes", () => {
+    const sandbox = sandboxdConfigFromEnv(env());
+    const parsed = kubernetesSandboxConfigFromEnv(env({
+      ...dedicatedEnv,
+      SAGAX_SANDBOX_K8S_DEDICATED_KEYS: key,
+      SAGAX_SANDBOX_K8S_DEDICATED_CPUS: "1.5",
+      SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB: "3072",
+    }), sandbox).k8s;
+    expect(dedicatedFor(parsed, key)).toBeDefined();
+    expect(dedicatedFor(parsed, other)).toBeUndefined();
+
+    const pod = podFromDockerSpec(sandboxContainerSpec(sandbox, key), parsed);
+    const spec = pod.spec as Record<string, any>;
+    expect(spec.hostUsers).toBe(false);
+    expect(spec.nodeSelector).toEqual({ "example.com/pool": "sandboxes", "example.com/isolation": "dedicated" });
+    expect(spec.tolerations).toEqual([
+      { key: "example.com/sandboxes", operator: "Equal", value: "true", effect: "NoSchedule" },
+      { key: "example.com/dedicated", operator: "Equal", value: "true", effect: "NoSchedule" },
+    ]);
+    expect(spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution).toEqual([{
+      labelSelector: { matchExpressions: [{ key: "com.pulsatrix.sagax.sandbox.user", operator: "Exists" }] },
+      topologyKey: "kubernetes.io/hostname",
+    }]);
+    expect(spec.containers[0].resources).toEqual({
+      requests: { cpu: "1500m", memory: "3072Mi", "ephemeral-storage": "512Mi" },
+      limits: { cpu: "1500m", memory: "3072Mi", "ephemeral-storage": "512Mi" },
+    });
+    // Same restricted pod as before: the uid inside stays 1000.
+    expect(spec.securityContext.runAsUser).toBe(1000);
+    expect(podIsolationProblems(pod, key, parsed)).toEqual([]);
+
+    // Someone not listed keeps the shared spec, unchanged.
+    const shared = podFromDockerSpec(sandboxContainerSpec(sandbox, other), parsed).spec as Record<string, any>;
+    expect(shared.hostUsers).toBeUndefined();
+    expect(shared.affinity).toBeUndefined();
+    expect(shared.nodeSelector).toEqual({ "example.com/pool": "sandboxes" });
+    expect(shared.tolerations).toHaveLength(1);
+    expect(shared.containers[0].resources.limits).toEqual({ cpu: "1000m", memory: "1536Mi", "ephemeral-storage": "512Mi" });
+    expect(podIsolationProblems({ spec: shared }, other, parsed)).toEqual([]);
+  });
+
+  it("refuses a listed person's pod that lost an option, and * covers everyone", () => {
+    const sandbox = sandboxdConfigFromEnv(env());
+    const parsed = kubernetesSandboxConfigFromEnv(env({ ...dedicatedEnv, SAGAX_SANDBOX_K8S_DEDICATED_KEYS: "*" }), sandbox).k8s;
+    expect(dedicatedFor(parsed, other)).toBeDefined();
+    const base = podFromDockerSpec(sandboxContainerSpec(sandbox, key), parsed);
+    const weaken = (mutate: (spec: Record<string, any>) => void) => {
+      const copy = structuredClone(base);
+      mutate(copy.spec as Record<string, any>);
+      return podIsolationProblems(copy, key, parsed);
+    };
+    expect(weaken((spec) => { delete spec.hostUsers; })).toContain("user namespace missing (hostUsers)");
+    expect(weaken((spec) => { spec.hostUsers = true; })).toContain("user namespace missing (hostUsers)");
+    expect(weaken((spec) => { delete spec.affinity; })).toContain("own node missing (pod anti-affinity)");
+    expect(weaken((spec) => { spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey = "topology.kubernetes.io/zone"; }))
+      .toContain("own node missing (pod anti-affinity)");
+    expect(weaken((spec) => { spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector = { matchLabels: { [`com.pulsatrix.sagax.sandbox.user`]: key } }; }))
+      .toContain("own node missing (pod anti-affinity)");
+    expect(weaken((spec) => { delete spec.nodeSelector["example.com/isolation"]; })).toContain("dedicated pool selector missing");
+    // Without the config the old check still passes the same pod.
+    expect(podIsolationProblems(base, key)).toEqual([]);
+  });
+
+  it("an empty key list moves everyone back to the shared spec", () => {
+    const sandbox = sandboxdConfigFromEnv(env());
+    const parsed = kubernetesSandboxConfigFromEnv(env({ ...dedicatedEnv, SAGAX_SANDBOX_K8S_DEDICATED_KEYS: "" }), sandbox).k8s;
+    const spec = podFromDockerSpec(sandboxContainerSpec(sandbox, key), parsed).spec as Record<string, any>;
+    expect(spec.hostUsers).toBeUndefined();
+    expect(spec.affinity).toBeUndefined();
+    expect(spec.nodeSelector).toEqual({ "example.com/pool": "sandboxes" });
   });
 });
 

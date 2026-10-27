@@ -83,6 +83,21 @@ if ! grep -A3 'resources: \["deployments"\]' "$tmp/default.yaml" | grep -q 'saga
   exit 1
 fi
 
+# Reserve and one node per person (both off by default).
+if grep -Eq "sagax-sandbox-spare\"?$|name: sandboxes-dedicated" "$tmp/default.yaml"; then
+  echo "reserve or dedicated policy rendered while off" >&2
+  exit 1
+fi
+helm template sandboxes "$chart" --set warmNode.spare.enabled=true --set admission.dedicated.enabled=true \
+  --set 'warmNode.spare.nodeSelector.sagax\.io/isolation=dedicated' > "$tmp/dedicated.yaml"
+for want in "kind: PriorityClass" "preemptionPolicy: Never" "priorityClassName: sagax-sandbox-spare" \
+  "deployment/sagax-sandbox-spare" "name: sandboxes-dedicated" "sagax.io/isolation: dedicated" "sagax.io/pool: sandboxes"; do
+  if ! grep -q "$want" "$tmp/dedicated.yaml"; then
+    echo "dedicated render is missing $want" >&2
+    exit 1
+  fi
+done
+
 # Cloud agent runs (off by default). Rendered with a sample digest: the
 # run Role has no exec, no log and no read of Secrets; the namespace has its
 # own quota, default deny and admission policy.

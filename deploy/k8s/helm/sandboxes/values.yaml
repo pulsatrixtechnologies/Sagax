@@ -163,6 +163,27 @@ warmNode:
     sagax.io/pool: sandboxes
   tolerationKey: sagax.io/sandboxes
   tolerationValue: "true"
+  # Warmer count the morning CronJob sets (0 once every person has a
+  # dedicated node and the reserve below keeps the pool warm).
+  upReplicas: 1
+  # Reserve for a pool with one node per person (SAGAX_SANDBOX_K8S_DEDICATED_NODE).
+  # Each reserve pod holds a whole node: its requests must leave less than one
+  # sandbox of room on that node (node allocatable minus cpu/memory below is
+  # smaller than the sandbox request), so no sandbox lands beside it and one
+  # that needs the room evicts it at once. Business hours: the warm-up CronJob
+  # sets businessHoursReplicas; the warm-down CronJob sets offHoursReplicas,
+  # which then run whenever the cluster runs.
+  spare:
+    enabled: false
+    priority: -10
+    businessHoursReplicas: 2
+    offHoursReplicas: 1
+    cpu: 1100m
+    memory: 2Gi
+    # Added to warmNode.nodeSelector, for example the dedicated pool's label.
+    nodeSelector: {}
+    # Added to the warmNode toleration, for example the dedicated pool's taint.
+    tolerations: []
 
 # Named people only. Off on AKS, where Entra ID and Azure RBAC are the admin
 # path. On for k3s (values-k3s.yaml). Never a User subject, never system:masters.
@@ -173,6 +194,13 @@ admin:
 
 admission:
   validating: true
+  # Policy for one node and one user namespace per person. validationActions:
+  # ["Warn", "Audit"] while people move one at a time, ["Deny"] at the end.
+  dedicated:
+    enabled: false
+    validationActions: ["Warn", "Audit"]
+    nodeLabelKey: sagax.io/isolation
+    nodeLabelValue: dedicated
   kyverno:
     enabled: true
     failureAction: Enforce

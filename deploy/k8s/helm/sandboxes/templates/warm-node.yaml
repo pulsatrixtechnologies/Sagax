@@ -77,6 +77,109 @@ spec:
             limits:
               cpu: 10m
               memory: 16Mi
+{{- if .Values.warmNode.spare.enabled }}
+---
+# Reserve: whole nodes held for the next person. The pause pod requests
+# most of a node, so no sandbox shares it, and its negative priority lets the
+# scheduler evict it the moment a sandbox needs the room: the person starts
+# on a warm node that already has the image, and the autoscaler adds a node
+# for the reserve in the background. Without it, a pool with one node per
+# person makes each arrival wait for a new node.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: sagax-sandbox-spare
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+value: {{ .Values.warmNode.spare.priority | int }}
+preemptionPolicy: Never
+globalDefault: false
+description: "Sagax sandbox reserve: evicted first, never evicts anything."
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sagax-sandbox-spare
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+    app.kubernetes.io/name: sagax-sandbox-spare
+spec:
+  {{- /* Same rule as the warmer: the CronJobs own the count once installed. */}}
+  {{- $liveSpare := lookup "apps/v1" "Deployment" .Values.systemNamespace "sagax-sandbox-spare" }}
+  replicas: {{ if and $liveSpare $liveSpare.spec }}{{ $liveSpare.spec.replicas | default 0 }}{{ else }}{{ .Values.warmNode.spare.offHoursReplicas }}{{ end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-sandbox-spare
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sagax-sandbox-spare
+    spec:
+      priorityClassName: sagax-sandbox-spare
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 0
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65535
+        runAsGroup: 65535
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        {{- toYaml (merge (deepCopy .Values.warmNode.spare.nodeSelector) .Values.warmNode.nodeSelector) | nindent 8 }}
+      tolerations:
+        - key: {{ .Values.warmNode.tolerationKey | quote }}
+          operator: Equal
+          value: {{ .Values.warmNode.tolerationValue | quote }}
+          effect: NoSchedule
+        {{- with .Values.warmNode.spare.tolerations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      # One reserve per node, whatever the node size.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: sagax-sandbox-spare
+              topologyKey: kubernetes.io/hostname
+      {{- with .Values.warmNode.prepullImages }}
+      initContainers:
+        {{- range $i, $img := . }}
+        - name: prepull-{{ $i }}
+          image: {{ $img | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "exit 0"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: pause
+          image: {{ .Values.warmNode.pauseImage | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: {{ .Values.warmNode.spare.cpu | quote }}
+              memory: {{ .Values.warmNode.spare.memory | quote }}
+            limits:
+              cpu: {{ .Values.warmNode.spare.cpu | quote }}
+              memory: {{ .Values.warmNode.spare.memory | quote }}
+{{- end }}
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -116,7 +219,7 @@ spec:
                 - kubectl
                 - scale
                 - deployment/sagax-sandbox-warmer
-                - --replicas=1
+                - --replicas={{ .Values.warmNode.upReplicas }}
                 - -n
                 - {{ .Values.systemNamespace | quote }}
               securityContext:
@@ -131,6 +234,30 @@ spec:
                 limits:
                   cpu: 200m
                   memory: 128Mi
+            {{- if .Values.warmNode.spare.enabled }}
+            - name: scale-spare
+              image: {{ .Values.warmNode.kubectlImage | quote }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - kubectl
+                - scale
+                - deployment/sagax-sandbox-spare
+                - --replicas={{ .Values.warmNode.spare.businessHoursReplicas }}
+                - -n
+                - {{ .Values.systemNamespace | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+            {{- end }}
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -185,4 +312,28 @@ spec:
                 limits:
                   cpu: 200m
                   memory: 128Mi
+            {{- if .Values.warmNode.spare.enabled }}
+            - name: scale-spare
+              image: {{ .Values.warmNode.kubectlImage | quote }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - kubectl
+                - scale
+                - deployment/sagax-sandbox-spare
+                - --replicas={{ .Values.warmNode.spare.offHoursReplicas }}
+                - -n
+                - {{ .Values.systemNamespace | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+            {{- end }}
 {{- end }}
