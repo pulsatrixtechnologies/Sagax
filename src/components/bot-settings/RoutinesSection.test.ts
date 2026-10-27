@@ -89,9 +89,26 @@ function render(routines: Routine[], runs: RoutineRun[]) {
 }
 
 describe("RoutinesSection", () => {
-  it("shows an empty state when the bot has no routines", () => {
+  // JC, 2026-10-27: a bot without routines shows no section (no title, no +,
+  // no dashed box), one quiet line. Asking in chat and "New routine" stay.
+  it("shows one quiet hint instead of the section when the bot has no routines", () => {
     const markup = render([], []);
-    expect(markup).toContain("No schedules yet.");
+    expect(markup).toContain("data-routines-hint");
+    expect(markup).toContain("Routines are recurring tasks this Bot runs on a schedule.");
+    expect(markup).toContain(">Ask it in chat</button>");
+    expect(markup).toContain(" to set one up.");
+    expect(markup).toContain(">New routine</button>");
+    expect(markup).not.toContain("No schedules yet.");
+    expect(markup).not.toContain("border-dashed");
+    expect(markup).not.toContain("<h2");
+    expect(markup).not.toContain('aria-label="Create schedule"');
+  });
+
+  it("shows the section as before as soon as one routine exists", () => {
+    const markup = render([activeRoutine], []);
+    expect(markup).toContain("<h2");
+    expect(markup).toContain('aria-label="Create schedule"');
+    expect(markup).not.toContain("data-routines-hint");
   });
 
   // The bot panel lists each routine with its name and when it runs. Pause,

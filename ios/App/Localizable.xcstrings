@@ -54852,6 +54852,38 @@
         }
       }
     },
+    "Routines are recurring tasks this Bot runs on a schedule. %@ to set one up.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Routines are recurring tasks this Bot runs on a schedule. %@ to set one up."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les routines sont des tâches récurrentes que ce bot exécute selon un horaire. %@ pour en créer une."
+          }
+        }
+      }
+    },
+    "Ask it in chat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask it in chat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demandez-le dans le chat"
+          }
+        }
+      }
+    },
     "No schedules yet.": {
       "localizations": {
         "en": {

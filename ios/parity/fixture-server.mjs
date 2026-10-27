@@ -458,6 +458,7 @@ async function seedThroughAPI(base) {
   await api(base, "PATCH", `/api/bots/${ids.ara.id}`, { unread: true }).catch(() => {});
 
   const ara = ids.ara.id;
+  if (process.env.PARITY_NO_ROUTINES) return { ids, groupId: group.id, groupThreadId: group.threadId, routines: [] };
   const cron = await api(base, "POST", "/api/routines", {
     name: "Scan skills populaires mensuel",
     prompt: "Texte de remplacement : liste les compétences les plus utilisées ce mois-ci et propose deux ajouts.",
