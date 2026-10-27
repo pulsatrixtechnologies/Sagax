@@ -796,6 +796,31 @@ describe("PiDriver turns (fake CLI)", () => {
     expect(error.message).not.toMatch(/limit/i);
   });
 
+  it("never answers on pi's default model when it cannot switch to a local one", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-pi-local-refused-"));
+    await create(undefined, { HOME: home, FAKE_PI_SET_MODEL_REFUSE: "1" });
+    // the turn fails before its prompt is sent, so sendTurn itself rejects
+    await instance.adapter.sendTurn({ threadId: "t-local-refused", text: "test", model: encodeInjectId("omlx", "Qwen3.8-27B") }).catch(() => undefined);
+    const done = await recorder.until((e) => e.type === "turn.completed" && e.threadId === "t-local-refused");
+    expect(done).toMatchObject({ ok: false });
+    const error = recorder.events.find((e) => e.type === "runtime.error" && e.threadId === "t-local-refused") as { message: string };
+    expect(error.message).toMatch(/^pi could not switch to the local model Qwen3\.8-27B, so it did not answer on another model\./);
+    expect(recorder.events.some((e) => e.type === "item.completed" && e.threadId === "t-local-refused")).toBe(false);
+  });
+
+  it("writes a local model into the payer's own pi home, the one the child reads", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-pi-payer-home-"));
+    const payerHome = join(home, "principals", "pr_test", "piAgent-key");
+    await create(undefined, { HOME: home });
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-payer-home", text: "hi", model: encodeInjectId("omlx", "Qwen3.8-27B"),
+      access: { via: "speaker-key", identity: "speaker-key:pr_test:key", engineHome: payerHome, environment: {} },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const written = JSON.parse(readFileSync(join(payerHome, "models.json"), "utf8")) as { providers: Record<string, { models: Array<{ id: string }> }> };
+    expect(written.providers.omlx!.models.some((m) => m.id === "Qwen3.8-27B")).toBe(true);
+  });
+
   it("keeps a hosted model's error as pi said it", async () => {
     await create("turn-error", { FAKE_PI_ERROR: "503 Service Unavailable" });
     const { turnId } = await instance.adapter.sendTurn({ threadId: "t-hosted-error", text: "hi", model: "openai/gpt-4o" });

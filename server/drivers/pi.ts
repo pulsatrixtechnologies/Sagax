@@ -441,6 +441,11 @@ export async function applyPiLocalCatalog(
 }
 
 function piAgentDir(env: Record<string, string | undefined>): string {
+  // pi reads PI_CODING_AGENT_DIR first: on an organization server each
+  // payer's turn runs in their own pi home (piAccessEnvironment), and a
+  // local model written to the server's ~/.pi/agent never reaches it.
+  const own = env.PI_CODING_AGENT_DIR?.trim();
+  if (own) return own;
   return join(env.HOME || env.USERPROFILE || homedir(), ".pi", "agent");
 }
 
@@ -816,7 +821,12 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // MCP temp files. If model setup fails, there is nothing sensitive to
       // clean up yet.
       if (typeof turn.model === "string" && turn.model) {
-        ensurePiInjectModel(turn.model, { ...process.env, ...input.environment });
+        ensurePiInjectModel(turn.model, {
+          ...process.env,
+          ...input.environment,
+          // the payer's own pi home, the one the child reads (piAccessEnvironment)
+          ...(turn.access?.engineHome ? { PI_CODING_AGENT_DIR: turn.access.engineHome } : {}),
+        });
       }
 
       // integrations → stdio MCP servers for the pi-mcp-extension. The config
@@ -1311,8 +1321,19 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           const modelPromise = awaitResponse("set_model");
           send({ type: "set_model", provider: chosen.provider, modelId: chosen.modelId });
           await modelPromise;
-        } catch {
-          /* keep going on the default model */
+        } catch (err) {
+          // A local model pi cannot reach is never replaced by pi's default
+          // model: that one bills a provider the person did not pick (on
+          // 2026-10-27 a computer-shared model ran on an xAI key instead, and
+          // its spent credits read as a usage limit).
+          if (isLocalModelId(turn.model)) {
+            const reason = String((err as Error)?.message ?? err).slice(0, 300);
+            const message = `pi could not switch to the local model ${chosen.modelId}, so it did not answer on another model. Check that the computer that serves it is online and shares it, then try again. (pi said: "${reason}")`;
+            emit({ ...base(threadId, turnId), type: "runtime.error", message });
+            settle(false);
+            throw new Error(message);
+          }
+          /* a hosted pick keeps going on the default model */
         }
       }
 
