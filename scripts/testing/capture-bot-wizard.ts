@@ -59,6 +59,10 @@ try {
   await page.waitForTimeout(500);
   await shot("04-rules");
 
+  // Tools and apps is optional (2026-10-27): "Yes" puts it on the path
+  await page.click('[data-wizard-tools-choice="yes"]');
+  await page.waitForTimeout(300);
+
   await page.click("[data-wizard-next]");
   await step("tools");
   await shot("05-tools");

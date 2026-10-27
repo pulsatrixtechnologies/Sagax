@@ -160,7 +160,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Share with a person or team ({target: user:<id>/team:<name>, level}, level null removes) | Bot editor > Visibility > Sharing | `sagax_settings` get, set `bot.share` | autrui |
 | Tool access grant ({scope: area:read/write/admin, expiresAt}) | Bot editor > Tool access | `sagax_settings` set `bot.toolGrant` | élargit les droits |
 | Delete the bot (true) | Bot editor > ... > Delete | `sagax_settings` set `bot.delete` | suppression |
-| Bot creation wizard draft ({step?, skip?, roleId?, answers?: {tone, language, does, never, speech}, rules?: {suggestionId: "pending" to apply / null}, routines?: [suggestionId]}); get also lists the suggestions | Bot creation wizard (guided or manual) | `sagax_settings` get, set `bot.wizard` | simple |
+| Bot creation wizard draft ({step?, skip?, roleId?, answers?: {tone, language, does, never, speech}, rules?: {suggestionId: "pending" to apply / null}, routines?: [suggestionId], tools?: "yes" if it uses apps or a computer / "later"}); get also lists the suggestions | Bot creation wizard (guided or manual) | `sagax_settings` get, set `bot.wizard` | simple |
 | Share the New bot defaults as a public template link ({name?, description?}); get lists your links | New bot > Share preset > Share the link | `sagax_settings` get, set `template.share` | autrui |
 | Update a shared template under the same link ({id, name?, description?}) | New bot > Share preset > Share the link > Update the template | `sagax_settings` set `template.update` | autrui |
 | Delete a shared template and turn its link off (its id) | New bot > Share preset > Share the link > Turn off | `sagax_settings` set `template.remove` | suppression |

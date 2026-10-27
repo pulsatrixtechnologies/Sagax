@@ -532,6 +532,14 @@ the guided first run (#1035). Desktop `src/components/bot-wizard/`, iOS
   an effect selector (Off, Allow, Ask, Deny; the suggested one named under
   it): Off deletes the custom rule, another effect PATCHes it in place
   (`setSuggestedRuleEffect`, effects read back by `appliedRuleEffects`).
+- Tools and apps (v2) is off the main path: the draft's `tools` ("later" |
+  "yes", absent = later) decides; Rules asks "Should this bot use apps or a
+  computer?". `wizardPath`, `nextStepFor`, `previousStepFor` (shared) walk the
+  draft's own path; the recap's Edit and the bot's settings still open it.
+  Defaults: Workspace Auto, no MCP server (sent in `settings`), apps later.
+- Recap (v2): read only, the bot in one card (avatar, name, role,
+  description, Try it), one line per step with Edit (`recapLines`), the test
+  conversation under it; Finish in the footer.
 - Captures: `node --experimental-strip-types scripts/testing/capture-bot-wizard.ts <outDir> [skin] [lang]`
   (headless; `SAGAX_CAPTURE_CHROME` names another headless shell).
 

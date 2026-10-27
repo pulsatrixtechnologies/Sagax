@@ -20,8 +20,12 @@
 //   steps on the right, filled live (the bot changes the bot's fields with
 //   sagax_settings and the wizard's with bot.wizard; the panel reads them
 //   back) and editable by hand.
-// - Recap: every step on one page, and Try it, the first test message to
-//   the new bot, before Finish.
+// - Recap (2026-10-27): a compact read-only summary, the bot in one card and
+//   one line per step with Edit, and Try it, the first test message to the
+//   new bot, before Finish.
+// - Tools and apps is off the main path (2026-10-27): the Rules step asks
+//   whether the bot uses apps or a computer; "Yes" puts the step on the path,
+//   "Later" keeps the defaults. The recap's Edit opens it at any time.
 //
 // Later (Escape, Later) keeps the draft: the bot stays a draft until the
 // person finishes, and the creation menu or the bot's panel resume it.
@@ -58,10 +62,10 @@ import {
   WIZARD_STEPS,
   applyWizardPatch,
   guidedKickoff,
-  nextWizardStep,
-  previousWizardStep,
+  nextStepFor,
+  previousStepFor,
   tryItMessage,
-  wizardStepIndex,
+  wizardPath,
   type WizardMode,
   type WizardPatch,
   type WizardStep,
@@ -70,7 +74,11 @@ import { PulsatrixMark } from "../PulsatrixMark";
 import { BotAvatar } from "../Avatar";
 import { ProgressDots } from "../onboarding/ProgressDots";
 import { PrimaryButton, QuietButton } from "../onboarding/beats/shared";
-import { StepBody, stepIntro, stepTitle, type StepProps } from "./WizardSteps";
+import { StepBody, stepIntro, stepTitle, useRuleEffects, type StepProps } from "./WizardSteps";
+import { worksOnMode } from "../computer/WorksOnSetting";
+import { placeLabelKey } from "@/lib/place";
+import { BOT_ROLES } from "@/lib/bot-roles";
+import type { LocaleKey } from "@/locales";
 import { WizardConversation } from "./WizardConversation";
 import { engineReady } from "../EngineLibrary";
 import { BotZipImportDialog } from "../BotZipImport";
@@ -231,7 +239,7 @@ export function BotWizard() {
   const skip = () => { if (draft) void patch({ skip: draft.step }); };
   const next = () => {
     if (!draft) return;
-    const after = nextWizardStep(draft.step);
+    const after = nextStepFor(draft);
     if (after) goTo(after);
   };
 
@@ -273,8 +281,9 @@ export function BotWizard() {
 
   const guided = phase === "steps" && draft?.mode === "guided";
   const step = draft?.step ?? "identity";
-  const index = wizardStepIndex(step);
-  const previous = previousWizardStep(step);
+  const path = draft ? wizardPath(draft) : WIZARD_STEPS.filter((each) => each !== "tools");
+  const index = Math.max(0, path.indexOf(step));
+  const previous = draft ? previousStepFor(draft) : null;
   const suggestions = useMemo(() => wizardSuggestions(draft?.roleId ?? "", language), [draft?.roleId, language]);
   const stepProps: StepProps | null = bot && draft ? { bot, draft, suggestions, patch, language } : null;
 
@@ -368,9 +377,9 @@ export function BotWizard() {
               <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-hairline/40 px-5 py-4 sm:px-8">
                 {previous ? <QuietButton onClick={() => goTo(previous)} data-wizard-back="">{t("onboarding.back")}</QuietButton> : <span />}
                 <div className="flex items-center gap-3">
-                  <ProgressDots items={WIZARD_STEPS.map((id) => ({ id, label: stepTitle(id) }))} index={index}
-                    onSelect={(target) => goTo(WIZARD_STEPS[target]!)} label={t("botWizard.steps")} />
-                  <span className="text-[11px] text-ink-secondary" aria-live="polite">{t("onboarding.progress", { current: index + 1, total: WIZARD_STEPS.length })}</span>
+                  <ProgressDots items={path.map((id) => ({ id, label: stepTitle(id) }))} index={index}
+                    onSelect={(target) => goTo(path[target]!)} label={t("botWizard.steps")} />
+                  <span className="text-[11px] text-ink-secondary" aria-live="polite">{t("onboarding.progress", { current: index + 1, total: path.length })}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   {step !== "recap" && <QuietButton onClick={skip} data-wizard-skip="">{t("botWizard.skip")}</QuietButton>}
@@ -511,11 +520,14 @@ function OtherStartsRow({ onTemplate, onBrowse, onImport, onQuick, quickBusy, bu
   );
 }
 
-/** Step 6: every step on one page, each editable where it stands, and Try it. */
+/** The last step (2026-10-27): a compact read-only summary. The bot in one
+ * card (avatar, name, role, description) with Try it, then one line per
+ * step with Edit, which opens that step. Finish stays in the footer. */
 function Recap(props: StepProps & { onEdit: (step: WizardStep) => void }) {
-  const { bot, draft, patch, language, onEdit } = props;
+  const { bot, draft, suggestions, patch, language, onEdit } = props;
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [effects] = useRuleEffects(draft, suggestions);
   const tryIt = async () => {
     setSending(true);
     setError(null);
@@ -532,37 +544,79 @@ function Recap(props: StepProps & { onEdit: (step: WizardStep) => void }) {
       setSending(false);
     }
   };
-  const sections = WIZARD_STEPS.filter((step): step is Exclude<WizardStep, "recap"> => step !== "recap");
+  const role = BOT_ROLES.find((each) => each.id === draft.roleId);
+  const roleName = role ? t(`botWizard.role.${role.id}` as LocaleKey) : t("botWizard.role.custom");
+  const lines = recapLines({ bot, draft, effects, suggestions, roleName });
   return (
-    <div className="flex flex-col gap-6" data-wizard-recap="">
-      <div className="flex items-center gap-3 rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3">
-        <BotAvatar bot={bot} state="happy" size={44} animated={false} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14px] font-medium text-ink">{bot.name}</span>
-          <span className="block truncate text-[12.5px] text-ink-secondary">{bot.description || bot.title}</span>
+    <div className="flex flex-col gap-5" data-wizard-recap="">
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl border-[0.5px] border-border bg-elevated px-4 py-4" data-wizard-recap-card="">
+        <BotAvatar bot={bot} state="happy" size={56} animated={false} />
+        <span className="flex min-w-0 flex-1 basis-[200px] flex-col gap-0.5">
+          <span className="truncate text-[15px] font-semibold text-ink">{bot.name}</span>
+          <span className="truncate text-[12.5px] text-accent-text" data-wizard-recap-role="">{roleName}</span>
+          <span className="line-clamp-2 text-[12.5px] leading-relaxed text-ink-secondary">{bot.description || bot.title || t("botWizard.recap.noDescription")}</span>
         </span>
-        <PrimaryButton onClick={() => void tryIt()} disabled={sending} className="w-auto px-4" data-wizard-try="">
+        <PrimaryButton onClick={() => void tryIt()} disabled={sending} className="w-auto px-5" data-wizard-try="">
           <span className="inline-flex items-center gap-1.5">{sending ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Send size={14} aria-hidden="true" />}{t("botWizard.recap.try")}</span>
         </PrimaryButton>
       </div>
       {error && <p role="alert" className="text-[12.5px] text-danger">{error}</p>}
+      <dl className="flex flex-col divide-y divide-hairline/40 rounded-xl border-[0.5px] border-border bg-elevated">
+        {lines.map((line) => (
+          <div key={line.step} className="flex min-h-[48px] items-center gap-4 px-3.5 py-2.5" data-wizard-recap-section={line.step}>
+            <dt className="w-[110px] shrink-0 text-[13px] font-medium text-ink sm:w-[140px]">{stepTitle(line.step)}</dt>
+            <dd className="min-w-0 flex-1 text-[13px] leading-relaxed text-ink-secondary" data-wizard-recap-summary="">
+              {line.text}
+              {draft.skipped.includes(line.step) && <span className="ml-2 text-[12px] text-ink-tertiary">{t("botWizard.recap.skipped")}</span>}
+            </dd>
+            <button type="button" onClick={() => onEdit(line.step)} data-wizard-recap-edit={line.step}
+              aria-label={t("botWizard.recap.editStep", { step: stepTitle(line.step) })}
+              className="shrink-0 rounded-md px-2 py-1 text-[12.5px] font-medium text-accent-text hover:bg-accent/10">{t("botWizard.recap.edit")}</button>
+          </div>
+        ))}
+      </dl>
       {draft.testThreadId && (
-        <div className="relative flex h-[340px] flex-col overflow-hidden rounded-xl border-[0.5px] border-border" data-wizard-test-chat="">
+        <div className="relative flex h-[320px] flex-col overflow-hidden rounded-xl border-[0.5px] border-border" data-wizard-test-chat="">
           <WizardConversation botId={bot.id} threadId={draft.testThreadId} title={t("botWizard.recap.testTitle")} />
         </div>
       )}
-      {sections.map((step) => (
-        <section key={step} className="flex flex-col gap-3" data-wizard-recap-section={step}>
-          <div className="flex items-center justify-between gap-3 border-b border-hairline/40 pb-1.5">
-            <h2 className="text-[14px] font-semibold text-ink">
-              {stepTitle(step)}
-              {draft.skipped.includes(step) && <span className="ml-2 text-[12px] font-normal text-ink-tertiary">{t("botWizard.recap.skipped")}</span>}
-            </h2>
-            <QuietButton onClick={() => onEdit(step)}>{t("botWizard.recap.open")}</QuietButton>
-          </div>
-          <StepBody {...props} step={step} compact />
-        </section>
-      ))}
     </div>
   );
+}
+
+const countText = (count: number, one: LocaleKey, many: LocaleKey) => t(count === 1 ? one : many, { count });
+
+/** One line of words per step, read only. Exported for tests. */
+export function recapLines({ bot, draft, effects, suggestions, roleName }: {
+  bot: Bot; draft: WireWizardDraft; effects: Record<string, "allow" | "ask" | "deny">; suggestions: StepProps["suggestions"]; roleName: string;
+}): Array<{ step: Exclude<WizardStep, "recap">; text: string }> {
+  const answered = Object.values(draft.answers).filter((value) => value.trim()).length;
+  const soul = bot.soul?.trim()
+    ? t("botWizard.recap.soulWritten", { answered, total: Object.keys(draft.answers).length })
+    : t("botWizard.recap.soulEmpty");
+  const counts = { allow: 0, ask: 0, deny: 0 };
+  for (const effect of Object.values(effects)) counts[effect] += 1;
+  const ruleParts = [
+    counts.ask ? countText(counts.ask, "botWizard.recap.rules.ask.one", "botWizard.recap.rules.ask.many") : "",
+    counts.deny ? countText(counts.deny, "botWizard.recap.rules.deny.one", "botWizard.recap.rules.deny.many") : "",
+    counts.allow ? countText(counts.allow, "botWizard.recap.rules.allow.one", "botWizard.recap.rules.allow.many") : "",
+  ].filter(Boolean);
+  const level = bot.approvalMode ? t(`approvalMode.${bot.approvalMode}.label` as LocaleKey) : "";
+  const rules = [level, ruleParts.length ? ruleParts.join(", ") : t("botWizard.recap.rules.none")].filter(Boolean).join(" · ");
+  const mcp = bot.mcpServers == null ? t("botWizard.recap.tools.mcpAll") : bot.mcpServers.length ? t("botWizard.recap.tools.mcpSome", { names: bot.mcpServers.join(", ") }) : t("botWizard.recap.tools.mcpNone");
+  const tools = [
+    t("botWizard.recap.tools.workspace", { place: t(placeLabelKey(worksOnMode(bot.computer) ?? "auto")) }),
+    mcp,
+    suggestions.apps.length ? t("botWizard.recap.tools.appsFor", { apps: suggestions.apps.join(", ") }) : t("botWizard.recap.tools.appsLater"),
+  ].join(" · ");
+  const picked = suggestions.routines.filter((routine) => draft.routines.includes(routine.id)).map((routine) => routine.name);
+  const routines = picked.length ? picked.join(", ") : t("botWizard.recap.routines.none");
+  const identity = [roleName, bot.chiefOfStaff ? t("botWizard.identity.primary") : ""].filter(Boolean).join(" · ");
+  return [
+    { step: "identity", text: identity },
+    { step: "soul", text: soul },
+    { step: "rules", text: rules },
+    { step: "tools", text: tools },
+    { step: "routines", text: routines },
+  ];
 }

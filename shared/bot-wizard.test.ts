@@ -17,6 +17,9 @@ import {
   previousWizardStep,
   wireKits,
   writeSoulPrompt,
+  nextStepFor,
+  previousStepFor,
+  wizardPath,
 } from "./bot-wizard.ts";
 import { compileRule, impliedRiskScope } from "./custom-rules.ts";
 
@@ -158,5 +161,22 @@ describe("soul", () => {
   it("the guided kickoff names the bot", () => {
     expect(guidedKickoff({ botName: "Tri", language: "fr" })).toContain("mon nouveau bot Tri");
     expect(guidedKickoff({ botName: "Tri", language: "en" })).toContain("bot.wizard");
+  });
+
+  it("Tools and apps is off the path unless the person says the bot uses apps or a computer (2026-10-27)", () => {
+    const draft = newWizardDraft({ botId: "b", owner: "o", origin: "new", mode: "manual", now: 1 });
+    expect(wizardPath(draft)).toEqual(["identity", "soul", "rules", "routines", "recap"]);
+    expect(nextStepFor({ ...draft, step: "rules" })).toBe("routines");
+    expect(previousStepFor({ ...draft, step: "routines" })).toBe("rules");
+    // skipping Rules lands on Routines too
+    expect(applyWizardPatch({ ...draft, step: "rules" }, { skip: "rules" }, 2).step).toBe("routines");
+    const yes = applyWizardPatch(draft, { tools: "yes" }, 2);
+    expect(yes.tools).toBe("yes");
+    expect(wizardPath(yes)).toEqual(["identity", "soul", "rules", "tools", "routines", "recap"]);
+    expect(nextStepFor({ ...yes, step: "rules" })).toBe("tools");
+    // opened from the recap: the step is shown while the person is on it
+    expect(wizardPath({ ...draft, step: "tools" })).toContain("tools");
+    expect(nextStepFor({ ...draft, step: "tools" })).toBe("routines");
+    expect(applyWizardPatch(draft, { tools: "nope" as never }, 2).tools).toBeUndefined();
   });
 });

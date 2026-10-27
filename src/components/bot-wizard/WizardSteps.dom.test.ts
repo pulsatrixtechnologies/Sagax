@@ -104,6 +104,14 @@ describe("wizard steps", () => {
     expect(patch).toHaveBeenCalledWith({ rules: { "deny-payment": null } });
   });
 
+  it("Rules: one simple question puts Tools and apps on the path, Later by default", async () => {
+    const { patch, value } = props("inbox");
+    act(() => root.render(createElement(StepBody, { ...value, step: "rules" })));
+    expect(container.querySelector("[data-wizard-tools-question]")?.getAttribute("data-wizard-tools-question")).toBe("later");
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-wizard-tools-choice="yes"]')!.click(); });
+    expect(patch).toHaveBeenCalledWith({ tools: "yes" });
+  });
+
   it("Tools: only what the role uses, every tool one click away", async () => {
     const { value } = props("inbox");
     act(() => root.render(createElement(StepBody, { ...value, step: "tools" })));

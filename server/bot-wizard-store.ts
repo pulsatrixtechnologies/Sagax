@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
-import { WIZARD_MODES, WIZARD_STEPS, type WizardDraft } from "../shared/bot-wizard.ts";
+import { WIZARD_MODES, WIZARD_STEPS, WIZARD_TOOLS_CHOICES, type WizardDraft } from "../shared/bot-wizard.ts";
 import { writeFileAtomic } from "./atomic.ts";
 
 /** A bound on the file, never a quota a person meets. */
@@ -31,6 +31,7 @@ const draftSchema = z.object({
   guidedBotId: z.string().optional(),
   guidedThreadId: z.string().optional(),
   testThreadId: z.string().optional(),
+  tools: z.enum(WIZARD_TOOLS_CHOICES).optional(),
   status: z.enum(["draft", "done"]),
   createdAt: z.number(),
   updatedAt: z.number(),

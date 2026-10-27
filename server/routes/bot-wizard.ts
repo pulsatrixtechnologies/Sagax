@@ -30,6 +30,7 @@ import { z } from "zod";
 import {
   WIZARD_MODES,
   WIZARD_STEPS,
+  WIZARD_TOOLS_CHOICES,
   applyWizardPatch,
   cleanSoulReply,
   composeSoul,
@@ -87,6 +88,7 @@ const patchSchema = z.object({
   guidedBotId: idOrNull.optional(),
   guidedThreadId: idOrNull.optional(),
   testThreadId: idOrNull.optional(),
+  tools: z.enum(WIZARD_TOOLS_CHOICES).optional(),
 }).strict();
 const startSchema = z.object({
   origin: z.enum(["new", "redo"]),
@@ -170,7 +172,7 @@ export function createBotWizardRoutes(deps: BotWizardDeps): RouteHandler {
     if (!action && method === "PATCH") {
       if (!current) return json(res, 404, { error: "no wizard draft for this bot" });
       const parsed = patchSchema.safeParse(await readBody(req));
-      if (!parsed.success) return json(res, 400, { error: "send a wizard patch: mode, step, skip, roleId, answers, rules, routines, guidedThreadId, testThreadId" });
+      if (!parsed.success) return json(res, 400, { error: "send a wizard patch: mode, step, skip, roleId, answers, rules, routines, tools, guidedThreadId, testThreadId" });
       const next = deps.drafts.put(applyWizardPatch(current, parsed.data, now()));
       return json(res, 200, { draft: wire(next, bot) });
     }

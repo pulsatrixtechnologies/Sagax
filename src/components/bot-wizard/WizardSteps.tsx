@@ -329,6 +329,32 @@ export function RulesStep({ bot, draft, suggestions, patch, language }: StepProp
         </ul>
       </PaneSection>
       {error && <p role="alert" className="text-[12.5px] text-danger">{error}</p>}
+      <ToolsQuestion draft={draft} patch={patch} />
+    </div>
+  );
+}
+
+/** 2026-10-27: Tools and apps is off the main path. One simple question
+ * puts it back: "Yes" opens the step next, "Later" keeps the defaults. */
+function ToolsQuestion({ draft, patch }: Pick<StepProps, "draft" | "patch">) {
+  const labelId = useId();
+  const value = draft.tools ?? "later";
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3" data-wizard-tools-question={value}>
+      <span className="flex min-w-0 flex-1 basis-[220px] flex-col gap-0.5">
+        <span id={labelId} className="text-[13px] text-ink">{t("botWizard.tools.question")}</span>
+        <span className="text-[12px] leading-relaxed text-ink-secondary">{t("botWizard.tools.questionHint")}</span>
+      </span>
+      <div role="radiogroup" aria-labelledby={labelId} className="inline-flex shrink-0 gap-0.5 rounded-lg bg-control p-0.5">
+        {(["later", "yes"] as const).map((choice) => (
+          <button key={choice} type="button" role="radio" aria-checked={value === choice} data-wizard-tools-choice={choice}
+            onClick={() => { if (value !== choice) void patch({ tools: choice }); }}
+            className={cn("min-h-[30px] whitespace-nowrap rounded-md border px-3 text-[12px] md:min-h-[26px]",
+              value === choice ? "border-accent-border bg-selected font-medium text-ink shadow-sm" : "border-transparent text-ink-secondary hover:bg-raised-hover hover:text-ink")}>
+            {t(choice === "yes" ? "botWizard.tools.yes" : "botWizard.tools.later")}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
