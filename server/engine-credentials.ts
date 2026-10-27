@@ -39,7 +39,14 @@
 //      an admin or Perspicax lists this engine on their
 //      person sheet (`sagax_server_engines`, 2026-10-16)  -> org-key
 //      otherwise                                        -> no_access (server_engine_not_allowed)
+//      2026-10-27 (#1098): never on an engine outside the
+//      organization's list (`allowedEngines`): the
+//      organization's key pays only for what it allows  -> no_access (server_engine_not_allowed)
 //   6. otherwise                                        -> no_access (no_credentials)
+//
+// 2026-10-27 (#1098): an engine outside the organization's list still runs
+// on the payer's own subscription or key (steps 3 and 4): it is their bill,
+// not the organization's (`paidByPerson`).
 //
 // Decision of 2026-10-01, superseding the 2026-09-28 decision 7 ("the owner key
 // serves everyone") and the slice 3 rules: the owner's credentials never pay
@@ -189,6 +196,9 @@ export interface EngineCredentialInput {
   /** 2026-10-26 (#1137): who pays for this bot's replies (shared/turn-payer.ts).
    * Absent means "speaker" (the rule since 2026-10-01). */
   payerMode?: TurnPayerMode;
+  /** 2026-10-27 (#1098): the organization's list allows this engine
+   * (`allowedEngines`). False: its key never serves it. Absent means allowed. */
+  orgEngineAllowed?: boolean;
 }
 
 export type EngineCredentialPlan =
@@ -245,12 +255,18 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
     // The organization's key serves only the people it was given to. A turn
     // nobody is known to speak for is judged as the bot's owner's.
     const judged = payer.principalId || input.owner.principalId;
-    if (input.serverEngineAllowed && !input.serverEngineAllowed(judged, input.instance.instanceId)) {
+    if (input.orgEngineAllowed === false || (input.serverEngineAllowed && !input.serverEngineAllowed(judged, input.instance.instanceId))) {
       return { ok: false, reason: "no_access", cause: "server_engine_not_allowed", ...who };
     }
     return { ok: true, via: "org-key", payer: "organization", ...routine };
   }
   return { ok: false, reason: "no_access", cause: "no_credentials", ...who };
+}
+
+/** 2026-10-27 (#1098): the plan runs on the payer's own subscription or
+ * key, so the organization's engine list does not hold it. */
+export function paidByPerson(plan: EngineCredentialPlan): boolean {
+  return plan.ok && (plan.via === "subscription" || keyVia(plan.via));
 }
 
 export interface MaterializeDeps {

@@ -197,22 +197,23 @@ server's header values in Plugins → MCP servers.
 
 A bot on the Claude engine gets the tools and instructions its owner gave it:
 the servers above, its integrations (computer, browser, agents, phone), and
-its own project's `<cwd>/.mcp.json`. By default it does **not** inherit this
-machine's Claude Code setup — the MCP servers and claude.ai connectors in your
-user or local Claude config, your skills and agents, your hooks, and your
-personal `~/.claude/CLAUDE.md`. Those were being mounted into every turn of
-every bot (one measured desktop added 407 tools, ~10k tokens per model call)
-and were reachable by the bot. Codex bots, by contrast, have always read the
+its own project's `<cwd>/.mcp.json`. It does **not** inherit your skills and
+agents, your hooks, or your personal `~/.claude/CLAUDE.md` from this
+machine's Claude Code setup. The MCP servers and claude.ai connectors of your
+user or local Claude config come in only through the switch below (one
+measured desktop added 407 tools, ~10k tokens per model call). Codex bots, by contrast, have always read the
 MCP servers in `~/.codex/config.toml`, which is why the two engines looked
 different.
 
-If you want Claude bots to see your own Claude Code MCP servers too, switch on
-**Also use my Claude Code MCP servers** at the top of Plugins → MCP servers.
-With it on, every Claude bot also loads the servers and connectors from your
-Claude Code config on every message; skills, hooks and the personal
-`CLAUDE.md` still stay out. More tools means more tokens per message, so keep
-it off unless you need those servers — the recommended way to give a bot a
-server is still this page or the bot project's `.mcp.json`.
+The switch **Also use my Claude Code MCP servers** at the top of Plugins → MCP
+servers lets Claude bots see your own Claude Code MCP servers too. Since
+2026-10-27 (#1098) it is **on by default on your own computer** (a solo
+server) and **off by default on an organization's shared server**, whose
+Claude Code setup belongs to no one person; turning it on or off is kept
+either way. With it on, every Claude bot also loads the servers and
+connectors from your Claude Code config on every message; skills, hooks and
+the personal `CLAUDE.md` still stay out. More tools means more tokens per
+message: turn it off if you do not need those servers.
 
 The switch drops the CLI flag `--strict-mcp-config` (Claude Code 1.0.60+)
 while keeping `--setting-sources project` (1.0.122+). The environment variable

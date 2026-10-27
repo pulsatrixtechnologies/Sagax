@@ -13,7 +13,7 @@ import { currentTaskBot, useStore, visibleMessages, type Bot } from "@/state/sto
 import { pendingApprovals } from "../PendingApproval";
 import { engineOfferContext, useOfferedInstances } from "@/lib/offered-instances";
 import { engineOffer } from "../../../shared/offered-engines";
-import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { botWithViewerSettings, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { useBotEditor } from "./BotEditorContext";
 import { ThreadModelsLine } from "../ThreadModelsLine";
@@ -140,10 +140,15 @@ function FallbackChain({ bot, onChange }: { bot: Bot; onChange: (fallback: Bot["
   const { state } = useStore();
   const offered = useOfferedInstances();
   const org = usePerspicaxOrg();
-  const offerContext = engineOfferContext(state.config, org !== null, null);
+  const mine = useMyEngines();
+  const offerContext = engineOfferContext(state.config, org !== null, mine);
   // a backup on an engine the organization no longer offers is not shown
-  // (the server skips it too) and leaves the chain at the next change
-  const chain = (bot.fallback ?? []).filter((entry) => engineOffer(offerContext, entry.instanceId) !== "notAllowed");
+  // (the server skips it too) and leaves the chain at the next change; one
+  // the person pays for themselves stays (#1098)
+  const chain = (bot.fallback ?? []).filter((entry) => {
+    const offer = engineOffer(offerContext, entry.instanceId);
+    return offer === "offered" || (offer === "notGiven" && mine?.find((row) => row.instanceId === entry.instanceId)?.orgNotAllowed !== true);
+  });
   // only engines offered to this person (src/lib/offered-instances.ts)
   const available = offered.filter(
     (instance) =>

@@ -30,8 +30,9 @@ editing files in the working folder, `kill` used as an English verb.
 ## Who may do defensive security work
 
 Perspicax can grant `security.triage` (group Security, label "Do defensive
-security work" / "Faire le travail de défense"). It is not a member default
-and it is not admin-only, so a profile can grant it. An organization admin
+security work" / "Faire le travail de défense"). Since 2026-10-27 (#1098) it
+is a member default: talking about security tools is conversation. It is not
+admin-only, and a Perspicax profile that leaves it out withholds it. An organization admin
 already holds every key. On a solo server the operator at this computer
 holds it, because their turn speaks as `operator`.
 
@@ -88,7 +89,8 @@ Surfaces:
 - The shared-computer terminal and file operations.
 - The MCP gate, hard blocks only, enforce mode only.
 
-`require_approval` is a refusal until Perspicax grants `security.triage`.
+`require_approval` is a refusal for a person who does not hold `security.triage`
+(a member holds it by default since 2026-10-27).
 It is not a chat approval card: Full and Auto would accept that card on
 their own.
 
@@ -195,7 +197,7 @@ How this sits next to the pieces that already existed:
 - Tool guard (`SAGAX_TOOL_GUARD`, default shadow) answers whether this bot and this speaker may call the route at all. It is unchanged.
 - Agent card guard runs before the approval card for `agents__` tools only. A missing grant is still a refusal, not a safety card.
 - Approval modes ask, auto, and full still answer ordinary cards. They do not answer a safety hold.
-- Perspicax `security.triage` is only for defensive security work. Admins hold every key. It is not a member default. It does not turn a hard block into a card.
+- Perspicax `security.triage` is only for defensive security work. Admins hold every key. It is a member default (2026-10-27), withheld when a profile leaves it out. It does not turn a hard block into a card.
 - The MCP gate still cannot see the person's permission. It blocks hard misuse categories in enforce, and it now carries the safety note (a safer path or a refusal) back to the model. A gate card is still one the person accepts.
 
 The reviewer is best-effort. A hard block never becomes a card. An explicit accept is not overridden, except by a later hard block.

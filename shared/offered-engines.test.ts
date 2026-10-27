@@ -20,10 +20,19 @@ describe("the engines offered to a person (2026-10-18)", () => {
     expect(engineOffer(org(["claude"]), "codex")).toBe("notAllowed");
   });
 
-  it("an engine hidden by the organization stays hidden even when the person connected it", () => {
-    const mine = [{ instanceId: "codex", myTurns: "subscription" }];
-    expect(engineOffer(org(["claude"], mine), "codex")).toBe("notAllowed");
-    expect(ids(offeredEngines(engines, org(["claude"], mine), "settings"))).toEqual(["claude"]);
+  it("an engine outside the organization's list is offered when the person pays for it themselves (#1098)", () => {
+    const mine = [
+      { instanceId: "codex", orgNotAllowed: true, myTurns: "subscription" },
+      { instanceId: "grok", orgNotAllowed: true, myTurns: "none" },
+    ];
+    expect(engineOffer(org(["claude"], mine), "codex")).toBe("offered");
+    expect(ids(offeredEngines(engines, org(["claude"], mine)))).toEqual(["claude", "codex"]);
+    // nothing of theirs serves it yet: in Settings to connect their own account, not to pick
+    expect(engineOffer(org(["claude"], mine), "grok")).toBe("notGiven");
+    expect(ids(offeredEngines(engines, org(["claude"], mine), "settings"))).toEqual(["claude", "codex", "grok"]);
+    // the organization's key never makes it offered, and an unlisted one stays hidden
+    expect(engineOffer(org(["claude"], [{ instanceId: "codex", myTurns: "org-key" }]), "codex")).toBe("notAllowed");
+    expect(engineOffer(org(["claude"], null), "codex")).toBe("notAllowed");
   });
 
   it("an engine the organization pays for but did not give the person: not to pick, still in Settings", () => {

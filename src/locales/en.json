@@ -3662,7 +3662,7 @@
   "mcp.auth.waiting": "Finish signing in in your browser…",
   "mcp.cancel": "Cancel",
   "mcp.claude.aria": "Use my Claude Code MCP servers",
-  "mcp.claude.desc": "Off: Claude bots only get the servers on this page, plus a bot project's own .mcp.json. On: they also get every MCP server and connector from your own Claude Code setup, on every message, the same way Codex bots already read your Codex config. More tools means more tokens per message, so keep this off unless you need them.",
+  "mcp.claude.desc": "On: Claude bots also get every MCP server and connector from your own Claude Code setup, on every message, the same way Codex bots already read your Codex config. Off: they only get the servers on this page, plus a bot project's own .mcp.json. On by default on your own computer; off by default on an organization's shared server. More tools means more tokens per message.",
   "mcp.claude.error": "Could not save this setting. Try again.",
   "mcp.claude.title": "Also use my Claude Code MCP servers",
   "mcp.editAria": "Edit {name}",

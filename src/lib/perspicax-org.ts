@@ -235,6 +235,9 @@ export interface MyEngine {
   /** 2026-10-16: the organization has a key for this engine, but Perspicax
    * does not give this engine to this person (`sagax_server_engines`). */
   orgKeyNotGiven?: boolean;
+  /** 2026-10-27 (#1098): outside the organization's engine list; only the
+   * person's own subscription or key runs it (offered once one does). */
+  orgNotAllowed?: boolean;
   /** What the person's own turns on this engine run with, on their bots
    * and on the bots shared with them (server/engine-credentials.ts). */
   myTurns: "subscription" | "key" | "org-key" | "none";

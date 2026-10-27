@@ -1852,8 +1852,8 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       envKeys ? `Environment names on file: ${envKeys}.` : "",
       headerKeys ? `Header names on file: ${headerKeys}.` : "",
     ].filter(Boolean).join(" ");
-    // 2026-10-26: on Full access the server saves it switched on (never a
-    // command on an organization's shared server); otherwise it stays off.
+    // 2026-10-27 (#1098): on Auto or Full access the server saves it switched
+    // on (never a command on an organization's shared server); otherwise off.
     if (saved.enabled === true) {
       return {
         text: `Saved MCP server “${serverName}”${where} switched on. Bots it is attached to can use it from their next turn.${named ? ` ${named}` : ""}`,

@@ -10,6 +10,11 @@
 //   (`allowedEngines`, shared/org-allowed-engines.ts: null or absent is
 //   every engine, [] is none since Sagax 0.5.12) is "notAllowed" and
 //   dropped everywhere, even when the person connected it before.
+// - 2026-10-27 (#1098): an engine outside that list that the person pays
+//   for with their own subscription or key (GET /api/me/engines `myTurns`
+//   "subscription" or "key") is offered: it is their bill, not the
+//   organization's. Until then it is "notGiven" when the server lists it
+//   (`orgNotAllowed`), so Settings shows it to connect their own account.
 // - An engine the organization pays for but has not given this person
 //   (`sagax_server_engines`, GET /api/me/engines `orgKeyNotGiven`) and that
 //   nothing of their own serves is "notGiven": not offered to pick, still
@@ -22,6 +27,9 @@ export type EngineOffer = "offered" | "notAllowed" | "notGiven";
 export interface PersonEngineAccess {
   instanceId: string;
   orgKeyNotGiven?: boolean;
+  /** #1098: outside the organization's list; only the person's own account
+   * or key runs it. */
+  orgNotAllowed?: boolean;
   myTurns?: string;
 }
 
@@ -34,11 +42,19 @@ export interface EngineOfferContext {
   mine?: readonly PersonEngineAccess[] | null;
 }
 
+/** #1098: the person's own subscription or key runs this engine. */
+export function personPays(access: Pick<PersonEngineAccess, "myTurns"> | undefined): boolean {
+  return access?.myTurns === "subscription" || access?.myTurns === "key";
+}
+
 /** Whether this engine is offered to the person, and why not. */
 export function engineOffer(context: EngineOfferContext, instanceId: string): EngineOffer {
   if (!context.organization) return "offered";
-  if (!engineAllowed(context.allowedEngines, instanceId)) return "notAllowed";
   const access = context.mine?.find((engine) => engine.instanceId === instanceId);
+  if (!engineAllowed(context.allowedEngines, instanceId)) {
+    if (personPays(access)) return "offered";
+    return access?.orgNotAllowed === true ? "notGiven" : "notAllowed";
+  }
   if (access?.orgKeyNotGiven === true && access.myTurns === "none") return "notGiven";
   return "offered";
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addDisabledMcpServer,
+  botAddedMcpServerEnabled,
   isReservedMcpEnvEntry,
   listMcpServers,
   MAX_MCP_SERVERS,
@@ -172,7 +173,7 @@ describe("addDisabledMcpServer", () => {
     expect(addDisabledMcpServer(current, { name: "other", command: "npx", enabled: true })).toEqual({
       ok: false,
       status: 400,
-      error: "A bot cannot change the on/off switch. The server is saved off, and only the user can turn it on in MCP server settings.",
+      error: "A bot cannot change the on/off switch. Send the server without it: on Auto or Full access it is saved on, otherwise off until the user turns it on in MCP server settings.",
     });
     expect(addDisabledMcpServer(current, { name: "other", command: "npx", enabled: false }).ok).toBe(false);
     expect(current).toEqual({ notes });
@@ -204,6 +205,18 @@ describe("addDisabledMcpServer", () => {
     });
     expect(addDisabledMcpServer(current, { name: "s0", command: "new" })).toMatchObject({ ok: false, status: 409 });
     expect(current).toEqual(before);
+  });
+});
+
+describe("botAddedMcpServerEnabled (#1098)", () => {
+  it("switches a bot's new server on at Auto or Full, never a command on an organization server", () => {
+    expect(botAddedMcpServerEnabled({ approvalMode: "auto", organization: false, remote: false })).toBe(true);
+    expect(botAddedMcpServerEnabled({ approvalMode: "full", organization: false, remote: false })).toBe(true);
+    expect(botAddedMcpServerEnabled({ approvalMode: "auto", organization: true, remote: true })).toBe(true);
+    expect(botAddedMcpServerEnabled({ approvalMode: "auto", organization: true, remote: false })).toBe(false);
+    expect(botAddedMcpServerEnabled({ approvalMode: "full", organization: true, remote: false })).toBe(false);
+    expect(botAddedMcpServerEnabled({ approvalMode: "ask", organization: false, remote: true })).toBe(false);
+    expect(botAddedMcpServerEnabled({ approvalMode: "edits", organization: false, remote: true })).toBe(false);
   });
 });
 
