@@ -10,7 +10,7 @@ import { json, readBody } from "../harness/http.ts";
 import { requiredScope, type RequestAuth } from "../request-auth.ts";
 import { createCustomRuleRoutes } from "./custom-rules.ts";
 import { dispatchRoutes } from "./table.ts";
-import type { CustomRule, CustomRuleBinding } from "../../shared/custom-rules.ts";
+import type { CustomRule, CustomRuleBinding, RuleProduct } from "../../shared/custom-rules.ts";
 
 const servers: Server[] = [];
 const dirs: string[] = [];
@@ -24,6 +24,7 @@ interface Options {
   person: string | null;
   card?: (personId: string, card: { threadId: string; requestId: string }, rule: CustomRule) => "covered" | "not-covered" | null;
   binding?: (personId: string, card: { threadId: string; requestId: string }) => CustomRuleBinding | null | undefined;
+  products?: (personId: string, botId: string | null) => RuleProduct[];
 }
 
 async function serve(options: Options) {
@@ -38,6 +39,7 @@ async function serve(options: Options) {
     ownedBots: (person) => person === "owner" ? [{ id: "bot-a", name: "Alpha" }, { id: "bot-b", name: "Beta" }] : [{ id: "bot-z", name: "Zed" }],
     ...(options.card ? { fromCard: options.card } : {}),
     ...(options.binding ? { bindingFor: options.binding } : {}),
+    ...(options.products ? { products: options.products } : {}),
     audit: (row) => audits.push(row.action),
     home: "/Users/example",
   })];
@@ -57,6 +59,28 @@ async function serve(options: Options) {
 }
 
 describe("custom rules routes", () => {
+  it("names a product only as the bot's servers declare it, and pins it on the saved rule (#1220)", async () => {
+    let declared: RuleProduct[] = [{ id: "acme_desk", name: "Acme Desk" }, { id: "example_chat" }];
+    const { call, store } = await serve({ person: "jc", products: (_person, botId) => (botId === "bot-a" ? declared : []) });
+    const listed = await call("?botId=bot-a");
+    expect(listed.body.products).toEqual([{ id: "acme_desk", name: "Acme Desk" }, { id: "example_chat" }]);
+    const saved = await call("", "POST", { text: "ne jamais écrire dans Acme Desk", botId: "bot-a" });
+    expect(saved.body.rule).toMatchObject({ behavior: "deny", products: ["acme_desk"] });
+    expect(saved.body.rule.compiled).toMatchObject({ recognized: true, products: ["acme_desk"] });
+    // the product is no longer declared: the rule keeps it
+    declared = [];
+    expect((await call("?botId=bot-a")).body.rules[0].compiled.products).toEqual(["acme_desk"]);
+    // new words with nothing declared keep the pins; with a declaration, they name their own
+    await call(`/${saved.body.rule.id}`, "PATCH", { when: "écrire dans Acme Desk ou ailleurs" });
+    expect(store.get("jc", saved.body.rule.id)?.products).toEqual(["acme_desk"]);
+    declared = [{ id: "example_chat" }];
+    await call(`/${saved.body.rule.id}`, "PATCH", { when: "écrire avec example chat" });
+    expect(store.get("jc", saved.body.rule.id)?.products).toEqual(["example_chat"]);
+    // a rule for every bot reads every bot's products; none declared, no pin
+    const all = await call("", "POST", { text: "ne jamais écrire dans Acme Desk", botId: null });
+    expect(all.body.rule.products).toBeUndefined();
+  });
+
   it("are a client session's own routes, and never a bot's", async () => {
     expect(requiredScope("GET", "/api/custom-rules")).toBe("client");
     expect(requiredScope("POST", "/api/custom-rules")).toBe("client");

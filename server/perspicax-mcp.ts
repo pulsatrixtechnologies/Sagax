@@ -706,6 +706,14 @@ export class PerspicaxMcp {
     return this.apiNames.get(botId)?.reviewed.has(apiId.trim().toLowerCase()) ?? false;
   }
 
+  /** 2026-10-27 (#1220): every API Perspicax declared for this bot, with
+   * its name (the products a custom rule may name), or undefined while
+   * api_list has not answered for it. */
+  declaredApis(botId: string): Array<{ id: string; name: string }> | undefined {
+    const names = this.apiNames.get(botId)?.names;
+    return names ? [...names].map(([id, name]) => ({ id, name })) : undefined;
+  }
+
   /** Call one Perspicax tool from the harness itself (a native tool, such
    * as the claims), as the person who speaks in this turn: the token of the
    * turn's first mounted profile, so Perspicax sees that person as the

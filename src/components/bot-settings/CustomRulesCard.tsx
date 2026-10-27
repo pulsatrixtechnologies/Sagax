@@ -24,7 +24,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { noteOrgAlwaysAllowOff } from "@/lib/org-approval-policy";
 import { api, ApiError, useStore, type Bot } from "@/state/store";
-import { compileRule, impliedRiskScope, RISK_CLASSES, type CompiledRule, type CustomRule, type CustomRuleBehavior, type RiskClass } from "../../../shared/custom-rules";
+import { compileRule, impliedRiskScope, RISK_CLASSES, type CompiledRule, type CustomRule, type CustomRuleBehavior, type RiskClass, type RuleProduct } from "../../../shared/custom-rules";
 import { OrgRuleBadge, RISK_LABEL, RuleTextDiff, riskList } from "../CustomRuleNotice";
 import { PaneEmpty, PaneSection } from "./PaneSection";
 import { RuleTestButton } from "../approvals/RuleTest";
@@ -85,8 +85,11 @@ export function customRuleError(failure: unknown): string {
 
 /** The editor of one rule. `risks` are the kinds the person must tick for
  * the rule to cover a given card (from "Toujours permettre ceci"). */
-export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, onSave, busy = false, fromCard = false, bots, botId, allowOff = false, ruleId }: {
+export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, onSave, busy = false, fromCard = false, bots, botId, allowOff = false, ruleId, products = [] }: {
   botName: string;
+  /** 2026-10-27 (#1220): the products the bot's servers declare (the list
+   * route's `products`), the only words a rule names a product by. */
+  products?: readonly RuleProduct[];
   /** The person's bots a rule may be saved for ("Les bots que je choisis"),
    * and the bot this editor is for (chosen first). */
   bots?: ReadonlyArray<{ id: string; name: string }>;
@@ -111,7 +114,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
   const [allBots, setAllBots] = useState(initial.allBots);
   const [chosen, setChosen] = useState<string[] | null>(initial.botIds?.length ? initial.botIds : null);
   const [riskScope, setRiskScope] = useState<RiskClass[]>(initial.riskScope);
-  const compiled = when.trim() ? compileRule(when) : null;
+  const compiled = when.trim() ? compileRule(when, undefined, undefined, products) : null;
   const recognized = compiled ? compiled.recognized : true;
   const shellFamily = behavior === "allow" && compiled?.shellFamily === true;
   const exactOutsideCard = behavior === "allow" && !fromCard && (compiled?.commands.length ?? 0) > 0;
@@ -261,6 +264,7 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
   const { state } = useStore();
   const [rules, setRules] = useState<CustomRuleRow[] | null>(null);
   const [alwaysAllow, setAlwaysAllow] = useState(true);
+  const [products, setProducts] = useState<RuleProduct[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // the person's bots a new rule may be saved for: this bot's owner's (on
@@ -269,9 +273,10 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
     .filter((each) => each.id === bot.id || each.ownerUserId === bot.ownerUserId)
     .map((each) => ({ id: each.id, name: each.name }));
 
-  const load = useCallback(() => api<{ rules: CustomRuleRow[]; orgPolicy?: { alwaysAllow?: boolean } }>(`/api/custom-rules?botId=${encodeURIComponent(bot.id)}`)
+  const load = useCallback(() => api<{ rules: CustomRuleRow[]; orgPolicy?: { alwaysAllow?: boolean }; products?: RuleProduct[] }>(`/api/custom-rules?botId=${encodeURIComponent(bot.id)}`)
     .then((body) => {
       setAlwaysAllow(body.orgPolicy?.alwaysAllow !== false);
+      setProducts(Array.isArray(body.products) ? body.products : []);
       setRules(customRulesForBot(body.rules ?? [], bot.id));
     })
     .catch(() => setRules(null)), [bot.id]);
@@ -355,6 +360,7 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
                     allowOff={!alwaysAllow}
                     ruleId={rule.id}
                     botId={bot.id}
+                    products={products}
                     onCancel={() => setEditing(null)}
                     onSave={(draft) => update(rule, { when: draft.when, behavior: draft.behavior, botId: draft.allBots ? null : bot.id, riskScope: draft.riskScope })}
                   />
@@ -414,6 +420,7 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
             initial={{ when: "", behavior: alwaysAllow ? "allow" : "ask", allBots: false, riskScope: [] }}
             bots={ownBots}
             botId={bot.id}
+            products={products}
             allowOff={!alwaysAllow}
             onCancel={() => setEditing(null)}
             onSave={create}

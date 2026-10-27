@@ -357,9 +357,9 @@ import { memberTeamSetupRefusal, TEAM_SETUP_DESKTOP_MESSAGE, TEAM_SETUP_DESKTOP_
 import { cardRuleCandidate, folderRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
-import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
+import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall, type RuleProductContext } from "./custom-rules-review.ts";
 import { createCustomRulesModelReviewer } from "./custom-rules-model.ts";
-import { compileRule, modelReviewCardEligible, type CustomRule } from "../shared/custom-rules.ts";
+import { compileRule, modelReviewCardEligible, type CustomRule, type RuleProduct } from "../shared/custom-rules.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
@@ -1778,6 +1778,36 @@ function declaredToolProduct(botId: string | undefined, name: string, input?: st
     if (declared) return { product: declared, productId: candidate };
   }
   return undefined;
+}
+/** 2026-10-27 (#1220): the products a custom rule may name for this bot,
+ * as its servers declare them: the APIs Perspicax declared for it
+ * (api_list, with the names the console shows) and the ids of the MCP
+ * servers it may use. No product is written in the code. */
+function ruleProductsOf(botId: string | undefined): RuleProductContext {
+  if (!botId) return {};
+  const declared = perspicaxMcp?.declaredApis(botId);
+  const products: RuleProduct[] = (declared ?? []).map((api) => ({ id: api.id, name: api.name }));
+  const bot = store.bot(botId);
+  if (bot) {
+    for (const name of Object.keys(cfg.mcpServers ?? {})) if (!bot.mcpServers || bot.mcpServers.includes(name)) products.push({ id: name });
+    try {
+      for (const name of Object.keys(personConnections.servers(effectiveBotOwner(bot)))) products.push({ id: name });
+    } catch {
+      // no connection of the person's own: the configured servers alone
+    }
+  }
+  return { products, gatewayNamesUnknown: Boolean(perspicaxMcp) && !declared };
+}
+/** The same for a rule of one bot, or of every bot of this person. */
+function ruleProductsOfPerson(personId: string, botId: string | null): RuleProduct[] {
+  const seen = new Map<string, RuleProduct>();
+  for (const id of botId ? [botId] : botsOwnedBy(personId).map((bot) => bot.id)) {
+    for (const product of ruleProductsOf(id).products ?? []) {
+      const key = product.id.toLowerCase();
+      if (!seen.has(key) || (product.name && !seen.get(key)!.name)) seen.set(key, product);
+    }
+  }
+  return [...seen.values()];
 }
 function personSpeaker(principal: string | null): TurnSpeaker | undefined {
   return principal ? { origin: "person", principalId: principal } : undefined;
@@ -15515,7 +15545,7 @@ bus.subscribe((event: RuntimeEvent) => {
         }
         : null;
       const customReview = customCall && asker
-        ? reviewCustomRules(customRules.rulesOf(cardAnswerer, asker.id, { ownSandbox: ownSandboxCall }), customCall, asker.id)
+        ? reviewCustomRules(customRules.rulesOf(cardAnswerer, asker.id, { ownSandbox: ownSandboxCall }), customCall, asker.id, serverHome(), ruleProductsOf(asker.id))
         : null;
       const customDecision = customReview?.decision.kind === "allow"
         && (strictCard || guestDriven || safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true)
@@ -15929,7 +15959,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // turn, a safety hold, a sandbox widening or under an ask rule
           ...(permission && customReview && !adminApproval && !guestDriven && safetyEffect?.kind !== "hold" && !event.requiresExplicitApproval && customDecision?.kind !== "ask"
             ? (() => {
-              const candidate = customRuleCandidate(customReview.facts, languageOfPerson(cardAnswerer));
+              const candidate = customRuleCandidate(customReview.facts, languageOfPerson(cardAnswerer), serverHome(), ruleProductsOf(asker?.id));
               return candidate ? { customRuleCandidate: candidate } : {};
             })()
             : {}),
@@ -29702,6 +29732,7 @@ ROUTES.push(createCustomRuleRoutes({
   stepUp: (_auth, personId, action, detail, stepUp) => settingsStepUpGate(personId, action, detail, stepUp),
   ownedBots: botsOwnedBy,
   home: serverHome(),
+  products: ruleProductsOfPerson,
   bindingFor: (personId, where) => {
     const message = store.messagesFor(where.threadId).find((row) => row.card?.requestId === where.requestId);
     const card = message?.card;
@@ -29725,7 +29756,7 @@ ROUTES.push(createCustomRuleRoutes({
       tool: card.tool, ...(card.mcpTool ? { mcpTool: card.mcpTool } : {}), ...(card.toolInput ? { input: card.toolInput } : {}), summary: card.subtitle,
       ...(binding ? { command: binding.command, ...(binding.cwd ? { cwd: binding.cwd } : {}), ...(binding.providerInstanceId ? { providerInstanceId: binding.providerInstanceId } : {}) } : {}),
     };
-    return ruleCoversCard(rule, call, bot.id) ? "covered" : "not-covered";
+    return ruleCoversCard(rule, call, bot.id, serverHome(), ruleProductsOf(bot.id)) ? "covered" : "not-covered";
   },
   markCard: (where, rule) => {
     const message = store.messagesFor(where.threadId).find((row) => row.card?.requestId === where.requestId);
@@ -30567,7 +30598,7 @@ function inboxTestRule(_auth: RequestAuth, viewer: InboxViewer, draft: RuleTestD
     createdAt: saved?.createdAt ?? Date.now(), updatedAt: Date.now(),
   };
   const home = serverHome();
-  const unreadable = !compileRule(draft.when, home).recognized;
+  const unreadable = !compileRule(draft.when, home, undefined, ruleProductsOfPerson(viewer.principalId, draft.botId)).recognized;
   const { rows } = journalRowsFor(viewer, RULE_TEST_DAYS);
   return testRuleOnJournal(rows, draftId, (row) => {
     if (!replayable(row)) return null;
@@ -30583,7 +30614,7 @@ function inboxTestRule(_auth: RequestAuth, viewer: InboxViewer, draft: RuleTestD
       ...(call?.providerInstanceId ? { providerInstanceId: call.providerInstanceId } : {}),
       ...(call?.paths?.length ? { paths: call.paths } : {}),
       ...(row.summary ? { summary: row.summary } : {}),
-    }, row.botId, home).decision;
+    }, row.botId, home, ruleProductsOf(row.botId)).decision;
   }, RULE_TEST_DAYS, unreadable);
 }
 

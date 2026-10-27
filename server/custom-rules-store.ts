@@ -34,6 +34,9 @@ export const MAX_ORG_RULES = 100;
 /** The owner an organization rule carries (never a person's id). */
 export const ORG_RULE_OWNER = "organization";
 
+/** The product ids one rule may pin (shared/custom-rules.ts CustomRule.products). */
+const MAX_RULE_PRODUCTS = 32;
+
 const ruleSchema = z.object({
   id: z.string().min(1).max(64),
   ownerId: z.string().min(1).max(200),
@@ -50,6 +53,7 @@ const ruleSchema = z.object({
     providerInstanceId: z.string().max(200).optional(),
   }).optional(),
   org: z.literal(true).optional(),
+  products: z.array(z.string().min(1).max(200)).max(MAX_RULE_PRODUCTS).optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
@@ -70,6 +74,8 @@ export interface NewCustomRule {
   behavior: CustomRuleBehavior;
   riskScope?: RiskClass[];
   binding?: CustomRuleBinding;
+  /** The product ids the words named when saved (compileRule). */
+  products?: string[];
 }
 
 export interface CustomRulePatch {
@@ -78,6 +84,8 @@ export interface CustomRulePatch {
   botId?: string | null;
   riskScope?: RiskClass[];
   enabled?: boolean;
+  /** Read again with the words: the product ids they name now. */
+  products?: string[];
 }
 
 export interface OrgRulePatch {
@@ -94,7 +102,9 @@ export function isOrgRuleBehavior(value: unknown): value is OrgRuleBehavior {
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-const copy = (rule: CustomRule): CustomRule => ({ ...rule, riskScope: [...rule.riskScope], ...(rule.binding ? { binding: { ...rule.binding } } : {}) });
+const copy = (rule: CustomRule): CustomRule => ({ ...rule, riskScope: [...rule.riskScope], ...(rule.binding ? { binding: { ...rule.binding } } : {}), ...(rule.products ? { products: [...rule.products] } : {}) });
+const cleanProducts = (ids: readonly string[] | undefined): string[] | undefined =>
+  ids === undefined ? undefined : [...new Set(ids.map((id) => id.trim().toLowerCase()).filter((id) => id.length > 0 && id.length <= 200))].slice(0, MAX_RULE_PRODUCTS);
 
 function cleanText(text: string): string {
   // control characters become spaces: a rule is one line of words
@@ -286,9 +296,12 @@ export class CustomRuleStore {
       existing.behavior = input.behavior;
       existing.riskScope = riskScope;
       existing.enabled = true;
+      const pinned = cleanProducts(input.products);
+      // a product pinned before stays pinned: saving again never widens
+      if (pinned) existing.products = [...new Set([...(existing.products ?? []), ...pinned])].slice(0, MAX_RULE_PRODUCTS);
       existing.updatedAt = at;
       this.save();
-      return { ...existing, riskScope: [...existing.riskScope] };
+      return copy(existing);
     }
     if (this.ownRulesOf(input.ownerId).length >= MAX_CUSTOM_RULES_PER_OWNER) {
       throw Object.assign(new Error(`At most ${MAX_CUSTOM_RULES_PER_OWNER} custom rules per person.`), { status: 409 });
@@ -302,12 +315,13 @@ export class CustomRuleStore {
       riskScope,
       enabled: true,
       ...(input.binding ? { binding: { ...input.binding } } : {}),
+      ...(input.products ? { products: cleanProducts(input.products)! } : {}),
       createdAt: at,
       updatedAt: at,
     };
     this.data.rules.push(rule);
     this.save();
-    return { ...rule, riskScope: [...rule.riskScope] };
+    return copy(rule);
   }
 
   update(ownerId: string, id: string, patch: CustomRulePatch): CustomRule | null {
@@ -324,9 +338,11 @@ export class CustomRuleStore {
     if (patch.riskScope !== undefined) rule.riskScope = cleanScope(patch.riskScope);
     // only an allow can carry a risk scope
     if (rule.behavior !== "allow") rule.riskScope = [];
+    // new words name their own products; the same words keep their pins
+    if (patch.products !== undefined) rule.products = cleanProducts(patch.products);
     rule.updatedAt = this.now();
     this.save();
-    return { ...rule, riskScope: [...rule.riskScope] };
+    return copy(rule);
   }
 
   remove(ownerId: string, id: string): boolean {

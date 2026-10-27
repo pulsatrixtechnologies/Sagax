@@ -97,7 +97,7 @@ describe("the model reviewer of custom rules", () => {
   });
 
   it("an organization rule is judged first and never allows", async () => {
-    const orgAsk = rule("modifier des billets ConnectWise", "ask", { org: true, ownerId: "org" });
+    const orgAsk = rule("modifier des billets Acme Desk", "ask", { org: true, ownerId: "org" });
     const { reviewer, review, deliver } = harness(JSON.stringify({ decision: "allow", rule: "R1", reason: "x" }));
     expect(await reviewer.reviewCard(card([free, orgAsk]))).toEqual({ kind: "none" });
     expect(review.mock.calls[0]![0]).toMatch(/R1 ORG ASK[^\n]*\nR2 ALLOW/);

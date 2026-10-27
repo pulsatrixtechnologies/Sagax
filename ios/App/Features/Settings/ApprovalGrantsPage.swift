@@ -23,6 +23,7 @@ struct ApprovalGrantsPage: View {
     @State private var readOnly = false
     @State private var rules: [CustomRuleRow]?
     @State private var alwaysAllow = true
+    @State private var products: [CustomRuleProduct] = []
     @State private var error: String?
     @State private var saving = false
     @State private var editor: Editor?
@@ -216,7 +217,7 @@ struct ApprovalGrantsPage: View {
 
     @ViewBuilder
     private func form(_ bot: Bot) -> some View {
-        let compiled = whenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : CustomRuleEditor.compile(whenText)
+        let compiled = whenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : CustomRuleEditor.compile(whenText, products: products)
         let exact = behavior == .allow && (compiled?.commands.isEmpty == false)
         let canChoose = editor == .new && !exact && ownBots(bot).count > 1
         let choosing = applies == .some && canChoose
@@ -468,6 +469,7 @@ struct ApprovalGrantsPage: View {
             let list = try await client.customRules(botId: id)
             rules = CustomRuleEditor.ordered(list.rules, forBot: id)
             alwaysAllow = list.alwaysAllow
+            products = list.products
         } catch {
             rules = []
             self.error = error.localizedDescription
