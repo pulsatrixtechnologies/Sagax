@@ -75,6 +75,10 @@ person their own node, which is a VM of its own on every cloud:
    `SAGAX_SANDBOX_K8S_DEDICATED_TOLERATION` set to that label and taint. The
    node is the person's, so `SAGAX_SANDBOX_K8S_DEDICATED_CPUS` and
    `SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB` can size the sandbox to it.
+   `SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST` can request a little less CPU
+   than that limit (for example 1.3 under a 1.5 limit): the sandbox runs
+   with the same limit, and a DaemonSet added to the pool later still
+   leaves room to place it. Memory stays request = limit.
 3. `warmNode.spare.enabled=true` in the chart, with
    `warmNode.spare.nodeSelector` and `warmNode.spare.tolerations` on that pool,
    and `SAGAX_SANDBOX_K8S_SPARE=<system namespace>/sagax-sandbox-spare`.
@@ -130,6 +134,7 @@ emptyDir, because that policy allows no other egress.
 | `SAGAX_SANDBOX_K8S_DEDICATED_NODE_SELECTOR` | with `DEDICATED_NODE` | label of the pool with one node per person, added to `SAGAX_SANDBOX_K8S_NODE_SELECTOR` |
 | `SAGAX_SANDBOX_K8S_DEDICATED_TOLERATION` | no | that pool's taint, added to `SAGAX_SANDBOX_K8S_TOLERATION` |
 | `SAGAX_SANDBOX_K8S_DEDICATED_CPUS` / `SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB` | no | CPU (fractions allowed) and MiB for those people; default the shared `SAGAX_SANDBOX_CPUS` / `SAGAX_SANDBOX_MEMORY_MB` |
+| `SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST` | no | CPU request below `SAGAX_SANDBOX_K8S_DEDICATED_CPUS` (the limit stays); needs `SAGAX_SANDBOX_K8S_DEDICATED_CPUS`; empty: request = limit |
 | `SAGAX_SANDBOX_K8S_SPARE` | no | reserve Deployment as `namespace/name` (chart `warmNode.spare`, `sagax-sandbox-system/sagax-sandbox-spare`); the provisioner scales it |
 | `SAGAX_SANDBOX_K8S_SPARE_MAX` | no | default `2`: reserve nodes = people active on the dedicated pool, capped here; 0 when nobody is active |
 | `SAGAX_SANDBOX_K8S_API` | no | default `https://kubernetes.default.svc` |

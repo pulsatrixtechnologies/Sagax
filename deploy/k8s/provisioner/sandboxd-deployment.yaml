@@ -74,6 +74,9 @@ spec:
               value: ""
             - name: SAGAX_SANDBOX_K8S_DEDICATED_CPUS
               value: ""
+            # CPU request below DEDICATED_CPUS (the limit stays); empty: request = limit.
+            - name: SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST
+              value: ""
             - name: SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB
               value: ""
             # Reserve Deployment (chart warmNode.spare) as namespace/name; empty: none.

@@ -67,6 +67,10 @@ export interface K8sDedicatedConfig {
    * shared SAGAX_SANDBOX_CPUS / SAGAX_SANDBOX_MEMORY_MB sizes. */
   nanoCpus?: number;
   memoryBytes?: number;
+  /** CPU request below the limit (SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST).
+   * The limit stays nanoCpus, so the sandbox runs as fast; the smaller
+   * request leaves room on its own node for a DaemonSet added later. */
+  nanoCpuRequest?: number;
   /** The reserve Deployment the provisioner scales (warmNode.spare). */
   spare?: K8sSpareConfig;
 }
@@ -190,6 +194,16 @@ export function dedicatedFromEnv(env: NodeJS.ProcessEnv): K8sDedicatedConfig | u
     if (!Number.isFinite(value) || value <= 0 || value > 64) throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_CPUS must be a positive number up to 64");
     nanoCpus = Math.floor(value * 1e9);
   }
+  const cpuRequest = env.SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST?.trim();
+  let nanoCpuRequest: number | undefined;
+  if (cpuRequest) {
+    const value = Number(cpuRequest);
+    if (!nanoCpus) throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST needs SAGAX_SANDBOX_K8S_DEDICATED_CPUS (the limit it stays under)");
+    if (!Number.isFinite(value) || value <= 0 || Math.floor(value * 1e9) > nanoCpus) {
+      throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST must be a positive number no higher than SAGAX_SANDBOX_K8S_DEDICATED_CPUS");
+    }
+    nanoCpuRequest = Math.floor(value * 1e9);
+  }
   if (memoryMb) {
     const value = Number(memoryMb);
     if (!Number.isInteger(value) || value <= 0 || value > 65536) throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB must be a whole number of MiB up to 65536");
@@ -215,6 +229,7 @@ export function dedicatedFromEnv(env: NodeJS.ProcessEnv): K8sDedicatedConfig | u
     ...(nodeSelector ? { nodeSelector } : {}),
     ...(tolerations ? { tolerations } : {}),
     ...(nanoCpus ? { nanoCpus } : {}),
+    ...(nanoCpuRequest ? { nanoCpuRequest } : {}),
     ...(memoryBytes ? { memoryBytes } : {}),
   };
 }
@@ -394,6 +409,7 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
   const shmBytes = Number(/size=(\d+)/.exec(tmpfs["/dev/shm"] ?? "")?.[1] ?? 0);
   const pids = Number(host.PidsLimit);
   const cpu = quantityCpu(nanoCpus);
+  const cpuRequest = dedicated?.nanoCpuRequest ? quantityCpu(dedicated.nanoCpuRequest) : cpu;
   const memoryQ = quantityBytes(memory);
   const tmpQ = quantityBytes(Math.min(tmpBytes || MiB, memory));
   const shmQ = quantityBytes(Math.min(shmBytes || 8 * MiB, 128 * MiB, memory));
@@ -475,7 +491,7 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
           { name: "SAGAX_ENVIRONMENT", value: "user-sandbox" },
         ],
         resources: {
-          requests: { cpu, memory: memoryQ, "ephemeral-storage": tmpQ },
+          requests: { cpu: cpuRequest, memory: memoryQ, "ephemeral-storage": tmpQ },
           limits: { cpu, memory: memoryQ, "ephemeral-storage": tmpQ },
         },
         volumeMounts: [
@@ -544,7 +560,9 @@ export function podIsolationProblems(pod: Obj, key: string, k8s?: Pick<K8sSandbo
   const resources = asObj(container.resources);
   const limits = asObj(resources.limits);
   const requests = asObj(resources.requests);
-  if (!limits.cpu || !limits.memory || limits.cpu !== requests.cpu || limits.memory !== requests.memory) problems.push("cpu or memory limit missing");
+  const cpuRequestOk = limits.cpu === requests.cpu
+    || (dedicated?.nanoCpuRequest !== undefined && requests.cpu === quantityCpu(dedicated.nanoCpuRequest));
+  if (!limits.cpu || !limits.memory || !cpuRequestOk || limits.memory !== requests.memory) problems.push("cpu or memory limit missing");
   const volumes = Array.isArray(spec.volumes) ? spec.volumes as Obj[] : [];
   for (const volume of volumes) {
     if (volume.hostPath || volume.nfs || volume.iscsi) problems.push(`host volume ${String(volume.name ?? "")}`);

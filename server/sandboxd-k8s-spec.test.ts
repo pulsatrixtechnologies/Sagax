@@ -239,6 +239,35 @@ describe("one node and one user namespace per person", () => {
     expect(podIsolationProblems({ spec: shared }, other, parsed)).toEqual([]);
   });
 
+  it("requests less CPU than the limit when DEDICATED_CPU_REQUEST is set, the limit unchanged", () => {
+    const sandbox = sandboxdConfigFromEnv(env());
+    const parsed = kubernetesSandboxConfigFromEnv(env({
+      ...dedicatedEnv,
+      SAGAX_SANDBOX_K8S_DEDICATED_KEYS: key,
+      SAGAX_SANDBOX_K8S_DEDICATED_CPUS: "1.5",
+      SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST: "1.3",
+      SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB: "3072",
+    }), sandbox).k8s;
+    const pod = podFromDockerSpec(sandboxContainerSpec(sandbox, key), parsed);
+    const resources = (pod.spec as Record<string, any>).containers[0].resources;
+    expect(resources.requests).toEqual({ cpu: "1300m", memory: "3072Mi", "ephemeral-storage": "512Mi" });
+    expect(resources.limits).toEqual({ cpu: "1500m", memory: "3072Mi", "ephemeral-storage": "512Mi" });
+    expect(podIsolationProblems(pod, key, parsed)).toEqual([]);
+    // Memory stays request = limit, and any other CPU request is refused.
+    const off = structuredClone(pod);
+    (off.spec as Record<string, any>).containers[0].resources.requests.cpu = "100m";
+    expect(podIsolationProblems(off, key, parsed)).toContain("cpu or memory limit missing");
+    const mem = structuredClone(pod);
+    (mem.spec as Record<string, any>).containers[0].resources.requests.memory = "1024Mi";
+    expect(podIsolationProblems(mem, key, parsed)).toContain("cpu or memory limit missing");
+    // Someone not listed keeps request = limit.
+    const shared = podFromDockerSpec(sandboxContainerSpec(sandbox, other), parsed).spec as Record<string, any>;
+    expect(shared.containers[0].resources.requests.cpu).toBe(shared.containers[0].resources.limits.cpu);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST: "1" })).toThrow(/needs SAGAX_SANDBOX_K8S_DEDICATED_CPUS/);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_DEDICATED_CPUS: "1.5", SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST: "2" })).toThrow(/no higher than/);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_DEDICATED_CPUS: "1.5", SAGAX_SANDBOX_K8S_DEDICATED_CPU_REQUEST: "0" })).toThrow(/positive/);
+  });
+
   it("refuses a listed person's pod that lost an option, and * covers everyone", () => {
     const sandbox = sandboxdConfigFromEnv(env());
     const parsed = kubernetesSandboxConfigFromEnv(env({ ...dedicatedEnv, SAGAX_SANDBOX_K8S_DEDICATED_KEYS: "*" }), sandbox).k8s;
