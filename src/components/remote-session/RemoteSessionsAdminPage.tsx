@@ -4,6 +4,7 @@ import { Monitor, FileText, X, ShieldOff, RefreshCw } from "lucide-react";
 import { formatEndLabel, type RemoteSessionView } from "../../../shared/remote-session";
 import type { AdminRowFilters, RemoteSessionAdminRow, RemoteSessionLogEntry } from "../../../shared/remote-session-admin";
 import { cn } from "@/lib/cn";
+import { useCaptionChrome } from "@/components/DesktopCapabilities";
 import { t, activeLocale } from "@/lib/i18n";
 import { remoteControllable, RemoteTakeover } from "./RemoteScreenCard";
 import {
@@ -101,6 +102,7 @@ function UnattendedCell({ row, admin, onRevoke }: { row: RemoteSessionAdminRow; 
 const COLS = ["computer", "user", "os", "started", "ends", "status", "rights", "bot", "openedBy", "unattended", "actions"] as const;
 
 export function RemoteSessionsAdminPage() {
+  const { controlsShiftStyle } = useCaptionChrome();
   const [filters, setFilters] = useState<AdminRowFilters>({});
   const [search, setSearch] = useState("");
   const { rows, admin, unattendedEnabled, loading, reload } = useRemoteSessionsAdmin({ ...filters, ...(search.trim() ? { search: search.trim() } : {}) });
@@ -152,7 +154,7 @@ export function RemoteSessionsAdminPage() {
       <header className="flex flex-wrap items-center gap-3 border-b border-hairline/50 px-5 py-3">
         <Monitor size={18} className="text-ink-secondary" />
         <h1 className="text-[15px] font-medium text-ink">{t("remoteSessionsAdmin.title")}</h1>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div style={controlsShiftStyle} className="ml-auto flex flex-wrap items-center gap-2">
           <input
             type="search"
             value={search}
