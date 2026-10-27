@@ -6238,7 +6238,12 @@ reads x.ai's public card. Grok Bot has no documented export format (docs.x.ai,
 2026-10-26): keep the export prompt, do not invent a file parser. Doc:
 `docs/import-agent.md`. Tests: `shared/claude-code-import.test.ts`,
 `src/components/AgentImport.test.ts`, `src/components/BotZipImport.test.ts`,
-`src/components/onboarding/GuidedFirstRun.test.ts`.
+`src/components/onboarding/GuidedFirstRun.test.ts`. Left-out lines carry
+`nameKey`/`reasonKey`/`params` (`leftOut.*`): add a key with any new reason.
+iOS: Create New Bot > Import from Grok Bot (`ios/App/Features/AgentImport/`),
+through `GET|POST /api/bots/import/agent` (server/routes/bot-zip.ts: the reply
+made into the package server side and staged like an upload, member scope);
+parity screen `create-bot-import`.
 
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 

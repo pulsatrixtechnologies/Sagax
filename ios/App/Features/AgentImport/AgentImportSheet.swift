@@ -111,7 +111,7 @@ struct AgentImportSheet: View {
             Section("Left out (set these up by hand)") {
                 ForEach(Array(staged.leftOut.enumerated()), id: \.offset) { _, item in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: "\(Self.text(item.nameKey, item.name, item.params)): \(Self.text(item.reasonKey, item.reason, item.params))")
+                        Text(String(localized: "\(Self.text(item.nameKey, item.name, item.params)): \(Self.text(item.reasonKey, item.reason, item.params))", comment: "A left-out line: what, then why"))
                             .font(.footnote)
                         if let original = item.original, !original.isEmpty {
                             Text(verbatim: original)

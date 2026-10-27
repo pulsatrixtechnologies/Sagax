@@ -78157,6 +78157,12 @@
         "en": { "stringUnit": { "state": "translated", "value": "That reply is larger than 4 MB." } },
         "fr": { "stringUnit": { "state": "translated", "value": "Cette réponse dépasse 4 Mo." } }
       }
+    },
+    "%@: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@: %2$@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%1$@ : %2$@" } }
+      }
     }
   },
   "version": "1.0"

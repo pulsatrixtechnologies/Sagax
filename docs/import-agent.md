@@ -80,6 +80,24 @@ A file that may hold a secret (`.env*`, `.envrc`, `.netrc`, `*.pem`, `*.key`,
 of the folder or under `.claude/`, it is named under Left out. Everything else
 in the folder (source code, `node_modules`, ...) is not read.
 
+## On iPhone and iPad
+
+**Create New Bot > Import from Grok Bot** does the Grok Bot import: Copy export
+prompt, send it to the bot on x.ai, paste its reply, Preview, Import. The phone
+has no copy of the converter, so it sends the reply to
+`POST /api/bots/import/agent` (`{ text, timeZone }`; `GET` gives the prompt):
+the server makes the same package with `shared/grok-import.ts` and stages it
+like an uploaded zip, for this person only, then the zip import's own
+`/api/bots/import/:id` finishes. Same rights as the upload: anyone who may
+create bots. The Claude Code folder import is desktop only.
+
+## Left out, in the person's language
+
+Every left-out line carries `nameKey`, `reasonKey` and `params` (catalog keys
+`leftOut.*` in `src/locales`, and the same English templates in the iOS
+`Localizable.xcstrings`), so the app shows it translated; the English text
+stays as the fallback.
+
 ## Code
 
 - `shared/grok-import.ts`: the Grok Bot export, the share link, the package.
