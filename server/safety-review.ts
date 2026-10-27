@@ -2,13 +2,15 @@
 //
 // The verdict is pure (shared/safety-review.ts). This module reads the same
 // flag as the misuse guardrail. Shadow records the row and changes nothing.
-// Enforce returns the safer path once, then waits for an explicit approval
-// the person accepts. Denial and expiry are final.
+// Enforce returns the safer path once for a held risk (a send, a destructive
+// git operation, untrusted content, an unknown kind), then waits for an
+// explicit approval the person accepts. Denial and expiry are final. Any
+// other call is left to the person's approval mode.
 
 import { randomUUID } from "node:crypto";
 import { appendAdminAction } from "./admin-activity.ts";
 import { DATA_DIR } from "./config.ts";
-import { misuseGuardrailMode } from "./misuse-guardrails.ts";
+import { misuseGuardrailMode, misuseOwnPaths } from "./misuse-guardrails.ts";
 import {
   SAFETY_REFUSAL_FINAL,
   admitSafety,
@@ -189,7 +191,9 @@ function audit(action: string, input: SafetyHoldInput, verdict: SafetyVerdict): 
 async function reviewed(input: SafetyHoldInput, verdict: SafetyVerdict): Promise<SafetyVerdict> {
   // 2026-10-26: the person's own environment is theirs, like a read:
   // no second review and no wait
-  if (!input.review || verdict.action === "block" || verdict.code === "read_only" || verdict.code === "own_environment") return verdict;
+  // 2026-10-27 (#1098): a call left to the approval mode is not held, so
+  // nothing waits on a reviewer either
+  if (!input.review || verdict.action === "block" || verdict.action === "allow" || verdict.code === "read_only" || verdict.code === "own_environment") return verdict;
   try {
     const text = await input.review(safetyReviewPrompt(input.text, input.policy), AbortSignal.timeout(8000));
     return tightenSafety(verdict, text);
@@ -203,9 +207,12 @@ function effectOf(input: SafetyHoldInput, verdict: SafetyVerdict, keys: readonly
     applyConsume(keys, verdict);
     return { kind: "allow", auto: true, message: "", fingerprint: verdict.fingerprint, classKey: verdict.classKey, verdict };
   }
-  if (verdict.code === "read_only" || verdict.code === "own_environment") {
+  if (verdict.code === "read_only") {
     return { kind: "allow", auto: true, message: "", fingerprint: verdict.fingerprint, classKey: verdict.classKey, verdict };
   }
+  // 2026-10-27 (#1098): a call in the person's own environment is not held
+  // and not approved here either: their approval mode answers it.
+  if (verdict.code === "own_environment") return null;
   if (verdict.action === "allow") return null;
   audit(verdict.action === "block" ? "safety.block" : "safety.review", input, verdict);
   applyRemember(keys, verdict);
@@ -215,8 +222,17 @@ function effectOf(input: SafetyHoldInput, verdict: SafetyVerdict, keys: readonly
   return { kind: "stop", message: verdict.message, fingerprint: verdict.fingerprint, classKey: verdict.classKey, verdict };
 }
 
+/** The input with the person's own folders the harness registered
+ * (misuse-guardrails.ts setMisuseOwnPaths), unless the caller gave them. */
+function withOwnPaths(input: SafetyHoldInput): SafetyHoldInput {
+  if (input.ownPaths) return input;
+  const ownPaths = misuseOwnPaths(input);
+  return ownPaths ? { ...input, ownPaths } : input;
+}
+
 /** Sync decision for a permission card. Off and shadow change nothing. */
-export function safetyPermissionEffect(input: SafetyHoldInput): SafetyEffect | null {
+export function safetyPermissionEffect(raw: SafetyHoldInput): SafetyEffect | null {
+  const input = withOwnPaths(raw);
   const mode = misuseGuardrailMode();
   if (mode === "off") return null;
   if (mode !== "enforce") {
@@ -237,7 +253,8 @@ export function safetyHttpRefusal(input: SafetyHoldInput): { status: 403; code: 
 
 /** Before a tool runs. Null means the tool may run. A string is the refusal
  * or the safer path, and the tool does not run. */
-export async function safetyToolHold(input: SafetyHoldInput): Promise<string | null> {
+export async function safetyToolHold(raw: SafetyHoldInput): Promise<string | null> {
+  const input = withOwnPaths(raw);
   const mode = misuseGuardrailMode();
   if (mode === "off") return null;
   const keys = bucketKeys(input);

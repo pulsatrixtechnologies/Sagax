@@ -24,7 +24,7 @@ import { foreignToolSpelling, sagaxInternalSelfAnswers, sagaxInternalTool } from
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
 import { auditSampleFromEnv, deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, mcpPolicyEnv, permissionModeFromEnv, principalFromEnv, scopeOwnersFromEnv } from "./mcp-permissions.ts";
-import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert } from "./misuse-guardrails.ts";
+import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert, setMisuseOwnPaths } from "./misuse-guardrails.ts";
 import {
   openSafetyHold,
   safetyArm,
@@ -15248,6 +15248,9 @@ bus.subscribe((event: RuntimeEvent) => {
           surface: /computer/i.test(safetyName) ? "computer" : /propose_routine/.test(safetyName) ? "routine" : event.mcpTool ? "mcp" : "shell",
           tool: safetyName,
           known: event.tool !== "other" || Boolean(event.mcpTool),
+          // 2026-10-27 (#1098): the person's own environment, as the sandbox
+          // and desktop paths already say (not read from the text)
+          ...(asker ? { ownEnvironment: safetyOwnEnvironment(asker, event.threadId, safetyName) } : {}),
           triage: safetyWho.triage,
           ...(safetyWho.principalId ? { principalId: safetyWho.principalId } : {}),
           threadId: event.threadId,
@@ -18868,6 +18871,23 @@ setMisuseAlert((alert) => {
       body: alert.message,
     },
   }, { adminOnly: true });
+});
+
+// 2026-10-27 (#1098): the person's own folders on the server, for the misuse
+// classifier and the safety review: their own bot's workspace and task
+// folders, their own principal folder, and the attachment store whose tags
+// the app writes into a message. Another bot's or person's folder stays a
+// platform path.
+setMisuseOwnPaths(({ principalId, botId }) => {
+  const person = principalId?.trim() || (IDENTITY.kind === "perspicax" ? "" : localPrincipalId());
+  const roots: string[] = [];
+  const bot = botId ? store.bot(botId) : undefined;
+  if (bot && person && samePerson(effectiveBotOwner(bot), person)) roots.push(workspaceDir(bot.id), join(TASK_WORKSPACES_DIR, bot.id));
+  if (person && isPrincipalId(person)) roots.push(join(DATA_DIR, "principals", person));
+  let real = DATA_DIR;
+  try { real = realpathSync(DATA_DIR); } catch { /* not created yet */ }
+  const spelled = roots.flatMap((root) => (real !== DATA_DIR && root.startsWith(`${DATA_DIR}/`) ? [root, real + root.slice(DATA_DIR.length)] : [root]));
+  return { roots: spelled, attachmentsDir: ATTACHMENTS_DIR };
 });
 
 // A risky call the engine will not ask about itself (a sandbox tool, a
@@ -32445,6 +32465,15 @@ function ownEnvironmentRequest(bot: BotRecord, threadId: string, tool: string | 
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   });
 }
+/** 2026-10-27 (#1098): whether a permission card's call runs in its
+ * person's own environment for the safety review: their own server
+ * environment or Local VM mounted for this turn (ownEnvironmentRequest), or
+ * one of Sagax's own person-scoped tools (sagax-internal-tools.ts). */
+function safetyOwnEnvironment(bot: BotRecord, threadId: string, tool: string | undefined): boolean {
+  const guestDriven = cloudGuestDriven(threadId) || botmailConfined(threadId);
+  if (guestDriven) return false;
+  return ownEnvironmentRequest(bot, threadId, tool, guestDriven) || sagaxInternalTool(tool, foreignMcpServerNames(bot, threadId)) !== null;
+}
 /** 2026-10-19 whether a call acts on the bot owner's own destination
  * (their server environment, their own computer or its Local VM) that Sagax
  * mounted for this turn: the owner's card, never an admin's
@@ -36085,6 +36114,9 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
       return {
         principal: principalFromEnv(env),
         owners: scopeOwnersFromEnv(env, principalId),
+        // Perspicax authorizes its own tools: one Sagax does not list is
+        // mcp:external, not an unknown tool (#1098)
+        external: true,
         mode: permissionModeFromEnv(process.env),
         ownBotId: botId,
         deniedResources: deniedResourcesFromEnv(process.env),

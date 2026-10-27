@@ -5,6 +5,7 @@ import {
   MCP_ROLES,
   decide,
   guardToolCall,
+  learnCreatedBot,
   deniedResourcesFromEnv,
   mcpAuditRow,
   auditSampleFromEnv,
@@ -97,7 +98,7 @@ describe("decide", () => {
     expect(decide(who("member"), "memory_update").allowed).toBe(true);
     expect(decide(who("member"), "ask_bot", "self").allowed).toBe(true);
     expect(decide(who("member"), "ask_bot", "team")).toMatchObject({ allowed: false, reason: "scope_too_narrow" });
-    expect(decide(who("member"), "vm_exec").allowed).toBe(false);
+    expect(decide(who("member"), "add_mcp_server").allowed).toBe(false);
   });
 
   it("lets an operator dispatch for a team but not administer", () => {
@@ -241,8 +242,8 @@ describe("guardToolCall", () => {
   it("audits in shadow only the denials, and the sampled share of allowed calls", async () => {
     const t = setup("shadow", "member");
     await guardToolCall(t.options, "memory_update", {}, t.run);
-    await guardToolCall(t.options, "vm_exec", {}, t.run);
-    expect(t.records.map((r) => [r.tool, r.decision])).toEqual([["vm_exec", "denied"]]);
+    await guardToolCall(t.options, "add_mcp_server", {}, t.run);
+    expect(t.records.map((r) => [r.tool, r.decision])).toEqual([["add_mcp_server", "denied"]]);
     expect(t.ran()).toBe(2);
     const draws = [0.05, 0.5];
     const sampled = { ...t.options, allowedSample: 0.1, random: () => draws.shift()! };
@@ -254,7 +255,7 @@ describe("guardToolCall", () => {
   it("audits every call in enforce mode", async () => {
     const t = setup("enforce", "member");
     await guardToolCall(t.options, "memory_update", {}, t.run);
-    await guardToolCall(t.options, "vm_exec", {}, t.run);
+    await guardToolCall(t.options, "add_mcp_server", {}, t.run);
     expect(t.records.map((r) => r.decision)).toEqual(["allowed", "denied"]);
   });
 
@@ -347,5 +348,55 @@ describe("harness identity and audit rows", () => {
     expect(JSON.stringify(row)).not.toMatch(/secret|args/);
     expect(mcpAuditRow({ ...record, enforced: false }, "b").action).toBe("mcp.shadow");
     expect(mcpAuditRow({ ...record, decision: "allowed", enforced: false }, "b").action).toBe("mcp.call");
+  });
+});
+
+// 2026-10-27 (#1098, point 33): the shadow denials of a person's own work
+describe("false denials in shadow (#1098)", () => {
+  const as = (role: string) => ({ id: "pr_alice", role });
+
+  it("gives an operator at least what a member holds in their own environment", () => {
+    for (const tool of ["create_bot", "propose_bot_deletion", "archive_bot", "create_room", "propose_team_memory", "vm_exec", "act"]) {
+      expect(decide(as("operator"), tool, "self").allowed, tool).toBe(true);
+    }
+    // the operator's own wider tiers stay, and admin-only tools stay refused
+    expect(decide(as("operator"), "delegate_bot", "team").allowed).toBe(true);
+    expect(decide(as("operator"), "add_mcp_server").allowed).toBe(false);
+  });
+
+  it("lets a member run their own Local VM, act as themselves and propose team memory, never a service", () => {
+    for (const tool of ["vm_exec", "act", "propose_team_memory"]) {
+      expect(decide(as("member"), tool, "self").allowed, tool).toBe(true);
+      expect(decide(as("member"), tool, "team").allowed, tool).toBe(false);
+    }
+    expect(decide(as("service"), "vm_exec").allowed).toBe(false);
+    expect(decide(as("service"), "act").allowed).toBe(false);
+  });
+
+  it("lets every role read at the org scope: the source shows only what the person may read", () => {
+    for (const role of ["viewer", "member", "operator", "service"]) {
+      expect(decide(as(role), "memory_search", "org").allowed, role).toBe(true);
+    }
+    expect(decide(as("member"), "memory_write", "org").allowed).toBe(false);
+  });
+
+  it("judges a tool the Perspicax relay serves and Sagax does not list as mcp:external", async () => {
+    expect(decide(as("member"), "list_pending_approvals", "self", { external: true })).toMatchObject({ allowed: true, permission: "mcp:external" });
+    // the agents proxy, Sagax's own catalog, still refuses an unknown name
+    expect(decide(as("member"), "list_pending_approvals").reason).toBe("unknown_tool");
+    const records: McpAuditRecord[] = [];
+    const options = { principal: as("member"), mode: "enforce" as const, ownBotId: "b", audit: (r: McpAuditRecord) => records.push(r), external: true };
+    expect(await guardToolCall(options, "list_pending_approvals", {}, async () => ({ text: "ok" }))).toEqual({ text: "ok" });
+    expect(records.map((r) => [r.permission, r.decision])).toEqual([["mcp:external", "allowed"]]);
+  });
+
+  it("counts a bot the person created in this process as theirs", () => {
+    const owners = scopeOwnersFromEnv({ SAGAX_MCP_OWN_BOTS: "b2" }, "pr_alice");
+    expect(scopeForCall({ bot_id: "b9" }, "b", owners)).toBe("team");
+    learnCreatedBot(owners, "Created @Helper in General [id: b9]. Assign work with delegate_bot.");
+    expect(scopeForCall({ bot_id: "b9" }, "b", owners)).toBe("self");
+    expect(decide(as("member"), "propose_bot_deletion", scopeForCall({ bot_id: "b9" }, "b", owners)).allowed).toBe(true);
+    // someone else's bot stays team
+    expect(scopeForCall({ bot_id: "bob1" }, "b", owners)).toBe("team");
   });
 });

@@ -83,6 +83,10 @@ Surfaces:
 
 - A person's message to a bot (`POST /api/bots/:id/messages`) and a live call (`acceptDirectSend`).
 - A message in a group. A direct conversation between two people is not classified.
+- A message is read in the `message` scope: it runs nothing, so destruction
+  and resource words ("supprimer", "reboot", "efface le disque") are not
+  refused there (since #1138); the tool that would run them still classifies
+  the command.
 - Shell, file, and browser tools in the server environment.
 - The desktop bridge (the command and the whole operation).
 - Personal MCP and the Perspicax MCP relay, including `flow_action` when it is the tool name or appears in the arguments.
@@ -105,6 +109,19 @@ file name (`bots.json`, `messages.db`, `idp_key`, `mcp-oauth.key`,
 `webhooks.json`) is refused wherever it sits. `security.triage` does not
 lift a path refusal. `/proc` and `/sys` are reported as an escape; the other
 refusals are platform exfiltration.
+
+The person's own folders on the server are theirs (2026-10-27, #1098). The
+harness registers them once (`setMisuseOwnPaths`), from what it knows, never
+from the text: the workspace and task folders of the bot when the person owns
+it (`workspaces/<bot>`, `task-workspaces/<bot>`), and their own principal
+folder (`principals/<person>`). In a command, a message or a path, such a
+folder is set aside before the classifier reads it (`maskOwnPaths`), unless
+what follows climbs out with `..`; the path allowlist accepts it after `..`
+is resolved. Another bot's folder, another person's folder and a platform
+file name inside an own folder stay refused. The `<attached-image>` and
+`<attached-file>` tag the app writes into a message for an upload is the
+app's, not the person's words: a tag whose path is one file of the attachment
+store reads as its file name. A tag that points anywhere else stays text.
 
 ### 3. Hard controls on the server environment
 
@@ -172,8 +189,9 @@ decision. Off does neither.
 
 The authoritative review is the deterministic classifier in
 `shared/safety-review.ts`. When the engine exposes `reviewPermission`,
-enforce may ask that isolated reviewer to tighten a call that is not
-already a hard block and not a read. It cannot weaken either. The
+enforce may ask that isolated reviewer to tighten a call the review holds
+(a safer path or a card). It cannot weaken either. A call the review leaves
+to the approval mode does not wait for the reviewer. The
 permission-card path does not wait for that reviewer: the card is
 synchronous. The sandbox, desktop, personal MCP, Perspicax, and shared
 computer paths do.
@@ -184,10 +202,12 @@ computer paths do.
 | `security_operations` without `security.triage` | The message path keeps the existing approval refusal. On a tool, the safety review asks for an explicit card. With the permission, the call may run, after the prompt and credential checks. |
 | Prompt secrecy, minting access, scraping a token, turning the guardrail off | Refusal. No card. |
 | Read-only tool | Auto-approved, including in Ask (`safety-read`). A Sagax gate card stays a person's choice: the gate already runs its own read-only list without asking. |
-| Write, unknown tool, destructive git | A safer path is returned once. The next attempt is a native approval card. Full, Auto, and a saved Allow rule do not accept it (`safety-hold`, checked before those). |
+| Any other write or known tool (a Sagax tool, a connector read the list does not name, a file write, `propose_routine`, a command) | Not held by the review (2026-10-27, #1098): the person's approval mode answers it, Ask, Auto, Full or their Allow rules, as for any card. No row in shadow. |
+| Call in the person's own environment (their server environment, their Local VM or computer, one of Sagax's own person-scoped tools) | Not held and not approved by the review: their approval mode answers it. A destructive git operation there is theirs too. A send, untrusted content and an unknown kind keep their review. |
+| Unknown kind, destructive git outside the own environment | A safer path is returned once. The next attempt is a native approval card. Full, Auto, and a saved Allow rule do not accept it (`safety-hold`, checked before those). |
 | Denial or expiry of that card | Final for that fingerprint. A destructive git intent, a prompt disclosure, or a credential grab is also final across rewording, splitting, and encoding. |
 | Outbound mail or message | First attempt tells the bot to write a draft the person sends. The next attempt is the existing "Send on your behalf?" card, including when outbound policy is allow. Denial seals that message only. A different later message still asks. |
-| Routine write | Full no longer applies it by itself. The routine card is explicit. Denial is final for that proposal. Allow does not admit the next one. |
+| Routine write | Its own routine card and the person's approval mode answer it, as any other write (#1098). |
 | Untrusted tool result, page, file, or other bot's message | Wrapped in `<<<UNTRUSTED>>>` markers. The model is told those markers are data. A consequential action taken from them (send, delete, spend, credentials, a new target) needs the person's confirmation. |
 
 People's direct conversations are not classified.
@@ -196,7 +216,7 @@ How this sits next to the pieces that already existed:
 
 - Tool guard (`SAGAX_TOOL_GUARD`, default shadow) answers whether this bot and this speaker may call the route at all. It is unchanged.
 - Agent card guard runs before the approval card for `agents__` tools only. A missing grant is still a refusal, not a safety card.
-- Approval modes ask, auto, and full still answer ordinary cards. They do not answer a safety hold.
+- Approval modes ask, auto, and full still answer ordinary cards, writes in the person's own environment included. They do not answer a safety hold (a send, destructive git outside the own environment, untrusted content, an unknown kind). The payment card and the classes a person protects with a security key keep their own card.
 - Perspicax `security.triage` is only for defensive security work. Admins hold every key. It is a member default (2026-10-27), withheld when a profile leaves it out. It does not turn a hard block into a card.
 - The MCP gate still cannot see the person's permission. It blocks hard misuse categories in enforce, and it now carries the safety note (a safer path or a refusal) back to the model. A gate card is still one the person accepts.
 
