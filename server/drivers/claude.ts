@@ -11,6 +11,7 @@
 import { CLAUDE_UNUSED_COMMANDS, claudeDisallowedTools, claudeOrgTools } from "./host-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
 import { FLOW_TOOLS_MCP_NAME } from "../flow-tools.ts";
+import { cleanCommandVariables, commandVariablesDigest } from "../credential-command-env.ts";
 import { isFlowToolsServer } from "./acp/grok-read-only-tools.ts";
 import { networkProxyEnvironment } from "./network-proxy.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -2259,6 +2260,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // boundary. Native background workers cannot outlive that boundary;
       // parallel bot work must use the harness's durable delegate_bot path.
       env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
+      // Command variables the person exposed to this bot (credential-command-env.ts).
+      for (const [name, value] of cleanCommandVariables(turn.commandEnvironment)) env[name] = value;
       // Desktop bridge: this turn's own network traffic leaves through the
       // person's computer (never the model traffic: NO_PROXY).
       if (turn.networkProxy) Object.assign(env, networkProxyEnvironment(turn.networkProxy, env));
@@ -2291,6 +2294,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         hooks: Boolean(hooks),
         // Slice 4: another person's credentials never reuse this process.
         access: turn.access?.identity ?? null,
+        // A changed command variable starts a fresh process (a digest only).
+        commandEnv: commandVariablesDigest(turn.commandEnvironment),
         // Rotating an account's key/helper must not reuse the old process.
         auth: createHash("sha256").update(JSON.stringify({
           settings: authSettings,

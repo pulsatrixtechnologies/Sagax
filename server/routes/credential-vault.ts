@@ -140,7 +140,9 @@ export function grantedNote(item: VaultItemListing, mode: VaultGrantMode): strin
   const when = mode !== "once" ? "" : onePassword ? " for one sign-in in this conversation (it ends a minute after your first fill)" : " in this conversation for the next 15 minutes";
   return `Sagax credential update: the person allowed you to use ${what}, handle ${vaultHandle(item.id)}, on ${item.domains.join(", ")}` +
     `${when}. Fields: ${fields.join(", ") || "none"}. ` +
-    "Continue the task: in the browser, call fill_credential with this handle and field login to sign in (or one field at a time). You never receive the value, and must not ask for it in chat." +
+    (item.kind === "apiKey" && item.injection
+      ? "Continue the task: call the API with vault_http_request and this handle (Sagax adds the key itself), or fill it in the browser with fill_credential. You never receive the value, and must not ask for it in chat."
+      : "Continue the task: in the browser, call fill_credential with this handle and field login to sign in (or one field at a time). You never receive the value, and must not ask for it in chat.") +
     (item.source === "1password" ? " This login lives in 1Password: at the fill, 1Password may ask the person to approve on their computer; if the fill says 1Password did not answer, tell them and wait, never ask for the password." : "");
 }
 

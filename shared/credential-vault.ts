@@ -69,6 +69,12 @@ export interface VaultItemListing {
   contact?: { fullName: string; email?: string; phone?: string; company?: string };
   /** "1password": a read-only reference resolved at fill time. */
   source: "local" | "1password";
+  /** An API key Sagax sends itself on a bot's request to the item's sites
+   * (vault_http_request). Absent: the key is only filled into pages. */
+  injection?: VaultApiInjection;
+  /** The person exposes the key to their allowed bots' commands under this
+   * name: those bots can read it in their shell. */
+  commandVariable?: string;
   grants: VaultGrantListing[];
   createdAt: number;
   updatedAt: number;
@@ -242,3 +248,90 @@ export function vaultSiteOf(domain: string): string | null {
  * reads 1Password (1Password may ask the person to approve first). The app
  * draws it in the reader's language (src/lib/activity-runs.ts). */
 export const ONE_PASSWORD_WAITING = "notice: Waiting for 1Password: approve the request in 1Password on your computer.";
+
+// ── API keys the server injects (2026-10-26) ─────────────────────────────
+// An API key item can be sent by Sagax itself on a bot's HTTP request to
+// the item's own sites (server/credential-http.ts, agents tool
+// vault_http_request): the bot names the handle, the server adds the key to
+// the request and the bot never reads it back. Optionally the person also
+// exposes it as a variable of their bots' commands
+// (server/credential-command-env.ts): that one the bot can read.
+
+/** How the key rides the request: `Authorization: Bearer <key>`, a header
+ * the person names, `Authorization: Basic base64(user:key)`, or a query
+ * parameter the person names. */
+export const VAULT_INJECTION_MODES = ["bearer", "header", "basic", "query"] as const;
+export type VaultInjectionMode = (typeof VAULT_INJECTION_MODES)[number];
+
+export interface VaultApiInjection {
+  mode: VaultInjectionMode;
+  /** header: the header's name (X-Api-Key). */
+  header?: string;
+  /** query: the parameter's name (api_key). */
+  param?: string;
+  /** Optional path the requests must start with (/v1), the base URL's path. */
+  basePath?: string;
+}
+
+const HEADER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
+const QUERY_PARAM = /^[A-Za-z0-9_.-]{1,64}$/;
+const BASE_PATH = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{0,199}$/;
+/** Headers a key never replaces: the transport's own and the cookies. */
+const RESERVED_HEADERS = new Set([
+  "host", "content-length", "transfer-encoding", "connection", "keep-alive", "upgrade", "te", "trailer",
+  "proxy-authorization", "proxy-connection", "cookie", "set-cookie",
+]);
+
+/** The injection the person chose, checked; a string when it is not one. */
+export function parseVaultInjection(raw: unknown): VaultApiInjection | string {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "Choose how the key is sent.";
+  const row = raw as Record<string, unknown>;
+  if (!(VAULT_INJECTION_MODES as readonly unknown[]).includes(row.mode)) return "The key is sent as Bearer, a named header, Basic or a query parameter.";
+  const mode = row.mode as VaultInjectionMode;
+  const out: VaultApiInjection = { mode };
+  if (mode === "header") {
+    const header = typeof row.header === "string" ? row.header.trim() : "";
+    if (!HEADER_NAME.test(header) || RESERVED_HEADERS.has(header.toLowerCase())) return "The header name must be letters, digits and dashes, such as X-Api-Key.";
+    out.header = header;
+  }
+  if (mode === "query") {
+    const param = typeof row.param === "string" ? row.param.trim() : "";
+    if (!QUERY_PARAM.test(param)) return "The parameter name must be letters, digits, dots, dashes or underscores, such as api_key.";
+    out.param = param;
+  }
+  const basePath = typeof row.basePath === "string" ? row.basePath.trim().replace(/\/+$/, "") : "";
+  if (basePath) {
+    if (!BASE_PATH.test(basePath) || basePath.split("/").some((segment) => segment === "." || segment === "..")) return "The base path must start with / and hold no dot segment, such as /v1.";
+    out.basePath = basePath;
+  }
+  return out;
+}
+
+/** The header a key lands in, lower case (null for a query parameter). */
+export function injectionHeader(injection: VaultApiInjection): string | null {
+  if (injection.mode === "query") return null;
+  return injection.mode === "header" ? injection.header!.toLowerCase() : "authorization";
+}
+
+/** A command variable's name: upper case, digits and underscores. */
+const COMMAND_VARIABLE = /^[A-Z_][A-Z0-9_]{0,63}$/;
+/** Names a shell, the engine or Sagax itself needs: a key never replaces
+ * them (the engine would sign in with it, or the shell break). */
+const RESERVED_VARIABLES = new Set([
+  "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "PWD", "OLDPWD", "TERM", "LANG", "TZ", "IFS", "ENV", "BASH_ENV",
+  "NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "PYTHONHOME", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+]);
+const RESERVED_VARIABLE_PREFIXES = ["LD_", "DYLD_", "SAGAX_", "ANTHROPIC_", "CLAUDE_", "CODEX_", "ELECTRON_", "GIT_", "NPM_CONFIG_", "BASH_FUNC_"];
+
+/** The variable name the person typed, checked; a string when refused. */
+export function parseCommandVariable(raw: unknown): string | null | { error: string } {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "string") return { error: "The variable name must be text." };
+  const name = raw.trim();
+  if (!name) return null;
+  if (!COMMAND_VARIABLE.test(name)) return { error: "The variable name must be upper case letters, digits and underscores, such as EXAMPLE_API_KEY." };
+  if (RESERVED_VARIABLES.has(name) || RESERVED_VARIABLE_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+    return { error: `${name} is a name the shell or the engine already uses. Choose another one.` };
+  }
+  return name;
+}

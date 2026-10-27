@@ -127,6 +127,8 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("rules:update", "own", "rules_update"),
   p("docs:update", "own", "docs_update"),
   p("credentials:login", "own", "request_login"),
+  // an API call with a vault key Sagax adds itself (server/credential-http.ts)
+  p("credentials:http", "own", "vault_http_request"),
   p("computers:select", "own", "select_computer"),
   p("pairing:manage", "own", "manage_pairing"),
   // Dispatch

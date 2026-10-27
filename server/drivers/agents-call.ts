@@ -19,6 +19,7 @@ import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDelivery
 import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
 import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
 import { callPhoneTool, PHONE_TOOL_NAME } from "./agents-phone-tools.ts";
+import { callVaultHttpTool, VAULT_HTTP_TOOL_NAME } from "./agents-vault-http-tools.ts";
 import { callConnectorSetupTool, CONNECTOR_SETUP_TOOL_NAME } from "./agents-connector-setup.ts";
 import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
 import { HELP_TOOL_NAMES } from "./agents-help-tools.ts";
@@ -564,6 +565,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   // create_options_card, show_widget, update_widget (agents-call-cards.ts).
   if (CARD_TOOL_NAMES.has(name)) return callCardTool(name, args, context);
   if (name === PHONE_TOOL_NAME) return callPhoneTool(args, context);
+  if (name === VAULT_HTTP_TOOL_NAME) return callVaultHttpTool(args, context);
   if (name === CONNECTOR_SETUP_TOOL_NAME) return callConnectorSetupTool(args, context);
   if (ARTIFACT_TOOL_NAMES.has(name)) return callArtifactTool(name, args, context);
   // sagax_help (server/self-knowledge.ts): a few sections of the generated
@@ -1190,9 +1192,9 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     });
     if (r.error) return { text: `Couldn't request a login: ${r.error}`, isError: true };
     if (Array.isArray(r.granted) && r.granted.length) {
-      const rows = (r.granted as Array<{ handle: string; name: string; domains: string[]; fields: string[] }>)
-        .map((item) => `${item.handle} "${item.name}" (sites: ${item.domains.join(", ")}; fields: ${item.fields.join(", ")})`);
-      return { text: `Already allowed for you: ${rows.join("; ")}. Call fill_credential in the browser with the handle and field login to sign in (or one field). You never see the value.` };
+      const rows = (r.granted as Array<{ handle: string; name: string; domains: string[]; fields: string[]; sentBySagax?: boolean }>)
+        .map((item) => `${item.handle} "${item.name}" (sites: ${item.domains.join(", ")}; fields: ${item.fields.join(", ")}${item.sentBySagax ? "; call its API with vault_http_request" : ""})`);
+      return { text: `Already allowed for you: ${rows.join("; ")}. Call fill_credential in the browser with the handle and field login to sign in (or one field), or vault_http_request for an API key Sagax sends. You never see the value.` };
     }
     return {
       text: "A secure login request card is ready for the person. End this turn; Sagax resumes the task with the login's handle after they allow it or decline. Never ask them for a password or a code in chat.",

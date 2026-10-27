@@ -5,11 +5,16 @@
 //     200 { granted: [{ handle, name, domains, fields }] }  already allowed
 //     201 { messageId }                                     a card was posted
 //
+//   POST /api/internal/credentials/http { handle, method?, url, headers?, body? }
+//     200 { text, isError? }   vault_http_request (2026-10-26): the server
+//     adds the API key to the request (server/credential-http.ts)
+//
 // The answer names handles, sites and which fields exist, never a value. A
 // card is the person's to answer (server/routes/credential-vault.ts).
 import { normalizeVaultDomain, vaultHandle, type VaultItemListing } from "../../shared/credential-vault.ts";
 import type { SecretRequestCardData } from "../../shared/wire.ts";
-import type { CredentialVault } from "../credential-vault.ts";
+import { outcomeText, sendWithInjectedKey, type CredentialHttpOptions } from "../credential-http.ts";
+import type { CredentialVault, OnePasswordFieldReader } from "../credential-vault.ts";
 import type { InternalRouteHandler } from "./internal-route.ts";
 import { PASS } from "./table.ts";
 import { vaultRequestCard } from "./credential-vault.ts";
@@ -25,6 +30,17 @@ export interface CredentialVaultInternalDeps {
   /** A new card replaces the open one: a person's own sign-in begun from it
    * ends (server/browser-runtime.ts endPersonSignIn). */
   endPersonSignIn?(botId: string, threadId: string): Promise<void>;
+  /** vault_http_request: the resolver and address checks (tests inject them). */
+  http?: CredentialHttpOptions;
+  /** A 1Password API key, read at use (the conversation says it waits). */
+  readOnePassword?(threadId: string): OnePasswordFieldReader;
+  /** One line per request sent or refused: host, method, status, never the
+   * key, the path or the query. */
+  audit?(detail: { botId: string; host: string; method: string; status?: number; refused?: string }): void;
+}
+
+function hostOf(url: unknown): string {
+  try { return typeof url === "string" ? new URL(url).host.slice(0, 253) : ""; } catch { return ""; }
 }
 
 function fieldsOf(item: VaultItemListing): string[] {
@@ -33,6 +49,28 @@ function fieldsOf(item: VaultItemListing): string[] {
 
 export function createCredentialVaultInternalRoutes(deps: CredentialVaultInternalDeps): InternalRouteHandler {
   return async ({ res, path, method, json, capability, readBody }) => {
+    if (path === "/api/internal/credentials/http") {
+      if (method !== "POST") return json(res, 405, { error: "POST only" });
+      const body = await readBody();
+      if (deps.botName(capability.botId, capability.threadId) === null) return json(res, 403, { error: "source conversation does not belong to sender" });
+      const principalId = deps.principalForThread(capability.threadId);
+      if (!principalId) return json(res, 403, { error: "This turn does not act for a person whose vault could answer." });
+      const requestMethod = typeof body.method === "string" ? body.method.toUpperCase().slice(0, 10) : "GET";
+      const host = hostOf(body.url);
+      const resolved = await deps.vault.resolveForRequest(principalId, { handle: body.handle, botId: capability.botId, threadId: capability.threadId, url: typeof body.url === "string" ? body.url : "" }, deps.readOnePassword?.(capability.threadId));
+      if (!resolved.ok) {
+        deps.audit?.({ botId: capability.botId, host, method: requestMethod, refused: resolved.code });
+        return json(res, 200, { text: resolved.message, isError: true });
+      }
+      const outcome = await sendWithInjectedKey({
+        value: resolved.value,
+        injection: resolved.injection,
+        ...(resolved.username ? { username: resolved.username } : {}),
+        domains: resolved.domains,
+      }, { method: body.method, url: body.url, headers: body.headers, body: body.body }, deps.http);
+      deps.audit?.({ botId: capability.botId, host, method: requestMethod, ...(outcome.ok ? { status: outcome.status } : { refused: outcome.code }) });
+      return json(res, 200, outcomeText(outcome, resolved.label));
+    }
     if (path !== "/api/internal/credentials/request") return PASS;
     if (method !== "POST") return json(res, 405, { error: "POST only" });
     const body = await readBody();
@@ -54,7 +92,7 @@ export function createCredentialVaultInternalRoutes(deps: CredentialVaultInterna
       // A vault that cannot be opened now still lets the person answer a card.
     }
     if (granted.length) {
-      return json(res, 200, { granted: granted.slice(0, 5).map((item) => ({ handle: vaultHandle(item.id), name: item.name, domains: item.domains, fields: fieldsOf(item) })) });
+      return json(res, 200, { granted: granted.slice(0, 5).map((item) => ({ handle: vaultHandle(item.id), name: item.name, domains: item.domains, fields: fieldsOf(item), ...(item.kind === "apiKey" && item.injection ? { sentBySagax: true } : {}) })) });
     }
     const messageId = deps.postCard(capability.botId, capability.threadId, vaultRequestCard({
       principalId, botName, ...(name ? { name } : {}), ...(domain ? { domain } : {}), ...(reason ? { reason } : {}),
