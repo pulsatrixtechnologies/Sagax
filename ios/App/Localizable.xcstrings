@@ -78163,6 +78163,422 @@
         "en": { "stringUnit": { "state": "translated", "value": "%1$@: %2$@" } },
         "fr": { "stringUnit": { "state": "translated", "value": "%1$@ : %2$@" } }
       }
+    },
+    "Harassment or bullying": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Harassment or bullying"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Harcèlement ou intimidation"
+          }
+        }
+      }
+    },
+    "Hate speech": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hate speech"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Propos haineux"
+          }
+        }
+      }
+    },
+    "Violence or threats": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Violence or threats"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Violence ou menaces"
+          }
+        }
+      }
+    },
+    "Spam or scam": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spam or scam"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pourriel ou arnaque"
+          }
+        }
+      }
+    },
+    "Private information": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private information"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renseignements personnels"
+          }
+        }
+      }
+    },
+    "Thanks. Your report was sent to the admins, who will review it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thanks. Your report was sent to the admins, who will review it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merci. Ton signalement a été envoyé aux administrateurs, qui vont l'examiner."
+          }
+        }
+      }
+    },
+    "%@ is blocked. Their messages are hidden for you.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is blocked. Their messages are hidden for you."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ est bloqué. Ses messages sont masqués pour toi."
+          }
+        }
+      }
+    },
+    "Block %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Block %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloquer %@"
+          }
+        }
+      }
+    },
+    "Block %@?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Block %@?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloquer %@ ?"
+          }
+        }
+      }
+    },
+    "Unblock %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unblock %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Débloquer %@"
+          }
+        }
+      }
+    },
+    "Block": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Block"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloquer"
+          }
+        }
+      }
+    },
+    "Unblock": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unblock"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Débloquer"
+          }
+        }
+      }
+    },
+    "Their messages in rooms and direct messages are hidden for you only. They are not told.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Their messages in rooms and direct messages are hidden for you only. They are not told."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses messages dans les salons et les messages directs sont masqués pour toi seulement. La personne n'est pas avisée."
+          }
+        }
+      }
+    },
+    "Their messages in rooms and direct messages are hidden for you only. They are not told. You can unblock them in Settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Their messages in rooms and direct messages are hidden for you only. They are not told. You can unblock them in Settings."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses messages dans les salons et les messages directs sont masqués pour toi seulement. La personne n'est pas avisée. Tu peux la débloquer dans Réglages."
+          }
+        }
+      }
+    },
+    "Report this message from %@. Your report and the message go to your organization's admins (the server's owner on a personal server). The person is not told who reported them.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report this message from %@. Your report and the message go to your organization's admins (the server's owner on a personal server). The person is not told who reported them."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signaler ce message de %@. Ton signalement et le message vont aux administrateurs de ton organisation (au propriétaire du serveur sur un serveur personnel). La personne ne sait pas qui l'a signalée."
+          }
+        }
+      }
+    },
+    "Report message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Report message"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signaler le message"
+          }
+        }
+      }
+    },
+    "Message from a blocked person": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message from a blocked person"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message d'une personne bloquée"
+          }
+        }
+      }
+    },
+    "Blocked people": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked people"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personnes bloquées"
+          }
+        }
+      }
+    },
+    "Nobody blocked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nobody blocked"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne n'est bloqué"
+          }
+        }
+      }
+    },
+    "Their messages in rooms and direct messages are hidden for you only, on all your devices. Tap someone to unblock them.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Their messages in rooms and direct messages are hidden for you only, on all your devices. Tap someone to unblock them."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leurs messages dans les salons et les messages directs sont masqués pour toi seulement, sur tous tes appareils. Touche une personne pour la débloquer."
+          }
+        }
+      }
+    },
+    "Before you continue, read and accept the terms of use.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Before you continue, read and accept the terms of use."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avant de continuer, lis et accepte les conditions d'utilisation."
+          }
+        }
+      }
+    },
+    "There is zero tolerance for objectionable or abusive content. Anyone can report a message or block a person, and the admins review every report.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is zero tolerance for objectionable or abusive content. Anyone can report a message or block a person, and the admins review every report."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il y a une tolérance zéro pour le contenu répréhensible ou abusif. Chacun peut signaler un message ou bloquer une personne, et les administrateurs examinent chaque signalement."
+          }
+        }
+      }
+    },
+    "Read the terms": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read the terms"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lire les conditions"
+          }
+        }
+      }
+    },
+    "Could not save your answer. Check the connection and try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save your answer. Check the connection and try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'enregistrer ta réponse. Vérifie la connexion et réessaie."
+          }
+        }
+      }
+    },
+    "I agree": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I agree"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "J'accepte"
+          }
+        }
+      }
+    },
+    "Terms of use": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terms of use"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conditions d'utilisation"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

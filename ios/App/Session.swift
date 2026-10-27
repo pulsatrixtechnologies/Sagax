@@ -160,6 +160,11 @@ final class Session: ObservableObject {
     /// The app is showing the demo (`DemoServer`): local made-up data, no
     /// network, nothing saved. Leaving it returns to the welcome screen.
     @Published private(set) var isDemo = false
+    /// App Store 1.2 (Session+Moderation.swift): the people this person
+    /// blocked (kept on the server, so every device agrees), and whether the
+    /// terms of use still wait for this account's one acceptance.
+    @Published var blockedPeople: [Moderation.BlockedPerson] = []
+    @Published var termsPending = false
     private var demoServer: DemoServer?
     /// Which way the connect screen opened: a computer (QR, nearby,
     /// address and code) or an organization (Sign in with Pulsatrix).
@@ -897,6 +902,8 @@ final class Session: ObservableObject {
         }
         state = demoState
         status = .live
+        // the demo asks for the terms too, and answers Report and Block
+        Task { await loadModeration() }
     }
 
     private func applyDemoFrame(_ frame: Frame) {
@@ -1327,6 +1334,8 @@ final class Session: ObservableObject {
                         Task { await PushRegistrar.shared.sync() }
                         // phone tools: what this phone offers, and any request waiting
                         PhoneToolCenter.shared.streamOpened(self)
+                        // blocked people and the terms (App Store 1.2)
+                        Task { await self.loadModeration() }
                         // Remember what actually carried the stream for
                         // display and legacy ordering. Typed routes retain
                         // their explicit security priority next launch.

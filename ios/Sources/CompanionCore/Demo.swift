@@ -37,6 +37,11 @@ public final class DemoServer: @unchecked Sendable {
     private var runs: [RoutineRun]
     private var counter = 0
     private var stopped = false
+    /// App Store 1.2 (Moderation.swift): the demo's own blocked list, its
+    /// reports, and the terms, asked once per demo (so a reviewer sees them).
+    private var blocked: [Moderation.BlockedPerson] = []
+    private var reports: [String] = []
+    private var termsAccepted: Double?
     /// Every request the demo answered, for tests.
     private var handled: [String] = []
 
@@ -116,12 +121,78 @@ public final class DemoServer: @unchecked Sendable {
             return send(text: json["text"] as? String ?? "", botId: nil, groupId: parts[2], threadId: json["threadId"] as? String, onCall: json["voiceCall"] != nil)
         case ("POST", ["api", "threads"]) where parts.count == 4 && parts[3] == "respond":
             return answer(threadId: parts[2], requestId: json["requestId"] as? String, behavior: json["behavior"] as? String ?? "deny", message: json["message"] as? String)
+        case ("POST", ["api", "threads"]) where parts.count == 6 && parts[3] == "messages" && parts[5] == "report":
+            return report(threadId: parts[2], messageId: parts[4])
+        case (_, ["api", "me"]) where parts.count >= 3 && parts[2] == "blocks":
+            return blocks(method: method, id: parts.count == 4 ? parts[3] : nil, json: json)
+        case (_, ["api", "me"]) where parts.count == 3 && parts[2] == "terms":
+            return terms(method: method)
         case ("POST", ["api", "bots"]) where parts.count == 4 && (parts[3] == "read" || parts[3] == "always-allow"),
              ("POST", ["api", "groups"]) where parts.count == 4 && parts[3] == "read":
             return .init(status: 200, body: Data("{}".utf8))
         default:
             return refusal(status: method == "GET" ? 404 : 403)
         }
+    }
+
+    // MARK: - Report, Block, terms (App Store 1.2)
+
+    private func report(threadId: String, messageId: String) -> Response {
+        lock.lock()
+        let known = (bots.first { $0.threadId == threadId }?.messages ?? rooms.first { $0.threadId == threadId }?.messages ?? [])
+            .contains { $0.id == messageId }
+        lock.unlock()
+        guard known else { return refusal(status: 404) }
+        let id = nextID("report")
+        let at = stamp()
+        lock.lock(); reports.append(id); lock.unlock()
+        let body = (try? JSONSerialization.data(withJSONObject: ["report": ["id": id, "at": at, "status": "open"]])) ?? Data()
+        return .init(status: 201, body: body)
+    }
+
+    private struct BlocksBody: Encodable { var people: [Moderation.BlockedPerson] }
+
+    private func blocks(method: String, id: String?, json: [String: Any]) -> Response {
+        switch (method, id) {
+        case ("GET", nil):
+            break
+        case ("POST", nil):
+            let target = Moderation.norm(json["id"] as? String)
+            guard !target.isEmpty else { return refusal(status: 400) }
+            let name = (json["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? target
+            let at = stamp()
+            lock.lock()
+            if let index = blocked.firstIndex(where: { $0.id == target }) { blocked[index].name = name }
+            else { blocked.append(.init(id: target, name: name, at: at)) }
+            lock.unlock()
+        case let ("DELETE", id?):
+            let target = Moderation.norm(id.removingPercentEncoding ?? id)
+            lock.lock(); blocked.removeAll { $0.id == target }; lock.unlock()
+        default:
+            return refusal(status: 405)
+        }
+        lock.lock(); defer { lock.unlock() }
+        return encode(BlocksBody(people: blocked))
+    }
+
+    private func terms(method: String) -> Response {
+        if method == "POST" {
+            let at = stamp()
+            lock.lock(); if termsAccepted == nil { termsAccepted = at }; lock.unlock()
+        } else if method != "GET" {
+            return refusal(status: 405)
+        }
+        lock.lock(); let accepted = termsAccepted; lock.unlock()
+        return encode(Moderation.TermsStatus(
+            accepted: accepted != nil, url: Moderation.termsURL.absoluteString,
+            version: accepted == nil ? nil : Moderation.termsVersion, acceptedAt: accepted
+        ))
+    }
+
+    /// Reports the demo took (tests).
+    public var reportCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return reports.count
     }
 
     private func refusal(status: Int) -> Response {

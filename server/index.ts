@@ -1098,6 +1098,8 @@ import { launchedAgentsForBot } from "./launched-agents.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
+import { createModerationRoutes, isReportPath } from "./routes/moderation.ts";
+import { createModerationStore } from "./moderation.ts";
 import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createRoutineAwayRoutes } from "./routes/routine-away.ts";
@@ -29396,6 +29398,7 @@ async function erasePersonDataNow(principalId: string): Promise<{ bots: number; 
   });
   await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
   userPreferenceStore.remove(principalId);
+  moderationStore.forgetPerson(principalId);
   try { credentialVault.drop(person); } catch (error) { console.warn(`account deletion: credential vault not removed: ${String(error)}`); }
   presence.forget(principalId);
   viewerBotOverrideStore.remove(principalId);
@@ -29879,6 +29882,72 @@ ROUTES.push(createPeopleDmRoutes<GroupRecord>({
   // Opening the conversation answers its default thread, as before threads,
   // each person's own unread state and never the other's.
   project: (group, auth) => peopleDmForViewer({ ...publicGroupState(group), messages: store.messagesFor(group.threadId) }, auth ? groupReaderId(auth) : undefined),
+}));
+// Content between people (App Store 1.2, server/moderation.ts): reports to
+// the admins, each person's own blocked people, the terms accepted once.
+const moderationStore = createModerationStore(DATA_DIR);
+/** Who acts for moderation: the session's principal, a solo server's older
+ * pairing by its person key, the operator at this computer. */
+function moderationViewer(auth: RequestAuth): { id: string; name: string } | null {
+  let id = actorPrincipalId(auth);
+  if (!id && auth.kind === "session" && IDENTITY.kind !== "perspicax") id = personKey(auth.session);
+  if (!id) return null;
+  const name = messageSender(auth)?.name || (auth.kind === "loopback" ? cfg.profile?.name?.trim() : "") || personDisplayName(principals.byId(id)) || "";
+  return { id: id.toLowerCase(), name };
+}
+/** Who is told about a report: the organization's admins and the operator;
+ * on a solo server, its owner. */
+function moderationAdminAudience(): string[] {
+  const ids = IDENTITY.kind === "perspicax"
+    ? principals.list().filter((person) => person.orgRole === "admin" && person.disabledAt === undefined).map((person) => person.id)
+    : [];
+  return [...new Set([...ids, localPrincipalId()].map((id) => id.toLowerCase()))];
+}
+ROUTES.push(createModerationRoutes({
+  store: moderationStore,
+  viewer: moderationViewer,
+  isAdmin: (auth) => IDENTITY.kind === "perspicax"
+    ? orgAdminCaller(auth)
+    : auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  message: (threadId, messageId) => {
+    const group = store.groupByThread(threadId);
+    const bot = group ? null : store.botByThread(threadId);
+    if (!group && !bot) return null;
+    const message = store.messagesFor(threadId).find((entry) => entry.id === messageId);
+    if (!message) return null;
+    let author: { id: string; name: string; kind: "person" | "bot" } | null = null;
+    if (message.role === "user") {
+      // A person's line names its sender; one without is the operator's.
+      const senderId = message.sender?.id?.trim();
+      author = senderId
+        ? { id: senderId.toLowerCase(), name: message.sender?.name?.trim() || personDisplayName(principals.byId(senderId)) || "", kind: "person" }
+        : { id: localPrincipalId().toLowerCase(), name: message.sender?.name?.trim() || cfg.profile?.name?.trim() || "", kind: "person" };
+    } else if (message.from?.botId) {
+      author = { id: message.from.botId, name: message.from.name, kind: "bot" };
+    } else if (bot) {
+      author = { id: bot.id, name: bot.name, kind: "bot" };
+    }
+    return {
+      author,
+      text: typeof message.text === "string" ? message.text : "",
+      ...(group ? { group: { id: group.id, name: group.name, peopleDm: group.peopleDm === true } } : {}),
+    };
+  },
+  notifyAdmins: (report) => {
+    const where = report.peopleDm ? "a direct conversation" : report.groupName ? report.groupName : "a conversation";
+    broadcast({
+      kind: "notify",
+      notification: {
+        kind: "report",
+        botId: "",
+        botName: "",
+        threadId: "",
+        title: "Message reported",
+        body: `${report.reporterName || "Someone"} reported a message from ${report.reportedName || "someone"} in ${where}.`,
+        audience: moderationAdminAudience(),
+      },
+    });
+  },
 }));
 // The folders of a person conversation's threads (server/routes/group-folders.ts).
 ROUTES.push(createGroupFolderRoutes({
@@ -37469,8 +37538,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const subject = pathSubject(path);
       if (subject && !subjectSeesChannel(subject, scopedViewerId)) return json(res, 404, { error: notFoundFor(subject) });
       // Slice 4: a read-only member of a shared section reads its rooms and
-      // changes nothing in them (settings, tasks, queue, interrupt, cards).
-      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) && !REACTION_ROUTE.test(path) ? roomOfSubject(subject) : null;
+      // changes nothing in them (settings, tasks, queue, interrupt, cards). A reaction and a report
+      // (App Store 1.2) are a reader's, like a read receipt.
+      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) && !REACTION_ROUTE.test(path) && !isReportPath(path) ? roomOfSubject(subject) : null;
       if (room && !groupPostAllowed(room, scopedViewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     {

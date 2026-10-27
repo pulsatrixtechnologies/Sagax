@@ -55,7 +55,10 @@ import { ChatMarkdown } from "./ChatMarkdown";
 import { VideoPlayerWidget } from "./video/VideoPlayerWidget";
 import { FailedTurnRow, MessageBoundary } from "./ChatView";
 import { MESSAGE_ROW, MessageActions, messageActionClass } from "./MessageActions";
-import { useBotMessageMenu, userMessageMenu, type PinAction } from "./message-menu";
+import { personModerationMenu, useBotMessageMenu, userMessageMenu, type PinAction } from "./message-menu";
+import { blockPerson, isBlockedId, personLineAuthor, unblockPerson, useBlockedPeople } from "@/lib/moderation";
+import { ReportPersonDialog } from "./ReportPersonDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
 import { SpeakButton } from "./SpeakButton";
 import { useSpeech } from "@/lib/tts/useSpeech";
@@ -298,6 +301,49 @@ function RoomTextMessage({
   // a reply with text lists its files under the text, without the ones it links inline
   // (memoized by the React Compiler on the text and the attachments)
   const replyGroup = !user && botText.trim() ? replyAttachmentGroup(botText, m.attachments) : null;
+  // Another person's line (App Store 1.2): Report it, Block its author for
+  // me only. A blocked person's line folds into one row that opens on a click.
+  const config = useStoreSelector((current) => current.config);
+  const blockedPeople = useBlockedPeople();
+  const author = user && !mine ? personLineAuthor(m, config) : null;
+  const authorBlocked = author ? isBlockedId(blockedPeople, author.id) : false;
+  const [revealed, setRevealed] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [confirmBlock, setConfirmBlock] = useState(false);
+  const personMenu = [
+    ...userMessageMenu({ pin }),
+    ...(author && requestId ? personModerationMenu({
+      name: author.name,
+      blocked: authorBlocked,
+      onReport: () => setReporting(true),
+      onToggleBlock: () => { if (authorBlocked) void unblockPerson(author.id).catch(() => {}); else setConfirmBlock(true); },
+    }) : []),
+  ];
+  const moderationDialogs = author ? (
+    <>
+      {reporting && requestId && <ReportPersonDialog threadId={group.threadId} messageId={requestId} author={author} blocked={authorBlocked} onClose={() => setReporting(false)} />}
+      <ConfirmDialog
+        open={confirmBlock}
+        tone="neutral"
+        title={t("moderation.block.confirmTitle", { name: author.name })}
+        body={t("moderation.block.confirmBody")}
+        confirmLabel={t("moderation.block.confirm")}
+        onCancel={() => setConfirmBlock(false)}
+        onConfirm={() => { setConfirmBlock(false); void blockPerson(author).catch(() => {}); }}
+      />
+    </>
+  ) : null;
+  if (author && authorBlocked && !revealed) {
+    return (
+      <div data-author="person" data-blocked-line="" className="group flex w-full flex-col items-start" {...{ [MESSAGE_ROW]: "" }}>
+        <div className="flex items-center gap-2 rounded-[18px] bg-raised px-3 py-[7px] text-[12.5px] text-ink-secondary ring-1 ring-inset ring-hairline/40">
+          <span>{t("moderation.blocked.line")}</span>
+          <button type="button" onClick={() => setRevealed(true)} className="text-ink-secondary underline hover:text-ink">{t("moderation.blocked.show")}</button>
+        </div>
+        {moderationDialogs}
+      </div>
+    );
+  }
   return (
     <div
       data-author={mine ? "self" : user ? "person" : "bot"}
@@ -412,7 +458,7 @@ function RoomTextMessage({
           )}
         </div>
         {!mine && user && (
-          <MessageActions side="bot" menu={userMessageMenu({ pin })} onReply={() => onReply(m)} copy={display.trim() ? display : undefined} requestId={requestId} react={react} />
+          <MessageActions side="bot" menu={personMenu} onReply={() => onReply(m)} copy={display.trim() ? display : undefined} requestId={requestId} react={react} />
         )}
         {!user && (
           <MessageActions
@@ -440,6 +486,7 @@ function RoomTextMessage({
       </div>
       <ReactionChips reactions={m.reactions} selfIds={reactionSelf} bots={members} end={mine} onToggle={(emoji) => toggleReactionOn(m.id, emoji)} />
       {!user && m.routedBy && <RoutedByLine routedBy={m.routedBy} />}
+      {moderationDialogs}
     </div>
   );
 }

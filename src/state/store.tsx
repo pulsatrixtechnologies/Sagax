@@ -98,6 +98,7 @@ import { ThreadPrefetchContext } from "./thread-prefetch";
 import { createThreadPrefetcher, ThreadPageCache, type ThreadPage } from "@/lib/thread-page-cache";
 import { ARTIFACTS_EVENT } from "@/lib/artifact-events";
 import { makeConfidentialBody } from "@/lib/confidential-thread";
+import { blockedDmSender, notifyReportsChanged } from "@/lib/moderation";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -5521,9 +5522,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // watching the badge return on the next hydration is exactly the
           // bug that makes notifications feel broken. Opened as the sidebar
           // shows threads when it is clicked.
+          // A direct message from someone this person blocked stays quiet
+          // (src/lib/moderation.ts): their line is folded away anyway.
+          if (frame.notification.kind === "message" && blockedDmSender(frame.notification.threadId, stateRef.current)) break;
+          if (frame.notification.kind === "report") notifyReportsChanged();
           showNotification(
             frame.notification,
-            (target) => openNotificationTarget(dispatch, target, stateRef.current, showThreadsRef.current),
+            (target) => frame.notification.kind === "report"
+              // a report opens the admins' list (Settings > Notifications)
+              ? dispatch({ type: "toggleAppSettings", open: true, section: "notifications" })
+              : openNotificationTarget(dispatch, target, stateRef.current, showThreadsRef.current),
             stateRef.current.bots.find((bot) => bot.id === frame.notification.botId)?.avatarUrl,
             visibleNotificationThread(stateRef.current),
           );

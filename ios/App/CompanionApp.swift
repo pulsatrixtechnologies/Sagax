@@ -144,6 +144,14 @@ struct RootView: View {
                 // the phone's roster, or on an iPad the desktop shell
                 // (Desktop/DesktopShell.swift); each applies the parity launcher
                 HomeRoot()
+                    // the terms of use, once per account (App Store 1.2);
+                    // never over the screenshot harness
+                    .sheet(isPresented: Binding(
+                        get: { session.termsPending && ParityLaunch.current == nil },
+                        set: { if !$0 { session.termsPending = false } }
+                    )) {
+                        TermsAcceptanceSheet().environmentObject(session)
+                    }
                     .onAppear {
                         hasSeenWelcome = true
                         // This is either an existing pairing or a new pairing

@@ -246,6 +246,8 @@ export function peopleDmRouteRefusal(method: string, path: string): string | nul
   if (method === "POST" && /^\/api\/groups\/[\w-]+\/(?:messages|read)$/.test(path)) return null;
   if (method === "POST" && /^\/api\/threads\/[\w-]+\/read$/.test(path)) return null;
   if (method === "POST" && /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/.test(path)) return null;
+  // App Store 1.2: either person reports the other's message (routes/moderation.ts)
+  if (method === "POST" && /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/report$/.test(path)) return null;
   if (method === "PATCH" && /^\/api\/groups\/[\w-]+$/.test(path)) return null;
   if (method === "POST" && /^\/api\/groups\/[\w-]+\/(?:tasks|projects)$/.test(path)) return null;
   if ((method === "POST" || method === "PATCH" || method === "DELETE") && /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/.test(path)) return null;
