@@ -40,7 +40,10 @@ describe("conversation files through the harness", () => {
   it("lists what a turn wrote and serves it only from that conversation", async () => {
     const bot = (await api("POST", "/api/bots", {})).body.bot;
     expect((await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } })).status).toBe(200);
-    const workspace = join(session.info.dataDir, "workspaces", bot.id);
+    // A turn works in its conversation's own folder (the workspace is always
+    // Auto, #743), and Claude's relative paths are recorded resolved against
+    // it (#858): the file the fake turn "wrote" is created there.
+    const workspace = join(session.info.dataDir, "task-workspaces", bot.id, bot.threadId);
     mkdirSync(workspace, { recursive: true });
     writeFileSync(join(workspace, "report.md"), "# Findings");
 
@@ -52,15 +55,16 @@ describe("conversation files through the harness", () => {
     }, { timeout: 20_000 }).toEqual(["never-here.png", "report.md"]);
 
     const report = files.find((file) => file.name === "report.md")!;
-    expect(report).toMatchObject({ source: "written", path: "report.md", size: 10, available: true, mime: "text/markdown; charset=utf-8" });
-    expect(report.localPath).toMatch(/workspaces[\\/].+[\\/]report\.md$/);
+    expect(report).toMatchObject({ source: "written", size: 10, available: true, mime: "text/markdown; charset=utf-8" });
+    expect(report.path).toMatch(/task-workspaces[\\/].+[\\/]report\.md$/);
+    expect(report.localPath).toMatch(/task-workspaces[\\/].+[\\/]report\.md$/);
     expect(files.find((file) => file.name === "never-here.png")).toMatchObject({ available: false, size: null });
 
     // The activity message carries the record, and is the download grant.
     const dump = await api("GET", `/api/threads/${bot.threadId}/export?format=json`);
     const activity = (dump.body.messages as Array<{ id: string; kind: string; tool?: { name: string; files?: string[] } }>)
       .find((message) => message.id === report.messageId)!;
-    expect(activity).toMatchObject({ kind: "activity", tool: { name: "Write", files: ["report.md"] } });
+    expect(activity).toMatchObject({ kind: "activity", tool: { name: "Write", files: [report.path] } });
 
     const byId = await fetch(`${session.info.url}/api/threads/${bot.threadId}/files/${report.id}`);
     expect(byId.status).toBe(200);
@@ -73,7 +77,7 @@ describe("conversation files through the harness", () => {
     const viaMessage = await fetch(`${session.info.url}/api/threads/${bot.threadId}/messages/${report.messageId}/file`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: "report.md" }),
+      body: JSON.stringify({ path: report.path }),
     });
     expect(viaMessage.status).toBe(200);
     expect(await viaMessage.text()).toBe("# Findings");

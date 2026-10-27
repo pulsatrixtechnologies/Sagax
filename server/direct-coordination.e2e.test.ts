@@ -489,7 +489,14 @@ it("uses recipient bot defaults for its new task, never the sender's or its sele
   const node = f.nodes().find((entry: any) => entry.botId === f.lead.id);
   const lead = (await f.api("/api/bots")).bots.find((bot: any) => bot.id === f.lead.id);
   expect(lead.tasks.find((task: any) => task.threadId === f.lead.activeTaskId)).toMatchObject({ modelSelection: { model: selected.id }, approvalMode: "edits" });
-  expect(lead.tasks.find((task: any) => task.threadId === node.threadId)).toMatchObject({ modelSelection: f.lead.modelSelection, approvalMode: "auto" });
+  // The level belongs to the bot (#1207): the new task keeps no copy of the
+  // sender's or the old thread's Edits and no exception; the turn runs on the
+  // recipient's own level (the evidence below).
+  const fresh = lead.tasks.find((task: any) => task.threadId === node.threadId);
+  expect(fresh).toMatchObject({ modelSelection: f.lead.modelSelection });
+  expect(fresh.approvalMode).toBeUndefined();
+  expect(fresh.approvalOwn).toBeUndefined();
+  expect(lead.approvalMode).toBe("auto");
   expect(f.evidence().filter((turn: any) => turn.botId === f.lead.id).every((turn: any) => turn.model === f.lead.modelSelection.model && turn.permissionMode === "auto")).toBe(true);
 }), 45_000);
 
@@ -910,7 +917,9 @@ it("withholds direct results when the owner's cross-team grant is revoked", () =
   f.plan[f.lead.id] = { readyFile: ready, gateFile: gate, reply: "PRIVATE_ENGINEERING_RESULT" };
   await f.start();
   await expect.poll(() => existsSync(ready), { timeout: 15_000 }).toBe(true);
-  await f.api(`/api/bots/${f.chief.id}`, { managedSections: [] }, "PATCH");
+  // A Primary Bot covers every bot its person owns on its own (2026-10-20,
+  // #897), so the grant goes with the Primary Bot role as well as the section.
+  await f.api(`/api/bots/${f.chief.id}`, { chiefOfStaff: false, managedSections: [] }, "PATCH");
   writeFileSync(gate, "finish the private work after the grant went");
   expect((await f.wait()).status).toBe("settled");
   // The Chief lost access while the teammate worked: whatever the Chief's
@@ -937,7 +946,8 @@ it("retains returned direct reports for follow-up turns but rechecks access befo
   await f.api(`/api/bots/${f.chief.id}/messages/${followup.id}/edit`, { threadId: f.chief.activeTaskId, text: "Check the earlier engineering report" });
   expect((await f.wait()).status).toBe("settled");
   expect(f.evidence().filter((turn: any) => turn.botId === f.chief.id).at(-1).prompt.message.content).toContain("PRIVATE_ENGINEERING_FACT_8347");
-  await f.api(`/api/bots/${f.chief.id}`, { managedSections: [] }, "PATCH");
+  // The Primary Bot role covers every bot of its person (#897): lose both it and the section.
+  await f.api(`/api/bots/${f.chief.id}`, { chiefOfStaff: false, managedSections: [] }, "PATCH");
   f.plan[f.chief.id] = { reply: "Access removed", expectContextIncludes: ["Teammate result withheld"] };
   f.save();
   // Editing the follow-up forces a fresh replay while retaining the earlier

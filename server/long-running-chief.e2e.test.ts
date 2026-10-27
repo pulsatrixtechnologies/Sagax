@@ -104,6 +104,10 @@ async function chiefJob(test: (f: any) => Promise<void>) {
     const clive = await bot("Clive", "Leadership");
     const mira = await bot("Mira", "Engineering");
     const eli = await bot("Eli", "Engineering");
+    // The approval cases below are written "as Claude Code does at Ask". A new
+    // bot starts on Approve for me, and a Primary Bot on that level delegates
+    // it to its teammates' hops, so the Chief and the teammates go to Ask here.
+    for (const teammate of [clive, mira, eli]) expect((await api("PATCH", `/api/bots/${teammate.id}`, { approvalMode: "ask" })).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${clive.id}`, { chiefOfStaff: true, managedSections: ["Engineering"], acknowledgePeerScope: true })).status).toBe(200);
     const compat = { key: "synthetic-fixture-key", url: `http://127.0.0.1:${(model.address() as AddressInfo).port}/v1`, model: "loop-model" };
     expect((await api("PATCH", "/api/config", { openaiCompat: compat })).status).toBe(200);
