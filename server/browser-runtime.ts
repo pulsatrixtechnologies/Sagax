@@ -3,6 +3,7 @@ import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT,
 import { randomBytes } from "node:crypto";
 import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, formStaysOnOrigin, LOGIN_MODE, parseEvalArray, parseEvalObject, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript, type FillRequest, type LoginRequest } from "./credential-fill.ts";
 import { itemIdFromHandle } from "../shared/credential-vault.ts";
+import { MASK_SENSITIVE_SCRIPT, NO_PAGE_TEXT_TOOLS, parseSensitiveValues, SENSITIVE_VALUES_SCRIPT, UNMASK_SENSITIVE_SCRIPT, withSensitiveValues } from "../shared/sensitive-fields.ts";
 import {
   parsePurchaseCall, parseReceiptCall, RECORD_PURCHASE_TOOL, RECORD_PURCHASE_TOOL_SPEC, REQUEST_PURCHASE_TOOL, REQUEST_PURCHASE_TOOL_SPEC,
   type PurchaseFlightLeg, type PurchaseItem,
@@ -37,6 +38,7 @@ const PAGE_ACTIONS: ReadonlySet<string> = new Set([
   "agent_browser_click", "agent_browser_fill", "agent_browser_type", "agent_browser_press",
   "agent_browser_check", "agent_browser_uncheck", "agent_browser_select",
 ]);
+const OBSERVE_PAGE_SCRIPT_WITH_SENSITIVE = withSensitiveValues(OBSERVE_PAGE_SCRIPT);
 const MAX_REQUEST_BYTES = 1_048_576;
 const MAX_RESPONSE_BYTES = 16_777_216;
 /** Startup, not per-request work: a cold engine spawn can exceed a tight
@@ -678,11 +680,15 @@ export class BrowserRuntime {
         // Read the page around an action with eval, not a snapshot: a
         // snapshot renumbers every @eN ref the model holds. A failed read only
         // leaves the change out; a lost transport still engages recovery.
+        // The same read also learns what the page's sensitive fields hold
+        // (shared/sensitive-fields.ts), so an action costs no extra call.
         const observePage = async (): Promise<PageState | null> => {
           try {
-            return parsePageState(await entry.client.rpc("tools/call", {
-              name: "agent_browser_eval", arguments: { script: OBSERVE_PAGE_SCRIPT, timeoutMs: 5_000 },
-            }));
+            const observed = await entry.client.rpc("tools/call", {
+              name: "agent_browser_eval", arguments: { script: OBSERVE_PAGE_SCRIPT_WITH_SENSITIVE, timeoutMs: 5_000 },
+            });
+            for (const value of parseSensitiveValues(observed)) this.redactor.rememberSensitive(session, value);
+            return parsePageState(observed);
           } catch (error) {
             if (error instanceof TransportError) throw error;
             return null;
@@ -695,10 +701,15 @@ export class BrowserRuntime {
           if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
         }
         let result: unknown;
+        // A screenshot draws the page's sensitive fields as discs, then puts
+        // them back: a style only, the page keeps every value.
+        const masking = method === "tools/call" && toolName === "agent_browser_screenshot";
+        if (masking) await this.maskSensitiveFields(entry.client);
         try {
           result = await entry.client.rpc(method, request);
         } finally {
           releaseKeys?.();
+          if (masking) await this.unmaskSensitiveFields(entry.client);
         }
         beforeDispatch?.(); // A turn revoked while the tool ran receives no result.
         if (method === "tools/list") {
@@ -709,6 +720,10 @@ export class BrowserRuntime {
         // Redact the engine's raw answer before anything shapes or trims it:
         // a cut through a value would otherwise leave its prefix whole. What
         // the filled fields hold now (edited, partial) is redacted too.
+        // What the page's sensitive fields hold now (a password the person
+        // typed during a takeover, a card number, a code) is hidden the same
+        // way, whoever typed it. A page action learned it in its observation.
+        if (toolName !== undefined && !NO_PAGE_TEXT_TOOLS.has(toolName) && !PAGE_ACTIONS.has(toolName)) await this.learnSensitiveValues(session, entry.client);
         if (this.redactor.hasTaint(session)) await this.refreshFilledValues(session, entry.client);
         result = this.redactor.redact(session, result);
         if (before) before = this.redactor.redact(session, before);
@@ -809,6 +824,34 @@ export class BrowserRuntime {
     } catch (error) {
       if (error instanceof TransportError) throw error;
     }
+  }
+
+  /** Learn what the sensitive fields of the page hold now
+   * (shared/sensitive-fields.ts), so the result never shows it. Never
+   * returned. A page that cannot be asked leaves the result as it is. */
+  private async learnSensitiveValues(session: string, client: BrowserClient): Promise<void> {
+    try {
+      const answer = await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: SENSITIVE_VALUES_SCRIPT, timeoutMs: 5_000 } });
+      for (const value of parseSensitiveValues(answer)) this.redactor.rememberSensitive(session, value);
+    } catch (error) {
+      if (error instanceof TransportError) throw error;
+    }
+  }
+
+  /** Before a screenshot: sensitive fields drawn as discs. */
+  private async maskSensitiveFields(client: BrowserClient): Promise<void> {
+    try {
+      await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: MASK_SENSITIVE_SCRIPT, timeoutMs: 5_000 } });
+    } catch (error) {
+      if (error instanceof TransportError) throw error;
+    }
+  }
+
+  /** After a screenshot, even a failed one: the page as it was. */
+  private async unmaskSensitiveFields(client: BrowserClient): Promise<void> {
+    try {
+      await client.rpc("tools/call", { name: "agent_browser_eval", arguments: { script: UNMASK_SENSITIVE_SCRIPT, timeoutMs: 5_000 } });
+    } catch { /* the screenshot's own outcome is what the bot hears */ }
   }
 
   /** Whether a fill holds this session now (the Browser panel does not

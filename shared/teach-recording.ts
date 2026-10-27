@@ -14,6 +14,7 @@
 // - addresses keep their page, never their credentials: user info, secret
 //   query values and token fragments are removed.
 
+import { isSensitiveField } from "./sensitive-fields.ts";
 import { isSkillName, SKILL_NAME_MAX } from "./skill-md.ts";
 
 export type TeachStepKind = "open" | "click" | "type" | "press" | "back" | "forward" | "reload" | "tab" | "note";
@@ -57,16 +58,15 @@ export interface TeachFieldInfo {
   fieldName?: string;
   fieldId?: string;
   name?: string;
+  /** The element's data-sensitive attribute, when it has one
+   * (shared/sensitive-fields.ts). */
+  sensitive?: string | null;
 }
 
 export const TEACH_MAX_STEPS = 200;
 export const TEACH_TEXT_MAX = 500;
 const TARGET_NAME_MAX = 120;
 
-const SECRET_AUTOCOMPLETE = new Set([
-  "current-password", "new-password", "one-time-code",
-  "cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year",
-]);
 // English and French field words for credentials and payment details.
 const SECRET_FIELD = /pass(?:word|wd|code|phrase)?|pwd|secret|token|otp|one[\s_-]?time|2fa|mfa|totp|\bpin\b|\bnip\b|cvv|cvc|csc|card[\s_-]?num|cc[\s_-]?num|\bssn\b|\bnas\b|api[\s_-]?key|private[\s_-]?key|mot[\s_-]?de[\s_-]?passe|code[\s_-]?de[\s_-]?s[ée]curit[ée]/i;
 
@@ -74,10 +74,9 @@ const SECRET_FIELD = /pass(?:word|wd|code|phrase)?|pwd|secret|token|otp|one[\s_-
  * (the page could not be asked): treated as secret. */
 export function isSecretField(info: TeachFieldInfo | null | undefined): boolean {
   if (!info) return true;
-  const type = (info.type ?? "").toLowerCase();
-  if (type === "password") return true;
-  const autocomplete = (info.autocomplete ?? "").toLowerCase().split(/\s+/);
-  if (autocomplete.some((token) => SECRET_AUTOCOMPLETE.has(token))) return true;
+  // The rule every surface shares (shared/sensitive-fields.ts): a password
+  // field, a password, one-time-code or cc-* autocomplete, data-sensitive.
+  if (isSensitiveField({ type: info.type, autocomplete: info.autocomplete, sensitive: info.sensitive })) return true;
   return [info.fieldName, info.fieldId, info.name].some((value) => typeof value === "string" && SECRET_FIELD.test(value));
 }
 
