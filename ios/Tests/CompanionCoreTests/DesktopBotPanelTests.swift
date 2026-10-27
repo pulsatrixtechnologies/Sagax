@@ -90,16 +90,6 @@ final class DesktopBotPanelTests: XCTestCase {
         XCTAssertNil(DesktopInlineEdit.commit(draft: "", current: "", required: false))
     }
 
-    func testPhoneEditGroupsFollowTheDesktopOrderAndKeepEverySection() {
-        XCTAssertEqual(PhoneBotEditGroup.allCases, [.instructions, .modelTools, .security, .activity])
-        // Profile's three pages moved, none dropped
-        let listed = PhoneBotEditGroup.allCases.flatMap(\.sections)
-        XCTAssertEqual(Set(listed), Set(DesktopPanelSection.allCases))
-        XCTAssertEqual(listed.count, DesktopPanelSection.allCases.count)
-        XCTAssertEqual(PhoneBotEditGroup.security.sections.suffix(2), [.visibility, .sharing])
-        XCTAssertEqual(PhoneBotEditGroup.visible([.voice]), [.modelTools])
-    }
-
     /// Edit bot's Description (several lines, optional): a change is saved
     /// trimmed, an emptied blurb clears, an unchanged one saves nothing.
     func testInlineEditDescriptionKeepsLinesAndMayClear() {

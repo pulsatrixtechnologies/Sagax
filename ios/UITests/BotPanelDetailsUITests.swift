@@ -319,12 +319,17 @@ final class BotPanelDetailsUITests: XCTestCase {
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["voiceNotes": true]) }
         let app = launchProfile()
         element("panel-edit-persona", in: app).tap()
-        // Edit persona > Usage
+        // Edit bot > Advanced > Usage
+        element("panel-edit-page.advanced", in: app).tap()
         element("panel-row.usage", in: app).tap()
         XCTAssertTrue(element("bot-usage-empty", in: app).waitForExistence(timeout: 10) || element("bot-usage-turns", in: app).exists, "the usage section shows")
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        // Edit persona > Voice & alerts
-        element("panel-row.voice", in: app).tap()
+        element("settings-back", in: app).tap()
+        // Edit bot > Identity > Voice & alerts
+        element("panel-edit-page.identity", in: app).tap()
+        let voice = element("panel-row.voice", in: app)
+        for _ in 0..<6 where !(voice.exists && voice.isHittable) { app.swipeUp() }
+        voice.tap()
         let toggle = app.switches["bot-voice-notes"].firstMatch
         for _ in 0..<8 where !(toggle.exists && toggle.isHittable) { app.swipeUp() }
         XCTAssertTrue(toggle.waitForExistence(timeout: 10))

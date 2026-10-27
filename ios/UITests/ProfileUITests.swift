@@ -294,6 +294,9 @@ final class ProfileUITests: XCTestCase {
 
         // Edit persona > Soul (the standing instructions), where the pairing has it
         element("panel-edit-persona", in: app).tap()
+        // Edit bot > Personality > Soul
+        let personality = element("panel-edit-page.personality", in: app)
+        if personality.waitForExistence(timeout: 10) { personality.tap() }
         let soul = element("panel-row.soul", in: app)
         guard soul.waitForExistence(timeout: 10) else { throw XCTSkip("this pairing has no Soul section: start the fixture with PARITY_OWNER=1") }
         soul.tap()

@@ -144,36 +144,6 @@ public enum DesktopPanelGroup: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-/// The iPhone's Edit bot groups, in the desktop editor's own order
-/// (`persona-sections.ts` `PERSONA_GROUPS`: Instructions, Model and tools,
-/// Security, Activity) under the inline identity block (avatar, name, label,
-/// description), which is the Profile group's home. Grok Bot's phone editor
-/// has no Profile list and no search: the three pages Profile held are moved,
-/// not dropped. Who can see it and Shared with join Security (they are access
-/// rules); the read-only Overview (what the model sees, export) opens Activity.
-public enum PhoneBotEditGroup: String, CaseIterable, Hashable, Sendable {
-    case instructions, modelTools, security, activity
-
-    public var sections: [DesktopPanelSection] {
-        switch self {
-        case .instructions: [.soul, .skills, .memory]
-        case .modelTools: [.model, .worksOn, .access, .slack, .voice]
-        case .security: [.permissions, .perspicax, .visibility, .sharing]
-        case .activity: [.overview, .usage, .history]
-        }
-    }
-
-    /// The groups with at least one of `visible`, in order.
-    public static func visible(_ visible: [DesktopPanelSection]) -> [PhoneBotEditGroup] {
-        allCases.filter { !$0.sections(in: visible).isEmpty }
-    }
-
-    /// The group's sections this pairing lists.
-    public func sections(in visible: [DesktopPanelSection]) -> [DesktopPanelSection] {
-        sections.filter(visible.contains)
-    }
-}
-
 /// Where the panel sits at a window width (spec "At each iPad width"): docked
 /// beside the chat from 1024 pt, over the leading edge below.
 public enum DesktopPanelPlacement: Equatable, Sendable {
