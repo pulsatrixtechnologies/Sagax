@@ -100,7 +100,9 @@ it("keeps the selected API model for direct, group and scheduled Boat turns and 
         await api("POST", `/api/bots/${bot.id}/computer/control`, { action: "release" });
       }
       const settled = await control(["wait", ...destination, "--timeout", "20"]);
-      expect(settled.status).toBe(scenario === "held" ? "failed" : "settled");
+      // An unperformed call ends the turn without an error row in the thread
+      // (#1108), so the turn reads settled in every scenario.
+      expect(settled.status).toBe("settled");
       expect(requests.slice(before)).toHaveLength(2);
       expect(requests.slice(before).every(request => request.model === "chosen-vision-model")).toBe(true);
       const followup = requests[before + 1].messages;
@@ -132,13 +134,12 @@ it("keeps the selected API model for direct, group and scheduled Boat turns and 
     expect((await control(["wait", ...destination, "--timeout", "1"])).status).toBe("timed-out");
     boatReadsGate = undefined;
     readiness.release();
-    const waiting = await control(["wait", ...destination, "--timeout", "20"]);
-    expect(waiting.status, JSON.stringify(waiting)).toBe("needs-user");
+    // The owner's own routine runs on their own cloud computer without a
+    // card (owner lineage, server/owner-autonomy.ts), so the turn settles.
+    const finished = await control(["wait", ...destination, "--timeout", "20"]);
+    expect(finished.status, JSON.stringify(finished)).toBe("settled");
     const routineMessages = await api("GET", `/api/threads/${routineThread}/messages?limit=30`);
-    const card = routineMessages.messages.find((message: any) => message.card?.requestId && !message.card.answered)?.card;
-    expect(card?.requestId).toBeTruthy();
-    await api("POST", `/api/threads/${routineThread}/respond`, { requestId: card.requestId, behavior: "allow" });
-    expect((await control(["wait", ...destination, "--timeout", "20"])).status).toBe("settled");
+    expect(routineMessages.messages.some((message: any) => message.card?.requestId)).toBe(false);
     expect(requests.slice(beforeRoutine)).toHaveLength(2);
     expect(requests.slice(beforeRoutine).every(request => request.model === "chosen-vision-model")).toBe(true);
     expect(nativePrompts).toBe(0);
@@ -178,7 +179,17 @@ it("keeps the selected API model for direct, group and scheduled Boat turns and 
     await expectBlockedRun(/target bot's model is not ready/i);
     await api("PATCH", "/api/config", { openaiCompat: { key: "synthetic-model-key", url: origin + "/v1", model: "other-default" } });
     boatOffline = true;
-    await expectBlockedRun(/cloud computer could not be checked/i);
+    // A readiness probe that hits a temporary Boat error (503) no longer fails
+    // the run: it stays queued, says why, and starts again at its retry time
+    // (#841). Nothing is dispatched to the model meanwhile.
+    const beforeOffline = requests.length;
+    const { run: retrying } = await api("POST", `/api/routines/${routine.id}/run`, {});
+    await expect.poll(async () => {
+      const latest = (await api("GET", "/api/routines")).runs.find((entry: any) => entry.id === retrying.id);
+      return latest?.status === "queued" && latest.retryAt ? String(latest.attention ?? "") : "";
+    }, { timeout: 15_000 }).toMatch(/cloud computer could not be checked/i);
+    expect(requests).toHaveLength(beforeOffline);
+    expect(nativePrompts).toBe(0);
   } finally {
     boatReadsGate?.release();
     await fixture.close(); upstream.closeAllConnections();

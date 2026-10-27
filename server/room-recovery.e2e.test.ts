@@ -79,6 +79,9 @@ it("ends the teammate work of a routine a restart failed instead of running it a
     writeFileSync(join(dataDir, "routines.json"), JSON.stringify({ version: 1, routines: [], runs: [{
       id: "cut-run", routineId: "cut-routine", routineName: "Weekly export", botId: chief.id, target: "bot", runOn: "maus",
       threadId: chief.activeTaskId, status: "running", prompt: "Have Engineering build the export", createdAt: at, scheduledFor: at, startedAt: at,
+      // A run cut once resumes in its own thread (#794); this one was already
+      // resumed, so a second cut fails it.
+      restartResumes: 1,
     }] }));
     // The tree as the server before the job runtime left it: imported once
     // at boot into runtime.db (server/runtime/import-legacy.ts), then the
