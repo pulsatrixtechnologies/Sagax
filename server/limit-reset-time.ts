@@ -10,14 +10,21 @@ export type LimitKind = "quota" | "rate_limited";
 /** Words of a spent balance that the shared classifier leaves to "unknown"
  * (xAI, OpenRouter, OpenCode Go, Gemini, the Anthropic API). */
 const SPENT = /\b(?:insufficient[_ ](?:account[_ ])?(?:funds|balance|credits?|quota)|(?:balance|credits?|quota) (?:is |are |has been )?(?:exhausted|used up|depleted|too low)|resource[_ ]exhausted|spending limit|credit balance is too low|usage balance)\b/i;
+/** What a local server must say for its refusal to be a spent quota. */
+const LOCAL_QUOTA = /\binsufficient[_ ]quota\b|\bquota (?:is |has been )?(?:exceeded|reached|exhausted)\b|\bexceeded (?:your|its) (?:current )?quota\b|\busage limit (?:reached|exceeded)\b/i;
 /** A driver's stop token for the same thing. */
 const LIMIT_STOPS = new Set(["quota", "usage_limit", "usage_limit_reached", "insufficient_funds", "rate_limit"]);
 
 /** "quota" for a spent usage limit or balance (hours away), "rate_limited"
  * for a 429 the driver already retried and gave up on, null otherwise. A
  * sign-in, a refused key or a bad request is never a limit. */
-export function limitKindOf(cause: string | undefined, stopReason?: string | null): LimitKind | null {
+export function limitKindOf(cause: string | undefined, stopReason?: string | null, options: { local?: boolean } = {}): LimitKind | null {
   const text = cause ?? "";
+  // A model on a local or computer-shared server has no usage limit: a 402,
+  // a 429, a stop token or a word like "subscription" there is the server
+  // being busy, unreachable or misconfigured, never hours to wait. Only a
+  // provider that says plainly that a quota is spent counts.
+  if (options.local) return LOCAL_QUOTA.test(text) && classifyError({ text }).reason !== "auth" ? "quota" : null;
   const reason = classifyError({ text }).reason;
   if (reason === "auth" || reason === "provider_safety" || reason === "interrupted") return null;
   if (reason === "quota" || SPENT.test(text)) return "quota";

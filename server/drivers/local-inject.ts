@@ -140,6 +140,17 @@ export function decodeInjectId(id: string | null | undefined): { host: string; m
   return { host, model };
 }
 
+/** A model served by a local or computer-shared server (`host::model`),
+ * whether or not that host is registered right now: a computer that went
+ * offline drops its host, and its failures are still a local model's. */
+export function isLocalModelId(id: string | null | undefined): boolean {
+  if (!id) return false;
+  const sep = id.indexOf(INJECT_SEP);
+  if (sep <= 0) return false;
+  const host = id.slice(0, sep);
+  return (HOST_BY_ID.has(host) || DESKTOP_HOSTS.has(host) || isDesktopHostId(host)) && MODEL_ID.test(id.slice(sep + INJECT_SEP.length));
+}
+
 export function localHost(id: string): LocalHost | undefined {
   return hostById(id);
 }

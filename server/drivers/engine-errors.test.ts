@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { engineFailureKind, engineFailureMessage, httpStatusOf, outOfCreditsMessage, providerReason, stopCause } from "./engine-errors.ts";
+import { engineFailureKind, engineFailureMessage, httpStatusOf, localModelFailureMessage, outOfCreditsMessage, providerReason, stopCause } from "./engine-errors.ts";
 import { classifyError } from "./retry.ts";
 
 const reason = (text: string) => classifyError({ text }).reason;
@@ -86,5 +86,38 @@ describe("stopCause", () => {
     expect(stopCause("provider crashed")).toBe("provider crashed");
     expect(stopCause("  ")).toBeUndefined();
     expect(stopCause(null)).toBeUndefined();
+  });
+});
+
+describe("localModelFailureMessage", () => {
+  it("names an unreachable computer or server, with what to do", () => {
+    for (const raw of [
+      "503 This local model is unavailable. The computer is offline, or it is not shared with you.",
+      "502 The local model request failed.",
+      "Connection error.",
+      "fetch failed",
+      "Request timed out.",
+      "502 oMLX injoignable: ConnectionRefusedError",
+    ]) expect(localModelFailureMessage(raw)).toMatch(/^The local model is not answering: .*try again\.$/);
+  });
+
+  it("tells a too-long conversation, a key and a model not loaded apart", () => {
+    expect(localModelFailureMessage("400 This model's maximum context length is 32768 tokens")).toMatch(/too long for the local model's context/);
+    expect(localModelFailureMessage("401 API key required")).toMatch(/API key is missing or wrong/);
+    expect(localModelFailureMessage("404 model not found: qwen3")).toMatch(/does not have this model loaded/);
+    expect(localModelFailureMessage("429 Too Many Requests")).toMatch(/busy with another request/);
+  });
+
+  it("never words a local failure as a usage limit or a sign-in", () => {
+    for (const raw of ["Connection error.", "401 API key required", "429 Too Many Requests", "500 Internal Server Error"]) {
+      const text = localModelFailureMessage(raw)!;
+      expect(text).not.toMatch(/limit|resets?|sign in/i);
+      expect(classifyError({ text }).reason).not.toBe("quota");
+    }
+  });
+
+  it("keeps what it does not know, and the proxy's own size sentence", () => {
+    expect(localModelFailureMessage("something odd happened")).toBeNull();
+    expect(localModelFailureMessage("This request is too large to send to the local model on your computer (1 MB at most).")).toBeNull();
   });
 });

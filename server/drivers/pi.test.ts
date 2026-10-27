@@ -784,6 +784,25 @@ describe("PiDriver turns (fake CLI)", () => {
     expect(instance.adapter.hasSession("t-turn-error")).toBe(false);
   });
 
+  // 2026-10-27: a local model's failure says what is wrong and what to do,
+  // never a usage limit.
+  it("words a local model's failure plainly, with the server's own reason", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-pi-local-error-"));
+    await create("turn-error", { HOME: home, FAKE_PI_ERROR: "503 This local model is unavailable. The computer is offline, or it is not shared with you." });
+    const { turnId } = await instance.adapter.sendTurn({ threadId: "t-local-error", text: "test", model: encodeInjectId("omlx", "Qwen3.8-27B") });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const error = recorder.events.find((e) => e.type === "runtime.error" && e.turnId === turnId) as { message: string };
+    expect(error.message).toMatch(/^The local model is not answering: .*try again\. \(the local server said: "This local model is unavailable"\)$/);
+    expect(error.message).not.toMatch(/limit/i);
+  });
+
+  it("keeps a hosted model's error as pi said it", async () => {
+    await create("turn-error", { FAKE_PI_ERROR: "503 Service Unavailable" });
+    const { turnId } = await instance.adapter.sendTurn({ threadId: "t-hosted-error", text: "hi", model: "openai/gpt-4o" });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    expect(recorder.events.find((e) => e.type === "runtime.error" && e.turnId === turnId)).toMatchObject({ message: "503 Service Unavailable" });
+  });
+
   it("advertises images and every harness effort level", async () => {
     await create();
     expect(instance.adapter.capabilities.images).toBe(true);
