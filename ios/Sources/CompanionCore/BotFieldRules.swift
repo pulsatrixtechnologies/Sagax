@@ -33,6 +33,8 @@ public enum BotFieldRules {
         "autoApprove": "bots.approvalLevel",
         "acknowledgeLocalAuto": "bots.approvalLevel",
         "proactiveMode": "bots.approvalLevel",
+        // Standing grants: the owner's own (mirror of shared/permissions.ts, #1138).
+        "alwaysAllow": "bots.approvalLevel",
         "memoryEnabled": "bots.behaviour",
         "teamMemorySharing": "bots.behaviour",
         "memoryUpkeep": "bots.behaviour",
