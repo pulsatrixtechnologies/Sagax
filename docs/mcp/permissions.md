@@ -40,7 +40,7 @@ One permission per action, named `resource:verb` (`memory:save`,
 | own | the caller's own work: memory, skills, files, widgets, reactions, proposals |
 | dispatch | puts other bots, people, routines or cloud agents to work |
 | claim | holds on shared work (acquire, renew, release) |
-| admin | creates bots, rooms or credentials, runs host commands, settings (2026-10-19: a bot's own rules and docs, its person's logins, computer choice and creating a pairing for the speaking person are `own`, never for a service turn, see docs/member-admin-audit.md) |
+| admin | creates bots, rooms or credentials, runs host commands, settings (2026-10-19: a bot's own rules and docs, its person's logins, computer choice and creating a pairing for the speaking person are `own`, never for a service turn; #1269: `act` and `manage_settings`, which run with the speaking person's own rights, are `own` too, see docs/member-admin-audit.md) |
 
 ## Roles (widest scope per tier)
 
@@ -50,7 +50,7 @@ One permission per action, named `resource:verb` (`memory:save`,
 | member | team | self | self | self | no (a few self-scope exceptions: create a bot or room of their own) |
 | operator | team | team | team | team | no |
 | admin | org | org | org | org | org |
-| service | team | self | self | self | no (and never `vm:exec` or `actions:invoke`) |
+| service | team | self | self | self | no (and never `vm:exec`, `actions:invoke` or `settings:manage`) |
 
 The `service` role holds claims at `self`: automation can hold work it
 started, not take over someone else's.

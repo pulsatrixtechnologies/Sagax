@@ -26,7 +26,8 @@ describe("Sagax's own person-scoped tools", () => {
     expect(sagaxInternalTool("data__data_load")).toBe("data");
     expect(sagaxInternalTool("agents__send_to_bot")).toBe("agents");
     expect(sagaxInternalTool("mcp__agents__memory_update")).toBe("agents");
-    for (const name of ["agents__act", "agents__add_mcp_server", "agents__vm_exec", "agents__attach_file", "sagax-environment__run_command", "browser__navigate", "other"]) {
+    expect(sagaxInternalTool("agents__act")).toBe("agents");
+    for (const name of ["agents__add_mcp_server", "agents__vm_exec", "agents__attach_file", "sagax-environment__run_command", "browser__navigate", "other"]) {
       expect(sagaxInternalTool(name)).toBeNull();
     }
   });

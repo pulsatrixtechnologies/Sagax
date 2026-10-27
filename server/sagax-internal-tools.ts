@@ -17,8 +17,9 @@
 // - the agents tools a member's bot runs in its own scope
 //   (member-tool-scope.ts MEMBER_OWN_SCOPE_AGENT_TOOLS): each one is served
 //   by a Sagax route that checks who the bot is and who it speaks for. The
-//   host-level ones (act, add_mcp_server, attach_file, vm_exec, ...) are not
-//   on that list and keep their card.
+//   host-level ones (add_mcp_server, attach_file, vm_exec, ...) are not
+//   on that list and keep their card. act is on it (#1269): it runs as the
+//   person, and its own service (bot-act.ts) holds a write for their Allow.
 //
 // Engines that ask anyway (Grok Build in default mode asks about every MCP
 // call behind its use_tool) reach the server's approval path, which answers

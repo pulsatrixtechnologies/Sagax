@@ -50,11 +50,16 @@ describe("member tool scope on an organization server", () => {
     // 2026-10-26: a pairing code for the member's own device
     expect(memberOwnScopeTool("mcp__agents__manage_pairing")).toBe("own-setup");
     expect(HOST_LEVEL_AGENT_TOOLS.has("manage_pairing")).toBe(false);
+    // #1269: act and manage_settings run as the person, with their own rights
+    expect(memberOwnScopeTool("agents__act")).toBe("own-setup");
+    expect(memberOwnScopeTool("mcp__agents__act")).toBe("own-setup");
+    expect(memberOwnScopeTool("agents__manage_settings")).toBe("own-setup");
+    expect(HOST_LEVEL_AGENT_TOOLS.has("act")).toBe(false);
   });
 
   it("keeps the host-level agents tools, other servers and look-alikes behind the admin gate", () => {
     for (const name of [
-      "agents__act", "agents__manage_settings", "notes__manage_pairing", "agents__add_mcp_server", "agents__attach_file", "agents__vm_exec", "agents__shared_computer",
+      "notes__act", "notes__manage_pairing", "agents__add_mcp_server", "agents__attach_file", "agents__vm_exec", "agents__shared_computer",
       "agents__unknown_tool", "notes__list_bots", "mcp__computer__click", "list_bots", "other", "shell",
       "agents__list_bots ", " agents__list_bots", "agents__list_bots; rm -rf /", "AGENTS__LIST_BOTS", "",
     ]) {

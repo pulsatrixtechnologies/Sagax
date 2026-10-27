@@ -37,7 +37,8 @@ server host; **org** = organization data, settings or secrets;
 | Same, owner holds `host.commands` | host | admin card | owner's card; no mode or saved command answers it; since 2026-10-19 their own Always allow made on it (`from: admin`; since 2026-10-21 the program of the engine's shell line in its folder, as on a solo bot) does while they still hold the right; checked again at the answer and at each use | Delegable right to the shared host. |
 | `agents` `offer_shell_terminal` (the terminal card) | own | **admin card** on engines that ask first: the shell name pattern read `_shell_` in its name as a server command | the owner's card (judged by its exact name first) | It only stages a card the person approves; the terminal opens on their own destination. |
 | Built-in `agents` tools in the member's own scope (`member-tool-scope.ts`: reads, conversation, memory, own setup, terminal offer) | own | owner card | unchanged | Already the owner's. |
-| `agents` host-level tools: `act`, `add_mcp_server`, `attach_file`, `vm_exec`, `manage_settings`, `api_reload`, `review_write`, cloud-agent tools | host / org | admin card (pre-allowed on Claude, see note) | unchanged; delegable through `host.commands` for the owner's own turn | Each reaches the server or organization settings (`member-tool-scope.ts` lists why). |
+| `agents` host-level tools: `add_mcp_server`, `attach_file`, `vm_exec`, `api_reload`, `review_write`, cloud-agent tools | host / org | admin card (pre-allowed on Claude, see note) | unchanged; delegable through `host.commands` for the owner's own turn | Each reaches the server or organization settings (`member-tool-scope.ts` lists why). |
+| `agents` `act`, `manage_settings` | own (the person's own rights) | admin card, even for a read (#1269; #1090 had opened only `/api/bots/<id>/skills`) | own scope (#1269): no admin card. `act` runs with the speaking person's own session: a route they cannot call is refused, a write waits for their own Allow unless the bot is at auto or full, a plugin install is the plugin route's own check, and a turn no person speaks in is refused | Nothing beyond what the person can do in their own app. |
 | `agents` `shared_computer` | own (organization: the speaker's own desktop) | admin card | unchanged in this pass | The card's answerer is the bot owner while the desktop is the speaker's; moving it needs the card to go to the speaker (see Open points). |
 | `agents` `manage_pairing` | own | admin card | own (2026-10-26): no admin card for the person's own devices | Own devices. |
 | MCP servers acting through the owner's identity (their remote servers, personal connections, claude.ai connectors on their own subscription) | own | owner card | unchanged | Already the owner's. |
@@ -82,8 +83,8 @@ under Full access, or would write lasting instructions from untrusted text.
 | `add_mcp_server` | host (a program on the server) | admin tier | unchanged | Shared host. |
 | `request_credential` | org (server keys) | admin tier | unchanged | Organization secrets. |
 | `shared_computer`, `vm_exec` | host or another person's machine | admin tier | unchanged | See section 1. |
-| `act` | any route, under the person's own rights | admin tier | unchanged | Mixed; the route checks the person. |
-| `manage_settings`, `api_reload` | org settings | admin tier | unchanged | Organization settings. |
+| `act`, `manage_settings` | any route, under the person's own rights | admin tier | own, self scope (#1269); never for a turn no person speaks in | The route checks the person. |
+| `api_reload` | org settings | admin tier | unchanged | Organization settings. |
 | `review_write` | org (an approval decision) | admin tier | unchanged | Perspicax applies the person's own grants. |
 | `memory_promote`, `memory_review` | org (Perspicax) | admin tier | unchanged | Organization memory. |
 
