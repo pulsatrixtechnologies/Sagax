@@ -300,14 +300,58 @@ it("every engine (#827): Codex and an ACP engine get the same Always allow, and 
 }, 150_000);
 
 it("a proposal card (a routine for another bot): Always allow keeps that kind for that bot, another bot keeps its card, revoking brings it back", async () => {
-  const fixture = await launchVerificationServer({ ...process.env, FAKE_CLAUDE_MODE: "hang" });
-  const { dataDir } = fixture.info;
-  const { api } = client(fixture);
-  const dump = join(dataDir, "fake-claude-dump.json");
+  // 2026-10-26 (#1138): a routine for another bot of the same person applies
+  // at once, without a card. A card, and its Always allow, is for a bot of
+  // another person: Helper and Third are seeded as someone else's, which a
+  // solo server cannot make through its API.
+  const home = mkdtempSync(join(tmpdir(), "omb-always-proposal-"));
+  const dataDir = join(home, ".sagax");
+  mkdirSync(dataDir, { recursive: true });
+  const fakeClaude = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
+  const claude = { instanceId: "claude", model: "claude-sonnet-5" };
+  writeFileSync(join(dataDir, "config.json"), JSON.stringify({ instances: { claude: { driver: "claudeAgent", displayName: "Fixture Claude", config: { cli: fakeClaude } } } }));
+  const foreign = (id: string, name: string, index: number) => ({
+    id, threadId: `${id}-thread`, name, title: "", description: "", notifications: true, color: "blue", unread: false,
+    modelSelection: claude, resumeCursors: {}, createdAt: index + 1, ownerUserId: "pr_00000000-0000-4000-8000-00000000f0f0",
+  });
+  writeFileSync(join(dataDir, "bots.json"), JSON.stringify([foreign("always-helper", "Helper", 0), foreign("always-third", "Third", 1)]));
+  const dump = join(home, "fake-claude-dump.json");
+  const port = await freePortBlock([0, 1]);
+  const base = `http://127.0.0.1:${port}`;
+  let log = "";
+  const child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+    cwd: join(SERVER_DIR, ".."),
+    env: {
+      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+      FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: dump,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout!.on("data", (chunk) => (log += chunk));
+  child.stderr!.on("data", (chunk) => (log += chunk));
+  const api: Api = async (method, path, body, status = 200, token) => {
+    const response = await fetch(base + path, {
+      method, headers: { origin: base, "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(15_000),
+    });
+    const text = await response.text();
+    let parsed: any = {};
+    try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+    expect(response.status, `${method} ${path}: ${text}\n${log.slice(-2000)}`).toBe(status);
+    return parsed;
+  };
   try {
-    const scout = (await api("POST", "/api/bots", { name: "Scout" }, 201)).bot;
-    const helper = (await api("POST", "/api/bots", { name: "Helper" }, 201)).bot;
-    const third = (await api("POST", "/api/bots", { name: "Third" }, 201)).bot;
+    await expect.poll(async () => {
+      try { return (await fetch(`${base}/api/health`)).ok; } catch { return false; }
+    }, { timeout: 30_000 }).toBe(true);
+    const scout = (await api("POST", "/api/bots", { name: "Scout", modelSelection: claude }, 201)).bot;
+    const listed = (await api("GET", "/api/bots?messages=0")).bots as any[];
+    const helper = listed.find((bot) => bot.id === "always-helper");
+    const third = listed.find((bot) => bot.id === "always-third");
+    expect(helper.ownerUserId).not.toBe(scout.ownerUserId);
+    // another bot of the same person: no card at all
+    const sibling = (await api("POST", "/api/bots", { name: "Sibling", modelSelection: claude }, 201)).bot;
     await api("PATCH", `/api/bots/${scout.id}`, { approvalMode: "ask" });
     await api("PATCH", `/api/bots/${scout.id}/tasks/${scout.threadId}`, { approvalMode: "ask" });
     rmSync(dump, { force: true });
@@ -322,6 +366,8 @@ it("a proposal card (a routine for another bot): Always allow keeps that kind fo
     const propose = (name: string, forBotId: string) => api("POST", "/api/internal/routine-requests",
       { fromBotId: scout.id, fromThreadId: scout.threadId, action: "create", routine: { name, instructions: `Summarize fixture results for ${name}.`, schedule }, forBotId }, 201, comms);
     const cardOf = async (requestId: string) => (await api("GET", `/api/threads/${scout.threadId}/messages?limit=200`)).messages.find((message: any) => message.card?.requestId === requestId)?.card;
+
+    expect(await propose("Monthly S", sibling.id)).toMatchObject({ state: "applied", appliedBy: "self" });
 
     const first = await propose("Monthly A", helper.id);
     const card = await cardOf(first.requestId);
@@ -345,6 +391,7 @@ it("a proposal card (a routine for another bot): Always allow keeps that kind fo
     expect(revoked.state).not.toBe("applied");
     expect((await cardOf(revoked.requestId)).answered).toBeUndefined();
   } finally {
-    await fixture.close();
+    await waitForExit(child, { signal: "SIGTERM" });
+    await removeTempDir(home);
   }
 }, 120_000);

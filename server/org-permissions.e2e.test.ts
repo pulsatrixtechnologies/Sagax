@@ -268,7 +268,6 @@ posixOnly("Perspicax organization: the permission matrix", () => {
       // named by the primary key server.settings.
       ["PATCH", "/api/config", { language: "fr" }, "server.settings"],
       ["PATCH", "/api/org/settings", { allowVaultExport: false }, "server.settings"],
-      ["GET", "/api/mcp/servers", undefined, "host.shell"],
       ["GET", "/api/org/approvals", undefined, "host.shell"],
       ["GET", "/api/workspace-backup/status", undefined, "backup.workspace"],
       ["GET", "/api/auth/sessions", undefined, "people.manage"],
@@ -279,6 +278,21 @@ posixOnly("Perspicax organization: the permission matrix", () => {
       expect(refused.body.permission, `${method} ${path}`).toBe(key);
     }
     expect((await api("GET", "/api/config", bob)).body.viewer.capabilities).toMatchObject({ editConfig: false, manageComputers: false, manageBackups: false });
+    // 2026-10-26 (#1201): without host.shell the MCP list opens for the MCP
+    // choice of bob's own bot, with each server's name, kind and state only:
+    // never a command, its arguments, a URL, a header or a variable.
+    const alice = await signIn(ALICE);
+    const secret = "pm6-mcp-secret-value";
+    const added = await api("POST", "/api/mcp/servers", alice, { name: "pm6fixture", type: "http", url: "https://pm6-mcp.example.test/mcp", headers: { "X-Pm6-Token": secret } });
+    expect(added.status, added.text).toBe(201);
+    const names = await api("GET", "/api/mcp/servers", bob);
+    expect(names.status, names.text).toBe(200);
+    expect(names.text).not.toContain(secret);
+    expect(names.text).not.toContain("X-Pm6-Token");
+    expect(names.text).not.toContain("pm6-mcp.example.test");
+    const row = (names.body.servers as Array<Record<string, unknown>>).find((server) => server.name === "pm6fixture");
+    expect(row).toBeDefined();
+    for (const key of Object.keys(row!)) expect(["name", "type", "enabled", "auth", "source", "managedBy"]).toContain(key);
 
     bob = await bobWith([...MEMBER_DEFAULT_PERMISSIONS, "server.settings", "host.shell", "backup.workspace", "people.manage"]);
     expect((await api("GET", "/api/config", bob)).body.viewer.capabilities).toMatchObject({ editConfig: true, manageKeys: true, manageComputers: true, manageBackups: true });

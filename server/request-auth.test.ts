@@ -158,16 +158,25 @@ describe("scopes", () => {
       ["POST", "/api/webhooks"], ["POST", "/api/webhooks/w/rotate"],
       ["POST", "/api/webhooks/w/test"], ["POST", "/api/webhooks/w/reveal"],
       ["PATCH", "/api/webhooks/w"], ["DELETE", "/api/webhooks/w"],
+      // 2026-10-26 (#1201): the folders of a bot's threads, the live view and
+      // capture of its cloud computer, and the MCP list for its MCP choice
+      // reach their handler, which lets only the bot's owner (or an admin)
+      // through; the MCP list gives a non-manager names and states only
+      ["POST", "/api/bots/x/projects"], ["PATCH", "/api/bots/x/projects/order"], ["PATCH", "/api/bots/x/projects/p"],
+      ["DELETE", "/api/bots/x/projects/p"],
+      ["POST", "/api/bots/x/computer/join"], ["POST", "/api/bots/x/computer/screenshot"],
+      ["GET", "/api/mcp/servers"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["PATCH", "/api/instances/claude"],
       ["GET", "/api/instances/claude"], ["POST", "/api/instances/claude/refresh-models"], ["GET", "/api/instances/extra/x"],
       ["GET", "/api/bots/x/queue/q/steer"], ["POST", "/api/bots/x/queue/q/steer/extra"],
       // the desktop remote client hides these, or their handler has no per-viewer check:
-      // folders, team filing, room setup (it sets the room's folder) and usage
-      ["POST", "/api/bots/x/projects"], ["PATCH", "/api/bots/x/projects/order"], ["DELETE", "/api/bots/x/projects/p"],
+      // team filing, room setup (it sets the room's folder) and usage
       ["POST", "/api/sidebar-sections"], ["GET", "/api/usage"],
-      ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/join"], ["POST", "/api/local-computer/run"],
+      // starting, stopping and running a bot's cloud computer stay admin (its live view is the owner's, below)
+      ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/start"], ["POST", "/api/bots/x/computer/stop"],
+      ["POST", "/api/local-computer/run"],
       ["POST", "/api/bots/x/browser/live"], ["GET", "/api/bots/x/browser/action"],
       ["POST", "/api/bots/x/browser/restart"], ["POST", "/api/browser-engine/install"],
       ["POST", "/api/bots/x/local-computer/join"], ["POST", "/api/bots/x/local-computer/screenshot"],
@@ -179,7 +188,7 @@ describe("scopes", () => {
       // answers the team-memory card of their own team (the respond routes)
       ["GET", "/api/team-memory"], ["POST", "/api/team-memory"],
       ["PATCH", "/api/team-memory/entry_1"], ["DELETE", "/api/team-memory/entry_1"],
-      ["GET", "/api/mcp/servers"], ["POST", "/api/mcp/servers"], ["POST", "/api/connectors/slack/authorize"],
+      ["POST", "/api/mcp/servers"], ["PATCH", "/api/mcp/servers/x"], ["DELETE", "/api/mcp/servers/x"], ["POST", "/api/connectors/slack/authorize"],
       ["POST", "/api/bots/x/slack-management"], ["GET", "/api/bots/x/slack-management/extra"],
       ["PUT", "/api/config"], ["POST", "/api/auth/pairing"], ["GET", "/api/auth/sessions"], ["DELETE", "/api/auth/sessions/abc"],
       // Live calls spend the owner's OpenAI key and reach any bot: admins only
@@ -210,6 +219,9 @@ describe("scopes", () => {
       ["GET", "/api/bots/x/memory/journal"], ["POST", "/api/bots/x/memory/journal/e1/revert"],
       ["GET", "/api/bots/x/memory/upkeep"], ["POST", "/api/bots/x/memory/tidy"],
       ["GET", "/api/bots/x/history"], ["POST", "/api/bots/x/history/rollback"], ["POST", "/api/bots/x/history/restore"],
+      // 2026-10-26 (#1201): the prompt preview of a bot the session owns
+      // (owner checked in the handler) and the presets New bot offers, read only
+      ["GET", "/api/bots/x/system-prompt"], ["GET", "/api/bot-presets"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist"],
@@ -217,8 +229,8 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/connector-cards/m/authorize/extra"], ["GET", "/api/plugins/install"],
       ["POST", "/api/plugins/uninstall"], ["POST", "/api/bots/x/overview"],
       // the voice engine and the advanced panel stay admin for a session (the sidecar is the owner)
-      ["PUT", "/api/tts/provider"], ["GET", "/api/bots/x/system-prompt"],
-      ["GET", "/api/bots/x/skills"], ["GET", "/api/bot-presets"], ["GET", "/api/bots/x/computer"],
+      ["PUT", "/api/tts/provider"], ["POST", "/api/bots/x/system-prompt"],
+      ["GET", "/api/bots/x/skills"], ["POST", "/api/bot-presets"], ["DELETE", "/api/bot-presets/p"], ["GET", "/api/bots/x/computer"],
       ["DELETE", "/api/bots/x/history"], ["POST", "/api/bots/x/memory/open"],
       // the workspace routes take only these shapes
       ["POST", "/api/bots/x/workspace"], ["PUT", "/api/bots/x/workspace/download"],

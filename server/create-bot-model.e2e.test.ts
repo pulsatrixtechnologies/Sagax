@@ -27,6 +27,9 @@ it("Chief creation uses the workspace default or a validated explicit model with
     const chiefModel = { instanceId: "claude", model: claude.models.default };
     const chief = (await api("POST", "/api/bots", { name: "Chief", section: "Design", modelSelection: chiefModel }, 201)).bot;
     await api("PATCH", `/api/bots/${chief.id}`, { chiefOfStaff: true });
+    // At Ask every time each creation is a card; at Approve for me the
+    // person's own request applies at once (#1138, the second turn below).
+    await api("PATCH", `/api/bots/${chief.id}`, { approvalMode: "ask" });
     await api("POST", `/api/bots/${chief.id}/messages`, { text: "Prepare a specialist." }, 202);
     await expect.poll(() => existsSync(fixture.fixtureDumpPath), { timeout: 15_000 }).toBe(true);
     const dump = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8"));
@@ -36,7 +39,7 @@ it("Chief creation uses the workspace default or a validated explicit model with
       role: "Specialist", instructions: "Complete assigned work.",
       ...(modelSelection === undefined ? {} : { modelSelection }),
     }, expected, token);
-    // Below Full Access every creation is one review card: nothing exists
+    // At Ask every time every creation is one review card: nothing exists
     // until the person applies it, after the Chief's turn has ended.
     const idle = () => expect.poll(async () => !(await api("GET", "/api/bots")).bots.find((bot: any) => bot.id === chief.id).busy, { timeout: 20_000 }).toBe(true);
     const apply = async (pending: any) => {
@@ -57,7 +60,9 @@ it("Chief creation uses the workspace default or a validated explicit model with
     }
     await create("Third specialist");
     await create("Fourth specialist");
-    await create("Fifth specialist", undefined, 429);
+    // The per-turn cap (4) holds only for turns the person did not ask for
+    // directly (#1201): the person's own request here gets a fifth card.
+    await create("Fifth specialist");
     writeFileSync(gate, "finish");
     await idle();
     await create("Expired authority", undefined, 401);
@@ -79,15 +84,18 @@ it("Chief creation uses the workspace default or a validated explicit model with
     // Changing the config revokes old capabilities. A fresh authorized turn
     // sees the new default; previously created bots keep their selected models.
     await api("PATCH", "/api/config", { defaultModelSelection: explicit });
+    await api("PATCH", `/api/bots/${chief.id}`, { approvalMode: "auto" });
     unlinkSync(gate);
     unlinkSync(fixture.fixtureDumpPath);
     await api("POST", `/api/bots/${chief.id}/messages`, { text: "Prepare the next specialist." }, 202);
     await expect.poll(() => existsSync(fixture.fixtureDumpPath), { timeout: 15_000 }).toBe(true);
     token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
-    const updatedCard = await create("Updated default specialist");
+    // Approve for me, the person's own turn: created at once, no card
+    const updated = await create("Updated default specialist");
+    expect(updated).toMatchObject({ state: "applied", modelSelection: explicit });
     writeFileSync(gate, "finish");
     await idle();
-    expect((await apply(updatedCard)).modelSelection).toEqual(explicit);
+    expect((await api("GET", "/api/bots")).bots.find((bot: any) => bot.id === updated.id)).toMatchObject({ modelSelection: explicit, approvalMode: "auto", approvePeerComms: false });
     expect((await api("GET", "/api/bots")).bots.find((bot: any) => bot.id === first.id).modelSelection).toEqual(defaultModel);
   } finally {
     writeFileSync(gate, "finish");

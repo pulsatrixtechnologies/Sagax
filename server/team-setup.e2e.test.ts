@@ -32,6 +32,10 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
     const selection = (instance: any) => ({ instanceId: instance.instanceId, model: instance.models.default });
     const chief = (await api("POST", "/api/bots", { name: "Clive", title: "Chief of Staff", section: "Operations", modelSelection: selection(claude) }, 201)).bot;
     await api("PATCH", `/api/bots/${chief.id}`, { chiefOfStaff: true });
+    // At Approve for me the person's own request applies a setup of their
+    // own bots at once (#1138, teamSetupDirectApply); this test reviews each
+    // card, so Clive runs on Ask every time.
+    await api("PATCH", `/api/bots/${chief.id}`, { approvalMode: "ask" });
     const state = async () => (await api("GET", "/api/bots")).bots;
     // The fixture pins its starter's name (control-omb.ts), but identity is
     // still the honest comparison: "Quill" once collided with a randomly

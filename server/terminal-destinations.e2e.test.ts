@@ -26,6 +26,10 @@ it.skipIf(process.platform === "win32")("offers, opens, drives and closes a term
   const audit = () => existsSync(auditPath) ? readFileSync(auditPath, "utf8").trim().split("\n").map((line) => JSON.parse(line)) : [];
   try {
     const bot = (await cli("new-bot", "--name", "Ops")).bot;
+    // At Approve for me (the new-bot default) the person's own computer opens
+    // without a card, journaled (#1138, terminal-requests.test.ts ownLevel);
+    // this test walks the card, so the bot runs on Ask every time.
+    expect((await api(`/api/bots/${bot.id}`, { approvalMode: "ask" }, "PATCH")).bot).toMatchObject({ approvalMode: "ask" });
     writeFileSync(planPath, JSON.stringify({ [bot.id]: {
       steps: [
         { tool: "list_terminal_resources", arguments: {} },

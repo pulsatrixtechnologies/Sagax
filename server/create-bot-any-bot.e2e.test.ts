@@ -38,6 +38,9 @@ it("a bot that is not the Primary Bot creates a bot for its person, and a bot-ma
     const primary = (await api("POST", "/api/bots", { name: "Primary", section: "Design" }, 201)).bot;
     await api("PATCH", `/api/bots/${primary.id}`, { chiefOfStaff: true });
     const maker = (await api("POST", "/api/bots", { name: "Maker", section: "Design" }, 201)).bot;
+    // At Ask every time the creation waits on a card (at Approve for me the
+    // person's own request applies at once, #1138: checked at the end).
+    await api("PATCH", `/api/bots/${maker.id}`, { approvalMode: "ask" });
 
     // The person asks Maker in its own conversation: create_bot is offered
     // and the creation waits on the same card a Primary Bot gets.
@@ -75,6 +78,18 @@ it("a bot that is not the Primary Bot creates a bot for its person, and a bot-ma
     expect(await create(maker.id, secret.threadId, env.SAGAX_COMMS_TOKEN!, "Leaky", 403)).toMatchObject({ code: "confidential_thread" });
     await finish(maker.id);
     expect((await api("GET", "/api/bots")).bots.some((bot: any) => bot.name === "Leaky" || bot.name === "Grandchild" || bot.name === "Unasked")).toBe(false);
+
+    // At Approve for me (the new-bot default) the person's own request in
+    // Maker's conversation creates the bot at once, without a card (#1138).
+    await api("PATCH", `/api/bots/${maker.id}`, { approvalMode: "auto" });
+    env = await turn(maker.id, maker.threadId);
+    const count = (await api("GET", "/api/bots")).bots.length;
+    const applied = await create(maker.id, maker.threadId, env.SAGAX_COMMS_TOKEN!, "Quick reviewer");
+    expect(applied).toMatchObject({ state: "applied", name: "Quick reviewer", section: "Design" });
+    await finish(maker.id);
+    const after = (await api("GET", "/api/bots")).bots;
+    expect(after.length).toBe(count + 1);
+    expect(after.find((bot: any) => bot.id === applied.id)).toMatchObject({ name: "Quick reviewer", approvePeerComms: false });
   } finally {
     writeFileSync(gate, "finish");
     await fixture.close();

@@ -101,10 +101,15 @@ it("the Primary Bot moves four of the person's bots to another engine on request
     for (const bot of team) expect(after.find((row) => row.id === bot.id).modelSelection).toMatchObject(codex);
     expect(await openCards(quasar.threadId)).toEqual([]);
     await expect.poll(() => journal().filter((row) => row.action === "setting.change" && row.after?.via === "primary-bot" && row.after?.viaBot === "Quasar" && row.changed?.includes("bot.model")).length, { timeout: 5_000 }).toBe(4);
-    // no quote: a card, as before
+    // no quote: Helper is another bot of the same person, so the change
+    // applies as the bot's own work with an Undo (#1138), not as the
+    // person's request via the Primary Bot, and opens no card
     const card = await model(comms, helper);
     expect(card.status, JSON.stringify(card.body)).toBe(201);
-    expect(card.body.state).toBe("pending");
+    expect(card.body.state).toBe("applied");
+    expect(card.body.appliedBy).toBe("self");
+    expect((await bots()).find((bot) => bot.id === helper.id).modelSelection).toMatchObject(codex);
+    expect(await openCards(quasar.threadId)).toEqual([]);
 
     // ── queue: a waiting proposal never blocks a new one ───────────────
     for (let i = 0; i < 9; i += 1) {

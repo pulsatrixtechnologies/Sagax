@@ -27,7 +27,12 @@ describe("Android release signing variables", () => {
   });
 
   it("reads every signing variable through that helper, new name first", () => {
-    expect(gradle.match(/System\.getenv\(/g)).toHaveLength(2);
+    // The push build values (fcmValue, #1187) read their own variables; they
+    // are not signing material and never touch the keystore names.
+    const fcm = gradle.match(/private fun fcmValue\([^)]*\): String =\n[^\n]*\n/)?.[0] ?? "";
+    expect(fcm).toContain("System.getenv(environment)");
+    expect(fcm).not.toMatch(/KEYSTORE|KEY_ALIAS|KEY_PASSWORD/);
+    expect(gradle.replace(fcm, "").match(/System\.getenv\(/g)).toHaveLength(2);
     const legacy = ["open", "maus", "bot"].join("").toUpperCase();
     for (const name of ["KEYSTORE_FILE", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD"]) {
       expect(gradle).toContain(`"SAGAX_${name}", "${legacy}_${name}")`);
