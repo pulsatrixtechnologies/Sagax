@@ -104,17 +104,6 @@ extension DesktopPanelGroup {
     }
 }
 
-extension PhoneBotEditGroup {
-    var title: LocalizedStringKey {
-        switch self {
-        case .instructions: "Instructions"
-        case .modelTools: "Model and tools"
-        case .security: "Security"
-        case .activity: "History and usage"
-        }
-    }
-}
-
 struct BotPanelMore: View {
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session

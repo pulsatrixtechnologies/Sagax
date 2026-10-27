@@ -5,9 +5,9 @@
 // Library (Files, Skills, Plugins: BotPanelLibrary.swift), Computer; no More
 // tab. Edit bot is a pencil on the mascot and the first entry of the
 // bot's one "..." menu (`BotActionsMenu.tsx`, #518), which also holds
-// Rename, the Primary Bot, the export and Archive. It opens every other
-// section behind a searchable list of six groups in a sheet, the bot
-// editor (`PersonaEditorModal.tsx`). The name and label are edited where they
+// Rename, the Primary Bot, the export and Archive. It opens Edit bot in a
+// sheet (BotEditIPad.swift): the Grok Bot layout of `BotEditTree`, the same
+// tree as the iPhone, with the desktop's own section views one level in. The name and label are edited where they
 // show, under the mascot (`InlineEditableText.tsx`). Which tabs and sections a pairing shows is
 // `DesktopPanelTab` / `DesktopPanelSection` / `DesktopPersonaEditor`
 // (CompanionCore), from `SurfaceGate`.
@@ -111,7 +111,7 @@ private struct BotPanelContent: View {
         }
         .sheet(item: $sharedFile) { file in ActivityShareSheet(items: [file.url]) }
         .sheet(isPresented: $model.personaOpen, onDismiss: { model.panelSection = nil }) {
-            BotPersonaEditorSheet(bot: current, slackURL: slackURL)
+            BotEditIPadSheet(bot: current, slackURL: slackURL)
                 .environmentObject(session)
                 .environmentObject(model)
                 .environment(\.desktopTheme, theme)
@@ -311,48 +311,6 @@ private struct BotPanelContent: View {
         case .computer:
             AnyView(BotPanelComputer(bot: current))
         }
-    }
-}
-
-// MARK: - Persona editor
-
-/// The persona editor (`PersonaEditorModal.tsx`) as an iPad sheet: its
-/// searchable list of sections, a section's page in place with Back, and
-/// Close (Escape).
-private struct BotPersonaEditorSheet: View {
-    @Environment(\.desktopTheme) private var theme
-    @EnvironmentObject private var model: DesktopShellModel
-    let bot: Bot
-    let slackURL: URL?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                if model.panelSection != nil {
-                    DesktopRoundButton(systemImage: "chevron.left", label: "Back") { model.panelSection = nil }
-                        .accessibilityIdentifier("desktop-panel-back")
-                }
-                Text("Edit bot")
-                    .font(theme.font(15, .semibold))
-                    .foregroundStyle(theme.ink)
-                Spacer(minLength: 0)
-                DesktopRoundButton(systemImage: "xmark", label: "Close") { model.personaOpen = false }
-                    .keyboardShortcut(.escape, modifiers: [])
-                    .accessibilityIdentifier("desktop-persona-close")
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 52)
-            ScrollView {
-                AnyView(BotPanelMore(bot: bot, slackURL: slackURL))
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(.top, 4)
-            }
-            .scrollDismissesKeyboard(.interactively)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(theme.app)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("desktop-persona-editor")
     }
 }
 

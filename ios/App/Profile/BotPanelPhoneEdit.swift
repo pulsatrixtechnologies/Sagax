@@ -1,17 +1,19 @@
-// The top of the phone's Edit bot page (the reference design): the avatar
-// with a pencil badge, the Name, Title and Description fields (Grok Bot's
-// identity block: the short blurb rosters and other bots show), Appearance > Avatar, and
-// the Voice calls group (Voice, Speed, Language as menus). The persona
-// editor's groups follow it on the same page.
+// Edit bot > Identity on the phone (the Grok Bot layout, 2026-10-27):
+// the avatar with a pencil badge, then the Name, Role and Description
+// fields (the short blurb rosters and other bots show) in
+// `PhoneBotIdentityFields`, and the Voice calls card (Voice, Speed,
+// Language as menus) in `PhoneBotCallVoiceCard`. The tree (`BotEditTree`)
+// places them with Appearance > Avatar and Voice & alerts on the page.
 //
-// Name, Title and Description save when the field is left or Return is pressed
-// (`DesktopInlineEdit.commit`, as the panel's inline name does). Voice,
-// Speed and Language are the call's own settings (`VoiceModeSettings`,
-// key `omb.voiceMode.v1`), the same values the call's gear card changes.
+// Name, Role and Description save when the field is left or Return is
+// pressed (`DesktopInlineEdit.commit`, as the panel's inline name does).
+// Voice, Speed and Language are the call's own settings
+// (`VoiceModeSettings`, key `omb.voiceMode.v1`), the same values the call's
+// gear card changes.
 import CompanionCore
 import SwiftUI
 
-struct PhoneBotEditHeader: View {
+struct PhoneBotIdentityFields: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     let bot: Bot
@@ -23,62 +25,19 @@ struct PhoneBotEditHeader: View {
     @State private var name = ""
     @State private var title = ""
     @State private var blurb = ""
-    @State private var voices: [VoiceModeVoice]?
     @FocusState private var focus: Field?
-    @AppStorage(VoiceModeSettings.storageKey) private var voiceRaw = ""
 
     private var current: Bot { session.state.bot(bot.id) ?? bot }
-    private var settings: VoiceModeSettings { VoiceModeSettings.decode(voiceRaw.isEmpty ? nil : voiceRaw) }
 
     var body: some View {
         VStack(spacing: 0) {
             avatar
             fieldLabel("Name")
             field(text: $name, prompt: nil, field: .name, id: "panel-edit-name")
-            fieldLabel("Title")
-            field(text: $title, prompt: "Add a label", field: .title, id: "panel-edit-title")
+            fieldLabel("Role")
+            field(text: $title, prompt: "Add a role", field: .title, id: "panel-edit-title")
             fieldLabel("Description")
             descriptionField
-            ProfileFooter(text: "Shown in rosters, on the phone and to other bots. Standing instructions go in Personality.")
-            fieldLabel("Appearance")
-            ProfileCard {
-                Button {
-                    Haptics.selection()
-                    onAvatar()
-                } label: {
-                    ProfileRow(title: Text("Avatar"), height: Theme.Profile.singleRow) { ProfileChevronTrailing() }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("panel-edit-avatar-row")
-            }
-            fieldLabel("Voice calls")
-            ProfileCard {
-                menuRow("Voice", value: voiceName, id: "panel-edit-voice") {
-                    Picker(selection: binding(\.voice)) {
-                        Text("Not set").tag("")
-                        ForEach(voices ?? []) { voice in Text(verbatim: voice.label).tag(voice.id) }
-                        if !settings.voice.isEmpty, !(voices ?? []).contains(where: { $0.id == settings.voice }) {
-                            Text(verbatim: settings.voice).tag(settings.voice)
-                        }
-                    } label: { Text("Voice") }
-                }
-                ProfileDivider(leading: Theme.Profile.textInset)
-                menuRow("Speed", value: VoiceModeSettings.speedLabel(settings.speed), id: "panel-edit-speed") {
-                    Picker(selection: binding(\.speed)) {
-                        ForEach(VoiceModeSettings.speeds, id: \.self) { speed in
-                            Text(verbatim: VoiceModeSettings.speedLabel(speed)).tag(speed)
-                        }
-                    } label: { Text("Speed") }
-                }
-                ProfileDivider(leading: Theme.Profile.textInset)
-                menuRow("Language", value: languageName, id: "panel-edit-language") {
-                    Picker(selection: binding(\.language)) {
-                        ForEach(VoiceModeSettings.languages, id: \.code) { language in
-                            Text(verbatim: language.code == "auto" ? String(localized: "Auto") : language.label).tag(language.code)
-                        }
-                    } label: { Text("Language") }
-                }
-            }
         }
         .onAppear {
             name = current.name
@@ -95,10 +54,6 @@ struct PhoneBotEditHeader: View {
             if now != .name { commitName() }
             if now != .title { commitTitle() }
             if now != .description { commitBlurb() }
-        }
-        .task {
-            guard voices == nil, let client = session.callClient else { return }
-            voices = (try? await client.voiceModeVoices(botId: bot.id)) ?? []
         }
     }
 
@@ -130,7 +85,7 @@ struct PhoneBotEditHeader: View {
     // MARK: Fields
 
     private func fieldLabel(_ text: LocalizedStringKey) -> some View {
-        ProfileSectionLabel(text: text)
+        ProfileSectionLabel(text: text, margin: SettingsMetrics.cardMargin)
             .padding(.top, Theme.Profile.cardGap)
     }
 
@@ -144,8 +99,8 @@ struct PhoneBotEditHeader: View {
             .padding(.horizontal, Theme.Profile.textInset)
             .frame(height: Theme.Profile.toggleRow)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
-            .padding(.horizontal, Theme.Profile.cardMargin)
-            .accessibilityLabel(Text(field == .name ? LocalizedStringKey("Name") : LocalizedStringKey("Title")))
+            .padding(.horizontal, SettingsMetrics.cardMargin)
+            .accessibilityLabel(Text(field == .name ? LocalizedStringKey("Name") : LocalizedStringKey("Role")))
             .accessibilityIdentifier(id)
     }
 
@@ -160,7 +115,7 @@ struct PhoneBotEditHeader: View {
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, minHeight: Theme.Profile.toggleRow * 2, alignment: .topLeading)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
-            .padding(.horizontal, Theme.Profile.cardMargin)
+            .padding(.horizontal, SettingsMetrics.cardMargin)
             .onValueChange(of: blurb) { now in
                 if now.count > NewBotRules.descriptionLimit { blurb = String(now.prefix(NewBotRules.descriptionLimit)) }
             }
@@ -199,8 +154,52 @@ struct PhoneBotEditHeader: View {
         let target = current
         Task { _ = await session.updateProfile(patch, for: target) }
     }
+}
 
-    // MARK: Voice calls
+/// Edit bot > Identity > Voice calls: the call's voice, speed and language.
+struct PhoneBotCallVoiceCard: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    let bot: Bot
+
+    @State private var voices: [VoiceModeVoice]?
+    @AppStorage(VoiceModeSettings.storageKey) private var voiceRaw = ""
+
+    private var settings: VoiceModeSettings { VoiceModeSettings.decode(voiceRaw.isEmpty ? nil : voiceRaw) }
+
+    var body: some View {
+        ProfileCard(margin: SettingsMetrics.cardMargin) {
+            menuRow("Voice", value: voiceName, id: "panel-edit-voice") {
+                Picker(selection: binding(\.voice)) {
+                    Text("Not set").tag("")
+                    ForEach(voices ?? []) { voice in Text(verbatim: voice.label).tag(voice.id) }
+                    if !settings.voice.isEmpty, !(voices ?? []).contains(where: { $0.id == settings.voice }) {
+                        Text(verbatim: settings.voice).tag(settings.voice)
+                    }
+                } label: { Text("Voice") }
+            }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            menuRow("Speed", value: VoiceModeSettings.speedLabel(settings.speed), id: "panel-edit-speed") {
+                Picker(selection: binding(\.speed)) {
+                    ForEach(VoiceModeSettings.speeds, id: \.self) { speed in
+                        Text(verbatim: VoiceModeSettings.speedLabel(speed)).tag(speed)
+                    }
+                } label: { Text("Speed") }
+            }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            menuRow("Language", value: languageName, id: "panel-edit-language") {
+                Picker(selection: binding(\.language)) {
+                    ForEach(VoiceModeSettings.languages, id: \.code) { language in
+                        Text(verbatim: language.code == "auto" ? String(localized: "Auto") : language.label).tag(language.code)
+                    }
+                } label: { Text("Language") }
+            }
+        }
+        .task {
+            guard voices == nil, let client = session.callClient else { return }
+            voices = (try? await client.voiceModeVoices(botId: bot.id)) ?? []
+        }
+    }
 
     private var voiceName: String {
         guard !settings.voice.isEmpty else { return String(localized: "Not set") }
@@ -242,8 +241,9 @@ struct PhoneBotEditHeader: View {
                     .foregroundStyle(Theme.textTertiary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, Theme.Profile.textInset)
-            .frame(height: Theme.Profile.singleRow)
+            .padding(.leading, SettingsMetrics.rowInset)
+            .padding(.trailing, SettingsMetrics.trailingInset)
+            .frame(height: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

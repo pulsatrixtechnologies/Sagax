@@ -102,9 +102,9 @@ final class BotAdvancedUITests: XCTestCase {
         app.launchArguments = arguments
         app.launch()
         XCTAssertTrue(element("profile-name", in: app).waitForExistence(timeout: 30))
-        // the bot panel's Edit persona: every section, in the desktop's order
+        // the bot panel's Edit bot (the Grok Bot layout: main sections, then pages)
         element("panel-edit-persona", in: app).tap()
-        XCTAssertTrue(element("panel-persona-list", in: app).waitForExistence(timeout: 10))
+        XCTAssertTrue(element("panel-persona", in: app).waitForExistence(timeout: 10))
         return app
     }
 
@@ -123,8 +123,26 @@ final class BotAdvancedUITests: XCTestCase {
         return target.exists
     }
 
+    /// The Edit bot page a section's row sits on (`BotEditTree`); nil is
+    /// the first page.
+    private func page(of row: String) -> String? {
+        switch row.replacingOccurrences(of: "panel-row.", with: "") {
+        case "soul", "skills", "memory": "panel-edit-page.personality"
+        case "worksOn", "access", "perspicax", "slack": "panel-edit-page.toolsApps"
+        case "sharing", "visibility": "panel-edit-page.sharing"
+        case "overview", "usage", "history": "panel-edit-page.advanced"
+        case "voice": "panel-edit-page.identity"
+        default: nil
+        }
+    }
+
     @MainActor
     private func open(_ row: String, in app: XCUIApplication) {
+        if let page = page(of: row), !element(row, in: app).exists {
+            let pageRow = element(page, in: app)
+            reveal(pageRow, in: app)
+            pageRow.tap()
+        }
         let link = element(row, in: app)
         reveal(link, in: app)
         XCTAssertTrue(link.waitForExistence(timeout: 10), "\(row) shows on this pairing")

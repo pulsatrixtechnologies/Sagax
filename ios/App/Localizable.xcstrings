@@ -1,6 +1,105 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Approvals" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Approvals" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Approbations" } }
+      }
+    },
+    "Sharing" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sharing" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Partage" } }
+      }
+    },
+    "Delete bot…" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Delete bot…" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Supprimer le bot…" } }
+      }
+    },
+    "Add a role" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Add a role" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Ajouter un rôle" } }
+      }
+    },
+    "Written" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Written" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Écrite" } }
+      }
+    },
+    "Not written yet" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Not written yet" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Pas encore écrite" } }
+      }
+    },
+    "No rule" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No rule" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucune règle" } }
+      }
+    },
+    "Workspace: %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Workspace: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Espace de travail : %@" } }
+      }
+    },
+    "Every MCP server" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Every MCP server" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Tous les serveurs MCP" } }
+      }
+    },
+    "No MCP server" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No MCP server" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucun serveur MCP" } }
+      }
+    },
+    "MCP: %@" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "MCP: %@" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "MCP : %@" } }
+      }
+    },
+    "No routine" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No routine" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucune routine" } }
+      }
+    },
+    "%lld asked" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld asked" } },
+        "fr" : { "variations" : { "plural" : {
+          "one" : { "stringUnit" : { "state" : "translated", "value" : "%lld demandée" } },
+          "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld demandées" } }
+        } } }
+      }
+    },
+    "%lld denied" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld denied" } },
+        "fr" : { "variations" : { "plural" : {
+          "one" : { "stringUnit" : { "state" : "translated", "value" : "%lld refusée" } },
+          "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld refusées" } }
+        } } }
+      }
+    },
+    "%lld allowed" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "%lld allowed" } },
+        "fr" : { "variations" : { "plural" : {
+          "one" : { "stringUnit" : { "state" : "translated", "value" : "%lld autorisée" } },
+          "other" : { "stringUnit" : { "state" : "translated", "value" : "%lld autorisées" } }
+        } } }
+      }
+    },
     "%@ is not connected for you. Connect %@ to talk to this bot.": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "%1$@ is not connected for you. Connect %2$@ to talk to this bot." } },

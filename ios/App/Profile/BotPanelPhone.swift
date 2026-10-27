@@ -16,9 +16,10 @@
 //            Skills; Plugins) and Computer (its state), each its own page:
 //            the desktop's three tabs, Details split in two. Then the
 //            Notifications switch with its caption.
-//   Edit bot under "..." and as the "Edit" pill. The editor starts with
-//            the avatar, Name, Title, Description, Appearance and Voice calls, then lists
-//            its groups (`PhoneBotEditGroup`, the desktop's order); a row opens its page.
+//   Edit bot under "..." and as the "Edit" pill: the Grok Bot layout
+//            (`BotEditTree`, BotEditPhone.swift): the bot's header, the main
+//            sections in the wizard's order with its recap line, Advanced,
+//            then Archive and Delete in red; the detail one page in.
 //
 // Which tabs and sections a pairing shows is `DesktopPanelTab` /
 // `DesktopPanelSection` / `DesktopPersonaEditor` (CompanionCore, from
@@ -60,6 +61,7 @@ private struct PhoneBotPanelContent: View {
     @State private var toast: String?
     @State private var editingAvatar = false
     @State private var confirmingArchive = false
+    @State private var confirmingDelete = false
     @State private var renaming = false
     @State private var renameDraft = ""
     @State private var exportingZip = false
@@ -88,6 +90,9 @@ private struct PhoneBotPanelContent: View {
         var start = NavigationPath()
         if let startSection {
             start.append(PanelPersonaRoute())
+            // the tree's pages that lead to it (the full tree: a row the
+            // pairing hides has no page to land on anyway)
+            for page in BotEditTree.path(to: startSection) ?? [] { start.append(page) }
             start.append(startSection)
         } else {
             // a door that names Library or Computer opens that page over
@@ -123,6 +128,9 @@ private struct PhoneBotPanelContent: View {
                 .navigationDestination(for: PanelComputerRoute.self) { _ in ComputerView(bot: current) }
                 .navigationDestination(for: PanelOverviewPage.self) { page in AnyView(overviewPage(page)) }
                 .navigationDestination(for: PanelPersonaRoute.self) { _ in AnyView(personaPage) }
+                .navigationDestination(for: BotEditPageID.self) { page in
+                    AnyView(PhoneBotEditPage(page: page, bot: current, context: editContext, actions: editActions))
+                }
         }
         .tint(Theme.accentText)
         .sheet(isPresented: $editingAvatar) { PhoneBotAvatarSheet(bot: current, draft: $draft) }
@@ -151,6 +159,16 @@ private struct PhoneBotPanelContent: View {
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
             Text("Its conversations are kept. Archived bots in the account menu brings it back.")
+        }
+        .confirmationDialog(
+            String(localized: "Delete \(current.name)?"),
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Delete"), role: .destructive) { Task { await deleteBot() } }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "The bot and its conversations will be deleted. This cannot be undone."))
         }
         .alert("Rename the bot", isPresented: $renaming) {
             TextField("Name", text: $renameDraft)
@@ -330,8 +348,7 @@ private struct PhoneBotPanelContent: View {
         case .share:
             return GlassMenuItem(id: "share-people", title: Text("Share"), systemImage: "person.badge.plus", dividerBefore: divider, heading: heading) {
                 Haptics.selection()
-                path.append(PanelPersonaRoute())
-                path.append(DesktopPanelSection.sharing)
+                openEditor(at: .sharing)
             }
         case .makePrimary:
             return GlassMenuItem(id: "make-primary", title: Text("Make primary bot"), systemImage: "star", disabled: primaryWorking, dividerBefore: divider, heading: heading) {
@@ -633,65 +650,33 @@ private struct PhoneBotPanelContent: View {
         }
     }
 
-    // MARK: Persona editor
+    // MARK: Edit bot
 
-    private var personaPage: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // the reference design's Edit bot: avatar, Name, Title,
-                // Appearance and Voice calls, then every other setting
-                AnyView(PhoneBotEditHeader(bot: current) { editingAvatar = true })
-                    .padding(.bottom, Theme.Profile.cardGap + 8)
-                AnyView(personaList)
-            }
-            .padding(.top, 16)
-            .padding(.bottom, 48)
-        }
-        .scrollDismissesKeyboard(.interactively)
-        .background(Theme.bg.ignoresSafeArea())
-        .navigationTitle(Text("Edit bot"))
-        .navigationBarTitleDisplayMode(.inline)
-        // one way out, as Grok Bot's editor: Done (everything is saved as
-        // it is left, so there is no Cancel)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") {
-                    if !path.isEmpty { path.removeLast() }
-                }
-                .fontWeight(.semibold)
-                .accessibilityIdentifier("panel-persona-done")
-            }
-        }
-        .accessibilityIdentifier("panel-persona")
+    /// Edit bot's tree for this pairing and bot (`BotEditTree`).
+    private var editContext: BotEditContext { BotEditContext(gate: gate, bot: current, slack: slackURL != nil) }
+
+    private var editActions: BotEditActions {
+        BotEditActions(
+            openPage: { path.append($0) },
+            openSection: { path.append($0) },
+            openRoutines: { path.append(PanelOverviewPage.routines) },
+            editAvatar: { editingAvatar = true },
+            archive: { confirmingArchive = true },
+            delete: { confirmingDelete = true },
+            close: { if !path.isEmpty { path.removeLast() } }
+        )
     }
 
-    private var personaList: some View {
-        // Grok Bot's phone editor: the identity block above, then the
-        // desktop editor's groups in order, no search and no Profile list
-        VStack(spacing: 12) {
-            ForEach(PhoneBotEditGroup.visible(sections), id: \.self) { group in
-                VStack(spacing: 0) {
-                    ProfileSectionLabel(text: group.title)
-                    ProfileCard {
-                        ForEach(Array(group.sections(in: sections).enumerated()), id: \.element) { index, section in
-                            if index > 0 { ProfileDivider() }
-                            NavigationLink(value: section) {
-                                ProfileRow(icon: ProfileRowIcon(systemImage: section.symbol, size: 16), title: Text(section.title),
-                                           height: Theme.Profile.singleRow) { ProfileChevronTrailing() }
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("panel-row.\(section.rawValue)")
-                        }
-                    }
-                }
-                .padding(.top, 8)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("panel-group.\(group.rawValue)")
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("panel-persona-list")
+    private var personaPage: some View {
+        PhoneBotEditRoot(bot: current, context: editContext, routines: routinesLoaded ? routines : nil, actions: editActions)
+    }
+
+    /// Edit bot open on a section's page, through the tree's pages (Back
+    /// walks back the way a tap would have come).
+    private func openEditor(at section: DesktopPanelSection) {
+        path.append(PanelPersonaRoute())
+        for page in BotEditTree.path(to: section, editContext) ?? [] { path.append(page) }
+        path.append(section)
     }
 
     // MARK: Actions
@@ -751,6 +736,14 @@ private struct PhoneBotPanelContent: View {
         }
     }
 
+    /// Delete (`DELETE /api/bots/:id`): the bot and its conversations; the panel closes.
+    private func deleteBot() async {
+        let target = current
+        if await session.deleteBot(target) {
+            dismiss()
+        }
+    }
+
     private func loadRoutines() async {
         routines = await session.loadRoutines().routines
         routinesLoaded = true
@@ -765,8 +758,7 @@ private struct PhoneBotPanelContent: View {
             path.append(PanelOverviewPage.routines)
         case let .openSection(name):
             guard let section = DesktopPanelSection(rawValue: name), sections.contains(section) else { return }
-            path.append(PanelPersonaRoute())
-            path.append(section)
+            openEditor(at: section)
         }
     }
 
@@ -822,6 +814,17 @@ private struct PhoneBotPanelContent: View {
         case .profileMoreMenu:
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             menuOpen = true
+        case .profileInfo:
+            // `-parityBotEditRoute root` (or a section) opens Edit bot
+            guard let route = UserDefaults.standard.string(forKey: "parityBotEditRoute") else { break }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            path.append(PanelPersonaRoute())
+            if let page = BotEditPageID(rawValue: route) {
+                if page != .root { path.append(page) }
+            } else if let section = DesktopPanelSection(rawValue: route) {
+                for page in BotEditTree.path(to: section, editContext) ?? [] { path.append(page) }
+                path.append(section)
+            }
         case .routineDetail, .routineInstruction:
             try? await Task.sleep(nanoseconds: 1_000_000_000)
             if let first = botRoutines.first(where: { $0.schedule.type == .cron }) ?? botRoutines.first {
