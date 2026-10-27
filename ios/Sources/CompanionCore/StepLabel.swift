@@ -1,6 +1,8 @@
 // What a step row in the chat says: a plain sentence for each tool call
 // ("Read a file", "Coordinated Wren and Olive", "Viewed tickets in
-// ConnectWise PSA") in the tense of its state, never the raw tool id.
+// <product>") in the tense of its state, never the raw tool id. The
+// product's name is the one the server declared for the tool at run time
+// (ToolActivity.product); no product name is written here.
 //
 // Ported rule for rule from the desktop: src/lib/step-label.ts (the
 // sentence), shared/mcp-gateway-call.ts (a call through pi's `mcp` gateway
@@ -229,15 +231,8 @@ public enum StepLabel {
     /// Servers that are Sagax itself: their tools name no product.
     private static let internalPrefix = StepRegex.make(#"^(?:mcp__)?(?:agents|sagax|sagax-[a-z-]+|maus|ogb|harness)(?:__|_|\.)"#, [.caseInsensitive])
 
-    /// Products whose tools ride on a gateway server (Perspicax serves
-    /// `sentinelone__query`): the inner prefix names the product.
-    private static let gatewayProducts: [(NSRegularExpression, String)] = [
-        (StepRegex.make(#"^sentinelone(?:_|$)"#, [.caseInsensitive]), "SentinelOne"),
-        (StepRegex.make(#"^tailscale(?:_|$)"#, [.caseInsensitive]), "Tailscale"),
-        (StepRegex.make(#"^twilio(?:_[a-z]+)?(?:_|$)"#, [.caseInsensitive]), "Twilio"),
-        (StepRegex.make(#"^x360recover(?:_|$)"#, [.caseInsensitive]), "Axcient x360Recover"),
-        (StepRegex.make(#"^bookstack(?:_|$)"#, [.caseInsensitive]), "BookStack"),
-    ]
+    /// A gateway tool's inner product prefix (`<product>__query`).
+    private static let gatewayTool = StepRegex.make(#"^([a-z0-9][a-z0-9_-]*?)__(.+)$"#, [.caseInsensitive])
 
     static let targetMax = 80
 
@@ -356,17 +351,22 @@ public enum StepLabel {
         }
     }
 
-    /// A gateway tool (`<gateway>__sentinelone__query`) read as its
-    /// product's own: the reading sees `mcp__<product>__query`.
-    static func productTool(_ name: String) -> (tool: String, product: String?) {
+    /// A gateway tool (`<gateway>__<product>__query`) read as its
+    /// product's own: the reading sees `mcp__<gateway>__query`. The product
+    /// is the name the server declared for the tool, else the prefix's words
+    /// titled (`acme_desk` reads "Acme Desk"). A prefix the shared reading
+    /// already knows keeps its own reading.
+    static func productTool(_ name: String, declared: String? = nil) -> (tool: String, product: String?) {
+        let trimmed = declared?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let declared: String? = trimmed.isEmpty ? nil : trimmed
         let parsed = parseToolId(name)
-        guard let server = parsed.server else { return (name, nil) }
-        for (prefix, product) in gatewayProducts {
-            guard let range = StepRegex.firstRange(prefix, parsed.name) else { continue }
-            let rest = String(parsed.name[range.upperBound...]).replacingOccurrences(of: #"^_+"#, with: "", options: .regularExpression)
-            return ("mcp__\(server)__\(rest.isEmpty ? parsed.name : rest)", product)
-        }
-        return (name, nil)
+        guard let server = parsed.server else { return (name, declared) }
+        let whole = NSRange(parsed.name.startIndex..., in: parsed.name)
+        guard ApprovalReading.productFor(server: nil, name: parsed.name).product == nil,
+              let match = gatewayTool.firstMatch(in: parsed.name, range: whole),
+              let slug = Range(match.range(at: 1), in: parsed.name),
+              let rest = Range(match.range(at: 2), in: parsed.name) else { return (name, declared) }
+        return ("mcp__\(server)__\(parsed.name[rest])", declared ?? ApprovalReading.titleCase(String(parsed.name[slug])))
     }
 
     static func capitalize(_ text: String) -> String {
@@ -374,10 +374,10 @@ public enum StepLabel {
         return String(first).uppercased(with: nil) + text.dropFirst()
     }
 
-    static func mcpLabel(name: String, input: String?, phase: StepPhase, words: StepWords) -> StepReading? {
+    static func mcpLabel(name: String, input: String?, phase: StepPhase, words: StepWords, product declared: String? = nil) -> StepReading? {
         let parsed = parseToolId(name)
         guard let server = parsed.server else { return nil }
-        let (described, override) = productTool(name)
+        let (described, override) = productTool(name, declared: declared)
         // the approval reads "view tickets"; a step reads "Viewed tickets"
         let reading = ApprovalReading.describe(described, input: input, words: words, verb: { key, vars in
             if key.hasPrefix("approval.verb.") {
@@ -390,12 +390,12 @@ public enum StepLabel {
         let product = override ?? (isInternal ? nil : reading.product)
         // A failed call names where it went, never the raw tool id: the verb
         // the reading guessed from its arguments may be what failed, and the
-        // id (twilio_api__query) stays in the opened row's detail.
+        // id (acme_api__query) stays in the opened row's detail.
         if phase == .failed && !isInternal {
             return StepReading(label: words.t("step.use.failed", ["name": product ?? serverName(server)]), target: reading.summary)
         }
         // A tool named for itself (flow, query) reads as the product it
-        // serves: "Used Twilio", not "Used query in Twilio".
+        // serves: "Used Acme", not "Used query in Acme".
         guard let readAction = reading.action, !reading.verbless else {
             let name = product ?? (reading.action ?? parsed.name)
                 .replacingOccurrences(of: #"_+"#, with: " ", options: .regularExpression)
@@ -407,9 +407,8 @@ public enum StepLabel {
         return StepReading(label: capitalize(label), target: reading.summary)
     }
 
-    /// A server id as a person reads it: its product when one is known
-    /// (pulsatrix-psa is Pulsatrix), else its words titled (twilio_api
-    /// reads "Twilio API"). Never the raw id.
+    /// A server id as a person reads it: its product when one is known,
+    /// else its words titled (acme_api reads "Acme API"). Never the raw id.
     static func serverName(_ server: String) -> String {
         ApprovalReading.productFor(server: server, name: "").product ?? ApprovalReading.titleCase(server)
     }
@@ -464,7 +463,7 @@ public enum StepLabel {
         case let .admin(action, server, query)?:
             return gatewayLabel(action, server: server, query: query, phase: phase, words: words)
         case let .tool(_, _, id, args)?:
-            if let named = mcpLabel(name: id, input: args, phase: phase, words: words) { return named }
+            if let named = mcpLabel(name: id, input: args, phase: phase, words: words, product: tool.product) { return named }
         case nil:
             break
         }
@@ -472,7 +471,7 @@ public enum StepLabel {
         if let kind = kindOf(name) {
             return StepReading(label: kindLabel(kind, phase, args, nameOf: nameOf, words: words), target: kindTarget(kind, args, tool))
         }
-        if let mcp = mcpLabel(name: name, input: tool.input ?? tool.summary, phase: phase, words: words) { return mcp }
+        if let mcp = mcpLabel(name: name, input: tool.input ?? tool.summary, phase: phase, words: words, product: tool.product) { return mcp }
         let display = name.replacingOccurrences(of: #"_+"#, with: " ", options: .regularExpression)
         var summary: String?
         if let text = tool.summary, text != tool.name, text.trimmingCharacters(in: .whitespaces).range(of: #"^[\[{]"#, options: .regularExpression) == nil {

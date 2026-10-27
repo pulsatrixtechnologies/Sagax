@@ -232,6 +232,24 @@ export function twilioToolsOf(body: unknown): string[] {
     .map((tool) => String(tool.name));
 }
 
+/** 2026-10-27: how long the product names of an api_list answer are kept. */
+const API_NAMES_TTL_MS = 30 * 60_000;
+/** Bounds the bots whose product names are kept. */
+const API_NAMES_MAX = 500;
+
+/** The product names an api_list answer declares, by API id: the
+ * operator's display name, else the catalog's title. */
+export function apiNamesOf(value: unknown): Map<string, string> {
+  const names = new Map<string, string>();
+  const apis = isObject(value) && Array.isArray(value.apis) ? value.apis : [];
+  for (const api of apis) {
+    if (!isObject(api) || typeof api.id !== "string" || !api.id.trim()) continue;
+    const declared = [api.display_name, api.title].find((name): name is string => typeof name === "string" && name.trim().length > 0);
+    if (declared) names.set(api.id.trim().toLowerCase(), declared.trim().slice(0, 80));
+  }
+  return names;
+}
+
 function isObject(value: unknown): value is Json {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -333,6 +351,10 @@ export class PerspicaxMcp {
   private readonly initParams = new Map<string, Json>();
   private reopens = 0;
   private nativeCalls = 0;
+  /** 2026-10-27, by bot: the product names Perspicax declares for its
+   * APIs (api_list), so a step row names the product as the server does. */
+  private readonly apiNames = new Map<string, { at: number; names: Map<string, string> }>();
+  private readonly apiNamesPending = new Set<string>();
   /** Per profile: tools whose tools/list entry names Twilio (telephony guard). */
   private readonly twilioTools = new Map<string, Set<string>>();
   /** "At the same time": a 5 minute window, then a write is sent again. */
@@ -628,6 +650,31 @@ export class PerspicaxMcp {
    * harness may call a Perspicax tool in the speaker's name (callTool). */
   hasMounted(threadId: string, generation: string, botId: string): boolean {
     return this.turnEntry(threadId, generation, botId) !== undefined;
+  }
+
+  /** Read the product names Perspicax declares for this bot's APIs
+   * (api_list), at most once per API_NAMES_TTL_MS per bot. Never throws;
+   * the turn never waits on it. */
+  async refreshApiNames(input: { threadId: string; generation: string; botId: string }): Promise<void> {
+    const cached = this.apiNames.get(input.botId);
+    if ((cached && Date.now() - cached.at < API_NAMES_TTL_MS) || this.apiNamesPending.has(input.botId)) return;
+    this.apiNamesPending.add(input.botId);
+    try {
+      const answer = await this.callTool({ ...input, name: "api_list", args: {} });
+      if (!answer.ok || answer.isError) return;
+      this.apiNames.delete(input.botId);
+      this.apiNames.set(input.botId, { at: Date.now(), names: apiNamesOf(answer.value) });
+      while (this.apiNames.size > API_NAMES_MAX) this.apiNames.delete(this.apiNames.keys().next().value!);
+    } catch {
+      // a name is a nicety: the row reads a generic name without it
+    } finally {
+      this.apiNamesPending.delete(input.botId);
+    }
+  }
+
+  /** The product name Perspicax declared for this API id, for this bot. */
+  apiName(botId: string, apiId: string): string | undefined {
+    return this.apiNames.get(botId)?.names.get(apiId.trim().toLowerCase());
   }
 
   /** Call one Perspicax tool from the harness itself (a native tool, such
