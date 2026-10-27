@@ -1184,7 +1184,7 @@ import {
 } from "./temporary-agents.ts";
 import { createTemporaryAgentRoutes } from "./routes/temporary-agents.ts";
 import { botCreationDepth, botCreationOffered, botCreationRefusal, createdByBotMark, recentBotCreations, type BotCreationRefusal } from "./bot-creation.ts";
-import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, signTurnHandle, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
+import { agentPromptWithFiles, createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, signTurnHandle, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
 import { parseWakePriority, planPriorityWake, releasePriorityNow, type PriorityDelivery } from "./priority-wake.ts";
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
@@ -37158,14 +37158,6 @@ function agentApiStageFiles(caller: AgentCaller, target: BotRecord, files: FileI
   }
   return written;
 }
-/** #1169: the files' full paths, read with the bot's own file tools. Before,
- * the line said "host file tools", which on an organization server (host
- * tools withheld) pushed the bot onto a file view that asked an admin. A
- * read of the bot's own workspace is its owner's at the bot's level. */
-const agentPromptWithFiles = (prompt: string, staged: string[], target: BotRecord) =>
-  staged.length
-    ? `${prompt}\n\n[Files sent with this message, now in your Sagax workspace folder: ${staged.map((rel) => join(workspaceDir(target.id), rel)).join(", ")}. Read them with your file tools at those paths; if you work on a VM or cloud computer, they are not there until you copy them over (read here, then write them there).]`
-    : prompt;
 /** A bot's prompt to a peer's hidden conversation: runs now when the peer
  * has a free slot, else waits in its queue; the line records the sender. */
 async function startAgentPrompt(from: BotRecord, target: BotRecord, threadId: string, text: string, sourceThreadId: string, depth: number, wake?: PriorityDelivery): Promise<{ messageId: string | null } | Refusal> {
@@ -37527,7 +37519,7 @@ const agentApi = createAgentApi({
     if (caller.kind === "person") {
       const staged = agentApiStageFiles(caller, target, files);
       if ("code" in staged) return staged;
-      const sent = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/messages`, body: { text: agentPromptWithFiles(prompt, staged, target), threadId } });
+      const sent = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/messages`, body: { text: agentPromptWithFiles(prompt, staged, workspaceDir(target.id)), threadId } });
       const body = (sent.body ?? {}) as { message?: { id?: unknown }; error?: unknown; message_?: unknown };
       if (sent.status >= 300) return agentRefuse(sent.status >= 400 ? sent.status : 502, "not_sent", String((sent.body as { error?: unknown })?.error ?? "The prompt could not be sent."));
       const messageId = typeof body.message?.id === "string" ? body.message.id : null;
@@ -37554,7 +37546,7 @@ const agentApi = createAgentApi({
     }
     const staged = agentApiStageFiles(caller, target, files);
     if ("code" in staged) return staged;
-    return startAgentPrompt(from, target, threadId, agentPromptWithFiles(prompt, staged, target), caller.sourceThreadId, capability, wake);
+    return startAgentPrompt(from, target, threadId, agentPromptWithFiles(prompt, staged, workspaceDir(target.id)), caller.sourceThreadId, capability, wake);
   },
   async interrupt(agentId, threadId) {
     await interruptDirectThread(agentId, threadId);

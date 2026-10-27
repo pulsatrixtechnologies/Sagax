@@ -24,6 +24,7 @@
 // the sender rides on the line and the chat folds the exchange (#291).
 import type { GuardDecision, GuardPolicy, GuardTarget, ToolGuardMode } from "./tool-guard.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { join } from "node:path";
 import { parseWakePriority, planPriorityWake, releasePriorityNow, wakeSenderId, type PriorityDelivery } from "./priority-wake.ts";
 import { TEMP_AGENT_IDLE_HOURS_MAX } from "./temporary-agents.ts";
 
@@ -90,6 +91,19 @@ export const FIND_LIMIT_DEFAULT = 8;
 export const PROMPT_MAX_CHARS = 32_000;
 export const SEND_FILES_MAX = 8;
 export const SEND_FILE_MAX_BYTES = 25 * 1024 * 1024;
+
+/** The prompt a send_prompt turn sees after its files are staged under
+ * workspaces/<bot>/inbox/<sender>/ (`staged` is relative to that workspace).
+ * #1169: it names both ways in. workspace_read takes the relative path and
+ * is the bot's own reviewed read, whatever the computer. The full path is
+ * for the bot's file tools (a read of its own workspace is the owner's card,
+ * answered at the bot's level). Never "host file tools": an organization
+ * server withholds them. */
+export function agentPromptWithFiles(prompt: string, staged: readonly string[], workspaceRoot: string): string {
+  if (!staged.length) return prompt;
+  const full = staged.map((rel) => join(workspaceRoot, rel));
+  return `${prompt}\n\n[Files sent with this message, now in your Sagax workspace folder: ${staged.join(", ")}. Read them with workspace_read using those paths (relative to your workspace; it reads text), or with your file tools at the full paths: ${full.join(", ")}. If you work on a VM or cloud computer, they are not there until you copy them over (read here, then write them there).]`;
+}
 export const TIMEOUT_MS_MIN = 1_000;
 export const TIMEOUT_MS_MAX = 600_000;
 export const TIMEOUT_MS_DEFAULT = 120_000;
