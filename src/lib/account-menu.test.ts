@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { accountChoices, businessAccount, CURRENT_ACCOUNT_ID, PERSONAL_ID, SAGAX_MOBILE_URL, serverDisplayName, switchTargets, usageLines, usagePercent } from "./account-menu";
+import { accountChoices, businessAccount, CURRENT_ACCOUNT_ID, PERSONAL_ID, SAGAX_MOBILE_URL, serverDisplayName, switchAccount, switchTargets, usageLines, usagePercent } from "./account-menu";
 import type { PlanRow, PlanWindow } from "./plan-usage";
 
 const closed: PlanWindow = { available: false, remainingPercent: null, usedPercent: null, resetsAt: null };
@@ -145,5 +145,28 @@ describe("a server's shown name", () => {
 describe("Get Sagax on mobile", () => {
   it("stays hidden while Sagax has no public App Store or TestFlight link", () => {
     expect(SAGAX_MOBILE_URL).toBeNull();
+  });
+});
+
+describe("switchAccount", () => {
+  it("never signs out: an organization server's page opens Personal through the desktop", async () => {
+    const calls: string[] = [];
+    // what the bundled page has: no saved-server list, no way to choose another destination
+    const orgPage = { accounts: { openPersonal: () => { calls.push("open-personal"); } }, serverMode: { leave: () => { calls.push("leave"); } } };
+    await switchAccount(PERSONAL_ID, orgPage);
+    await switchAccount("another-server", orgPage);
+    expect(calls).toEqual(["open-personal"]);
+  });
+
+  it("Personal's page switches to any saved account, the organization server included", async () => {
+    const calls: string[] = [];
+    const localPage = { environments: { switch: (id: string) => { calls.push(id); } }, accounts: { openPersonal: () => { calls.push("open-personal"); } } };
+    await switchAccount("org", localPage);
+    await switchAccount(PERSONAL_ID, localPage);
+    expect(calls).toEqual(["org", PERSONAL_ID]);
+  });
+
+  it("does nothing without a desktop bridge", async () => {
+    await expect(switchAccount(PERSONAL_ID, undefined)).resolves.toBeUndefined();
   });
 });

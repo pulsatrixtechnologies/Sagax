@@ -1000,18 +1000,29 @@ welcome tour:
 
 The choice is kept in the workspace config (`onboarding.launchMode`, `solo`
 or `server`). After **No server** the screen does not come back. **Server**
-is exclusive (server mode): the app then shows that server only. There is no
-**This computer** in the server switcher or the Server menu, no other saved
-server and no **Connect to a server**, and the packaged app starts no local
-server, so no bot runs on this computer. Every bot runs on the
-organization's server. The one way out is **Settings > General > System >
-Server > Change** (or **Server > Change server…** in the menu bar): after a
-confirmation the app signs out of the server, forgets it and its page data,
-and returns to the launch screen. **No server** there brings back the solo
+opens the app on that server (server mode). Beside it, **Personal** (this
+computer's own space) is one click away in the account menu and in the
+Server menu, at once and without signing out of the server; there is no
+other saved server and no **Connect to a server**. The packaged app starts
+no local server until Personal is first opened (it starts then, and with the
+app from then on), so until then no bot runs on this computer. The one way
+out is **Settings > General > System > Server > Change** (or **Server >
+Change server…** in the menu bar): after a confirmation the app signs out of
+the server, forgets it and its page data, and returns to the launch screen. **No server** there brings back the solo
 app with its local bots, conversations and keys exactly as they were. An
 install that had already finished the welcome tour is not interrupted. Only
 the desktop app's own window shows the launch screen; a browser and a hosted
 page never do.
+
+#### Switching accounts
+
+Switching between Personal and an organization server, or between two saved
+servers, never signs out and never asks to sign in again: each account keeps
+its own page in the window, on its own address, with its own session, its
+conversations, drafts and the screen it was on. A switch only changes which
+page is on screen, so it shows at once, and the page catches up from its
+live stream. Signing out of one account (or forgetting it) closes that
+account's page only.
 
 #### The same UI in both modes
 

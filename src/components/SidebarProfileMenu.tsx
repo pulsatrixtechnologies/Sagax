@@ -64,7 +64,7 @@ import { RenameServerDialog } from "./RenameServerDialog";
 import { SidebarPopoverMenu, type SidebarMenuItem, type SidebarSubmenuEntry } from "./SidebarPopoverMenu";
 import { useServerMode } from "./ServerModeSettings";
 import { api } from "@/state/store";
-import { accountChoices, businessAccount, PERSONAL_ID, SAGAX_MOBILE_URL, switchTargets as listSwitchTargets, usageLines as planUsageLines, usagePercent as planUsagePercent, type AccountChoice, type SwitchTarget, type UsageLine } from "@/lib/account-menu";
+import { accountChoices, businessAccount, SAGAX_MOBILE_URL, switchAccount, switchTargets as listSwitchTargets, usageLines as planUsageLines, usagePercent as planUsagePercent, type AccountChoice, type SwitchTarget, type UsageLine } from "@/lib/account-menu";
 import { connectedPlanRows, type PlanRow, type PlanUsageReport } from "@/lib/plan-usage";
 import { costOf, formatCost, personalUsagePeriods, usageQuery, type PersonalUsageSummary } from "@/lib/usage-personal";
 import { requestReleaseNotes } from "@/lib/release-notes-ui";
@@ -594,23 +594,28 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   const [renaming, setRenaming] = useState<{ id: string; name: string; defaultName: string } | null>(null);
   const account = useAccountMenuData(menuOpened, namesTick);
   const serverMode = useServerMode(namesTick);
-  const lockedServer = serverMode?.active === true;
+  // The desktop opens on an organization server (server mode) and this is
+  // that server's page; Personal's own page (it has the saved-server list)
+  // is not, even in server mode.
+  const lockedServer = serverMode?.active === true && !window.ogb?.environments;
   // A business session is an organization server (Perspicax) or the desktop
-  // locked to one. Its page is not given the saved-server list, and the
-  // desktop refuses to leave that server except by signing out, so the
-  // submenu names the account in use and any saved account the bridge
-  // actually handed over.
+  // in server mode on its page. Its page is not given the saved-server list,
+  // so the submenu names the account in use and Personal, which the desktop
+  // opens at once without signing out.
   const business = lockedServer || perspicaxOrg !== null || viewer?.profileManagedBy === "perspicax";
-  const canSwitch = !lockedServer && Boolean(window.ogb?.environments?.switch);
+  const canSwitch = Boolean(window.ogb?.environments?.switch);
+  // An organization server's page opens Personal through the desktop, at once
+  // and still signed in to the server (never by leaving it).
+  const canOpenPersonal = Boolean(window.ogb?.accounts?.openPersonal);
   const leaveBridge = serverModeBridge(window.ogb);
   const setServerName = lockedServer ? leaveBridge?.setName : window.ogb?.environments?.setName;
   const announcedOrg = perspicaxOrg?.org.name?.trim() ?? "";
   const accounts = business
     ? accountChoices(account.targets, businessAccount(serverMode, announcedOrg), t("sidebar.account.personal")).map((entry) => ({
         ...entry,
-        // Personal, from a locked server, is leaving it (the launch screen
-        // then opens this computer's own space)
-        switchable: entry.local ? (canSwitch || (lockedServer && Boolean(leaveBridge))) : canSwitch && entry.switchable,
+        // Personal, from an organization server, is a switch: the server's
+        // session and page stay as they are (Sign out is its own item)
+        switchable: entry.local ? (canSwitch || canOpenPersonal) : canSwitch && entry.switchable,
         renamable: entry.renamable === true && Boolean(setServerName),
       }))
     : null;
@@ -654,13 +659,9 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
       onReleaseNotes: () => requestReleaseNotes("browse"),
       onAbout: () => setAboutOpen(true),
       onViewUsage: () => dispatch({ type: "toggleAppSettings", open: true, section: "usage" }),
-      onSwitch: (id) => {
-        if (lockedServer && id === PERSONAL_ID) {
-          void Promise.resolve(leaveBridge?.leave()).catch(() => {});
-          return;
-        }
-        void Promise.resolve(window.ogb?.environments?.switch(id)).catch(() => {});
-      },
+      // Switching never signs out: from an organization server's page,
+      // Personal opens through the desktop and the server stays signed in.
+      onSwitch: (id) => { void switchAccount(id, window.ogb).catch(() => {}); },
       onRename: (entry) => setRenaming(entry),
       onAddOrganization: () => dispatch({ type: "toggleAppSettings", open: true, section: "organization" }),
       onSignOut: () => {

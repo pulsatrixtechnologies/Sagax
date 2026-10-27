@@ -64,7 +64,7 @@ const REMOTE_SAFE = new Set(["platform", "windowControls", "getCapabilities", "o
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "artifactWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "openConnectorSetup", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences", "localModels"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "artifactWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "openConnectorSetup", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences", "localModels", "accounts"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -679,6 +679,20 @@ const bridge = {
       ipcRenderer.on("floating-bots:closed", handler);
       return () => ipcRenderer.removeListener("floating-bots:closed", handler);
     },
+    // This account's page is on screen again (a switch from another account,
+    // whose page closed the windows): open the floated bots again.
+    onShown: cb => {
+      const handler = () => cb();
+      ipcRenderer.on("floating-bots:shown", handler);
+      return () => ipcRenderer.removeListener("floating-bots:shown", handler);
+    },
+  },
+  /** An organization server's page (this app's bundle): open Personal, this
+   * computer's own space, at once and without signing out of the server.
+   * The page names no destination and learns nothing of the other saved
+   * servers; main checks the sender (desktopUiOnly). */
+  accounts: {
+    openPersonal: () => ipcRenderer.invoke("accounts:open-personal"),
   },
 };
 

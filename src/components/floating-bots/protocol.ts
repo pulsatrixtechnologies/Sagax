@@ -258,6 +258,8 @@ export interface FloatingBotsBridge {
   onWant?(cb: (value: { botId: string }) => void): () => void;
   /** "Switch bot": that window now stands for another bot, in place (optional: an older preload lacks it). */
   rekey?(fromId: string, toId: string): Promise<boolean>;
+  /** This account's page is on screen again after a switch: the windows were closed meanwhile, open them again (optional: an older preload lacks it). */
+  onShown?(cb: () => void): () => void;
   /** The mascot's call hotkey: on or off, its keys, and whether holds are read (optional: an older preload lacks it). */
   hotkey?(config: { enabled: boolean; accelerator: string; hold: boolean }): Promise<{ registered: string | null; conflict: boolean } | null>;
   /** The hotkey was pressed: a tap, a hold or the release of a hold (optional: an older preload lacks it). */

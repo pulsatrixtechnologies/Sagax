@@ -42,6 +42,7 @@ import { createWindowNudger } from "./window-nudge.mjs";
 import { createDesktopAttention } from "./desktop-attention.mjs";
 import { createAllWindowsClosedQuit } from "./window-all-closed.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
+import { createPageContexts } from "./page-contexts.mjs";
 import { createLoadRecovery, isAppPage, loadErrorPage, loadingPage, loadOutcome, recoveryStrings, uiBundleState, waitForUiBundle } from "./load-recovery.mjs";
 import { confirmLanguage } from "./update-confirm.mjs";
 import { createSystemTray, normalizeBotHotkeyConfig, normalizeRoster, slotAccelerator } from "./system-tray.mjs";
@@ -208,7 +209,49 @@ let pendingPackageInstallUrl = pendingOrganizationEntry ? null : packageUrlFromC
 let pendingChatLink = pendingOrganizationEntry ? null : chatLinkInArgv(process.argv);
 let organizationEntryReady = false;
 let mainWindow = null;
+// The main window's pages, one per account (electron/page-contexts.mjs):
+// switching accounts shows the page already open for that account.
+let pageContexts = null;
 const serverUnavailableWindows = new WeakSet();
+
+/** The page the person sees in the main window: the active account's. */
+function mainPage() {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
+  const page = pageContexts?.activeContents() ?? mainWindow.webContents;
+  return page && !page.isDestroyed() ? page : null;
+}
+
+/** Personal's address: this computer's server, also under a port it no
+ * longer answers on (a window opened while it was down), never a saved
+ * server's. */
+function isPersonalOrigin(origin) {
+  if (origin === rendererOrigin()) return true;
+  try {
+    const url = new URL(origin);
+    return url.protocol === "http:" && url.hostname === "127.0.0.1" && !environmentsState.environments.some((entry) => entry.origin === origin);
+  } catch {
+    return false;
+  }
+}
+
+/** This computer's own page (Personal), open or hidden, or null. */
+function localPage() {
+  const page = pageContexts?.contentsFor(rendererOrigin()) ?? null;
+  return page && !page.isDestroyed() ? page : null;
+}
+
+/** Any page of the main window, the hidden accounts' included. */
+function isMainWindowPage(contents) {
+  if (!contents || !mainWindow || mainWindow.isDestroyed()) return false;
+  return contents === mainWindow.webContents || pageContexts?.isPage(contents) === true;
+}
+
+/** What the modules that drive a page (floating bots, Hibou 98, Data and
+ * artifact windows, dictation) are handed: the page, as a window would be. */
+function pageHandle(contents) {
+  if (!contents) return null;
+  return { webContents: contents, isDestroyed: () => contents.isDestroyed() || !mainWindow || mainWindow.isDestroyed() };
+}
 let unreadCount = 0;
 let unreadOverlayIcon = null;
 
@@ -263,7 +306,12 @@ function installWindowStatePersistence(win) {
   // until the next toggle, so a send failure is not fatal.
   const pushMaximized = () => {
     try {
-      if (!win.isDestroyed()) win.webContents.send("window:maximized-changed", win.isMaximized());
+      if (win.isDestroyed()) return;
+      // every account's page draws the caption buttons, the hidden ones too
+      const pages = win === mainWindow && pageContexts ? pageContexts.openOrigins().map((origin) => pageContexts.contentsFor(origin)) : [];
+      for (const page of new Set([win.webContents, ...pages])) {
+        if (page && !page.isDestroyed()) page.send("window:maximized-changed", win.isMaximized());
+      }
     } catch {}
   };
   win.on("maximize", pushMaximized);
@@ -333,20 +381,19 @@ nativeAutoUpdater.on("before-quit-for-update", () => {
   if (app.isReady()) void flushSessionCookies(session.defaultSession, { log: slog });
 });
 
-/** Hand a pending link to THIS computer's UI. False while it has to wait: the
- * page is loading, or a remote server is showing, in which case the window
- * switches back to Local and the link is delivered when that page loads. */
-function sendToLocalPage(win, channel, value) {
-  if (!win || win.isDestroyed() || win.webContents.isLoadingMainFrame()) return false;
+/** Hand a pending link to THIS computer's UI. False while it has to wait:
+ * the page is loading or not open yet. Another account on screen switches
+ * to Personal (at once when its page is open) and the link follows. */
+function sendToLocalPage(_win, channel, value) {
+  const page = localPage();
+  if (activeRemote(environmentsState)) void workspaceMenuAction(() => switchEnvironment(LOCAL_ID));
+  if (!page || page.isLoadingMainFrame()) return false;
   let showingLocal = false;
   try {
-    showingLocal = new URL(win.webContents.getURL()).origin === rendererOrigin();
+    showingLocal = new URL(page.getURL()).origin === rendererOrigin();
   } catch {}
-  if (!showingLocal) {
-    if (activeRemote(environmentsState)) void workspaceMenuAction(() => switchEnvironment(LOCAL_ID));
-    return false;
-  }
-  win.webContents.send(channel, value);
+  if (!showingLocal) return false;
+  page.send(channel, value);
   return true;
 }
 
@@ -365,16 +412,19 @@ function chatLinkInArgv(argv) {
 
 /** Server mode's own page: the organization server drawn with this app's
  * bundle (bundled-ui.cjs). Its chats are that server's, so a chat link goes
- * there; server mode never switches to Local. */
-function sendToServerModePage(win, channel, value) {
+ * there, and the window shows that server when Personal was on screen. */
+function sendToServerModePage(_win, channel, value) {
   const locked = serverModeEnvironment(environmentsState);
-  if (!locked || !win || win.isDestroyed() || win.webContents.isLoadingMainFrame()) return false;
+  if (!locked) return false;
+  if (environmentsState.activeId !== locked.id) void workspaceMenuAction(() => switchEnvironment(locked.id));
+  const page = pageContexts?.contentsFor(locked.origin) ?? null;
+  if (!page || page.isDestroyed() || page.isLoadingMainFrame()) return false;
   let showingServer = false;
   try {
-    showingServer = new URL(win.webContents.getURL()).origin === new URL(locked.origin).origin;
+    showingServer = new URL(page.getURL()).origin === new URL(locked.origin).origin;
   } catch {}
   if (!showingServer) return false;
-  win.webContents.send(channel, value);
+  page.send(channel, value);
   return true;
 }
 
@@ -483,8 +533,7 @@ function watchSignInRedeem(win, origin) {
 
 function setSignInState(next) {
   signInState = next;
-  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  if (win && !win.webContents.isDestroyed()) win.webContents.send("pulsatrix-sign-in:changed", signInState);
+  mainPage()?.send("pulsatrix-sign-in:changed", signInState);
 }
 
 /** What the saved server says about desktop returns, or null when it cannot be read. */
@@ -533,11 +582,13 @@ function deliverSignInReturn(parsed) {
   }
   signInHandoff.accept(parsed);
   const target = oidcSignInModule.authReturnTarget(parsed);
+  // That server's own page: the account on screen.
+  const page = mainPage() ?? win.webContents;
   let showing = "nothing";
-  try { showing = new URL(win.webContents.getURL()).origin + new URL(win.webContents.getURL()).pathname; } catch { /* blank */ }
+  try { showing = new URL(page.getURL()).origin + new URL(page.getURL()).pathname; } catch { /* blank */ }
   signInLog(`${"code" in parsed ? "credential" : `error (${parsed.error})`} handed to the main window (was on ${showing}), loading ${oidcSignInModule.redactedTarget(target)}`);
   if ("code" in parsed) watchSignInRedeem(win, parsed.origin);
-  win.loadURL(target).catch((error) => signInLog(`the main window could not load /pair (${error?.code ?? error?.message ?? "error"})`));
+  page.loadURL(target).catch((error) => signInLog(`the main window could not load /pair (${error?.code ?? error?.message ?? "error"})`));
   bringMainWindowForward(win);
 }
 
@@ -808,10 +859,16 @@ const serverSupervisor = createServerSupervisor({
     routineWake.start();
     // Existing chat windows reconnect in place, preserving unsent drafts.
     // A window opened during the outage is still on our error page instead.
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!serverUnavailableWindows.has(win) || activeRemote(environmentsState)) continue;
-      void win.loadURL(`http://127.0.0.1:${SERVER_PORT}`).then(() => {
-        serverUnavailableWindows.delete(win);
+    // Personal's page in its own view (another account opened the window) too.
+    const localView = localPage();
+    for (const target of [...BrowserWindow.getAllWindows(), ...(localView ? [localView] : [])]) {
+      if (!serverUnavailableWindows.has(target)) continue;
+      // The window's own page belongs to another account now: nothing to reload there.
+      if (target === mainWindow && pageContexts?.homeOrigin() && !isPersonalOrigin(pageContexts.homeOrigin())) continue;
+      // Personal's page, under the port the server now answers on.
+      if (target === mainWindow && pageContexts && pageContexts.homeOrigin() !== rendererOrigin()) pageContexts.setHome(rendererOrigin());
+      void target.loadURL(`http://127.0.0.1:${SERVER_PORT}`).then(() => {
+        serverUnavailableWindows.delete(target);
       }).catch((error) => {
         slog(`recovered server window failed to load: ${error?.message ?? error}`);
       });
@@ -1129,7 +1186,7 @@ installDesktopCrashListeners({
   processTarget: process,
   record: recordDesktopCrash,
   isShuttingDown: () => desktopShutdownStarted,
-  mainWebContents: () => mainWindow?.webContents ?? null,
+  mainWebContents: () => mainPage(),
 });
 
 // ── managed companion connection ───────────────────────────────────────
@@ -1548,9 +1605,10 @@ function ensureManagedDesktop() {
       companyBackupSchedule?.reconcile();
       // Remote pages never receive local identity events, even if they were
       // loaded in this window after an earlier local subscription.
-      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.mainFrame.url.startsWith(`${rendererOrigin()}/`) &&
-          !activeRemote(environmentsState) && !desktopRemoteAccess) {
-        mainWindow.webContents.send("organization:state-changed", state);
+      // Personal's page hears it, in the window or in its view, on screen or not.
+      const local = localPage();
+      if (local && local.mainFrame.url.startsWith(`${rendererOrigin()}/`) && !desktopRemoteAccess) {
+        local.send("organization:state-changed", state);
       }
     },
   });
@@ -1599,7 +1657,7 @@ function companyBackupDeferred() {
 }
 
 function collectCompanyBackupClientState(signal, scope, proc) {
-  const win = mainWindow, contents = win?.webContents, frame = contents?.mainFrame;
+  const win = mainWindow, contents = localPage(), frame = contents?.mainFrame;
   if (companyBackupClientStateRequest || !win || win.isDestroyed() || desktopRemoteAccess || activeEnvironment(environmentsState) ||
       !frame?.url.startsWith(`${rendererOrigin()}/`)) return Promise.reject(companyBackupDeferred());
   return new Promise((resolve, reject) => {
@@ -1624,8 +1682,8 @@ function receiveCompanyBackupClientState(event, input) {
   const pending = companyBackupClientStateRequest;
   if (!pending || input?.requestId !== pending.requestId || event.sender !== pending.contents || event.senderFrame !== pending.frame) return;
   const scope = companyBackupScope();
-  if (pending.win !== mainWindow || mainWindow.isDestroyed() || pending.url !== pending.frame.url ||
-      !workspaceSenderAllowed(event, mainWindow.webContents, environmentsState, rendererOrigin()) ||
+  if (pending.win !== mainWindow || mainWindow.isDestroyed() || pending.contents !== localPage() || pending.url !== pending.frame.url ||
+      !workspaceSenderAllowed(event, pending.contents, environmentsState, rendererOrigin()) ||
       procUnavailable() || !scope || scope.key !== pending.scope.key || scope.generation !== pending.scope.generation) {
     pending.finish(companyBackupDeferred()); return;
   }
@@ -1640,8 +1698,8 @@ function receiveCompanyBackupClientState(event, input) {
 
 function publishCompanyBackupState(value) {
   companyBackupState = { ...value, ...(companyBackupSchedule ? { schedule: companyBackupSchedule.state() } : {}) };
-  if (mainWindow && !mainWindow.isDestroyed() && !activeRemote(environmentsState) && !desktopRemoteAccess &&
-      mainWindow.webContents.mainFrame.url.startsWith(`${rendererOrigin()}/`)) mainWindow.webContents.send("company-backups:state-changed", companyBackupState);
+  const local = localPage();
+  if (local && !desktopRemoteAccess && local.mainFrame.url.startsWith(`${rendererOrigin()}/`)) local.send("company-backups:state-changed", companyBackupState);
 }
 
 function localBackupRequest(proc, route, init = {}) {
@@ -1735,7 +1793,8 @@ function youtubeEmbedderPage(details) {
     if (own) return own;
   } catch {}
   try {
-    if (mainWindow && !mainWindow.isDestroyed()) return mainWindow.webContents.getURL();
+    const page = mainPage();
+    if (page) return page.getURL();
   } catch {}
   return null;
 }
@@ -2028,17 +2087,19 @@ function recoveryIconDataUrl() {
  * (electron/load-recovery.mjs). A remote server that cannot be reached at
  * all keeps its own handling (back to Local, did-fail-load below).
  */
-function installLoadRecovery(win) {
+function installLoadRecovery(win, contents = win.webContents) {
   const recovery = createLoadRecovery();
   let timer = null;
+  // This page's own account (each account has its page), else the active one.
   const origins = () => {
     const list = [rendererOrigin()];
-    const remote = activeRemote(environmentsState);
+    const own = pageContexts?.originOf(contents);
+    const remote = own && own !== rendererOrigin() ? { origin: own } : (contents === win.webContents ? activeRemote(environmentsState) : null);
     if (remote?.origin) list.push(remote.origin);
     return list;
   };
   const handle = (url, result, { network = false } = {}) => {
-    if (win.isDestroyed()) return;
+    if (win.isDestroyed() || contents.isDestroyed()) return;
     if (!isAppPage(url, origins())) return;
     const outcome = loadOutcome(result);
     if (outcome === "ok") {
@@ -2057,24 +2118,25 @@ function installLoadRecovery(win) {
       slog(`main window: ${new URL(url).origin} still failing after ${step.attempts} attempts (${result.httpStatus ?? result.errorCode}); showing the error page`);
       recovery.reset();
       // The local server may come back later: its onReady reloads this window.
-      if (new URL(url).origin === rendererOrigin() && !serverReady) serverUnavailableWindows.add(win);
-      void win.loadURL(loadErrorPage({ language, iconDataUrl: recoveryIconDataUrl(), retryUrl: url })).catch(() => {});
+      if (new URL(url).origin === rendererOrigin() && !serverReady) serverUnavailableWindows.add(contents === win.webContents ? win : contents);
+      void contents.loadURL(loadErrorPage({ language, iconDataUrl: recoveryIconDataUrl(), retryUrl: url })).catch(() => {});
       return;
     }
     slog(`main window: ${new URL(url).origin} answered ${result.httpStatus ?? result.errorCode}; retry ${step.attempt} in ${step.delayMs} ms`);
-    void win.loadURL(loadingPage({ language, iconDataUrl: recoveryIconDataUrl() })).catch(() => {});
+    void contents.loadURL(loadingPage({ language, iconDataUrl: recoveryIconDataUrl() })).catch(() => {});
     timer = setTimeout(() => {
       // Never back to a workspace the person switched away from meanwhile.
-      if (win.isDestroyed() || !origins().includes(new URL(url).origin)) return;
-      void win.loadURL(url).catch(() => {});
+      if (win.isDestroyed() || contents.isDestroyed() || !origins().includes(new URL(url).origin)) return;
+      void contents.loadURL(url).catch(() => {});
     }, step.delayMs);
     timer.unref?.();
   };
-  win.webContents.on("did-navigate", (_event, url, httpResponseCode) => handle(url, { httpStatus: httpResponseCode }));
-  win.webContents.on("did-fail-load", (_event, errorCode, _description, validatedURL, isMainFrame) => {
+  contents.on("did-navigate", (_event, url, httpResponseCode) => handle(url, { httpStatus: httpResponseCode }));
+  contents.on("did-fail-load", (_event, errorCode, _description, validatedURL, isMainFrame) => {
     if (isMainFrame) handle(validatedURL, { errorCode }, { network: true });
   });
-  win.on("closed", () => clearTimeout(timer));
+  if (contents === win.webContents) win.on("closed", () => clearTimeout(timer));
+  else contents.once("destroyed", () => clearTimeout(timer));
 }
 
 function rendererOrigin() {
@@ -2118,7 +2180,7 @@ function desktopViewerErrorPage(message, retryUrl) {
   );
 }
 
-function openDesktopViewer(owner, rawUrl, rawTitle, contextId) {
+function openDesktopViewer(owner, rawUrl, rawTitle, contextId, ownerContents = owner?.webContents) {
   if (!owner || owner.isDestroyed()) throw new Error("The Sagax window is unavailable");
   const url = desktopViewerUrl(rawUrl);
   const titleCandidate = Object.prototype.toString.call(rawTitle) === "[object String]" ? rawTitle.trim() : "";
@@ -2141,7 +2203,7 @@ function openDesktopViewer(owner, rawUrl, rawTitle, contextId) {
       previousOwner.send("desktop-viewer:state", { open: false, contextId: previousContextId });
     }
   }
-  desktopViewerOwner = owner.webContents;
+  desktopViewerOwner = ownerContents;
   desktopViewerContextId = nextContextId;
 
   const viewer = new BrowserWindow({
@@ -2250,21 +2312,13 @@ function ensureDesktopWorkspace(owner) {
     owner,
     createView: (options) => new WebContentsView(options),
     partitionPrefix: `openmausbot-desktop-workspace-${randomUUID()}`,
+    // The page that opened the panes (Personal's, in the window or in its view).
     notify: (state) => {
-      if (!owner.isDestroyed() && !owner.webContents.isDestroyed()) {
-        owner.webContents.send("desktop-workspace:state", state);
-      }
+      const page = desktopWorkspacePage;
+      if (!owner.isDestroyed() && page && !page.isDestroyed()) page.send("desktop-workspace:state", state);
     },
   });
   desktopWorkspaceManager = manager;
-
-  // Native child views outlive the renderer DOM unless we explicitly tear
-  // them down. Reloads, renderer crashes and owner destruction all close both
-  // panes without retaining their secret-bearing noVNC URLs.
-  owner.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) manager.closeAll();
-  });
-  owner.webContents.on("render-process-gone", () => manager.closeAll());
   owner.once("closed", () => {
     manager.closeAll();
     if (desktopWorkspaceManager === manager) {
@@ -2275,15 +2329,35 @@ function ensureDesktopWorkspace(owner) {
   return manager;
 }
 
+/** The page whose panes are open, and the pages already watched: native
+ * child views outlive the renderer DOM unless we explicitly tear them down.
+ * Reloads, renderer crashes, owner destruction and a switch to another
+ * account all close both panes without retaining their secret-bearing noVNC
+ * URLs. */
+let desktopWorkspacePage = null;
+const desktopWorkspaceWatched = new WeakSet();
+function watchDesktopWorkspacePage(page) {
+  if (desktopWorkspaceWatched.has(page)) return;
+  desktopWorkspaceWatched.add(page);
+  page.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace && desktopWorkspacePage === page) desktopWorkspaceManager?.closeAll();
+  });
+  page.on("render-process-gone", () => { if (desktopWorkspacePage === page) desktopWorkspaceManager?.closeAll(); });
+}
+
 function desktopWorkspaceForEvent(event, create = false) {
   const owner = mainWindow;
-  if (!owner || owner.isDestroyed() || event.sender !== owner.webContents) {
+  if (!owner || owner.isDestroyed() || event.sender !== mainPage()) {
     throw new Error("The two-desktop view is available only to the main app window");
   }
   if (desktopWorkspaceManager && desktopWorkspaceOwner !== owner) {
     throw new Error("The two-desktop view belongs to another app window");
   }
-  return create ? ensureDesktopWorkspace(owner) : desktopWorkspaceManager;
+  if (!create) return desktopWorkspacePage === event.sender ? desktopWorkspaceManager : null;
+  if (desktopWorkspacePage && desktopWorkspacePage !== event.sender) desktopWorkspaceManager?.closeAll();
+  desktopWorkspacePage = event.sender;
+  watchDesktopWorkspacePage(event.sender);
+  return ensureDesktopWorkspace(owner);
 }
 
 
@@ -2291,12 +2365,28 @@ ipcMain.on("screen:preview-intent", localOnlySync("screen:preview-intent", (even
   event.returnValue = displayMediaGuard.begin(event.senderFrame);
 }));
 
+// Each account's page keeps its own count; the badge adds them up, as a
+// chat app's icon counts every workspace (a hidden account's unread shows).
+const pageUnreadCounts = new Map();
+function totalUnread() {
+  let total = 0;
+  for (const [page, count] of pageUnreadCounts) {
+    if (page.isDestroyed() || !isMainWindowPage(page)) pageUnreadCounts.delete(page);
+    else total += count;
+  }
+  return normalizeUnreadCount(total);
+}
 ipcMain.on("desktop:unread-count", (event, value) => {
   const sender = BrowserWindow.fromWebContents(event.sender);
-  if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
-  unreadCount = normalizeUnreadCount(value);
+  if (!sender || sender !== mainWindow || sender.isDestroyed() || !isMainWindowPage(event.sender)) return;
+  pageUnreadCounts.set(event.sender, normalizeUnreadCount(value));
+  unreadCount = totalUnread();
   applyUnreadBadge(sender);
 });
+function showPageUnreadCount() {
+  unreadCount = totalUnread();
+  applyUnreadBadge(mainWindow);
+}
 
 // A nudge between the two people in a chat: bring this desktop's main
 // window to the very front and shake it. The sender and the recipient each
@@ -2325,13 +2415,33 @@ ipcMain.handle("desktop:system-idle", (event) => {
   return systemIdleSnapshot(powerMonitor);
 });
 
-/** The main window's top frame, the only page that may ask for attention. */
+/** The main window's top frame, the only page that may ask for attention:
+ * any account's page (a hidden account still notifies, as a chat app does). */
 function fromMainWindowTop(event) {
   const sender = BrowserWindow.fromWebContents(event.sender);
-  if (!sender || sender !== mainWindow || sender.isDestroyed()) return false;
+  if (!sender || sender !== mainWindow || sender.isDestroyed() || !isMainWindowPage(event.sender)) return false;
   const frame = event.senderFrame;
   const mainFrame = event.sender?.mainFrame;
   return !(frame && mainFrame && frame !== mainFrame);
+}
+
+/** Which account's page asked for each notification still on screen, so a
+ * click opens that account and tells its page (bounded, oldest first). */
+const notificationAccounts = new Map();
+function rememberNotificationAccount(event, request) {
+  const id = typeof request?.id === "string" ? request.id : null;
+  const origin = pageContexts?.originOf(event.sender) ?? null;
+  if (!id || !origin) return;
+  notificationAccounts.delete(id);
+  notificationAccounts.set(id, origin);
+  if (notificationAccounts.size > 200) notificationAccounts.delete(notificationAccounts.keys().next().value);
+}
+
+/** The account an origin belongs to: Personal or a saved server. */
+function accountIdForOrigin(origin) {
+  if (!origin) return null;
+  if (origin === rendererOrigin()) return LOCAL_ID;
+  return environmentsState.environments.find((entry) => entry.origin === origin)?.id ?? null;
 }
 
 // Native notifications, the Dock bounce and the taskbar flash
@@ -2343,7 +2453,23 @@ const desktopAttention = createDesktopAttention({
   Notification,
   getWindow: () => mainWindow,
   onClick: (id, target) => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:notification-click", id, target);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    // The account that posted it comes on screen, then its page opens the conversation.
+    const origin = notificationAccounts.get(id) ?? null;
+    notificationAccounts.delete(id);
+    const account = accountIdForOrigin(origin);
+    if (!origin || account === null) {
+      mainPage()?.send("desktop:notification-click", id, target);
+      return;
+    }
+    void workspaceMenuAction(async () => {
+      if (pageContexts?.activeOrigin() !== origin) await switchEnvironment(account);
+      // that account's page, opened again when it was closed meanwhile
+      const page = pageContexts?.contentsFor(origin);
+      if (!page || page !== mainPage()) return;
+      if (page.isLoadingMainFrame()) page.once("did-stop-loading", () => { if (!page.isDestroyed()) page.send("desktop:notification-click", id, target); });
+      else page.send("desktop:notification-click", id, target);
+    });
   },
 });
 
@@ -2353,7 +2479,8 @@ const desktopAttention = createDesktopAttention({
 // until the person looks (macOS) and flashes the taskbar button (Windows,
 // Linux); the sender's own window does not.
 ipcMain.on("desktop:nudge", (event, options) => {
-  if (!fromMainWindowTop(event)) return;
+  // Only the account on screen may bring the window forward and shake it.
+  if (!fromMainWindowTop(event) || event.sender !== mainPage()) return;
   const asked = options && typeof options === "object" ? options : {};
   if (asked.role !== "sent") desktopAttention.requestAttention({ bounce: "critical", flash: true });
   windowNudger.nudge(mainWindow, { shake: asked.shake !== false });
@@ -2363,6 +2490,7 @@ ipcMain.on("desktop:nudge", (event, options) => {
 // shell so it can stay until dismissed and bring the window back on click.
 ipcMain.on("desktop:notify", (event, request) => {
   if (!fromMainWindowTop(event)) return;
+  rememberNotificationAccount(event, request);
   desktopAttention.notify(request);
 });
 // The approval a notification asked about was answered elsewhere or expired.
@@ -2613,15 +2741,16 @@ function desktopBridge() {
   return desktopBridgeConnector;
 }
 
-async function offerComputerSharing(win) {
+async function offerComputerSharing(win, contents = win.webContents) {
   const env = activeEnvironment(environmentsState);
-  if (!env || sharingPrompts.has(env.id) || win.isDestroyed()) return;
+  // Asked on the page on screen only, never by a hidden account's page.
+  if (!env || sharingPrompts.has(env.id) || win.isDestroyed() || contents !== mainPage()) return;
   // Never offer a grant this build's server will not honour.
   if (!(await refreshSharedComputersAllowed()) || win.isDestroyed()) return;
   sharingPrompts.add(env.id);
   try {
     const info = await sharingController().observe(env);
-    if (!info || win.isDestroyed() || activeEnvironment(environmentsState)?.id !== env.id || new URL(win.webContents.getURL()).origin !== env.origin) return;
+    if (!info || win.isDestroyed() || contents.isDestroyed() || contents !== mainPage() || activeEnvironment(environmentsState)?.id !== env.id || new URL(contents.getURL()).origin !== env.origin) return;
     const choice = await dialog.showMessageBox(win, {
       type: "question", message: `Share this computer with ${env.name}?`,
       detail: "Let this server’s bots use folders and capabilities you choose while this desktop app is running, only when you are the person asking. Nothing is shared unless you enable it. You can change this later in Settings → Organization.",
@@ -2685,7 +2814,7 @@ function refreshApplicationMenu() {
       onConnect: () => void workspaceMenuAction(openWorkspaceSettings),
       onForget: (id) => void workspaceMenuAction(() => forgetEnvironment(id)),
       onOpenSettings: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("app:open-settings");
+        mainPage()?.send("app:open-settings");
       },
       serverModeId: serverModeEnvironment(environmentsState)?.id ?? null,
       onLeaveServerMode: () => void workspaceMenuAction(leaveServerMode),
@@ -2694,13 +2823,18 @@ function refreshApplicationMenu() {
 }
 
 // ── this app's own UI on an organization server (electron/bundled-ui.cjs) ──
-// While the active environment is an organization server, every page request
-// to its origin is answered from this app's bundle and its API is passed
-// through untouched: the same UI as on this computer, the server's session
-// and authorization. The handler is installed only for that scheme and only
-// while such a server is active.
-let bundledScheme = null;
+// While an organization server is on screen, every page request to its
+// origin is answered from this app's bundle and its API is passed through
+// untouched: the same UI as on this computer, the server's session and
+// authorization. The handler takes a whole scheme (protocol.handle), so it is
+// installed only while such a server is on screen: Personal and every other
+// page then reach the network natively (measured: the passthrough cost main
+// CPU and latency, and stopped an embedded YouTube video). A hidden
+// organization page keeps its loaded app; it is opened, never prepared
+// hidden, so it always loads through the bundle.
+const bundledSchemes = new Set();
 let currentBundledOrigin = null;
+let bundledOriginsNow = [];
 function bundledUiStaticDir() {
   if (app.isPackaged) return path.join(process.resourcesPath, "ui");
   return process.env.SAGAX_BUNDLED_UI_DIR || null;
@@ -2710,7 +2844,7 @@ function bundledUiDevOrigin() {
   return new URL(DEV_URL).origin;
 }
 const bundledUiHandler = bundledUiModule.createBundledUiHandler({
-  origin: () => currentBundledOrigin,
+  origin: () => bundledOriginsNow,
   staticDir: bundledUiStaticDir,
   devOrigin: bundledUiDevOrigin,
   fetch: (input, init) => net.fetch(input, init),
@@ -2718,21 +2852,26 @@ const bundledUiHandler = bundledUiModule.createBundledUiHandler({
   log: (line) => slog(line),
 });
 function syncBundledUi() {
-  const origin = bundledOrigin(environmentsState);
-  const scheme = origin ? new URL(origin).protocol.slice(0, -1) : null;
-  if (bundledScheme && bundledScheme !== scheme) {
-    try { session.defaultSession.protocol.unhandle(bundledScheme); } catch {}
-    bundledScheme = null;
+  const onScreen = bundledOrigin(environmentsState);
+  const origins = onScreen ? [onScreen] : [];
+  const schemes = new Set(origins.map((origin) => new URL(origin).protocol.slice(0, -1)));
+  for (const scheme of bundledSchemes) {
+    if (schemes.has(scheme)) continue;
+    try { session.defaultSession.protocol.unhandle(scheme); } catch {}
+    bundledSchemes.delete(scheme);
   }
-  if (scheme && bundledScheme !== scheme) {
+  for (const scheme of schemes) {
+    if (bundledSchemes.has(scheme)) continue;
     try {
       session.defaultSession.protocol.handle(scheme, bundledUiHandler);
-      bundledScheme = scheme;
+      bundledSchemes.add(scheme);
     } catch (error) {
       slog(`bundled UI: could not take over ${scheme} (${error?.message ?? error})`);
     }
   }
-  currentBundledOrigin = bundledScheme ? origin : null;
+  bundledOriginsNow = origins.filter((origin) => bundledSchemes.has(new URL(origin).protocol.slice(0, -1)));
+  const active = bundledOrigin(environmentsState);
+  currentBundledOrigin = active && bundledOriginsNow.includes(active) ? active : null;
   setBundledOrigin(currentBundledOrigin);
 }
 
@@ -2776,21 +2915,67 @@ async function workspaceMenuAction(action) {
   }
 }
 
-function navigateMainWindow(url) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  // Floating bots and the detached assistant belong to the page that drives
-  // them: another server's page brings its own.
-  try {
-    if (new URL(url).origin !== new URL(mainWindow.webContents.getURL()).origin) {
-      floatingBotWindows.closeAll();
-      retroAssistantWindow.close();
-    }
-  } catch {}
-  // did-fail-load shows the connection error and returns to the local app.
-  void mainWindow.loadURL(url).catch(() => {});
+/** Whether `url` is an account's front door (its origin, maybe with a
+ * slash): what a switch shows as the page already is. Any other address (a
+ * sign-in, a Settings page, a pairing link) is loaded in that page. */
+function isAccountHome(url, origin) {
+  return url === origin || url === `${origin}/`;
 }
 
-/** Server mode refuses anything that would show Local or another server. */
+/**
+ * Show `url`'s account in the main window. Each account keeps its own page
+ * (electron/page-contexts.mjs): one already open is shown as it was left, at
+ * once, still signed in, with its conversations, drafts and screen; only a
+ * specific address, or `reload`, loads it again. did-fail-load shows the
+ * connection error and returns to the local app.
+ */
+function navigateMainWindow(url, { reload = false, account = null } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed() || !pageContexts) return;
+  // `account`: the account whose page shows `url` (a loading or error page
+  // of this app, which has no origin of its own).
+  let origin = account;
+  try {
+    origin ??= new URL(url).origin;
+  } catch {
+    return;
+  }
+  const started = performance.now();
+  const before = mainPage();
+  // Floating bots, the detached assistant and the two-desktop panes belong
+  // to the page that drives them: another account's page brings its own.
+  let previousOrigin = null;
+  try { previousOrigin = pageContexts.activeOrigin() ?? new URL(before?.getURL() ?? "").origin; } catch {}
+  const otherAccount = previousOrigin !== origin;
+  if (otherAccount) {
+    floatingBotWindows.closeAll();
+    retroAssistantWindow.close();
+    desktopWorkspaceManager?.closeAll();
+  }
+  const shown = pageContexts.show(origin, url);
+  if (!shown) return;
+  // A page kept open but showing this app's loading or error page (not its
+  // account's address) loads the account now.
+  let onItsAddress = false;
+  try { onItsAddress = new URL(shown.contents.getURL()).origin === origin; } catch {}
+  if (shown.reused && (reload || !onItsAddress || !isAccountHome(url, origin))) void shown.contents.loadURL(url).catch(() => {});
+  if (otherAccount) {
+    mainWindow.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
+    dataWindows.mainNavigated(shown.contents.getURL() || url);
+    artifactWindows.mainNavigated(shown.contents.getURL() || url);
+    // The page shown as it was: its floated bots open again, its badge counts.
+    if (shown.reused) {
+      try { shown.contents.send("floating-bots:shown"); } catch {}
+    }
+    showPageUnreadCount(shown.contents);
+    showPageSkin(shown.contents);
+    showPageRoster(shown.contents);
+    // A page opened hidden was not on screen when it loaded: offer sharing now.
+    if (shown.reused) void offerComputerSharing(mainWindow, shown.contents);
+  }
+  slog(`account: ${origin === rendererOrigin() ? "Personal" : origin} on screen in ${Math.round(performance.now() - started)} ms (${shown.reused ? "its page as it was" : "page opened"})`);
+}
+
+/** Server mode refuses another server (Personal is a switch, see switchEnvironment). */
 function requireNotServerMode() {
   const locked = serverModeEnvironment(environmentsState);
   if (locked) throw new Error(`This app is connected to ${locked.name}. Change the server in Settings > General first.`);
@@ -2902,7 +3087,8 @@ async function switchLocalEnvironmentTo(targetDir, targetId) {
       return failedSwitch();
     }
     switchSucceeded = true;
-    navigateMainWindow(rendererOrigin());
+    // Same address, another data folder: Personal's page loads anew.
+    navigateMainWindow(rendererOrigin(), { reload: true });
     return { ok: true };
   } catch (error) {
     slog(`environment switch to ${targetDir} failed (${error?.message ?? error})`);
@@ -2928,11 +3114,19 @@ async function switchLocalEnvironmentTo(targetDir, targetId) {
   }
 }
 
+/**
+ * Switch accounts: Personal (this computer's own space), a saved server, or
+ * a named local environment. Never a sign-out and never a new sign-in: each
+ * account keeps its session (its own cookie, on its own origin) and its page
+ * (navigateMainWindow), so the switch only changes which page is on screen.
+ */
 async function switchEnvironment(id) {
   if (id === environmentsState.activeId || (id !== LOCAL_ID && !environmentsState.environments.some((entry) => entry.id === id))) return;
-  // Server mode locks the app to its organization server: no switch to
-  // Local, a named local environment or another saved server.
-  if (serverModeEnvironment(environmentsState)) return;
+  // Server mode: the organization's server and Personal; no named local
+  // environment and no other saved server.
+  const locked = serverModeEnvironment(environmentsState);
+  if (locked && id !== LOCAL_ID && id !== locked.id) return;
+  if (locked && id === LOCAL_ID) return await openPersonalInServerMode();
   const entry = environmentsState.environments.find((candidate) => candidate.id === id);
   if (entry?.kind === "local") return await switchLocalEnvironmentTo(entry.dataDir, entry.id);
   // Leaving any named folder for "This computer" is the same flow onto the
@@ -2945,8 +3139,40 @@ async function switchEnvironment(id) {
   navigateMainWindow(activeOrigin());
 }
 
+/** Server mode runs no local server until the person opens Personal: the
+ * first time, it starts here (the server's page stays signed in and open
+ * meanwhile), and from then on with the app (environments.cjs `personal`). */
+let localServerStart = null;
+async function openPersonalInServerMode() {
+  if (!app.isPackaged || serverReady || desktopRemoteAccess) {
+    persistEnvironments(withActive(environmentsState, LOCAL_ID));
+    navigateMainWindow(rendererOrigin());
+    return;
+  }
+  const waiting = rendererOrigin();
+  persistEnvironments(withActive(environmentsState, LOCAL_ID));
+  navigateMainWindow(loadingPage({ language: recoveryLanguage(), iconDataUrl: recoveryIconDataUrl() }), { account: waiting });
+  localServerStart ??= (async () => {
+    slog("server mode: Personal opened, starting this computer's server");
+    const started = await startServerPackaged();
+    if (started) setLocalOrigin(rendererOrigin());
+    return started;
+  })().finally(() => { localServerStart = null; });
+  const started = await localServerStart;
+  if (!pageContexts) return;
+  const origin = rendererOrigin();
+  // The port may differ from the one the page waited on: that page goes.
+  if (origin !== waiting) pageContexts.drop(waiting);
+  if (environmentsState.activeId !== LOCAL_ID) return;
+  if (!started) {
+    navigateMainWindow(buildErrorPage({ allPortsOccupied: serverStartConflictOnly }), { account: origin, reload: true });
+    return;
+  }
+  navigateMainWindow(origin, { reload: true });
+}
+
 /** Signing in from the launch screen: the organization server becomes the
- * only one this app shows (environments.cjs withServerMode). */
+ * one this app opens on (environments.cjs withServerMode). */
 let leavingServerMode = false;
 /** Leave server mode, the one way out (Settings > General > Server >
  * Sign out, or Server > Change server…): after a native confirmation, sign out
@@ -2985,10 +3211,13 @@ async function leaveServerMode() {
     floatingBotWindows.closeAll();
     retroAssistantWindow.close();
     persistEnvironments(withoutServerMode(environmentsState));
+    // Signing out of this server closes its page only: Personal's stays.
+    pageContexts?.drop(locked.origin);
     if (app.isPackaged && !serverReady && !desktopRemoteAccess) {
       relaunchAfterDesktopRemoteChange();
     } else {
-      navigateMainWindow(`${rendererOrigin()}/`);
+      // Personal's page again, loaded anew: the launch screen comes back there.
+      navigateMainWindow(`${rendererOrigin()}/`, { reload: true });
     }
     return { left: true };
   } finally {
@@ -3064,10 +3293,12 @@ const organizationEntry = createOrganizationEntry({
     if (!serverReady) throw new Error("This installation is unavailable. Restart the app and try organization sign-in again.");
     if (desktopRemoteAccess || activeRemote(environmentsState)) throw new Error("Choose this computer before signing in with your organization.");
     const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow({ deferNavigation: true });
-    if (!win.webContents.isLoadingMainFrame() && senderIsLocal({ sender: win.webContents })) {
-      win.webContents.send("app:open-settings", "organization");
+    const page = mainPage() ?? win.webContents;
+    if (!page.isLoadingMainFrame() && senderIsLocal({ sender: page })) {
+      page.send("app:open-settings", "organization");
     } else {
-      await win.loadURL(`${rendererOrigin()}/?desktop-settings=organization`);
+      // Personal's page, in the window or in its own view.
+      navigateMainWindow(`${rendererOrigin()}/?desktop-settings=organization`, { reload: true });
     }
   },
   relaunch: relaunchAfterDesktopRemoteChange,
@@ -3096,13 +3327,19 @@ async function deliverOrganizationEntry() {
 
 function openWorkspaceSettings(computerId) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  // Server mode never leaves for the local page: the server's own Settings open.
-  if (serverModeEnvironment(environmentsState)) {
-    mainWindow.webContents.send("app:open-settings", "organization");
+  // Server mode: the server's own Settings open, on its page.
+  const locked = serverModeEnvironment(environmentsState);
+  if (locked) {
+    if (environmentsState.activeId !== locked.id) {
+      persistEnvironments(withActive(environmentsState, locked.id));
+      navigateMainWindow(locked.origin);
+    }
+    mainPage()?.send("app:open-settings", "organization");
     return;
   }
-  if (senderIsLocal({ sender: mainWindow.webContents })) {
-    mainWindow.webContents.send("workspaces:open-settings", typeof computerId === "string" ? computerId : null);
+  const page = mainPage();
+  if (page && senderIsLocal({ sender: page })) {
+    page.send("workspaces:open-settings", typeof computerId === "string" ? computerId : null);
   } else {
     persistEnvironments(withActive(environmentsState, LOCAL_ID));
     navigateMainWindow(`${rendererOrigin()}/?desktop-settings=workspaces${typeof computerId === "string" ? `&share-computer=${encodeURIComponent(computerId)}` : ""}`);
@@ -3170,7 +3407,6 @@ async function upgradeSavedOrganizationServers() {
   const serverModeChosen = !serverModeEnvironment(environmentsState) && orgOrigins.size ? (await localLaunchMode()) === "server" : false;
   const next = withOrganizationUpgrade(environmentsState, { orgOrigins, serverModeChosen });
   if (next === environmentsState) return;
-  const before = bundledOrigin(environmentsState);
   try {
     persistEnvironments(next);
   } catch (error) {
@@ -3178,11 +3414,15 @@ async function upgradeSavedOrganizationServers() {
     return;
   }
   slog(`organization servers marked: ${[...orgOrigins].join(", ")}${serverModeEnvironment(next) ? " (server mode)" : ""}`);
-  const now = bundledOrigin(next);
-  if (now && now !== before && mainWindow && !mainWindow.isDestroyed()) {
+  // Each upgraded server whose page is open is loaded again, on screen or
+  // not, so it gets this app's bundle and bridge.
+  for (const origin of orgOrigins) {
+    const page = pageContexts?.contentsFor(origin);
+    // the page on screen only: the bundle is served while it is on screen
+    if (!page || page !== mainPage()) continue;
     let current = null;
-    try { current = new URL(mainWindow.webContents.getURL()); } catch {}
-    if (current?.origin === now) navigateMainWindow(current.href);
+    try { current = new URL(page.getURL()); } catch {}
+    if (current?.origin === origin) void page.loadURL(current.href).catch(() => {});
   }
 }
 
@@ -3283,6 +3523,8 @@ async function forgetEnvironment(id, purge = false) {
     }
   }
   persistEnvironments(withoutEnvironment(environmentsState, id));
+  // Its page closes with it, on screen or not; the other accounts' stay.
+  if (env.origin) pageContexts?.drop(env.origin);
   // Leave a removed workspace immediately; forgetting an inactive connection
   // must not reload the local app or discard a Settings form/chat draft.
   if (wasActive) navigateMainWindow(activeOrigin());
@@ -3315,7 +3557,7 @@ async function forgetEnvironment(id, purge = false) {
  * @param {Electron.ContextMenuParams} params - Context menu parameters from Electron.
  * @returns {Promise<void>}
  */
-async function showContextMenu(win, params) {
+async function showContextMenu(win, params, contents = win.webContents) {
   // nothing actionable here — no menu at all, rather than a wall of
   // disabled items
   if (!params.isEditable && !params.linkURL && !params.misspelledWord && !params.selectionText) return;
@@ -3324,7 +3566,7 @@ async function showContextMenu(win, params) {
     for (const suggestion of params.dictionarySuggestions.slice(0, 5)) {
       menuItems.push({
         label: suggestion,
-        click: () => win.webContents.replaceMisspelling(suggestion),
+        click: () => contents.replaceMisspelling(suggestion),
       });
     }
     if (menuItems.length) menuItems.push({ type: "separator" });
@@ -3341,13 +3583,175 @@ async function showContextMenu(win, params) {
     { type: "separator" },
     { label: "Cut", role: "cut", enabled: params.editFlags.canCut },
     { label: "Copy", role: "copy", enabled: params.editFlags.canCopy },
-    await pasteMenuItem(params, clipboard, win.webContents),
+    await pasteMenuItem(params, clipboard, contents),
     { label: "Paste and Match Style", role: "pasteAndMatchStyle", enabled: params.editFlags.canPaste },
     { type: "separator" },
     { label: "Select All", role: "selectAll", enabled: params.editFlags.canSelectAll },
   );
   if (win.isDestroyed()) return;
   Menu.buildFromTemplate(menuItems).popup({ window: win, frame: params.frame });
+}
+
+/**
+ * The rules every page of the main window follows, the window's own and each
+ * account's view: links open in the browser, a page navigates within its own
+ * account only, no saved server is embedded, sign-in opens in the system
+ * browser, load recovery, context menu. Only the page on screen names the
+ * window, drives the floating windows or reports an unreachable server.
+ */
+function wireAccountPage(win, contents) {
+  contents.on("page-title-updated", event => {
+    // Only the page on screen names the window; a hidden account's never does.
+    if (contents === win.webContents && contents === mainPage() && !desktopRemoteAccess && !activeEnvironment(environmentsState)) return;
+    event.preventDefault();
+    if (contents === mainPage()) win.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
+  });
+  // Another server in this window: the previous server's Data windows go.
+  contents.on("did-navigate", (_event, url) => {
+    if (contents !== mainPage()) return;
+    dataWindows.mainNavigated(url);
+    artifactWindows.mainNavigated(url);
+  });
+  contents.on("render-process-gone", () => {
+    // A hidden account's page that died is opened again on its next switch.
+    if (contents !== mainPage()) {
+      if (contents !== win.webContents) pageContexts?.drop(pageContexts.originOf(contents));
+      return;
+    }
+    retroAssistantWindow.mainWindowGone();
+    floatingBotWindows.mainWindowGone();
+    mascotHotkey.disable();
+    clearTrayRoster();
+  });
+
+  contents.setWindowOpenHandler(({ url }) => {
+    try {
+      void shell.openExternal(externalOpenUrl(url)).catch(() => {
+        console.warn("The external web link could not be opened");
+      });
+    } catch {
+      // Reject non-web links and embedded credentials without opening them.
+    }
+    return { action: "deny" };
+  });
+  // A page navigates within its own account only. Switching is a native
+  // action, not a redirect/link from a remote page to the local bridge.
+  const guardNavigation = (event, url) => {
+    // "Sign in with Pulsatrix" on a saved organization server: the identity
+    // provider's page opens in the system browser, never in this
+    // preload-bearing window nor any other of this app
+    // (electron/oidc-system-sign-in.cjs).
+    const loginStart = oidcSignInModule.oidcLoginStartUrl(url, environmentsState);
+    if (loginStart) {
+      event.preventDefault();
+      void startPulsatrixSignIn(win, loginStart);
+      return;
+    }
+    let origin = null;
+    try {
+      origin = new URL(url).origin;
+    } catch {}
+    const own = pageContexts?.originOf(contents) ?? null;
+    if (own ? origin === own : workspaceNavigationAllowed(url, environmentsState, rendererOrigin())) return;
+    event.preventDefault();
+    slog(`blocked navigation to ${origin ?? "an invalid address"}`);
+  };
+  contents.on("will-navigate", guardNavigation);
+  contents.on("will-redirect", guardNavigation);
+  // Subframes: a page may not embed the local server, or any other saved
+  // server, inside this preload-bearing window.
+  contents.on("will-frame-navigate", (details) => {
+    if (details.isMainFrame) return;
+    // A published page's preview frame may only reload its own address
+    // (electron/page-frame-guard.mjs): never carry data out by navigating.
+    if (blockPageFrameNavigation(details)) {
+      details.preventDefault();
+      slog("blocked a published page's frame navigation");
+      return;
+    }
+    let target = null;
+    let page = null;
+    try {
+      target = new URL(details.url).origin;
+      page = new URL(contents.getURL()).origin;
+    } catch {}
+    if (!target || !page || target === page) return;
+    if (target === rendererOrigin() || allowedOrigins(environmentsState, rendererOrigin()).has(target)) {
+      details.preventDefault();
+      slog(`blocked subframe navigation to ${details.url}`);
+    }
+  });
+  if (app.isPackaged) installLoadRecovery(win, contents);
+  contents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return; // -3: aborted by a newer navigation
+    // A hidden account's page that cannot reach its server: no dialog, no
+    // switch; its next switch opens it again.
+    if (contents !== mainPage()) {
+      const own = pageContexts?.originOf(contents);
+      if (own && contents !== win.webContents && own !== rendererOrigin()) {
+        slog(`a hidden account's server is unreachable (${errorDescription}); its page closes until the next switch`);
+        pageContexts.drop(own);
+      }
+      return;
+    }
+    const remote = activeRemote(environmentsState);
+    if (!remote) return;
+    let origin = null;
+    try {
+      origin = new URL(validatedURL).origin;
+    } catch {}
+    if (origin !== remote.origin) return;
+    // Server mode has no Local to fall back to: the page says the server is
+    // unreachable and Settings > General > Server > Change still works.
+    if (serverModeEnvironment(environmentsState)) {
+      slog(`server-mode server unreachable (${errorDescription})`);
+      return;
+    }
+    slog(`remote server unreachable (${errorDescription}); back to Local`);
+    void dialog.showMessageBox({
+      type: "warning",
+      message: `${remote.name} is not reachable`,
+      detail: `${errorDescription}. Showing the local server instead; choose it again from the Server menu when it is back.`,
+    });
+    void workspaceMenuAction(() => switchEnvironment(LOCAL_ID));
+  });
+  // A pending link is handed over once the page has stopped loading. Not on
+  // did-finish-load: Electron still reports the main frame as loading then,
+  // and the hand-off's own guard would refuse it.
+  contents.on("did-stop-loading", () => {
+    deliverPackageInstall(win);
+    deliverChatLink(win);
+  });
+  contents.on("did-finish-load", () => void offerComputerSharing(win, contents));
+
+  // Native context menu for text inputs — without this, right-click does
+  // nothing in the Electron window (no Cut/Copy/Paste/Select All).
+  contents.on("context-menu", (_event, params) => {
+    showContextMenu(win, params, contents).catch((error) => slog(`context menu: ${error?.message ?? error}`));
+  });
+
+}
+
+/** The main window's pages, its own and each account's view. */
+function mainPageWebPreferences() {
+  return {
+    contextIsolation: true,
+    // Cache V8's compiled code from the very first load instead of after
+    // a script has run hot a few times: the renderer bundle starts faster
+    // from the second launch on (the reference design does the same).
+    v8CacheOptions: "bypassHeatCheck",
+    preload: path.join(__dirname, "preload.cjs"),
+    // Settings > Appearance > Desktop: the spell checker (on by default);
+    // macOS reads this when the window opens, the others also change live.
+    spellcheck: readShellPreferences(app.getPath("userData")).spellcheck,
+    // The preload exposes the full bridge only to this origin (see preload.cjs).
+    // Companion client mode still serves the bundled UI from its own
+    // loopback relay, so it is a trusted local page while also needing the
+    // renderer's remote-only feature gates. Keep the two facts independent:
+    // upstream's origin boundary must not erase the client-mode marker.
+    additionalArguments: [...desktopCompanionRendererArguments(rendererOrigin(), desktopRemoteAccess),
+      ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : [])],
+  };
 }
 
 /**
@@ -3374,26 +3778,36 @@ function createWindow({ deferNavigation = false } = {}) {
     backgroundColor: "#070707",
     autoHideMenuBar: process.platform !== "darwin",
     ...windowChromeOptions(process.platform),
-    webPreferences: {
-      contextIsolation: true,
-      // Cache V8's compiled code from the very first load instead of after
-      // a script has run hot a few times: the renderer bundle starts faster
-      // from the second launch on (the reference design does the same).
-      v8CacheOptions: "bypassHeatCheck",
-      preload: path.join(__dirname, "preload.cjs"),
-      // Settings > Appearance > Desktop: the spell checker (on by default);
-      // macOS reads this when the window opens, the others also change live.
-      spellcheck: readShellPreferences(app.getPath("userData")).spellcheck,
-      // The preload exposes the full bridge only to this origin (see preload.cjs).
-      // Companion client mode still serves the bundled UI from its own
-      // loopback relay, so it is a trusted local page while also needing the
-      // renderer's remote-only feature gates. Keep the two facts independent:
-      // upstream's origin boundary must not erase the client-mode marker.
-      additionalArguments: [...desktopCompanionRendererArguments(rendererOrigin(), desktopRemoteAccess),
-        ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : [])],
-    },
+    webPreferences: mainPageWebPreferences(),
   });
   mainWindow = win;
+  // One page per account (electron/page-contexts.mjs): the window's own page
+  // is the first; each other account gets a view laid over it, the same
+  // preload, the same rules, the same persistent session (each on its own
+  // origin, so with its own cookie and storage).
+  pageContexts?.reset();
+  const contexts = createPageContexts({
+    window: () => (mainWindow === win ? win : null),
+    createView: () => {
+      const view = new WebContentsView({ webPreferences: mainPageWebPreferences() });
+      view.setBackgroundColor("#070707");
+      return view;
+    },
+    onCreated: (contents) => wireAccountPage(win, contents),
+    // what main kept for that account's page goes with it
+    onDropped: (contents) => {
+      serverUnavailableWindows.delete(contents);
+      pageUnreadCounts.delete(contents);
+      pageRosters.delete(contents);
+      pageSkins.delete(contents);
+      showPageUnreadCount();
+    },
+    log: slog,
+  });
+  pageContexts = contexts;
+  for (const event of ["resize", "maximize", "unmaximize", "enter-full-screen", "leave-full-screen", "restore"]) {
+    win.on(event, () => contexts.layout());
+  }
   win.on("show", () => desktopTray?.windowShown(win));
   win.on("focus", () => desktopAttention.settle());
   win.on("close", (event) => {
@@ -3416,12 +3830,7 @@ function createWindow({ deferNavigation = false } = {}) {
     }
   });
   win.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
-  win.webContents.on("page-title-updated", event => {
-    if (!desktopRemoteAccess && !activeEnvironment(environmentsState)) return;
-    event.preventDefault();
-    win.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
-  });
-  attachUpdaterWindow(win);
+  attachUpdaterWindow(win, { pages: () => contexts.openOrigins().map((origin) => contexts.contentsFor(origin)).filter(Boolean) });
   if (startupScreen) startupScreen.attach(win, { maximized: restored.maximized });
   else if (waitsForSkinSync) {
     // A broken renderer or preload must not strand the app as an invisible
@@ -3438,120 +3847,17 @@ function createWindow({ deferNavigation = false } = {}) {
   installWindowStatePersistence(win);
   applyUnreadBadge(win);
   if (restored.maximized && !startupScreen) win.maximize();
-  // Another server in this window: the previous server's Data windows go.
-  win.webContents.on("did-navigate", (_event, url) => {
-    dataWindows.mainNavigated(url);
-    artifactWindows.mainNavigated(url);
-  });
   win.once("closed", () => {
     if (mainWindow === win) mainWindow = null;
+    contexts.reset();
+    if (pageContexts === contexts) pageContexts = null;
     // the detached Hibou 98 assistant is driven by this window's page
     retroAssistantWindow.mainWindowGone();
     floatingBotWindows.mainWindowGone();
     mascotHotkey.disable();
     clearTrayRoster();
   });
-  win.webContents.on("render-process-gone", () => {
-    retroAssistantWindow.mainWindowGone();
-    floatingBotWindows.mainWindowGone();
-    mascotHotkey.disable();
-    clearTrayRoster();
-  });
-
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    try {
-      void shell.openExternal(externalOpenUrl(url)).catch(() => {
-        console.warn("The external web link could not be opened");
-      });
-    } catch {
-      // Reject non-web links and embedded credentials without opening them.
-    }
-    return { action: "deny" };
-  });
-  // Only the selected workspace may navigate this window. Switching is a
-  // native action, not a redirect/link from a remote page to the local bridge.
-  const guardNavigation = (event, url) => {
-    // "Sign in with Pulsatrix" on a saved organization server: the identity
-    // provider's page opens in the system browser, never in this
-    // preload-bearing window nor any other of this app
-    // (electron/oidc-system-sign-in.cjs).
-    const loginStart = oidcSignInModule.oidcLoginStartUrl(url, environmentsState);
-    if (loginStart) {
-      event.preventDefault();
-      void startPulsatrixSignIn(win, loginStart);
-      return;
-    }
-    let origin = null;
-    try {
-      origin = new URL(url).origin;
-    } catch {}
-    if (workspaceNavigationAllowed(url, environmentsState, rendererOrigin())) return;
-    event.preventDefault();
-    slog(`blocked navigation to ${origin ?? "an invalid address"}`);
-  };
-  win.webContents.on("will-navigate", guardNavigation);
-  win.webContents.on("will-redirect", guardNavigation);
-  // Subframes: a page may not embed the local server, or any other saved
-  // server, inside this preload-bearing window.
-  win.webContents.on("will-frame-navigate", (details) => {
-    if (details.isMainFrame) return;
-    // A published page's preview frame may only reload its own address
-    // (electron/page-frame-guard.mjs): never carry data out by navigating.
-    if (blockPageFrameNavigation(details)) {
-      details.preventDefault();
-      slog("blocked a published page's frame navigation");
-      return;
-    }
-    let target = null;
-    let page = null;
-    try {
-      target = new URL(details.url).origin;
-      page = new URL(win.webContents.getURL()).origin;
-    } catch {}
-    if (!target || !page || target === page) return;
-    if (target === rendererOrigin() || allowedOrigins(environmentsState, rendererOrigin()).has(target)) {
-      details.preventDefault();
-      slog(`blocked subframe navigation to ${details.url}`);
-    }
-  });
-  if (app.isPackaged) installLoadRecovery(win);
-  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame || errorCode === -3) return; // -3: aborted by a newer navigation
-    const remote = activeRemote(environmentsState);
-    if (!remote) return;
-    let origin = null;
-    try {
-      origin = new URL(validatedURL).origin;
-    } catch {}
-    if (origin !== remote.origin) return;
-    // Server mode has no Local to fall back to: the page says the server is
-    // unreachable and Settings > General > Server > Change still works.
-    if (serverModeEnvironment(environmentsState)) {
-      slog(`server-mode server unreachable (${errorDescription})`);
-      return;
-    }
-    slog(`remote server unreachable (${errorDescription}); back to Local`);
-    void dialog.showMessageBox({
-      type: "warning",
-      message: `${remote.name} is not reachable`,
-      detail: `${errorDescription}. Showing the local server instead; choose it again from the Server menu when it is back.`,
-    });
-    void workspaceMenuAction(() => switchEnvironment(LOCAL_ID));
-  });
-  // A pending link is handed over once the page has stopped loading. Not on
-  // did-finish-load: Electron still reports the main frame as loading then,
-  // and the hand-off's own guard would refuse it.
-  win.webContents.on("did-stop-loading", () => {
-    deliverPackageInstall(win);
-    deliverChatLink(win);
-  });
-  win.webContents.on("did-finish-load", () => void offerComputerSharing(win));
-
-  // Native context menu for text inputs — without this, right-click does
-  // nothing in the Electron window (no Cut/Copy/Paste/Select All).
-  win.webContents.on("context-menu", (_event, params) => {
-    showContextMenu(win, params).catch((error) => slog(`context menu: ${error?.message ?? error}`));
-  });
+  wireAccountPage(win, win.webContents);
 
   // Packaged CI smoke hook. It validates the real renderer/preload bridge and
   // same-origin embedded server, then follows the normal window-close path.
@@ -3666,24 +3972,49 @@ function createWindow({ deferNavigation = false } = {}) {
   if (!serverReady && (desktopRemoteAccess || (app.isPackaged && !remote))) serverUnavailableWindows.add(win);
   // The confirmed native organisation action supplies the fixed local URL.
   if (deferNavigation) return win;
+  // The window's own page is the account it opens on (page-contexts.mjs).
   if (desktopRemoteAccess) {
+    contexts.setHome(rendererOrigin());
     win.loadURL(serverReady ? `http://127.0.0.1:${SERVER_PORT}` : buildErrorPage({ allPortsOccupied: serverStartConflictOnly }));
   } else if (remote) {
+    contexts.setHome(remote.origin);
     void win.loadURL(remote.origin).catch(() => {});
   } else if (app.isPackaged) {
+    contexts.setHome(rendererOrigin());
     win.loadURL(serverReady ? `http://127.0.0.1:${SERVER_PORT}` : buildErrorPage({ allPortsOccupied: serverStartConflictOnly }));
   } else {
+    contexts.setHome(rendererOrigin());
     win.loadURL(DEV_URL);
   }
+  // The other accounts' pages open hidden once this one is up, so the first
+  // switch to them is as instant as the next ones.
+  win.webContents.once("did-finish-load", () => {
+    const timer = setTimeout(() => prepareOtherAccounts(contexts), 3_000);
+    timer.unref?.();
+  });
   return win;
+}
+
+/** Open Personal's page hidden when this computer's server runs, so the
+ * first switch to it is instant too. An organization server's page is never
+ * prepared hidden: it must load through this app's bundle, which is served
+ * only while that server is on screen (syncBundledUi). Never in companion
+ * client mode (its one page is the remote desktop). */
+function prepareOtherAccounts(contexts) {
+  if (contexts !== pageContexts || desktopRemoteAccess || desktopShutdownStarted) return;
+  const accounts = serverReady || !app.isPackaged ? [rendererOrigin()] : [];
+  for (const origin of accounts) {
+    if (contexts.contentsFor(origin)) continue;
+    if (contexts.prepare(origin)) slog(`account: ${origin === rendererOrigin() ? "Personal" : origin} opened hidden, ready for a switch`);
+  }
 }
 
 // /pair in the main window asks whether the credential in its address is the
 // one this app just handed it from a sign-in return (PairPage). Only the main
 // window's top frame, on the origin of that return, can claim it, once.
 ipcMain.handle("auth-return:take", (event, code) => {
-  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) {
+  const page = mainPage();
+  if (!page || event.sender !== page || event.senderFrame !== page.mainFrame) {
     signInLog("a page that is not the main window's top frame asked to redeem a returned credential: refused");
     return false;
   }
@@ -3701,8 +4032,8 @@ ipcMain.handle("auth-return:take", (event, code) => {
 // The waiting state of "Sign in with Pulsatrix" for /pair in the main window:
 // read it, cancel it, or open the browser again. Main window, top frame only.
 function signInSender(event) {
-  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  return Boolean(win) && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame;
+  const page = mainPage();
+  return Boolean(page) && event.sender === page && event.senderFrame === page.mainFrame;
 }
 ipcMain.handle("pulsatrix-sign-in:state", (event) => (signInSender(event) ? signInState : { status: "idle" }));
 ipcMain.handle("pulsatrix-sign-in:cancel", (event) => {
@@ -4056,19 +4387,32 @@ ipcMain.handle("desktop:reveal-file", localOnly("desktop:reveal-file", async (_e
 // The renderer owns the skin, including the Windows caption buttons it draws
 // itself (titleBarStyle hidden, no native overlay). Keep syncing the window
 // background so a light skin never flashes the Midnight-black cold start.
+// Each account's page has its own skin: a hidden page's is kept and put on
+// the window when that page comes on screen.
+const pageSkins = new WeakMap();
+function applyWindowSkin(win, skin) {
+  if (!win || win.isDestroyed()) return;
+  const { color } = skinChrome(skin);
+  try { win.setBackgroundColor(color); } catch {}
+  // Hibou 98 draws its own title bar; keep the lights inside it.
+  const lights = trafficLightsForSkin(process.platform, skin);
+  if (lights) {
+    try { win.setWindowButtonPosition?.(lights); } catch {}
+  }
+}
+function showPageSkin(page) {
+  const skin = page ? pageSkins.get(page) : null;
+  if (skin) try { applyWindowSkin(mainWindow, skin); } catch {}
+}
 ipcMain.handle("desktop:skin", (event, skin) => {
   if (!isKnownSkin(skin)) return false;
   try {
-    const { color } = skinChrome(skin);
     const win = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
-    if (win && !win.isDestroyed()) {
-      try { win.setBackgroundColor(color); } catch {}
-      // Hibou 98 draws its own title bar; keep the lights inside it.
-      const lights = trafficLightsForSkin(process.platform, skin);
-      if (lights) {
-        try { win.setWindowButtonPosition?.(lights); } catch {}
-      }
+    if (win === mainWindow && isMainWindowPage(event.sender)) {
+      pageSkins.set(event.sender, skin);
+      if (event.sender !== mainPage()) return true;
     }
+    applyWindowSkin(win, skin);
   } catch {}
   return true;
 });
@@ -4081,7 +4425,8 @@ const retroAssistantWindow = createRetroAssistantWindow({
   screen,
   ipcMain,
   Menu,
-  getMainWindow: () => mainWindow,
+  // the page on screen drives it (each account has its page)
+  getMainWindow: () => pageHandle(mainPage()),
   isTrustedMain: (event) => isDesktopUiSender(event),
   pageUrl: () => `${detachedPageOrigin()}/?${DETACHED_QUERY}`,
   session: detachedUiSessionIfNeeded,
@@ -4104,7 +4449,8 @@ const floatingBotWindows = createFloatingBotWindows({
   screen,
   ipcMain,
   Menu,
-  getMainWindow: () => mainWindow,
+  // the page on screen drives it (each account has its page)
+  getMainWindow: () => pageHandle(mainPage()),
   isTrustedMain: (event) => isDesktopUiSender(event),
   pageUrl: () => `${detachedPageOrigin()}/?${FLOATING_QUERY}`,
   session: detachedUiSessionIfNeeded,
@@ -4132,7 +4478,8 @@ const floatingBotWindows = createFloatingBotWindows({
 const dataWindows = createDataWindows({
   BrowserWindow,
   ipcMain,
-  getMainWindow: () => mainWindow,
+  // the page on screen drives it (each account has its page)
+  getMainWindow: () => pageHandle(mainPage()),
   isTrustedMain: (event) => isDesktopUiSender(event),
   // The person's own session cookie, like the org memory call: never the
   // HTTP cache (the answer must be the server's state now), and a refusal or
@@ -4172,7 +4519,8 @@ const dataWindows = createDataWindows({
 const artifactWindows = createArtifactWindows({
   BrowserWindow,
   ipcMain,
-  getMainWindow: () => mainWindow,
+  // the page on screen drives it (each account has its page)
+  getMainWindow: () => pageHandle(mainPage()),
   isTrustedMain: (event) => isDesktopUiSender(event),
   openExternal: (url) => {
     try {
@@ -4193,8 +4541,7 @@ const mascotHotkey = createMascotHotkey({
   globalShortcut,
   probe: createModifierProbe(),
   notify: (kind) => {
-    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-    win?.webContents.send("floating-bots:hotkey", { kind });
+    mainPage()?.send("floating-bots:hotkey", { kind });
   },
   log: (line) => slog(line),
 });
@@ -4209,7 +4556,7 @@ function openBotFromShell(botId) {
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
-  win.webContents.send("desktop:open-bot", { botId: String(botId) });
+  mainPage()?.send("desktop:open-bot", { botId: String(botId) });
 }
 // Settings > Appearance > Desktop: the bots' global shortcuts on or off, and
 // which chord (kept with the other shell choices, desktop-shell-preferences.mjs).
@@ -4261,7 +4608,7 @@ async function captureScreenToBot() {
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
-  win.webContents.send("desktop:screen-capture", png
+  (mainPage() ?? win.webContents).send("desktop:screen-capture", png
     ? { png: png.toString("base64") }
     : { error: refused ? "permission" : "unavailable", platform: process.platform });
 }
@@ -4279,15 +4626,36 @@ function clearTrayRoster() {
   desktopTray?.setRoster([]);
   botHotkeys.sync(0);
 }
-ipcMain.on("desktop:tray-roster", (event, value, labels) => {
-  if (!isDesktopUiSender(event)) return;
-  const sender = BrowserWindow.fromWebContents(event.sender);
-  if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
+/** This app's own UI on any account's page, on screen or hidden: Personal's
+ * page, or an organization server's page drawn from this app's bundle, its
+ * top frame on its own origin. */
+function fromOwnUiPage(event) {
+  if (!isMainWindowPage(event.sender) || event.senderFrame !== event.sender.mainFrame) return false;
+  const own = pageContexts?.originOf(event.sender) ?? null;
+  if (!own || (own !== rendererOrigin() && !bundledOriginsNow.includes(own))) return false;
+  try { return new URL(event.senderFrame.url).origin === own; } catch { return false; }
+}
+// Each account's page keeps its own bot list; the menu bar shows the one on screen.
+const pageRosters = new WeakMap();
+function applyTrayRoster(value, labels) {
   trayRoster = normalizeRoster(value);
   if (labels) desktopTray?.setLabels(labels);
   desktopTray?.setRoster(trayRoster);
   // the shortcuts exist only where a menu bar list exists
   if (process.platform === "darwin") botHotkeys.sync(trayRoster.length, botHotkeyConfig().enabled);
+}
+function showPageRoster(page) {
+  const kept = page ? pageRosters.get(page) : null;
+  if (kept) applyTrayRoster(kept.value, kept.labels);
+  else applyTrayRoster([], null);
+}
+ipcMain.on("desktop:tray-roster", (event, value, labels) => {
+  if (!isDesktopUiSender(event) && !fromOwnUiPage(event)) return;
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
+  if (isMainWindowPage(event.sender)) pageRosters.set(event.sender, { value, labels });
+  if (event.sender !== mainPage()) return;
+  applyTrayRoster(value, labels);
 });
 
 ipcMain.handle("floating-bots:hotkey", (event, config) => {
@@ -4331,7 +4699,8 @@ ipcMain.handle("desktop:open-connector-setup", desktopUiOnly("desktop:open-conne
 // live desktop inside Sagax instead of sending the person to a browser.
 ipcMain.handle("desktop-viewer:open", localOnly("desktop-viewer:open", (event, rawUrl, title, contextId) => {
   const owner = BrowserWindow.fromWebContents(event.sender);
-  return openDesktopViewer(owner, rawUrl, title, contextId);
+  // The page that asked (an account's view or the window's own page) hears the viewer's state.
+  return openDesktopViewer(owner, rawUrl, title, contextId, event.sender);
 }));
 
 // Two Local VM desktops share the existing app BrowserWindow. The renderer
@@ -4415,7 +4784,9 @@ ipcMain.handle("desktop:relaunch", localOnly("desktop:relaunch", (event) => {
 }));
 
 ipcMain.handle("speech:start", localOnly("speech:start", (event, options) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
+  // The page that asked hears the words: an account's view or the window's own page.
+  const page = event.sender;
+  const win = BrowserWindow.fromWebContents(page) ? { webContents: page, isDestroyed: () => page.isDestroyed() } : null;
   if (!win) return;
   if (!nativeActions.appleSpeech) {
     win.webContents.send("speech:end", { code: 2, reason: "unsupported-platform" });
@@ -4485,7 +4856,7 @@ function publicDesktopRemoteState() {
 
 function requireMainWindowSender(event) {
   const sender = BrowserWindow.fromWebContents(event.sender);
-  if (!sender || sender !== mainWindow || sender.isDestroyed() ||
+  if (!sender || sender !== mainWindow || sender.isDestroyed() || event.sender !== mainPage() ||
       !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
     throw new Error("The desktop client window is unavailable");
   }
@@ -4537,7 +4908,7 @@ ipcMain.handle("companion-account:retry", localOnly("companion-account:retry", (
 ipcMain.handle("companion-account:sign-out", localOnly("companion-account:sign-out", () => ensureCompanionAccountService().signOut()));
 
 const workspaceOnly = (handler) => (event, ...args) => {
-  if (!workspaceSenderAllowed(event, mainWindow?.webContents, environmentsState, rendererOrigin())) throw new Error("These controls are only available in the main desktop window");
+  if (!workspaceSenderAllowed(event, mainPage(), environmentsState, rendererOrigin())) throw new Error("These controls are only available in the main desktop window");
   return handler(event, ...args);
 };
 const localWorkspaceOnly = (channel, handler) => localOnly(channel, workspaceOnly(handler));
@@ -4715,7 +5086,7 @@ const orgJoin = createOrgJoin({
 /** The origin of a call from the active saved server's main frame, or null. */
 function orgJoinSender(event) {
   const active = activeEnvironment(environmentsState);
-  if (!active || !workspaceSenderAllowed(event, mainWindow?.webContents, environmentsState, rendererOrigin())) return null;
+  if (!active || !workspaceSenderAllowed(event, mainPage(), environmentsState, rendererOrigin())) return null;
   try {
     const origin = new URL(event.senderFrame.url).origin;
     return origin === active.origin ? origin : null;
@@ -4760,8 +5131,11 @@ ipcMain.handle("dialog:confirm", desktopUiOnly("dialog:confirm", workspaceOnly(a
 // Server mode: the page asks which organization server this app is locked
 // to, and leaves through the same confirmation as the Server menu. This
 // app's own UI only (the local page, or the bundle on that server).
-ipcMain.handle("server-mode:state", desktopUiOnly("server-mode:state", workspaceOnly(() => {
+ipcMain.handle("server-mode:state", desktopUiOnly("server-mode:state", workspaceOnly((event) => {
   const locked = serverModeEnvironment(environmentsState);
+  // Personal's page in server mode is this computer's own space, not the
+  // server's: it says so (`personal`), and stays the solo app.
+  if (locked && senderIsLocal(event)) return { active: false, personal: true };
   return locked ? {
     active: true, id: locked.id, name: locked.name, origin: locked.origin,
     ...(locked.label ? { label: locked.label } : {}), ...(locked.orgName ? { orgName: locked.orgName } : {}),
@@ -4782,6 +5156,12 @@ ipcMain.handle("server-mode:set-name", desktopUiOnly("server-mode:set-name", wor
   return locked ? setServerName(locked.id, input) : { ok: false };
 })));
 ipcMain.handle("server-mode:leave", desktopUiOnly("server-mode:leave", workspaceOnly(() => leaveServerMode())));
+// An organization server's page opens Personal (its account menu): a switch,
+// never a sign-out. The page names no destination; this app's own UI on
+// screen only.
+ipcMain.handle("accounts:open-personal", desktopUiOnly("accounts:open-personal", workspaceOnly(async () => {
+  await workspaceMenuAction(() => switchEnvironment(LOCAL_ID));
+})));
 // The model picker opened: probe this computer's loopback model servers now
 // (a server started after launch shows up) and publish the ids. Nothing
 // comes back to the page: it reloads the server's catalog afterwards.
@@ -4796,9 +5176,13 @@ ipcMain.handle("server-mode:refresh-local-models", desktopUiOnly("server-mode:re
 ipcMain.on("workspace:bundled-ui", (event) => {
   let bundled = false;
   try {
-    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-    bundled = Boolean(win && currentBundledOrigin && event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame &&
-      new URL(event.senderFrame.url).origin === currentBundledOrigin);
+    // Any account's page of the main window, its top frame, on its own
+    // organization server's origin: a page opened hidden (prepared for a
+    // switch) gets its bridge too, and main still answers the desktop-UI
+    // channels for the page on screen only (desktopUiOnly).
+    const own = isMainWindowPage(event.sender) ? pageContexts?.originOf(event.sender) : null;
+    bundled = Boolean(own && bundledOriginsNow.includes(own) && event.senderFrame === event.sender.mainFrame &&
+      new URL(event.senderFrame.url).origin === own);
   } catch {
     bundled = false;
   }
@@ -4934,14 +5318,20 @@ async function broadcastDesktopCapabilities() {
     desktopCapabilities({ remote, platform: process.platform, env: process.env, packaged: app.isPackaged, localConnection });
   const local = build(false);
   let redacted = null;
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed()) continue;
+  // every window's page, and each account's page of the main window
+  const pages = new Set(BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed()).map((window) => window.webContents));
+  for (const origin of pageContexts?.openOrigins() ?? []) {
+    const page = pageContexts.contentsFor(origin);
+    if (page) pages.add(page);
+  }
+  for (const page of pages) {
+    if (page.isDestroyed()) continue;
     let isLocal = false;
     try {
-      isLocal = new URL(window.webContents.getURL()).origin === rendererOrigin();
+      isLocal = new URL(page.getURL()).origin === rendererOrigin();
     } catch {}
     if (!isLocal) redacted ??= build(true);
-    window.webContents.send("desktop:capabilities-changed", isLocal ? local : redacted);
+    page.send("desktop:capabilities-changed", isLocal ? local : redacted);
   }
 }
 
@@ -5186,11 +5576,11 @@ app.whenReady().then(async () => {
       serverReady = false;
       slog(`desktop companion relay failed: ${error?.message ?? error}`);
     }
-  } else if (app.isPackaged && serverModeEnvironment(readEnvironments())) {
+  } else if (app.isPackaged && serverModeEnvironment(readEnvironments()) && readEnvironments().personal !== true) {
     // Server mode: every bot runs on the organization's server. No local
-    // server starts, so nothing of this computer's own (routines, channels,
-    // memory upkeep, queued sends) runs in the background. Leaving server
-    // mode restarts the app, which starts it again.
+    // server starts until the person opens Personal (it starts then, and
+    // with the app from then on), so nothing of this computer's own runs in
+    // the background. Leaving server mode restarts the app.
     slog("server mode: the local server is not started");
   } else if (app.isPackaged) {
     const booted = await startServerPackaged();
@@ -5260,7 +5650,7 @@ app.whenReady().then(async () => {
   // request is decided again, so a server switch withdraws it at once.
   appPermissions = appPermissionHandlers({
     rendererOrigin,
-    mainContents: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null),
+    mainContents: () => mainPage(),
     microphoneOrigins: () => [bundledOrigin(environmentsState)],
     activeRemoteOrigin: () => activeEnvironment(environmentsState)?.origin ?? null,
     activeRemoteMicrophone: () => activeEnvironment(environmentsState)?.microphone === true,

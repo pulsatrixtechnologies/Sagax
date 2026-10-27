@@ -13,7 +13,7 @@ import { useStore } from "@/state/store";
 import { ComputerSharingSettings } from "./ComputerSharingSettings";
 import { Card, DescribedRow, PILL } from "./SettingsPrimitives";
 
-export type ServerModeState = { active: false } | { active: true; id: string; name: string; origin: string; label?: string; orgName?: string };
+export type ServerModeState = { active: false; personal?: boolean } | { active: true; id: string; name: string; origin: string; label?: string; orgName?: string };
 
 /** Server mode as the desktop reports it; null in a browser, on another
  * page, and until the desktop answers. */

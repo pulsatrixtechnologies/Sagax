@@ -19,8 +19,9 @@ const plain = (value) => (value === undefined || value === null ? value : Array.
 
 test("main retires an unavailable window only after recovery navigation succeeds", () => {
   const source = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
-  assert.match(source, /void win\.loadURL\(`http:\/\/127\.0\.0\.1:\$\{SERVER_PORT\}`\)\.then\(\(\) => \{\s*serverUnavailableWindows\.delete\(win\);/);
-  assert.doesNotMatch(source, /serverUnavailableWindows\.delete\(win\);\s*void win\.loadURL/);
+  // a window, or Personal's page in its own view (page-contexts.mjs)
+  assert.match(source, /void target\.loadURL\(`http:\/\/127\.0\.0\.1:\$\{SERVER_PORT\}`\)\.then\(\(\) => \{\s*serverUnavailableWindows\.delete\(target\);/);
+  assert.doesNotMatch(source, /serverUnavailableWindows\.delete\(target\);\s*void target\.loadURL/);
 });
 
 function fixture(t, options = {}) {
@@ -232,7 +233,7 @@ function runForget(state) {
   const start = MAIN_SOURCE.indexOf("async function forgetEnvironment(");
   const end = MAIN_SOURCE.indexOf("async function showContextMenu(", start);
   assert.ok(start > 0 && end > start, "the forget helper exists");
-  const calls = { dialogs: [], shares: [], persisted: [], navigated: [], rm: [], memoryForgotten: [] };
+  const calls = { dialogs: [], shares: [], persisted: [], navigated: [], rm: [], memoryForgotten: [], dropped: [] };
   const rmOptions = [];
   const ctx = {
     environmentsState: state,
@@ -249,6 +250,8 @@ function runForget(state) {
     isOrganizationServer: async () => false,
     leaveServerMode: async () => {},
     navigateMainWindow: (url) => calls.navigated.push(url),
+    // each account's page (page-contexts.mjs): a forgotten server's closes
+    pageContexts: { drop: (origin) => calls.dropped.push(origin) },
     activeOrigin: () => "http://127.0.0.1:8799",
     fs: {
       promises: { rm: async (dir, options) => { calls.rm.push(dir); rmOptions.push(options); if (ctx.__rmThrows) throw new Error("busy"); } },
@@ -269,7 +272,7 @@ function runForget(state) {
 test("forgetting the ACTIVE local environment is refused with {error:active} and touches nothing", async () => {
   const { calls, context } = runForget({ environments: [LOCAL_FIXTURE], activeId: "l1" });
   assert.deepEqual(plain(await context.forgetEnvironment("l1", true)), { ok: false, error: "active" });
-  assert.deepEqual(calls, { dialogs: [], shares: [], persisted: [], navigated: [], rm: [], memoryForgotten: [] });
+  assert.deepEqual(calls, { dialogs: [], shares: [], persisted: [], navigated: [], rm: [], memoryForgotten: [], dropped: [] });
 });
 
 test("forgetting a local environment asks nothing of the user, and a failed purge keeps the entry with {error:purge}", async () => {
@@ -303,6 +306,7 @@ test("forgetting a remote environment keeps its sign-out confirmation and answer
   assert.match(calls.dialogs[0].detail, /signs out of that server/);
   assert.deepEqual(plain(calls.persisted[0].environments), []);
   assert.deepEqual(calls.memoryForgotten, ["https://box.example"], "the memory copy from that server leaves with the person");
+  assert.deepEqual(calls.dropped, ["https://box.example"], "its page closes, the other accounts' stay");
 });
 
 test("forgetting a local environment whose folder the server child uses is refused with {error:active}", async () => {

@@ -122,7 +122,10 @@ test("a whole bundle starts at once, without the loading screen's install line",
 
 test("main wires both guards", () => {
   const source = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
-  assert.match(source, /if \(app\.isPackaged\) installLoadRecovery\(win\);/);
+  // every page of the main window, the window's own and each account's view
+  assert.match(source, /if \(app\.isPackaged\) installLoadRecovery\(win, contents\);/);
+  assert.match(source, /wireAccountPage\(win, win\.webContents\);/);
+  assert.match(source, /onCreated: \(contents\) => wireAccountPage\(win, contents\)/);
   assert.match(source, /await waitForUiBundle\(\{\s*check: \(\) => uiBundleState\(\{ resourcesPath: process\.resourcesPath \}\)/);
   assert.match(source, /startupScreen\?\.fail\(`\$\{strings\.bundleTitle\}\. \$\{strings\.bundleBody\}`\)/);
 });

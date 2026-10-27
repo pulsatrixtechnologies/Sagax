@@ -13,11 +13,14 @@
 // call. The session credential for a remote is the HttpOnly cookie the /pair
 // page set for that origin, held by Chromium's cookie jar, never by this file.
 //
-// Server mode (the launch screen's "Server") is exclusive: `serverModeId`
-// names the one organization server this app shows. While it is set,
-// nothing switches to Local, a named local environment or another saved
-// server, and no local environment is registered; only leaving server mode
-// (Settings > General > Server > Change, or the Server menu) clears it.
+// Server mode (the launch screen's "Server"): `serverModeId` names the
+// organization server this app opens on. While it is set, nothing switches
+// to a named local environment or another saved server, and no local
+// environment is registered; this computer's own space (Personal) is a
+// switch away, without signing out of the server (`personal: true` once the
+// person opened it: the local server then starts with the app). Only leaving
+// server mode (Settings > General > Server > Change, or the Server menu)
+// clears it, and that signs out of the server.
 const LOCAL_ID = "local";
 const MAX_NAME = 60;
 
@@ -141,6 +144,12 @@ function bundledOrigin(state) {
   return active?.org === true ? active.origin : null;
 }
 
+/** Every saved organization server's origin: each keeps its page open in
+ * the main window (page-contexts.mjs), drawn from this app's bundle. */
+function bundledOrigins(state) {
+  return (state?.environments ?? []).filter((e) => e.org === true && typeof e.origin === "string").map((e) => e.origin);
+}
+
 /** Native identity must not depend on a hosted renderer's version/title. */
 function workspaceWindowTitle(state, companion) {
   if (companion) return `Sagax — Connected to: ${companion.serverName} (${new URL(companion.endpoint).host})`;
@@ -171,14 +180,16 @@ function workspaceSenderAllowed(event, contents, state, localOrigin) {
 }
 
 /** Native menu choices, never renderer-supplied destinations or callbacks.
- * In server mode the only server is the organization's: no Local, no other
- * saved server, no Connect; "Change server…" leaves server mode. */
+ * In server mode the only server is the organization's, beside this
+ * computer's own space: no other saved server, no Connect; "Change server…"
+ * leaves server mode. */
 function workspaceMenuTemplate(state, { onSwitch, onConnect, onForget, onLeaveServerMode }) {
   const active = activeEnvironment(state);
   const locked = serverModeEnvironment(state);
   if (locked) {
     return [
-      { id: `workspace-${locked.id}`, label: locked.name, sublabel: new URL(locked.origin).host, type: "radio", checked: true, click: () => {} },
+      { id: "workspace-local", label: "This computer", type: "radio", checked: state.activeId !== locked.id, click: () => onSwitch(LOCAL_ID) },
+      { id: `workspace-${locked.id}`, label: locked.name, sublabel: new URL(locked.origin).host, type: "radio", checked: state.activeId === locked.id, click: () => onSwitch(locked.id) },
       { type: "separator" },
       { id: "workspace-leave-server-mode", label: "Change server…", click: () => onLeaveServerMode?.() },
     ];
@@ -312,9 +323,14 @@ function parseEnvironments(raw) {
     });
   }
   // Server mode survives a restart only on an organization server it saved.
+  // The app opens where the person left it: the server, or Personal once
+  // they opened it (`personal`).
   const serverModeId = typeof value?.serverModeId === "string" && environments.some((e) => e.id === value.serverModeId && e.org === true)
     ? value.serverModeId : null;
-  if (serverModeId) return { environments, activeId: serverModeId, serverModeId };
+  if (serverModeId) {
+    const personal = value?.personal === true;
+    return { environments, activeId: personal && value?.activeId === LOCAL_ID ? LOCAL_ID : serverModeId, serverModeId, ...(personal ? { personal: true } : {}) };
+  }
   const activeId = typeof value?.activeId === "string" && environments.some((e) => e.id === value.activeId) ? value.activeId : LOCAL_ID;
   return { environments, activeId };
 }
@@ -323,6 +339,7 @@ function serializeEnvironments(state) {
   return JSON.stringify({
     version: 2, environments: state.environments, activeId: state.activeId,
     ...(state.serverModeId ? { serverModeId: state.serverModeId } : {}),
+    ...(state.serverModeId && state.personal === true ? { personal: true } : {}),
   }, null, 2) + "\n";
 }
 
@@ -401,7 +418,9 @@ function bootEnvironmentDir(state, defaultDir) {
 function withoutEnvironment(state, id) {
   const environments = state.environments.filter((e) => e.id !== id);
   const next = { environments, activeId: state.activeId === id ? LOCAL_ID : state.activeId };
-  return state.serverModeId && state.serverModeId !== id ? { ...next, serverModeId: state.serverModeId } : next;
+  return state.serverModeId && state.serverModeId !== id
+    ? { ...next, serverModeId: state.serverModeId, ...(state.personal === true ? { personal: true } : {}) }
+    : next;
 }
 
 /** The person allowed this saved server the microphone (asked on its first
@@ -411,10 +430,13 @@ function withMicrophone(state, id) {
   return { ...state, environments: state.environments.map((e) => (e.id === id ? { ...e, microphone: true } : e)) };
 }
 
-/** In server mode only the locked server can be active. */
+/** In server mode only the server and Personal can be active; opening
+ * Personal there is remembered (`personal`), so the app starts this
+ * computer's own server too from then on. */
 function withActive(state, id) {
   if (id !== LOCAL_ID && !state.environments.some((e) => e.id === id)) return state;
-  if (state.serverModeId && id !== state.serverModeId) return state;
+  if (state.serverModeId && id !== state.serverModeId && id !== LOCAL_ID) return state;
+  if (state.serverModeId && id === LOCAL_ID) return { ...state, activeId: id, personal: true };
   return { ...state, activeId: id };
 }
 
@@ -447,7 +469,7 @@ function withOrganizationUpgrade(state, { orgOrigins, serverModeChosen }) {
 /** Leave server mode: the server is forgotten and Local is active again. */
 function withoutServerMode(state) {
   const locked = serverModeEnvironment(state);
-  const { serverModeId: _left, ...rest } = state;
+  const { serverModeId: _left, personal: _personal, ...rest } = state;
   return locked ? withoutEnvironment(rest, locked.id) : { ...rest, activeId: LOCAL_ID };
 }
 
@@ -477,6 +499,7 @@ module.exports = {
   allowedOrigins,
   bootEnvironmentDir,
   bundledOrigin,
+  bundledOrigins,
   serverModeEnvironment,
   withOrganizationUpgrade,
   withServerMode,

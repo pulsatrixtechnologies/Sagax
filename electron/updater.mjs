@@ -33,6 +33,8 @@ const require = createRequire(import.meta.url);
 
 let autoUpdater = null;
 let win = null;
+// Every page of the main window (each account keeps its own, page-contexts.mjs).
+let windowPages = null;
 // status: idle | checking | downloading | preparing | downloaded | installing | handed-off | error
 let state = { status: "idle" };
 let updaterCoordinator = null;
@@ -82,12 +84,15 @@ export function handOffDownloadedPackage(packageType) {
 
 function setState(patch) {
   state = { ...state, ...patch };
-  try {
-    const contents = win?.webContents;
-    // Only the page the window shows now, and only if it may read the state.
-    if (contents && pageAllowed({ sender: contents, senderFrame: contents.mainFrame })) contents.send("update:state", state);
-  } catch {
-    /* window gone */
+  // Each page of the window that may read the state: the one on screen and
+  // the accounts' pages kept open behind it, so none shows a stale banner.
+  const pages = new Set([win?.webContents, ...(windowPages?.() ?? [])]);
+  for (const contents of pages) {
+    try {
+      if (contents && !contents.isDestroyed?.() && pageAllowed({ sender: contents, senderFrame: contents.mainFrame })) contents.send("update:state", state);
+    } catch {
+      /* window or page gone */
+    }
   }
 }
 
@@ -222,8 +227,9 @@ async function confirmInstallNatively({ version } = {}) {
 // macOS keeps the process (and updater) alive after its window closes.
 // Retarget broadcasts on every window creation without adding more timers
 // or event listeners to the process-wide updater.
-export function attachUpdaterWindow(mainWindow) {
+export function attachUpdaterWindow(mainWindow, { pages = null } = {}) {
   win = mainWindow;
+  windowPages = pages;
 }
 
 export function startUpdater() {

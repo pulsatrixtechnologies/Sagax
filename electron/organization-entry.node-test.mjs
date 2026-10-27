@@ -64,6 +64,8 @@ test("desktop relaunch accepts every platform once, guards its sender, and prese
     const mainWindow = { webContents: contents, isDestroyed: () => false };
     runInNewContext(source, {
       localOnly: localOrigin.localOnly, mainWindow, desktopShutdownStarted: false,
+      // main.mjs's page on screen (page-contexts.mjs): here the window's own page
+      mainPage: () => (mainWindow.isDestroyed() ? null : mainWindow.webContents),
       ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
       BrowserWindow: { fromWebContents: sender => sender === contents ? mainWindow : null },
       process: { platform, argv },
@@ -210,7 +212,7 @@ test("native entry checks owned server readiness before creating, sending to, or
   const navigation = main.slice(main.indexOf("  openLocalSettings: async () => {"), main.indexOf("  relaunch: relaunchAfterDesktopRemoteChange"));
   assert.match(navigation, /if \(!serverReady\) throw new Error\(/);
   const guard = navigation.indexOf("if (!serverReady)");
-  for (const action of ["createWindow(", "win.webContents.send(", "win.loadURL("]) {
+  for (const action of ["createWindow(", "page.send(", "navigateMainWindow("]) {
     assert.ok(navigation.indexOf(action) > guard, `${action} must follow the owned-server guard`);
   }
 });

@@ -14,7 +14,9 @@
 //
 // Electron routes a scheme to one handler (protocol.handle), so requests to
 // any other origin are passed through untouched, with
-// bypassCustomProtocolHandlers. Pure apart from the injected fetch and file
+// bypassCustomProtocolHandlers. Each saved organization server keeps its page
+// open (electron/page-contexts.mjs), so the handler serves all of them, each
+// on its own origin. Pure apart from the injected fetch and file
 // reader, so node:test covers every rule.
 const path = require("node:path");
 
@@ -127,9 +129,26 @@ function passThroughHeaders(request, bundled) {
 
 const BUNDLE_HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff" };
 
+/** The bundled origin a request is for: the one of `bundled` (one origin,
+ * a list of them, or null) that is the request's own origin, else null.
+ * Each organization server's page keeps its own origin: a request carries
+ * the cookie of the server it is sent to only when that server's own page
+ * sent it (fromBundledPage), never another server's page. */
+function bundledOriginFor(bundled, url) {
+  const list = Array.isArray(bundled) ? bundled : bundled ? [bundled] : [];
+  if (list.length === 0) return null;
+  let origin;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return list.length === 1 ? list[0] : null;
+  }
+  return list.includes(origin) ? origin : (list.length === 1 ? list[0] : null);
+}
+
 /**
  * @param {{
- *   origin: () => string | null,              the bundled origin right now
+ *   origin: () => string | string[] | null,   the bundled origin(s) right now: every saved organization server
  *   staticDir?: () => string | null,          the built UI (packaged: resources/ui)
  *   devOrigin?: () => string | null,          the Vite dev server when unpackaged
  *   fetch: (input: any, init?: any) => Promise<Response>,  net.fetch
@@ -141,7 +160,7 @@ function createBundledUiHandler(deps) {
   const log = deps.log ?? (() => {});
   const bypass = { bypassCustomProtocolHandlers: true };
   return async function handle(request) {
-    const bundled = deps.origin();
+    const bundled = bundledOriginFor(deps.origin(), request.url);
     const route = routeRequest(request, bundled);
     if (route.kind === "pass") {
       if (!bundled || new URL(request.url).origin !== bundled) return deps.fetch(request, bypass);
@@ -206,6 +225,7 @@ function createDetachedUiHandler(deps) {
 
 module.exports = {
   DETACHED_UI_ORIGIN,
+  bundledOriginFor,
   bundleFile,
   createBundledUiHandler,
   createDetachedUiHandler,
