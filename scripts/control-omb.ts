@@ -399,6 +399,8 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // says otherwise: the test suite turns it off (server/testing/setup.ts)
   // for the fixtures whose checks read the message database raw.
   if (parentEnv.SAGAX_CONTENT_ENCRYPTION) childEnv.SAGAX_CONTENT_ENCRYPTION = parentEnv.SAGAX_CONTENT_ENCRYPTION;
+  // how soon a file written plain is sealed at rest (docs/content-encryption.md)
+  if (/^\d+$/.test(parentEnv.SAGAX_CONTENT_AT_REST_GRACE_MS ?? "")) childEnv.SAGAX_CONTENT_AT_REST_GRACE_MS = parentEnv.SAGAX_CONTENT_AT_REST_GRACE_MS;
   // A test's key for relaying an organization library into the fixture
   // (POST /api/testing/org-library); the route does not exist without it.
   if (parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY) childEnv.SAGAX_TEST_ORG_LIBRARY_KEY = parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY;

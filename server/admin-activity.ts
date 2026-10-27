@@ -16,9 +16,12 @@
 // Fire-and-forget, like the decision log: a full disk must not undo a
 // setting that already took effect.
 import { readdirSync, readFileSync } from "node:fs";
-import { appendFile, mkdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 
+import { DATA_DIR } from "./config.ts";
+import { appendLog, parseLogLine, registerSealedLog, sealLogLine } from "./content-at-rest.ts";
+import { ContentKeyUnavailable, WORKSPACE_OWNER } from "./content-keys.ts";
 import { actorLabel, boundRetentionDays, pruneMonthFiles, type DecisionActor, type DecisionRow } from "./decision-log.ts";
 import { redactSecrets } from "./redact.ts";
 import { csvCell, monthKey } from "./usage-ledger.ts";
@@ -47,6 +50,14 @@ export interface AdminActionRow {
 }
 
 const DIR = "admin-activity";
+
+// Values before and after a change: sealed at rest under the workspace's key
+// (docs/content-encryption.md), time, category and action in the clear.
+registerSealedLog({
+  dir: join(DATA_DIR, DIR),
+  scope: () => ({ owner: WORKSPACE_OWNER }),
+  projection: (record) => ({ at: record.at, category: record.category, action: record.action }),
+});
 const MONTH_FILE = /^(\d{4})-(\d{2})\.ndjson$/;
 const PRUNE_EVERY_MS = 60 * 60_000;
 const writeQueues = new Map<string, Promise<void>>();
@@ -59,7 +70,8 @@ export function adminActivityFileFor(dataDir: string, at: Date): string {
 async function writeRow(dataDir: string, row: AdminActionRow): Promise<void> {
   const at = new Date(row.at);
   await mkdir(join(dataDir, DIR), { recursive: true, mode: 0o700 });
-  await appendFile(adminActivityFileFor(dataDir, at), JSON.stringify(row) + "\n", { mode: 0o600 });
+  const file = adminActivityFileFor(dataDir, at);
+  await appendLog(file, sealLogLine(file, row as unknown as Record<string, unknown>) + "\n", { mode: 0o600 });
   if (at.getTime() - (lastPrune.get(dataDir) ?? 0) >= PRUNE_EVERY_MS) {
     lastPrune.set(dataDir, at.getTime());
     await pruneMonthFiles(join(dataDir, DIR), boundRetentionDays(), at);
@@ -337,9 +349,11 @@ function readRows(path: string): AdminActionRow[] {
   for (const line of text.split("\n")) {
     if (!line) continue;
     try {
-      const value: unknown = JSON.parse(line);
+      // a row sealed at rest opens here (server/content-at-rest.ts)
+      const value: unknown = parseLogLine(path, line);
       if (isRow(value)) rows.push(value);
-    } catch {
+    } catch (error) {
+      if (error instanceof ContentKeyUnavailable) throw error;
       /* a line torn mid-write */
     }
   }
@@ -544,8 +558,9 @@ export function readOrgAuditPage(dataDir: string, input: {
       if (!line) continue;
       let value: unknown;
       try {
-        value = JSON.parse(line);
-      } catch {
+        value = parseLogLine(join(dataDir, DIR, `${month}.ndjson`), line);
+      } catch (error) {
+        if (error instanceof ContentKeyUnavailable) throw error;
         continue;
       }
       if (!isRow(value) || !categories.has(value.category)) continue;

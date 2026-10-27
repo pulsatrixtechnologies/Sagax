@@ -8,6 +8,8 @@ import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 
+import { openIfSealed } from "./content-at-rest.ts";
+
 import { botAvatarProfile, clampAvatarFocus, clampAvatarZoom } from "../shared/bot-avatar.ts";
 import { MASCOT_FAMILY_OF, type MascotCatalogFamily } from "../shared/mascot-catalog.ts";
 import { MASCOT_COLOR_HEX, type MascotColorName } from "../shared/mascot-colors.ts";
@@ -166,7 +168,10 @@ export function readBotAvatar(bot: LookSource, attachmentsDir: string, maxBytes 
       if (got <= 0) break;
       read += got;
     }
-    return { bytes: bytes.subarray(0, read), type: IMAGE_TYPES[file.split(".").pop()!]!, version: avatarVersion(file) };
+    // a stored picture sealed at rest opens here (server/content-at-rest.ts)
+    let plain: Buffer;
+    try { plain = openIfSealed(bytes.subarray(0, read), join(attachmentsDir, file)); } catch { return null; }
+    return { bytes: plain, type: IMAGE_TYPES[file.split(".").pop()!]!, version: avatarVersion(file) };
   } finally {
     closeSync(fd);
   }

@@ -9,6 +9,7 @@
 //     computer through server/harness-mcp-proxy.ts computer) as the one
 //     stdio `computer` server in turn.integrations.localComputer
 import { CLAUDE_UNUSED_COMMANDS, claudeDisallowedTools, claudeOrgTools } from "./host-tools.ts";
+import { readAtRestSync } from "../content-at-rest.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
 import { FLOW_TOOLS_MCP_NAME } from "../flow-tools.ts";
 import { cleanCommandVariables, commandVariablesDigest } from "../credential-command-env.ts";
@@ -1417,7 +1418,7 @@ function claudeUserMessage(
     source: {
       type: "base64",
       media_type: image.mime,
-      data: readFileSync(image.path).toString("base64"),
+      data: readAtRestSync(image.path).toString("base64"),
     },
   }));
   if (text) content.push({ type: "text", text });

@@ -7,8 +7,11 @@ import { lstat, open, readdir, realpath, stat, type FileHandle } from "node:fs/p
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep, win32 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import type { Readable } from "node:stream";
+
 import { fromMarkdown } from "mdast-util-from-markdown";
 
+import { atRestStream, describeHandle, plainSizeFor, readAllFromHandle } from "./content-at-rest.ts";
 import { windowsPathDestinations } from "../shared/markdown-windows-paths.ts";
 import { isSharedHost } from "./host-kind.ts";
 
@@ -22,9 +25,14 @@ export function messageFileMaxBytes(sharedHost = isSharedHost()): number {
 
 export interface OpenedMessageFile {
   handle: FileHandle;
+  /** plaintext bytes (a stored file may be sealed at rest) */
   bytes: number;
   name: string;
   mime: string;
+  /** the plaintext as a stream (opened chunk by chunk when sealed) */
+  stream(options?: { start?: number; end?: number; autoClose?: boolean }): Readable;
+  /** the whole plaintext */
+  read(): Promise<Buffer>;
 }
 
 export function messageFileRoots(options: {
@@ -470,11 +478,16 @@ export async function openMessageFile(href: string, roots: readonly string[]): P
         throw statusError(409, "the linked file changed while it was being opened");
       }
 
+      // sealed at rest (server/content-at-rest.ts): served and copied as plaintext
+      const content = await describeHandle(handle, canonicalAfter);
+      const opener = handle;
       return {
         handle,
-        bytes: opened.size,
+        bytes: content.size,
         name: basename(canonicalAfter),
         mime: mimeFor(canonicalAfter),
+        stream: (options = {}) => atRestStream(opener, content, options.start ?? 0, options.end ?? content.size - 1, options.autoClose ?? true),
+        read: () => readAllFromHandle(opener, content),
       };
     } catch (error) {
       await handle?.close().catch(() => undefined);
@@ -514,7 +527,8 @@ export async function statMessageFile(href: string, roots: readonly string[]): P
       if (!canonicalRoots.some((root) => containedBy(root, canonical))) continue;
       const info = await stat(canonical);
       if (!info.isFile()) continue;
-      return { bytes: info.size, name: basename(canonical), mime: mimeFor(canonical), path: canonical };
+      // its plaintext size (a stored file may be sealed at rest)
+      return { bytes: plainSizeFor(canonical, info), name: basename(canonical), mime: mimeFor(canonical), path: canonical };
     } catch {
       continue;
     }

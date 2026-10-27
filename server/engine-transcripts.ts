@@ -34,6 +34,7 @@ import { closeSync, type Dirent, lstatSync, openSync, readdirSync, readFileSync,
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { parseLogLine } from "./content-at-rest.ts";
 import { writeFileAtomic } from "./atomic.ts";
 
 type Env = Record<string, string | undefined>;
@@ -123,9 +124,10 @@ export function eventLogSessionIds(path: string): string[] {
   for (const line of text.split("\n")) {
     if (!line.includes("session.started")) continue;
     try {
-      const event = JSON.parse(line) as { type?: unknown; sessionId?: unknown };
+      // a line sealed at rest keeps its type in the clear and opens here
+      const event = (parseLogLine(path, line) ?? {}) as { type?: unknown; sessionId?: unknown };
       if (event.type === "session.started") { const key = sessionKey(event.sessionId); if (key) out.add(key); }
-    } catch { /* a torn line */ }
+    } catch { /* a torn line, or a key not open on this launch */ }
   }
   return [...out];
 }

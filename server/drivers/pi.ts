@@ -24,6 +24,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { readAtRestSync } from "../content-at-rest.ts";
 import { PROVIDER_CREDENTIAL_ENV, stripWorkspaceCredentialEnv } from "../config.ts";
 import { applyEngineCommandVariables } from "../credential-command-env.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
@@ -110,7 +111,7 @@ type PiPromptImage = {
 function readPiPromptImages(turn: SendTurnInput): PiPromptImage[] {
   return (turn.images ?? []).map((image) => ({
     type: "image",
-    data: readFileSync(image.path).toString("base64"),
+    data: readAtRestSync(image.path).toString("base64"),
     mimeType: image.mime,
   }));
 }

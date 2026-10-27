@@ -11,10 +11,10 @@
 // bus holds a thread's text for at most DELTA_MERGE_MS and publishes it as
 // one delta, sooner when anything else happens on that thread, so the order
 // of events never changes.
-import { appendFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { EVENTS_DIR } from "../config.ts";
+import { appendLog, registerSealedLog, sealLogLine } from "../content-at-rest.ts";
 import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { redactSecrets } from "../redact.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
@@ -43,7 +43,16 @@ export type EventLogAppend = (
   options?: { mode?: number },
 ) => void | Promise<void>;
 
-const defaultAppend: EventLogAppend = (path, data, options) => appendFile(path, data, options);
+// The canonical log holds what the engine said and did: each line is sealed
+// under its thread's key (docs/content-encryption.md), its type and time in
+// the clear for the readers' filters.
+registerSealedLog({
+  dir: EVENTS_DIR,
+  scope: (_record, file) => ({ thread: basename(file, ".ndjson") }),
+  projection: (record) => ({ type: record.type, createdAt: record.createdAt, ...(typeof record.itemType === "string" ? { itemType: record.itemType } : {}) }),
+});
+
+const defaultAppend: EventLogAppend = (path, data, options) => appendLog(path, data, options);
 
 /** `line` is the event as the log writes it, redacted and serialized once
  * when it is queued, not again at write time (port de OpenMausBot #3130). */
@@ -316,9 +325,9 @@ export class EventBus {
     if (threadLogsForgotten(threadId)) { this.pendingLogWarnings.delete(threadId); return; }
     const warning = this.pendingLogWarnings.get(threadId);
     const events = items.map((item) => item.event);
-    const lines = items.map((item) => item.line);
-    if (warning) lines.unshift(JSON.stringify(warning));
     const file = join(EVENTS_DIR, `${threadId}.ndjson`);
+    const lines = items.map((item) => sealLogLine(file, item.event as unknown as Record<string, unknown>, item.line));
+    if (warning) lines.unshift(sealLogLine(file, warning as unknown as Record<string, unknown>));
     try {
       await this.appendLog(file, lines.join("\n") + "\n", { mode: 0o600 });
       if (warning) this.pendingLogWarnings.delete(threadId);

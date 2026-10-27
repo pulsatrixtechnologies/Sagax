@@ -19,12 +19,13 @@
 // with their upload (see modelImageCopyPath's callers); copies of a picture
 // in a subfolder (`.office/<upload>/`) sit beside it and go with that folder.
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 
 import type { renderAsync as RenderAsync } from "@resvg/resvg-js";
 
+import { atRestSizeSync, readAtRest } from "./content-at-rest.ts";
 import { ATTACHMENTS_DIR, modelImageCopyPath } from "./attachments.ts";
 import type { TurnImageInput } from "./contracts.ts";
 import { nativeRequire } from "./data/engine.ts";
@@ -216,9 +217,10 @@ async function fitOne(image: TurnImageInput, attachmentsDir: string, render: Sca
   try {
     const copy = modelImageCopyPath(attachmentsDir, image.path);
     if (existsSync(copy) && statSync(copy).mtimeMs >= statSync(image.path).mtimeMs) {
-      return { path: copy, mime: "image/png", bytes: statSync(copy).size };
+      return { path: copy, mime: "image/png", bytes: atRestSizeSync(copy) };
     }
-    const bytes = await readFile(image.path);
+    // sealed at rest or plain (server/content-at-rest.ts)
+    const bytes = await readAtRest(image.path);
     const fitted = await fitImageForModel(bytes, image.mime, render);
     if (!fitted || !fitted.resized) return image;
     mkdirSync(dirname(copy), { recursive: true, mode: 0o700 });

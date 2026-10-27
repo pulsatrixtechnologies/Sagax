@@ -18,10 +18,11 @@
 // by their first bytes. The pictures are written once, 0600, under
 // `<attachments>/.office/<upload>/`, a folder the attachment routes and the
 // quota scan never look into.
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, extname, join, posix } from "node:path";
 import zlib from "node:zlib";
 
+import { atRestSizeSync, readAtRestSync } from "./content-at-rest.ts";
 import type { TurnImageInput } from "./contracts.ts";
 
 export const OFFICE_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024;
@@ -221,8 +222,9 @@ export function readOfficeMedia(serverPath: string, attachmentsDir: string): Off
   if (!kind) return null;
   let buffer: Buffer;
   try {
-    if (statSync(serverPath).size > OFFICE_DOCUMENT_MAX_BYTES) return null;
-    buffer = readFileSync(serverPath);
+    if (atRestSizeSync(serverPath) > OFFICE_DOCUMENT_MAX_BYTES) return null;
+    // sealed at rest or plain (server/content-at-rest.ts)
+    buffer = readAtRestSync(serverPath);
   } catch {
     return null;
   }
@@ -255,7 +257,7 @@ export function readOfficeMedia(serverPath: string, attachmentsDir: string): Off
     }
     const path = join(folder, `${String(index).padStart(2, "0")}${EXTENSION[mime]}`);
     try {
-      if (!existsSync(path) || statSync(path).size !== bytes.length) {
+      if (!existsSync(path) || atRestSizeSync(path) !== bytes.length) {
         mkdirSync(folder, { recursive: true, mode: 0o700 });
         // a crash mid-write never leaves a half picture under the final name
         const partial = `${path}.${process.pid}.partial`;

@@ -12,9 +12,10 @@
 //
 // A bot with neither RULES.md nor docs/ gets the prompt it always had: every
 // block here is empty until a file exists.
-import { lstatSync, readFileSync, readdirSync, realpathSync, statSync, type Stats } from "node:fs";
+import { lstatSync, readdirSync, realpathSync, statSync, type Stats } from "node:fs";
 import { dirname, join, sep } from "node:path";
 
+import { readAtRestSync } from "./content-at-rest.ts";
 import { READABLE_HIDDEN_SEGMENTS } from "../shared/readable-hidden.ts";
 
 import { RULE_SETS_DIR, RULES_FILE, RULES_MAX_BYTES, RULES_MAX_LINES, effectiveRulesText, listRuleSets } from "./rule-sets.ts";
@@ -208,7 +209,7 @@ export function resolveOwnReadable(botId: string, input: unknown, plugins: reado
  * WORKSPACE_READ_MAX_BYTES from `offset` (bytes), refusing binary files. */
 export function readWorkspaceText(botId: string, input: unknown, offset = 0, plugins: readonly ReadablePlugin[] = []): { path: string; text: string; bytes: number; offset: number; nextOffset: number | null } {
   const file = resolveOwnReadable(botId, input, plugins);
-  const buffer = readFileSync(file.absolute);
+  const buffer = readAtRestSync(file.absolute);
   if (buffer.subarray(0, 8192).includes(0)) throw new WorkspacePathError(`${file.path} is not a text file`);
   const start = Math.max(0, Math.min(Math.trunc(offset) || 0, buffer.length));
   let end = Math.min(buffer.length, start + WORKSPACE_READ_MAX_BYTES);

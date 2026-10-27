@@ -13,6 +13,8 @@
 // thousands of native lines and the panel wants the recent ones first.
 import { closeSync, fstatSync, openSync, readSync, type Stats } from "node:fs";
 import { join } from "node:path";
+import { isProjectedRecord, parseLogLine } from "./content-at-rest.ts";
+import { ContentKeyUnavailable } from "./content-keys.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import type { InspectorEntry, InspectorPage, NativeRecord } from "../shared/inspector.ts";
 
@@ -84,24 +86,34 @@ function countLines(fd: number, file: string, stat: FileStat): number {
 
 type RecordGuard<T> = (value: unknown) => value is T;
 
-function parseRecent<T>(text: string, includeFirst: boolean, limit: number, valid: RecordGuard<T>): T[] {
+function parseRecent<T>(file: string, text: string, includeFirst: boolean, limit: number, valid: RecordGuard<T>, projectionOnly?: ProjectionOnly): T[] {
   const lines = text.split("\n");
   if (!includeFirst) lines.shift();
   const out: T[] = [];
-  for (const raw of lines) {
+  // newest first, and no further than `limit` valid entries: an older line
+  // is never parsed (nor opened, when sealed) for nothing
+  for (let index = lines.length - 1; index >= 0 && out.length < limit; index--) {
+    const raw = lines[index];
     if (!raw) continue;
     try {
-      const value: unknown = JSON.parse(raw);
-      if (valid(value)) out.push(value);
-    } catch {
+      // a line sealed at rest opens here (server/content-at-rest.ts)
+      const value: unknown = parseLogLine(file, raw, projectionOnly);
+      if (isProjectedRecord(value) || valid(value)) out.push(value as T);
+    } catch (error) {
+      // a locked key fails the read rather than show a shorter log
+      if (error instanceof ContentKeyUnavailable) throw error;
       // A torn line during a write, or a hand-edited record. Keep looking
       // farther back until we still have `limit` valid recent entries.
     }
   }
-  return out.slice(-limit);
+  return out.reverse();
 }
 
-export function readRecentLines<T>(file: string, limit: number, valid: RecordGuard<T>): { lines: T[]; total: number } {
+/** A sealed line the caller does not need opened, by its clear fields: it
+ * comes back as its projection (still counted toward `limit`). */
+export type ProjectionOnly = (projection: Record<string, unknown>) => boolean;
+
+export function readRecentLines<T>(file: string, limit: number, valid: RecordGuard<T>, projectionOnly?: ProjectionOnly): { lines: T[]; total: number } {
   let fd: number;
   try {
     fd = openSync(file, "r");
@@ -128,12 +140,12 @@ export function readRecentLines<T>(file: string, limit: number, valid: RecordGua
       // walking backwards rather than returning fewer valid rows.
       const text = bytes.toString("utf8");
       if (position === 0 || text.split("\n").length - 1 >= limit) {
-        lines = parseRecent(text, position === 0, limit, valid);
+        lines = parseRecent(file, text, position === 0, limit, valid, projectionOnly);
         if (lines.length >= limit || position === 0) break;
       }
     }
     if (lines.length === 0 && bytes.length > 0) {
-      lines = parseRecent(bytes.toString("utf8"), position === 0, limit, valid);
+      lines = parseRecent(file, bytes.toString("utf8"), position === 0, limit, valid, projectionOnly);
     }
     return { lines, total };
   } finally {

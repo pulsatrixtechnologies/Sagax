@@ -32,6 +32,7 @@ import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promi
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 
+import { readAtRest } from "../../content-at-rest.ts";
 import { DATA_DIR, PROVIDER_CREDENTIAL_ENV, stripControlPlaneEnv, WORKSPACE_CREDENTIAL_ENV } from "../../config.ts";
 import { applyStoredEngineEnv } from "../../engine-api-keys.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../../startup-model-catalog.ts";
@@ -686,7 +687,7 @@ export function offeredModels(result: any, configId: string): string[] {
 async function readAcpImageBlocks(images: readonly TurnImageInput[]) {
   return Promise.all(images.map(async (image) => ({
     type: "image" as const,
-    data: (await readFile(image.path)).toString("base64"),
+    data: (await readAtRest(image.path)).toString("base64"),
     mimeType: image.mime,
   })));
 }

@@ -4,7 +4,9 @@ Conversations are encrypted in the message database (`DATA_DIR/messages.db`)
 with a content key per person, and a key of its own for each confidential
 thread. Deleting a person or a confidential thread destroys its key, so what
 was sealed under it never opens again (cryptographic erasure). Search and
-recall keep working through a blind index: keyed tokens, never text.
+recall keep working through a blind index: keyed tokens, never text. The
+bots' memory, the attachments and the event logs are sealed with the same
+keys ("Files and logs" below).
 
 Code: `server/content-crypto.ts` (sealing, blind tokens),
 `server/content-keys.ts` (keys and their wrapping),
@@ -12,9 +14,11 @@ Code: `server/content-crypto.ts` (sealing, blind tokens),
 `server/content-encryption-env.ts` (settings), `server/message-sealing.ts`
 (row shape, recall terms, snippets), `server/message-db.ts` (reads, writes,
 migration, erasure), `server/message-search-query.ts` and the search worker,
-`server/content-export.ts` (backups). Tests:
-`server/content-encryption.test.ts`. Benchmark:
-`node --experimental-strip-types scripts/bench-content-encryption.ts`.
+`server/content-export.ts` (backups), `server/content-file-crypto.ts` and
+`server/content-at-rest.ts` (files and logs). Tests:
+`server/content-encryption.test.ts`, `server/content-at-rest.test.ts`.
+Benchmarks: `node --experimental-strip-types scripts/bench-content-encryption.ts`
+(transcripts) and `scripts/bench-content-at-rest.ts` (files and logs).
 
 ## Settings
 
@@ -28,6 +32,7 @@ organization; the operator supplies their own.
 | `SAGAX_CONTENT_KEY_AZURE_KEY_URL` | `https://<vault>.vault.azure.net/keys/<name>[/<version>]` | none |
 | `SAGAX_CONTENT_KEY_AZURE_ALG` | `RSA-OAEP-256`, `RSA-OAEP`, `A256KW` | `RSA-OAEP-256` |
 | `SAGAX_CONTENT_KEY_AZURE_CLIENT_SECRET` | a client secret (or `AZURE_CLIENT_SECRET`) | none |
+| `SAGAX_CONTENT_AT_REST_GRACE_MS` | idle time before a file written plain is sealed (files and logs, below) | `600000` (10 minutes) |
 
 **On by default.** A new installation writes sealed rows from the first
 message. An existing one migrates in the background (below), reversibly.
@@ -219,3 +224,140 @@ checkpoint or FTS5 merge now and then makes a step of 100-300 ms), and the
 next start's rebuild and VACUUM took 0.2-0.5 s (0.8 s saturated). `off`
 took 6-12 s, with steps up to a few hundred milliseconds (1.3 s once on a saturated host) when FTS5 merges
 the plain index it refills.
+
+## Files and logs
+
+What the server keeps outside `messages.db` is sealed with the same content
+keys (`content_keys`, the same KEK, no second key store), reversibly, by the
+same setting (`SAGAX_CONTENT_ENCRYPTION`).
+
+| What | Where | Key | Read by |
+|---|---|---|---|
+| bot memory | `workspaces/<bot>/` `MEMORY.md`, `memory/` (topics, daily logs, archive), `docs/` | the bot's owner on an organization server, else the workspace | the prompt, the Memory editor and journal, search; the engine's own file tools |
+| memory index | `memory_files` in `messages.db` | the same | `session_search`, automatic recall, `workspace_search` |
+| memory journal | `memory-journal/<bot>.ndjson` (each row keeps the full prior text) | the same | Memory panel, revert |
+| group memory | `group-memory/<group>/MEMORY.md` | the workspace | the room's prompt and editor |
+| attachments | everything under `attachments/`: uploads, generated files, scaled pictures (`.model/`), an Office document's pictures (`.office/`), archive manifests (`.archives/`) and unpacked archives (solo) | the uploader on an organization server (known at upload), else the workspace | downloads and previews (streamed), copies to a person's computer or server environment, the Office, picture and archive readers, the drivers; the engine by path |
+| event logs | `events/<thread>.ndjson`, `native/<thread>.ndjson` | the thread's key, as its messages | inspector, Activity, session ids |
+| decision log | `decisions/YYYY-MM.ndjson` | the row's thread, else the workspace | Activity, Journal, History |
+| admin activity | `admin-activity/YYYY-MM.ndjson` | the workspace | Activity, the organization audit |
+
+**File format** (`server/content-file-crypto.ts`): a header (`SGXF`, version,
+chunk size, key id, context) then AES-256-GCM chunks of 64 KiB, each with its
+own nonce and tag. The additional data of a chunk is the key, its owner, the
+file's context (an attachment's stored path, `memory/<bot>`), the chunk's
+index and whether it is the last one: a chunk moved, dropped or cut off, or a
+file copied to another place or another bot, does not open. A file is sealed
+and opened as a stream, never whole in memory, and a byte range (the audio
+route's `Range`, a download) opens only the chunks it covers.
+
+**Log lines**: `{ <projection>, "sealed": "<key id>:<base64>" }`, where
+`sealed` is the AES-256-GCM of the original line, byte for byte (additional
+data: key, owner, folder and file name). The projection keeps what readers
+filter on before opening: an event's `type`, `createdAt` and `itemType`; a
+native message's `at` and `dir`; a decision's `at`, `threadId`, `botId`,
+`decision`, `source`; an admin row's `at`, `category`, `action`; a journal
+row's `id`, `at`, `kind`. A reader that drops a line by those fields does
+not open it (the Activity view opens only a tool's start and end, and only
+the bot's own decisions). Line numbers do not change (the organization
+audit's ids stay valid).
+
+**Every reader opens both kinds**: `readAtRestSync`, `readMemoryText`,
+`atRestStream` (`openMessageFile(...).stream()`), `parseLogLine`. A plain
+file reads exactly as before.
+
+**Writes are not slowed**: a new or edited file is written plain, as before,
+and the background migration seals it once idle (`GRACE_MS`, 10 minutes since
+its last write or use); a log line is sealed as it is appended (a few
+microseconds), written plain when its key is not available yet and sealed
+later.
+
+**Engines read by path**, so a turn holds its files plain in place
+(`holdPlain`, `holdBotMemoryPlain`): the bot's memory files (opened in
+parallel with the rest of the turn's setup, waited for before the engine
+starts), this message's attachments and pictures (and their scaled copy,
+Office pictures, unpacked archive), and in solo the earlier attachments of
+the thread in the background (an engine may read one again). On an
+organization server an engine works on copies made in the person's computer
+or server environment, which are plain there, as before. The turn's end
+(`releasePlain(turn:<thread>)`, at `turn.completed`, `session.exited` or a
+failed dispatch) lets them go; the migration seals them again once idle. A
+turn that never started lets go after 10 minutes, one that never said it
+ended after 6 hours. Opening for a turn skips the fsync (a turn does not wait
+on the disk): the sealed original stays as a hard link in
+`.at-rest-originals/` until the file is sealed again, and a plain copy that a
+power cut left empty or zeroed gets it back; an original whose file was
+removed goes with it.
+
+**Migration**: a background loop (a slice of synchronous checks then a turn
+of the event loop, a 20 ms pause every 8 files or MiB) seals plain files,
+re-seals a memory file whose bot changed hands, and with `off` opens every
+file and line back to plain. Each replacement writes a hidden sibling, reads
+it back and compares it with the original byte for byte (opened, for a
+sealed one), checks the original did not change and is not held by a turn,
+then renames it over the original (atomic), keeping its time, so nothing that
+judges a file by its time (the memory index, a scaled picture) redoes its
+work. A log is rewritten the same way, line for line, with the lines
+appended during the copy carried over in a last short step. An upload keeps
+the key it was sealed with. A key that is not available (Key Vault not
+answering, a key not created yet) leaves the file exactly as it was, plain
+(`on`) or sealed (`off`), and the pass is tried again. The memory index rows
+migrate with the transcripts (`runContentMigration`), verified the same way.
+
+**Key not available**: a read of a sealed file or line fails
+(`ContentKeyUnavailable`, 503), never as an empty file: a memory read that
+fails is never answered as empty memory, so neither the editor nor a memory
+update writes over it (`isAtRestRefusal`).
+
+**Erasure**: a person's erasure destroys their keys, so their bots' memory,
+their uploads and the lines of their threads that are still sealed under
+them never open again. Just before, a bot's memory that now belongs to
+someone else is re-sealed under its new owner's key, and an upload another
+conversation still shows under the workspace's. Deleting a bot removes its
+workspace, journal and index rows; deleting a thread removes its logs; a
+confidential thread's own key goes with it.
+
+**Backups**: the archive carries these files and logs in the clear, inside
+its password encryption (`exportPlainCopy`), with the keys the server hands
+the backup worker; a key that exists but cannot be opened fails the backup.
+The migration pauses while the folder is copied; the hidden siblings and
+kept originals are never exported. A restore brings plain files, which the
+destination's migration seals under its own keys.
+
+**Still plain**: a file while a turn holds it (and up to 10 minutes after);
+the copies staged on a person's computer or in their server environment;
+conversation work folders (`task-workspaces/`) and the engines' own
+transcripts; logs that carry no content by design (usage ledger, problem
+log, remote-control and terminal audits, the decision model's log).
+
+**Performance** (`node --experimental-strip-types scripts/bench-content-at-rest.ts --before <main checkout>`,
+synthetic text, medians, macOS arm64, Node 26, 2026-10-27, a shared host:
+compare columns; "before" is main without this change, "on" reads files the
+migration already sealed):
+
+| Measure | Before | Off | On |
+|---|---:|---:|---:|
+| memory write (8 KB, index included) | 6.4-11 ms | 6.5-6.6 ms | 7.9-12 ms |
+| memory read (MEMORY.md) | 0.02 ms | 0.02 ms | 0.04 ms |
+| memory in the prompt (MEMORY.md + 29 topic heads) | 0.61 ms | 0.59-0.62 ms | 0.60-0.63 ms |
+| memory search | 0.28-0.29 ms | 0.31-0.33 ms | 0.35-0.37 ms |
+| memory opened for a turn (30 sealed files, in parallel with the turn's setup) | n/a | 0.7 ms | 16-20 ms |
+| memory already open (a later turn) | n/a | 0.7-0.8 ms | 0.6 ms |
+| upload 100 KB / 1 MB / 5 MB / 20 MB | 0.7-1.0 / 1.0-1.3 / 2.3-3.1 / 8.4-10 ms | 0.7 / 1.0-1.3 / 2.7-2.8 / 7.6-9.9 ms | 0.6-0.7 / 1.1-1.2 / 2.5-7.8 / 9.0-12.5 ms |
+| download 100 KB / 1 MB / 5 MB / 20 MB | 0.3 / 0.6-0.7 / 1.7-1.8 / 6.4-6.6 ms | 0.4-0.5 / 0.7-0.8 / 2.2 / 6.4-6.7 ms | 0.3 / 0.8-0.9 / 2.3-5.5 / 6.3-6.7 ms |
+| 64 KB range of a 20 MB file | 0.19-0.21 ms | 0.26-0.33 ms | 0.23-0.28 ms |
+| a sealed 20 MB attachment opened for a turn | n/a | 0 | 27 ms |
+| log append (native tee), p50 | 35 µs | 36-41 µs | 40 µs |
+| inspector tail, 300 lines | 0.25-0.28 ms | 0.23-0.26 ms | 1.1-1.3 ms |
+| 2,000 lines filtered by a field | 2.4 ms | 2.4-2.5 ms | 9.0-9.1 ms |
+| Activity tool runs (2,000 of 20,000 events) | 2.4-2.6 ms | 2.5-2.6 ms | 4.0-4.2 ms |
+
+Migration (640 files and 20 logs, 57 MB): sealed in 8.2-10 s (6-7 MB/s,
+paced), event-loop delay p99 2-3 ms, longest 8-16 ms (8 ms on the same host
+with nothing running); back to plain (`off`) in 8-14 s. Writes do not wait
+on encryption (a file is sealed later, a log line costs about 5 µs more).
+Opening for a turn happens once per stretch of work (10 minutes idle), the
+memory in parallel with the turn's setup; an attachment of the current
+message that was already sealed is the only wait on the turn's path. A
+sealed log line costs about 3 µs to open; readers that filter on the clear
+fields do not open what they drop.

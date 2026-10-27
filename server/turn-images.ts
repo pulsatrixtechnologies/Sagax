@@ -11,6 +11,7 @@ import { dirname, extname, resolve } from "node:path";
 import { fromMarkdown } from "mdast-util-from-markdown";
 
 import { ATTACHMENTS_DIR, IMAGE_MAX_BYTES, imageMaxBytes } from "./attachments.ts";
+import { atRestSizeSync } from "./content-at-rest.ts";
 import type { TurnImageInput } from "./contracts.ts";
 import { decodeAttachmentAttribute } from "./message-file.ts";
 
@@ -92,14 +93,17 @@ function ownedImage(path: string, attachmentsDir: string): TurnImageInput | null
 
   try {
     const entry = lstatSync(expected);
-    if (!entry.isFile() || entry.isSymbolicLink() || entry.size <= 0 || entry.size > imageMaxBytes()) return null;
+    if (!entry.isFile() || entry.isSymbolicLink()) return null;
+    // its plaintext size: a stored picture may be sealed at rest (server/content-at-rest.ts)
+    const bytes = entry.size < 5 ? entry.size : atRestSizeSync(expected);
+    if (bytes <= 0 || bytes > imageMaxBytes()) return null;
     const canonicalRoot = realpathSync(attachmentsDir);
     const canonicalFile = realpathSync(expected);
     if (dirname(canonicalFile) !== canonicalRoot) return null;
     const finalEntry = statSync(canonicalFile);
     if (!finalEntry.isFile() || finalEntry.size !== entry.size) return null;
     const mime = MIME_BY_EXTENSION[extname(name)];
-    return mime ? { path: expected, mime, bytes: entry.size } : null;
+    return mime ? { path: expected, mime, bytes } : null;
   } catch {
     return null;
   }

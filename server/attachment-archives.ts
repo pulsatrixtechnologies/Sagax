@@ -14,7 +14,7 @@
 //
 // The listing is kept as `<attachments>/.archives/<upload>.json` (a folder
 // the quota scan and the attachment routes never look into).
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import {
@@ -26,6 +26,7 @@ import {
   readSmallArchiveTexts,
   type ArchiveManifest,
 } from "../electron/archive-extract.mjs";
+import { readAtRestTextSync } from "./content-at-rest.ts";
 import { ATTACHMENTS_DIR } from "./attachments.ts";
 import { INLINE_FILE_MAX_BYTES, INLINE_TOTAL_MAX_BYTES } from "./attachment-staging.ts";
 
@@ -73,7 +74,7 @@ export async function prepareArchiveUpload(path: string, options: { extractHere:
 export function storedArchiveManifest(file: string, attachmentsDir = ATTACHMENTS_DIR): StoredArchiveManifest | null {
   if (!UPLOAD_NAME.test(file)) return null;
   try {
-    const value = JSON.parse(readFileSync(join(manifestsDir(attachmentsDir), `${file}.json`), "utf8")) as StoredArchiveManifest;
+    const value = JSON.parse(readAtRestTextSync(join(manifestsDir(attachmentsDir), `${file}.json`))) as StoredArchiveManifest;
     return value && value.version === 1 && Array.isArray(value.entries) ? value : null;
   } catch {
     return null;

@@ -7343,3 +7343,23 @@ inside its password-encrypted archive. Tests run with it off unless they
 turn it on (`server/testing/setup.ts`); its own:
 `server/content-encryption.test.ts`. Benchmark:
 `scripts/bench-content-encryption.ts`. See `docs/content-encryption.md`.
+
+Files and logs (2026-10-27, same keys, `server/content-at-rest.ts`,
+`server/content-file-crypto.ts`): bot memory files (`workspaces/<bot>/`
+MEMORY.md, memory/, docs/), the `memory_files` index (blind index like
+the transcripts), group memory, everything under `attachments/` (uploads,
+generated files, scaled pictures, Office pictures, archive manifests and
+unpacked folders) are sealed in place (64 KiB AES-256-GCM chunks, additional
+data = key, owner, context, chunk index, last chunk); the memory journal,
+`events/`, `native/`, `decisions/` and `admin-activity/` are sealed line by
+line (clear projection for filters). New files are written plain as before
+and sealed by the background migration once idle (10 min); every
+replacement is read back and compared before an atomic rename. Never read
+such a file with `readFileSync` for content in new code: use
+`readAtRestSync`, `readMemoryText`, `atRestStream` / `openMessageFile`'s
+`stream()`, and for a log line `parseLogLine`. An engine reads them by
+path: a turn holds them plain in place (`holdPlain`, `holdBotMemoryPlain`,
+released with `releasePlain(turn:<thread>)`). A locked key throws
+`ContentKeyUnavailable`; a memory read never answers empty on it
+(`isAtRestRefusal`). Tests: `server/content-at-rest.test.ts`. Benchmark:
+`scripts/bench-content-at-rest.ts [--before <checkout of main>]`.

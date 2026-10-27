@@ -98,7 +98,7 @@ export async function saveBotAttachment(input: SaveBotAttachmentInput): Promise<
     const name = displayNameFor(input.name, file.name);
     if (extensionForMime(mime)) {
       if (file.bytes > imageMaxBytes()) throw statusError(413, `image exceeds ${imageMaxBytes()} bytes`);
-      const saved = saveImage(await file.handle.readFile(), mime);
+      const saved = saveImage(await file.read(), mime);
       // The name lets the reply's inline picture of this file show the copy (deliveredCopy).
       return { attachment: { kind: "image", path: saved.path, mime: saved.mime, name }, bytes: saved.bytes };
     }
@@ -106,7 +106,7 @@ export async function saveBotAttachment(input: SaveBotAttachmentInput): Promise<
       throw statusError(415, `${file.name} is not a supported attachment type. Supported: ${ATTACH_SUPPORTED_TYPES}.`);
     }
     if (file.bytes > fileMaxBytes()) throw statusError(413, `file exceeds ${fileMaxBytes()} bytes`);
-    const saved = await saveFile(file.handle.createReadStream({ start: 0, autoClose: false }), name || basename(file.name), mime, {
+    const saved = await saveFile(file.stream({ start: 0, autoClose: false }), name || basename(file.name), mime, {
       expectedBytes: file.bytes,
     });
     return { attachment: { kind: "file", path: saved.path, mime: saved.mime, name: saved.name }, bytes: saved.bytes };

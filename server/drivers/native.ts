@@ -3,9 +3,10 @@
 // written verbatim next to the canonical stream, so protocol drift can be
 // diagnosed by diffing the two.
 import { appendFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { NATIVE_DIR } from "../config.ts";
+import { registerSealedLog, sealLogLine } from "../content-at-rest.ts";
 import { redactSecrets } from "../redact.ts";
 import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
@@ -53,6 +54,14 @@ export function withoutInlineData(value: unknown, depth = 0): unknown {
   return copy ?? value;
 }
 
+// The provider's own protocol messages: sealed line by line under the
+// thread's key (docs/content-encryption.md), direction and time in the clear.
+registerSealedLog({
+  dir: NATIVE_DIR,
+  scope: (_record, file) => ({ thread: basename(file, ".ndjson") }),
+  projection: (record) => ({ at: record.at, dir: record.dir }),
+});
+
 export function appendNative(threadId: string, entry: { dir: "in" | "out"; source: string; msg: unknown }) {
   // a deleted confidential thread's log is never written again
   if (threadLogsForgotten(threadId)) return;
@@ -63,11 +72,9 @@ export function appendNative(threadId: string, entry: { dir: "in" | "out"; sourc
     // an MCP header can carry a provider key. These files are ordinary
     // 0644 files people paste into bug reports, so values are masked while
     // the shape stays intact.
-    appendFileSync(
-      file,
-      JSON.stringify({ at: new Date().toISOString(), ...entry, msg: redactSecrets(withoutInlineData(entry.msg)) }) + "\n",
-      { mode: 0o600 },
-    );
+    const record = { at: new Date().toISOString(), ...entry, msg: redactSecrets(withoutInlineData(entry.msg)) };
+    // sealed under the thread's key at rest (server/content-at-rest.ts)
+    appendFileSync(file, sealLogLine(file, record) + "\n", { mode: 0o600 });
     // Best-effort size cap (#1280) — same rule as the write itself: never
     // let logging break the run it is observing.
     capThreadLog(file, currentThreadLogCap());

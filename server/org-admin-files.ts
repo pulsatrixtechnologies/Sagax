@@ -38,6 +38,8 @@ import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, isAbsolute, join, relative, sep } from "node:path";
 
+import { atRestStream, describeHandle } from "./content-at-rest.ts";
+
 export const ADMIN_FILES_ROUTE = /^files\/([A-Za-z0-9_-]{1,128})\/(roots|list|stat|read|download)$/;
 export const FILES_MAX_ENTRIES = 1_000;
 export const FILES_MAX_READ_BYTES = 128 * 1024;
@@ -469,22 +471,30 @@ export async function answerBotFiles(input: {
       await handle.close();
       throw new FileRefusal(413, "too_large", `This file is over ${FILES_MAX_DOWNLOAD_BYTES} bytes.`);
     }
-    deps.record(input.principalId, { action: "bot.files.download", botId, botName: bot.name, root: target.root, path: target.path, bytes: stat.size });
+    // a memory file or an attachment sealed at rest downloads as its plaintext (server/content-at-rest.ts)
+    let content: Awaited<ReturnType<typeof describeHandle>>;
+    try {
+      content = await describeHandle(handle, join(target.rootDir, ...target.segments));
+    } catch (error) {
+      await handle.close();
+      throw error;
+    }
+    deps.record(input.principalId, { action: "bot.files.download", botId, botName: bot.name, root: target.root, path: target.path, bytes: content.size });
     res.writeHead(200, {
       "content-type": "application/octet-stream",
-      "content-length": String(stat.size),
+      "content-length": String(content.size),
       "content-disposition": attachmentDisposition(target.name),
       "x-sagax-admin-api": "1",
       "x-sagax-file-type": mimeOf(target.name),
       "x-content-type-options": "nosniff",
       "cache-control": "no-store",
     });
-    if (stat.size === 0) {
+    if (content.size === 0) {
       await handle.close();
       res.end();
       return;
     }
-    const stream = handle.createReadStream({ start: 0, end: stat.size - 1, autoClose: true });
+    const stream = atRestStream(handle, content);
     await new Promise<void>((resolve) => {
       stream.on("error", () => {
         res.destroy();

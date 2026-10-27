@@ -18,8 +18,7 @@
 // line did.
 import { randomUUID } from "node:crypto";
 import { closeSync, fstatSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
-import { appendFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { DATA_DIR } from "./config.ts";
 import {
@@ -35,6 +34,8 @@ import {
   writeMemoryDoc,
 } from "./memory-store.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { appendLog, openLogRecord, registerSealedLog, sealLogLine } from "./content-at-rest.ts";
+import { ContentKeyUnavailable } from "./content-keys.ts";
 
 /** "upkeep" is the harness itself: background capture and the tidy-up
  * (server/memory-upkeep.ts) for a bot with Memory upkeep switched on. */
@@ -84,6 +85,14 @@ const CONTEXT = 2;
 export function journalFile(botId: string): string {
   return join(JOURNAL_DIR, `${botId}.ndjson`);
 }
+
+// Each row holds the full prior text of a memory file: sealed under the
+// bot's key (docs/content-encryption.md), its id, time and kind in the clear.
+registerSealedLog({
+  dir: JOURNAL_DIR,
+  scope: (_record, file) => ({ bot: basename(file, ".ndjson") }),
+  projection: (record) => ({ id: record.id, at: record.at, kind: record.kind }),
+});
 
 // ── unified diff ──────────────────────────────────────────────────────
 
@@ -214,7 +223,8 @@ function enqueue(botId: string, entry: MemoryJournalEntry): void {
   const queued = previous
     .then(async () => {
       mkdirSync(JOURNAL_DIR, { recursive: true, mode: 0o700 });
-      await appendFile(journalFile(botId), `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+      const file = journalFile(botId);
+      await appendLog(file, `${sealLogLine(file, entry as unknown as Record<string, unknown>)}\n`, { mode: 0o600 });
     })
     .catch((error: unknown) => {
       // fire-and-forget: the change this row records already happened
@@ -276,9 +286,11 @@ export function readMemoryJournal(botId: string, limit = 50): MemoryJournalEntry
     const line = lines[index];
     if (!line) continue;
     try {
-      const value: unknown = JSON.parse(line);
+      const value: unknown = openLogRecord(journalFile(botId), JSON.parse(line));
       if (isEntry(value)) rows.push(value);
-    } catch {
+    } catch (error) {
+      // a locked key fails the read rather than show a shorter history
+      if (error instanceof ContentKeyUnavailable) throw error;
       // a torn final line from a crash mid-append is skipped, not fatal
     }
   }
