@@ -972,6 +972,7 @@ import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotInboundMailReadRoutes } from "./routes/bot-inbound-mail.ts";
 import { BOT_MAIL_ASSERTION_ACTORS, botmailConfinedInternalRefusal, botmailRunConfined, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
+import { TELEPHONY_ASSERTION_ACTORS, createBotInboundTelephonyRoute } from "./bot-inbound-telephony.ts";
 import { isRelaySource } from "../shared/trigger-sources.ts";
 import { BotMailAddresses } from "./bot-mail-addresses.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
@@ -2502,8 +2503,8 @@ function guestWorkThread(from: BotRecord, target: BotRecord, fromThreadId: strin
  * the owner is told about one, and when its engine cannot be confined. */
 const ROUTINE_FROM_BEFORE = "This routine was made before this update. Open it and save it once to run it with full access.";
 const CONVERSATION_FROM_BEFORE = "This conversation is from before My Cloud was only yours, so this bot works in it without a shell. Start a new conversation to use it fully.";
-const BOTMAIL_ENGINE_REFUSAL = "This bot's engine can't run a routine woken by email without a shell. Use Claude or Codex for this bot, or turn on full tools for this Bot email trigger.";
-const BOTMAIL_CONFINED_WHY = "This run was woken by an email: no shell, and every change or send asks first. The trigger's owner can turn on full tools for it.";
+const BOTMAIL_ENGINE_REFUSAL = "This bot's engine can't run a routine woken by an email or a phone message without a shell. Use Claude or Codex for this bot, or turn on full tools for this trigger.";
+const BOTMAIL_CONFINED_WHY = "This run was woken by an email or a phone message: no shell, and every change or send asks first. The trigger's owner can turn on full tools for it.";
 function confinedWhy(threadId: string): string {
   if (!cloudGuestDriven(threadId) && botmailConfined(threadId)) return BOTMAIL_CONFINED_WHY;
   const run = activeRoutineRunForThread(threadId);
@@ -28093,6 +28094,33 @@ const inboundMail = createBotInboundMailRoute({
     actor: { kind: "person", principalId: row.ownerPrincipalId, via: "perspicax-mail" },
   }),
 });
+// 2026-10-26 (Perspicax Voice, phase 2): a text or a call on the owner's
+// phone line wakes the chosen bot's Bot phone triggers
+// (server/bot-inbound-telephony.ts), wired before the session gate with the
+// member API and bot email. Same owner rule as bot email.
+const inboundTelephony = createBotInboundTelephonyRoute({
+  identity: () => IDENTITY.kind,
+  publicOrigin: () => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : null),
+  linkServerId: () => perspicaxDirectory?.serverId() ?? null,
+  verify: (token, audience, serverId) => {
+    if (!oidcRp) throw new Error("This server has no identity provider configured.");
+    return oidcRp.verifyConsoleAssertion(token, audience, serverId, TELEPHONY_ASSERTION_ACTORS);
+  },
+  bot: (id) => {
+    const bot = store.bot(id);
+    return bot ? { id: bot.id, name: bot.name } : null;
+  },
+  owner: (id) => botMailOwner(id),
+  triggers: (botId) => webhooks.list().filter((hook) => hook.enabled && hook.botId === botId && hook.source?.type === "telephony").map((hook) => hook.id),
+  ingest: (id, event, key) => webhooks.ingest(id, event, key),
+  record: (row) => appendAdminAction(DATA_DIR, {
+    category: "webhook",
+    action: row.notice ? "bot-phone.notice" : "bot-phone.delivered",
+    target: { kind: "bot", id: row.botId, name: row.botName },
+    after: { event: row.event, caller: row.caller, authenticated: row.authenticated, triggers: row.triggers, delivered: row.delivered, duplicate: row.duplicate, ignored: row.ignored },
+    actor: { kind: "person", principalId: row.ownerPrincipalId, via: "perspicax-voice" },
+  }),
+});
 // An imported bot's public card (port of OpenMausBot #3073).
 ROUTES.push(createTeamLibraryGrokRoutes());
 ROUTES.push(createMyChromeRoutes({
@@ -36845,6 +36873,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (await orgMember(req, res, url)) return;
     // 2026-10-21: bot inbound mail from the Perspicax relay, same rule.
     if (await inboundMail(req, res, url)) return;
+    // 2026-10-26: bot phone events from Perspicax Voice, same rule.
+    if (await inboundTelephony(req, res, url)) return;
     // 2026-10-11: Perspicax's link routes, the link token only.
     if (await orgLink(req, res, url)) return;
     // 2026-10-16: a security key ceremony, its own id only (server/routes/security-keys.ts).

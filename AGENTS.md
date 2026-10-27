@@ -954,6 +954,48 @@ covered by `server/bot-inbound-mail.test.ts`,
   rename) is the Perspicax PR; the steps done outside code are listed
   there.
 
+## Bot phone: Perspicax Voice relay (2026-10-26)
+
+Phase 2 of Perspicax Voice (contract `perspicax-voice/1`, Perspicax side in
+its own PR). A text or a call on a person's phone line is answered by
+Perspicax (Twilio webhooks, IVR, PIN, choice of bot) and relayed here. It
+only wakes a routine, like bot email. Covered by
+`server/bot-inbound-telephony.test.ts`, `server/oidc-rp.test.ts` and
+`src/components/TriggersPanel.test.ts`:
+
+- Delivery: `POST /api/org/telephony/inbound`
+  (`server/bot-inbound-telephony.ts`), answered before the session gate,
+  next to bot email. Same credential rule as bot email with actor
+  `perspicax-voice` (accepted HERE ONLY: admin, member and mail routes
+  refuse it) and a required `body_sha256`. Order: 401 `unauthorized`, 400
+  `invalid` (not the contract, over 64 KiB, `from` not masked for
+  `pin_locked` and `call_rejected`), 404 `no_bot`, 403 `not_owner` (the
+  chosen `botId` is not the assertion `sub`'s own), 403 `owner_inactive`.
+  Every answer carries `X-Sagax-Telephony-Api: 1`.
+- `sms`, `call_request`, `call_summary` go through every ENABLED typed
+  trigger of source `telephony` ("Bot phone", fr "Téléphone du bot",
+  `secretMode: "relay"`) on that bot via `WebhookManager.ingest(id, event,
+  eventId)`: kinds `sms.received`, `call.requested`, `call.summary`; filters
+  `sender` (the number, exact or glob) and `keyword`. `call_started`,
+  `pin_locked`, `call_rejected` are notices: one admin row, no run. 202
+  `{event, notice, triggers, delivered, duplicate, ignored, reason?}`
+  (`no_trigger`, `notice`, `duplicate`); 429 only when every trigger refused
+  on its rate.
+- Dedupe on `eventId`: the triggers' delivery ring (on disk) plus a route
+  memory per bot (2000 ids, one day, in memory) that also covers notices.
+- The caller's text is untrusted data: owner instructions, then
+  `[BOT PHONE RULES]`, then `[PERSPICAX LINE DIRECTIVES]` (the line's
+  `directives` as Perspicax sent them, closed values; Sagax adds no rule
+  about them), then `[UNTRUSTED TELEPHONY EVENT DATA <boundary>]`, markers
+  defanged. A run it wakes is confined like a mail-woken run
+  (`botmailRunConfined` covers every relayed source; `allowFullTools`
+  opt-in on the trigger).
+- No text and no full number in a log, an audit row or the trigger's event
+  log: the event log row says "Text from ***0100"; one admin activity row,
+  category `webhook`, action `bot-phone.delivered` or `bot-phone.notice`,
+  actor the owner `via: "perspicax-voice"`: bot, event, masked number,
+  PIN result, trigger counts.
+
 ## Confidential threads: kept to their owner (2026-10-16)
 
 Decision: a « Fil confidentiel » is a 1:1 bot thread nothing of which is

@@ -511,12 +511,15 @@ export interface ConsoleAssertion {
   locale?: string;
   /** Who presents it for the person (`act.sub`): `console` (the Perspicax
    * console), `perspicax-mcp` (an AI client attached to Perspicax, the
-   * member API of 2026-10-09) or `perspicax-mail` (the mail relay delivering
-   * a mail to one of the person's bots, 2026-10-21). */
+   * member API of 2026-10-09), `perspicax-mail` (the mail relay delivering
+   * a mail to one of the person's bots, 2026-10-21) or `perspicax-voice`
+   * (Perspicax Voice delivering an event of the person's phone line,
+   * 2026-10-26). */
   actor: ConsoleAssertionActor;
   /** `body_sha256`: lowercase hex SHA-256 of the exact request body, when
    * the signer binds the assertion to it (the mail relay must, contract v2
-   * of 2026-10-21; the route compares it). Absent otherwise. */
+   * of 2026-10-21, and Perspicax Voice too; the route compares it). Absent
+   * otherwise. */
   bodySha256?: string;
 }
 
@@ -524,8 +527,10 @@ export interface ConsoleAssertion {
  * console; the member API (server/org-member-routes.ts) accepts the console
  * and `perspicax-mcp`; `perspicax-mail` (the Perspicax mail relay,
  * 2026-10-21) is accepted by `POST /api/org/inbound-mail` alone
- * (server/bot-inbound-mail.ts). */
-export const CONSOLE_ASSERTION_ACTORS = ["console", "perspicax-mcp", "perspicax-mail"] as const;
+ * (server/bot-inbound-mail.ts); `perspicax-voice` (Perspicax Voice,
+ * 2026-10-26) by `POST /api/org/telephony/inbound` alone
+ * (server/bot-inbound-telephony.ts). */
+export const CONSOLE_ASSERTION_ACTORS = ["console", "perspicax-mcp", "perspicax-mail", "perspicax-voice"] as const;
 export type ConsoleAssertionActor = typeof CONSOLE_ASSERTION_ACTORS[number];
 
 export interface VerifyConsoleAssertionInput extends JwsCheck {

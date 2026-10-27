@@ -17,6 +17,7 @@ export const TRIGGER_SOURCE_TYPES = [
   "pagerduty",
   "linear",
   "botmail",
+  "telephony",
 ] as const;
 
 export type TriggerSourceType = (typeof TRIGGER_SOURCE_TYPES)[number];
@@ -53,8 +54,9 @@ export type TriggerFilterKey = (typeof TRIGGER_FILTER_KEYS)[number];
  * - `provided`: the provider makes it; the owner pastes it into Sagax.
  * - `relay`: no secret and no endpoint at all. Events arrive only through a
  *   Sagax route with its own credential (bot email: the Perspicax relay's
- *   console assertion on `POST /api/org/inbound-mail`), never on
- *   `/sources/<endpointId>`. */
+ *   console assertion on `POST /api/org/inbound-mail`; bot phone: the
+ *   Perspicax Voice assertion on `POST /api/org/telephony/inbound`), never
+ *   on `/sources/<endpointId>`. */
 export type TriggerSecretMode = "generated" | "provided" | "relay";
 
 export interface TriggerSourceDefinition {
@@ -191,6 +193,18 @@ export const TRIGGER_SOURCES: Record<TriggerSourceType, TriggerSourceDefinition>
     containsFilters: ["subject"],
     fence: "BOTMAIL",
   },
+  // 2026-10-26 (Perspicax Voice, phase 2): a text or a call on the owner's
+  // phone line, answered by Perspicax (IVR, PIN) and relayed to this server
+  // (server/bot-inbound-telephony.ts). It only wakes a routine; the caller's
+  // words are data, never instructions.
+  telephony: {
+    type: "telephony",
+    label: "Bot phone",
+    secretMode: "relay",
+    events: ["sms.received", "call.requested", "call.summary"],
+    filters: ["sender", "keyword"],
+    fence: "TELEPHONY",
+  },
 };
 
 /** Version of the event catalog a trigger was saved against. 2 added the
@@ -237,9 +251,10 @@ export interface TriggerSourceConfig {
   /** GitHub: also run for PR and inline review comments posted by a GitHub
    * app or bot. Off by default so a bot never triggers itself. */
   includeBotComments?: boolean;
-  /** Bot email (2026-10-21, S2): a mail-woken run is confined (no shell,
-   * a card for every write or outbound call, no Always-allow or Full) unless
-   * the owner turns this on for the trigger. Off by default. */
+  /** Bot email (2026-10-21, S2) and bot phone (2026-10-26): a run woken by
+   * a relayed source is confined (no shell, a card for every write or
+   * outbound call, no Always-allow or Full) unless the owner turns this on
+   * for the trigger. Off by default. */
   allowFullTools?: boolean;
   /** Deliveries accepted per minute before 429 (1 to 120, default 10). */
   rateLimitPerMinute?: number;
@@ -345,6 +360,10 @@ export interface NormalizedTriggerEvent {
   resource?: string;
   /** A comment posted by an app or bot account (GitHub `type: "Bot"`). */
   fromBot?: boolean;
+  /** Bot phone (Perspicax Voice): the line's directives as Perspicax sent
+   * them (closed values, never the caller's words), handed to the run as
+   * they are, outside the untrusted fence. */
+  directives?: Readonly<Record<string, string>>;
 }
 
 /** Shown once after create (or rotate of a generated secret): where the
