@@ -40,6 +40,10 @@ it("creates and manages an own-section room through the mounted Chief MCP proxy"
     }
     const [chief, peer, second, foreign] = bots;
     await api("PATCH", `/api/bots/${chief.id}`, { chiefOfStaff: true });
+    // 2026-10-20 (#897): a Primary Bot covers every bot of its person whatever
+    // the section, so a bot in another section is no longer foreign. What
+    // stays out of reach is a bot the Chief's own peer list leaves out.
+    await api("PATCH", `/api/bots/${chief.id}`, { peers: [peer.id, second.id] });
     // What one bot's turn mounts, then that agents proxy spawned the same way.
     const mount = async (bot: Bot, text: string): Promise<Mounted> => {
       rmSync(fixture.fixtureDumpPath, { force: true });

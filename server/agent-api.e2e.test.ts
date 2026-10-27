@@ -139,19 +139,22 @@ describe("agent-to-agent API (real server)", () => {
     const latest = await tool(fresh, "read_latest_page", { agent_id: beta.id, limit: 10 });
     expect(latest.status).toBe(200);
     const texts = latest.body.entries.map((entry: { role: string; text: string }) => `${entry.role}:${entry.text}`);
-    expect(texts[0]).toBe("user:Please confirm the Monday schedule");
+    // 2026-10-26 (#1207): send_prompt lands in the bot's single conversation,
+    // so the bot's own greeting can precede the prompt.
+    expect(texts).toContain("user:Please confirm the Monday schedule");
     expect(latest.body.entries.every((entry: { thread_id: string }) => entry.thread_id === threadId)).toBe(true);
     if (awaited.body.reply) expect(texts).toContain(`agent:${awaited.body.reply}`);
 
     const withThreads = await tool(fresh, "read_latest_page_with_threads", { agent_id: beta.id, limit: 1 });
-    expect(withThreads.body.threads).toEqual([expect.objectContaining({ thread_id: threadId, hidden: true, status: "idle" })]);
+    expect(withThreads.body.threads).toEqual(expect.arrayContaining([expect.objectContaining({ thread_id: threadId, hidden: false, status: "idle" })]));
     const cold = await tool(fresh, "read_transcript_cold", { agent_id: beta.id });
     expect(cold.body.entries.length).toBe(latest.body.entries.length);
 
-    // B's own chat with the person never saw it: the conversation is hidden.
+    // 2026-10-26 (#1207): no hidden thread; the prompt is in B's one chat
+    // (its main thread), where the person can see and close it.
     const betaNow = await botState(beta.id);
-    expect(JSON.stringify(betaNow.messages ?? [])).not.toContain("Monday schedule");
-    expect(betaNow.threadId).not.toBe(threadId);
+    expect(JSON.stringify(betaNow.messages ?? [])).toContain("Monday schedule");
+    expect(betaNow.threadId).toBe(threadId);
 
     // isolation: another team's bot is unknown
     const refused = await tool(fresh, "send_prompt", { agent_id: outsider.id, prompt: "hi" });

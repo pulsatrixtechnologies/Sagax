@@ -173,7 +173,9 @@ async function fixture(test: (f: any) => Promise<void>, options: { env?: NodeJS.
     // Stop this fixture's own server, let the test edit its stored records,
     // and start it again on the same data.
     const restart = async (edit: (bots: any[]) => void, signal: NodeJS.Signals = "SIGTERM", extraEnv: NodeJS.ProcessEnv = {}) => {
-      await waitForExit(restarted ?? session.child, { signal });
+      // A quit drains the turns in progress for up to 5 s (SHUTDOWN_DRAIN_MS)
+      // before it ends the conversations of those it cut: wait it out.
+      await waitForExit(restarted ?? session.child, { signal, graceMs: 20_000 });
       const bots = JSON.parse(readFileSync(join(dataDir, "bots.json"), "utf8"));
       edit(bots);
       writeFileSync(join(dataDir, "bots.json"), JSON.stringify(bots, null, 2));
@@ -212,8 +214,9 @@ it("resumes the source session and gives it each of three results exactly once, 
   const returned = f.turns().at(-1);
   const text = f.prompt(returned);
   expect(returned.resumed).toBe(true);
-  const launches = f.launches();
-  expect(launches.at(-1).resume).toBe(launches[0].sessionId);
+  // One native session throughout: a warm process keeps it across the turns
+  // (one launch), or a relaunch resumes it.
+  expect(f.nativeSession()).toBe(f.launches()[0].sessionId);
   for (const tag of ["LEAD", "QA", "OPS"]) {
     expect(count(text, `RESULT_${tag}_START`)).toBe(1);
     expect(count(text, `RESULT_${tag}_END`)).toBe(1);
@@ -238,7 +241,7 @@ it("gives the return turn a result that landed while a newer message was running
   const returned = f.turns().at(-1);
   expect(returned.resumed).toBe(true);
   expect(count(f.prompt(returned), "LEAD_RESULT_TOKEN")).toBe(1);
-  expect(f.launches().at(-1).resume).not.toBeNull();
+  expect(f.nativeSession()).not.toBeNull();
 }), hostTimeout(60_000));
 
 it("offers a result that lands mid-turn after its source was stopped to the next turn, once, labelled", () => fixture(async (f) => {
@@ -369,9 +372,14 @@ it("offers the results again when the person stops the return turn before the pr
 
 it("rebuilds a rejected resume with each result exactly once", () => fixture(async (f) => {
   await warmUp(f);
-  f.plan[f.lead.id] = { reply: `RECOVERY_RESULT_START ${"r".repeat(900)} RECOVERY_RESULT_END` };
+  f.plan[f.lead.id] = { reply: `RECOVERY_RESULT_START ${"r".repeat(900)} RECOVERY_RESULT_END`, gateFile: f.gate("lead") };
   f.plan[f.chief.id] = f.delegate("build", [f.lead], "Build the export");
   await f.send("Please have Engineering build the export.");
+  await expect.poll(() => f.nodes().find((node: any) => node.botId === f.lead.id)?.status, { timeout: 15_000 }).toBe("running");
+  // The Chief's warm process ends once idle under the new mode, so the return
+  // turn launches with --resume, which this mode rejects.
+  await f.setMode("resume=dead-session");
+  f.open(f.gate("lead"));
   await f.wait();
   const recovered = f.prompt(f.turns().at(-1));
   // A return turn would have replayed today: its rebuild is that same replay.
@@ -379,7 +387,7 @@ it("rebuilds a rejected resume with each result exactly once", () => fixture(asy
   expect(recovered).toContain("ORCHID_7Q");
   expect(count(recovered, "RECOVERY_RESULT_START")).toBe(1);
   expect(count(recovered, "RECOVERY_RESULT_END")).toBe(1);
-}, { env: { FAKE_CLAUDE_MODE: "dead-session" } }), hostTimeout(60_000));
+}), hostTimeout(60_000));
 
 it("keeps provenance and exactly-once delivery across rework rounds to the same teammate", () => fixture(async (f) => {
   await warmUp(f);
@@ -403,7 +411,7 @@ it("keeps provenance and exactly-once delivery across rework rounds to the same 
   // what it handed out, and the host keeps those reports out of the
   // transcript it replays. Round one's result is in round two's resume, once.
   expect(count(f.prompt(roundTwo), "ROUND_ONE_RESULT")).toBe(1);
-  expect(f.launches().at(-1).resume).not.toBeNull();
+  expect(f.nativeSession()).not.toBeNull();
 
   const second = f.prompt(f.turns(f.lead.id)[1]);
   expect(count(second, "REQUEST_TWO")).toBe(1);
@@ -514,6 +522,10 @@ it("keeps the person's request on work handed on after a card answer, and only w
     await expect.poll(() => handed().length, { timeout: 30_000 }).toBe(1);
     return f.prompt(handed()[0]);
   };
+  // 2026-10-26 (#1138): at Approve for me the person's own bot deletion applies
+  // without a card. At Ask the card waits for the person, which is the path
+  // this test follows.
+  await f.api(`/api/bots/${f.chief.id}`, { approvalMode: "ask" }, "PATCH");
   f.plan[f.lead.id] = { reply: "LEAD_DONE" };
   const propose = (key: string, brief: string) => ({
     steps: [{ tool: "propose_bot_deletion", arguments: { bot_id: f.ops.id, reason: "No longer needed" } }], reply: "Proposed",
@@ -833,12 +845,16 @@ it.each(["SIGTERM", "SIGKILL"] as const)("runs each teammate turn a restart cut 
       expect(rows.filter((name: string) => name === "Resuming after a restart"), `${botId}: ${JSON.stringify(rows)}`).toHaveLength(1);
       expect(rows.filter((name: string) => name.startsWith("error:")), botId).toEqual([]);
     }
-    // A person's own turn is not run again; a quit or update says in its
-    // conversation that it was cut (a crash cannot, nor can Windows' kill).
-    // That line is all: no unread mark, no notification.
-    expect(f.launches(f.qa.id)).toHaveLength(1);
+    // A person's own turn (#794): a quit or update writes it down and it runs
+    // once more at the next start, in its own conversation, which says so.
+    // A crash or Windows' kill writes nothing: that turn is not run again.
+    // The lines are all it adds: no unread mark, no notification.
     const said = signal === "SIGTERM" && process.platform !== "win32";
-    expect((await f.messages(f.qa.activeTaskId)).filter((m: any) => m.tool?.name === "error: turn interrupted — Sagax restarted")).toHaveLength(said ? 1 : 0);
+    await expect.poll(() => f.launches(f.qa.id).length, { timeout: 20_000 }).toBe(said ? 2 : 1);
+    const qaRows = (await f.messages(f.qa.activeTaskId)).map((m: any) => m.tool?.name).filter(Boolean);
+    expect(qaRows.filter((name: string) => name === "Sagax restarted during this turn; it resumes when Sagax is back")).toHaveLength(said ? 1 : 0);
+    expect(qaRows.filter((name: string) => name === "Resuming after a restart")).toHaveLength(said ? 1 : 0);
+    expect(qaRows.filter((name: string) => name.startsWith("error:"))).toEqual([]);
     expect((await f.api("/api/bots")).bots.find((b: any) => b.id === f.qa.id).tasks
       .find((task: any) => task.threadId === f.qa.activeTaskId).unread).toBe(false);
   } finally {
@@ -1007,7 +1023,8 @@ it("gives a replacement session an earlier round's result that its rebuild could
   await expect.poll(() => f.nodes().filter((node: any) => node.botId === f.lead.id).map((node: any) => node.status).join(","), { timeout: 30_000 }).toBe("completed,running");
   await expect.poll(() => f.turns().length, { timeout: 10_000 }).toBe(3);
   await expect.poll(() => count(f.prompt(f.turns()[2]), "ROUND_ONE_RESULT_TOKEN"), { timeout: 10_000 }).toBe(1);
-  await expect.poll(() => f.launches(f.lead.id).length, { timeout: 15_000 }).toBe(2);
+  // The lead's second round (a warm process may serve it: one launch, two turns).
+  await expect.poll(() => f.consumed(f.lead.id), { timeout: 15_000 }).toBe(2);
   // A terminal message is published before the driver releases its turn.
   // Wait for the source to yield to its outstanding teammate before each
   // new message; otherwise a loaded runner can steer into the previous turn.
@@ -1501,7 +1518,10 @@ it("gives a delegate_bot source today's fresh session and replay when its soul c
   // poll for it so a slow launch is not mistaken for a wrong resume.
   await expect.poll(() => f.launches().at(-1)?.resume, { timeout: 10_000 }).toBe(null);
   expect(f.prompt(third)).toContain("received an update outside your provider session");
-  expect(count(f.prompt(third), late)).toBe(1);
+  // Once in the replay. The recent-work notes (the bot's own lines, one per
+  // other conversation) may also name the delegation it sent; that is not
+  // a second delivery of the reply.
+  expect(count(f.prompt(third).replace(/^- today .*$/gm, ""), late)).toBe(1);
 }), hostTimeout(120_000));
 
 // ── Settings a resumed session cannot take on ──

@@ -45,14 +45,8 @@ it("merges topics into one stream: digest, recall_topic, privacy exclusions, thr
     const { bot } = await runControlOmb(["new-bot", "--name", "Streamer"], { env }) as { bot: { id: string; activeTaskId: string } };
     const send = async (threadId: string, text: string, singleStream?: boolean) => {
       await api("POST", `/api/bots/${bot.id}/messages`, { text, threadId, ...(singleStream === undefined ? {} : { singleStream }) });
-      if (threadId === hiddenId) {
-        // A hidden conversation is not listed to the control tools: wait for its answer.
-        await expect.poll(async () => ((await api("GET", `/api/threads/${threadId}/messages`)).messages as Json[]).at(-1)?.role, { timeout: 30_000 }).toBe("bot");
-        return;
-      }
       expect((await runControlOmb(["wait", "--bot", bot.id, "--task", threadId, "--timeout", "30"], { env }) as Json).status).toBe("settled");
     };
-    let hiddenId = "";
     const newThread = async (body: Json) => ((await api("POST", `/api/bots/${bot.id}/tasks`, body)).task as Json).threadId as string;
     const first = bot.activeTaskId;
 
@@ -68,11 +62,13 @@ it("merges topics into one stream: digest, recall_topic, privacy exclusions, thr
     const confidential = await newThread({ confidential: true });
     await send(confidential, "CONFIDENTIAL-ZEBRA merger plan", true);
     expect(stored(bot.id, confidential).streamSegment).toBeUndefined();
-    // An AI client's hidden conversation stays out as well.
+    // 2026-10-26 (#1207): `hidden` from an older AI client is accepted and
+    // ignored. No conversation is hidden any more: it is an ordinary thread,
+    // so it is not excluded from the stream like a confidential one.
     const hidden = await newThread({ hidden: true });
-    hiddenId = hidden;
-    await send(hidden, "HIDDEN-OTTER side work", true);
-    expect(stored(bot.id, hidden).streamSegment).toBeUndefined();
+    await send(hidden, "ASIDE-OTTER side work", true);
+    expect(stored(bot.id, hidden).hidden).toBeFalsy();
+    expect(stored(bot.id, hidden).streamSegment).toBe(true);
 
     // New topic: a fresh context, already a segment; the topic it closes gets
     // its digest written in the background.
@@ -88,18 +84,14 @@ it("merges topics into one stream: digest, recall_topic, privacy exclusions, thr
     expect(prompt).toContain("Earlier topics in this same conversation");
     expect(prompt).toContain(`id ${first}`);
     // Nothing confidential anywhere in the turn; the digest block itself
-    // holds neither excluded conversation (an AI client's hidden one keeps
-    // its existing recent-work line, outside the stream).
+    // holds no confidential conversation.
     expect(prompt).not.toContain("CONFIDENTIAL-ZEBRA");
     const block = prompt.slice(prompt.indexOf("Earlier topics in this same conversation"), prompt.indexOf("[end of earlier topics]"));
-    expect(block).not.toContain("HIDDEN-OTTER");
     expect(block).not.toContain(`id ${confidential}`);
-    expect(block).not.toContain(`id ${hidden}`);
     const listed = JSON.parse(readFileSync(mcpDump, "utf8")) as { calls: Array<{ tool: string; ok: boolean; listed: boolean; text: string }> };
     expect(listed.calls[0]).toMatchObject({ tool: "recall_topic", ok: true, listed: true });
     expect(listed.calls[0]!.text).toContain(first);
     expect(listed.calls[0]!.text).not.toContain(confidential);
-    expect(listed.calls[0]!.text).not.toContain(hidden);
 
     // recall_topic reads topic 1 word for word, and refuses the confidential one.
     await send(second, `RECALL_READ PROMPT_ID=${first}`, true);
@@ -114,7 +106,10 @@ it("merges topics into one stream: digest, recall_topic, privacy exclusions, thr
     // Threads on: the next send says so, the mark goes, the turn is as before.
     await send(second, "Plain thread-mode turn", false);
     expect(stored(bot.id, second).streamSegment).toBeUndefined();
-    expect(given()).not.toContain("Earlier topics in this same conversation");
+    // The session was launched with the digest, and a live session keeps its
+    // launch prompt (that is what the fake CLI dumps). Since the delta
+    // context (a47c59ff2) the turn says the section is gone instead.
+    expect(given()).toMatch(/The earlier \\?"stream\\?" context section no longer applies/);
     const plain = await newThread({});
     expect(stored(bot.id, plain).streamSegment).toBeUndefined();
     await send(plain, "Another plain turn");

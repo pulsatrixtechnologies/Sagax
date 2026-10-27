@@ -48,6 +48,20 @@ const CONTAINER_ID = "b".repeat(64);
 const CALL_WAIT_MS = 3_000;
 
 // the fake docker is a POSIX shell script, like every process fixture here
+type Mount = { name: string; command?: string; args?: string[]; env?: Array<{ name: string; value: string }> };
+// What the fake ACP agent was handed. Every server of a turn is wrapped by
+// server/mcp-gate.ts (SAGAX_GATE_UPSTREAM holds the real command), so this
+// unwraps it back to the server's own command, args and env.
+function mounts(path: string): Mount[] {
+  const list = JSON.parse(readFileSync(path, "utf8")) as Mount[];
+  return list.map((entry) => {
+    const upstream = entry.env?.find((item) => item.name === "SAGAX_GATE_UPSTREAM")?.value;
+    if (!upstream) return entry;
+    const inner = JSON.parse(upstream) as { command?: string; args?: string[]; env?: Record<string, string> };
+    return { name: entry.name, command: inner.command, args: inner.args ?? [], env: Object.entries(inner.env ?? {}).map(([name, value]) => ({ name, value })) };
+  });
+}
+
 const posixOnly = describe.skipIf(process.platform === "win32");
 
 function imageInspectJson(): string {
@@ -335,7 +349,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
         const saved = await botById(bot.id);
         return !saved.busy && saved.messages.some((message: any) => message.text?.startsWith("echo: "));
       }, "the turn on the customized VPS");
-      const mounted = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8"));
+      const mounted = mounts(`${acpDump}.mcp.json`);
       expect(mounted.find((tool: any) => tool.name === "computer")?.args).toContain(CONTAINER_ID);
       const calls = readFileSync(dockerLog, "utf8").slice(offset);
       expect(calls).not.toMatch(/ssh:\/\/production-vps (run|start|stop|rm|pull|build|update) /);
@@ -439,7 +453,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
         const saved = await botById(bot.id);
         return !saved.busy && saved.messages.some((message: any) => message.text?.startsWith("echo: "));
       }, "the recovered VPS turn");
-      const mounted = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8"));
+      const mounted = mounts(`${acpDump}.mcp.json`);
       expect(mounted.find((tool: any) => tool.name === "computer")?.args).toContain(CONTAINER_ID);
     } finally {
       rmSync(hold, { force: true });
@@ -465,13 +479,13 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
           modelSelection: { instanceId: "vps", model: "fake-model" } });
         expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Open Chrome on the available remote VM" })).status).toBe(202);
         await until(async () => existsSync(`${acpDump}.mcp.json`), "the discovery turn");
-        const first = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8"));
+        const first = mounts(`${acpDump}.mcp.json`);
         if (state === "stopped-during-turn") {
           expect(first.find((tool: { name: string }) => tool.name === "computer")).toBeTruthy();
           writeFileSync(template, original.replace('"Running":true', '"Running":false'));
         } else expect(first.find((tool: { name: string }) => tool.name === "computer")).toBeUndefined();
         const agents = first.find((tool: { name: string }) => tool.name === "agents");
-        const token = agents.env.find((entry: { name: string }) => entry.name === "SAGAX_COMMS_TOKEN").value;
+        const token = agents!.env!.find((entry) => entry.name === "SAGAX_COMMS_TOKEN")!.value;
         const availability = await (await fetch(`${BASE}/api/internal/computer/select`, { headers: { authorization: `Bearer ${token}` } })).json() as any;
         expect(availability.options.find((option: any) => option.surface === "cloud")).toMatchObject({ available: true, ready: false,
           canStart: state !== "missing", canCreate: state === "missing" });
@@ -482,7 +496,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
         const before = readFileSync(dockerLog, "utf8").length;
         writeFileSync(gateFile, "open");
         await until(async () => existsSync(`${acpDump}.mcp.json`) && !(await botById(bot.id))?.busy, "the switched VPS turn");
-        const next = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8"));
+        const next = mounts(`${acpDump}.mcp.json`);
         expect(next.find((tool: { name: string }) => tool.name === "computer")?.args).toContain("production-vps");
         const commands = readFileSync(dockerLog, "utf8").slice(before);
         expect(commands).toContain(state === "missing" ? " run " : " start ");
@@ -571,7 +585,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
       // the official Cua MCP server was mounted through the VPS bridge
       // SAFETY: the fake ACP CLI wrote this dump itself from session/new's
       // mcpServers array; the shape is pinned by fake-acp-cli.ts.
-      const mcpServers = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8")) as Array<{
+      const mcpServers = mounts(`${acpDump}.mcp.json`) as Array<{
         name: string;
         command: string;
         args?: string[];
@@ -608,7 +622,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
       const cloudTurn = await api("POST", `/api/bots/${bot.id}/messages`, { threadId: explicitThread, text: "Open Chrome on the VPS and inspect the page" });
       expect(cloudTurn.status, JSON.stringify(cloudTurn.body)).toBe(202);
       await until(async () => existsSync(`${acpDump}.mcp.json`) && (await botById(bot.id))?.busy === false, "the explicit VPS turn");
-      const explicitTools = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8"));
+      const explicitTools = mounts(`${acpDump}.mcp.json`);
       expect(explicitTools.find((tool: { name: string }) => tool.name === "computer")?.args).toContain("production-vps");
       const threadPreview = await api("GET", `/api/bots/${bot.id}/computer?threadId=${explicitThread}`);
       expect(threadPreview.body).toMatchObject({ surface: "cloud", backend: "vps", ready: true });
@@ -629,7 +643,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
         completed = (await api("GET", "/api/routines")).body.runs.find((run: any) => run.id === started.body.run.id);
         return completed?.status === "completed";
       }, "the routine on the existing VPS");
-      const routineTools = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8"));
+      const routineTools = mounts(`${acpDump}.mcp.json`);
       expect(routineTools.find((tool: { name: string }) => tool.name === "computer")?.args).toContain("production-vps");
       const routineMessages = (await api("GET", `/api/threads/${completed.threadId}/messages?limit=100`)).body.messages;
       expect(routineMessages.some((message: any) => message.text?.includes("This is the user's own VPS"))).toBe(true);
@@ -682,7 +696,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
       expect((await api("PATCH", `/api/bots/${bot.id}`, { cloudBackend: "vps" })).status).toBe(200);
       expect((await api("PATCH", `/api/bots/${bot.id}`, { computer: "cloud" })).status).toBe(200);
       const mountedComputer = () => {
-        const servers = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8")) as Array<{ name: string; args?: string[]; env?: Array<{ name: string; value: string }> }>;
+        const servers = mounts(`${acpDump}.mcp.json`) as Array<{ name: string; args?: string[]; env?: Array<{ name: string; value: string }> }>;
         const computer = servers.find((server) => server.name === "computer");
         expect(computer, "no computer MCP server reached the agent").toBeTruthy();
         const env = (name: string) => computer!.env?.find((entry) => entry.name === name)?.value ?? "";
@@ -777,7 +791,7 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
     try {
       expect((await api("POST", `/api/bots/${asker.id}/messages`, { text: "Ask your teammate for the queue summary" })).status).toBe(202);
       await until(async () => existsSync(`${askerDump}.mcp.json`), "the asker's turn");
-      const agents = (JSON.parse(readFileSync(`${askerDump}.mcp.json`, "utf8")) as Array<{ name: string; env?: Array<{ name: string; value: string }> }>)
+      const agents = (mounts(`${askerDump}.mcp.json`) as Array<{ name: string; env?: Array<{ name: string; value: string }> }>)
         .find((server) => server.name === "agents");
       const token = agents?.env?.find((entry) => entry.name === "SAGAX_COMMS_TOKEN")?.value ?? "";
       const sent = await fetch(`${BASE}/api/internal/coordinate-bots`, {
