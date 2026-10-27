@@ -779,8 +779,9 @@ struct DesktopEngineCard: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 12) {
                         Group {
-                            if let mark = DesktopProviderMark(driverKind: engine.driverKind, preset: engine.iconPreset) {
-                                DesktopProviderMarkView(mark: mark, size: 28)
+                            if let monogram = EngineMonogram(driverKind: engine.driverKind, preset: engine.iconPreset)
+                                ?? EngineMonogram(name: engine.name) {
+                                DesktopEngineBadge(monogram: monogram, size: 28)
                             } else {
                                 Text(verbatim: String(engine.driverKind.replacingOccurrences(of: "Agent", with: "").prefix(1)).uppercased())
                                     .font(theme.font(10, .semibold))

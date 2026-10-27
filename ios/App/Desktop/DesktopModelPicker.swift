@@ -147,8 +147,8 @@ struct DesktopModelPicker: View {
         } label: {
             HStack(spacing: 10) {
                 Group {
-                    if let mark = DesktopProviderMark(driverKind: target.driverKind, preset: nil) {
-                        DesktopProviderMarkView(mark: mark, size: 16)
+                    if let monogram = EngineMonogram(driverKind: target.driverKind, preset: nil) {
+                        DesktopEngineBadge(monogram: monogram, size: 20)
                     } else {
                         Image(systemName: "cpu").font(.system(size: 13)).foregroundStyle(theme.ink)
                     }

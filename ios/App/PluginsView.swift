@@ -521,7 +521,7 @@ private struct PluginListingRow: View {
             description: listing.reviewed ? listing.description : [listing.description, listing.domain].filter { !$0.isEmpty }.joined(separator: " · "),
             identifier: "plugin-row.\(listing.id)"
         ) {
-            PluginIconTile(key: listing.icon, remote: listing.iconUrl, size: 38.5)
+            PluginIconTile(key: listing.icon, monogram: listing.iconUrl == nil ? nil : listing.name, size: 38.5)
         } pill: {
             PluginPill(installed: installed, busy: busy, action: add)
                 .accessibilityIdentifier("plugin-add.\(listing.id)")

@@ -329,7 +329,7 @@ struct ConnectAppIcon: View {
         if item.kind == .skill {
             PluginsGlyphTile(systemImage: "sparkles", size: size)
         } else {
-            PluginIconTile(key: item.domain.map { $0.split(separator: ".").dropLast().last.map(String.init) ?? $0 }, remote: item.logo, size: size)
+            PluginIconTile(key: item.domain.map { $0.split(separator: ".").dropLast().last.map(String.init) ?? $0 }, monogram: item.logo == nil ? nil : item.name, size: size)
         }
     }
 }
@@ -679,7 +679,8 @@ struct ConnectAppsManage: View {
         }
     }
 
-    /// The entry's mark: the plugin's puzzle tile unless a server lends a logo.
+    /// The entry's mark: the plugin's puzzle tile, or its neutral monogram when
+    /// a server lends a logo (the logo itself is never drawn).
     private func icon(_ entry: InstalledEntry) -> ConnectAppItem {
         var item = entry.primary
         item.name = entry.name
