@@ -216,7 +216,34 @@ struct PrivacySecuritySettingsView: View {
     var body: some View {
         SettingsPage(title: "Privacy and security") {
             SettingsTreeCards(page: .privacySecurity)
+            BlockedPeopleCard()
         }
+    }
+}
+
+/// Settings > Privacy and security > Blocked people (App Store 1.2,
+/// Session+Moderation.swift): the people this person blocked, each with
+/// Unblock. Personal, and the same list on every device of theirs.
+struct BlockedPeopleCard: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+
+    var body: some View {
+        SettingsSectionLabel(text: "Blocked people")
+        SettingsCard {
+            if session.blockedPeople.isEmpty {
+                SettingsRow(title: "Nobody blocked", identifier: "blocked-none")
+            } else {
+                ForEach(Array(session.blockedPeople.enumerated()), id: \.element.id) { index, person in
+                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: "\(person.name)", accessory: .value(String(localized: "Unblock")), style: .action, identifier: "blocked-person") {
+                        Task { _ = await session.unblock(person.id) }
+                    }
+                }
+            }
+        }
+        SettingsFooter(text: "Their messages in rooms and direct messages are hidden for you only, on all your devices. Tap someone to unblock them.")
+            .task { await session.loadModeration() }
     }
 }
 

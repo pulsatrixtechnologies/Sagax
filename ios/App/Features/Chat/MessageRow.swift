@@ -28,6 +28,11 @@ struct MessageRow: View {
     @State private var showingSource = false
     /// Report: the report sheet for this bot reply.
     @State private var reporting = false
+    /// Report on another person's line (App Store 1.2): the server path.
+    @State private var reportingPerson = false
+    /// Block's confirmation, and a blocked line opened with Show.
+    @State private var confirmingBlock = false
+    @State private var revealedBlocked = false
     @Environment(\.messageActions) private var context
     /// Cite in the Select Text sheet (CO8); nil where nothing can be sent.
     @Environment(\.citeIntoComposer) private var citeIntoComposer
@@ -59,12 +64,17 @@ struct MessageRow: View {
 
     var body: some View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+            if !revealedBlocked, session.isBlockedLine(message, in: chat) {
+                // someone this person blocked: folded, for them only
+                BlockedLineRow { revealedBlocked = true }
+            } else {
             content
                 .environment(\.desktopMessageActions, desktop == nil || isPendingEdit ? nil : DesktopMessageActions(
                     copyText: message.webhookContent?.task ?? Citations.split(attachedContent.text).display,
                     actions: actionSet,
                     at: message.date
                 ))
+            }
 
             if let comm = message.comm {
                 // the chip already says what happened ("Posted in Standup");
@@ -154,8 +164,28 @@ struct MessageRow: View {
                 demo: session.isDemo
             )
         }
+        .sheet(isPresented: $reportingPerson) {
+            if let author = session.personAuthor(of: message, in: chat) {
+                ReportPersonSheet(message: message, chat: chat, author: author)
+                    .environmentObject(session)
+            }
+        }
+        .confirmationDialog(blockTitle, isPresented: $confirmingBlock, titleVisibility: .visible) {
+            if let author = session.personAuthor(of: message, in: chat) {
+                Button("Block", role: .destructive) { Task { _ = await session.block(author) } }
+                    .accessibilityIdentifier("block-confirm")
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Their messages in rooms and direct messages are hidden for you only. They are not told. You can unblock them in Settings.")
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("message-\(message.id)")
+    }
+
+    private var blockTitle: String {
+        let name = session.personAuthor(of: message, in: chat)?.name ?? ""
+        return String(localized: "Block \(name)?")
     }
 
     /// The desktop's message actions for this row (ChatView.tsx `Bubble`,
@@ -196,6 +226,16 @@ struct MessageRow: View {
         if message.role == .bot, case .room = chat { set.routedBy = message.routedBy }
         if MessageReport.canReport(message, isBot: { session.state.bot($0) != nil }) {
             set.report = { reporting = true }
+        } else if let author = session.personAuthor(of: message, in: chat) {
+            // another person's line (App Store 1.2): Report to the admins,
+            // Block or Unblock for this person only
+            set.report = { reportingPerson = true }
+            let blocked = session.blockedIds.contains(author.id)
+            set.personName = author.name
+            set.personBlocked = blocked
+            set.toggleBlock = blocked
+                ? { Task { _ = await session.unblock(author.id) } }
+                : { confirmingBlock = true }
         }
         return set
     }

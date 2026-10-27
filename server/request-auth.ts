@@ -376,6 +376,14 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
   // own preferences (organization server; the handler answers the session's person only)
   { methods: ["GET", "PUT", "PATCH"], path: /^\/api\/me\/preferences$/ },
+  // Content between people (server/routes/moderation.ts, App Store 1.2): the
+  // person's own blocked people and terms acceptance (the handler answers the
+  // session's person only), and a report on a message of a thread they read
+  // (the thread gates run first). The reports list stays admin.
+  { methods: ["GET", "POST"], path: /^\/api\/me\/blocks$/ },
+  { methods: ["DELETE"], path: /^\/api\/me\/blocks\/[^/]{1,600}$/ },
+  { methods: ["GET", "POST"], path: /^\/api\/me\/terms$/ },
+  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/report$/ },
   // own model, effort and notification choices for a bot this person does not own
   { methods: ["GET"], path: /^\/api\/me\/bot-overrides$/ },
   { methods: ["PUT"], path: /^\/api\/me\/bot-overrides\/[\w-]+$/ },

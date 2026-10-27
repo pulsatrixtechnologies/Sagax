@@ -26,7 +26,11 @@ export type NotifyKind =
   | "message"
   /** An organization admin force-stopped or force-deleted a bot
    * (server/org-bot-force.ts). Sent to the bot's owner only (`audience`). */
-  | "admin-action";
+  | "admin-action"
+  /** Someone reported a message another person wrote (App Store 1.2,
+   * server/moderation.ts). Sent to the organization's admins, or a solo
+   * server's owner, only (`audience`); `botId` and `threadId` are empty. */
+  | "report";
 
 export interface Notification {
   kind: NotifyKind;

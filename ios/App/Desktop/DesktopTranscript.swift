@@ -218,6 +218,10 @@ struct DesktopMessageHoverStrip: View {
             if let report = a.report {
                 DesktopActionButton(systemImage: "flag", label: "Report", action: report)
             }
+            if let toggleBlock = a.toggleBlock {
+                DesktopActionButton(systemImage: a.personBlocked ? "hand.raised.slash" : "hand.raised",
+                                    label: a.personBlocked ? "Unblock \(a.personName)" : "Block \(a.personName)", action: toggleBlock)
+            }
         }
     }
 }

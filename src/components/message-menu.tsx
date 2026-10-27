@@ -1,6 +1,6 @@
 // What moves into a message's "more" menu, built the same way for 1:1 chats
 // and rooms, bot answers and the person's own bubbles.
-import { Code, Eye, Pencil, Pin, PinOff, RefreshCw, Square, Volume2 } from "lucide-react";
+import { Ban, Code, Eye, Flag, Pencil, Pin, PinOff, RefreshCw, Square, UserCheck, Volume2 } from "lucide-react";
 import { t } from "@/lib/i18n";
 import type { ConfigStatus } from "@/state/store";
 import { ACTION_ICON, type MessageMenuItem } from "@/components/MessageActions";
@@ -80,5 +80,21 @@ export function userMessageMenu({ onEdit, pin }: { onEdit?: () => void; pin?: Pi
   return [
     ...(onEdit ? [{ key: "edit", icon: <Pencil {...ACTION_ICON} />, label: t("chat.editMessage"), onSelect: onEdit }] : []),
     ...pinItem(pin),
+  ];
+}
+
+/** Another person's line (App Store 1.2, src/lib/moderation.ts): Report it
+ * to the admins, and Block or Unblock its author for yourself only. */
+export function personModerationMenu({ name, blocked, onReport, onToggleBlock }: {
+  name: string;
+  blocked: boolean;
+  onReport: () => void;
+  onToggleBlock: () => void;
+}): MessageMenuItem[] {
+  return [
+    { key: "report", icon: <Flag {...ACTION_ICON} />, label: t("moderation.report.action"), onSelect: onReport },
+    blocked
+      ? { key: "unblock", icon: <UserCheck {...ACTION_ICON} />, label: t("moderation.unblock.action", { name }), onSelect: onToggleBlock }
+      : { key: "block", icon: <Ban {...ACTION_ICON} />, label: t("moderation.block.action", { name }), onSelect: onToggleBlock },
   ];
 }

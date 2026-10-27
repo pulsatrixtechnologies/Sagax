@@ -24,6 +24,11 @@ struct MessageActionSet {
     var routedBy: RoutedBy?
     /// Report a bot's reply (App Store guideline 1.2): opens the report sheet.
     var report: (() -> Void)?
+    /// Another person's line (App Store 1.2): Block or Unblock its author,
+    /// for this person only. `personBlocked` says which.
+    var toggleBlock: (() -> Void)?
+    var personBlocked = false
+    var personName = ""
 }
 
 struct MessageMenu: View {
@@ -110,6 +115,13 @@ struct MessageMenu: View {
         if let report = actions.report {
             Divider()
             Button("Report", systemImage: "flag", action: report)
+        }
+        if let toggleBlock = actions.toggleBlock {
+            if actions.personBlocked {
+                Button("Unblock \(actions.personName)", systemImage: "hand.raised.slash", action: toggleBlock)
+            } else {
+                Button("Block \(actions.personName)", systemImage: "hand.raised", role: .destructive, action: toggleBlock)
+            }
         }
         if let routedBy = actions.routedBy {
             Section {

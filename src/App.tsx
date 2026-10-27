@@ -25,6 +25,7 @@ import {
 } from "@/components/lazy-screens";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
+import { TermsGate } from "@/components/TermsGate";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { DesktopCapabilitiesProvider, useCaptionChrome, useDesktopCapabilities, WindowDragStrip } from "@/components/DesktopCapabilities";
 import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
@@ -447,6 +448,8 @@ function Shell() {
     <div className="flex h-full flex-col" data-app-shell="">
       {/* What's new sits above the update dialog. Both are outside the layout flow. */}
       <ReleaseNotesPrompt />
+      {/* The terms of use, once per account (App Store 1.2). */}
+      <TermsGate />
       <UpdateBanner />
       {/* A bot driving the person's own Chrome: who, where, and Stop. */}
       <MyChromeIndicator />

@@ -2451,6 +2451,37 @@ carries as `resources/ui` (outside the asar) and serves from there. Tests: `src/
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.
 
+## Report, Block and the terms between people (App Store 1.2, 2026-10-26)
+
+Rooms with several people and direct messages between people carry content
+between users. Keep these rules, covered by `server/moderation.test.ts`,
+`server/routes/moderation.test.ts`, `src/lib/moderation.test.ts` and
+`ios/Tests/CompanionCoreTests/ModerationTests.swift`:
+
+- Report: `POST /api/threads/:t/messages/:m/report { reason, note? }`
+  (`server/routes/moderation.ts`) on a line someone else wrote. The author
+  comes from the stored message, never the body; the thread gates run
+  first (a people DM's two people, a read-only member too, like a reaction).
+  The report (with the message's words) is stored in
+  `DATA_DIR/moderation.json` and a `notify` of kind `report` reaches the
+  organization's admins and the operator (a solo server's owner) only
+  (`audience`). Admins read `GET /api/moderation/reports` and mark one
+  handled (`POST .../:id/resolve`), admin scope; the desktop shows them in
+  Settings > Notifications > Reports. A bot's reply keeps its own Report
+  on iOS (an email to Pulsatrix, `MessageReport.swift`).
+- Block is personal: `GET/POST /api/me/blocks`, `DELETE /api/me/blocks/:id`,
+  the session's person only. Clients fold the person's lines into "Message
+  from a blocked person" (Show opens it) for that person only; nothing
+  changes for anyone else and no admin option turns Report or Block off.
+  Unblock: desktop Settings > Notifications, iOS Settings > Privacy and
+  security, or the message menu.
+- Terms: `GET/POST /api/me/terms`, accepted once per person with the date
+  (`TERMS_VERSION`), asked by the desktop (`TermsGate`) and the phone
+  (`TermsAcceptanceSheet`) after sign-in. An older server without the route
+  asks nothing. The demo (`Demo.swift`) answers all these routes.
+- Account deletion forgets the person's blocks and acceptance; reports stay
+  with the admins.
+
 ## Background effects behind the conversation (2026-10-18)
 
 Settings > Appearance > Background effects ("Effets d'arrière-plan"), shown

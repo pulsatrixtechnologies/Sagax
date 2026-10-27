@@ -21,6 +21,9 @@ import { NOTIFICATION_SOUND_CHOICES, notificationSoundChoice, playNotificationSo
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
 import { NotificationInvite } from "./NotificationInvite";
+import { BlockedPeopleSettings, ReportsSettings } from "./settings/ModerationSettings";
+import { useStoreSelector } from "@/state/store-selector";
+import { viewerIsOrgAdmin } from "@/lib/group-owner";
 
 function ThisComputer() {
   return <span className="min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary">· {t("settings.notifications.thisComputer")}</span>;
@@ -34,6 +37,8 @@ export function NotificationSettings({ privacy = false }: { privacy?: boolean })
   const shake = useLocalSwitch(nudgeShake);
   const chime = useLocalSwitch(approvalChime);
   const soundChoice = notificationSoundChoice.use();
+  // App Store 1.2: an admin (a solo server's owner) reads the reports here.
+  const admin = useStoreSelector((current) => viewerIsOrgAdmin(current.config));
   return (
     <>
       <SettingsGroup title={t("settings.group.alerts")} groupId="alerts" accessory={<ThisComputer />}>
@@ -83,6 +88,12 @@ export function NotificationSettings({ privacy = false }: { privacy?: boolean })
           </SettingsGroup>
         </div>
       )}
+      {/* App Store 1.2 (2026-10-26): the people this person blocked, for them
+          only, and the reports people sent, for an admin. */}
+      <div data-settings-card="notifications.blockedPeople">
+        <BlockedPeopleSettings />
+      </div>
+      {admin && <ReportsSettings />}
     </>
   );
 }
