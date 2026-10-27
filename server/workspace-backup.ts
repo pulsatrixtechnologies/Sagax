@@ -14,6 +14,7 @@ import { Worker } from "node:worker_threads";
 import * as tar from "tar";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { writeFileAtomic } from "./atomic.ts";
+import { contentKeysForExport, unsealDatabaseCopy, type ExportedContentKey } from "./content-export.ts";
 import { mergePrincipalFiles } from "./principals.ts";
 import { removeThreadTrees } from "./runtime/store.ts";
 import {
@@ -93,6 +94,9 @@ export interface CreateWorkspaceBackupOptions {
   password: string;
   clientState?: WorkspaceBackupClientState;
   appVersion?: string;
+  /** Unwrapped content keys, handed to the worker in memory so the message
+   * snapshot is exported in the clear (docs/content-encryption.md). */
+  contentKeys?: ExportedContentKey[];
 }
 type CreatedWorkspaceBackup = { id: string; path: string; summary: WorkspaceBackupSummary };
 export interface WorkspaceRestoreResult {
@@ -540,7 +544,7 @@ export async function createWorkspaceBackup(dataDir: string, options: CreateWork
   let completed = false;
   try {
     worker = new Worker(existsSync(source) ? source : new URL("./workspace-backup.worker.js", import.meta.url), {
-      workerData: { dataDir, options, jobId }, execArgv: [],
+      workerData: { dataDir, options: { ...options, contentKeys: options.contentKeys ?? contentKeysForExport() }, jobId }, execArgv: [],
     });
     const result = await new Promise<CreatedWorkspaceBackup>((resolveBackup, reject) => {
       const failed = () => reject(new Error("The backup worker stopped before completing. Try again."));
@@ -614,6 +618,8 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       finally { clearInterval(completionPulse); db.close(); }
       const snapshotDb = new DatabaseSync(join(snapshot, snapshotName));
       try { snapshotDb.exec("PRAGMA journal_mode = DELETE"); } finally { snapshotDb.close(); }
+      // sealed transcripts leave in the clear, inside the password-encrypted archive
+      if (name === "messages.db") unsealDatabaseCopy(join(snapshot, snapshotName), options.contentKeys ?? contentKeysForExport());
       if (name === "messages.db") confidentialAttachments = stripConfidentialMessages(join(snapshot, snapshotName), new Set(confidential.keys()), forgotten);
       if (name === "runtime.db") stripConfidentialRuntime(join(snapshot, snapshotName), new Set(confidential.keys()), forgotten);
     }

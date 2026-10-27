@@ -111,6 +111,11 @@ thread loses (messages, event and native logs):
   and status;
 - its turns' idempotency receipts in the message database (any deleted
   thread loses those);
+- its own content key (`docs/content-encryption.md`): a confidential thread
+  is sealed under a key of its own, wrapped under its owner's, and that key
+  is destroyed with the thread (its row zeroed, the write-ahead log
+  truncated), so nothing left in the live database (a row, an index entry,
+  a free page) opens again (cryptographic erasure);
 - the engines' own transcripts of it (below): its idle engine processes are
   asked to close (an engine whose driver keeps no warm process, or a turn
   still running elsewhere, is not waited for), the purge runs right after
@@ -198,11 +203,18 @@ Confidential means kept from the other people **using Sagax**. It is not
 end-to-end encryption, and it does not hide the thread from:
 
 - **The server operator, and anyone with administrator access to the VM or
-  cluster and its disk.** Messages are stored on the server like any other
-  thread until the thread is deleted; `bots.json` holds its task record.
+  cluster and its disk.** Messages are encrypted at rest under the thread's
+  own key (`docs/content-encryption.md`), but the running server holds the
+  keys, and whoever holds the key-encryption key (the server's key file, or
+  access to the Key Vault key) can open them until the thread is deleted;
+  `bots.json` holds its task record.
 - **Backups made outside Sagax.** Disk and cluster backups (for example
   Velero, kept 30 days) contain whatever was on disk when they ran, deleted
-  threads included until those backups expire.
+  threads included until those backups expire. A thread's messages there are
+  sealed, but such a copy also holds the thread's wrapped key of that time:
+  with the key-encryption key, which a deletion does not change, it still
+  opens. Other files of the thread (its folder, attachments, engine
+  transcripts) are not encrypted by Sagax.
 - **The model provider.** Every turn is sent to the engine the bot runs on,
   as any turn is.
 - **Perspicax.** A call the person allows (a card) or a read through a

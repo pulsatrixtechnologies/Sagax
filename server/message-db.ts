@@ -10,17 +10,22 @@
 // Legacy JSON thread files import lazily: the first read of a thread with
 // no rows pulls the old file in, after which the DB is the source of
 // truth (the JSON file is left behind as a one-time backup).
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import { DATA_DIR } from "./config.ts";
+import { ContentSealError, fieldAad, messageAad, openField, openText, seal, sealField, sealedFieldKeyId } from "./content-crypto.ts";
+import { provideContentKeys, type ExportedContentKey } from "./content-export.ts";
+import { ContentKeyring, ContentKeyUnavailable, ensureContentKeySchema, localKekProvider, WORKSPACE_OWNER, type KekProvider, type LiveKey } from "./content-keys.ts";
+import { resolveVaultKey } from "./mcp-oauth.ts";
+import { blindSnippet, indexColumns, indexSourcesOf, recallHolds, recallMatch, recallTermsFor, skeletonOf, type RecallTerm } from "./message-sealing.ts";
 import { peerProvenanceAuthor, WEBHOOK_AUTHOR, type WorkOrigin } from "./peer-provenance.ts";
 import type { ResolvedSender, SteerQueueReason } from "../shared/wire.ts";
 import type { Message } from "./store.ts";
 import type { UsageTrigger } from "./usage-ledger.ts";
 import { MessageSearchWorker } from "./message-search-worker.ts";
-import { searchMessagesInDatabase, type SearchHit } from "./message-search-query.ts";
+import { searchMessagesInDatabase, type SealedKeyMaterial, type SearchHit } from "./message-search-query.ts";
 export type { SearchHit } from "./message-search-query.ts";
 
 const DB_FILE = () => join(DATA_DIR, "messages.db");
@@ -90,7 +95,53 @@ function open(): DatabaseSync {
   `);
   ensureRecallIndex(db);
   ensureMemoryIndex(db);
+  ensureSealedSchema(db);
   return db;
+}
+
+// Content encryption at rest (docs/content-encryption.md): a sealed row has
+// `sealed` (AES-256-GCM of the whole message), `key_id` (its content key),
+// no `text`, and a cleartext projection in `json` (message-sealing.ts).
+// Its blind index is a row of message_index (the keyed Bloom filter of a
+// text or activity row; `words` when its keyed words are in
+// messages_sealed_fts), written just after the row; no index row yet means
+// not indexed yet. Plain rows have all three
+// empty, so a database never encrypted reads exactly as before.
+function ensureSealedSchema(db: DatabaseSync): void {
+  const columns = new Set((db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!columns.has("sealed")) db.exec("ALTER TABLE messages ADD COLUMN sealed BLOB");
+  if (!columns.has("key_id")) db.exec("ALTER TABLE messages ADD COLUMN key_id TEXT");
+  ensureContentKeySchema(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS content_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS thread_keys (
+      thread_id TEXT PRIMARY KEY,
+      key_id TEXT NOT NULL
+    );
+    CREATE VIRTUAL TABLE IF NOT EXISTS messages_sealed_fts USING fts5(
+      words, prefixes, content='', contentless_delete=1, detail=column
+    );
+    CREATE TABLE IF NOT EXISTS message_index (
+      rowid INTEGER PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      at INTEGER NOT NULL,
+      key_id TEXT NOT NULL,
+      words INTEGER NOT NULL,
+      bloom BLOB
+    );
+    CREATE INDEX IF NOT EXISTS message_index_thread ON message_index(thread_id);
+    CREATE TRIGGER IF NOT EXISTS messages_sealed_ad AFTER DELETE ON messages WHEN old.key_id IS NOT NULL BEGIN
+      DELETE FROM messages_sealed_fts WHERE rowid IN (SELECT rowid FROM message_index WHERE rowid = old.rowid AND words = 1);
+      DELETE FROM message_index WHERE rowid = old.rowid;
+    END;
+    CREATE TRIGGER IF NOT EXISTS messages_sealed_au AFTER UPDATE OF sealed, key_id ON messages WHEN old.key_id IS NOT NULL BEGIN
+      DELETE FROM messages_sealed_fts WHERE rowid IN (SELECT rowid FROM message_index WHERE rowid = old.rowid AND words = 1);
+      DELETE FROM message_index WHERE rowid = old.rowid;
+    END;
+  `);
 }
 
 // The bot's memory files — MEMORY.md, memory/<topic>.md, memory/log/<day>.md
@@ -180,9 +231,9 @@ function ensureRecallIndex(db: DatabaseSync): void {
 // triggers on), leaving a dangling FTS entry. An upsert keeps the rowid and
 // runs the update trigger, so the index never drifts from the table.
 const UPSERT_MESSAGE =
-  "INSERT INTO messages (thread_id, id, at, role, kind, text, json) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+  "INSERT INTO messages (thread_id, id, at, role, kind, text, json, sealed, key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
   "ON CONFLICT(thread_id, id) DO UPDATE SET at = excluded.at, role = excluded.role, kind = excluded.kind, " +
-  "text = excluded.text, json = excluded.json";
+  "text = excluded.text, json = excluded.json, sealed = excluded.sealed, key_id = excluded.key_id RETURNING rowid";
 
 /** The live handle — reopened when the file was removed out from under us
  * (tests wipe DATA_DIR between cases; a fresh Store must get a fresh DB,
@@ -192,9 +243,24 @@ function db(): DatabaseSync {
   try {
     handle?.close();
   } catch {}
+  // a new database: none of the old one's keys, bindings or queued tokens apply
+  forgetSealingState();
   handle = open();
   handlePath = DB_FILE();
+  scheduleMigration();
   return handle;
+}
+
+/** Statements prepared once per handle: the write and read paths run per message. */
+const statements = new Map<string, StatementSync>();
+function cached(sql: string): StatementSync {
+  const database = db();
+  let statement = statements.get(sql);
+  if (!statement) {
+    statement = database.prepare(sql);
+    statements.set(sql, statement);
+  }
+  return statement;
 }
 
 /** Nested writes use savepoints: even a caught inner error must not commit
@@ -228,6 +294,567 @@ function transaction<T>(fn: (database: DatabaseSync) => T): T {
   } finally {
     transactionDepth = 0;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Content encryption at rest (docs/content-encryption.md)
+
+export type ContentEncryptionMode = "on" | "off";
+
+/** Who a thread's content belongs to: its person (or the workspace for a
+ * room or an unowned thread), and whether it is confidential (its own key,
+ * wrapped under the owner's). Null: not known yet (the store is loading);
+ * the row is written plain and the migration seals it later. */
+export type ContentOwnerResolver = (threadId: string) => { owner: string; confidential: boolean } | null;
+
+export interface ContentEncryptionOptions {
+  mode: ContentEncryptionMode;
+  /** the key-encryption key; local (the vault key) when absent */
+  provider?: KekProvider;
+  /** providers that only unwrap keys an earlier configuration wrapped */
+  others?: KekProvider[];
+  resolveOwner?: ContentOwnerResolver;
+  /** background migration on timers (tests drive it by hand) */
+  autoMigrate?: boolean;
+}
+
+/** SAGAX_CONTENT_ENCRYPTION: on unless it says off (the server default). */
+export function contentEncryptionModeFromEnv(env: NodeJS.ProcessEnv = process.env): ContentEncryptionMode {
+  return /^(off|0|false|no)$/i.test(env.SAGAX_CONTENT_ENCRYPTION?.trim() ?? "") ? "off" : "on";
+}
+
+let configured: ContentEncryptionOptions | null = null;
+let ring: ContentKeyring | null = null;
+let ownerOf: ContentOwnerResolver = () => ({ owner: WORKSPACE_OWNER, confidential: false });
+/** thread id -> the key its new rows are sealed with */
+const bindings = new Map<string, LiveKey>();
+interface PendingIndex {
+  threadId: string;
+  keyId: string;
+  sources: ReturnType<typeof indexSourcesOf>;
+}
+/** rowid -> tokens still to write: indexing runs just after the write, in
+ * one batch, so a streamed reply re-indexes once, not per patch. */
+const pendingIndex = new Map<number, PendingIndex>();
+let indexTimer: ReturnType<typeof setTimeout> | null = null;
+let unreadableWarned = false;
+
+/** Unconfigured (a script, a test): the library default is off unless
+ * SAGAX_CONTENT_ENCRYPTION=on; sealed rows still read either way. */
+function encryptionMode(): ContentEncryptionMode {
+  if (configured) return configured.mode;
+  return process.env.SAGAX_CONTENT_ENCRYPTION?.trim().toLowerCase() === "on" ? "on" : "off";
+}
+
+function keyring(): ContentKeyring {
+  if (ring) return ring;
+  const local = localKekProvider(() => resolveVaultKey(DATA_DIR));
+  const active = configured?.provider ?? local;
+  const others = [...(configured?.others ?? []), ...(active.id === "local" ? [] : [local])];
+  ring = new ContentKeyring(db, active, others, () => scheduleMigration());
+  return ring;
+}
+
+/** Called once at startup (server/index.ts) and by tests. */
+export function configureContentEncryption(options: ContentEncryptionOptions): void {
+  configured = options;
+  ring = null;
+  bindings.clear();
+  if (options.resolveOwner) ownerOf = options.resolveOwner;
+  migration.dirty = true;
+  scheduleMigration();
+}
+
+export function setContentOwnerResolver(resolve: ContentOwnerResolver): void {
+  ownerOf = resolve;
+}
+
+/** Unwrap every stored key ahead of the first read: required with an
+ * asynchronous provider (Key Vault), harmless locally. */
+export async function unlockContentKeys(): Promise<{ unlocked: number; failed: number; rewrapped: number }> {
+  db();
+  const result = await keyring().unlock();
+  if (result.failed) console.warn(`content encryption: ${result.failed} content key(s) could not be unwrapped on this launch`);
+  return result;
+}
+
+function forgetSealingState(): void {
+  ring?.reset();
+  bindings.clear();
+  pendingIndex.clear();
+  statements.clear();
+  migration.cursor = 0;
+  migration.phase = "messages";
+  migration.dirty = true;
+}
+
+/** The key a thread's new rows are sealed with; null writes them plain
+ * (encryption off, owner not known yet, key not available). */
+function sealingKey(threadId: string): LiveKey | null {
+  if (encryptionMode() !== "on") return null;
+  const bound = bindings.get(threadId);
+  if (bound) return bound;
+  const ringNow = keyring();
+  const row = cached("SELECT key_id FROM thread_keys WHERE thread_id = ?").get(threadId) as { key_id: string } | undefined;
+  if (row) {
+    const key = ringNow.key(row.key_id);
+    if (key && key !== "destroyed") {
+      bindings.set(threadId, key);
+      return key;
+    }
+    if (!key) return null; // exists, not unwrapped yet
+  }
+  let owner: ReturnType<ContentOwnerResolver>;
+  try { owner = ownerOf(threadId); } catch { owner = null; }
+  if (!owner) return null;
+  let key: LiveKey | null;
+  try { key = owner.confidential ? ringNow.threadKey(owner.owner, threadId) : ringNow.ownerKey(owner.owner); }
+  catch { key = null; }
+  if (!key) return null;
+  cached("INSERT INTO thread_keys (thread_id, key_id) VALUES (?, ?) ON CONFLICT(thread_id) DO UPDATE SET key_id = excluded.key_id").run(threadId, key.keyId);
+  bindings.set(threadId, key);
+  return key;
+}
+
+interface RowValues {
+  text: string | null;
+  json: string;
+  sealed: Buffer | null;
+  keyId: string | null;
+}
+
+function rowValues(threadId: string, message: Message): { values: RowValues; key: LiveKey | null } {
+  const full = JSON.stringify(message);
+  const key = sealingKey(threadId);
+  if (!key) return { values: { text: message.text ?? null, json: full, sealed: null, keyId: null }, key: null };
+  return {
+    values: { text: null, json: skeletonOf(message, full), sealed: seal(key.dek, full, messageAad(key.keyId, key.owner, threadId, String(message.id))), keyId: key.keyId },
+    key,
+  };
+}
+
+function afterWrite(rowid: number | bigint | undefined, threadId: string, message: Message, key: LiveKey | null): void {
+  if (rowid === undefined) return;
+  const id = Number(rowid);
+  if (!key) {
+    pendingIndex.delete(id);
+    if (encryptionMode() === "on") migration.plaintext = true;
+    return;
+  }
+  pendingIndex.set(id, { threadId, keyId: key.keyId, sources: indexSourcesOf(message) });
+  scheduleIndex(40);
+}
+
+/** In the background the queue drains in slices of a few milliseconds, so
+ * a burst of writes (an import, the migration) never holds the event loop. */
+function scheduleIndex(delay: number): void {
+  if (indexTimer) return;
+  indexTimer = setTimeout(() => {
+    indexTimer = null;
+    try { flushContentIndex(INDEX_SLICE_MS); } catch { /* the migration reindexes what has no index row */ }
+    if (pendingIndex.size) scheduleIndex(1);
+  }, delay);
+  indexTimer.unref?.();
+}
+const INDEX_SLICE_MS = 6;
+
+function writeRow(threadId: string, message: Message): void {
+  const { values, key } = rowValues(threadId, message);
+  const row = cached(UPSERT_MESSAGE).get(threadId, message.id, message.at, message.role, message.kind, values.text, values.json, values.sealed, values.keyId) as { rowid: number } | undefined;
+  afterWrite(row?.rowid, threadId, message, key);
+}
+
+/** Write the queued blind-index tokens. Runs before every search, recall
+ * and backup, so a query never misses a row already written. */
+export function flushContentIndex(budgetMs = Infinity): void {
+  if (budgetMs === Infinity && indexTimer) { clearTimeout(indexTimer); indexTimer = null; }
+  if (!pendingIndex.size || !handle) return;
+  const started = performance.now();
+  const entries = [...pendingIndex];
+  pendingIndex.clear();
+  let done = 0;
+  transaction(() => {
+    const check = cached("SELECT m.key_id, m.at, i.rowid AS indexed FROM messages m LEFT JOIN message_index i ON i.rowid = m.rowid WHERE m.rowid = ?");
+    const insert = cached("INSERT INTO messages_sealed_fts (rowid, words, prefixes) VALUES (?, ?, ?)");
+    const record = cached("INSERT INTO message_index (rowid, thread_id, at, key_id, words, bloom) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const [rowid, entry] of entries) {
+      // a background slice stops at its budget; the rest waits for the next
+      if (done % 8 === 0 && performance.now() - started > budgetMs) break;
+      done++;
+      const row = check.get(rowid) as { key_id: string | null; at: number; indexed: number | null } | undefined;
+      if (!row || row.key_id !== entry.keyId || row.indexed !== null) continue;
+      const key = keyring().key(entry.keyId);
+      if (!key || key === "destroyed") continue;
+      const columns = indexColumns(key.tokenizer(), entry.sources);
+      if (columns?.words) insert.run(rowid, columns.words, columns.prefixes);
+      record.run(rowid, entry.threadId, row.at, entry.keyId, columns?.words ? 1 : 0, columns?.bloom ?? null);
+    }
+  });
+  for (const [rowid, entry] of entries.slice(done)) if (!pendingIndex.has(rowid)) pendingIndex.set(rowid, entry);
+}
+
+interface StoredRow {
+  thread_id?: string;
+  id?: string;
+  json: string;
+  sealed?: Uint8Array | null;
+  key_id?: string | null;
+}
+
+/** A stored row as the message it holds. Null: its key was destroyed
+ * (erased), or the blob does not open here (copied from another row).
+ * Throws ContentKeyUnavailable when the key exists but is locked, so a
+ * caller never mistakes a locked transcript for an empty one. */
+function decodeRow(row: StoredRow, threadId?: string): Message | null {
+  if (!row.sealed) return JSON.parse(row.json) as Message;
+  const key = keyring().key(row.key_id ?? "");
+  if (key === "destroyed") return null;
+  if (!key) throw new ContentKeyUnavailable();
+  const thread = threadId ?? row.thread_id ?? "";
+  const id = row.id ?? (JSON.parse(row.json) as { id?: string }).id ?? "";
+  try {
+    return JSON.parse(openText(key.dek, row.sealed, messageAad(key.keyId, key.owner, thread, id))) as Message;
+  } catch (error) {
+    if (!(error instanceof ContentSealError) && !(error instanceof SyntaxError)) throw error;
+    if (!unreadableWarned) {
+      unreadableWarned = true;
+      console.warn("content encryption: a sealed message did not open with its key and was left out (no content logged)");
+    }
+    return null;
+  }
+}
+
+const decodeAll = (rows: StoredRow[], threadId?: string): Message[] => {
+  const out: Message[] = [];
+  for (const row of rows) {
+    const message = decodeRow(row, threadId);
+    if (message) out.push(message);
+  }
+  return out;
+};
+
+/** The text of a sealed or plain row, for a head or snippet. */
+function rowText(row: StoredRow & { text?: string | null }): string | null {
+  if (typeof row.text === "string") return row.text;
+  if (!row.sealed) return null;
+  const message = decodeRow(row);
+  return typeof message?.text === "string" ? message.text : null;
+}
+
+// A sealed TEXT field: a receipt's result, a queued follow-up's payload.
+function sealText(threadId: string | null, domain: string, id: string, value: string): string {
+  const key = threadId ? sealingKey(threadId) : workspaceKey();
+  if (!key) {
+    if (encryptionMode() === "on") migration.plaintext = true;
+    return value;
+  }
+  return sealField(key.keyId, key.dek, value, fieldAad(key.keyId, key.owner, domain, id));
+}
+
+function workspaceKey(): LiveKey | null {
+  if (encryptionMode() !== "on") return null;
+  try { return keyring().ownerKey(WORKSPACE_OWNER); } catch { return null; }
+}
+
+/** Null: its key was destroyed. */
+function openTextField(domain: string, id: string, value: string): string | null {
+  const keyId = sealedFieldKeyId(value);
+  if (!keyId) return value;
+  const key = keyring().key(keyId);
+  if (key === "destroyed") return null;
+  if (!key) throw new ContentKeyUnavailable();
+  try { return openField(key.dek, value, fieldAad(key.keyId, key.owner, domain, id)); }
+  catch { return null; }
+}
+
+/** Live keys for the search worker and a workspace backup (in memory only). */
+function liveKeyMaterial(): SealedKeyMaterial[] {
+  return keyring().liveKeys().map((key) => ({ keyId: key.keyId, owner: key.owner, raw: key.raw }));
+}
+provideContentKeys((): ExportedContentKey[] => {
+  if (!handle) db();
+  return keyring().liveKeys().map((key) => ({ keyId: key.keyId, owner: key.owner, threadId: key.threadId, raw: key.raw }));
+});
+
+/** Whether any sealed row exists (the blind index then takes part in reads). */
+function anySealed(): boolean {
+  return Boolean(cached("SELECT 1 FROM content_keys LIMIT 1").get());
+}
+
+/** A thread changes key: it turned confidential, or its owner changed. New
+ * rows take the new key at once; the migration re-seals the old ones. */
+export function contentKeyChanged(threadId: string): void {
+  bindings.delete(threadId);
+  if (!handle && !existsSync(DB_FILE())) return;
+  cached("DELETE FROM thread_keys WHERE thread_id = ?").run(threadId);
+  migration.dirty = true;
+  scheduleMigration();
+}
+
+/** Cryptographic erasure of a person (Loi 25): their content keys and the
+ * confidential-thread keys under them are destroyed, with every row still
+ * sealed under one. A thread that is still someone else's (a bot that
+ * changed hands) is first re-sealed under its current owner. */
+export function eraseContentOwner(owner: string): { keys: number; rows: number } {
+  const ringNow = keyring();
+  const keyIds = ringNow.ownerKeyIds(owner);
+  if (!keyIds.length) return { keys: 0, rows: 0 };
+  flushContentIndex();
+  const placeholders = keyIds.map(() => "?").join(", ");
+  const threads = (db().prepare(`SELECT DISTINCT thread_id FROM messages WHERE key_id IN (${placeholders})`).all(...keyIds) as Array<{ thread_id: string }>).map((row) => row.thread_id);
+  for (const threadId of threads) {
+    let current: ReturnType<ContentOwnerResolver>;
+    try { current = ownerOf(threadId); } catch { current = null; }
+    if (!current || current.owner === owner) continue;
+    bindings.delete(threadId);
+    db().prepare("DELETE FROM thread_keys WHERE thread_id = ?").run(threadId);
+    resealThread(threadId);
+  }
+  let rows = 0;
+  writeFollowups((connection) => {
+    connection.exec("PRAGMA secure_delete = ON");
+    try {
+      rows = Number(connection.prepare(`DELETE FROM messages WHERE key_id IN (${placeholders})`).run(...keyIds).changes);
+      connection.prepare(`DELETE FROM thread_keys WHERE key_id IN (${placeholders})`).run(...keyIds);
+      ringNow.destroyKeys(keyIds);
+    } finally { connection.exec("PRAGMA secure_delete = OFF"); }
+  });
+  for (const [threadId, key] of bindings) if (keyIds.includes(key.keyId)) bindings.delete(threadId);
+  checkpointSoon();
+  return { keys: keyIds.length, rows };
+}
+
+/** Re-seal one thread's rows under its current key, now (an erasure). */
+function resealThread(threadId: string): void {
+  const rows = db().prepare("SELECT rowid, json, sealed, key_id, id FROM messages WHERE thread_id = ?").all(threadId) as unknown as Array<StoredRow & { rowid: number }>;
+  transaction(() => {
+    for (const row of rows) {
+      const message = decodeRow(row, threadId);
+      if (message) rewriteRow(row.rowid, threadId, message);
+    }
+  });
+}
+
+function rewriteRow(rowid: number, threadId: string, message: Message): void {
+  const { values, key } = rowValues(threadId, message);
+  cached("UPDATE messages SET text = ?, json = ?, sealed = ?, key_id = ? WHERE rowid = ?").run(values.text, values.json, values.sealed, values.keyId, rowid);
+  afterWrite(rowid, threadId, message, key);
+}
+
+let checkpointTimer: ReturnType<typeof setTimeout> | null = null;
+/** Drop the write-ahead log's copies of destroyed keys soon after. */
+function checkpointSoon(): void {
+  if (checkpointTimer) return;
+  checkpointTimer = setTimeout(() => {
+    checkpointTimer = null;
+    try { handle?.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* readers busy: the next checkpoint takes it */ }
+  }, 0);
+  checkpointTimer.unref?.();
+}
+
+// The migration: small batches on timers, a few milliseconds each, so the
+// event loop never waits on it. "on" seals plain rows (and re-seals rows
+// whose thread changed key); "off" opens every sealed row back to plain.
+// Each batch is one transaction and verifies what it wrote opens again
+// before it commits. A pass ends at the last row; a change starts another.
+const migration = {
+  phase: "messages" as "messages" | "followups" | "receipts" | "done",
+  cursor: 0,
+  dirty: true,
+  /** a plain row may remain (encryption on): the search reads plain rows too */
+  plaintext: true,
+  timer: null as ReturnType<typeof setTimeout> | null,
+  /** a plain row was left during this pass (no key yet) */
+  passPlain: false,
+  sealedThisPass: 0,
+  sealed: 0,
+  opened: 0,
+  failed: 0,
+};
+
+/** A few milliseconds of work, then a pause: the migration takes about a
+ * sixth of one core while it runs, and never a request's turn. */
+const MIGRATION_SLICE_MS = 4;
+const MIGRATION_PAUSE_MS = 20;
+
+function scheduleMigration(): void {
+  if (configured?.autoMigrate === false || migration.timer) return;
+  if (!configured) return; // scripts and tests that never configured: no timers
+  migration.timer = setTimeout(() => {
+    migration.timer = null;
+    let finished = true;
+    try { finished = runContentMigration(MIGRATION_SLICE_MS).done; }
+    catch { finished = true; }
+    if (!finished) scheduleMigration();
+  }, MIGRATION_PAUSE_MS);
+  migration.timer.unref?.();
+}
+
+/** At start, before the server serves anything: what a sealing pass asked
+ * for, so neither the plain full-text index nor a free page keeps text
+ * from before it. Skipped above
+ * `maxBytes` (the next start tries again). Returns how long it took. */
+export function vacuumAfterSealing(maxBytes = 1024 ** 3): number | null {
+  const database = db();
+  if (!(cached("SELECT value FROM content_meta WHERE key = 'vacuum'").get())) return null;
+  let size = 0;
+  try { size = statSync(DB_FILE()).size; } catch { return null; }
+  if (size > maxBytes) return null;
+  const started = performance.now();
+  flushContentIndex();
+  database.exec("DELETE FROM content_meta WHERE key = 'vacuum'");
+  database.exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')");
+  database.exec("VACUUM");
+  try { database.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* the next checkpoint */ }
+  statements.clear();
+  return performance.now() - started;
+}
+
+export interface ContentMigrationStatus {
+  mode: ContentEncryptionMode;
+  provider: string;
+  done: boolean;
+  sealedRows: number;
+  plainRows: number;
+  keys: number;
+}
+
+/** Counts for a status line (a scan: not for a hot path). */
+export function contentEncryptionStatus(): ContentMigrationStatus {
+  const counts = db().prepare("SELECT SUM(sealed IS NOT NULL) AS sealed, SUM(sealed IS NULL) AS plain FROM messages").get() as { sealed: number | null; plain: number | null };
+  return {
+    mode: encryptionMode(),
+    provider: keyring().providerId,
+    done: migration.phase === "done" && !migration.dirty,
+    sealedRows: counts.sealed ?? 0,
+    plainRows: counts.plain ?? 0,
+    keys: keyring().count(),
+  };
+}
+
+/** One step of the migration: one batch, then more while `budgetMs` lasts
+ * (Infinity: to the end). */
+export function runContentMigration(budgetMs = 8): { done: boolean } {
+  const started = performance.now();
+  if (migration.phase === "done") {
+    if (!migration.dirty) return { done: true };
+    migration.phase = "messages";
+    migration.cursor = 0;
+  }
+  if (migration.cursor === 0 && migration.phase === "messages") {
+    migration.dirty = false;
+    migration.passPlain = false;
+  }
+  const on = encryptionMode() === "on";
+  const database = db();
+  // at least one batch per step, then as many as fit in the budget
+  for (let first = true; first || performance.now() - started < budgetMs; first = false) {
+    if (migration.phase === "messages") {
+      const rows = database.prepare(
+        "SELECT m.rowid AS rowid, m.thread_id, m.id, m.json, m.sealed, m.key_id, i.rowid AS indexed, k.key_id AS bound FROM messages m " +
+        "LEFT JOIN thread_keys k ON k.thread_id = m.thread_id LEFT JOIN message_index i ON i.rowid = m.rowid WHERE m.rowid > ? ORDER BY m.rowid LIMIT 16",
+      ).all(migration.cursor) as unknown as Array<StoredRow & { rowid: number; thread_id: string; id: string; indexed: number | null; bound: string | null }>;
+      if (!rows.length) { migration.phase = "followups"; migration.cursor = 0; continue; }
+      database.exec("PRAGMA secure_delete = ON");
+      try {
+        transaction(() => {
+          for (const row of rows) {
+            // the budget holds per row, not per batch: a slow disk ends the step early
+            if (row.rowid !== rows[0]!.rowid && performance.now() - started > budgetMs) break;
+            migration.cursor = row.rowid;
+            if (on) {
+              if (row.sealed && row.key_id && row.key_id === row.bound) {
+                if (row.indexed === null && !pendingIndex.has(row.rowid)) {
+                  const message = decodeRow(row, row.thread_id);
+                  if (message) afterWrite(row.rowid, row.thread_id, message, bindings.get(row.thread_id) ?? sealingKey(row.thread_id));
+                }
+                continue;
+              }
+              let message: Message | null;
+              try { message = decodeRow(row, row.thread_id); } catch { migration.passPlain = migration.passPlain || !row.sealed; continue; }
+              if (!message) continue;
+              const { values, key } = rowValues(row.thread_id, message);
+              if (!key) { migration.passPlain = true; continue; }
+              // verify before it replaces anything: the sealed copy opens to the same message
+              const check = openText(key.dek, values.sealed!, messageAad(key.keyId, key.owner, row.thread_id, String(message.id)));
+              if (check !== JSON.stringify(message)) { migration.failed++; continue; }
+              cached("UPDATE messages SET text = ?, json = ?, sealed = ?, key_id = ? WHERE rowid = ?").run(values.text, values.json, values.sealed, values.keyId, row.rowid);
+              afterWrite(row.rowid, row.thread_id, message, key);
+              migration.sealed++;
+              migration.sealedThisPass++;
+            } else if (row.sealed) {
+              let message: Message | null;
+              try { message = decodeRow(row, row.thread_id); } catch { migration.failed++; continue; }
+              if (!message) continue;
+              cached("UPDATE messages SET text = ?, json = ?, sealed = NULL, key_id = NULL WHERE rowid = ?").run(message.text ?? null, JSON.stringify(message), row.rowid);
+              pendingIndex.delete(row.rowid);
+              migration.opened++;
+            }
+          }
+        });
+      } finally { database.exec("PRAGMA secure_delete = OFF"); }
+      // the tokens of what this step sealed, in what is left of its budget
+      if (pendingIndex.size) flushContentIndex(Math.max(1, budgetMs - (performance.now() - started)));
+      continue;
+    }
+    if (migration.phase === "followups") {
+      const rows = database.prepare("SELECT rowid AS rowid, id, thread_id, payload FROM chat_followups WHERE rowid > ? ORDER BY rowid LIMIT 64").all(migration.cursor) as Array<{ rowid: number; id: string; thread_id: string; payload: string }>;
+      if (!rows.length) { migration.phase = "receipts"; migration.cursor = 0; continue; }
+      writeFollowups((connection) => {
+        for (const row of rows) {
+          migration.cursor = row.rowid;
+          const sealedNow = sealedFieldKeyId(row.payload) !== null;
+          if (sealedNow === on) continue;
+          const plain = openTextField("followup", row.id, row.payload);
+          if (plain === null) continue;
+          const next = on ? sealText(row.thread_id, "followup", row.id, plain) : plain;
+          if (next !== row.payload) connection.prepare("UPDATE chat_followups SET payload = ? WHERE rowid = ?").run(next, row.rowid);
+        }
+      });
+      continue;
+    }
+    if (migration.phase === "receipts") {
+      const rows = database.prepare("SELECT rowid AS rowid, kind, key, result FROM command_receipts WHERE rowid > ? ORDER BY rowid LIMIT 64").all(migration.cursor) as Array<{ rowid: number; kind: string; key: string; result: string }>;
+      if (!rows.length) {
+        // the queued tokens first, a slice per step: never one long flush
+        if (pendingIndex.size) {
+          flushContentIndex(Math.max(1, budgetMs - (performance.now() - started)));
+          if (pendingIndex.size) return { done: false };
+        }
+        migration.phase = "done";
+        migration.cursor = 0;
+        migration.plaintext = !on || migration.passPlain;
+        // A delete only marks a row gone in the plain full-text index: the
+        // words of rows sealed this pass stay in its segments until a merge.
+        // Pages written before the pass (a B-tree split, a deleted row) can
+        // also hold old plain text in their free space. Both go at the next
+        // start, before it serves anything (vacuumAfterSealing: the index
+        // rebuilt from the table, where sealed rows have no text, then one
+        // VACUUM), never as a pause in a running server.
+        if (on && migration.sealedThisPass > 0 && !migration.passPlain) {
+          cached("INSERT INTO content_meta (key, value) VALUES ('vacuum', '1') ON CONFLICT(key) DO UPDATE SET value = '1'").run();
+          migration.sealedThisPass = 0;
+        }
+        checkpointSoon();
+        return { done: !migration.dirty };
+      }
+      transaction(() => {
+        for (const row of rows) {
+          migration.cursor = row.rowid;
+          const sealedNow = sealedFieldKeyId(row.result) !== null;
+          if (sealedNow === on) continue;
+          const id = `${row.kind}\u0000${row.key}`;
+          const plain = openTextField("receipt", id, row.result);
+          if (plain === null) continue;
+          const next = on ? sealText(null, "receipt", id, plain) : plain;
+          if (next !== row.result) cached("UPDATE command_receipts SET result = ? WHERE rowid = ?").run(next, row.rowid);
+        }
+      });
+      continue;
+    }
+    break;
+  }
+  return { done: false };
 }
 
 export interface FollowupPayload {
@@ -308,7 +935,9 @@ export function readCommandReceipt(kind: string, key: string): StoredCommandRece
   const row = db()
     .prepare("SELECT kind, key, at, result FROM command_receipts WHERE kind = ? AND key = ?")
     .get(kind, key) as StoredCommandReceipt | undefined;
-  return row ?? null;
+  if (!row) return null;
+  const result = openTextField("receipt", `${kind}\u0000${key}`, row.result);
+  return result === null ? null : { ...row, result };
 }
 
 /** Run `apply` and record its receipt in ONE transaction on the transcript
@@ -326,11 +955,14 @@ export function withCommandReceipt(
     const existing = database
       .prepare("SELECT result FROM command_receipts WHERE kind = ? AND key = ?")
       .get(kind, key) as { result: string } | undefined;
-    if (existing) return { result: existing.result, replayed: true };
+    const opened = existing ? openTextField("receipt", `${kind}\u0000${key}`, existing.result) : null;
+    if (opened !== null) return { result: opened, replayed: true };
+    // a receipt whose key was destroyed proves nothing any more: run again
+    if (existing) database.prepare("DELETE FROM command_receipts WHERE kind = ? AND key = ?").run(kind, key);
     const result = apply();
     database
       .prepare("INSERT INTO command_receipts(kind, key, at, result) VALUES (?, ?, ?, ?)")
-      .run(kind, key, at, result);
+      .run(kind, key, at, sealText(null, "receipt", `${kind}\u0000${key}`, result));
     return { result, replayed: false };
   });
 }
@@ -338,7 +970,8 @@ export function withCommandReceipt(
 export function saveChatFollowup(followup: Omit<ChatFollowup, "status">): void {
   writeFollowups((connection) => connection.prepare(
     "INSERT INTO chat_followups(id, kind, owner_id, thread_id, send_id, status, payload) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-  ).run(followup.id, followup.kind, followup.ownerId, followup.threadId, followup.payload.sendId ?? null, JSON.stringify(followup.payload)));
+  ).run(followup.id, followup.kind, followup.ownerId, followup.threadId, followup.payload.sendId ?? null,
+    sealText(followup.threadId, "followup", followup.id, JSON.stringify(followup.payload))));
 }
 
 /** Null retires a dispatch whose canonical transcript is already durable.
@@ -364,8 +997,13 @@ export function chatFollowups(kind?: ChatFollowup["kind"]): ChatFollowup[] {
     : db().prepare("SELECT * FROM chat_followups ORDER BY rowid").all()) as Array<{
       id: string; kind: ChatFollowup["kind"]; owner_id: string; thread_id: string; status: FollowupStatus; payload: string;
     }>;
-  return rows.map((row) => ({ id: row.id, kind: row.kind, ownerId: row.owner_id, threadId: row.thread_id,
-    status: row.status, payload: JSON.parse(row.payload) as FollowupPayload }));
+  const out: ChatFollowup[] = [];
+  for (const row of rows) {
+    const payload = openTextField("followup", row.id, row.payload);
+    if (payload === null) continue; // its key was destroyed: erased with its thread
+    out.push({ id: row.id, kind: row.kind, ownerId: row.owner_id, threadId: row.thread_id, status: row.status, payload: JSON.parse(payload) as FollowupPayload });
+  }
+  return out;
 }
 
 export function cancelledChatFollowup(kind: ChatFollowup["kind"], ownerId: string, threadId: string, sendId: string): boolean {
@@ -374,8 +1012,6 @@ export function cancelledChatFollowup(kind: ChatFollowup["kind"], ownerId: strin
   ).get(kind, ownerId, threadId, sendId));
 }
 
-const rowToMessage = (row: { json: string }): Message => JSON.parse(row.json) as Message;
-
 export interface ThreadRows {
   messages: Message[];
   activeLeafId: string | null;
@@ -383,14 +1019,12 @@ export interface ThreadRows {
 
 /** Read one thread, importing its legacy JSON file on first touch. */
 export function readThread(threadId: string, legacyFile: string): ThreadRows {
-  const rows = db()
-    .prepare("SELECT json FROM messages WHERE thread_id = ? ORDER BY rowid")
-    .all(threadId) as Array<{ json: string }>;
+  const rows = cached("SELECT json, sealed, key_id, id FROM messages WHERE thread_id = ? ORDER BY rowid")
+    .all(threadId) as unknown as StoredRow[];
   if (rows.length) {
-    const state = db()
-      .prepare("SELECT active_leaf_id FROM thread_state WHERE thread_id = ?")
+    const state = cached("SELECT active_leaf_id FROM thread_state WHERE thread_id = ?")
       .get(threadId) as { active_leaf_id: string | null } | undefined;
-    return { messages: rows.map(rowToMessage), activeLeafId: state?.active_leaf_id ?? null };
+    return { messages: decodeAll(rows, threadId), activeLeafId: state?.active_leaf_id ?? null };
   }
   return importLegacy(threadId, legacyFile);
 }
@@ -408,17 +1042,15 @@ export interface ThreadTailRows extends ThreadRows {
  * on first touch, same as readThread(); that read is a one-time migration
  * cost regardless of how much of the result the caller keeps. */
 export function readThreadTail(threadId: string, legacyFile: string, limit: number): ThreadTailRows {
-  const rows = db()
-    .prepare("SELECT json FROM messages WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?")
-    .all(threadId, limit + 1) as Array<{ json: string }>;
+  const rows = cached("SELECT json, sealed, key_id, id FROM messages WHERE thread_id = ? ORDER BY rowid DESC LIMIT ?")
+    .all(threadId, limit + 1) as unknown as StoredRow[];
   if (rows.length) {
     const hasMore = rows.length > limit;
     if (hasMore) rows.length = limit;
     rows.reverse();
-    const state = db()
-      .prepare("SELECT active_leaf_id FROM thread_state WHERE thread_id = ?")
+    const state = cached("SELECT active_leaf_id FROM thread_state WHERE thread_id = ?")
       .get(threadId) as { active_leaf_id: string | null } | undefined;
-    return { messages: rows.map(rowToMessage), activeLeafId: state?.active_leaf_id ?? null, hasMore };
+    return { messages: decodeAll(rows, threadId), activeLeafId: state?.active_leaf_id ?? null, hasMore };
   }
   return importLegacy(threadId, legacyFile);
 }
@@ -437,12 +1069,9 @@ function importLegacy(threadId: string, legacyFile: string): ThreadRows {
     messages = ((raw as { messages?: Message[] }).messages ?? []) as Message[];
     activeLeafId = (raw as { activeLeafId?: string | null }).activeLeafId ?? null;
   }
-  const insert = db().prepare(UPSERT_MESSAGE);
   db().exec("BEGIN");
   try {
-    for (const message of messages) {
-      insert.run(threadId, message.id, message.at, message.role, message.kind, message.text ?? null, JSON.stringify(message));
-    }
+    for (const message of messages) writeRow(threadId, message);
     setActiveLeaf(threadId, activeLeafId);
     db().exec("COMMIT");
   } catch (error) {
@@ -461,9 +1090,7 @@ function importLegacy(threadId: string, legacyFile: string): ThreadRows {
 }
 
 export function insertMessage(threadId: string, message: Message): void {
-  db()
-    .prepare(UPSERT_MESSAGE)
-    .run(threadId, message.id, message.at, message.role, message.kind, message.text ?? null, JSON.stringify(message));
+  writeRow(threadId, message);
 }
 
 /** A backup may only populate a fresh thread, never replace a transcript. */
@@ -487,9 +1114,10 @@ export function appendMessage(threadId: string, message: Message): void {
 }
 
 export function updateMessage(threadId: string, message: Message): void {
-  db()
-    .prepare("UPDATE messages SET at = ?, role = ?, kind = ?, text = ?, json = ? WHERE thread_id = ? AND id = ?")
-    .run(message.at, message.role, message.kind, message.text ?? null, JSON.stringify(message), threadId, message.id);
+  const { values, key } = rowValues(threadId, message);
+  const row = cached("UPDATE messages SET at = ?, role = ?, kind = ?, text = ?, json = ?, sealed = ?, key_id = ? WHERE thread_id = ? AND id = ? RETURNING rowid")
+    .get(message.at, message.role, message.kind, values.text, values.json, values.sealed, values.keyId, threadId, message.id) as { rowid: number } | undefined;
+  afterWrite(row?.rowid, threadId, message, key);
 }
 
 /** Goal cards are new SQLite-backed messages, so crash recovery can locate
@@ -498,11 +1126,11 @@ export function updateMessage(threadId: string, message: Message): void {
 export function workingGoalRunMessages(): Array<{ threadId: string; message: Message }> {
   const rows = db()
     .prepare(
-      "SELECT thread_id, json FROM messages " +
+      "SELECT thread_id, id, json, sealed, key_id FROM messages " +
       "WHERE kind = 'goal.run' AND json_extract(json, '$.goalRun.status') = 'working'",
     )
-    .all() as Array<{ thread_id: string; json: string }>;
-  return rows.map((row) => ({ threadId: row.thread_id, message: JSON.parse(row.json) as Message }));
+    .all() as unknown as Array<StoredRow & { thread_id: string }>;
+  return decodedWithThread(rows);
 }
 
 /** Approval cards still open in storage. Their live request (engine
@@ -511,15 +1139,24 @@ export function workingGoalRunMessages(): Array<{ threadId: string; message: Mes
 export function openApprovalCardMessages(): Array<{ threadId: string; message: Message }> {
   const rows = db()
     .prepare(
-      "SELECT thread_id, json FROM messages " +
+      "SELECT thread_id, id, json, sealed, key_id FROM messages " +
       "WHERE json_extract(json, '$.card.requestType') = 'permission' " +
       "AND json_extract(json, '$.card.requestId') IS NOT NULL " +
       "AND json_extract(json, '$.card.answered') IS NULL " +
       "AND COALESCE(json_extract(json, '$.card.dismissed'), 0) = 0 " +
       "AND COALESCE(json_extract(json, '$.card.expired'), 0) = 0",
     )
-    .all() as Array<{ thread_id: string; json: string }>;
-  return rows.map((row) => ({ threadId: row.thread_id, message: JSON.parse(row.json) as Message }));
+    .all() as unknown as Array<StoredRow & { thread_id: string }>;
+  return decodedWithThread(rows);
+}
+
+function decodedWithThread(rows: Array<StoredRow & { thread_id: string }>): Array<{ threadId: string; message: Message }> {
+  const out: Array<{ threadId: string; message: Message }> = [];
+  for (const row of rows) {
+    const message = decodeRow(row, row.thread_id);
+    if (message) out.push({ threadId: row.thread_id, message });
+  }
+  return out;
 }
 
 export function setActiveLeaf(threadId: string, leafId: string | null): void {
@@ -575,8 +1212,16 @@ export function deleteThread(threadId: string, beforeCommit?: () => void): void 
     // compaction.append), keyed "<thread>:<turn>...": copies of its digest
     // and compaction rows. A key range, so no other thread's id matches.
     connection.prepare("DELETE FROM command_receipts WHERE key >= ? AND key < ?").run(`${threadId}:`, `${threadId};`);
+    // its key binding, and a confidential thread's own key: destroyed, so
+    // nothing sealed under it opens again (cryptographic erasure)
+    connection.prepare("DELETE FROM thread_keys WHERE thread_id = ?").run(threadId);
+    const own = keyring().threadKeyId(threadId);
+    if (own) keyring().destroyKeys([own]);
     beforeCommit?.();
   });
+  bindings.delete(threadId);
+  for (const [rowid, entry] of pendingIndex) if (entry.threadId === threadId) pendingIndex.delete(rowid);
+  checkpointSoon();
 }
 
 /** Read positions of one thread (server/read-receipts.ts): participant id
@@ -611,14 +1256,24 @@ export function threadsReferencing(fragment: string): string[] {
 /** Case-insensitive substring search over text messages, newest first.
  * Keep literal substring semantics; HTTP callers run the scan off-thread. */
 export function searchMessages(query: string, limit = 40, threadId?: string): SearchHit[] {
-  return searchMessagesInDatabase(db(), query, limit, threadId);
+  db();
+  flushContentIndex();
+  const sealed = anySealed() ? { keys: keyring().liveKeys(), plaintext: plaintextMayRemain() } : undefined;
+  return searchMessagesInDatabase(db(), query, limit, threadId, sealed);
+}
+
+/** Whether the plaintext scan must still run: encryption off, or a plain
+ * row may be left (the migration has not finished a pass without one). */
+function plaintextMayRemain(): boolean {
+  return encryptionMode() !== "on" || migration.plaintext || migration.phase !== "done";
 }
 
 export function searchMessagesAsync(query: string, limit = 40, threadId?: string): Promise<SearchHit[]> {
   if (!query.trim()) return Promise.resolve([]);
   db(); // The owner initializes/migrates the schema before any read-only scan.
+  flushContentIndex(); // the worker reads committed rows: tokens first
   searchWorker ??= new MessageSearchWorker(DB_FILE());
-  return searchWorker.search(query, limit, threadId);
+  return searchWorker.search(query, limit, threadId, anySealed() ? { keys: liveKeyMaterial(), plaintext: plaintextMayRemain() } : undefined);
 }
 
 export interface RecallHit {
@@ -712,6 +1367,10 @@ export function recallTerms(query: string): string[] {
   return out.slice(0, 16);
 }
 
+/** A row with text: a plain one's column, a sealed one's projection flag. */
+const HAS_TEXT = "(text IS NOT NULL OR (sealed IS NOT NULL AND json_extract(json, '$.hasText') = 1))";
+const HAS_TEXT_M = "(m.text IS NOT NULL OR (m.sealed IS NOT NULL AND json_extract(m.json, '$.hasText') = 1))";
+
 /** How much of a matched message rides back in a hit. Wide enough that a
  * short report reads whole; a longer one is fetched with readMessageText. */
 const SNIPPET_TOKENS = 48;
@@ -725,21 +1384,23 @@ export function readMessageText(
 ): { threadId: string; messageId: string; at: number; role: string; text: string; from?: string; peer?: string; webhook?: true } | null {
   const row = db()
     .prepare(
-      "SELECT at, role, text, json_extract(json, '$.from.name') AS from_name, " +
+      "SELECT id, at, role, text, json, sealed, key_id, json_extract(json, '$.from.name') AS from_name, " +
         "json_extract(json, '$.peerAsk.name') AS peer_name, json_extract(json, '$.webhookPost') AS webhook_post FROM messages " +
-        "WHERE thread_id = ? AND id = ? AND kind = 'text' AND text IS NOT NULL",
+        `WHERE thread_id = ? AND id = ? AND kind = 'text' AND ${HAS_TEXT}`,
     )
     .get(threadId, messageId) as
-    | { at: number; role: string; text: string; from_name: string | null; peer_name: string | null; webhook_post: number | null }
+    | (StoredRow & { at: number; role: string; text: string | null; from_name: string | null; peer_name: string | null; webhook_post: number | null })
     | undefined;
   if (!row) return null;
-  const peer = peerAuthor(row.peer_name, row.text);
+  const text = rowText({ ...row, thread_id: threadId });
+  if (text === null) return null;
+  const peer = peerAuthor(row.peer_name, text);
   return {
     threadId,
     messageId,
     at: row.at,
     role: row.role,
-    text: row.text,
+    text,
     ...(row.webhook_post ? { from: WEBHOOK_AUTHOR, webhook: true as const } : row.from_name ? { from: row.from_name } : {}),
     ...(peer ? { peer } : {}),
   };
@@ -773,13 +1434,93 @@ function rangeClause(range: RecallRange | undefined, column: string): { sql: str
 export function recallMessages(query: string, threadIds: readonly string[], limit = 12, range?: RecallRange, mode: SearchMode = "all"): RecallHit[] {
   const match = ftsQuery(query, mode);
   if (!match || !threadIds.length) return [];
+  db();
+  const plain = plainRecall(match, threadIds, limit, range);
+  if (!anySealed()) return plain.map(unscored);
+  flushContentIndex();
+  const hidden = sealedRecall(query, threadIds, limit, range, mode);
+  if (!hidden.length) return plain.map(unscored);
+  // the plain and sealed halves rank by the same rule: text before digest,
+  // then bm25, then newest (two indexes: comparable, not identical scores)
+  return [...plain, ...hidden]
+    .sort((a, b) => Number(a.digest) - Number(b.digest) || a.score - b.score || b.at - a.at)
+    .slice(0, limit)
+    .map(unscored);
+}
+
+type ScoredRecallHit = RecallHit & { score: number; digest: boolean };
+const unscored = ({ score: _score, digest: _digest, ...hit }: ScoredRecallHit): RecallHit => hit;
+
+/** The recall terms ftsQuery would send, for the blind index. */
+function blindRecallTerms(query: string, mode: SearchMode): RecallTerm[] {
+  if (mode === "any") {
+    const terms = recallTerms(query).filter((term) => recallMatchTerm(term) !== null);
+    return recallTermsFor(terms.map((term) => {
+      if (!/^\p{L}{4,}$/u.test(term)) return term;
+      return term.length > 4 && term.endsWith("s") && !term.endsWith("ss") ? term.slice(0, -1) : term;
+    }), (term) => /^\p{L}{4,}$/u.test(term));
+  }
+  const tokens = query.split(/\s+/).map((token) => token.replace(/"/g, "").trim()).filter(Boolean);
+  const content = tokens.filter((token) => !STOP_WORDS.has(token.toLowerCase()));
+  return recallTermsFor(content.length ? content : tokens, () => false);
+}
+
+/** Recall over sealed rows: the blind index ranks (bm25 over keyed words),
+ * the snippet is cut from the opened text. */
+function sealedRecall(query: string, threadIds: readonly string[], limit: number, range: RecallRange | undefined, mode: SearchMode): ScoredRecallHit[] {
+  const terms = blindRecallTerms(query, mode);
+  const placeholders = threadIds.map(() => "?").join(", ");
+  // the threads' bound keys (a row still under an older key, between a key
+  // change and its re-seal, joins the recall once the migration reaches it)
+  const keyIds = new Set((db().prepare(`SELECT DISTINCT key_id FROM thread_keys WHERE thread_id IN (${placeholders})`).all(...threadIds) as Array<{ key_id: string }>).map((row) => row.key_id));
+  const keys = [...keyIds].map((id) => keyring().key(id)).filter((key): key is LiveKey => Boolean(key) && key !== "destroyed");
+  const match = recallMatch(keys.map((key) => key.tokenizer()), terms, mode);
+  if (!match) return [];
+  const window = rangeClause(range, "m.at");
+  const rows = db()
+    .prepare(
+      "SELECT m.thread_id, m.id, m.at, m.role, m.kind, m.json, m.sealed, m.key_id, json_extract(m.json, '$.from.name') AS from_name, " +
+        "json_extract(m.json, '$.peerAsk.name') AS peer_name, json_extract(m.json, '$.webhookPost') AS webhook_post, " +
+        "bm25(messages_sealed_fts, 1.0, 0.5) AS score " +
+        "FROM messages_sealed_fts JOIN messages m ON m.rowid = messages_sealed_fts.rowid " +
+        `WHERE messages_sealed_fts MATCH ? AND m.kind IN ('text', 'digest') AND m.thread_id IN (${placeholders})${window.sql} ` +
+        "ORDER BY (m.kind = 'digest'), score, m.at DESC LIMIT ?",
+    )
+    // a superset (four-letter prefixes): read more, keep what the text holds
+    .all(match, ...threadIds, ...window.params, limit * 4) as unknown as Array<StoredRow & {
+    thread_id: string; id: string; at: number; role: string; kind: string;
+    from_name: string | null; peer_name: string | null; webhook_post: number | null; score: number;
+  }>;
+  const out: ScoredRecallHit[] = [];
+  for (const row of rows) {
+    const text = rowText(row);
+    if (text === null || !recallHolds(text, terms, mode)) continue;
+    if (out.length >= limit) break;
+    const peer = peerAuthor(row.peer_name, text.slice(0, PEER_NOTE_HEAD_CHARS));
+    out.push({
+      threadId: row.thread_id,
+      messageId: row.id,
+      at: row.at,
+      role: row.role,
+      ...(row.kind === "digest" ? { kind: "digest" as const } : {}),
+      snippet: blindSnippet(text, terms, SNIPPET_TOKENS).replace(/\s+/g, " ").trim(),
+      ...(row.webhook_post ? { from: WEBHOOK_AUTHOR } : row.from_name ? { from: row.from_name } : {}),
+      ...(peer ? { peer } : {}),
+      score: row.score,
+      digest: row.kind === "digest",
+    });
+  }
+  return out;
+}
+
+function plainRecall(match: string, threadIds: readonly string[], limit: number, range: RecallRange | undefined): ScoredRecallHit[] {
   const placeholders = threadIds.map(() => "?").join(", ");
   const window = rangeClause(range, "m.at");
   const rows = db()
     .prepare(
       "SELECT m.thread_id, m.id, m.at, m.role, m.kind, json_extract(m.json, '$.from.name') AS from_name, " +
         `json_extract(m.json, '$.peerAsk.name') AS peer_name, json_extract(m.json, '$.webhookPost') AS webhook_post, substr(m.text, 1, ${PEER_NOTE_HEAD_CHARS}) AS head, ` +
-        `snippet(messages_fts, 0, '[', ']', '…', ${SNIPPET_TOKENS}) AS snippet ` +
+        `snippet(messages_fts, 0, '[', ']', '…', ${SNIPPET_TOKENS}) AS snippet, bm25(messages_fts) AS score ` +
         "FROM messages_fts JOIN messages m ON m.rowid = messages_fts.rowid " +
         `WHERE messages_fts MATCH ? AND m.kind IN ('text', 'digest') AND m.thread_id IN (${placeholders})${window.sql} ` +
         // a digest is a record of work, not something anyone said: it ranks
@@ -797,6 +1538,7 @@ export function recallMessages(query: string, threadIds: readonly string[], limi
     webhook_post: number | null;
     head: string;
     snippet: string;
+    score: number;
   }>;
   return rows.map((row) => {
     const peer = peerAuthor(row.peer_name, row.head);
@@ -807,6 +1549,8 @@ export function recallMessages(query: string, threadIds: readonly string[], limi
       role: row.role,
       ...(row.kind === "digest" ? { kind: "digest" as const } : {}),
       snippet: row.snippet.replace(/\s+/g, " ").trim(),
+      score: row.score,
+      digest: row.kind === "digest",
       ...(row.webhook_post ? { from: WEBHOOK_AUTHOR } : row.from_name ? { from: row.from_name } : {}),
       ...(peer ? { peer } : {}),
     };
@@ -827,12 +1571,12 @@ export function recentMessages(threadIds: readonly string[], range: RecallRange,
   const window = rangeClause(range, "m.at");
   const rows = db()
     .prepare(
-      "SELECT m.thread_id, m.id, m.at, m.role, json_extract(m.json, '$.from.name') AS from_name, " +
+      "SELECT m.thread_id, m.id, m.at, m.role, m.json, m.sealed, m.key_id, json_extract(m.json, '$.from.name') AS from_name, " +
         `json_extract(m.json, '$.peerAsk.name') AS peer_name, json_extract(m.json, '$.webhookPost') AS webhook_post, substr(m.text, 1, ${Math.max(PEER_NOTE_HEAD_CHARS, RECENT_HEAD_CHARS)}) AS head ` +
-        `FROM messages m WHERE m.kind = 'text' AND m.text IS NOT NULL AND m.thread_id IN (${placeholders})${window.sql} ` +
+        `FROM messages m WHERE m.kind = 'text' AND ${HAS_TEXT_M} AND m.thread_id IN (${placeholders})${window.sql} ` +
         "ORDER BY m.at DESC LIMIT ?",
     )
-    .all(...threadIds, ...window.params, limit) as Array<{
+    .all(...threadIds, ...window.params, limit) as unknown as Array<StoredRow & {
     thread_id: string;
     id: string;
     at: number;
@@ -840,11 +1584,13 @@ export function recentMessages(threadIds: readonly string[], range: RecallRange,
     from_name: string | null;
     peer_name: string | null;
     webhook_post: number | null;
-    head: string;
+    head: string | null;
   }>;
-  return rows.map((row) => {
-    const peer = peerAuthor(row.peer_name, row.head);
-    const folded = row.head.replace(/\s+/g, " ").trim();
+  return rows.flatMap((row) => {
+    const head = row.head ?? rowText(row)?.slice(0, Math.max(PEER_NOTE_HEAD_CHARS, RECENT_HEAD_CHARS)) ?? null;
+    if (head === null) return [];
+    const peer = peerAuthor(row.peer_name, head);
+    const folded = head.replace(/\s+/g, " ").trim();
     return {
       threadId: row.thread_id,
       messageId: row.id,
@@ -876,21 +1622,19 @@ export function latestSaidByBot(threadIds: readonly string[], botId: string, sin
   const placeholders = threadIds.map(() => "?").join(", ");
   const rows = db()
     .prepare(
-      "SELECT thread_id, id, at, head FROM (" +
-        "SELECT m.thread_id, m.id, m.at, substr(m.text, 1, 400) AS head, " +
+      "SELECT thread_id, id, at, head, json, sealed, key_id FROM (" +
+        "SELECT m.thread_id, m.id, m.at, substr(m.text, 1, 400) AS head, m.json, m.sealed, m.key_id, " +
         "ROW_NUMBER() OVER (PARTITION BY m.thread_id ORDER BY m.at DESC) AS rn " +
         "FROM messages m " +
-        `WHERE m.kind = 'text' AND m.role = 'bot' AND m.text IS NOT NULL AND m.at >= ? AND m.thread_id IN (${placeholders}) ` +
+        `WHERE m.kind = 'text' AND m.role = 'bot' AND ${HAS_TEXT_M} AND m.at >= ? AND m.thread_id IN (${placeholders}) ` +
         "AND (json_extract(m.json, '$.from.botId') IS NULL OR json_extract(m.json, '$.from.botId') = ?)" +
         ") WHERE rn = 1 ORDER BY at DESC LIMIT ?",
     )
-    .all(since, ...threadIds, botId, limit) as Array<{ thread_id: string; id: string; at: number; head: string }>;
-  return rows.map((row) => ({
-    threadId: row.thread_id,
-    messageId: row.id,
-    at: row.at,
-    head: row.head.replace(/\s+/g, " ").trim(),
-  }));
+    .all(since, ...threadIds, botId, limit) as unknown as Array<StoredRow & { thread_id: string; id: string; at: number; head: string | null }>;
+  return rows.flatMap((row) => {
+    const head = row.head ?? rowText(row)?.slice(0, 400) ?? null;
+    return head === null ? [] : [{ threadId: row.thread_id, messageId: row.id, at: row.at, head: head.replace(/\s+/g, " ").trim() }];
+  });
 }
 
 export interface MemoryFileStat {
@@ -976,6 +1720,10 @@ export async function closeMessageSearch(): Promise<void> {
 /** Test/shutdown hook — closes the handle so a wiped DATA_DIR starts clean. */
 export function closeMessageDb(): void {
   void closeMessageSearch();
+  try { if (handle && handlePath === DB_FILE() && existsSync(DB_FILE())) flushContentIndex(); } catch { /* a closing database: the migration reindexes what has no index row */ }
+  if (migration.timer) { clearTimeout(migration.timer); migration.timer = null; }
+  if (indexTimer) { clearTimeout(indexTimer); indexTimer = null; }
+  forgetSealingState();
   try {
     handle?.close();
   } catch {}

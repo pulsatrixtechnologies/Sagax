@@ -9,12 +9,13 @@ import { launchVerificationServer, runControlOmb, verificationServerArgs, verifi
 import { waitForExit } from "./testing/cleanup.ts";
 
 it("keeps an ACP partial reply in the transcript across graceful shutdown and restart", async () => {
-  const fixture = await launchVerificationServer({}, undefined, undefined, undefined, undefined, undefined, ["cline"]);
+  const fixture = await launchVerificationServer({ SAGAX_CONTENT_ENCRYPTION: "off" }, undefined, undefined, undefined, undefined, undefined, ["cline"]);
   const { dataDir, url, logPath } = fixture.info;
   const port = Number(new URL(url).port);
   let server = fixture.child;
   const start = async () => {
-    const env = verificationServerEnvironment({}, dataDir, port);
+    // its checks read the message database raw (docs/content-encryption.md)
+    const env = verificationServerEnvironment({ SAGAX_CONTENT_ENCRYPTION: "off" }, dataDir, port);
     const log = openSync(logPath, "a", 0o600);
     // Windows child.kill("SIGTERM") terminates immediately without running Node's signal handlers.
     const bootstrap = `process.on('message', message => { if (message === 'stop') process.emit('SIGTERM'); });

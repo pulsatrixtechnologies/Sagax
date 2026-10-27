@@ -391,6 +391,10 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
     // FAKE_CLAUDE_DUMP stays the launcher's: assertions read fixtureDumpPath.
     if (key.startsWith("FAKE_CLAUDE_") && key !== "FAKE_CLAUDE_DUMP" && value) childEnv[key] = value;
   }
+  // Content encryption (docs/content-encryption.md) is on unless the caller
+  // says otherwise: the test suite turns it off (server/testing/setup.ts)
+  // for the fixtures whose checks read the message database raw.
+  if (parentEnv.SAGAX_CONTENT_ENCRYPTION) childEnv.SAGAX_CONTENT_ENCRYPTION = parentEnv.SAGAX_CONTENT_ENCRYPTION;
   // A test's key for relaying an organization library into the fixture
   // (POST /api/testing/org-library); the route does not exist without it.
   if (parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY) childEnv.SAGAX_TEST_ORG_LIBRARY_KEY = parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY;

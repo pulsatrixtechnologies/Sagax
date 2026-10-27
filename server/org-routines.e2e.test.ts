@@ -193,6 +193,8 @@ async function start() {
       SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
       SAGAX_ROUTINE_RENEW_SECONDS: String(RENEW_SECONDS),
       SAGAX_ORG_NAME: "Acme",
+      // its checks read the message database raw (docs/content-encryption.md)
+      SAGAX_CONTENT_ENCRYPTION: "off",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

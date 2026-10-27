@@ -2127,6 +2127,8 @@ export class Store {
     if (!bot || !task) return null;
     if (task.confidential === true) return task;
     task.confidential = true;
+    // its own key from now on, the rows so far re-sealed under it
+    mdb.contentKeyChanged(threadId);
     // Nothing of a confidential thread feeds the single stream: its digest
     // goes, and it stops being a stream segment (server/single-stream.ts).
     delete task.streamSegment;
@@ -3582,6 +3584,8 @@ export class Store {
       if (!task || !owner || task.ownerPrincipalId === owner) continue;
       task.ownerPrincipalId = owner;
       touched.add(entry.botId);
+      // its content key follows its owner (docs/content-encryption.md)
+      mdb.contentKeyChanged(entry.threadId);
     }
     if (!touched.size) return 0;
     this.saveBots();
