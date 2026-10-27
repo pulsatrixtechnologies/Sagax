@@ -58,6 +58,11 @@ const dump = () => until(() => {
 }, Boolean);
 const idle = (botId: string) => until(() => api("GET", "/api/bots?messages=0"), s => !s.bots.find((b: any) => b.id === botId)?.busy);
 const computer = (d: any) => d.mcpConfig.mcpServers.computer;
+// The cloud computer's tools reach Claude as a streamable HTTP server since
+// #857 (2026-10-20); the stdio harness-mcp-proxy is the fallback form.
+const isHarnessComputer = (c: any) => c?.type === "http"
+  ? String(c.url).endsWith("/api/internal/computer/mcp-http")
+  : c?.args?.at(-1) === "computer" && /harness-mcp-proxy/.test(String(c.args[0]));
 const gate = (c: any) => fetch(c.env.SAGAX_CONTROL_URL, { headers: { authorization: `Bearer ${c.env.SAGAX_CONTROL_TOKEN}` } });
 // A screen tools/call's check, exactly as the mounted bridge makes it: the
 // real control client, with its own timeout.
@@ -537,7 +542,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       if (state === "removed") boatRow = null;
       // The continuation keeps the bot's own engine and model; the selected
       // Boat arrives as its computer tools. Boat's runner is never asked.
-      const harnessComputer = (sent: any) => computer(sent)?.args?.at(-1) === "computer" && /harness-mcp-proxy/.test(computer(sent).args[0]);
+      const harnessComputer = (sent: any) => isHarnessComputer(computer(sent));
       rmSync(dumpFile, { force: true });
       writeFileSync(finishFile, "finish");
       const continued: any = await dump();
@@ -823,7 +828,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       boatCalls.length = 0; boatPrompts.length = 0;
       // The speaker keeps its own engine; its Boat is woken and mounted as
       // its computer tools, and Boat's runner is never asked.
-      const onBoat = (sent: any) => computer(sent)?.args?.at(-1) === "computer" && /harness-mcp-proxy/.test(computer(sent).args[0]);
+      const onBoat = (sent: any) => isHarnessComputer(computer(sent));
       writeFileSync(finishFile, "finish");
       await send(group.id);
       expect(onBoat(await dump())).toBe(true);
