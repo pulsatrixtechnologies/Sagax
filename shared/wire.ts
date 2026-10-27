@@ -812,8 +812,10 @@ export interface WireMessage {
   /** Provider turn that produced this message. */
   turnId?: string;
   /** What the turn that wrote this bot reply ran on. Absent on replies from
-   * before it was recorded, and on rooms; no effort means the engine default. */
-  turnRun?: { instanceId: string; model: string; effort?: EffortLevel };
+   * before it was recorded, and on room replies that ran on the bot's model;
+   * no effort means the engine default. `requested` (#1154): the pick the
+   * turn left because the person paying could not run it. */
+  turnRun?: { instanceId: string; model: string; effort?: EffortLevel; requested?: { instanceId: string; model: string } };
   /** Server-proven originating user message, including supported harness
    * continuations. Absent means external clients must not infer ownership. */
   requestMessageId?: string;

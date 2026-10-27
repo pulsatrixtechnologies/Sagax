@@ -17,4 +17,11 @@ describe("turnRunFor", () => {
     expect(turnRunFor({ instanceId: "claude", model: "opus", variant: "think", auto: true } as never))
       .toEqual({ instanceId: "claude", model: "opus" });
   });
+
+  it("names the pick the turn left when it ran on another model (#1154)", () => {
+    expect(turnRunFor({ instanceId: "grok", model: "grok-4.6" }, { instanceId: "grok", model: "grok-4.7" }))
+      .toEqual({ instanceId: "grok", model: "grok-4.6", requested: { instanceId: "grok", model: "grok-4.7" } });
+    expect(turnRunFor({ instanceId: "grok", model: "grok-4.7" }, { instanceId: "grok", model: "grok-4.7" }))
+      .toEqual({ instanceId: "grok", model: "grok-4.7" });
+  });
 });

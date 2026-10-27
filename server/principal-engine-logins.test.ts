@@ -1,5 +1,5 @@
 // Slice 4 (D10): each person's own engine sign-in, in their own directory.
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import { LOGIN_MARKER, loginCliFor, PrincipalEngineLogins, type LoginController 
 const A = "pr_00000000-0000-4000-8000-00000000000a";
 const B = "pr_00000000-0000-4000-8000-00000000000b";
 
-function harness(options: { onClaudeLinked?: (principalId: string) => void } = {}) {
+function harness(options: { onClaudeLinked?: (principalId: string) => void; probeModels?: (cli: string, env: Record<string, string | undefined>) => Promise<Array<{ id: string }> | null> } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), "engine-logins-"));
   const made: Array<{ driver: string; home: string; env: Record<string, string | undefined>; finish: () => Promise<void>; signedOut: boolean }> = [];
   const logins = new PrincipalEngineLogins({
@@ -34,6 +34,7 @@ function harness(options: { onClaudeLinked?: (principalId: string) => void } = {
       return controller;
     },
     ...(options.onClaudeLinked ? { onClaudeLinked: options.onClaudeLinked } : {}),
+    ...(options.probeModels ? { probeModels: options.probeModels } : {}),
   });
   return { dataDir, logins, made };
 }
@@ -125,6 +126,44 @@ describe("PrincipalEngineLogins", () => {
     await originalFinish();
     expect(await logins.status(A, "codex", "s", started.flowId!)).toMatchObject({ phase: "succeeded" });
     expect(logins.signedIn(A, "codex")).toBe(true);
+  });
+});
+
+describe("knownAccountModels (#1154)", () => {
+  it("reads the catalog the person's own Grok wrote in their home, never someone else's", () => {
+    const { logins } = harness();
+    expect(logins.knownAccountModels(A, "grok")).toBeNull();
+    const dir = logins.loginDir(A, "grokAgent");
+    mkdirSync(join(dir, ".grok"), { recursive: true });
+    writeFileSync(join(dir, LOGIN_MARKER), "{}");
+    writeFileSync(join(dir, ".grok", "models_cache.json"), JSON.stringify({ models: { "grok-4.6": { info: { name: "Grok 4.6" } }, "grok-4.5": { info: { name: "Grok 4.5" } } } }));
+    expect(logins.knownAccountModels(A, "grok")?.toSorted()).toEqual(["grok-4.5", "grok-4.6"]);
+    expect(logins.knownAccountModels(B, "grok")).toBeNull();
+    expect(logins.knownAccountModels(A, "claude")).toBeNull();
+  });
+});
+
+describe("warmAccountModels (#1154): a turn never waits on the probe", () => {
+  it("returns at once with nothing known, then a later turn reads the answer", async () => {
+    let release: (models: Array<{ id: string }>) => void = () => {};
+    let probes = 0;
+    const slow = () => { probes += 1; return new Promise<Array<{ id: string }> | null>((done) => { release = done; }); };
+    const { logins } = harness({ probeModels: slow });
+    const dir = logins.loginDir(A, "grokAgent");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, LOGIN_MARKER), "{}");
+    const started = Date.now();
+    logins.warmAccountModels(A, "grok");
+    // the turn reads synchronously right after: unknown, so it keeps the bot's model
+    expect(logins.knownAccountModels(A, "grok")).toBeNull();
+    expect(Date.now() - started).toBeLessThan(50);
+    logins.warmAccountModels(A, "grok");
+    expect(probes).toBe(1);
+    release([{ id: "grok-4.6" }]);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(logins.knownAccountModels(A, "grok")).toEqual(["grok-4.6"]);
+    logins.warmAccountModels(A, "grok");
+    expect(probes).toBe(1);
   });
 });
 

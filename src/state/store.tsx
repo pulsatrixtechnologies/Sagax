@@ -304,7 +304,7 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
   /** Provider turn that produced this message. */
   turnId?: string;
   /** What the turn that wrote this reply ran on; no effort = engine default. */
-  turnRun?: { instanceId: string; model: string; effort?: EffortLevel };
+  turnRun?: { instanceId: string; model: string; effort?: EffortLevel; requested?: { instanceId: string; model: string } };
   /** Last assistant text item from a settled provider turn. */
   turnTerminal?: boolean;
   /** screen messages: the server holds a frame of the bot's computer,
@@ -1297,7 +1297,9 @@ export interface AppState {
   /** Session discoveries stay with their conversation and never enter persisted settings. */
   modelVariantSessions: Record<string, ModelVariantSession>;
   /** Per thread: the model the engine really ran, when it is not the one picked (the person's own session does not offer the pick). Cleared when the next turn starts. */
-  modelFallbacks?: Record<string, { instanceId: string; requested: string; actual: string }>;
+  /** #1154: what the last turn of a thread ran on when it is not the pick;
+   * `actualInstanceId` when it ran on another engine the person pays for. */
+  modelFallbacks?: Record<string, { instanceId: string; requested: string; actual: string; actualInstanceId?: string }>;
   config: ConfigStatus | null;
   /** The Live call the harness is running, including a call that has just
    * ended; null when no call is known. Follows `live.call` SSE frames and
@@ -2839,8 +2841,12 @@ export function reducer(state: AppState, action: Action): AppState {
       if (!event.turnId) return state;
       if (event.type === "session.model-fallback") {
         if (!event.providerInstanceId) return state;
+        // A group: another person's turn ran on their own fallback, not this viewer's.
+        const me = state.config?.viewer?.principalId?.trim().toLowerCase();
+        if (event.principalId && me && event.principalId.trim().toLowerCase() !== me) return state;
         return { ...state, modelFallbacks: { ...state.modelFallbacks, [event.threadId]: {
           instanceId: event.providerInstanceId, requested: event.requested, actual: event.actual,
+          ...(event.actualInstanceId ? { actualInstanceId: event.actualInstanceId } : {}),
         } } };
       }
       if (event.type === "turn.started" && state.modelFallbacks?.[event.threadId]) {

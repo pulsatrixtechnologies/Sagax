@@ -88,6 +88,8 @@ export interface PrincipalEngineLoginsOptions {
   now?: () => number;
   /** Own Claude login succeeded for this person. */
   onClaudeLinked?: (principalId: string) => void;
+  /** Tests pass a fake; the default asks the person's own Grok CLI. */
+  probeModels?: (cli: string, env: Record<string, string | undefined>) => Promise<Array<{ id: string }> | null>;
 }
 
 const failure = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -96,10 +98,16 @@ export function isLoginDriver(driver: string): driver is LoginDriver {
   return driver === "claudeAgent" || driver === "codex" || driver === "grokAgent" || driver === "kimiAgent";
 }
 
+/** #1154: how long a person's model list stays the one a turn reads. */
+export const ACCOUNT_MODELS_TTL_MS = 10 * 60_000;
+
 export class PrincipalEngineLogins {
   private readonly options: PrincipalEngineLoginsOptions;
   private readonly sessions = new ProviderAuthSessions();
   private readonly controllers = new Map<string, LoginController>();
+  /** #1154: the last model list each person's own session gave, per engine. */
+  private readonly knownModels = new Map<string, { at: number; ids: string[] }>();
+  private readonly warming = new Set<string>();
   private readonly now: () => number;
 
   constructor(options: PrincipalEngineLoginsOptions) {
@@ -206,6 +214,7 @@ export class PrincipalEngineLogins {
             /* the directory goes below either way */
           }
           rmSync(this.loginDir(principalId, driver), { recursive: true, force: true });
+          this.knownModels.delete(key);
         },
       },
     };
@@ -216,14 +225,45 @@ export class PrincipalEngineLogins {
    * Null when it is not known (not signed in, no CLI answer, an engine that
    * lists nothing per person): the picker then keeps the server's list. */
   async accountModels(principalId: string, instanceId: string): Promise<string[] | null> {
+    const env = this.accountEnv(principalId, instanceId);
+    if (!env) return null;
+    const models = await (this.options.probeModels ?? probeGrokModels)(env.cli, env.env) ?? readGrokModelsCache(env.env);
+    const ids = models?.map((model) => model.id) ?? [];
+    const answer = ids.length ? ids : null;
+    if (answer) this.knownModels.set(this.flowKey(principalId, instanceId), { at: this.now(), ids: answer });
+    return answer;
+  }
+
+  /** #1154: what a turn may read without starting the engine: the last
+   * answer of accountModels (fresh for ACCOUNT_MODELS_TTL_MS), else the
+   * catalog the person's own Grok wrote in their home. Null when unknown. */
+  knownAccountModels(principalId: string, instanceId: string): string[] | null {
+    const env = this.accountEnv(principalId, instanceId);
+    if (!env) return null;
+    const memo = this.knownModels.get(this.flowKey(principalId, instanceId));
+    if (memo && this.now() - memo.at < ACCOUNT_MODELS_TTL_MS) return memo.ids;
+    const ids = readGrokModelsCache(env.env)?.map((model) => model.id) ?? [];
+    return ids.length ? ids : memo?.ids ?? null;
+  }
+
+  /** #1154: a turn never waits on the engine. Nothing known yet: ask the
+   * person's own session in the background (once at a time per person and
+   * engine) so a later turn and the model menu read the answer. */
+  warmAccountModels(principalId: string, instanceId: string): void {
+    if (!this.accountEnv(principalId, instanceId) || this.knownAccountModels(principalId, instanceId)) return;
+    const key = this.flowKey(principalId, instanceId);
+    if (this.warming.has(key)) return;
+    this.warming.add(key);
+    void this.accountModels(principalId, instanceId).catch(() => null).finally(() => this.warming.delete(key));
+  }
+
+  private accountEnv(principalId: string, instanceId: string): { cli: string; env: Record<string, string | undefined> } | null {
     const facts = this.options.instance(instanceId);
     if (!facts || facts.driver !== "grokAgent" || !facts.cli.trim() || !this.signedIn(principalId, "grokAgent")) return null;
     const dir = this.loginDir(principalId, "grokAgent");
     const env: Record<string, string | undefined> = { ...process.env, ...facts.environment, HOME: dir, GROK_HOME: join(dir, ".grok") };
     delete env.XAI_API_KEY;
-    const models = await probeGrokModels(facts.cli, env) ?? readGrokModelsCache(env);
-    const ids = models?.map((model) => model.id) ?? [];
-    return ids.length ? ids : null;
+    return { cli: facts.cli, env };
   }
 
   async start(principalId: string, instanceId: string, sessionId: string): Promise<ProviderAuthenticationStart> {
@@ -261,6 +301,7 @@ export class PrincipalEngineLogins {
       rmSync(dir, { recursive: true, force: true });
     }
     for (const key of this.controllers.keys()) if (key.startsWith(`${principalId}/`)) this.controllers.delete(key);
+    for (const key of this.knownModels.keys()) if (key.startsWith(`${principalId}/`)) this.knownModels.delete(key);
     return cleared;
   }
 

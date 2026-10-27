@@ -1879,8 +1879,9 @@ it for one of its bots.
   When the bot's model cannot run for them (no credentials of theirs, or a
   local model of someone else's computer not shared with them), the bot
   answers with their default model: the first model they starred
-  (`sagax.modelFavorites.v1`) that they can run, for that turn only
-  (`speakerDefaultSelection` in `server/index.ts`, direct and room turns).
+  (`sagax.modelFavorites.v1`) that they can run, for that turn only, else
+  the same tier on an engine they can pay for (#1154 below,
+  `speakerTurnSelection` in `server/index.ts`, direct and room turns).
 - Default when the bot has no choice: the owner when the bot runs on a
   local model of the owner's computer or on an engine the owner signed in to
   with their own subscription; otherwise each person
@@ -1916,6 +1917,45 @@ it for one of its bots.
   `server/routes/group-bot-payer.test.ts`, `src/components/AccessCard.payer.test.ts`,
   S4-9 in `server/org-rights.e2e.test.ts` (owner's subscription by default,
   each person with their default model).
+
+## Each turn runs on a model its payer can pay for (#1154, 2026-10-27)
+
+Decision: on an organization server every person's turn of a bot, in a 1:1
+or in a group, runs on a model the person who pays can run
+(`server/turn-model-routing.ts`, called by `speakerTurnSelection` in
+`server/index.ts` for direct and room turns). Routines are not routed: they
+keep the owner's credentials and model.
+
+- Order: the bot's model (a viewer's own pin applied); the nearest model the
+  payer's own session offers on that engine (`equivalentOfferedModel`,
+  `shared/payable-model.ts`: same line, then same kind, nearest version);
+  when they cannot pay for that engine and each person pays (or it is the
+  owner's own turn): their own model for the bot, their first starred model
+  they can run, then the model of the bot's tier (`tierOfModel`) on another
+  engine they can pay for (`pickEquivalentModel` over `autoEnginesFor`).
+  Nothing runs: the access card (connect a subscription, add a key).
+- The payer's session list is `knownAccountModels` (the last
+  `accountModels` answer for 10 min, else the person's Grok
+  `models_cache.json`). A turn never waits on it: with nothing known it runs
+  on the bot's model at once and the list is asked in the background
+  (`warmAccountModels`, one probe at a time per person and engine); an
+  engine fallback is still kept per person. Unknown means nothing is replaced.
+- Seen: the reply's turn line carries `turnRun.requested` and shows at all
+  times ("Grok 4.6 · effort High · instead of Grok 4.7"); the model menu
+  gets a `session.model-fallback` (with `actualInstanceId` when the engine
+  changed and `principalId` in a group, so only that person's menu shows it)
+  and the picked row reads "Not offered by your account: your turns use X".
+  The system prompt's Model section names the model that runs, rooms
+  included, and a fallback the engine made is kept per person, engine and
+  pick (`modelFallbackByPayer`), so a new conversation's first turn names it.
+- Approval: switching to another engine the person pays for needs no manual
+  approval (the person who pays decides with their own credentials); the
+  bot's approval level must hold on that engine (`modelSwitchNeedsAsk`:
+  Custom stays on its engine), as for Auto and the limit backup.
+- Tests: `shared/payable-model.test.ts`, `server/turn-model-routing.test.ts`,
+  `server/model-auto.test.ts`, `server/principal-engine-logins.test.ts`,
+  `server/turn-run.test.ts`, `src/components/TurnRunLine.test.ts`, S4-9 in
+  `server/org-rights.e2e.test.ts` (another engine, starred model, a group).
 
 ## Per-bot runtime settings (2026-10-15)
 
