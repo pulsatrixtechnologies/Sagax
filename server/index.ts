@@ -15012,7 +15012,7 @@ bus.subscribe((event: RuntimeEvent) => {
           role: "bot",
           kind: "activity",
           tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}),
-            ...(declaredToolProduct(bot?.id, name, event.input) ?? {}),
+            ...declaredToolProduct(bot?.id, name, event.input),
             ...(event.parentItemId ? { parentItemId: event.parentItemId } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,
