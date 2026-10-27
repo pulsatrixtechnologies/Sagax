@@ -33,6 +33,7 @@ vi.mock("./WizardSteps", () => ({
   stepTitle: (step: string) => `title:${step}`,
   stepIntro: (step: string) => `intro:${step}`,
   StepBody: ({ step }: { step: string }) => createElement("div", { "data-stub-step": step }),
+  useRuleEffects: (draft: { rules: Record<string, string> }) => [Object.fromEntries(Object.keys(draft.rules).map((id) => [id, id.startsWith("ask") ? "ask" : "deny"])), () => {}],
 }));
 vi.mock("./WizardConversation", () => ({
   WizardConversation: ({ botId, threadId }: { botId: string; threadId: string }) => createElement("div", { "data-stub-chat": `${botId}:${threadId}` }),
@@ -215,6 +216,44 @@ describe("the bot creation wizard", () => {
     expect(fixture.lib.finishWizard).toHaveBeenCalledWith(expect.objectContaining({ botId: "bot-new", routines: ["morning-brief"] }), expect.any(String));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "closeBotWizard" });
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "select", id: "bot-new" });
+  });
+
+  it("Tools and apps is off the path unless the bot uses apps or a computer", async () => {
+    await render();
+    await click('[data-wizard-choose="manual"]');
+    await rerender();
+    await click("[data-wizard-next]");
+    await click("[data-wizard-next]");
+    expect(container.querySelector('[data-stub-step="rules"]')).not.toBeNull();
+    await click("[data-wizard-next]");
+    // Rules goes straight to Routines, and back
+    expect(container.querySelector('[data-stub-step="routines"]')).not.toBeNull();
+    await click("[data-wizard-back]");
+    expect(container.querySelector('[data-stub-step="rules"]')).not.toBeNull();
+    expect(container.textContent).toContain("5");
+  });
+
+  it("the recap is a compact summary: the bot's card, one line per step with Edit, Try it and Finish", async () => {
+    fixture.state = { bots: [primary, { ...newBot, description: "Sorts the inbox", soul: "You are Nova.", approvalMode: "auto", mcpServers: [] }], botWizard: { botId: "bot-new" } };
+    server = applyWizardPatch(newWizardDraft({ botId: "bot-new", owner: "pr_me", origin: "new", mode: "manual", roleId: "inbox", now: 1 }),
+      { step: "recap", rules: { "ask-send-mail": "r1", "deny-payment": "r2", "deny-delete-mail": "r3" }, routines: ["inbox-triage"] }, 2);
+    fixture.lib.readWizardDraft.mockImplementation(async () => ({ draft: server, suggestions: { rules: [], routines: [], tools: [], apps: [] } }));
+    await render();
+    const card = container.querySelector("[data-wizard-recap-card]")!;
+    expect(card.textContent).toContain("Nova");
+    expect(card.textContent).toContain("Sorts the inbox");
+    expect(container.querySelector("[data-wizard-try]")).not.toBeNull();
+    expect(container.querySelector("[data-wizard-finish]")).not.toBeNull();
+    // read only: no step's form is drawn on the recap
+    expect(container.querySelector("[data-stub-step]")).toBeNull();
+    expect([...container.querySelectorAll("[data-wizard-recap-section]")].map((row) => row.getAttribute("data-wizard-recap-section")))
+      .toEqual(["identity", "soul", "rules", "tools", "routines"]);
+    const rules = container.querySelector('[data-wizard-recap-section="rules"] [data-wizard-recap-summary]')!.textContent!;
+    expect(rules).toContain("1");
+    expect(rules).toContain("2");
+    await click('[data-wizard-recap-edit="tools"]');
+    expect(fixture.lib.patchWizardDraft).toHaveBeenLastCalledWith("bot-new", { step: "tools" });
+    expect(container.querySelector('[data-stub-step="tools"]')).not.toBeNull();
   });
 
   it("Later closes and keeps the draft", async () => {

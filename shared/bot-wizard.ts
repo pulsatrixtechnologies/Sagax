@@ -56,13 +56,23 @@ export interface WizardDraft {
   guidedThreadId?: string;
   /** The conversation "Try it" sent its first message to. */
   testThreadId?: string;
+  /** 2026-10-27: Tools and apps is off the main path. "yes" when the person
+   * answered that this bot uses apps or a computer (the step is then on the
+   * path); absent or "later" keeps the defaults (Workspace on Auto, no MCP
+   * server, apps connected later). The recap and the bot's settings still
+   * open the step at any time. */
+  tools?: WizardToolsChoice;
   status: "draft" | "done";
   createdAt: number;
   updatedAt: number;
 }
 
 /** What a client (or the Primary Bot through `bot.wizard`) may change. */
+export const WIZARD_TOOLS_CHOICES = ["later", "yes"] as const;
+export type WizardToolsChoice = (typeof WIZARD_TOOLS_CHOICES)[number];
+
 export interface WizardPatch {
+  tools?: WizardToolsChoice;
   mode?: WizardMode;
   step?: WizardStep;
   skip?: WizardStep;
@@ -97,6 +107,27 @@ export function previousWizardStep(step: WizardStep): WizardStep | null {
   return index > 0 ? WIZARD_STEPS[index - 1]! : null;
 }
 
+/** The steps a draft walks through (2026-10-27): Tools and apps only when
+ * the person said this bot uses apps or a computer, or while they are on it
+ * (opened from the recap). Pure. */
+export function wizardPath(draft: Pick<WizardDraft, "step" | "tools">): WizardStep[] {
+  return WIZARD_STEPS.filter((step) => step !== "tools" || draft.tools === "yes" || draft.step === "tools");
+}
+
+/** The next step on the draft's own path. Pure. */
+export function nextStepFor(draft: Pick<WizardDraft, "step" | "tools">, from: WizardStep = draft.step): WizardStep | null {
+  const index = WIZARD_STEPS.indexOf(from);
+  for (const step of WIZARD_STEPS.slice(index + 1)) if (step !== "tools" || draft.tools === "yes") return step;
+  return null;
+}
+
+/** The previous step on the draft's own path. Pure. */
+export function previousStepFor(draft: Pick<WizardDraft, "step" | "tools">): WizardStep | null {
+  const index = WIZARD_STEPS.indexOf(draft.step);
+  for (const step of WIZARD_STEPS.slice(0, Math.max(index, 0)).reverse()) if (step !== "tools" || draft.tools === "yes") return step;
+  return null;
+}
+
 /** A fresh draft. `prefill` (a redo) starts from the bot's own role. */
 export function newWizardDraft(input: { botId: string; owner: string; origin: WizardDraft["origin"]; mode: WizardMode; roleId?: string; now: number }): WizardDraft {
   return {
@@ -124,6 +155,7 @@ const clip = (text: string, max: number) => text.length > max ? text.slice(0, ma
 export function applyWizardPatch(draft: WizardDraft, patch: WizardPatch, now: number): WizardDraft {
   const next: WizardDraft = { ...draft, answers: { ...draft.answers }, rules: { ...draft.rules }, visited: [...draft.visited], skipped: [...draft.skipped], routines: [...draft.routines] };
   if (patch.mode && isWizardMode(patch.mode)) next.mode = patch.mode;
+  if (patch.tools && (WIZARD_TOOLS_CHOICES as readonly string[]).includes(patch.tools)) next.tools = patch.tools;
   if (patch.roleId !== undefined) next.roleId = patch.roleId === "" || wizardKit(patch.roleId) ? patch.roleId : next.roleId;
   if (patch.answers) {
     for (const key of WIZARD_ANSWER_KEYS) {
@@ -141,7 +173,7 @@ export function applyWizardPatch(draft: WizardDraft, patch: WizardPatch, now: nu
   if (patch.routines) next.routines = [...new Set(patch.routines.filter((id) => routineSuggestion(id)))];
   if (patch.skip && isWizardStep(patch.skip)) {
     if (!next.skipped.includes(patch.skip)) next.skipped.push(patch.skip);
-    const after = nextWizardStep(patch.skip);
+    const after = nextStepFor(next, patch.skip);
     if (after && !patch.step) next.step = after;
   }
   if (patch.step && isWizardStep(patch.step)) {
@@ -432,8 +464,8 @@ export function cleanSoulReply(raw: string): string {
 export function guidedKickoff(input: { botName: string; language: string }): string {
   const name = input.botName.trim() || "?";
   return pick({
-    en: `Help me set up my new bot ${name} with the wizard. Ask me the questions one at a time (identity, soul, rules, tools and apps, routines) and fill each step live: ${name}'s own fields with sagax_settings (bot.name, bot.description, bot.persona, bot.approvalMode...), and the wizard's answers, rules and routines with bot.wizard. Start with the first question.`,
-    fr: `Aide-moi à configurer mon nouveau bot ${name} avec l'assistant. Pose-moi les questions une à la fois (identité, soul, règles, outils et apps, routines) et remplis chaque étape en direct : les champs de ${name} avec sagax_settings (bot.name, bot.description, bot.persona, bot.approvalMode...), et les réponses, règles et routines de l'assistant avec bot.wizard. Commence par la première question.`,
+    en: `Help me set up my new bot ${name} with the wizard. Ask me the questions one at a time (identity, soul, rules, routines; tools and apps only if I say this bot uses apps or a computer) and fill each step live: ${name}'s own fields with sagax_settings (bot.name, bot.description, bot.persona, bot.approvalMode...), and the wizard's answers, rules, routines and tools choice with bot.wizard. Start with the first question.`,
+    fr: `Aide-moi à configurer mon nouveau bot ${name} avec l'assistant. Pose-moi les questions une à la fois (identité, soul, règles, routines ; outils et apps seulement si je dis que ce bot utilise des apps ou un ordinateur) et remplis chaque étape en direct : les champs de ${name} avec sagax_settings (bot.name, bot.description, bot.persona, bot.approvalMode...), et les réponses, règles, routines et le choix des outils de l'assistant avec bot.wizard. Commence par la première question.`,
   }, input.language);
 }
 
