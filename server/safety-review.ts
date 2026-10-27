@@ -187,7 +187,9 @@ function audit(action: string, input: SafetyHoldInput, verdict: SafetyVerdict): 
 }
 
 async function reviewed(input: SafetyHoldInput, verdict: SafetyVerdict): Promise<SafetyVerdict> {
-  if (!input.review || verdict.action === "block" || verdict.code === "read_only") return verdict;
+  // 2026-10-26: the person's own environment is theirs, like a read:
+  // no second review and no wait
+  if (!input.review || verdict.action === "block" || verdict.code === "read_only" || verdict.code === "own_environment") return verdict;
   try {
     const text = await input.review(safetyReviewPrompt(input.text, input.policy), AbortSignal.timeout(8000));
     return tightenSafety(verdict, text);
@@ -201,7 +203,7 @@ function effectOf(input: SafetyHoldInput, verdict: SafetyVerdict, keys: readonly
     applyConsume(keys, verdict);
     return { kind: "allow", auto: true, message: "", fingerprint: verdict.fingerprint, classKey: verdict.classKey, verdict };
   }
-  if (verdict.code === "read_only") {
+  if (verdict.code === "read_only" || verdict.code === "own_environment") {
     return { kind: "allow", auto: true, message: "", fingerprint: verdict.fingerprint, classKey: verdict.classKey, verdict };
   }
   if (verdict.action === "allow") return null;

@@ -157,6 +157,18 @@ describe("add_mcp_server", () => {
     }]);
   });
 
+  it("tells the model a server saved on Full access is switched on (2026-10-26)", async () => {
+    const result = await callTool("add_mcp_server", { name: "docs", url: "https://docs.example/mcp" }, context({
+      client: {
+        api: async () => ({ name: "docs", enabled: true, transport: "http", target: "https://docs.example/mcp", envKeys: [], headerKeys: [] }),
+        apiResponse: async () => ({ ok: true, status: 200, body: {} }),
+      },
+    }));
+    expect(result.isError).toBeFalsy();
+    expect(result.text).toContain("Saved MCP server “docs” (http https://docs.example/mcp) switched on.");
+    expect(result.text).not.toContain("switched off");
+  });
+
   it("returns the route's error sentence without echoing a secret", async () => {
     const result = await callTool("add_mcp_server", {
       name: "docs",

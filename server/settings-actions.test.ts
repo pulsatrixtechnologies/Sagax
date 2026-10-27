@@ -43,7 +43,7 @@ function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "
 }
 
 describe("sagax_settings", () => {
-  it("Full on the person's own request runs at once and says so to the route (JC 2026-10-20), even for the speaking bot", async () => {
+  it("Full on the person's own request runs at once and says so to the route(2026-10-20), even for the speaking bot", async () => {
     const primary = { botId: "b1", botName: "Scout", messageId: "m1" };
     const h = harness({ mode: "ask", personAsked: () => ({ message: "Mets-toi en Full.", primary }) });
     const done = await h.call({ action: "set", key: "bot.approvalMode", value: "full", quote: "Mets-toi en Full" });
@@ -72,11 +72,10 @@ describe("sagax_settings", () => {
     expect(h.planned[1]).toMatchObject({ path: "/api/routines/r1", body: { resultsThreadId: "th1" } });
   });
 
-  it("keeps a card for Full, a deletion, a secret, another person and the organization", async () => {
+  it("keeps a card for Full, a secret, another person and the organization", async () => {
     const h = harness({ mode: "full" });
     for (const args of [
       { key: "bot.approvalMode", value: "full" },
-      { key: "routine.delete", target: "r1", value: true },
       { key: "credentials.item", value: { name: "x", password: "y" } },
       { key: "bot.share", value: { target: "user:pr_x", level: "use" } },
       { key: "org.allowFullAccess", value: true },
@@ -86,6 +85,32 @@ describe("sagax_settings", () => {
     }
     expect(h.planned.every((row) => row.effect === "hold")).toBe(true);
     expect(h.audits).toEqual([]);
+  });
+
+  it("deletes the person's own routine and bot at Approve for me and Full without a card (2026-10-26)", async () => {
+    for (const mode of ["auto", "full"] as const) {
+      const h = harness({ mode });
+      await h.call({ action: "set", key: "routine.delete", target: "r1", value: true });
+      await h.call({ action: "set", key: "bot.delete", target: "b2", value: true });
+      expect(h.planned.map((row) => row.effect), mode).toEqual(["run", "run"]);
+    }
+    // at Ask the level still asks
+    const ask = harness({ mode: "ask" });
+    expect((await ask.call({ action: "set", key: "routine.delete", target: "r1", value: true })).body.text).toContain("this bot is at Ask");
+  });
+
+  it("keeps the card for deleting a group with another person in it, someone else's routine, a shared team or an unknown group", async () => {
+    const alone = harness({ mode: "full", groupHumans: () => ["pr_owner"] });
+    await alone.call({ action: "set", key: "group.delete", target: "g1", value: true });
+    expect(alone.planned.map((row) => row.effect)).toEqual(["run"]);
+    for (const over of [{ groupHumans: () => ["pr_owner", "pr_bob"] }, { groupHumans: () => null }, {}]) {
+      const h = harness({ mode: "full", ...over });
+      expect((await h.call({ action: "set", key: "group.delete", target: "g1", value: true })).body.text).toContain("Approval needed.");
+    }
+    const theirs = harness({ mode: "full" });
+    expect((await theirs.call({ action: "set", key: "routine.delete", target: "r2", value: true })).body.text).toContain("Approval needed.");
+    const team = harness({ mode: "full" });
+    expect((await team.call({ action: "set", key: "section.delete", target: "Sales", value: true })).body.text).toContain("Approval needed.");
   });
 
   it("keeps a card at Ask, and for someone else's routine", async () => {

@@ -4,6 +4,9 @@
 // enforced. A hard misuse block stays a refusal. A risky call that is not
 // forbidden returns a safer path once, then an explicit approval. Denial of
 // that approval is final for the unfolded text and for the same intent.
+// A call that runs in the speaker's own sandbox or own computer is theirs:
+// it runs without the safer path or a card, unless it sends to a third
+// party or was triggered by untrusted content.
 
 import { createHash } from "node:crypto";
 import { isOutboundTool } from "./outbound.ts";
@@ -73,6 +76,7 @@ export type SafetyCode =
   | "allow"
   | "read_only"
   | "admit"
+  | "own_environment"
   | "safer"
   | "confirm"
   | "final"
@@ -91,6 +95,11 @@ export interface SafetyInput {
   fromUntrusted?: boolean;
   /** `security.triage`. It does not lift a hard block. */
   triage?: boolean;
+  /** The call runs in the speaker's own environment: their server sandbox
+   * or their own computer (Local VM, desktop bridge). Set by the server from
+   * the capability, never from the text. A host shell, a lent computer and
+   * an MCP connector are not. */
+  ownEnvironment?: boolean;
 }
 
 export interface SafetyVerdict {
@@ -269,7 +278,7 @@ export function reviewSafety(input: SafetyInput, memory: SafetyMemory = emptySaf
   const sealed = memory.final.has(fingerprint) || (classKey !== undefined && memory.final.has(classKey));
   if (sealed) return verdict("block", "final", SAFETY_REFUSAL_FINAL, fingerprint, classKey);
 
-  const misuse = classifyMisuse(input.text, false);
+  const misuse = classifyMisuse(input.text, false, input.ownEnvironment ? "own_environment" : input.surface === "message" ? "message" : "default");
   if (misuse.action === "block") {
     return verdict("block", "misuse", misuseRefusalText(misuse.category, "block"), fingerprint, classKey);
   }
@@ -295,8 +304,15 @@ export function reviewSafety(input: SafetyInput, memory: SafetyMemory = emptySaf
 
   if (isReadOnly(input, text)) return verdict("allow", "read_only", "", fingerprint, classKey);
 
-  const next = step(memory, fingerprint, classKey);
   const outbound = (input.tool ? isOutboundTool(input.tool) : false) || classKey === "outbound:send";
+  // The speaker's own environment: a write, a delete, a commit, an install,
+  // a hard reset or a force-push there is theirs. A send to a third party, a
+  // call driven by untrusted content and an unknown tool keep their review.
+  if (input.ownEnvironment && !outbound && !looksUntrusted(input, text) && input.known !== false) {
+    return verdict("allow", "own_environment", "", fingerprint, classKey);
+  }
+
+  const next = step(memory, fingerprint, classKey);
   if (classKey?.startsWith("git:")) {
     return verdict(next, next, next === "safer" ? SAFER_GIT : CONFIRM_GUIDANCE, fingerprint, classKey);
   }
@@ -329,11 +345,14 @@ export function parseSafetyReview(raw: string): { action: SafetyAction } | null 
 }
 
 /** The model may only move a verdict toward a stricter action. A read stays
- * allowed. A hard block stays a block. A parse failure keeps the local verdict. */
+ * allowed. A hard block stays a block. A parse failure keeps the local verdict.
+ * A call in the person's own environment may still be blocked by the model,
+ * not sent back for a safer path or a card. */
 export function tightenSafety(local: SafetyVerdict, modelText: string | null | undefined): SafetyVerdict {
   if (local.code === "read_only" || local.action === "block") return local;
   const parsed = modelText ? parseSafetyReview(modelText) : null;
   if (!parsed || REVIEW_RANK[parsed.action] <= REVIEW_RANK[local.action]) return local;
+  if (local.code === "own_environment" && parsed.action !== "block") return local;
   if (parsed.action === "block") {
     return { ...local, action: "block", code: "model", message: SAFETY_REFUSAL_MODEL };
   }

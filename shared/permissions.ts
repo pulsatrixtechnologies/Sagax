@@ -501,6 +501,11 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   autoApprove: "bots.approvalLevel",
   acknowledgeLocalAuto: "bots.approvalLevel",
   proactiveMode: "bots.approvalLevel",
+  // 2026-10-26: the owner's own "Always allow" list on their own bot.
+  // The PATCH keeps its guards: the person's security key for an added
+  // grant, and an organization that turned standing grants off still wins
+  // where a grant is read (auto-approve.ts, step-up-gate.ts).
+  alwaysAllow: "bots.approvalLevel",
   memoryEnabled: "bots.behaviour",
   teamMemorySharing: "bots.behaviour",
   memoryUpkeep: "bots.behaviour",

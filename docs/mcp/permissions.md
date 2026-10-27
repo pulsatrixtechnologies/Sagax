@@ -11,7 +11,9 @@ One permission per action, named `resource:verb` (`memory:save`,
 2. **Scope.** Every grant has a widest scope: `self` < `team` < `org`. A call
    reaches a scope (`scopeForCall`): another bot, a room, group or team
    argument means `team`; `scope: "org"` means `org`; otherwise `self`. The
-   call is allowed only when the role's grant is at least as wide.
+   call is allowed only when the role's grant is at least as wide. Exception
+   (2026-10-26): a bot or room the speaking person owns (`SAGAX_MCP_OWN_BOTS`,
+   `SAGAX_MCP_OWN_ROOMS`, `scopeOwnersFromEnv`) is `self`, not `team`.
 3. **Audit.** One record per audited call: time, principal, role, tool,
    permission, scope, decision, reason, and whether the denial was enforced.
    It never holds arguments, message text or results. It goes to the server's

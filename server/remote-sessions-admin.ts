@@ -2,7 +2,9 @@
 // session this server knows into the rows the page shows, enforces who may see
 // them (a workspace admin sees the organization's sessions; anyone else sees
 // only the sessions they own), and serves the redacted per-session log. It also
-// records and revokes the install-time unattended consent. One Sagax server is
+// records and revokes the install-time unattended consent: any signed-in
+// person for a host of their own, recorded under their principal; an admin
+// for any host. One Sagax server is
 // one organization, so "org isolation" here is: no row leaves this server, and
 // a non-admin never sees another person's session.
 import {
@@ -15,7 +17,7 @@ import {
   type RemoteSessionAdminRow,
 } from "../shared/remote-session-admin.ts";
 import type { RemoteSessionLogEntry } from "../shared/remote-session-admin.ts";
-import type { UnattendedConsent, UnattendedConsentInput } from "../shared/remote-session-consent.ts";
+import { isUnattendedActive, normalizeHostKey, type UnattendedConsent, type UnattendedConsentInput } from "../shared/remote-session-consent.ts";
 import type { UnattendedConsentStore } from "./remote-session-consent-store.ts";
 
 export interface AdminViewer {
@@ -63,6 +65,19 @@ export function createRemoteSessionsAdmin(deps: {
 
   const find = (id: string) => deps.rows().find((row) => row.id === id) ?? null;
 
+  const samePrincipal = (a: string | undefined | null, b: string | undefined | null) =>
+    !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+  /** Whether a non-admin may act on this host's unattended consent: no
+   * session of another person runs on it, and no live consent of another
+   * person covers it. An admin may act on any host. */
+  const hostIsTheirs = (viewer: AdminViewer, hostKey: string): boolean => {
+    if (viewer.orgAdmin) return true;
+    if (deps.rows().some((input) => adminHostKey(input) === hostKey && !samePrincipal(input.ownerId, viewer.principalId))) return false;
+    const current = deps.consent.get(hostKey);
+    return !current || !isUnattendedActive(current, now()) || samePrincipal(current.installedBy, viewer.principalId);
+  };
+
   return {
     /** The rows this viewer may see, filtered and sorted. */
     list(viewer: AdminViewer, filters: AdminRowFilters = {}): RemoteSessionAdminRow[] {
@@ -85,28 +100,34 @@ export function createRemoteSessionsAdmin(deps: {
     },
     /** Whether the unattended (Access) path is usable (feature flag). */
     unattendedEnabled,
-    /** Record install-time unattended consent. Admin only. Gated off until the
+    /** Record install-time unattended consent, attributed to the caller's
+     * principal. Any signed-in person may, for a host that is not another
+     * person's (hostIsTheirs); an admin for any host. Gated off until the
      * host-service install, revoke-uninstall and expiry enforcement are wired. */
-    grantUnattended(viewer: AdminViewer, input: UnattendedConsentInput): UnattendedConsent | null | "forbidden" | "disabled" {
+    grantUnattended(viewer: AdminViewer, input: Omit<UnattendedConsentInput, "installedBy">): UnattendedConsent | null | "forbidden" | "disabled" {
       if (!unattendedEnabled()) return "disabled";
-      if (!viewer.orgAdmin) return "forbidden";
-      return deps.consent.grant(input);
+      if (!viewer.principalId) return "forbidden";
+      const hostKey = normalizeHostKey(input.hostKey);
+      if (hostKey && !hostIsTheirs(viewer, hostKey)) return "forbidden";
+      return deps.consent.grant({ ...input, installedBy: viewer.principalId });
     },
     /** Revoke unattended access for a host from the page: the person who
      * recorded the consent (installedBy) does it themselves, an admin does it
      * for any host of the organization (decision 2026-10-26). Mark the consent
-     * revoked, end any live session on that host (cuts the tunnel), and
-     * propagate to the host service and Perspicax. Works whatever the flag
-     * (M2): a consent recorded before the flag was cut stays revocable. */
+     * revoked, end the live sessions on that host the caller may end (cuts the
+     * tunnel), and propagate to the host service and Perspicax. Works whatever
+     * the flag (M2): a consent recorded before the flag was cut stays revocable. */
     async revokeUnattended(viewer: AdminViewer, hostKey: string, reason = ""): Promise<RevokeOutcome> {
+      if (!viewer.principalId && !viewer.orgAdmin) return { ok: false, error: "forbidden" };
       const current = deps.consent.get(hostKey);
       if (!current) return { ok: false, error: "not_found" };
-      if (!viewer.orgAdmin && current.installedBy !== viewer.principalId) return { ok: false, error: "forbidden" };
+      if (!viewer.orgAdmin && !samePrincipal(current.installedBy, viewer.principalId)) return { ok: false, error: "forbidden" };
       const consent = deps.consent.revoke(hostKey);
       if (!consent) return { ok: false, error: "not_found" };
-      // Cut any live session whose host matches, so revoke stops control now.
+      // Cut the live sessions on that host, so revoke stops control now. A
+      // non-admin never ends another person's session.
       for (const input of deps.rows()) {
-        if (input.state === "connected" && adminHostKey(input) === hostKey) {
+        if (input.state === "connected" && adminHostKey(input) === hostKey && (viewer.orgAdmin || samePrincipal(input.ownerId, viewer.principalId))) {
           await deps.closeById(input.id).catch(() => false);
         }
       }

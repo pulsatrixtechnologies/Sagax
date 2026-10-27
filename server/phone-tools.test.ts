@@ -132,6 +132,34 @@ describe("phone tool broker", () => {
     expect(again.grants("ann")).toEqual([]);
   });
 
+  it("lets the person always allow the clipboard, a reminder, an event and the precise position for one bot only", () => {
+    const { broker } = setup();
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["clipboard", "reminders", "calendar", "location"], transport: "protected" });
+    const cases: Array<{ tool: "clipboard" | "reminders" | "calendar" | "location"; args: Record<string, unknown>; result: Record<string, unknown>; key: string }> = [
+      { tool: "clipboard", args: {}, result: { empty: true }, key: "clipboard:read" },
+      { tool: "reminders", args: { action: "create", title: "Pain" }, result: { created: { title: "Pain" } }, key: "reminders:write:create" },
+      { tool: "calendar", args: { action: "create", title: "Dentiste", start: "2026-11-02T10:00:00Z", end: "2026-11-02T11:00:00Z" }, result: { created: { title: "Dentiste", start: "2026-11-02T10:00:00Z", end: "2026-11-02T11:00:00Z" } }, key: "calendar:write:create" },
+      { tool: "location", args: { precise: true }, result: { latitude: 45.5, longitude: -73.5 }, key: "location:read:precise" },
+    ];
+    const probe = (tool: string, args: Record<string, unknown>, botId = "bot1") => {
+      const request = broker.request({ ...ask, botId, tool: tool as "status", args });
+      broker.cancel("ann", request.id);
+      return request.preApproved;
+    };
+    for (const { tool, args, result } of cases) {
+      const first = broker.request({ ...ask, tool, args });
+      expect(first.allowAlways, tool).toBe(true);
+      expect(broker.answer("ann", "phone-a", first.id, { decision: "always", result }), tool).toEqual({ ok: true });
+      expect(probe(tool, args), tool).toBe(true);
+      // Another bot of the same person does not inherit it.
+      expect(probe(tool, args, "bot2"), tool).toBe(false);
+    }
+    // A write grant never covers a read, and precise never covers approximate.
+    expect(probe("reminders", { action: "list" })).toBe(false);
+    expect(probe("location", {})).toBe(false);
+    expect(broker.grants("ann").map((grant) => grant.key).sort()).toEqual(cases.map((entry) => entry.key).sort());
+  });
+
   it("refuses Toujours permettre where the card does not offer it", () => {
     const { broker } = setup();
     broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["shortcut"], transport: "protected" });
@@ -180,7 +208,7 @@ describe("phoneToolTurn", () => {
   });
 });
 
-describe("protected transport only (JC 2026-10-21)", () => {
+describe("protected transport only(2026-10-21)", () => {
   it("a phone on plain local Wi-Fi offers nothing to bots", () => {
     const dataDir = mkdtempSync(join(tmpdir(), "sagax-phone-transport-"));
     try {

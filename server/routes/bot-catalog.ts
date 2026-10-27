@@ -14,9 +14,10 @@
 //        A copy for the viewer (the console's clone: soul, skills, model
 //        and settings; no threads, memory, grants or routines), from a bot
 //        they own, one shared with them, or one published to the organisation.
-//        A member's copy (anyone not an organisation admin) drops where the
-//        bot runs and what it reaches on the host (memberImportReset); an
-//        admin's keeps everything.
+//        A member's copy (anyone not an organisation admin) drops what
+//        stays an admin's on the shared server (memberImportReset: working
+//        folder, browser profile, MCP servers but the remote ones of their
+//        own bot); an admin's keeps everything.
 //
 // Organisation server only for the shared and published parts: a solo
 // server lists its own bots and refuses a listing. Member scope
@@ -78,8 +79,9 @@ export interface BotCatalogRouteDeps {
   personName(principalId: string): string;
   detail(botId: string, options: { memories: boolean }): Omit<BotCatalogDetail, "entry"> | null;
   setListing(botId: string, listing: BotCatalogListing | null): void;
-  /** `asMember`: reset the copy with memberImportReset. */
-  clone(botId: string, input: { ownerPrincipalId: string; name?: string; asMember: boolean }): Promise<string>;
+  /** `asMember`: reset the copy with memberImportReset. `ownSource`: the
+   * copy is of the viewer's own bot, so its remote MCP servers may stay. */
+  clone(botId: string, input: { ownerPrincipalId: string; name?: string; asMember: boolean; ownSource: boolean }): Promise<string>;
   audit(auth: RequestAuth, row: CatalogAuditRow): void;
   now?(): number;
 }
@@ -110,20 +112,22 @@ function entryOf(bot: CatalogBot, source: BotCatalogSource, ownerName: string, o
   };
 }
 
-/** The fields of a member's imported copy that go back to a member's new
- * bot: no computer, no browser, none of the host's tools (MCP servers,
- * always-allowed tools, working folder). Engine, model, soul, skills and
- * the Perspicax profile list stay: whoever speaks to it uses their own
- * access anyway. */
-export function memberImportReset(): {
-  computer: "off";
-  browser: false;
+/** The fields of a member's imported copy that stay an admin's: the
+ * working folder and the server's browser profiles (dossiers and signed-in
+ * sessions on the shared server) and MCP servers. 2026-10-26: what the
+ * bot does in the person's own environment is theirs, so the computer
+ * (only Off travels; any other value reads as Auto, server/surface.ts), the
+ * browser and the Always allow list stay. MCP servers stay only when the
+ * copy is of the person's own bot (`keep`) and only the remote (url) ones:
+ * a stdio server runs on the organization's server. Engine, model, soul,
+ * skills and the Perspicax profile list stay too. */
+export function memberImportReset(keep?: { mcpServers?: readonly string[]; remote: (name: string) => boolean }): {
   browserProfile: undefined;
-  mcpServers: [];
-  alwaysAllow: undefined;
   cwd: undefined;
+  mcpServers: string[];
 } {
-  return { computer: "off", browser: false, browserProfile: undefined, mcpServers: [], alwaysAllow: undefined, cwd: undefined };
+  const mcpServers = keep ? (keep.mcpServers ?? []).filter((name) => keep.remote(name)) : [];
+  return { browserProfile: undefined, cwd: undefined, mcpServers };
 }
 
 const ROUTE = /^\/api\/bot-catalog(?:\/([\w-]+)(?:\/(listing|import))?)?$/;
@@ -241,7 +245,7 @@ export function createBotCatalogRoutes(deps: BotCatalogRouteDeps): RouteHandler 
     }
     let copyId: string;
     try {
-      copyId = await deps.clone(bot.id, { ownerPrincipalId: viewer.principalId, ...(name ? { name } : {}), asMember: !viewer.admin });
+      copyId = await deps.clone(bot.id, { ownerPrincipalId: viewer.principalId, ...(name ? { name } : {}), asMember: !viewer.admin, ownSource: source === "mine" });
     } catch (error) {
       const status = (error as { status?: unknown })?.status;
       if (typeof status === "number" && status >= 400 && status < 500) {

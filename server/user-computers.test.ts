@@ -43,6 +43,43 @@ describe("whose computer a bot may use", () => {
     expect(speakingPerson(undefined)).toBeNull();
   });
 
+  it("a routine of the person's own bot, run as them, scheduled or by hand, reaches the computer they shared (2026-10-26)", async () => {
+    for (const automationTrigger of ["schedule", "manual"]) {
+      const own = { botOwner: ADA, automationTrigger };
+      expect(speakingPerson({ origin: "owner-routine", principalId: ADA }, own)).toBe(ADA);
+      expect(speakingPerson({ origin: "peer", fromBotId: "b1", routine: true, routinePayer: ADA }, own)).toBe(ADA);
+      expect(speakingPerson({ origin: "peer", fromBotId: "b1", principalId: ADA, routine: true, routinePayer: ADA }, own)).toBe(ADA);
+    }
+    const { broker, adaDesktop, provider } = desktops();
+    const router = createUserComputerRouter([provider]);
+    const routine: TurnSpeaker = { origin: "owner-routine", principalId: ADA };
+    expect(router.list(routine, { botOwner: ADA, automationTrigger: "schedule" })).toEqual([{ target: "user-desktop", computer: adaDesktop }]);
+    broker.close();
+  });
+
+  it("never a routine run as someone else, a webhook, an unknown start, or someone else's routine", async () => {
+    const schedule = { botOwner: ADA, automationTrigger: "schedule" };
+    // run as another person, or as nobody known
+    expect(speakingPerson({ origin: "owner-routine", principalId: BOB }, schedule)).toBeNull();
+    expect(speakingPerson({ origin: "owner-routine" }, schedule)).toBeNull();
+    // a webhook, a typed trigger, an unknown start
+    for (const automationTrigger of ["webhook", "graph", undefined]) {
+      expect(speakingPerson({ origin: "owner-routine", principalId: ADA }, { botOwner: ADA, ...(automationTrigger ? { automationTrigger } : {}) })).toBeNull();
+      expect(speakingPerson({ origin: "peer", fromBotId: "b1", routine: true, routinePayer: ADA }, { botOwner: ADA, ...(automationTrigger ? { automationTrigger } : {}) })).toBeNull();
+    }
+    // a routine someone else pays for, or carrying someone else's words
+    expect(speakingPerson({ origin: "peer", fromBotId: "b1", routine: true, routinePayer: BOB }, schedule)).toBeNull();
+    expect(speakingPerson({ origin: "peer", fromBotId: "b1", principalId: BOB, routine: true, routinePayer: ADA }, schedule)).toBeNull();
+    // a routine of Bob's bot never reaches Ada's computer, and Ada's routine never Bob's
+    expect(speakingPerson({ origin: "owner-routine", principalId: ADA }, { botOwner: BOB, automationTrigger: "schedule" })).toBeNull();
+    const { broker, bobDesktop, provider } = desktops();
+    const router = createUserComputerRouter([provider]);
+    await expect(router.request({ origin: "owner-routine", principalId: ADA }, { computer_id: bobDesktop.id, action: "list_files" } as never, () => true, schedule))
+      .rejects.toMatchObject({ status: 403, code: "not_theirs" });
+    expect(() => router.list({ origin: "owner-routine", principalId: ADA }, { botOwner: ADA, automationTrigger: "webhook" })).toThrow(USER_COMPUTER_MESSAGES.noPerson);
+    broker.close();
+  });
+
   it("lists only the speaker's connected computers", () => {
     const { broker, adaDesktop, provider } = desktops();
     const router = createUserComputerRouter([provider]);

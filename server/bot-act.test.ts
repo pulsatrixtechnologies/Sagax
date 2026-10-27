@@ -8,7 +8,7 @@ function facts(patch: Partial<TurnFacts> = {}): TurnFacts {
   return { automation: false, guest: false, requestUsable: true, senderUnproven: false, provenPerson: person, sharedServer: false, ...patch };
 }
 
-function harness(options: { mode?: "ask" | "edits" | "auto" | "full" | "custom"; session?: { id: string; scopes: Array<"admin" | "client"> } | null } = {}) {
+function harness(options: { mode?: "ask" | "edits" | "auto" | "full" | "custom"; session?: { id: string; scopes: Array<"admin" | "client"> } | null; routeStatus?: (path: string) => number } = {}) {
   const performed: Array<{ actor: PerformActor; method?: string; path?: string }> = [];
   const broadcasts: Array<{ audience: string; command: string; input: Record<string, unknown> }> = [];
   const cards: Array<{ requestId: string; summary: string; rule?: unknown; answered?: "allow" | "deny"; expired?: true }> = [];
@@ -25,7 +25,8 @@ function harness(options: { mode?: "ask" | "edits" | "auto" | "full" | "custom";
     async performRoute(actor, target) {
       performed.push({ actor, method: target.method, path: target.path });
       if (holdPerform) return new Promise((resolve) => { holdPerform = { resolve }; });
-      return { status: 200, text: "ok" };
+      const status = options.routeStatus?.(target.path) ?? 200;
+      return { status, text: status < 400 ? "ok" : "This bot is not yours." };
     },
     broadcastUi: (audience, command, input) => { broadcasts.push({ audience, command, input }); },
     postCard: (input) => {
@@ -104,12 +105,16 @@ describe("bot act", () => {
     expect(box.cards[0]?.answered).toBeUndefined();
   });
 
-  it("holds a write in auto, runs an ordinary write in full, and refuses unproven turns", async () => {
+  it("runs an own-environment write in auto, holds one that reaches others, runs an ordinary write in full, and refuses unproven turns", async () => {
     const { service, performed } = harness({ mode: "auto" });
-    const held = await service.handle({ facts: facts(), raw: { method: "POST", path: "/api/bots", body: { name: "Bea" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "auto" });
+    const own = await service.handle({ facts: facts(), raw: { method: "POST", path: "/api/bots", body: { name: "Bea" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "auto" });
+    expect(own.status).toBe(200);
+    expect(own.body.held).toBeUndefined();
+    expect(performed).toHaveLength(1);
+    const held = await service.handle({ facts: facts(), raw: { method: "POST", path: "/api/groups", body: { name: "team" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "auto" });
     expect(held.status).toBe(200);
     expect(held.body.held).toBe(true);
-    expect(performed).toHaveLength(0);
+    expect(performed).toHaveLength(1);
     const full = harness({ mode: "full" });
     const ran = await full.service.handle({ facts: facts(), raw: { method: "POST", path: "/api/bots", body: { name: "Bea" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
     expect(ran.status).toBe(200);
@@ -137,10 +142,21 @@ describe("bot act", () => {
       const refused = await service.handle({ facts: facts(reason), raw: { method: "GET", path: "/api/bots" }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
       expect(refused.status, JSON.stringify(reason)).toBe(403);
     }
-    expect(performed).toHaveLength(0);
+    expect(performed).toHaveLength(1);
     const missing = harness({ session: null });
     const gone = await missing.service.handle({ facts: facts(), raw: { method: "GET", path: "/api/bots" }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
     expect(gone).toMatchObject({ status: 403 });
+  });
+
+  it("in auto, runs a write on the person's own bot and the route still refuses another person's bot", async () => {
+    const box = harness({ mode: "auto", routeStatus: (path) => path.startsWith("/api/bots/bob-bot") ? 403 : 200 });
+    const own = await box.service.handle({ facts: facts(), raw: { method: "PATCH", path: "/api/bots/alice-bot", body: { name: "Bea" } }, threadId: "t", botId: "alice-bot", botName: "Ada", botColor: "green", mode: "auto" });
+    expect(own.status).toBe(200);
+    expect(own.body.held).toBeUndefined();
+    const other = await box.service.handle({ facts: facts(), raw: { method: "PATCH", path: "/api/bots/bob-bot", body: { name: "Bea" } }, threadId: "t", botId: "alice-bot", botName: "Ada", botColor: "green", mode: "auto" });
+    expect(other.status).toBe(403);
+    expect(other.body.held).toBeUndefined();
+    expect(box.cards).toHaveLength(0);
   });
 
   it("acts as the desktop owner only when the turn is unproven on a personal server", async () => {

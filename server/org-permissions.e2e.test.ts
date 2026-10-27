@@ -181,7 +181,7 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     const created = await api("POST", "/api/bots", bob, { name: "Sprout" });
     expect(created.status, created.text).toBe(201);
     const id = created.body.bot.id as string;
-    // 2026-10-26 (JC): every setting of their own bot, without a permission list
+    // 2026-10-26: every setting of their own bot, without a permission list
     const auto = await api("PATCH", `/api/bots/${id}`, bob, { approvalMode: "auto" });
     expect(auto.status, auto.text).toBe(200);
     for (const body of [{ chiefOfStaff: true }, { proactiveMode: "propose" }, { memoryEnabled: false }, { section: "Ops" }, { chiefOfStaff: false }, { hidden: true }]) {
@@ -202,12 +202,15 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     expect(allowed.status, allowed.text).toBe(200);
     const moved = await api("PATCH", `/api/bots/${id}`, bob, { cwd: folder });
     expect(moved.status, moved.text).toBe(200);
-    // still never the fields no permission opens
-    expect((await api("PATCH", `/api/bots/${id}`, bob, { alwaysAllow: [] })).status).toBe(403);
+    // 2026-10-26: the owner's own Always allow list goes with bots.approvalLevel
+    const allowList = await api("PATCH", `/api/bots/${id}`, bob, { alwaysAllow: [] });
+    expect(allowList.status, allowList.text).toBe(200);
     // an admin passes without any permission list (an admin opens no one
     // else's bot without a grant, so on their own)
     const elm = await api("POST", "/api/bots", alice, { name: "Elm" });
     expect(elm.status, elm.text).toBe(201);
+    // never on another person's bot (it is not even visible to them)
+    expect([403, 404]).toContain((await api("PATCH", `/api/bots/${elm.body.bot.id}`, bob, { alwaysAllow: [] })).status);
     const adminPatch = await api("PATCH", `/api/bots/${elm.body.bot.id}`, alice, { approvalMode: "auto", cwd: folder });
     expect(adminPatch.status, adminPatch.text).toBe(200);
   }, 60_000);
@@ -260,7 +263,7 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     // nothing given: every one of them closed, naming its key
     let bob = await bobWith(undefined);
     const closed: Array<[string, string, unknown, string]> = [
-      // 2026-10-22 (JC): the config write opens to server.settings OR the
+      // 2026-10-22: the config write opens to server.settings OR the
       // separate server.experimental key; a member with neither is refused,
       // named by the primary key server.settings.
       ["PATCH", "/api/config", { language: "fr" }, "server.settings"],
@@ -300,7 +303,7 @@ posixOnly("Perspicax organization: the permission matrix", () => {
       expect(refused.status, field).toBe(403);
       expect(refused.body, field).toMatchObject({ code: "admin_only_field", field, error: "Only an organization admin can change an address the server connects to." });
     }
-    // nor a provider key of the server (JC 2026-10-19), in any block
+    // nor a provider key of the server(2026-10-19), in any block
     const providerKeys: Array<[Record<string, unknown>, string]> = [
       [{ openrouter: { key: "sk-test" } }, "openrouter.key"],
       [{ openai: { key: "sk-test" } }, "openai.key"],
@@ -383,7 +386,7 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     expect((await api("GET", "/api/tool-grants", alice)).status).toBe(200);
   }, 90_000);
 
-  it("PM-7 (2026-10-22, JC): server.experimental alone flips the experiments and nothing else", async () => {
+  it("PM-7 (2026-10-22, ): server.experimental alone flips the experiments and nothing else", async () => {
     const bob = await bobWith([...MEMBER_DEFAULT_PERMISSIONS, "server.experimental"]);
     // the section's capability is off (it is not server.settings), yet the
     // experiment switches write through

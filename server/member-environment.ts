@@ -37,6 +37,11 @@
 //   `.config/gh/hosts.yml`, `.ssh`, `.netrc`, `.npmrc`, `.aws`,
 //   `.docker/config.json`, `.kube`, any `.`-name, a `..` segment, a key
 //   file), which keep their card (ownEnvironmentSensitiveRead);
+//   2026-10-26: the person's own routine on their own bot (run as
+//   themselves, scheduled or by hand) and a hop between two of their own
+//   bots from their own words count as their own turn
+//   (ownEnvironmentTurnOrigin); a webhook, an email, a typed trigger, a
+//   guest or another person still get the reads only;
 // - the person's own deny and ask rules, the safety review and the grant
 //   guard run first (server/index.ts request.opened), on every engine: the
 //   Grok gate holds these calls and sends them there (grok-approval-gate.ts).
@@ -49,6 +54,7 @@
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 import { DESKTOP_BRIDGE_MCP_NAME } from "../shared/bot-workplace.ts";
 import type { TurnSpeaker } from "./engine-access.ts";
+import { ownerLineageOrigin } from "./owner-autonomy.ts";
 import { sensitiveReadPath } from "./sensitive-path.ts";
 import { USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 
@@ -120,10 +126,17 @@ export function ownEnvironmentSensitiveRead(input: string | undefined): boolean 
 }
 
 /** Whose turn a permission request comes from, for the owner's own
- * environment: "owner" only when the bot's owner (or the operator at this
- * computer) wrote the request themselves; "other" for another bot's hop, a
- * routine, a webhook or typed trigger, an email, any automation, a room
- * without a known person, another person, or anything unknown. */
+ * environment: "owner" when the bot's owner (or the operator at this
+ * computer) wrote the request themselves. 2026-10-26 (the person's bots
+ * work in their own environment, and what happens there is theirs): also
+ * "owner" for the person's own lineage on their own bot, when the caller
+ * names the bot's owner (`botOwnerPrincipalId`): their routine (run as
+ * themselves, scheduled or started by hand) or a hop between two of their
+ * own bots that carries their own words (owner-autonomy.ts
+ * ownerLineageOrigin). "other" for a webhook or typed trigger, an email,
+ * any other automation, a hop from a routine, a room without a known
+ * person, a guest, another person, someone else's bot, or anything
+ * unknown. */
 export function ownEnvironmentTurnOrigin(input: {
   speaker: TurnSpeaker | undefined;
   ownerPrincipalId: string;
@@ -135,14 +148,50 @@ export function ownEnvironmentTurnOrigin(input: {
   automation: boolean;
   /** The bot works unattended on this thread (a routine run). */
   unattended: boolean;
+  /** The owner of the bot this turn runs on. Absent: only the person's own
+   * words count (what create_bot and the other owner-only actions read). */
+  botOwnerPrincipalId?: string;
+  /** What started the request when it was an automation: a routine's
+   * trigger ("schedule", "manual", "webhook") or another source. */
+  automationTrigger?: string;
+  /** The owner of the bot a peer hop comes from, when that bot exists. */
+  peerFromOwner?: string;
 }): "owner" | "other" {
-  if (input.internalTurn || input.routineLineage || input.automation || input.unattended) return "other";
+  if (ownWordsTurn(input)) return "owner";
+  return ownLineageTurn(input) ? "owner" : "other";
+}
+
+function ownWordsTurn(input: Parameters<typeof ownEnvironmentTurnOrigin>[0]): boolean {
+  if (input.internalTurn || input.routineLineage || input.automation || input.unattended) return false;
   const speaker = input.speaker;
-  if (!speaker) return "other";
-  if (speaker.origin === "operator") return "owner";
-  if (speaker.origin !== "person" || !speaker.principalId) return "other";
+  if (!speaker) return false;
+  if (speaker.origin === "operator") return true;
+  if (speaker.origin !== "person" || !speaker.principalId) return false;
   const owner = input.ownerPrincipalId.trim().toLowerCase();
-  return owner && speaker.principalId.trim().toLowerCase() === owner ? "owner" : "other";
+  return Boolean(owner) && speaker.principalId.trim().toLowerCase() === owner;
+}
+
+/** The person's own routine on their own bot, or a hop between two of
+ * their own bots from their own words. */
+function ownLineageTurn(input: Parameters<typeof ownEnvironmentTurnOrigin>[0]): boolean {
+  const owner = input.ownerPrincipalId.trim().toLowerCase();
+  const botOwner = input.botOwnerPrincipalId?.trim().toLowerCase();
+  if (!owner || !botOwner || botOwner !== owner || !input.speaker) return false;
+  const trigger = input.automationTrigger;
+  const ownTrigger = trigger === "schedule" || trigger === "manual";
+  // an automation is the person's only when it is their routine's schedule
+  // or a manual run; a webhook, a typed trigger or an unknown source is not
+  if ((input.automation || input.unattended) && !ownTrigger) return false;
+  if (trigger !== undefined && !ownTrigger) return false;
+  // a routine lineage is the person's only on the routine's own turn
+  if (input.routineLineage && input.speaker.origin !== "owner-routine") return false;
+  return ownerLineageOrigin({
+    speaker: input.speaker,
+    ownerPrincipalId: owner,
+    ...(input.peerFromOwner !== undefined ? { peerFromOwner: input.peerFromOwner } : {}),
+    ...(trigger !== undefined ? { automation: trigger } : {}),
+    unattended: false,
+  }) === "owner";
 }
 
 /** Whether Sagax answers one own-environment call itself (no card): the

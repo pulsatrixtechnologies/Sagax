@@ -16,10 +16,35 @@ describe("every setting is an action (sagax_settings policy)", () => {
     expect(decideSettingEffect({ ...owner, classes: ["own"], mode: undefined })).toEqual({ effect: "hold", reason: "level" });
   });
 
-  it("keeps the card for a secret, another person, a bulk change, a deletion and the organization, Full included", () => {
+  it("keeps the card for a secret, another person, a bulk change, a deletion and the organization when others may be involved, Full included", () => {
     for (const name of ["secret", "others", "bulk", "delete", "org"] as const) {
       expect(decideSettingEffect({ ...owner, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "hold", reason: "sensitive" });
     }
+  });
+
+  it("lets the level decide a deletion or bulk change of the owner's own things that touches nobody else (2026-10-26)", () => {
+    for (const name of ["bulk", "delete"] as const) {
+      expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["own", name], mode: "auto" }), name).toEqual({ effect: "run" });
+      expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "run" });
+      expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["own", name], mode: "ask" }), name).toEqual({ effect: "hold", reason: "level" });
+    }
+  });
+
+  it("keeps the card for a deletion or bulk change that reaches another person, or of someone else's thing", () => {
+    for (const name of ["bulk", "delete"] as const) {
+      // a group with other humans in it
+      expect(decideSettingEffect({ ...owner, othersInvolved: true, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "hold", reason: "sensitive" });
+      // unknown: the card
+      expect(decideSettingEffect({ ...owner, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "hold", reason: "sensitive" });
+      // another person's bot or routine
+      expect(decideSettingEffect({ ownerWork: false, keyProtected: false, othersInvolved: false, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "hold", reason: "sensitive" });
+    }
+    // the other card classes keep the card even alone
+    for (const name of ["secret", "others", "org"] as const) {
+      expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "hold", reason: "sensitive" });
+    }
+    // a removed rule still never raises what runs unasked past the level
+    expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["delete", "rule-change"], mode: "full" })).toEqual({ effect: "hold", reason: "above-level" });
   });
 
   it("keeps the card when it is not the owner's own work", () => {

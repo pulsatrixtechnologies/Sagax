@@ -12,7 +12,9 @@
 // - deny wins over ask, which wins over allow;
 // - a destructive call (a delete, a bulk change, an external email or SMS)
 //   is covered only by an allow rule made for that same kind, in every
-//   mode: never implicitly;
+//   mode: never implicitly. 2026-10-26: except a delete or a bulk change in
+//   the person's own isolated environment (their sandbox, their Local VM)
+//   at auto or bypass, which is their own work;
 // - modes: approval (default: rules, then a card), auto (rules, then
 //   approve what no rule covers unless it is destructive), bypass (no card
 //   for the owner route, only the journal; deny and ask rules and the
@@ -506,13 +508,24 @@ export function ownerDecision(input: {
    * owner's own words on their own bot. Bypass, which the owner chose with
    * its confirmation (and bots.fullAccess on an organization server),
    * answers it like any other call of the owner route: deny rules, the
-   * destructive rule, holds and security keys still come first. Auto and
-   * Approval keep the card. */
+   * destructive rule, holds and security keys still come first.
+   * 2026-10-26 (the person's own environment is theirs): Approve for me
+   * (auto) answers it the same way; only Approval keeps the card. A webhook,
+   * a routine that is not theirs or another person's bot never sets this. */
   ownComputerOwnTurn?: boolean;
+  /** 2026-10-26: the call acts in the person's own isolated
+   * environment as Sagax mounted it for this turn (their server sandbox or
+   * the Local VM on their computer, member-environment.ts
+   * ownEnvironmentCall), never their real computer, the organization's
+   * server or someone else's. A delete or a bulk change there is the
+   * person's own work: at auto and bypass it runs like any other call of
+   * theirs (rules, holds and security keys first). A message that leaves
+   * the organization keeps its card wherever it is sent from. */
+  ownEnvironment?: boolean;
 }): OwnerDecision {
   if (input.adminRoute) return { kind: "card", reason: "admin" };
   if (input.crossPerson) return { kind: "card", reason: "cross-person" };
-  const bypassOwnComputer = input.mode === "bypass" && input.autonomyRefused === true && input.ownComputerOwnTurn === true;
+  const bypassOwnComputer = (input.mode === "bypass" || input.mode === "auto") && input.autonomyRefused === true && input.ownComputerOwnTurn === true;
   // 2026-10-19 ("Toujours permettre" on every card): a held card (a
   // safety hold, a sandbox widening) and a turn that is not the person's own
   // are answered only by an allow rule the person saved from that same kind
@@ -533,7 +546,11 @@ export function ownerDecision(input: {
   // to be skipped; the level only decides what no rule covers.
   if (rule?.behavior === "ask") return { kind: "card", reason: "ask-rule", rule };
   const destructive = destructiveKindOf(input.call);
-  if (destructive) return { kind: "card", reason: "destructive", destructive };
+  // 2026-10-26: a delete or a bulk change in the person's own isolated
+  // environment is theirs at auto and bypass; Approval, a message to a
+  // third party and anything outside that environment keep the card.
+  const ownEnvironmentChange = input.ownEnvironment === true && input.mode !== "approval" && (destructive === "delete" || destructive === "bulk");
+  if (destructive && !ownEnvironmentChange) return { kind: "card", reason: "destructive", destructive };
   if (input.mode === "bypass") return { kind: "allow", source: "owner-bypass" };
   if (input.mode === "auto") return { kind: "allow", source: "owner-auto" };
   return { kind: "card", reason: "no-rule" };

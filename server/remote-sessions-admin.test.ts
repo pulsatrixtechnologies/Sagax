@@ -16,8 +16,8 @@ function input(over: Partial<AdminSessionInput> = {}): AdminSessionInput {
   return {
     id: "a1b2c3d4e5f6", code: "ABC234", os: "windows", elevated: false,
     endAt: "2026-10-22T18:00:00Z", state: "connected", createdAt: NOW - 1000,
-    hostname: "PC-A", serial: "SN-A", user: "marie", ownerId: "tech@gox",
-    openedBy: "tech@gox", botId: "bot-7", reachable: true, ...over,
+    hostname: "PC-A", serial: "SN-A", user: "marie", ownerId: "tech@example.com",
+    openedBy: "tech@example.com", botId: "bot-7", reachable: true, ...over,
   };
 }
 
@@ -37,17 +37,17 @@ function make(rows: AdminSessionInput[], closeById = vi.fn(async () => true)) {
 
 describe("remote sessions admin visibility", () => {
   it("an admin sees every session, a non-admin only their own", () => {
-    const rows = [input({ id: "aaaaaaaaaaaa", ownerId: "tech@gox" }), input({ id: "bbbbbbbbbbbb", ownerId: "other@gox", serial: "SN-B" })];
+    const rows = [input({ id: "aaaaaaaaaaaa", ownerId: "tech@example.com" }), input({ id: "bbbbbbbbbbbb", ownerId: "other@example.com", serial: "SN-B" })];
     const { admin } = make(rows);
     expect(admin.list({ principalId: "x", orgAdmin: true }).map((r) => r.id).sort()).toEqual(["aaaaaaaaaaaa", "bbbbbbbbbbbb"]);
-    expect(admin.list({ principalId: "tech@gox", orgAdmin: false }).map((r) => r.id)).toEqual(["aaaaaaaaaaaa"]);
-    expect(admin.canSee({ principalId: "tech@gox", orgAdmin: false }, "bbbbbbbbbbbb")).toBe(false);
+    expect(admin.list({ principalId: "tech@example.com", orgAdmin: false }).map((r) => r.id)).toEqual(["aaaaaaaaaaaa"]);
+    expect(admin.canSee({ principalId: "tech@example.com", orgAdmin: false }, "bbbbbbbbbbbb")).toBe(false);
   });
 
   it("logs and end respect visibility", async () => {
-    const rows = [input({ id: "bbbbbbbbbbbb", ownerId: "other@gox" })];
+    const rows = [input({ id: "bbbbbbbbbbbb", ownerId: "other@example.com" })];
     const { admin, closeById } = make(rows);
-    const viewer = { principalId: "tech@gox", orgAdmin: false };
+    const viewer = { principalId: "tech@example.com", orgAdmin: false };
     expect(admin.logs(viewer, "bbbbbbbbbbbb")).toBeNull();
     expect(await admin.end(viewer, "bbbbbbbbbbbb")).toBe("forbidden");
     expect(closeById).not.toHaveBeenCalled();
@@ -59,22 +59,46 @@ describe("remote sessions admin visibility", () => {
 });
 
 describe("unattended grant and revoke", () => {
-  it("grant is admin only and shows on the row", () => {
-    const rows = [input()];
+  it("a person grants for a host of their own, recorded under their principal, and it shows on the row", () => {
+    const rows = [input({ ownerId: "alice@example.com", openedBy: "alice@example.com" })];
     const { admin } = make(rows);
-    expect(admin.grantUnattended({ principalId: "p", orgAdmin: false }, { hostKey: "sn-a", org: "GOX", installedBy: "p" })).toBe("forbidden");
-    const granted = admin.grantUnattended({ principalId: "p", orgAdmin: true }, { hostKey: "sn-a", org: "GOX", installedBy: "admin@gox", bannerVisible: false });
+    const granted = admin.grantUnattended({ principalId: "alice@example.com", orgAdmin: false }, { hostKey: "SN-A", org: "acme", bannerVisible: false });
     expect(granted && granted !== "forbidden" && granted !== "disabled" && granted.hostKey).toBe("sn-a");
-    const row = admin.list({ principalId: "p", orgAdmin: true })[0]!;
+    expect(granted && granted !== "forbidden" && granted !== "disabled" && granted.installedBy).toBe("alice@example.com");
+    const row = admin.list({ principalId: "alice@example.com", orgAdmin: false })[0]!;
     expect(row.unattended).toBe(true);
     expect(row.bannerVisible).toBe(false);
+  });
+
+  it("the installer is always the caller, whatever the input says", () => {
+    const { admin, consent } = make([]);
+    admin.grantUnattended({ principalId: "alice@example.com", orgAdmin: false }, { hostKey: "sn-new", org: "acme", installedBy: "bob@example.com" } as never);
+    expect(consent.get("sn-new")?.installedBy).toBe("alice@example.com");
+  });
+
+  it("a person cannot grant for a host of another person; an admin can", () => {
+    const rows = [input({ id: "bbbbbbbbbbbb", ownerId: "bob@example.com", openedBy: "bob@example.com", serial: "SN-B" })];
+    const { admin, consent } = make(rows);
+    expect(admin.grantUnattended({ principalId: "alice@example.com", orgAdmin: false }, { hostKey: "sn-b", org: "acme" })).toBe("forbidden");
+    expect(consent.get("sn-b")).toBeNull();
+    // A live consent another person granted is not overwritten either.
+    consent.grant({ hostKey: "sn-c", org: "acme", installedBy: "bob@example.com" });
+    expect(admin.grantUnattended({ principalId: "alice@example.com", orgAdmin: false }, { hostKey: "sn-c", org: "acme" })).toBe("forbidden");
+    expect(consent.get("sn-c")?.installedBy).toBe("bob@example.com");
+    const byAdmin = admin.grantUnattended({ principalId: "admin@example.com", orgAdmin: true }, { hostKey: "sn-b", org: "acme" });
+    expect(byAdmin && byAdmin !== "forbidden" && byAdmin !== "disabled" && byAdmin.installedBy).toBe("admin@example.com");
+  });
+
+  it("refuses a caller with no principal", () => {
+    const { admin } = make([]);
+    expect(admin.grantUnattended({ principalId: "", orgAdmin: false }, { hostKey: "sn-a", org: "acme" })).toBe("forbidden");
   });
 
   it("revoke marks consent, ends the live session on that host, and propagates", async () => {
     const rows = [input({ id: "cccccccccccc", serial: "SN-A", state: "connected" })];
     const closeById = vi.fn(async () => true);
     const consent = createUnattendedConsentStore({ dataDir: dir, now: () => NOW });
-    consent.grant({ hostKey: "sn-a", org: "GOX", installedBy: "admin@gox" });
+    consent.grant({ hostKey: "sn-a", org: "acme", installedBy: "admin@example.com" });
     const onRevoke = vi.fn(async () => {});
     const admin = createRemoteSessionsAdmin({ rows: () => rows, botLabel: () => "Atlas", consent, log: () => [], closeById, onRevoke, unattendedEnabled: () => true, now: () => NOW });
     // Someone else, not an admin, does not revoke another person's host.
@@ -102,11 +126,31 @@ describe("unattended grant and revoke", () => {
     expect(onRevoke).toHaveBeenCalledWith(expect.objectContaining({ hostKey: "sn-b" }), "tech@example.org", "");
   });
 
+  it("the person who granted it revokes it, and only their own live session ends", async () => {
+    const rows = [
+      input({ id: "aaaaaaaaaaaa", serial: "SN-A", state: "connected", ownerId: "alice@example.com", openedBy: "alice@example.com" }),
+    ];
+    const closeById = vi.fn(async () => true);
+    const { admin, consent } = make(rows, closeById);
+    expect(admin.grantUnattended({ principalId: "alice@example.com", orgAdmin: false }, { hostKey: "sn-a", org: "acme" })).not.toBe("forbidden");
+    // Another person cannot revoke it.
+    expect(await admin.revokeUnattended({ principalId: "bob@example.com", orgAdmin: false }, "sn-a")).toEqual({ ok: false, error: "forbidden" });
+    expect(consent.get("sn-a")?.revokedAt).toBeFalsy();
+    // A session of another person opened on that host later is not hers to end.
+    rows.push(input({ id: "bbbbbbbbbbbb", serial: "SN-A", state: "connected", ownerId: "bob@example.com", openedBy: "bob@example.com" }));
+    const out = await admin.revokeUnattended({ principalId: "Alice@Example.com", orgAdmin: false }, "sn-a");
+    expect(out.ok).toBe(true);
+    expect(consent.get("sn-a")?.revokedAt).toBeTruthy();
+    expect(closeById).toHaveBeenCalledWith("aaaaaaaaaaaa");
+    expect(closeById).not.toHaveBeenCalledWith("bbbbbbbbbbbb");
+  });
+
   it("is gated off by default: grant is disabled, revoke still works (M2)", async () => {
     const consent = createUnattendedConsentStore({ dataDir: dir, now: () => NOW });
     const admin = createRemoteSessionsAdmin({ rows: () => [input()], botLabel: () => "Atlas", consent, log: () => [], closeById: vi.fn(async () => true), now: () => NOW });
     expect(admin.unattendedEnabled()).toBe(false);
-    expect(admin.grantUnattended({ principalId: "p", orgAdmin: true }, { hostKey: "sn-a", org: "GOX", installedBy: "admin@gox" })).toBe("disabled");
+    expect(admin.grantUnattended({ principalId: "p", orgAdmin: true }, { hostKey: "sn-a", org: "acme" })).toBe("disabled");
+    expect(admin.grantUnattended({ principalId: "p", orgAdmin: false }, { hostKey: "sn-a", org: "acme" })).toBe("disabled");
     expect(consent.get("sn-a")).toBeNull();
     // A consent recorded while the flag was on stays revocable once it is cut.
     consent.grant({ hostKey: "sn-a", org: "GOX", installedBy: "admin@gox" });

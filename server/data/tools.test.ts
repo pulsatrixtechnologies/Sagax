@@ -125,11 +125,34 @@ describe("the statement gate", () => {
   });
 
   it.each([
-    "INSERT INTO t VALUES (1)", "UPDATE t SET a = 1", "DELETE FROM t", "DROP TABLE t", "ALTER TABLE t ADD COLUMN x INT",
+    ["INSERT INTO t VALUES (1)", { kind: "write", verb: "INSERT", target: "t" }],
+    ["INSERT OR REPLACE INTO s.t SELECT * FROM u", { kind: "write", verb: "INSERT", target: "s.t" }],
+    ["UPDATE t SET a = 1", { kind: "write", verb: "UPDATE", target: "t" }],
+    ["DELETE FROM t", { kind: "write", verb: "DELETE", target: "t" }],
+    ["delete from \"My T\" where a = 1", { kind: "write", verb: "DELETE", target: "\"My T\"" }],
+    ["TRUNCATE t", { kind: "write", verb: "TRUNCATE", target: "t" }],
+    ["DROP TABLE t", { kind: "write", verb: "DROP TABLE", target: "t" }],
+    ["DROP VIEW IF EXISTS s.v", { kind: "write", verb: "DROP VIEW", target: "s.v" }],
+    ["DROP TABLE a, b", { kind: "write", verb: "DROP TABLE", target: "a" }],
+    ["ALTER TABLE t ADD COLUMN x INT", { kind: "write", verb: "ALTER TABLE", target: "t" }],
+    ["CREATE INDEX i ON t(a)", { kind: "write", verb: "CREATE INDEX", target: "t" }],
+    ["CREATE UNIQUE INDEX IF NOT EXISTS i ON \"S\".t (a)", { kind: "write", verb: "CREATE INDEX", target: "\"S\".t" }],
+    ["WITH a AS (SELECT 1) DELETE FROM t", { kind: "write", verb: "DELETE", target: "t" }],
+    ["WITH a(x) AS (SELECT 1) INSERT INTO t SELECT * FROM a", { kind: "write", verb: "INSERT", target: "t" }],
+    ["CREATE TABLE t (a INT)", { kind: "create", target: "t" }],
+  ])("lets the person change their own tables: %s", (sql, expected) => {
+    expect(classifySql(sql)).toEqual(expected);
+  });
+
+  it.each([
     "SET threads = 1", "PRAGMA memory_limit = '1GB'", "ATTACH 'x.db' AS x", "COPY t TO 'out.csv'", "CALL something()",
-    "INSTALL httpfs", "LOAD httpfs", "CREATE TABLE t (a INT)", "CREATE SCHEMA s", "CREATE INDEX i ON t(a)",
-    "WITH a AS (SELECT 1) DELETE FROM t", "WITH a(x) AS (SELECT 1) INSERT INTO t SELECT * FROM a", "EXPLAIN ANALYZE DELETE FROM t",
-    "BEGIN", "EXPORT DATABASE 'd'", "TRUNCATE t",
+    "INSTALL httpfs", "LOAD httpfs", "CREATE SCHEMA s", "EXPLAIN ANALYZE DELETE FROM t",
+    "BEGIN", "EXPORT DATABASE 'd'", "IMPORT DATABASE 'd'", "DETACH x", "CREATE SECRET s (TYPE s3)", "CREATE MACRO m(a) AS a",
+    "DROP SCHEMA s", "DROP SECRET s", "ALTER INDEX i RENAME TO j",
+    // another database (catalog.schema.table): not this scope's own tables
+    "DELETE FROM other.main.t", "DELETE FROM \"other\".\"main\".\"t\"", "INSERT INTO other.main.t VALUES (1)",
+    "UPDATE \"other\".main.t SET a = 1", "DROP TABLE t, other.main.u", "CREATE TABLE other.main.t AS SELECT 1",
+    "CREATE TABLE other.main.t (a INT)", "TRUNCATE other.main.t",
   ])("refuses %s", (sql) => {
     expect(classifySql(sql).kind).toBe("refused");
   });
@@ -402,11 +425,21 @@ describe("data_sql", () => {
     expect(described.rows).toHaveLength(3);
   });
 
-  it("refuses writes and passes DuckDB's own text through with the line and a hint", async () => {
+  it("runs a change to the person's own tables and returns DuckDB's answer", async () => {
     const { ctx, database } = context();
-    const refused = await runDataTool(ctx, "data_sql", { sql: "DELETE FROM orders" });
+    const deleted = await runDataTool(ctx, "data_sql", { sql: "DELETE FROM orders WHERE amount < 0" });
+    expect(deleted.isError).toBeUndefined();
+    expect(database.calls.map((call) => call.method)).toEqual(["run"]);
+    expect(database.calls[0]!.sql).toBe("DELETE FROM orders WHERE amount < 0");
+    expect(deleted.structuredContent).toMatchObject({ table: null });
+  });
+
+  it("refuses database-level statements and passes DuckDB's own text through with the line and a hint", async () => {
+    const { ctx, database } = context();
+    const refused = await runDataTool(ctx, "data_sql", { sql: "COPY orders TO 'out.csv'" });
     expect(refused.isError).toBe(true);
-    expect(refused.structuredContent).toMatchObject({ code: "write_refused", message: "DELETE is not allowed here.", sql: "DELETE FROM orders" });
+    expect(refused.structuredContent).toMatchObject({ code: "write_refused", message: "COPY is not allowed here.", sql: "COPY orders TO 'out.csv'" });
+    expect(await failure(runSql(ctx, { sql: "DELETE FROM other.main.orders" }))).toMatchObject({ code: "write_refused" });
     expect(refused.content[0]!.text).toContain("write_refused");
     expect(database.calls).toEqual([]);
 

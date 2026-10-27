@@ -374,9 +374,11 @@ export interface PerspicaxDirectoryOptions {
    * started (RoutineConsents.reconcile). */
   onDelegations?: (present: (sub: string) => boolean | undefined, fetchStartedAt: number) => void;
   /** `sagax_integrations` changed for an active person (effective right:
-   * an admin stays `manage`). Not fired on a 304, and not again while the
-   * right stays the same. The new right is passed in: `integrationRights`
-   * still reads the previous directory until this answer is stored. */
+   * an admin stays `manage`). Informational for the person's own
+   * connections: `off` must not close or remove them (2026-10-26). Not
+   * fired on a 304, and not again while the right stays the same. The new
+   * right is passed in: `integrationRights` still reads the previous
+   * directory until this answer is stored. */
   onIntegrationRights?: (principalId: string, rights: "manage" | "off") => void;
   /** A new directory body was applied (not called on 304). */
   onDirectory?: (directory: Directory) => void;
@@ -1444,8 +1446,10 @@ export class PerspicaxDirectory {
   }
 
   /** Tell the server when an active person's effective `sagax_integrations`
-   * changed, so saved connections stop or start being usable without waiting
-   * for their next turn. A disabled person is logged out instead. */
+   * changed. Since 2026-10-26 `off` no longer takes a person's own MCP
+   * servers, plugins, skills or GitHub account (they work in the person's
+   * own environment), so the server's handler must leave those alone on
+   * `off`. A disabled person is logged out instead. */
   private reportIntegrationRights(person: DirectoryPerson, before: Principal | undefined, principalId: string, orgRole: "admin" | "member"): void {
     if (!this.options.onIntegrationRights) return;
     const next = effectiveIntegrationRights(orgRole === "admin", person.sagax_integrations);

@@ -109,8 +109,8 @@ const routineToolFieldsSchema = z.object({
   continuity: z.boolean().optional(),
   overlap: z.enum(["skip", "queue"]).optional(),
   /** Create only: true starts the routine live, false paused; absent
-   * follows `routines.newPaused`. A webhook or email trigger is always
-   * paused, whatever this says. Pause and resume are actions of their own. */
+   * follows `routines.newPaused`. A webhook or email trigger follows the
+   * same rule. Pause and resume are actions of their own. */
   enabled: z.boolean().optional(),
 }).strict();
 
@@ -390,7 +390,7 @@ export interface RoutineRequestServiceOptions {
    * refuse with, or null to allow. Checked at propose AND confirm time. */
   validateTarget?: (proposerBotId: string, target: { botId: string; name: string }) => string | null;
   /** Whether a created routine starts paused (config `routines.newPaused`,
-   * default true). Read once per proposal and carried on the operation, so
+   * default false). Read once per proposal and carried on the operation, so
    * the card and the applied routine never disagree. */
   newPaused?: () => boolean;
   /** Attaches the webhook or email trigger a confirmed create owns. The
@@ -778,7 +778,7 @@ function normalizedOperation(
   botId: string,
   validated: ParsedRoutineProposal,
   now: number,
-  newPaused = true,
+  newPaused = false,
 ): RoutineRequestOperation {
   if (validated.action === "create") {
     const operation: Extract<RoutineRequestOperation, { action: "create" }> = {
@@ -786,9 +786,10 @@ function normalizedOperation(
       routine: normalizeDefinition(validated.routine, now),
     };
     if (validated.forBot) operation.forBot = validated.forBot;
-    // A trigger starts paused so nothing runs before the owner has the key.
-    // Otherwise an explicit choice of the creator wins over the server default.
-    if (isTriggerSchedule(operation.routine.schedule) || (validated.routine.enabled === undefined ? newPaused : !validated.routine.enabled)) {
+    // An explicit choice of the creator wins over the server default, for a
+    // schedule and a webhook or email trigger alike. A live trigger still
+    // needs its key (webhook) and still runs a confined turn.
+    if (validated.routine.enabled === undefined ? newPaused : !validated.routine.enabled) {
       operation.paused = true;
     }
     return operation;
@@ -1381,7 +1382,7 @@ export class RoutineRequestService {
     this.validateTarget = options.validateTarget;
     this.autoApply = options.autoApply;
     // Same default as config.ts DEFAULT_NEW_ROUTINES_PAUSED.
-    this.newPaused = options.newPaused ?? (() => true);
+    this.newPaused = options.newPaused ?? (() => false);
     this.bindTrigger = options.bindTrigger;
     this.rotateTrigger = options.rotateTrigger;
     this.onAudit = options.onAudit;

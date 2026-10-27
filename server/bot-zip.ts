@@ -28,7 +28,7 @@
 //
 // Import never overwrites: a new id, a name with a suffix when taken, every
 // routine and webhook off, approval Full or Custom back to Ask, a member's
-// copy without host settings (memberImportReset), and a rollback that
+// copy without the host settings that stay an admin's (memberImportReset), and a rollback that
 // removes everything the import wrote when any step fails.
 import { botRuntimeSettingsShape } from "./bot-runtime-settings.ts";
 import { exportedSecretFile, registrySettingsPath, withoutRegistrySecrets } from "./workspace-backup-policy.ts";
@@ -97,8 +97,9 @@ type FieldPolicy =
 
 /** Every BotRecord field, and what the package does with it. A new field
  * fails to compile here until someone decides. "host": a setting of where
- * the bot runs and what it reaches on the host, which a member's import
- * drops (memberImportReset). */
+ * the bot runs and what it reaches on the host; a member's import keeps
+ * the computer, browser and Always allow list and drops the rest
+ * (memberImportReset). */
 export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy } = {
   id: { drop: "a new id on import" },
   name: "identity",
@@ -664,6 +665,10 @@ const HOST_LABELS: Record<string, string> = {
   browser: "Browser", browserProfile: "Browser profile", mcpServers: "MCP servers", alwaysAllow: "Always allowed tools",
 };
 
+/** Host settings a member's copy keeps (2026-10-26): they work in the
+ * member's own environment. The rest stays an admin's (memberImportReset). */
+const MEMBER_HOST_KEYS: ReadonlySet<string> = new Set(["computer", "browser", "alwaysAllow"]);
+
 function line(part: string, detail: string, key?: string, params?: Record<string, string | number>): BotZipPreviewLine {
   return { part, detail, ...(key ? { key: `botZip.line.${key}` } : {}), ...(params ? { params } : {}) };
 }
@@ -712,7 +717,10 @@ export async function previewBotZip(host: BotZipHost, inspected: InspectedBotZip
   else if (typeof mode === "string") created.push(line("approval", mode, "approval", { mode }));
   const hostKeys = Object.keys(document.host);
   if (viewer.asMember && hostKeys.length) {
-    skipped.push(line("host", `Not for a member's copy: ${hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ")}.`, "hostSkipped", { names: hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ") }));
+    const kept = hostKeys.filter((key) => MEMBER_HOST_KEYS.has(key));
+    const dropped = hostKeys.filter((key) => !MEMBER_HOST_KEYS.has(key));
+    if (kept.length) created.push(line("host", kept.map((key) => HOST_LABELS[key] ?? key).join(", "), "host", { names: kept.map((key) => HOST_LABELS[key] ?? key).join(", ") }));
+    if (dropped.length) skipped.push(line("host", `Not for a member's copy: ${dropped.map((key) => HOST_LABELS[key] ?? key).join(", ")}.`, "hostSkipped", { names: dropped.map((key) => HOST_LABELS[key] ?? key).join(", ") }));
   } else {
     if (hostKeys.length) created.push(line("host", hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", "), "host", { names: hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ") }));
     for (const server of manifest.mcpServers) {
@@ -947,19 +955,25 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
       ...(settings.pinned !== undefined ? { pinned: settings.pinned } : {}),
       ...(mode && mode !== "full" && mode !== "custom" ? { approvalMode: mode as BotRecord["approvalMode"], ...(settings.autoApprove !== undefined ? { autoApprove: settings.autoApprove } : {}) } : { approvalMode: "ask", autoApprove: false }),
     };
+    // Workspace is always Auto (2026-10-18): only Off travels. 2026-10-26
+    //: a member's copy keeps its computer, browser and Always allow
+    // list too: they work in the member's own environment. What stays an
+    // admin's on the shared server (memberImportReset) does not travel.
+    Object.assign(patch, {
+      ...(autoOnlyDestination(hostSettings.computer) ? { computer: "off" as const } : {}),
+      ...(hostSettings.browser !== undefined ? { browser: hostSettings.browser } : {}),
+      ...(hostSettings.alwaysAllow ? { alwaysAllow: hostSettings.alwaysAllow } : {}),
+    });
     if (!options.asMember) {
       Object.assign(patch, {
-        // Workspace is always Auto (2026-10-18): only Off travels.
-        ...(autoOnlyDestination(hostSettings.computer) ? { computer: "off" as const } : {}),
         ...(hostSettings.cloudBackend ? { cloudBackend: hostSettings.cloudBackend } : {}),
         ...(hostSettings.autoStartVps !== undefined ? { autoStartVps: hostSettings.autoStartVps } : {}),
         ...(hostSettings.cwd && (host.cwdUsable?.(hostSettings.cwd) ?? true) ? { cwd: hostSettings.cwd } : {}),
-        ...(hostSettings.browser !== undefined ? { browser: hostSettings.browser } : {}),
         ...(hostSettings.browserProfile && (host.browserProfileExists?.(hostSettings.browserProfile) ?? true) ? { browserProfile: hostSettings.browserProfile } : {}),
         ...(hostSettings.mcpServers ? { mcpServers: hostSettings.mcpServers } : {}),
-        ...(hostSettings.alwaysAllow ? { alwaysAllow: hostSettings.alwaysAllow } : {}),
       });
     } else {
+      // a package is not provably the member's own bot: no MCP server
       Object.assign(patch, memberImportReset());
     }
     if (!options.asMember && hostSettings.cwd && !(host.cwdUsable?.(hostSettings.cwd) ?? true)) warnings.push(`The working folder ${hostSettings.cwd} is not usable here: the bot works in its own folder.`);
@@ -1032,7 +1046,7 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
           ...(raw.openedBy && typeof raw.openedBy === "object" ? { openedBy: raw.openedBy as TaskRecord["openedBy"] } : {}),
           ...(raw.closedBy && typeof raw.closedBy === "object" ? { closedBy: raw.closedBy as TaskRecord["closedBy"] } : {}),
           ...(!options.asMember && typeof raw.cwd === "string" ? { cwd: raw.cwd } : {}),
-          ...(!options.asMember && Array.isArray(raw.alwaysAllow) ? { alwaysAllow: (raw.alwaysAllow as unknown[]).filter((tool): tool is string => typeof tool === "string") } : {}),
+          ...(Array.isArray(raw.alwaysAllow) ? { alwaysAllow: (raw.alwaysAllow as unknown[]).filter((tool): tool is string => typeof tool === "string") } : {}),
         } as TaskRecord;
         const taskSelection = selectionSchema.safeParse(raw.modelSelection);
         if (taskSelection.success && host.engineUsable(taskSelection.data as ModelSelection)) task.modelSelection = taskSelection.data as ModelSelection;

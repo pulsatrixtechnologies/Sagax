@@ -46,6 +46,24 @@ describe("tool guard", () => {
     expect(guardDecision(admin, bot, jc, store)).toEqual({ allow: true, reason: "grant", needsApproval: true });
   });
 
+  it("lets the owner delete their own resource without a grant, and nobody else", () => {
+    const store = new ToolGrantStore(null);
+    const own = { tier: "admin" as const, scope: "bots:admin", readOnly: false, defaultEnabled: false, ownerScoped: true };
+    const alice = { kind: "user" as const, id: "pr_alice" };
+    const bob = { kind: "user" as const, id: "pr_bob" };
+    // Alice herself, and her bot speaking for her.
+    expect(guardDecision(own, alice, null, store, { ownerPrincipalId: "pr_alice" })).toEqual({ allow: true, reason: "owner", needsApproval: true });
+    expect(guardDecision(own, bot, alice, store, { ownerPrincipalId: "pr_alice" })).toMatchObject({ allow: true, reason: "owner" });
+    // Bob's resource, an unknown owner, or a bot with no speaker: the grant rule.
+    expect(guardDecision(own, alice, null, store, { ownerPrincipalId: "pr_bob" })).toMatchObject({ allow: false, reason: "not_granted" });
+    expect(guardDecision(own, bot, alice, store, { ownerPrincipalId: "pr_bob" })).toMatchObject({ allow: false, reason: "not_granted" });
+    expect(guardDecision(own, bot, bob, store, { ownerPrincipalId: "pr_alice" })).toMatchObject({ allow: false });
+    expect(guardDecision(own, alice, null, store)).toMatchObject({ allow: false, reason: "not_granted" });
+    expect(guardDecision(own, bot, null, store, { ownerPrincipalId: "pr_alice" })).toMatchObject({ allow: false });
+    // An admin route that is not owner-scoped stays admin for its owner too.
+    expect(guardDecision(admin, alice, null, store, { ownerPrincipalId: "pr_alice" })).toMatchObject({ allow: false, reason: "not_granted" });
+  });
+
   it("treats an unknown route (off by default) as needing a grant", () => {
     expect(guardDecision({ tier: "write", scope: "unknown:write", readOnly: false, defaultEnabled: false }, bot, null, new ToolGrantStore(null))).toMatchObject({ allow: false, reason: "not_granted" });
   });

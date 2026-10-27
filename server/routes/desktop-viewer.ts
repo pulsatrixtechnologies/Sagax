@@ -112,9 +112,12 @@ export function createDesktopViewer(deps: {
     if (method !== "GET") return json(res, 405, { error: "method not allowed" });
     // Also enforce at this boundary; the central gate defaults these paths
     // to admin, like the existing Local VM status and control endpoints. A
-    // person's own server environment is theirs alone (target.allows).
+    // person's own server environment is theirs alone, and (2026-10-26) a
+    // bot's VPS desktop is its owner's: their target decides (target.allows).
+    // The Local VM desktops (shared, pooled, per bot) stay admin.
     const sandbox = match[1] === SANDBOX_VIEWER_TARGET;
-    if ((!sandbox && !auth.scopes.includes("admin")) || !isSameOrigin(req)) return json(res, 403, { error: "forbidden" });
+    const ownerServed = sandbox || match[1].startsWith("vps/");
+    if ((!ownerServed && !auth.scopes.includes("admin")) || !isSameOrigin(req)) return json(res, 403, { error: "forbidden" });
     // A viewer bound to a control lease: both names or neither, well formed,
     // and holding before anything is inspected. Checked again with every
     // liveness pass, so handing back closes the desktop within seconds. The

@@ -35,7 +35,7 @@ describe("the permission catalogue", () => {
   });
 
   it("keeps the admin-only list tiny, each with its reason, never a member default", () => {
-    // 2026-10-19 (JC): only what decides who reaches the server at all
+    // 2026-10-19: only what decides who reaches the server at all
     expect([...ADMIN_ONLY_PERMISSIONS].sort()).toEqual(["server.link"]);
     for (const entry of PERMISSIONS.filter((row) => row.adminOnly)) {
       expect(entry.memberDefault, entry.key).toBe(false);
@@ -49,6 +49,12 @@ describe("the permission catalogue", () => {
       "clients.agentsCreate", "clients.botsMessage", "clients.botsRead", "clients.routinesRead", "clients.routinesRun", "sharing.grants", "sharing.visibility"];
     expect([...MEMBER_DEFAULT_PERMISSIONS].sort()).toEqual(own);
     expect([...MEMBER_ALWAYS_PERMISSIONS].sort()).toEqual(own);
+  });
+
+  it("lets the owner set Always allow on their own bot with bots.approvalLevel, never without it (2026-10-26)", () => {
+    expect(BOT_FIELD_PERMISSIONS.alwaysAllow).toBe("bots.approvalLevel");
+    expect(can({ admin: false, permissions: ["bots.approvalLevel"] }, BOT_FIELD_PERMISSIONS.alwaysAllow!)).toBe(true);
+    expect(can({ admin: false, permissions: ["bots.behaviour"] }, BOT_FIELD_PERMISSIONS.alwaysAllow!)).toBe(false);
   });
 
   it("maps every bot field a permission opens, and none a member already sets", () => {

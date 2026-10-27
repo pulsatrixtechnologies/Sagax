@@ -85,20 +85,25 @@ it("applies the owner's own settings at once, holds the sensitive ones on a card
       .toEqual(["bot.approvalMode", "bot.title", "routine.schedule", "routine.thread", "group.name", "server.showToolCalls"]);
     expect(journal()[0]).toMatchObject({ category: "setting", after: { "bot.approvalMode": "auto", how: "run", bot: scout.id } });
 
-    // ── sensitive: a deletion and an organization setting wait on a card ─
-    expect((await settings(comms, { action: "set", key: "routine.delete", target: routine.id, value: true })).text).toContain("Approval needed.");
+    // ── the person's own routine: deleted at once (2026-10-26) ──────────
+    expect((await settings(comms, { action: "set", key: "routine.delete", target: routine.id, value: true })).text).toMatch(/^Done/);
+    expect((await api("GET", "/api/routines")).routines.some((row: any) => row.id === routine.id)).toBe(false);
+
+    // ── sensitive: a group not known to be the person's alone and an
+    // organization setting wait on a card ─────────────────────────────────
+    expect((await settings(comms, { action: "set", key: "group.delete", target: group.id, value: true })).text).toContain("Approval needed.");
     expect((await settings(comms, { action: "set", key: "org.allowFullAccess", value: true })).text).toContain("Approval needed.");
-    expect((await api("GET", "/api/routines")).routines.some((row: any) => row.id === routine.id)).toBe(true);
+    expect((await api("GET", "/api/groups")).groups.some((row: any) => row.id === group.id)).toBe(true);
     const cards = (await api("GET", `/api/threads/${scout.threadId}/messages`)).messages.filter((message: any) => message.card?.botActRequest);
     expect(cards.map((message: any) => message.card.subtitle)).toEqual([
       expect.stringContaining("bot.approvalMode"),
-      expect.stringContaining("routine.delete"),
+      expect.stringContaining("group.delete"),
       expect.stringContaining("org.allowFullAccess"),
     ]);
     // the person's Allow applies the deletion as them, and it is journaled
     await api("POST", `/api/threads/${scout.threadId}/respond`, { requestId: cards[1].card.requestId, behavior: "allow" });
-    expect((await api("GET", "/api/routines")).routines.some((row: any) => row.id === routine.id)).toBe(false);
-    await expect.poll(() => journal().at(-1)?.after, { timeout: 5_000 }).toMatchObject({ "routine.delete": true, how: "allowed" });
+    expect((await api("GET", "/api/groups")).groups.some((row: any) => row.id === group.id)).toBe(false);
+    await expect.poll(() => journal().at(-1)?.after, { timeout: 5_000 }).toMatchObject({ "group.delete": true, how: "allowed" });
 
     // ── a person with chat access only: refused with the reason ──────────
     const pairing = await api("POST", "/api/auth/pairing", { label: "Member fixture", scopes: ["client"] });

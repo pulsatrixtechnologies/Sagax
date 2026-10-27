@@ -10,6 +10,7 @@ import {
   misuseGuardrailMode,
   misusePathRefusal,
   misuseRefusal,
+  misuseScopeFor,
   misuseToolFrameText,
   resetMisuseGuardrailsForTests,
   setMisuseAlert,
@@ -114,6 +115,41 @@ describe("lockout", () => {
     for (let i = 0; i < 5; i += 1) expect(misuseRefusal("sudo -i", context, start + i)).toBeNull();
     const written = await rows(dir);
     expect(written.at(-1)?.action).toBe("misuse.lockout");
+  });
+});
+
+describe("surfaces", () => {
+  it("lets the person act in their own environment and keeps the rest", () => {
+    process.env.SAGAX_MISUSE_GUARDRAILS = "enforce";
+    tempDir();
+    const shell = { ...context, surface: "shell" as const, tool: "run_command" };
+    expect(misuseRefusal("rm -rf ~", shell, 1_000)).toBeNull();
+    expect(misuseRefusal("sudo apt-get install -y jq", shell, 1_001)).toBeNull();
+    expect(misuseRefusal("history -c", shell, 1_002)).toBeNull();
+    expect(misuseRefusal("fallocate -l 500G big", shell, 1_003)?.verdict.category).toBe("resource_abuse");
+    expect(misuseRefusal("nsenter -t 1 -m bash", shell, 1_004)?.verdict.category).toBe("sandbox_escape");
+    expect(misuseRefusal("cat /data/bots.json", shell, 1_005)?.verdict.category).toBe("platform_exfiltration");
+  });
+
+  it("keeps a lent computer and the MCP surface strict", () => {
+    process.env.SAGAX_MISUSE_GUARDRAILS = "enforce";
+    tempDir();
+    expect(misuseRefusal("rm -rf ~", { ...context, surface: "terminal" as const }, 1_000)?.verdict.category).toBe("destruction");
+    expect(misuseRefusal("sudo -i", { ...context, surface: "mcp" as const }, 1_001)?.verdict.category).toBe("privilege_escalation");
+  });
+
+  it("does not refuse destruction words in a message", () => {
+    process.env.SAGAX_MISUSE_GUARDRAILS = "enforce";
+    tempDir();
+    expect(misuseRefusal("Planifie un reboot du serveur de test vendredi.", context, 1_000)).toBeNull();
+    expect(misuseRefusal("sudo -i", context, 1_001)?.code).toBe("misuse_blocked");
+  });
+
+  it("maps each surface to its scope", () => {
+    expect(misuseScopeFor("message")).toBe("message");
+    expect(misuseScopeFor("shell")).toBe("own_environment");
+    expect(misuseScopeFor("terminal")).toBe("default");
+    expect(misuseScopeFor("file")).toBe("default");
   });
 });
 

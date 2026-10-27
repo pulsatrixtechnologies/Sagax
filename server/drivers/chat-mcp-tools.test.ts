@@ -477,7 +477,7 @@ describe("Chat MCP x-google-enum-descriptions (port de OpenMausBot #3299)", () =
 });
 
 describe("Chat MCP approvals by server", () => {
-  it("asks nothing for Sagax's agents server, and grants no session-wide allow on the person's computer", async () => {
+  it("asks nothing for Sagax's agents server, and offers a session-wide allow on the person's own computer", async () => {
     const agents = fixture(); const audit = fixture(); const computer = fixture();
     const session = await mountChatTools({
       agents: agents.server, custom: { audit: audit.server },
@@ -487,7 +487,14 @@ describe("Chat MCP approvals by server", () => {
     expect(session.definitions.map((tool) => tool.function.name).sort()).toEqual(["agents_write", "audit_write", "computer_write"]);
     expect(session.view("agents_write", { value: "x" })).toEqual({ title: "agents_write", input: { value: "x" }, ask: false });
     expect(session.view("audit_write", { value: "x" })).toEqual({ title: "audit_write", input: { value: "x" }, ask: true, grant: grantFor("audit", "write"), mcpTool: "audit__write" });
-    expect(session.view("computer_write", { value: "x" })).toEqual({ title: "computer_write", input: { value: "x" }, ask: true, mcpTool: "computer__write" });
+    // her computer, her thread: "Always allow this session" is hers to give
+    const hers = session.view("computer_write", { value: "x" });
+    expect(hers).toEqual({ title: "computer_write", input: { value: "x" }, ask: true, grant: grantFor("computer", "write"), mcpTool: "computer__write" });
+    // the same server as another machine (an isolated VM) never shares it
+    const vm = await mountChatTools({ localComputer: computer.server }, computer.controller.signal, true);
+    sessions.push(vm);
+    expect(vm.view("computer_write", { value: "x" }).grant).toEqual(grantFor("computer", "write"));
+    expect(vm.view("computer_write", { value: "x" }).grant).not.toBe(hers.grant);
   });
 
   it("ties an allow to the server as launched: the same server keeps it, a changed one under the same name does not", async () => {

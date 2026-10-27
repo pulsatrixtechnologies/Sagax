@@ -17,6 +17,13 @@
 //         subscription login only: never the server's own login, never
 //         another person's; one row per provider; the org key is an API-key
 //         row with no plan windows (no network: only states that fetch nothing)
+//   MA-7  (2026-10-26) a member saves Always allow on a card of her own
+//         bot; another member cannot on hers
+//   MA-8  (2026-10-26) a member's Primary Bot on Approve for me applies her
+//         own team setup and bot deletion on her own turn; another person's
+//         turn keeps the card, and someone else's bot stays out of reach
+//   MA-9  (2026-10-26) a member's bot on Full access adds a remote MCP server
+//         switched on; a command (it would run on the shared server) stays off
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -496,4 +503,94 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
       ["claudeApi", "no-windows"],
     ]);
   }, 60_000);
+
+  const mint = async (botId: string, threadId: string, speakerPrincipalId?: string): Promise<string> => {
+    const res = await fetch(`${BASE}/api/testing/internal-capability`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY },
+      body: JSON.stringify({ botId, threadId, ...(speakerPrincipalId ? { speakerPrincipalId } : {}) }),
+    });
+    expect(res.status).toBe(201);
+    return ((await res.json()) as { token: string }).token;
+  };
+  const internal = async (token: string, path: string, body: unknown) => {
+    const res = await fetch(`${BASE}${path}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    return { status: res.status, body: await res.json() as any };
+  };
+
+  it("MA-7: a member saves Always allow on her own bot's card; another member cannot (2026-10-26)", async () => {
+    setUma("manage");
+    const uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly !== true);
+    const bob = await signIn(BOB);
+    const asker = await createBot(bob, "Bob Asker", "claude");
+    const peer = await createBot(bob, "Bob Peer", "claude");
+    expect((await api("PATCH", `/api/bots/${asker.id}`, bob, { approvePeerComms: true })).status).toBe(200);
+    const asked = internal(await mint(asker.id, asker.threadId, ids.bob), "/api/internal/ask-bot", { toBotId: peer.id, message: "Check the report." });
+    const card = await waitFor(async () => ((await api("GET", `/api/threads/${asker.threadId}/messages`, bob)).body.messages as Array<{ card?: any }> ?? [])
+      .find((message) => message.card?.allowKey && !message.card.answered)?.card);
+    // someone else's bot: refused
+    const foreign = await api("POST", `/api/bots/${asker.id}/always-allow`, uma, { threadId: asker.threadId, allowKey: card.allowKey });
+    expect([403, 404], foreign.text).toContain(foreign.status);
+    // her own bot: saved, no admin
+    const saved = await api("POST", `/api/bots/${asker.id}/always-allow`, bob, { threadId: asker.threadId, allowKey: card.allowKey });
+    expect(saved.status, saved.text).toBe(200);
+    const stored = ((await api("GET", "/api/bots?messages=0", bob)).body.bots as Array<{ id: string; alwaysAllow?: string[] }>).find((bot) => bot.id === asker.id);
+    expect(stored?.alwaysAllow, JSON.stringify(saved.body).slice(0, 400)).toContain(card.allowKey);
+    expect((await api("POST", `/api/threads/${asker.threadId}/respond`, bob, { requestId: card.requestId, behavior: "deny" })).status).toBe(200);
+    await asked;
+  }, 90_000);
+
+  it("MA-8: Approve for me applies a member's own team setup on her own turn; someone else's turn or bot keeps the card (2026-10-26)", async () => {
+    setUma("manage");
+    const uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly !== true);
+    const bob = await signIn(BOB);
+    const chief = await createBot(uma, "Uma Lead", "claude");
+    expect((await api("POST", `/api/bots/${chief.id}/primary`, uma, {})).status).toBe(200);
+    const level = await api("PATCH", `/api/bots/${chief.id}/tasks/${chief.threadId}`, uma, { approvalMode: "auto" });
+    expect(level.status, level.text).toBe(200);
+    const writer = await createBot(uma, "Uma Writer", "claude");
+    const plan = (botId: string, title: string) => ({ plan: { reason: "Uma asked for it", operations: [{ action: "update", botId, fields: { title } }] } });
+    const title = async (id: string) => ((await api("GET", "/api/bots", uma)).body.bots as Array<{ id: string; title?: string }>).find((bot) => bot.id === id)?.title;
+
+    // another person speaking to her Primary Bot: the card stays
+    const other = await internal(await mint(chief.id, chief.threadId, ids.bob), "/api/internal/team-setup-requests", plan(writer.id, "Bob's idea"));
+    expect(other.status, JSON.stringify(other.body)).toBe(201);
+    expect(other.body.state).toBe("pending");
+    expect(await title(writer.id)).not.toBe("Bob's idea");
+    // her own turn: applied at once, no card
+    const own = await internal(await mint(chief.id, chief.threadId, ids.uma), "/api/internal/team-setup-requests", plan(writer.id, "Writer lead"));
+    expect(own.status, JSON.stringify(own.body)).toBe(201);
+    expect(own.body.state).toBe("applied");
+    expect(await title(writer.id)).toBe("Writer lead");
+    // someone else's bot stays out of reach, even on her own turn
+    const bobs = await createBot(bob, "Bob Own", "claude");
+    const foreign = await internal(await mint(chief.id, chief.threadId, ids.uma), "/api/internal/team-setup-requests", plan(bobs.id, "Taken"));
+    expect(foreign.body.state, JSON.stringify(foreign.body)).not.toBe("applied");
+    expect(((await api("GET", "/api/bots", bob)).body.bots as Array<{ id: string; title?: string }>).find((bot) => bot.id === bobs.id)?.title).not.toBe("Taken");
+    // deleting her own bot on her own turn: applied
+    const deleted = await internal(await mint(chief.id, chief.threadId, ids.uma), "/api/internal/bot-deletion-requests", { targetBotId: writer.id, reason: "Uma asked" });
+    expect(deleted.status, JSON.stringify(deleted.body)).toBe(201);
+    expect(deleted.body.state).toBe("applied");
+    expect(await botIds(uma)).not.toContain(writer.id);
+  }, 90_000);
+
+  it("MA-9: a member's bot on Full access adds a remote MCP server switched on; a command stays off (2026-10-26)", async () => {
+    setUma("manage");
+    const uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly !== true);
+    const bot = await createBot(uma, "Uma Wires", "claude");
+    const full = await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, uma, { approvalMode: "full", confirmFullAccess: true });
+    expect(full.status, full.text).toBe(200);
+    const token = await mint(bot.id, bot.threadId, ids.uma);
+    const remote = await internal(token, "/api/internal/mcp-servers", { name: "umadocs", url: "https://docs.example/mcp" });
+    expect(remote.status, JSON.stringify(remote.body)).toBe(201);
+    expect(remote.body.enabled).toBe(true);
+    const command = await internal(token, "/api/internal/mcp-servers", { name: "umacmd", command: "npx", args: ["-y", "notes-mcp"] });
+    expect(command.status, JSON.stringify(command.body)).toBe(201);
+    expect(command.body.enabled).toBe(false);
+    // below Full: off, even a remote one
+    const ask = await createBot(uma, "Uma Asks", "claude");
+    const off = await internal(await mint(ask.id, ask.threadId, ids.uma), "/api/internal/mcp-servers", { name: "umaoff", url: "https://docs.example/other" });
+    expect(off.body.enabled).toBe(false);
+    for (const name of ["umadocs", "umacmd", "umaoff"]) await api("DELETE", `/api/mcp/servers/${name}`, alice);
+  }, 90_000);
 });

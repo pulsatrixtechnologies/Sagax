@@ -1664,7 +1664,10 @@ export class WebhookManager {
   }
 
   /** A routine's own trigger. The key is stored for the owner to copy once
-   * and is not returned here. Idempotent for a routine that already has one. */
+   * and is not returned here. Idempotent for a routine that already has one.
+   * `enabled` follows the routine: true makes the trigger live at once (no
+   * capture step); absent or false keeps it off, waiting for verification.
+   * Either way a delivery still runs the routine's confined turn. */
   createOwned(input: {
     routineId: string;
     name: string;
@@ -1672,6 +1675,7 @@ export class WebhookManager {
     botId: string;
     runOn: RoutineRunOn;
     kind: "webhook" | "email";
+    enabled?: boolean;
   }): { id: string } {
     this.assertWritable();
     const routineId = input.routineId.trim();
@@ -1686,8 +1690,8 @@ export class WebhookManager {
       prompt: input.prompt,
       botId: input.botId,
       runOn: input.runOn,
-      enabled: false,
-      verificationPending: true,
+      enabled: input.enabled === true,
+      verificationPending: input.enabled !== true,
       ...(source ? { source } : {}),
     });
     if (this.options.botState(clean.botId) === "missing") fail(400, "That MAUS no longer exists");

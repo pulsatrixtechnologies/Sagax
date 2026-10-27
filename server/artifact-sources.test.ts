@@ -75,7 +75,7 @@ describe("artifact sources: what runs with nobody there", () => {
     expect(await run(artifact({ kind: "tool", tool: "stats__cpu", args: {} }), signal)).toEqual({ ok: false, error: "rate limited" });
   });
 
-  it("runs a command only on the bot's own Local VM in Full access, and waits for a stopped one", async () => {
+  it("runs a command only on the bot's own Local VM in Full access (or Auto, below), and waits for a stopped one", async () => {
     const source: ArtifactSource = { kind: "command", command: "cat /home/cua/workspace/stats.json" };
     expect(await deps().run(artifact(source), signal)).toEqual({ ok: false, blocked: true, error: SOURCE_BLOCKED.command });
     expect(await deps({ fullAccess: () => true, bot: () => ({ id: "bot-a", computer: "local" }) }).run(artifact(source), signal)).toMatchObject({ blocked: true });
@@ -86,6 +86,27 @@ describe("artifact sources: what runs with nobody there", () => {
     expect(await stopped.run(artifact(source), signal)).toMatchObject({ ok: false, waiting: true });
     const failing = deps({ fullAccess: () => true, vm: { state: async () => "running", exec: async () => ({ exitCode: 2, stdout: "", stderr: "no such file\nmore" }) } });
     expect(await failing.run(artifact(source), signal)).toEqual({ ok: false, error: "The command exited with 2: no such file" });
+  });
+
+  it("runs the owner's command on their own bot's Local VM in Approve for me too (2026-10-26)", async () => {
+    const source: ArtifactSource = { kind: "command", command: "cat stats.json" };
+    const alice = "pr_alice";
+    const own = deps({ approvalLevel: () => "auto", bot: () => ({ id: "bot-a", computer: "vm", ownerPrincipalId: alice }) });
+    expect(await own.run({ ...artifact(source), ownerPrincipalId: alice }, signal)).toEqual({ ok: true, value: { up: true } });
+    // an artifact with no owner of its own is the bot owner's
+    expect(await own.run(artifact(source), signal)).toEqual({ ok: true, value: { up: true } });
+    expect(own.calls).toEqual(["exec cat stats.json", "exec cat stats.json"]);
+  });
+
+  it("still blocks a command at Approve for me for another person's bot, an unknown owner, Ask, or off the Local VM", async () => {
+    const source: ArtifactSource = { kind: "command", command: "cat stats.json" };
+    const blocked = { ok: false, blocked: true, error: SOURCE_BLOCKED.command };
+    const bob = deps({ approvalLevel: () => "auto", bot: () => ({ id: "bot-b", computer: "vm", ownerPrincipalId: "pr_bob" }) });
+    expect(await bob.run({ ...artifact(source), ownerPrincipalId: "pr_alice" }, signal)).toEqual(blocked);
+    expect(await deps({ approvalLevel: () => "auto" }).run({ ...artifact(source), ownerPrincipalId: "pr_alice" }, signal)).toEqual(blocked);
+    expect(await deps({ approvalLevel: () => "ask", bot: () => ({ id: "bot-a", computer: "vm", ownerPrincipalId: "pr_alice" }) }).run(artifact(source), signal)).toEqual(blocked);
+    expect(await deps({ approvalLevel: () => "auto", bot: () => ({ id: "bot-a", computer: "cloud", ownerPrincipalId: "pr_alice" }) }).run(artifact(source), signal)).toEqual(blocked);
+    expect(bob.calls).toEqual([]);
   });
 
   it("blocks a source whose bot is gone", async () => {

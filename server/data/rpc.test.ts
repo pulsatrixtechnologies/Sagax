@@ -70,9 +70,9 @@ describe("dataRpc", () => {
     expect(database.calls).toEqual([]);
   });
 
-  it("answers a refused write as a tool error, not a transport error", async () => {
+  it("answers a refused statement as a tool error, not a transport error", async () => {
     const { deps } = harness();
-    const result = await dataRpc({ method: "tools/call", params: { name: "data_sql", arguments: { sql: "DROP TABLE t" } } }, deps) as { isError?: boolean; structuredContent?: { code: string } };
+    const result = await dataRpc({ method: "tools/call", params: { name: "data_sql", arguments: { sql: "ATTACH 'other.duckdb' AS other" } } }, deps) as { isError?: boolean; structuredContent?: { code: string } };
     expect(result).toMatchObject({ isError: true, structuredContent: { code: "write_refused" } });
   });
 

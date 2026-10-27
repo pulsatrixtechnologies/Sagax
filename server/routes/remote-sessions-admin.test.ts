@@ -31,8 +31,8 @@ function row(over: Partial<AdminSessionInput> = {}): AdminSessionInput {
   return {
     id: "a1b2c3d4e5f6", code: "ABC234", os: "windows", elevated: false,
     endAt: "2026-10-22T18:00:00Z", state: "connected", createdAt: NOW - 1000,
-    hostname: "PC-A", serial: "SN-A", user: "marie", ownerId: "tech@gox",
-    openedBy: "tech@gox", botId: "bot-7", reachable: true, ...over,
+    hostname: "PC-A", serial: "SN-A", user: "marie", ownerId: "tech@example.com",
+    openedBy: "tech@example.com", botId: "bot-7", reachable: true, ...over,
   };
 }
 
@@ -44,7 +44,7 @@ async function serve(rows: AdminSessionInput[], orgAdmin: boolean, enabled = tru
   const routes = [createRemoteSessionsAdminRoutes({ admin, principalId: (auth) => (auth.kind === "session" ? (auth.session as { principalId?: string }).principalId : undefined), orgAdmin: () => orgAdmin })];
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
-    if (!await dispatchRoutes(routes, { req, res, url, path: url.pathname, method: req.method ?? "GET", auth: person("viewer@gox"), json, readBody })) json(res, 404, {});
+    if (!await dispatchRoutes(routes, { req, res, url, path: url.pathname, method: req.method ?? "GET", auth: person("viewer@example.com"), json, readBody })) json(res, 404, {});
   });
   servers.push(server);
   await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
@@ -82,9 +82,9 @@ describe("admin remote-sessions routes", () => {
     expect(closeById).toHaveBeenCalledWith("cccccccccccc");
   });
 
-  it("grants and revokes unattended consent (admin only)", async () => {
+  it("grants and revokes unattended consent as an admin", async () => {
     const { base, consent } = await serve([row({ id: "dddddddddddd", serial: "SN-A", state: "connected" })], true);
-    const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "GOX", installed_by: "admin@gox", banner_visible: false }) });
+    const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "acme", banner_visible: false }) });
     expect(grant.status).toBe(200);
     expect(consent.get("sn-a")?.bannerVisible).toBe(false);
     const revoke = await fetch(`${base}/api/admin/remote-sessions/unattended/revoke`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a" }) });
@@ -96,7 +96,7 @@ describe("admin remote-sessions routes", () => {
     const { base } = await serve([row({ id: "ffffffffffff", serial: "SN-A" })], true, false);
     const list = await (await fetch(`${base}/api/admin/remote-sessions`)).json() as { unattendedEnabled: boolean };
     expect(list.unattendedEnabled).toBe(false);
-    const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "GOX", installed_by: "admin@gox" }) });
+    const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "acme" }) });
     expect(grant.status).toBe(501);
     const revoke = await fetch(`${base}/api/admin/remote-sessions/unattended/revoke`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a" }) });
     // nothing recorded for that host: a 404, never a 501 behind the flag
@@ -104,11 +104,26 @@ describe("admin remote-sessions routes", () => {
   });
 
   it("a non-admin cannot see another person's session or grant consent", async () => {
-    const { base } = await serve([row({ id: "eeeeeeeeeeee", ownerId: "other@gox" })], false);
+    const { base } = await serve([row({ id: "eeeeeeeeeeee", ownerId: "other@example.com" })], false);
     const logs = await fetch(`${base}/api/admin/remote-sessions/eeeeeeeeeeee/logs`);
     expect(logs.status).toBe(403);
-    const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "GOX", installed_by: "x" }) });
+    // SN-A runs another person's session: not the caller's host.
+    const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "acme", installed_by: "x" }) });
     expect(grant.status).toBe(403);
+  });
+
+  it("a non-admin grants for their own host under their principal and revokes it; another person's grant stays theirs", async () => {
+    const { base, consent } = await serve([row({ id: "eeeeeeeeeeee", ownerId: "viewer@example.com", openedBy: "viewer@example.com", serial: "SN-A" })], false);
+    const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "acme", installed_by: "someone-else" }) });
+    expect(grant.status).toBe(200);
+    expect(consent.get("sn-a")?.installedBy).toBe("viewer@example.com");
+    const revoke = await fetch(`${base}/api/admin/remote-sessions/unattended/revoke`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a" }) });
+    expect(revoke.status).toBe(200);
+    expect(consent.get("sn-a")?.revokedAt).toBeTruthy();
+    consent.grant({ hostKey: "sn-z", org: "acme", installedBy: "bob@example.com" });
+    const theirs = await fetch(`${base}/api/admin/remote-sessions/unattended/revoke`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-z" }) });
+    expect(theirs.status).toBe(403);
+    expect(consent.get("sn-z")?.revokedAt).toBeFalsy();
   });
 });
 

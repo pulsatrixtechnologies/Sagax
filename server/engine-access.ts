@@ -37,7 +37,9 @@ export type TurnSpeaker =
   | { origin: "person"; principalId?: string; groupId?: string }
   | { origin: "operator" }
   | { origin: "owner-routine"; principalId?: string }
-  | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true; routinePayer?: string };
+  /** `routineTrigger`: what started the routine a `routine` hop descends
+   * from ("schedule", "manual", "webhook"), when known. */
+  | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true; routinePayer?: string; routineTrigger?: string };
 
 /** A turn a routine or other automation started, directly or through hops. */
 export function routineLineage(speaker: TurnSpeaker): boolean {

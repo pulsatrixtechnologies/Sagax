@@ -860,6 +860,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The live view of the caller's own server environment desktop: the route
   // builds the target from the session's principal (routes/desktop-viewer.ts).
   { methods: ["GET"], path: /^\/api\/desktop-viewer\/sandbox\/me(?:\/websockify)?$/, feature: "orgDirectory" },
+  // 2026-10-26: the desktop of a bot's own VPS, for its owner who may run
+  // its computer; the target's `allows` decides (routes/desktop-viewer.ts).
+  { methods: ["GET"], path: /^\/api\/desktop-viewer\/vps\/[\w-]+(?:\/websockify)?$/ },
   { methods: ["POST"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/status$/, feature: "orgDirectory" },
   // The caller's own claude.ai connectors (server/harness-connectors.ts):
@@ -889,6 +892,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (the phone's agent import); GET is the export prompt. Same rights as upload.
   { methods: ["GET", "POST"], path: /^\/api\/bots\/import\/agent$/ },
   { methods: ["DELETE"], path: /^\/api\/bots\/import\/[0-9a-f-]{36}$/ },
+  // 2026-10-26: a team file imported for oneself. The handler requires the
+  // right to create bots, makes every bot the caller's with a member's
+  // defaults, and keeps a server folder, visibility and a backup restore
+  // an admin's. The organization library's Add stays admin.
+  { methods: ["POST"], path: /^\/api\/teams\/import$/ },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
   // checks the session, the caller's right to create bots and the copy).
   { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },

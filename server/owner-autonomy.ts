@@ -26,8 +26,8 @@
 //    routine is the owner's own work when every link of it is: the owner's
 //    own bots, started by the owner's own words (or the routine they wrote),
 //    never by a webhook, an email, another person or an unknown source.
-//    Such a turn counts as the owner's own for their cloud computer too,
-//    which it did not before: one bot asked 32 times in a row to run a
+//    Such a turn counts as the owner's own for their cloud computer (and,
+//    since 2026-10-26, their Local VM) too, which it did not before: one bot asked 32 times in a row to run a
 //    command in its owner's own cloud computer because the owner's Primary
 //    Bot had handed it the work.
 // 3. Perspicax reads and leases. A Perspicax tool that only reads (the
@@ -173,21 +173,54 @@ const COMMAND_HOME_WALK = /\b(?:find|tar|zip|rsync|scp|cp|base64|xxd|od|strings|
 const COMMAND_CREDENTIAL = /(?:^|[\s"'=@:/])(?:\.(?:ssh|gnupg|aws|azure|kube|docker|netrc|npmrc|pypirc|git-credentials|password-store|vault-token|pgpass|env)\b|\.config\/(?:gh|gcloud|hub|git|op|rclone|doctl|helm)\b|[\w.-]+\.(?:pem|key|p12|pfx|kdbx)\b|id_(?:rsa|dsa|ecdsa|ed25519)\b|\/proc\/[^\s/]+\/(?:environ|cmdline|mem)\b|\b(?:printenv|env)\s*(?:$|[|;&>])|\bgh\s+auth\s+token\b|credential\s+fill\b)/i;
 
 /** Rule 2's bound for the owner's own environment: a call a hop or a
- * routine of the owner's own lineage may run unasked. Only the server
- * environment (The owner's cloud computer; the Local VM on their own
- * computer keeps today's rule), and never a call that reaches a credential:
- * a read of a dotfile or a credential path (member-environment.ts
- * ownEnvironmentSensitiveRead), a command line that names one, or input that
- * cannot be read. Those keep their card, as the 2026-10-16 security review
- * asked for anything a hand-off may have brought in. */
+ * routine of the owner's own lineage may run unasked. The server
+ * environment (the owner's cloud computer) and, since 2026-10-26 (the
+ * person's own environment is theirs), the Local VM on their own computer
+ * (`sagax-desktop__local_vm`, never another tool of This computer). Never a
+ * call that reaches a credential: a read of a dotfile or a credential path
+ * (member-environment.ts ownEnvironmentSensitiveRead), a command line (or a
+ * Local VM screen action's arguments) that names one, or input that cannot
+ * be read. Those keep their card, as the 2026-10-16 security review asked
+ * for anything a hand-off may have brought in. The caller still checks
+ * that Sagax mounted that environment for this owner (ownEnvironmentCall). */
 export function lineageEnvironmentCall(tool: string | undefined, input: string | undefined,
   sensitiveRead: (input: string | undefined) => boolean): boolean {
-  const match = /^(?:mcp__)?sagax-environment__([a-z_]+)$/.exec(tool?.trim() ?? "");
+  const name = tool?.trim() ?? "";
+  if (/^(?:mcp__)?sagax-desktop__local_vm$/.test(name)) return lineageLocalVmCall(input, sensitiveRead);
+  const match = /^(?:mcp__)?sagax-environment__([a-z_]+)$/.exec(name);
   if (!match) return false;
   if (sensitiveRead(input)) return false;
   if (match[1] !== "run_command") return true;
   let command: unknown;
   try { command = (JSON.parse(input ?? "{}") as Record<string, unknown>).command; } catch { return false; }
+  return plainCommand(command);
+}
+
+function plainCommand(command: unknown): boolean {
   if (typeof command !== "string" || !command.trim()) return false;
   return !COMMAND_CREDENTIAL.test(command) && !COMMAND_HIDDEN.test(command) && !COMMAND_HOME_WALK.test(command);
+}
+
+/** The Local VM's actions (server/desktop-bridge.ts desktopToolOperation). */
+const LOCAL_VM_PLAIN_ACTIONS: ReadonlySet<string> = new Set(["status", "start", "create", "tools"]);
+
+/** A Local VM call of the owner's lineage: a plain action, a command line
+ * with the same bounds as the server environment's, or a screen action
+ * whose arguments name no credential. Anything else keeps its card. */
+function lineageLocalVmCall(input: string | undefined, sensitiveRead: (input: string | undefined) => boolean): boolean {
+  if (sensitiveRead(input)) return false;
+  let args: unknown;
+  try { args = JSON.parse(input ?? "{}"); } catch { return false; }
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  const { action, command, arguments: screen } = args as Record<string, unknown>;
+  if (typeof action !== "string") return false;
+  if (LOCAL_VM_PLAIN_ACTIONS.has(action)) return true;
+  if (action === "run") return plainCommand(command);
+  if (action === "use") {
+    if (screen === undefined) return true;
+    let text: string;
+    try { text = JSON.stringify(screen); } catch { return false; }
+    return !COMMAND_CREDENTIAL.test(text) && !COMMAND_HIDDEN.test(text) && !COMMAND_HOME_WALK.test(text);
+  }
+  return false;
 }

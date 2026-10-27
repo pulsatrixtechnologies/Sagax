@@ -134,6 +134,8 @@ const FULL = { direct: "direct+skills+shared+voice", room: "room+own-thread+skil
 // added to every non-external profile; the baselines moved to the measured bytes.
 // +861 bytes (2026-10-22): remote_session_snapshot and remote_session_exec,
 // loaded directly so "check this computer" is one call (Tailcat 8F2NZU).
+// 2026-10-26: the remote-session tools leave the solo profiles (#1093), so
+// the two closest non-chief baselines move down to the measured bytes.
 const BUDGET_BASELINE: Record<string, number> = {
   "direct": 84256,
   "direct+voice": 84997,
@@ -159,8 +161,8 @@ const BUDGET_BASELINE: Record<string, number> = {
   "room+own-thread+skills+voice": 86172,
   "room+own-thread+skills+shared": 87176,
   "room+own-thread+skills+shared+voice": 87917,
-  "direct+non-chief": 73080,
-  "direct+voice+non-chief": 73821,
+  "direct+non-chief": 71598,
+  "direct+voice+non-chief": 72339,
   "direct+shared+non-chief": 74825,
   "direct+shared+voice+non-chief": 75566,
   "direct+skills+non-chief": 75133,

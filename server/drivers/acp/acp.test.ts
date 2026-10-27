@@ -1433,6 +1433,77 @@ describe("ACP turns (fake CLI)", () => {
     expect(recorder.events.filter((e) => e.type === "request.opened")).toHaveLength(2);
   });
 
+  describe("'Always allow this session' on the person's own computer", () => {
+    const localComputer = { command: "/cua-driver", args: ["mcp"], env: {}, platform: "linux" as const, scope: "local-computer" as const };
+    afterEach(() => {
+      delete process.env.FAKE_ACP_ALLOW_ALWAYS;
+      delete process.env.FAKE_ACP_PERMISSION_TOOL_CALL;
+    });
+
+    it("offers it and remembers only the exact operation, for this thread, answering allow-once (never the engine's allow_always)", async () => {
+      process.env.FAKE_ACP_ALLOW_ALWAYS = "1";
+      const answer = join(scratch, "permission-answer-local.txt");
+      process.env.FAKE_ACP_PERMISSION_ANSWER = answer;
+      await create(GrokAgentDriver, "permission");
+      const first = await instance.adapter.sendTurn({ threadId: "t-local-always", text: "go", approvalMode: "ask", integrations: { localComputer } });
+      const opened = await recorder.until((e) => e.type === "request.opened" && e.turnId === first.turnId);
+      expect(opened).toMatchObject({ approvalScope: "local-computer", allowSession: true });
+      await instance.adapter.respondToRequest("t-local-always", (opened as { requestId: string }).requestId, { behavior: "allow", always: true });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === first.turnId);
+      // the engine's allow_always could cover more than this exact call
+      expect(readFileSync(answer, "utf8")).toBe("allow-once");
+
+      // the same operation on her computer, same thread: no second card
+      const second = await instance.adapter.sendTurn({ threadId: "t-local-always", text: "again", approvalMode: "ask", resumeCursor: "fake-acp-session", integrations: { localComputer } });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === second.turnId);
+      expect(recorder.events.filter((e) => e.type === "request.opened")).toHaveLength(1);
+      expect(readFileSync(answer, "utf8")).toBe("allow-once");
+
+      // another operation on her computer still asks
+      process.env.FAKE_ACP_PERMISSION_TOOL_CALL = JSON.stringify({ kind: "execute", rawInput: { command: "rm -rf ~/notes" }, title: "rm -rf ~/notes" });
+      const other = await instance.adapter.sendTurn({ threadId: "t-local-always", text: "other", approvalMode: "ask", resumeCursor: "fake-acp-session", integrations: { localComputer } });
+      const otherCard = await recorder.until((e) => e.type === "request.opened" && e.turnId === other.turnId);
+      await instance.adapter.respondToRequest("t-local-always", (otherCard as { requestId: string }).requestId, { behavior: "deny" });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === other.turnId);
+    });
+
+    it("never carries the grant to another thread, nor from the sandbox to her computer", async () => {
+      await create(GrokAgentDriver, "permission");
+      const first = await instance.adapter.sendTurn({ threadId: "t-local-grant", text: "go", approvalMode: "ask", integrations: { localComputer } });
+      const opened = await recorder.until((e) => e.type === "request.opened" && e.turnId === first.turnId);
+      await instance.adapter.respondToRequest("t-local-grant", (opened as { requestId: string }).requestId, { behavior: "allow", always: true });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === first.turnId);
+
+      // another thread (another bot's conversation) asks again
+      const elsewhere = await instance.adapter.sendTurn({ threadId: "t-local-grant-other", text: "go", approvalMode: "ask", integrations: { localComputer } });
+      const elsewhereCard = await recorder.until((e) => e.type === "request.opened" && e.turnId === elsewhere.turnId);
+      await instance.adapter.respondToRequest("t-local-grant-other", (elsewhereCard as { requestId: string }).requestId, { behavior: "deny" });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === elsewhere.turnId);
+
+      // a sandbox grant on a thread never answers the same call on her computer
+      const sandbox = await instance.adapter.sendTurn({ threadId: "t-sandbox-grant", text: "go", approvalMode: "ask" });
+      const sandboxCard = await recorder.until((e) => e.type === "request.opened" && e.turnId === sandbox.turnId);
+      await instance.adapter.respondToRequest("t-sandbox-grant", (sandboxCard as { requestId: string }).requestId, { behavior: "allow", always: true });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === sandbox.turnId);
+      const onComputer = await instance.adapter.sendTurn({ threadId: "t-sandbox-grant", text: "again", approvalMode: "ask", resumeCursor: "fake-acp-session", integrations: { localComputer } });
+      const computerCard = await recorder.until((e) => e.type === "request.opened" && e.turnId === onComputer.turnId);
+      expect(computerCard).toMatchObject({ approvalScope: "local-computer" });
+      await instance.adapter.respondToRequest("t-sandbox-grant", (computerCard as { requestId: string }).requestId, { behavior: "deny" });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === onComputer.turnId);
+    });
+
+    it("keeps an outward connector call once each time on her computer", async () => {
+      process.env.FAKE_ACP_PERMISSION_TOOL_CALL = JSON.stringify({ kind: "other", title: "use_tool", rawInput: { variant: "UseTool", tool_name: "slack__send_message", tool_input: { text: "hi" } } });
+      await create(GrokAgentDriver, "permission");
+      const { turnId } = await instance.adapter.sendTurn({ threadId: "t-local-outward", text: "go", approvalMode: "ask", integrations: { localComputer } });
+      const opened = await recorder.until((e) => e.type === "request.opened" && e.turnId === turnId);
+      expect(opened).toMatchObject({ approvalScope: "local-computer", outbound: true });
+      expect((opened as { allowSession?: boolean }).allowSession).toBeUndefined();
+      await instance.adapter.respondToRequest("t-local-outward", (opened as { requestId: string }).requestId, { behavior: "deny" });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    });
+  });
+
   it.each(["grok-4.7", "grok-4.6", "grok-4.5", "local-model"])(
     "keeps native Grok Auto (bots opted out of the gate) when selecting and resuming %s",
     async (model) => {
@@ -1544,6 +1615,25 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(lines[0]).toBe("agents:list_bots -> ran list_bots");
       expect(lines[1]).toContain("Not approved: agents__create_bot did not run");
       expect(lines[2]).toContain("Not approved: third__anything did not run");
+    });
+
+    it("opens one card, the gate's, for a held MCP call on the person's own computer", async () => {
+      writeFileSync(flagFile, JSON.stringify({ bots: ["bot-gated"] }));
+      process.env.FAKE_ACP_ASK_BEFORE_MCP = "use_tool";
+      process.env.FAKE_ACP_PERMISSION_ANSWER = join(scratch, "agent-answer-local.txt");
+      process.env.FAKE_ACP_MCP_CALLS = "agents:create_bot";
+      await create(GrokAgentDriver, "mcp-call");
+      const { turnId } = await instance.adapter.sendTurn({
+        threadId: "t-gate-local", botId: "bot-gated", text: "go", model: "grok-4.5", approvalMode: "auto",
+        integrations: { agents: server("agents"), localComputer: { ...server("computer"), platform: "linux", scope: "local-computer" } },
+      });
+      const card = await nextCard(turnId, 1);
+      expect(card).toMatchObject({ mcpTool: "agents__create_bot", approvalScope: "local-computer" });
+      expect(readFileSync(process.env.FAKE_ACP_PERMISSION_ANSWER!, "utf8")).toBe("allow-once");
+      expect(await instance.adapter.respondToRequest("t-gate-local", card.requestId, { behavior: "allow" })).toBe("allowed-once");
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+      expect(opened(turnId)).toHaveLength(1);
+      expect(ran()).toEqual(["agents:create_bot"]);
     });
 
     it("keeps Grok's use_tool ask as a card for a bot that opted out", async () => {

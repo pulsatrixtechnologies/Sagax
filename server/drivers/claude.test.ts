@@ -1295,6 +1295,24 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(second.env.ANTHROPIC_API_KEY).toBe("sk-ant-test-erin-key-00002");
   });
 
+  it("never lets another bot on the thread reuse the process that holds a session allow on the person's computer", async () => {
+    await create();
+    const dump = join(scratch, "dump-bot-grant.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const localComputer = { command: "/cua-driver", args: ["mcp"], env: {}, platform: "linux" as const, scope: "local-computer" as const };
+    const send = async (botId: string) => {
+      const before = recorder.events.filter((e) => e.type === "turn.completed").length;
+      await instance.adapter.sendTurn({ threadId: "t-bot-grant", botId, text: "hello", approvalMode: "ask", integrations: { localComputer } });
+      await recorder.until(() => recorder.events.filter((e) => e.type === "turn.completed").length > before);
+      return JSON.parse(readFileSync(dump, "utf8")) as { pid: number };
+    };
+    const alice = await send("bot-alice");
+    const bob = await send("bot-bob");
+    // the rules Claude keeps for "Always allow this session" live in the
+    // process: a fresh one keeps none of them
+    expect(bob.pid).not.toBe(alice.pid);
+  });
+
   it("hands a hosted tenant's CLI the hosted model token but none of the operator's control-plane secrets", async () => {
     // server/hosted-models.ts delivers the model token as the provider key.
     await create(undefined, { ANTHROPIC_API_KEY: "omb_workspace_fixture", ANTHROPIC_AUTH_TOKEN: "omb_workspace_fixture" });
@@ -4037,9 +4055,9 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(resolved).toMatchObject({ behavior: "allow", source: "user" });
     expect(resolved).toHaveProperty("approvalScope", undefined);
 
-    // a real desktop-control tool keeps the local-computer scope, which
-    // suppresses remembered grants — desktop actions must be approved
-    // one at a time
+    // a real desktop-control tool on the person's own computer keeps the
+    // local-computer scope and may be allowed for the session too: the
+    // rules Claude keeps live in this thread's process only
     const answered2 = new Promise<{ behavior: string }>((resolve) => {
       let buf = "";
       conn.on("data", (c) => {
@@ -4053,11 +4071,9 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     );
     const opened2 = await recorder.until((e) => e.requestId === "ask-2" && e.type === "request.opened");
     expect(opened2).toHaveProperty("approvalScope", "local-computer");
-    expect(opened2).toHaveProperty("allowSession", undefined);
-    await expect(instance.adapter.respondToRequest("t-perm-abc", "ask-2", { behavior: "allow" })).resolves.toBe("allowed-once");
-    const plain = await answered2;
-    expect(plain).toMatchObject({ behavior: "allow" });
-    expect(plain).not.toHaveProperty("always");
+    expect(opened2).toHaveProperty("allowSession", true);
+    await expect(instance.adapter.respondToRequest("t-perm-abc", "ask-2", { behavior: "allow", always: true })).resolves.toBe("allowed-once");
+    expect(await answered2).toMatchObject({ behavior: "allow", always: true });
     const resolved2 = await recorder.until((e) => e.requestId === "ask-2" && e.type === "request.resolved");
     expect(resolved2).toHaveProperty("approvalScope", "local-computer");
 
