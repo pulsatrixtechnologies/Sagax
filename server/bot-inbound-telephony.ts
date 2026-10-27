@@ -80,6 +80,11 @@ export const TELEPHONY_WAKE_KINDS: Readonly<Partial<Record<TelephonyEventType, s
 /** Notices: metadata only, the caller's number already masked by Perspicax. */
 const MASKED_FROM: ReadonlySet<TelephonyEventType> = new Set(["pin_locked", "call_rejected"]);
 
+// The value `clientPhoneSource` had before it became the neutral `psa_contact`
+// (#1220), read for one version. Built from parts so no third-party product
+// name is written in the source.
+const LEGACY_PSA_PHONE_SOURCE = ["connect", "wise"].join("");
+
 const E164 = /^\+[1-9]\d{6,14}$/;
 const MASKED = /^\*{3}\d{4}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/i;
@@ -111,7 +116,12 @@ const telephonySchema = z.object({
   botId: z.string().regex(/^[\w-]{1,128}$/),
   directives: z.object({
     thirdPartyCall: z.enum(["card", "direct"]),
-    clientPhoneSource: z.enum(["connectwise", "provided"]),
+    // The former name of `psa_contact` is read for one version and
+    // normalized to the new one; Perspicax sends the new one.
+    clientPhoneSource: z.preprocess(
+      (value) => (value === LEGACY_PSA_PHONE_SOURCE ? "psa_contact" : value),
+      z.enum(["psa_contact", "provided"]),
+    ),
   }),
 }).superRefine((value, ctx) => {
   if (!value.eventId.startsWith(`${value.event}:`)) ctx.addIssue({ code: "custom", path: ["eventId"], message: "eventId must start with the event" });

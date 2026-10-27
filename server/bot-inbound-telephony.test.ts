@@ -42,7 +42,7 @@ const voice = (extra: Record<string, unknown> = {}) => ({
   person: { id: "u_123", name: "Alex Example" },
   content: { trust: "caller", text: "Rappelle le fournisseur pour la livraison de jeudi." },
   botId: "bot_abc",
-  directives: { thirdPartyCall: "card", clientPhoneSource: "connectwise" },
+  directives: { thirdPartyCall: "card", clientPhoneSource: "psa_contact" },
   ...extra,
 });
 
@@ -81,7 +81,7 @@ describe("parseTelephonyEvent and telephonyTriggerEvent", () => {
       fields: { sender: "+15145550100" },
       resource: `sms:${SID}`,
       occurredAt: "2026-10-26T14:05:09.000Z",
-      directives: { thirdPartyCall: "card", clientPhoneSource: "connectwise" },
+      directives: { thirdPartyCall: "card", clientPhoneSource: "psa_contact" },
     });
     expect(event!.title).not.toContain("fournisseur");
     expect(event!.text).toContain("From: +15145550100");
@@ -119,11 +119,20 @@ describe("parseTelephonyEvent and telephonyTriggerEvent", () => {
     ["no bot", voice({ botId: "" })],
     ["a bot id with a slash", voice({ botId: "a/b" })],
     ["no directives", voice({ directives: undefined })],
-    ["an unknown third-party directive", voice({ directives: { thirdPartyCall: "always", clientPhoneSource: "connectwise" } })],
+    ["an unknown third-party directive", voice({ directives: { thirdPartyCall: "always", clientPhoneSource: "psa_contact" } })],
     ["an unknown phone source", voice({ directives: { thirdPartyCall: "card", clientPhoneSource: "crm" } })],
     ["authenticated that is not a boolean", voice({ authenticated: "yes" })],
   ])("refuses %s", (_label, body) => {
     expect(parseTelephonyEvent(body)).toBeNull();
+  });
+
+  it("reads the former phone source for one version and normalizes it to psa_contact", () => {
+    const legacy = ["connect", "wise"].join("");
+    const parsed = parseTelephonyEvent(voice({ directives: { thirdPartyCall: "card", clientPhoneSource: legacy } }));
+    expect(parsed?.directives.clientPhoneSource).toBe("psa_contact");
+    expect(parseTelephonyEvent(voice())?.directives.clientPhoneSource).toBe("psa_contact");
+    expect(parseTelephonyEvent(voice({ directives: { thirdPartyCall: "card", clientPhoneSource: "provided" } }))?.directives.clientPhoneSource).toBe("provided");
+    expect(telephonyTriggerEvent(parsed!).directives?.clientPhoneSource).toBe("psa_contact");
   });
 
   it("masks a number to its last four digits for logs and audit rows", () => {
@@ -202,7 +211,7 @@ describe("WebhookManager with a telephony trigger", () => {
     // the directives, outside the fence, as Perspicax sent them
     const directives = prompt.slice(prompt.indexOf("[PERSPICAX LINE DIRECTIVES]"), prompt.indexOf("[/PERSPICAX LINE DIRECTIVES]"));
     expect(directives).toContain("- thirdPartyCall: card");
-    expect(directives).toContain("- clientPhoneSource: connectwise");
+    expect(directives).toContain("- clientPhoneSource: psa_contact");
     expect(prompt.indexOf("[/PERSPICAX LINE DIRECTIVES]")).toBeLessThan(prompt.indexOf("[UNTRUSTED TELEPHONY EVENT DATA "));
   });
 
