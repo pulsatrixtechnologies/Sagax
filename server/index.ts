@@ -45141,9 +45141,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const updated = store.patchBot(target.id, {
           approvalMode: "full", autoApprove: false, alwaysAllow: [],
           fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() },
-        })!;
+        }, { actorPrincipalId: sessionPrincipal(auth) })!;
         // #1169: every thread of the bot, hidden ones included, now follows
-        // it to Full (store.patchBot); the open one is recorded too.
+        // it to Full (store.patchBot), except a level another person chose
+        // for their own conversation; the open one is recorded too.
         if (follow) {
           store.patchTask(updated.id, follow, { approvalOwn: undefined, alwaysAllow: [] });
           auditApprovalModeChange(auth, target.id, threadBefore!, "full", follow);
@@ -45769,11 +45770,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // fail-closed semantics; atomically commit only the profile fields.
         const runtimePatch = { ...patch };
         for (const field of Object.keys(profile.patch)) delete runtimePatch[field];
-        if (Object.keys(runtimePatch).length) store.patchBot(m[1], runtimePatch);
+        if (Object.keys(runtimePatch).length) store.patchBot(m[1], runtimePatch, { actorPrincipalId: sessionPrincipal(auth) });
         bot = store.patchBotProfile(m[1], profile.patch);
       } else {
         if (freshBrowserBot) assertTeamComputerChangeIdle(freshBrowserBot, { ...freshBrowserBot, ...patch } as BotRecord);
-        bot = store.patchBot(m[1], patch);
+        bot = store.patchBot(m[1], patch, { actorPrincipalId: sessionPrincipal(auth) });
       }
       if (!bot) return json(res, 404, { error: "no such bot" });
       if (body.memoryUpkeep === false || body.memoryEnabled === false) memoryUpkeep.dropBot(bot.id);

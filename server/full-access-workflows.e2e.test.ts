@@ -111,13 +111,15 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     const savedBots = JSON.parse(readFileSync(join(dataDir, "bots.json"), "utf8"));
     const savedChief = savedBots.find((bot: any) => bot.id === chief.id);
     savedChief.approvalMode = "full"; savedChief.autoApprove = false;
+    // #1207: a thread keeps a level of its own only as a stated exception
+    // (approvalOwn); a bare copy is dropped on start and follows the bot.
     for (const task of savedChief.tasks) {
-      task.approvalMode = task.threadId === ask.threadId ? "ask" : "full";
-      task.autoApprove = false;
+      if (task.threadId === ask.threadId) Object.assign(task, { approvalMode: "ask", autoApprove: false, approvalOwn: "thread" });
+      else { delete task.approvalMode; delete task.autoApprove; delete task.approvalOwn; }
     }
     const savedInverse = savedBots.find((bot: any) => bot.id === inverse.id);
     savedInverse.approvalMode = "ask"; savedInverse.autoApprove = false;
-    savedInverse.tasks.find((task: any) => task.threadId === inverse.activeTaskId).approvalMode = "full";
+    Object.assign(savedInverse.tasks.find((task: any) => task.threadId === inverse.activeTaskId), { approvalMode: "full", autoApprove: false, approvalOwn: "thread" });
     writeFileSync(join(dataDir, "bots.json"), JSON.stringify(savedBots, null, 2));
     await restart();
     expect((await api("GET", "/api/health")).capabilities).toMatchObject({ guardedFullAccess: 1 });

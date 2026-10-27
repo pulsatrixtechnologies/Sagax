@@ -64,8 +64,14 @@ it("reports every run into the bot's main thread while fresh executions, approva
     expect(savedBot.tasks.filter((task: any) => !task.routineRunId)).toHaveLength(1);
     expect(savedBot.tasks.some((task: any) => task.title.endsWith("· Results"))).toBe(false);
     expect(savedBot.tasks.find((task: any) => task.threadId === destination).unread).toBe(true);
-    for (const run of completed) expect(savedBot.tasks.find((task: any) => task.threadId === run.threadId))
-      .toMatchObject({ routineRunId: run.id, unread: false, autoApprove: true, approvalMode: "auto" });
+    // #1207: a run keeps no copy of the level; it runs at the bot's, live
+    expect(savedBot).toMatchObject({ autoApprove: true, approvalMode: "auto" });
+    for (const run of completed) {
+      const runTask = savedBot.tasks.find((task: any) => task.threadId === run.threadId);
+      expect(runTask).toMatchObject({ routineRunId: run.id, unread: false });
+      expect(runTask.approvalMode).toBeUndefined();
+      expect(runTask).not.toHaveProperty("approvalOwn");
+    }
 
     await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: completed[0].threadId }, 400);
     // Open run remains a usable normal conversation. Marking its historical

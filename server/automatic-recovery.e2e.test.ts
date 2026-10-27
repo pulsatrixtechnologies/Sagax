@@ -247,7 +247,12 @@ it("recovers a coordinated specialist and returns its result to the Chief exactl
     expect(fleet.groups).toEqual([]);
     const after = fleet.bots.find((bot: any) => bot.id === specialist.id);
     expect(after.modelSelection).toEqual(primary);
-    expect(after.tasks.find((task: any) => task.threadId === child.threadId)).toMatchObject({ modelSelection: backup, approvalMode: "auto", busy: false });
+    const childTask = after.tasks.find((task: any) => task.threadId === child.threadId);
+    expect(childTask).toMatchObject({ modelSelection: backup, busy: false });
+    // #1207: the recovered thread keeps no copy of the level; it runs at its bot's
+    expect(childTask).not.toHaveProperty("approvalOwn");
+    expect(childTask.approvalMode).toBeUndefined();
+    expect(after).toMatchObject({ approvalMode: "auto", autoApprove: true });
     expect(after.tasks.find((task: any) => task.threadId === specialist.activeTaskId).modelSelection).toEqual(primary);
     expect(fleet.bots.find((bot: any) => bot.id === chief.id)).toMatchObject({ busy: false, waitingForTeammates: false });
     await control("messages", "--bot", chief.id, "--task", chief.activeTaskId, "--limit", "20");

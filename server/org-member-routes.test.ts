@@ -280,8 +280,8 @@ describe("sending", () => {
       : { status: 403, body: { error: "This bot is not yours to use." } };
     const got = await call("POST", "bots/b1/messages", token("bob"), { text: "hello", newThread: true });
     expect(performed.map((p) => p.request.path)).toEqual(["/api/bots/b1/tasks", "/api/bots/b1/messages"]);
-    // a new thread is a hidden one too (#291)
-    expect(performed[0]!.request.body).toEqual({ hidden: true, confidential: false });
+    // #1170: a new thread is never hidden; the person can see and close it
+    expect(performed[0]!.request.body).toEqual({ confidential: false });
     expect(performed[1]!.request.body).toEqual({ text: "hello", threadId: "t9" });
     expect(got.status).toBe(403);
     expect(got.body).toMatchObject({ code: "forbidden", message: "This bot is not yours to use." });
@@ -295,13 +295,13 @@ describe("sending", () => {
         ? { status: 202, body: { ok: true, threadId, message: { id: "m1" } } }
         : page({ id: "m1", role: "user", kind: "text", text: "x", at: 2 });
 
-    it("starts the person's hidden conversation when they have none, never their open chat", async () => {
+    it("starts the person's chat with the bot when they have none, never a hidden one (#1170)", async () => {
       hiddenThread = () => null;
       respond = sentTo("t9");
       const got = await call("POST", "bots/b1/messages", token("bob"), { text: "count the tickets" });
       expect(got.status).toBe(200);
       expect(performed.filter((p) => p.request.method === "POST").map((p) => [p.request.path, p.request.body])).toEqual([
-        ["/api/bots/b1/tasks", { hidden: true, confidential: false }],
+        ["/api/bots/b1/tasks", { confidential: false }],
         ["/api/bots/b1/messages", { text: "count the tickets", threadId: "t9" }],
       ]);
       expect(recorded[0]!.after).toEqual({ threadId: "t9", waited: false, hidden: true });

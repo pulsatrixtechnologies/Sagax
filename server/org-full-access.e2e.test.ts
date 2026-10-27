@@ -14,7 +14,9 @@
 //         on at once, with their own rights; without their words it waits
 //   FA-5  (PR #934 review) the Full grant from the bot's settings names the
 //         open conversation: the owner's own thread follows and is audited;
-//         another person's thread on the same bot is left alone
+//         another person's thread is never named or audited, and the level
+//         that person chose for their own conversation stays theirs. Since
+//         #1169 the level is the bot's: the owner's threads follow it
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -256,35 +258,43 @@ posixOnly("organization Full access", () => {
     await api("POST", `/api/bots/${ivy.id}/interrupt`, erin, { threadId: ivy.threadId });
   }, 60_000);
 
-  it("FA-5: the Full grant follows the owner's open thread, never another person's", async () => {
+  it("FA-5: the Full grant names and audits the owner's open thread, never another person's, whose own level stays (#1169)", async () => {
     await waitFor(async () => !(await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string; busy?: boolean }) => bot.id === zed.id)?.busy);
     // Alice (shared on Zed) has her own private thread on it
     const aliceThread = (await api("GET", `/api/bots`, alice)).body.bots.find((bot: { id: string }) => bot.id === zed.id)?.threadId as string;
     expect(aliceThread).toBeTruthy();
     expect(aliceThread).not.toBe(zed.threadId);
     expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" })).status).toBe(200);
-    const threadMode = async (who: Auth, threadId: string) =>
+    const threadOf = async (who: Auth, threadId: string): Promise<{ approvalMode?: string; approvalOwn?: string } | undefined> =>
       ((await api("GET", `/api/bots`, who)).body.bots.find((bot: { id: string }) => bot.id === zed.id)?.tasks ?? [])
-        .find((task: { threadId: string }) => task.threadId === threadId)?.approvalMode;
+        .find((task: { threadId: string }) => task.threadId === threadId);
+    const threadMode = async (who: Auth, threadId: string) => (await threadOf(who, threadId))?.approvalMode;
+    const botMode = async (who: Auth) => (await api("GET", `/api/bots`, who)).body.bots.find((bot: { id: string }) => bot.id === zed.id)?.approvalMode;
     // started while Zed defaulted to Full (FA-4): Alice lowers her own
     const lowered = await api("PATCH", `/api/bots/${zed.id}/tasks/${aliceThread}`, alice, { approvalMode: "ask" });
     expect(lowered.status, lowered.text).toBe(200);
-    const aliceBefore = await threadMode(alice, aliceThread);
-    expect(aliceBefore).toBe("ask");
+    expect(await threadOf(alice, aliceThread)).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
 
-    // the owner names another person's conversation: the bot default changes, that thread does not
+    // the owner names another person's conversation: it is not named in the
+    // audit, and the level that person chose for it stays theirs
     const foreign = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full", threadId: aliceThread });
     expect(foreign.status, foreign.text).toBe(200);
-    expect(await threadMode(alice, aliceThread)).toBe(aliceBefore);
+    expect(await botMode(erin)).toBe("full");
+    expect(await threadOf(alice, aliceThread)).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
     expect(auditRows().some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === aliceThread)).toBe(false);
 
     // the owner's own open conversation follows and the change is audited with it
+    const relowered = await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" });
+    expect(relowered.status, relowered.text).toBe(200);
     expect(await threadMode(erin, zed.threadId)).toBe("ask");
     const threadRows = () => auditRows().filter((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === zed.threadId).length;
     const rowsBefore = threadRows();
     const own = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full", threadId: zed.threadId });
     expect(own.status, own.text).toBe(200);
-    expect(await threadMode(erin, zed.threadId)).toBe("full");
+    // its exception ends: it reads the bot's Full, live
+    expect(await threadOf(erin, zed.threadId)).not.toHaveProperty("approvalOwn");
+    expect(await threadMode(erin, zed.threadId)).toBeUndefined();
+    expect(await botMode(erin)).toBe("full");
     await waitFor(async () => threadRows() === rowsBefore + 1);
   }, 60_000);
 });

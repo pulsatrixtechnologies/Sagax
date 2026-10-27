@@ -70,12 +70,15 @@ describe("iOS parity routes on a personal server", () => {
     expect((await api("GET", "/api/settings/bot")).settings).toEqual({ autoReviewDefault: false, timeZone: null, timeZoneAuto: true });
     await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" });
     const before = (await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Before" }, 201)).task;
-    expect(before.approvalMode).toBe("ask");
+    // #1207: no copy of the level; the thread follows its Ask bot, live
+    expect(before.approvalMode).toBeUndefined();
+    expect(before.approvalOwn).toBeUndefined();
     const saved = await api("PUT", "/api/settings/bot", { autoReviewDefault: true, timeZone: "America/Toronto", timeZoneAuto: false });
     expect(saved).toMatchObject({ scope: "server", effectiveTimeZone: "America/Toronto" });
     await api("PUT", "/api/settings/bot", { timeZone: "Nowhere/Land" }, 400);
     const after = (await api("POST", `/api/bots/${bot.id}/tasks`, { title: "After" }, 201)).task;
-    expect(after.approvalMode).toBe("auto");
+    // auto-review is the person's choice: a visible exception on the thread
+    expect(after).toMatchObject({ approvalMode: "auto", approvalOwn: "thread" });
     await api("PUT", "/api/settings/bot", { autoReviewDefault: false });
     expect(await api("GET", "/api/auto-review/rules")).toEqual({ rules: [], global: [], total: 0 });
   });
@@ -128,7 +131,8 @@ describe("iOS parity routes on a personal server", () => {
     const chatOnly = await api("POST", "/api/auth/pair", { code: (await api("POST", "/api/auth/pairing", { label: "Chat-only phone", scopes: ["client"] })).code });
     const admin = await api("POST", "/api/auth/pair", { code: (await api("POST", "/api/auth/pairing", { label: "Admin phone", scopes: ["admin", "client"] })).code });
 
-    expect((await api("GET", `/api/bots/${bot.id}/overview`, undefined, 403, chatOnly.token)).code).toBe("not_bot_owner");
+    // #1223: the overview refusal has its own code (it was not_bot_owner)
+    expect((await api("GET", `/api/bots/${bot.id}/overview`, undefined, 403, chatOnly.token)).code).toBe("bot_activity_owner_only");
     expect(await api("GET", `/api/bots/${bot.id}/overview`, undefined, 200, admin.token)).toMatchObject({ does: expect.anything() });
     await api("GET", `/api/bots/${bot.id}/overview`);
 
