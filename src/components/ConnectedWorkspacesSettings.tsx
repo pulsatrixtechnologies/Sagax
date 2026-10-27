@@ -31,7 +31,8 @@ export function ConnectedWorkspacesSettings() {
   const [serverModeActive, setServerModeActive] = useState(false);
   useEffect(() => {
     let live = true;
-    void window.ogb?.serverMode?.state().then((mode) => { if (live) setServerModeActive(mode.active); }).catch(() => {});
+    // Personal's page beside the server (`personal`) is still in server mode.
+    void window.ogb?.serverMode?.state().then((mode) => { if (live) setServerModeActive(mode.active || ("personal" in mode && mode.personal === true)); }).catch(() => {});
     return () => { live = false; };
   }, []);
   const pending = useRef(false);

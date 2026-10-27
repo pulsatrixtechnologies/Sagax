@@ -78,7 +78,9 @@ export function WelcomeGate({ viewer }: { viewer: WelcomeViewer | null }) {
     void serverModeState
       .state()
       .then((state) => {
-        if (active) setServerMode(state.active);
+        // Personal opened beside the server (server mode) is not a server
+        // mode that was left: no launch screen there.
+        if (active) setServerMode(state.active || ("personal" in state && state.personal === true));
       })
       .catch(() => {});
     return () => {

@@ -67,17 +67,30 @@ describe("buildApplicationMenu", () => {
     expect(server.some(entry => entry.label === "Connect to a server…")).toBe(true);
   });
 
-  it("in server mode the Server menu shows the organization's server and Change server only", () => {
+  it("in server mode the Server menu shows this computer, the organization's server and Change server", () => {
     const onLeaveServerMode = vi.fn();
     const onSwitch = vi.fn();
     const template = build("darwin", { serverModeId: "x", onLeaveServerMode, onSwitch });
     const items = template.find(entry => entry.label === "Server").submenu;
     const labels = items.map(entry => entry.label).filter(Boolean);
-    expect(labels).toEqual(["X — localhost", "Change server…"]);
-    expect(JSON.stringify(items)).not.toContain("Local (this computer)");
+    expect(labels).toEqual(["This computer", "X — localhost", "Change server…"]);
+    expect(items.find(entry => entry.label === "X — localhost").checked).toBe(true);
+    expect(JSON.stringify(items)).not.toContain("Connect to a server");
     items.find(entry => entry.label === "Change server…").click();
     expect(onLeaveServerMode).toHaveBeenCalledOnce();
     expect(onSwitch).not.toHaveBeenCalled();
+  });
+
+  it("in server mode, This computer switches to Personal without leaving the server (no sign-out)", () => {
+    const onLeaveServerMode = vi.fn();
+    const onSwitch = vi.fn();
+    const template = build("darwin", { serverModeId: "x", activeId: "local", onLeaveServerMode, onSwitch });
+    const items = template.find(entry => entry.label === "Server").submenu;
+    expect(items.find(entry => entry.label === "This computer").checked).toBe(true);
+    items.find(entry => entry.label === "This computer").click();
+    items.find(entry => entry.label === "X — localhost").click();
+    expect(onSwitch.mock.calls).toEqual([["local"], ["x"]]);
+    expect(onLeaveServerMode).not.toHaveBeenCalled();
   });
 
 });

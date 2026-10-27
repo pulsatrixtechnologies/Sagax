@@ -149,7 +149,7 @@ test("native window identity distinguishes hosted HTML, companion data, and the 
   assert.equal(env.workspaceWindowTitle(env.withActive(state, "local")), "Sagax");
 });
 
-test("server mode locks the app to one organization server: no Local, no other server", () => {
+test("server mode opens on one organization server: Personal beside it, no other server", () => {
   let state = { environments: [], activeId: "local" };
   state = env.withEnvironment(state, { origin: "https://hosted.example" }, () => "h1");
   state = env.withEnvironment(state, { origin: "https://org.example", org: true }, () => "o1");
@@ -160,22 +160,36 @@ test("server mode locks the app to one organization server: no Local, no other s
   assert.equal(state.activeId, "o1");
   assert.equal(env.serverModeEnvironment(state).origin, "https://org.example");
   assert.equal(env.bundledOrigin(state), "https://org.example");
-  // nothing switches away while it is on
-  assert.equal(env.withActive(state, "local"), state);
+  // every saved organization server keeps its page drawn from the bundle, not a plain saved server
+  assert.deepEqual(env.bundledOrigins(state), ["https://org.example"]);
+  // no other saved server while it is on; Personal is a switch away and is remembered
   assert.equal(env.withActive(state, "h1"), state);
-  // the native chooser lists that server and the way out only
+  const personal = env.withActive(state, "local");
+  assert.equal(personal.activeId, "local");
+  assert.equal(personal.serverModeId, "o1");
+  assert.equal(personal.personal, true);
+  assert.equal(env.withActive(personal, "o1").activeId, "o1");
+  assert.equal(env.withActive(personal, "o1").serverModeId, "o1");
+  // the native chooser lists this computer, that server and the way out only
   const calls = [];
   const items = env.workspaceMenuTemplate(state, { onSwitch: (id) => calls.push(["switch", id]), onConnect: () => calls.push(["connect"]), onForget: () => calls.push(["forget"]), onLeaveServerMode: () => calls.push(["leave"]) });
-  assert.deepEqual(items.filter((item) => item.id).map((item) => item.id), ["workspace-o1", "workspace-leave-server-mode"]);
-  assert.ok(!JSON.stringify(items).includes("This computer"));
+  assert.deepEqual(items.filter((item) => item.id).map((item) => item.id), ["workspace-local", "workspace-o1", "workspace-leave-server-mode"]);
+  assert.equal(items.find((item) => item.id === "workspace-o1").checked, true);
+  assert.ok(!JSON.stringify(items).includes("Connect"));
+  items.find((item) => item.id === "workspace-local").click();
   items.find((item) => item.id === "workspace-o1").click();
   items.find((item) => item.id === "workspace-leave-server-mode").click();
-  assert.deepEqual(calls, [["leave"]]);
+  assert.deepEqual(calls, [["switch", "local"], ["switch", "o1"], ["leave"]]);
   assert.deepEqual(env.workspaceSummary(state), { local: false, name: "org.example", origin: "https://org.example", serverMode: true });
   // it survives a restart, and only on an organization server
   const reread = env.parseEnvironments(env.serializeEnvironments(state));
   assert.equal(reread.serverModeId, "o1");
   assert.equal(reread.activeId, "o1");
+  // Personal opened: the app opens there again, still in server mode
+  const rereadPersonal = env.parseEnvironments(env.serializeEnvironments(personal));
+  assert.deepEqual([rereadPersonal.activeId, rereadPersonal.serverModeId, rereadPersonal.personal], ["local", "o1", true]);
+  // leaving server mode forgets that Personal was opened beside it
+  assert.equal(env.withoutServerMode(personal).personal, undefined);
   const tampered = JSON.parse(env.serializeEnvironments(state));
   tampered.serverModeId = "h1";
   tampered.activeId = "local";

@@ -88,6 +88,39 @@ never shows on another's.
 
 A connected Tailcat session is a first-class card (`remoteSession` on the message) and a Sessions à distance section in the bot panel. The address and the client key stay in the Flow session folder on this host. Never accept them as tool arguments, never put them in an API answer, a log line, or visible text. The support code is the label. The 12-hex folder id stays off the screen. Screenshot in the Computer tab is read-only. Shell reuses the in-chat terminal (`provider: tailcat`). Sagax ships tailcat 0.7.0 beside the app (`dist-native/tailcat`, then the app resources) and in the server image at `/usr/local/bin/tailcat`. Do not tell a bot to install it onto the system PATH. The panel section always renders (empty state when none). A session the bot opened with `remote_support_open` registers itself through `PerspicaxMcp.relay` -> `server/remote-session-register.ts` when the status says connected; its tunnel is in `<data dir>/remote-support/sessions/<CODE>/`, and resolves only for the person and bot named in that folder's `open.json` (the speaker whose Perspicax credentials opened it; never the conversation owner, never the 12-hex id alone). Prendre le contrôle opens the Computer tab in every mode (`startRemoteControl`, `visiblePanelTabs`); the screen stays read-only until live control lands over `RemoteSessionScreen`. Bot guidance (standard rights, three calls, script in the first reply, no jpg, no Preview) lives in the tool descriptions and the `remote-support` guide. See `docs/remote-sessions.md`.
 
+## Switching accounts is instant and never signs out (2026-10-27)
+
+Decision: "passer du compte personnel à un serveur d'organisation, ou d'un
+serveur à un autre, ne doit JAMAIS déconnecter", instant like a chat app's
+workspace switch.
+
+- Desktop: one page per account in the main window
+  (`electron/page-contexts.mjs`). The window's own webContents is the first
+  account's page; each other account (Personal, each saved server) gets a
+  `WebContentsView` laid over it, with the same preload, rules
+  (`wireAccountPage`) and persistent session. A switch shows the page as it
+  was left (conversations, drafts, screen, live stream) and loads nothing;
+  only a specific address (a sign-in, a Settings link) or a data-folder
+  change loads it again (`navigateMainWindow`). Hidden pages are throttled
+  and kept current by their own stream; at most four pages stay open (least
+  recently shown closed first, never the one on screen). The other accounts'
+  pages open hidden a few seconds after launch (`prepareOtherAccounts`).
+- Isolation: each page stays on its own origin, so its cookie, storage and
+  session are its own; a page navigates within its own account only. The
+  bundled-UI handler serves every saved organization server
+  (`bundledOrigins`), and its session rides only with that server's own page
+  (`fromBundledPage`). The desktop-UI channels, the badge, the window title,
+  permissions, floating bots and dialogs answer the page on screen only
+  (`mainPage()`); a hidden account may still notify (a click opens it).
+- Signing out or forgetting an account closes its page only
+  (`pageContexts.drop`); Personal and the other servers stay signed in.
+- An organization server's page opens Personal with `accounts.openPersonal`
+  (BUNDLED_EXTRA, `desktopUiOnly`): never `serverMode.leave`. The page names
+  no destination and is never given the saved-server list.
+- Tests: `electron/page-contexts.node-test.mjs`, `electron/server-mode.node-test.mjs`,
+  `electron/bundled-ui.node-test.mjs`, `src/lib/account-menu.test.ts`; real
+  Electron with timings: `scripts/verify-account-switch.ts`.
+
 ## Never a UUID/GUID on screen (2026-10-19)
 
 Decision: "N'affiche JAMAIS des GUID, on ne comprend rien." Jamais d'UUID/GUID
@@ -2843,14 +2876,17 @@ computer already saved in `environments.json`. The welcome tour and Settings > O
 offer the inherited managed-desktop Admin sign-in. Organization is Perspicax. See
 `docs/self-hosting.md` ("At launch: No server or Server").
 
-Server mode (the launch screen's Server) is exclusive: `serverModeId` in
-`environments.json` (`electron/environments.cjs`) locks the app to that
-organization server. While it is set nothing switches to Local or another
-server (`withActive`, `switchEnvironment`, `requireNotServerMode`), the
-packaged app starts no local server, and the only way out is `leaveServerMode`
-in `electron/main.mjs` (Settings > General > Server > Sign out, Server > Change
-server…), which asks in a native dialog ("Sign out of <name>?"), signs out
-and returns to the launch screen. That Server card names the server's
+Server mode (the launch screen's Server): `serverModeId` in
+`environments.json` (`electron/environments.cjs`) opens the app on that
+organization server. While it is set nothing switches to another saved
+server or a named local environment (`withActive`, `switchEnvironment`,
+`requireNotServerMode`); Personal (this computer's own space) is a switch
+away and never a sign-out (2026-10-27, below). The packaged app starts no
+local server until Personal is first opened (`openPersonalInServerMode`
+starts it in place; `personal: true` then starts it with the app). The only
+way out is `leaveServerMode` in `electron/main.mjs` (Settings > General >
+Server > Sign out, Server > Change server…), which asks in a native dialog
+("Sign out of <name>?"), signs out and returns to the launch screen. That Server card names the server's
 address in bold, the organization and the signed-in person
 (`ServerModeCard`, test `src/components/SettingsModal.serverMode.test.ts`). Tests:
 `electron/server-mode.node-test.mjs`, `electron/environments.node-test.mjs`.

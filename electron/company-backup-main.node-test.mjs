@@ -87,7 +87,10 @@ function fixture() {
       return f.restoreResponse();
     },
   });
-  vm.runInContext(`${functions}\n${registrations}`, context, { filename: "main.mjs (company backup boundary fixture)" });
+  // main.mjs's page on screen (page-contexts.mjs): here the window's own page.
+  const pages = "function mainPage() { return mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null; }\n" +
+    "function localPage() { return mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null; }";
+  vm.runInContext(`${pages}\n${functions}\n${registrations}`, context, { filename: "main.mjs (company backup boundary fixture)" });
   context.ensureManagedDesktop();
   return Object.assign(f, {
     context,

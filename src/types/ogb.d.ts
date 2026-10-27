@@ -152,10 +152,13 @@ const __BASE_VERSION__: string;
         menu: () => Promise<void>;
       };
       /** Server mode (electron/environments.cjs): the organization server
-       * this app is locked to, and leaving it (signs out, back to the launch
-       * screen). This app's own UI only. */
+       * this app opens on, and leaving it (signs out, back to the launch
+       * screen). Switching to Personal is not leaving: see `accounts`. This
+       * app's own UI only. */
       serverMode?: {
-        state: () => Promise<{ active: false } | { active: true; id: string; name: string; origin: string; label?: string; orgName?: string }>;
+        /** `personal`: this is Personal's page while the app is in server
+         * mode (this computer's own space, not the server's). */
+        state: () => Promise<{ active: false; personal?: boolean } | { active: true; id: string; name: string; origin: string; label?: string; orgName?: string }>;
         /** Rename the locked server for this person (`label`; empty clears it) or record the organization name it announced. */
         setName?: (input: { label?: string; orgName?: string }) => Promise<{ ok: boolean }>;
         leave: () => Promise<{ left: boolean }>;
@@ -163,6 +166,12 @@ const __BASE_VERSION__: string;
          * them to the server (electron/desktop-bridge.mjs). Absent on an
          * older desktop. */
         refreshLocalModels?: () => Promise<{ refreshed: boolean }>;
+      };
+      /** An organization server's page (this app's bundle): open Personal,
+       * this computer's own space, at once and still signed in to the server
+       * (electron/page-contexts.mjs). Absent on an older desktop. */
+      accounts?: {
+        openPersonal: () => Promise<void>;
       };
       /** Saved servers and the active one (desktop Server menu). Present on
        * the local server's UI; a remote server's page sees a reduced bridge. */

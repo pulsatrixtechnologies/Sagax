@@ -71,6 +71,27 @@ export function usageLines(
  * account always lists it, even while signed into an organization server. */
 export const PERSONAL_ID = "local";
 
+/** The desktop bridges a switch may use: Personal's page has the saved
+ * servers (`environments`), an organization server's page only opens
+ * Personal (`accounts`). Neither signs anyone out. */
+export interface SwitchBridges {
+  environments?: { switch: (id: string) => Promise<unknown> | unknown };
+  accounts?: { openPersonal: () => Promise<unknown> | unknown };
+}
+
+/**
+ * Switch account › and Switch organization ›: show that account. A switch
+ * is never a sign-out (Sign out is its own item): each account keeps its
+ * session and its page in the desktop, so the switch is at once. From an
+ * organization server's page, Personal opens through the desktop; that page
+ * names no other destination.
+ */
+export function switchAccount(id: string, bridges: SwitchBridges | undefined): Promise<unknown> {
+  if (bridges?.environments?.switch) return Promise.resolve(bridges.environments.switch(id));
+  if (id === PERSONAL_ID && bridges?.accounts?.openPersonal) return Promise.resolve(bridges.accounts.openPersonal());
+  return Promise.resolve();
+}
+
 /** The name shown for a server: the one the person gave it, else the
  * organization name it announced, else its host (the saved name). */
 export function serverDisplayName(entry: { name: string; label?: string | null; orgName?: string | null }): string {

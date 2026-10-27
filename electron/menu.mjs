@@ -23,12 +23,14 @@ export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFr
   const isMac = process.platform === "darwin";
   const active = environments.find((e) => e.id === activeId) ?? null;
   const locked = serverModeId ? environments.find((e) => e.id === serverModeId) ?? null : null;
-  // Server mode is exclusive: the organization's server only, no Local, no
-  // other saved server, no way to add one. Leaving signs out of it.
+  // Server mode: the organization's server and this computer's own space
+  // (Personal), switched at once without signing out; no other saved server
+  // and no way to add one. Change server… signs out of it.
   const server = locked ? {
     label: "Server",
     submenu: [
-      { label: `${locked.name} — ${new URL(locked.origin).host}`, type: "radio", checked: true },
+      { label: "This computer", type: "radio", checked: activeId !== locked.id, click: () => onSwitch("local") },
+      { label: `${locked.name} — ${new URL(locked.origin).host}`, type: "radio", checked: activeId === locked.id, click: () => onSwitch(locked.id) },
       { type: "separator" },
       { label: "Change server…", click: () => onLeaveServerMode?.() },
     ],

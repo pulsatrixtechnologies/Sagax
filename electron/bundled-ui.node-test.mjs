@@ -126,6 +126,37 @@ test("the API passes through with the session; a write from the bundled page car
   assert.deepEqual(other.init, { bypassCustomProtocolHandlers: true });
 });
 
+test("every saved organization server is drawn from the bundle, and each one's session rides with its own page only", async () => {
+  const OTHER = "https://other-org.example.test";
+  assert.equal(ui.bundledOriginFor([ORG, OTHER], `${OTHER}/pair`), OTHER);
+  assert.equal(ui.bundledOriginFor([ORG, OTHER], "https://cdn.example.test/x.png"), null);
+  assert.equal(ui.bundledOriginFor(ORG, `${ORG}/`), ORG);
+  assert.equal(ui.bundledOriginFor(null, `${ORG}/`), null);
+  const fetched = [];
+  const dir = bundleDir();
+  const handle = ui.createBundledUiHandler({
+    origin: () => [ORG, OTHER],
+    staticDir: () => dir,
+    fetch: async (input, init) => { fetched.push({ url: typeof input === "string" ? input : input.url, init }); return new Response("{}"); },
+    readFile: async (file) => readFileSync(file),
+  });
+  // both servers' pages come from this app's bundle (a page kept open while another is on screen)
+  for (const origin of [ORG, OTHER]) {
+    const page = await handle(request(`${origin}/`));
+    assert.match(await page.text(), /DESKTOP BUNDLE/);
+  }
+  assert.equal(fetched.length, 0, "no page request reached either server");
+  // each server's own page carries its session to it; the other server's page never does
+  await handle(request(`${OTHER}/api/bots`, { referrer: `${OTHER}/` }));
+  await handle(request(`${OTHER}/api/bots`, { method: "POST", body: "{}", referrer: `${ORG}/` }));
+  await handle(request(`${ORG}/api/auth/session`, { referrer: `${OTHER}/` }));
+  const [own, crossWrite, crossRead] = fetched;
+  assert.equal(own.init.credentials, "include");
+  assert.equal(crossWrite.init.credentials, "omit", "one organization's page never writes with another's session");
+  assert.equal(crossWrite.init.headers.get("origin"), null);
+  assert.equal(crossRead.init.credentials, "omit", "nor reads with it");
+});
+
 test("in development the bundle comes from Vite", async () => {
   const fetched = [];
   const handle = ui.createBundledUiHandler({
@@ -228,12 +259,16 @@ test("the bundled organization page gets localModels (keyBases/setKey/clearKey) 
 
 test("a CRLF checkout of main.mjs still matches the bundled-ui wiring", () => {
   const crlf = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8")).replace(/\n/g, "\r\n");
-  assert.match(sourceText(crlf), /function syncBundledUi\(\) \{\n  const origin = bundledOrigin\(environmentsState\);/);
+  assert.match(sourceText(crlf), /function syncBundledUi\(\) \{\n  const origins = bundledOrigins\(environmentsState\);/);
 });
 
-test("main draws the bundle only for the active organization server and trusts it for the desktop-UI channels", () => {
+test("main draws the bundle for every saved organization server, and trusts the one on screen for the desktop-UI channels", () => {
   const main = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8"));
-  assert.match(main, /function syncBundledUi\(\) \{\n  const origin = bundledOrigin\(environmentsState\);/);
+  // each organization server keeps its page open (page-contexts.mjs): the handler serves them all
+  assert.match(main, /function syncBundledUi\(\) \{\n  const origins = bundledOrigins\(environmentsState\);/);
+  assert.match(main, /origin: \(\) => bundledOriginsNow,/);
+  // the desktop-UI bridge answers the active one only
+  assert.match(main, /currentBundledOrigin = active && bundledOriginsNow\.includes\(active\) \? active : null;\n  setBundledOrigin\(currentBundledOrigin\);/);
   assert.match(main, /environmentsState = next;\n  syncBundledUi\(\);/, "every saved change re-syncs the handler");
   assert.match(main, /environmentsState = readEnvironments\(\);\n  syncBundledUi\(\);/, "and the first read at launch");
   // floating bots, Hibou 98, the Data window and a popped-out artifact's own
@@ -244,5 +279,7 @@ test("main draws the bundle only for the active organization server and trusts i
     assert.match(call.slice(0, call.indexOf("\n});")), /isTrustedMain: \(event\) => isDesktopUiSender\(event\)/, `${factory} trusts the desktop UI only`);
   }
   assert.match(main, /ipcMain\.on\("workspace:bundled-ui"/);
-  assert.match(main, /event\.senderFrame === win\.webContents\.mainFrame/);
+  // the bundled page's bridge: an account's page of the main window, its top frame, on its own server's origin
+  assert.match(main, /const own = isMainWindowPage\(event\.sender\) \? pageContexts\?\.originOf\(event\.sender\) : null;/);
+  assert.match(main, /bundled = Boolean\(own && bundledOriginsNow\.includes\(own\) && event\.senderFrame === event\.sender\.mainFrame &&/);
 });

@@ -24,6 +24,8 @@ function fixture(response = 0) {
     mainWindow, rendererOrigin: () => ORIGIN, environmentsState: { activeId: "local", environments: [] },
     dialog: { showMessageBox: async (...args) => { calls.push(args); return { response }; } },
   });
+  // main.mjs's page on screen (page-contexts.mjs): here the window's own page.
+  context.mainPage = () => (context.mainWindow && !context.mainWindow.isDestroyed() ? context.mainWindow.webContents : null);
   vm.runInContext(section("const workspaceOnly =", 'ipcMain.handle("organization:settings-opened"')
     + section('ipcMain.handle("dialog:confirm"', "// Server mode: the page asks"), context);
   return { confirm: handlers.get("dialog:confirm"), calls, mainWindow, context, event: { sender: contents, senderFrame: frame } };
@@ -56,7 +58,8 @@ test("invalid messages and closed windows fail closed without opening a dialog",
   const f = fixture();
   for (const message of [null, {}, "", " ", "x".repeat(4097)]) assert.equal(await f.confirm(f.event, message), false);
   f.mainWindow.isDestroyed = () => true;
-  assert.equal(await f.confirm(f.event, "Delete?"), false);
+  // a closed window has no page on screen: refused (an error or false), never a dialog
+  assert.equal(await Promise.resolve().then(() => f.confirm(f.event, "Delete?")).catch(() => false), false);
   assert.equal(f.calls.length, 0);
 });
 

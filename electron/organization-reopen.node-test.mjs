@@ -55,6 +55,8 @@ function main() {
     mainWindow: { webContents: contents }, rendererOrigin: () => ORIGIN, environmentsState: { environments: [], activeId: "local" },
     ensureManagedDesktop: () => client, organizationEntry: {},
   });
+  // main.mjs's page on screen (page-contexts.mjs): here the window's own page.
+  context.mainPage = () => context.mainWindow?.webContents ?? null;
   vm.runInContext(registrations, context, { filename: "main.mjs (organization IPC fixture)" });
   return { handlers, calls, context, event: { sender: contents, senderFrame: frame } };
 }

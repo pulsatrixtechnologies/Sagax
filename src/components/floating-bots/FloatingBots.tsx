@@ -660,6 +660,17 @@ export function FloatingBots() {
   });
 
   const floatedKey = floated.map(({ entry }) => `${entry.id}:${entry.top}`).join("|");
+  // Back on screen after a switch to another account, whose page closed the
+  // windows: open the floated bots again and send them their state.
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    if (!bridge?.onShown) return;
+    return bridge.onShown(() => {
+      opened.current.clear();
+      sent.current.clear();
+      setShown((n) => n + 1);
+    });
+  }, [bridge]);
   useEffect(() => {
     if (!bridge) return;
     const wanted = new Map(floated.map(({ entry }) => [entry.id, entry.top] as const));
@@ -675,7 +686,7 @@ export function FloatingBots() {
       void bridge.close(id).catch(() => undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, floatedKey]);
+  }, [bridge, floatedKey, shown]);
 
   // Close them all when the brain goes away (the app page reloads or unmounts this).
   // Forget what was sent too: a window opened again (React mounts twice in
