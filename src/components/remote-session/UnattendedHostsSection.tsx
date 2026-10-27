@@ -4,7 +4,7 @@
 // control flow) and "Revoke". The open button is behind
 // SAGAX_UNATTENDED_ACCESS; Revoke always shows (M2). No host id on screen:
 // the readable name, the id only in a tooltip and the Copy action.
-import { useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Copy, KeyRound, Monitor, ShieldOff } from "lucide-react";
 
 import {
@@ -12,7 +12,9 @@ import {
   canRevokeUnattendedHost,
   type UnattendedHostRow,
 } from "../../../shared/remote-unattended-host";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { cn } from "@/lib/cn";
+import { copyText } from "@/lib/copy-text";
 import { activeLocale, t } from "@/lib/i18n";
 import {
   openUnattendedHost,
@@ -67,7 +69,7 @@ export function UnattendedHostsSection({ state, onOpened }: {
     reload();
   };
   const copy = (row: UnattendedHostRow) => {
-    void navigator.clipboard?.writeText(row.hostId).catch(() => {});
+    void copyText(row.hostId);
   };
 
   return (
@@ -135,7 +137,7 @@ export function UnattendedHostsSection({ state, onOpened }: {
         </div>
       )}
       {confirmRevoke && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+        <RevokeDialog onClose={() => setConfirmRevoke(null)}>
           <div className="w-full max-w-sm rounded-2xl border border-hairline/60 bg-panel p-5 shadow-xl">
             <h2 className="text-[14px] font-medium text-ink">{t("remoteSessionsAdmin.hosts.revokeTitle", { host: unattendedHostLabel(confirmRevoke) })}</h2>
             <p className="mt-2 text-[13px] text-ink-secondary">{t("remoteSessionsAdmin.hosts.revokeBody")}</p>
@@ -156,8 +158,19 @@ export function UnattendedHostsSection({ state, onOpened }: {
               <button type="button" data-unattended-host-revoke-confirm="" onClick={() => void revoke(confirmRevoke)} className="rounded-lg bg-danger px-3 py-1 text-[13px] text-white hover:opacity-90">{t("remoteSessionsAdmin.hosts.revoke")}</button>
             </div>
           </div>
-        </div>
+        </RevokeDialog>
       )}
     </section>
+  );
+}
+
+/** The revoke confirmation: a modal dialog, so Escape closes it and focus stays inside. */
+function RevokeDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, onClose);
+  return (
+    <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 outline-none" role="dialog" aria-modal="true">
+      {children}
+    </div>
   );
 }
