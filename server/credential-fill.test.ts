@@ -514,7 +514,8 @@ describe("fill_credential through the browser runtime", () => {
     const site = engine("https://example.test/login", { otherTab: "https://other.test/" });
     // No grant yet: the script runs, guarded by the origin it was recorded on.
     expect((await call(runtime, "s3", site.spec, "agent_browser_eval", { script: "document.title" }, access("bot-b", "t9"))).isError).toBeUndefined();
-    expect(site.calls().filter((entry) => entry.startsWith("eval:")).at(-1)).toContain('if (location.origin !== "https://example.test")');
+    // The last eval is the runtime's own read of the sensitive fields; the bot's is before it.
+    expect(site.calls().filter((entry) => entry.startsWith("eval:") && !entry.includes("data-sagax-sensitive")).at(-1)).toContain('if (location.origin !== "https://example.test")');
     vault.grant(LOCAL_VAULT_PRINCIPAL, item.id, { botId: "bot-a", mode: "once", threadId: "t1" });
     const fresh = engine("https://example.test/login");
     expect((await call(runtime, "s4", fresh.spec, "fill_credential", { credential: handle, field: "password" }, access("bot-a", "t1"))).isError).toBeUndefined();

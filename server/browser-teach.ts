@@ -57,7 +57,7 @@ export function teachDescribeScript(point?: { x: number; y: number }): string {
   if (!name) name = el.getAttribute('alt') || el.getAttribute('title') || el.getAttribute('placeholder') || '';
   if (!name && (role === 'button' || role === 'link' || role === 'tab' || role === 'menuitem' || role === 'option' || role === 'heading' || tag === 'label')) name = text(el);
   if (!name && tag === 'input' && (type === 'submit' || type === 'button' || type === 'reset')) name = el.getAttribute('value') || '';
-  return JSON.stringify({ ...base, tag, role, name: String(name).slice(0, 300), type, autocomplete: el.getAttribute('autocomplete') || '', fieldName: el.getAttribute('name') || '', fieldId: el.id || '' });
+  return JSON.stringify({ ...base, tag, role, name: String(name).slice(0, 300), type, autocomplete: el.getAttribute('autocomplete') || '', fieldName: el.getAttribute('name') || '', fieldId: el.id || '', sensitive: el.getAttribute('data-sensitive') });
 })()`;
 }
 
@@ -77,7 +77,7 @@ export function parseDescribedElement(result: unknown): DescribedElement | null 
   return {
     url: sanitizeTeachUrl(record.url),
     ...(target ? { target } : {}),
-    field: target ? { tag: str("tag", 20), type: str("type", 40), autocomplete: str("autocomplete", 200), fieldName: str("fieldName", 200), fieldId: str("fieldId", 200), name: target.name } : null,
+    field: target ? { tag: str("tag", 20), type: str("type", 40), autocomplete: str("autocomplete", 200), fieldName: str("fieldName", 200), fieldId: str("fieldId", 200), name: target.name, ...(typeof record.sensitive === "string" ? { sensitive: record.sensitive.slice(0, 40) } : {}) } : null,
   };
 }
 

@@ -5758,6 +5758,33 @@ telemetry. Keep these rules, each covered by a test:
   host outside its reviewed allowlist; `server/no-phone-home.e2e.test.ts`
   audits a server start and a chat turn.
 
+## Sensitive fields masked from the bot (2026-10-26)
+
+A sensitive field's value never reaches a model, whoever typed it: the
+person during a takeover, the bot, the site or the vault. One rule,
+`shared/sensitive-fields.ts`: `input type=password`; an input, textarea or
+select whose `autocomplete` has `current-password`, `new-password`,
+`one-time-code` or any `cc-*` token; any element marked `data-sensitive`
+(any value but `"false"`, which never makes a password ordinary); and a
+field already seen sensitive (`data-sagax-sensitive`, so a "show password"
+toggle keeps it hidden). Teach by demonstration uses the same rule
+(`isSecretField`). `server/browser-runtime.ts` reads what those fields hold
+(`SENSITIVE_VALUES_SCRIPT`, in the page, its open shadow roots and
+same-origin frames) after every tool whose answer can carry page text
+(snapshot, read, get_text, eval, open and any unknown tool; not
+`NO_PAGE_TEXT_TOOLS`), and in the page observation a click, fill or type
+already makes (`withSensitiveValues`, no extra call); the values go to
+`SecretRedactor.rememberSensitive`, which replaces them in every later
+result with `[sensitive field]` (8 characters or more: with their pieces;
+shorter: whole, for 5 minutes after last seen). A screenshot is taken with
+those fields drawn as discs (`MASK_SENSITIVE_SCRIPT`, a style and
+`data-sagax-masked`), then the page is put back (`UNMASK_SENSITIVE_SCRIPT`).
+Nothing writes a field's value: the page and its forms keep the real one.
+Out of reach: a cross-origin frame (a payment widget's own frame), pixels
+of a desktop computer, and the live view and preview frames, which only the
+person sees. Tests: `shared/sensitive-fields.test.ts`,
+`server/browser-runtime.sensitive.test.ts`.
+
 ## Credential vault and secure form fill (2026-10-16)
 
 Settings > Credentials (`src/components/settings/CredentialsSettings.tsx`)

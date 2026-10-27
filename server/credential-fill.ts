@@ -25,6 +25,7 @@ import {
   isVaultFillField,
   type VaultFillField,
 } from "../shared/credential-vault.ts";
+import { SENSITIVE_FIELD_MARKER } from "../shared/sensitive-fields.ts";
 
 export const FILL_CREDENTIAL_TOOL = "fill_credential";
 /** field "login": a whole sign-in, step by step (server/login-fill.ts). */
@@ -310,6 +311,9 @@ export function problemText(problem: string, field: VaultFillField): string {
 const MIN_REDACT_LENGTH = 4;
 const MIN_PIECE_LENGTH = 6;
 const SHORT_LIVED_MS = 5 * 60_000;
+/** A sensitive-field value this long is a secret whose pieces are hidden
+ * too; a shorter one (a code, an expiry, a security code) only whole. */
+const MIN_SENSITIVE_PIECES_LENGTH = 8;
 
 function htmlEntities(value: string, hex: boolean): string {
   return [...value].map((char) => hex ? `&#x${char.codePointAt(0)!.toString(16)};` : `&#${char.codePointAt(0)};`).join("");
@@ -407,6 +411,12 @@ export class SecretRedactor {
   private readonly raw = new Map<string, string[]>();
   /** Origins where the bot ran its own script in this browser session. */
   private readonly scripted = new Map<string, Set<string>>();
+  /** The marker a value is replaced with when it is not a vault value
+   * (SENSITIVE_FIELD_MARKER for what a sensitive field held). */
+  private readonly markers = new Map<string, Map<string, string>>();
+  /** Long sensitive-field values already learned, so a read of the same
+   * page does not rebuild their pieces. */
+  private readonly sensitive = new Map<string, Set<string>>();
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -416,11 +426,24 @@ export class SecretRedactor {
   /** pieces: also every part of four characters or more (a secret such as
    * a password, an API key or a code; not a user name, whose parts are
    * ordinary words and domains). */
-  remember(session: string, value: string, options: { shortLived?: boolean; pieces?: boolean; caseless?: boolean } = {}): void {
+  remember(session: string, value: string, options: { shortLived?: boolean; pieces?: boolean; caseless?: boolean; marker?: string } = {}): void {
     if (!value) return;
-    let values = this.sessions.get(session);
-    if (!values) this.sessions.set(session, values = new Map());
+    let stored = this.sessions.get(session);
+    if (!stored) this.sessions.set(session, stored = new Map());
+    let markers = this.markers.get(session);
+    if (options.marker && !markers) this.markers.set(session, markers = new Map());
     const until = options.shortLived ? this.now() + SHORT_LIVED_MS : Number.POSITIVE_INFINITY;
+    // A value keeps the longest life it was given, and a vault value keeps
+    // its own marker when a sensitive field holds it too.
+    const store = stored;
+    const values = {
+      set: (key: string, life: number) => {
+        const known = store.get(key);
+        if (options.marker && (known === undefined || markers!.has(key))) markers!.set(key, options.marker);
+        else if (!options.marker) markers?.delete(key);
+        store.set(key, Math.max(known ?? Number.NEGATIVE_INFINITY, life));
+      },
+    };
     let raw = this.raw.get(session);
     if (!raw) this.raw.set(session, raw = []);
     const known = raw.slice(-8);
@@ -491,7 +514,26 @@ export class SecretRedactor {
     return (this.scripted.get(session)?.size ?? 0) > 0;
   }
 
+  /** What a sensitive field of the page holds (shared/sensitive-fields.ts),
+   * typed by the person, the bot or the site: hidden from every later result
+   * as SENSITIVE_FIELD_MARKER. A long value (a password, a card number) is
+   * kept with its pieces, like a filled secret; a short one (a code, an
+   * expiry) only whole and for SHORT_LIVED_MS after it was last seen. */
+  rememberSensitive(session: string, value: string): void {
+    if (!value) return;
+    const long = [...value].length >= MIN_SENSITIVE_PIECES_LENGTH;
+    if (long) {
+      let known = this.sensitive.get(session);
+      if (!known) this.sensitive.set(session, known = new Set());
+      if (known.has(value)) return;
+      known.add(value);
+    }
+    this.remember(session, value, { pieces: long, shortLived: !long, marker: SENSITIVE_FIELD_MARKER });
+  }
+
   forget(session: string): void {
+    this.markers.delete(session);
+    this.sensitive.delete(session);
     this.sessions.delete(session);
     this.tainted.delete(session);
     this.raw.delete(session);
@@ -503,7 +545,7 @@ export class SecretRedactor {
     const values = this.sessions.get(session);
     if (!values?.size) return null;
     const now = this.now();
-    for (const [value, until] of values) if (until <= now) values.delete(value);
+    for (const [value, until] of values) if (until <= now) { values.delete(value); this.markers.get(session)?.delete(value); }
     if (!values.size) return null;
     const sorted = [...values.keys()].sort((left, right) => right.length - left.length);
     // A short value (a 3-letter user name) is hidden only as a whole word,
@@ -517,13 +559,14 @@ export class SecretRedactor {
     return new RegExp([...parts, "[\u2022\u25CF]{2,}"].join("|"), "gu");
   }
 
-  private replace(text: string, pattern: RegExp): string {
-    return text.replace(pattern, (match) => /^[\u2022\u25CF]+$/u.test(match) ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : REDACTED_CREDENTIAL);
+  private replace(session: string, text: string, pattern: RegExp): string {
+    const markers = this.markers.get(session);
+    return text.replace(pattern, (match) => /^[\u2022\u25CF]+$/u.test(match) ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : markers?.get(match) ?? REDACTED_CREDENTIAL);
   }
 
   redactText(session: string, text: string): string {
     const pattern = this.pattern(session);
-    return pattern ? this.replace(text, pattern) : text;
+    return pattern ? this.replace(session, text, pattern) : text;
   }
 
   /** Every string inside a tool result (text parts, structured content). */
@@ -531,7 +574,7 @@ export class SecretRedactor {
     const pattern = this.pattern(session);
     if (!pattern) return value;
     const walk = (node: unknown, depth: number): unknown => {
-      if (typeof node === "string") return this.replace(node, pattern);
+      if (typeof node === "string") return this.replace(session, node, pattern);
       if (depth > 32 || !node || typeof node !== "object") return node;
       if (Array.isArray(node)) return node.map((item) => walk(item, depth + 1));
       return Object.fromEntries(Object.entries(node).map(([key, item]) => [key, key === "data" && (node as { type?: unknown }).type === "image" ? item : walk(item, depth + 1)]));
