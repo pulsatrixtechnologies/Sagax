@@ -168,9 +168,10 @@ function OwnerRuleInset({ rule }: { rule: NonNullable<OptionCardData["ruleSaved"
 }
 
 /** The tool's own name is noise to a human: Bash is "run a command",
- * mcp__perspicax_pulsatrix_flow_jc__cw_psa_schedule__query is "view the
- * schedule in ConnectWise PSA". `input` (the card's JSON arguments) lets a
- * generic tool (cw_psa__write) say what it writes. */
+ * mcp__perspicax_example_flow__acme_desk__query_schedule is "view the
+ * schedule in Acme Desk" (the product the server declared). `input` (the
+ * card's JSON arguments) lets a generic tool (acme_desk__write) say what it
+ * writes. */
 export function toolLabel(tool?: string, input?: string, hints?: ToolHints): string {
   if (!tool) return t("approval.tool.takeAction");
   const nice: ToolLabels = {
@@ -231,7 +232,7 @@ export function toolApprovalView(card: OptionCardData, botName?: string): ToolAp
   // the engine's own `<server>__<tool>` when `tool` is only a kind ("other")
   const tool = card.mcpTool ?? card.tool;
   const described = describeApproval(tool, input, card.toolHints);
-  // "Allow Quasar to view the schedule in ConnectWise PSA?" and one plain
+  // "Allow Quasar to view the schedule in Acme Desk?" and one plain
   // line: the same generator the server uses for the push
   // (shared/approval-describe.ts), in this app's language.
   const words = approvalPlain({ botName, tool, toolInput: input, detail: card.subtitle, hints: card.toolHints });

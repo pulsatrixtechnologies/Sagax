@@ -260,6 +260,8 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     /// The product this tool serves, as the connector or the server declared
     /// it at run time (shared/wire.ts `tool.product`); the step row names it.
     public var product: String? = nil
+    /// The id the tool's name starts with for that product, declared with it.
+    public var productId: String? = nil
 
     public init(name: String, ok: Bool? = nil, spoken: String? = nil, setup: Bool? = nil, claudeUpdate: Bool? = nil, output: String? = nil, summary: String? = nil, widget: CwWidget? = nil) {
         self.name = name
@@ -273,7 +275,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product
+        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId
     }
 
     public init(from decoder: Decoder) throws {
@@ -288,6 +290,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         input = try? box.decodeIfPresent(String.self, forKey: .input)
         durationMs = try? box.decodeIfPresent(Double.self, forKey: .durationMs)
         product = try? box.decodeIfPresent(String.self, forKey: .product)
+        productId = try? box.decodeIfPresent(String.self, forKey: .productId)
         do {
             widget = try box.decodeIfPresent(CwWidget.self, forKey: .widget)
         } catch {
@@ -308,6 +311,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         try box.encodeIfPresent(input, forKey: .input)
         try box.encodeIfPresent(durationMs, forKey: .durationMs)
         try box.encodeIfPresent(product, forKey: .product)
+        try box.encodeIfPresent(productId, forKey: .productId)
     }
 
     /// The output worth expanding the chip for; nil when there is none.

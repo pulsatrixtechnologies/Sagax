@@ -49,7 +49,7 @@ function stopWords(text: string): string[] {
 
 /** The whole utterance is a stop ("stop", "arrête ça", "ok stop", "stop
  * please", with at most two filler or polite words), never a request that
- * starts with the word: "Stop le service CrowdStrike sur SRV-01" is work
+ * starts with the word: "Stop le service AcmeGuard sur SRV-01" is work
  * to do, not a stop. */
 export function isStopUtterance(text: string): boolean {
   const words = stopWords(text);

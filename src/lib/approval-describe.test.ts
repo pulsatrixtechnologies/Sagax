@@ -10,7 +10,7 @@ import {
   riskFor,
 } from "./approval-describe";
 
-// ConnectWise sends UTC; the summary reads in the viewer's zone (ET here).
+// The service desk sends UTC; the summary reads in the viewer's zone (ET here).
 beforeAll(() => {
   process.env.TZ = "America/Toronto";
 });
@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 const NOW = new Date(2026, 9, 2, 12);
-const SCREENSHOT_TOOL = "mcp__perspicax_pulsatrix_flow_jc__cw_psa_schedule__query";
+const SCREENSHOT_TOOL = "mcp__perspicax_example_flow__acme_desk__query_schedule";
 const scheduleArgs = JSON.stringify({
   conditions: "member/identifier='amartin' and dateStart >= [2026-10-02T04:00:00Z] and dateStart < [2026-10-04T04:00:00Z]",
   fields: "id,dateStart,dateEnd,member/identifier",
@@ -28,19 +28,22 @@ const scheduleArgs = JSON.stringify({
 
 describe("parseToolId", () => {
   it("keeps underscores inside the server id and double underscores inside the tool", () => {
-    expect(parseToolId(SCREENSHOT_TOOL)).toEqual({ server: "perspicax_pulsatrix_flow_jc", name: "cw_psa_schedule__query" });
+    expect(parseToolId(SCREENSHOT_TOOL)).toEqual({ server: "perspicax_example_flow", name: "acme_desk__query_schedule" });
     expect(parseToolId("mcp__ogb__computer_batch")).toEqual({ server: "ogb", name: "computer_batch" });
     expect(parseToolId("Bash")).toEqual({ name: "Bash" });
   });
 });
 
 describe("productFor", () => {
-  it("names the product from the tool prefix, else the server", () => {
-    expect(productFor(parseToolId(SCREENSHOT_TOOL)).product).toBe("ConnectWise PSA");
-    expect(productFor(parseToolId("mcp__claude_ai_Connectwise_PSA__api_search")).product).toBe("ConnectWise PSA");
+  it("names the product the server declared, else the tool prefix, else the server", () => {
+    expect(productFor(parseToolId(SCREENSHOT_TOOL)).product).toBe("Acme Desk");
+    expect(productFor(parseToolId("mcp__claude_ai_Acme_Desk__api_search")).product).toBe("Acme Desk");
     expect(productFor(parseToolId("mcp__claude_ai_Microsoft_365__outlook_email_search")).product).toBe("Microsoft 365");
     expect(productFor(parseToolId("mcp__unifi_network__list_sites")).product).toBe("Unifi Network");
     expect(productFor(parseToolId("mcp__ogb__computer_batch")).product).toBeUndefined();
+    // the server declared the product and its id: the name is the server's
+    expect(productFor(parseToolId("mcp__gw__acme_desk_ticket_get"), { product: "AcmeDesk Pro", productId: "acme_desk" })).toEqual({ product: "AcmeDesk Pro", prefixTokens: 2 });
+    expect(productFor(parseToolId("mcp__gw__acme_desk__query"), { product: "AcmeDesk Pro" }).product).toBe("AcmeDesk Pro");
   });
 });
 
@@ -49,11 +52,11 @@ describe("describeApproval titles", () => {
     setLocale("fr");
     const described = describeApproval(SCREENSHOT_TOOL, scheduleArgs, undefined, NOW);
     expect(described.action).toBe("consulter l'horaire");
-    expect(described.product).toBe("ConnectWise PSA");
+    expect(described.product).toBe("Acme Desk");
     expect(described.risk).toBe("read");
     // 04:00Z is local midnight: the exclusive end means through Oct 3
     expect(described.summary).toBe("amartin, 2 oct. au 3 oct.");
-    expect(described.server).toBe("perspicax_pulsatrix_flow_jc");
+    expect(described.server).toBe("perspicax_example_flow");
     expect(described.argsJson).toContain('\n  "conditions": ');
   });
 
@@ -66,7 +69,7 @@ describe("describeApproval titles", () => {
   it("takes a generic write's operation and resource from its arguments", () => {
     setLocale("fr");
     const args = JSON.stringify({ resource: "time/entries", operation: "create", body: { chargeToId: 287826, member: { identifier: "amartin" }, timeStart: "2026-10-02T13:00:00Z" } });
-    const described = describeApproval("mcp__perspicax_pulsatrix_flow_jc__cw_psa__write", args, undefined, NOW);
+    const described = describeApproval("mcp__perspicax_example_flow__acme_desk__write", args, undefined, NOW);
     expect(described.action).toBe("créer une saisie de temps");
     expect(described.risk).toBe("write");
     expect(described.summary).toBe("amartin, #287826, 2 oct.");
@@ -74,12 +77,12 @@ describe("describeApproval titles", () => {
 
   it("maps verbs to read, change, delete and run", () => {
     const cases: Array<[string, string | undefined, string, string]> = [
-      ["mcp__claude_ai_Connectwise_PSA__cw_psa__query", JSON.stringify({ resource: "service/tickets" }), "view tickets", "read"],
-      ["mcp__pulsatrix__cw_psa_tickets__update", undefined, "change tickets", "write"],
-      ["mcp__pulsatrix__cw_psa__write", JSON.stringify({ resource: "companies", method: "DELETE" }), "delete companies", "destructive"],
-      ["mcp__pulsatrix__cw_psa__action", JSON.stringify({ action: "isolate" }), "run the isolate action", "execute"],
+      ["mcp__claude_ai_Acme_Desk__acme_desk__query", JSON.stringify({ resource: "service/tickets" }), "view tickets", "read"],
+      ["mcp__pulsatrix__acme_desk__tickets_update", undefined, "change tickets", "write"],
+      ["mcp__pulsatrix__acme_desk__write", JSON.stringify({ resource: "companies", method: "DELETE" }), "delete companies", "destructive"],
+      ["mcp__pulsatrix__acme_desk__action", JSON.stringify({ action: "isolate" }), "run the isolate action", "execute"],
       ["mcp__unifi__list_sites", undefined, "view sites", "read"],
-      ["mcp__pulsatrix__cw_psa__action", undefined, "run an action", "execute"],
+      ["mcp__pulsatrix__acme_desk__action", undefined, "run an action", "execute"],
     ];
     for (const [tool, args, action, risk] of cases) {
       const described = describeApproval(tool, args, undefined, NOW);

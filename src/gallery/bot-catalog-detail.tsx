@@ -84,7 +84,7 @@ const full: CatalogDetailContent = {
   memories: ["Le client Alpha préfère les courriels le matin.", "Les billets critiques passent par le 2e niveau."],
   skills: [{ name: "resume-billets", description: "Résume les billets ouverts" }, { name: "relance", description: "" }],
   routines: [{ name: "Ronde du matin", schedule: "Tous les jours à 8 h", enabled: true }, { name: "Rapport hebdo", schedule: "Le vendredi à 16 h", enabled: false }],
-  integrations: [{ name: "connectwise", kind: "mcp" }, { name: "Outlook", kind: "app" }, { name: "browser", kind: "browser" }],
+  integrations: [{ name: "acme-desk", kind: "mcp" }, { name: "Outlook", kind: "app" }, { name: "browser", kind: "browser" }],
 };
 const empty: CatalogDetailContent = { soul: "", memories: [], skills: [], routines: [], integrations: [] };
 const content = params.get("empty") ? empty : params.get("private") ? { ...full, memories: null } : full;

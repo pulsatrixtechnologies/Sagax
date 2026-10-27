@@ -52,7 +52,7 @@ extension ConnectApps {
     ]
 
     /// A server or plugin name as people say it: "github-github" is
-    /// "GitHub", "twilio-docs" is "Twilio Docs", "linear-mcp" is "Linear".
+    /// "GitHub", "acme-docs" is "Acme Docs", "linear-mcp" is "Linear".
     public static func readableName(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return name }

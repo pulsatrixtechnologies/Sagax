@@ -1018,9 +1018,9 @@ final class VoiceModeClientTests: XCTestCase {
     }
 
     func testTheCallsStartBringsBackTheKeyterms() async throws {
-        VoiceStub.body = Data(#"{"ok":true,"keyterms":["Quasar","  ServiceNow ","servicenow","","CrowdStrike"]}"#.utf8)
+        VoiceStub.body = Data(#"{"ok":true,"keyterms":["Quasar","  ServiceNow ","servicenow","","AcmeGuard"]}"#.utf8)
         let terms = await client.voiceCallStart(botId: "ara", callId: "call-12345678", threadId: "th-1", language: "fr")
-        XCTAssertEqual(terms, ["Quasar", "ServiceNow", "CrowdStrike"])
+        XCTAssertEqual(terms, ["Quasar", "ServiceNow", "AcmeGuard"])
         let (request, body) = try XCTUnwrap(VoiceStub.requests.last)
         XCTAssertEqual(request.url?.path, "/api/bots/ara/voice/call")
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(body)) as? [String: Any])

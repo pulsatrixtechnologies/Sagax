@@ -36,7 +36,7 @@ describe("approvalPlain", () => {
     expect(isolate.title).not.toMatch(/run a command/);
   });
   it("reads an MCP tool behind Grok's mcp__ prefix", () => {
-    expect(parseToolId("mcp__perspicax__cw_psa__query")).toMatchObject({ server: "perspicax" });
+    expect(parseToolId("mcp__perspicax__acme_desk__query")).toMatchObject({ server: "perspicax" });
   });
   it("falls back to a plain line when there is nothing readable", () => {
     const plain = approvalPlain({ botName: "Nib", tool: "other", detail: "{}" });

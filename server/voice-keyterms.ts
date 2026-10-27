@@ -4,7 +4,7 @@
 // characters each) on both the streaming socket and POST /v1/stt
 // (https://docs.x.ai/developers/model-capabilities/audio/speech-to-text).
 // Without them a bot called "Nova" is heard as "critique", a client's
-// name as two common words and "CrowdStrike" as "crowd strike". The terms
+// name as two common words and "AcmeGuard" as "acme guard". The terms
 // come from what the call is about: the bot, the person, the other bots,
 // the organization's own list (SAGAX_VOICE_KEYTERMS) and the proper nouns
 // of the thread's recent messages. Names only, and nothing is stored: a
@@ -39,7 +39,7 @@ const COMMON = new Set(
 );
 
 /** A run of capitalized words ("Marie Tremblay", "Microsoft 365"), a mixed
- * case word ("CrowdStrike", "iCloud", "macOS"), or an acronym ("ACME", "CW"). */
+ * case word ("AcmeGuard", "iCloud", "macOS"), or an acronym ("ACME", "CW"). */
 const NAME = /(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{N}'’&-]*(?:[ \t]+(?:\p{Lu}[\p{L}\p{N}'’&-]*|\p{N}+))*/gu;
 const MIXED = /\b\p{Ll}+\p{Lu}[\p{L}\p{N}]*\b/gu;
 const SENTENCE_START = /(?:^|[.!?:;\n]\s*|["«(]\s*)$/u;

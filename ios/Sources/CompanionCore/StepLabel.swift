@@ -231,8 +231,6 @@ public enum StepLabel {
     /// Servers that are Sagax itself: their tools name no product.
     private static let internalPrefix = StepRegex.make(#"^(?:mcp__)?(?:agents|sagax|sagax-[a-z-]+|maus|ogb|harness)(?:__|_|\.)"#, [.caseInsensitive])
 
-    /// A gateway tool's inner product prefix (`<product>__query`).
-    private static let gatewayTool = StepRegex.make(#"^([a-z0-9][a-z0-9_-]*?)__(.+)$"#, [.caseInsensitive])
 
     static let targetMax = 80
 
@@ -351,35 +349,20 @@ public enum StepLabel {
         }
     }
 
-    /// A gateway tool (`<gateway>__<product>__query`) read as its
-    /// product's own: the reading sees `mcp__<gateway>__query`. The product
-    /// is the name the server declared for the tool, else the prefix's words
-    /// titled (`acme_desk` reads "Acme Desk"). A prefix the shared reading
-    /// already knows keeps its own reading.
-    static func productTool(_ name: String, declared: String? = nil) -> (tool: String, product: String?) {
-        let trimmed = declared?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let declared: String? = trimmed.isEmpty ? nil : trimmed
-        let parsed = parseToolId(name)
-        guard let server = parsed.server else { return (name, declared) }
-        let whole = NSRange(parsed.name.startIndex..., in: parsed.name)
-        guard ApprovalReading.productFor(server: nil, name: parsed.name).product == nil,
-              let match = gatewayTool.firstMatch(in: parsed.name, range: whole),
-              let slug = Range(match.range(at: 1), in: parsed.name),
-              let rest = Range(match.range(at: 2), in: parsed.name) else { return (name, declared) }
-        return ("mcp__\(server)__\(parsed.name[rest])", declared ?? ApprovalReading.titleCase(String(parsed.name[slug])))
-    }
-
     static func capitalize(_ text: String) -> String {
         guard let first = text.first else { return text }
         return String(first).uppercased(with: nil) + text.dropFirst()
     }
 
-    static func mcpLabel(name: String, input: String?, phase: StepPhase, words: StepWords, product declared: String? = nil) -> StepReading? {
+    static func mcpLabel(name: String, input: String?, phase: StepPhase, words: StepWords, product declared: String? = nil, productId: String? = nil) -> StepReading? {
         let parsed = parseToolId(name)
         guard let server = parsed.server else { return nil }
-        let (described, override) = productTool(name, declared: declared)
+        // a gateway tool (`<gateway>__<product>__query`) reads as its
+        // product's own, named as the server declared it
+        let trimmed = declared?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let override: String? = trimmed.isEmpty ? nil : trimmed
         // the approval reads "view tickets"; a step reads "Viewed tickets"
-        let reading = ApprovalReading.describe(described, input: input, words: words, verb: { key, vars in
+        let reading = ApprovalReading.describe(name, input: input, words: words, product: override, productId: productId, verb: { key, vars in
             if key.hasPrefix("approval.verb.") {
                 return words.t("step.verb.\(key.dropFirst("approval.verb.".count)).\(phase.rawValue)", vars)
             }
@@ -463,7 +446,7 @@ public enum StepLabel {
         case let .admin(action, server, query)?:
             return gatewayLabel(action, server: server, query: query, phase: phase, words: words)
         case let .tool(_, _, id, args)?:
-            if let named = mcpLabel(name: id, input: args, phase: phase, words: words, product: tool.product) { return named }
+            if let named = mcpLabel(name: id, input: args, phase: phase, words: words, product: tool.product, productId: tool.productId) { return named }
         case nil:
             break
         }
@@ -471,7 +454,7 @@ public enum StepLabel {
         if let kind = kindOf(name) {
             return StepReading(label: kindLabel(kind, phase, args, nameOf: nameOf, words: words), target: kindTarget(kind, args, tool))
         }
-        if let mcp = mcpLabel(name: name, input: tool.input ?? tool.summary, phase: phase, words: words, product: tool.product) { return mcp }
+        if let mcp = mcpLabel(name: name, input: tool.input ?? tool.summary, phase: phase, words: words, product: tool.product, productId: tool.productId) { return mcp }
         let display = name.replacingOccurrences(of: #"_+"#, with: " ", options: .regularExpression)
         var summary: String?
         if let text = tool.summary, text != tool.name, text.trimmingCharacters(in: .whitespaces).range(of: #"^[\[{]"#, options: .regularExpression) == nil {

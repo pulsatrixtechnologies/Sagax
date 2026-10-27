@@ -62,7 +62,7 @@ describe("a tool step row", () => {
 });
 
 describe("a group of steps", () => {
-  const steps = [step("a", "Read", 1_000), step("b", "Bash", 2_000), step("c", "mcp__x__cw_psa__find_tickets", 3_000)];
+  const steps = [step("a", "Read", 1_000), step("b", "Bash", 2_000), step("c", "mcp__x__acme_desk__find_tickets", 3_000)];
   const renderStep = (message: Message) => createElement(ToolActivity, { tool: message.tool! });
   const renderMessage = (message: Message) => createElement("p", null, message.text);
 
@@ -80,7 +80,7 @@ describe("a group of steps", () => {
     expect([...rows].map((entry) => entry.querySelector("[data-step-label]")?.textContent)).toEqual([
       "Read a file",
       "Ran a command",
-      "Viewed tickets in ConnectWise PSA",
+      "Viewed tickets in Acme Desk",
     ]);
   });
 
@@ -90,7 +90,7 @@ describe("a group of steps", () => {
   });
 
   it("keeps failures out of the folded line, shows them once open, and merges the same step repeated", () => {
-    const tickets = JSON.stringify({ server: "pulsatrix-psa", tool: "cw_psa__query", args: { resource: "service.tickets" } });
+    const tickets = JSON.stringify({ server: "pulsatrix-psa", tool: "acme_desk__query", args: { resource: "service.tickets" } });
     const failed = (id: string): Message => ({ id, role: "bot", kind: "activity", at: 1, tool: { name: "mcp", ok: false, input: tickets } });
     const done = (id: string): Message => ({ id, role: "bot", kind: "activity", at: 1, tool: { name: "mcp", ok: true, input: tickets } });
     const node = mount(createElement(ActivityRun, { messages: [done("1"), failed("2"), failed("3"), failed("4"), done("5")], renderStep }));
@@ -105,9 +105,9 @@ describe("a group of steps", () => {
     const labels = [...node.querySelectorAll("[data-step-detail] > div > [data-step-row] > button [data-step-label], [data-step-detail] > div > .contents > [data-step-row] > button [data-step-label]")]
       .map((label) => label.textContent);
     expect(labels).toEqual([
-      "Viewed tickets in ConnectWise PSA",
-      "Could not use ConnectWise PSA ×3",
-      "Viewed tickets in ConnectWise PSA",
+      "Viewed tickets in Acme Desk",
+      "Could not use Acme Desk ×3",
+      "Viewed tickets in Acme Desk",
     ]);
     // the merged row opens to each call, each with its own detail
     click(node.querySelector('[data-testid="activity-run-repeat"] button'));

@@ -13,7 +13,7 @@ beforeAll(() => {
 });
 afterEach(() => setLocale("en"));
 
-const TOOL = "mcp__perspicax_pulsatrix_flow_jc__cw_psa_schedule__query";
+const TOOL = "mcp__perspicax_example_flow__acme_desk__query_schedule";
 const ARGS = JSON.stringify({
   conditions: "member/identifier='amartin' and dateStart >= [2026-10-02T04:00:00Z] and dateStart < [2026-10-04T04:00:00Z]",
   orderBy: "dateStart asc",
@@ -50,7 +50,7 @@ describe("human approval card", () => {
     setLocale("fr");
     const [pending] = pendingApprovals([ask("a", TOOL, ARGS)]);
     const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: pending!, count: 1, index: 0, bot }));
-    expect(html).toContain("Quasar veut consulter l&#x27;horaire dans ConnectWise PSA");
+    expect(html).toContain("Quasar veut consulter l&#x27;horaire dans Acme Desk");
     expect(html).toContain("amartin");
     expect(html).toContain("Lecture seule");
     expect(html).not.toContain(TOOL);
@@ -77,7 +77,7 @@ describe("human approval card", () => {
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot, message }));
     expect(html).toContain('data-testid="approval-receipt"');
     expect(html).toContain("Allowed once");
-    expect(html).toContain("View the schedule in ConnectWise PSA");
+    expect(html).toContain("View the schedule in Acme Desk");
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("conditions");
   });
@@ -111,15 +111,15 @@ describe("risk chips", () => {
 
 describe("technical details toggle", () => {
   it("is collapsed by default and shows tool, server and colored JSON when open", () => {
-    const closed = renderToStaticMarkup(createElement(TechnicalDetails, { tool: TOOL, server: "perspicax_pulsatrix_flow_jc", args: ARGS }));
+    const closed = renderToStaticMarkup(createElement(TechnicalDetails, { tool: TOOL, server: "perspicax_example_flow", args: ARGS }));
     expect(closed).toContain("View the full request");
     expect(closed).toContain('data-technical-details="closed"');
     expect(closed).not.toContain(TOOL);
 
-    const open = renderToStaticMarkup(createElement(TechnicalDetails, { tool: TOOL, server: "perspicax_pulsatrix_flow_jc", args: ARGS, defaultOpen: true }));
+    const open = renderToStaticMarkup(createElement(TechnicalDetails, { tool: TOOL, server: "perspicax_example_flow", args: ARGS, defaultOpen: true }));
     expect(open).toContain("Hide the full request");
     expect(open).toContain(TOOL);
-    expect(open).toContain("perspicax_pulsatrix_flow_jc");
+    expect(open).toContain("perspicax_example_flow");
     expect(open).toContain('<span class="text-accent">&quot;conditions&quot;</span>');
     expect(open).toContain("Copy");
   });
@@ -134,15 +134,15 @@ describe("technical details toggle", () => {
 describe("composer panel and stepper", () => {
   const messages = [
     ask("a", TOOL, ARGS),
-    ask("b", "mcp__perspicax_pulsatrix_flow_jc__cw_psa__write", JSON.stringify({ resource: "time/entries", operation: "create" })),
-    ask("c", "mcp__claude_ai_Connectwise_PSA__cw_psa__query", JSON.stringify({ resource: "tickets" })),
+    ask("b", "mcp__perspicax_example_flow__acme_desk__write", JSON.stringify({ resource: "time/entries", operation: "create" })),
+    ask("c", "mcp__claude_ai_Acme_Desk__acme_desk__query", JSON.stringify({ resource: "tickets" })),
   ];
 
   it("shows one request with a 1 of 3 stepper and the details collapsed", () => {
     setLocale("fr");
     const approvals = pendingApprovals(messages);
     const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: approvals[0]!, count: 3, index: 0, bot, onNext: () => {} }));
-    expect(html).toContain("Quasar veut consulter l&#x27;horaire dans ConnectWise PSA");
+    expect(html).toContain("Quasar veut consulter l&#x27;horaire dans Acme Desk");
     expect(html).toContain("1 sur 3");
     expect(html).toContain('aria-label="Demande précédente"');
     // 2026-10-20 (JC): the details are folded under one short line
@@ -179,7 +179,7 @@ describe("composer panel and stepper", () => {
   it("speaks the summary, never the raw JSON", () => {
     const [pending] = pendingApprovals([messages[0]!]);
     const spoken = spokenApprovalPrompt(pending!, "Quasar");
-    expect(spoken).toContain("Quasar wants to view the schedule in ConnectWise PSA");
+    expect(spoken).toContain("Quasar wants to view the schedule in Acme Desk");
     expect(spoken).toContain("amartin");
     expect(spoken).not.toContain("conditions");
   });

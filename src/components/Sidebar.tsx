@@ -1976,7 +1976,7 @@ export function BotListItem({
   // the visible branch, so a version switch changes the row with the chat
   const visible = useVisibleMessages(bot);
   // The role (Bot settings > Title) is the pill beside the name, as Grok
-  // Bot draws it ("ConnectWise Ops & MS 365").
+  // Bot draws it ("Service Desk Ops").
   const title = bot.title.trim();
   const unreadThreads = !iconOnly && showThreads ? sidebarUnreadThreads(bot, selected ? bot.threadId : null) : [];
   const rowClass = cn(

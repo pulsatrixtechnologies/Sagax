@@ -35,7 +35,7 @@ describe("voice topics", () => {
       expect(classifyVoiceIntent(text), text).toBe("stop");
     }
     for (const text of [
-      "Stop le service CrowdStrike sur SRV-01",
+      "Stop le service AcmeGuard sur SRV-01",
       "stop the print spooler on the server",
       "arrête le service de backup sur le serveur",
       "cancel the meeting with Max",

@@ -128,10 +128,10 @@ describe("Grok voice", () => {
 
   it("voice mode: sends keyterms before the file, which xAI needs last", async () => {
     const grok = await import("./grok.ts");
-    await grok.transcribe(new Uint8Array([82, 73, 70, 70]), "audio/wav", "fixture-xai-key", "fr", ["Quasar", "CrowdStrike"]);
+    await grok.transcribe(new Uint8Array([82, 73, 70, 70]), "audio/wav", "fixture-xai-key", "fr", ["Quasar", "AcmeGuard"]);
     const body = seen[0]?.body ?? "";
     expect(body.match(/name="keyterm"/g)).toHaveLength(2);
-    expect(body).toContain("CrowdStrike");
+    expect(body).toContain("AcmeGuard");
     const file = body.indexOf('name="file"');
     expect(file).toBeGreaterThan(body.lastIndexOf('name="keyterm"'));
     expect(file).toBeGreaterThan(body.indexOf('name="language"'));
