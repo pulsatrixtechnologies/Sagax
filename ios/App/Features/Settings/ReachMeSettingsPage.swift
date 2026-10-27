@@ -254,7 +254,10 @@ struct ReachMeSettingsPage: View {
         case .sms: return String(localized: "From your Perspicax Voice line to your own verified number. Reply with the code.")
         case .teams: return String(localized: "In your own Teams chat, through your engine's connector. Your reply is read for 40 minutes.")
         case .telegram: return String(localized: "With your own Telegram bot, made with BotFather.")
-        case .whatsapp: return String(localized: "Coming later.")
+        case .whatsapp:
+            return view.offers(.whatsapp)
+                ? String(localized: "With your own WhatsApp Business number. Reply with the code.")
+                : String(localized: "Coming later.")
         }
     }
 
@@ -275,9 +278,9 @@ struct ReachMeSettingsPage: View {
             SettingsRow(title: label(id), subtitle: help(id, draft.view),
                         accessory: .toggle(Binding(get: { on }, set: { value in model.edit { $0.set(id, on: value) } })),
                         identifier: "reach-me-\(id.rawValue)")
-                .disabled(!id.wired || model.busy)
-                .opacity(id.wired ? 1 : 0.55)
-            if on, !status.ready, status.reason != nil, id != .telegram {
+                .disabled(!draft.view.offers(id) || model.busy)
+                .opacity(draft.view.offers(id) ? 1 : 0.55)
+            if on, !status.ready, status.reason != nil, id != .telegram, id != .whatsapp {
                 note(notReady(id), color: Theme.warning)
                     .accessibilityIdentifier("reach-me-\(id.rawValue)-not-ready")
             }
@@ -292,6 +295,7 @@ struct ReachMeSettingsPage: View {
                 }
             }
             if on, id == .telegram { telegram(status) }
+            if on, id == .whatsapp { whatsApp(status) }
         }
     }
 
@@ -342,6 +346,38 @@ struct ReachMeSettingsPage: View {
             .padding(.horizontal, SettingsMetrics.rowInset)
             .padding(.bottom, 12)
         }
+    }
+
+    /// WhatsApp (#1247): its state as the server says; connecting the
+    /// business number stays on the computer (the bot page).
+    @ViewBuilder private func whatsApp(_ status: ReachChannelView) -> some View {
+        let name = status.verifiedName ?? status.displayNumber ?? ""
+        VStack(alignment: .leading, spacing: 8) {
+            if status.connected == true {
+                Text("\(name) connected.").foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("reach-me-whatsapp-connected")
+                if !status.ready, let reason = status.reason {
+                    Text(verbatim: reason).foregroundStyle(Theme.warning)
+                }
+            } else if status.linking == true {
+                Text("Send the code from your WhatsApp to finish.").foregroundStyle(Theme.textSecondary)
+                if let link = status.whatsAppLink {
+                    Link(destination: link) {
+                        Text("Open WhatsApp").fontWeight(.medium).foregroundStyle(Theme.blue)
+                    }
+                    .accessibilityIdentifier("reach-me-whatsapp-open")
+                }
+            } else {
+                Text("Connect your WhatsApp Business number on your computer: the bot's page, Reach me.")
+                    .foregroundStyle(Theme.warning)
+                    .accessibilityIdentifier("reach-me-whatsapp-connect-on-computer")
+            }
+        }
+        .font(Theme.Font.label)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SettingsMetrics.rowInset)
+        .padding(.bottom, 12)
     }
 
     // MARK: Hours

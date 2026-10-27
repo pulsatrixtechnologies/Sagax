@@ -225,6 +225,27 @@ final class ReachMeTests: XCTestCase {
         XCTAssertEqual(clean.settings.channels, ["push"], "no edit: the server's answer")
     }
 
+    func testWhatsAppFollowsTheServersAnswer() throws {
+        // an older server: "comes later", never turned on
+        let older = try decode(#"{"settings":{"channels":["push"]},"channels":{"whatsapp":{"ready":false,"reason":"WhatsApp comes later."}}}"#)
+        XCTAssertFalse(older.offers(.whatsapp))
+        var draft = ReachMeDraft(older)
+        draft.set(.whatsapp, on: true)
+        XCTAssertFalse(draft.isOn(.whatsapp))
+        // a server that wires it (#1247): offered, even before it is connected
+        let wired = try decode(#"{"settings":{"channels":["push"]},"channels":{"whatsapp":{"ready":false,"webhookPublic":true,"linking":false}}}"#)
+        XCTAssertTrue(wired.offers(.whatsapp))
+        draft = ReachMeDraft(wired)
+        draft.set(.whatsapp, on: true)
+        XCTAssertTrue(draft.isOn(.whatsapp))
+        XCTAssertEqual(try draft.payload().get().channels, ["push", "whatsapp"])
+        let linking = try decode(#"{"settings":{"channels":["whatsapp"]},"channels":{"whatsapp":{"ready":false,"linking":true,"displayNumber":"+1 555-010-0000","verifiedName":"Example Shop","linkUrl":"https://wa.me/15550100000?text=SAGAX%20K7Q2WX"}}}"#)
+        XCTAssertEqual(linking.channel(.whatsapp).whatsAppLink?.host, "wa.me")
+        XCTAssertEqual(linking.channel(.whatsapp).verifiedName, "Example Shop")
+        XCTAssertNil(ReachChannelView(linkUrl: "https://example.com/x").whatsAppLink)
+        XCTAssertTrue(try decode(#"{"settings":{"channels":[]},"channels":{"whatsapp":{"ready":true,"connected":true}}}"#).offers(.whatsapp))
+    }
+
     // MARK: Calls
 
     private var session: URLSession!

@@ -1,6 +1,34 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "With your own WhatsApp Business number. Reply with the code.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "With your own WhatsApp Business number. Reply with the code." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Avec votre propre numéro WhatsApp Business. Répondez avec le code." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Com o seu próprio número do WhatsApp Business. Responda com o código." } }
+      }
+    },
+    "Send the code from your WhatsApp to finish.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Send the code from your WhatsApp to finish." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Envoyez le code depuis votre WhatsApp pour terminer." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Envie o código pelo seu WhatsApp para concluir." } }
+      }
+    },
+    "Open WhatsApp": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open WhatsApp" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir WhatsApp" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir o WhatsApp" } }
+      }
+    },
+    "Connect your WhatsApp Business number on your computer: the bot's page, Reach me.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect your WhatsApp Business number on your computer: the bot's page, Reach me." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Branchez votre numéro WhatsApp Business sur votre ordinateur : page du bot, Me joindre." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Conecte o seu número do WhatsApp Business no computador: página do bot, Fale comigo." } }
+      }
+    },
     "Reach me": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Reach me" } },

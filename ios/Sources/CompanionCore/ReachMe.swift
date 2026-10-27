@@ -18,7 +18,8 @@ import Foundation
 public enum ReachChannelID: String, CaseIterable, Codable, Hashable, Sendable {
     case push, sms, teams, telegram, whatsapp
 
-    /// The channels wired today (`REACH_WIRED`).
+    /// Wired on every server that has the setting. WhatsApp depends on the
+    /// server (#1247): `ReachMeView.offers` reads its answer.
     public var wired: Bool { self != .whatsapp }
 }
 
@@ -118,18 +119,32 @@ public struct ReachChannelView: Codable, Equatable, Hashable, Sendable {
     public var connected: Bool?
     public var username: String?
     /// Telegram: a token is saved and waits for Start in the chat.
+    /// WhatsApp: the number is saved and waits for the code from the person's phone.
     public var linking: Bool?
+    /// WhatsApp (#1247): the server can receive its replies. Present only on
+    /// a server that wires WhatsApp; an older one answers "comes later".
+    public var webhookPublic: Bool?
+    /// WhatsApp: the business number and its verified name (what the
+    /// person connected, never an id), and the wa.me link to send the code.
+    public var displayNumber: String?
+    public var verifiedName: String?
+    public var linkUrl: String?
 
-    public init(ready: Bool = false, reason: String? = nil, devices: Int? = nil, connected: Bool? = nil, username: String? = nil, linking: Bool? = nil) {
+    public init(ready: Bool = false, reason: String? = nil, devices: Int? = nil, connected: Bool? = nil, username: String? = nil, linking: Bool? = nil,
+                webhookPublic: Bool? = nil, displayNumber: String? = nil, verifiedName: String? = nil, linkUrl: String? = nil) {
         self.ready = ready
         self.reason = reason
         self.devices = devices
         self.connected = connected
         self.username = username
         self.linking = linking
+        self.webhookPublic = webhookPublic
+        self.displayNumber = displayNumber
+        self.verifiedName = verifiedName
+        self.linkUrl = linkUrl
     }
 
-    private enum Keys: String, CodingKey { case ready, reason, devices, connected, username, linking }
+    private enum Keys: String, CodingKey { case ready, reason, devices, connected, username, linking, webhookPublic, displayNumber, verifiedName, linkUrl }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -139,6 +154,24 @@ public struct ReachChannelView: Codable, Equatable, Hashable, Sendable {
         connected = try? c.decodeIfPresent(Bool.self, forKey: .connected)
         username = try? c.decodeIfPresent(String.self, forKey: .username)
         linking = try? c.decodeIfPresent(Bool.self, forKey: .linking)
+        webhookPublic = try? c.decodeIfPresent(Bool.self, forKey: .webhookPublic)
+        displayNumber = try? c.decodeIfPresent(String.self, forKey: .displayNumber)
+        verifiedName = try? c.decodeIfPresent(String.self, forKey: .verifiedName)
+        linkUrl = try? c.decodeIfPresent(String.self, forKey: .linkUrl)
+    }
+
+    /// WhatsApp's answer comes from a server that wires it: its own fields,
+    /// or ready. An older server's "comes later" has none of them.
+    var wiresWhatsApp: Bool {
+        ready || webhookPublic != nil || connected != nil || linking != nil || displayNumber != nil
+    }
+
+    /// The wa.me link that sends the code, only when it is one.
+    public var whatsAppLink: URL? {
+        guard let linkUrl, let url = URL(string: linkUrl), url.scheme == "https",
+              let host = url.host?.lowercased(), host == "wa.me" || host == "api.whatsapp.com"
+        else { return nil }
+        return url
     }
 }
 
@@ -159,6 +192,10 @@ public struct ReachMeView: Decodable, Equatable, Sendable {
     }
 
     public func channel(_ id: ReachChannelID) -> ReachChannelView { channels[id] ?? ReachChannelView() }
+
+    /// Whether this server sends through the channel: WhatsApp as its
+    /// answer says (#1247), the others always.
+    public func offers(_ id: ReachChannelID) -> Bool { id.wired || channel(id).wiresWhatsApp }
 
     private enum Keys: String, CodingKey { case saved, settings, channels, link }
 
@@ -255,11 +292,11 @@ public struct ReachMeDraft: Equatable, Sendable {
 
     public mutating func cancel() { self = ReachMeDraft(view) }
 
-    public func isOn(_ channel: ReachChannelID) -> Bool { channel.wired && settings.has(channel) }
+    public func isOn(_ channel: ReachChannelID) -> Bool { view.offers(channel) && settings.has(channel) }
 
-    /// WhatsApp waits: it cannot be turned on.
+    /// WhatsApp on a server that does not wire it yet waits: it cannot be turned on.
     public mutating func set(_ channel: ReachChannelID, on: Bool) {
-        guard channel.wired else { return }
+        guard view.offers(channel) else { return }
         settings.channels.removeAll { $0 == channel.rawValue }
         if on { settings.channels.append(channel.rawValue) }
     }
