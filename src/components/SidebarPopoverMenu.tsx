@@ -383,7 +383,7 @@ export function SidebarPopoverMenu({
                               entry.rename?.onRename();
                               close();
                             }}
-                            className="absolute right-8 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-ink-tertiary opacity-50 hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus group-hover/entry:opacity-100"
+                            className="absolute right-8 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-ink-tertiary opacity-50 hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus group-hover/entry:opacity-100 touch:opacity-100"
                           >
                             <Pencil size={13} aria-hidden="true" />
                           </button>
