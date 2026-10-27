@@ -720,17 +720,18 @@ public struct BotTask: Codable, Hashable, Sendable {
     public var archivedAt: Double?
     /// Bot-only internal execution. Keep it addressable, but out of thread pickers.
     public var routineRunId: String?
-    /// An AI client's own conversation with this bot (#291): reachable from
-    /// a link or the bot's activity, never in the list, previews, unread or
-    /// notifications.
+    /// An AI client's own conversation with this bot (#291, #1170): listed
+    /// so the owner can open, rename or archive it. Never a preview, an
+    /// unread badge or a notification.
     public var hidden: Bool? = nil
     /// An automatic "<routine> · Results" thread (2026-10-22): a routine's
     /// reports now go to the person's own conversation, so this old thread is
     /// kept but never listed, previewed or counted unread.
     public var routineResults: Bool? = nil
-    /// Out of the person's thread list: a routine run's execution, an
-    /// automatic routine results thread or an AI client's hidden conversation.
-    public var isHiddenFromPerson: Bool { routineRunId != nil || routineResults == true || hidden == true }
+    /// Out of the person's thread list: a routine run's execution or an
+    /// automatic routine results thread. An AI client's hidden conversation
+    /// stays in the list (#1170).
+    public var isHiddenFromPerson: Bool { routineRunId != nil || routineResults == true }
     /// A confidential thread ("Fil confidentiel"): never remembered,
     /// exported or shared beyond its owner. Permanent once set; only
     /// deleting the thread ends it. Absent means an ordinary thread.
@@ -1018,8 +1019,21 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     }
 
     /// Routine runs' executions and automatic results threads are hidden.
+    /// AI client and bot-to-bot conversations stay, so the owner can open them.
     public var visibleTasks: [BotTask] {
         (tasks ?? []).filter { !$0.isHiddenFromPerson }
+    }
+
+    /// Conversations to list when threads are off: an AI client's hidden
+    /// thread, or one another bot opened. Ordinary topics stay in the
+    /// single stream.
+    public var agentConversations: [BotTask] {
+        (tasks ?? []).filter { task in
+            guard task.archivedAt == nil, task.routineRunId == nil, task.routineResults != true else { return false }
+            if task.hidden == true { return true }
+            if let opener = task.openedBy?.botId, opener != id { return true }
+            return false
+        }
     }
 
     /// Older computers only send the profile default. Newer ones snapshot
@@ -2112,7 +2126,7 @@ public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
 public enum RoutineResultsDestination: Hashable, Sendable {
     /// "Keep current destination": the field is left out.
     case keep
-    /// "Create a dedicated results thread": null.
+    /// "The bot's main thread": null, which the server reads as that conversation.
     case newThread
     /// An existing conversation of the bot.
     case thread(String)

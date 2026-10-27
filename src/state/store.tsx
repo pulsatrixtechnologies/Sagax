@@ -483,8 +483,8 @@ export interface Task {
   /** An automatic "<routine> · Results" thread: listed with threads shown,
    * never a stream segment, a row under the bot or a dot (2026-10-22). */
   routineResults?: true;
-  /** An AI client's hidden conversation (#291): the server lists it only
-   * while it is the open thread; never a dot, a preview or typing dots. */
+  /** An AI client's conversation (#291, #1170): listed so the owner can
+   * open, rename or archive it. Never a dot, a preview or typing dots. */
   hidden?: true;
   /** A confidential thread (src/lib/confidential-thread.ts): never
    * remembered, exported or shared beyond its owner. Permanent once set. */

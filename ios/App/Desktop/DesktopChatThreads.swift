@@ -13,6 +13,8 @@ struct DesktopThreadPickerButton: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: DesktopShellModel
     let bot: Bot
+    /// Threads off: only AI client and bot-to-bot conversations (#1170).
+    var agentsOnly: Bool = false
     @Binding var open: Bool
 
     static let messagesSquare = [
@@ -36,7 +38,7 @@ struct DesktopThreadPickerButton: View {
             if open {
                 // `absolute right-0 top-full mt-1`: hung from a zero-high
                 // frame on the button's top edge, 40 pt down
-                DesktopThreadPickerCard(bot: bot, close: { open = false })
+                DesktopThreadPickerCard(bot: bot, agentsOnly: agentsOnly, close: { open = false })
                     .frame(width: 300)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(height: 0, alignment: .top)
@@ -53,13 +55,14 @@ struct DesktopThreadPickerCard: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: DesktopShellModel
     let bot: Bot
+    var agentsOnly: Bool = false
     let close: () -> Void
     @State private var query = ""
     @FocusState private var searching: Bool
 
     var body: some View {
         let live = session.state.bot(bot.id) ?? bot
-        let tasks = live.threadGroups(matching: query, queuedThreadIds: session.state.queuedThreadIds).flatMap(\.tasks)
+        let tasks = pickerTasks(of: live)
         VStack(alignment: .leading, spacing: 0) {
             search.padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
             ScrollView {
@@ -78,6 +81,7 @@ struct DesktopThreadPickerCard: View {
             }
             .frame(maxHeight: 320)
             .fixedSize(horizontal: false, vertical: tasks.count < 6)
+            if !agentsOnly {
             Button {
                 close()
                 Task {
@@ -98,6 +102,7 @@ struct DesktopThreadPickerCard: View {
             .overlay(alignment: .top) { Rectangle().fill(theme.hairline.opacity(0.4)).frame(height: 1) }
             .padding(.top, 4)
             .accessibilityIdentifier("desktop-thread-picker-new")
+            }
         }
         .padding(.vertical, 4)
         .padding(1)
@@ -107,6 +112,18 @@ struct DesktopThreadPickerCard: View {
         .shadow(color: .black.opacity(0.5), radius: 25, y: 25)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desktop-thread-picker-card")
+    }
+
+    /// Threads on: every conversation the header already lists. Threads off:
+    /// only the agent conversations the owner can still open or archive.
+    private func pickerTasks(of live: Bot) -> [BotTask] {
+        if agentsOnly {
+            let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            return live.agentConversations.filter { task in
+                needle.isEmpty || task.displayTitle.localizedStandardContains(needle)
+            }
+        }
+        return live.threadGroups(matching: query, queuedThreadIds: session.state.queuedThreadIds).flatMap(\.tasks)
     }
 
     private var search: some View {
@@ -121,7 +138,7 @@ struct DesktopThreadPickerCard: View {
                 .focused($searching)
                 .onSubmit {
                     let live = session.state.bot(bot.id) ?? bot
-                    if let first = live.threadGroups(matching: query, queuedThreadIds: session.state.queuedThreadIds).flatMap(\.tasks).first,
+                    if let first = pickerTasks(of: live).first,
                        let projected = live.projected(forThread: first.threadId) {
                         model.open(.bot(projected))
                     }

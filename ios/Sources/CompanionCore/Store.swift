@@ -255,7 +255,7 @@ public struct CompanionState: Sendable {
     public var unreadCount: Int {
         let botCount = bots.filter { $0.hidden != true }.reduce(0) { count, bot in
             if bot.tasks?.contains(where: { $0.unread != nil }) == true {
-                return count + bot.visibleTasks.filter { $0.unread == true }.count
+                return count + bot.visibleTasks.filter { $0.unread == true && $0.hidden != true }.count
             }
             // Legacy computers omit task unread flags entirely. Do not
             // invent individual unread threads from their aggregate flag.

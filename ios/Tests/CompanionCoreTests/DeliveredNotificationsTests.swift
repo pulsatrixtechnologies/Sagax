@@ -34,13 +34,19 @@ final class DeliveredNotificationsTests: XCTestCase {
         XCTAssertEqual(payload?.threadId, "t1")
     }
 
-    func testHiddenConversationsStayOutOfTheListAndBadge() {
+    /// #1170: an AI client's conversation is listed so the owner can open or
+    /// archive it. It is not a badge and not an attention row.
+    func testHiddenConversationsAreListedButNeverABadgeOrAttention() {
         var hidden = task("h", unread: true)
         hidden.hidden = true
         let alpha = bot("a", tasks: [task("t"), hidden])
-        XCTAssertEqual(alpha.visibleTasks.map(\.threadId), ["t"])
+        XCTAssertEqual(alpha.visibleTasks.map(\.threadId), ["t", "h"])
+        XCTAssertEqual(alpha.agentConversations.map(\.threadId), ["h"])
         XCTAssertTrue(alpha.attentionTasks().isEmpty)
-        XCTAssertTrue(hidden.isHiddenFromPerson)
+        XCTAssertFalse(hidden.isHiddenFromPerson)
+        var state = CompanionState()
+        state.bots = [alpha]
+        XCTAssertEqual(state.unreadCount, 0)
     }
 
     /// 2026-10-22 (JC): a routine's automatic results thread is no row, no

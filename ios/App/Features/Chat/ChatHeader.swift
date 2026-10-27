@@ -72,8 +72,14 @@ extension ChatView {
     /// off (TestFlight 79, 2026-10-26): no button, the single stream is
     /// all there is. Nil below two threads.
     var headerThreadCount: Int? {
-        guard case let .bot(bot) = current, threadPrefs.threads.allows(.headerButton) else { return nil }
+        guard case let .bot(bot) = current else { return nil }
         let live = session.state.bot(bot.id) ?? bot
+        // Threads off is one conversation, except agent threads the owner
+        // still has to open or close (#1170).
+        if !threadPrefs.threads.allows(.headerButton) {
+            let agents = live.agentConversations.count
+            return agents > 0 ? agents : nil
+        }
         let count = live.threadGroups(queuedThreadIds: session.state.queuedThreadIds).reduce(0) { $0 + $1.tasks.count }
         return threadPrefs.threads.headerButtonCount(threadCount: count)
     }
@@ -85,7 +91,7 @@ extension ChatView {
         let live = session.state.bot(bot.id) ?? bot
         let queued = session.state.queuedThreadIds
         return (live.tasks ?? []).filter { task in
-            task.threadId != threadId && !task.isHiddenFromPerson && (task.unread == true || task.busy == true
+            task.threadId != threadId && !task.isHiddenFromPerson && task.hidden != true && (task.unread == true || task.busy == true
                 || task.activity == "working" || task.activity == "waiting-on-you" || queued.contains(task.threadId))
         }.count
     }

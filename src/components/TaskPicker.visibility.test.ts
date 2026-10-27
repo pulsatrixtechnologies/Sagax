@@ -67,6 +67,34 @@ describe("optional bot thread picker", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
+  it("with threads on lists an agent conversation beside the person's own", () => {
+    fixture.showThreads = true;
+    const pepper: Bot = { ...bot, tasks: [...bot.tasks!,
+      { threadId: "ai", title: "AI client", createdAt: 9, hidden: true }] };
+    const markup = renderToStaticMarkup(createElement(TaskPicker, { bot: pepper, initialOpen: true }));
+    expect(markup).toContain("AI client");
+    expect(markup).toContain("Current chat");
+    expect(markup).toContain("New thread");
+  });
+
+  it("with threads off lists agent conversations the owner can archive", () => {
+    fixture.showThreads = false;
+    const pepper: Bot = { ...bot, tasks: [...bot.tasks!,
+      { threadId: "ai", title: "AI client", createdAt: 9, hidden: true },
+      { threadId: "peer-opened", title: "@Talon · work", createdAt: 7, openedBy: { botId: "talon", name: "Talon", at: 7 } },
+      { threadId: "old-agent", title: "Old client", createdAt: 8, hidden: true, archivedAt: 9 },
+      { threadId: "results", title: "Nightly · Results", createdAt: 10, routineResults: true }] };
+    const markup = renderToStaticMarkup(createElement(TaskPicker, { bot: pepper, initialOpen: true }));
+    expect(markup).toContain("AI client");
+    expect(markup).toContain("@Talon · work");
+    expect(markup).toContain('aria-label="Actions for AI client"');
+    expect(markup).not.toContain("Quiet history");
+    expect(markup).not.toContain("Current chat");
+    expect(markup).not.toContain("Old client");
+    expect(markup).not.toContain("Nightly · Results");
+    expect(markup).not.toContain("New thread");
+  });
+
   it("selects the exact sibling without creating or stopping work", () => {
     fixture.showThreads = false;
     const picker = BotActivityPicker({ bot });

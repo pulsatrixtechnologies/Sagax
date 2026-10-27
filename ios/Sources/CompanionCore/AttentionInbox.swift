@@ -53,7 +53,7 @@ extension Bot {
     public func attentionTasks() -> [BotTask] {
         let candidates: [BotTask]
         if let tasks {
-            candidates = tasks.filter { !$0.isHiddenFromPerson }
+            candidates = tasks.filter { !$0.isHiddenFromPerson && $0.hidden != true }
         } else {
             candidates = [BotTask(
                 threadId: threadId, title: "", createdAt: 0,

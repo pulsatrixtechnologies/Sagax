@@ -6,6 +6,9 @@ import CompanionCore
 struct TaskManagerView: View {
     @Environment(\.themePalette) var themePalette
     let chat: Chat
+    /// Threads off: only AI client and bot-to-bot conversations, no New
+    /// thread and no folders (#1170).
+    var agentsOnly: Bool = false
     var onSelectThread: (String) -> Void = { _ in }
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -35,8 +38,18 @@ struct TaskManagerView: View {
     private var tasks: [BotTask] {
         switch current {
         case let .bot(bot):
+            if agentsOnly { return agentRows(of: bot, matching: "") }
             return bot.threadGroups(includingClosed: true, queuedThreadIds: session.state.queuedThreadIds).flatMap(\.tasks)
         case let .room(room): return threadsInListOrder(room.tasks ?? [])
+        }
+    }
+
+    /// Agent conversations, filtered by the sheet's search. Archived ones
+    /// stay out, the same way the desktop picker leaves them out.
+    private func agentRows(of bot: Bot, matching query: String) -> [BotTask] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return bot.agentConversations.filter { task in
+            needle.isEmpty || task.displayTitle.localizedCaseInsensitiveContains(needle)
         }
     }
 
@@ -47,7 +60,9 @@ struct TaskManagerView: View {
 
     private var matchingTasks: [BotTask] {
         switch current {
-        case let .bot(bot): return bot.threadGroups(matching: search, includingClosed: true).flatMap(\.tasks)
+        case let .bot(bot):
+            if agentsOnly { return agentRows(of: bot, matching: search) }
+            return bot.threadGroups(matching: search, includingClosed: true).flatMap(\.tasks)
         case .room: return matchingRoomTasks
         }
     }
@@ -117,7 +132,7 @@ struct TaskManagerView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    if !isSelecting, case let .bot(bot) = current, session.surfaceGate.allows(.threadFolders) {
+                    if !isSelecting, !agentsOnly, case let .bot(bot) = current, session.surfaceGate.allows(.threadFolders) {
                         Menu {
                             Button { actions.newFolder(for: bot) } label: {
                                 Label("New folder", systemImage: "folder.badge.plus")
@@ -137,7 +152,7 @@ struct TaskManagerView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    if !isSelecting {
+                    if !isSelecting, !agentsOnly {
                         Button("New thread", systemImage: "plus") {
                             perform { await create() }
                         }
@@ -234,6 +249,23 @@ struct TaskManagerView: View {
     }
 
     @ViewBuilder private var threadSections: some View {
+        if agentsOnly, case let .bot(bot) = current {
+            let rows = agentRows(of: bot, matching: search)
+            if rows.isEmpty {
+                emptySearch
+            } else {
+                Section {
+                    ForEach(rows, id: \.threadId) { task in
+                        threadButton(task)
+                    }
+                }
+            }
+        } else {
+            threadSectionsAll
+        }
+    }
+
+    @ViewBuilder private var threadSectionsAll: some View {
         switch current {
         case let .bot(bot):
             // The manage sheet is the "all threads" surface: closed ones

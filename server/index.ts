@@ -7731,11 +7731,11 @@ const wireTask = (task: TaskRecord, botModel: ModelSelection, coordinated: Reado
 };
 
 /** The threads a client lists for a bot. An AI client's hidden
- * conversation (#291) is left out unless it is the selected thread (someone
- * opened it from the Activity panel or a link): no sidebar row, no preview,
- * no dot, on every client including the ones built before `hidden`. */
-function listedTasks<T extends { threadId: string; hidden?: true }>(selectedThreadId: string | undefined, tasks: readonly T[]): T[] {
-  return tasks.filter((task) => task.hidden !== true || task.threadId === selectedThreadId);
+ * conversation (#291, #1170) is included so the owner can open, rename,
+ * archive or close it. Unread, previews and typing dots still skip it
+ * (`shownBotActivity`). */
+function listedTasks<T extends { threadId: string; hidden?: true }>(_selectedThreadId: string | undefined, tasks: readonly T[]): T[] {
+  return tasks.slice();
 }
 /** The bot-wide activity a client shows (the sidebar's "Waiting for you…",
  * "Working…" and typing dots): an AI client's hidden conversation does not

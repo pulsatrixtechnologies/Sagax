@@ -175,7 +175,7 @@ import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
 import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
-import { botShowsUnread, iconUnreadDotPosition, isInterBotThread, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
+import { botShowsUnread, iconUnreadDotPosition, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
 import { groupMemberBots } from "@/lib/group-members";
@@ -1801,8 +1801,9 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
   const pendingQueued = useStoreSelector((current) => current.pendingQueued);
   const generatedTitles = useStoreSelector((current) => llmThreadTitlesEnabled(current.config));
   const tasks = (bot.tasks ?? [{ threadId: bot.threadId, title: t("task.newShort"), createdAt: 0 }])
-    // bot-to-bot threads never show (the selected one stays reachable)
-    .filter((task) => !task.routineRunId && (task.threadId === bot.threadId || !isInterBotThread(bot.id, task)))
+    // Routine runs stay in Run logs. Agent and bot-to-bot threads stay so
+    // the owner can open and archive them (#1170).
+    .filter((task) => !task.routineRunId)
     .map((task) => ({ ...task, queued: Boolean(pendingQueued[task.threadId]?.length) }));
   const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
   // the same live verb the chat pane derives from the visible tail

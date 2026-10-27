@@ -365,8 +365,13 @@ struct DesktopChatHeader: View {
                             if exportOpen { exportMenu }
                         }
                         .zIndex(1)
-                    if case let .bot(bot) = chat, DesktopSidebarState.headerThreads(model: model, prefs: prefs) {
-                        DesktopThreadPickerButton(bot: bot, open: $threadsOpen)
+                    if case let .bot(bot) = chat {
+                        let live = session.state.bot(bot.id) ?? bot
+                        let threadsOn = DesktopSidebarState.headerThreads(model: model, prefs: prefs)
+                        // Threads off still lists agent conversations (#1170).
+                        if threadsOn || !live.agentConversations.isEmpty {
+                            DesktopThreadPickerButton(bot: live, agentsOnly: !threadsOn, open: $threadsOpen)
+                        }
                     }
                     if let devPods {
                         DesktopRoundButton(systemImage: "sidebar.squares.right", label: "devPods.toggle.show", active: devPodsOpen, action: devPods)

@@ -24,6 +24,7 @@ import { t } from "@/lib/i18n";
 import { formatTaskTokens, headlineTokens, usageDetail } from "@/lib/usage";
 import { nextRename } from "@/lib/rename";
 import { BotProjectDialog, FolderActions, FolderIcon, NewThreadButton } from "./BotProjects";
+import { isInterBotThread } from "@/lib/bot-unread";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { threadsOffReturnTarget } from "./thread-home";
 import { threadsWhenTreeHidden } from "./SidebarBotActivity";
@@ -588,6 +589,15 @@ export function botPickerThreads(bot: Pick<Bot, "tasks">): Task[] {
   return orderedThreadList((bot.tasks ?? []).filter((task) => !task.routineRunId));
 }
 
+/** Conversations the owner manages when threads are off: an AI client's
+ * hidden thread, or one another bot opened. Ordinary topics stay in the
+ * single stream. Archived threads and automatic results threads stay out. */
+export function agentPickerThreads(bot: Pick<Bot, "id" | "tasks">): Task[] {
+  return botPickerThreads(bot).filter((task) =>
+    task.archivedAt === undefined && task.routineResults !== true
+    && (task.hidden === true || isInterBotThread(bot.id, task)));
+}
+
 export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen?: boolean }) {
   const { state, dispatch } = useStore();
   // A bot's threads live here whatever Threads location says: the sidebar
@@ -598,7 +608,11 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [folderSaving, setFolderSaving] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
-  if (!showThreads) return null;
+  // Threads off is one conversation. Agent threads are the exception: they
+  // stay out of that stream, so this picker lists only those, with archive
+  // and without New thread (#1170). No agent threads: nothing to show.
+  const agentThreads = agentPickerThreads(bot);
+  if (!showThreads && agentThreads.length === 0) return null;
   const projects = bot.projects ?? [];
   const projectIds = projects.map((project) => project.id);
   const threadActions: PickerThreadActions = {
@@ -654,13 +668,13 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
     <>
     <ConversationTaskPicker
       threadId={bot.threadId}
-      tasks={botPickerThreads(bot)}
+      tasks={showThreads ? botPickerThreads(bot) : agentThreads}
       busy={false}
-      folders={bot.projects ?? []}
-      newButton={(close) => <div className="mt-1 border-t border-popover-hairline">
+      folders={showThreads ? bot.projects ?? [] : undefined}
+      newButton={showThreads ? (close) => <div className="mt-1 border-t border-popover-hairline">
         {newThreadChoices(state.config?.confidentialThreadsByDefault === true).map((kind) =>
           <NewThreadButton key={kind.label} bot={bot} kind={kind} onCreated={close} className="w-full rounded-none" />)}
-      </div>}
+      </div> : () => null}
       onNew={() => dispatch({ type: "newTask", botId: bot.id })}
       onSwitch={(threadId) => dispatch({ type: "switchTask", botId: bot.id, threadId })}
       onRename={(threadId, title) => dispatch({ type: "renameTask", botId: bot.id, threadId, title })}

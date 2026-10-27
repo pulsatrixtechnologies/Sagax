@@ -97,9 +97,14 @@ reads the entries just before it.
 
 ## Guarantees
 
-- **Hidden conversations**: every prompt lands in a hidden conversation owned
-  by the caller (#291/#302), never in the person's own chat with the agent. A
-  bot caller's later sends continue the same conversation; a person's AI client starts a new one each send unless it passes `thread_id`. `supersede` interrupts
+- **Hidden conversations**: every prompt lands in a conversation owned
+  by the caller (#291/#302), separate from the person's own chat with the agent.
+  The API still marks it `hidden: true`. The owner sees it in the thread list
+  under a human label (the calling bot's name, or "AI client" for a person's
+  own client) and can open, rename, archive or close it. It never counts as
+  unread and its messages stay out of the main chat. A turn there reads the
+  bot's current approval level, not a copy taken when the conversation was
+  created. A bot caller's later sends continue the same conversation; a person's AI client starts a new one each send unless it passes `thread_id`. `supersede` interrupts
   only that conversation.
 - **Isolation**: a bot reaches only its peers. That means the same team and
   scope, the per-pair allow-list, and never a hidden bot. A person reaches

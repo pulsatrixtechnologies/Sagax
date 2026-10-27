@@ -254,6 +254,13 @@ struct ChatView: View {
         .sheet(isPresented: $showingTasks) {
             if current.supportsTasks, threadPrefs.threads.allows(.threadList) {
                 TaskManagerView(chat: current) { selectedThreadId = $0 }
+            } else if case let .bot(bot) = current {
+                // Threads off is one conversation, except agent threads the
+                // owner still opens or archives (#1170).
+                let live = session.state.bot(bot.id) ?? bot
+                if !live.agentConversations.isEmpty {
+                    TaskManagerView(chat: .bot(live), agentsOnly: true) { selectedThreadId = $0 }
+                }
             }
         }
         .fullScreenCover(isPresented: $showingPanel) {
