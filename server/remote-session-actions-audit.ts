@@ -20,7 +20,20 @@ export interface RemoteSessionActionEvent {
   sessionId: string;
   principalId: string;
   botId: string;
-  kind: "exec" | "transfer";
+  /** exec / transfer: one session's action. unattended.open /
+   * remote_host.revoked: a host-level act on the Remote Sessions page,
+   * `principalId` is the person who acted (never the installer, M4) and
+   * `hostKey` the host; the per-session log view leaves these out.
+   * remote_host.revoked is the name Perspicax gives the same act. */
+  kind: "exec" | "transfer" | "unattended.open" | "remote_host.revoked";
+  /** Host-level acts: the host the act was on (enrolled host id or consent key). */
+  hostKey?: string;
+  /** Host-level acts: whether it was accepted. */
+  ok?: boolean;
+  /** remote_host.revoked: the reason the person gave ("" when none). */
+  reason?: string;
+  /** remote_host.revoked: when, in UTC (ISO-8601 with Z), beside `at`. */
+  atUtc?: string;
   /** exec: the command line, already safe to store (redacted again here). */
   command?: string;
   readOnly?: boolean;

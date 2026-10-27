@@ -63,6 +63,9 @@ export interface RemoteSessionAdminRow {
   bannerVisible?: boolean;
   /** Per host, when unattended: the agent binary is code-signed. */
   signed?: boolean;
+  /** Unattended, and the viewer recorded this consent: they revoke it
+   * themselves (no admin). */
+  unattendedMine?: boolean;
 }
 
 const FAILED_INVENTORY = new Set(["no-tunnel", "no-answer", "os-unknown", "no-client"]);

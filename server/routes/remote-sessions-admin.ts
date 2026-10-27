@@ -3,19 +3,27 @@
 // them without an explicit grant. A signed-in person reaches them from the
 // account menu; the aggregator then enforces who may see each session (a
 // workspace admin sees the organization's sessions, anyone else only their
-// own) and who may record or revoke unattended consent (admins only). No
-// tunnel address, key or secret ever enters a request or an answer.
+// own), who may record unattended consent (admins) and who may revoke it (the
+// person who recorded it, or an admin). The enrolled hosts (/hosts) are
+// Perspicax's: any person here lists them, revokes the ones Perspicax lets
+// them (their own, or any as an admin), and opens one when
+// SAGAX_UNATTENDED_ACCESS is on. No tunnel address,
+// key or secret ever enters a request or an answer.
 import { z } from "zod";
 
 import { PASS } from "./table.ts";
 import type { RouteHandler } from "./table.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import type { AdminViewer, RemoteSessionsAdmin } from "../remote-sessions-admin.ts";
+import { cleanReason, REVOKE_REASON_MAX, type UnattendedHosts } from "../remote-unattended-hosts.ts";
 
 const LIST = /^\/api\/admin\/remote-sessions$/;
 const UNATTENDED = /^\/api\/admin\/remote-sessions\/unattended$/;
 const UNATTENDED_REVOKE = /^\/api\/admin\/remote-sessions\/unattended\/revoke$/;
 const ONE = /^\/api\/admin\/remote-sessions\/([a-f0-9]{12})\/(logs|end)$/;
+// Enrolled hosts (docs/inscription-hote.md): list, open unattended, revoke.
+const HOSTS = /^\/api\/admin\/remote-sessions\/hosts$/;
+const HOST_ACTION = /^\/api\/admin\/remote-sessions\/hosts\/(h_[0-9a-f]{32})\/(open|revoke)$/;
 
 const grantBody = z.object({
   host_key: z.string().min(1).max(200),
@@ -30,7 +38,14 @@ const grantBody = z.object({
   key_bound: z.boolean().optional(),
 }).strict();
 
-const revokeBody = z.object({ host_key: z.string().min(1).max(200) }).strict();
+const revokeBody = z.object({ host_key: z.string().min(1).max(200), reason: z.string().max(REVOKE_REASON_MAX).optional() }).strict();
+
+const hostRevokeBody = z.object({ reason: z.string().max(REVOKE_REASON_MAX).optional() }).strict();
+
+const hostOpenBody = z.object({
+  scope: z.enum(["full-control", "view-only", "shell-only"]).optional(),
+  rights: z.enum(["standard", "elevated"]).optional(),
+}).strict();
 
 function boolParam(value: string | null): boolean {
   return value === "1" || value === "true";
@@ -40,6 +55,8 @@ export function createRemoteSessionsAdminRoutes(deps: {
   admin: RemoteSessionsAdmin;
   principalId(auth: RequestAuth): string | undefined;
   orgAdmin(auth: RequestAuth): boolean;
+  /** Enrolled hosts at Perspicax. Absent: the hosts routes answer 404. */
+  hosts?: UnattendedHosts;
 }): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
     if (!path.startsWith("/api/admin/remote-sessions")) return PASS;
@@ -58,6 +75,37 @@ export function createRemoteSessionsAdminRoutes(deps: {
         ...(query.get("q") ? { search: query.get("q")! } : {}),
       });
       return json(res, 200, { sessions, admin: viewer.orgAdmin, unattendedEnabled: deps.admin.unattendedEnabled() });
+    }
+
+    if (HOSTS.test(path) && deps.hosts) {
+      if (method !== "GET") return json(res, 405, { error: "method not allowed" });
+      // Listed whatever the flag, so a host can always be revoked (M2).
+      const listed = await deps.hosts.list({ principalId });
+      return json(res, 200, { ...listed, openEnabled: deps.hosts.openEnabled() });
+    }
+
+    const hostAction = HOST_ACTION.exec(path);
+    if (hostAction && deps.hosts) {
+      if (method !== "POST") return json(res, 405, { error: "method not allowed" });
+      const hostId = hostAction[1]!;
+      if (hostAction[2] === "open") {
+        // Any person who reaches this server may open (no admin approval,
+        // decision 2026-10-26); only the flag gates it.
+        const parsed = hostOpenBody.safeParse(await readBody(req));
+        if (!parsed.success) return json(res, 400, { error: "Send scope (full-control, view-only, shell-only) and rights (standard, elevated), or nothing." });
+        const out = await deps.hosts.open({ principalId }, hostId, parsed.data);
+        if (out.ok) return json(res, 200, { code: out.code, botId: out.botId, threadId: out.threadId });
+        const status = out.error === "disabled" ? 501 : out.error === "invalid" ? 400 : out.error === "unavailable" ? 409 : 502;
+        return json(res, status, { error: out.message, code: out.error });
+      }
+      // Revoke, flag OFF included (M2). Perspicax decides who may: the person
+      // who enrolled the host, or an admin.
+      const revokeParsed = hostRevokeBody.safeParse(await readBody(req));
+      if (!revokeParsed.success) return json(res, 400, { error: `Send reason (at most ${REVOKE_REASON_MAX} characters), or nothing.` });
+      const out = await deps.hosts.revoke({ principalId }, hostId, revokeParsed.data.reason ?? "");
+      if (out.ok) return json(res, 200, { ok: true });
+      const status = out.error === "invalid" ? 400 : out.error === "unavailable" ? 409 : 502;
+      return json(res, status, { error: out.message, code: out.error });
     }
 
     if (UNATTENDED.test(path)) {
@@ -86,9 +134,10 @@ export function createRemoteSessionsAdminRoutes(deps: {
       if (method !== "POST") return json(res, 405, { error: "method not allowed" });
       const parsed = revokeBody.safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "Send host_key." });
-      const out = await deps.admin.revokeUnattended(viewer, parsed.data.host_key.trim().toLowerCase());
-      if (!out.ok && out.error === "disabled") return json(res, 501, { error: "Unattended access is not available yet (not enabled on this server)." });
-      if (!out.ok && out.error === "forbidden") return json(res, 403, { error: "Only a workspace admin revokes unattended access." });
+      // Never gated by the flag: a consent recorded before it was cut can
+      // always be revoked (M2 of the 2026-10-26 review).
+      const out = await deps.admin.revokeUnattended(viewer, parsed.data.host_key.trim().toLowerCase(), cleanReason(parsed.data.reason));
+      if (!out.ok && out.error === "forbidden") return json(res, 403, { error: "Only the person who installed it, or a workspace admin, revokes unattended access." });
       if (!out.ok) return json(res, 404, { error: "No unattended access is recorded for that host." });
       return json(res, 200, { consent: out.consent });
     }

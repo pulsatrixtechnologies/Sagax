@@ -798,6 +798,7 @@ import { createRemoteSessionService } from "./remote-sessions.ts";
 import { createRemoteSessionActionsAudit, readRemoteSessionLog } from "./remote-session-actions-audit.ts";
 import { createUnattendedConsentStore } from "./remote-session-consent-store.ts";
 import { createRemoteSessionsAdmin } from "./remote-sessions-admin.ts";
+import { createUnattendedHosts } from "./remote-unattended-hosts.ts";
 import { createRemoteSessionRegistrar } from "./remote-session-register.ts";
 import { recallSupportSession } from "./remote-support-local.ts";
 import { supportFolderOwner, supportOwnersOfId } from "./remote-session-probe.ts";
@@ -10705,9 +10706,66 @@ const remoteSessionsAdmin = createRemoteSessionsAdmin({
   // Revoke propagates to the host service (the Pulsatrix Assist "Sagax Remote
   // Control" service uninstalls) and to Perspicax (the --allow binding drops);
   // the consent is already marked revoked and any live tunnel is cut here.
-  onRevoke: async (consent) => {
-    remoteSessionActionsAudit.write({ at: Date.now(), sessionId: consent.hostKey, principalId: consent.installedBy, botId: "", kind: "exec", command: `[unattended revoked for ${consent.hostLabel}]`, readOnly: true });
+  // The audit names the person who revoked (M4: the installer themselves or
+  // an admin), as remote_host.revoked, the host in its own field, the reason
+  // and the UTC time: never a fake exec line.
+  onRevoke: async (consent, actor, reason) => {
+    const at = Date.now();
+    remoteSessionActionsAudit.write({ at, atUtc: new Date(at).toISOString(), sessionId: "", principalId: actor, botId: "", kind: "remote_host.revoked", hostKey: consent.hostKey, ok: true, reason });
   },
+});
+// The hosts Perspicax enrolled for unattended access (docs/inscription-hote.md
+// of sagax-remote-access): listed and revoked whatever the flag (M2), opened
+// only with SAGAX_UNATTENDED_ACCESS=1, by any person who reaches this server
+// (no admin approval, decision 2026-10-26). Calls go in the person's name
+// through the Perspicax link of their Primary Bot (else another bot of
+// theirs with a Perspicax profile), on that bot's conversation, so the
+// session card and panel row come from the usual remote_support_* registrar.
+const unattendedHosts = createUnattendedHosts({
+  enabled: () => process.env.SAGAX_UNATTENDED_ACCESS === "1",
+  seat: async (principalId) => {
+    const mcp = perspicaxMcp;
+    if (!mcp) return { error: "This server is not linked to Perspicax." };
+    const mine = store.bots.filter((bot) => !bot.temporary && bot.perspicax?.profiles.length && effectiveBotOwner(bot).trim().toLowerCase() === principalId);
+    const bot = mine.find((candidate) => candidate.chiefOfStaff) ?? mine[0];
+    if (!bot?.perspicax) return { error: "None of your bots is linked to Perspicax, so Sagax cannot reach it for you." };
+    const threadId = bot.threadId;
+    const generation = randomUUID();
+    const plan = await mcp.prepareTurn({ threadId, generation, bot: { id: bot.id, perspicax: bot.perspicax }, speakerPrincipalId: principalId, speakerOrigin: "person" });
+    if (!plan.mounted.length) {
+      await mcp.endGeneration(threadId, generation).catch(() => {});
+      const reason = plan.unavailable[0]?.reason;
+      return { error: reason ? `Perspicax: ${PERSPICAX_UNAVAILABLE_WHY[reason]}` : "No Perspicax profile could be used." };
+    }
+    const owner = { principalId, botId: bot.id };
+    return {
+      botId: bot.id,
+      threadId,
+      call: async (tool, args) => {
+        const answer = await mcp.callTool({ threadId, generation, botId: bot.id, name: tool, args: args as never });
+        if (!answer.ok) return { status: answer.code === "profile_not_mounted" ? 409 : 502, body: { error: answer.error, code: answer.code } };
+        const text = typeof answer.value === "string" ? answer.value : JSON.stringify(answer.value);
+        return { status: 200, body: { text, isError: answer.isError, owner } };
+      },
+      end: () => mcp.endGeneration(threadId, generation),
+    };
+  },
+  local: (principalId) => ({
+    dir: REMOTE_SUPPORT_DIR,
+    technicianName: (personDisplayName(principals.byId(principalId)) || cfg.profile?.name?.trim() || "").slice(0, 80),
+    orgName: (process.env.SAGAX_ORG_NAME?.trim() || "Pulsatrix").slice(0, 80),
+  }),
+  closeById: (id) => remoteSessions.adminClose(id),
+  audit: (event) => remoteSessionActionsAudit.write({
+    at: event.at,
+    sessionId: "",
+    principalId: event.actor,
+    botId: "",
+    kind: event.kind,
+    hostKey: event.hostId,
+    ok: event.ok,
+    ...(event.kind === "remote_host.revoked" ? { reason: event.reason ?? "", atUtc: new Date(event.at).toISOString() } : {}),
+  }),
 });
 // The usage card (server/resource-usage/): read-only samples of a computer
 // the person already reaches, under the same rules as its terminal.
@@ -36694,7 +36752,7 @@ ROUTES.push(createRemoteControlRoutes({
   upgrade: (req) => desktopViewer.upgradeOf(req),
 }));
 ROUTES.push(createRemoteSessionFileRoutes({ sessions: remoteSessions, principalId: terminalPrincipalId }));
-ROUTES.push(createRemoteSessionsAdminRoutes({ admin: remoteSessionsAdmin, principalId: terminalPrincipalId, orgAdmin: orgAdminCaller }));
+ROUTES.push(createRemoteSessionsAdminRoutes({ admin: remoteSessionsAdmin, hosts: unattendedHosts, principalId: terminalPrincipalId, orgAdmin: orgAdminCaller }));
 ROUTES.push(resourceUsage.route);
 
 // Live calls (GPT-Live as the voice, the bot as the brain). A client holds

@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { chmod, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isTailcatAddress, TAILCAT_ADDRESS_MAX } from "../shared/remote-session.ts";
+import { parseUnattendedHostId } from "../shared/remote-unattended-host.ts";
 import {
   liveSupportKey,
   normPrincipal,
@@ -216,6 +217,9 @@ export function prepareOpen(input: {
   org?: string;
   now: Date;
   sessionId: string;
+  /** Unattended: the enrolled host (`h_` and 32 hex) the session is opened
+   * against instead of a support code (docs/inscription-hote.md). */
+  hostId?: string;
 }): { ok: true; args: Record<string, unknown>; session: string } | { ok: false; error: string } {
   if (!NODEKEY.test(input.nodekey)) return { ok: false, error: CREATE_FAILED };
   if (!SESSION.test(input.sessionId)) return { ok: false, error: "The session id could not be created." };
@@ -252,6 +256,11 @@ export function prepareOpen(input: {
     technician,
     end_at: end.value,
   };
+  if (input.hostId !== undefined) {
+    const hostId = parseUnattendedHostId(input.hostId);
+    if (!hostId) return { ok: false, error: "That computer is not an enrolled host." };
+    args.host_id = hostId;
+  }
   if (os === "windows" || os === "macos" || os === "linux") args.os = os;
   if (start !== undefined) args.start_minutes = start;
   if (typeof scope === "string" && scope) args.scope = scope;
@@ -542,6 +551,58 @@ async function openCall(input: {
     });
     if (!await adoptSessionKey(dir, key, shown.code)) return { text: KEEP_FAILED, isError: true };
     return { text: shown.text };
+  } finally {
+    await rm(key.folder, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Open an unattended session against an enrolled host, from the Remote
+ * Sessions page (no bot turn, no support page). Same key handling as a coded
+ * open: one client key for this session only, kept in its folder, the public
+ * nodekey alone goes to Perspicax, which binds it into the session grant it
+ * hands the host at its next beat. Perspicax answers with the session's code
+ * (status and close stay keyed by code). Never returns the key or an address. */
+export async function openUnattendedSession(input: {
+  hostId: string;
+  args?: Record<string, unknown>;
+  local: RemoteSupportContext;
+  post: (tool: string, args: Record<string, unknown>) => Promise<{ status: number; body: Record<string, unknown> }>;
+}): Promise<{ ok: true; code: string; session: string; endAt: string; elevated: boolean } | { ok: false; error: string }> {
+  const run = input.local.run ?? spawnTailcat();
+  const dir = input.local.dir;
+  const now = input.local.now?.() ?? new Date();
+  try { sweepSupportKeys(dir, now.getTime()); } catch { /* best effort */ }
+  const sessionId = input.local.sessionId?.() ?? newSessionId();
+  const key = await createSessionKey(dir, sessionId, run);
+  if (!key.ok) return { ok: false, error: key.error };
+  try {
+    const prepared = prepareOpen({
+      args: input.args ?? {},
+      nodekey: key.nodekey,
+      person: input.local.technicianName,
+      org: input.local.orgName,
+      now,
+      sessionId,
+      hostId: input.hostId,
+    });
+    if (!prepared.ok) return prepared;
+    const posted = await input.post("remote_support_open", prepared.args);
+    const error = refused(posted.status, posted.body);
+    if (error) return { ok: false, error };
+    const answer = asObject(posted.body.text);
+    const code = typeof answer?.code === "string" ? compactCode(answer.code) : null;
+    if (!code) return { ok: false, error: "Perspicax did not answer with a session for that computer." };
+    const owner = ownerOf(posted.body);
+    const scope = REMOTE_SUPPORT_SCOPES.find((value) => value === prepared.args.scope);
+    const elevated = prepared.args.rights === "elevated";
+    await rememberSession(dir, code, prepared.session, {
+      ...owner,
+      rights: elevated ? "elevated" : "standard",
+      end_at: String(prepared.args.end_at),
+      ...(scope ? { scope } : {}),
+    });
+    if (!await adoptSessionKey(dir, key, code)) return { ok: false, error: KEEP_FAILED };
+    return { ok: true, code, session: prepared.session, endAt: String(prepared.args.end_at), elevated };
   } finally {
     await rm(key.folder, { recursive: true, force: true }).catch(() => {});
   }

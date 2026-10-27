@@ -92,14 +92,15 @@ describe("admin remote-sessions routes", () => {
     expect(consent.get("sn-a")?.revokedAt).toBeTruthy();
   });
 
-  it("gates unattended off by default: list says disabled, grant and revoke return 501", async () => {
+  it("gates unattended off by default: list says disabled, grant returns 501, revoke still works (M2)", async () => {
     const { base } = await serve([row({ id: "ffffffffffff", serial: "SN-A" })], true, false);
     const list = await (await fetch(`${base}/api/admin/remote-sessions`)).json() as { unattendedEnabled: boolean };
     expect(list.unattendedEnabled).toBe(false);
     const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "GOX", installed_by: "admin@gox" }) });
     expect(grant.status).toBe(501);
     const revoke = await fetch(`${base}/api/admin/remote-sessions/unattended/revoke`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a" }) });
-    expect(revoke.status).toBe(501);
+    // nothing recorded for that host: a 404, never a 501 behind the flag
+    expect(revoke.status).toBe(404);
   });
 
   it("a non-admin cannot see another person's session or grant consent", async () => {
@@ -108,5 +109,65 @@ describe("admin remote-sessions routes", () => {
     expect(logs.status).toBe(403);
     const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "GOX", installed_by: "x" }) });
     expect(grant.status).toBe(403);
+  });
+});
+
+describe("enrolled hosts routes", () => {
+  const HOST = `h_${"ab".repeat(16)}`;
+
+  async function serveHosts(openEnabled: boolean) {
+    const dir = mkdtempSync(path.join(tmpdir(), "rsadmin-hosts-")); dirs.push(dir);
+    const consent = createUnattendedConsentStore({ dataDir: dir, now: () => NOW });
+    const admin = createRemoteSessionsAdmin({ rows: () => [], botLabel: () => "Atlas", consent, log: () => [], closeById: vi.fn(async () => true), now: () => NOW });
+    const hosts = {
+      openEnabled: () => openEnabled,
+      list: vi.fn(async () => ({ available: true as const, hosts: [] })),
+      open: vi.fn(async () => (openEnabled ? { ok: true as const, code: "K7QMNP", botId: "bot-7", threadId: "t" } : { ok: false as const, error: "disabled" as const, message: "off" })),
+      revoke: vi.fn(async () => ({ ok: true as const })),
+    };
+    const routes = [createRemoteSessionsAdminRoutes({ admin, hosts: hosts as never, principalId: (auth) => (auth.kind === "session" ? (auth.session as { principalId?: string }).principalId : undefined), orgAdmin: () => false })];
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (!await dispatchRoutes(routes, { req, res, url, path: url.pathname, method: req.method ?? "GET", auth: person("viewer@gox"), json, readBody })) json(res, 404, {});
+    });
+    servers.push(server);
+    await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+    return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, hosts };
+  }
+  const post = (url: string, body: unknown = {}) => fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+  it("lists hosts and says whether opening is enabled", async () => {
+    const { base, hosts } = await serveHosts(false);
+    const listed = await (await fetch(`${base}/api/admin/remote-sessions/hosts`)).json() as { available: boolean; openEnabled: boolean };
+    expect(listed).toMatchObject({ available: true, openEnabled: false });
+    expect(hosts.list).toHaveBeenCalledWith({ principalId: "viewer@gox" });
+  });
+
+  it("opens for a non-admin when the flag is on (no admin approval)", async () => {
+    const { base, hosts } = await serveHosts(true);
+    const opened = await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/open`, { scope: "view-only" });
+    expect(opened.status).toBe(200);
+    expect(await opened.json()).toEqual({ code: "K7QMNP", botId: "bot-7", threadId: "t" });
+    expect(hosts.open).toHaveBeenCalledWith({ principalId: "viewer@gox" }, HOST, { scope: "view-only" });
+  });
+
+  it("refuses to open with the flag off (501), but revokes (M2)", async () => {
+    const { base, hosts } = await serveHosts(false);
+    expect((await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/open`)).status).toBe(501);
+    const revoked = await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/revoke`);
+    expect(revoked.status).toBe(200);
+    expect(hosts.revoke).toHaveBeenCalledWith({ principalId: "viewer@gox" }, HOST, "");
+    const withReason = await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/revoke`, { reason: "poste remplacé" });
+    expect(withReason.status).toBe(200);
+    expect(hosts.revoke).toHaveBeenLastCalledWith({ principalId: "viewer@gox" }, HOST, "poste remplacé");
+    expect((await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/revoke`, { reason: "x".repeat(300) })).status).toBe(400);
+  });
+
+  it("refuses a malformed host id or body", async () => {
+    const { base, hosts } = await serveHosts(true);
+    expect((await post(`${base}/api/admin/remote-sessions/hosts/PC-01/open`)).status).toBe(404);
+    expect((await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/open`, { scope: "root" })).status).toBe(400);
+    expect((await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/open`, { nodekey: "x" })).status).toBe(400);
+    expect(hosts.open).not.toHaveBeenCalled();
   });
 });

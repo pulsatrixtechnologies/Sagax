@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RemoteSessionAdminRow } from "../../../shared/remote-session-admin";
 import type { RemoteSessionLogEntry } from "../../../shared/remote-session-admin";
 import type { AdminRowFilters } from "../../../shared/remote-session-admin";
+import type { UnattendedHostRow } from "../../../shared/remote-unattended-host";
 import { api } from "@/state/store";
 
 export interface RemoteSessionsAdminState {
@@ -74,4 +75,68 @@ export function revokeUnattended(hostKey: string): Promise<boolean> {
   return api("/api/admin/remote-sessions/unattended/revoke", { method: "POST", body: JSON.stringify({ host_key: hostKey }) })
     .then(() => true)
     .catch(() => false);
+}
+
+// ── enrolled hosts (unattended access, docs/inscription-hote.md) ──
+
+export interface UnattendedHostsState {
+  hosts: UnattendedHostRow[];
+  /** Perspicax answered the list (false: not linked, or not shipped yet). */
+  available: boolean;
+  /** SAGAX_UNATTENDED_ACCESS: the open button shows only when true. Revoke
+   * shows whatever it says (M2). */
+  openEnabled: boolean;
+  loading: boolean;
+  reload: () => void;
+}
+
+/** The hosts Perspicax enrolled, polled slowly while the page is mounted. */
+export function useUnattendedHosts(): UnattendedHostsState {
+  const [state, setState] = useState<Omit<UnattendedHostsState, "reload">>({ hosts: [], available: false, openEnabled: false, loading: true });
+  const [tick, setTick] = useState(0);
+  const reload = useCallback(() => setTick((value) => value + 1), []);
+  useEffect(() => {
+    let stop = false;
+    const load = () => {
+      api<{ hosts?: UnattendedHostRow[]; available?: boolean; openEnabled?: boolean }>("/api/admin/remote-sessions/hosts")
+        .then((body) => {
+          if (stop) return;
+          setState({
+            hosts: Array.isArray(body.hosts) ? body.hosts : [],
+            available: body.available === true,
+            openEnabled: body.openEnabled === true,
+            loading: false,
+          });
+        })
+        .catch(() => { if (!stop) setState((prev) => ({ ...prev, loading: false })); });
+    };
+    load();
+    const timer = setInterval(load, 15_000);
+    return () => { stop = true; clearInterval(timer); };
+  }, [tick]);
+  return { ...state, reload };
+}
+
+export type UnattendedHostFailure = "disabled" | "invalid" | "unavailable" | "refused";
+
+function failureOf(error: unknown): UnattendedHostFailure {
+  const code = (error as { body?: { code?: unknown } } | null)?.body?.code;
+  return code === "disabled" || code === "invalid" || code === "unavailable" ? code : "refused";
+}
+
+/** Open an unattended session against an enrolled host. The session card and
+ * row arrive through the usual flow once the host picks it up (client "app"). */
+export function openUnattendedHost(hostId: string): Promise<{ ok: true; code: string; botId: string } | { ok: false; error: UnattendedHostFailure }> {
+  return api<{ code?: string; botId?: string }>(`/api/admin/remote-sessions/hosts/${encodeURIComponent(hostId)}/open`, { method: "POST", body: JSON.stringify({}) })
+    .then((body) => ({ ok: true as const, code: String(body.code ?? ""), botId: String(body.botId ?? "") }))
+    .catch((error: unknown) => ({ ok: false as const, error: failureOf(error) }));
+}
+
+/** Revoke an enrolled host (offered flag OFF included). Perspicax lets the
+ * person who enrolled it, or an admin. `reason` is optional, kept in the audit. */
+export function revokeUnattendedHost(hostId: string, reason = ""): Promise<{ ok: true } | { ok: false; error: UnattendedHostFailure }> {
+  const trimmed = reason.trim();
+  return api(`/api/admin/remote-sessions/hosts/${encodeURIComponent(hostId)}/revoke`, { method: "POST", body: JSON.stringify(trimmed ? { reason: trimmed } : {}) })
+    .then(() => ({ ok: true as const }))
+    .catch((error: unknown) => ({ ok: false as const, error: failureOf(error) }));
 }

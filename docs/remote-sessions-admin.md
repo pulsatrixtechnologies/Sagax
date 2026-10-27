@@ -23,9 +23,59 @@ Designed but NOT wired yet (gated OFF, do not rely on in prod):
 
 Because of this, unattended access is gated behind a server flag
 `unattendedEnabled` that is FALSE by default (env `SAGAX_UNATTENDED_ACCESS=1`).
-While it is off: the grant and revoke routes return 501 "not available", the
-page shows the Unattended column read only with a "not enabled" note, and no
-one can turn the dangerous path on by mistake. See the TODO at the bottom.
+While it is off: recording consent (grant) and opening an enrolled host return
+501 "not available", the page shows a "not enabled" note, and no one can turn
+the dangerous path on by mistake. Revoking is never behind the flag (M2 of the
+2026-10-26 review): a host enrolled before the flag was cut can always be
+revoked. See the TODO at the bottom.
+
+## Enrolled hosts (2026-10-26)
+
+The contract is `docs/inscription-hote.md` in `sagax-remote-access` ("Côté
+Sagax"). Perspicax is the authority: it keeps the enrolled hosts
+(`remote_support_hosts`), keyed by `host_id` (`h_` and 32 hex, the fingerprint
+of the host's own key, never a hostname or a serial: E3).
+
+- The page shows an "Enrolled hosts" section above the sessions
+  (`src/components/remote-session/UnattendedHostsSection.tsx`): the readable
+  name, the organization when it is a name, the scope, enrolled, expires, last
+  seen and the state (enrolled, expired, revoked). The `host_id` is only in the
+  name's tooltip and behind the Copy button, never in the text.
+- "Unattended access" (`POST /api/admin/remote-sessions/hosts/<host_id>/open`)
+  shows on an enrolled host only when `SAGAX_UNATTENDED_ACCESS=1`. Any person
+  who reaches this server may open (no admin approval, decision 2026-10-26).
+  Sagax makes a client key for that session only (as for a coded open), sends
+  `remote_support_open` with `host_id` and the public nodekey, follows
+  `remote_support_status` until the host picks the session at its beat, and
+  the usual registrar posts the card and the panel row (`client = "app"`) in
+  the conversation of the person's Primary Bot (else another bot of theirs
+  with a Perspicax profile). The page then opens the live control overlay by
+  itself.
+- "Revoke" (`POST /api/admin/remote-sessions/hosts/<host_id>/revoke`, optional
+  body `{ reason }`) shows on every host not yet revoked, flag OFF included
+  (M2), with a confirm and an optional reason. Who may: the person who
+  enrolled the host revokes it themselves (their own environment, no admin),
+  and an admin revokes any host of the organization; Perspicax decides and
+  Sagax adds no gate of its own. Sessions opened from this page on that host
+  end here at once; Perspicax ends the others and the host stops and
+  uninstalls at its next beat (a 410: only a 410 makes the host uninstall; a
+  404, a 5xx or a network failure is retried with backoff).
+- Every open writes an `unattended.open` line and every revoke a
+  `remote_host.revoked` line (the name Perspicax gives the same act) in
+  `remote-session-actions.jsonl`: the actor is the person who acted (M4), the
+  host is in its own field, with the reason and the UTC time (`atUtc`). The
+  legacy consent revoke writes the same kind; it is open to the person who
+  recorded the consent and to an admin.
+- Server: `server/remote-unattended-hosts.ts` (list, open, revoke),
+  `shared/remote-unattended-host.ts` (rows, states, what may be opened),
+  `openUnattendedSession` in `server/remote-support-local.ts`.
+
+Perspicax tools (names frozen with Perspicax): `remote_support_hosts` (answer
+`{ hosts: [{ host_id, hostname, org, scope, created_at, expires_at,
+last_seen_at, revoked_at, ... }] }`), `remote_support_host_revoke`
+(`{ host_id, reason? }`) and `remote_support_open` with `host_id`, which
+answers the session's `code`, as status and close stay keyed by code. A
+server without them reads as "list not available".
 
 ## What shipped in Sagax (this PR)
 
@@ -81,8 +131,9 @@ model, kept legitimate (discreet, never stealth):
 - The service auto starts on reboot, survives logout (service or session 0
   context where the OS allows), and auto relaunches on crash (Windows SCM
   recovery, launchd KeepAlive, systemd Restart=on-failure).
-- The end user can uninstall it locally (an admin of that machine), and an org
-  admin can revoke it remotely from the Remote Sessions page. Revoke marks the
+- The end user can uninstall it locally (an admin of that machine), and the
+  person who installed it, or an org admin, can revoke it remotely from the
+  Remote Sessions page. Revoke marks the
   consent revoked, cuts any live tunnel at once, and propagates to the host
   service (uninstall) and to Perspicax (the `--allow` binding drops).
 
@@ -192,7 +243,8 @@ From the security review of PR #981:
 2. Enforce `Expired()` at runtime: a host whose consent lapsed must not accept
    an unattended (re)connect.
 3. `onRevoke` must actually uninstall the host service and invalidate the
-   Perspicax `--allow` binding, not only write an audit line.
+   Perspicax `--allow` binding, not only write an audit line. (Enrolled hosts:
+   revoke goes to Perspicax, which tells the host at its next beat.)
 4. `publish()` must refuse a session from a host without active consent
    (revoked or expired), so unattended cannot be used past its window.
 5. Decide signed consent attestation (org signed token) vs free text
