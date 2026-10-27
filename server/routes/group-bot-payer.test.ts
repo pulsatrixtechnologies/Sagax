@@ -56,7 +56,7 @@ describe("a group's override of who pays for one of its bots (#1137)", () => {
     const { put, groups } = await serve(session("pr_owner"));
     const other = await put("/api/groups/room-1/bot-payer", { botId: "bot-2", turnPayer: "owner" });
     expect(other.status).toBe(403);
-    expect((await other.json() as { code: string }).code).toBe("not_bot_owner");
+    expect((await other.json() as { code: string }).code).toBe("bot_payer_owner_only");
     expect((await put("/api/groups/room-1/bot-payer", { botId: "bot-3", turnPayer: "owner" })).status).toBe(404);
     expect((await put("/api/groups/dm-1/bot-payer", { botId: "bot-1", turnPayer: "owner" })).status).toBe(404);
     expect((await put("/api/groups/room-1/bot-payer", { botId: "bot-1", turnPayer: "everyone" })).status).toBe(400);
