@@ -1351,7 +1351,6 @@
   "botPanel.permissions.ask": "Preguntarme antes de contactar a otros bots",
   "botPanel.permissions.approval": "Nivel de aprobación",
   "botPanel.permissions.approvalDraft": "Valor predeterminado de las conversaciones, las rutinas y el trabajo delegado del bot nuevo.",
-  "botPanel.permissions.approvalHelp": "Valor predeterminado de las conversaciones nuevas, las rutinas y el trabajo delegado. Al activar el acceso completo, también puedes aplicarlo a cada conversación existente. Usa Actualizar permisos en una conversación para aplicarle el nivel actual.",
   "botPanel.permissions.applyFull": "Aplicar acceso completo a todas las conversaciones",
   "botPanel.permissions.outbound": "Envíos en tu nombre",
   "botPanel.permissions.outboundHelp": "Correos, mensajes, publicaciones, invitaciones y pagos a través de las apps conectadas. Leer y redactar nunca cuentan. Se aplica en cada nivel de aprobación, incluido el acceso completo.",

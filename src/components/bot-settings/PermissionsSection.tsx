@@ -276,14 +276,10 @@ export function PermissionsSection({
         {...commandAllowlistTarget}
         onClose={() => setCommandAllowlistTarget(null)}
       />}
-      {/* Applying Full to every thread, the command list (also in the
-          approval menu) and sending on your behalf: folded. */}
+      {/* The command list (also in the approval menu) and sending on your
+          behalf: folded. #1169: no "apply Full to every thread" any more:
+          every thread follows the bot's level, always. */}
       {!draft && advanced && !only && (showApproval || showOutboundUi) && <AdvancedFold id="permissions">
-        {showApproval && approvalMode === "full" && trustedModesAvailable && <button
-          type="button" disabled={Boolean(bot.busy)}
-          className={cn(PILL, "self-start")}
-          onClick={() => { setAllThreads(true); setFullAccessTarget(bot.id); }}
-        >{t("botPanel.permissions.applyFull")}</button>}
         {showApproval && ownerOrAdmin === true && <button
           type="button"
           className={cn(PILL, "self-start")}
@@ -305,7 +301,7 @@ export function PermissionsSection({
         open={fullAccessTarget !== null}
         scope={orgFullAccess !== undefined ? "organization" : "bot"}
         allThreads={allThreads}
-        onAllThreadsChange={draft || orgFullAccess !== undefined ? undefined : setAllThreads}
+        onAllThreadsChange={undefined}
         onCancel={() => setFullAccessTarget(null)}
         onConfirm={() => {
           const target = fullAccessTarget;
@@ -315,7 +311,7 @@ export function PermissionsSection({
             grantOrgFull(target, true);
             return;
           }
-          dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, applyToAllThreads: allThreads } });
+          dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true } });
         }}
       />
     </div>

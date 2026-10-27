@@ -19,8 +19,9 @@
 //   - a person's AI client, through the member API
 //     (/api/org/member/agents/*, Perspicax's tools of the same names): it
 //     reaches the bots that person can use in Sagax.
-// Either way every send lands in a hidden conversation (#291, #302) that the
-// caller owns, never in the person's open chat.
+// Either way every send lands in the agent's single chat with the person
+// the caller works for (#1170, like the reference design), never a hidden conversation:
+// the sender rides on the line and the chat folds the exchange (#291).
 import type { GuardDecision, GuardPolicy, ToolGuardMode } from "./tool-guard.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { parseWakePriority, planPriorityWake, releasePriorityNow, wakeSenderId, type PriorityDelivery } from "./priority-wake.ts";
@@ -248,10 +249,11 @@ export interface AgentApiDeps {
   messages(threadId: string): StoredMessage[];
   /** The live state of one conversation. */
   turnState(agentId: string, threadId: string): TurnState;
-  /** The caller's hidden conversation with this agent: the newest open one,
-   * else a new one. `fresh` always opens a new one (an AI client's ping must
-   * not make the engine read the whole earlier history again). */
-  conversation(caller: AgentCaller, agentId: string, options?: { fresh?: boolean }): Promise<{ threadId: string } | Refusal>;
+  /** #1170: the agent's single chat with the person the caller works for
+   * (the open conversation they last wrote in), else their first one. Never
+   * a hidden conversation: the person sees, closes and sets the level of
+   * every conversation their bot has. */
+  conversation(caller: AgentCaller, agentId: string): Promise<{ threadId: string } | Refusal>;
   /** Put the prompt (and the staged files) into the conversation and start or
    * queue its turn. messageId is the stored prompt's id, when known. */
   post(caller: AgentCaller, agentId: string, threadId: string, prompt: string, files: FileInput[], wake?: PriorityDelivery): Promise<{ messageId: string | null } | Refusal>;
@@ -565,6 +567,16 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const limiter = new AgentRateLimiter();
   if (deps.secret.length < 32) throw new Error("the agent API secret must be at least 32 bytes");
+  /** #1170: the prompt each caller last started in a conversation. In the
+   * bot's single chat the running turn may be the person's own or another
+   * caller's: supersede stops only a turn this caller started. */
+  const startedBy = new Map<string, { messageId: string; caller: string }>();
+  const ownsRunningTurn = (caller: AgentCaller, threadId: string): boolean => {
+    const mine = startedBy.get(threadId);
+    if (!mine || mine.caller !== callerKey(caller)) return false;
+    const lastUser = [...deps.messages(threadId)].reverse().find((message) => message.role === "user");
+    return lastUser?.id === mine.messageId;
+  };
 
   const ok = (body: Record<string, unknown>): AgentApiAnswer => ({ status: 200, body });
   const asAnswer = (refusal: Refusal): AgentApiAnswer => ({
@@ -740,9 +752,8 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       }
       const agent = await reachable(caller, agentId);
       if (isRefusal(agent)) return agent;
-      // An AI client (a person) starts a fresh hidden conversation unless it
-      // names one of its own to continue: the engine reads a conversation's
-      // whole history again every turn. A bot keeps one per pair.
+      // #1170: the agent's single chat with the person, unless the caller
+      // names one of its own conversations to continue.
       let conversation: { threadId: string } | Refusal;
       if (continued !== null) {
         if (!deps.threads(caller, agentId).some((thread) => thread.threadId === continued)) {
@@ -750,18 +761,20 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
         }
         conversation = { threadId: continued };
       } else {
-        conversation = await deps.conversation(caller, agentId, caller.kind === "person" ? { fresh: true } : undefined);
+        conversation = await deps.conversation(caller, agentId);
       }
       if (isRefusal(conversation)) return conversation;
       const { threadId } = conversation;
       const state = deps.turnState(agentId, threadId);
       if (state !== "idle") {
         if (onBusy === "reject") {
-          return refuse(409, "busy", `${agent.name} is still working on your previous prompt. Wait with await_turn, or send with on_busy queue (waits its turn) or supersede (stops the running turn).`, { thread_id: threadId });
+          return refuse(409, "busy", `${agent.name} is still working in this conversation. Wait with await_turn, or send with on_busy queue (waits its turn) or supersede (stops the running turn).`, { thread_id: threadId });
         }
         // priority now never stops a turn that is already running, even when
         // the caller also asked to supersede.
-        if (onBusy === "supersede" && asked !== "now" && (state === "running" || state === "waiting")) await deps.interrupt(agentId, threadId);
+        // #1170: only a turn this caller started; another's (the person's
+        // own, another bot's) is never stopped: the prompt waits its turn.
+        if (onBusy === "supersede" && asked !== "now" && (state === "running" || state === "waiting") && ownsRunningTurn(caller, threadId)) await deps.interrupt(agentId, threadId);
       }
       const slotFree = deps.turnState(agentId, threadId) === "idle";
       const senderId = wakeSenderId(caller);
@@ -777,6 +790,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
         if (plan.reported === "now") releasePriorityNow(senderId);
         return posted;
       }
+      if (posted.messageId) startedBy.set(threadId, { messageId: posted.messageId, caller: callerKey(caller) });
       const body: HandleBody = { a: agentId, t: threadId, m: posted.messageId, i: issuedAt, c: callerKey(caller) };
       const handle = signHandle(deps.secret, body);
       const accepted = {

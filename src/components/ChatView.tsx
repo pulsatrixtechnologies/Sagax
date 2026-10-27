@@ -895,7 +895,9 @@ function PeerLabel({ peer, autoModel }: { peer: PeerLine; autoModel?: Message["a
   const author =
     bots.find((b) => b.id === peer.botId) ?? bots.find((b) => b.name === peer.name);
   const how =
-    peer.delivery === "delegate_bot"
+    peer.delivery === "ai_client"
+      ? t("chat.peer.viaAiClient")
+      : peer.delivery === "delegate_bot"
       ? t("chat.peer.delegated")
       : peer.delivery === "start_thread"
         ? t("chat.peer.openedThread")
@@ -912,7 +914,7 @@ function PeerLabel({ peer, autoModel }: { peer: PeerLine; autoModel?: Message["a
         motionKey={0}
         animated={false}
       />
-      <span className="text-[11px] font-medium text-ink-secondary">{peer.name}</span>
+      <span className="text-[11px] font-medium text-ink-secondary">{peer.delivery === "ai_client" ? t("chat.peer.aiClientName") : peer.name}</span>
       <span className="text-[11px] text-ink-tertiary">· {how}</span>
       {/* Auto: the model this delegated work runs on, and its class. */}
       {autoModel?.role === "worker" && (

@@ -113,6 +113,20 @@ export function serverCommandApproval(input: { tool?: string; command?: unknown 
 const WORKSPACE_FILE_TOOLS = new Set(["read", "write", "edit", "multiedit", "notebookedit", "notebookread", "glob", "grep", "ls"]);
 /** The ones that only read. */
 const READ_ONLY_FILE_TOOLS = new Set(["read", "notebookread", "glob", "grep", "ls"]);
+/** #1169: Sagax's own file-view tools ("<bot> wants to view files"), as an
+ * MCP server spells them: a read of the bot's own folders is the owner's,
+ * like a native Read there. */
+const MCP_FILE_VIEW_TOOL = /^(?:mcp__)?(?:sagax-environment|sagax-desktop|files)__(read_file|list_files|search_files)$/i;
+
+/** The path a file-view MCP call names in its arguments, when absolute. */
+export function fileViewToolPaths(tool: string | undefined, input: string | undefined): string[] {
+  if (!MCP_FILE_VIEW_TOOL.test(tool?.trim() ?? "")) return [];
+  let args: unknown;
+  try { args = JSON.parse(input ?? ""); } catch { return []; }
+  if (!args || typeof args !== "object" || Array.isArray(args)) return [];
+  const path = (args as Record<string, unknown>).path;
+  return typeof path === "string" && isAbsolute(path) ? [path] : [];
+}
 
 /** A path's real location: the deepest existing ancestor resolved through
  * its symlinks, then the part that does not exist yet. */
@@ -184,6 +198,9 @@ export function memberBotAdminApproval(input: {
   command?: unknown;
   paths?: string[];
   workspaceRoot: string;
+  /** #1169: more of the bot's own folders it may read without an admin
+   * (its workspace, where send_prompt files land in inbox/). Reads only. */
+  readRoots?: string[];
   /** 2026-10-14 (bot owner permissions): whether this MCP server acts
    * through its owner's identity elsewhere (a remote server mounted for the
    * bot, or a personal connection of the owner, which runs in their own
@@ -226,19 +243,26 @@ export function memberBotAdminApproval(input: {
   if (builtin && dataToolName(input.tool)) return false;
   if (ownerScopedTool(input.tool?.trim() ?? "", input.ownerScopedMcpServer)) return false;
   const tool = input.tool?.trim().toLowerCase() ?? "";
-  if (!WORKSPACE_FILE_TOOLS.has(tool)) return true;
+  // #1169: Sagax's own file views (read_file, list_files, search_files) only
+  // read, like a native Read: inside the bot's own folders they are the
+  // owner's card, so the bot's level (Full included) answers them.
+  const fileView = MCP_FILE_VIEW_TOOL.test(tool);
+  if (!WORKSPACE_FILE_TOOLS.has(tool) && !fileView) return true;
   if (!input.paths?.length) return true;
-  const root = realLocation(input.workspaceRoot);
   // 2026-10-19 (bot quality, cause A): a read may open the bot's own skill
   // revisions and plugin manifests (READABLE_HIDDEN_SEGMENTS); every other
   // dot folder, and any write into a dot folder, still waits for an admin.
-  const reads = READ_ONLY_FILE_TOOLS.has(tool);
+  const reads = fileView || READ_ONLY_FILE_TOOLS.has(tool);
+  const roots = [input.workspaceRoot, ...(reads ? input.readRoots ?? [] : [])].map(realLocation);
   return !input.paths.every((path) => {
     if (typeof path !== "string" || !isAbsolute(path)) return false;
-    const rel = relative(root, realLocation(path));
-    if (rel === "") return true;
-    if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
-    return !rel.split(sep).some((segment) => segment.startsWith(".") && !(reads && READABLE_HIDDEN_SEGMENTS.has(segment)));
+    const real = realLocation(path);
+    return roots.some((root) => {
+      const rel = relative(root, real);
+      if (rel === "") return true;
+      if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
+      return !rel.split(sep).some((segment) => segment.startsWith(".") && !(reads && READABLE_HIDDEN_SEGMENTS.has(segment)));
+    });
   });
 }
 

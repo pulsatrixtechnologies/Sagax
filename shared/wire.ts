@@ -12,7 +12,7 @@ import type { LimitFailoverLine } from "./limit-failover.ts";
 import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { DataBroadcast } from "./data-surface.ts";
-import type { ApprovalMode } from "./approval-mode.ts";
+import type { ApprovalException, ApprovalMode } from "./approval-mode.ts";
 import type { ProactiveMode } from "./proactive-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
@@ -214,9 +214,20 @@ export interface WireTask {
    * person picked this thread's model. Derived at projection, never stored;
    * absent from servers older than this field. */
   followsBotModel?: boolean;
+  /** The thread's own approval level, present only with approvalOwn: a
+   * thread follows its bot's current level live (#1169, #1170), and stores
+   * none. */
   approvalMode?: ApprovalMode;
   autoApprove?: boolean;
+  /** Standing approvals saved in this thread. A thread that follows its bot
+   * also gets the bot's own; an exception keeps only these. */
   alwaysAllow?: string[];
+  /** Why this thread runs at its own approval level instead of its bot's:
+   * a person chose it in this thread ("thread"), a Primary Bot delegated its
+   * level ("delegated"), an engine change asks again ("engine"), or a safety
+   * revocation ("safety"). Absent: the thread follows the bot, live. Any
+   * change of the bot's level ends every exception (approval-levels.md). */
+  approvalOwn?: ApprovalException;
   unread?: boolean;
   /** The newest message on screen the last time the person read this
    * conversation. The New divider goes after it. */
@@ -839,6 +850,10 @@ export interface WireMessage {
    * failure already buzzed the person (a run that could not start, a
    * failed routine). */
   peerAsk?: { botId: string; name: string; unattended?: boolean; incident?: { threadId: string; notified?: boolean } };
+  /** #291: a user-role line a person's AI client sent through the agent API
+   * (send_prompt, sagax_send) into this bot's chat: not the person typing.
+   * The chat folds it with the bot's answer into one exchange chip. */
+  aiClient?: true;
   /** Auto: the model this delivered work ran on, and why (the delegation
    * card and the worker's activity row). Clients that do not know it ignore it. */
   autoModel?: AutoModelRecord;

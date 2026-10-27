@@ -1369,7 +1369,6 @@
   "botPanel.permissions.ask": "Mich fragen, bevor andere Bots kontaktiert werden",
   "botPanel.permissions.approval": "Freigabestufe",
   "botPanel.permissions.approvalDraft": "Vorgabe für die Unterhaltungen, Routinen und übertragene Arbeit des neuen Bots.",
-  "botPanel.permissions.approvalHelp": "Vorgabe für neue Unterhaltungen, Routinen und übertragene Arbeit. Wenn du vollen Zugriff einschaltest, kannst du ihn auch auf jede bestehende Unterhaltung anwenden. Mit Berechtigungen aktualisieren übernimmst du die aktuelle Stufe für diese Unterhaltung.",
   "botPanel.permissions.applyFull": "Vollen Zugriff auf alle Unterhaltungen anwenden",
   "botPanel.permissions.outbound": "Senden in deinem Namen",
   "botPanel.permissions.outboundHelp": "E-Mails, Nachrichten, Beiträge, Einladungen und Zahlungen über verbundene Apps. Lesen und Entwürfe zählen nie. Das gilt auf jeder Freigabestufe, auch bei vollem Zugriff.",

@@ -86,11 +86,12 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
       turnStateCalls.push(threadId);
       return state.get(threadId) ?? "idle";
     },
-    async conversation(caller, agentId, options) {
-      const found = options?.fresh ? undefined : [...threads].find(([, t]) => t.agentId === agentId && t.owner === key(caller));
+    // #1170: the agent's single chat with the caller's person
+    async conversation(caller, agentId) {
+      const found = [...threads].find(([, t]) => t.agentId === agentId && t.owner === key(caller));
       if (found) return { threadId: found[0] };
       const threadId = `t${++ids}`;
-      threads.set(threadId, { agentId, owner: key(caller), title: `${caller.name} via agent API`, hidden: true });
+      threads.set(threadId, { agentId, owner: key(caller), title: `${caller.name} via agent API`, hidden: false });
       return { threadId };
     },
     async post(_caller, _agentId, threadId, prompt, files, wake) {

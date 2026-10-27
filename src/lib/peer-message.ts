@@ -13,7 +13,7 @@
 // The wire shape, so server code and tests can read peer lines too.
 import type { WireMessage as Message } from "../../shared/wire.ts";
 
-export type PeerDelivery = "ask_bot" | "delegate_bot" | "start_thread" | "coordinate_bots";
+export type PeerDelivery = "ask_bot" | "delegate_bot" | "start_thread" | "coordinate_bots" | "ai_client";
 
 export interface PeerLine {
   /** The bot that wrote it; absent on rows older than Message.peerAsk. */
@@ -24,6 +24,10 @@ export interface PeerLine {
   body: string;
   unattended?: boolean;
 }
+
+/** The party an AI client's line names (its chip and its sheet): the
+ * renderer shows the localized label for it. */
+export const AI_CLIENT_PARTY = "AI client";
 
 // The note is one bracketed line with a fixed opening; the wording after
 // the workspace clause varies by delivery and is not needed here.
@@ -37,9 +41,11 @@ const DELIVERY: Record<string, PeerDelivery> = {
 };
 
 /** Who wrote a user-role line, when it was not the person; null when it was. */
-export function peerLine(message: Pick<Message, "role" | "text" | "peerAsk">): PeerLine | null {
+export function peerLine(message: Pick<Message, "role" | "text" | "peerAsk" | "aiClient">): PeerLine | null {
   if (message.role !== "user") return null;
   const text = message.text ?? "";
+  // #291: a person's AI client (send_prompt) wrote it, not the person typing
+  if (message.aiClient === true && !message.peerAsk) return { name: AI_CLIENT_PARTY, delivery: "ai_client", body: text };
   const note = PROVENANCE_NOTE.exec(text);
   const name = message.peerAsk?.name ?? note?.[2]?.trim();
   if (!name) return null;

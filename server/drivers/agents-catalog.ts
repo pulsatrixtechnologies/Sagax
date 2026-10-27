@@ -1557,7 +1557,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
 
 /** The agent-to-agent tools (server/agent-api.ts, docs/agent-api.md): the
  * names, parameters and limits of the reference design's own agent tools. Every send
- * lands in a hidden conversation the calling bot owns on that agent. */
+ * lands in that agent's single chat with its person (#1170), the sender named. */
 const AGENT_ID = { type: "string", description: "The agent's id, exactly as list_agents or find_agents returned it." } as const;
 const AGENT_CURSOR = { type: "string", description: "next_cursor of the previous page: entries before it." } as const;
 const AGENT_API_TOOLS = [
@@ -1597,7 +1597,7 @@ const AGENT_API_TOOLS = [
   },
   {
     name: "send_prompt",
-    description: "Send a prompt to an agent in your own hidden conversation with it. mode fire_and_forget (default) and async return a handle once accepted (async also tells you when the turn ends); blocking waits up to timeout_ms. After a timeout, resume with await_turn and the handle: never re-send. An empty reply with finished=true means the agent said nothing. on_busy: queue (default) waits its turn, reject refuses, supersede stops its running turn (and any approval it waits on). Optional priority now wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn; past 10 now sends an hour it is delivered as normal.",
+    description: "Send a prompt to an agent: it lands in the agent's one chat with its person, your name on it, and runs at the agent's own approval level. mode fire_and_forget (default) and async return a handle once accepted (async also tells you when the turn ends); blocking waits up to timeout_ms. After a timeout, resume with await_turn and the handle: never re-send. An empty reply with finished=true means the agent said nothing. on_busy: queue (default) waits its turn, reject refuses, supersede stops the running turn you started (and any approval it waits on), never someone else's. Optional priority now wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn; past 10 now sends an hour it is delivered as normal.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       agent_id: AGENT_ID,
       prompt: { type: "string", minLength: 1, maxLength: 32000 },

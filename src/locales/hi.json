@@ -1351,7 +1351,6 @@
   "botPanel.permissions.ask": "अन्य bots से संपर्क से पहले मुझसे पूछें",
   "botPanel.permissions.approval": "अनुमोदन स्तर",
   "botPanel.permissions.approvalDraft": "नए bot की बातचीत, रूटीन और सौंपे गए काम का डिफ़ॉल्ट।",
-  "botPanel.permissions.approvalHelp": "नई बातचीत, रूटीन और सौंपे गए काम का डिफ़ॉल्ट। पूर्ण पहुँच चालू करते समय आप इसे हर मौजूदा बातचीत पर भी लगा सकते हैं। किसी बातचीत पर वर्तमान स्तर लगाने के लिए अनुमतियाँ ताज़ा करें का उपयोग करें।",
   "botPanel.permissions.applyFull": "सभी बातचीत पर पूर्ण पहुँच लागू करें",
   "botPanel.permissions.outbound": "आपकी ओर से भेजना",
   "botPanel.permissions.outboundHelp": "जुड़े ऐप्स से ईमेल, संदेश, पोस्ट, निमंत्रण और भुगतान। पढ़ना और मसौदा कभी नहीं गिने जाते। यह हर अनुमोदन स्तर पर लागू होता है, पूर्ण पहुँच सहित।",
