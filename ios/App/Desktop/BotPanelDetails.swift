@@ -420,6 +420,10 @@ struct BotPanelRoutines: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if loaded && mine.isEmpty {
+                // No routine: no section, one quiet line (RoutinesSection.tsx).
+                AnyView(emptyHint)
+            } else {
             HStack(spacing: 8) {
                 DesktopIconView(icon: .calendarClock, size: 16)
                     .foregroundStyle(theme.inkSecondary)
@@ -433,6 +437,7 @@ struct BotPanelRoutines: View {
             }
             .frame(height: 28)
             AnyView(list)
+            }
         }
         .task { await load() }
         .sheet(item: $openRoutine) { routine in
@@ -447,6 +452,40 @@ struct BotPanelRoutines: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desktop-panel-routines")
+    }
+
+    /// A bot without routines: one centered, quiet line. "Ask it in chat" opens
+    /// the bot's conversation; "New routine" opens the same editor as the +.
+    private var emptyHint: some View {
+        let ask = String(localized: "Ask it in chat")
+        let full = String(format: String(localized: "Routines are recurring tasks this Bot runs on a schedule. %@ to set one up."), ask)
+        var text = AttributedString(full)
+        if let range = text.range(of: ask) {
+            text[range].link = URL(string: "sagax-ask://chat")
+            text[range].underlineStyle = .single
+        }
+        return VStack(spacing: 4) {
+            Text(text)
+                .font(theme.font(12))
+                .foregroundStyle(theme.inkTertiary)
+                .multilineTextAlignment(.center)
+                .environment(\.openURL, OpenURLAction { _ in
+                    session.openChat(threadId: bot.threadId)
+                    return .handled
+                })
+                .accessibilityIdentifier("desktop-panel-routines-hint")
+            Button { adding = true } label: {
+                Text("New routine")
+                    .font(theme.font(12))
+                    .foregroundStyle(theme.inkSecondary)
+                    .padding(.horizontal, 4)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("desktop-panel-routine-new")
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
     }
 
     private func iconButton(_ icon: DesktopIcon, size: CGFloat, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
