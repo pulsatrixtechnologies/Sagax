@@ -220,8 +220,8 @@ describe("sidebar footer row", () => {
   });
 });
 
-describe("the wide foot's account pill (reference design)", () => {
-  it("draws the avatar and the name in one rounded pill that opens the account menu", () => {
+describe("the foot's profile (the reference design's row)", () => {
+  it("draws the avatar and the name, no background pill, that opens the account menu", () => {
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { avatarOnly: true, withName: true }));
     const pill = /<span[^>]*data-sidebar-account-pill=""[^>]*>/.exec(html)?.[0] ?? "";
     expect(pill).toContain("rounded-full");
@@ -229,7 +229,9 @@ describe("the wide foot's account pill (reference design)", () => {
     expect(pill).toContain("[button:focus-visible:not([data-pointer-focus])&gt;&amp;]:ring-2");
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toMatch(/data-account-pill-name=""[^>]*>[^<]+<\/span>/);
-    expect(html).toContain("width:32px");
+    expect(html).toContain("width:36px");
+    expect(pill).not.toContain("bg-sidebar-card");
+    expect(pill).not.toContain("border-sidebar-hairline");
     // no title or points line in the pill, and not the wide row's layout
     expect(html).not.toContain("data-member-line");
     expect(html).not.toContain("data-sidebar-account-row");
@@ -246,7 +248,7 @@ describe("the wide foot's account pill (reference design)", () => {
     const pill = /<span[^>]*data-sidebar-account-pill=""[^>]*>/.exec(html)?.[0] ?? "";
     expect(pill).toContain("w-full");
     // tight insets, so "Jean…" still shows beside the open label at 280px
-    expect(pill.split(/[\s"]/)).toEqual(expect.arrayContaining(["gap-1", "pl-1", "pr-1"]));
+    expect(pill.split(/[\s"]/)).toEqual(expect.arrayContaining(["gap-2", "pl-0.5", "pr-1"]));
     // the name is one line, cut only by the room it has (never in markup)
     const name = /<span data-account-pill-name="" class="([^"]*)"/.exec(html)?.[1] ?? "";
     expect(name.split(" ")).toEqual(expect.arrayContaining(["min-w-0", "flex-1", "truncate"]));

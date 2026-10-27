@@ -128,19 +128,18 @@ describe("sidebar header", () => {
     },
   );
 
-  // The foot (reference design): the account pill (avatar and name, the
-  // account menu) and the plain Connect apps button, whatever Sidebar
+  // The foot (JC, 2026-10-27): the profile row (avatar and name, no pill, the
+  // account menu) and the round apps grid button, whatever Sidebar
   // shortcuts said. No Browse Bots row: Browse Bots is in the account menu.
-  it.each([true, false])("draws only the account pill and the Connect apps button at the foot (shortcuts %s)", (shortcuts) => {
+  it.each([true, false])("draws only the profile and the round apps grid button at the foot (shortcuts %s)", (shortcuts) => {
     fixture.density = "comfortable";
     fixture.shortcuts = shortcuts;
     resetAchievementsForTests({ status: "ready", snapshot: achievementSnapshot() });
     const html = render();
     const foot = html.slice(html.indexOf("data-sidebar-foot"));
     expect(foot).toContain("data-sidebar-account-row");
-    // the row is the container the open label's cap measures (100cqw)
     const row = /<div data-sidebar-account-row="[^"]*" class="([^"]*)"/.exec(foot)?.[1] ?? "";
-    expect(row.split(" ")).toEqual(expect.arrayContaining(["gap-1.5", "[container-type:inline-size]"]));
+    expect(row.split(" ")).toEqual(expect.arrayContaining(["gap-1.5"]));
     expect(foot).not.toContain("data-sidebar-place=");
     expect(foot).not.toContain(">Browse Bots</span>");
     expect(foot).not.toContain("data-account-name");
@@ -151,16 +150,14 @@ describe("sidebar header", () => {
     const pill = buttons[0] ?? "";
     expect(pill).toContain('type="button"');
     expect(pill).toContain('data-tour="nav-apps"');
-    // a small rounded pill beside the name pill (#935's design): only the
-    // generic icon here (nothing connected in this fixture), no words
+    // a separate round button beside the profile: the apps grid, no words,
+    // no overlapping logos (nothing connected in this fixture: no dot)
     expect(pill).toContain("rounded-full");
-    expect(pill).toContain('data-connect-apps-layout="inline"');
-    expect(pill).not.toContain("sidebar-apps-pill");
+    expect(pill).toContain("size-9");
     expect(pill.slice(0, pill.indexOf(">"))).toContain("shrink-0");
-    // same height as the account pill (the --foot-tile-h tile of #980)
-    expect(pill).toContain("h-[var(--foot-tile-h,2.25rem)]");
+    expect(pill).toContain("data-apps-grid-icon");
     expect(pill).not.toContain("data-connect-apps-label");
-    expect(pill).toContain("lucide-puzzle");
+    expect(pill).not.toContain("data-connected-apps-stack");
     // the account pill carries the avatar and the name
     expect(foot).toContain("data-sidebar-account-pill");
     expect(foot).toContain("data-account-pill-name");
