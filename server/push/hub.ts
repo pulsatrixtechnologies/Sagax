@@ -1,7 +1,9 @@
 // The push hub: takes what happened (a message for a person, a nudge, an
 // approval, an achievement, a routine that failed), decides with
 // ./decide.ts whether that person's phones get a push, and sends it to
-// each registered device (./devices.ts) through APNs (./apns.ts).
+// each registered device: iPhones (./devices.ts) through APNs (./apns.ts),
+// Android phones (./fcm-devices.ts) through FCM HTTP v1 (./fcm.ts,
+// 2026-10-26). Either one may be off; the other still sends.
 //
 // Without APNs settings (./config.ts) it logs one clear line the first time
 // a push would have gone out, then skips quietly. A dead token (410, or 400
@@ -11,11 +13,15 @@ import type { ApnsConfigResult } from "./config.ts";
 import { maskSecret } from "./config.ts";
 import { PUSH_SEEN_GRACE_MS, PushRateLimiter, shouldPush, waitsForGrace } from "./decide.ts";
 import type { PushDeviceStore } from "./devices.ts";
+import type { AndroidPushDeviceStore } from "./fcm-devices.ts";
+import { buildFcmMessage, type FcmSender } from "./fcm.ts";
 import { buildApnsRequest, buildReadSyncRequest, collapseId, type PushMessage } from "./payload.ts";
 
 export interface PushHubDeps {
   config: ApnsConfigResult;
   store: PushDeviceStore;
+  /** Android phones (FCM). Absent or no sender: Android pushes are off. */
+  android?: { store: AndroidPushDeviceStore; sender: FcmSender | null; reason?: string };
   /** A client of this person is connected right now (presence, or a live stream). */
   connected(person: string): boolean;
   /** APNs tokens of this person's devices that have a live stream right now.
@@ -80,7 +86,16 @@ export class PushHub {
       }
     }
     this.sender = sender;
-    this.enabled = sender !== null;
+    this.fcm = deps.android?.sender ?? null;
+    if (this.fcm) this.log.info("push: FCM on (Android)");
+    this.enabled = sender !== null || this.fcm !== null;
+  }
+
+  private readonly fcm: FcmSender | null;
+
+  /** This person's Android phones. */
+  private androidDevices(person: string) {
+    return this.deps.android?.store.list(person) ?? [];
   }
 
   /** Something a person may want on their phone. Never throws. */
@@ -88,12 +103,15 @@ export class PushHub {
     try {
       const person = message.personId.trim().toLowerCase();
       if (!person) return;
-      if (!this.deps.store.list(person).length) return;
-      if (!this.sender) {
+      const iosDevices = this.deps.store.list(person).length;
+      const androidDevices = this.androidDevices(person).length;
+      if (!iosDevices && !androidDevices) return;
+      if (!this.sender && !(androidDevices && this.fcm)) {
         if (!this.notConfiguredLogged) {
           this.notConfiguredLogged = true;
           const reason = this.deps.config.configured ? "key not loaded" : this.deps.config.reason;
-          this.log.warn(`push: APNs is not configured (${reason}); pushes to phones are skipped (docs/ios-push.md)`);
+          if (iosDevices) this.log.warn(`push: APNs is not configured (${reason}); pushes to phones are skipped (docs/ios-push.md)`);
+          if (androidDevices) this.log.warn(`push: FCM is not configured (${this.deps.android?.reason ?? "not set"}); pushes to Android phones are skipped (docs/android-push.md)`);
         }
         return;
       }
@@ -165,13 +183,20 @@ export class PushHub {
   /** The silent "read" push, at most READ_SYNC_MAX per person per window. */
   private syncRead(person: string, threadId: string): void {
     const sender = this.sender;
-    if (!sender || !this.deps.store.list(person).length) return;
+    const fcm = this.fcm;
+    const ios = sender ? this.deps.store.list(person) : [];
+    const android = fcm ? this.androidDevices(person) : [];
+    if (!ios.length && !android.length) return;
     if (!this.readLimiter.tryTake(person, this.now())) return;
     const bundleId = this.deps.config.configured ? this.deps.config.config.bundleId : "";
     const run = (async () => {
-      for (const device of this.deps.store.list(person)) {
-        const outcome = await sender.send(device, buildReadSyncRequest({ threadId, bundleId, nowMs: this.now() }));
+      for (const device of ios) {
+        const outcome = await sender!.send(device, buildReadSyncRequest({ threadId, bundleId, nowMs: this.now() }));
         if (!outcome.ok && outcome.prune) this.deps.store.prune(device.token);
+      }
+      for (const device of android) {
+        const outcome = await fcm!.send(device.token, buildFcmMessage({ message: { kind: "message", personId: person, title: "", body: "", threadId, at: this.now() }, token: device.token, kind: "read" }));
+        if (!outcome.ok && outcome.prune) this.deps.android?.store.prune(device.token);
       }
     })().catch((error) => {
       this.log.warn(`push: read sync failed (${error instanceof Error ? error.message : String(error)})`);
@@ -201,7 +226,9 @@ export class PushHub {
   }
 
   private dispatch(message: PushMessage): void {
-    if (!this.devicesToSend(message.personId).length) return;
+    const ios = this.sender ? this.devicesToSend(message.personId).length : 0;
+    const android = this.fcm ? this.androidDevices(message.personId).length : 0;
+    if (!ios && !android) return;
     if (!this.limiter.tryTake(message.personId, this.now())) return;
     if (message.threadId && message.kind !== "nudge") {
       if (this.pushed.size >= 5_000) this.pushed.clear();
@@ -215,6 +242,19 @@ export class PushHub {
   }
 
   private async deliver(message: PushMessage): Promise<void> {
+    await this.deliverIos(message);
+    const fcm = this.fcm;
+    if (!fcm) return;
+    for (const device of this.androidDevices(message.personId)) {
+      const outcome = await fcm.send(device.token, buildFcmMessage({ message, token: device.token }));
+      if (!outcome.ok && outcome.prune) {
+        this.deps.android?.store.prune(device.token);
+        this.log.info(`push: removed Android device ${maskSecret(device.token)} (${outcome.status} ${outcome.reason})`);
+      }
+    }
+  }
+
+  private async deliverIos(message: PushMessage): Promise<void> {
     const sender = this.sender;
     if (!sender) return;
     const personSound = this.deps.personSound?.(message.personId) ?? true;

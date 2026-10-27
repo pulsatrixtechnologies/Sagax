@@ -288,6 +288,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
+| Reach me: how this bot reaches you outside the app when a card waits on you ({ channels: push/sms/teams/telegram/whatsapp, smsNumber?: your own E.164 number, hours: { always: true } or { always: false, timeZone, ranges: [{ days: 0-6, start: HH:MM, end: HH:MM }] } }) | Bot panel > Overview > Reach me | `sagax_settings` get, set `notifications.reachMe` | simple |
+| Reach me by Telegram: connect your own bot ({ token } from BotFather; the answer gives the t.me link to press Start), or { disconnect: true } | Bot panel > Overview > Reach me > Telegram | `sagax_settings` set `notifications.reachMeTelegram` | simple |
 | Notification sounds | Settings > Notifications | `sagax_settings` set `notifications.sounds` | simple |
 | Notification sound (the system's, Tick, Double tick, Chime A, Chime B, Blip) | Settings > Notifications | `sagax_settings` set `notifications.soundChoice` | simple |
 | Persistent notifications | Settings > Notifications | `sagax_settings` set `notifications.persistent` | simple |

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -200,6 +201,27 @@
           window is open. stopWithTask: swiping the task away is the user
           saying they are done, so the window goes with it.
         -->
+        <!--
+          Closed-app pushes through FCM (2026-10-26, "Me joindre"). Firebase is
+          started by hand (push/FcmSetup.kt) only when the build carries the
+          Firebase identifiers; its automatic initializer is removed so a build
+          without them never touches Firebase.
+        -->
+        <service
+            android:name=".push.SagaxMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
+
         <service
             android:name=".lifecycle.SessionLingerService"
             android:exported="false"

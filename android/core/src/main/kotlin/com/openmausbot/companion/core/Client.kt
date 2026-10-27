@@ -226,6 +226,27 @@ class CompanionClient(
 
     suspend fun health(): JsonObject = send(makeRequest("GET", "/api/health"))
 
+    /**
+     * Registers this phone's FCM registration token for closed-app pushes
+     * (2026-10-26, "Me joindre"): `POST /api/push/devices` with
+     * `platform: "android"`. The server only learns the token; it never
+     * comes back in full.
+     */
+    suspend fun registerPushDevice(token: String, deviceName: String, appVersion: String) {
+        sendUnit(
+            makeRequest(
+                "POST",
+                "/api/push/devices",
+                body = buildJsonObject {
+                    put("token", token)
+                    put("platform", "android")
+                    put("deviceName", deviceName.take(80))
+                    put("appVersion", appVersion.take(40))
+                },
+            ),
+        )
+    }
+
     /** Wire support for P1-03; applying the snapshot to a live session is deliberately later. */
     suspend fun connectionMetadata(): CompanionConnectionMetadata =
         send(makeRequest("GET", "/api/companion/endpoints"))

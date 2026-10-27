@@ -1050,6 +1050,90 @@ only wakes a routine, like bot email. Covered by
   actor the owner `via: "perspicax-voice"`: bot, event, masked number,
   PIN result, trigger counts.
 
+## Reach me: one setting per bot to reach the person outside the app (2026-10-26)
+
+Decision: "un seul cadre « Me joindre » par bot" (the analyses of the
+2026-10-26 comparisons: Telegram and WhatsApp per bot, Slack, Teams, SMS,
+push with resume). When a question or an approval card waits on a person,
+the bot reaches them outside the app the way THEY chose for THAT bot, and
+the turn picks up when they answer from that channel. Each person chooses
+for themself, for every bot they can see: no admin, no owner check.
+
+- Setting: `shared/reach-me.ts` (`channels`: push, sms, teams, telegram,
+  whatsapp; `smsNumber`, the person's own E.164 number; `hours`: always, or
+  ranges of days and HH:MM in a time zone, a range past midnight belongs to
+  the day it starts). Stored per person and bot in `<data>/reach-me.json`
+  (0600, `server/reach-me/store.ts`). No choice saved: push only at any
+  hour, the behavior before. Routes `GET/PUT /api/bots/:id/reach-me`,
+  `POST/DELETE /api/bots/:id/reach-me/telegram` (`server/routes/reach-me.ts`,
+  client-scoped). `sagax_settings` keys `notifications.reachMe` and
+  `notifications.reachMeTelegram` (the token is a secret: its card).
+- Out (`server/reach-me/service.ts`): `observePushFrame` asks `allowsPush`
+  for every card push (push chosen and within the hours; any other push is
+  unchanged), then `cardRaised` sends the card through every other channel
+  chosen and ready, with ONE reply code for that card (4 characters of
+  `REACH_CODE_ALPHABET`, a day at most, gone when the card settles:
+  `withdrawApprovalNotice` -> `cardSettled`). Outside the hours nothing
+  leaves; the card goes out (push included) when the next range starts if
+  still open (`tick`, every minute). A confidential card's words never
+  leave the app; a card that needs the person's security key says Allow
+  needs Sagax (Deny works from outside).
+- Back: a reply counts only when it starts with an open code of that
+  person, came through a channel the code was sent through, and for a text
+  from the number it was sent to; never "any text from that number". Then
+  the answer IS the click: POST `/api/threads/:id/respond` replayed with the
+  person's own session (`reachMeRespond`, the Primary Bot's replay), so
+  every check of the click applies. The card reads "· via Texto/Telegram/
+  Teams" (`answeredBy.via: "reach-me"`, `channel`). A yes/no is one word
+  read by Sagax (`readReachDecision`); a question's answer reaches the bot
+  inside `[UNTRUSTED REACH-ME REPLY <boundary>]`, markers defanged
+  (`fenceReachReply`). Ten wrong codes in 10 minutes per person and channel:
+  replies refused for a while. Journal rows `reach-me.*` (category
+  `approval`): bot, channel, outcome; never the text or a full number.
+- Channels share one contract, `ReachChannel` (`server/reach-me/channel.ts`:
+  `status`, `send`; replies come back as `ReachInbound` with the person the
+  channel proved):
+  - push: iOS APNs as before, plus Android through FCM HTTP v1
+    (`server/push/fcm.ts`, `SAGAX_FCM_SERVICE_ACCOUNT_PATH` or `_JSON`,
+    never committed; off with one log line when unset). Android devices
+    register with `POST /api/push/devices { platform: "android" }`
+    (`server/push/fcm-devices.ts`); the app starts Firebase only when the
+    build carries its four identifiers (`android/app/build.gradle.kts`, no
+    google-services.json). See `docs/android-push.md`.
+  - sms (`server/reach-me/sms.ts`): Perspicax Voice with the person's own
+    access (`reachMeVoice`: `voice_line`, the number must be one of the
+    line's verified callers, masked match, then `voice_sms`). The reply
+    arrives on `POST /api/org/telephony/inbound` (PR #1134, event `sms`),
+    which must call `reachMeSmsReply` (`server/reach-me/inbound.ts`) before
+    its triggers and stop when `handled`. A text costs money: no retry, no
+    acknowledgement by text.
+  - teams (`server/reach-me/teams.ts`): the person's own engine connector,
+    no Graph client, no Teams app. Each step is a confined routine run of a
+    bot the person owns (`webhookId` `reach-me-teams`, "Reach me (Teams)" in
+    Automations). The send run's ONE Teams post or chat send to the
+    person's self chat, carrying its code and no address but theirs, takes
+    no extra card (`reachMeSelf`, `autoVerdict` source `reach-me`); every
+    other call keeps its rules, a security key, an explicit approval, the
+    safety hold and the person's rules included. The reply is read by check
+    runs at 2, 6, 15 and 40 minutes (reads only), stopped when the card
+    settles; later, the app or another channel answers.
+  - telegram (`server/reach-me/telegram.ts`): the person's own bot from
+    BotFather, token sealed (`server/reach-me/secrets.ts`, vault key), linked
+    by a one-time `/start` code; Sagax polls `getUpdates` only while a link
+    or a Telegram card waits; any other chat is ignored.
+  - whatsapp: the contract's place only (it needs a WhatsApp Business
+    account and a webhook per person): "À venir" on the page.
+- UI: "Me joindre" on the bot's Overview, under its email address
+  (`src/components/bot-settings/BotReachMe.tsx`); no id on screen (the
+  Telegram bot by its @username). iOS: not on the phone's bot panel yet;
+  the Primary Bot changes it from any chat (`sagax_settings`).
+- Tests: `shared/reach-me.test.ts`, `server/reach-me/*.test.ts`,
+  `server/routes/reach-me.test.ts`, `server/push/fcm.test.ts`,
+  `server/routes/push-devices.test.ts`, `server/auto-approve.test.ts`,
+  `src/components/bot-settings/BotReachMe.test.ts`,
+  `src/lib/no-visible-ids.test.ts`, Android `FcmMessageTest`. Captures:
+  `node scripts/capture-reach-me.mjs`. Doc: `docs/reach-me.md`.
+
 ## Confidential threads: kept to their owner (2026-10-16)
 
 Decision: a « Fil confidentiel » is a 1:1 bot thread nothing of which is

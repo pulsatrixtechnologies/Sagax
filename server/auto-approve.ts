@@ -186,6 +186,7 @@ export type AutoVerdictSource =
   /** 2026-10-21 (parité 1C): a message send whose every recipient is on the
    * bot's allowed recipients (shared/allowed-recipients.ts). */
   | "allowed-recipient"
+  | "reach-me"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -271,6 +272,13 @@ export function autoVerdict(
      * and the person's own rules, never for a sandbox widening, a call a
      * security key protects, or while standing grants are off. */
     recipientsAllowed?: boolean;
+    /** 2026-10-26 "Me joindre": the one call of a "Reach me (Teams)" run
+     * the person chose as their channel (server/reach-me/teams.ts
+     * answersConnectorCall): the send of the card's message to their own
+     * Teams chat, or a read of their own connector for the reply. Answered
+     * after the safety hold and the person's own rules, never for a call a
+     * security key protects or one that needs an explicit approval. */
+    reachMeSelf?: boolean;
     /** The engine's driver read the ask as outward-facing (an engine
      * connector call that is not plainly a read, review of #943): held by
      * the outbound guard like a send, never answered as read-only. */
@@ -326,6 +334,9 @@ export function autoVerdict(
   // class the person protects with a security key.
   if (context?.recipientsAllowed && !context.requiresExplicitApproval && !(context.stepUpRequired?.length)) {
     return { approve: `approved ${tool} (allowed recipients)`, source: "allowed-recipient" };
+  }
+  if (context?.reachMeSelf && !context.requiresExplicitApproval && !(context.stepUpRequired?.length)) {
+    return { approve: `approved ${tool} (Reach me: your own Teams chat)`, source: "reach-me" };
   }
   // Sagax's own person-scoped tools (sagax-internal-tools.ts, a reviewed
   // list of exact names) and the owner's own environment answer only after

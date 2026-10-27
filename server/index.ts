@@ -1139,6 +1139,17 @@ import { PresenceTracker } from "./presence.ts";
 import { readApnsConfig } from "./push/config.ts";
 import { createPushDeviceStore, PUSH_TOKEN_HEADER, pushTokenFromHeader, tokensOfConnectedDevices } from "./push/devices.ts";
 import { PushHub } from "./push/hub.ts";
+import { createAndroidPushDeviceStore } from "./push/fcm-devices.ts";
+import { FcmSender, readFcmConfig } from "./push/fcm.ts";
+import { ReachMe, type ReachCard, type ReachRespondBody } from "./reach-me/service.ts";
+import { createReachCodeStore, createReachMeStore } from "./reach-me/store.ts";
+import { ReachMeSecrets } from "./reach-me/secrets.ts";
+import { createSmsChannel } from "./reach-me/sms.ts";
+import { ReachTelegram } from "./reach-me/telegram.ts";
+import { ReachTeams, REACH_TEAMS_RUN_NAME, REACH_TEAMS_WEBHOOK } from "./reach-me/teams.ts";
+import { setReachMeSmsHandler } from "./reach-me/inbound.ts";
+import { createReachMeRoutes } from "./routes/reach-me.ts";
+import type { ReachChannelId } from "../shared/reach-me.ts";
 import { pushesForFrame } from "./push/frames.ts";
 import { createPushDeviceRoutes } from "./routes/push-devices.ts";
 import { achievementById } from "../shared/achievements-catalog.ts";
@@ -1396,9 +1407,18 @@ const achievementCallStarts = new Map<string, number>();
 // with one log line, until SAGAX_APNS_KEY_PATH and SAGAX_APNS_KEY_ID are set.
 const apnsConfig = readApnsConfig();
 const pushDevices = createPushDeviceStore(DATA_DIR);
+// Android phones through FCM HTTP v1 (server/push/fcm.ts, docs/android-push.md):
+// off, with one log line, until SAGAX_FCM_SERVICE_ACCOUNT_PATH is set.
+const fcmConfig = readFcmConfig();
+const androidPushDevices = createAndroidPushDeviceStore(DATA_DIR);
 const pushHub = new PushHub({
   config: apnsConfig,
   store: pushDevices,
+  android: {
+    store: androidPushDevices,
+    sender: fcmConfig.configured ? new FcmSender({ config: fcmConfig.config }) : null,
+    ...(fcmConfig.configured ? {} : { reason: fcmConfig.reason }),
+  },
   // a client of this person is here: presence on an organization server,
   // any live stream on a personal one (its only person is the operator)
   connected: (person) => IDENTITY.kind === "perspicax" ? presence.view(person).state !== "offline" : sseClients.size > 0,
@@ -1426,6 +1446,9 @@ const pushHub = new PushHub({
     }
   },
 });
+/** "Me joindre" (server/reach-me/): set once its channels exist, further down. */
+let reachMeService: ReachMe | null = null;
+let reachMeTeams: ReachTeams | null = null;
 /** Turns another bot's words joined as an aside (tryAsideDelivery): no phone
  * tool for the rest of that turn (review of #960). Cleared when a turn starts. */
 const phoneToolTaintedThreads = new Set<string>();
@@ -1590,7 +1613,12 @@ function observePushFrame(payload: Record<string, unknown>): void {
       },
       now: () => Date.now(),
     });
-    for (const message of messages) pushHub.submit(message);
+    for (const message of messages) {
+      // "Me joindre" (server/reach-me/): a card follows the person's choice
+      // for its bot (push or not, their hours) and goes out by their other channels
+      if (!reachMeService || reachMeService.allowsPush(message)) pushHub.submit(message);
+      reachMeService?.cardRaised(message);
+    }
   } catch (error) {
     console.warn(`push: a frame could not be read for pushes (${error instanceof Error ? error.message : String(error)})`);
   }
@@ -2883,7 +2911,9 @@ async function answeringCardAs(auth: RequestAuth, threadId: string, requestId: s
       // 2026-10-20: answered by the person's Primary Bot at their request
       // (sagax_approvals): the card reads "via <bot>"
       const primary = actConfirmed()?.primary;
-      const how = primary ? { via: "primary-bot" as const, bot: primary.botName.slice(0, 80) } : via ? { via } : {};
+      // 2026-10-26: answered from the person's "Me joindre" channel (a text, Telegram, Teams)
+      const reach = actConfirmed()?.reachMe;
+      const how = primary ? { via: "primary-bot" as const, bot: primary.botName.slice(0, 80) } : reach ? { via: "reach-me" as const, channel: reach.channel } : via ? { via } : {};
       store.patchMessage(threadId, message.id, { card: { ...card, answeredBy: { ...cardAnswererFor(auth), ...how } } });
     }
     if (CLOUD_HOME && open) cloudCardAnswersInFlight.delete(requestId);
@@ -12751,6 +12781,7 @@ function scheduleApprovalExpiry(
 function withdrawApprovalNotice(threadId: string, requestId: string): void {
   broadcast({ kind: "notify-withdraw", threadId, requestId });
   pushHub.noteSettled(threadId);
+  reachMeService?.cardSettled(threadId, requestId);
 }
 
 /** Whether a notification belongs to an AI client's hidden conversation. */
@@ -15145,6 +15176,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const baseVerdict = permission && asker && event.requestId
         ? autoVerdict(strictCard || foreignDestination ? "ask" : effectiveApprovalMode, event.tool, {
           recipientsAllowed: recipientsListed,
+          reachMeSelf: Boolean(reachMeTeams?.answersConnectorCall(event.threadId, event.mcpTool ?? event.tool, event.input)),
           ...(event.outbound === true ? { outbound: true } : {}),
           requiresExplicitApproval: event.requiresExplicitApproval,
           sagaxGate: event.sagaxGate === true,
@@ -21776,7 +21808,10 @@ routines = new RoutineManager({
     }
   },
   interruptGoal: interruptRoutineGroupGoal,
-  onRunChanged: syncRoutineRunToSource,
+  onRunChanged: (run) => {
+    syncRoutineRunToSource(run);
+    if (run.webhookId === REACH_TEAMS_WEBHOOK) void reachMeTeams?.runChanged(run);
+  },
   onRunRequeued: (run) => {
     if (!run.threadId) return;
     pendingDelegationWakes.delete(run.threadId);
@@ -29450,6 +29485,8 @@ async function erasePersonDataNow(principalId: string): Promise<{ bots: number; 
   viewerBotOverrideStore.remove(principalId);
   achievementStore.remove(principalId);
   pushDevices.removePerson(principalId);
+  androidPushDevices.removePerson(principalId);
+  reachMeSettings.removePerson(principalId);
   botSettings.forgetPerson(principalId);
   // Their Perspicax sign-in on this server: grants and routine delegation,
   // cached keys and photo, sessions and pairing codes (the back-channel
@@ -31132,7 +31169,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
  * (`primary`, 2026-10-20) the person's own request to their Primary Bot to
  * answer a card for them (server/primary-approvals.ts), which the card then
  * reads as "via <bot>". */
-type ActConfirmation = { personKey: string | null; classes: readonly string[]; primary?: PrimaryAnswer };
+type ActConfirmation = { personKey: string | null; classes: readonly string[]; primary?: PrimaryAnswer; reachMe?: { channel: ReachChannelId } };
 type InternalRequestMark = { onBehalf?: true; continuation?: string; continuationExact?: true; confirmed?: ActConfirmation };
 /** A planned setting change (sagax_settings) the person allowed on its card,
  * the card's security key covering `classes` (2026-10-19): its replay is
@@ -33855,8 +33892,187 @@ ROUTES.push(createPhoneCardScanRoutes({
 ROUTES.push(createPushDeviceRoutes({
   person: (auth) => actorPrincipalId(auth) || undefined,
   store: pushDevices,
+  android: { store: androidPushDevices, configured: () => fcmConfig.configured },
   configured: () => pushHub.enabled,
   defaultEnvironment: () => (apnsConfig.configured ? apnsConfig.config.environment : "production"),
+}));
+// ── "Me joindre" (server/reach-me/, 2026-10-26) ─────────────────────────
+// The bot reaches the person outside the app when a card waits on them, by
+// the channels and hours they chose for THAT bot, and the card is answered
+// from there with the same click as in the app.
+function reachMePerson(person: string): string {
+  return IDENTITY.kind === "perspicax" ? person.trim().toLowerCase() : localPrincipalId();
+}
+function reachMeLanguage(person: string): "fr" | "en" {
+  let language = "";
+  try {
+    if (IDENTITY.kind === "perspicax") language = userPreferenceStore.get(person).preferences["omb-language"] ?? "";
+  } catch { /* the server's language */ }
+  if (!language) language = cfg.language ?? "fr";
+  return language.toLowerCase().startsWith("en") ? "en" : "fr";
+}
+/** An open question or approval card, as "Me joindre" names it. */
+function reachMeCard(threadId: string, requestId: string): ReachCard | null {
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+  const card = message?.card;
+  if (!message || !card || card.answered || card.dismissed || card.expired || message.kind !== "options") return null;
+  const question = isPersistentQuestionCard(card) && !isApprovalCardMessage(message);
+  if (!question && !isApprovalCardMessage(message)) return null;
+  const bot = botForApproval(threadId, message);
+  if (!bot) return null;
+  const person = cardAnswererId(bot, threadId, card);
+  return {
+    threadId, requestId, botId: bot.id, botName: bot.name,
+    kind: question ? "question" : "approval",
+    title: String(card.plain?.title ?? card.title ?? "Approval").slice(0, 300),
+    line: String(card.plain?.line ?? card.subtitle ?? "").replace(/\s+/g, " ").slice(0, 400),
+    confidential: store.isConfidentialThread(threadId),
+    needsKey: !question && Boolean(stepUpGate(person, threadId, requestId, "allow", {}, undefined)),
+  };
+}
+function reachMeAnswerer(threadId: string, requestId: string): string | null {
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+  const bot = message ? botForApproval(threadId, message) : undefined;
+  return bot && message?.card ? reachMePerson(cardAnswererId(bot, threadId, message.card)) : null;
+}
+/** The click, replayed with the person's own session (the Primary Bot's
+ * replay of sagax_approvals, server/primary-approvals.ts). */
+async function reachMeRespond(person: string, card: ReachCard, body: ReachRespondBody, channel: ReachChannelId): Promise<{ status: number; body: Record<string, unknown> }> {
+  let actor: PerformActor = { kind: "operator" };
+  if (IDENTITY.kind === "perspicax") {
+    const live = sessions.liveWhere((session) => personKey(session) === person);
+    const picked = live.find((session) => session.scopes.includes("admin")) ?? live[0];
+    if (!picked) return { status: 403, body: { error: "The person has no live session on this server: they answer in Sagax." } };
+    actor = { kind: "person", sessionId: picked.id, personKey: person, scopes: picked.scopes.filter((scope): scope is "admin" | "client" => scope === "admin" || scope === "client") };
+  }
+  const confirmed = { personKey: actor.kind === "person" ? actor.personKey : null, classes: [] as string[], reachMe: { channel } };
+  const target = { kind: "route" as const, method: "POST", path: `/api/threads/${card.threadId}/respond`, body: { requestId: card.requestId, ...body } };
+  const answer = store.isConfidentialThread(card.threadId)
+    ? await performBotActRoute(actor, target, 8000, { onBehalf: true, continuation: card.threadId, continuationExact: true, confirmed })
+    : await performBotActRouteOutsideConfidential(actor, target, confirmed);
+  let parsed: Record<string, unknown> = {};
+  try { parsed = JSON.parse(answer.text) as Record<string, unknown>; } catch { parsed = {}; }
+  return { status: answer.status, body: answer.status >= 400 ? { error: String(parsed.error ?? "The answer was refused.") } : parsed };
+}
+/** One Perspicax Voice tool for the person, outside any turn: their own
+ * access (routine delegation), one profile of their bot at a time. */
+async function reachMeVoice(person: string, botId: string, tool: "voice_line" | "voice_sms", args: Record<string, unknown>): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+  if (IDENTITY.kind !== "perspicax" || !perspicaxMcp) return { ok: false, error: "Perspicax is not linked on this server" };
+  const candidates = [store.bot(botId), ...store.bots.filter((bot) => bot.chiefOfStaff && effectiveBotOwner(bot) === person)]
+    .filter((bot): bot is BotRecord => Boolean(bot?.perspicax?.profiles.length) && effectiveBotOwner(bot!) === person);
+  let last = "no bot of the person has a Perspicax profile";
+  for (const bot of candidates.slice(0, 3)) {
+    for (const profileId of bot.perspicax!.profiles.slice(0, 6)) {
+      const threadId = `reach-me-${randomBytes(6).toString("hex")}`;
+      const generation = "1";
+      try {
+        const plan = await perspicaxMcp.prepareTurn({ threadId, generation, bot: { id: bot.id, perspicax: { profiles: [profileId] } }, speakerPrincipalId: person, speakerOrigin: "owner-routine", routine: true });
+        if (!plan.mounted.length) { last = plan.unavailable[0]?.reason ?? "not mounted"; continue; }
+        const answer = await perspicaxMcp.callTool({ threadId, generation, botId: bot.id, name: tool, args });
+        if (answer.ok && !answer.isError) return { ok: true, value: answer.value };
+        last = answer.ok ? (typeof answer.value === "string" ? answer.value : "refused") : answer.error;
+      } finally {
+        await perspicaxMcp.endGeneration(threadId, generation).catch(() => {});
+      }
+    }
+  }
+  return { ok: false, error: last.slice(0, 200) };
+}
+const reachMeSettings = createReachMeStore(DATA_DIR);
+const reachMeCodes = createReachCodeStore(DATA_DIR);
+const reachMeSecrets = new ReachMeSecrets(DATA_DIR, vaultKeySource);
+const reachMeTelegram = new ReachTelegram({
+  settings: reachMeSettings,
+  secrets: reachMeSecrets,
+  waiting: (person, botId) => reachMeCodes.list().some((code) => code.person === person && code.botId === botId && code.channels.includes("telegram")),
+  onReply: (person, text) => reachMeService!.handleReply({ channel: "telegram", person, text }),
+  language: reachMeLanguage,
+});
+const reachMeTeamsChannel = new ReachTeams({
+  codes: reachMeCodes,
+  runBot: (person, botId) => {
+    const own = (bot: BotRecord) => reachMePerson(effectiveBotOwner(bot) || localPrincipalId()) === person;
+    const bot = store.bot(botId);
+    if (bot && own(bot)) return bot.id;
+    return store.bots.find((candidate) => candidate.chiefOfStaff && !candidate.temporary && own(candidate))?.id ?? null;
+  },
+  reachesTeams: () => "unknown",
+  startRun: ({ botId, prompt, deliveryId }) => {
+    if (!routines) return { ok: false, reason: "routines are not ready" };
+    try {
+      const run = routines.enqueueWebhook({ webhookId: REACH_TEAMS_WEBHOOK, webhookName: REACH_TEAMS_RUN_NAME, prompt, botId, runOn: "maus", deliveryId, receivedAt: Date.now() });
+      return { ok: true, runId: run.id };
+    } catch (error) {
+      return { ok: false, reason: error instanceof Error ? error.message.slice(0, 120) : "could not queue the run" };
+    }
+  },
+  runForThread: (threadId) => {
+    const run = routines?.runForThread(threadId);
+    return run ? { id: run.id, ...(run.webhookId ? { webhookId: run.webhookId } : {}), status: run.status, ...(run.output ? { output: run.output } : {}) } : null;
+  },
+  personEmails: (person) => {
+    const email = IDENTITY.kind === "perspicax" ? principals.byId(person)?.email : undefined;
+    return email ? [email] : [];
+  },
+  onReply: (person, text) => reachMeService!.handleReply({ channel: "teams", person, text }),
+  failed: (person, botId, threadId, reason) => reachMeAudit({ person, botId, threadId, channel: "teams", action: "send_failed", reason }),
+});
+reachMeTeams = reachMeTeamsChannel;
+function reachMeAudit(row: { person: string; botId: string; threadId: string; channel: ReachChannelId; action: string; outcome?: string; reason?: string }): void {
+  try {
+    appendAdminAction(DATA_DIR, {
+      category: "approval",
+      action: `reach-me.${row.action}`,
+      target: auditBotTarget(row.botId),
+      // metadata only: never the person's text, never a full number
+      after: { channel: row.channel, ...(row.outcome ? { outcome: row.outcome } : {}), ...(row.reason ? { reason: row.reason } : {}) },
+      actor: IDENTITY.kind === "perspicax" && isPrincipalId(row.person) ? { kind: "person", principalId: row.person, via: "sagax" } : { kind: "loopback" },
+    });
+  } catch { /* the journal is a record, never a reason to fail */ }
+}
+reachMeService = new ReachMe({
+  settings: reachMeSettings,
+  codes: reachMeCodes,
+  channels: {
+    sms: createSmsChannel({
+      settings: reachMeSettings,
+      linked: (person) => IDENTITY.kind === "perspicax" && Boolean(perspicaxMcp) && isPrincipalId(person),
+      voice: reachMeVoice,
+    }),
+    teams: reachMeTeamsChannel.channel(),
+    telegram: reachMeTelegram.channel(),
+  },
+  card: reachMeCard,
+  answerer: reachMeAnswerer,
+  respond: reachMeRespond,
+  push: (message) => pushHub.submit(message),
+  language: reachMeLanguage,
+  audit: reachMeAudit,
+});
+setReachMeSmsHandler((input) => reachMeService!.handleReply({ channel: "sms", person: reachMePerson(input.ownerPrincipalId), text: input.text, from: input.from }));
+setInterval(() => {
+  try {
+    reachMeService?.tick();
+    reachMeTeams?.tick();
+  } catch { /* a minute later */ }
+}, 60_000).unref();
+// Telegram links still waiting after a restart: look again
+if (reachMeSettings.telegramLinks().length) reachMeTelegram.ensurePolling();
+ROUTES.push(createReachMeRoutes({
+  person: (auth) => {
+    const id = actorPrincipalId(auth);
+    return id ? reachMePerson(id) : undefined;
+  },
+  bot: (id) => store.bot(id),
+  settings: reachMeSettings,
+  channelStatus: (person, botId) => ({
+    push: { ready: pushHub.enabled && (pushDevices.list(person).length + androidPushDevices.list(person).length) > 0, devices: pushDevices.list(person).length + androidPushDevices.list(person).length, ...(pushHub.enabled ? {} : { reason: "Phone notifications are not set up on this server." }) },
+    sms: reachMeService!.channelStatus("sms", person, botId),
+    teams: reachMeService!.channelStatus("teams", person, botId),
+    telegram: { ...reachMeService!.channelStatus("telegram", person, botId), ...reachMeTelegram.view(person, botId) },
+    whatsapp: { ready: false, reason: "WhatsApp comes later." },
+  }),
+  telegram: reachMeTelegram,
 }));
 if (IDENTITY.kind === "perspicax") setInterval(() => presence.sweep(), PRESENCE_SWEEP_MS).unref();
 ROUTES.push(createPresenceRoutes({

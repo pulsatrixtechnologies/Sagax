@@ -103,6 +103,17 @@ private val appVersionCode = run {
     parts[0] * 10_000 + parts[1] * 100 + parts[2]
 }
 
+// Android pushes through Firebase Cloud Messaging (2026-10-26, "Me joindre").
+// The Firebase app's public identifiers reach a build from the environment or
+// gradle properties, never from a committed google-services.json:
+// SAGAX_FCM_ANDROID_APP_ID, SAGAX_FCM_ANDROID_API_KEY, SAGAX_FCM_PROJECT_ID,
+// SAGAX_FCM_SENDER_ID (or sagax.fcm.appId, .apiKey, .projectId, .senderId).
+// Any of them missing: the app never starts Firebase and keeps its local
+// notifications only, as before.
+private fun fcmValue(environment: String, property: String): String =
+    (System.getenv(environment) ?: (project.findProperty(property) as String?) ?: "").trim()
+private fun quoted(value: String): String = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "com.openmausbot.companion"
     compileSdk = 37
@@ -113,6 +124,10 @@ android {
         targetSdk = 37
         versionCode = appVersionCode
         versionName = appVersionName
+        buildConfigField("String", "SAGAX_FCM_APP_ID", quoted(fcmValue("SAGAX_FCM_ANDROID_APP_ID", "sagax.fcm.appId")))
+        buildConfigField("String", "SAGAX_FCM_API_KEY", quoted(fcmValue("SAGAX_FCM_ANDROID_API_KEY", "sagax.fcm.apiKey")))
+        buildConfigField("String", "SAGAX_FCM_PROJECT_ID", quoted(fcmValue("SAGAX_FCM_PROJECT_ID", "sagax.fcm.projectId")))
+        buildConfigField("String", "SAGAX_FCM_SENDER_ID", quoted(fcmValue("SAGAX_FCM_SENDER_ID", "sagax.fcm.senderId")))
     }
 
     signingConfigs {
@@ -189,6 +204,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -257,6 +273,12 @@ dependencies {
     // process and hide the origin from someone about to grant full control of a
     // cloud machine. ~200 KB, no transitive weight beyond androidx.core.
     implementation("androidx.browser:browser:1.10.0")
+
+    // Closed-app pushes (FCM, 2026-10-26). Started by hand from BuildConfig
+    // (push/FcmSetup.kt) only when the four identifiers above are set; the
+    // automatic initializer is removed in the manifest.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
 
     // Pairing QR scanner. CameraX gives the preview and frame pipeline; ML Kit's
     // *bundled* barcode model reads them. Bundled rather than the Play-services

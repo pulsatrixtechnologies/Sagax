@@ -38,6 +38,8 @@ const { NET_FIXTURES } = await import("../../shared/net-tools/fixtures");
 const { RoutineChangeLine } = await import("@/components/RoutineToggleLine");
 const { BotEmailAddressCard } = await import("@/components/bot-settings/BotEmailAddress");
 const { BotMailAddressLine } = await import("@/components/TypedTriggers");
+const { BotReachMeCard } = await import("@/components/bot-settings/BotReachMe");
+const { reachMeFrom } = await import("@/lib/reach-me");
 const { ModeChoice } = await import("@/components/bot-wizard/BotWizard");
 const { newWizardDraft } = await import("../../shared/bot-wizard");
 
@@ -216,6 +218,14 @@ describe("no UUID on screen", () => {
       expect(text).toContain("cryptic@bots.example.org");
       expect(text).not.toContain(BOT_ID);
     }
+  });
+
+  it("Reach me names channels and the Telegram bot by its @username, never an id (2026-10-26)", () => {
+    const view = reachMeFrom({ saved: true, settings: { channels: ["telegram", "sms"], smsNumber: "+15145550123", hours: { always: true } }, channels: { telegram: { ready: true, connected: true, username: "my_sagax_bot" }, sms: { ready: false, reason: `bot ${BOT_ID}` } } });
+    const actions = { onSave: async () => ({ ok: true as const }), onTelegramConnect: async () => ({ ok: true as const }), onTelegramDisconnect: async () => {} };
+    const text = visibleText(createElement(BotReachMeCard, { view, actions }));
+    expectNoUuid(text);
+    expect(text).toContain("@my_sagax_bot");
   });
 
   it("people, bots, engines and accounts read by name or a plain word", () => {

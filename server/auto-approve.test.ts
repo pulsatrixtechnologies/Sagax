@@ -162,6 +162,20 @@ describe("allowed recipients (parité 1C)", () => {
   });
 });
 
+describe("Reach me: the person's own Teams chat (2026-10-26)", () => {
+  const tool = "mcp__microsoft_teams__send_chat_message";
+  it("the one self-send of a Reach me run goes with no card, at Ask too", () => {
+    expect(autoVerdict("ask", tool, { reachMeSelf: true })).toEqual({ approve: `approved ${tool} (Reach me: your own Teams chat)`, source: "reach-me" });
+  });
+  it("relaxes nothing else: a security key, an explicit approval, a safety hold, the person's rules", () => {
+    expect(autoVerdict("ask", tool, { reachMeSelf: true, stepUpRequired: ["external-send"] }).approve).toBeNull();
+    expect(autoVerdict("ask", tool, { reachMeSelf: true, requiresExplicitApproval: true }).approve).toBeNull();
+    expect(autoVerdict("ask", tool, { reachMeSelf: true, safetyHold: true }).approve).toBeNull();
+    expect(autoVerdict("ask", tool, { reachMeSelf: true, customRule: { behavior: "deny", id: "r1" } }).approve).toBeNull();
+    expect(autoVerdict("ask", tool, { reachMeSelf: false })).toEqual({ approve: null, source: "outbound-guard" });
+  });
+});
+
 describe("approvalModeForOrigin", () => {
   it("runs peer-started Custom turns as Auto and leaves every other mode alone", () => {
     expect(approvalModeForOrigin("custom", { peerInitiated: true })).toBe("auto");

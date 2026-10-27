@@ -557,8 +557,11 @@ export type CardAnswerer = (
    * request in their conversation with it (sagax_approvals, 2026-10-20).
    * "auto-review": the model reviewer applied the person's rule (2026-10-21,
    * server/custom-rules-model.ts; the card's customRule says which and why). */
-  via?: "call" | "ai-client" | "primary-bot" | "auto-review";
+  via?: "call" | "ai-client" | "primary-bot" | "auto-review" | "reach-me";
   bot?: string;
+  /** "reach-me" (2026-10-26): answered from the person's own "Me joindre"
+   * channel (sms, teams, telegram) with the card's reply code. */
+  channel?: string;
 };
 
 export interface WireAccessCard {

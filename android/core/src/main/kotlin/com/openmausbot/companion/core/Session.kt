@@ -2081,6 +2081,23 @@ class Session(
         }
     }
 
+    /**
+     * Hands this phone's FCM token to the paired server so a closed app still
+     * hears about a question or an approval (2026-10-26). False while not
+     * paired or when the server refused it; the caller tries again on the
+     * next token or the next launch.
+     */
+    suspend fun registerPushToken(token: String, appVersion: String): Boolean {
+        val activeClient = client ?: return false
+        return try {
+            activeClient.registerPushDevice(token, deviceNameProvider(), appVersion)
+            true
+        } catch (error: Throwable) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            false
+        }
+    }
+
     suspend fun avatarData(forBot: Bot): ByteArray? {
         val path = forBot.avatarUrl ?: return null
         return try {
