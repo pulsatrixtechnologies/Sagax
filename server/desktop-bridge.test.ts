@@ -221,6 +221,35 @@ describe("the sagax-desktop tools", () => {
     const refused = await handleDesktopBridgeMcp("tools/call", { name: "run_command", arguments: { command: "ls" } }, async () => { throw new Error("Your computer is not connected right now."); });
     expect(refused).toEqual({ content: [{ type: "text", text: "Your computer is not connected right now." }], isError: true });
   });
+  // Command variables (server/credential-command-env.ts), read for each command.
+  it("adds command variables to run_command after the refusal checks, and an older desktop runs without them", async () => {
+    const value = "fake-command-variable-value";
+    const sent: Array<Record<string, unknown>> = [];
+    const checked: string[] = [];
+    const ok = await handleDesktopBridgeMcp("tools/call", { name: "run_command", arguments: { command: "ls" } }, async (operation) => {
+      sent.push(operation);
+      return { content: [{ type: "text", text: "done" }] };
+    }, { payloadRefusal: (payload) => { checked.push(payload); return null; }, commandVariables: () => ({ EXAMPLE_API_KEY: value, lower: "dropped" }) });
+    expect(ok).toEqual({ content: [{ type: "text", text: "done" }] });
+    expect(sent).toEqual([{ action: "run_command", command: "ls", timeout_seconds: 120, env: { EXAMPLE_API_KEY: value } }]);
+    expect(checked.join("")).not.toContain(value);
+    // turned off or revoked: nothing
+    sent.length = 0;
+    await handleDesktopBridgeMcp("tools/call", { name: "run_command", arguments: { command: "ls" } }, async (operation) => { sent.push(operation); return { content: [{ type: "text", text: "done" }] }; }, { commandVariables: () => ({}) });
+    expect(sent[0]).not.toHaveProperty("env");
+    // never on another action
+    sent.length = 0;
+    await handleDesktopBridgeMcp("tools/call", { name: "read_file", arguments: { path: "~/x" } }, async (operation) => { sent.push(operation); return { content: [{ type: "text", text: "x" }] }; }, { commandVariables: () => ({ EXAMPLE_API_KEY: value }) });
+    expect(sent[0]).not.toHaveProperty("env");
+    // a desktop app from before command variables refuses the field: once more without
+    sent.length = 0;
+    const old = await handleDesktopBridgeMcp("tools/call", { name: "run_command", arguments: { command: "ls" } }, async (operation) => {
+      sent.push(operation);
+      return operation.env ? { content: [{ type: "text", text: "Invalid request" }], isError: true } : { content: [{ type: "text", text: "done" }] };
+    }, { commandVariables: () => ({ EXAMPLE_API_KEY: value }) }) as { content: Array<{ text: string }> };
+    expect(sent.map((operation) => "env" in operation)).toEqual([true, false]);
+    expect(old.content.map((item) => item.text)).toEqual(["done", expect.stringMatching(/too old to receive your command variables/)]);
+  });
   it("an older desktop app that cannot create a Local VM says to update it", async () => {
     const old = await handleDesktopBridgeMcp("tools/call", { name: "local_vm", arguments: { action: "create" } }, async () => ({ content: [{ type: "text", text: "Invalid request" }], isError: true }));
     expect(old).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringMatching(/too old to create a Local VM/) }] });

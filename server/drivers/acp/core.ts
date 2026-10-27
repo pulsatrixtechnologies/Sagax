@@ -84,6 +84,7 @@ import type {
 } from "../../contracts.ts";
 import { newEventId, newId, TurnNotStartedError } from "../../contracts.ts";
 import { augmentedPath } from "../../env-path.ts";
+import { applyEngineCommandVariables } from "../../credential-command-env.ts";
 import { isCwTool } from "../../../shared/cw-widgets/tool-call.ts";
 import { supportsApprovalMode } from "../../../shared/approval-mode.ts";
 import { MAX_QUESTION_TEXT, parseAskQuestions, parseChoices, questionAnswersByQuestion } from "../../../shared/ask-question.ts";
@@ -2061,6 +2062,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           localKeyPrincipal: turn.access?.localKeyPrincipal,
           threadId, mcpServers,
         });
+        // Command variables the person exposed to this bot
+        // (server/credential-command-env.ts): the engine's own shell inherits
+        // them, never a name the engine reads as its own sign-in. They are in
+        // the env fingerprint below, so a change or a revoke starts a fresh
+        // process at the next turn.
+        applyEngineCommandVariables(env, turn.commandEnvironment, support.credentialEnv ?? []);
         let launch: { command: string; args?: string[]; env?: Record<string, string | undefined> };
         try {
           launch = support.resolveCommand

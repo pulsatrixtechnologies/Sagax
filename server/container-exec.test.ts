@@ -5,9 +5,9 @@ import { clipExecOutput, containerExec, perBotLocalVmTarget } from "./container-
 const target = perBotLocalVmTarget("bot-under-test");
 
 function fakeExec(result: { stdout?: string; stderr?: string; code?: number } = {}) {
-  const calls: Array<{ command: string; args: string[]; timeout: number }> = [];
-  const exec = async (command: string, args: string[], options: { timeout: number }) => {
-    calls.push({ command, args, timeout: options.timeout });
+  const calls: Array<{ command: string; args: string[]; timeout: number; input?: string }> = [];
+  const exec = async (command: string, args: string[], options: { timeout: number; input?: string }) => {
+    calls.push({ command, args, timeout: options.timeout, ...(options.input !== undefined ? { input: options.input } : {}) });
     return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", code: result.code ?? 0 };
   };
   return { calls, exec };
@@ -26,6 +26,23 @@ describe("containerExec", () => {
     ]);
     // The client waits a little longer than the in-container limit.
     expect(calls[0]!.timeout).toBe(50_000);
+  });
+
+  // Command variables (server/credential-command-env.ts): a script of exports
+  // on stdin, the command line holds only the names' reader.
+  it("hands command variables on stdin, never on the command line, and nothing without them", async () => {
+    const value = "fake-command-variable-value";
+    const { calls, exec } = fakeExec();
+    await containerExec(target, "echo $EXAMPLE_API_KEY", { runtime: "podman", exec, commandVariables: { EXAMPLE_API_KEY: value } });
+    expect(calls[0]!.args).toContain("-i");
+    expect(calls[0]!.args.at(-1)).toBe('eval "$(cat)"\necho $EXAMPLE_API_KEY');
+    expect(JSON.stringify(calls[0]!.args)).not.toContain(value);
+    expect(calls[0]!.input).toBe(`export EXAMPLE_API_KEY='${value}'\n`);
+    // revoked or never turned on: the plain command, no stdin
+    await containerExec(target, "echo hello", { runtime: "podman", exec, commandVariables: {} });
+    expect(calls[1]!.args).not.toContain("-i");
+    expect(calls[1]!.args.at(-1)).toBe("echo hello");
+    expect(calls[1]!.input).toBeUndefined();
   });
 
   it("returns a failing command's exit code and stderr instead of throwing", async () => {

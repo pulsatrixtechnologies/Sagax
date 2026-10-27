@@ -338,7 +338,7 @@ export function createLocalVm({
   };
   const runEnv = () => runtimeEnv(env, home, platform);
   const detect = () => detectRuntime({ exec, home, platform, env, exists });
-  const run = (runtime, args, timeoutSeconds = 60) => exec([runtime.cli, ...args], { timeoutSeconds, env: runEnv() });
+  const run = (runtime, args, timeoutSeconds = 60, extraEnv = undefined) => exec([runtime.cli, ...args], { timeoutSeconds, env: extraEnv ? { ...runEnv(), ...extraEnv } : runEnv() });
   const need = async () => {
     const runtime = await detect();
     if (!runtime.cli) throw new Error("No container runtime (Docker or Podman) on this computer, so there is no Local VM here.");
@@ -644,7 +644,10 @@ export function createLocalVm({
       const vm = await pick(runtime, container);
       if (vm.stale) throw new Error(staleMessage(vm));
       if (vm.state !== "running") throw new Error(`${vm.name} is not running; start it first`);
-      const answer = await run(runtime, ["exec", "-u", "cua", vm.name, "bash", "-lc", command], Math.min(600, options?.timeoutSeconds ?? 120));
+      // Command variables: `-e NAME` takes the value from the client's own
+      // environment (Docker and Podman), so it is never on the command line.
+      const variables = options?.env && typeof options.env === "object" ? Object.keys(options.env) : [];
+      const answer = await run(runtime, ["exec", "-u", "cua", ...variables.flatMap(name => ["-e", name]), vm.name, "bash", "-lc", command], Math.min(600, options?.timeoutSeconds ?? 120), variables.length ? options.env : undefined);
       const out = `${answer.stdout}${answer.stderr ? `${answer.stdout ? "\n" : ""}[stderr]\n${answer.stderr}` : ""}\n[exit ${answer.code}]`.trimStart();
       return { ...text(out.slice(0, OUTPUT_LIMIT)), ...(answer.code === 0 ? {} : { isError: true }) };
     },

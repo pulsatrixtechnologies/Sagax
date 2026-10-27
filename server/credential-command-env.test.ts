@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { parseCommandVariable, parseVaultInjection } from "../shared/credential-vault.ts";
-import { commandVariablesDigest, withCommandVariables } from "./credential-command-env.ts";
+import { commandVariablesDigest, commandVariablesScript, engineCommandVariables, withCommandVariables, withStdinCommandVariables } from "./credential-command-env.ts";
 import { CredentialVault, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
 
@@ -102,5 +102,23 @@ describe("withCommandVariables (server environment)", () => {
     expect(digest).not.toContain(FAKE_KEY);
     expect(commandVariablesDigest({})).toBeNull();
     expect(commandVariablesDigest({ EXAMPLE_API_KEY: "other-fake" })).not.toBe(digest);
+  });
+});
+
+describe("command variables for the engines and the Local VM", () => {
+  it("never hand an engine a name it reads as its own sign-in", () => {
+    expect(engineCommandVariables({ EXAMPLE_API_KEY: FAKE_KEY, OPENAI_API_KEY: FAKE_KEY, XAI_API_KEY: FAKE_KEY, OWN_ENGINE_KEY: FAKE_KEY }, ["OWN_ENGINE_KEY"]))
+      .toEqual([["EXAMPLE_API_KEY", FAKE_KEY]]);
+    expect(engineCommandVariables(undefined)).toEqual([]);
+  });
+
+  it("export from a stdin script in a real shell, with quotes, dollars and new lines intact", () => {
+    const value = `fake'key "with" $HOME and\nlines`;
+    const script = commandVariablesScript({ EXAMPLE_API_KEY: value, lower: "dropped" })!;
+    expect(script).not.toContain("lower");
+    const command = withStdinCommandVariables('printf %s "$EXAMPLE_API_KEY"');
+    expect(command).not.toContain("fake");
+    expect(execFileSync("sh", ["-lc", command], { input: script, encoding: "utf8" })).toBe(value);
+    expect(commandVariablesScript({})).toBeNull();
   });
 });

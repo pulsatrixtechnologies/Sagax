@@ -440,6 +440,28 @@ describe("PiDriver turns (fake CLI)", () => {
     await instance?.dispose();
   });
 
+  // Command variables (server/credential-command-env.ts): pi's bash tool runs
+  // in pi's own process environment, started for every turn.
+  it("hands command variables to pi's environment only when the turn carries them", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omb-pi-cmdvar-"));
+    const dump = join(dir, "rpc.jsonl");
+    await create(undefined, { FAKE_PI_DUMP: dump });
+    const run = async (threadId: string, commandEnvironment?: Record<string, string>) => {
+      const { turnId } = await instance.adapter.sendTurn({ threadId, text: "hi", ...(commandEnvironment ? { commandEnvironment } : {}) });
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+      const rows = readFileSync(dump, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      return rows.filter((row) => Array.isArray(row.envConfigured)).at(-1) as { argv: string[]; envConfigured: string[] };
+    };
+    const on = await run("t-pi-cmdvar", { EXAMPLE_API_KEY: "fake-command-variable-value", OPENAI_API_KEY: "fake-provider-value" });
+    expect(on.envConfigured).toContain("EXAMPLE_API_KEY");
+    // never a provider key pi would bill
+    expect(on.envConfigured).not.toContain("OPENAI_API_KEY");
+    expect(JSON.stringify(on.argv)).not.toContain("fake-command-variable-value");
+    // revoked: the next turn's process has none
+    const off = await run("t-pi-cmdvar");
+    expect(off.envConfigured).not.toContain("EXAMPLE_API_KEY");
+  });
+
   it("normalizes a full turn into the canonical event sequence", async () => {
     await create();
     const { turnId } = await instance.adapter.sendTurn({

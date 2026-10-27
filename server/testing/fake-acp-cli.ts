@@ -359,6 +359,8 @@ const dumpEnv = Object.fromEntries(
     "FAKE_ACP_IMAGE_CAPABILITY",
     "FAKE_ACP_DUMP_PROMPT",
     "TEST_POLICY",
+    // a command variable (server/credential-command-env.ts)
+    "EXAMPLE_API_KEY",
     "OPENCODE_API_KEY",
     "OPENCODE_PERMISSION",
     "OPENAI_API_KEY",

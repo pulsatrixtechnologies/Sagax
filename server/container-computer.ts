@@ -15,6 +15,7 @@ import { promisify } from "node:util";
 
 import { augmentedPath, resolveCliSpawn } from "./env-path.ts";
 import { DATA_DIR } from "./config.ts";
+import { commandVariablesScript, withStdinCommandVariables } from "./credential-command-env.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 
 const run = promisify(execFile);
@@ -1251,7 +1252,8 @@ export interface ContainerExecResult {
 type ContainerExecRunner = (
   command: string,
   args: string[],
-  options: { timeout: number },
+  /** `input`: written to the command's stdin, then closed. */
+  options: { timeout: number; input?: string },
 ) => Promise<{ stdout: string; stderr: string; code: number }>;
 
 const EXEC_DEFAULT_SECONDS = 60;
@@ -1268,12 +1270,18 @@ export function clipExecOutput(text: string, limit = EXEC_OUTPUT_LIMIT): string 
 const defaultExecRunner: ContainerExecRunner = async (command, args, options) => {
   const resolved = resolveCliSpawn(command, args);
   try {
-    const { stdout, stderr } = await run(resolved.command, resolved.args, {
+    const pending = run(resolved.command, resolved.args, {
       timeout: options.timeout,
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
       env: { ...process.env, PATH: augmentedPath() },
     });
+    if (options.input !== undefined) {
+      // a command that exits before reading stdin must not crash the server
+      pending.child.stdin?.on("error", () => {});
+      pending.child.stdin?.end(options.input);
+    }
+    const { stdout, stderr } = await pending;
     return { stdout, stderr, code: 0 };
   } catch (error) {
     const failure = error as { stdout?: string; stderr?: string; code?: unknown; killed?: boolean; message?: string };
@@ -1293,7 +1301,13 @@ const defaultExecRunner: ContainerExecRunner = async (command, args, options) =>
 export async function containerExec(
   target: LocalVmTarget,
   command: string,
-  options: { timeoutSeconds?: number; runtime?: Runtime; exec?: ContainerExecRunner } = {},
+  options: {
+    timeoutSeconds?: number; runtime?: Runtime; exec?: ContainerExecRunner;
+    /** The command variables the person exposed to this bot
+     * (server/credential-command-env.ts): exported from a script on stdin,
+     * never on the command line. */
+    commandVariables?: Record<string, string>;
+  } = {},
 ): Promise<ContainerExecResult> {
   if (!command.trim()) throw Object.assign(new Error("command is required"), { status: 400 });
   if (command.length > 20_000) throw Object.assign(new Error("command is too long"), { status: 400 });
@@ -1303,19 +1317,21 @@ export async function containerExec(
   const runtime = options.runtime ?? (await containerRuntimeStatus()).runtime;
   if (!runtime) throw Object.assign(new Error("No container runtime is available for the Local VM"), { status: 409 });
   const seconds = Math.min(Math.max(Math.floor(options.timeoutSeconds ?? EXEC_DEFAULT_SECONDS), 1), EXEC_MAX_SECONDS);
+  const script = commandVariablesScript(options.commandVariables);
   const result = await (options.exec ?? defaultExecRunner)(
     runtime,
     [
       "exec",
+      ...(script ? ["-i"] : []),
       "-u", "cua",
       "-w", VM_WORKSPACE_GUEST,
       "-e", "HOME=/home/cua",
       "-e", `DISPLAY=${DISPLAY}`,
       target.containerName,
       "timeout", "-k", "5", String(seconds),
-      "sh", "-lc", command,
+      "sh", "-lc", script ? withStdinCommandVariables(command) : command,
     ],
-    { timeout: (seconds + 20) * 1000 },
+    { timeout: (seconds + 20) * 1000, ...(script ? { input: script } : {}) },
   );
   const timedOut = result.code === 124 || result.code === 137;
   return { exitCode: result.code, stdout: clipExecOutput(result.stdout), stderr: clipExecOutput(result.stderr), timedOut };

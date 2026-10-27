@@ -39655,6 +39655,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(person), command)
               ?? misuseTextRefusal(command, person, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "run_command" }),
             payloadRefusal: (value) => misuseTextRefusal(value, person, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "desktop" }),
+            // 2026-10-27: the person's own computer gets the API keys they
+            // exposed to this bot's commands (credential-command-env.ts).
+            commandVariables: () => commandVariablesFor(internalCapability.botId, internalCapability.threadId, person),
           });
           requireActiveInternalCapability();
           return json(res, 200, { result });
@@ -40079,6 +40082,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const result = await containerExec(vm, typeof body.command === "string" ? body.command : "", {
             runtime,
             timeoutSeconds: typeof body.timeout_seconds === "number" ? body.timeout_seconds : undefined,
+            // 2026-10-27: the API keys the person exposed to this bot's
+            // commands, read again for every command (credential-command-env.ts)
+            commandVariables: commandVariablesFor(internalCapability.botId, threadId),
           });
           localVmIdleFor(vm).touch();
           return json(res, 200, result);
