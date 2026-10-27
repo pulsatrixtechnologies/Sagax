@@ -36,7 +36,7 @@ export const USER_COMPUTER_MESSAGES = {
 
 const refusal = (message: string, status: number, code: string) => Object.assign(new Error(message), { status, code });
 
-/** 2026-10-26 (JC: a person's bots work in their own environment): what
+/** 2026-10-26 (a person's bots work in their own environment): what
  * the caller knows of the turn beyond its speaker, so a routine of the
  * person's own bot reaches the computer they shared. */
 export interface SpeakingContext {

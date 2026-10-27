@@ -509,11 +509,11 @@ export function ownerDecision(input: {
    * its confirmation (and bots.fullAccess on an organization server),
    * answers it like any other call of the owner route: deny rules, the
    * destructive rule, holds and security keys still come first.
-   * 2026-10-26 (JC: the person's own environment is theirs): Approve for me
+   * 2026-10-26 (the person's own environment is theirs): Approve for me
    * (auto) answers it the same way; only Approval keeps the card. A webhook,
    * a routine that is not theirs or another person's bot never sets this. */
   ownComputerOwnTurn?: boolean;
-  /** 2026-10-26 (JC): the call acts in the person's own isolated
+  /** 2026-10-26: the call acts in the person's own isolated
    * environment as Sagax mounted it for this turn (their server sandbox or
    * the Local VM on their computer, member-environment.ts
    * ownEnvironmentCall), never their real computer, the organization's
@@ -546,7 +546,7 @@ export function ownerDecision(input: {
   // to be skipped; the level only decides what no rule covers.
   if (rule?.behavior === "ask") return { kind: "card", reason: "ask-rule", rule };
   const destructive = destructiveKindOf(input.call);
-  // 2026-10-26 (JC): a delete or a bulk change in the person's own isolated
+  // 2026-10-26: a delete or a bulk change in the person's own isolated
   // environment is theirs at auto and bypass; Approval, a message to a
   // third party and anything outside that environment keep the card.
   const ownEnvironmentChange = input.ownEnvironment === true && input.mode !== "approval" && (destructive === "delete" || destructive === "bulk");

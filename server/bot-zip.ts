@@ -956,7 +956,7 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
       ...(mode && mode !== "full" && mode !== "custom" ? { approvalMode: mode as BotRecord["approvalMode"], ...(settings.autoApprove !== undefined ? { autoApprove: settings.autoApprove } : {}) } : { approvalMode: "ask", autoApprove: false }),
     };
     // Workspace is always Auto (2026-10-18): only Off travels. 2026-10-26
-    // (JC): a member's copy keeps its computer, browser and Always allow
+    //: a member's copy keeps its computer, browser and Always allow
     // list too: they work in the member's own environment. What stays an
     // admin's on the shared server (memberImportReset) does not travel.
     Object.assign(patch, {

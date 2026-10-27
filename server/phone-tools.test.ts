@@ -208,7 +208,7 @@ describe("phoneToolTurn", () => {
   });
 });
 
-describe("protected transport only (JC 2026-10-21)", () => {
+describe("protected transport only(2026-10-21)", () => {
   it("a phone on plain local Wi-Fi offers nothing to bots", () => {
     const dataDir = mkdtempSync(join(tmpdir(), "sagax-phone-transport-"));
     try {

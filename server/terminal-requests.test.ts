@@ -54,7 +54,7 @@ describe("terminal destination rights", () => {
     // A row from an older adapter (no scope) is a server host.
     expect(terminalResourceAllowed({}, member)).toBe(false);
     expect(terminalResourceAllowed({ scope: "personal" }, member)).toBe(true);
-    // 2026-10-19 (JC): a person's own cloud computer, Local VM and computer
+    // 2026-10-19: a person's own cloud computer, Local VM and computer
     // are theirs from any conversation of theirs on an organization server,
     // whoever owns the bot; answering someone else's card opens nothing
     expect(terminalResourceAllowed({ scope: "personal" }, ownConversation)).toBe(true);

@@ -41,7 +41,7 @@ export interface TerminalRequestServiceDeps {
   keptRule?(principalId: string, botId: string, candidate: { tool: string; scope: Record<string, string> }, threadId: string): { id: string } | null;
   /** One journal row for an offer a kept rule opened. */
   journalRule?(input: { threadId: string; botId: string; requestId: string; summary: string; rule: string }): void;
-  /** 2026-10-26 (JC: the person's own environment is theirs): the bot's
+  /** 2026-10-26 (the person's own environment is theirs): the bot's
    * approval level for this person's own turn in this conversation, or
    * null when the turn is not theirs (a guest, a webhook, an email,
    * someone else's routine) or the level is unknown. At Approve for me

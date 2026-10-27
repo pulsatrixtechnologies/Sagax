@@ -43,7 +43,7 @@ function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "
 }
 
 describe("sagax_settings", () => {
-  it("Full on the person's own request runs at once and says so to the route (JC 2026-10-20), even for the speaking bot", async () => {
+  it("Full on the person's own request runs at once and says so to the route(2026-10-20), even for the speaking bot", async () => {
     const primary = { botId: "b1", botName: "Scout", messageId: "m1" };
     const h = harness({ mode: "ask", personAsked: () => ({ message: "Mets-toi en Full.", primary }) });
     const done = await h.call({ action: "set", key: "bot.approvalMode", value: "full", quote: "Mets-toi en Full" });

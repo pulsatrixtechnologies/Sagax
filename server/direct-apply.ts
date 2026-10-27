@@ -7,8 +7,9 @@
 //   the person sees a one-line receipt with Undo. A change for a bot of
 //   another person keeps its card.
 // The one exception is a Cloud home's guest-driven turn, which keeps today's
-// card for everything (`blocked`). Team setup and peer approvals are not
-// changes to the bot itself and stay Full access only.
+// card for everything (`blocked`). Team setup about the person's own bots
+// applies at Full access and at Approve for me on their own turn
+// (teamSetupDirectSource, 2026-10-26); peer approvals keep their card.
 
 /** Why a change applied without a person. Also the decision log's source. */
 /** "primary-bot" (2026-10-20): the person asked their own Primary Bot for

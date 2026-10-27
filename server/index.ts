@@ -23,7 +23,7 @@ import { ToolGrantStore } from "./tool-grants.ts";
 import { foreignToolSpelling, sagaxInternalSelfAnswers, sagaxInternalTool } from "./sagax-internal-tools.ts";
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
-import { auditSampleFromEnv, deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, mcpPolicyEnv, permissionModeFromEnv, principalFromEnv } from "./mcp-permissions.ts";
+import { auditSampleFromEnv, deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, mcpPolicyEnv, permissionModeFromEnv, principalFromEnv, scopeOwnersFromEnv } from "./mcp-permissions.ts";
 import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert } from "./misuse-guardrails.ts";
 import {
   openSafetyHold,
@@ -1671,8 +1671,26 @@ let egressProxy: EgressProxy | null = null;
 
 /** The person a shared-computer call provably acts for
  * (sharedComputerPrincipal), as the router reads a speaker. */
+/** Two principal ids name the same person (case and spaces aside). */
+function samePerson(a: string | null | undefined, b: string | null | undefined): boolean {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
+}
 function personSpeaker(principal: string | null): TurnSpeaker | undefined {
   return principal ? { origin: "person", principalId: principal } : undefined;
+}
+/** 2026-10-26 (a person's bots work in their own environment): who a
+ * turn reaches the shared computers as. A person who asked speaks as
+ * themselves; otherwise the turn's own speaker, with the bot's owner and
+ * what started its routine, so the person's own routine (or a hop from it)
+ * reaches the computer they shared (user-computers.ts speakingPerson). */
+function userComputerSpeaking(principal: string | null, capability: { botId: string; threadId: string }): { speaker: TurnSpeaker | undefined; context: { botOwner?: string; automationTrigger?: string } } {
+  if (principal) return { speaker: personSpeaker(principal), context: {} };
+  const bot = store.bot(capability.botId);
+  const trigger = routineTriggerOf(capability.threadId);
+  return {
+    speaker: turnSpeakers.get(capability.threadId),
+    context: { ...(bot ? { botOwner: effectiveBotOwner(bot) } : {}), ...(trigger ? { automationTrigger: trigger } : {}) },
+  };
 }
 // Sagax has no personal OMB Cloud home. CLOUD_HOME stays null, so every
 // guard below is off. Boat and VPS computers stay behind their own flags.
@@ -1961,6 +1979,15 @@ const turnRoutineLineage = new Set<string>();
  * credentials that routine runs on (its bot's owner, 2026-10-01), carried
  * to the bot hops it starts. */
 const turnRoutinePayers = new Map<string, string>();
+/** 2026-10-26: what started the routine a thread's lineage descends from
+ * ("schedule", "manual", "webhook"), carried along bot hops so a relay
+ * between the person's own bots knows it (routineTriggerOf). */
+const turnRoutineTriggers = new Map<string, string>();
+/** What started this thread's request or the routine its lineage comes
+ * from, when known. */
+function routineTriggerOf(threadId: string): string | undefined {
+  return directRequestOwners.get(threadId)?.automation ?? turnRoutineTriggers.get(threadId);
+}
 /** Slice 6: the routine delegations of an organization server (set with
  * the sign-in grants, below); null in solo mode. */
 let routineConsents: RoutineConsents | null = null;
@@ -4072,7 +4099,19 @@ function groupMemoryWritable(group: GroupRecord | undefined, botId: string): boo
 function mcpIdentityOf(botId: string, threadId: string): Parameters<typeof mcpIdentityEnv>[0] {
   const speakerId = safetyPrincipal(threadId).principalId;
   const person = speakerId ? principals.byId(speakerId) : undefined;
-  return { botId, ...(speakerId ? { principalId: speakerId } : {}), perspicaxRole: person?.perspicaxRole, teamIds: (person?.teams ?? []).map((team) => team.id) };
+  return {
+    botId, ...(speakerId ? { principalId: speakerId } : {}), perspicaxRole: person?.perspicaxRole, teamIds: (person?.teams ?? []).map((team) => team.id),
+    // 2026-10-26: a call to another of the person's own bots or rooms is
+    // theirs, not a team call (mcp-permissions.ts scopeForCall)
+    ...(speakerId ? personOwnScope(speakerId) : {}),
+  };
+}
+/** The bots and rooms this person owns (mcp-permissions.ts scopeOwnersFromEnv). */
+function personOwnScope(principalId: string): { ownBotIds: string[]; ownRoomIds: string[] } {
+  const person = principalId.trim().toLowerCase();
+  const ownBotIds = store.bots.filter((bot) => effectiveBotOwner(bot).trim().toLowerCase() === person).map((bot) => bot.id);
+  const ownRoomIds = store.groups.filter((group) => (IDENTITY.kind === "perspicax" ? groupOwnerId(group) : localPrincipalId())?.trim().toLowerCase() === person).map((group) => group.id);
+  return { ownBotIds, ownRoomIds };
 }
 
 function agentsIntegration(
@@ -10661,6 +10700,7 @@ const terminalFeature = installTerminalFeature({
       routineLineage: turnRoutineLineage.has(threadId),
       automation: Boolean(directRequestOwners.get(threadId)?.automation),
       unattended: isUnattended(botId, threadId),
+      ...ownLineageFields(bot, threadId),
     });
     if (origin !== "owner") return null;
     if (securityKeys.required(principalId, ["destructive", "irreversible"], principalId).length) return null;
@@ -10669,6 +10709,20 @@ const terminalFeature = installTerminalFeature({
   },
   journalRule: ({ threadId, botId, requestId, summary, rule }) => {
     appendDecision(DATA_DIR, { threadId, requestId, botId, botName: store.bot(botId)?.name, tool: "shell_terminal", summary, decision: "auto-approved", source: "owner-rule", rule });
+  },
+  // 2026-10-26 (the person's own environment is theirs): at Approve for
+  // me or Full access, a terminal on one of their own environments opens on
+  // their own turn with no card. Never a guest's turn, a mail-woken run, a
+  // webhook or someone else's routine (approvalModeForTurn, ownEnvironmentOrigin).
+  ownLevel: (principalId, botId, threadId) => {
+    const bot = store.bot(botId);
+    if (!bot || cloudGuestDriven(threadId) || botmailConfined(threadId)) return null;
+    if (effectiveBotOwner(bot).trim().toLowerCase() !== principalId.trim().toLowerCase()) return null;
+    if (ownEnvironmentOrigin(bot, threadId) !== "owner") return null;
+    return approvalModeForTurn(store.projectBotForTask(botId, threadId) ?? bot, false, threadId);
+  },
+  journalLevel: ({ threadId, botId, requestId, summary, level }) => {
+    appendDecision(DATA_DIR, { threadId, requestId, botId, botName: store.bot(botId)?.name, tool: "shell_terminal", summary, decision: "auto-approved", source: level === "full" ? "owner-bypass" : "owner-auto" });
   },
   personal: {
     // The person's server environment (the provisioner, Docker or
@@ -15303,6 +15357,9 @@ bus.subscribe((event: RuntimeEvent) => {
           // own bot, which Bypass answers (never another origin or person)
           ownComputerOwnTurn: Boolean(ownDestination && !ownEnvironment && destination?.byOwner && destinationOrigin === "owner"),
           crossPerson: foreignDestination,
+          // 2026-10-26: a delete or a bulk change in the person's own
+          // sandbox or Local VM is theirs at auto and bypass
+          ownEnvironment: Boolean(ownEnvironment && !foreignDestination),
         })
         : null;
       // 2026-10-19 an admin's card of a member's bot (or a holder's
@@ -19670,9 +19727,13 @@ async function startTurn(
       const payer = turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId;
       if (payer) turnRoutinePayers.set(threadId, payer);
       else turnRoutinePayers.delete(threadId);
+      const trigger = directRequestOwners.get(threadId)?.automation ?? (speaker.origin === "peer" ? speaker.routineTrigger : undefined);
+      if (trigger) turnRoutineTriggers.set(threadId, trigger);
+      else turnRoutineTriggers.delete(threadId);
     } else {
       turnRoutineLineage.delete(threadId);
       turnRoutinePayers.delete(threadId);
+      turnRoutineTriggers.delete(threadId);
     }
   }
   // A card continuation neither starts nor ends the person's ask: it
@@ -23370,6 +23431,7 @@ async function runGroupMemberTurn(
     if (roomSpeakerId) {
       turnRoutineLineage.delete(threadId);
       turnRoutinePayers.delete(threadId);
+      turnRoutineTriggers.delete(threadId);
     } else {
       turnRoutineLineage.add(threadId);
       // a room routine runs on this bot's owner's credentials
@@ -26843,7 +26905,8 @@ function peerSpeaker(fromBotId: string, fromThreadId?: string): TurnSpeaker {
   const principalId = fromThreadId ? turnSpeakerPrincipals.get(fromThreadId) : undefined;
   const routine = fromThreadId ? turnRoutineLineage.has(fromThreadId) : false;
   const routinePayer = routine && fromThreadId ? turnRoutinePayers.get(fromThreadId) : undefined;
-  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}), ...(routinePayer ? { routinePayer } : {}) };
+  const routineTrigger = routine && fromThreadId ? routineTriggerOf(fromThreadId) : undefined;
+  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}), ...(routinePayer ? { routinePayer } : {}), ...(routineTrigger ? { routineTrigger } : {}) };
 }
 /** On an organization server, words may join a running turn only when they
  * speak for the same principal as that turn: anyone else's words wait for a
@@ -27942,8 +28005,12 @@ const artifactRefresher = createArtifactRefresher({
   run: createArtifactSourceRunner({
     bot: (botId) => {
       const bot = store.bot(botId);
-      return bot ? { id: bot.id, computer: bot.computer, ...(bot.perspicax?.profiles.length ? { perspicaxProfiles: bot.perspicax.profiles } : {}) } : null;
+      const owner = bot ? effectiveBotOwner(bot).trim().toLowerCase() : "";
+      return bot ? { id: bot.id, computer: bot.computer, ...(owner ? { ownerPrincipalId: owner } : {}), ...(bot.perspicax?.profiles.length ? { perspicaxProfiles: bot.perspicax.profiles } : {}) } : null;
     },
+    // 2026-10-26: Approve for me refreshes the owner's own command
+    // source on the bot's own Local VM (artifact-sources.ts commandMayRun)
+    approvalLevel: (botId, threadId) => sourceApprovalMode(botId, threadId),
     threadFor: (artifact) => artifact.threadId && connectorThread(artifact.botId, artifact.threadId) ? artifact.threadId : store.bot(artifact.botId)?.threadId ?? "",
     fullAccess: (botId, threadId) => fullAccessForSource(botId, threadId),
     alwaysAllowed: (botId, threadId, key) => Boolean((store.projectBotForTask(botId, threadId) ?? store.bot(botId))?.alwaysAllow?.includes(key)),
@@ -30389,6 +30456,9 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       if (!group) return null;
       return IDENTITY.kind === "perspicax" ? groupOwnerId(group) : localPrincipalId();
     },
+    // 2026-10-26: the people of a group (a group of the person's own bots
+    // only is theirs: settings-actions.ts)
+    groupHumans: (groupId) => store.groups.find((candidate) => candidate.id === groupId)?.humanIds ?? null,
     turnMode: (botId, threadId) => {
       const bot = store.projectBotForTask(botId, threadId) ?? store.bot(botId);
       return bot ? approvalModeForTurn(bot, false, threadId) : "ask";
@@ -31553,6 +31623,7 @@ function destinationTurnOrigin(bot: BotRecord, threadId: string, person: string)
     routineLineage: turnRoutineLineage.has(threadId),
     automation: Boolean(directRequestOwners.get(threadId)?.automation),
     unattended: isUnattended(bot.id, threadId),
+    ...ownLineageFields(bot, threadId),
   });
 }
 /** Who answers this card: the person whose own destination it acts on when
@@ -31610,7 +31681,21 @@ function ownEnvironmentOrigin(bot: BotRecord, threadId: string): "owner" | "othe
     routineLineage: turnRoutineLineage.has(threadId),
     automation: Boolean(directRequestOwners.get(threadId)?.automation),
     unattended: isUnattended(bot.id, threadId),
+    ...ownLineageFields(bot, threadId),
   });
+}
+/** 2026-10-26: what lets the person's own routine on their own bot,
+ * or a hop between two of their own bots, count as their own turn
+ * (member-environment.ts ownLineageTurn). A webhook never does. */
+function ownLineageFields(bot: BotRecord, threadId: string): { botOwnerPrincipalId: string; automationTrigger?: string; peerFromOwner?: string } {
+  const speaker = turnSpeakers.get(threadId);
+  const trigger = routineTriggerOf(threadId);
+  const peerFromOwner = speaker ? peerOwnerPrincipal(speaker) : undefined;
+  return {
+    botOwnerPrincipalId: effectiveBotOwner(bot),
+    ...(trigger ? { automationTrigger: trigger } : {}),
+    ...(peerFromOwner ? { peerFromOwner } : {}),
+  };
 }
 /** 2026-10-19 (owner setup): the line for a person's own AI client
  * conversation (the member API's hidden "AI client" thread, never one a bot
@@ -31687,7 +31772,15 @@ function personDirectTurn(bot: BotRecord, threadId: string): boolean {
   }) === "owner";
 }
 function botCreationTurnOrigin(bot: BotRecord, threadId: string): "owner" | "other" {
-  return ownEnvironmentOrigin(bot, threadId);
+  // only the person's own words: never their routine or a hop between bots
+  return ownEnvironmentTurnOrigin({
+    speaker: turnSpeakers.get(threadId),
+    ownerPrincipalId: effectiveBotOwner(bot),
+    internalTurn: isInternalTurn(threadId),
+    routineLineage: turnRoutineLineage.has(threadId),
+    automation: Boolean(directRequestOwners.get(threadId)?.automation),
+    unattended: isUnattended(bot.id, threadId),
+  });
 }
 /** Why a bot that is not a Primary Bot may not create a bot in this turn,
  * or null (server/bot-creation.ts). Checked before and again after the
@@ -34784,9 +34877,10 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     botProfiles: (id) => store.bot(id)?.perspicax?.profiles,
     permissionGuard: ({ botId, principalId }) => {
       const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
-      const env = mcpIdentityEnv({ botId, principalId, perspicaxRole: person?.perspicaxRole, teamIds: (person?.teams ?? []).map((team) => team.id) });
+      const env = mcpIdentityEnv({ botId, principalId, perspicaxRole: person?.perspicaxRole, teamIds: (person?.teams ?? []).map((team) => team.id), ...personOwnScope(principalId) });
       return {
         principal: principalFromEnv(env),
+        owners: scopeOwnersFromEnv(env, principalId),
         mode: permissionModeFromEnv(process.env),
         ownBotId: botId,
         deniedResources: deniedResourcesFromEnv(process.env),
@@ -35403,7 +35497,15 @@ ROUTES.push(createBotCatalogRoutes({
     // reaches on the host (an admin's keeps the source's settings).
     store.patchBot(id, {
       ...(source?.perspicax ? { perspicax: structuredClone(source.perspicax) } : {}),
-      ...(input.asMember ? memberImportReset() : {}),
+      // 2026-10-26: a copy of the person's own bot keeps its remote
+      // MCP servers; a stdio one runs on the organization's server
+      ...(input.asMember ? memberImportReset(input.ownSource ? {
+        mcpServers: source?.mcpServers ?? [],
+        remote: (name) => {
+          const parsed = parseStoredMcpServer(name, cfg.mcpServers?.[name]);
+          return parsed.ok && isRemoteMcpServer(parsed.server);
+        },
+      } : undefined) : {}),
     });
     const current = store.bot(id);
     if (current) broadcast({ kind: "bot", bot: publicBot(current) });
@@ -36580,9 +36682,16 @@ ROUTES.push(createGroupBotPayerRoutes({
   }),
 }));
 // B2.1: the guard before the approval card (server/agent-tool-card-guard.ts).
+/** 2026-10-26: the person who owns an agent (a bot), lowercased, or null. */
+function agentOwnerPrincipal(agentId: string): string | null {
+  const bot = store.bot(agentId);
+  const owner = bot ? effectiveBotOwner(bot).trim().toLowerCase() : "";
+  return owner || null;
+}
 const agentCardGuard = createAgentCardGuard({
   grants: toolGrants,
   mode: () => toolGuardMode(process.env.SAGAX_TOOL_GUARD),
+  agentOwner: agentOwnerPrincipal,
   audit: (row) => {
     // the target is the agent the call is aimed at, like the call's own row
     const target = row.agentId ? store.bot(row.agentId) : undefined;
@@ -36597,8 +36706,9 @@ const agentCardGuard = createAgentCardGuard({
 });
 const agentApi = createAgentApi({
   guardMode: toolGuardMode(process.env.SAGAX_TOOL_GUARD),
-  guard: (caller, policy) => guardDecision(policy, { kind: caller.kind === "bot" ? "bot" : "user", id: caller.id },
-    caller.kind === "bot" && caller.speakerPrincipalId ? { kind: "user", id: caller.speakerPrincipalId } : null, toolGrants),
+  guard: (caller, policy, target) => guardDecision(policy, { kind: caller.kind === "bot" ? "bot" : "user", id: caller.id },
+    caller.kind === "bot" && caller.speakerPrincipalId ? { kind: "user", id: caller.speakerPrincipalId } : null, toolGrants, target),
+  agentOwner: agentOwnerPrincipal,
   secret: agentApiSecret(),
   audit: agentApiAudit,
   async agents(caller) {
@@ -38570,6 +38680,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 threadId: internalCapability.threadId,
                 botId: internalCapability.botId,
                 review: safetyReviewer(internalCapability.botId),
+                // 2026-10-26: the speaker's own server sandbox
+                ownEnvironment: samePerson(principalId, ownerId),
               });
             },
           });
@@ -38670,6 +38782,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               threadId: internalCapability.threadId,
               botId: internalCapability.botId,
               review: safetyReviewer(internalCapability.botId),
+              // 2026-10-26: the speaker's own computer or Local VM
+              ownEnvironment: samePerson(who.principalId ?? person, person),
             });
             if (desktopHeld) return json(res, 200, { result: { content: [{ type: "text", text: desktopHeld }], isError: true } });
             await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
@@ -38867,7 +38981,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // asked, or their desktop is not connected) instead of an empty list.
         if (IDENTITY.kind === "perspicax") {
           try {
-            return json(res, 200, { computers: userComputers.list(personSpeaker(principal)).map(entry => ({ ...(entry.computer as object), target: entry.target })) });
+            const { speaker: computerSpeaker, context: computerContext } = userComputerSpeaking(principal, internalCapability);
+            return json(res, 200, { computers: userComputers.list(computerSpeaker, computerContext).map(entry => ({ ...(entry.computer as object), target: entry.target })) });
           } catch (error) {
             return json(res, (error as { status?: number }).status ?? 409, { error: (error as Error).message, code: (error as { code?: string }).code });
           }
@@ -38914,7 +39029,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           review: safetyReviewer(internalCapability.botId),
         });
         if (terminalHeld) return json(res, 403, { error: terminalHeld, code: "safety_blocked" });
-        if (IDENTITY.kind === "perspicax") return json(res, 200, { result: await userComputers.request(personSpeaker(principal), parsed.data, active) });
+        if (IDENTITY.kind === "perspicax") {
+          const { speaker: computerSpeaker, context: computerContext } = userComputerSpeaking(principal, internalCapability);
+          return json(res, 200, { result: await userComputers.request(computerSpeaker, parsed.data, active, computerContext) });
+        }
         return json(res, 200, { result: await sharedComputers.request(parsed.data, principal, active) });
       }
       if (method === "GET" && path === "/api/internal/agents") {

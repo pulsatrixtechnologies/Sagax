@@ -132,7 +132,7 @@ describe("the owner's mode and rules never answer what Sagax would not (re-revie
   });
 });
 
-describe("Always allow on a read card (JC, 2026-10-15: Rocket reading Twilio accounts)", () => {
+describe("Always allow on a read card (2026-10-15: Rocket reading Twilio accounts)", () => {
   const TWILIO_QUERY = "mcp__perspicax_quasar__twilio_api__query";
   const accounts = (extra: Record<string, unknown> = {}) => JSON.stringify({ resource: "Accounts", fields: ["sid", "friendlyName"], limit: 5, ...extra });
   let dir = "";
@@ -449,7 +449,7 @@ describe("earlier per-bot Allow keys on the rules page", () => {
   });
 });
 
-describe("Always allow keeps a command's one program (JC 2026-10-20)", () => {
+describe("Always allow keeps a command's one program(2026-10-20)", () => {
   const RUN = "mcp__sagax-environment__run_command";
   const run = (command: string): RuleCall => ({ ownerId: ALICE, botId: "bot-a", tool: RUN, input: JSON.stringify({ command }) });
   const kept = (command: string): OwnerRule => {

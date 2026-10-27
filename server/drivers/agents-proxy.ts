@@ -24,7 +24,7 @@ import readline from "node:readline";
 import { availableTools, catalogProfileFromEnv, withDeferredRareTools } from "./agents-catalog.ts";
 import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
 import { harnessClientFromEnv, type Json } from "./agents-client.ts";
-import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, permissionModeFromEnv, principalFromEnv } from "../mcp-permissions.ts";
+import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, permissionModeFromEnv, principalFromEnv, scopeOwnersFromEnv } from "../mcp-permissions.ts";
 
 const PROFILE = catalogProfileFromEnv(process.env);
 const AVAILABLE_TOOLS = availableTools(PROFILE);
@@ -36,8 +36,11 @@ const CONTEXT = toolCallContextFromEnv(process.env);
 // Permission check and audit row for every call (docs/mcp/permissions.md).
 // SAGAX_MCP_PERMISSIONS: off | shadow (default: refuses nothing, audits the
 // denials and SAGAX_MCP_AUDIT_SAMPLE of the allowed calls) | enforce (audits all).
+const PRINCIPAL = principalFromEnv(process.env);
 const GUARD = {
-  principal: principalFromEnv(process.env),
+  principal: PRINCIPAL,
+  // 2026-10-26: the person's own bots and rooms (SAGAX_MCP_OWN_BOTS / _ROOMS)
+  owners: scopeOwnersFromEnv(process.env, PRINCIPAL.id),
   mode: permissionModeFromEnv(process.env),
   ownBotId: CONTEXT.botId,
   deniedResources: deniedResourcesFromEnv(process.env),

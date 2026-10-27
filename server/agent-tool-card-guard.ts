@@ -25,6 +25,8 @@ export interface CardGuardDeps {
   grants: Pick<ToolGrantStore, "holds">;
   mode: () => ToolGuardMode;
   audit(row: CardGuardRow): void;
+  /** The person who owns this agent, lowercased, or null (ownerScoped tools). */
+  agentOwner?(agentId: string): string | null;
 }
 
 export interface CardGuardOpen {
@@ -62,11 +64,13 @@ export function createAgentCardGuard(deps: CardGuardDeps) {
       if (mode === "off" || !name.startsWith(PREFIX)) return null;
       const tool = name.slice(PREFIX.length);
       if (!isAgentToolName(tool)) return null;
-      const policy = agentToolGuardPolicy(AGENT_TOOL_POLICY[tool]);
-      const decision = guardDecision(policy, { kind: "bot", id: input.bot.id },
-        input.speakerPrincipalId ? { kind: "user", id: input.speakerPrincipalId } : null, deps.grants as ToolGrantStore);
-      const deny = !decision.allow && mode === "enforce";
+      const policy = agentToolGuardPolicy(AGENT_TOOL_POLICY[tool], tool);
       const agentId = targetAgentId(input.input, input.summary);
+      const ownerPrincipalId = policy.ownerScoped && agentId ? deps.agentOwner?.(agentId) ?? null : null;
+      const decision = guardDecision(policy, { kind: "bot", id: input.bot.id },
+        input.speakerPrincipalId ? { kind: "user", id: input.speakerPrincipalId } : null, deps.grants as ToolGrantStore,
+        ownerPrincipalId ? { ownerPrincipalId } : undefined);
+      const deny = !decision.allow && mode === "enforce";
       const base = {
         phase: "pre_card", requestId: input.requestId, access: policy.tier, readOnly: policy.readOnly, scope: policy.scope,
         guard: decision.reason, guardAllow: decision.allow, guardMode: mode,

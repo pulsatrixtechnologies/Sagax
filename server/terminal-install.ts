@@ -17,6 +17,7 @@ import type { Store } from "./store.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import type { IncomingMessage } from "node:http";
 import type { RouteHandler } from "./routes/table.ts";
+import type { ApprovalMode } from "../shared/approval-mode.ts";
 
 export interface TerminalFeature {
   registry: TerminalResourceRegistry;
@@ -95,6 +96,9 @@ export function installTerminalFeature(deps: {
   /** 2026-10-19: Always allow kept for a terminal offer (terminal-requests.ts). */
   keptRule?: (principalId: string, botId: string, candidate: { tool: string; scope: Record<string, string> }, threadId: string) => { id: string } | null;
   journalRule?: (input: { threadId: string; botId: string; requestId: string; summary: string; rule: string }) => void;
+  /** 2026-10-26: the bot's level on the person's own turn (terminal-requests.ts ownLevel). */
+  ownLevel?: (principalId: string, botId: string, threadId: string) => ApprovalMode | null;
+  journalLevel?: (input: { threadId: string; botId: string; requestId: string; summary: string; level: ApprovalMode }) => void;
   /** The person's own environments, when this server has them. */
   personal?: Partial<Record<"sandbox" | "local-vm" | "desktop", PersonalTerminalDeps>>;
   now?: () => number;
@@ -129,6 +133,8 @@ export function installTerminalFeature(deps: {
     ...(deps.owner ? { owner: deps.owner } : {}),
     ...(deps.keptRule ? { keptRule: deps.keptRule } : {}),
     ...(deps.journalRule ? { journalRule: deps.journalRule } : {}),
+    ...(deps.ownLevel ? { ownLevel: deps.ownLevel } : {}),
+    ...(deps.journalLevel ? { journalLevel: deps.journalLevel } : {}),
   });
 
   return {

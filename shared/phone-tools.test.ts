@@ -109,7 +109,7 @@ describe("card scan (row 84)", () => {
     expect(phoneToolGrantKey("card_scan", {})).toBeNull();
   });
 
-  it("accepts only a sealed envelope, never a number in clear (JC 2026-10-21)", () => {
+  it("accepts only a sealed envelope, never a number in clear(2026-10-21)", () => {
     const enc = "B" + "A".repeat(86);
     const sealed = { encapsulatedKey: enc, ciphertext: "A".repeat(80) };
     expect(checkPhoneToolResult("card_scan", {}, { number: "4111111111111111" }).ok).toBe(false);

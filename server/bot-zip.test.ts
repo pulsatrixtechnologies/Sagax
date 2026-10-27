@@ -191,7 +191,7 @@ describe("bot zip round trip", () => {
     expect(after.soul).toContain("«redacted");
     delete before.soul;
     delete after.soul;
-    // Workspace is always Auto (JC 2026-10-18): only Off travels, so the
+    // Workspace is always Auto(2026-10-18): only Off travels, so the
     // source's This computer arrives as Auto.
     expect(before.computer).toBe("local");
     expect(after.computer).toBeUndefined();
@@ -298,7 +298,7 @@ describe("bot zip round trip", () => {
   });
 });
 
-describe("bot zip: no sign-in or key file (JC 2026-10-18 « Exclure tout »)", () => {
+describe("bot zip: no sign-in or key file(2026-10-18 « Exclure tout »)", () => {
   it("leaves out sign-in files, keys and sealed stores of the desk and the work folders, and keeps a Keynote document", async () => {
     const fx = fixture();
     const source = richBot(fx);
@@ -419,7 +419,7 @@ describe("bot zip import rules", () => {
     expect(copy.approvalMode).toBe("ask");
     expect(copy.tasks).toHaveLength(1);
     const admin = await importBotZip(fx.host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000001", asMember: false, conversations: false, sharing: false });
-    // Workspace is always Auto (JC 2026-10-18): a place does not travel.
+    // Workspace is always Auto(2026-10-18): a place does not travel.
     expect(fx.store.bot(admin.botId)).toMatchObject({ browser: true, mcpServers: ["docs"], alwaysAllow: ["Bash"], approvalMode: "ask" });
     expect(fx.store.bot(admin.botId)!.computer).toBeUndefined();
     expect(fx.store.bot(admin.botId)!.name).toBe("Atlas 3");

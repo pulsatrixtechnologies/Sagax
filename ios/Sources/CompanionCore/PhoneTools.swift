@@ -18,9 +18,10 @@ public enum PhoneTool: String, CaseIterable, Codable, Sendable, Identifiable {
     public var id: String { rawValue }
 
     /// "Toujours permettre" is never offered: a shortcut can do anything,
-    /// the clipboard may hold a password, a photo is picked by hand anyway,
-    /// a card is scanned by hand each time.
-    public var onceOnly: Bool { self == .shortcut || self == .clipboard || self == .photos || self == .cardScan }
+    /// a photo is picked by hand anyway, a card is scanned by hand each
+    /// time. The clipboard is the person's own phone: they may let one bot
+    /// read it (mirror of shared/phone-tools.ts PHONE_TOOLS_ONCE_ONLY).
+    public var onceOnly: Bool { self == .shortcut || self == .photos || self == .cardScan }
 
     /// The person's computer asked, not a bot.
     public var fromComputer: Bool { self == .cardScan }

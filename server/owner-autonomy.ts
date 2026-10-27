@@ -174,7 +174,7 @@ const COMMAND_CREDENTIAL = /(?:^|[\s"'=@:/])(?:\.(?:ssh|gnupg|aws|azure|kube|doc
 
 /** Rule 2's bound for the owner's own environment: a call a hop or a
  * routine of the owner's own lineage may run unasked. The server
- * environment (the owner's cloud computer) and, since 2026-10-26 (JC: the
+ * environment (the owner's cloud computer) and, since 2026-10-26 (the
  * person's own environment is theirs), the Local VM on their own computer
  * (`sagax-desktop__local_vm`, never another tool of This computer). Never a
  * call that reaches a credential: a read of a dotfile or a credential path

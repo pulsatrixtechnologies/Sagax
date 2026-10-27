@@ -35,7 +35,7 @@ describe("the permission catalogue", () => {
   });
 
   it("keeps the admin-only list tiny, each with its reason, never a member default", () => {
-    // 2026-10-19 (JC): only what decides who reaches the server at all
+    // 2026-10-19: only what decides who reaches the server at all
     expect([...ADMIN_ONLY_PERMISSIONS].sort()).toEqual(["server.link"]);
     for (const entry of PERMISSIONS.filter((row) => row.adminOnly)) {
       expect(entry.memberDefault, entry.key).toBe(false);

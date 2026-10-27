@@ -246,7 +246,7 @@ describe("own-environment autonomy, security review 2026-10-16", () => {
   });
 });
 
-// 2026-10-19 (JC): "everyone should be able to run commands on their own
+// 2026-10-19: "everyone should be able to run commands on their own
 // VM, PC or cloud computer". The reported case: a member's bot on his Windows
 // computer asked mcp__sagax-desktop__list_files on the attachments folder
 // and mcp__sagax-desktop__run_command, and both waited for an admin.

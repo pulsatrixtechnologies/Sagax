@@ -149,7 +149,7 @@ describe("unattended grant and revoke", () => {
     const consent = createUnattendedConsentStore({ dataDir: dir, now: () => NOW });
     const admin = createRemoteSessionsAdmin({ rows: () => [input()], botLabel: () => "Atlas", consent, log: () => [], closeById: vi.fn(async () => true), now: () => NOW });
     expect(admin.unattendedEnabled()).toBe(false);
-    expect(admin.grantUnattended({ principalId: "p", orgAdmin: true }, { hostKey: "sn-a", org: "GOX", installedBy: "admin@gox" })).toBe("disabled");
+    expect(admin.grantUnattended({ principalId: "p", orgAdmin: true }, { hostKey: "sn-a", org: "GOX" })).toBe("disabled");
     expect(admin.grantUnattended({ principalId: "p", orgAdmin: false }, { hostKey: "sn-a", org: "acme" })).toBe("disabled");
     expect(consent.get("sn-a")).toBeNull();
     // A consent recorded while the flag was on stays revocable once it is cut.

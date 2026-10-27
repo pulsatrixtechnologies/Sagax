@@ -151,7 +151,7 @@ describe("scopes", () => {
       ["POST", "/api/workers/queue/m1/cancel"],
       ["GET", "/api/threads/t/files"], ["GET", `/api/threads/t/files/${"a1".repeat(12)}`],
       ["POST", `/api/threads/t/files/${"a1".repeat(12)}/pin`],
-      // 2026-10-22 (JC): a webhook runs on the bot's own computer, so its
+      // 2026-10-22: a webhook runs on the bot's own computer, so its
       // owner creates and manages it without the server-settings right; the
       // handler (webhookDelegateRefusal, webhookExecTargetAdminOnly) keeps the
       // limits (an admin's bot, a Microsoft trigger, a server run target).
@@ -204,7 +204,7 @@ describe("scopes", () => {
       ["GET", "/api/bots/x/workspace"], ["GET", "/api/bots/x/workspace/download"],
       ["GET", "/api/bots/x/workspace/file"], ["PUT", "/api/bots/x/workspace/file"], ["DELETE", "/api/bots/x/workspace/file"],
       ["POST", "/api/bots/x/workspace/docs/rename"],
-      // 2026-10-26 (JC): the bot's memory and change history, owner checked in the handlers
+      // 2026-10-26: the bot's memory and change history, owner checked in the handlers
       ["GET", "/api/bots/x/memory"], ["PUT", "/api/bots/x/memory"],
       ["GET", "/api/bots/x/memory/file"], ["PUT", "/api/bots/x/memory/file"], ["DELETE", "/api/bots/x/memory/file"],
       ["GET", "/api/bots/x/memory/journal"], ["POST", "/api/bots/x/memory/journal/e1/revert"],
@@ -454,14 +454,14 @@ describe("resolveRequestAuth", () => {
     expect(routePermission("POST", "/api/instances/claude/leftover-files/remove", org)).toBeNull();
     // 2026-10-19: the four admin keys an admin gives in Perspicax
     expect(routePermission("PUT", "/api/mcp/servers/x", org)).toBe("host.shell");
-    // 2026-10-22 (JC): the config write opens to EITHER server.settings OR the
+    // 2026-10-22: the config write opens to EITHER server.settings OR the
     // separate server.experimental key (no implication). A refusal names the
     // primary (server.settings); routePermissions lists both.
     expect(routePermission("PATCH", "/api/config", org)).toBe("server.settings");
     expect(routePermission("PUT", "/api/config", org)).toBe("server.settings");
     expect([...routePermissions("PATCH", "/api/config", org)!]).toEqual(["server.settings", "server.experimental"]);
     expect(routePermission("PATCH", "/api/org/settings", org)).toBe("server.settings");
-    // 2026-10-22 (JC): webhooks are no longer gated behind server.settings;
+    // 2026-10-22: webhooks are no longer gated behind server.settings;
     // a normal owner creates and manages one on the bot's own computer.
     expect(routePermission("POST", "/api/webhooks", org)).toBeNull();
     expect(routePermission("PATCH", "/api/webhooks/w", org)).toBeNull();

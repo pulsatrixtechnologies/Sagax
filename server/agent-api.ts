@@ -22,7 +22,7 @@
 // Either way every send lands in the agent's single chat with the person
 // the caller works for (#1170, like the reference design), never a hidden conversation:
 // the sender rides on the line and the chat folds the exchange (#291).
-import type { GuardDecision, GuardPolicy, ToolGuardMode } from "./tool-guard.ts";
+import type { GuardDecision, GuardPolicy, GuardTarget, ToolGuardMode } from "./tool-guard.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { parseWakePriority, planPriorityWake, releasePriorityNow, wakeSenderId, type PriorityDelivery } from "./priority-wake.ts";
 import { TEMP_AGENT_IDLE_HOURS_MAX } from "./temporary-agents.ts";
@@ -58,8 +58,11 @@ export interface AgentToolPolicy {
 }
 
 /** The tool-policy row of an agent tool (docs/tool-policy.md). */
-export function agentToolGuardPolicy(policy: AgentToolPolicy): GuardPolicy {
-  return { tier: policy.access, scope: `agents:${policy.access}`, readOnly: policy.readOnly, defaultEnabled: policy.access !== "admin" };
+export function agentToolGuardPolicy(policy: AgentToolPolicy, tool?: AgentToolName): GuardPolicy {
+  // 2026-10-26: archiving one's own agent is theirs, no grant needed
+  // (tool-guard.ts ownerScoped); anyone else's stays admin
+  const ownerScoped = tool === "delete_agent" && policy.access === "admin";
+  return { tier: policy.access, scope: `agents:${policy.access}`, readOnly: policy.readOnly, defaultEnabled: policy.access !== "admin", ...(ownerScoped ? { ownerScoped: true } : {}) };
 }
 
 export const RATE_WINDOW_MS = { read: 60_000, write: 60_000, admin: 3_600_000 } as const;
@@ -264,7 +267,9 @@ export interface AgentApiDeps {
   audit(caller: AgentCaller, entry: AuditEntry): void;
   /** The securable tool layer (server/tool-guard.ts): grants and the speaker.
    * Absent, or mode "off", skips it; "shadow" records the decision only. */
-  guard?(caller: AgentCaller, policy: GuardPolicy): GuardDecision;
+  guard?(caller: AgentCaller, policy: GuardPolicy, target?: GuardTarget): GuardDecision;
+  /** The person who owns this agent, lowercased, or null (tool-guard.ts ownerScoped). */
+  agentOwner?(agentId: string): string | null;
   guardMode?: ToolGuardMode;
   /** The HMAC key turn handles are signed with (at least 32 bytes). */
   secret: Buffer;
@@ -952,7 +957,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       const agentId = args && typeof args.agent_id === "string" ? args.agent_id : null;
       const policy = AGENT_TOOL_POLICY[tool];
       const guardMode = deps.guard ? deps.guardMode ?? "shadow" : "off";
-      const guardPolicy = agentToolGuardPolicy(policy);
+      const guardPolicy = agentToolGuardPolicy(policy, tool);
       let guarded: GuardDecision | null = null;
       const finish = (answer: AgentApiAnswer, detail?: Record<string, unknown>): AgentApiAnswer => {
         const outcome = answer.status < 400 ? "ok" : answer.status >= 500 ? "error" : "refused";
@@ -974,7 +979,8 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
         return finish(asAnswer(refuse(403, "forbidden_scope", `This caller does not hold the ${policy.scope} scope that ${tool} needs.`, { scope: policy.scope })));
       }
       if (guardMode !== "off") {
-        guarded = deps.guard!(caller, guardPolicy);
+        const ownerPrincipalId = guardPolicy.ownerScoped && agentId ? deps.agentOwner?.(agentId) ?? null : null;
+        guarded = deps.guard!(caller, guardPolicy, ownerPrincipalId ? { ownerPrincipalId } : undefined);
         if (!guarded.allow && guardMode === "enforce") {
           return finish(asAnswer(refuse(403, "not_granted", `${tool} needs a ${guardPolicy.scope} grant${guarded.reason === "speaker_not_granted" ? " for the person this turn speaks for" : ""}; ask the owner in Settings.`, { scope: guardPolicy.scope })));
         }

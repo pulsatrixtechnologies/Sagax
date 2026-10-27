@@ -257,7 +257,7 @@ export const ROLE_TIER_SCOPES: Record<McpRole, TierScopes> = {
  * denied; a scope replaces the tier's. */
 export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | null>>> = {
   // A member may start a bot of their own, nothing wider.
-  // 2026-10-26 (JC): archiving one of their own bots, and Perspicax's
+  // 2026-10-26: archiving one of their own bots, and Perspicax's
   // temporary agents they create and archive for themselves, are their own
   // work too. Someone else's bot reaches the team scope (scopeForCall) and
   // stays refused.
@@ -308,7 +308,7 @@ export function decide(principal: McpPrincipal, tool: string, target: McpScope =
   return { allowed: true, permission: perm.key, requiredScope: target, grantedScope: granted, reason: "ok" };
 }
 
-/** 2026-10-26 (JC: a person's bots and rooms are theirs): who owns a bot or
+/** 2026-10-26 (a person's bots and rooms are theirs): who owns a bot or
  * a room the call names, for the principal the call acts for. A bot or a
  * room this principal owns is the call's own scope ("self"); an unknown
  * owner is someone else's. */

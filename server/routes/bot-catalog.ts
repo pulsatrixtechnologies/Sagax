@@ -114,7 +114,7 @@ function entryOf(bot: CatalogBot, source: BotCatalogSource, ownerName: string, o
 
 /** The fields of a member's imported copy that stay an admin's: the
  * working folder and the server's browser profiles (dossiers and signed-in
- * sessions on the shared server) and MCP servers. 2026-10-26 (JC): what the
+ * sessions on the shared server) and MCP servers. 2026-10-26: what the
  * bot does in the person's own environment is theirs, so the computer
  * (only Off travels; any other value reads as Auto, server/surface.ts), the
  * browser and the Always allow list stay. MCP servers stay only when the

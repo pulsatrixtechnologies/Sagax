@@ -37,7 +37,7 @@
 //   `.config/gh/hosts.yml`, `.ssh`, `.netrc`, `.npmrc`, `.aws`,
 //   `.docker/config.json`, `.kube`, any `.`-name, a `..` segment, a key
 //   file), which keep their card (ownEnvironmentSensitiveRead);
-//   2026-10-26 (JC): the person's own routine on their own bot (run as
+//   2026-10-26: the person's own routine on their own bot (run as
 //   themselves, scheduled or by hand) and a hop between two of their own
 //   bots from their own words count as their own turn
 //   (ownEnvironmentTurnOrigin); a webhook, an email, a typed trigger, a
@@ -127,7 +127,7 @@ export function ownEnvironmentSensitiveRead(input: string | undefined): boolean 
 
 /** Whose turn a permission request comes from, for the owner's own
  * environment: "owner" when the bot's owner (or the operator at this
- * computer) wrote the request themselves. 2026-10-26 (JC: the person's bots
+ * computer) wrote the request themselves. 2026-10-26 (the person's bots
  * work in their own environment, and what happens there is theirs): also
  * "owner" for the person's own lineage on their own bot, when the caller
  * names the bot's owner (`botOwnerPrincipalId`): their routine (run as

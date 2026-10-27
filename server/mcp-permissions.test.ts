@@ -134,7 +134,7 @@ describe("scopeForCall", () => {
     expect(scopeForCall({ scope: "org" }, "b")).toBe("org");
   });
 
-  // 2026-10-26 (JC): a person's own bots and rooms are their own scope
+  // 2026-10-26: a person's own bots and rooms are their own scope
   const owners = { principalId: "pr_alice", botOwner: (id: string) => ({ b2: "pr_alice", b3: "PR_ALICE", bob1: "pr_bob" } as Record<string, string>)[id], roomOwner: (id: string) => ({ r1: "pr_alice", rb: "pr_bob" } as Record<string, string>)[id] };
   it("is self for another bot or a room of the same person", () => {
     for (const key of ["bot_id", "for_bot_id", "agent_id", "to_bot_id", "target_bot_id"]) {
