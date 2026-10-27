@@ -740,7 +740,7 @@ describe("Toujours permettre: ce fichier ou tout le dossier (#1065)", () => {
   });
 
   it("is not offered for a sensitive file or folder, the root, a drive or the home folder", () => {
-    for (const path of ["/repo/.ssh/config", "/repo/.github/workflows/ci.yml", "/repo/.env", "/home/jc/.aws/credentials", "/README.md", "README.md", "C:\\README.md", "~/notes.md", "/proc/self/environ", "/repo/../etc/passwd"]) {
+    for (const path of ["/repo/.ssh/config", "/repo/.github/workflows/ci.yml", "/repo/.env", "/home/example/.aws/credentials", "/README.md", "README.md", "C:\\README.md", "~/notes.md", "/proc/self/environ", "/repo/../etc/passwd"]) {
       expect(folderRuleCandidate({ tool: DESKTOP_READ, input: read(path) }, {}), path).toBeUndefined();
     }
     expect(folderRuleCandidate({ tool: DESKTOP_LIST, input: read("/") }, {})).toBeUndefined();
