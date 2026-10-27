@@ -173,7 +173,7 @@ describe("safety review", () => {
     expect(reviewSafety(own({ text: "nsenter -t 1 -m bash", tool: "run_command" })).code).toBe("misuse");
     expect(reviewSafety(own({ text: "fallocate -l 500G big", tool: "run_command" })).code).toBe("misuse");
     expect(reviewSafety(own({ text: "gh auth token", tool: "run_command" })).code).toBe("credentials");
-    expect(reviewSafety(own({ text: "sentinelctl status" })).action).toBe("confirm");
+    expect(reviewSafety(own({ text: "edr status" })).action).toBe("confirm");
   });
 
   it("lets the model block a call in the person's own environment, not send it back for a card", () => {

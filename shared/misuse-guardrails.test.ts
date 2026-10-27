@@ -207,7 +207,7 @@ describe("the person's own environment", () => {
   });
 
   it("still asks for the permission for defensive work", () => {
-    expect(classifyMisuse("sentinelctl unprotect", false, "own_environment").action).toBe("require_approval");
+    expect(classifyMisuse("edr unprotect", false, "own_environment").action).toBe("require_approval");
   });
 
   it("reads a path of their own in the same scope", () => {
