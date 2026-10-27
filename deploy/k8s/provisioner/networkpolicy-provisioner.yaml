@@ -3,6 +3,11 @@
 # signed provisioner port. Sandbox Pods do not carry this
 # label, so they do not inherit the allow. Apply this before the default
 # deny policy, or the provisioner loses the API on the next request.
+# The API rule below allows 443/6443 to any address. On a real cluster,
+# narrow it with `to: ipBlock` to the service IP of kubernetes.default and
+# the address the kubernetes Endpoints object lists (kubectl get endpoints
+# kubernetes -n default): the policy sees the address after the service
+# translation. That leaves a stolen provisioner token no other way out.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

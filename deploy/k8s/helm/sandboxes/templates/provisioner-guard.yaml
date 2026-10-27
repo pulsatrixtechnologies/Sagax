@@ -1,0 +1,85 @@
+{{- $guard := .Values.admission.provisionerGuard | default dict }}
+{{- if and .Values.admission.validating (include "sandboxes.on" (list $guard "enabled" false)) }}
+{{- $sa := index $guard "serviceAccount" | default (printf "system:serviceaccount:%s:sagax-sandboxd" .Values.systemNamespace) }}
+# Bounds the provisioner identity beyond its Role, which cannot select by name
+# or by content:
+#  - an exec (or attach, port-forward) only into a person's sandbox Pod
+#    (sagax-user-<key>), never into the provisioner itself or another Pod;
+#  - a NetworkPolicy only of the two shapes the provisioner writes
+#    (server/sandboxd-k8s-spec.ts): the namespace default deny, or one
+#    person's policy with no ingress and egress to the public internet minus
+#    every egressDeny range. A stolen provisioner token cannot open a sandbox
+#    to the cluster, the node network or the cloud metadata service.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sandboxes-provisioner-guard
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CONNECT"]
+        resources: ["pods/exec", "pods/attach", "pods/portforward"]
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["networkpolicies"]
+  matchConditions:
+    - name: provisioner-only
+      expression: {{ printf "request.userInfo.username == '%s'" $sa | quote }}
+  variables:
+    - name: deny
+      expression: {{ .Values.egressDeny | toJson | quote }}
+    - name: isPolicy
+      expression: "request.resource.resource == 'networkpolicies'"
+  validations:
+    - expression: |
+        variables.isPolicy ||
+        (request.subResource == 'exec' && request.name.startsWith('sagax-user-'))
+      message: "The provisioner may exec only into a person's sandbox Pod."
+    - expression: |
+        !variables.isPolicy ||
+        (
+          object.metadata.name == 'sagax-default-deny' &&
+          !has(object.spec.podSelector.matchLabels) &&
+          !has(object.spec.podSelector.matchExpressions) &&
+          (!has(object.spec.ingress) || size(object.spec.ingress) == 0) &&
+          (!has(object.spec.egress) || size(object.spec.egress) == 0) &&
+          has(object.spec.policyTypes) &&
+          'Ingress' in object.spec.policyTypes && 'Egress' in object.spec.policyTypes
+        ) ||
+        (
+          object.metadata.name.startsWith('sagax-user-') &&
+          object.metadata.name.endsWith('-net') &&
+          has(object.spec.podSelector.matchLabels) &&
+          'com.pulsatrix.sagax.sandbox.user' in object.spec.podSelector.matchLabels &&
+          !has(object.spec.podSelector.matchExpressions) &&
+          has(object.spec.policyTypes) &&
+          'Ingress' in object.spec.policyTypes && 'Egress' in object.spec.policyTypes &&
+          (!has(object.spec.ingress) || size(object.spec.ingress) == 0) &&
+          has(object.spec.egress) && size(object.spec.egress) == 1 &&
+          !has(object.spec.egress[0].ports) &&
+          has(object.spec.egress[0].to) && size(object.spec.egress[0].to) == 1 &&
+          has(object.spec.egress[0].to[0].ipBlock) &&
+          !has(object.spec.egress[0].to[0].podSelector) &&
+          !has(object.spec.egress[0].to[0].namespaceSelector) &&
+          object.spec.egress[0].to[0].ipBlock.cidr == '0.0.0.0/0' &&
+          has(object.spec.egress[0].to[0].ipBlock.except) &&
+          variables.deny.all(d, d in object.spec.egress[0].to[0].ipBlock.except)
+        )
+      message: "The provisioner may write only the default deny or a person's egress policy that keeps every denied range."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sandboxes-provisioner-guard
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+spec:
+  policyName: sandboxes-provisioner-guard
+  validationActions: ["Deny"]
+{{- end }}

@@ -86,7 +86,16 @@ variable "pool" {
     warm_nodes_night = number
     labels           = map(string)
     taint            = string
+    # kubelet podPidsLimit on the sandbox pool only. Far above the sandbox's
+    # own 512 (which counts Chromium's threads), so no real use reaches it;
+    # it stops one sandbox from exhausting the node's pids.
+    pod_max_pid = optional(number, 4096)
   })
+
+  validation {
+    condition     = var.pool.pod_max_pid >= 1024
+    error_message = "pool.pod_max_pid must leave room for Chromium (at least 1024)."
+  }
 
   validation {
     condition     = can(regex("^Standard_[A-Za-z0-9_]+$", var.pool.azure_vm_size))

@@ -293,7 +293,12 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
       hostIPC: false,
       shareProcessNamespace: false,
       dnsPolicy: "None",
-      dnsConfig: { nameservers: k8s.dnsNameservers, searches: [] },
+      // single-request-reopen: glibc sends the A and AAAA queries from one
+      // UDP socket at the same instant; behind a NAT gateway (a dedicated
+      // egress address for the sandbox pool) the second packet of that new
+      // flow can be dropped and every lookup waits the 5 s resolver timeout.
+      // A new socket for the second query costs nothing measurable.
+      dnsConfig: { nameservers: k8s.dnsNameservers, searches: [], options: [{ name: "single-request-reopen" }] },
       ...(k8s.runtimeClass ? { runtimeClassName: k8s.runtimeClass } : {}),
       ...(k8s.pullSecret ? { imagePullSecrets: [{ name: k8s.pullSecret }] } : {}),
       // A dedicated node pool: its label selects it, its taint keeps every

@@ -23,6 +23,7 @@ spec:
   policyTypes:
     - Ingress
     - Egress
+{{- if include "sandboxes.on" (list .Values.sandboxEgressPolicy "enabled" true) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -55,6 +56,8 @@ spec:
             cidr: 0.0.0.0/0
             except:
               {{- toYaml .Values.egressDeny | nindent 14 }}
+{{- end }}
+{{- if include "sandboxes.on" (list .Values.provisionerRbac "enabled" true) }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -103,6 +106,7 @@ spec:
         - port: {{ $.Values.apiServer.port }}
           protocol: TCP
     {{- end }}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

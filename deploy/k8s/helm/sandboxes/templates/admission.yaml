@@ -97,6 +97,11 @@ spec:
     namespaceSelector:
       matchLabels:
         kubernetes.io/metadata.name: {{ .Values.sandboxNamespace | quote }}
+    {{- with .Values.admission.placementObjectSelector }}
+    # The provisioner shares this namespace: only sandbox pods must sit on the sandbox pool.
+    objectSelector:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
 {{- end }}
 {{- if .Values.admission.kyverno.enabled }}
 ---

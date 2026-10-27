@@ -270,7 +270,14 @@ describe("image scripts and manifests", () => {
     expect(rbac).toContain("storageclasses");
     expect(rbac).toContain("sagax-sandbox-workload");
     expect(rbac).toMatch(/resources: \["events"\]\r?\n\s+verbs: \["create"\]/);
-    expect(rbac).toMatch(/resources: \["resourcequotas", "limitranges"\]\r?\n\s+verbs: \["get", "list"\]/);
+    expect(rbac).toMatch(/resources: \["resourcequotas"\]\r?\n\s+verbs: \["get"\]/);
+    // Only the verbs the backend uses: exec is create alone, no patch on Pods
+    // or NetworkPolicies, no pods/log; the readiness check reads its namespace.
+    expect(rbac).toMatch(/resources: \["pods\/exec"\]\r?\n\s+verbs: \["create"\]/);
+    expect(rbac).toMatch(/resources: \["pods"\]\r?\n\s+verbs: \["get", "list", "create", "delete"\]/);
+    expect(rbac).toMatch(/resources: \["networkpolicies"\]\r?\n\s+verbs: \["get", "list", "create", "delete"\]/);
+    expect(rbac).not.toContain("pods/log");
+    expect(rbac).toMatch(/resourceNames: \["sandboxes"\]/);
     const deployment = readFileSync(new URL("../deploy/k8s/provisioner/sandboxd-deployment.yaml", import.meta.url), "utf8");
     expect(deployment).not.toContain("docker.sock");
     expect(deployment).toContain("example.invalid/sagax:must-set");

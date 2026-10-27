@@ -1,3 +1,4 @@
+{{- if include "sandboxes.on" (list .Values.provisionerRbac "enabled" true) }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -48,6 +49,7 @@ subjects:
   - kind: ServiceAccount
     name: sagax-sandboxd
     namespace: {{ .Values.systemNamespace | quote }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount

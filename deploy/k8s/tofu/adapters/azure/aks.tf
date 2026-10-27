@@ -50,7 +50,10 @@ resource "azurerm_kubernetes_cluster" "this" {
   dynamic "api_server_access_profile" {
     for_each = length(var.api_server_authorized_ip_ranges) > 0 ? [1] : []
     content {
-      authorized_ip_ranges = var.api_server_authorized_ip_ranges
+      # The sandbox pool's kubelets reach the API from the NAT gateway address.
+      # The sandboxes behind it must not: put the API server address in
+      # SAGAX_SANDBOX_EGRESS_DENY so their policy refuses it.
+      authorized_ip_ranges = concat(var.api_server_authorized_ip_ranges, ["${azurerm_public_ip.sandbox_egress[0].ip_address}/32"])
     }
   }
 
@@ -103,6 +106,8 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 }
 
+# kubelet_config and vnet_subnet_id cannot change on an existing pool: a
+# change replaces it (create the new pool first, then drain the old one).
 resource "azurerm_kubernetes_cluster_node_pool" "sandboxes" {
   count                 = local.on ? 1 : 0
   name                  = "sbx"
@@ -116,10 +121,14 @@ resource "azurerm_kubernetes_cluster_node_pool" "sandboxes" {
   min_count             = var.pool.warm_nodes_night
   max_count             = var.pool.max_nodes
   scale_down_mode       = "Delete"
-  vnet_subnet_id        = azurerm_subnet.nodes[0].id
+  vnet_subnet_id        = azurerm_subnet.sandboxes[0].id
   zones                 = var.zones
   node_labels           = var.pool.labels
   node_taints           = [var.pool.taint]
+
+  kubelet_config {
+    pod_max_pid = var.pool.pod_max_pid
+  }
 
   upgrade_settings {
     max_surge = "33%"

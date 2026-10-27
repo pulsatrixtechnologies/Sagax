@@ -121,6 +121,35 @@ for want in "name: sagax-run-quota" "name: sagax-run-workload" "name: sandboxes-
   fi
 done
 
+# Shared-namespace layout: the provisioner kit (deploy/k8s/provisioner) owns
+# the sandbox namespace, its Role and the per-person policies. The chart must
+# not redeclare them, must keep the provisioner off the placement rule and
+# must render the provisioner guard.
+helm template sandboxes "$chart" -f "$chart/values-azure.yaml" \
+  --set createSandboxNamespace=false \
+  --set sandboxEgressPolicy.enabled=false \
+  --set provisionerRbac.enabled=false \
+  --set admission.provisionerGuard.enabled=true \
+  --set admission.provisionerGuard.serviceAccount=system:serviceaccount:sandboxes:sagax-sandboxd \
+  --set-json 'admission.placementObjectSelector={"matchExpressions":[{"key":"com.pulsatrix.sagax.sandbox.user","operator":"Exists"}]}' \
+  > "$tmp/shared.yaml"
+for unwanted in 'name: "sandboxes"$' 'name: sandbox-egress$' 'name: sagax-sandboxd$'; do
+  if grep -Eq "^  $unwanted" "$tmp/shared.yaml"; then
+    echo "shared-namespace render still declares $unwanted" >&2
+    exit 1
+  fi
+done
+for want in "name: sandboxes-provisioner-guard" "objectSelector:" "operations: \[\"CONNECT\"\]" "168.63.129.16/32"; do
+  if ! grep -q "$want" "$tmp/shared.yaml"; then
+    echo "shared-namespace render is missing $want" >&2
+    exit 1
+  fi
+done
+if grep -q "name: sandboxes-provisioner-guard" "$tmp/default.yaml"; then
+  echo "the provisioner guard must stay off by default" >&2
+  exit 1
+fi
+
 check_stack() {
   stack="$1"
   echo "tofu validate $stack"
