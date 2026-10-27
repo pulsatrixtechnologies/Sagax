@@ -268,6 +268,44 @@ test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a 
   assert.equal(calls.length, before);
 });
 
+test("a 404 that says the model was not found is a yes, a route 404 is a no", async () => {
+  const base = "http://127.0.0.1:8002/v1";
+  let clock = 1000;
+  const now = () => clock;
+  let calls = 0;
+  const reply = (status, body) => async () => { calls += 1; return new Response(body, { status }); };
+  resetAnthropicProbeCache();
+  assert.equal(await probeAnthropicMessages(base, reply(404, "Model 'probe' not found"), now), true);
+  // Cached as a yes for 10 minutes: no second request.
+  clock += 9 * 60_000;
+  assert.equal(await probeAnthropicMessages(base, reply(404, "Not Found"), now), true);
+  assert.equal(calls, 1);
+  clock += 61_000;
+  assert.equal(await probeAnthropicMessages(base, reply(404, "Not Found"), now), false);
+  assert.equal(calls, 2);
+  for (const body of ['{"error":{"type":"not_found_error","message":"model: probe"}}', "unknown model probe", "The model does not exist"]) {
+    resetAnthropicProbeCache();
+    assert.equal(await probeAnthropicMessages(base, reply(404, body), now), true, body);
+  }
+  for (const body of ["Not Found", "{}", "", "Cannot POST /v1/messages", "<!DOCTYPE html><html><body><h1>404 Not Found</h1></body></html>"]) {
+    resetAnthropicProbeCache();
+    assert.equal(await probeAnthropicMessages(base, reply(404, body), now), false, body);
+  }
+  // The model wording does not change 405, 501 or 5xx.
+  for (const status of [405, 501, 503]) {
+    resetAnthropicProbeCache();
+    assert.equal(await probeAnthropicMessages(base, reply(status, "Model 'probe' not found"), now), false, `status ${status}`);
+  }
+  // A body that cannot be read is a route 404, not a crash.
+  resetAnthropicProbeCache();
+  const broken = async () => ({
+    status: 404,
+    body: new ReadableStream({ pull() { throw new Error("socket reset"); } }),
+  });
+  assert.equal(await probeAnthropicMessages(base, broken, now), false);
+  resetAnthropicProbeCache();
+});
+
 test("a busy server keeps its last Anthropic answer: a timeout or a 5xx is not a no", async () => {
   resetAnthropicProbeCache();
   const base = "http://127.0.0.1:8002/v1";

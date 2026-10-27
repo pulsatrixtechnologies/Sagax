@@ -114,7 +114,8 @@ const anthropicCache = new Map();
  * Does this loopback server answer the Anthropic protocol at /v1/messages?
  * One tiny request that no server runs a model for (no messages): a server
  * that speaks it answers 200 or 4xx, one that does not answers 404, 405 or
- * 501. A "no" is cached for 5 s and a "yes" for 10 minutes. A probe that
+ * 501. A 404 whose body says the model was not found counts as a yes, since
+ * some servers route the request and then look up the model "probe". A "no" is cached for 5 s and a "yes" for 10 minutes. A probe that
  * gets no answer (timeout, the server busy with a long generation) or a 5xx
  * is not an answer: it keeps the last definite one, so a busy server is not
  * reported as one that does not speak the protocol (2026-10-18).
@@ -135,14 +136,45 @@ export async function probeAnthropicMessages(base, fetchImpl = globalThis.fetch,
       // on a loaded Mac (2026-10-18), which read as "does not speak it".
       signal: AbortSignal.timeout(ANTHROPIC_PROBE_TIMEOUT_MS),
     });
+    // A 404 may be a missing route or a missing model; only the body tells.
+    const modelMissing = response.status === 404 ? modelNotFoundBody(await readBodyHead(response)) : false;
     await response.body?.cancel?.().catch(() => {});
     if (response.status >= 500 && response.status !== 501) return keepLast(normalized, hit, now);
-    const ok = response.status !== 404 && response.status !== 405 && response.status !== 501;
+    const ok = modelMissing || (response.status !== 404 && response.status !== 405 && response.status !== 501);
     anthropicCache.set(normalized, { ok, at: now() });
     return ok;
   } catch {
     return keepLast(normalized, hit, now);
   }
+}
+
+const ANTHROPIC_BODY_PEEK_BYTES = 2048;
+
+/** Up to 2 KB of the response body as text. Never throws: an unreadable body is "". */
+async function readBodyHead(response) {
+  const reader = response.body?.getReader?.();
+  if (!reader) return "";
+  try {
+    const chunks = [];
+    let size = 0;
+    while (size < ANTHROPIC_BODY_PEEK_BYTES) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      chunks.push(value);
+      size += value.length;
+    }
+    return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, ANTHROPIC_BODY_PEEK_BYTES));
+  } catch {
+    return "";
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
+/** A 404 that says the model was not found means the request was routed, so the
+ * server speaks the protocol. A route 404 ("Not Found", "Cannot POST ...") does not. */
+function modelNotFoundBody(text) {
+  return /model/i.test(text) && /not[ _]found|unknown|does not exist|no such/i.test(text);
 }
 
 /** No answer: the last definite one holds for another fresh window, so a
