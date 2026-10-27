@@ -549,6 +549,34 @@ computer only to show its state.
 - Zonal disks: a workspace disk pins its Pod to its zone; keep sandbox
   pools in that zone or use ZRS for new workspaces.
 
+## Journal of a person's bot actions and their own tool access (2026-10-26)
+
+Decision (chantier Confiance, top 10 point 1): Approvals > Journal shows
+every action of the signed-in person's own bots (desktop
+`src/components/approvals/ApprovalsJournal.tsx`, iOS Settings > Journal des
+actions `ios/App/Features/Settings/ActionJournalPage.swift`), allowed, asked,
+refused, failed or expired, with what decided it. Rules:
+
+- One fold, no new log: `server/action-journal.ts` reads the decision log,
+  the thread tool runs and the agents.* audit rows (tool guard verdict).
+  Wire shape `shared/action-journal.ts`. Only the person's own bots and
+  confidential threads (`cardAnswererId`); never a multi-person view.
+- The fold's decision rows keep `call` (`decisionCall`: arguments, shell
+  line, folder; 4 KB cap, redacted, `metadataOnly` drops it) so "Tester une
+  règle" (`POST /api/approvals/journal/test`) replays a rule with the real
+  matcher (`reviewCustomRules`), never a copy of it. Nothing is saved.
+- The History tab stays unchanged; the Journal is added beside it.
+- Tool access: the owner grants their bot every tier, admin included, and
+  the person grants themselves (`/api/me/tool-grants`), without an admin,
+  for a scope of their own environment. Only areas reaching past it
+  (`shared/grant-reach.ts`) stay an admin's. Admin-tier grants end within 30
+  days. Grant routes stay `tool-grants:admin` and not default-enabled: no
+  agent grants itself anything. The guard stays `shadow` by default.
+- Tests: `server/action-journal.test.ts`, `server/routes/my-tool-grants.test.ts`,
+  `server/routes/bot-runtime-settings.test.ts`, `src/lib/action-journal.test.ts`,
+  `ios/Tests/CompanionCoreTests/ActionJournalTests.swift`. Screenshots:
+  `node scripts/capture-action-journal.mjs`.
+
 ## Tests
 
 `pnpm test` runs every vitest file in one serial process (about 45 minutes),

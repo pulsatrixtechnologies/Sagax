@@ -27,6 +27,7 @@ import { api, ApiError, useStore, type Bot } from "@/state/store";
 import { compileRule, impliedRiskScope, RISK_CLASSES, type CompiledRule, type CustomRule, type CustomRuleBehavior, type RiskClass } from "../../../shared/custom-rules";
 import { OrgRuleBadge, RISK_LABEL, RuleTextDiff, riskList } from "../CustomRuleNotice";
 import { PaneEmpty, PaneSection } from "./PaneSection";
+import { RuleTestButton } from "../approvals/RuleTest";
 
 export type CustomRuleRow = CustomRule & { compiled?: { recognized: boolean } };
 
@@ -84,7 +85,7 @@ export function customRuleError(failure: unknown): string {
 
 /** The editor of one rule. `risks` are the kinds the person must tick for
  * the rule to cover a given card (from "Toujours permettre ceci"). */
-export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, onSave, busy = false, fromCard = false, bots, botId, allowOff = false }: {
+export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, onSave, busy = false, fromCard = false, bots, botId, allowOff = false, ruleId }: {
   botName: string;
   /** The person's bots a rule may be saved for ("Les bots que je choisis"),
    * and the bot this editor is for (chosen first). */
@@ -101,6 +102,9 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
   /** Made from an approval card ("Toujours permettre ceci"): an exact
    * command may be allowed, bound to that card. */
   fromCard?: boolean;
+  /** 2026-10-26: the saved rule being edited, which "Tester" replays in
+   * its place (its exact command binding included). */
+  ruleId?: string;
 }) {
   const [when, setWhen] = useState(initial.when);
   const [behavior, setBehavior] = useState<CustomRuleBehavior>(allowOff && initial.behavior === "allow" ? "ask" : initial.behavior);
@@ -227,6 +231,16 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
             : <p className="text-[11.5px] text-ink-tertiary">{t("customRules.form.riskHint")}</p>}
         </fieldset>
       )}
+      {/* 2026-10-26: replay the rule on the last 7 days before saving it */}
+      <RuleTestButton
+        disabled={!when.trim() || !recognized}
+        draft={() => (when.trim() ? {
+          ...(ruleId ? { id: ruleId } : {}),
+          when: when.trim(), behavior,
+          botId: allBots || !botId ? null : (choosing && chosen?.length === 1 ? chosen[0]! : botId),
+          riskScope: behavior === "allow" ? riskScope : [],
+        } : null)}
+      />
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className="rounded-full px-3 py-1 text-[13px] text-ink-secondary hover:bg-control">
           {t("customRules.form.cancel")}
@@ -339,6 +353,8 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
                     botName={bot.name}
                     initial={{ when: rule.when, behavior: rule.behavior, allBots: rule.botId === null, riskScope: rule.riskScope }}
                     allowOff={!alwaysAllow}
+                    ruleId={rule.id}
+                    botId={bot.id}
                     onCancel={() => setEditing(null)}
                     onSave={(draft) => update(rule, { when: draft.when, behavior: draft.behavior, botId: draft.allBots ? null : bot.id, riskScope: draft.riskScope })}
                   />

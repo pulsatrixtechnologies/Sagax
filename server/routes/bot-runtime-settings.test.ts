@@ -131,13 +131,21 @@ describe("a bot's tool access (JC 2026-10-15)", () => {
     expect((await send("POST", "/api/bots/bot-1/tool-grants", { subject: { kind: "user", id: "pr_x" }, scope: "agents:read" })).status).toBe(400);
   });
 
-  it("the owner grants read and write; admin access stays an admin's, within 30 days", async () => {
+  it("the owner grants every tier in their own environment; a scope past it stays an admin's, within 30 days (JC 2026-10-26)", async () => {
     const owner = await serve(session("pr_owner"));
     expect((await owner.send("POST", "/api/bots/bot-1/tool-grants", { scope: "agents:write" })).status).toBe(201);
+    // create_agent (agents:admin) makes a temporary agent of the owner's own: theirs to grant
+    expect((await owner.send("POST", "/api/bots/bot-1/tool-grants", { scope: "agents:admin", expiresAt: NOW + 7 * DAY })).status).toBe(201);
+    expect((await owner.send("POST", "/api/bots/bot-1/tool-grants", { scope: "agents:admin" })).status).toBe(400);
     const refused = await owner.send("POST", "/api/bots/bot-1/tool-grants", { scope: "org:admin", expiresAt: NOW + DAY });
     expect(refused.status).toBe(403);
-    expect(((await refused.json()) as { code: string }).code).toBe("admin_tier_admin_only");
-    expect(((await (await owner.send("GET", "/api/bots/bot-1/tool-grants")).json()) as { mayGrantAdmin: boolean }).mayGrantAdmin).toBe(false);
+    expect(((await refused.json()) as { code: string }).code).toBe("org_scope_admin_only");
+    for (const scope of ["members:admin", "billing:admin", "fleet:admin", "tool-grants:admin"]) {
+      expect((await owner.send("POST", "/api/bots/bot-1/tool-grants", { scope, expiresAt: NOW + DAY })).status).toBe(403);
+    }
+    const listed = (await (await owner.send("GET", "/api/bots/bot-1/tool-grants")).json()) as { mayGrantAdmin: boolean; adminOnlyAreas: string[] };
+    expect(listed.mayGrantAdmin).toBe(true);
+    expect(listed.adminOnlyAreas).toEqual(expect.arrayContaining(["org", "members", "billing", "fleet"]));
     expect((await owner.send("GET", "/api/bots/bot-2/tool-grants")).status).toBe(403);
     const adminServer = await serve(admin);
     expect((await adminServer.send("POST", "/api/bots/bot-1/tool-grants", { scope: "org:admin" })).status).toBe(400);

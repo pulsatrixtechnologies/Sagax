@@ -287,6 +287,13 @@ struct ApprovalGrantsPage: View {
                     .font(Theme.Font.label)
                     .foregroundStyle(Theme.textTertiary)
             }
+            RuleTestRunner(draft: RuleTestDraft(
+                id: { if case let .existing(id) = editor { return id } else { return nil } }(),
+                when: whenText.trimmingCharacters(in: .whitespacesAndNewlines),
+                behavior: behavior,
+                botId: applies == .all ? nil : bot.id,
+                riskScope: behavior == .allow ? CustomRuleRisk.allCases.filter { risks.contains($0) } : []
+            ))
             HStack {
                 Spacer()
                 Button("Cancel") { editor = nil }

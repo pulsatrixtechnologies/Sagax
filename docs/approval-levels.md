@@ -512,6 +512,33 @@ rather than an app rule, with a remembered approval that belongs to the
 provider's session. Its quieter default is Full access; Sagax keeps its
 own opt-in desktop confirmation and Ask as the default.
 
+## The Journal: what your bots did, and what decided it (2026-10-26)
+
+Approvals > Journal lists every action of your own bots over the last 7 or
+30 days: allowed, asked (a card), refused, failed or expired, with what
+decided it: one of your rules in your words, an organization rule (Refuser,
+Demander d'abord), an Always allow, the bot's approval level, Full access, a
+tool access grant, your own answer, a timeout or an error. A tool the engine
+ran without a card at its level is listed too. The History tab stays as it
+was. On an organization server you see only your own bots and your own
+confidential threads; views across people stay in Perspicax.
+
+Nothing new is captured for it: `server/action-journal.ts` folds the
+decision log (`server/decision-log.ts`), the tool runs of your threads
+(`server/activity.ts`) and the agent tools' audit with the tool guard's
+verdict. A decision row now keeps the call's arguments (bounded, redacted,
+dropped in a confidential thread) so a rule can be replayed exactly.
+
+"Tester une règle" (in the Journal, and in the rule editor before you
+save): the rule, saved or a draft, is replayed with the real matcher among
+your other rules on the last 7 days. The result counts what it would allow,
+ask or refuse, and lists the actions, marking those whose outcome would
+change. Nothing is saved. An older action whose arguments were not kept is
+read from its one line and marked approximate.
+
+Routes: `GET /api/approvals/journal?days=7|30`,
+`POST /api/approvals/journal/test { rule }`.
+
 ## Verification for contributors
 
 The [Full Access workflow recipe](verification/full-access.md) tests immediate

@@ -563,6 +563,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["PUT"], path: /^\/api\/groups\/[\w-]+\/bot-payer$/ },
   { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/tool-grants$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tool-grants\/tg_[\w-]+\/revoke$/ },
+  // 2026-10-26: the person's own tool access (server/routes/my-tool-grants.ts),
+  // always the caller's own; a scope past their environment stays an admin's
+  { methods: ["GET", "POST"], path: /^\/api\/me\/tool-grants$/ },
+  { methods: ["POST"], path: /^\/api\/me\/tool-grants\/tg_[\w-]+\/revoke$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only, or the owner's own bot: see clientBotPatchViolation
   // iOS parity (docs/ios-companion.md): the owner's (or an admin's) picture
   // generation, and the bot profile's Links, Media and Files tabs. The
@@ -639,6 +643,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // cards, answered with the same refusals as /respond, once, never remembered
   { methods: ["GET"], path: /^\/api\/approvals$/ },
   { methods: ["POST"], path: /^\/api\/approvals\/bulk$/ },
+  // 2026-10-26: the Journal of the person's own bots and "Tester cette
+  // règle" (read only, nothing saved); the handler keeps it to their bots
+  { methods: ["GET"], path: /^\/api\/approvals\/journal$/ },
+  { methods: ["POST"], path: /^\/api\/approvals\/journal\/test$/ },
   // a ConnectWise widget's change: an approval card for whoever may answer it (server/cw-widget-actions.ts)
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/cw-actions$/ },
   // an email draft's Send: an approval card for the bot's owner, then the send

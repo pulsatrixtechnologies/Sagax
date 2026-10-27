@@ -30,6 +30,9 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { ApprovalDetail, OutcomePanel, type InboxOutcome } from "./ApprovalDetail";
 import { ApprovalRow, InboxAvatar } from "./ApprovalRow";
 import { ApprovalsHistory } from "./ApprovalsHistory";
+import { ApprovalsJournal } from "./ApprovalsJournal";
+import { useJournal } from "@/lib/action-journal";
+import { JOURNAL_DEFAULT_DAYS, type JournalEntry } from "../../../shared/action-journal";
 import { inboxKeyAction, moveSelection, selectionAfterRemoval } from "./inbox-keys";
 
 /** How long the answer's outcome stays before the next card. */
@@ -224,6 +227,9 @@ export function ApprovalsPage() {
     .flatMap((bot) => (bot.tasks ?? []).filter((task) => task.activity === "waiting-on-you").map((task) => task.threadId))
     .sort().join(","), [state.bots]);
   const { data, error, refresh, arrived } = useInbox(filters.tab === "history", signal);
+  // 2026-10-26: the Journal tab reads its own route, only while it is open
+  const [journalDays, setJournalDays] = useState(JOURNAL_DEFAULT_DAYS);
+  const journal = useJournal(filters.tab === "journal", journalDays);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -315,6 +321,9 @@ export function ApprovalsPage() {
   // the task; a bot's topic opens where the single stream shows it
   const showThreads = useShowThreads();
   const openThread = useCallback((entry: InboxApproval) => {
+    openNotificationTarget(dispatch, { botId: entry.botId, threadId: entry.threadId }, state, showThreads);
+  }, [dispatch, state, showThreads]);
+  const openJournalThread = useCallback((entry: JournalEntry) => {
     openNotificationTarget(dispatch, { botId: entry.botId, threadId: entry.threadId }, state, showThreads);
   }, [dispatch, state, showThreads]);
   const cancelTurn = useCallback((entry: InboxApproval) => {
@@ -420,7 +429,7 @@ export function ApprovalsPage() {
       <header className="flex flex-wrap items-center gap-3 px-5 pb-2 pt-12">
         <h1 className="text-[20px] font-semibold tracking-tight text-ink">{t("approvals.title")}</h1>
         <div role="tablist" aria-label={t("approvals.title")} className="flex rounded-full bg-control/70 p-0.5">
-          {(["pending", "history"] as const).map((tab) => (
+          {(["pending", "history", "journal"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -429,14 +438,16 @@ export function ApprovalsPage() {
               onClick={() => patch({ tab })}
               className={cn("rounded-full px-3 py-1 text-[12.5px] transition-colors", filters.tab === tab ? "bg-card font-medium text-ink shadow-sm" : "text-ink-secondary hover:text-ink")}
             >
-              {tab === "pending" ? t("approvals.tab.pending", { count: pendingCount }) : t("approvals.tab.history")}
+              {tab === "pending" ? t("approvals.tab.pending", { count: pendingCount }) : tab === "history" ? t("approvals.tab.history") : t("approvals.tab.journal")}
             </button>
           ))}
         </div>
-        {error && <span role="alert" className="text-[12.5px] text-danger">{t("approvals.error")}</span>}
+        {(filters.tab === "journal" ? journal.error : error) && <span role="alert" className="text-[12.5px] text-danger">{t("approvals.error")}</span>}
       </header>
 
-      {filters.tab === "history" ? (
+      {filters.tab === "journal" ? (
+        <ApprovalsJournal data={journal.data} loading={!journal.data} days={journalDays} onDays={setJournalDays} query={filters.q} onQuery={(q) => patch({ q })} onOpenThread={openJournalThread} />
+      ) : filters.tab === "history" ? (
         <ApprovalsHistory rows={data?.history ?? []} query={filters.q} onQuery={(q) => patch({ q })} loading={!data} />
       ) : (
         <>

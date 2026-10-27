@@ -129,7 +129,7 @@ function foldDecisions(rows: DecisionRow[]): ActivityRow[] {
   return folded;
 }
 
-function readToolRuns(eventsDir: string, threadId: string): ActivityRow[] {
+export function readToolRuns(eventsDir: string, threadId: string): ActivityRow[] {
   const { lines } = readRecentLines(join(eventsDir, `${threadId}.ndjson`), EVENTS_PER_THREAD, isRuntimeEvent);
   const runs = new Map<string, ActivityRow>();
   for (const event of lines) {

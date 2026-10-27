@@ -3,6 +3,11 @@
 //   GET  /api/approvals          { pending, history, scopes } for this person
 //                                (history only with ?history=1)
 //   POST /api/approvals/bulk     { decision: "allow" | "deny", items: [{ threadId, requestId }] }
+//   GET  /api/approvals/journal  ?days=7|30: the Journal, every action of
+//                                this person's own bots with what decided it
+//                                (2026-10-26, shared/action-journal.ts)
+//   POST /api/approvals/journal/test { rule: { id?, when, behavior, botId, riskScope } }:
+//                                that rule replayed on the last 7 days
 //
 // The list and the answers come from server/index.ts (deps below): the same
 // cards, owners, refusals and security-key gate as answering one card in a
@@ -22,6 +27,8 @@ import {
   type InboxPayload,
 } from "../../shared/approvals-inbox.ts";
 import type { OptionCardData } from "../../shared/wire.ts";
+import { journalDays, type JournalPayload, type RuleTestDraft, type RuleTestResult } from "../../shared/action-journal.ts";
+import { isCustomRuleBehavior, isRiskClass, MAX_RULE_TEXT } from "../../shared/custom-rules.ts";
 import { liveDecisionRefusal } from "../../shared/live-approval.ts";
 import { approvalTypeOf } from "../approval-type.ts";
 import type { RequestAuth } from "../request-auth.ts";
@@ -44,6 +51,31 @@ export interface ApprovalsInboxDeps {
   /** Answer one card, allow or deny, as this person; `rule` "allow" also
    * keeps that card's own Always allow (its exact scope). */
   answer(auth: RequestAuth, item: { threadId: string; requestId: string }, decision: "allow" | "deny", rule?: "allow"): Promise<InboxAnswer>;
+  /** The Journal: this person's own bots' actions over `days`. */
+  journal?(auth: RequestAuth, viewer: InboxViewer, days: number): JournalPayload;
+  /** A rule (saved or a draft) replayed on the Journal's last 7 days with
+   * the real matcher; a string is a refusal (400). */
+  testRule?(auth: RequestAuth, viewer: InboxViewer, draft: RuleTestDraft): RuleTestResult | { error: string; status: number };
+}
+
+/** A rule test's body, or why not. Nothing is saved. */
+export function parseRuleTestDraft(body: unknown): RuleTestDraft | string {
+  const rule = body && typeof body === "object" && !Array.isArray(body) ? (body as { rule?: unknown }).rule : undefined;
+  if (!rule || typeof rule !== "object" || Array.isArray(rule)) return "rule must be an object";
+  const value = rule as Record<string, unknown>;
+  if (typeof value.when !== "string" || !value.when.trim() || value.when.length > MAX_RULE_TEXT) return `rule.when must be 1 to ${MAX_RULE_TEXT} characters`;
+  if (!isCustomRuleBehavior(value.behavior)) return "rule.behavior must be allow, ask or deny";
+  if (value.botId !== null && value.botId !== undefined && (typeof value.botId !== "string" || !ID.test(value.botId))) return "rule.botId must be a bot id or null";
+  if (value.id !== undefined && (typeof value.id !== "string" || !ID.test(value.id))) return "rule.id must be a rule id";
+  const risks = value.riskScope ?? [];
+  if (!Array.isArray(risks) || !risks.every(isRiskClass)) return "rule.riskScope must list risk classes";
+  return {
+    ...(typeof value.id === "string" ? { id: value.id } : {}),
+    when: value.when.trim(),
+    behavior: value.behavior,
+    botId: typeof value.botId === "string" ? value.botId : null,
+    riskScope: [...new Set(risks)],
+  };
 }
 
 /** A card answered on its own only, never in a bulk answer: a send in the
@@ -82,6 +114,23 @@ export function createApprovalsInboxRoutes(deps: ApprovalsInboxDeps): RouteHandl
         scopes: deps.scopes(auth, viewer),
       };
       return json(res, 200, payload);
+    }
+
+    if (method === "GET" && path === "/api/approvals/journal") {
+      const viewer = deps.viewer(auth);
+      if (!viewer || !deps.journal) return json(res, 403, { error: "Sign in to see your bots' journal.", code: "no_person" });
+      res.setHeader("cache-control", "no-store");
+      return json(res, 200, deps.journal(auth, viewer, journalDays(url.searchParams.get("days"))));
+    }
+    if (method === "POST" && path === "/api/approvals/journal/test") {
+      const viewer = deps.viewer(auth);
+      if (!viewer || !deps.testRule) return json(res, 403, { error: "Sign in to test a rule.", code: "no_person" });
+      const draft = parseRuleTestDraft(await readBody(req));
+      if (typeof draft === "string") return json(res, 400, { error: draft });
+      const result = deps.testRule(auth, viewer, draft);
+      if ("error" in result) return json(res, result.status, { error: result.error });
+      res.setHeader("cache-control", "no-store");
+      return json(res, 200, result);
     }
 
     if (!(method === "POST" && path === "/api/approvals/bulk")) return PASS;

@@ -125,6 +125,39 @@ export interface DecisionRow {
    * out of model-authored output ("output", only in rows the removed
    * Computer engine wrote). Question cards only. */
   origin?: "output";
+  /** 2026-10-26 (Journal, "Tester cette règle"): what a rule reads of the
+   * call, kept so a rule can be replayed on it exactly (the arguments, the
+   * shell line, its folder). Capped, redacted like the rest of the row, and
+   * dropped with the summary in a confidential thread. */
+  call?: DecisionCall;
+}
+
+export interface DecisionCall {
+  mcpTool?: string;
+  input?: string;
+  command?: string;
+  cwd?: string;
+  paths?: string[];
+  providerInstanceId?: string;
+}
+
+/** Longest arguments a row keeps for a replay; a longer call keeps none. */
+export const DECISION_CALL_INPUT_MAX = 4_000;
+const DECISION_CALL_PATHS_MAX = 20;
+
+/** The replayable part of a call, bounded: nothing when there is nothing
+ * a rule could read, and no arguments when they are too long to keep (the
+ * replay then reads the summary, like an older row). */
+export function decisionCall(call: { mcpTool?: string; input?: string; command?: string; cwd?: string; paths?: readonly string[]; providerInstanceId?: string } | null | undefined): DecisionCall | undefined {
+  if (!call) return undefined;
+  const out: DecisionCall = {};
+  if (call.mcpTool) out.mcpTool = call.mcpTool.slice(0, 200);
+  if (typeof call.input === "string" && call.input.length <= DECISION_CALL_INPUT_MAX) out.input = call.input;
+  if (typeof call.command === "string" && call.command.length <= DECISION_CALL_INPUT_MAX) out.command = call.command;
+  if (call.cwd) out.cwd = call.cwd.slice(0, 1_000);
+  if (call.paths?.length) out.paths = call.paths.slice(0, DECISION_CALL_PATHS_MAX).map((path) => path.slice(0, 1_000));
+  if (call.providerInstanceId) out.providerInstanceId = call.providerInstanceId.slice(0, 200);
+  return out.input !== undefined || out.command !== undefined || out.paths ? out : undefined;
 }
 
 const DIR = "decisions";
@@ -149,7 +182,7 @@ export function bindConfidentialDecisions(isConfidential: (threadId: string) => 
 /** A row without anything a person or a bot wrote: the summary of the call,
  * the rule that matched it, how the ask reached the fold. */
 export function metadataOnly<T extends Partial<DecisionRow>>(row: T): T {
-  const { summary: _summary, rule: _rule, reason: _reason, origin: _origin, ...rest } = row;
+  const { summary: _summary, rule: _rule, reason: _reason, origin: _origin, call: _call, ...rest } = row;
   return rest as T;
 }
 
@@ -173,7 +206,7 @@ export function scrubThreadDecisions(dataDir: string, threadId: string): Promise
         if (!line) return line;
         try {
           const value = JSON.parse(line) as Partial<DecisionRow>;
-          if (value?.threadId !== threadId || (value.summary === undefined && value.rule === undefined && value.origin === undefined)) return line;
+          if (value?.threadId !== threadId || (value.summary === undefined && value.rule === undefined && value.origin === undefined && value.call === undefined)) return line;
           touched = true;
           changed += 1;
           return JSON.stringify(metadataOnly(value));

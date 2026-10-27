@@ -42,6 +42,8 @@ const { BotReachMeCard } = await import("@/components/bot-settings/BotReachMe");
 const { reachMeFrom } = await import("@/lib/reach-me");
 const { ModeChoice } = await import("@/components/bot-wizard/BotWizard");
 const { newWizardDraft } = await import("../../shared/bot-wizard");
+const { ApprovalsJournal } = await import("@/components/approvals/ApprovalsJournal");
+const { RuleTestResults } = await import("@/components/approvals/RuleTest");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -247,5 +249,19 @@ describe("no UUID on screen", () => {
     expect(botLabel(undefined, BOT_ID)).toBe(t("ids.deletedBot"));
     expect(engineLabel(undefined, ENGINE_ID)).toBe(t("ids.removedEngine"));
     expect(engineLabel(undefined, "claude")).toBe("claude");
+  });
+  it("the Journal names the bot, the action and the rule, never an id (2026-10-26)", () => {
+    const entries = [
+      { key: `${THREAD_ID}:${BOT_ID}`, at: "2026-10-26T12:00:00.000Z", botId: BOT_ID, botName: "Quasar", threadId: THREAD_ID, requestId: THREAD_ID,
+        tool: "Bash", summary: `rm -rf /srv/${BOT_ID}`, outcome: "denied" as const, decider: "custom-rule" as const, source: "custom-rule-deny",
+        ruleText: `supprimer dans /srv/${THREAD_ID}`, ruleId: THREAD_ID, askedBy: "level" as const, askedSource: "no-grant" },
+      { key: `run:${THREAD_ID}`, at: "2026-10-26T12:01:00.000Z", botId: BOT_ID, botName: BOT_ID, threadId: THREAD_ID, tool: `mcp__${BOT_ID}__read`,
+        outcome: "allowed" as const, decider: "grant" as const, guard: { allow: false, reason: "speaker_not_granted", mode: "shadow", scope: "agents:admin" }, answeredBy: PERSON_ID },
+    ];
+    expectNoUuid(visibleText(createElement(ApprovalsJournal, { data: { entries, days: 7 }, loading: false, days: 7, onDays: () => {}, query: "", onQuery: () => {} })));
+    expectNoUuid(visibleText(createElement(RuleTestResults, { result: {
+      days: 7, scanned: 2, matched: 1, counts: { allowed: 0, asked: 0, denied: 1, cardStays: 0, changed: 1 },
+      hits: [{ key: THREAD_ID, at: "2026-10-26T12:00:00.000Z", botName: "Quasar", tool: "Bash", summary: `cat /srv/${BOT_ID}`, actual: "allowed", would: "denied", changed: true }],
+    } })));
   });
 });
