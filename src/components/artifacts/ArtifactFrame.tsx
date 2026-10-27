@@ -3,7 +3,7 @@
 // no cookies or storage of the app. The document is built once per version
 // of the widget; fresh data from the source is posted into the frame, so a
 // refresh never reloads it (and never loses what the person scrolled to).
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import geistLatin from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?inline";
 
@@ -27,12 +27,30 @@ export function postArtifactData(frame: HTMLIFrameElement | null, data: Artifact
   frame?.contentWindow?.postMessage({ type: ARTIFACT_DATA_MESSAGE, data: data.value, at: data.at }, "*");
 }
 
+type FullscreenArtifact = Pick<Artifact, "id" | "title" | "html" | "data" | "rev">;
+
+// The full-screen view belongs to the app, not to the frame that asked for it:
+// a frame inside a floating window (z-40) used to portal it from inside that
+// window, so it sat in the window's lifetime and closed with it. One slot,
+// drawn by ArtifactFullscreenHost (always mounted) above every floating window.
+let fullscreenArtifact: FullscreenArtifact | null = null;
+const fullscreenListeners = new Set<() => void>();
+function setFullscreenArtifact(next: FullscreenArtifact | null): void {
+  fullscreenArtifact = next;
+  for (const listener of fullscreenListeners) listener();
+}
+function subscribeFullscreen(listener: () => void): () => void {
+  fullscreenListeners.add(listener);
+  return () => { fullscreenListeners.delete(listener); };
+}
+const currentFullscreen = () => fullscreenArtifact;
+
 /** The full-screen layer is a modal dialog: Escape and Tab are handled by useModalDialog. */
-function FullscreenLayer({ artifact, onClose }: { artifact: Pick<Artifact, "id" | "title" | "html" | "data" | "rev">; onClose: () => void }) {
+function FullscreenLayer({ artifact, onClose }: { artifact: FullscreenArtifact; onClose: () => void }) {
   const layer = useRef<HTMLDivElement>(null);
   useModalDialog(layer, onClose);
   return (
-    <div ref={layer} tabIndex={-1} className="fixed inset-0 z-50 flex flex-col bg-panel outline-none" role="dialog" aria-modal="true" aria-label={artifact.title}>
+    <div ref={layer} tabIndex={-1} data-artifact-fullscreen-layer className="fixed inset-0 z-[70] flex flex-col bg-panel outline-none" role="dialog" aria-modal="true" aria-label={artifact.title}>
       <div className="flex justify-end p-2">
         <button type="button" data-artifact-exit-fullscreen onClick={onClose} className="rounded-md px-2 py-1 text-[12px] text-ink hover:bg-hover">
           {t("artifact.exitFullscreen")}
@@ -41,6 +59,14 @@ function FullscreenLayer({ artifact, onClose }: { artifact: Pick<Artifact, "id" 
       <ArtifactFrame artifact={artifact} fill bare className="min-h-0 flex-1" />
     </div>
   );
+}
+
+/** Mounted once for the app (ArtifactsHost): draws the full-screen artifact in
+ * front of everything, independent of the popup that opened it. */
+export function ArtifactFullscreenHost() {
+  const artifact = useSyncExternalStore(subscribeFullscreen, currentFullscreen, currentFullscreen);
+  if (!artifact || typeof document === "undefined") return null;
+  return createPortal(<FullscreenLayer artifact={artifact} onClose={() => setFullscreenArtifact(null)} />, document.body);
 }
 
 export function ArtifactFrame({ artifact, fill = false, className, bare = false }: {
@@ -62,7 +88,6 @@ export function ArtifactFrame({ artifact, fill = false, className, bare = false 
   const [generation, setGeneration] = useState(0);
   const [escapes, setEscapes] = useState(0);
   const [problem, setProblem] = useState<ArtifactProblem | null>(null);
-  const [full, setFull] = useState(false);
   const loads = useRef(0);
   const ready = useRef(false);
   // Built per widget version: a theme change is posted, data is posted.
@@ -75,6 +100,10 @@ export function ArtifactFrame({ artifact, fill = false, className, bare = false 
 
   useEffect(() => { postWidgetTheme(frame.current, theme); }, [theme]);
   useEffect(() => { postArtifactData(frame.current, artifact.data); }, [artifact.data]);
+  // A newer version of the artifact open full screen follows this frame.
+  useEffect(() => {
+    if (!bare && fullscreenArtifact?.id === artifact.id && fullscreenArtifact.rev !== artifact.rev) setFullscreenArtifact(artifact);
+  }, [bare, artifact]);
 
   useEffect(() => {
     loads.current = 0;
@@ -117,15 +146,11 @@ export function ArtifactFrame({ artifact, fill = false, className, bare = false 
         <button
           type="button"
           data-artifact-fullscreen
-          onClick={() => setFull(true)}
+          onClick={() => setFullscreenArtifact(artifact)}
           className="absolute end-1 top-1 z-10 rounded-md bg-panel/90 px-2 py-0.5 text-[11px] text-ink-secondary hover:text-ink"
         >
           {t("artifact.fullscreen")}
         </button>
-      )}
-      {full && typeof document !== "undefined" && createPortal(
-        <FullscreenLayer artifact={artifact} onClose={() => setFull(false)} />,
-        document.body,
       )}
       {blocked ? (
         <p role="alert" className="py-2 text-[12px] text-warning">{t("rich.widget.blocked")}</p>

@@ -9,7 +9,7 @@ import { t } from "@/lib/i18n";
 import { registerFloatingKind } from "@/lib/floating-windows";
 import { OPEN_ARTIFACT_EVENT, type OpenArtifactDetail } from "@/lib/artifact-events";
 import { refreshArtifact, useAllArtifacts, useArtifact, useArtifactWatch } from "@/lib/artifacts";
-import { ArtifactFrame } from "./ArtifactFrame";
+import { ArtifactFrame, ArtifactFullscreenHost } from "./ArtifactFrame";
 import { ArtifactStatusLine } from "./ArtifactsSection";
 import {
   ARTIFACT_WINDOW_KIND, artifactWindowData, closeArtifactWindow, dockArtifact, dockArtifactWindow, popOutArtifact, reconcileArtifactWindows, type ArtifactWindowData,
@@ -84,5 +84,5 @@ export function ArtifactsHost() {
     window.addEventListener(OPEN_ARTIFACT_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, onOpen);
   }, [onOpen]);
-  return null;
+  return <ArtifactFullscreenHost />;
 }
