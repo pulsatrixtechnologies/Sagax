@@ -66,7 +66,13 @@ final class SettingsModel: ObservableObject {
 
     var connectionName: String { session?.connection?.name ?? String(localized: "Not connected") }
     var displayName: String { identity?.displayName(fallback: connectionName) ?? connectionName }
-    var detail: String? { identity?.detail ?? (identity == nil ? nil : session?.connection?.displayAddress) }
+    /// Under the name: the person's email, else the account this phone is
+    /// signed in with, else "Personal account"; never the server's address.
+    var detail: String? {
+        if let email = identity?.detail { return email }
+        if let email = session?.account?.email, email != displayName { return email }
+        return identity == nil ? nil : String(localized: "Personal account")
+    }
 
     // MARK: Bot settings
 

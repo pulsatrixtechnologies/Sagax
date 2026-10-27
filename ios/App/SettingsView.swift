@@ -1,12 +1,11 @@
 // Settings (iOS parity 12 and 14): the card sheet the account menu opens.
 //
-// The root groups its cards as the reference design iOS 1.14 does: the account card
-// (Pair devices: switch, add, sign out, delete) with Usage, Connect apps,
-// the bot's settings, the phone's own (Notifications, Appearance, Language,
-// Haptics), then Sagax's extra pages (General, Organization, Experimental),
-// the links, feedback and Sign Out. Which rows show still comes from
-// NavigationMenus.settings. List density and home chrome sit in Appearance.
-// The search at the top finds any page.
+// The Grok Bot layout (2026-10-26): one short list of grouped cards drawn
+// from SettingsTree: the profile with Usage, then Bots, Connect apps and
+// Published pages, this phone's Notifications, Appearance, Language and
+// Haptics, Privacy and security, Help, About and Sign Out. The detail sits
+// one level in. The search at the top finds any page and opens it through
+// its parents.
 // Geometry: measure-settings.md §1 to §4.
 import CompanionCore
 import SwiftUI
@@ -14,8 +13,10 @@ import UIKit
 import MessageUI
 
 /// The sheet's pages.
-enum SettingsRoute: Hashable {
+enum SettingsRoute: String, Hashable {
     case account, usage, plugins, rules, approvalGrants, timeZone, botComputer, pages, appearance, language, haptics, general, experimental, notifications, privacy, vault, securityKeys
+    // The Grok Bot layout's pages (SettingsTree)
+    case bots, privacySecurity, about
 }
 
 struct SettingsView: View {
@@ -65,27 +66,32 @@ struct SettingsView: View {
         }
         .task {
             model.attach(session)
-            if let route = Self.initialRoute, navigator.routes.isEmpty {
+            if !Self.initialRoutes.isEmpty, navigator.routes.isEmpty {
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
-                withTransaction(transaction) { navigator.routes = [route] }
+                withTransaction(transaction) { navigator.routes = Self.initialRoutes }
             }
             await model.load()
         }
     }
 
-    /// The parity harness opens 15, 16 and 21 one level in.
-    private static var initialRoute: SettingsRoute? {
+    /// The parity harness opens 15, 16 and 21 one level in; a capture of
+    /// any level passes `-paritySettingsRoute bots/rules` (route names,
+    /// outermost first) with 12-settings-top.
+    private static var initialRoutes: [SettingsRoute] {
 #if DEBUG
+        if ParityLaunch.current != nil, let path = UserDefaults.standard.string(forKey: "paritySettingsRoute") {
+            return path.split(separator: "/").compactMap { SettingsRoute(rawValue: String($0)) }
+        }
         switch ParityLaunch.current?.screen {
-        case .plugins?: return .plugins
-        case .account?: return .account
-        case .botComputer?: return .botComputer
-        case .appearance?: return .appearance
-        default: return nil
+        case .plugins?: return [.plugins]
+        case .account?: return [.account]
+        case .botComputer?: return [.botComputer]
+        case .appearance?: return [.appearance]
+        default: return []
         }
 #else
-        return nil
+        return []
 #endif
     }
 }
@@ -122,22 +128,7 @@ private struct SettingsRootPage: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: SettingsModel
     @EnvironmentObject private var navigator: SettingsNavigator
-    @ObservedObject private var themes = ThemeStore.shared
-    @ObservedObject private var achievements = AchievementStore.shared
-    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
-    @AppStorage(PrefKey.haptics) private var haptics = true
     @State private var query = ""
-    @State private var confirmingSignOut = false
-
-    private var sections: [PhoneSettingsSection] {
-        NavigationMenus.settings(
-            gate: session.surfaceGate,
-            connected: session.connection != nil,
-            achievementsAvailable: achievements.status != .unavailable
-        )
-        // Pair devices is the account card above the list.
-        .filter { $0 != .pairDevices }
-    }
 
     var body: some View {
         // The search shares the header row with the X: same height (the
@@ -176,136 +167,9 @@ private struct SettingsRootPage: View {
 
     // MARK: Cards
 
-    /// The root as the reference design iOS 1.14 groups it: the account with Usage,
-    /// Connect apps, the bot's settings, the phone's own (Notifications,
-    /// Appearance, Language, Haptics), then Sagax's extra pages, the links,
-    /// feedback and Sign Out. Which rows show still comes from
-    /// `NavigationMenus.settings` (gates and connection).
-    @ViewBuilder
+    /// The root's cards (SettingsTree.root); the rows decide which show.
     private var groupedRoot: some View {
-        accountCard
-        // Published pages sit under Connect apps (2026-10-26, as on the desktop).
-        if has(.plugins) || session.connection != nil {
-            SettingsSpacer(SettingsMetrics.cardGap)
-            SettingsCard {
-                if has(.plugins) {
-                    SettingsRow(
-                        title: "Connect apps", subtitle: "Tools and skills for Sagax",
-                        accessory: .chevron, identifier: "settings-plugins", textTop: 13.4
-                    ) { navigator.push(.plugins) }
-                }
-                if session.connection != nil {
-                    if has(.plugins) { CardHairline(leadingInset: SettingsMetrics.rowInset) }
-                    SettingsRow(title: "Published pages", accessory: .chevron, height: 44, identifier: "settings-pages") {
-                        navigator.push(.pages)
-                    }
-                }
-            }
-        }
-        if session.connection != nil {
-            SettingsSectionLabel(text: "Bot")
-            SettingsBotCard(showsComputer: has(.computer))
-        }
-        SettingsSpacer(SettingsMetrics.cardGap)
-        SettingsCard {
-            if has(.notifications) {
-                SettingsRow(title: "Notifications", accessory: .valueChevron(notificationsValue), height: 44.33, identifier: "settings-notifications") { navigator.push(.notifications) }
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-            }
-            SettingsRow(title: "Appearance", accessory: .valueChevron(appearanceValue), height: 44.33, identifier: "settings-appearance") { navigator.push(.appearance) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Language", accessory: .valueChevron(AppLanguage.resolved(language).shortLabel), height: 43.33, identifier: "settings-language") { navigator.push(.language) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Haptics", accessory: .valueChevron(haptics ? String(localized: "On") : String(localized: "Off")), height: 43.67, identifier: "settings-haptics") { navigator.push(.haptics) }
-            // What General held (2026-10-26): quick replies and the call voice, in the list.
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Quick Replies", accessory: .chevron, height: 43.67, identifier: "settings-quick-replies") { navigator.sheet = .quickReplies }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Call voice", accessory: .chevron, height: 43.67, identifier: "settings-walkie-voice") { navigator.sheet = .walkieVoice }
-        }
-        // General is out of the list (2026-10-26, as on the desktop).
-        let more = sections.filter { [.organization, .experimental].contains($0) }
-        if !more.isEmpty {
-            SettingsSpacer(SettingsMetrics.cardGap)
-            SettingsCard {
-                ForEach(Array(more.enumerated()), id: \.element) { index, section in
-                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
-                    row(section)
-                }
-            }
-        }
-        SettingsSpacer(SettingsMetrics.cardGap)
-        SettingsLinksCard()
-        SettingsSpacer(SettingsMetrics.cardGap)
-        SettingsFeedbackCard()
-        if session.connection != nil {
-            SettingsSpacer(SettingsMetrics.cardGap)
-            SettingsCard {
-                SettingsRow(title: "Sign Out", style: .destructive, height: 44.67, identifier: "settings-sign-out") { confirmingSignOut = true }
-            }
-            .confirmationDialog("Sign out of this computer?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
-                Button("Sign Out", role: .destructive) {
-                    close?()
-                    session.signOut()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This phone forgets this computer. Pair it again to come back.")
-            }
-        }
-    }
-
-    private func has(_ section: PhoneSettingsSection) -> Bool { sections.contains(section) }
-
-    private var notificationsValue: String {
-        SystemNotificationsRow.isOn(session) ? String(localized: "On") : String(localized: "Off")
-    }
-
-    /// The account card: who is signed in, then Usage under it.
-    private var accountCard: some View {
-        SettingsCard {
-            AccountCardRow(name: model.displayName, detail: model.detail, photo: session.accountPhoto, chevron: true) { navigator.push(.account) }
-            // Vault and Security keys sit under the account (2026-10-26, as on the desktop).
-            if session.connection != nil {
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Security keys", accessory: .chevron, height: 44, identifier: "settings-security-keys") { navigator.push(.securityKeys) }
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Vault", accessory: .chevron, height: 44, identifier: "settings-vault") { navigator.push(.vault) }
-            }
-            if has(.usage) {
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Usage", accessory: .chevron, height: 44.33, identifier: "settings-usage") { navigator.push(.usage) }
-            }
-        }
-    }
-
-    // MARK: Rows
-
-    /// The rows of the "more" card: the Sagax pages the reference design has no row for.
-    /// The other sections have their own cards above.
-    @ViewBuilder
-    private func row(_ section: PhoneSettingsSection) -> some View {
-        switch section {
-        case .general:
-            SettingsRow(title: "General", accessory: .chevron, height: 44.33, identifier: "settings-general") { navigator.push(.general) }
-        case .organization:
-            SettingsRow(title: "Organization", accessory: .chevron, height: 44.33, identifier: "settings-organization") { navigator.sheet = .organization }
-        case .experimental:
-            SettingsRow(title: "Experimental", accessory: .chevron, height: 44.33, identifier: "settings-experimental") { navigator.push(.experimental) }
-        default:
-            EmptyView()
-        }
-    }
-
-    /// "System · Black": how the skin is chosen, then the one worn now.
-    private var appearanceValue: String {
-        let mode: String
-        switch themes.effective.mode {
-        case .system: mode = String(localized: "System")
-        case .fixed: mode = String(localized: "Fixed")
-        case .computer: mode = String(localized: "Computer")
-        }
-        return "\(mode) · \(themePalette.id.name)"
+        SettingsTreeCards(page: .root, closeSheet: close)
     }
 
     /// The Pulsatrix logo over "Sagax", then the app version and the
@@ -341,31 +205,35 @@ private struct SettingsRootPage: View {
 
     // MARK: Search
 
+    /// Opens a result through the pages that lead to it, so Back walks
+    /// up the tree.
     private func open(_ destination: SettingsDestination) {
+        let bots: [SettingsRoute] = [.bots]
+        let privacy: [SettingsRoute] = [.privacySecurity]
         switch destination {
-        case .general: navigator.push(.general)
+        case .general: navigator.routes = [.general]
         case .organization: navigator.sheet = .organization
-        case .appearance: navigator.push(.appearance)
+        case .appearance: navigator.routes = [.appearance]
         case .achievements: navigator.sheet = .achievements
-        case .notifications: navigator.push(.notifications)
-        // Privacy is a card of Notifications (#518)
-        case .privacy: navigator.push(.notifications)
-        case .experimental: navigator.push(.experimental)
-        case .plugins: navigator.push(.plugins)
-        case .account: navigator.push(.account)
-        case .botComputer: navigator.push(.botComputer)
-        case .pages: navigator.push(.pages)
-        case .usage: navigator.push(.usage)
-        case .rules: navigator.push(.rules)
-        case .approvalGrants: navigator.push(.approvalGrants)
-        case .timeZone: navigator.push(.timeZone)
-        case .language: navigator.push(.language)
-        case .haptics: navigator.push(.haptics)
-        case .quickReplies: navigator.sheet = .quickReplies
-        case .walkieVoice: navigator.sheet = .walkieVoice
-        case .about: navigator.sheet = .about
-        case .credentials: navigator.push(.vault)
-        case .securityKeys: navigator.push(.securityKeys)
+        case .notifications: navigator.routes = [.notifications]
+        case .privacy, .privacySecurity: navigator.routes = privacy
+        case .experimental: navigator.routes = bots + [.experimental]
+        case .plugins: navigator.routes = [.plugins]
+        case .account: navigator.routes = [.account]
+        case .botComputer: navigator.routes = bots + [.botComputer]
+        case .pages: navigator.routes = [.pages]
+        case .usage: navigator.routes = [.usage]
+        case .rules: navigator.routes = bots + [.rules]
+        case .approvalGrants: navigator.routes = bots + [.approvalGrants]
+        case .timeZone: navigator.routes = bots + [.timeZone]
+        case .language: navigator.routes = [.language]
+        case .haptics: navigator.routes = [.haptics]
+        case .quickReplies: navigator.routes = bots; navigator.sheet = .quickReplies
+        case .walkieVoice: navigator.routes = bots; navigator.sheet = .walkieVoice
+        case .about: navigator.routes = [.about]
+        case .credentials: navigator.routes = privacy + [.vault]
+        case .securityKeys: navigator.routes = privacy + [.securityKeys]
+        case .bots: navigator.routes = bots
         }
     }
 }
@@ -397,6 +265,9 @@ struct SettingsRouteView: View {
         case .privacy: PrivacySettingsView()
         case .vault: VaultSettingsView()
         case .securityKeys: SecurityKeysSettingsView()
+        case .bots: BotsSettingsView()
+        case .privacySecurity: PrivacySecuritySettingsView()
+        case .about: AboutSettingsView()
         }
     }
 }

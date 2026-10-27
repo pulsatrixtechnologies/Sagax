@@ -53,11 +53,12 @@ public struct AccountIdentity: Decodable, Equatable, Sendable {
         name ?? email ?? fallback
     }
 
-    /// The card's second line: the email on an organization server, the
-    /// computer's name on a personal one.
+    /// The card's second line: the person's email when the server knows
+    /// it. Never the computer's host name (2026-10-26): the caller falls
+    /// back to the signed-in account, then to "Personal account".
     public var detail: String? {
         if let email, email != name { return email }
-        return computerName
+        return nil
     }
 }
 

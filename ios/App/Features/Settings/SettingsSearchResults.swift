@@ -50,7 +50,7 @@ struct SettingsSearchResults: View {
             case .achievements: return sections.contains(.achievements)
             case .privacy: return NavigationMenus.showsPrivacy(gate: gate, connected: connected)
             case .experimental: return sections.contains(.experimental)
-            case .plugins, .botComputer, .pages, .usage, .rules, .approvalGrants, .timeZone, .credentials, .securityKeys: return connected
+            case .plugins, .botComputer, .pages, .usage, .rules, .approvalGrants, .timeZone, .credentials, .securityKeys, .privacySecurity: return connected
             default: return true
             }
         }
@@ -80,6 +80,8 @@ struct SettingsSearchResults: View {
         case .about: String(localized: "About")
         case .credentials: String(localized: "Vault")
         case .securityKeys: String(localized: "Security keys")
+        case .bots: String(localized: "Bots")
+        case .privacySecurity: String(localized: "Privacy and security")
         }
     }
 
@@ -107,6 +109,8 @@ struct SettingsSearchResults: View {
         case .about: "info.circle"
         case .credentials: "key"
         case .securityKeys: "lock"
+        case .bots: "cpu"
+        case .privacySecurity: "lock.shield"
         }
     }
 }

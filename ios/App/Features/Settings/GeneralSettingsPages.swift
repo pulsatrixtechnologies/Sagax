@@ -1,6 +1,6 @@
-// The Settings root's own cards (the bot's computer settings, the links,
-// feedback, the system notification switch), Settings > General (quick
-// replies and the call voice) and
+// Rows the Settings tree draws (feedback, links outside the app, the
+// system notification switch), Settings > General (quick replies and the
+// call voice, kept for old links) and
 // Settings > Experimental (SettingsModal.tsx "experimental": the
 // installation's early features, an admin pairing only), plus the picker
 // rows Appearance gains (list density, activity, home chrome).
@@ -28,100 +28,20 @@ struct GeneralSettingsView: View {
     }
 }
 
-/// The bot's computer settings on the Settings root: auto-review and its
-/// rules, the time zone, then the computer itself.
-struct SettingsBotCard: View {
+/// The Send Feedback row, in its card or in the Help card of the root.
+struct SettingsFeedbackRow: View {
     @Environment(\.themePalette) var themePalette
-    @EnvironmentObject private var model: SettingsModel
-    @EnvironmentObject private var navigator: SettingsNavigator
-    var showsComputer = true
-
-    var body: some View {
-        SettingsCard {
-            SettingsRow(
-                title: "Auto-review",
-                subtitle: "Require approval for risky shell, MCP, and computer actions.",
-                accessory: .toggle(Binding(get: { model.autoReview }, set: { on in Task { await model.setAutoReview(on) } })),
-                height: 75,
-                identifier: "settings-auto-review"
-            )
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Auto-review Rules", accessory: .valueChevron(model.rules.map { "\($0.total)" } ?? ""), height: 43.33, identifier: "settings-rules") {
-                navigator.push(.rules)
-            }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Approval rules", accessory: .chevron, height: 43.33, identifier: "settings-approval-grants") {
-                navigator.push(.approvalGrants)
-            }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(
-                title: "Set Time Zone Automatically",
-                subtitle: "Your Bot's computer follows this device's time zone.",
-                accessory: .toggle(Binding(get: { model.timeZoneAuto }, set: { on in Task { await model.setTimeZoneAuto(on) } })),
-                height: 74,
-                identifier: "settings-time-zone-auto",
-                textTop: 13.4
-            )
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            if model.timeZoneAuto {
-                SettingsRow(title: "Time Zone", accessory: .value(model.timeZone ?? ""), height: 43.67, identifier: "settings-time-zone")
-            } else {
-                SettingsRow(title: "Time Zone", accessory: .valueChevron(model.timeZone ?? ""), height: 43.67, identifier: "settings-time-zone") {
-                    navigator.push(.timeZone)
-                }
-            }
-            if showsComputer {
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Bot Computer", accessory: .chevron, height: 43.67, identifier: "settings-bot-computer") {
-                    navigator.push(.botComputer)
-                }
-            }
-        }
-    }
-}
-
-/// Help Center, Privacy Policy, Terms: pages outside the app, in Safari.
-struct SettingsLinksCard: View {
-    @Environment(\.themePalette) var themePalette
-    @Environment(\.locale) private var locale
-    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
-    @State private var link: URL?
-
-    private var french: Bool {
-        (AppLanguage.resolved(language).locale ?? locale).language.languageCode?.identifier == "fr"
-    }
-
-    var body: some View {
-        SettingsCard {
-            SettingsRow(title: "Help Center", accessory: .external, height: 44.33, identifier: "settings-help") { link = SettingsLinks.helpCenter(french: french) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Privacy Policy", accessory: .external, height: 43.33, identifier: "settings-privacy") { link = SettingsLinks.privacy(french: french) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Terms of Service", accessory: .external, height: 43.67, identifier: "settings-terms") { link = SettingsLinks.terms(french: french) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Sagax Terms", accessory: .external, height: 43.33, identifier: "settings-sagax-terms") { link = SettingsLinks.sagaxTerms }
-        }
-        .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
-            SafariSheet(url: item.url).ignoresSafeArea()
-        }
-    }
-}
-
-/// Send Feedback: a mail to Pulsatrix with the app and iOS versions.
-struct SettingsFeedbackCard: View {
-    @Environment(\.themePalette) var themePalette
+    var height: CGFloat? = 44.67
     @State private var composingMail = false
 
     var body: some View {
-        SettingsCard {
-            SettingsRow(title: "Send Feedback", accessory: .chevron, height: 44.67, identifier: "settings-feedback") { sendFeedback() }
-        }
-        .sheet(isPresented: $composingMail) {
-            MailComposeSheet(recipient: SettingsLinks.supportEmail, subject: feedbackSubject, body: feedbackBody) {
-                composingMail = false
+        SettingsRow(title: "Send Feedback", accessory: .chevron, height: height, identifier: "settings-feedback") { sendFeedback() }
+            .sheet(isPresented: $composingMail) {
+                MailComposeSheet(recipient: SettingsLinks.supportEmail, subject: feedbackSubject, body: feedbackBody) {
+                    composingMail = false
+                }
+                .ignoresSafeArea()
             }
-            .ignoresSafeArea()
-        }
     }
 
     private var feedbackSubject: String { String(localized: "Sagax feedback") }
@@ -142,6 +62,28 @@ struct SettingsFeedbackCard: View {
         components.path = SettingsLinks.supportEmail
         components.queryItems = [URLQueryItem(name: "subject", value: feedbackSubject), URLQueryItem(name: "body", value: feedbackBody)]
         if let url = components.url { UIApplication.shared.open(url) }
+    }
+}
+
+/// A page outside the app, opened in Safari over Settings.
+struct SettingsLinkRow: View {
+    @Environment(\.themePalette) var themePalette
+    @Environment(\.locale) private var locale
+    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
+    let title: LocalizedStringKey
+    let identifier: String
+    let url: (_ french: Bool) -> URL
+    @State private var link: URL?
+
+    private var french: Bool {
+        (AppLanguage.resolved(language).locale ?? locale).language.languageCode?.identifier == "fr"
+    }
+
+    var body: some View {
+        SettingsRow(title: title, accessory: .external, height: 44, identifier: identifier) { link = url(french) }
+            .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
+                SafariSheet(url: item.url).ignoresSafeArea()
+            }
     }
 }
 
