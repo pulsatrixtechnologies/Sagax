@@ -35,8 +35,10 @@ vi.mock("./beats/EnginesBeat", () => ({ EnginesBeat: () => null }));
 vi.mock("@/components/Avatar", () => ({ MausAvatar: () => null }));
 vi.mock("@/components/PulsatrixMark", () => ({ PulsatrixMark: () => null }));
 vi.mock("./ProgressDots", () => ({ ProgressDots: () => null }));
+vi.mock("@/components/AgentImport", () => ({ AgentImportDialog: () => null }));
 import { GuidedFirstRun } from "./GuidedFirstRun";
 import { EnginesBeat } from "./beats/EnginesBeat";
+import { AgentImportDialog } from "@/components/AgentImport";
 
 type El = ReactElement<Record<string, unknown> & { onClick?: () => void; children?: ReactNode }>;
 function render(props: Parameters<typeof GuidedFirstRun>[0]) {
@@ -143,6 +145,31 @@ describe("create my first bot", () => {
     const { tree } = render({ onDone: vi.fn(), initialStep: "bot" });
     expect(() => button(tree, "Create my first bot")).toThrow();
     expect(() => button(tree, "Connect an engine")).not.toThrow();
+  });
+});
+
+describe("import an agent", () => {
+  it("is offered on the bot step, even before an engine is ready, and lands on the imported bot", () => {
+    for (const instances of [[], [readyInstance]]) {
+      fixture.values = [];
+      store.state = { ...store.state, instances, bots: [] };
+      const first = render({ onDone: vi.fn(), initialStep: "bot" });
+      expect(collect(first.tree).some((el) => el.type === AgentImportDialog)).toBe(false);
+      button(first.tree, "Import an agent (Grok Bot, Claude Code)").props.onClick!();
+      const opened = render({ onDone: vi.fn(), initialStep: "bot" });
+      const dialog = collect(opened.tree).find((el) => el.type === AgentImportDialog)!;
+      expect(dialog).toBeDefined();
+      (dialog.props.onImported as (result: { botId: string }) => void)({ botId: "bot_1" });
+      expect(render({ onDone: vi.fn(), initialStep: "bot" }).html).toContain("Step 3 of 3");
+    }
+  });
+
+  it("follows the right to create bots, never an admin gate", () => {
+    store.state = { ...store.state, instances: [readyInstance], bots: [], config: { viewer: { admin: false, canCreateBots: true } } };
+    expect(() => button(render({ onDone: vi.fn() }).tree, "Import an agent")).not.toThrow();
+    fixture.values = [];
+    store.state = { ...store.state, config: { viewer: { admin: false, canCreateBots: false } } };
+    expect(() => button(render({ onDone: vi.fn() }).tree, "Import an agent")).toThrow();
   });
 });
 

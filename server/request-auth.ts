@@ -853,6 +853,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bot-catalog(?:\/[\w-]+)?$/ },
   { methods: ["PUT"], path: /^\/api\/bot-catalog\/[\w-]+\/listing$/ },
   { methods: ["POST"], path: /^\/api\/bot-catalog\/[\w-]+\/import$/ },
+  // The public card of a bot shared on x.ai (server/routes/team-library-grok.ts):
+  // it only reads x.ai and creates nothing, so anyone signed in may use it
+  // to import their own agent (src/components/AgentImport.tsx).
+  { methods: ["POST"], path: /^\/api\/team-library\/grok$/ },
   // A bot as one zip (server/routes/bot-zip.ts): export needs owner or
   // manage, import the right to create bots; both checked in the handler.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/export\.zip$/ },

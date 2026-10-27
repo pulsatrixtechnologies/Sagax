@@ -346,8 +346,11 @@ function skillEntry(skill: GrokExport["skills"][number], name: string): { name: 
 /** A Grok Bot export as one bot in an openmaus.package v2 file, plus what could not travel. */
 export function grokExportToPackage(
   x: GrokExport,
-  options: { sourceUrl?: string; timeZone?: string } = {},
+  options: { sourceUrl?: string; timeZone?: string; sourceName?: string } = {},
 ): { document: PackageDocument; leftOut: GrokLeftOut[] } {
+  // The agent the setup came from, in the fallback texts (Grok Bot unless a
+  // caller such as shared/claude-code-import.ts names another).
+  const from = options.sourceName?.trim() || "Grok Bot";
   const leftOut: GrokLeftOut[] = [];
   const skip = (item: GrokLeftOut): [] => {
     leftOut.push(item);
@@ -356,8 +359,8 @@ export function grokExportToPackage(
   const shareId = grokShareIdFrom(options.sourceUrl ?? "") ?? grokShareIdFrom(x.sourceUrl ?? "");
   const sourceUrl = shareId ? grokShareUrl(shareId) : undefined;
   const timeZone = options.timeZone?.trim() || "UTC";
-  const name = clip(oneLine(x.name) || "Grok Bot", 100);
-  const agentKey = slug(name, 60) || "grok-bot";
+  const name = clip(oneLine(x.name) || from, 100);
+  const agentKey = slug(name, 60) || slug(from, 60) || "grok-bot";
   const description = x.description.trim();
 
   let soul = x.instructions.trim();
@@ -410,28 +413,28 @@ export function grokExportToPackage(
     if (!appSlug || appSlugs.has(appSlug)) return [];
     if (appSlugs.size >= MAX_APPS) return skip({ kind: "app", name: `App “${label}”`, reason: `a package lists at most ${MAX_APPS} apps` });
     appSlugs.add(appSlug);
-    return [{ slug: appSlug, label, reason: clip(oneLine(plugin.note) || `${name} used ${label} in Grok Bot.`, 240) }];
+    return [{ slug: appSlug, label, reason: clip(oneLine(plugin.note) || `${name} used ${label} in ${from}.`, 240) }];
   });
 
   let seed: { memory: Record<string, string> } | undefined;
   if (x.memories.length) {
-    const notes = `# Notes from Grok Bot\n\n${x.memories.map((memory) => `- ${memory.replace(/\s*\n\s*/g, " ")}`).join("\n")}\n`;
+    const notes = `# Notes from ${from}\n\n${x.memories.map((memory) => `- ${memory.replace(/\s*\n\s*/g, " ")}`).join("\n")}\n`;
     if (utf8Bytes(notes) <= SEED_FILE_MAX_BYTES) seed = { memory: { "MEMORY.md": notes } };
     else skip({ kind: "memories", name: "Memories", reason: "they were larger than 256 KB" });
   }
 
-  const summary = clip(description || `${name}, brought over from Grok Bot.`, 2_000);
+  const summary = clip(description || `${name}, brought over from ${from}.`, 2_000);
   const draft: PackageDocument = {
     format: PACKAGE_FORMAT,
     version: PACKAGE_VERSION,
     package: {
-      id: `${slug(name, 60) || "grok-bot"}-${shortHash(shareId ?? `${name}\n${soul}`)}`,
+      id: `${agentKey}-${shortHash(shareId ?? `${name}\n${soul}`)}`,
       release: "1.0.0",
       name,
       tagline: clip(oneLine(summary), 160),
       summary,
       category: "Imported",
-      author: { name: clip(x.creator || "Grok Bot creator", 100), ...(sourceUrl ? { url: sourceUrl } : {}) },
+      author: { name: clip(x.creator || `${from} creator`, 100), ...(sourceUrl ? { url: sourceUrl } : {}) },
       license: "See source",
       outcomes: [clip(`${name} runs in Sagax with your own engine and apps.`, 240)],
       setupMinutes: 5,

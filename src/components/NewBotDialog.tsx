@@ -39,6 +39,7 @@ import { botsReadOnlyText } from "@/lib/permissions";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { showBotZipImport } from "@/lib/bot-zip";
 import { BotZipImportDialog } from "./BotZipImport";
+import { AgentImportDialog } from "./AgentImport";
 import { refreshModelHealth, startingModel, type StartingModel } from "@/lib/model-health";
 import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOfferedInstances } from "@/lib/offered-instances";
@@ -476,6 +477,7 @@ function DraftSection({ active, draft, derived }: { active: Section; draft: BotC
 
 const BROWSE_TEMPLATES = "action:browse-templates";
 const IMPORT_ZIP = "action:import-zip";
+const IMPORT_AGENT = "action:import-agent";
 
 /** Starting role: presets from the organization and imported files first,
  * then the built-in roles. A preset fills name, look and instructions (all
@@ -487,6 +489,7 @@ const IMPORT_ZIP = "action:import-zip";
 export function StartingRole({ draft, defaultsMode, onImported }: { draft: BotCreationDraft; defaultsMode: boolean; onImported?: () => void }) {
   const { state, dispatch } = useStore();
   const [zipOpen, setZipOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
   const [presets, setPresets] = useState<BotPreset[]>([]);
   const [loads, setLoads] = useState(0);
   const [error, setError] = useState("");
@@ -544,10 +547,12 @@ export function StartingRole({ draft, defaultsMode, onImported }: { draft: BotCr
   const onPick = (value: string) => {
     if (value === BROWSE_TEMPLATES) { for (const action of templatesEntryActions("newBot")) dispatch(action); return; }
     if (value === IMPORT_ZIP) { setZipOpen(true); return; }
+    if (value === IMPORT_AGENT) { setAgentOpen(true); return; }
     void choose(value);
   };
   return <div>
     {zipOpen && <BotZipImportDialog onClose={() => setZipOpen(false)} onImported={() => onImported?.()} />}
+    {agentOpen && <AgentImportDialog onClose={() => setAgentOpen(false)} onImported={() => onImported?.()} />}
     <div data-new-bot-start>
       <CompactRow label={t("newBot.startingRole")}>
         <PillSelect
@@ -580,6 +585,7 @@ export function startOptions(presets: BotPreset[], defaultsMode: boolean, canImp
   if (!defaultsMode) {
     options.push({ value: BROWSE_TEMPLATES, label: t("newBot.browseTemplatesOption"), group: t("newBot.otherStarts") });
     if (canImport) options.push({ value: IMPORT_ZIP, label: t("newBot.importZipOption"), group: t("newBot.otherStarts") });
+    if (canImport) options.push({ value: IMPORT_AGENT, label: t("newBot.importAgentOption"), group: t("newBot.otherStarts") });
   }
   return options;
 }

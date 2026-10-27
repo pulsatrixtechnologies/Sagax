@@ -105,13 +105,16 @@ describe("import from zip", () => {
     // the Start from pill (#596) lists the other ways to start after the roles
     expect(container.querySelector("[data-new-bot-start]")).not.toBeNull();
     const other = startOptions([], false, true).filter(option => option.value.startsWith("action:"));
-    expect(other.map(option => option.label)).toEqual(["Template from the catalog…", "Zip file…"]);
+    expect(other.map(option => option.label)).toEqual(["Template from the catalog…", "Zip file…", "Grok Bot or Claude Code…"]);
     expect(new Set(other.map(option => option.group)).size).toBe(1);
     expect(draft.patch).not.toHaveBeenCalled();
     // the installation's defaults are not a bot: no import there
     expect(startOptions([], true, true).some(option => option.value === "action:import-zip")).toBe(false);
     // without the right to import, the option is not drawn
     expect(startOptions([], false, false).some(option => option.value === "action:import-zip")).toBe(false);
+    // the agent import (Grok Bot, Claude Code) follows the same right
+    expect(startOptions([], true, true).some(option => option.value === "action:import-agent")).toBe(false);
+    expect(startOptions([], false, false).some(option => option.value === "action:import-agent")).toBe(false);
   });
 });
 

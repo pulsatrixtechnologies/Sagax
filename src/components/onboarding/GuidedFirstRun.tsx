@@ -32,6 +32,8 @@ import { FIRST_RUN_STEPS, firstRunInitialStep, firstRunStepIndex, type FirstRunS
 import { t } from "@/lib/i18n";
 import { completionPatch, engineSummary, organisationSignIn } from "@/lib/onboarding";
 import { api, useStore } from "@/state/store";
+import { AgentImportDialog } from "@/components/AgentImport";
+import { showBotZipImport } from "@/lib/bot-zip";
 import { EnginesBeat } from "./beats/EnginesBeat";
 import { PrimaryButton, QuietButton } from "./beats/shared";
 import { ProgressDots } from "./ProgressDots";
@@ -74,6 +76,8 @@ export function GuidedFirstRun({
   const [creating, setCreating] = useState(false);
   const [createFailed, setCreateFailed] = useState(false);
   const [createdBotId, setCreatedBotId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const canImport = showBotZipImport(state.config);
   const finishing = useRef(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -228,6 +232,19 @@ export function GuidedFirstRun({
                     {t("onboarding.firstRun.bot.advanced")}
                   </QuietButton>
                 </>
+              )}
+              {/* Bring an agent from Grok Bot or Claude Code: it arrives inert,
+                  so it needs no engine yet and is offered in every case. */}
+              {canImport && (
+                <QuietButton onClick={() => setImportOpen(true)} className="mt-2 self-center" data-first-run-import="">
+                  {t("onboarding.firstRun.bot.import")}
+                </QuietButton>
+              )}
+              {importOpen && (
+                <AgentImportDialog
+                  onClose={() => setImportOpen(false)}
+                  onImported={(result) => { setCreatedBotId(result.botId); goTo("message"); }}
+                />
               )}
             </div>
           )}

@@ -1,5 +1,6 @@
-// POST /api/team-library/grok (port of OpenMausBot #3073): an admin route that
-// reads only x.ai's public card, with a stubbed x.ai.
+// POST /api/team-library/grok (port of OpenMausBot #3073): a route anyone signed
+// in may call (it creates nothing), that reads only x.ai's public card, with a
+// stubbed x.ai.
 import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -39,8 +40,9 @@ const post = async (body: unknown) => {
 };
 
 describe("POST /api/team-library/grok", () => {
-  it("is an admin route, like the GitHub import", () => {
-    expect(requiredScope("POST", "/api/team-library/grok")).toBe("admin");
+  it("is open to anyone who imports their own agent: it only reads x.ai and creates nothing", () => {
+    expect(requiredScope("POST", "/api/team-library/grok")).toBe("client");
+    // The GitHub import is unchanged.
     expect(requiredScope("POST", "/api/team-library/github")).toBe("admin");
   });
 
