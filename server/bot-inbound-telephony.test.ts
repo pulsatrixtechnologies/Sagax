@@ -132,7 +132,7 @@ describe("parseTelephonyEvent and telephonyTriggerEvent", () => {
     expect(parsed?.directives.clientPhoneSource).toBe("psa_contact");
     expect(parseTelephonyEvent(voice())?.directives.clientPhoneSource).toBe("psa_contact");
     expect(parseTelephonyEvent(voice({ directives: { thirdPartyCall: "card", clientPhoneSource: "provided" } }))?.directives.clientPhoneSource).toBe("provided");
-    expect(telephonyTriggerEvent(parsed!).directives?.clientPhoneSource).toBe("psa_contact");
+    expect(telephonyTriggerEvent(parsed!)?.directives?.clientPhoneSource).toBe("psa_contact");
   });
 
   it("masks a number to its last four digits for logs and audit rows", () => {
