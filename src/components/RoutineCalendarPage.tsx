@@ -1807,7 +1807,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   const newMenuRef = useRef<HTMLDetailsElement>(null);
   const navMenuRef = useRef<HTMLDetailsElement>(null);
   const filtersMenuRef = useRef<HTMLDetailsElement>(null);
-  const { controlsShiftStyle } = useCaptionChrome();
+  const { dragProps, noDragStyle, controlsShiftStyle } = useCaptionChrome();
   const [section, setSection] = useState<"calendar" | "logs" | "webhooks">(state.routinesFocus?.section === "logs" ? "logs" : "calendar");
   const [scheduleView, setScheduleView] = useState<"calendar" | "list">(state.routinesFocus?.view ?? "calendar");
   // Mine, My teams or Everyone and the filters (src/lib/use-routine-scope.ts).
@@ -2004,6 +2004,8 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   // the view switch and Filters fold to their icons (a tooltip keeps the
   // name); under 44rem the view and dates take a second line. The right
   // group clears the Windows caption buttons (useCaptionChrome, #1204).
+  // The title and the drag handle follow the Achievements page (#1246):
+  // plain icon, 15px medium title, the header drags the window.
   const scopeShown = section !== "webhooks" && scoped.available;
   const calendarGrid = section === "calendar" && scheduleView === "calendar";
   const hideStatus = calendarGrid;
@@ -2100,16 +2102,17 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       {fill && (macInset || browser) && <div className="content-topbar-strip" />}
       <header
         data-automations-header
-        className={cn(fill && "content-topbar", "@container/automations-header shrink-0 border-b border-hairline/35 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-4")}
-        style={embedded || fill ? undefined : windowDragStyle}
+        {...(fill ? dragProps : {})}
+        className={cn(fill && "content-topbar", "@container/automations-header shrink-0 border-b border-hairline/50 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-5")}
+        style={embedded ? undefined : fill ? dragProps.style : windowDragStyle}
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div data-tour="automations-page" className="flex min-w-0 shrink-0 items-center gap-2">
             <CalendarDays size={18} className="shrink-0 text-ink-secondary" aria-hidden="true" />
-            <h1 className="text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink">{t("sidebar.nav.automations")}</h1>
-            {sectionName && <span data-automations-section className="flex min-w-0 items-center gap-1 text-[14px] text-ink-secondary"><ChevronRight size={14} aria-hidden="true" /><span className="truncate">{sectionName}</span></span>}
+            <h1 className="text-[15px] font-medium leading-6 text-ink">{t("sidebar.nav.automations")}</h1>
+            {sectionName && <span data-automations-section className="flex min-w-0 items-center gap-1 text-[15px] text-ink-secondary"><ChevronRight size={14} aria-hidden="true" /><span className="truncate">{sectionName}</span></span>}
           </div>
-          {section === "calendar" && <div data-automations-primary className="flex min-w-0 items-center gap-2 @max-[44rem]/automations-header:order-last @max-[44rem]/automations-header:basis-full" style={windowNoDragStyle}>
+          {section === "calendar" && <div data-automations-primary className="flex min-w-0 items-center gap-2 @max-[44rem]/automations-header:order-last @max-[44rem]/automations-header:basis-full" style={noDragStyle ?? windowNoDragStyle}>
             <div role="group" className="flex shrink-0 items-center rounded-lg border border-hairline/50 bg-panel p-0.5" aria-label={t("routines.view.label")}>
               <button type="button" aria-pressed={scheduleView === "list"} title={t("routines.view.list")} onClick={() => setScheduleView("list")} className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px]", scheduleView === "list" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><List size={14} aria-hidden="true" /><span className="@max-[60rem]/automations-header:sr-only">{t("routines.view.list")}</span></button>
               <button type="button" aria-pressed={scheduleView === "calendar"} title={t("connectApps.capabilities.calendar")} onClick={() => setScheduleView("calendar")} className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px]", scheduleView === "calendar" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><CalendarDays size={14} aria-hidden="true" /><span className="@max-[60rem]/automations-header:sr-only">{t("connectApps.capabilities.calendar")}</span></button>
@@ -2123,7 +2126,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
               <div data-automations-range className="min-w-0 truncate text-[14px] font-medium text-ink">{calendarRangeLabel(rangeStart, viewDays)}</div>
             </>}
           </div>}
-          <div data-automations-actions className="ml-auto flex shrink-0 items-center gap-1.5" style={{ ...windowNoDragStyle, ...controlsShiftStyle }}>
+          <div data-automations-actions className="ml-auto flex shrink-0 items-center gap-1.5" style={{ ...(noDragStyle ?? windowNoDragStyle), ...controlsShiftStyle }}>
             {section !== "webhooks" && running > 0 && <span role="status" data-automations-running title={t("routineCalendar.activeCount", { count: running })} aria-label={t("routineCalendar.activeCount", { count: running })} className="flex h-9 items-center gap-1 px-1.5 text-[11.5px] text-accent"><Loader2 size={13} className="animate-spin" aria-hidden="true" />{running}</span>}
             {unseenFailures > 0 && <button type="button" data-automations-problems onClick={() => dispatch({ type: "showRoutines", section: "logs", runStatus: "problems" })} className="flex h-9 items-center gap-1 rounded-lg px-2 text-[11.5px] font-medium text-danger hover:bg-danger/10" title={t("routineCalendar.openProblemLogs")} aria-label={t("routineCalendar.openProblemLogs")}><CircleAlert size={14} aria-hidden="true" />{unseenFailures}</button>}
             {filtersMenu}
