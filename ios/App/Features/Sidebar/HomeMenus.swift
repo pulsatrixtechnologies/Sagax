@@ -21,6 +21,8 @@ final class BotRowActions: ObservableObject {
     @Published var archiving: Bot?
     @Published var deleting: Bot?
     @Published var replacingPrimary: Bot?
+    /// Share: the bot whose Shared with page is open.
+    @Published var sharing: Bot?
     /// Move to ▸ Create section on a server: the New section sheet.
     @Published var newServerSection = false
     @Published private(set) var notice: String?
@@ -37,6 +39,7 @@ final class BotRowActions: ObservableObject {
 
     func startArchive(_ bot: Bot) { afterMenu { self.archiving = bot } }
     func startDelete(_ bot: Bot) { afterMenu { self.deleting = bot } }
+    func startShare(_ bot: Bot) { afterMenu { self.sharing = bot } }
     func startReplacePrimary(_ bot: Bot) { afterMenu { self.replacingPrimary = bot } }
     func startNewServerSection() { afterMenu { self.newServerSection = true } }
 
@@ -137,6 +140,10 @@ struct BotRowActionsPresenter: ViewModifier {
                 PrimaryBotPicker(currentId: bot.id, viewerId: actions.viewerId ?? "local-owner") { actions.flash($0) }
                     .environmentObject(session)
             }
+            .fullScreenCover(item: $actions.sharing) { bot in
+                PhoneBotPanel(bot: bot, section: .sharing)
+                    .environmentObject(session)
+            }
             .overlay(alignment: .bottom) {
                 if let notice = actions.notice {
                     Text(verbatim: notice)
@@ -223,6 +230,11 @@ struct BotRowMenu: View {
             Button { botActions.startRename(bot) } label: {
                 Label(String(localized: "Rename Bot"), systemImage: "pencil")
             }
+        case .share:
+            Button { botActions.startShare(bot) } label: {
+                Label(String(localized: "Share"), systemImage: "person.badge.plus")
+            }
+            .accessibilityIdentifier("bot-row-share")
         case .copyConversationId:
             Button { threadActions.copyConversationId(bot) } label: {
                 Label(String(localized: "Copy conversation ID"), systemImage: "doc.on.doc")

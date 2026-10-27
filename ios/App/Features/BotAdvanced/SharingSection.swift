@@ -19,23 +19,34 @@ extension GrantLevel {
 }
 
 struct BotSharingSection: View {
+    let bot: Bot
+    @EnvironmentObject private var session: Session
+
+    var body: some View {
+        if let client = session.profileClient {
+            BotSharingContent(bot: bot, client: client)
+        }
+    }
+}
+
+private struct BotSharingContent: View {
     @Environment(\.themePalette) var themePalette
     let bot: Bot
     @EnvironmentObject private var session: Session
-    @State private var directory: OrgShareDirectory?
-    @State private var grants: [WireGrant]?
-    @State private var administer: GrantAdministration?
-    @State private var loadedAdminister = false
-    @State private var query = ""
-    @State private var busy: String?
-    @State private var error: String?
-    @State private var viewerId: String?
+    @StateObject private var model: BotSharingModel
 
-    private var rows: [WireGrant] { grants ?? GrantRules.initialRows(bot, directory: directory) }
-    private var candidates: [GrantCandidate] {
-        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] :
-            GrantRules.candidates(directory, ownerId: bot.ownerUserId, taken: rows.map(\.target), query: query, administer: administer)
+    init(bot: Bot, client: CompanionClient) {
+        self.bot = bot
+        _model = StateObject(wrappedValue: BotSharingModel(bot: bot, api: client))
     }
+
+    private var rows: [WireGrant] { model.rows }
+    private var administer: GrantAdministration? { model.administer }
+    private var directory: OrgShareDirectory? { model.directory }
+    private var busy: String? { model.busy }
+    private var candidates: [GrantCandidate] { model.candidates }
+    private var loadedAdminister: Bool { model.loaded }
+    private var error: String? { model.failed ? String(localized: "The change could not be saved.") : nil }
 
     var body: some View {
         Section {
@@ -65,12 +76,12 @@ struct BotSharingSection: View {
                         Text(String(localized: "You manage sharing for your teams and their members on this bot."))
                             .font(.footnote).foregroundStyle(Theme.textSecondary)
                     }
-                    TextField(String(localized: "Search by name, login or email"), text: $query)
+                    TextField(String(localized: "Search by name, login or email"), text: $model.query)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .accessibilityLabel(Text(String(localized: "Search people and teams")))
                         .accessibilityIdentifier("sharing-search")
-                    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, candidates.isEmpty {
+                    if !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, candidates.isEmpty {
                         Text(String(localized: "Nobody matches.")).font(.footnote).foregroundStyle(Theme.textSecondary)
                     }
                     ForEach(candidates) { candidate in
@@ -155,43 +166,13 @@ struct BotSharingSection: View {
     }
 
     private func load() async {
-        guard let client = session.profileClient else { return }
         let config = await session.configStatus()
-        viewerId = config?.viewer?.principalId
-        if GrantRules.viewerOwns(bot, viewerPrincipalId: viewerId) { administer = .owner }
-        async let directoryAnswer = try? client.orgShareDirectory()
-        do {
-            let answer = try await client.botGrants(botId: bot.id)
-            grants = answer.grants
-            administer = answer.administer
-        } catch {
-            // the owner keeps their own right to share when the read fails
-            if administer?.any != true { administer = nil }
-        }
-        directory = await directoryAnswer ?? OrgShareDirectory(people: [])
-        loadedAdminister = true
+        await model.load(viewerPrincipalId: config?.viewer?.principalId)
     }
 
-    private func run(_ key: String, _ request: @escaping (CompanionClient) async throws -> BotGrants) async {
-        guard let client = session.profileClient else { return }
-        busy = key
-        error = nil
-        defer { busy = nil }
-        do {
-            grants = try await request(client).grants
-            query = ""
-        } catch {
-            self.error = String(localized: "The change could not be saved.")
-        }
-    }
+    private func put(_ target: String, _ level: GrantLevel) async { _ = await model.add(target, level: level) }
 
-    private func put(_ target: String, _ level: GrantLevel) async {
-        await run(target) { [botId = bot.id] in try await $0.putGrant(botId: botId, target: target, level: level) }
-    }
-
-    private func remove(_ target: String) async {
-        await run(target) { [botId = bot.id] in try await $0.removeGrant(botId: botId, target: target) }
-    }
+    private func remove(_ target: String) async { _ = await model.remove(target) }
 }
 
 struct BotSharingPage: View {

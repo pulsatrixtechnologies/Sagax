@@ -327,6 +327,12 @@ private struct PhoneBotPanelContent: View {
                 renameDraft = current.name
                 renaming = true
             }
+        case .share:
+            return GlassMenuItem(id: "share-people", title: Text("Share"), systemImage: "person.badge.plus", dividerBefore: divider, heading: heading) {
+                Haptics.selection()
+                path.append(PanelPersonaRoute())
+                path.append(DesktopPanelSection.sharing)
+            }
         case .makePrimary:
             return GlassMenuItem(id: "make-primary", title: Text("Make primary bot"), systemImage: "star", disabled: primaryWorking, dividerBefore: divider, heading: heading) {
                 Task { await PrimaryBotActions.make(current.id, session: session, done: { show($0) }, working: $primaryWorking) }
