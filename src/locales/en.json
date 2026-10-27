@@ -9808,6 +9808,8 @@
   "remoteSessionsAdmin.hosts.revoked": "{host} is revoked. The computer stops and removes the service within a minute.",
   "remoteSessionsAdmin.hosts.revokeTitle": "Revoke {host}?",
   "remoteSessionsAdmin.hosts.revokeBody": "Unattended access to this computer ends now: any open session is cut, and the computer stops and removes the service at its next check. Enrolling it again needs a new install.",
+  "remoteSessionsAdmin.hosts.reasonLabel": "Reason (optional, kept in the audit)",
+  "remoteSessionsAdmin.hosts.reasonPlaceholder": "For example: computer replaced",
   "remoteSessionsAdmin.hosts.error.disabled": "Opening unattended access is not enabled on this server.",
   "remoteSessionsAdmin.hosts.error.invalid": "That computer is not an enrolled host.",
   "remoteSessionsAdmin.hosts.error.unavailable": "Sagax cannot reach Perspicax for you right now. Check that one of your bots is linked to it.",

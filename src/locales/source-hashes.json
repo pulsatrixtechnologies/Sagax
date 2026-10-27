@@ -14035,6 +14035,8 @@
       "remoteSessionsAdmin.hosts.copyId": "0fd573056599ac31073bd7871453476887781a5ddaa3a6ab148b39237b47fe8f",
       "remoteSessionsAdmin.hosts.pending": "0e5489976abaf7608f5b46b8be7a82778ac0d558952bca0733bd2fa9843aab10",
       "remoteSessionsAdmin.hosts.revoked": "97750c515ec87b81b13845d9fa13ac0b641f88214fa8b5529ea196c049a136a8",
+      "remoteSessionsAdmin.hosts.reasonLabel": "729af7ece8f3325ca67471b033cd420dab12f9c66dfcbb7d9c21bbc07816e715",
+      "remoteSessionsAdmin.hosts.reasonPlaceholder": "81311cfdf74dc4d0cf2dc0c8a8fffa4462b12ddc860edac5346a665515f6a07b",
       "remoteSessionsAdmin.hosts.revokeTitle": "323fb29ba60a6c72cb0f7408c36adba1c01dfb3ccfb4605fb2825eb8c19073b9",
       "remoteSessionsAdmin.hosts.revokeBody": "3e9122b50b0139ec6b49c80e4fc7e39698fca932286e6f2ff3c77dbf29baccdb",
       "remoteSessionsAdmin.hosts.error.disabled": "21e96cfa2cfcd13528eee3fb49ad4a3d3f82c66c85c17a204a159855438eab58",

@@ -9808,6 +9808,8 @@
   "remoteSessionsAdmin.hosts.revoked": "{host} est révoqué. L'ordinateur arrête et retire le service en moins d'une minute.",
   "remoteSessionsAdmin.hosts.revokeTitle": "Révoquer {host}?",
   "remoteSessionsAdmin.hosts.revokeBody": "L'accès non surveillé à cet ordinateur prend fin maintenant : toute session ouverte est coupée, et l'ordinateur arrête et retire le service à sa prochaine vérification. Le réinscrire exige une nouvelle installation.",
+  "remoteSessionsAdmin.hosts.reasonLabel": "Raison (facultative, gardée dans l'audit)",
+  "remoteSessionsAdmin.hosts.reasonPlaceholder": "Par exemple : ordinateur remplacé",
   "remoteSessionsAdmin.hosts.error.disabled": "L'ouverture d'un accès non surveillé n'est pas activée sur ce serveur.",
   "remoteSessionsAdmin.hosts.error.invalid": "Cet ordinateur n'est pas un hôte inscrit.",
   "remoteSessionsAdmin.hosts.error.unavailable": "Sagax ne peut pas joindre Perspicax pour vous en ce moment. Vérifiez qu'un de vos bots y est relié.",

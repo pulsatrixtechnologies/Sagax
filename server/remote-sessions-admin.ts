@@ -37,8 +37,9 @@ export function createRemoteSessionsAdmin(deps: {
   closeById(id: string): Promise<boolean>;
   /** Propagate a revoke to the host service and Perspicax --allow binding.
    * Best effort; the consent is already marked revoked when this runs.
-   * `actor` is the admin who revoked, for the audit (M4), never the installer. */
-  onRevoke?(consent: UnattendedConsent, actor: string): Promise<void>;
+   * `actor` is the person who revoked (the installer themselves or an admin),
+   * for the audit (M4); `reason` the one they gave ("" when none). */
+  onRevoke?(consent: UnattendedConsent, actor: string, reason: string): Promise<void>;
   /** The unattended (Access) path is only usable when this is true. It is
    * false by default: the host service install, the revoke that uninstalls it,
    * and the expiry enforcement are designed but not wired yet, so the grant
@@ -52,12 +53,13 @@ export function createRemoteSessionsAdmin(deps: {
   const visible = (viewer: AdminViewer, input: AdminSessionInput) =>
     viewer.orgAdmin || input.ownerId === viewer.principalId;
 
-  const rowFor = (input: AdminSessionInput): RemoteSessionAdminRow =>
-    toAdminRow(input, {
-      botLabel: deps.botLabel(input.botId),
-      consent: deps.consent.get(adminHostKey(input)),
-      now: now(),
-    });
+  const rowFor = (input: AdminSessionInput, viewer?: AdminViewer): RemoteSessionAdminRow => {
+    const consent = deps.consent.get(adminHostKey(input));
+    const row = toAdminRow(input, { botLabel: deps.botLabel(input.botId), consent, now: now() });
+    // The person who recorded the consent revokes it themselves (their own
+    // environment, no admin): the page offers Revoke on their rows.
+    return viewer && row.unattended && consent?.installedBy === viewer.principalId ? { ...row, unattendedMine: true } : row;
+  };
 
   const find = (id: string) => deps.rows().find((row) => row.id === id) ?? null;
 
@@ -65,7 +67,7 @@ export function createRemoteSessionsAdmin(deps: {
     /** The rows this viewer may see, filtered and sorted. */
     list(viewer: AdminViewer, filters: AdminRowFilters = {}): RemoteSessionAdminRow[] {
       const mine = deps.rows().filter((input) => visible(viewer, input));
-      return sortAdminRows(filterAdminRows(mine.map(rowFor), filters));
+      return sortAdminRows(filterAdminRows(mine.map((input) => rowFor(input, viewer)), filters));
     },
     /** Whether the viewer may see / act on this session. */
     canSee(viewer: AdminViewer, id: string): boolean {
@@ -90,12 +92,16 @@ export function createRemoteSessionsAdmin(deps: {
       if (!viewer.orgAdmin) return "forbidden";
       return deps.consent.grant(input);
     },
-    /** Revoke unattended access for a host from the page (admin only): mark the
-     * consent revoked, end any live session on that host (cuts the tunnel), and
+    /** Revoke unattended access for a host from the page: the person who
+     * recorded the consent (installedBy) does it themselves, an admin does it
+     * for any host of the organization (decision 2026-10-26). Mark the consent
+     * revoked, end any live session on that host (cuts the tunnel), and
      * propagate to the host service and Perspicax. Works whatever the flag
      * (M2): a consent recorded before the flag was cut stays revocable. */
-    async revokeUnattended(viewer: AdminViewer, hostKey: string): Promise<RevokeOutcome> {
-      if (!viewer.orgAdmin) return { ok: false, error: "forbidden" };
+    async revokeUnattended(viewer: AdminViewer, hostKey: string, reason = ""): Promise<RevokeOutcome> {
+      const current = deps.consent.get(hostKey);
+      if (!current) return { ok: false, error: "not_found" };
+      if (!viewer.orgAdmin && current.installedBy !== viewer.principalId) return { ok: false, error: "forbidden" };
       const consent = deps.consent.revoke(hostKey);
       if (!consent) return { ok: false, error: "not_found" };
       // Cut any live session whose host matches, so revoke stops control now.
@@ -104,7 +110,7 @@ export function createRemoteSessionsAdmin(deps: {
           await deps.closeById(input.id).catch(() => false);
         }
       }
-      await deps.onRevoke?.(consent, viewer.principalId).catch(() => {});
+      await deps.onRevoke?.(consent, viewer.principalId, reason).catch(() => {});
       return { ok: true, consent };
     },
   };

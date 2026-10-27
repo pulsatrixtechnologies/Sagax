@@ -156,7 +156,11 @@ describe("enrolled hosts routes", () => {
     expect((await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/open`)).status).toBe(501);
     const revoked = await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/revoke`);
     expect(revoked.status).toBe(200);
-    expect(hosts.revoke).toHaveBeenCalledWith({ principalId: "viewer@gox" }, HOST);
+    expect(hosts.revoke).toHaveBeenCalledWith({ principalId: "viewer@gox" }, HOST, "");
+    const withReason = await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/revoke`, { reason: "poste remplacé" });
+    expect(withReason.status).toBe(200);
+    expect(hosts.revoke).toHaveBeenLastCalledWith({ principalId: "viewer@gox" }, HOST, "poste remplacé");
+    expect((await post(`${base}/api/admin/remote-sessions/hosts/${HOST}/revoke`, { reason: "x".repeat(300) })).status).toBe(400);
   });
 
   it("refuses a malformed host id or body", async () => {

@@ -45,6 +45,7 @@ export function UnattendedHostsSection({ state, onOpened }: {
   const { hosts, available, openEnabled, loading, reload } = state;
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<UnattendedHostRow | null>(null);
+  const [reason, setReason] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const open = async (row: UnattendedHostRow) => {
@@ -58,7 +59,8 @@ export function UnattendedHostsSection({ state, onOpened }: {
   const revoke = async (row: UnattendedHostRow) => {
     setConfirmRevoke(null);
     setBusy(row.hostId);
-    const out = await revokeUnattendedHost(row.hostId);
+    const out = await revokeUnattendedHost(row.hostId, reason);
+    setReason("");
     setBusy(null);
     if (!out.ok) { setNotice({ kind: "error", error: out.error }); return; }
     setNotice({ kind: "revoked", host: unattendedHostLabel(row) });
@@ -116,7 +118,7 @@ export function UnattendedHostsSection({ state, onOpened }: {
                           </button>
                         )}
                         {canRevokeUnattendedHost(row) && (
-                          <button type="button" data-unattended-host-revoke="" disabled={working} onClick={() => setConfirmRevoke(row)} className="inline-flex items-center gap-1 rounded-lg border border-danger/50 px-2 py-1 text-[12px] text-danger hover:bg-raised disabled:opacity-50">
+                          <button type="button" data-unattended-host-revoke="" disabled={working} onClick={() => { setReason(""); setConfirmRevoke(row); }} className="inline-flex items-center gap-1 rounded-lg border border-danger/50 px-2 py-1 text-[12px] text-danger hover:bg-raised disabled:opacity-50">
                             <ShieldOff size={12} /> {t("remoteSessionsAdmin.hosts.revoke")}
                           </button>
                         )}
@@ -137,6 +139,18 @@ export function UnattendedHostsSection({ state, onOpened }: {
           <div className="w-full max-w-sm rounded-2xl border border-hairline/60 bg-panel p-5 shadow-xl">
             <h2 className="text-[14px] font-medium text-ink">{t("remoteSessionsAdmin.hosts.revokeTitle", { host: unattendedHostLabel(confirmRevoke) })}</h2>
             <p className="mt-2 text-[13px] text-ink-secondary">{t("remoteSessionsAdmin.hosts.revokeBody")}</p>
+            <label className="mt-3 block text-[12px] text-ink-secondary">
+              {t("remoteSessionsAdmin.hosts.reasonLabel")}
+              <input
+                type="text"
+                data-unattended-host-revoke-reason=""
+                value={reason}
+                maxLength={256}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder={t("remoteSessionsAdmin.hosts.reasonPlaceholder")}
+                className="mt-1 w-full rounded-lg border border-hairline/50 bg-raised px-2 py-1 text-[13px] text-ink"
+              />
+            </label>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setConfirmRevoke(null)} className="rounded-lg border border-hairline/50 px-3 py-1 text-[13px] text-ink-secondary hover:bg-raised">{t("remoteSessionsAdmin.cancel")}</button>
               <button type="button" data-unattended-host-revoke-confirm="" onClick={() => void revoke(confirmRevoke)} className="rounded-lg bg-danger px-3 py-1 text-[13px] text-white hover:opacity-90">{t("remoteSessionsAdmin.hosts.revoke")}</button>

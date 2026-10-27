@@ -82,6 +82,8 @@ function LogsPanel({ row, onClose }: { row: RemoteSessionAdminRow; onClose: () =
 }
 
 // Revoke shows whatever the flag says (M2): only recording consent is gated.
+// It shows to an admin, and to the person who recorded the consent (their
+// own host, no admin needed).
 function UnattendedCell({ row, admin, onRevoke }: { row: RemoteSessionAdminRow; admin: boolean; onRevoke: (row: RemoteSessionAdminRow) => void }) {
   if (!row.unattended) return <span className="text-ink-secondary">{t("remoteSessionsAdmin.unattended.no")}</span>;
   return (
@@ -91,7 +93,7 @@ function UnattendedCell({ row, admin, onRevoke }: { row: RemoteSessionAdminRow; 
       {row.unattendedExpiresAt && <span className="text-[12px] text-ink-secondary">{t("remoteSessionsAdmin.unattended.expires", { date: startedLabel(row.unattendedExpiresAt) })}</span>}
       <span className="text-[12px] text-ink-secondary">{row.bannerVisible === false ? t("remoteSessionsAdmin.unattended.bannerOff") : t("remoteSessionsAdmin.unattended.bannerOn")}</span>
       {row.signed === false && <span className="text-[12px] text-warning">{t("remoteSessionsAdmin.unattended.unsigned")}</span>}
-      {admin && <button type="button" data-remote-admin-revoke="" onClick={() => onRevoke(row)} className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-lg border border-danger/50 px-2 py-0.5 text-[12px] text-danger hover:bg-raised"><ShieldOff size={12} /> {t("remoteSessionsAdmin.unattended.revoke")}</button>}
+      {(admin || row.unattendedMine) && <button type="button" data-remote-admin-revoke="" onClick={() => onRevoke(row)} className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-lg border border-danger/50 px-2 py-0.5 text-[12px] text-danger hover:bg-raised"><ShieldOff size={12} /> {t("remoteSessionsAdmin.unattended.revoke")}</button>}
     </div>
   );
 }

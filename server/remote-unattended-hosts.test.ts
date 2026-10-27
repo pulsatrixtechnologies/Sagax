@@ -148,15 +148,17 @@ describe("enrolled hosts at Perspicax", () => {
     });
     expect((await hosts.open(viewer, HOST)).ok).toBe(true);
     enabled = false;
-    expect(await hosts.revoke({ principalId: "boss@example.org" }, HOST)).toEqual({ ok: true });
-    expect(calls.find((c) => c.tool === HOST_REVOKE_TOOL)?.args).toEqual({ host_id: HOST });
+    expect(await hosts.revoke({ principalId: "boss@example.org" }, HOST, "  poste\nremplacé  ")).toEqual({ ok: true });
+    expect(calls.find((c) => c.tool === HOST_REVOKE_TOOL)?.args).toEqual({ host_id: HOST, reason: "poste remplacé" });
     expect(closeById).toHaveBeenCalledWith("0123456789ab");
-    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ kind: "unattended.revoke", actor: "boss@example.org", hostId: HOST, ok: true }));
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ kind: "remote_host.revoked", actor: "boss@example.org", hostId: HOST, ok: true, reason: "poste remplacé" }));
   });
 
   it("a refused revoke says so and closes nothing", async () => {
-    const { hosts, closeById } = make({ answers: { [HOST_REVOKE_TOOL]: () => ({ status: 200, body: { text: "not permitted", isError: true } }) } });
+    const { hosts, closeById, calls } = make({ answers: { [HOST_REVOKE_TOOL]: () => ({ status: 200, body: { text: "not permitted", isError: true } }) } });
     expect(await hosts.revoke(viewer, HOST)).toMatchObject({ ok: false, error: "refused" });
     expect(closeById).not.toHaveBeenCalled();
+    // No reason given: none sent (Perspicax decides who may revoke).
+    expect(calls.find((c) => c.tool === HOST_REVOKE_TOOL)?.args).toEqual({ host_id: HOST });
   });
 });

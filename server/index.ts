@@ -10704,10 +10704,12 @@ const remoteSessionsAdmin = createRemoteSessionsAdmin({
   // Revoke propagates to the host service (the Pulsatrix Assist "Sagax Remote
   // Control" service uninstalls) and to Perspicax (the --allow binding drops);
   // the consent is already marked revoked and any live tunnel is cut here.
-  // The audit names the admin who revoked (M4), in its own kind, the host in
-  // its own field: never the installer, never a fake exec line.
-  onRevoke: async (consent, actor) => {
-    remoteSessionActionsAudit.write({ at: Date.now(), sessionId: "", principalId: actor, botId: "", kind: "unattended.revoke", hostKey: consent.hostKey, ok: true });
+  // The audit names the person who revoked (M4: the installer themselves or
+  // an admin), as remote_host.revoked, the host in its own field, the reason
+  // and the UTC time: never a fake exec line.
+  onRevoke: async (consent, actor, reason) => {
+    const at = Date.now();
+    remoteSessionActionsAudit.write({ at, atUtc: new Date(at).toISOString(), sessionId: "", principalId: actor, botId: "", kind: "remote_host.revoked", hostKey: consent.hostKey, ok: true, reason });
   },
 });
 // The hosts Perspicax enrolled for unattended access (docs/inscription-hote.md
@@ -10752,7 +10754,16 @@ const unattendedHosts = createUnattendedHosts({
     orgName: (process.env.SAGAX_ORG_NAME?.trim() || "Pulsatrix").slice(0, 80),
   }),
   closeById: (id) => remoteSessions.adminClose(id),
-  audit: (event) => remoteSessionActionsAudit.write({ at: event.at, sessionId: "", principalId: event.actor, botId: "", kind: event.kind, hostKey: event.hostId, ok: event.ok }),
+  audit: (event) => remoteSessionActionsAudit.write({
+    at: event.at,
+    sessionId: "",
+    principalId: event.actor,
+    botId: "",
+    kind: event.kind,
+    hostKey: event.hostId,
+    ok: event.ok,
+    ...(event.kind === "remote_host.revoked" ? { reason: event.reason ?? "", atUtc: new Date(event.at).toISOString() } : {}),
+  }),
 });
 // The usage card (server/resource-usage/): read-only samples of a computer
 // the person already reaches, under the same rules as its terminal.

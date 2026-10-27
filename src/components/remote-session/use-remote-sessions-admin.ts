@@ -132,9 +132,11 @@ export function openUnattendedHost(hostId: string): Promise<{ ok: true; code: st
     .catch((error: unknown) => ({ ok: false as const, error: failureOf(error) }));
 }
 
-/** Revoke an enrolled host (always offered, flag OFF included). */
-export function revokeUnattendedHost(hostId: string): Promise<{ ok: true } | { ok: false; error: UnattendedHostFailure }> {
-  return api(`/api/admin/remote-sessions/hosts/${encodeURIComponent(hostId)}/revoke`, { method: "POST", body: JSON.stringify({}) })
+/** Revoke an enrolled host (offered flag OFF included). Perspicax lets the
+ * person who enrolled it, or an admin. `reason` is optional, kept in the audit. */
+export function revokeUnattendedHost(hostId: string, reason = ""): Promise<{ ok: true } | { ok: false; error: UnattendedHostFailure }> {
+  const trimmed = reason.trim();
+  return api(`/api/admin/remote-sessions/hosts/${encodeURIComponent(hostId)}/revoke`, { method: "POST", body: JSON.stringify(trimmed ? { reason: trimmed } : {}) })
     .then(() => ({ ok: true as const }))
     .catch((error: unknown) => ({ ok: false as const, error: failureOf(error) }));
 }
