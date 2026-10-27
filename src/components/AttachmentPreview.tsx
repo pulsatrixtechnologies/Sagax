@@ -695,7 +695,7 @@ export function AttachmentPreviewDialog({
           {failed ? (
             <div className="flex flex-col items-center gap-3 text-white/60" role="alert">
               <ImageOff size={34} />
-              <span className="text-[13px]">This image could not be loaded.</span>
+              <span className="text-[13px]">{t("attachment.imageFailed")}</span>
               <button
                 type="button"
                 onClick={retry}
@@ -1025,7 +1025,7 @@ export function MarkdownImagePreview({
         )}
         {openUrl && (
           <a href={openUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex text-[11px] text-accent hover:underline">
-            Open original
+            {t("attachment.openOriginal")}
           </a>
         )}
       </span>

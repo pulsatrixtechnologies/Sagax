@@ -11,7 +11,7 @@ import { scheduleLabel } from "@/lib/schedule-label";
 import { api, ApiError, useStore, type Bot } from "@/state/store";
 import { RoutineEditor } from "./RoutinesPage";
 
-import { activeLocale } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 function viewerAddress(raw: unknown): string {
   if (typeof raw !== "string" || !raw) throw new Error("The host did not return a live desktop link");
   if (raw.startsWith("/vps-viewer/")) return new URL(raw, window.location.origin).toString();
@@ -210,7 +210,7 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
           type="button"
           onClick={() => dispatch({ type: "toggleComputer", open: false })}
           className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
-          aria-label="Close computer panel"
+          aria-label={t("remoteDesktop.close")}
         >
           <X size={18} />
         </button>
@@ -236,14 +236,14 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
           )}
           {frame && (
             <span className="absolute inset-x-0 bottom-0 bg-black/65 py-2 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
-              Open live desktop
+              {t("remoteDesktop.openLive")}
             </span>
           )}
         </button>
         <div>
-          <div className="text-[14px] font-medium text-ink">Open the live desktop</div>
+          <div className="text-[14px] font-medium text-ink">{t("remoteDesktop.openLive")}</div>
           <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">
-            The host creates a temporary, encrypted viewer relay. VPS SSH and VNC credentials stay on the host computer.
+            {t("remoteDesktop.relayNote")}
           </p>
         </div>
         <button
@@ -261,7 +261,7 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
           </div>
         )}
         <p className="text-[11px] leading-relaxed text-ink-secondary">
-          The host must enable cloud desktop access for this paired device in Settings → Remote access.
+          {t("remoteDesktop.hostEnable")}
         </p>
 
         <div className="w-full rounded-xl bg-card p-4 text-left">
@@ -316,13 +316,13 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent py-2 text-[13px] font-medium text-accent-ink hover:brightness-110"
             >
               <Plus size={14} />
-              Create schedule
+              {t("remoteDesktop.createSchedule")}
             </button>
             <button
               type="button"
               onClick={() => dispatch({ type: "showRoutines" })}
               className="flex items-center justify-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
-              title="Open schedules"
+              title={t("remoteDesktop.openSchedules")}
             >
               <CalendarDays size={14} />
               Schedules

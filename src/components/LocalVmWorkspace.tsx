@@ -14,6 +14,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { t } from "@/lib/i18n";
 import { api, useStore, type Action, type Bot } from "@/state/store";
 import { useCaptionChrome } from "@/components/DesktopCapabilities";
 import { cn } from "@/lib/cn";
@@ -436,7 +437,7 @@ function LocalVmPane({
             disabled={controlPending}
             className="w-full truncate rounded-lg border border-hairline/50 bg-card px-2.5 py-1.5 text-[13px] font-medium text-ink outline-none focus:border-accent/70"
           >
-            <option value="">Choose a Local VM bot</option>
+            <option value="">{t("localVm.chooseBot")}</option>
             {bots.map((candidate) => (
               <option key={candidate.id} value={candidate.id} disabled={candidate.id === otherBotId}>
                 {candidate.name}
@@ -473,7 +474,7 @@ function LocalVmPane({
             onClick={() => onTake(bot.id)}
             disabled={!canDrive || controlPending || heldElsewhere}
             className="flex shrink-0 items-center gap-1.5 rounded-lg bg-raised px-2.5 py-2 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-45"
-            title="Pause only this bot and enable keyboard and pointer input in this pane"
+            title={t("localVm.takeControl")}
           >
             {controlPending ? <Loader2 size={13} className="animate-spin" /> : <Hand size={13} />}
             {heldElsewhere ? "Held elsewhere" : "Take control"}
@@ -490,7 +491,7 @@ function LocalVmPane({
           {!bot ? (
             <div className="flex max-w-[260px] flex-col items-center gap-2 text-ink-secondary">
               <Monitor size={22} />
-              <span className="text-[12px]">Choose another bot configured for a Local VM.</span>
+              <span className="text-[12px]">{t("localVm.chooseOther")}</span>
             </div>
           ) : !status && !error ? (
             <div className="flex items-center gap-2 text-[12px] text-ink-secondary">
@@ -772,9 +773,9 @@ export function LocalVmWorkspace({
           <Monitor size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[14px] font-semibold text-ink">Local VM view</h1>
+          <h1 className="truncate text-[14px] font-semibold text-ink">{t("localVm.viewTitle")}</h1>
           <p className="truncate text-[11.5px] text-ink-secondary">
-            Two live desktops · one active controller · watch-only by default
+            {t("localVm.viewSubtitle")}
           </p>
         </div>
         <button
@@ -782,7 +783,7 @@ export function LocalVmWorkspace({
           onClick={() => void closeWorkspace()}
           disabled={controlPending}
           className="rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
-          aria-label="Close Local VM view"
+          aria-label={t("localVm.close")}
         >
           <X size={18} />
         </button>

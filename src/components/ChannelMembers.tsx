@@ -1,5 +1,6 @@
 // Presentational roster. The booleans only hide controls. Ajouter calls the matching callback.
 
+import { t } from "@/lib/i18n";
 import { Plus, X } from "lucide-react";
 
 import type { MausColor } from "@/lib/mascot";
@@ -85,7 +86,7 @@ export function ChannelMembers(props: {
                 {human.removable && (
                   <button
                     type="button"
-                    aria-label={`Retirer ${label}`}
+                    aria-label={t("channelMembers.remove", { name: label })}
                     onClick={() => props.onRemoveHuman?.(human.id)}
                     className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
                   >
@@ -97,9 +98,9 @@ export function ChannelMembers(props: {
           })}
           {props.canAddHuman && (
             <li>
-              <button type="button" aria-label="Ajouter" onClick={() => props.onAddHuman?.()} className="flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink hover:bg-control/40">
+              <button type="button" aria-label={t("common.add")} onClick={() => props.onAddHuman?.()} className="flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink hover:bg-control/40">
                 <span className="flex size-8 items-center justify-center rounded-full border border-dashed border-hairline text-ink-secondary"><Plus size={14} /></span>
-                Ajouter
+                {t("common.add")}
               </button>
             </li>
           )}
@@ -125,7 +126,7 @@ export function ChannelMembers(props: {
               {props.onRemoveBot && bot.removable !== false && (
                 <button
                   type="button"
-                  aria-label={`Retirer ${bot.name}`}
+                  aria-label={t("channelMembers.remove", { name: bot.name })}
                   onClick={() => props.onRemoveBot?.(bot.id)}
                   className="rounded-md p-1 text-ink-secondary hover:bg-control hover:text-ink"
                 >
@@ -136,9 +137,9 @@ export function ChannelMembers(props: {
           ))}
           {props.canAddBot && (
             <li>
-              <button type="button" aria-label={props.addBotLabel ?? "Ajouter"} onClick={() => props.onAddBot?.()} className="flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink hover:bg-control/40">
+              <button type="button" aria-label={props.addBotLabel ?? t("common.add")} onClick={() => props.onAddBot?.()} className="flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink hover:bg-control/40">
                 <span className="flex size-8 items-center justify-center rounded-full border border-dashed border-hairline text-ink-secondary"><Plus size={14} /></span>
-                {props.addBotLabel ?? "Ajouter"}
+                {props.addBotLabel ?? t("common.add")}
               </button>
             </li>
           )}

@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import { reviewedSkillSha256, type SkillRequestCardData } from "../../shared/skill-request";
 
 /** Render learned instructions as inert plain text. The approval hash binds
@@ -7,8 +8,7 @@ export function SkillRequestPreview({ request }: { request: SkillRequestCardData
   if (!reviewedSha256) {
     return (
       <div className="mt-3 rounded-lg border border-danger/30 bg-danger/5 p-3 text-[12px] leading-relaxed text-danger">
-        This proposal was created by an older build and cannot be safely applied. Deny it, then ask the bot to
-        {request.action === "update" ? " propose the update again." : " create the skill again."}
+        {request.action === "update" ? t("skillRequest.oldBuildUpdate") : t("skillRequest.oldBuildCreate")}
       </div>
     );
   }

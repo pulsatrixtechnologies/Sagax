@@ -426,7 +426,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
               }}>
                 <button className={menuButton} onClick={() => onEditTeam(section.key)} aria-label={t("team.moveTo", { name: label })}><Users size={14} />{t("team.moveTo", { name: label })}</button>
                 <button className={menuButton} onClick={() => onInstructions(section.key, label)} aria-label={t("team.instructionsEdit", { name: label })}><BookOpen size={14} />{t("team.instructions")}</button>
-                {onMemory && <button className={menuButton} onClick={() => onMemory(section.key, label)} aria-label={`${label} team memory`}><Brain size={14} />Team memory</button>}
+                {onMemory && <button className={menuButton} onClick={() => onMemory(section.key, label)} aria-label={t("teamCanvas.memoryAria", { name: label })}><Brain size={14} />{t("botPanel.teamMemorySharing")}</button>}
                 {section.key && <button className={menuButton} onClick={() => onEditTeam(section.key, true)} aria-label={t("team.renameAria", { name: label })}><Pencil size={14} />{t("team.rename")}</button>}
                 {section.key && <button className={cn(menuButton, "hover:text-danger")} onClick={() => onDeleteTeam(section.key)} aria-label={t("team.deleteAria", { name: label })}><Trash2 size={14} />{t("team.delete")}</button>}
               </div>

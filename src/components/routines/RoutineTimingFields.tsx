@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+
 const DEFAULT_EARLY_MINUTES = 15;
 const DEFAULT_LATE_MINUTES = 15;
 
@@ -68,23 +70,23 @@ export function RoutineTimingFields({
   return (
     <div className="flex flex-wrap items-center gap-2" data-routine-timing={mode}>
       <label className="flex items-center gap-2 text-[13px] text-ink">
-        <span className="text-ink-secondary">Timing</span>
+        <span className="text-ink-secondary">{t("routineTiming.label")}</span>
         <select
-          aria-label="Timing"
+          aria-label={t("routineTiming.label")}
           value={mode}
           onChange={(event) => onMode(event.target.value === "flexible" ? "flexible" : "exact")}
           className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong"
         >
-          <option value="exact">Exact</option>
-          <option value="flexible">Flexible</option>
+          <option value="exact">{t("routineTiming.exact")}</option>
+          <option value="flexible">{t("routineTiming.flexible")}</option>
         </select>
       </label>
       {mode === "flexible" && (
         <span className="flex flex-wrap items-center gap-2 text-[13px] text-ink-secondary">
           <label className="flex items-center gap-1">
-            Early
+            {t("routineTiming.early")}
             <input
-              aria-label="Early window minutes"
+              aria-label={t("routineTiming.earlyAria")}
               type="number"
               min={0}
               step={1}
@@ -92,12 +94,12 @@ export function RoutineTimingFields({
               onChange={(event) => onEarly(wholeMinutes(event.target.value))}
               className={field}
             />
-            min
+            {t("routineTiming.min")}
           </label>
           <label className="flex items-center gap-1">
-            Late
+            {t("routineTiming.late")}
             <input
-              aria-label="Late window minutes"
+              aria-label={t("routineTiming.lateAria")}
               type="number"
               min={0}
               step={1}
@@ -105,9 +107,9 @@ export function RoutineTimingFields({
               onChange={(event) => onLate(wholeMinutes(event.target.value))}
               className={field}
             />
-            min
+            {t("routineTiming.min")}
           </label>
-          <span>0 late means ready by the scheduled time.</span>
+          <span>{t("routineTiming.lateHelp")}</span>
         </span>
       )}
     </div>

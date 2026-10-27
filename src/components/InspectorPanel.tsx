@@ -171,7 +171,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
   const total = lens === "raw" ? (page?.total.native ?? 0) : (page?.total.runtime ?? 0);
 
   return (
-    <aside aria-label="Inspector" className="app-docked-panel animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l-[0.5px] border-hairline-weak bg-app lg:static lg:z-auto lg:w-[min(460px,45vw)] lg:shrink-0">
+    <aside aria-label={t("chat.inspector")} className="app-docked-panel animate-panel-in absolute inset-0 z-40 flex h-full min-w-0 flex-col border-l-[0.5px] border-hairline-weak bg-app lg:static lg:z-auto lg:w-[min(460px,45vw)] lg:shrink-0">
       {(macInset || browser) && <div className="content-topbar-strip" />}
       <div {...dragProps} className={cn("content-topbar flex items-center justify-between px-4 py-3", padClass)}>
         <span className="flex items-center gap-2 text-[13px] font-medium leading-[18px] text-ink">
@@ -179,8 +179,8 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
         </span>
         <button
           onClick={() => dispatch({ type: "toggleInspector", open: false })}
-          aria-label="Close the Inspector"
-          title="Close the Inspector"
+          aria-label={t("inspector.close")}
+          title={t("inspector.close")}
           className={CIRCLE_BUTTON}
         >
           <PanelRight size={18} strokeWidth={1.75} />
@@ -223,7 +223,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
         {lens !== "run" && <span className="ml-auto text-[11px] text-ink-secondary">
           {page ? (shown < total ? `last ${shown} of ${total}` : `${shown} entries`) : "loading…"}
         </span>}
-        {lens !== "run" && <button type="button" onClick={() => managedRefresh.current()} className="ui-icon-button" title="Reload from disk" aria-label="Reload from disk">
+        {lens !== "run" && <button type="button" onClick={() => managedRefresh.current()} className="ui-icon-button" title={t("inspector.reload")} aria-label={t("inspector.reload")}>
           <RefreshCw size={14} />
         </button>}
       </div>

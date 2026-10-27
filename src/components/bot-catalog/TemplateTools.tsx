@@ -220,7 +220,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
   };
 
   const readFile = async (file: File) => {
-    if (file.size > MAX_TEAM_BACKUP_BYTES) throw new Error("That file exceeds the 50 MB import limit.");
+    if (file.size > MAX_TEAM_BACKUP_BYTES) throw new Error(t("templateTools.fileTooBig"));
     const raw = await file.text();
     let manifest: unknown = raw;
     // A shared the reference design's export (port of OpenMausBot #3073) becomes a package.
@@ -232,7 +232,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
       try {
         manifest = JSON.parse(raw);
       } catch (cause) {
-        if (cause instanceof SyntaxError) throw new Error("That backup or team file is not valid JSON.");
+        if (cause instanceof SyntaxError) throw new Error(t("templateTools.badJson"));
         throw cause;
       }
     }
@@ -322,7 +322,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
         .map((candidate, index) => ({
           key: `dir-${candidate.slug}`,
           name: candidate.name,
-          title: candidate.category || "Community bot",
+          title: candidate.category || t("templateTools.communityBot"),
           description: candidate.prompt,
           appearance: { color: DIRECTORY_COLORS[index % DIRECTORY_COLORS.length] },
         }));
@@ -401,7 +401,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                 void readFile(file).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
               }}
             />
-            <div className="mb-3 text-[12px] font-medium text-ink-secondary">Bring your own team</div>
+            <div className="mb-3 text-[12px] font-medium text-ink-secondary">{t("templateTools.byoTeam")}</div>
             <div className="grid gap-5 md:grid-cols-2">
               <button
                 type="button"
@@ -421,14 +421,14 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                 )}
               >
                 <UploadCloud size={27} className="text-accent" />
-                <span className="mt-3 text-[14px] font-medium text-ink">Choose a backup or team file</span>
-                <span className="mt-1 text-[12.5px] text-ink-secondary">Drop a .mausbackup.json, BotMRR .md or legacy .mausteam.json here. You&apos;ll preview it before anything is added.</span>
+                <span className="mt-3 text-[14px] font-medium text-ink">{t("templateTools.chooseFile")}</span>
+                <span className="mt-1 text-[12.5px] text-ink-secondary">{t("templateTools.dropHelp")}</span>
               </button>
 
               <div className="flex min-h-56 flex-col justify-center rounded-2xl bg-raised/25 px-6">
                 <Github size={25} className="text-ink-secondary" />
-                <h3 className="mt-3 text-[14px] font-medium text-ink">Load from GitHub</h3>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">Paste a public repo or a direct team JSON link.</p>
+                <h3 className="mt-3 text-[14px] font-medium text-ink">{t("templateTools.loadGit")}</h3>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">{t("templateTools.loadGitHelp")}</p>
                 <p data-template-link-hint className="mt-1 text-[12px] leading-relaxed text-ink-tertiary">{t("templateLink.importHint")}</p>
                 <div className="mt-4 flex gap-2">
                   <input
@@ -436,7 +436,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                     onChange={(event) => setGithubUrl(event.target.value)}
                     onKeyDown={(event) => event.key === "Enter" && void loadGithubUrl(githubUrl)}
                     placeholder="github.com/owner/repo"
-                    aria-label="GitHub team URL"
+                    aria-label={t("templateTools.gitUrl")}
                     className={fieldCls}
                   />
                   <button
@@ -487,10 +487,9 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
 
         {!pending && tool === "scout" && (
           <div>
-            <div className="mb-3 text-[12px] font-medium text-ink-secondary">Start from a project folder</div>
+            <div className="mb-3 text-[12px] font-medium text-ink-secondary">{t("templateTools.scoutTitle")}</div>
             <p className="max-w-2xl text-[12.5px] leading-relaxed text-ink-secondary">
-              Point the scout at a folder. It reads what&apos;s in there (README, dependencies, layout) and
-              suggests a team for it. Nothing is created until you say so.
+              {t("templateTools.scoutHelp")}
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <input
@@ -498,13 +497,13 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                 onChange={(event) => setScoutFolder(event.target.value)}
                 onKeyDown={(event) => event.key === "Enter" && scoutTarget && void runScout(scoutTarget)}
                 placeholder="/path/to/your/project"
-                aria-label="Project folder to scout"
+                aria-label={t("templateTools.scoutFolder")}
                 className={fieldCls}
               />
               {Boolean(window.ogb?.pickFolder) && (
                 <button type="button" onClick={() => void pickScoutFolder()} disabled={scouting} className="ui-button disabled:opacity-40">
                   <FolderOpen size={14} />
-                  Browse
+                  {t("templateTools.browse")}
                 </button>
               )}
               <button
@@ -514,7 +513,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                 className="flex items-center justify-center gap-1.5 rounded-full bg-accent px-4 py-2.5 text-[13px] font-medium text-accent-ink hover:bg-accent/90 disabled:opacity-40"
               >
                 {scouting ? <Loader2 size={14} className="animate-spin" /> : <Compass size={14} />}
-                {scouting ? "Scouting…" : "Scout"}
+                {scouting ? t("templateTools.scouting") : t("templateTools.scout")}
               </button>
             </div>
 
@@ -532,7 +531,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                   )}
                 </div>
 
-                <div className="mt-5 text-[12px] font-medium text-ink-secondary">Suggested team</div>
+                <div className="mt-5 text-[12px] font-medium text-ink-secondary">{t("templateTools.suggested")}</div>
                 <div className="mt-1 grid grid-cols-1 gap-x-10 md:grid-cols-2">
                   {scouted.suggestion.manifest.team.members.map((member, index) => (
                     <div key={member.key} className="flex min-h-[64px] items-center gap-3 border-b border-hairline/35 px-1 py-3">
@@ -551,7 +550,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
 
                 {directory && directory.length > 0 && (
                   <>
-                    <div className="mt-5 text-[12px] font-medium text-ink-secondary">From the community directory, tick to add</div>
+                    <div className="mt-5 text-[12px] font-medium text-ink-secondary">{t("templateTools.fromDirectory")}</div>
                     <div className="mt-1 flex flex-col">
                       {directory.map((candidate) => (
                         <div key={candidate.slug} className="flex items-center gap-3 border-b border-hairline/35 px-1 py-3">
@@ -580,8 +579,8 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                           <button
                             type="button"
                             onClick={() => void openExternal(candidate.detailUrl)}
-                            aria-label={`Open ${candidate.name} on botdirectory.ai`}
-                            title="Read this bot's page before adding it"
+                            aria-label={t("templateTools.openCandidate", { name: candidate.name })}
+                            title={t("templateTools.readBotPage")}
                             className="rounded-lg p-1.5 text-ink-secondary hover:bg-raised hover:text-ink"
                           >
                             <ExternalLink size={14} />
@@ -593,14 +592,14 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                 )}
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <input value={roomName} onChange={(event) => setRoomName(event.target.value)} aria-label="Group chat name" className={fieldCls} />
+                  <input value={roomName} onChange={(event) => setRoomName(event.target.value)} aria-label={t("templateTools.roomName")} className={fieldCls} />
                   <button type="button" onClick={() => void createProject()} disabled={creating} className={primaryCls}>
                     {creating && <Loader2 size={15} className="animate-spin" />}
-                    {creating ? "Creating…" : "Create group chat"}
+                    {creating ? t("templateTools.creating") : t("templateTools.createRoom")}
                   </button>
                 </div>
                 <p className="mt-2 text-[12px] text-ink-secondary">
-                  Creates the team as new bots, opens a group chat for them, and points its working folder here.
+                  {t("templateTools.createHelp")}
                 </p>
               </div>
             )}

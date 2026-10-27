@@ -77,7 +77,7 @@ export function ConnectedWorkspacesSettings() {
   const locals = saved?.environments.filter(entry => entry.kind === "local") ?? [];
   const forgetEntry = locals.find(entry => entry.id === envForget);
   return <>
-    {saved?.packaged && !serverModeActive && <Card title="Environments on this computer" subtitle="Separate setups on this computer, each with its own bots, conversations and data folder.">
+    {saved?.packaged && !serverModeActive && <Card title={t("envLocal.title")} subtitle={t("envLocal.subtitle")}>
       {envError && <p role="alert" className="text-[12px] text-danger">{envError}</p>}
       {locals.length > 0 && <ul className="divide-y divide-hairline/40">
         {locals.map((entry) => {
@@ -86,39 +86,39 @@ export function ConnectedWorkspacesSettings() {
             <Laptop size={18} className="shrink-0 text-ink-secondary" />
             <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium text-ink">{entry.name}</div>
               <div className="break-all text-[12px] text-ink-secondary">{entry.dataDir}
-                {entry.missing && <span className="ml-2 rounded-md bg-inset px-1.5 py-0.5 text-[11px]">missing</span>}</div></div>
-            {active ? <span className="flex shrink-0 items-center gap-1 text-[12px] text-ink-secondary"><Check size={13} />Current</span> :
-              <button type="button" disabled={busy} aria-label={`Switch to ${entry.name}`}
+                {entry.missing && <span className="ml-2 rounded-md bg-inset px-1.5 py-0.5 text-[11px]">{t("envLocal.missing")}</span>}</div></div>
+            {active ? <span className="flex shrink-0 items-center gap-1 text-[12px] text-ink-secondary"><Check size={13} />{t("settings.servers.current")}</span> :
+              <button type="button" disabled={busy} aria-label={t("envLocal.switchTo", { name: entry.name })}
                 onClick={() => void perform(async () => {
-                  if (!await confirmAction(`Switch to ${entry.name}? The app restarts on that environment. Running turns stop.`)) return;
+                  if (!await confirmAction(t("envLocal.switchConfirm", { name: entry.name }))) return;
                   // Main's error strings are an open set ("dev", "busy", …):
                   // one generic sentence for all of them.
                   const result = await bridge.switch(entry.id);
-                  if (result && result.ok === false) throw new Error("Couldn't switch.");
+                  if (result && result.ok === false) throw new Error(t("envLocal.switchFailed"));
                   return true;
                 }, setEnvError)}
-                className={PILL}>Switch</button>}
-            {!active && <button type="button" disabled={busy} aria-label={`Forget ${entry.name}`} title={`Forget ${entry.name}`}
+                className={PILL}>{t("settings.servers.switch")}</button>}
+            {!active && <button type="button" disabled={busy} aria-label={t("envLocal.forgetName", { name: entry.name })} title={t("envLocal.forgetName", { name: entry.name })}
               onClick={() => { setEnvForget(entry.id); setEnvPurge(false); }}
               className="rounded-md p-1.5 text-ink-secondary hover:bg-control hover:text-danger disabled:opacity-50"><Trash2 size={14} /></button>}
           </li>;
         })}
       </ul>}
-      {forgetEntry && <EditorBox label={`Forget ${forgetEntry.name}`} className="mt-3" actions={<>
-        <button type="button" onClick={() => setEnvForget(null)} className={PILL}>Cancel</button>
+      {forgetEntry && <EditorBox label={t("envLocal.forgetName", { name: forgetEntry.name })} className="mt-3" actions={<>
+        <button type="button" onClick={() => setEnvForget(null)} className={PILL}>{t("common.cancel")}</button>
         <button type="button" disabled={busy} onClick={() => void perform(async () => {
           // Main answers {ok:false} when it refuses or the folder delete fails;
           // the entry stays, so say so generically and leave the panel open.
           const result = envPurge ? await bridge.forget(forgetEntry.id, true) : await bridge.forget(forgetEntry.id);
-          if (result && result.ok === false) throw new Error("Couldn't forget the environment.");
+          if (result && result.ok === false) throw new Error(t("envLocal.forgetFailed"));
           setEnvForget(null);
-        }, setEnvError)} className={`${DANGER_PILL} min-h-[44px] md:min-h-0`}>Forget</button>
+        }, setEnvError)} className={`${DANGER_PILL} min-h-[44px] md:min-h-0`}>{t("settings.servers.forgetShort")}</button>
       </>}>
-        <SwitchRow className="px-3 py-1.5" label="Also delete this folder and everything in it"
-          description={<><span className="break-all">{forgetEntry.dataDir}</span>. Otherwise the folder, its bots and conversations stay on this computer.</>}
+        <SwitchRow className="px-3 py-1.5" label={t("envLocal.purge")}
+          description={<><span className="break-all">{forgetEntry.dataDir}</span>. {t("envLocal.purgeHelp")}</>}
           checked={envPurge} disabled={busy} onChange={setEnvPurge} />
       </EditorBox>}
-      <EditorBox label="New environment" className="mt-4" onSubmit={() => {
+      <EditorBox label={t("envLocal.new")} className="mt-4" onSubmit={() => {
         if (!envName.trim()) return;
         void perform(async () => {
           // A failure carries main's reason; none of them is a sentence the
@@ -129,20 +129,20 @@ export function ConnectedWorkspacesSettings() {
         }, setEnvError);
       }} actions={
         <button type="submit" disabled={busy || !envName.trim()} className={`${PRIMARY_PILL} inline-flex items-center gap-1.5`}>
-          {busy && <Loader2 size={13} className="animate-spin" />}Create
+          {busy && <Loader2 size={13} className="animate-spin" />}{t("envLocal.create")}
         </button>
       }>
-        <p className="px-3 py-1.5 text-[13px] leading-[18px] text-ink">New environment</p>
-        <EditorField label="Name">
-          <input required value={envName} disabled={busy} maxLength={60} onChange={(event) => setEnvName(event.target.value)} placeholder="My environment" aria-label="Name" className={FIELD} />
+        <p className="px-3 py-1.5 text-[13px] leading-[18px] text-ink">{t("envLocal.new")}</p>
+        <EditorField label={t("botPanel.identity.name")}>
+          <input required value={envName} disabled={busy} maxLength={60} onChange={(event) => setEnvName(event.target.value)} placeholder={t("envLocal.namePlaceholder")} aria-label={t("botPanel.identity.name")} className={FIELD} />
         </EditorField>
-        <EditorField label="Data folder (optional)" hint="Leave empty to create one in your home folder">
+        <EditorField label={t("envLocal.dataFolder")} hint={t("envLocal.dataFolderHint")}>
           <span className="flex min-w-0 flex-1 gap-2">
-            <input value={envDir} disabled={busy} onChange={(event) => setEnvDir(event.target.value)} aria-label="Data folder (optional)" className={FIELD} />
+            <input value={envDir} disabled={busy} onChange={(event) => setEnvDir(event.target.value)} aria-label={t("envLocal.dataFolder")} className={FIELD} />
             <button type="button" disabled={busy} onClick={() => void perform(async () => {
               const picked = await bridge.pickDir();
               if (picked?.ok && picked.path) setEnvDir(picked.path);
-            }, setEnvError)} className={`${PILL} shrink-0`}>Choose…</button>
+            }, setEnvError)} className={`${PILL} shrink-0`}>{t("botPanel.access.choose")}</button>
           </span>
         </EditorField>
       </EditorBox>

@@ -2,6 +2,7 @@
 // file drop that creates them. A long paste collapses into a card of its
 // first lines instead of flooding the composer; a file dropped anywhere
 // on the window attaches by path.
+import { t } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ClipboardPaste, File as FileIcon, FileArchive, Image as ImageIcon, LoaderCircle, MessageSquareText, X } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -117,7 +118,7 @@ export function ComposerAttachments({
       {dragging && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-10">
           <div className="rounded-2xl border-2 border-dashed border-accent/70 bg-panel/90 px-8 py-6 text-[14px] font-medium text-ink shadow-2xl">
-            Drop to attach
+            {t("composer.dropToAttach")}
           </div>
         </div>
       )}
@@ -127,7 +128,7 @@ export function ComposerAttachments({
           <span className="min-w-0 flex-1">{notice}</span>
           <button
             onClick={() => onNotice(null)}
-            aria-label="Dismiss"
+            aria-label={t("chat.error.dismiss")}
             className="shrink-0 rounded p-0.5"
           >
             <X size={12} />
@@ -163,11 +164,11 @@ export function ComposerAttachments({
                   type="button"
                   onClick={() => onDisplayInChatBox(a)}
                   className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-accent/25 bg-accent/5 px-2 py-1.5 text-[10.5px] font-medium text-accent-text transition-colors hover:border-accent/50 hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus/60"
-                  aria-label="Display pasted text in chat box"
-                  title="Display in chat box"
+                  aria-label={t("composer.paste.displayAria")}
+                  title={t("composer.paste.display")}
                 >
                   <MessageSquareText size={12} aria-hidden="true" />
-                  <span>Display in chat box</span>
+                  <span>{t("composer.paste.display")}</span>
                 </button>
               </Chip>
             ) : a.kind === "image" ? (
