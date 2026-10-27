@@ -30,7 +30,6 @@ import { InterimPeople } from "./settings/InterimPeople";
 import { OrgVaultExportPolicy } from "./settings/OrgVaultExportPolicy";
 import { OrgConfidentialThreadsDefault } from "./settings/OrgConfidentialThreadsDefault";
 import { OrgTeamSecrets } from "./settings/OrgTeamSecrets";
-import { OrgPhoneCalls } from "./settings/OrgPhoneCalls";
 import { OrgSourcesAccess } from "./plugins/OrgSourcesAccess";
 import { OrganizationPages } from "./PublishedPages";
 
@@ -182,7 +181,6 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
         {admin && <OrgConfidentialThreadsDefault initial={org.settings.confidentialThreadsByDefault === true} onChanged={onChanged} />}
         {admin && <OrgVaultExportPolicy initial={org.settings.allowVaultExport !== false} onChanged={onChanged} />}
         {admin && <OrgTeamSecrets />}
-        {admin && <OrgPhoneCalls />}
         {botRows}
       </SettingsGroup>
       {/* 2026-10-26: what Connect apps > Manage used to show an admin (where
