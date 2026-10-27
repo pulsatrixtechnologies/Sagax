@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { vaultHandle } from "../shared/credential-vault.ts";
-import { luhnOk, parsePurchaseCall, parseReceiptCall, purchaseCardText } from "../shared/payment-vault.ts";
+import { inAppDigitalPurchaseRefusal, luhnOk, parsePurchaseCall, parseReceiptCall, purchaseCardText } from "../shared/payment-vault.ts";
 import { fillResolverFor } from "./credential-vault.ts";
 import { CredentialVault, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
@@ -220,5 +220,50 @@ describe("payment vault", () => {
     expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", items: [{ name: "4242.4242.4242.4242" }] } })).toMatch(/card number/);
     expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", flights: [{ from: "4242 4242 4242 4242", to: "YVR", date: "2026-11-02" }] } })).toMatch(/flights/);
     expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", flights: [{ from: "YUL", to: "YVR", date: "2026-13-45" }] } })).toMatch(/flights/);
+  });
+
+  describe("digital content used inside Sagax (App Store 3.1.5(a))", () => {
+    it("refuses in_app_digital and a merchant, page or article naming Sagax, Pulsatrix or Perspicax", () => {
+      const store = vault();
+      const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
+      const access = fillResolverFor(store, { principalId: LOCAL_VAULT_PRINCIPAL, botId: "bot-a", threadId: "thread-1" });
+      const base = { amount: "20.00", currency: "CAD", cardId: saved.id };
+      const refused = [
+        access.requestPurchase({ ...base, pageUrl: "https://shop.example.test/pay", category: "in_app_digital" }),
+        access.requestPurchase({ ...base, pageUrl: "https://shop.example.test/pay", merchant: "Sagax" }),
+        access.requestPurchase({ ...base, pageUrl: "https://billing.pulsatrix.example/checkout" }),
+        access.requestPurchase({ ...base, pageUrl: "https://shop.example.test/pay", items: [{ name: "Perspicax credits", quantity: 1 }] }),
+      ];
+      for (const result of refused) {
+        expect(result.ok).toBe(false);
+        expect(result.message).toMatch(/digital content used inside Sagax/);
+        expect(result.message).toMatch(/Nothing was asked or charged/);
+      }
+      expect(store.pendingPurchases(LOCAL_VAULT_PRINCIPAL)).toEqual([]);
+    });
+
+    it("asks a real good or service exactly as before, with or without a category", () => {
+      const store = vault();
+      const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
+      const access = fillResolverFor(store, { principalId: LOCAL_VAULT_PRINCIPAL, botId: "bot-a", threadId: "thread-1" });
+      const flight = access.requestPurchase({
+        pageUrl: "https://air.example.test/book", amount: "412.00", currency: "CAD", cardId: saved.id, merchant: "Example Air", category: "travel",
+        flights: [{ from: "YUL", to: "YVR", date: "2026-11-02" }],
+      });
+      expect(flight.ok).toBe(true);
+      expect(flight.message).toContain("Wait for the person to allow it");
+      const meal = access.requestPurchase({ pageUrl: "https://food.example.test/cart", amount: "31.40", currency: "CAD", cardId: saved.id, merchant: "Example Bistro", items: [{ name: "Soupe", quantity: 2 }] });
+      expect(meal.ok).toBe(true);
+      const outside = access.requestPurchase({ pageUrl: "https://stream.example.test/plan", amount: "9.99", currency: "USD", cardId: saved.id, category: "external_subscription" });
+      expect(outside.ok).toBe(true);
+      expect(store.pendingPurchases(LOCAL_VAULT_PRINCIPAL)).toHaveLength(3);
+      expect(inAppDigitalPurchaseRefusal({ category: "goods", merchant: "Sagaxville Hardware", pageUrl: "https://sagaxville.example.test/" })).toBeNull();
+    });
+
+    it("reads the category from the tool call and refuses an unknown one", () => {
+      expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", category: "in_app_digital" } })).toMatchObject({ category: "in_app_digital" });
+      expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", category: "gems" } })).toMatch(/category must be one of/);
+      expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD" } })).not.toHaveProperty("category");
+    });
   });
 });

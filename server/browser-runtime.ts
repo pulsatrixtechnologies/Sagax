@@ -5,7 +5,7 @@ import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, 
 import { itemIdFromHandle } from "../shared/credential-vault.ts";
 import {
   parsePurchaseCall, parseReceiptCall, RECORD_PURCHASE_TOOL, RECORD_PURCHASE_TOOL_SPEC, REQUEST_PURCHASE_TOOL, REQUEST_PURCHASE_TOOL_SPEC,
-  type PurchaseFlightLeg, type PurchaseItem,
+  type PurchaseCategory, type PurchaseFlightLeg, type PurchaseItem,
 } from "../shared/payment-vault.ts";
 import { clearScript, loginOutcomeText, loginStateScript, markerScript, MAX_LOGIN_STEPS, parseLoginState, stepFields, submitScript, type LoginField, type LoginOutcome, type LoginPageState } from "./login-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
@@ -86,7 +86,7 @@ export interface CredentialFillAccess {
    * the whole browser session, so it cannot plant a listener before a fill. */
   armed(): boolean;
   /** Ask the person to approve a payment. The value never comes back. */
-  requestPurchase?(input: { pageUrl: string; amount: string; currency: string; cardId: string; merchant?: string; addressId?: string; contactId?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
+  requestPurchase?(input: { pageUrl: string; amount: string; currency: string; cardId: string; category?: PurchaseCategory; merchant?: string; addressId?: string; contactId?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
   /** The shop confirmed the order: the receipt for the person. */
   recordPurchase?(input: { pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
 }
@@ -860,6 +860,7 @@ export class BrowserRuntime {
     if (!href) return toolText("The page's address could not be read; nothing was asked.", true);
     const opened = credentials.requestPurchase({
       pageUrl: href, amount: call.amount, currency: call.currency, cardId,
+      ...(call.category ? { category: call.category } : {}),
       ...(call.merchant ? { merchant: call.merchant } : {}),
       ...(addressId ? { addressId } : {}),
       ...(contactId ? { contactId } : {}),

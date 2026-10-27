@@ -327,7 +327,9 @@ sees them:
 - `https://openmausbot.invalid/` reserved origin in binaries.
 - `openmausbot.sidebarCollapsedSections.v1` and
   `openmausbot.sidebarSectionOrder.v1` preference keys.
-- `openmausbot browser install`: the CLI binary name in the install hint.
+
+No visible text names the upstream: the install hint says
+`sagax browser install` (the `sagax` bin of the npm package).
 
 `scripts/check-ios-bundle-names.sh path/to/Sagax.app` fails on any other
 "openmaus" in the built bundle; CI runs it after the simulator build.

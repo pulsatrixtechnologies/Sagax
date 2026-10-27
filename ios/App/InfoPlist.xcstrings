@@ -126,6 +126,96 @@
           }
         }
       }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "comment": "Pairing: iOS local network permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax finds your computer on this network so your bots can reach you here."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax trouve votre ordinateur sur ce réseau pour que vos bots puissent vous joindre ici."
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription": {
+      "comment": "Pairing QR code, profile photo, photo for a bot, payment card scan (CardPhotoScanner): iOS camera permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax uses the camera to scan a pairing QR code shown on your computer and, when you choose it, to take your profile photo, a photo to send to a bot, or a photo of a payment card you choose to save."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax utilise l'appareil photo pour lire le code QR de jumelage affiché sur votre ordinateur et, quand vous le choisissez, pour prendre votre photo de profil, une photo à envoyer à un bot ou une photo d'une carte de paiement que vous choisissez d'enregistrer."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "comment": "Dictation, voice notes, calls: iOS microphone permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax listens while you dictate a message to a bot, record a voice note for one, or talk with one on a call."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax écoute pendant que vous dictez un message à un bot, enregistrez une note vocale pour lui ou lui parlez pendant un appel."
+          }
+        }
+      }
+    },
+    "NSFaceIDUsageDescription": {
+      "comment": "Vault reveal (VaultRevealGate): iOS Face ID permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax uses Face ID to show a card number or another secret you saved. The bot never sees it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax utilise Face ID pour afficher un numéro de carte ou un autre secret que vous avez enregistré. Le bot ne le voit jamais."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription": {
+      "comment": "Dictation: iOS speech recognition permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax converts your speech into text so you can send it to a bot. Recognition runs on this phone when it can."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sagax convertit votre voix en texte pour que vous puissiez l'envoyer à un bot. La reconnaissance se fait sur ce téléphone quand c'est possible."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

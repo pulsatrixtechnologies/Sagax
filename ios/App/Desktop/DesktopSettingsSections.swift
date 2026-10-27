@@ -469,7 +469,7 @@ struct DesktopExperimentalSettings: View {
             DesktopFeatureRow(
                 title: Text("Built-in browser"),
                 detail: engine?.kind == "unavailable"
-                    ? Text(verbatim: AppStrings.localized("The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `openmausbot browser install` on the server."))
+                    ? Text(verbatim: AppStrings.localized("The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `sagax browser install` on the server."))
                     : (browser
                         ? Text("Enabled for this installation. Each bot also has its own browser switch.")
                         : Text("Off by default. Enable it to let supported bots use a browser tab you can watch and take over.")),

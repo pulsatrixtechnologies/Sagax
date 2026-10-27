@@ -18,7 +18,6 @@
 #   https://openmausbot.invalid/            reserved invalid origin in tests/binaries
 #   openmausbot.sidebarCollapsedSections.v1 local preference key
 #   openmausbot.sidebarSectionOrder.v1      local preference key
-#   openmausbot browser install             CLI binary name in the browser-install hint
 # Third-party license texts (paths containing LICENSE or Licenses) are skipped.
 set -eu
 
@@ -38,7 +37,6 @@ scan() { # $1 = file label, stdin = text
       -e 's#https://openmausbot\.invalid/##g' \
       -e 's#openmausbot\.sidebarCollapsedSections\.v1##g' \
       -e 's#openmausbot\.sidebarSectionOrder\.v1##g' \
-      -e 's#openmausbot browser install##g' \
       -e 's#^openmausbot$##' |
     grep -i -n 'openmaus' | sed "s#^#$1: #" >> "$report" || true
 }
