@@ -89,14 +89,14 @@ describe("the wizard's calls", () => {
     const bot = await createDesignerBot("fr-CA", request as never);
     expect(bot.name).toBe("Concepteur de bots");
     const body = JSON.parse(String(request.mock.calls[1]![1]!.body));
-    expect(Object.keys(body).sort()).toEqual(["description", "modelSelection", "name", "soul", "title"]);
-    expect(body.soul).toContain("bot.wizard");
+    expect(Object.keys(body).sort()).toEqual(["description", "modelSelection", "name", "settings", "title"]);
+    expect(body.settings.soul).toContain("bot.wizard");
     expect(designerProfile("en").name).toBe("Bot designer");
   });
 
   it("the wizard's bot starts with no MCP server when asked", async () => {
     const request = vi.fn(async (path: string, init?: RequestInit) => path === "/api/bot-defaults" ? {} : { bot: JSON.parse(String(init?.body)) });
-    expect(await createWizardBot(request as never, { noMcp: true })).toEqual({ mcpServers: [] });
+    expect(await createWizardBot(request as never, { noMcp: true })).toEqual({ settings: { mcpServers: [] } });
     expect(await createWizardBot(request as never)).toEqual({});
   });
 
