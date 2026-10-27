@@ -53,6 +53,11 @@ public enum RoutinePatch {
         if let after = input.autoPauseAfter, after != RoutineAutoPause.after(original) {
             body["autoPauseAfter"] = after
         }
+        switch input.watch {
+        case .keep: break
+        case let .set(watch): if watch != original.precheck { body["precheck"] = watch.bodyValue }
+        case .remove: if RoutineWatchRules.watch(original.precheck) != nil { body["precheck"] = NSNull() }
+        }
         return body
     }
 
@@ -81,6 +86,7 @@ public enum RoutinePatch {
         if input.onlyWhenPresent == true { body["onlyWhenPresent"] = true }
         if let postResults = input.postResults { body["postResults"] = postResults }
         if let after = input.autoPauseAfter, after != RoutineAutoPause.defaultAfter { body["autoPauseAfter"] = after }
+        if case let .set(watch) = input.watch { body["precheck"] = watch.bodyValue }
         return body
     }
 

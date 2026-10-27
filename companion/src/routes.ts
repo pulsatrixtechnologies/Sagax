@@ -470,6 +470,9 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "PATCH", path: /^\/api\/routines\/[\w-]+$/ },
   { method: "DELETE", path: /^\/api\/routines\/[\w-]+$/ },
   { method: "POST", path: /^\/api\/routines\/[\w-]+\/run$/ },
+  // "Check now" in the phone's routine editor (#1202): one reading of a
+  // watch where the routine would read it, no model, nothing kept
+  { method: "POST", path: /^\/api\/routines\/watch-check$/ },
   { method: "POST", path: /^\/api\/routine-runs\/[\w-]+\/(?:cancel|seen)$/ },
 
   // A remote client may decline or retry a credential request, but never

@@ -129,6 +129,7 @@ describe("what the app may do", () => {
     ["PATCH", "/api/routines/routine_1"],
     ["DELETE", "/api/routines/routine_1"],
     ["POST", "/api/routines/routine_1/run"],
+    ["POST", "/api/routines/watch-check"],
     ["POST", "/api/routine-runs/run_1/cancel"],
     ["POST", "/api/routine-runs/run_1/seen"],
     ["POST", "/api/bots/bot_123/secret-cards/msg_2/resume"],
@@ -188,6 +189,7 @@ describe("what it may not", () => {
       ["GET", "/api/routines/routine_1"],
       ["PUT", "/api/routines/routine_1"],
       ["POST", "/api/routines/routine_1/cancel"],
+      ["GET", "/api/routines/watch-check"],
     ] as Array<[string, string]>) {
       const denial = ask(method, path);
       expect(denial, `${method} ${path}`).toEqual({

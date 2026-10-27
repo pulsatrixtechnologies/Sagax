@@ -612,7 +612,9 @@ private struct PhoneBotPanelContent: View {
                         icon: ProfileRowIcon(systemImage: "clock", size: 17,
                                              color: routine.enabled ? Theme.routineActive : Theme.routinePaused),
                         title: Text(verbatim: routine.name),
-                        subtitle: Text(verbatim: RoutineWording.subtitle(routine)),
+                        // #1202: "Runs on change" first, as the list's badge (a long schedule cuts its end)
+                        subtitle: (routine.runsOnChange ? Text("Runs on change") + Text(verbatim: " · ") : Text(verbatim: ""))
+                            + Text(verbatim: RoutineWording.subtitle(routine)),
                         height: Theme.Profile.routineRow
                     ) { ProfileChevronTrailing() }
                 }

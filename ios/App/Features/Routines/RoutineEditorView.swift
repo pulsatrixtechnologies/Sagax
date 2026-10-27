@@ -56,6 +56,10 @@ struct RoutineEditorView: View {
     @State private var postResults: Bool
     /// 2026-10-26: failed runs in a row that pause it (0 never).
     @State private var autoPauseAfter: Int
+    /// #1202 "Only when something changes": the draft, and the one it opened
+    /// with (an untouched watch is never sent).
+    @State private var watchDraft: RoutineWatchDraft
+    private let initialWatch: RoutineWatchDraft
 
     /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
     /// `seed`: a new routine from the Automations calendar ("More options"
@@ -82,10 +86,31 @@ struct RoutineEditorView: View {
         // Default silent for a new routine; an existing one keeps its choice.
         _postResults = State(initialValue: routine?.postResults == true)
         _autoPauseAfter = State(initialValue: routine.map(RoutineAutoPause.after) ?? RoutineAutoPause.defaultAfter)
+        let watch = RoutineWatchDraft(precheck: routine?.precheck)
+        initialWatch = watch
+        _watchDraft = State(initialValue: watch)
     }
 
     private var advanced: Bool { session.surfaceGate.allows(.routineAdvancedEditor) }
     private var isTeamGoal: Bool { target == "room-goal" }
+    /// As on the desktop: a bot routine that repeats.
+    private var watchAllowed: Bool { RoutineWatchRules.allowed(target: target, repeats: form.recurrence != .none) }
+    private var watchSection: some View {
+        RoutineWatchSection(draft: $watchDraft, botId: botId, routineId: routine?.id,
+                            runOn: isTeamGoal ? RoutineRunLocation.maus.rawValue : runOn.rawValue)
+    }
+    /// DEBUG captures only (`-parityRoutineWatchFirst YES`): the section on
+    /// top, so a headless screenshot shows it without scrolling.
+    private var watchFirst: Bool {
+#if DEBUG
+        UserDefaults.standard.bool(forKey: "parityRoutineWatchFirst")
+#else
+        false
+#endif
+    }
+    private var watchEdit: Result<RoutineWatchEdit, RoutineWatchProblem> {
+        RoutineWatchRules.edit(original: routine?.precheck, initial: initialWatch, draft: watchDraft, allowed: watchAllowed)
+    }
     private var bots: [Bot] { session.state.bots.filter { $0.hidden != true } }
     private var rooms: [Room] { RoutineTeamGoal.rooms(session.state.rooms) }
     private var room: Room? { rooms.first { $0.id == groupId } }
@@ -94,6 +119,7 @@ struct RoutineEditorView: View {
     var body: some View {
         NavigationStack {
             ThemedForm {
+                if watchFirst && watchAllowed { watchSection }
                 if advanced { typeSection }
                 workSection
                 if advanced && !isTeamGoal { resultsSection }
@@ -101,6 +127,7 @@ struct RoutineEditorView: View {
                 runOnSection
                 scheduleSection
                 advancedSection
+                if watchAllowed && !watchFirst { watchSection }
                 if advanced && session.surfaceGate.allows(.routineAttachments) { attachmentsSection }
             }
             .navigationTitle(routine == nil ? "New routine" : "Edit routine")
@@ -561,6 +588,7 @@ struct RoutineEditorView: View {
               !botId.isEmpty, form.isValid
         else { return false }
         if isTeamGoal { return !groupId.isEmpty && roomMembers.contains { $0.id == botId } }
+        if case .failure = watchEdit { return false }
         return true
     }
 
@@ -591,6 +619,7 @@ struct RoutineEditorView: View {
             input.postResults = postResults
         }
         if form.recurrence != .none { input.autoPauseAfter = autoPauseAfter }
+        if case let .success(edit) = watchEdit { input.watch = edit }
         if await session.saveRoutine(input, original: routine) != nil {
             await onSaved()
             dismiss()

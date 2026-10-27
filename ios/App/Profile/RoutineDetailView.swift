@@ -189,6 +189,10 @@ struct RoutineDetailView: View {
         .navigationDestination(isPresented: $showingInstruction) {
             TextCardView(title: String(localized: "Instruction"), text: routine.prompt)
         }
+#if DEBUG
+        // captures only (`-parityOpenRoutineEditor YES`): the editor open
+        .task { if UserDefaults.standard.bool(forKey: "parityOpenRoutineEditor") { try? await Task.sleep(nanoseconds: 1_500_000_000); editing = true } }
+#endif
         .sheet(isPresented: $editing) {
             RoutineEditorView(routine: routine) { await reload() }
         }
