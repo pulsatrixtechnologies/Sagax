@@ -21,7 +21,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Duplex } from "node:stream";
 import { pathToFileURL } from "node:url";
 
-import { ensureSandboxdKey, SANDBOXD_AUTH_HEADER, SandboxdVerifier } from "./sandboxd-auth.ts";
+import { ensureSandboxdKey, SANDBOXD_AUTH_HEADER, sandboxdKeySource, SandboxdVerifier } from "./sandboxd-auth.ts";
 import { SandboxError, SandboxService } from "./sandboxd-core.ts";
 import { ttyFrameDecoder } from "./sandbox-tty-frames.ts";
 import { dockerApi } from "./sandboxd-docker.ts";
@@ -259,11 +259,12 @@ async function main(): Promise<void> {
     process.exit(result.exitCode === 0 ? 0 : 1);
   }
   if (!(await docker.ping())) throw new Error(`sandboxd: no Docker daemon at ${config.dockerSocket}`);
-  const key = ensureSandboxdKey(config.keyFile);
+  ensureSandboxdKey(config.keyFile);
   const service = new SandboxService(docker, config);
   const egress = await service.installEgressPolicy();
   console.log(`sandboxd: instance ${config.instance}, egress policy ${egress}, at most ${config.maxRunning} running, idle stop ${config.idleStopMs / 60_000} min`);
-  const verifier = new SandboxdVerifier(key);
+  // Follows the key file, so a rotation needs no restart (sandboxd-auth.ts).
+  const verifier = new SandboxdVerifier(sandboxdKeySource(config.keyFile));
   const server = createServer(createSandboxdHandler(service, verifier));
   server.on("upgrade", createSandboxdUpgradeHandler(service, verifier));
   server.requestTimeout = 16 * 60_000;

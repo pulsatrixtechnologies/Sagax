@@ -1200,7 +1200,7 @@ import { routinesRoutes, type RoutinesDeps } from "./org-admin-routines.ts";
 import { routineRunsRoutes, type RoutineRunsDeps } from "./org-admin-runs.ts";
 import { opsRoutes, type ConnectionsView, type OpsDeps, type TestResult } from "./org-admin-ops.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
-import { readSandboxdKey } from "./sandboxd-auth.ts";
+import { sandboxdKeySource } from "./sandboxd-auth.ts";
 import { sandboxBackendFor, sandboxRouteFromEnv } from "./sandbox-route.ts";
 import { sandboxdClient, sandboxdHealth } from "./user-sandbox-client.ts";
 import { SandboxClusterWaker } from "./sandbox-k8s-wake.ts";
@@ -6708,8 +6708,10 @@ const userSandbox: UserSandboxManager | null = (() => {
   if (IDENTITY.kind !== "perspicax") return null;
   const settings = userSandboxSettingsFromEnv();
   if (!settings) return null;
-  let cachedKey = "";
-  const sandboxdKey = () => (cachedKey ||= readSandboxdKey(settings.keyFile));
+  // The first line of the key file signs; the file is reread when it changes,
+  // so a key rotation needs no restart (server/sandboxd-auth.ts).
+  let keys: (() => readonly string[]) | null = null;
+  const sandboxdKey = () => (keys ||= sandboxdKeySource(settings.keyFile))()[0]!;
   const kubernetesTls = settings.kubernetesUrl && settings.tlsCaFile ? { ca: readFileSync(settings.tlsCaFile) } : null;
   const kubernetes = settings.kubernetesUrl && kubernetesTls
     ? sandboxdClient(settings.kubernetesUrl, sandboxdKey, fetch, kubernetesTls)

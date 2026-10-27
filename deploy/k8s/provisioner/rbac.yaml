@@ -18,22 +18,29 @@ kind: Role
 metadata:
   name: sagax-sandboxd
   namespace: sandboxes
+# Only the verbs server/sandboxd-k8s.ts uses. Exec keeps `get` and `create`:
+# the websocket upgrade is a GET and is still refused without `get` (checked
+# on Kubernetes 1.35). No
+# patch on Pods or NetworkPolicies, no log reads, no LimitRange. What the
+# provisioner may exec into and which NetworkPolicies it may write is
+# bounded further by the chart's admission.provisionerGuard.
 rules:
   - apiGroups: [""]
-    resources: ["pods", "persistentvolumeclaims"]
-    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    # patch: the paused annotation on the claim
+    verbs: ["get", "list", "create", "delete", "patch"]
   - apiGroups: [""]
     resources: ["pods/exec"]
     verbs: ["get", "create"]
-  - apiGroups: [""]
-    resources: ["pods/log"]
-    verbs: ["get"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["get", "list", "create", "delete", "patch"]
+    verbs: ["get", "list", "create", "delete"]
   - apiGroups: [""]
-    resources: ["resourcequotas", "limitranges"]
-    verbs: ["get", "list"]
+    resources: ["resourcequotas"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create"]
@@ -75,3 +82,28 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: sagax-sandboxd-storage
+---
+# The readiness check reads its own namespace (GET /api/v1/namespaces/<ns>),
+# a cluster-scoped object: this one namespace by name, nothing else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sagax-sandboxd-namespace-read
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["sandboxes"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sagax-sandboxd-namespace-read
+subjects:
+  - kind: ServiceAccount
+    name: sagax-sandboxd
+    namespace: sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sagax-sandboxd-namespace-read

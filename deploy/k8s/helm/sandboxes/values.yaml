@@ -5,6 +5,18 @@ nameOverride: ""
 sandboxNamespace: sandboxes
 systemNamespace: sandbox-system
 
+# Layout where the provisioner kit (deploy/k8s/provisioner) already created
+# the sandbox namespace and runs the provisioner inside it: set
+# createSandboxNamespace false, sandboxEgressPolicy.enabled false (the
+# provisioner writes one policy per person), provisionerRbac.enabled false
+# (the kit owns the Role) and admission.placementObjectSelector to the
+# sandbox label. The system namespace is always created.
+createSandboxNamespace: true
+sandboxEgressPolicy:
+  enabled: true
+provisionerRbac:
+  enabled: true
+
 # Matches server/user-sandbox-spec.ts. One environment per person.
 sandbox:
   instance: default
@@ -17,6 +29,14 @@ sandbox:
   uid: 1000
   workspaceMount: /workspace
   image: ghcr.io/pulsatrixtechnologies/sagax-sandbox:0.1.0
+
+# Ceilings of the sandbox namespace LimitRange. Empty: sandbox.cpu,
+# sandbox.memory and sandbox.workspace. Raise them when a provisioner shares
+# the namespace or sizes are raised per person, so nothing running is refused.
+limitRange:
+  maxCpu: ""
+  maxMemory: ""
+  maxStorage: ""
 
 quota:
   pods: "8"
@@ -161,6 +181,16 @@ admission:
     # change case, so the repository name stays Sagax. Anchored to docker.yml
     # on main or on a v* tag (admission.yaml subjectRegExp).
     subjectRegExp: '^https://github\.com/pulsatrixtechnologies/Sagax/\.github/workflows/docker\.yml@refs/(heads/main|tags/v.*)$'
+  # Only sandbox pods must sit on the sandbox pool; set to
+  # {matchExpressions: [{key: com.pulsatrix.sagax.sandbox.user, operator: Exists}]}
+  # when the provisioner shares the sandbox namespace. Empty: every pod.
+  placementObjectSelector: {}
+  # Bounds the provisioner identity (templates/provisioner-guard.yaml): exec
+  # only into sandbox pods, NetworkPolicies only of the shapes it writes.
+  # serviceAccount defaults to system:serviceaccount:<systemNamespace>:sagax-sandboxd.
+  provisionerGuard:
+    enabled: false
+    serviceAccount: ""
   # Digest-pinned images that are allowed beside signed Pulsatrix images.
   allowedImages:
     - registry.k8s.io/pause@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a

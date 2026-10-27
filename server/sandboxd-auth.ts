@@ -3,13 +3,23 @@
 // HMAC over its method, path, timestamp, nonce and body digest, valid for a
 // short window and accepted once. The key lives in a file only the two
 // containers can read (the provisioner writes it, mode 0440).
+//
+// Rotation without a cut: the key file may hold two keys, one per line.
+// The first line signs; every line verifies. Both sides reread the file when
+// it changes (sandboxdKeySource), so the operator moves one file at a time
+// and no service restarts: the provisioner gets "old, new", then the signer
+// gets "new, old", then both get "new" alone (docs/sandbox-kubernetes.md).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const SANDBOXD_AUTH_HEADER = "x-sagax-sandboxd-auth";
 export const SANDBOXD_AUTH_WINDOW_MS = 30_000;
 const KEY_RE = /^[a-f0-9]{64}$/;
+/** A rotation overlaps two keys; never more. */
+export const SANDBOXD_MAX_KEYS = 2;
+/** How often a key source looks at its file for a rotation. */
+export const SANDBOXD_KEY_RECHECK_MS = 5_000;
 /** Domain of a signature. The person-sandbox routes sign under the first;
  * the run routes (server/sandboxd-runs.ts) under the second, with their own
  * key, so a signature made for one surface never verifies on the other. */
@@ -32,18 +42,35 @@ export function signSandboxdRequest(key: string, method: string, path: string, b
   return `v1 ts=${now},nonce=${nonce},sig=${mac(key, method, path, now, nonce, body, context)}`;
 }
 
+/** The keys a verifier accepts: one key, a fixed list, or a source that
+ * follows a key file through a rotation (sandboxdKeySource). */
+export type SandboxdKeys = string | readonly string[] | (() => readonly string[]);
+
+function checkedKeys(keys: readonly string[]): readonly string[] {
+  if (keys.length === 0 || keys.length > SANDBOXD_MAX_KEYS || !keys.every((key) => KEY_RE.test(key))) {
+    throw new Error("invalid sandboxd key");
+  }
+  return keys;
+}
+
 /** Verifies signatures and remembers nonces for the window, so a captured
- * request cannot be replayed. */
+ * request cannot be replayed. During a rotation a signature made with any
+ * of the current keys verifies. */
 export class SandboxdVerifier {
   private readonly seen = new Map<string, number>();
-  private readonly key: string;
+  private readonly keys: () => readonly string[];
   private readonly now: () => number;
   private readonly context: string;
-  constructor(key: string, now: () => number = Date.now, context: string = SANDBOXD_AUTH_CONTEXT) {
-    this.key = key;
+  constructor(keys: SandboxdKeys, now: () => number = Date.now, context: string = SANDBOXD_AUTH_CONTEXT) {
+    if (typeof keys === "function") {
+      checkedKeys(keys());
+      this.keys = () => checkedKeys(keys());
+    } else {
+      const fixed = checkedKeys(typeof keys === "string" ? [keys] : keys);
+      this.keys = () => fixed;
+    }
     this.now = now;
     this.context = context;
-    if (!KEY_RE.test(key)) throw new Error("invalid sandboxd key");
   }
 
   verify(header: string | string[] | undefined, method: string, path: string, body: string | Buffer): boolean {
@@ -54,9 +81,14 @@ export class SandboxdVerifier {
     const nonce = match[2]!;
     const now = this.now();
     if (Math.abs(now - ts) > SANDBOXD_AUTH_WINDOW_MS) return false;
-    const expected = Buffer.from(mac(this.key, method, path, ts, nonce, body, this.context), "hex");
     const given = Buffer.from(match[3]!, "hex");
-    if (expected.length !== given.length || !timingSafeEqual(expected, given)) return false;
+    let valid = false;
+    // Every key is checked (no early exit), so timing does not tell which one matched.
+    for (const key of this.keys()) {
+      const expected = Buffer.from(mac(key, method, path, ts, nonce, body, this.context), "hex");
+      if (expected.length === given.length && timingSafeEqual(expected, given)) valid = true;
+    }
+    if (!valid) return false;
     for (const [seenNonce, at] of this.seen) if (now - at > SANDBOXD_AUTH_WINDOW_MS * 2) this.seen.delete(seenNonce);
     if (this.seen.has(nonce)) return false;
     this.seen.set(nonce, now);
@@ -64,11 +96,50 @@ export class SandboxdVerifier {
   }
 }
 
-/** Read the shared key; the provisioner creates it on first start. */
+/** Every key in a key file: one, or two during a rotation (first signs). */
+export function readSandboxdKeys(file: string): string[] {
+  const keys = readFileSync(file, "utf8").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (keys.length === 0 || keys.length > SANDBOXD_MAX_KEYS || !keys.every((key) => KEY_RE.test(key)) || new Set(keys).size !== keys.length) {
+    throw new Error(`${file} does not hold a sandboxd key`);
+  }
+  return keys;
+}
+
+/** Read the signing key (the first line); the provisioner creates the file on first start. */
 export function readSandboxdKey(file: string): string {
-  const key = readFileSync(file, "utf8").trim();
-  if (!KEY_RE.test(key)) throw new Error(`${file} does not hold a sandboxd key`);
-  return key;
+  return readSandboxdKeys(file)[0]!;
+}
+
+/** Follows a key file through a rotation: rereads it when it changes (checked
+ * at most every SANDBOXD_KEY_RECHECK_MS). A file that becomes unreadable or
+ * malformed keeps the last good keys and says so once, so a bad edit never
+ * locks the service out. */
+export function sandboxdKeySource(file: string, now: () => number = Date.now): () => readonly string[] {
+  let keys: readonly string[] = readSandboxdKeys(file);
+  const stamp = (): string => {
+    const info = statSync(file);
+    return `${info.ino}:${info.size}:${info.mtimeMs}`;
+  };
+  let seen = stamp();
+  let checkedAt = now();
+  let warned = false;
+  return () => {
+    const at = now();
+    if (at - checkedAt < SANDBOXD_KEY_RECHECK_MS) return keys;
+    checkedAt = at;
+    try {
+      const current = stamp();
+      if (current === seen) return keys;
+      keys = readSandboxdKeys(file);
+      seen = current;
+      warned = false;
+      console.log(`sandboxd: key file reloaded (${keys.length} key${keys.length === 1 ? "" : "s"})`);
+    } catch (error) {
+      if (!warned) console.error(`sandboxd: key file not reloaded, keeping the current keys: ${error instanceof Error ? error.message : String(error)}`);
+      warned = true;
+    }
+    return keys;
+  };
 }
 
 export function ensureSandboxdKey(file: string): string {

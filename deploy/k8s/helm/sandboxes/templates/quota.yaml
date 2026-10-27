@@ -23,9 +23,10 @@ metadata:
 spec:
   limits:
     - type: Container
+      {{- $lr := .Values.limitRange | default dict }}
       max:
-        cpu: {{ .Values.sandbox.cpu | quote }}
-        memory: {{ .Values.sandbox.memory | quote }}
+        cpu: {{ (index $lr "maxCpu" | default .Values.sandbox.cpu) | quote }}
+        memory: {{ (index $lr "maxMemory" | default .Values.sandbox.memory) | quote }}
       default:
         cpu: {{ .Values.sandbox.cpu | quote }}
         memory: {{ .Values.sandbox.memory | quote }}
@@ -34,4 +35,4 @@ spec:
         memory: {{ .Values.sandbox.memory | quote }}
     - type: PersistentVolumeClaim
       max:
-        storage: {{ .Values.sandbox.workspace | quote }}
+        storage: {{ (index $lr "maxStorage" | default .Values.sandbox.workspace) | quote }}

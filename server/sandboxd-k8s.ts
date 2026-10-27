@@ -10,7 +10,7 @@ import { dirname } from "node:path";
 import type { Duplex } from "node:stream";
 
 import { createSandboxAudit, type SandboxAudit } from "./sandbox-audit.ts";
-import { ensureSandboxdKey, readSandboxdKey, SANDBOXD_RUNS_AUTH_CONTEXT, SandboxdVerifier } from "./sandboxd-auth.ts";
+import { ensureSandboxdKey, readSandboxdKey, SANDBOXD_RUNS_AUTH_CONTEXT, sandboxdKeySource, SandboxdVerifier } from "./sandboxd-auth.ts";
 import type { K8sClient } from "./sandboxd-k8s-client.ts";
 import {
   IMAGE_ANNOTATION,
@@ -562,11 +562,13 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
     return;
   }
   if (!(await backend.ping())) throw new Error(`sandboxd: kubernetes namespace ${k8s.namespace} is not reachable`);
-  const key = ensureSandboxdKey(sandbox.keyFile);
+  ensureSandboxdKey(sandbox.keyFile);
+  const sandboxKeys = sandboxdKeySource(sandbox.keyFile);
   const service = new SandboxService(backend, sandbox);
   const egress = await service.installEgressPolicy();
   console.log(`sandboxd: kubernetes backend, namespace ${k8s.namespace}, instance ${sandbox.instance}, egress policy ${egress}, at most ${sandbox.maxRunning} running, idle stop ${sandbox.idleStopMs / 60_000} min`);
-  const verifier = new SandboxdVerifier(key);
+  // Follows the key file (a Secret volume), so a rotation needs no restart.
+  const verifier = new SandboxdVerifier(sandboxKeys);
   const handler = createSandboxdHandler(service, verifier);
   const server = guards.tlsInsecure
     ? createServer(handler)
@@ -584,7 +586,7 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
   if (runs) {
     const { RunService, createRunsServer } = await import("./sandboxd-runs.ts");
     const runsKey = readSandboxdKey(runs.keyFile);
-    if (runsKey === key) {
+    if (sandboxKeys().includes(runsKey)) {
       audit.record({ action: "runs.start", outcome: "denied", detail: { reason: "shared_key" } });
       throw new Error("sandboxd: the run key must differ from the sandbox key");
     }

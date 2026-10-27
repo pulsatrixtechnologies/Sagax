@@ -1,3 +1,4 @@
+{{- if include "sandboxes.on" (list .Values "createSandboxNamespace" true) }}
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -10,6 +11,7 @@ metadata:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
 ---
+{{- end }}
 apiVersion: v1
 kind: Namespace
 metadata:

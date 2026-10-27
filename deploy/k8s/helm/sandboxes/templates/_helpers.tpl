@@ -1,3 +1,18 @@
+{{/*
+A boolean value that may be absent: `helm upgrade --reuse-values` does not
+bring in chart defaults for keys added after the first install, so a new
+switch reads its default here. Usage:
+  include "sandboxes.on" (list .Values.someMap "key" true)
+Renders "true" or nothing.
+*/}}
+{{- define "sandboxes.on" -}}
+{{- $m := index . 0 | default dict -}}
+{{- $k := index . 1 -}}
+{{- if hasKey $m $k -}}
+{{- if index $m $k -}}true{{- end -}}
+{{- else if index . 2 -}}true{{- end -}}
+{{- end -}}
+
 {{- define "sandboxes.labels" -}}
 app.kubernetes.io/name: sandboxes
 app.kubernetes.io/instance: {{ .Release.Name }}

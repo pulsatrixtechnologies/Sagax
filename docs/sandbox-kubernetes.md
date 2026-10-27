@@ -28,11 +28,25 @@ paused, and it keeps its capacity slot. Resume clears the annotation and
 creates the Pod again. Stop clears the annotation, deletes the Pod and keeps
 the PVC. Core Kubernetes has no portable cgroup freeze and no per-pod pid or
 file-size rlimit; the pid cap is only the annotation
-`sagax.pulsatrix.com/pids-limit`.
+`sagax.pulsatrix.com/pids-limit`. Set the kubelet `podPidsLimit` on the
+sandbox node pool only (AKS: `podMaxPids` in the node pool kubelet config,
+which can only be set when the pool is created). Keep it well above the
+annotation, which also counts Chromium's threads, so no real use reaches it:
+the point is that one sandbox can no longer exhaust the node's pids and take
+its neighbours and the kubelet down.
 
 Sandbox Pods use the ServiceAccount `sagax-sandbox-workload` (no Role, token
 not mounted). DNS is public (`1.1.1.1`, `8.8.8.8`, or `SAGAX_SANDBOX_K8S_DNS`)
-so the deny list can include the cluster CIDR. An address inside the deny
+so the deny list can include the cluster CIDR. The resolver runs with
+`single-request-reopen`: behind a NAT gateway (a dedicated egress address for
+the sandbox pool), glibc's simultaneous A and AAAA queries from one socket
+otherwise lose the second answer and every lookup waits 5 seconds.
+
+A sandbox reaches the Kubernetes API's public address unless it is denied:
+the deny list sees the address after the service translation, so
+`kubernetes.default` is that public address too. Put the address the
+`kubernetes` Endpoints object lists in `SAGAX_SANDBOX_EGRESS_DENY`. Existing
+per-person policies keep their old list until they are recreated or patched. An address inside the deny
 list is refused at startup.
 
 Without a node selector and a toleration, sandbox Pods go wherever the
@@ -345,6 +359,11 @@ optional collector is `POST` of that line to an https URL with no userinfo
 and redirects treated as errors. A failed POST does not remove the line.
 HTTP ship URLs are refused.
 
+The audit directory must outlive the Pod. An `emptyDir` loses the trail on
+every restart; mount a volume that keeps it (on AKS, an Azure Files claim:
+ReadWriteMany, so a rolling update can start the new Pod before the old one
+stops, and not zonal, unlike an Azure Disk on a multi-zone pool).
+
 Kubernetes Events are a best-effort copy. The Role allows `create` and not
 `patch`, `update` or `delete`. Events expire. The file is the record.
 
@@ -374,9 +393,40 @@ Unit tests do not need a cluster: `server/sandboxd-k8s-spec.test.ts`,
 only when `SAGAX_SANDBOX_K8S_INTEGRATION=1`, then deletes the cluster. It is
 not part of `pnpm test:unit`.
 
+## Key rotation
+
+The provisioner and Sagax share one HMAC key (`SAGAX_SANDBOXD_KEY_FILE`).
+The file may hold two keys, one per line, during a rotation: the first line
+signs, every line verifies, and both sides reread the file within 5 seconds
+of a change (`sandboxdKeySource` in `server/sandboxd-auth.ts`), so no service
+restarts and no request fails. A file that turns unreadable or malformed
+keeps the last good keys. Three moves, each verified before the next:
+
+1. Provisioner file: `old` then `new` (the Kubernetes Secret, or the Docker
+   volume). Both keys verify; Sagax still signs with `old`.
+2. Sagax file: `new` then `old`. Sagax signs with `new`.
+3. Both files: `new` alone, once no request signed with `old` is in flight
+   (more than 30 seconds after step 2).
+
+Generate the new key where it is stored (a key vault) and move it from there
+to the files without printing it. A release older than this rotation reads a
+two-line file as malformed: update both sides first.
+
+## Provisioner guard
+
+The provisioner Role cannot say "exec only into a sandbox" or "write only
+this NetworkPolicy shape". The chart's `admission.provisionerGuard` adds a
+ValidatingAdmissionPolicy for the provisioner identity: exec only into
+`sagax-user-*` Pods, and NetworkPolicies only of the two shapes the
+provisioner writes (the namespace default deny, or a person's policy with no
+ingress and egress to `0.0.0.0/0` minus every `egressDeny` range). The
+NetworkPolicy verbs themselves stay: each person's policy is created and
+deleted with their sandbox.
+
 ## Gaps
 
-- No portable per-Pod pid limit or `RLIMIT_FSIZE`.
+- No portable per-Pod pid limit (the kubelet's node pool setting is per
+  pool, see above) and no `RLIMIT_FSIZE`.
 - Pause deletes the Pod. The slot stays taken; the memory does not.
 - Without metrics-server, CPU and current memory stats are 0.
 - etcd encryption and CNI enforcement are attestations.
