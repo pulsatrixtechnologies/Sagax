@@ -162,7 +162,7 @@ describe("grokExportToPackage", () => {
     // A body's own frontmatter is replaced; its description is kept when the export gave none.
     expect(entries[1]).toMatchObject({ description: "Find slow steps", instructions: "---\nname: bottlenecks\ndescription: Find slow steps\n---\n\nLook for waits.\n" });
     expect(document.package.agents[0]!.skills).toEqual(["audit-routines", "bottlenecks"]);
-    expect(leftOut).toContainEqual({ kind: "skill", name: "Skill “empty”", reason: "the export had no text for it" });
+    expect(leftOut).toContainEqual(expect.objectContaining({ kind: "skill", name: "Skill “empty”", reason: "the export had no text for it" }));
   });
 
   it("keeps clock routines paused, and lists event and unreadable ones with their original text", () => {
@@ -172,14 +172,14 @@ describe("grokExportToPackage", () => {
       ["Weekly audit", { type: "cron", expression: "0 9 * * 1", timeZone: "America/New_York" }, false, "maus", "doge-department-of-grok-efficiency"],
       ["Morning check", { type: "daily", time: "08:30", weekdays: [1, 2, 3, 4, 5] }, false, "maus", "doge-department-of-grok-efficiency"],
     ]);
-    expect(leftOut).toContainEqual({
+    expect(leftOut).toContainEqual(expect.objectContaining({
       kind: "routine",
       name: "Routine “On new PR”",
       reason: "it starts on an event, not a clock",
       original: "When: When a GitHub pull request opens\nReview the PR.",
-    });
-    expect(leftOut).toContainEqual({ kind: "routine", name: "Routine “Sometimes”", reason: "it starts on an event, not a clock", original: "When: now and then, when it feels right\nThink." });
-    expect(leftOut).toContainEqual({ kind: "routine", name: "Routine “Bad cron”", reason: "its schedule could not be read", original: "Cron: 99 99 * * *\nNever runs." });
+    }));
+    expect(leftOut).toContainEqual(expect.objectContaining({ kind: "routine", name: "Routine “Sometimes”", reason: "it starts on an event, not a clock", original: "When: now and then, when it feels right\nThink." }));
+    expect(leftOut).toContainEqual(expect.objectContaining({ kind: "routine", name: "Routine “Bad cron”", reason: "its schedule could not be read", original: "Cron: 99 99 * * *\nNever runs." }));
   });
 
   it("reads plain times and falls back to the person's zone", () => {
@@ -299,5 +299,21 @@ describe("Grok Bot marketplace links", () => {
     expect(isGrokLink("https://x.ai/bot/marketplace/bots/overheard")).toBe(true);
     expect(isGrokLink("https://x.ai/bot/NIEguoGUjA648fUPle8F5")).toBe(true);
     expect(isGrokLink("https://github.com/a/b/team.md")).toBe(false);
+  });
+});
+
+describe("left out, in the person's language", () => {
+  it("names a catalog key for every line, whose English is the line itself", async () => {
+    const en = (await import("../src/locales/en.json")).default as Record<string, string>;
+    const fill = (template: string, params: Record<string, string | number> = {}) =>
+      template.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
+    const { leftOut } = grokExportToPackage(parseGrokExport(JSON.stringify(reply)), { timeZone: "UTC" });
+    expect(leftOut.length).toBeGreaterThan(2);
+    for (const item of leftOut) {
+      expect(en[item.reasonKey!], item.reason).toBeDefined();
+      const reason = fill(en[item.reasonKey!]!, { ...item.params, bytes: item.params?.bytes !== undefined ? Number(item.params.bytes).toLocaleString("en-US") : "" });
+      expect(reason).toBe(item.reason);
+      if (item.nameKey) expect(fill(en[item.nameKey]!, item.params)).toBe(item.name);
+    }
   });
 });

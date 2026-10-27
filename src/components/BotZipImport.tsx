@@ -3,7 +3,7 @@
 // created, what is skipped and why, what needs a token or a sign-in after.
 // Nothing is created before Import. The panel is the Templates tool of
 // Browse Bots; the dialog wraps it for New bot.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FileArchive, Loader2, X } from "lucide-react";
 
 import { useStore } from "@/state/store";
@@ -28,10 +28,18 @@ function Lines({ title, lines, tone, id }: { title: string; lines: BotZipPreview
   );
 }
 
-export function BotZipImportPanel({ onImported, onCancel, autoFocus = false }: {
+export function BotZipImportPanel({ onImported, onCancel, autoFocus = false, file, sourceLabel, summary, extra }: {
   onImported?: (result: BotZipImportResult) => void;
   onCancel?: () => void;
   autoFocus?: boolean;
+  /** A package made in the app (AgentImport: Grok Bot, Claude Code), staged at once instead of a picked file. */
+  file?: Blob;
+  /** Where that package came from, in place of "An older Sagax package". */
+  sourceLabel?: string;
+  /** What the import creates, in place of the server's lines for an older package. */
+  summary?: ReactNode;
+  /** Shown under the preview (what could not come over). */
+  extra?: ReactNode;
 }) {
   const { dispatch } = useStore();
   const input = useRef<HTMLInputElement>(null);
@@ -48,7 +56,7 @@ export function BotZipImportPanel({ onImported, onCancel, autoFocus = false }: {
 
   const fail = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause));
 
-  const choose = async (file: File | undefined) => {
+  const choose = async (file: Blob | undefined) => {
     if (!file || busy) return;
     setError("");
     setBusy("upload");
@@ -107,12 +115,27 @@ export function BotZipImportPanel({ onImported, onCancel, autoFocus = false }: {
     onCancel?.();
   };
 
+  // A package made in the app is staged once, when the panel opens with it.
+  const stagedFile = useRef<Blob | null>(null);
+  useEffect(() => {
+    if (!file || stagedFile.current === file) return;
+    stagedFile.current = file;
+    void choose(file);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file]);
+
   const preview = staged?.preview;
   return (
     <div className="flex flex-col gap-3 text-[13px]" data-bot-zip-import="">
       <input ref={input} type="file" accept=".zip,.sagaxbot.zip,application/zip,.json,.md" className="hidden" data-bot-zip-file=""
         onChange={(event) => void choose(event.target.files?.[0])} />
-      {!preview && (
+      {!preview && file && (
+        <div className="flex items-center gap-2 text-ink-secondary" data-bot-zip-staging="">
+          {busy === "upload" ? <Loader2 size={16} className="animate-spin" /> : null}
+          <span>{busy === "upload" ? t("botZip.uploading") : sourceLabel}</span>
+        </div>
+      )}
+      {!preview && !file && (
         <button type="button" autoFocus={autoFocus} disabled={busy !== null} onClick={() => input.current?.click()}
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => { event.preventDefault(); void choose(event.dataTransfer.files?.[0]); }}
@@ -128,7 +151,9 @@ export function BotZipImportPanel({ onImported, onCancel, autoFocus = false }: {
           <div>
             <div className="text-[14px] font-medium text-ink">{preview.name}</div>
             <div className="text-[12px] text-ink-secondary">
-              {preview.kind === "legacy"
+              {sourceLabel
+                ? sourceLabel
+                : preview.kind === "legacy"
                 ? t("botZip.legacy")
                 : t("botZip.exportedBy", { version: preview.appVersion ?? "?", date: preview.exportedAt ? new Date(preview.exportedAt).toLocaleDateString(activeLocale()) : "?" })}
             </div>
@@ -150,9 +175,12 @@ export function BotZipImportPanel({ onImported, onCancel, autoFocus = false }: {
               <Switch checked={sharing} onClick={() => setSharing((value) => !value)} aria-label={t("botZip.includeSharing")} data-bot-zip-sharing="" />
             </label>
           )}
-          <Lines id="created" title={t("botZip.created")} lines={preview.created} />
-          <Lines id="needs" title={t("botZip.needsAction")} lines={preview.needsAction} tone="warn" />
-          <Lines id="skipped" title={t("botZip.skipped")} lines={preview.skipped} />
+          {summary ?? <>
+            <Lines id="created" title={t("botZip.created")} lines={preview.created} />
+            <Lines id="needs" title={t("botZip.needsAction")} lines={preview.needsAction} tone="warn" />
+            <Lines id="skipped" title={t("botZip.skipped")} lines={preview.skipped} />
+          </>}
+          {extra}
           <details className="text-[12px] text-ink-secondary" data-bot-zip-excluded="">
             <summary className="cursor-pointer">{t("botZip.excluded.title")}</summary>
             <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-5">{EXCLUDED_KEYS.map((key) => <li key={key}>{t(key)}</li>)}</ul>

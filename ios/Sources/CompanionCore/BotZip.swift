@@ -26,8 +26,12 @@ public struct BotZipPreview: Decodable, Equatable, Sendable {
     public var created: [BotZipPreviewLine]
     public var skipped: [BotZipPreviewLine]
     public var needsAction: [BotZipPreviewLine]
+    /// An older package's (or an imported agent's) counts: its skills and routines.
+    public var includesSkills: Int?
+    public var includesRoutines: Int?
 
-    enum CodingKeys: String, CodingKey { case kind, name, importName, appVersion, exportedAt, hasConversations, hasSharing, created, skipped, needsAction }
+    enum CodingKeys: String, CodingKey { case kind, name, importName, appVersion, exportedAt, hasConversations, hasSharing, created, skipped, needsAction, includes }
+    private struct Includes: Decodable { var skills: Int?; var routines: Int? }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -44,6 +48,9 @@ public struct BotZipPreview: Decodable, Equatable, Sendable {
         created = lines(.created)
         skipped = lines(.skipped)
         needsAction = lines(.needsAction)
+        let includes = (try? c.decodeIfPresent(Includes.self, forKey: .includes)) ?? nil
+        includesSkills = includes?.skills
+        includesRoutines = includes?.routines
     }
 
     /// An older Sagax package file rather than a zip.

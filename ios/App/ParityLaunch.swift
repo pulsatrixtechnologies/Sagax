@@ -41,6 +41,8 @@ enum ParityScreen: String, CaseIterable {
     /// Not a reference: the home's "+" as New chat (bots and members).
     case newChat = "new-chat"
     case createBot = "20-create-bot"
+    /// Not a reference: New bot's Import from Grok Bot, a reply pasted and previewed.
+    case createBotImport = "create-bot-import"
     case botComputer = "21-bot-computer"
     /// Not a reference: Settings > Appearance, for the theme captures.
     case appearance = "22-appearance"
@@ -75,7 +77,7 @@ enum ParityScreen: String, CaseIterable {
     /// Screens the home opens itself: its "+" menu and its sheets.
     var opensFromHome: Bool {
         switch self {
-        case .home, .homePlusMenu, .search, .searchTyped, .newChat, .newGroupChat, .createBot,
+        case .home, .homePlusMenu, .search, .searchTyped, .newChat, .newGroupChat, .createBot, .createBotImport,
              .settingsTop, .settingsBottom, .plugins, .account, .botComputer, .appearance: true
         default: false
         }

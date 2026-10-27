@@ -1352,7 +1352,7 @@ extension ChatListView {
             case .searchTyped?: showingSearch = true
             case .newChat?: showingNewChat = true
             case .newGroupChat?: showingNewGroup = true
-            case .createBot?: showingCreateBot = true
+            case .createBot?, .createBotImport?: showingCreateBot = true
             case .settingsTop?, .settingsBottom?, .plugins?, .account?, .botComputer?, .appearance?: showingSettings = true
             default: break
             }

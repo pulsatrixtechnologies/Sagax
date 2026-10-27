@@ -77971,6 +77971,198 @@
         "en": { "stringUnit": { "state": "translated", "value": "Resume %@" } },
         "fr": { "stringUnit": { "state": "translated", "value": "Relancer %@" } }
       }
+    },
+    "Import from Grok Bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Import from Grok Bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Importer depuis Grok Bot" } }
+      }
+    },
+    "Import an agent": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Import an agent" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Importer un agent" } }
+      }
+    },
+    "Bring a bot you use in Grok Bot into Sagax. It arrives inert: skills off, routines paused, and no key, token or sign-in comes over.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Bring a bot you use in Grok Bot into Sagax. It arrives inert: skills off, routines paused, and no key, token or sign-in comes over." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Amenez dans Sagax un bot que vous utilisez dans Grok Bot. Il arrive inerte : skills désactivés, routines en pause, et aucune clé, aucun jeton ni aucune connexion n'est importé." } }
+      }
+    },
+    "Copy export prompt": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy export prompt" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier la demande d'export" } }
+      }
+    },
+    "1. Send the export prompt to your Grok Bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1. Send the export prompt to your Grok Bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "1. Envoyez la demande d'export à votre Grok Bot" } }
+      }
+    },
+    "2. Paste its reply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "2. Paste its reply" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "2. Collez sa réponse" } }
+      }
+    },
+    "From Grok Bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "From Grok Bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Depuis Grok Bot" } }
+      }
+    },
+    "%lld skill(s), off until you turn them on": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld skill(s), off until you turn them on" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%lld skill(s), désactivé(s) jusqu'à ce que vous les activiez" } }
+      }
+    },
+    "%lld routine(s), paused until you start them": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld routine(s), paused until you start them" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%lld routine(s), en pause jusqu'à ce que vous les lanciez" } }
+      }
+    },
+    "Will be created": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Will be created" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sera créé" } }
+      }
+    },
+    "Nothing runs until you say so: no routine starts and no app is signed in.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nothing runs until you say so: no routine starts and no app is signed in." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rien ne roule sans votre accord : aucune routine ne démarre et aucune app n'est connectée." } }
+      }
+    },
+    "Left out (set these up by hand)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Left out (set these up by hand)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Laissé de côté (à configurer à la main)" } }
+      }
+    },
+    "Skill “{name}”": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Skill “{name}”" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Skill « {name} »" } }
+      }
+    },
+    "Routine “{name}”": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Routine “{name}”" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Routine « {name} »" } }
+      }
+    },
+    "App “{name}”": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "App “{name}”" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "App « {name} »" } }
+      }
+    },
+    "Memories": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Memories" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mémoires" } }
+      }
+    },
+    "Keys and passwords": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keys and passwords" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Clés et mots de passe" } }
+      }
+    },
+    "it starts on an event, not a clock": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "it starts on an event, not a clock" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "elle démarre sur un événement, pas à une heure" } }
+      }
+    },
+    "its schedule could not be read": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "its schedule could not be read" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "son horaire n'a pas pu être lu" } }
+      }
+    },
+    "the export gave no schedule for it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "the export gave no schedule for it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "l'export ne donnait pas son horaire" } }
+      }
+    },
+    "they were longer than {bytes} bytes, so the end was cut. Check them after adding the bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "they were longer than {bytes} bytes, so the end was cut. Check them after adding the bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "elles dépassaient {bytes} octets, la fin a donc été coupée. Vérifiez-les après l'ajout du bot" } }
+      }
+    },
+    "a bot holds at most {max} skills": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "a bot holds at most {max} skills" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "un bot a au plus {max} skills" } }
+      }
+    },
+    "its text could not be read as a skill": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "its text could not be read as a skill" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "son texte n'a pas pu être lu comme un skill" } }
+      }
+    },
+    "the export had no text for it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "the export had no text for it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "l'export n'avait pas de texte pour lui" } }
+      }
+    },
+    "a package holds at most {max} routines": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "a package holds at most {max} routines" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "un package contient au plus {max} routines" } }
+      }
+    },
+    "the export had no prompt for it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "the export had no prompt for it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "l'export n'avait pas de consigne pour elle" } }
+      }
+    },
+    "a package lists at most {max} apps": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "a package lists at most {max} apps" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "un package liste au plus {max} apps" } }
+      }
+    },
+    "they were larger than 256 KB": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "they were larger than 256 KB" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "elles dépassaient 256 Ko" } }
+      }
+    },
+    "text that looked like a key or password was replaced in {parts}": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "text that looked like a key or password was replaced in {parts}" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "du texte qui ressemblait à une clé ou à un mot de passe a été remplacé dans {parts}" } }
+      }
+    },
+    "Paste the reply first.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paste the reply first." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Collez d'abord la réponse." } }
+      }
+    },
+    "That reply is larger than 4 MB.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "That reply is larger than 4 MB." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette réponse dépasse 4 Mo." } }
+      }
+    },
+    "%@: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@: %2$@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%1$@ : %2$@" } }
+      }
     }
   },
   "version": "1.0"

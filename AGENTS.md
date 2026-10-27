@@ -6201,7 +6201,7 @@ Backups for whoever cannot manage backups, and in Simple mode), and the export o
 a bot shared on x.ai dropped on Bot templates > Import (`TemplateTools` readFile).
 `src/components/GrokImportBox.tsx` reads an `https://x.ai/bot/<id>` link or a
 marketplace page through `POST /api/team-library/grok`
-(`server/routes/team-library-grok.ts`, admin scope; `server/team-library.ts`
+(`server/routes/team-library-grok.ts`, client scope since 2026-10-26; `server/team-library.ts`
 `fetchGrokTemplateCard` fetches only x.ai, redirects must stay there, 20 s,
 2 MB) and shows the public card (name, creator, description) with Start
 from the description (`grokStarterPackage`). The full setup comes from the
@@ -6220,6 +6220,30 @@ original text. The preview and Add are the templates' own
 `server/routes/team-library-grok.test.ts`,
 `src/components/settings/ImportSettings.dom.test.ts` (the export fixture
 `shared/fixtures/grok-import/shared-grok-bot.json`).
+
+### Import an agent: New bot and the first run (2026-10-26)
+
+New bot > Start from > "Grok Bot or Claude Code…" and the first run's
+"Import an agent" (bot step, shown even before an engine is ready) open
+`src/components/AgentImport.tsx`: the Grok Bot box above, or a Claude Code
+folder (`webkitdirectory`, `src/lib/claude-code-folder.ts`,
+`shared/claude-code-import.ts`: CLAUDE.md / AGENTS.md / CLAUDE.local.md,
+`.claude/skills`, `.claude/commands` as skills, `.claude/agents` as one bot
+each, `.mcp.json` http/sse servers as slots with header names only). Secret
+files are never opened, only named. The package made in the app goes through
+the bot import (`BotZipImportPanel` with `file`, `POST /api/bots/import/upload`,
+member scope, the right to create bots), never `/api/teams/import`, so a
+member imports alone. `POST /api/team-library/grok` is client scope: it only
+reads x.ai's public card. Grok Bot has no documented export format (docs.x.ai,
+2026-10-26): keep the export prompt, do not invent a file parser. Doc:
+`docs/import-agent.md`. Tests: `shared/claude-code-import.test.ts`,
+`src/components/AgentImport.test.ts`, `src/components/BotZipImport.test.ts`,
+`src/components/onboarding/GuidedFirstRun.test.ts`. Left-out lines carry
+`nameKey`/`reasonKey`/`params` (`leftOut.*`): add a key with any new reason.
+iOS: Create New Bot > Import from Grok Bot (`ios/App/Features/AgentImport/`),
+through `GET|POST /api/bots/import/agent` (server/routes/bot-zip.ts: the reply
+made into the package server side and staged like an upload, member scope);
+parity screen `create-bot-import`.
 
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 
