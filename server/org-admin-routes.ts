@@ -26,7 +26,7 @@ import { permissionCatalogue } from "../shared/permissions.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { aggregateOrgUsage, ORG_USAGE_MAX_ROWS, parseOrgUsageRange, type OrgUsageAggregate, type UsageRow } from "./usage-ledger.ts";
-import type { ConsoleAssertion, OidcTeamClaim } from "./oidc-rp.ts";
+import type { ConsoleAssertion, ConsoleGrant, ConsoleGrantKind, OidcTeamClaim } from "./oidc-rp.ts";
 import type { IdentifiedAdminAction } from "./admin-activity.ts";
 import type { AdminBotLook, AdminBotPersona } from "./org-admin-look.ts";
 import { ADMIN_FILES_ROUTE, answerBotFiles, type OrgAdminFilesDeps } from "./org-admin-files.ts";
@@ -248,6 +248,13 @@ export class AssertionReplayCache {
   size(): number {
     return this.seen.size;
   }
+}
+
+
+/** Whether an assertion's `grant` covers this one request: the kind the
+ * route declares, the same method, the same path below /api/org/admin/. */
+export function grantCovers(grant: ConsoleGrant | undefined, kind: ConsoleGrantKind, method: string, sub: string): boolean {
+  return Boolean(grant && grant.kind === kind && grant.method === method && grant.path === sub);
 }
 
 /** The principals a manager reaches: themselves plus the members and
@@ -472,7 +479,10 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         refuse(res, 405, "method_not_allowed", "Use GET here.");
         return true;
       }
-      if (ROLE_RANK[viewer.role] < ROLE_RANK.manager) {
+      // Below manager, only the `own-bot` grant of this request, for a bot
+      // of the person's own.
+      const filesOwnOnly = ROLE_RANK[viewer.role] < ROLE_RANK.manager;
+      if (filesOwnOnly && !grantCovers(assertion.grant, "own-bot", method, sub)) {
         refuse(res, 403, "forbidden_role", "This needs the manager role in Perspicax.");
         return true;
       }
@@ -481,7 +491,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
       const reach = managedReach(viewer, deps.teamPeople);
       const managedTeams = new Set(viewer.teams.filter((team) => team.manager).map((team) => team.id));
       // Out of a manager's reach reads as no such bot: the id says nothing.
-      if (!facts || !botInReach(reach, managedTeams, facts)) {
+      if (!facts || (filesOwnOnly ? facts.ownerPrincipalId !== viewer.principalId : !botInReach(reach, managedTeams, facts))) {
         refuse(res, 404, "not_found", "No such bot.");
         return true;
       }
@@ -497,10 +507,10 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
     const answerMatch = /^approvals\/([^/]+)\/([^/]+)$/.exec(sub);
     // `approvals?scope=org` and `approvals/history` are console routes.
     const consoleApprovals = sub === "approvals" && url.searchParams.get("scope") === "org";
-    const route = sub === "capabilities"
+    const route: { name: string; method: string; min: ConsoleRole; ownerGrant?: ConsoleGrantKind } | null = sub === "capabilities"
       ? { name: sub, method: "GET", min: "employee" as const }
       : (sub === "bots" || sub === "usage" || sub === "audit" || sub === "approvals") && !consoleApprovals
-        ? { name: sub, method: "GET", min: sub === "audit" ? "admin" as const : sub === "approvals" ? "employee" as const : "manager" as const }
+        ? { name: sub, method: "GET", min: sub === "audit" ? "admin" as const : sub === "approvals" ? "employee" as const : "manager" as const, ...(sub === "approvals" ? {} : { ownerGrant: "own-bot" as const }) }
         : answerMatch && answerMatch[1] !== "history" && CARD_ID.test(answerMatch[1]!) && CARD_ID.test(answerMatch[2]!)
           ? { name: "answer", method: "POST", min: "employee" as const }
           : null;
@@ -521,8 +531,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
       // a person reach their own thing (2026-10-26, `own-computer`).
       let ownOnly = false;
       if (ROLE_RANK[viewer.role] < ROLE_RANK[hit.route.min]) {
-        const grant = assertion.grant;
-        const granted = Boolean(hit.route.ownerGrant && grant && grant.kind === hit.route.ownerGrant && grant.method === method && grant.path === sub);
+        const granted = Boolean(hit.route.ownerGrant && grantCovers(assertion.grant, hit.route.ownerGrant, method, sub));
         if (!granted) {
           refuse(res, 403, "forbidden_role", `This needs the ${hit.route.min} role in Perspicax.`);
           return true;
@@ -550,8 +559,10 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
           return true;
         }
       }
-      const reach = managedReach(viewer, deps.teamPeople);
-      const managedTeams = new Set(viewer.teams.filter((team) => team.manager).map((team) => team.id));
+      // Under a grant the reach is the person alone, and a bot is visible
+      // only when it is theirs (not one shared with them).
+      const reach = ownOnly ? new Set([viewer.principalId]) : managedReach(viewer, deps.teamPeople);
+      const managedTeams = ownOnly ? new Set<string>() : new Set(viewer.teams.filter((team) => team.manager).map((team) => team.id));
       const ctx: ConsoleContext = {
         viewer,
         locale: consoleLocale(assertion.locale),
@@ -563,7 +574,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         reach,
         managedTeams,
         inReach: (principalId) => !reach || (principalId ? reach.has(principalId) : false),
-        botVisible: (facts) => botInReach(reach, managedTeams, facts),
+        botVisible: (facts) => ownOnly ? facts.ownerPrincipalId === viewer.principalId : botInReach(reach, managedTeams, facts),
         record: (entry) => deps.recordAction?.(viewer.principalId, entry),
         now,
         ...(ownOnly ? { ownOnly: true } : {}),
@@ -584,13 +595,17 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
       refuse(res, 405, "method_not_allowed", `Use ${route.method} here.`);
       return true;
     }
-    if (ROLE_RANK[viewer.role] < ROLE_RANK[route.min]) {
+    // Below the route's role: the `own-bot` grant of this request only, and
+    // then the person's own bots alone.
+    const ownOnly = ROLE_RANK[viewer.role] < ROLE_RANK[route.min];
+    if (ownOnly && !(route.ownerGrant && grantCovers(assertion.grant, route.ownerGrant, method, sub))) {
       refuse(res, 403, "forbidden_role", `This needs the ${route.min} role in Perspicax.`);
       return true;
     }
-    const reach = managedReach(viewer, deps.teamPeople);
-    const managedTeams = new Set(viewer.teams.filter((team) => team.manager).map((team) => team.id));
+    const reach = ownOnly ? new Set([viewer.principalId]) : managedReach(viewer, deps.teamPeople);
+    const managedTeams = ownOnly ? new Set<string>() : new Set(viewer.teams.filter((team) => team.manager).map((team) => team.id));
     const inReach = (principalId: string | null | undefined) => !reach || (principalId ? reach.has(principalId) : false);
+    const ownBot = (facts: AdminBotReach) => facts.ownerPrincipalId === viewer.principalId;
 
     if (route.name === "capabilities") {
       const catalogue = permissionCatalogue();
@@ -613,7 +628,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
       return true;
     }
     if (route.name === "bots") {
-      const listed = deps.bots().filter((entry) => botInReach(reach, managedTeams, entry.reach)).map((entry) => entry.bot);
+      const listed = deps.bots().filter((entry) => ownOnly ? ownBot(entry.reach) : botInReach(reach, managedTeams, entry.reach)).map((entry) => entry.bot);
       const params = url.searchParams;
       const paged = ["q", "status", "engine", "owner", "limit", "cursor"].some((name) => params.has(name));
       if (!paged) {
@@ -644,6 +659,8 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         return true;
       }
       const { rows, truncated } = aggregateOrgUsage(deps.usageRows(range), ({ speaker, ownerPrincipalId }) => {
+        // Under the grant: the rows of the person's own bots.
+        if (ownOnly) return ownerPrincipalId === viewer.principalId;
         if (!reach) return true;
         if (speaker.kind === "unattributed") return false;
         if (speaker.kind === "person" && inReach(speaker.principalId)) return true;
@@ -700,6 +717,11 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
     }
     if (target !== null && (target.length < 1 || target.length > 160)) {
       refuse(res, 400, "bad_request", "target is an id of at most 160 characters.");
+      return true;
+    }
+    // Under the grant: the activity about one bot of the person's own.
+    if (ownOnly && !(target && deps.bots().some((entry) => entry.bot.id === target && ownBot(entry.reach)))) {
+      refuse(res, 404, "not_found", "No such bot.");
       return true;
     }
     const page = deps.audit({

@@ -51,6 +51,10 @@ export interface OpsDeps {
   test(kind: TestKind, id: string, principalId: string | null): Promise<TestResult | null>;
   logs(input: { level: LogLevel | null; limit: number; before: number | null }): { lines: LogLine[]; next: number | null };
   problems(from: number): ProblemRow[];
+  /** The ids of the bots a person owns: under the `own-bot` grant, the log
+   * lines and incidents of those bots only. Absent: nothing is answered
+   * under the grant. */
+  botsOwnedBy?(principalId: string): string[];
   settings(): { org: unknown; policies: Policies; backup: { enabled: boolean; schedule: string | null; lastAt: number | null; ok: boolean | null } };
   /** Applies the changes; each setter audits its own row. Throws a
    * ConsoleRefusal for a value it refuses. */
@@ -289,6 +293,7 @@ export function opsRoutes(deps: OpsDeps): ConsoleRoute[] {
       method: "GET",
       path: "logs",
       min: "admin",
+      ownerGrant: "own-bot",
       handle(ctx) {
         const params = ctx.url.searchParams;
         const level = enumParam(params, "level", LOG_LEVELS);
@@ -301,6 +306,11 @@ export function opsRoutes(deps: OpsDeps): ConsoleRoute[] {
           return badRequest("limit is 1 to 500, before the seq of a line this route gave.");
         }
         const page = deps.logs({ level, limit, before });
+        // Under the grant: the lines that name one of the person's own bots.
+        if (ctx.ownOnly) {
+          const mine = deps.botsOwnedBy?.(ctx.viewer.principalId) ?? [];
+          page.lines = page.lines.filter((line) => mine.some((id) => line.message.includes(id)));
+        }
         return ok({ lines: page.lines.map(({ seq, at, level: lineLevel, area, message }) => ({ seq, at, level: lineLevel, area, message })), next: page.next });
       },
     },
@@ -308,13 +318,15 @@ export function opsRoutes(deps: OpsDeps): ConsoleRoute[] {
       method: "GET",
       path: "incidents",
       min: "admin",
+      ownerGrant: "own-bot",
       handle(ctx) {
+        const mine = ctx.ownOnly ? new Set(deps.botsOwnedBy?.(ctx.viewer.principalId) ?? []) : null;
         const page = parsePage(ctx.url.searchParams);
         if (isAnswer(page)) return page;
         const kind = enumParam(ctx.url.searchParams, "kind", INCIDENT_KINDS as readonly ProblemKind[]);
         if (isAnswer(kind)) return kind;
         const rows = deps.problems(ctx.now() - 90 * 24 * 60 * 60_000)
-          .filter((row) => (INCIDENT_KINDS as readonly string[]).includes(row.kind) && (!kind || row.kind === kind))
+          .filter((row) => (INCIDENT_KINDS as readonly string[]).includes(row.kind) && (!kind || row.kind === kind) && (!mine || (!!row.botId && mine.has(row.botId))))
           .filter((row) => !page.q || [row.botName, row.title, row.detail].some((text) => text?.toLocaleLowerCase().includes(page.q)))
           .map((row) => ({
             id: row.id, at: row.at, kind: row.kind, bot: { id: row.botId, name: row.botName }, threadId: row.threadId, title: row.title,

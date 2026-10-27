@@ -526,12 +526,17 @@ export interface ConsoleAssertion {
    * (2026-10-26): the person's own server environment, on the routes that
    * declare it (server/org-admin-computers.ts), for that method and path
    * below /api/org/admin/ only; the route then answers only what the person
-   * owns. Absent otherwise. */
+   * owns. `own-bot` (their own bots: the list, a bot, its files, picture,
+   * package, copy, archive, restore, model, stop, delete, its usage,
+   * incidents, log lines and activity) and `own-routine` (the routines of
+   * their own bots: the list, one, its runs, run now, pause) work the same
+   * way, so a person never needs a role above their own for their own
+   * things. Absent otherwise. */
   grant?: ConsoleGrant;
 }
 
 /** The capabilities a console assertion's `grant` may name. */
-export const CONSOLE_GRANT_KINDS = ["own-computer"] as const;
+export const CONSOLE_GRANT_KINDS = ["own-computer", "own-bot", "own-routine"] as const;
 export type ConsoleGrantKind = typeof CONSOLE_GRANT_KINDS[number];
 
 /** One request a `grant` covers: its kind, its method and its path below
