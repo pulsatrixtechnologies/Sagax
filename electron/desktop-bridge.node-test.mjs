@@ -182,6 +182,46 @@ test("Local VM: only labelled Sagax containers", async () => {
   await assert.rejects(vm.exec("some-other-container", "id"), /does not exist/);
 });
 
+// Command variables (server/credential-command-env.ts): the server sends the
+// API keys the person exposed to this bot with run_command and
+// vm_run_command; they join the command's environment, never its argv.
+test("command variables: checked for shape, in the shell's environment, never on the command line", async () => {
+  assert.equal(validBridgeOperation({ action: "run_command", command: "ls", env: { EXAMPLE_API_KEY: "fake" } }), true);
+  assert.equal(validBridgeOperation({ action: "vm_run_command", command: "ls", env: { EXAMPLE_API_KEY: "fake" } }), true);
+  assert.equal(validBridgeOperation({ action: "read_file", path: "~/x", env: { EXAMPLE_API_KEY: "fake" } }), false);
+  for (const env of [{ PATH: "/tmp" }, { SAGAX_X: "fake" }, { lower: "fake" }, { EXAMPLE_API_KEY: 1 }, { EXAMPLE_API_KEY: "" }, []]) {
+    assert.equal(validBridgeOperation({ action: "run_command", command: "ls", env }), false, JSON.stringify(env));
+  }
+  if (process.platform === "win32") return;
+  const home = sandboxHome();
+  const value = "fake-command-variable-value";
+  const on = await executeBridgeOperation({ action: "run_command", command: 'printf %s "$EXAMPLE_API_KEY"', env: { EXAMPLE_API_KEY: value } }, deps(home), signal());
+  assert.match(on.content[0].text, new RegExp(`^${value}`));
+  const off = await executeBridgeOperation({ action: "run_command", command: 'printf %s "${EXAMPLE_API_KEY:-none}"' }, deps(home), signal());
+  assert.match(off.content[0].text, /^none/);
+
+  const calls = [];
+  const envs = [];
+  const vm = createLocalVm({ dataDir: "/Users/ada/.openmausbot", platform: "linux", env: { PATH: "/usr/bin" }, exists: file => file === "/Users/ada/.openmausbot/vm-home", exec: async (argv, options) => {
+    calls.push(argv.join(" "));
+    if (argv[1] === "exec") envs.push(options?.env ?? {});
+    if (argv[1] === "version") return { code: 0, stdout: "27.0\n", stderr: "" };
+    if (argv[1] === "info") return { code: 0, stdout: "Docker Desktop\n", stderr: "" };
+    if (argv[1] === "context") return { code: 0, stdout: "unix:///Users/ada/.docker/run/docker.sock\n", stderr: "" };
+    if (argv[1] === "ps") return { code: 0, stdout: "openmausbot-computer\trunning\n", stderr: "" };
+    if (argv[1] === "inspect") return { code: 0, stdout: JSON.stringify([{ Name: "/openmausbot-computer", State: { Running: true }, Config: { Labels: { "com.openmausbot.local-vm": "1" } }, Mounts: [{ Type: "bind", Source: "/Users/ada/.openmausbot/vm-home" }] }]), stderr: "" };
+    return { code: 0, stdout: "", stderr: "" };
+  } });
+  await vm.exec(undefined, "env", { env: { EXAMPLE_API_KEY: value } });
+  assert.ok(calls.includes("docker exec -u cua -e EXAMPLE_API_KEY openmausbot-computer bash -lc env"));
+  assert.ok(!calls.some(call => call.includes(value)));
+  assert.equal(envs.at(-1).EXAMPLE_API_KEY, value);
+  await vm.exec(undefined, "env");
+  assert.ok(calls.includes("docker exec -u cua openmausbot-computer bash -lc env"));
+  assert.equal(envs.at(-1).EXAMPLE_API_KEY, undefined);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
 test("network: this computer's own services and link-local never; local network only when asked", async () => {
   for (const address of ["127.0.0.1", "::1", "169.254.169.254", "168.63.129.16", "::ffff:168.63.129.16", "0.0.0.0", "::ffff:127.0.0.1", "fe80::1"]) assert.equal(isBlockedAddress(address), true, address);
   for (const address of ["10.0.0.5", "192.168.1.2", "100.64.0.1", "8.8.8.8"]) assert.equal(isBlockedAddress(address), false, address);

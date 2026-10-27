@@ -7,6 +7,7 @@
 // Never pre-allowed for any engine: every call rides the bot's approval mode
 // (Ask shows a card per call), exactly as the engine's own tools do in solo.
 import { localVmDesktopSpec } from "./container-computer.ts";
+import { cleanCommandVariables } from "./credential-command-env.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
 import { localVmComputerCall, localVmComputerCatalogText } from "./local-vm-computer.ts";
 
@@ -213,7 +214,14 @@ export async function handleDesktopBridgeMcp(
   method: string,
   params: unknown,
   request: (operation: DesktopBridgeOperation) => Promise<unknown>,
-  options?: { commandRefusal?: (command: string) => string | null; payloadRefusal?: (text: string) => string | null },
+  options?: {
+    commandRefusal?: (command: string) => string | null;
+    payloadRefusal?: (text: string) => string | null;
+    /** The command variables the person exposed to this bot, read for this
+     * command (server/credential-command-env.ts). Added after the refusal
+     * checks, which never see a value. */
+    commandVariables?: () => Record<string, string>;
+  },
 ): Promise<unknown> {
   if (method === "tools/list") return { tools: DESKTOP_BRIDGE_TOOLS };
   if (method === "tools/call") {
@@ -231,9 +239,18 @@ export async function handleDesktopBridgeMcp(
     }
     const payloadRefusal = options?.payloadRefusal?.(JSON.stringify(operation));
     if (payloadRefusal) return text(payloadRefusal, true);
+    const commandVariables = operation.action === "run_command" || operation.action === "vm_run_command"
+      ? cleanCommandVariables(options?.commandVariables?.()) : [];
     try {
-      const result = desktopToolResult(await request(operation));
-      const staleDesktop = result.isError && result.content[0]?.type === "text" && (result.content[0].text === "Invalid request" || result.content[0].text === "Unsupported operation");
+      const stale = (value: ToolResult) => value.isError === true && value.content[0]?.type === "text" && (value.content[0].text === "Invalid request" || value.content[0].text === "Unsupported operation");
+      let result = desktopToolResult(await request(commandVariables.length ? { ...operation, env: Object.fromEntries(commandVariables) } : operation));
+      // A desktop app from before command variables refuses the field before
+      // running anything: the command runs without them, and the bot is told.
+      if (commandVariables.length && stale(result)) {
+        result = desktopToolResult(await request(operation));
+        if (!stale(result)) result = { ...result, content: [...result.content, { type: "text", text: "The Sagax desktop app on this computer is too old to receive your command variables, so this command ran without them. Update the Sagax app." }] };
+      }
+      const staleDesktop = stale(result);
       // A desktop app from before Local VM creation refuses the operation.
       if (operation.action === "vm_create" && staleDesktop) {
         return text("The Sagax desktop app on this computer is too old to create a Local VM. Update it, or create the Local VM from its settings.", true);

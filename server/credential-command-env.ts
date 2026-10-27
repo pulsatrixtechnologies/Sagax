@@ -5,18 +5,28 @@
 // Credentials says so on the key's row. Read again for every command, so a
 // change or a revoke holds at the next command.
 //
-// Two places a bot's commands run get them:
+// Every place a bot's commands run gets them:
 //   - the person's server environment (organization server, run_command of
 //     sagax-environment): the sandbox takes only SAGAX_* variables, so the
 //     values ride SAGAX_CMDVAR_<n> and a fixed prelude, made of the names
 //     only, exports each under its chosen name and unsets the carrier. The
 //     values are never on the command line.
-//   - the engine's own shell on this computer (Claude Code's Bash): the turn's
-//     `commandEnvironment` joins the engine process's environment
-//     (server/drivers/claude.ts), and a change starts a fresh process.
+//   - the engine's own shell on this computer: the turn's
+//     `commandEnvironment` joins the engine process's environment (Claude
+//     Code, the ACP engines with Grok Build, Pi: engineCommandVariables), and
+//     a change starts a fresh process. Codex gets them in its shell policy's
+//     `set` table on the thread (over stdin, never argv), so only its shell
+//     sees them.
+//   - the Local VM's vm_exec: the values reach the shell on stdin as a
+//     script of exports (commandVariablesScript); the command line holds
+//     only `eval "$(cat)"`.
+//   - the person's own computer through the desktop app (run_command and the
+//     Local VM there): the operation's `env`, merged into the command's
+//     environment on the desktop.
 import { createHash } from "node:crypto";
 
 import { parseCommandVariable } from "../shared/credential-vault.ts";
+import { PROVIDER_CREDENTIAL_ENV, WORKSPACE_CREDENTIAL_ENV } from "./config.ts";
 
 export interface SandboxExecLike {
   argv: string[];
@@ -53,4 +63,33 @@ export function commandVariablesDigest(vars: Record<string, string> | null | und
   const entries = cleanCommandVariables(vars).sort(([left], [right]) => left.localeCompare(right));
   if (!entries.length) return null;
   return createHash("sha256").update(JSON.stringify(entries)).digest("hex");
+}
+
+/** The variables an engine process takes in its own environment: never a
+ * name an engine reads as its own sign-in or billing (OPENAI_API_KEY,
+ * XAI_API_KEY, the workspace keys, the driver's `engineOwned`), which would
+ * move the engine itself onto the key. */
+export function engineCommandVariables(vars: Record<string, string> | null | undefined, engineOwned: Iterable<string> = []): Array<[string, string]> {
+  const owned = new Set<string>([...PROVIDER_CREDENTIAL_ENV, ...WORKSPACE_CREDENTIAL_ENV, ...engineOwned]);
+  return cleanCommandVariables(vars).filter(([name]) => !owned.has(name));
+}
+
+/** Adds the variables to an engine's child environment (in place). */
+export function applyEngineCommandVariables(env: Record<string, string | undefined>, vars: Record<string, string> | null | undefined, engineOwned: Iterable<string> = []): void {
+  for (const [name, value] of engineCommandVariables(vars, engineOwned)) env[name] = value;
+}
+
+const singleQuoted = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
+
+/** A POSIX shell script of exports for stdin (`eval "$(cat)"` reads it), or
+ * null with nothing to export. The values never reach a command line. */
+export function commandVariablesScript(vars: Record<string, string> | null | undefined): string | null {
+  const entries = cleanCommandVariables(vars);
+  if (!entries.length) return null;
+  return entries.map(([name, value]) => `export ${name}=${singleQuoted(value)}`).join("\n") + "\n";
+}
+
+/** The shell line that reads that script first, then runs the command. */
+export function withStdinCommandVariables(command: string): string {
+  return `eval "$(cat)"\n${command}`;
 }

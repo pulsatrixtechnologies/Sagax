@@ -2,6 +2,7 @@ import { reviewCodexPermission } from "./codex-review.ts";
 import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
 import { CODEX_WITHHELD_APPROVAL, CODEX_WITHHELD_FULL_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
 import { networkProxyEnvironment } from "./network-proxy.ts";
+import { cleanCommandVariables } from "../credential-command-env.ts";
 // Codex driver — upstream CodexDriver skeleton over agentcal's
 // drivers/codex.js runtime: the official `codex` CLI headless over its
 // app-server JSON-RPC protocol (newline-delimited JSON on stdio).
@@ -565,13 +566,20 @@ function permissionProfileUnsupported(error: unknown): boolean {
 /** Keep native instructions and private host paths out of diagnostics while
  * preserving enough of the input shape to debug delivery. The unmodified request is
  * still written to the provider immediately after this log copy is made. */
+/** The thread-config key of Codex's shell `set` table (command variables). */
+const CODEX_SHELL_SET = "shell_environment_policy.set";
+
 function codexNativeLogMessage(message: unknown): unknown {
   if (!message || typeof message !== "object" || Array.isArray(message)) return message;
   const record = message as Record<string, unknown>;
   const params = record.params;
   if (!params || typeof params !== "object" || Array.isArray(params)) return message;
   if (record.method === "thread/start" || record.method === "thread/resume") {
-    return { ...record, params: { ...params, developerInstructions: "[developer instructions omitted]" } };
+    // The shell policy's `set` values (command variables) never reach the log.
+    const config = plainRecord((params as Record<string, unknown>).config);
+    const set = plainRecord(config?.[CODEX_SHELL_SET]);
+    return { ...record, params: { ...params, developerInstructions: "[developer instructions omitted]",
+      ...(config && set ? { config: { ...config, [CODEX_SHELL_SET]: Object.fromEntries(Object.keys(set).map((name) => [name, "[value omitted]"])) } } : {}) } };
   }
   if (record.method === "thread/inject_items") {
     return { ...record, params: { ...params, items: "[developer instruction update omitted]" } };
@@ -1976,6 +1984,19 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           }
           selectionConfig.config = { ...selectionConfig.config,
             ...extendShellExclusions((rawPolicy ?? {}) as Record<string, unknown>, [...(plan ? ["SAGAX_CHATGPT_TOKEN"] : []), ...privateEnv]) };
+        }
+        // Command variables the person exposed to this bot
+        // (server/credential-command-env.ts): added to the shell policy's
+        // `set` table on the thread, over stdin, so Codex's shell gets them
+        // after its exclusions and the app-server's own environment never
+        // does (no billing switch, nothing on argv). The person's own `set`
+        // entries stay. Codex starts for every turn, so a change or a revoke
+        // holds at the next one.
+        const commandVariables = cleanCommandVariables(turn.commandEnvironment);
+        if (commandVariables.length) {
+          const rawSet = plainRecord((effectiveConfig as { shell_environment_policy?: { set?: unknown } } | null)?.shell_environment_policy?.set) ?? {};
+          selectionConfig.config = { ...selectionConfig.config,
+            [CODEX_SHELL_SET]: { ...rawSet, ...Object.fromEntries(commandVariables) } };
         }
         if (turn.toolScope !== undefined) {
           const catalog = (effectiveConfig as { mcp_servers?: unknown } | null)?.mcp_servers;

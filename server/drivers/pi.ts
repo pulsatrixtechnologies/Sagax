@@ -25,6 +25,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { PROVIDER_CREDENTIAL_ENV, stripWorkspaceCredentialEnv } from "../config.ts";
+import { applyEngineCommandVariables } from "../credential-command-env.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { augmentedPath } from "../env-path.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
@@ -690,6 +691,15 @@ export function piAccessEnvironment(env: Record<string, string | undefined>, acc
   return env;
 }
 
+/** One turn's environment: the command variables the person exposed to
+ * this bot (server/credential-command-env.ts) join the process pi runs its
+ * bash tool in, never a provider key name pi would bill. pi starts for every
+ * turn, so a change or a revoke holds at the next one. */
+export function piTurnEnvironment(env: Record<string, string | undefined>, commandEnvironment: Record<string, string> | undefined): Record<string, string | undefined> {
+  applyEngineCommandVariables(env, commandEnvironment, PI_ACCESS_KEY_ENV);
+  return env;
+}
+
 /** On an organization server the server's own pi holds no key, and pi lists
  * only the models of providers it has a key for: the catalog is read with a
  * placeholder for every provider a person's key can serve, in a pi home of
@@ -855,11 +865,11 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           return spawnCli(config.cli, childArgs, {
             stdio: ["pipe", "pipe", "pipe"],
             cwd: turn.cwd,
-            env: piAccessEnvironment(piEnvironment({
+            env: piTurnEnvironment(piAccessEnvironment(piEnvironment({
               ...process.env,
               ...input.environment,
               ...(mcpTempDir ? { SAGAX_MCP_CONFIG: join(mcpTempDir, "mcp.json") } : {}),
-            }), turn.access),
+            }), turn.access), turn.commandEnvironment),
           }, "bot");
         } catch (err) {
           if (mcpTempDir) {

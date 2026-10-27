@@ -232,6 +232,35 @@ describe("CodexDriver turns (fake app-server)", () => {
     }
   });
 
+  // Command variables (server/credential-command-env.ts): only Codex's shell
+  // gets them, in the policy's `set` table on the thread (stdin), next to the
+  // person's own entries; never the app-server's environment, argv or log.
+  it("hands command variables to Codex's shell only, on new and resumed threads, and drops them at the revoke", async () => {
+    const dump = join(scratch, "command-variables.json"); process.env.FAKE_CODEX_DUMP = dump;
+    mkdirSync(NATIVE_DIR, { recursive: true });
+    const value = "fake-command-variable-value";
+    const policy = { inherit: "all", ignore_default_excludes: false, set: { SAFE_FIXTURE_LABEL: "retained" } };
+    await create({ mode: "resume", environment: { HOME: scratch, CODEX_HOME: join(scratch, ".codex"), FAKE_CODEX_SHELL_ENVIRONMENT_POLICY: JSON.stringify(policy) } });
+    for (const resumeCursor of [undefined, "old-session"]) {
+      const { turnId } = await instance.adapter.sendTurn({ threadId: "codex-cmdvar", text: "Fixture", resumeCursor, commandEnvironment: { EXAMPLE_API_KEY: value } });
+      await recorder.until(event => event.type === "turn.completed" && event.turnId === turnId);
+      const seen = JSON.parse(readFileSync(dump, "utf8"));
+      const thread = seen.calls.find((call: { method: string }) => call.method === (resumeCursor ? "thread/resume" : "thread/start"));
+      expect(thread.params.config["shell_environment_policy.set"]).toEqual({ SAFE_FIXTURE_LABEL: "retained", EXAMPLE_API_KEY: value });
+      expect(seen.env.EXAMPLE_API_KEY).toBeUndefined();
+      expect(JSON.stringify(seen.argv)).not.toContain(value);
+    }
+    const nativeLog = readFileSync(join(NATIVE_DIR, "codex-cmdvar.ndjson"), "utf8");
+    expect(nativeLog).not.toContain(value);
+    expect(nativeLog).toContain("[value omitted]");
+    // revoked: the next turn's thread carries none
+    const { turnId } = await instance.adapter.sendTurn({ threadId: "codex-cmdvar", text: "Fixture", resumeCursor: "old-session" });
+    await recorder.until(event => event.type === "turn.completed" && event.turnId === turnId);
+    const after = JSON.parse(readFileSync(dump, "utf8"));
+    const resumed = after.calls.find((call: { method: string }) => call.method === "thread/resume");
+    expect(JSON.stringify(resumed.params.config ?? {})).not.toContain(value);
+  });
+
   // codex-cli 0.160 reports every unset policy field as null, even with an
   // empty config.toml; the fake's default mirrors that shape.
   it("runs scoped turns when Codex reports every shell policy field as null", async () => {

@@ -6360,7 +6360,12 @@ only (`addressClass`, pinned connection), same-origin redirects only, 30 s,
 errors; audit has host, method, status only. `commandVariable` (off by
 default, the person's choice, one line on the row, no admin) exposes the key
 to the allowed bots' commands: sandbox `run_command` via
-`withCommandVariables`, Claude's own shell via `SendTurnInput.commandEnvironment`.
+`withCommandVariables`; every engine's own shell via
+`SendTurnInput.commandEnvironment` (Claude, ACP core and Pi in the process
+env, never an engine's own credential name: `engineCommandVariables`; Codex
+in the thread's `shell_environment_policy.set`, names only in the native
+log); `vm_exec` on stdin (`commandVariablesScript`); the desktop bridge's
+`run_command`/`vm_run_command` `env`. Not the cloud computer's `exec`.
 Do not log a resolved value; do not touch `server/credential-fill.ts` for it.
 Doc: `docs/api-key-injection.md`. Tests: `server/credential-http.test.ts`,
 `server/credential-command-env.test.ts`.

@@ -75,7 +75,17 @@ const FETCH_MAX = 256 * 1024;
 /** The server's largest upload (an archive, server/attachments.ts). */
 const STAGE_MAX = 90 * 1024 * 1024;
 const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "stage_file", "extract_archive", "local_model", "terminal_open", "vm_terminal_open"]);
-const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final", "endpoint", "http_method", "http_path", "json"]);
+const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final", "endpoint", "http_method", "http_path", "json", "env"]);
+/** Command variables (run_command, vm_run_command): API keys the person
+ * exposed to this bot, by the names they chose. Names a shell or Sagax
+ * needs never come from the server (server/credential-command-env.ts). */
+const COMMAND_VARIABLE = /^[A-Z_][A-Z0-9_]{0,63}$/;
+const RESERVED_VARIABLES = new Set(["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "PWD", "OLDPWD", "TERM", "LANG", "TZ", "IFS", "ENV", "BASH_ENV", "NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "PYTHONHOME", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"]);
+const RESERVED_PREFIXES = ["LD_", "DYLD_", "SAGAX_", "ANTHROPIC_", "CLAUDE_", "CODEX_", "ELECTRON_", "GIT_", "NPM_CONFIG_", "BASH_FUNC_"];
+const validCommandVariables = env => env === undefined || (Boolean(env) && typeof env === "object" && !Array.isArray(env)
+  && Object.keys(env).length <= 16
+  && Object.entries(env).every(([name, value]) => COMMAND_VARIABLE.test(name) && !RESERVED_VARIABLES.has(name) && !RESERVED_PREFIXES.some(prefix => name.startsWith(prefix))
+    && typeof value === "string" && value.length > 0 && value.length <= 100_000 && !value.includes("\0")));
 const LOCAL_MODEL_PROBE_MS = 15_000;
 /** A picker that opens right after a probe reuses it instead of probing again. */
 export const LOCAL_MODEL_FRESH_MS = 5_000;
@@ -95,6 +105,7 @@ export function validBridgeOperation(operation) {
     if (operation[key] !== undefined && (typeof operation[key] !== "number" || !Number.isFinite(operation[key]) || operation[key] < 0)) return false;
   }
   if (operation.arguments !== undefined && (!operation.arguments || typeof operation.arguments !== "object" || Array.isArray(operation.arguments))) return false;
+  if (!validCommandVariables(operation.env) || (operation.env !== undefined && operation.action !== "run_command" && operation.action !== "vm_run_command")) return false;
   if (operation.endpoint !== undefined && (typeof operation.endpoint !== "string" || !/^desk[a-z0-9]{3,24}$/.test(operation.endpoint))) return false;
   if (operation.http_method !== undefined && operation.http_method !== "GET" && operation.http_method !== "POST") return false;
   if (operation.http_path !== undefined && operation.http_path !== "/models" && operation.http_path !== "/chat/completions" && operation.http_path !== "/messages") return false;
@@ -232,7 +243,7 @@ export async function executeBridgeOperation(operation, deps, signal) {
   switch (operation.action) {
     case "run_command": {
       const cwd = operation.cwd ? localPath(operation.cwd, home) : home;
-      return runCommand(operation.command, { cwd, timeoutSeconds: operation.timeout_seconds ?? 120, signal });
+      return runCommand(operation.command, { cwd, timeoutSeconds: operation.timeout_seconds ?? 120, signal, env: { ...commandEnvironment(), ...operation.env } });
     }
     case "read_file": {
       const target = localPath(operation.path, home);
@@ -318,7 +329,7 @@ export async function executeBridgeOperation(operation, deps, signal) {
     case "vm_computer_call":
       if (typeof deps.localVm.computer !== "function") throw new Error("This Sagax desktop app cannot control the Local VM screen. Update it.");
       return deps.localVm.computer(operation.tool_name, operation.arguments);
-    case "vm_run_command": return deps.localVm.exec(operation.container, operation.command, { timeoutSeconds: operation.timeout_seconds ?? 120, signal });
+    case "vm_run_command": return deps.localVm.exec(operation.container, operation.command, { timeoutSeconds: operation.timeout_seconds ?? 120, signal, ...(operation.env ? { env: operation.env } : {}) });
     case "vm_create": return deps.localVm.create({ spec: operation.arguments?.spec, signal, progress: deps.progress });
     case "stage_file": {
       const dir = deps.attachmentsDir;

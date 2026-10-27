@@ -106,6 +106,10 @@ export const desktopBridgeOperation = z.object({
   http_path: z.enum(["/models", "/chat/completions", "/messages"]).optional(),
   /** local_model JSON body. Never logged. */
   json: z.string().max(1_000_000).optional(),
+  /** run_command, vm_run_command: the command variables the person exposed
+   * to this bot (server/credential-command-env.ts), merged into the
+   * command's environment on the desktop. Never logged. */
+  env: z.record(z.string().regex(/^[A-Z_][A-Z0-9_]{0,63}$/), z.string().max(100_000)).optional(),
 }).strict();
 export type DesktopBridgeOperation = z.infer<typeof desktopBridgeOperation>;
 
