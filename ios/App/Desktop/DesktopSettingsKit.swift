@@ -727,101 +727,36 @@ extension View {
     }
 }
 
-// MARK: - Provider marks (ProviderIcons.tsx)
+// MARK: - Provider badges
 
-/// The model providers' official marks, as the desktop draws them. Paths
-/// from src/components/ProviderIcons.tsx and CursorMark.tsx (their sources
-/// and licences are noted there); a mark drawn in ink follows the skin.
-enum DesktopProviderMark: String {
-    case claude, codex, grok, cursor, pi, qwen, kimi, opencode, mistral, openrouter
-
-    /// By driver kind, or by the instance's icon preset (`icon.preset`).
-    init?(driverKind: String, preset: String?) {
-        switch preset ?? "" {
-        case "openai": self = .codex; return
-        case "anthropic": self = .claude; return
-        case "xai": self = .grok; return
-        case "qwen": self = .qwen; return
-        case "moonshot": self = .kimi; return
-        case "mistral": self = .mistral; return
-        case "openrouter": self = .openrouter; return
-        default: break
-        }
-        switch driverKind {
-        case "claudeAgent": self = .claude
-        case "codex": self = .codex
-        case "grok", "grokAgent": self = .grok
-        case "cursorAgent": self = .cursor
-        case "piAgent": self = .pi
-        case "qwenAgent": self = .qwen
-        case "kimiAgent": self = .kimi
-        case "opencodeGo": self = .opencode
-        case "mistral": self = .mistral
-        default: return nil
-        }
-    }
-
-    var art: DesktopProviderArt {
-        switch self {
-        case .claude: DesktopProviderArt(viewBox: CGSize(width: 256, height: 257), paths: [
-            ("m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z", "#d97757", false),
-        ])
-        case .codex: DesktopProviderArt(viewBox: CGSize(width: 256, height: 260), paths: [
-            ("M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z", nil, false),
-        ])
-        case .grok: DesktopProviderArt(viewBox: CGSize(width: 24, height: 24), paths: [
-            ("M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861", nil, false),
-            ("M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257", nil, false),
-        ])
-        case .cursor: DesktopProviderArt(viewBox: CGSize(width: 24, height: 24), paths: [
-            ("M4 2.2 20.6 12 12.7 13.9 10.4 21.8z", nil, false),
-        ])
-        case .pi: DesktopProviderArt(viewBox: CGSize(width: 800, height: 800), paths: [
-            ("M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z", nil, true),
-            ("M517.36 400 H634.72 V634.72 H517.36 Z", nil, false),
-        ])
-        case .qwen: DesktopProviderArt(viewBox: CGSize(width: 24, height: 24), paths: [
-            ("M12.604 1.34c.393.69.784 1.382 1.174 2.075a.18.18 0 00.157.091h5.552c.174 0 .322.11.446.327l1.454 2.57c.19.337.24.478.024.837-.26.43-.513.864-.76 1.3l-.367.658c-.106.196-.223.28-.04.512l2.652 4.637c.172.301.111.494-.043.77-.437.785-.882 1.564-1.335 2.34-.159.272-.352.375-.68.37-.777-.016-1.552-.01-2.327.016a.099.099 0 00-.081.05 575.097 575.097 0 01-2.705 4.74c-.169.293-.38.363-.725.364-.997.003-2.002.004-3.017.002a.537.537 0 01-.465-.271l-1.335-2.323a.09.09 0 00-.083-.049H4.982c-.285.03-.553-.001-.805-.092l-1.603-2.77a.543.543 0 01-.002-.54l1.207-2.12a.198.198 0 000-.197 550.951 550.951 0 01-1.875-3.272l-.79-1.395c-.16-.31-.173-.496.095-.965.465-.813.927-1.625 1.387-2.436.132-.234.304-.334.584-.335a338.3 338.3 0 012.589-.001.124.124 0 00.107-.063l2.806-4.895a.488.488 0 01.422-.246c.524-.001 1.053 0 1.583-.006L11.704 1c.341-.003.724.032.9.34zm-3.432.403a.06.06 0 00-.052.03L6.254 6.788a.157.157 0 01-.135.078H3.253c-.056 0-.07.025-.041.074l5.81 10.156c.025.042.013.062-.034.063l-2.795.015a.218.218 0 00-.2.116l-1.32 2.31c-.044.078-.021.118.068.118l5.716.008c.046 0 .08.02.104.061l1.403 2.454c.046.081.092.082.139 0l5.006-8.76.783-1.382a.055.055 0 01.096 0l1.424 2.53a.122.122 0 00.107.062l2.763-.02a.04.04 0 00.035-.02.041.041 0 000-.04l-2.9-5.086a.108.108 0 010-.113l.293-.507 1.12-1.977c.024-.041.012-.062-.035-.062H9.2c-.059 0-.073-.026-.043-.077l1.434-2.505a.107.107 0 000-.114L9.225 1.774a.06.06 0 00-.053-.031zm6.29 8.02c.046 0 .058.02.034.06l-.832 1.465-2.613 4.585a.056.056 0 01-.05.029.058.058 0 01-.05-.029L8.498 9.841c-.02-.034-.01-.052.028-.054l.216-.012 6.722-.012z", nil, false),
-        ])
-        case .kimi: DesktopProviderArt(viewBox: CGSize(width: 24, height: 24), paths: [
-            ("M21.846 0a1.923 1.923 0 110 3.846H20.15a.226.226 0 01-.227-.226V1.923C19.923.861 20.784 0 21.846 0z", "#1783FF", false),
-            ("M11.065 11.199l7.257-7.2c.137-.136.06-.41-.116-.41H14.3a.164.164 0 00-.117.051l-7.82 7.756c-.122.12-.302.013-.302-.179V3.82c0-.127-.083-.23-.185-.23H3.186c-.103 0-.186.103-.186.23V19.77c0 .128.083.23.186.23h2.69c.103 0 .186-.102.186-.23v-3.25c0-.069.025-.135.069-.178l2.424-2.406a.158.158 0 01.205-.023l6.484 4.772a7.677 7.677 0 003.453 1.283c.108.012.2-.095.2-.23v-3.06c0-.117-.07-.212-.164-.227a5.028 5.028 0 01-2.027-.807l-5.613-4.064c-.117-.078-.132-.279-.028-.381z", nil, false),
-        ])
-        case .opencode: DesktopProviderArt(viewBox: CGSize(width: 24, height: 24), paths: [
-            ("M16 6H8v12h8V6zm4 16H4V2h16v20z", nil, true),
-        ])
-        case .mistral: DesktopProviderArt(viewBox: CGSize(width: 24, height: 24), paths: [
-            ("M17.143 3.429v3.428h-3.429v3.429h-3.428V6.857H6.857V3.43H3.43v13.714H0v3.428h10.286v-3.428H6.857v-3.429h3.429v3.429h3.429v-3.429h3.428v3.429h-3.428v3.428H24v-3.428h-3.43V3.429z", "#FA520F", false),
-        ])
-        case .openrouter: DesktopProviderArt(viewBox: CGSize(width: 24, height: 24), paths: [
-            ("M16.778 1.844v1.919q-.569-.026-1.138-.032-.708-.008-1.415.037c-1.93.126-4.023.728-6.149 2.237-2.911 2.066-2.731 1.95-4.14 2.75-.792.447-2.497.904-3.936 1.131v4.229c1.31.184 2.908.627 3.795 1.132 1.41.798 1.228.683 4.14 2.75 2.126 1.509 4.22 2.11 6.148 2.236.88.058 1.716.041 2.555.005v1.918L24 15.038l-7.222-4.17v2.176c-.86.038-1.611.065-2.278.021-1.364-.09-2.417-.357-3.979-1.465-2.244-1.593-2.866-2.027-3.68-2.508.889-.518 1.449-.906 3.822-2.59 1.56-1.109 2.614-1.377 3.978-1.466.667-.044 1.418-.017 2.278.02v2.176L24 6.014Z", "#94A3B8", false),
-        ])
-
-        }
-    }
-}
-
-/// One mark: its viewBox and paths (data, fill or nil for ink, even-odd).
-struct DesktopProviderArt {
-    let viewBox: CGSize
-    let paths: [(String, String?, Bool)]
-}
-
-struct DesktopProviderMarkView: View {
+/// A model provider's neutral badge: its monogram (CompanionCore
+/// `EngineMonogram`) on a soft tone of Sagax's own palette. Never a third
+/// party's official mark (App Store 5.2); the provider's name stays in text
+/// beside it.
+struct DesktopEngineBadge: View {
     @Environment(\.desktopTheme) private var theme
-    let mark: DesktopProviderMark
+    let monogram: EngineMonogram
     var size: CGFloat = 28
 
+    /// Sagax's badge tones (muted slate, sage, sand, plum, teal, clay), not
+    /// any provider's colour.
+    static let tones: [Color] = [
+        Color(hex: 0x7C8799), Color(hex: 0x7FA08A), Color(hex: 0xB49A6A),
+        Color(hex: 0x9A84A8), Color(hex: 0x6E9CA3), Color(hex: 0xB07F6E),
+    ]
+
     var body: some View {
-        let art = mark.art
-        Canvas { context, canvas in
-            let scale = min(canvas.width / art.viewBox.width, canvas.height / art.viewBox.height)
-            context.translateBy(x: (canvas.width - art.viewBox.width * scale) / 2, y: (canvas.height - art.viewBox.height * scale) / 2)
-            context.scaleBy(x: scale, y: scale)
-            for (d, fill, evenOdd) in art.paths {
-                let color = fill.flatMap { SkinColor(css: $0)?.color } ?? theme.ink
-                context.fill(Path(SVGPath.cached(d)), with: .color(color), style: FillStyle(eoFill: evenOdd))
-            }
+        let tone = Self.tones[monogram.tone % Self.tones.count]
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                .fill(tone.opacity(0.28))
+            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                .strokeBorder(tone.opacity(0.55), lineWidth: 1)
+            Text(verbatim: monogram.letters)
+                .font(.system(size: size * (monogram.letters.count > 1 ? 0.42 : 0.5), weight: .semibold, design: .rounded))
+                .foregroundStyle(theme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)

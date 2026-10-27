@@ -2,8 +2,9 @@
 // `icon`). These are our own drawings, a symbol on a colour, never a copy of
 // a service's logo. An entry the table does not know, and a server added on
 // the computer, get the generic tile of the reference: #2B2B2D with a 1 px
-// #363537 border and a white puzzle piece. A registry entry's or a connected
-// app's own image (a URL the server hands over) is shown when there is one.
+// #363537 border and a white puzzle piece. An entry whose server lends a logo
+// (a registry entry, a connected app) gets a neutral monogram of its name
+// instead: the app never shows a third party's official mark (App Store 5.2).
 import CompanionCore
 import SwiftUI
 
@@ -20,7 +21,7 @@ struct PluginGlyph {
         "asana": PluginGlyph(symbol: "circle.grid.cross.fill", background: Color(hex: 0xF06A6A)),
         "sentry": PluginGlyph(symbol: "exclamationmark.triangle", background: Color(hex: 0x362D59)),
         "stripe": PluginGlyph(symbol: "creditcard.fill", background: Color(hex: 0x635BFF)),
-        "vercel": PluginGlyph(symbol: "triangle.fill", background: .black),
+        "vercel": PluginGlyph(symbol: "server.rack", background: .black),
         "figma": PluginGlyph(symbol: "pencil.and.outline", background: Color(hex: 0x1E1E1E)),
         "canva": PluginGlyph(symbol: "paintbrush.pointed.fill", background: Color(hex: 0x00A8B5)),
         "higgsfield": PluginGlyph(symbol: "film.stack", background: Color(hex: 0x151515), foreground: Color(hex: 0xD7F75B)),
@@ -38,14 +39,16 @@ struct PluginGlyph {
 struct PluginIconTile: View {
     @Environment(\.themePalette) var themePalette
     var key: String?
-    var remote: String?
+    /// The entry's name, drawn as a neutral monogram when the key has no
+    /// glyph (only for an entry whose server lends a logo).
+    var monogram: String?
     var size: CGFloat = 38.5
     /// The "N installed" capsule stacks them as circles.
     var circle = false
 
-    init(key: String?, remote: String? = nil, size: CGFloat = 38.5, circle: Bool = false) {
+    init(key: String?, monogram: String? = nil, size: CGFloat = 38.5, circle: Bool = false) {
         self.key = key
-        self.remote = remote
+        self.monogram = monogram
         self.size = size
         self.circle = circle
     }
@@ -70,13 +73,15 @@ struct PluginIconTile: View {
                         .font(.system(size: size * 0.5, weight: .semibold))
                         .foregroundStyle(glyph.foreground)
                 }
-            } else if let remote, let url = URL(string: remote), url.scheme == "https" {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        ZStack { Color.white; image.resizable().scaledToFit().padding(size * 0.14) }
-                    } else {
-                        generic
-                    }
+            } else if let letters = monogram.flatMap(EngineMonogram.initials) {
+                ZStack {
+                    Theme.pill
+                    shape.stroke(Theme.pillBorder, lineWidth: 1)
+                    Text(verbatim: letters)
+                        .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
             } else {
                 generic
