@@ -145,7 +145,8 @@ describe("independent bot threads", () => {
 
   it("keeps the profile aggregate while projecting the selected thread's model, permissions and idle composer", () => {
     const current = currentTaskBot(bot);
-    expect(current).toMatchObject({ busy: false, activity: "idle", unread: false, approvalMode: "auto", alwaysAllow: ["Read"] });
+    // #1207: a thread level without approvalOwn is a stale copy; the bot's level applies.
+    expect(current).toMatchObject({ busy: false, activity: "idle", unread: false, approvalMode: "ask", alwaysAllow: ["Read"] });
     expect(current.modelSelection).toEqual(bot.tasks?.[0]?.modelSelection);
     expect(bot.busy).toBe(true);
     expect(currentTaskBot(bot, "second")).toMatchObject({ busy: true, activity: "waiting-on-you", approvalMode: "ask", turnStartedAt: 5_000 });
@@ -1774,7 +1775,10 @@ describe("sections and the Primary Bot", () => {
     });
     const saved = next.bots[0]!;
     expect(saved.approvalMode).toBe("full");
-    expect(saved.tasks?.[0]).toMatchObject({ threadId: "talk", approvalMode: "full", autoApprove: false });
+    // #1207: the open conversation follows the bot, so it shows Full with no copy of its own.
+    expect(saved.tasks?.[0]).toMatchObject({ threadId: "talk" });
+    expect(saved.tasks?.[0]?.approvalMode).toBeUndefined();
+    expect(currentTaskBot(saved, "talk")).toMatchObject({ approvalMode: "full" });
     expect(saved.tasks?.find((task) => task.threadId !== "talk")).toBeUndefined();
   });
 });
