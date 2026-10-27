@@ -106,6 +106,7 @@ export class BotCreationDraft {
     return {
       id: previous?.id ?? `draft-${crypto.randomUUID()}`, createdAt: previous?.createdAt ?? Date.now(),
       updatedAt: Date.now(), nextRunAt: null, runOn: "maus", ...previous, ...fields,
+      precheck: input.precheck === undefined ? previous?.precheck : input.precheck ?? undefined,
       enabled: input.enabled ?? previous?.enabled ?? true, target: "bot", botId: this.id,
       timeoutMinutes: input.timeoutMinutes ?? undefined,
       postResults: input.postResults ?? undefined,

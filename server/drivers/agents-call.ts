@@ -387,6 +387,8 @@ function routineFields(args: Json): { fields: Json; error?: string } {
   if (typeof args.continuity === "boolean") fields.continuity = args.continuity;
   if (args.overlap !== undefined) fields.overlap = args.overlap;
   if (typeof args.enabled === "boolean") fields.enabled = args.enabled;
+  // 2026-10-26: run only when something changes; checked by the service.
+  if (args.watch !== undefined) fields.watch = args.watch;
   return { fields };
 }
 

@@ -713,7 +713,8 @@ you don't tell me anything in the chat."
   per run only when `routineRunReportable`: a report (completed, not quiet),
   a question or approval card waiting in the run's task (re-synced from
   `tellThePerson`), a team goal needing input, or a failure. Missed,
-  cancelled, deferred, pre-check `nothing_to_report` and quiet runs post
+  cancelled, deferred, pre-check `nothing_to_report` (a watch that saw no
+  change included, 2026-10-26) and quiet runs post
   nothing, ring nothing (`done` notification skipped) and mark nothing unread.
   A message already posted (it waited on the person) is patched in place.
 - The client draws it as the bot's report (`ChatMarkdown`, inert) with a
@@ -734,6 +735,51 @@ you don't tell me anything in the chat."
 - Tests: `server/routine-report.test.ts`, `server/routines.test.ts` ("background
   runs"), `server/routine-silent-runs.e2e.test.ts`, `src/lib/routine-quiet.test.ts`,
   `src/components/RoutineRunCard.test.ts`.
+
+## Routines that run when something changes (2026-10-26)
+
+Decision (gap 6.1 of the 2026-10-26 comparison, top 3): a routine can watch
+a file or folder of the bot's folder, the output of a command run where the
+bot works, or a read-only MCP tool with fixed arguments, and its turn starts
+only when that changed or a condition holds. No model turn while nothing
+changes. Doc: `docs/routine-schedules.md` ("Only when something changes").
+
+- Shape and bounds: `shared/routine-watch.ts` (`ROUTINE_WATCH_LIMITS`: one
+  check per 5 min at most, 15 s, 256 KB, 5 000 entries, depth 8, 500 items,
+  64 KB of state, 4 000-character note). Validation in
+  `server/routine-precheck.ts` (`kind: "watch"` beside `condition`).
+- Reading and deciding: `server/routine-watch.ts` (fingerprint, `track`,
+  conditions, note, `RoutineWatchStates` in `<data dir>/routine-watch/`).
+  Read tools only: `server/routine-watch-tools.ts` reuses
+  `perspicaxReadTool`, `connectorCallReads`, `isOutboundTool`,
+  `connectorWriteKind`, `perspicaxWriteOnceTool`; checked on save and at
+  every check.
+- Scheduler (`server/routines.ts`): a watch is read beside the pass
+  (`startWatch`, `watchSettled`), never awaited inside it; the answer quiets
+  the run (`nothing_to_report`, as for any pre-check) or wakes it with
+  `RoutineRun.watchNote`, which the turn reads fenced as untrusted data
+  (`watchNoteBlock`). No engine pre-warm for a watch; no pre-wake unless
+  `whenAsleep: wake`. Run now and webhooks skip it.
+- Where it reads (`server/index.ts` `routineWatchPlace`): the place a run
+  gets, the plugin hooks' rule (`chooseHookTarget`): the person's server
+  environment or computer on an organization server (never the server
+  itself), the bot's cloud computer, Local VM or folder on a solo server.
+  An asleep computer is not woken (`whenAsleep: skip`, default) unless the
+  person chose `wake`. Tools: the bot's remote MCP servers, else Perspicax
+  as the run-as person (`perspicaxReadAlone`, shared with artifacts).
+- The person sets it on their own bots, no admin: the routine modal
+  (`src/components/routines/WatchFields.tsx`, Check now =
+  `POST /api/routines/watch-check`, same rights as saving), `sagax_settings`
+  `routine.precheck` (a command watch is `rule-change`: it runs up to the
+  speaking bot's own level, like any wider "runs without asking"), and
+  `propose_routine` / `propose_routine_action` (`watch`, null removes it).
+  Editing the watch moves `runAs` to the editor like the instructions.
+- iOS keeps a watch intact (an edit sends only changed fields) and has no
+  editor for it yet.
+- Cost: `pnpm bench:routine-watch` (numbers in the doc).
+- Tests: `server/routine-watch.test.ts`, `server/routine-precheck.test.ts`,
+  `server/routines.test.ts` ("routine watch"), `server/routine-requests.test.ts`,
+  `src/components/routines/WatchFields.test.ts`.
 
 ## Routines and webhooks: bearer token on every webhook (2026-10-08)
 

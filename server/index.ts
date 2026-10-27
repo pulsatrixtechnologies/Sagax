@@ -348,7 +348,7 @@ import { entitled } from "./enterprise.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSION } from "./hosted-contract.ts";
 import { cliCommandRefusal, describeSpawnFailure, execCli } from "./procs.ts";
 import { blockedTarget, buildSpendNotification, deliverableNotification, quietForCall, summarize, type Notification } from "./notify.ts";
-import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from "../shared/approval-describe.ts";
+import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey, parseToolId } from "../shared/approval-describe.ts";
 import { ComputerAppReader } from "./computer-app.ts";
 import { appRuleOffered } from "../shared/computer-app.ts";
 import { proposalReplacements } from "./proposal-budget.ts";
@@ -1115,7 +1115,10 @@ import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT, PHONE_TOOLS_FRAME, pho
 import { createArtifactStore } from "./artifacts.ts";
 import { createArtifactInternalRoutes, createArtifactRoutes } from "./routes/artifacts.ts";
 import { createArtifactRefresher } from "./artifact-refresh.ts";
-import { createArtifactSourceRunner, toolResultValue } from "./artifact-sources.ts";
+import { createArtifactSourceRunner, toolResultValue, type ToolAnswer } from "./artifact-sources.ts";
+import { createRoutineWatchEvaluator, previewWatch, RoutineWatchStates, type RoutineWatchDeps, type WatchPlace, type WatchRoutine } from "./routine-watch.ts";
+import { RemoteMcpClient } from "./mcp-http.ts";
+import { parseRoutinePrecheck } from "./routine-precheck.ts";
 import { createMeetingService, type MeetingService } from "./meetings/meeting-requests.ts";
 import { parseEvalJson } from "./meetings/meet-scripts.ts";
 import type { MeetingBrowser } from "./meetings/meeting-session.ts";
@@ -21544,7 +21547,128 @@ function routineAwayVerdict(principalId: string | undefined): AwayVerdict {
   if (IDENTITY.kind === "perspicax") return principalId ? verdictFromPresence(presence.view(principalId).state) : "unknown";
   return localRoutineAway.verdict(Date.now());
 }
+/** Routines that run when something changes (2026-10-26, server/routine-watch.ts):
+ * where a routine's watch reads, and how it calls its read tool. */
+const routineWatchStates = new RoutineWatchStates(join(DATA_DIR, "routine-watch"));
+/** Where the bot of a routine works, reached without waking anything:
+ * organization server, the place a run of it gets (decideWorkplace and the
+ * plugin hooks' rule: the person's server environment or their computer,
+ * never this server); solo server, its cloud computer, its Local VM, or its
+ * own folder on this machine. */
+function routineWatchPlace(routine: WatchRoutine): WatchPlace {
+  const bot = store.bot(routine.botId);
+  if (!bot) return { kind: "refuse", reason: "The bot of this routine is gone" };
+  if (IDENTITY.kind === "perspicax") {
+    const principal = effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) })?.trim().toLowerCase() || null;
+    const decision = decideWorkplace({ desktopTargeted: false, routine: true, principal, personAsked: false });
+    const target = chooseHookTarget({ identityKind: IDENTITY.kind, workplace: decision.target, principal: decision.principal ?? principal });
+    if (target.kind === "refuse") {
+      return { kind: "refuse", reason: target.reason === "server" ? "A watch never runs on this server: it reads where the bot works (your server environment or your computer)" : "This bot has no computer to watch" };
+    }
+    if (target.kind === "sandbox") {
+      return {
+        kind: "remote", label: "Your server environment",
+        awake: async () => Boolean(userSandbox) && (await userSandbox!.status(target.principal, bot.id)).state === "running",
+        wake: () => { void userSandbox?.prewake(target.principal, bot.id); },
+        exec: async (command, options) => {
+          if (!userSandbox) return { exitCode: null, stdout: "", truncated: false, timedOut: false };
+          const result = await userSandbox.exec(target.principal, {
+            argv: ["/bin/sh", "-c", command], env: { LANG: "C.UTF-8" },
+            timeoutSec: Math.max(1, Math.floor(options.timeoutMs / 1000)), maxOutputBytes: options.maxOutputBytes,
+          }, bot.id);
+          return { exitCode: result.exitCode, stdout: result.stdout, truncated: result.truncated, timedOut: result.timedOut };
+        },
+      };
+    }
+    if (target.kind === "desktop") {
+      return {
+        kind: "remote", label: "Your computer",
+        awake: async () => desktopBridges.connected(target.principal),
+        exec: async (command, options) => {
+          const desktop = desktopBridges.current(target.principal);
+          if (!desktop || desktop.platform === "win32") return { exitCode: null, stdout: "", truncated: false, timedOut: false };
+          const answer = await desktopBridges.request(target.principal, {
+            action: "run_command", command, timeout_seconds: Math.max(1, Math.floor(options.timeoutMs / 1000)),
+          }, () => true) as { isError?: boolean; content?: Array<{ text?: string }> } | null;
+          const stdout = answer?.content?.map((part) => part.text ?? "").join("\n") ?? "";
+          return { exitCode: answer?.isError ? 1 : 0, stdout: stdout.slice(0, options.maxOutputBytes), truncated: stdout.length > options.maxOutputBytes, timedOut: false };
+        },
+      };
+    }
+    return { kind: "refuse", reason: "This bot has no computer to watch" };
+  }
+  if (bot.computer === "off") return { kind: "refuse", reason: "This bot's computer is off" };
+  if (routine.runOn === "cloud" || cloudOnlyBot(bot.id) || bot.computer === "cloud") {
+    return {
+      kind: "remote", label: "The bot's cloud computer",
+      awake: async () => {
+        const status = await boat.boatStatus(cfg, bot.id).catch(() => null);
+        return Boolean(status?.box && ["idle", "ready", "running"].includes(status.box.state));
+      },
+      wake: () => { void boat.readyBoat(cfg, bot.id).catch(() => null); },
+      exec: async (command, options) => {
+        // Never wakes the computer (409 when it is asleep), short deadline.
+        const out = await boat.runDesktopScript(cfg, bot.id, command);
+        return { exitCode: out.ok ? 0 : 1, stdout: out.stdout.slice(0, options.maxOutputBytes), truncated: out.stdout.length > options.maxOutputBytes, timedOut: false };
+      },
+    };
+  }
+  if (bot.computer === "vm") {
+    const target = localVmTargetForBot(bot.id);
+    return {
+      kind: "remote", label: "The bot's Local VM",
+      awake: async () => {
+        if (botComputerControlSnapshot(bot.id).held) return false;
+        const status = await containerComputerStatus(undefined, undefined, target, { probeDesktop: false }).catch(() => null);
+        return Boolean(status?.runtime && status.container === "running");
+      },
+      exec: async (command, options) => {
+        const out = await containerExec(target, command, { timeoutSeconds: Math.max(1, Math.floor(options.timeoutMs / 1000)) });
+        return { exitCode: out.exitCode, stdout: out.stdout.slice(0, options.maxOutputBytes), truncated: out.stdout.length > options.maxOutputBytes, timedOut: Boolean(out.timedOut) };
+      },
+    };
+  }
+  return { kind: "host", cwd: bot.cwd ?? workspaceDir(bot.id) };
+}
+/** A read tool for a watch: one of the bot's remote MCP servers (its own
+ * sign-in, the tool not switched off), else a Perspicax tool in the name of
+ * the person the routine runs as, through their routine delegation. The
+ * read-only rule itself is server/routine-watch-tools.ts. */
+async function routineWatchCallTool(routine: WatchRoutine, tool: string, args: Record<string, unknown>, signal: AbortSignal): Promise<ToolAnswer | { error: string }> {
+  const bot = store.bot(routine.botId);
+  if (!bot) return { error: "The bot of this routine is gone" };
+  const parsed = parseToolId(tool);
+  if (parsed.server) {
+    await refreshMcpOAuth(bot);
+    const spec = engineMcpServers(bot)[parsed.server];
+    if (spec) {
+      if (!("url" in spec)) return { error: "A watch reaches the bot's remote MCP servers and Perspicax; this server only runs inside a turn" };
+      if (mcpDisabledTools(cfg)[parsed.server]?.includes(parsed.name)) return { error: "This tool is turned off for this workspace" };
+      const client = new RemoteMcpClient(spec);
+      try {
+        await client.initialize("Sagax routine watch", signal);
+        return toolResultValue(await client.request("tools/call", { name: parsed.name, arguments: args }, signal));
+      } finally {
+        await client.close().catch(() => {});
+      }
+    }
+  }
+  if (IDENTITY.kind === "perspicax" && bot.perspicax?.profiles.length) {
+    const principal = effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) }) || effectiveBotOwner(bot);
+    return perspicaxReadAlone({ botId: bot.id, principalId: principal, threadId: `routine-watch-${routine.id}`, tool: tool.replace(/^mcp__[A-Za-z0-9_.-]+?__(?=[A-Za-z0-9])/, ""), args, clientName: "Sagax routine watch" });
+  }
+  return { error: "This tool is not one of the bot's MCP servers" };
+}
+const routineWatchDeps: RoutineWatchDeps = {
+  place: routineWatchPlace,
+  callTool: routineWatchCallTool,
+  states: routineWatchStates,
+  now: () => Date.now(),
+};
+const routineWatchEvaluator = createRoutineWatchEvaluator(routineWatchDeps);
 routines = new RoutineManager({
+  evaluateWatch: (routine, watch) => routineWatchEvaluator(routine, watch),
+  forgetWatch: (routineId) => routineWatchStates.forget(routineId),
   languageFor: (routine) => {
     const person = IDENTITY.kind === "perspicax" && routine.botId
       ? effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) })
@@ -27902,6 +28026,37 @@ ROUTES.push(createMeetingRoutes({
   enabled: () => meetingNotetakerEnabled(cfg),
   refusal: (auth, threadId, requestId) => approvalAnswerRefusal(auth, threadId, requestId) ?? cardAnswerRefusal(auth, threadId, requestId, "allow"),
 }));
+/** One Perspicax tool call with nobody there (an artifact's refresh, a
+ * routine's watch): in the name of `principalId`, through the routine
+ * delegation (speakerOrigin owner-routine). The relay applies the MCP
+ * permission guard; the tokens end with the call. */
+async function perspicaxReadAlone(input: { botId: string; principalId: string; threadId: string; tool: string; args: Record<string, unknown>; clientName: string }): Promise<ToolAnswer | { error: string }> {
+  const mcp = perspicaxMcp;
+  const live = store.bot(input.botId);
+  if (!mcp || !live?.perspicax?.profiles.length) return { error: "Perspicax is not available to this bot." };
+  const { threadId, tool, args } = input;
+  const generation = randomUUID();
+  try {
+    const plan = await mcp.prepareTurn({
+      threadId, generation, bot: { id: live.id, perspicax: live.perspicax },
+      speakerPrincipalId: input.principalId, speakerOrigin: "owner-routine",
+    });
+    const profile = plan.mounted.find((candidate) => candidate.slug && tool.startsWith(`${candidate.slug}__`)) ?? plan.mounted[0];
+    if (!profile) {
+      const reason = plan.unavailable[0]?.reason;
+      return { error: reason ? `Perspicax: ${PERSPICAX_UNAVAILABLE_WHY[reason]}` : "No Perspicax profile could be used." };
+    }
+    const relay = (frame: Record<string, unknown>) => mcp.relay({ threadId, generation, botId: live.id, profileId: profile.profileId, frame });
+    await relay({ jsonrpc: "2.0", id: "artifact-init", method: "initialize", params: { protocolVersion: PERSPICAX_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: input.clientName, version: serverVersion() } } });
+    await relay({ jsonrpc: "2.0", method: "notifications/initialized" });
+    const answer = await relay({ jsonrpc: "2.0", id: "artifact-call", method: "tools/call", params: { name: tool, arguments: args } });
+    const body = answer.body as { error?: { message?: unknown }; result?: unknown } | undefined;
+    if (!body || body.error) return { error: typeof body?.error?.message === "string" ? body.error.message : "Perspicax refused the call." };
+    return toolResultValue(body.result);
+  } finally {
+    await mcp.endGeneration(threadId, generation).catch(() => {});
+  }
+}
 // Artifacts in the Files tab and the palette (server/routes/artifacts.ts).
 // The artifact refresher (server/artifact-refresh.ts): a source re-runs on
 // its interval while its artifact is open somewhere or a favorite, and only
@@ -27940,31 +28095,12 @@ const artifactRefresher = createArtifactRefresher({
         // The relay applies the MCP permission guard; the tokens end with
         // the run.
         call: async ({ artifact, tool, args }) => {
-          const mcp = perspicaxMcp;
           const live = store.bot(artifact.botId);
-          if (!mcp || !live?.perspicax?.profiles.length) return { error: "Perspicax is not available to this bot." };
-          const threadId = `artifact-${artifact.id}`;
-          const generation = randomUUID();
-          try {
-            const plan = await mcp.prepareTurn({
-              threadId, generation, bot: { id: live.id, perspicax: live.perspicax },
-              speakerPrincipalId: artifact.ownerPrincipalId ?? effectiveBotOwner(live), speakerOrigin: "owner-routine",
-            });
-            const profile = plan.mounted.find((candidate) => candidate.slug && tool.startsWith(`${candidate.slug}__`)) ?? plan.mounted[0];
-            if (!profile) {
-              const reason = plan.unavailable[0]?.reason;
-              return { error: reason ? `Perspicax: ${PERSPICAX_UNAVAILABLE_WHY[reason]}` : "No Perspicax profile could be used." };
-            }
-            const relay = (frame: Record<string, unknown>) => mcp.relay({ threadId, generation, botId: live.id, profileId: profile.profileId, frame });
-            await relay({ jsonrpc: "2.0", id: "artifact-init", method: "initialize", params: { protocolVersion: PERSPICAX_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "Sagax artifacts", version: serverVersion() } } });
-            await relay({ jsonrpc: "2.0", method: "notifications/initialized" });
-            const answer = await relay({ jsonrpc: "2.0", id: "artifact-call", method: "tools/call", params: { name: tool, arguments: args } });
-            const body = answer.body as { error?: { message?: unknown }; result?: unknown } | undefined;
-            if (!body || body.error) return { error: typeof body?.error?.message === "string" ? body.error.message : "Perspicax refused the call." };
-            return toolResultValue(body.result);
-          } finally {
-            await mcp.endGeneration(threadId, generation).catch(() => {});
-          }
+          if (!live) return { error: "Perspicax is not available to this bot." };
+          return perspicaxReadAlone({
+            botId: live.id, principalId: artifact.ownerPrincipalId ?? effectiveBotOwner(live),
+            threadId: `artifact-${artifact.id}`, tool, args, clientName: "Sagax artifacts",
+          });
         },
       },
     } : {}),
@@ -41498,6 +41634,31 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       cloudRoutineAuthors?.wrote(routine.id, writer);
       return json(res, 201, { routine: routineOnWire(routine) });
     }
+    // 2026-10-26 "Check now" in the routine editor: one reading of a watch
+    // (server/routine-watch.ts) where the routine would read it, no model,
+    // no state kept. The same rights as saving a routine of that bot.
+    if (path === "/api/routines/watch-check" && method === "POST") {
+      const body = await readBody(req) as { botId?: unknown; precheck?: unknown; routineId?: unknown; runOn?: unknown } | null;
+      const botId = typeof body?.botId === "string" ? body.botId : "";
+      const hidden = hiddenRoutineTarget({ botId }, visible);
+      if (hidden || !store.bot(botId)) return json(res, 404, { error: hidden ?? "no such bot" });
+      if (routineNeedsRun(auth, botId)) return json(res, 403, NEEDS_RUN);
+      let watch;
+      try {
+        watch = parseRoutinePrecheck(body?.precheck);
+      } catch (error) {
+        return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
+      }
+      if (watch.kind !== "watch") return json(res, 400, { error: "Choose a watch to check" });
+      const existing = typeof body?.routineId === "string" ? routines!.listRoutines().find((routine) => routine.id === body.routineId && routine.botId === botId) : undefined;
+      const runAs = existing ? effectiveRunAs(existing) : routineActor(auth)?.actorPrincipalId;
+      const result = await previewWatch(routineWatchDeps, {
+        id: existing?.id ?? "preview", botId,
+        ...(runAs ? { runAs } : {}),
+        runOn: body?.runOn === "cloud" ? "cloud" : existing?.runOn ?? "maus",
+      }, watch);
+      return json(res, 200, result);
+    }
     // The desktop shell polls this to decide whether to hold the computer
     // awake: a run in flight, or a routine due within the hour.
     if (path === "/api/routines/wake" && method === "GET") {
@@ -49449,6 +49610,8 @@ const onListening = async () => {
       if (task.routineRunId?.startsWith(RESERVED_RUN_PREFIX) && store.messagesFor(task.threadId).length === 0) store.deleteTask(bot.id, task.threadId);
     }
   }
+  // States of watches whose routine is gone (deleted while stopped).
+  try { routineWatchStates.prune(routines!.listRoutines().filter((routine) => routine.precheck?.kind === "watch").map((routine) => routine.id)); } catch { /* best effort */ }
   routines!.start();
   limitFailover.start();
   memoryUpkeep.start();

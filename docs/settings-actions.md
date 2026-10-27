@@ -197,6 +197,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Only when present | Automations > routine > Advanced | `sagax_settings` get, set `routine.onlyWhenPresent` | simple |
 | Pause after this many failures in a row (0 never, null the default 5) | Automations > routine > Advanced | `sagax_settings` get, set `routine.autoPauseAfter` | simple |
 | Runs as (a person) | Automations > routine > Runs as | `sagax_settings` get, set `routine.runAs` | autrui |
+| Run only when something changes ({kind: watch, source: {type: files, path} / {type: command, command} / {type: tool, tool, args}, condition?, wakeOn?, track?, firstRun?, whenAsleep?}; null: every due time) | Automations > routine > Only when something changes | `sagax_settings` get, set `routine.precheck` | simple |
 | New routine ({name, prompt, botId, schedule, ...}) | Automations > New routine | `sagax_settings` set `routine.create` | simple |
 | Run now (true) | Automations > routine > Run now | `sagax_settings` set `routine.run` | simple |
 | Delete the routine (true) | Bot panel > Details > Routines > Delete | `sagax_settings` set `routine.delete` | suppression |

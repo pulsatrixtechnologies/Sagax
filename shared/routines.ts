@@ -3,6 +3,7 @@
  * from the client's hand-maintained mirrors (src/lib/routines.ts) so the
  * frame union and every client consumer share one home; the client file
  * re-exports these under the same names. */
+import type { RoutineWatchPrecheck } from "./routine-watch.ts";
 import type { RoutineCronSchedule } from "./routine-schedule.ts";
 import type { RoutineWindowTiming } from "./routine-timing.ts";
 import type { RoutineAutoPause } from "./routine-auto-pause.ts";
@@ -168,6 +169,10 @@ export interface Routine {
   /** Occurrences skipped while the person was away; `reportedAt` once they
    * are back. Cleared by POST /api/routines/:id/away-seen. */
   awaySkips?: { count: number; firstAt: number; lastAt: number; reportedAt?: number };
+  /** A pre-check run before each scheduled turn (server/routine-precheck.ts):
+   * a condition on its own receipts, or (2026-10-26) a watch that starts the
+   * run only when something changes (shared/routine-watch.ts). */
+  precheck?: RoutineWatchPrecheck | { kind: "condition"; test: string; [field: string]: unknown };
   nextRunAt: number | null;
   /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
   nominalRunAt?: number;
@@ -273,4 +278,6 @@ export interface RoutineInput {
   attachments?: RoutineContextAttachment[];
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;
+  /** Omission preserves it; null removes it (every due time starts a turn). */
+  precheck?: Routine["precheck"] | null;
 }

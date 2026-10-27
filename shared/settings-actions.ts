@@ -345,11 +345,17 @@ routineField("routine.overlap", "overlap", "enum:skip|queue", "When a run is sti
 routineField("routine.onlyWhenPresent", "onlyWhenPresent", "boolean", "Only when present", "Automations > routine > Advanced");
 routineField("routine.autoPauseAfter", "autoPauseAfter", "number?", "Pause after this many failures in a row (0 never, null the default 5)", "Automations > routine > Advanced");
 routineField("routine.runAs", "runAs", "string", "Runs as (a person)", "Automations > routine > Runs as", always("others"));
+// 2026-10-26 run only when something changes (shared/routine-watch.ts). A
+// watch command runs on each check with no card: what runs without asking
+// grows (rule-change), so it follows the speaking bot's own level.
+const watchCommandClasses = (v: unknown): SettingClass[] =>
+  (v as { kind?: unknown; source?: { type?: unknown } } | null)?.kind === "watch" && (v as { source?: { type?: unknown } }).source?.type === "command" ? ["rule-change"] : ["own"];
+routineField("routine.precheck", "precheck", "object?", "Run only when something changes ({kind: watch, source: {type: files, path} | {type: command, command} | {type: tool, tool, args}, condition?, wakeOn?, track?, firstRun?, whenAsleep?}; null: every due time)", "Automations > routine > Only when something changes", watchCommandClasses);
 add({
   key: "routine.create", family: "routine", target: "none", value: "object",
   label: "New routine ({name, prompt, botId, schedule, ...})", where: "Automations > New routine",
   write: (_ids, v) => ({ method: "POST", path: "/api/routines", body: v }),
-  classes: (v) => (v as { runAs?: unknown } | null)?.runAs !== undefined ? ["others"] : ["own"],
+  classes: (v) => (v as { runAs?: unknown } | null)?.runAs !== undefined ? ["others"] : watchCommandClasses((v as { precheck?: unknown } | null)?.precheck),
 });
 add({
   key: "routine.run", family: "routine", target: "routine", value: "boolean", label: "Run now (true)", where: "Automations > routine > Run now",

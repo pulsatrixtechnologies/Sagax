@@ -434,6 +434,21 @@ describe("RoutineRequestService", () => {
     expect(routines.listRoutines()[0].overlap).toBeUndefined();
   });
 
+  it("a proposal can make a routine run only when something changes, and remove it (2026-10-26)", async () => {
+    const { service, routines } = harness();
+    const watch = { kind: "watch", source: { type: "files", path: "inbox" } } as const;
+    const created = await service.propose({ botId: "bot-a", threadId: "thread-a", proposal: createProposal({ watch }) });
+    expect(created.detail).toContain("Runs only when it changes: checks the files in inbox, no model until then");
+    service.resolve({ botId: "bot-a", threadId: "thread-a", requestId: created.requestId, behavior: "allow" });
+    const routine = routines.listRoutines()[0];
+    expect(routine.precheck).toEqual(watch);
+    await expect(service.propose({ botId: "bot-a", threadId: "thread-a", proposal: createProposal({ name: "Sends", watch: { kind: "watch", source: { type: "tool", tool: "mail__send_message" } } }) }))
+      .rejects.toThrow(/read tools only/);
+    const update = await service.propose({ botId: "bot-a", threadId: "thread-a", proposal: { action: "update", routineId: routine.id, changes: { watch: null } } });
+    service.resolve({ botId: "bot-a", threadId: "thread-a", requestId: update.requestId, behavior: "allow" });
+    expect(routines.listRoutines()[0].precheck).toBeUndefined();
+  });
+
   it("canonicalizes receipt fingerprints and binds them to the card's conversation", async () => {
     const { service, store } = harness();
     await service.propose({ botId: "bot-a", threadId: "thread-a", proposal: createProposal() });

@@ -10,6 +10,9 @@ import { isTriggerSchedule } from "../shared/routines.ts";
 import { newId } from "./contracts.ts";
 import { SELF_ROUTINE_CAP, UNDO_STALE, type DirectApply, type DirectApplyCheck } from "./direct-apply.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { loadRoutinePrecheck, parseRoutinePrecheck } from "./routine-precheck.ts";
+import type { RoutineWatchPrecheck } from "../shared/routine-watch.ts";
+import { describeCondition } from "./routine-watch.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import {
   intervalHasRestrictions,
@@ -108,6 +111,9 @@ const routineToolFieldsSchema = z.object({
   timeoutMinutes: z.number().nullable().optional(),
   continuity: z.boolean().optional(),
   overlap: z.enum(["skip", "queue"]).optional(),
+  /** 2026-10-26: a watch pre-check (server/routine-precheck.ts); null in an
+   * update removes it. */
+  watch: z.unknown().optional(),
   /** Create only: true starts the routine live, false paused; absent
    * follows `routines.newPaused`. A webhook or email trigger is always
    * paused, whatever this says. Pause and resume are actions of their own. */
@@ -265,13 +271,15 @@ const storedDefinitionSchema = z.object({
   timeoutMinutes: z.number().int().min(5).max(240).optional(),
   continuity: z.boolean().optional(),
   overlap: z.enum(["skip", "queue"]).optional(),
+  watch: z.custom<RoutineWatchPrecheck>((value) => loadRoutinePrecheck(value)?.kind === "watch").optional(),
 }).strict();
 const storedChangesSchema = storedDefinitionSchema
-  .omit({ schedule: true, timeoutMinutes: true })
+  .omit({ schedule: true, timeoutMinutes: true, watch: true })
   .partial()
   .extend({
     schedule: storedScheduleChangesSchema.optional(),
     timeoutMinutes: z.number().int().min(5).max(240).nullable().optional(),
+    watch: z.custom<RoutineWatchPrecheck | null>((value) => value === null || loadRoutinePrecheck(value)?.kind === "watch").optional(),
   })
   .strict()
   .refine(
@@ -299,6 +307,7 @@ const storedOperationSchema = z.discriminatedUnion("action", [
 ]);
 const storedSnapshotSchema = storedDefinitionSchema.extend({
   enabled: z.boolean(),
+  precheck: z.custom<unknown>((value) => loadRoutinePrecheck(value) !== undefined).optional(),
   target: z.literal("room-goal").optional(),
   groupId: z.string().min(1).max(128).optional(),
   resultsThreadId: z.string().min(1).max(128).optional(),
@@ -720,6 +729,19 @@ function triggerSchedule(trigger: { type: "webhook" } | { type: "email" }): Rout
   return { type: "event", source: "email" };
 }
 
+/** A routine tool's `watch`: a watch pre-check, or null to remove one. */
+function watchInput(value: unknown): RoutineWatchPrecheck | null {
+  if (value === null) return null;
+  let parsed;
+  try {
+    parsed = parseRoutinePrecheck(value);
+  } catch (error) {
+    throw new RoutineRequestError(error instanceof Error ? error.message.replace("pre-check", "watch") : "Choose a valid watch");
+  }
+  if (parsed.kind !== "watch") throw new RoutineRequestError("Choose a valid watch: kind must be watch");
+  return parsed;
+}
+
 function normalizeDefinition(input: RoutineToolDefinitionInput, now: number): RoutineRequestDefinition {
   if ((input.schedule === undefined) === (input.trigger === undefined)) {
     throw new RoutineRequestError("Choose exactly one of schedule or trigger");
@@ -734,6 +756,7 @@ function normalizeDefinition(input: RoutineToolDefinitionInput, now: number): Ro
     ...(timeoutMinutes == null ? {} : { timeoutMinutes }),
     ...(input.continuity === true ? { continuity: true } : {}),
     ...(input.overlap === "queue" ? { overlap: "queue" as const } : {}),
+    ...(input.watch != null ? { watch: watchInput(input.watch)! } : {}),
   };
 }
 
@@ -751,6 +774,7 @@ function normalizeChanges(
   if (input.timeoutMinutes !== undefined) changes.timeoutMinutes = timeout(input.timeoutMinutes);
   if (input.continuity !== undefined) changes.continuity = input.continuity === true;
   if (input.overlap !== undefined) changes.overlap = input.overlap;
+  if (input.watch !== undefined) changes.watch = watchInput(input.watch);
   return changes;
 }
 
@@ -1021,9 +1045,10 @@ function effectiveDefinition(operation: RoutineRequestOperation, manager: Routin
     ...(existing.timeoutMinutes === undefined ? {} : { timeoutMinutes: existing.timeoutMinutes }),
     ...(existing.continuity ? { continuity: true } : {}),
     ...(existing.overlap ? { overlap: existing.overlap } : {}),
+    ...(existing.precheck?.kind === "watch" ? { watch: structuredClone(existing.precheck) } : {}),
   };
   if (operation.action !== "update") return base;
-  const { schedule, timeoutMinutes, ...changes } = operation.changes;
+  const { schedule, timeoutMinutes, watch, ...changes } = operation.changes;
   const merged: RoutineRequestDefinition = {
     ...base,
     ...changes,
@@ -1031,7 +1056,23 @@ function effectiveDefinition(operation: RoutineRequestOperation, manager: Routin
   };
   if (timeoutMinutes === null) delete merged.timeoutMinutes;
   else if (timeoutMinutes !== undefined) merged.timeoutMinutes = timeoutMinutes;
+  if (watch === null) delete merged.watch;
+  else if (watch !== undefined) merged.watch = watch;
   return merged;
+}
+
+/** The card's line for a watch: what it reads and when the run starts. */
+function watchLine(watch: RoutineWatchPrecheck | undefined): string {
+  if (!watch) return "Runs: on every due time";
+  const source = watch.source.type === "files"
+    ? `the files in ${watch.source.path.trim() || "the bot's folder"}${watch.source.recursive ? " and its subfolders" : ""}`
+    : watch.source.type === "command"
+      ? `the output of: ${redactSecretsInText(watch.source.command)}`
+      : `the tool ${watch.source.tool}`;
+  const when = watch.wakeOn === "match" && watch.condition
+    ? `each time ${describeCondition(watch.condition)}`
+    : watch.condition ? `when it changes and ${describeCondition(watch.condition)}` : "when it changes";
+  return `Runs only ${when}: checks ${source}, no model until then${watch.firstRun === "wake" ? "; the first check runs once" : ""}${watch.whenAsleep === "wake" ? "; wakes an asleep computer to check" : ""}`;
 }
 
 /** The line a create card carries when new routines start paused. */
@@ -1112,6 +1153,7 @@ function cardCopy(
       `Run limit: ${definition.timeoutMinutes === undefined ? "No limit" : `${definition.timeoutMinutes} minutes`}`,
       `Continuity: ${definition.continuity ? "Carries the previous run's report into the next run" : "Each run starts fresh"}`,
       `While busy: ${definition.overlap === "queue" ? "Queue one scheduled run; skip further occurrences until it starts" : "Skip overlapping scheduled occurrences"}`,
+      ...(definition.watch ? [watchLine(definition.watch)] : []),
       // Last before the instructions: the one sentence that says what
       // confirming actually does, in the reader's terms.
       ...(operation.action === "create" || operation.action === "update"
@@ -1140,6 +1182,7 @@ function inputFromDefinition(definition: RoutineRequestDefinition, botId: string
     ...(definition.timeoutMinutes === undefined ? {} : { timeoutMinutes: definition.timeoutMinutes }),
     ...(definition.continuity ? { continuity: true } : {}),
     ...(definition.overlap === "queue" ? { overlap: "queue" as const } : {}),
+    ...(definition.watch ? { precheck: structuredClone(definition.watch) } : {}),
   };
 }
 
@@ -1157,6 +1200,7 @@ function updateFromChanges(
   if (changes.timeoutMinutes !== undefined) patch.timeoutMinutes = changes.timeoutMinutes;
   if (changes.continuity !== undefined) patch.continuity = changes.continuity;
   if (changes.overlap !== undefined) patch.overlap = changes.overlap;
+  if (changes.watch !== undefined) patch.precheck = changes.watch === null ? null : structuredClone(changes.watch);
   return patch;
 }
 
@@ -1235,6 +1279,7 @@ function revalidateOperation(operation: RoutineRequestOperation, manager: Routin
         || routine.timeoutMinutes !== definition.timeoutMinutes
         || Boolean(routine.continuity) !== Boolean(definition.continuity)
         || (routine.overlap ?? "skip") !== (definition.overlap ?? "skip")
+        || !isDeepStrictEqual(routine.precheck?.kind === "watch" ? routine.precheck : undefined, definition.watch)
         || (routine.attachments?.length ?? 0) > 0) return false;
       // An omitted start means "every N minutes", not a new phase each time
       // the model retries. Explicit starts and all other constraints stay exact.
@@ -1331,6 +1376,7 @@ function routineSnapshot(routine: Routine): RoutineRequestSnapshot | undefined {
     ...(routine.timeoutMinutes === undefined ? {} : { timeoutMinutes: routine.timeoutMinutes }),
     ...(routine.continuity ? { continuity: true } : {}),
     ...(routine.overlap === "queue" ? { overlap: "queue" as const } : {}),
+    ...(routine.precheck ? { precheck: structuredClone(routine.precheck) } : {}),
     enabled: routine.enabled,
     ...(routine.target === "room-goal" ? { target: "room-goal" as const } : {}),
     ...(routine.groupId ? { groupId: routine.groupId } : {}),
@@ -1354,6 +1400,7 @@ function restorePatch(before: RoutineRequestSnapshot, now: number): Partial<Rout
     timeoutMinutes: before.timeoutMinutes ?? null,
     continuity: before.continuity === true,
     overlap: before.overlap ?? "skip",
+    precheck: before.precheck === undefined ? null : structuredClone(before.precheck) as RoutineInput["precheck"],
   };
 }
 
@@ -1620,6 +1667,7 @@ export class RoutineRequestService {
             ...(before.timeoutMinutes === undefined ? {} : { timeoutMinutes: before.timeoutMinutes }),
             ...(before.continuity ? { continuity: true } : {}),
             ...(before.overlap === "queue" ? { overlap: "queue" as const } : {}),
+            ...(before.precheck !== undefined ? { precheck: structuredClone(before.precheck) as RoutineInput["precheck"] } : {}),
             ...(before.resultsThreadId ? { resultsThreadId: before.resultsThreadId } : {}),
           }).id;
           break;

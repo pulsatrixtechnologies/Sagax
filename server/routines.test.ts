@@ -4093,6 +4093,103 @@ describe("routine pre-check and nothing_to_report", () => {
   });
 });
 
+describe("routine watch: runs only when something changes (2026-10-26)", () => {
+  const start = Date.parse("2026-10-20T08:00:00Z");
+  const watch = { kind: "watch" as const, source: { type: "command" as const, command: "cat queue.txt" } };
+  const input = () => ({ name: "Queue", prompt: "Handle the new jobs", botId: "maus-1",
+    schedule: { type: "interval" as const, everyMinutes: 5, anchorAt: start }, precheck: watch });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("reads the watch beside the pass, then quiets the run: no turn, no card", async () => {
+    const h = harness(start);
+    let calls = 0;
+    h.options.evaluateWatch = async () => { calls += 1; return { wake: false, reason: "No change since the last check" }; };
+    const routine = h.manager.create(input());
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    // The pass did not wait for the watch: the run is still queued.
+    expect(h.manager.listRuns()[0].status).toBe("queued");
+    await settle(); await settle();
+    await h.manager.tick();
+    const run = h.manager.listRuns()[0];
+    expect(calls).toBe(1);
+    expect(run.status).toBe("nothing_to_report");
+    expect(run.quietReason).toBe("No change since the last check");
+    expect(h.started).toHaveLength(0);
+    expect(h.changed).toHaveLength(0);
+  });
+
+  it("a slow watch never holds another routine's run", async () => {
+    const h = harness(start);
+    h.options.evaluateWatch = () => new Promise(() => {});
+    const watched = h.manager.create(input());
+    h.manager.create({ name: "Plain", prompt: "Say hi", botId: "maus-2", schedule: { type: "interval", everyMinutes: 5, anchorAt: start } });
+    h.setNow(watched.nextRunAt!);
+    await h.manager.tick();
+    expect(h.started.map((started) => started.botId)).toEqual(["maus-2"]);
+  });
+
+  it("a change wakes the run and its turn reads the note inside the data fence", async () => {
+    const h = harness(start);
+    h.options.evaluateWatch = async () => ({ wake: true, note: "New lines (1):\n- job 3" });
+    const routine = h.manager.create(input());
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    await settle(); await settle();
+    await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    expect(h.started[0].prompt).toMatch(/^Handle the new jobs/);
+    expect(h.started[0].prompt).toMatch(/\[UNTRUSTED ROUTINE WATCH DATA [0-9a-f]{32}\][\s\S]*- job 3[\s\S]*\[\/UNTRUSTED ROUTINE WATCH DATA [0-9a-f]{32}\]/);
+    expect(h.manager.listRuns()[0].watchNote).toMatch(/job 3/);
+  });
+
+  it("a failing watch fails the run with its reason", async () => {
+    const h = harness(start);
+    h.options.evaluateWatch = async () => { throw new Error("The command ran past 14 s"); };
+    const routine = h.manager.create(input());
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    await settle(); await settle();
+    await h.manager.tick();
+    const run = h.manager.listRuns()[0];
+    expect(run.status).toBe("failed");
+    expect(run.error).toMatch(/Pre-check failed[\s\S]*ran past 14 s/);
+    expect(h.started).toHaveLength(0);
+  });
+
+  it("Run now skips the watch; a watch needs a repeating schedule", async () => {
+    const h = harness(start);
+    let calls = 0;
+    h.options.evaluateWatch = async () => { calls += 1; return { wake: false, reason: "quiet" }; };
+    const routine = h.manager.create(input());
+    h.manager.runNow(routine.id);
+    await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    expect(calls).toBe(0);
+    expect(() => h.manager.create({ ...input(), schedule: { type: "once", at: start + 60_000 } })).toThrow(/repeating schedule/);
+  });
+
+  it("no engine pre-warm nor computer pre-wake unless the person chose to wake it; delete forgets the state", async () => {
+    const h = harness(start);
+    const woke: string[] = [];
+    const warmed: string[] = [];
+    const forgot: string[] = [];
+    h.options.prewake = (routine) => { woke.push(routine.name); };
+    h.options.prewarmEngine = (routine) => { warmed.push(routine.name); };
+    h.options.reserveTask = () => ({ threadId: "reserved" });
+    h.options.forgetWatch = (id) => { forgot.push(id); };
+    h.options.evaluateWatch = () => new Promise(() => {});
+    const quiet = h.manager.create(input());
+    h.manager.create({ ...input(), name: "Wakes", precheck: { ...watch, whenAsleep: "wake" } });
+    h.setNow(quiet.nextRunAt! - 30_000);
+    await h.manager.tick();
+    expect(woke).toEqual(["Wakes"]);
+    expect(warmed).toEqual([]);
+    h.manager.remove(quiet.id);
+    expect(forgot).toEqual([quiet.id]);
+  });
+});
+
 describe("background runs: nothing to report (JC 2026-10-22)", () => {
   const at = new Date(2026, 7, 17, 8, 1).getTime();
   const runOnce = async (output: string, prompt = "Check the invoices") => {
