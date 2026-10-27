@@ -2933,7 +2933,7 @@ End users must not use a bot for privilege escalation, escape from the
 server environment, tampering with antivirus or logs, attacks on third
 parties, malware, reading the platform's files (`bots.json`, `messages.db`,
 `idp_key`, and the rest), destruction of the server, or resource abuse.
-Defensive security work (SentinelOne triage and the like) is the permission
+Defensive security work (EDR triage and the like) is the permission
 `security.triage` in Perspicax. It allows that work only. It does not lift
 a block. Details, the flag, and the French refusals:
 [`docs/security/misuse-guardrails.md`](docs/security/misuse-guardrails.md).

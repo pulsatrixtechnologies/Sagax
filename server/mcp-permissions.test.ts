@@ -22,7 +22,7 @@ import {
 } from "./mcp-permissions.ts";
 
 /** A tool name each permission stands for (a per-profile one by example). */
-const SAMPLE: Record<string, string> = { query: "cw_psa__query", write: "cw_psa__write", action: "cw_psa__action", read_action: "sentinelone__read_action", operation: "cw_psa__find_tickets" };
+const SAMPLE: Record<string, string> = { query: "cw_psa__query", write: "cw_psa__write", action: "cw_psa__action", read_action: "edr__read_action", operation: "cw_psa__find_tickets" };
 const toolOf = (x: (typeof MCP_PERMISSIONS)[number]) => (x.profileKind ? SAMPLE[x.profileKind]! : x.tool);
 
 const FULL = { externalRuntime: false, coordinating: true, ownThreadCreation: true, skillAuthoring: true, sharedComputers: true, voiceNotes: true, voiceCall: true, cloudHome: false, memoryEnabled: true, groupMemory: true, chief: true, botId: "b", agentApi: true };
@@ -56,7 +56,7 @@ describe("mcp permission registry", () => {
       "list_agents", "find_agents", "create_agent", "send_prompt", "await_turn", "read_transcript", "read_transcript_page", "read_latest_page", "read_latest_page_with_threads", "read_transcript_cold",
       "sagax_bots", "sagax_send", "sagax_thread", "sagax_routine_run", "sagax_approve", "sagax_nudge",
       // per-profile tools, both separators
-      "cw_psa__query", "cw_psa__write", "cw_psa__action", "sentinelone__read_action", "cw_psa__find_tickets", "twilio_lookups__Bucket_write", "cw_psa-query",
+      "cw_psa__query", "cw_psa__write", "cw_psa__action", "edr__read_action", "cw_psa__find_tickets", "twilio_lookups__Bucket_write", "cw_psa-query",
       // memory v2 draft behind a switch (Perspicax #326)
       "memory_find", "memory_save", "memory_remove", "memory_suggestions",
     ];
@@ -68,13 +68,13 @@ describe("mcp permission registry", () => {
     expect(profileToolCall("cw_psa__query")).toEqual({ profile: "cw_psa", kind: "query", name: "query" });
     expect(profileToolCall("cw_psa-write")).toEqual({ profile: "cw_psa", kind: "write", name: "write" });
     expect(profileToolCall("twilio_lookups__Bucket_write")).toMatchObject({ profile: "twilio_lookups", kind: "write" });
-    expect(profileToolCall("sentinelone__read_action")).toMatchObject({ kind: "read_action" });
+    expect(profileToolCall("edr__read_action")).toMatchObject({ kind: "read_action" });
     expect(profileToolCall("cw_psa__find_tickets")).toMatchObject({ kind: "operation" });
     expect(profileToolCall("api_list")).toBeNull();
     expect(permissionForTool("cw_psa__query")?.key).toBe("api:query");
     expect(permissionForTool("cw_psa__write")?.key).toBe("api:write");
     expect(permissionForTool("cw_psa__action")?.key).toBe("api:action");
-    expect(permissionForTool("sentinelone__read_action")?.tier).toBe("read");
+    expect(permissionForTool("edr__read_action")?.tier).toBe("read");
     expect(permissionForTool("cw_psa__find_tickets")?.tier).toBe("dispatch");
   });
 });
@@ -293,7 +293,7 @@ describe("per-resource permissions", () => {
     expect(resourceKeyForCall("cw_psa-write", { resource: "tickets", action: "delete" })).toBe("cw_psa:tickets.delete");
     expect(resourceKeyForCall("twilio_lookups__Bucket_write", { action: "create" })).toBe("twilio_lookups:bucket.create");
     expect(resourceKeyForCall("cw_psa__action", { action: "merge_companies" })).toBe("cw_psa:merge_companies.run");
-    expect(resourceKeyForCall("sentinelone__read_action", { action: "agents_count" })).toBe("sentinelone:agents_count.read");
+    expect(resourceKeyForCall("edr__read_action", { action: "agents_count" })).toBe("edr:agents_count.read");
     expect(resourceKeyForCall("cw_psa__find_tickets", {})).toBe("cw_psa:find_tickets.run");
     expect(resourceKeyForCall("api_list", { resource: "x" })).toBeNull();
     expect(resourceKeyForCall("cw_psa__write", { resource: "../x", action: "update" })).toBeNull();

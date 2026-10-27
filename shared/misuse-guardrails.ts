@@ -113,7 +113,7 @@ const BLOCK_RULES: ReadonlyArray<{ category: MisuseCategory; pattern: RegExp; ow
   { category: "sandbox_escape", pattern: /sortie (du|de l'?) ?(conteneur|environnement)|échappe(r|ment)? (du|au) (conteneur|bac à sable)|échappe(r)? à l'isolement/ },
   { category: "security_evasion", pattern: /\b(amsi|csrutil)\b/ },
   { category: "security_evasion", pattern: /tamper protection|protection contre l['’]alt[ée]ration/ },
-  { category: "security_evasion", pattern: /d[ée]sactive[^\n]{0,48}(antivirus|defender|sentinel|protection)|disable[^\n]{0,48}(antivirus|defender|sentinel|real-?time)/ },
+  { category: "security_evasion", pattern: /d[ée]sactive[^\n]{0,48}(antivirus|defender|\bedr\b|\bxdr\b|protection)|disable[^\n]{0,48}(antivirus|defender|\bedr\b|\bxdr\b|real-?time)/ },
   { category: "security_evasion", pattern: /protection en temps r[ée]el|real-?time protection/ },
   { category: "security_evasion", pattern: /\b(auditctl\s+-d|wevtutil\s+cl|clear-eventlog)\b/ },
   { category: "security_evasion", pattern: /unset\s+histfile|histfile\s*=|history\s+-c/, own: true },
@@ -150,12 +150,11 @@ const BLOCK_RULES: ReadonlyArray<{ category: MisuseCategory; pattern: RegExp; ow
 ];
 
 const DEFENSIVE_RULES: ReadonlyArray<RegExp> = [
-  /\b(sentinelone|crowdstrike)\b/,
   // an endpoint agent's own control command (protection off, quarantine)
   /\b[a-z0-9]+ctl\s+(?:unprotect|quarantine|unquarantine)\b/,
-  /sentinel one/,
   /falcon sensor/,
-  /\b(edr|siem)\b/,
+  /\b(edr|xdr|siem)\b/,
+  /endpoint (?:protection|security|detection)|protection des (?:postes|points de terminaison)/,
   /microsoft defender|windows defender/,
   /threat hunting|chasse aux menaces/,
   /mise en quarantaine/,
