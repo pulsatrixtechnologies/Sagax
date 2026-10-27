@@ -2567,6 +2567,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                           "Choose another model for this bot to stop seeing this.",
                       });
                     }
+                    if (wanted) emit({ ...base(threadId, turnId), type: "session.model-fallback", requested: wanted, actual: fallback });
                     cliTurn = { ...cliTurn, model: fallback };
                     current.turn = cliTurn;
                     reportedModel = fallback;
@@ -2628,6 +2629,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 });
                 approvalUnconfirmed = false;
                 if (configured && typeof configured.model === "string" && configured.model !== cliTurn.model) {
+                  if (cliTurn.model) emit({ ...base(threadId, turnId), type: "session.model-fallback", requested: cliTurn.model, actual: configured.model });
                   cliTurn = { ...cliTurn, model: configured.model };
                   current.turn = cliTurn;
                   reportedModel = configured.model;

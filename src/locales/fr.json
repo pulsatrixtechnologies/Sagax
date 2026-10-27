@@ -2960,6 +2960,7 @@
   "model.org.state.notInstalled": "Non installé sur le serveur",
   "model.org.state.signInRequired": "Connexion requise",
   "model.ownModel": "Modèle propre à ce fil",
+  "model.ranOn": "Tourne sur {model} (non offert par votre compte)",
   "model.payer.current": "Utilisé maintenant",
   "model.payer.hint": "Vérifié dans cet ordre ; le premier prêt est utilisé.",
   "model.payer.keyMissing": "Aucune clé",
