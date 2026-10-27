@@ -6494,7 +6494,10 @@ function checkedGroupResponder(value: unknown, memberIds: string[]): GroupDefaul
   return null;
 }
 
-function checkedMemberIds(value: unknown): { ok: true; memberIds: string[] } | { ok: false; error: string } {
+/** `people`: how many people the room lists. A room of two or more people may
+ * hold no bot at all (a people-only group chat, #1150); without them it still
+ * needs one. */
+function checkedMemberIds(value: unknown, people = 0): { ok: true; memberIds: string[] } | { ok: false; error: string } {
   if (!Array.isArray(value)) return { ok: false, error: "memberIds must be a list of bot IDs" };
   const invalidIndex = value.findIndex(
     (id) => typeof id !== "string" || !id.trim() || !store.bot(id),
@@ -6503,7 +6506,10 @@ function checkedMemberIds(value: unknown): { ok: true; memberIds: string[] } | {
     return { ok: false, error: `unknown channel member: ${String(value[invalidIndex])}` };
   }
   const memberIds = [...new Set(value as string[])];
-  if (!memberIds.length) return { ok: false, error: "a channel needs at least one bot" };
+  if (!memberIds.length) {
+    if (people >= 2) return { ok: true, memberIds };
+    return { ok: false, error: "a channel needs at least one bot" };
+  }
   // A room whose every member is archived accepts messages and answers none of
   // them — the failure only surfaces later, as "… is archived and can't
   // respond" on the first turn. Refuse it here, where the mistake is made.
@@ -8803,7 +8809,8 @@ function createChannel(value: unknown): GroupRecord {
   }
   const body = value as Record<string, unknown>;
 
-  const roster = checkedMemberIds(body.memberIds);
+  const listedPeople = Array.isArray(body.humanIds) ? new Set(body.humanIds.filter((id): id is string => typeof id === "string" && id.trim() !== "").map((id) => id.trim().toLowerCase())).size : 0;
+  const roster = checkedMemberIds(body.memberIds, listedPeople);
   if (!roster.ok) throw Object.assign(new Error(roster.error), { status: 400 });
   const { memberIds } = roster;
   const audienceConflict = roomAudienceConflict(memberIds);
@@ -8811,7 +8818,7 @@ function createChannel(value: unknown): GroupRecord {
   if (body.name !== undefined && typeof body.name !== "string") {
     throw Object.assign(new Error("channel name must be a string"), { status: 400 });
   }
-  const name = body.name?.trim() || `${store.bot(memberIds[0])!.name} & co.`;
+  const name = body.name?.trim() || (memberIds.length ? `${store.bot(memberIds[0])!.name} & co.` : "New group");
   if (name.length > 100) throw Object.assign(new Error("channel name must be at most 100 characters"), { status: 400 });
   let section: string | undefined;
   if (body.section !== undefined && body.section !== null) {
@@ -8921,7 +8928,8 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   if (body.memberIds !== undefined) {
     // A DM is the pair it was opened for; only real rooms have a roster.
     if (existing.dm) throw Object.assign(new Error("direct-message channels cannot change members"), { status: 400 });
-    const roster = checkedMemberIds(body.memberIds);
+    const peopleAfter = new Set((Array.isArray(body.humanIds) ? body.humanIds : existing.humanIds ?? []).filter((id): id is string => typeof id === "string" && id.trim() !== "").map((id) => id.trim().toLowerCase())).size;
+    const roster = checkedMemberIds(body.memberIds, peopleAfter);
     if (!roster.ok) throw Object.assign(new Error(roster.error.replace("channel", "room")), { status: 400 });
     const audienceConflict = roomAudienceConflict(roster.memberIds, existing.memberIds);
     if (audienceConflict) throw Object.assign(new Error(audienceConflict), { status: 400 });
@@ -25005,7 +25013,8 @@ function startGroupTurn(
     const defaultArchivedId = group.defaultResponder.kind === "member" ? group.defaultResponder.botId : undefined;
     const defaultArchived = archived.find((member) => member.id === defaultArchivedId);
     let unavailableMessage: string | undefined;
-    if (!mentionedArchived && !availableMembers.length) {
+    // A people-only room has no bot to wait for: nothing to say.
+    if (!mentionedArchived && !availableMembers.length && members.length) {
       unavailableMessage = "No active room members can respond — restore an archived bot or add an active member.";
     } else if (!mentionedArchived && defaultArchived) {
       unavailableMessage = `${defaultArchived.name} is archived and can't respond — restore it or mention an active room member.`;
@@ -30180,7 +30189,7 @@ function notifyRoomMentions(groupId: string, threadId: string, text: string, aut
     return { id, names: [personDisplayName(person), person?.name ?? "", person?.login ?? ""] };
   });
   const avatarUrl = personAvatarUrl(principals.byId(from));
-  const notification = roomMentionNotification({ room, threadId, text, sender: { principalId: from, name, ...(avatarUrl ? { avatarUrl } : {}) }, people });
+  const notification = roomMentionNotification({ room, threadId, text, sender: { principalId: from, name, ...(avatarUrl ? { avatarUrl } : {}) }, people, everyone: room.memberIds.length === 0 });
   if (!notification?.audience?.length) return;
   const unreadFor = [...new Set([...(room.unreadFor ?? []), ...notification.audience])].sort();
   const updated = store.patchGroup(room.id, { unreadFor });
@@ -33175,7 +33184,9 @@ function withCreatorListed(auth: RequestAuth, body: unknown): unknown {
   if (Object.prototype.hasOwnProperty.call(body, "humanIds")) {
     // A member naming coworkers stays in the room they create.
     const named = (body as { humanIds?: unknown }).humanIds;
-    if (channelActorRole(auth) !== "member" || !principalId || !Array.isArray(named)) return body;
+    // A people-only group (no bot, #1150) always lists its creator too.
+    const peopleOnly = Array.isArray((body as { memberIds?: unknown }).memberIds) && (body as { memberIds: unknown[] }).memberIds.length === 0;
+    if ((channelActorRole(auth) !== "member" && !peopleOnly) || !principalId || !Array.isArray(named)) return body;
     const listed = named.some((id) => typeof id === "string" && id.trim().toLowerCase() === principalId.toLowerCase());
     return listed ? body : { ...(body as Record<string, unknown>), humanIds: [principalId, ...named] };
   }

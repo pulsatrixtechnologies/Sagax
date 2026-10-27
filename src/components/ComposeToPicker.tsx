@@ -173,9 +173,9 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
         setQuery("");
         return;
       }
-      // A group always holds at least one bot; people come on top of it.
+      // A group holds a bot, or at least one other person (people-only group, #1150).
       const { memberIds, humanIds } = splitPicked(picked);
-      if (!memberIds.length) return;
+      if (!memberIds.length && !humanIds.length) return;
       dispatch({ type: "createGroup", memberIds, ...(humanIds.length ? { humanIds } : {}) });
       track("room_created", { members: picked.size, context: false });
       onCloseRef.current();
@@ -395,7 +395,7 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
               );
             }
             if (row.kind === "create-group") {
-              const disabled = mode === "group" && splitPicked(picked).memberIds.length === 0;
+              const disabled = mode === "group" && picked.size === 0;
               return (
                 <button
                   key="create-group"
