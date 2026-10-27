@@ -561,7 +561,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   const approvalsWaiting = state.bots
     .filter((bot) => !bot.hidden)
     .reduce((total, bot) => total + (bot.tasks ?? []).filter((task) => task.activity === "waiting-on-you").length, 0);
-  const openAchievements = () => dispatch({ type: "toggleAchievements", open: true });
+  const openAchievements = () => dispatch({ type: "showAchievements" });
   // The routines badge sits at the right edge of the row; under the name,
   // the viewer's own title and points, each only while its "Show my ..."
   // switch is on. Nothing under the name when both are off.

@@ -1,5 +1,5 @@
 // How a Mastery character (shared/mascot-unlocks.ts) draws in the
-// achievements modal, the toast and the look editor's previews. Until its
+// achievements page, the toast and the look editor's previews. Until its
 // branch lands, a character is a greyed placeholder (its initial on a
 // disc); a mascot branch registers its real art by adding one line to
 // MASTERY_ART below (no other file needs to know).

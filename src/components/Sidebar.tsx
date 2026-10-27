@@ -799,6 +799,7 @@ const COMPOSE_DISMISS = new Set([
   "select",
   "showTeamMap",
   "showRoutines",
+  "showAchievements",
   "switchTask",
   "switchGroupTask",
   "newTask",

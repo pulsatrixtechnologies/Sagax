@@ -1,5 +1,5 @@
 // The achievements' drawing: never in the sidebar footer, the member card,
-// the unlock toast, the catalog's icons, the page, and its own modal.
+// the unlock toast, the catalog's icons, the page, and its own page.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +18,7 @@ vi.mock("@/state/store", async (importOriginal) => {
 import { SidebarProfileMenu } from "../SidebarProfileMenu";
 import { AchievementToast } from "./AchievementToaster";
 import { AchievementsPage } from "./AchievementsPage";
-import { AchievementsModal, ACHIEVEMENTS_MODAL_CATEGORIES, achievementCategoryCounts } from "./AchievementsModal";
+import { AchievementsScreen, ACHIEVEMENTS_SCREEN_CATEGORIES, achievementCategoryCounts } from "./AchievementsScreen";
 import { SECTIONS } from "../SettingsModal";
 import { ACHIEVEMENT_ICONS } from "./icons";
 import { MemberCard, memberCardRows, publicMemberRows } from "./MemberCard";
@@ -41,7 +41,7 @@ function snapshot(partial: Partial<AchievementSnapshot> = {}): AchievementSnapsh
 
 beforeEach(() => {
   setLocale("en");
-  fixture.state = { config: { profile: { name: "Ada Lovelace", email: "ada@example.com" } } as AppState["config"] };
+  fixture.state = { config: { profile: { name: "Ada Lovelace", email: "ada@example.com" } } as AppState["config"], achievementsFocus: { category: "all", nonce: 0 } };
   vi.stubGlobal("window", {});
 });
 afterEach(() => {
@@ -189,7 +189,7 @@ describe("achievements page", () => {
     // recent unlocks, a horizontal row of cards
     expect(html).toContain(">Recent unlocks</h3>");
     expect(html).toContain('data-recent-achievement="hello-bot"');
-    // search, rewards and status, and no category chips: the modal's left column has them
+    // search, rewards and status, and no category chips: the page's left column has them
     expect(html).toContain('data-achievement-search=""');
     expect(html).toContain('aria-label="Reward"');
     expect(html).toContain('aria-label="Show"');
@@ -252,19 +252,21 @@ describe("achievements page", () => {
   });
 });
 
-describe("achievements modal", () => {
+describe("achievements page", () => {
   it("lists every category on the left with its unlocked count, All first and selected", () => {
     resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
-    const html = renderToStaticMarkup(createElement(AchievementsModal));
-    expect(html).toContain('role="dialog"');
-    expect(html).toContain('aria-modal="true"');
-    expect(html).toContain("data-achievements-modal");
-    // the Settings shell: same size, a left column, a close button
-    expect(html).toContain("h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))]");
+    const html = renderToStaticMarkup(createElement(AchievementsScreen));
+    // a page of the content frame (not a dialog): its header with the way
+    // back and the title, then the left column
+    expect(html).toContain("data-achievements-screen");
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain("fixed inset-0");
+    expect(html).toContain('data-achievements-back=""');
+    expect(html).toContain('aria-label="Back"');
+    expect(html).toMatch(/<h1[^>]*>Achievements<\/h1>/);
     expect(html).toContain("w-[198px]");
-    expect(html).toContain('aria-label="Close"');
     const labels = ["All", "Getting started", "Productivity", "Power user", "Voice", "Claude", "Together", "Streaks", "Mastery", "Tiers", "Secrets", "Settings"];
-    expect(ACHIEVEMENTS_MODAL_CATEGORIES).toEqual(["all", "onboarding", "productivity", "power", "voice", "claude", "collaboration", "streaks", "mastery", "tiers", "secrets", "settings"]);
+    expect(ACHIEVEMENTS_SCREEN_CATEGORIES).toEqual(["all", "onboarding", "productivity", "power", "voice", "claude", "collaboration", "streaks", "mastery", "tiers", "secrets", "settings"]);
     const nav = html.slice(html.indexOf("data-achievements-nav"), html.indexOf("</nav>"));
     let at = 0;
     for (const label of labels) {
@@ -283,7 +285,7 @@ describe("achievements modal", () => {
 
   it("shows the shared settings alone under their own entry, and on no category page", () => {
     resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
-    const html = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: "settings" }));
+    const html = renderToStaticMarkup(createElement(AchievementsScreen, { initialCategory: "settings" }));
     expect(html).toMatch(/data-achievement-category="settings" aria-current="page"/);
     expect(html).toContain(">Settings</h2>");
     expect(html).toContain("data-achievements-settings-page");
@@ -294,7 +296,7 @@ describe("achievements modal", () => {
     expect(html).not.toContain("data-achievements-page");
     expect(html).not.toContain('data-achievement="hello-bot"');
     for (const category of ["all", "secrets"] as const) {
-      const page = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: category }));
+      const page = renderToStaticMarkup(createElement(AchievementsScreen, { initialCategory: category }));
       expect(page).not.toContain("data-achievements-settings-page");
       expect(page).not.toContain('data-settings-group="achievements.settings"');
     }
@@ -302,14 +304,14 @@ describe("achievements modal", () => {
 
   it("opens on a category and shows only that category", () => {
     resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
-    const html = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: "secrets" }));
+    const html = renderToStaticMarkup(createElement(AchievementsScreen, { initialCategory: "secrets" }));
     expect(html).toMatch(/data-achievement-category="secrets" aria-current="page"/);
     expect(html).toContain(">Secrets</h2>");
     expect(html).not.toContain("data-recent-achievement");
     expect(html).not.toContain('data-achievement="hello-bot"');
     setLocale("fr");
-    const fr = renderToStaticMarkup(createElement(AchievementsModal));
-    expect(fr).toContain(">Succès</div>");
+    const fr = renderToStaticMarkup(createElement(AchievementsScreen));
+    expect(fr).toContain(">Succès</h1>");
     expect(fr).toContain(">Premiers pas</span>");
     expect(fr).toContain(">Débloqués récemment</h3>");
   });
@@ -324,7 +326,7 @@ describe("achievements modal", () => {
       ...(item.id === "polyglot" ? { unlockedAt: 1 } : {}),
     }));
     resetAchievementsForTests({ status: "ready", snapshot: snapshot({ items, recent: [] }) });
-    const html = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: "mastery" }));
+    const html = renderToStaticMarkup(createElement(AchievementsScreen, { initialCategory: "mastery" }));
     expect(html).toMatch(/data-achievement-category="mastery" aria-current="page"/);
     expect(html).toContain(">Mastery</h2>");
     // only the Mastery cards, each marked as one
@@ -355,7 +357,7 @@ describe("achievements modal", () => {
     expect(secret).not.toContain("data-mastery-preview");
     // in French
     setLocale("fr");
-    const fr = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: "mastery" }));
+    const fr = renderToStaticMarkup(createElement(AchievementsScreen, { initialCategory: "mastery" }));
     expect(fr).toContain(">Maîtrise</h2>");
     expect(fr).toContain(">Déléguer sans surveiller<");
     expect(fr).toContain(">Paliers</span>");
@@ -368,7 +370,7 @@ describe("achievements modal", () => {
     expect(counts.onboarding.unlocked).toBe(2);
     expect(counts.secrets.unlocked).toBe(1);
     expect(counts.voice.unlocked).toBe(0);
-    const sum = ACHIEVEMENTS_MODAL_CATEGORIES.filter((id) => id !== "all").reduce((total, id) => total + counts[id].total, 0);
+    const sum = ACHIEVEMENTS_SCREEN_CATEGORIES.filter((id) => id !== "all").reduce((total, id) => total + counts[id].total, 0);
     expect(sum).toBe(ACHIEVEMENTS.length);
   });
 

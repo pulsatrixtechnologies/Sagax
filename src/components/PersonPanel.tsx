@@ -277,7 +277,7 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
               card={publicCard}
               title={titleName}
               emptyText={publicCard.unlocked.length === 0 ? t("personPanel.achievements.empty") : undefined}
-              onOpenPage={ownPanel ? () => dispatch({ type: "toggleAchievements", open: true }) : undefined}
+              onOpenPage={ownPanel ? () => dispatch({ type: "showAchievements" }) : undefined}
             />
           ) : <p className="text-[12.5px] text-ink-secondary">{t("personPanel.achievements.private")}</p>}
         </div>

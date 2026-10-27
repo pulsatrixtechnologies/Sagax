@@ -247,7 +247,7 @@ describe("launch bundle", () => {
       "ActivityPanel", "BotSettingsDialog", "ComputerPanel", "InspectorPanel", "KeyboardShortcutsModal",
       "LocalVmWorkspace", "NewBotDialog", "RemoteAgentSettingsPanel", "remote-desktop-panel", "RoutineCalendarPage",
       "RoutinesPage", "SettingsModal", "TeamMapPage", "TriggersPanel",
-      "achievements/AchievementsModal", "bot-catalog/BotCatalogModal", "code/CodePage", "code/RunView", "code/DiffView",
+      "achievements/AchievementsScreen", "bot-catalog/BotCatalogModal", "code/CodePage", "code/RunView", "code/DiffView",
       "approvals/ApprovalsPage", "approvals/ApprovalDetail", "approvals/ApprovalsHistory",
     ].map((name) => `components/${name}.tsx`);
     expect(deferred.filter((file) => reached.has(file))).toEqual([]);
