@@ -144,8 +144,8 @@ describe("member admin audit, section 2: in-chat terminal", () => {
 describe("member admin audit, section 3: MCP permission catalogue", () => {
   // 2026-10-26: create_agent and delete_agent on the member's own temporary
   // agents are theirs too
-  const own = ["rules_update", "docs_update", "request_login", "select_computer", "manage_pairing", "propose_team_setup", "create_bot", "propose_bot_deletion", "create_room", "manage_room", "create_agent", "delete_agent"];
-  const reserved = ["propose_team_memory", "add_mcp_server", "request_credential", "shared_computer", "vm_exec", "act", "manage_settings", "api_reload", "review_write", "memory_promote", "memory_review"];
+  const own = ["rules_update", "docs_update", "request_login", "select_computer", "manage_pairing", "propose_team_setup", "create_bot", "propose_bot_deletion", "create_room", "manage_room", "create_agent", "delete_agent", "act", "manage_settings"];
+  const reserved = ["propose_team_memory", "add_mcp_server", "request_credential", "shared_computer", "vm_exec", "api_reload", "review_write", "memory_promote", "memory_review"];
 
   it.each(own)("%s: a member's own work (self scope); an admin's too", (tool) => {
     expect(decide({ id: OWNER, role: "member" }, tool, "self").allowed).toBe(true);
@@ -157,7 +157,7 @@ describe("member admin audit, section 3: MCP permission catalogue", () => {
     expect(decide({ id: "pr_admin", role: "admin" }, tool, "org").allowed).toBe(true);
     expect(DOC).toContain(`\`${tool}\``);
   });
-  it.each(["manage_pairing", "request_login", "propose_team_setup", "rules_update", "docs_update", "create_bot"])("a turn no person speaks in (routine, webhook) never calls %s", (tool) => {
+  it.each(["manage_pairing", "request_login", "propose_team_setup", "rules_update", "docs_update", "create_bot", "act", "manage_settings"])("a turn no person speaks in (routine, webhook) never calls %s", (tool) => {
     expect(decide({ id: "bot", role: "service" }, tool, "self").allowed).toBe(false);
   });
 });

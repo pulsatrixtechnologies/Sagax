@@ -138,8 +138,16 @@ describe("the admin gate on a member's bot", () => {
     expect(gate("agents__memory_update")).toBe(false);
     expect(gate("agents__propose_routine")).toBe(false);
   });
+  it("lets the owner answer act and manage_settings, which run with the person's own rights (#1269)", () => {
+    expect(gate("agents__act")).toBe(false);
+    expect(gate("mcp__agents__act")).toBe(false);
+    expect(gate("agents__manage_settings")).toBe(false);
+    expect(ownerGate("agents__act")).toBe(false);
+    // a command dressed as act, or act on a server Sagax did not mount, is not the built-in
+    expect(gate("agents__act", undefined, { command: "ls", cwd: root })).toBe(true);
+    expect(memberBotAdminApproval({ tool: "agents__act", workspaceRoot: root, foreignMcpServers: ["agents"] })).toBe(true);
+  });
   it("still needs an admin for a host-level agents tool or a command dressed as one", () => {
-    expect(gate("agents__act")).toBe(true);
     expect(gate("agents__add_mcp_server")).toBe(true);
     expect(gate("agents__attach_file")).toBe(true);
     expect(gate("agents__vm_exec")).toBe(true);
@@ -186,7 +194,7 @@ describe("the admin gate on a member's bot", () => {
     expect(ownerGate("mcp__computer__click")).toBe(true);
     expect(ownerGate("mcp__browser__navigate")).toBe(true);
     expect(ownerGate("mcp__sagax-computer__run")).toBe(true);
-    expect(ownerGate("agents__act")).toBe(true);
+    expect(ownerGate("agents__vm_exec")).toBe(true);
     expect(ownerGate("Bash", { command: "ls", cwd: root })).toBe(true);
     expect(ownerGate("WebFetch")).toBe(true);
     expect(ownerGate("other")).toBe(true);

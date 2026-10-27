@@ -157,7 +157,9 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("credentials:request", "admin", "request_credential"),
   p("computers:use", "admin", "shared_computer"),
   p("vm:exec", "admin", "vm_exec"),
-  p("actions:invoke", "admin", "act"),
+  // #1269: act runs as the signed-in person with their own rights
+  // (server/bot-act.ts); a routine or a webhook never calls it (service below)
+  p("actions:invoke", "own", "act"),
   // Claims (Sagax #497, Perspicax #327): the native claim tools.
   p("claims:acquire", "claim", "claim"),
   p("claims:renew", "claim", "claim_renew"),
@@ -208,7 +210,8 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   profileTool("api:action", "dispatch", "action", "<profile>__action"),
   profileTool("api:action.read", "read", "read_action", "<profile>__read_action"),
   profileTool("api:operation", "dispatch", "operation", "<profile>__<operation>"),
-  p("settings:manage", "admin", "manage_settings"),
+  // act on /api/config as the person: their own rights decide (#1269)
+  p("settings:manage", "own", "manage_settings"),
   // every setting as the person (server/settings-actions.ts): the person's
   // own rights decide on the route, like act
   p("settings:change", "own", "sagax_settings"),
@@ -273,7 +276,7 @@ export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | n
   // team setup could create bots under Full access, and a bot's rules and
   // docs are lasting instructions untrusted text must not write.
   service: {
-    "vm:exec": null, "actions:invoke": null, "pairing:manage": null, "credentials:login": null,
+    "vm:exec": null, "actions:invoke": null, "settings:manage": null, "pairing:manage": null, "credentials:login": null,
     "teamsetup:propose": null, "rules:update": null, "docs:update": null,
   },
 };

@@ -15262,7 +15262,6 @@ bus.subscribe((event: RuntimeEvent) => {
         ownDestination,
         ownComputerChoice,
         foreignMcpServers: foreignServers,
-        rawInput: event.input,
       }));
       // Security review 2026-10-19: a holder of host.commands answers a
       // server-level card of their own bot only for their own turn, when the

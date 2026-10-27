@@ -109,6 +109,17 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   // every setting as the member (server/settings-actions.ts): the member's
   // own rights decide on the route the screen calls, a card otherwise
   sagax_settings: "own-setup",
+  // #1269: act (and manage_settings, act on /api/config) runs as the signed-in
+  // person with their own session, never as the bot or the server
+  // (server/bot-act.ts): on an organization server a turn no proven person
+  // speaks in is refused, a route that person cannot call is refused with
+  // the route's own answer, and a write waits for that person's Allow unless
+  // the bot is at auto or full. A plugin install is the plugin route's own
+  // check (owner or manager of the bot, and the organization's integrations
+  // policy). Nothing act reaches is beyond what the member can do in their
+  // own app, so an admin card on it only blocked the member's own setup.
+  act: "own-setup",
+  manage_settings: "own-setup",
   // the member's own cards, at their request (server/primary-approvals.ts)
   sagax_approvals: "own-setup",
   // 2026-10-26: a pairing code for the member's own device; the route binds
@@ -134,7 +145,8 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
 });
 
 /** The agents tools that keep the admin gate, and why:
- *   act             any /api route or a plugin install, as the bot
+ *   api_reload, review_write
+ *                   Perspicax admin tools
  *   add_mcp_server  starts a local program on the server
  *   attach_file     reads any path on the server into the chat
  *   vm_exec         a shell command
@@ -143,7 +155,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
  *   archive_cloud_agent
  *                   a cloud coding agent run on a provider account */
 export const HOST_LEVEL_AGENT_TOOLS: ReadonlySet<string> = new Set([
-  "act", "manage_settings", "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
+  "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
   "launch_cloud_agent", "cloud_agent_follow_up", "cancel_cloud_agent", "archive_cloud_agent",
 ]);
 
@@ -163,25 +175,4 @@ export function memberOwnScopeTool(name: string | undefined): MemberToolFamily |
   const tool = builtinAgentToolName(name);
   if (!tool || HOST_LEVEL_AGENT_TOOLS.has(tool)) return null;
   return Object.hasOwn(MEMBER_OWN_SCOPE_AGENT_TOOLS, tool) ? MEMBER_OWN_SCOPE_AGENT_TOOLS[tool]! : null;
-}
-
-const OWN_BOT_SKILLS_ROUTE = /^\/api\/bots\/[\w-]+\/skills(?:\/[a-z0-9-]+)?$/;
-
-/** #1090: `act` on a bot's skills (list, read, edit, remove) is the person's
- * own setup, as skill_manage is: the route checks that the person owns or
- * manages that bot, and act runs it with the person's own session, so no
- * admin has to approve it. Any other `act` stays host level. `input` is the
- * tool's raw JSON input. */
-export function ownBotSkillsAct(name: string | undefined, input: unknown): boolean {
-  if (builtinAgentToolName(name) !== "act") return false;
-  let raw: unknown = input;
-  if (typeof input === "string") {
-    try { raw = JSON.parse(input); } catch { return false; }
-  }
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
-  const record = raw as Record<string, unknown>;
-  if (Object.keys(record).some((key) => !["method", "path", "query", "body"].includes(key))) return false;
-  if (typeof record.method !== "string" || typeof record.path !== "string") return false;
-  if (!["GET", "HEAD", "POST", "PATCH", "DELETE"].includes(record.method.toUpperCase())) return false;
-  return OWN_BOT_SKILLS_ROUTE.test(record.path);
 }
