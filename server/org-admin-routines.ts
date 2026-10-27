@@ -93,8 +93,10 @@ function row(ctx: ConsoleContext, deps: RoutinesDeps, routine: Routine, runs: re
 const runAt = (run: RoutineRun) => run.startedAt ?? run.scheduledFor ?? run.createdAt;
 
 function visible(ctx: ConsoleContext, deps: RoutinesDeps, routine: Routine): boolean {
-  if (!ctx.reach) return true;
   const bot = deps.bot(routine.botId);
+  // Under the `own-routine` grant: a routine of the person's own bot only.
+  if (ctx.ownOnly) return !!bot && bot.ownerPrincipalId === ctx.viewer.principalId;
+  if (!ctx.reach) return true;
   return ctx.inReach(bot?.ownerPrincipalId) || ctx.inReach(deps.runAs(routine));
 }
 
@@ -109,6 +111,7 @@ export function routinesRoutes(deps: RoutinesDeps): ConsoleRoute[] {
       method: "GET",
       path: "routines",
       min: "manager",
+      ownerGrant: "own-routine",
       handle(ctx) {
         const params = ctx.url.searchParams;
         const page = parsePage(params);
@@ -133,6 +136,7 @@ export function routinesRoutes(deps: RoutinesDeps): ConsoleRoute[] {
       method: "GET",
       path: "routines/{id}",
       min: "manager",
+      ownerGrant: "own-routine",
       handle(ctx) {
         const routine = findRoutine(ctx, deps, ctx.params.id!);
         if (!routine) return notFound("No such routine.");
@@ -143,6 +147,7 @@ export function routinesRoutes(deps: RoutinesDeps): ConsoleRoute[] {
       method: "GET",
       path: "routines/{id}/runs",
       min: "manager",
+      ownerGrant: "own-routine",
       handle(ctx) {
         const page = parsePage(ctx.url.searchParams);
         if (isAnswer(page)) return page;
@@ -186,6 +191,7 @@ export function routinesRoutes(deps: RoutinesDeps): ConsoleRoute[] {
       method: "POST",
       path: "routines/{id}/run",
       min: "manager",
+      ownerGrant: "own-routine",
       handle(ctx) {
         const body = objectBody(ctx.body ?? {});
         if (!body || onlyKeys(body, [])) return badRequest("Send {}.");
@@ -202,6 +208,7 @@ export function routinesRoutes(deps: RoutinesDeps): ConsoleRoute[] {
       method: "POST",
       path: "routines/{id}/pause",
       min: "manager",
+      ownerGrant: "own-routine",
       handle(ctx) {
         const body = objectBody(ctx.body);
         if (!body || onlyKeys(body, ["paused"]) || typeof body.paused !== "boolean") return badRequest("Send { \"paused\": true or false }.");

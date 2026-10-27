@@ -36181,6 +36181,7 @@ const orgOpsDeps: OpsDeps = {
   },
   logs: (input) => serverLog.read(input),
   problems: (from) => readProblems(DATA_DIR, { from }),
+  botsOwnedBy: (principalId) => store.bots.filter((bot) => effectiveBotOwner(bot) === principalId).map((bot) => bot.id),
   settings: () => {
     const selection = cfg.newBotDefaults?.profile.modelSelection ?? cfg.defaultModelSelection;
     const policy = pluginMarketplacePolicy();

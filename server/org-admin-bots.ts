@@ -160,11 +160,12 @@ const answerOf = (result: { bot: AdminBot } | ConsoleRefusal): ConsoleAnswer =>
 
 /** "admin, or manager in reach": the route is open to managers, `find`
  * keeps them to their reach. */
-function single(deps: BotsDeps, path: string, action: ActionName, keys: string[], check: (body: Record<string, unknown>) => string | null, min: "manager" | "admin"): ConsoleRoute {
+function single(deps: BotsDeps, path: string, action: ActionName, keys: string[], check: (body: Record<string, unknown>) => string | null, min: "manager" | "admin", own = false): ConsoleRoute {
   return {
     method: "POST",
     path,
     min,
+    ...(own ? { ownerGrant: "own-bot" as const } : {}),
     handle(ctx) {
       const body = objectBody(ctx.body ?? {});
       const extra = body ? onlyKeys(body, keys) : "Send a JSON object.";
@@ -177,16 +178,17 @@ function single(deps: BotsDeps, path: string, action: ActionName, keys: string[]
 
 export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
   const actionRoutes = [
-    single(deps, "bots/{id}/archive", "archive", [], () => null, "manager"),
-    single(deps, "bots/{id}/restore", "restore", [], () => null, "manager"),
+    single(deps, "bots/{id}/archive", "archive", [], () => null, "manager", true),
+    single(deps, "bots/{id}/restore", "restore", [], () => null, "manager", true),
     single(deps, "bots/{id}/transfer", "transfer", ["ownerPrincipalId", "ownerSub"], (body) => typeof body.ownerPrincipalId === "string" || typeof body.ownerSub === "string" ? null : "Send { \"ownerSub\": a Perspicax user id } or { \"ownerPrincipalId\" }.", "admin"),
-    single(deps, "bots/{id}/model", "model", ["engineInstanceId", "model"], (body) => "model" in body ? null : "Send { \"engineInstanceId\"?: an engine instance, \"model\": a model id or null }.", "manager"),
+    single(deps, "bots/{id}/model", "model", ["engineInstanceId", "model"], (body) => "model" in body ? null : "Send { \"engineInstanceId\"?: an engine instance, \"model\": a model id or null }.", "manager", true),
   ];
   return [
     {
       method: "GET",
       path: "bots/{id}",
       min: "manager",
+      ownerGrant: "own-bot",
       handle(ctx) {
         const entry = find(ctx, deps, ctx.params.id!);
         const detail = entry ? deps.detail(entry.bot.id) : null;
@@ -199,6 +201,7 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
       method: "GET",
       path: "bots/{id}/avatar",
       min: "manager",
+      ownerGrant: "own-bot",
       handle(ctx) {
         const entry = find(ctx, deps, ctx.params.id!);
         if (!entry) return notFound("No such bot.");
@@ -216,10 +219,15 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
       method: "POST",
       path: "bots/{id}/clone",
       min: "manager",
+      ownerGrant: "own-bot",
       async handle(ctx) {
         const body = objectBody(ctx.body ?? {});
         const extra = body ? onlyKeys(body, ["ownerPrincipalId", "ownerSub", "name"]) : "Send a JSON object.";
         if (!body || extra) return badRequest(extra ?? "Send a JSON object.");
+        // Under the grant a copy stays the person's: an admin gives a bot away.
+        if (ctx.ownOnly && ((body.ownerPrincipalId != null && body.ownerPrincipalId !== ctx.viewer.principalId) || (body.ownerSub != null && body.ownerSub !== ctx.viewer.sub))) {
+          return fail(403, "forbidden_role", "A copy of your own bot stays yours; an admin gives a bot to someone else.");
+        }
         const entry = find(ctx, deps, ctx.params.id!);
         if (!entry) return notFound("No such bot.");
         const name = nameField(body.name);
@@ -237,6 +245,7 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
       method: "POST",
       path: "bots/{id}/stop",
       min: "admin",
+      ownerGrant: "own-bot",
       async handle(ctx) {
         const body = objectBody(ctx.body ?? {});
         if (!body || onlyKeys(body, [])) return badRequest("Send {}.");
@@ -252,6 +261,7 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
       method: "POST",
       path: "bots/{id}/delete",
       min: "admin",
+      ownerGrant: "own-bot",
       async handle(ctx) {
         const body = objectBody(ctx.body);
         const entry = find(ctx, deps, ctx.params.id!);
@@ -307,6 +317,7 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
       method: "GET",
       path: "bots/{id}/package",
       min: "admin",
+      ownerGrant: "own-bot",
       handle(ctx) {
         const entry = find(ctx, deps, ctx.params.id!);
         if (!entry) return notFound("No such bot.");

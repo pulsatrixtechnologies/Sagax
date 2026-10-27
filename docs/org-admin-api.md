@@ -1002,6 +1002,17 @@ them, anyone else's computer is `404 not_found`. `update` and `delete`
 take no grant and stay an admin's. Perspicax signs the grant only after
 it has checked the owner itself.
 
+The same mechanism covers a person's own bots and routines (2026-10-26), so
+no call of a member is ever signed above their own role:
+
+| Grant kind | Routes | Answered |
+|---|---|---|
+| `own-bot` | `GET bots`, `GET bots/{id}`, `bots/{id}/avatar`, `bots/{id}/package`, `files/{bot}/roots\|list\|stat\|read\|download`, `POST bots/{id}/clone\|archive\|restore\|model\|stop\|delete`, `GET usage`, `GET incidents`, `GET logs`, `GET audit?target=<bot>` | the person's own bots only (not one shared with them); a copy stays theirs (another owner `403`); usage rows, incidents and log lines of their own bots; the activity of one bot of theirs (`target` required) |
+| `own-routine` | `GET routines`, `GET routines/{id}`, `GET routines/{id}/runs`, `POST routines/{id}/run\|pause` | the routines of the person's own bots |
+
+The transfer, `bots/bulk`, `bots/import` and every other route take no
+grant.
+
 Code: `server/org-admin-computers.ts`. A server environment is the
 organization's machine for one person (sagax-sandboxd,
 `docs/user-sandbox.md`): an admin acts on it with the calls the person's
