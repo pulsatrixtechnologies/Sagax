@@ -82,7 +82,9 @@ app.whenReady().then(async () => {
   // The organization server is on the internet: each of its answers takes a
   // round trip (VERIFY_LATENCY_MS, 40 ms by default). Personal is this computer.
   const latency = Number(process.env.VERIFY_LATENCY_MS ?? 40);
-  session.defaultSession.protocol.handle("http", bundledUi.createBundledUiHandler({
+  // As main.mjs syncBundledUi: the handler is installed only while the
+  // organization server is on screen (it takes the whole scheme).
+  const relay = () => bundledUi.createBundledUiHandler({
     origin: () => origin, staticDir: () => bundle, devOrigin: () => null,
     fetch: async (input, init) => {
       const url = typeof input === "string" ? input : input.url;
@@ -90,7 +92,16 @@ app.whenReady().then(async () => {
       return net.fetch(input, init);
     },
     readFile: (file) => readFile(file),
-  }));
+  });
+  const handler = relay();
+  let relayOn = false;
+  const setRelay = (on) => {
+    if (on === relayOn) return;
+    if (on) session.defaultSession.protocol.handle("http", handler);
+    else session.defaultSession.protocol.unhandle("http");
+    relayOn = on;
+  };
+  setRelay(true);
   const webPreferences = () => ({
     preload: path.join(ROOT, "electron", "preload.cjs"),
     contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false,
@@ -167,6 +178,7 @@ app.whenReady().then(async () => {
       contents = win.webContents;
       await contents.loadURL(target).catch(() => {});
     } else {
+      setRelay(target === origin);
       contents = pages.show(target).contents;
     }
     const paintedAt = await Promise.race([contents.executeJavaScript(painted(BOT[target])), wait(30_000).then(() => null)]);
@@ -206,6 +218,7 @@ app.whenReady().then(async () => {
   check("Personal shows the solo app with its own bot", true, `${Math.round(first.ms)} ms to the first paint`);
 
   // 2. The organization server: Sign in with Pulsatrix once, through the loopback return.
+  setRelay(true);
   const orgPage = mode === "reload" ? win.webContents : pages.show(origin, `${origin}/pair`).contents;
   if (mode === "reload") await orgPage.loadURL(`${origin}/pair`).catch(() => {});
   await until("the organization's sign-in page", () => orgPage.executeJavaScript(`location.pathname === "/pair" && document.readyState === "complete"`));

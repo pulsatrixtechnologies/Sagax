@@ -259,13 +259,14 @@ test("the bundled organization page gets localModels (keyBases/setKey/clearKey) 
 
 test("a CRLF checkout of main.mjs still matches the bundled-ui wiring", () => {
   const crlf = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8")).replace(/\n/g, "\r\n");
-  assert.match(sourceText(crlf), /function syncBundledUi\(\) \{\n  const origins = bundledOrigins\(environmentsState\);/);
+  assert.match(sourceText(crlf), /function syncBundledUi\(\) \{\n  const onScreen = bundledOrigin\(environmentsState\);/);
 });
 
-test("main draws the bundle for every saved organization server, and trusts the one on screen for the desktop-UI channels", () => {
+test("main draws the bundle for the organization server on screen only, and trusts it for the desktop-UI channels", () => {
   const main = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8"));
-  // each organization server keeps its page open (page-contexts.mjs): the handler serves them all
-  assert.match(main, /function syncBundledUi\(\) \{\n  const origins = bundledOrigins\(environmentsState\);/);
+  // only the organization server on screen: protocol.handle takes the whole scheme, Personal never pays for it
+  assert.match(main, /function syncBundledUi\(\) \{\n  const onScreen = bundledOrigin\(environmentsState\);\n  const origins = onScreen \? \[onScreen\] : \[\];/);
+  assert.match(main, /const accounts = serverReady \|\| !app\.isPackaged \? \[rendererOrigin\(\)\] : \[\];/, "no organization page is prepared hidden");
   assert.match(main, /origin: \(\) => bundledOriginsNow,/);
   // the desktop-UI bridge answers the active one only
   assert.match(main, /currentBundledOrigin = active && bundledOriginsNow\.includes\(active\) \? active : null;\n  setBundledOrigin\(currentBundledOrigin\);/);

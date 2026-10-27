@@ -103,13 +103,17 @@ workspace switch.
   only a specific address (a sign-in, a Settings link) or a data-folder
   change loads it again (`navigateMainWindow`). Hidden pages are throttled
   and kept current by their own stream; at most four pages stay open (least
-  recently shown closed first, never the one on screen). The other accounts'
-  pages open hidden a few seconds after launch (`prepareOtherAccounts`).
+  recently shown closed first, never the one on screen). Personal's page opens
+  hidden a few seconds after launch (`prepareOtherAccounts`); an organization
+  server's page opens on its first switch, then stays.
 - Isolation: each page stays on its own origin, so its cookie, storage and
   session are its own; a page navigates within its own account only. The
-  bundled-UI handler serves every saved organization server
-  (`bundledOrigins`), and its session rides only with that server's own page
-  (`fromBundledPage`). The desktop-UI channels, the badge, the window title,
+  bundled-UI handler (`protocol.handle`, a whole scheme) is installed only
+  while an organization server is on screen: with it, every https request of
+  the main process session goes through a JS passthrough (measured on a
+  heavy page: about +20 % load, main CPU doubled, an embedded YouTube video
+  stopped), so Personal never pays for it. A server's session rides only with
+  its own page (`fromBundledPage`). The desktop-UI channels, the badge, the window title,
   permissions, floating bots and dialogs answer the page on screen only
   (`mainPage()`); a hidden account may still notify (a click opens it).
 - Signing out or forgetting an account closes its page only

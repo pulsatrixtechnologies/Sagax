@@ -2503,7 +2503,7 @@ ipcMain.on("desktop:notify-withdraw", (event, withdrawKey) => {
 // The app switches by loading the chosen server's own UI (electron/menu.mjs).
 // Only {id, name, origin} is stored here; the session credential is the
 // HttpOnly cookie /pair set for that origin, kept by Chromium's cookie jar.
-const { LOCAL_ID, activeEnvironment, activeRemote, allowedOrigins, bootEnvironmentDir, bundledOrigin, bundledOrigins, parseEnvironments, parseHostedWorkspaceLink, serializeEnvironments, serverModeEnvironment, startupEnvironmentDir, withActive, withEnvironment, withLocalEnvironment, withMicrophone, withOrganizationUpgrade, withServerName, withServerMode, withoutEnvironment, withoutServerMode, workspaceMenuTemplate, workspaceNavigationAllowed, workspaceSenderAllowed, workspaceSummary, workspaceWindowTitle } = environmentsModule;
+const { LOCAL_ID, activeEnvironment, activeRemote, allowedOrigins, bootEnvironmentDir, bundledOrigin, parseEnvironments, parseHostedWorkspaceLink, serializeEnvironments, serverModeEnvironment, startupEnvironmentDir, withActive, withEnvironment, withLocalEnvironment, withMicrophone, withOrganizationUpgrade, withServerName, withServerMode, withoutEnvironment, withoutServerMode, workspaceMenuTemplate, workspaceNavigationAllowed, workspaceSenderAllowed, workspaceSummary, workspaceWindowTitle } = environmentsModule;
 let environmentsState = { environments: [], activeId: LOCAL_ID };
 let computerSharing;
 const sharingPrompts = new Set();
@@ -2823,14 +2823,15 @@ function refreshApplicationMenu() {
 }
 
 // ── this app's own UI on an organization server (electron/bundled-ui.cjs) ──
-// Every page request to a saved organization server's origin is answered
-// from this app's bundle and its API is passed through untouched: the same
-// UI as on this computer, the server's session and authorization. Each
-// account keeps its page open (page-contexts.mjs), so the handler serves
-// every saved organization server, not only the one on screen; the
-// desktop-UI bridge still answers the one on screen only
-// (local-origin.cjs setBundledOrigin). The handler is installed only for
-// those servers' schemes and only while one is saved.
+// While an organization server is on screen, every page request to its
+// origin is answered from this app's bundle and its API is passed through
+// untouched: the same UI as on this computer, the server's session and
+// authorization. The handler takes a whole scheme (protocol.handle), so it is
+// installed only while such a server is on screen: Personal and every other
+// page then reach the network natively (measured: the passthrough cost main
+// CPU and latency, and stopped an embedded YouTube video). A hidden
+// organization page keeps its loaded app; it is opened, never prepared
+// hidden, so it always loads through the bundle.
 const bundledSchemes = new Set();
 let currentBundledOrigin = null;
 let bundledOriginsNow = [];
@@ -2851,7 +2852,8 @@ const bundledUiHandler = bundledUiModule.createBundledUiHandler({
   log: (line) => slog(line),
 });
 function syncBundledUi() {
-  const origins = bundledOrigins(environmentsState);
+  const onScreen = bundledOrigin(environmentsState);
+  const origins = onScreen ? [onScreen] : [];
   const schemes = new Set(origins.map((origin) => new URL(origin).protocol.slice(0, -1)));
   for (const scheme of bundledSchemes) {
     if (schemes.has(scheme)) continue;
@@ -3416,7 +3418,8 @@ async function upgradeSavedOrganizationServers() {
   // not, so it gets this app's bundle and bridge.
   for (const origin of orgOrigins) {
     const page = pageContexts?.contentsFor(origin);
-    if (!page) continue;
+    // the page on screen only: the bundle is served while it is on screen
+    if (!page || page !== mainPage()) continue;
     let current = null;
     try { current = new URL(page.getURL()); } catch {}
     if (current?.origin === origin) void page.loadURL(current.href).catch(() => {});
@@ -3992,15 +3995,14 @@ function createWindow({ deferNavigation = false } = {}) {
   return win;
 }
 
-/** Open the other accounts' pages hidden: Personal when this computer's
- * server runs, and each saved organization server, up to the pages kept
- * open. Never in companion client mode (its one page is the remote desktop). */
+/** Open Personal's page hidden when this computer's server runs, so the
+ * first switch to it is instant too. An organization server's page is never
+ * prepared hidden: it must load through this app's bundle, which is served
+ * only while that server is on screen (syncBundledUi). Never in companion
+ * client mode (its one page is the remote desktop). */
 function prepareOtherAccounts(contexts) {
   if (contexts !== pageContexts || desktopRemoteAccess || desktopShutdownStarted) return;
-  const accounts = [
-    ...(serverReady || !app.isPackaged ? [rendererOrigin()] : []),
-    ...environmentsState.environments.filter((entry) => entry.org === true).map((entry) => entry.origin),
-  ];
+  const accounts = serverReady || !app.isPackaged ? [rendererOrigin()] : [];
   for (const origin of accounts) {
     if (contexts.contentsFor(origin)) continue;
     if (contexts.prepare(origin)) slog(`account: ${origin === rendererOrigin() ? "Personal" : origin} opened hidden, ready for a switch`);
