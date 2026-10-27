@@ -359,19 +359,19 @@ describe("get_agent / delete_agent", () => {
 });
 
 describe("send_prompt / await_turn", () => {
-  it("fire_and_forget returns a handle once accepted, in the caller's hidden conversation", async () => {
+  it("fire_and_forget returns a handle once accepted, in the agent's single chat, never hidden (#1170)", async () => {
     const w = world();
     const r = await w.api.call(bot("bot-x"), "send_prompt", { agent_id: "bot-a", prompt: "hello" });
     expect(r.body).toMatchObject({ accepted: true, mode: "fire_and_forget", finished: false, agent_id: "bot-a" });
     expect(String(r.body.handle)).toMatch(/^turn_/);
-    expect(w.threads.get(String(r.body.thread_id))).toMatchObject({ hidden: true, owner: "bot:bot-x" });
+    expect(w.threads.get(String(r.body.thread_id))).toMatchObject({ hidden: false, owner: "bot:bot-x" });
   });
 
-  it("a person's send_prompt opens a fresh conversation unless thread_id names one of theirs; a bot keeps one", async () => {
+  it("a person's send_prompt lands in the single chat unless thread_id names one of theirs; a bot keeps one (#1170)", async () => {
     const w = world();
     const first = await w.api.call(person("p1"), "send_prompt", { agent_id: "bot-a", prompt: "one" });
     const second = await w.api.call(person("p1"), "send_prompt", { agent_id: "bot-a", prompt: "two" });
-    expect(second.body.thread_id).not.toBe(first.body.thread_id);
+    expect(second.body.thread_id).toBe(first.body.thread_id);
     const again = await w.api.call(person("p1"), "send_prompt", { agent_id: "bot-a", prompt: "three", thread_id: first.body.thread_id });
     expect(again.body).toMatchObject({ accepted: true, thread_id: first.body.thread_id });
     const foreign = await w.api.call(person("p2"), "send_prompt", { agent_id: "bot-a", prompt: "x", thread_id: first.body.thread_id });
@@ -613,7 +613,7 @@ describe("transcripts", () => {
   it("read_latest_page_with_threads adds per-thread counts", async () => {
     const { w, c } = await seeded();
     const r = await w.api.call(c, "read_latest_page_with_threads", { agent_id: "bot-a", limit: 2 });
-    expect(r.body.threads).toEqual([expect.objectContaining({ count: 6, in_page: 2, hidden: true, status: "idle" })]);
+    expect(r.body.threads).toEqual([expect.objectContaining({ count: 6, in_page: 2, hidden: false, status: "idle" })]);
   });
 
   it("read_latest_page and read_latest_page_with_threads read one conversation by thread_id, the caller's own only", async () => {
@@ -686,8 +686,8 @@ describe("end to end: two bots", () => {
       ["user", "schedule Bob on Monday"],
       ["agent", "B did: schedule Bob on Monday"],
     ]);
-    // the conversation is hidden and belongs to A
-    expect(w.threads.get(String(sent.body.thread_id))).toMatchObject({ hidden: true, owner: "bot:bot-a", agentId: "bot-b" });
+    // #1170: the conversation is not hidden, and belongs to A
+    expect(w.threads.get(String(sent.body.thread_id))).toMatchObject({ hidden: false, owner: "bot:bot-a", agentId: "bot-b" });
     expect(w.audits.map((row) => row.entry.tool)).toEqual(["find_agents", "send_prompt", "await_turn", "read_latest_page"]);
   });
 });
