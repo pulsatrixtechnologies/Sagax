@@ -1,5 +1,5 @@
 // Turns a permission ask (tool id + arguments) into words a person reads:
-// "consulter l'horaire dans ConnectWise PSA · amartin, 2 oct. au 3 oct."
+// "consulter l'horaire dans Acme Desk · amartin, 2 oct. au 3 oct."
 // with a risk level. The raw tool id and JSON stay available for the
 // card's collapsed technical details; nothing here decides anything.
 //
@@ -137,6 +137,12 @@ type Operation = "read" | "create" | "update" | "delete" | "run";
 export interface ToolHints {
   readOnly?: boolean;
   destructive?: boolean;
+  /** The product the server declared for the tool at run time (a
+   * Perspicax API's display name or title). No product name is written in
+   * this file: without one, the reading names the tool's own prefix. */
+  product?: string;
+  /** The id the tool's name starts with for that product (`acme_desk`). */
+  productId?: string;
 }
 
 export interface ParsedToolId {
@@ -149,7 +155,7 @@ export interface ParsedToolId {
 export interface ApprovalDescription {
   /** verb phrase that follows "wants to", e.g. "view the schedule" */
   action?: string;
-  /** the product the tool acts on, e.g. "ConnectWise PSA" */
+  /** the product the tool acts on, e.g. "Acme Desk" */
   product?: string;
   /** a short plain-language reading of the key arguments */
   summary?: string;
@@ -165,7 +171,7 @@ export interface ApprovalDescription {
 /** `mcp__<server>__<tool>` (Claude, Codex) or the engine's own
  * `<server>__<tool>` (Grok: perspicax_quasar_agent__flow_action): the
  * server id may itself hold single underscores (perspicax_example_flow)
- * and the tool may hold double ones (cw_psa__query), so split on the first
+ * and the tool may hold double ones (acme_desk__query), so split on the first
  * `__` after the optional prefix. A name with spaces, or a built-in such as
  * Bash, is no MCP tool. */
 export function parseToolId(tool: string): ParsedToolId {
@@ -177,25 +183,14 @@ export function parseToolId(tool: string): ParsedToolId {
 /** Servers that are the app itself: they name no product. */
 const INTERNAL_SERVERS = new Set(["ogb", "sagax", "maus", "harness"]);
 
-const PRODUCT_BY_PREFIX: Array<[RegExp, string, number]> = [
-  // [tool-name prefix, product, tokens the prefix takes]
-  [/^cw_psa(_|$)/, "ConnectWise PSA", 2],
-  [/^cw_rmm(_|$)/, "ConnectWise RMM", 2],
-  [/^cw_automate(_|$)/, "ConnectWise Automate", 2],
-  [/^(sc|screenconnect)(_|$)/, "ScreenConnect", 1],
-  [/^(m365|outlook|graph)(_|$)/, "Microsoft 365", 1],
-  [/^bookstack(_|$)/, "BookStack", 1],
-  [/^passportal(_|$)/, "Passportal", 1],
-  [/^axcient(_|$)/, "Axcient", 1],
-  [/^itglue(_|$)/, "IT Glue", 1],
-];
-
+/** Servers that are this platform's own gateway: their tools are named
+ * for the product they serve, never the gateway. */
 const PRODUCT_BY_SERVER: Array<[RegExp, string]> = [
-  [/connectwise|(^|_)cw(_|$)/i, "ConnectWise PSA"],
-  [/microsoft_?365|outlook/i, "Microsoft 365"],
-  [/screen_?connect/i, "ScreenConnect"],
   [/perspicax|pulsatrix/i, "Pulsatrix"],
 ];
+
+/** A product prefix in a tool's own name: `<product>__<tool>`. */
+const PRODUCT_PREFIX = /^([a-z0-9][a-z0-9_-]*?)__./i;
 
 const ACRONYMS = new Set(["psa", "rmm", "api", "mcp", "ai", "it", "id", "url", "cw", "sso", "vpn", "dns"]);
 
@@ -207,13 +202,22 @@ export function titleCase(words: string): string {
     .join(" ");
 }
 
-/** The product a tool acts on, from its name first (cw_psa_* is
- * ConnectWise PSA whichever server serves it), then its server's id. */
-export function productFor(parsed: ParsedToolId): { product?: string; prefixTokens: number } {
+/** The product a tool acts on. 2026-10-27: the name comes from the server
+ * (hints.product, the product it declared for the tool), never from a table
+ * here. Its id (hints.productId) is the prefix the tool's name starts with,
+ * whichever server serves it; without one, a `<product>__<tool>` prefix is.
+ * A prefix without a declared name reads as its own words, titled
+ * (`acme_desk` reads "Acme Desk"); then the server's id. */
+export function productFor(parsed: ParsedToolId, hints?: Pick<ToolHints, "product" | "productId">): { product?: string; prefixTokens: number } {
   const lower = parsed.name.toLowerCase();
-  for (const [prefix, product, tokens] of PRODUCT_BY_PREFIX) {
-    if (prefix.test(lower)) return { product, prefixTokens: tokens };
+  const declared = hints?.product?.trim() || undefined;
+  const id = hints?.productId?.trim().toLowerCase();
+  if (id && (lower === id || lower.startsWith(`${id}_`))) {
+    return { product: declared ?? titleCase(id), prefixTokens: id.split(/_+/).filter(Boolean).length };
   }
+  const prefix = PRODUCT_PREFIX.exec(lower)?.[1];
+  if (prefix) return { product: declared ?? titleCase(prefix), prefixTokens: prefix.split(/_+/).filter(Boolean).length };
+  if (declared) return { product: declared, prefixTokens: 0 };
   const server = parsed.server;
   if (!server || INTERNAL_SERVERS.has(server.toLowerCase())) return { prefixTokens: 0 };
   for (const [pattern, product] of PRODUCT_BY_SERVER) {
@@ -239,7 +243,7 @@ function operationOf(word: string | undefined): Operation | undefined {
 }
 
 /** HTTP methods and free-form operation names in the arguments
- * (cw_psa__write { operation: "create" }, { method: "DELETE" }). */
+ * (acme_desk__write { operation: "create" }, { method: "DELETE" }). */
 function operationFromArgs(args: Record<string, unknown> | undefined): Operation | undefined {
   if (!args) return undefined;
   for (const key of ["operation", "method", "op", "verb", "mode", "action"]) {
@@ -381,7 +385,7 @@ function dayKey(date: Date): string {
 }
 
 /** Every date the arguments mention, read in the viewer's time zone
- * (ConnectWise sends UTC). A range's exclusive end at local midnight
+ * (a service desk sends UTC). A range's exclusive end at local midnight
  * ("dateStart < [2026-10-04T04:00:00Z]") counts as the day before. */
 export function dateRange(text: string): { from: Date; to: Date } | undefined {
   const dates: Array<{ date: Date; midnight: boolean }> = [];
@@ -527,17 +531,21 @@ export function describeApproval(
   if (!parsed.server) {
     return { risk: riskFor(undefined, hints, builtin), argsJson };
   }
-  const { product, prefixTokens } = productFor(parsed);
-  // cw_psa_schedule__query → [cw, psa, schedule, query]; the product
+  const { product, prefixTokens } = productFor(parsed, hints);
+  // acme_desk__query_schedule → [acme, desk, query, schedule]; the product
   // prefix goes, the verb is the last word (or the first: list_sites).
-  const tokens = parsed.name.split(/_+/).filter(Boolean).slice(prefixTokens);
+  let tokens = parsed.name.split(/_+/).filter(Boolean).slice(prefixTokens);
+  // no product prefix declared or written `<product>__`: a leading word
+  // that is no verb, before a verb, is the tool's own namespace
+  // (outlook_create_event, acme_send_mail): "create an event"
+  if (prefixTokens === 0 && tokens.length >= 3 && !operationOf(tokens[0]) && (operationOf(tokens[1]) || operationOf(tokens[tokens.length - 1]))) tokens = tokens.slice(1);
   let op = operationOf(tokens[tokens.length - 1]);
   let rest = tokens.slice(0, -1);
   if (!op) {
     op = operationOf(tokens[0]);
     rest = tokens.slice(1);
   }
-  // generic verbs (cw_psa__write, cw_psa__action) read the arguments
+  // generic verbs (acme_desk__write, acme_desk__action) read the arguments
   const argsOp = operationFromArgs(args);
   if (argsOp && (op === undefined || op === "update" || op === "run") && (tokens.length <= 1 || rest.length === 0)) op = argsOp;
   const resourceRaw = rest.length
@@ -623,8 +631,8 @@ const BUILTIN_ACTION: Record<string, string> = {
 };
 
 /** The verb phrase after "wants to" / "Allow X to": Bash is "run a
- * command", mcp__…__cw_psa_schedule__query is "view the schedule in
- * ConnectWise PSA". Never the raw tool id. */
+ * command", mcp__…__acme_desk__query_schedule is "view the schedule in
+ * Acme Desk". Never the raw tool id. */
 export function approvalAction(tool: string | undefined, input: string | undefined, hints?: ToolHints, words: ApprovalWords = ENGLISH_WORDS, now = new Date()): string {
   if (!tool) return words.t("approval.tool.takeAction");
   const builtin = BUILTIN_ACTION[tool];
@@ -651,7 +659,7 @@ const oneLine = (text: string, max: number) => {
 export interface ApprovalPlain {
   /** "Allow Nova to run a command?" */
   title: string;
-  /** "view the schedule in ConnectWise PSA": the action alone */
+  /** "view the schedule in Acme Desk": the action alone */
   action: string;
   /** one plain line: what exactly and where. Never a raw tool id or JSON. */
   line: string;

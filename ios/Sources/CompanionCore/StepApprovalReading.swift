@@ -1,5 +1,6 @@
 // The parts of shared/approval-describe.ts a step reuses to word an MCP
-// call: the product (name prefix first, then the server), the verb from the
+// call: the product (the name the server declared, else the name prefix,
+// then the server), the verb from the
 // tool's last or first word (or its arguments for generic tools), the
 // resource, and a short reading of the arguments (who, which record). The
 // date range the desktop adds to that reading is left out on the phone.
@@ -15,24 +16,16 @@ struct ApprovalReading {
 
     private static let internalServers: Set<String> = ["ogb", "sagax", "maus", "harness"]
 
-    private static let productByPrefix: [(NSRegularExpression, String, Int)] = [
-        (StepRegex.make(#"^cw_psa(_|$)"#), "ConnectWise PSA", 2),
-        (StepRegex.make(#"^cw_rmm(_|$)"#), "ConnectWise RMM", 2),
-        (StepRegex.make(#"^cw_automate(_|$)"#), "ConnectWise Automate", 2),
-        (StepRegex.make(#"^(sc|screenconnect)(_|$)"#), "ScreenConnect", 1),
-        (StepRegex.make(#"^(m365|outlook|graph)(_|$)"#), "Microsoft 365", 1),
-        (StepRegex.make(#"^bookstack(_|$)"#), "BookStack", 1),
-        (StepRegex.make(#"^passportal(_|$)"#), "Passportal", 1),
-        (StepRegex.make(#"^axcient(_|$)"#), "Axcient", 1),
-        (StepRegex.make(#"^itglue(_|$)"#), "IT Glue", 1),
-    ]
-
+    /// This platform's own gateway: its tools are named for the product
+    /// they serve. No other product name is written here: the server
+    /// declares it (`ToolActivity.product`), else the prefix reads as its
+    /// own words, titled.
     private static let productByServer: [(NSRegularExpression, String)] = [
-        (StepRegex.make(#"connectwise|(^|_)cw(_|$)"#, [.caseInsensitive]), "ConnectWise PSA"),
-        (StepRegex.make(#"microsoft_?365|outlook"#, [.caseInsensitive]), "Microsoft 365"),
-        (StepRegex.make(#"screen_?connect"#, [.caseInsensitive]), "ScreenConnect"),
         (StepRegex.make(#"perspicax|pulsatrix"#, [.caseInsensitive]), "Pulsatrix"),
     ]
+
+    /// A product prefix in a tool's own name: `<product>__<tool>`.
+    private static let productPrefix = StepRegex.make(#"^([a-z0-9][a-z0-9_-]*?)__."#, [.caseInsensitive])
 
     private static let acronyms: Set<String> = ["psa", "rmm", "api", "mcp", "ai", "it", "id", "url", "cw", "sso", "vpn", "dns"]
 
@@ -42,9 +35,23 @@ struct ApprovalReading {
         }.joined(separator: " ")
     }
 
-    static func productFor(server: String?, name: String) -> (product: String?, prefixTokens: Int) {
+    /// Mirror of shared/approval-describe.ts `productFor`: the declared
+    /// name and id first, then a `<product>__` prefix, then the server.
+    static func productFor(server: String?, name: String, declared: String? = nil, declaredId: String? = nil) -> (product: String?, prefixTokens: Int) {
         let lower = name.lowercased()
-        for (prefix, product, tokens) in productByPrefix where StepRegex.test(prefix, lower) { return (product, tokens) }
+        let trimmed = declared?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let product: String? = trimmed.isEmpty ? nil : trimmed
+        let id = declaredId?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let count = { (words: String) in words.split(separator: "_").filter { !$0.isEmpty }.count }
+        if !id.isEmpty, lower == id || lower.hasPrefix("\(id)_") {
+            return (product ?? titleCase(id), count(id))
+        }
+        let whole = NSRange(lower.startIndex..., in: lower)
+        if let match = productPrefix.firstMatch(in: lower, range: whole), let range = Range(match.range(at: 1), in: lower) {
+            let prefix = String(lower[range])
+            return (product ?? titleCase(prefix), count(prefix))
+        }
+        if let product { return (product, 0) }
         guard let server, !internalServers.contains(server.lowercased()) else { return (nil, 0) }
         for (pattern, product) in productByServer where StepRegex.test(pattern, server) { return (product, 0) }
         let bare = StepRegex.strip(StepRegex.make(#"^plugin_[^_]+_"#, [.caseInsensitive]), StepRegex.strip(StepRegex.make(#"^claude_ai_"#, [.caseInsensitive]), server))
@@ -170,13 +177,18 @@ struct ApprovalReading {
     /// `describeApproval`'s action, product and summary. `verb` words the
     /// `approval.verb.*` and `approval.tool.runCommand` keys (a step turns
     /// them into its own tense); every other key goes to `words`.
-    static func describe(_ tool: String, input: String?, words: StepWords, verb: (String, [String: String]) -> String) -> ApprovalReading {
+    static func describe(_ tool: String, input: String?, words: StepWords, product declared: String? = nil, productId: String? = nil, verb: (String, [String: String]) -> String) -> ApprovalReading {
         let text = input ?? ""
         let args = StepLabel.parseArgs(text)
         let parsed = StepLabel.parseToolId(tool)
         guard let server = parsed.server else { return ApprovalReading() }
-        let (product, prefixTokens) = productFor(server: server, name: parsed.name)
-        let tokens = Array(parsed.name.split(separator: "_").map(String.init).filter { !$0.isEmpty }.dropFirst(prefixTokens))
+        let (product, prefixTokens) = productFor(server: server, name: parsed.name, declared: declared, declaredId: productId)
+        var tokens = Array(parsed.name.split(separator: "_").map(String.init).filter { !$0.isEmpty }.dropFirst(prefixTokens))
+        // no product prefix: a leading word that is no verb, before a verb,
+        // is the tool's own namespace (outlook_create_event)
+        if prefixTokens == 0, tokens.count >= 3, operation(tokens[0]) == nil, operation(tokens[1]) != nil || operation(tokens.last) != nil {
+            tokens = Array(tokens.dropFirst())
+        }
         var op = operation(tokens.last)
         var rest = Array(tokens.dropLast())
         if op == nil {

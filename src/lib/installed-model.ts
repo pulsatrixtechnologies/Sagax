@@ -21,7 +21,7 @@ export interface InstalledBrings {
 export interface InstalledEntry {
   /** stable across loads: the key of the row that stands for the entry */
   key: string;
-  /** a name for people: "GitHub", "Twilio Docs" */
+  /** a name for people: "GitHub", "Acme Docs" */
   name: string;
   logo: string | null;
   domain: string | null;
@@ -59,7 +59,7 @@ const DISPLAY_NAMES: Readonly<Record<string, string>> = {
 };
 
 /** A server or plugin name as people say it: "github-github" is "GitHub",
- * "twilio-docs" is "Twilio Docs". A repeated word (a plugin that named its
+ * "acme-docs" is "Acme Docs". A repeated word (a plugin that named its
  * server after itself) shows once; a name already written with capitals
  * stays as it is. */
 export function readableName(name: string): string {

@@ -3,8 +3,8 @@ import { configuredKeyterms, looksSecret, properNouns, VOICE_KEYTERM_CHARS, VOIC
 
 describe("properNouns", () => {
   it("keeps names, mixed case words and acronyms, not sentence starts", () => {
-    const found = properNouns("Bonjour. Le billet de Marie Tremblay est dans ServiceNow. Peux-tu vérifier CrowdStrike pour ACME? The agent on macOS is fine.");
-    expect([...found.keys()]).toEqual(expect.arrayContaining(["Marie Tremblay", "ServiceNow", "CrowdStrike", "ACME", "macOS"]));
+    const found = properNouns("Bonjour. Le billet de Marie Tremblay est dans ServiceNow. Peux-tu vérifier AcmeGuard pour ACME? The agent on macOS is fine.");
+    expect([...found.keys()]).toEqual(expect.arrayContaining(["Marie Tremblay", "ServiceNow", "AcmeGuard", "ACME", "macOS"]));
     expect(found.has("Bonjour")).toBe(false);
     expect(found.has("Le")).toBe(false);
     expect(found.has("The")).toBe(false);
@@ -20,13 +20,13 @@ describe("properNouns", () => {
   });
 
   it("never returns a token that looks like a secret, from a thread or the organization's list", () => {
-    const text = "La clé AKIAIOSFODNN7EXAMPLE est dans le coffre. Le mot de passe Summer2024 marche. Token sk-proj-Ab12Cd34Ef56 et xai-Q7w9Er2T, puis ghp-16C7e42F292c6912E7710c838347Ae178B4a et K9mP2xQ7vR4tZ8wY. Le serveur SRV-01 sous Windows11 avec Office365 et GPT4 chez CrowdStrike.";
+    const text = "La clé AKIAIOSFODNN7EXAMPLE est dans le coffre. Le mot de passe Summer2024 marche. Token sk-proj-Ab12Cd34Ef56 et xai-Q7w9Er2T, puis ghp-16C7e42F292c6912E7710c838347Ae178B4a et K9mP2xQ7vR4tZ8wY. Le serveur SRV-01 sous Windows11 avec Office365 et GPT4 chez AcmeGuard.";
     const found = [...properNouns(text).keys()];
     for (const secret of ["AKIAIOSFODNN7EXAMPLE", "Summer2024", "sk-proj-Ab12Cd34Ef56", "xai-Q7w9Er2T", "K9mP2xQ7vR4tZ8wY"]) {
       expect(found.some((term) => term.includes(secret))).toBe(false);
     }
     expect(found.some((term) => /ghp/i.test(term))).toBe(false);
-    expect(found).toEqual(expect.arrayContaining(["SRV-01", "Windows11", "Office365", "GPT4", "CrowdStrike"]));
+    expect(found).toEqual(expect.arrayContaining(["SRV-01", "Windows11", "Office365", "GPT4", "AcmeGuard"]));
     const terms = voiceKeyterms({ botName: "Quasar", configured: ["AKIAIOSFODNN7EXAMPLE", "CONTOSO"] });
     expect(terms).toContain("CONTOSO");
     expect(terms).not.toContain("AKIAIOSFODNN7EXAMPLE");
@@ -34,7 +34,7 @@ describe("properNouns", () => {
 
   it("tells a secret from a product name", () => {
     for (const secret of ["AKIAIOSFODNN7EXAMPLE", "Summer2024", "Hiver2025", "a1B2c3", "sk-abc", "xai-abcdef", "eyJhbGciOiJIUzI1NiJ9", "Zq8Lr2Vx9Pt4"]) expect(looksSecret(secret)).toBe(true);
-    for (const name of ["Microsoft", "365", "SRV-01", "Windows11", "Office365", "GPT4", "iPhone", "Win10", "M365", "CrowdStrike", "X360Recover", "Skyline", "Pierre"]) expect(looksSecret(name)).toBe(false);
+    for (const name of ["Microsoft", "365", "SRV-01", "Windows11", "Office365", "GPT4", "iPhone", "Win10", "M365", "AcmeGuard", "X360Recover", "Skyline", "Pierre"]) expect(looksSecret(name)).toBe(false);
   });
 
   it("keeps product names with numbers", () => {
@@ -76,7 +76,7 @@ describe("voiceKeyterms", () => {
 
 describe("configuredKeyterms", () => {
   it("splits on commas and newlines", () => {
-    expect(configuredKeyterms(" ServiceNow, CrowdStrike\nVeeam ,, ")).toEqual(["ServiceNow", "CrowdStrike", "Veeam"]);
+    expect(configuredKeyterms(" ServiceNow, AcmeGuard\nVeeam ,, ")).toEqual(["ServiceNow", "AcmeGuard", "Veeam"]);
     expect(configuredKeyterms(undefined)).toEqual([]);
   });
 });

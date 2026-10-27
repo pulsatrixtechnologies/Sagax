@@ -13,7 +13,7 @@ const step = (name: string, ok?: boolean, input?: Record<string, unknown>, durat
   tool: { name, ...(ok === undefined ? {} : { ok }), ...(input ? { input: JSON.stringify(input) } : {}), ...(durationMs === undefined ? {} : { durationMs }) },
 });
 const said = (text: string): Message => ({ id: `m${++seq}`, at: seq, role: "bot", kind: "text", text, turnId: "t" });
-const tickets = { server: "pulsatrix-psa", tool: "cw_psa__query", args: { resource: "service.tickets" } };
+const tickets = { server: "pulsatrix-psa", tool: "acme_desk__query", args: { resource: "service.tickets" } };
 
 describe("the steps of a group, opened", () => {
   it("merges the same step repeated back to back, with a count", () => {
@@ -50,15 +50,15 @@ describe("the steps of a group, opened", () => {
     const use = (tool: string) => step("use_tool", true, { tool_name: tool, tool_input: { resource: "service.tickets" } });
     const entries = mergeSteps([
       step("search_tool", true, { query: "perspicax" }), step("search_tool", true, { query: "remote" }),
-      use("perspicax__cw_psa__query"),
+      use("perspicax__acme_desk__query"),
       step("search_tool", true, { query: "tickets" }),
-      use("perspicax__cw_psa__query"), use("perspicax__cw_psa__query"),
+      use("perspicax__acme_desk__query"), use("perspicax__acme_desk__query"),
       step("ToolSearch", true, { query: "select:Read" }),
       step("search_tool", undefined, { query: "still going" }),
     ]);
     expect(entries.map((entry) => entry.kind === "steps" ? [entry.label, entry.messages.length] : entry.kind)).toEqual([
       ["Looked for a tool", 4],
-      ["Viewed tickets in ConnectWise PSA", 3],
+      ["Viewed tickets in Acme Desk", 3],
       ["Looking for a tool", 1],
     ]);
     // opened, the folded row lists its calls in the order they ran, and each
@@ -73,7 +73,7 @@ describe("the steps of a group, opened", () => {
     const words = said("Now the computer.");
     const entries = mergeSteps([
       step("search_tool", true, { query: "tickets" }),
-      step("use_tool", true, { tool_name: "perspicax__cw_psa__query", tool_input: { resource: "service.tickets" } }),
+      step("use_tool", true, { tool_name: "perspicax__acme_desk__query", tool_input: { resource: "service.tickets" } }),
       words,
       step("search_tool", true, { query: "remote" }),
       step("use_tool", true, { tool_name: "remote__status", tool_input: {} }),
@@ -81,7 +81,7 @@ describe("the steps of a group, opened", () => {
     // the narration splits the stretch: the second search stays after it
     expect(entries.map((entry) => entry.kind === "steps" ? [entry.label, entry.messages.length] : entry.kind)).toEqual([
       ["Looked for a tool", 1],
-      ["Viewed tickets in ConnectWise PSA", 1],
+      ["Viewed tickets in Acme Desk", 1],
       "message",
       ["Looked for a tool", 1],
       ["Read data in Remote", 1],
@@ -116,8 +116,8 @@ describe("the group's one line", () => {
   it("says what runs now while the bot still works", () => {
     const live = [...turn, step("mcp", undefined, tickets)];
     const words = stepGroupWords(summarizeSteps(live), undefined);
-    expect(words).toMatchObject({ label: "Viewing tickets in ConnectWise PSA", phase: "running", tools: "13 tools", failed: "5 failed" });
-    expect(words.ariaLabel).toBe("Viewing tickets in ConnectWise PSA, service.tickets, 13 tools, 5 failed, press to see the detail");
+    expect(words).toMatchObject({ label: "Viewing tickets in Acme Desk", phase: "running", tools: "13 tools", failed: "5 failed" });
+    expect(words.ariaLabel).toBe("Viewing tickets in Acme Desk, service.tickets, 13 tools, 5 failed, press to see the detail");
   });
 
   it("speaks French when the interface is in French", () => {

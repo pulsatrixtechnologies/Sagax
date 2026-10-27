@@ -190,7 +190,7 @@ the line is not dead air. Approvals stay spoken yes or no and are not
 cancelled. Tools still run on the bot. A "stop" is a stop only when it is
 the whole utterance ("stop", "arrête", "arrête ça", "ok stop", "stop
 please", with at most two filler or polite words around it,
-`voice-topics.ts` `isStopUtterance`): "Stop le service CrowdStrike sur
+`voice-topics.ts` `isStopUtterance`): "Stop le service AcmeGuard sur
 SRV-01" is work for the bot, sent like any other request, never swallowed.
 The call speaks no canned filler
 and no tool-chip narration; the prompt asks the bot to say so once, in

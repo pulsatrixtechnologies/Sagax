@@ -11,10 +11,13 @@ import Foundation
 
 // MARK: - Wire pieces of an approval card
 
-/// `OptionCardData.toolHints`: MCP annotations.
+/// `OptionCardData.toolHints`: MCP annotations, and the product the
+/// server declared for the tool.
 public struct ToolHints: Codable, Hashable, Sendable {
     public var readOnly: Bool?
     public var destructive: Bool?
+    public var product: String?
+    public var productId: String?
 
     public init(readOnly: Bool? = nil, destructive: Bool? = nil) {
         self.readOnly = readOnly

@@ -17,7 +17,7 @@ final class StepsModelMenuUITests: XCTestCase {
         let repeated = app.buttons["step-repeat.step-1"]
         XCTAssertTrue(repeated.waitForExistence(timeout: 5), "the same step three times reads once")
         XCTAssertTrue(repeated.label.hasPrefix("A lu un fichier ×3"), repeated.label)
-        XCTAssertTrue(contains("A consulté les billets dans ConnectWise PSA", in: app), "the MCP server is named")
+        XCTAssertTrue(contains("A consulté les billets dans Acme Desk", in: app), "the MCP server is named")
         shot("steps-open", app)
         repeated.tap()
         shot("steps-repeat-open", app)

@@ -745,6 +745,9 @@ export interface WireMessage {
      * the step row names it. Absent: the row reads a generic name from the
      * tool id. */
     product?: string;
+    /** The id the tool's name starts with for that product (`acme_desk`
+     * in `acme_desk_ticket_get`), declared with it. */
+    productId?: string;
     /** error rows: the installed Claude Code is too old for the model, and
      * the UI can offer to update it in place. */
     claudeUpdate?: boolean;
@@ -1025,8 +1028,10 @@ export interface OptionCardData {
   /** A permission ask's full arguments as redacted JSON, shown only in
    * the card's collapsed technical details. */
   toolInput?: string;
-  /** MCP tool annotations, when the provider passes them on. */
-  toolHints?: { readOnly?: boolean; destructive?: boolean };
+  /** MCP tool annotations, when the provider passes them on, and the
+   * product the server declared for the tool (its name, and the id its
+   * tool names start with). */
+  toolHints?: { readOnly?: boolean; destructive?: boolean; product?: string; productId?: string };
   /** Exact native command offered for an owner/admin to remember. */
   commandAllowlist?: CommandAllowlistCandidate;
   /** Local actions never share remembered grants with cloud/tool approvals. */

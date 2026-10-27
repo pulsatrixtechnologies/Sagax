@@ -46,7 +46,7 @@ const bot = (id: string, name: string, extra: Partial<Bot>, last: string, at: nu
 const team: Bot[] = [
   bot("nova", "Nova", { chiefOfStaff: true, title: "Chef de cabinet", color: "green", mascotBody: "squircle", pinned: true }, "Je coordonne la semaine avec l'équipe.", minutes(4)),
   bot("atlas", "Atlas", {
-    title: "ConnectWise Ops & MS 365", color: "pink", mascotBody: "squircle", section: "My team",
+    title: "Service Desk Ops", color: "pink", mascotBody: "squircle", section: "My team",
     tasks: [
       task("t-atlas", "Général", minutes(8)),
       task("t-atlas-2", "Rapport mensuel des billets", minutes(30), { unread: true }),
@@ -77,7 +77,7 @@ const sharing = params.get("sharing") === "1";
 if (sharing) {
   team.length = 0;
   team.push(
-    bot("atlas", "Atlas", { title: "ConnectWise Ops", color: "pink", mascotBody: "squircle", ownerUserId: "pr_me", busy: true, tasks: [task("t-atlas", "Général", minutes(2), { busy: true })] }, "Je prépare le rapport mensuel.", minutes(2)),
+    bot("atlas", "Atlas", { title: "Service Desk Ops", color: "pink", mascotBody: "squircle", ownerUserId: "pr_me", busy: true, tasks: [task("t-atlas", "Général", minutes(2), { busy: true })] }, "Je prépare le rapport mensuel.", minutes(2)),
     bot("iris", "Iris", { title: "Full Stack, Dev Ops & ITSec", color: "orange", mascotBody: "drop", ownerUserId: "pr_me" }, "Rien à signaler.", minutes(40)),
     bot("support", "Ada Support", { title: "Service desk", color: "blue", mascotBody: "circle", ownerUserId: "pr_ada" }, "Le billet 4821 est fermé.", minutes(12)),
     bot("reports", "Rapports financiers trimestriels de la direction", { title: "Finance", color: "purple", mascotBody: "capsule", ownerUserId: "pr_bob", busy: true, tasks: [task("t-reports", "Général", minutes(1), { busy: true })] }, "Je compile les chiffres du trimestre.", minutes(1)),

@@ -80,7 +80,7 @@ describe("admitDuplexSend", () => {
     const admit = (text: string) => admitDuplexSend({
       duplex: true, botBusy: true, stopping: false, queued: false, intent: classifyVoiceIntent(text), newTopic: classifyVoiceIntent(text) === "new_topic",
     });
-    expect(admit("Stop le service CrowdStrike sur SRV-01")).toEqual({ action: "replace", interrupt: true, discardQueue: true });
+    expect(admit("Stop le service AcmeGuard sur SRV-01")).toEqual({ action: "replace", interrupt: true, discardQueue: true });
     expect(admit("ok stop")).toEqual({ action: "stop", interrupt: true, discardQueue: true });
   });
 

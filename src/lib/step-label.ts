@@ -25,8 +25,10 @@ export type StepTool = {
   output?: string;
   durationMs?: number;
   /** The product this tool serves, as the connector or the server declared
-   * it at run time (shared/wire.ts Message.tool.product). */
+   * it at run time (shared/wire.ts Message.tool.product), and the id its
+   * tool names start with. */
   product?: string;
+  productId?: string;
 };
 
 /** A teammate's display name from the id a coordination tool was given. */
@@ -109,8 +111,6 @@ const BARE: Record<string, Kind> = {
 /** Servers that are Sagax itself: their tools name no product. */
 const INTERNAL = /^(?:mcp__)?(?:agents|sagax|sagax-[a-z-]+|maus|ogb|harness)(?:__|_|\.)/i;
 
-/** A gateway tool's inner product prefix (`<product>__query`). */
-const GATEWAY_TOOL = /^([a-z0-9][a-z0-9_-]*?)__(.+)$/i;
 
 const TARGET_MAX = 80;
 
@@ -234,24 +234,13 @@ function kindTarget(kind: Kind, args: Record<string, unknown> | undefined, tool:
   }
 }
 
-/** A gateway tool (`<gateway>__<product>__query`) read as its product's
- * own: the describe sees `mcp__<gateway>__query`. The product is the name
- * the server declared for the tool (StepTool.product), else the prefix's
- * words titled (`acme_desk` reads "Acme Desk"). A prefix the shared reading
- * already knows keeps its own reading. */
-function productTool(tool: StepTool): { tool: string; product?: string } {
-  const declared = tool.product?.trim() || undefined;
-  const parsed = parseToolId(tool.name);
-  if (!parsed.server) return { tool: tool.name, ...(declared ? { product: declared } : {}) };
-  const split = GATEWAY_TOOL.exec(parsed.name);
-  if (!split || shared.productFor({ name: parsed.name }).product) return { tool: tool.name, ...(declared ? { product: declared } : {}) };
-  return { tool: `mcp__${parsed.server}__${split[2]}`, product: declared ?? shared.titleCase(split[1]!) };
-}
-
 function mcpLabel(tool: StepTool, phase: StepPhase): { label: string; target?: string } | undefined {
   const parsed = parseToolId(tool.name);
   if (!parsed.server) return undefined;
-  const { tool: described, product: override } = productTool(tool);
+  // a gateway tool (`<gateway>__<product>__query`) reads as its product's
+  // own, named as the server declared it (shared/approval-describe.ts)
+  const declared = tool.product?.trim() || undefined;
+  const hints: shared.ToolHints | undefined = declared || tool.productId ? { ...(declared ? { product: declared } : {}), ...(tool.productId ? { productId: tool.productId } : {}) } : undefined;
   const words: shared.ApprovalWords = {
     locale: activeLocale(),
     t: (key, vars) => {
@@ -261,9 +250,9 @@ function mcpLabel(tool: StepTool, phase: StepPhase): { label: string; target?: s
       return t(key as LocaleKey, vars);
     },
   };
-  const reading = shared.describeApproval(described, tool.input ?? tool.summary, undefined, new Date(), words);
+  const reading = shared.describeApproval(tool.name, tool.input ?? tool.summary, hints, new Date(), words);
   const internal = parsed.server.startsWith("sagax-");
-  const product = override ?? (internal ? undefined : reading.product);
+  const product = declared ?? (internal ? undefined : reading.product);
   // A failed call names where it went, never the raw tool id: the verb the
   // reading guessed from its arguments may be what failed, and the id
   // (acme_api__query) stays in the opened row's detail.

@@ -18,7 +18,7 @@ if (!positionals[0]) throw new Error("usage: seed-fixture.ts <out-dir> [--turns 
 const turns = Number(values.turns);
 
 const ROSTER: Array<{ name: string; title: string; section?: string }> = [
-  { name: "Ottoline", title: "ConnectWise Ops & MS 365", section: "My Team" },
+  { name: "Ottoline", title: "Service Desk Ops", section: "My Team" },
   { name: "Ember", title: "Full Stack, Dev Ops & ITSec", section: "My Team" },
   { name: "Harrie", title: "Verificator", section: "My Team" },
   { name: "Vanessa", title: "Legal and marketing", section: "My Team" },

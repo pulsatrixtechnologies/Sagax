@@ -1723,7 +1723,7 @@ function samePerson(a: string | null | undefined, b: string | null | undefined):
  * step row. The API id is a segment of the tool id before its verb
  * (`mcp__<server>__<api>__query`, or the `mcp` gateway's `tool`). Undefined
  * when nothing declared one: the row then reads a generic name. */
-function declaredToolProduct(botId: string | undefined, name: string, input?: string): string | undefined {
+function declaredToolProduct(botId: string | undefined, name: string, input?: string): { product: string; productId: string } | undefined {
   if (!botId || !perspicaxMcp) return undefined;
   let inner = name.replace(/^mcp__/, "");
   // pi's `mcp` gateway and Grok's use_tool name the tool in their input
@@ -1740,7 +1740,7 @@ function declaredToolProduct(botId: string | undefined, name: string, input?: st
   const parts = inner.split("__").filter(Boolean);
   for (const candidate of parts.slice(0, -1).reverse()) {
     const declared = perspicaxMcp.apiName(botId, candidate);
-    if (declared) return declared;
+    if (declared) return { product: declared, productId: candidate };
   }
   return undefined;
 }
@@ -15012,7 +15012,7 @@ bus.subscribe((event: RuntimeEvent) => {
           role: "bot",
           kind: "activity",
           tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}),
-            ...((() => { const product = declaredToolProduct(bot?.id, name, event.input); return product ? { product } : {}; })()),
+            ...(declaredToolProduct(bot?.id, name, event.input) ?? {}),
             ...(event.parentItemId ? { parentItemId: event.parentItemId } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,
@@ -15673,7 +15673,8 @@ bus.subscribe((event: RuntimeEvent) => {
       // One generator for the card and its push (shared/approval-describe.ts):
       // "Allow the bot to run a command?" and one plain line, never a raw id.
       const plainWords = permission ? serverApprovalWords(languageOfPerson(cardAnswerer)) : undefined;
-      const plain = plainWords ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, plainWords) : undefined;
+      const declaredProduct = permission ? declaredToolProduct(asker?.id, event.mcpTool ?? event.tool ?? "", event.input) : undefined;
+      const plain = plainWords ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary, ...(declaredProduct ? { hints: declaredProduct } : {}) }, plainWords) : undefined;
       // An AI client's hidden conversation (#291) is not in anyone's sidebar:
       // its approval still reaches the person, and is declined when nobody
       // answers in time instead of holding the turn forever.
@@ -15694,6 +15695,9 @@ bus.subscribe((event: RuntimeEvent) => {
           requestType: permission ? "permission" : "question",
           tool: permission ? event.tool : undefined,
           toolInput: permission ? event.input : undefined,
+          // 2026-10-27: the product the server declared for this tool, so
+          // the card names it (shared/approval-describe.ts productFor)
+          ...(permission && declaredProduct ? { toolHints: declaredProduct } : {}),
           questionRequest: questions
             ? { version: 1, questions, ...(event.origin === "output" ? { origin: "output" as const } : {}) }
             : undefined,
@@ -31213,7 +31217,8 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
   const personal = languageOfRequest(auth);
   const language = cwActionLanguage(personal);
   const card = cwActionCard(action, language, actorPrincipalId(auth));
-  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(personal));
+  const cwProduct = declaredToolProduct(bot.id, "cw_psa__write");
+  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary, ...(cwProduct ? { hints: cwProduct } : {}) }, serverApprovalWords(personal));
   // 2026-10-19 ("Toujours permettre" on every card): what Always allow
   // keeps here (this bot, this kind of ConnectWise change), and whether the
   // person already kept it (no security key of theirs protecting the write)
