@@ -51,6 +51,8 @@ export interface Pending {
 
 /** The persisted payload is the authoritative marker. Tool names are
  * provider-authored display strings and can collide with ours. */
+const HELD_SILENT = new Set(["approval.held.native", "approval.held.gate"]);
+
 export function isRoutineApproval(pending: Pending): boolean {
   return Boolean(pending.message.card?.routineRequest);
 }
@@ -222,11 +224,11 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
    * and nothing else about a pending approval changes with the language. */
   locale?: string;
 }) {
-  // 2026-10-20 (after the reference design): no explanatory paragraph on the card
-  // ("the provider requires your approval", "this sends something on your
-  // behalf"): the title says what waits. Only the person's own ask rule
-  // keeps its line, so they know why their rule stopped it.
-  const heldNote = pending.heldCode === "approval.held.customRule" ? tFromServer(pending.heldCode, pending.held) : undefined;
+  // Held note (issue #426): one quiet line. The provider's own note and the
+  // routine gate's say nothing the title does not, so they are never shown;
+  // the others (outbound, sandbox, safety, undelivered, the person's own
+  // rule) say why this waits.
+  const heldNote = pending.heldCode && HELD_SILENT.has(pending.heldCode) ? undefined : tFromServer(pending.heldCode, pending.held);
   const card = pending.message.card;
   const [detailsOpen, setDetailsOpen] = useState(false);
   const proposal = isSkillApproval(pending) || isRoutineApproval(pending) || isProfileApproval(pending) || Boolean(card?.teamSetupRequest);
@@ -332,7 +334,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
         </pre>
       )}
       {card?.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
-      {heldNote && <div className="mt-2 text-[12px] text-warning">{heldNote}</div>}
+      {heldNote && <div className="mt-2 text-[12px] text-ink-secondary" data-approval-held>{heldNote}</div>}
       {card?.reviewing && !card.answered && (
         <div data-auto-review="pending" className="mt-2 text-[12.5px] text-ink-secondary">{t("customRules.notice.reviewing")}</div>
       )}

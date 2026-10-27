@@ -431,7 +431,7 @@ export function ApprovalCard({
   const isTeamSetup = Boolean(card.teamSetupRequest);
   const routineAction = card.routineRequest?.operation.action;
   const skillAction = card.skillRequest?.action;
-  const heldNote = tFromServer(card.heldCode, card.held);
+  const heldNote = card.heldCode === "approval.held.native" || card.heldCode === "approval.held.gate" ? undefined : tFromServer(card.heldCode, card.held);
   const outcome = approvalCardOutcome(card);
   const displayTool = isRoutineRequest
     ? routineAction === "create" ? "schedule_routine" : "manage_routine"
@@ -506,7 +506,7 @@ export function ApprovalCard({
                 {view.plain}
               </pre>
             )}
-            {heldNote && <div className="text-warning">{heldNote}</div>}
+            {heldNote && <div className="text-ink-secondary">{heldNote}</div>}
             {card.answered === "allow" && card.alwaysAllowed && <AllowRuleInset rule={card.alwaysAllowed} />}
             {card.answered && card.ruleSaved && <OwnerRuleInset rule={card.ruleSaved} />}
             {card.customRule && <CustomRuleNoticeLine notice={card.customRule} />}
@@ -552,7 +552,7 @@ export function ApprovalCard({
       {card.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
 
       {heldNote && (
-        <div className="mt-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[12.5px] text-warning">
+        <div className="mt-2 text-[12.5px] text-ink-secondary">
           {heldNote}
         </div>
       )}
