@@ -6,7 +6,7 @@
 // it, when there are enough people to say so) and what it unlocks. The
 // modal's left column picks the category; unlocked or locked, reward and
 // search narrow the list together. The settings that hide the points or the
-// toasts sit at the bottom.
+// toasts are their own entry in the left column (AchievementSettingsPage).
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Flame, Lock, Search, Trophy } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
@@ -149,8 +149,8 @@ function saveCardSetting(patch: Parameters<typeof saveAchievementSettings>[0]): 
 }
 
 /** The left column's label for a category, "All" included. */
-export function achievementCategoryLabel(id: AchievementCategory | "all"): string {
-  return id === "all" ? t("achievements.category.all") : t(CATEGORY_LABEL[id]);
+export function achievementCategoryLabel(id: AchievementCategory | "all" | "settings"): string {
+  return id === "all" ? t("achievements.category.all") : id === "settings" ? t("achievements.settings.title") : t(CATEGORY_LABEL[id]);
 }
 
 export function AchievementsPage({ category = "all" }: { category?: AchievementCategory | "all" }) {
@@ -175,11 +175,11 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
 
   const level = snapshot.level;
   const toNext = level.to - level.from;
-  const titles = ACHIEVEMENTS.flatMap((item) => (states.get(item.id)?.unlockedAt ? item.rewards : [])).filter((reward) => reward.kind === "title");
   const recent = snapshot.recent.map((id) => ACHIEVEMENTS.find((item) => item.id === id)).filter((item): item is AchievementDefinition => Boolean(item));
 
   // 2026-10-16 : drawn like Settings: the progress card, then grey
-  // headings over the recent unlocks, the tiles and the card of settings.
+  // headings over the recent unlocks and the tiles. The settings have their
+  // own entry in the modal's left column (AchievementSettingsPage).
   return (
     <div className="flex flex-col gap-5" data-achievements-page="">
       <section className="flex flex-wrap items-center gap-4 rounded-xl border-[0.5px] border-border bg-elevated p-4">
@@ -271,7 +271,24 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
           {shown.map((item) => <AchievementCard key={item.id} item={item} state={states.get(item.id)} unlocks={unlocks} />)}
         </ul>
       </section>
+    </div>
+  );
+}
 
+/** The feature-wide settings (card, title, toasts, public card), shown alone
+ * under their own entry of the modal's left column instead of at the bottom of
+ * every category page. */
+export function AchievementSettingsPage() {
+  const { status, snapshot } = useAchievements();
+  useEffect(() => { void loadAchievements(); }, []);
+  if (status === "unavailable") {
+    return <p className="px-1 text-[13px] text-ink-secondary" data-achievements-unavailable="">{t("achievements.unavailable")}</p>;
+  }
+  if (!snapshot) return <p className="px-1 text-[13px] text-ink-secondary">{t("achievements.loading")}</p>;
+  const states = new Map(snapshot.items.map((item) => [item.id, item]));
+  const titles = ACHIEVEMENTS.flatMap((item) => (states.get(item.id)?.unlockedAt ? item.rewards : [])).filter((reward) => reward.kind === "title");
+  return (
+    <div className="flex flex-col gap-5" data-achievements-settings-page="">
       <SettingsGroup title={t("achievements.settings.title")} groupId="achievements.settings">
         {titles.length > 0 && (
           <CompactRow label={t("achievements.titleLabel")} rowId="achievements.title">

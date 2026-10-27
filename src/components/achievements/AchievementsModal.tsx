@@ -1,10 +1,11 @@
 // Achievements, in their own modal beside Settings (same shell: a left
 // column and a content pane, the close button top right). The left column
-// lists the categories, All first, each with how many of its achievements
+// lists the categories, All first and Settings (the feature-wide
+// settings, on their own) last, each with how many of its achievements
 // are unlocked; the pane is AchievementsPage for the chosen one. Opened from
 // the account menu (store action toggleAchievements).
 import { useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Crown, Flame, GraduationCap, Lock, Mic, Rocket, Sparkles, Trophy, Users, X, Zap, Gauge, type LucideIcon } from "lucide-react";
+import { Crown, Flame, GraduationCap, Lock, Mic, Rocket, Settings, Sparkles, Trophy, Users, X, Zap, Gauge, type LucideIcon } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
 import { ACHIEVEMENT_CATEGORIES, type AchievementCategory } from "../../../shared/achievements";
 import { useAchievements } from "@/lib/achievements";
@@ -13,11 +14,11 @@ import { CATEGORY_MODAL, categoryNavItemClass, nextCategory, useCategoryModalKey
 import { useStore } from "@/state/store";
 import { useRetroSkin } from "../RetroChromeHost";
 import { shortcutLabel } from "../ShortcutHint";
-import { AchievementsPage, achievementCategoryLabel } from "./AchievementsPage";
+import { AchievementSettingsPage, AchievementsPage, achievementCategoryLabel } from "./AchievementsPage";
 
-export type AchievementsModalCategory = AchievementCategory | "all";
+export type AchievementsModalCategory = AchievementCategory | "all" | "settings";
 
-export const ACHIEVEMENTS_MODAL_CATEGORIES: readonly AchievementsModalCategory[] = ["all", ...ACHIEVEMENT_CATEGORIES];
+export const ACHIEVEMENTS_MODAL_CATEGORIES: readonly AchievementsModalCategory[] = ["all", ...ACHIEVEMENT_CATEGORIES, "settings"];
 
 const CATEGORY_ICON: Record<AchievementsModalCategory, LucideIcon> = {
   all: Trophy,
@@ -31,6 +32,7 @@ const CATEGORY_ICON: Record<AchievementsModalCategory, LucideIcon> = {
   mastery: GraduationCap,
   tiers: Crown,
   secrets: Lock,
+  settings: Settings,
 };
 
 /** Unlocked and total per category, All included. Secrets count like the
@@ -109,7 +111,7 @@ export function AchievementsModal({ initialCategory = "all" }: { initialCategory
               >
                 <Icon size={15} className="shrink-0" aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate">{achievementCategoryLabel(id)}</span>
-                {snapshot && (
+                {snapshot && id !== "settings" && (
                   <span className="shrink-0 text-[11.5px] tabular-nums text-ink-secondary" data-achievement-category-count="">
                     {count.unlocked}/{count.total}
                   </span>
@@ -138,7 +140,7 @@ export function AchievementsModal({ initialCategory = "all" }: { initialCategory
             >
               {ACHIEVEMENTS_MODAL_CATEGORIES.map((id) => (
                 <option key={id} value={id}>
-                  {achievementCategoryLabel(id)}{snapshot ? ` (${counts[id].unlocked}/${counts[id].total})` : ""}
+                  {achievementCategoryLabel(id)}{snapshot && id !== "settings" ? ` (${counts[id].unlocked}/${counts[id].total})` : ""}
                 </option>
               ))}
             </select>
@@ -148,7 +150,7 @@ export function AchievementsModal({ initialCategory = "all" }: { initialCategory
               {achievementCategoryLabel(category)}
             </h2>
             <div className={CATEGORY_MODAL.body}>
-              <AchievementsPage category={category} />
+              {category === "settings" ? <AchievementSettingsPage /> : <AchievementsPage category={category} />}
             </div>
           </div>
           {/* Hibou 98 only: the era's dialog footer, as in Settings. */}

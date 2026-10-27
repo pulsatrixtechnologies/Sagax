@@ -181,9 +181,9 @@ describe("achievements page", () => {
     expect(html).toContain("160 to the next level");
     expect(html).toContain("2 of");
     expect(html).toContain("4-day streak");
-    // the title picker, a pill menu in the settings card at the bottom
-    expect(html).toMatch(/data-settings-row="achievements.title"/);
-    expect(html).toMatch(/aria-label="Title" aria-haspopup="listbox"/);
+    // the shared settings have their own entry in the left column, not this page
+    expect(html).not.toContain("data-settings-group");
+    expect(html).not.toMatch(/data-settings-row="achievements.title"/);
     // recent unlocks, a horizontal row of cards
     expect(html).toContain(">Recent unlocks</h3>");
     expect(html).toContain('data-recent-achievement="hello-bot"');
@@ -261,8 +261,8 @@ describe("achievements modal", () => {
     expect(html).toContain("h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))]");
     expect(html).toContain("w-[198px]");
     expect(html).toContain('aria-label="Close"');
-    const labels = ["All", "Getting started", "Productivity", "Power user", "Voice", "Claude", "Together", "Streaks", "Mastery", "Tiers", "Secrets"];
-    expect(ACHIEVEMENTS_MODAL_CATEGORIES).toEqual(["all", "onboarding", "productivity", "power", "voice", "claude", "collaboration", "streaks", "mastery", "tiers", "secrets"]);
+    const labels = ["All", "Getting started", "Productivity", "Power user", "Voice", "Claude", "Together", "Streaks", "Mastery", "Tiers", "Secrets", "Settings"];
+    expect(ACHIEVEMENTS_MODAL_CATEGORIES).toEqual(["all", "onboarding", "productivity", "power", "voice", "claude", "collaboration", "streaks", "mastery", "tiers", "secrets", "settings"]);
     const nav = html.slice(html.indexOf("data-achievements-nav"), html.indexOf("</nav>"));
     let at = 0;
     for (const label of labels) {
@@ -277,6 +277,24 @@ describe("achievements modal", () => {
     // the pane: the category's title, then the page on All with its recent unlocks
     expect(html).toContain(">All</h2>");
     expect(html).toContain("data-recent-achievement");
+  });
+
+  it("shows the shared settings alone under their own entry, and on no category page", () => {
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
+    const html = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: "settings" }));
+    expect(html).toMatch(/data-achievement-category="settings" aria-current="page"/);
+    expect(html).toContain(">Settings</h2>");
+    expect(html).toContain("data-achievements-settings-page");
+    // the title picker, every switch of the card and of the notifications
+    expect(html).toMatch(/data-settings-row="achievements.title"/);
+    expect(html).toMatch(/aria-label="Title" aria-haspopup="listbox"/);
+    expect(html).not.toContain("data-achievements-page");
+    expect(html).not.toContain('data-achievement="hello-bot"');
+    for (const category of ["all", "secrets"] as const) {
+      const page = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: category }));
+      expect(page).not.toContain("data-achievements-settings-page");
+      expect(page).not.toContain('data-settings-group="achievements.settings"');
+    }
   });
 
   it("opens on a category and shows only that category", () => {
