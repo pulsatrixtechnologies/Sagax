@@ -11201,5 +11201,7 @@
   "botPanel.reachMe.save": "Enregistrer",
   "botPanel.reachMe.cancel": "Annuler",
   "approval.status.viaChannel": "via {name}",
-  "botPanel.reachMe.push.deviceOne": "Sur votre téléphone jumelé."
+  "botPanel.reachMe.push.deviceOne": "Sur votre téléphone jumelé.",
+  "voice.noDashes.title": "Pas de tirets longs dans les réponses",
+  "voice.noDashes.short": "Les remplace dans le texte final des réponses des bots : « à » entre deux heures ou deux nombres, deux-points après un libellé de liste, virgule ailleurs. Actif par défaut en français."
 }

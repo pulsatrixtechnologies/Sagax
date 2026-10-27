@@ -7051,3 +7051,14 @@ message) and answers the bot with the first sample in words.
   headless shell); four of them are in `docs/screenshots/resource-usage/`.
 - iOS and Android show the row's text fallback (none yet): a native card is a
   follow-up.
+
+## Replies without em or en dashes (2026-10-26, #1208)
+
+The final text of a bot reply is cleaned in `pushAssistantText`
+(`dashFreeReply`, `server/index.ts`) by `replaceDashes`
+(`shared/voice-dashes.ts`): a range word between two times, dates or tight
+numbers, a colon after a list label, a comma elsewhere; code, inline code and
+links stay as they are; tool calls and reasoning never go through it. The
+setting is the person's own (`sagax.voiceDashes.v1`, Settings > Models and
+voice > Voice), on by default for French. A solo server cannot read the
+browser's choice, so it follows the server language there.

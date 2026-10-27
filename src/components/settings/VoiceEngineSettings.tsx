@@ -11,10 +11,11 @@ import { Check, Loader2 } from "lucide-react";
 
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
+import { setVoiceDashes, useVoiceDashes } from "@/lib/voice-dashes-preference";
 import { cn } from "@/lib/cn";
 import { KeyInKeys, keyRowSaved, type KeyRowId } from "./ProviderKeys";
-import { DescribedRow, PILL, PillSelect } from "../SettingsPrimitives";
+import { DescribedRow, PILL, PillSelect, Switch } from "../SettingsPrimitives";
 
 const FISH_MODELS = [
   { value: "s2.1-pro", label: "voice.fish.modelPro" },
@@ -52,6 +53,7 @@ export function VoiceEngineSettings({ keysLink = true }: { keysLink?: boolean })
   const host = (capabilities as { host?: { platform?: string } }).host;
   const systemVoicesAvailable = host?.platform === "darwin";
   const configured = Boolean(tts?.configured);
+  const noDashes = useVoiceDashes(activeLocale());
   const included = Boolean(tts?.included);
   // The engine's key is saved in the list (or included with Cloud Pro).
   const keySaved = keyRow ? keyRowSaved(keyRow, state.config) : false;
@@ -192,6 +194,10 @@ export function VoiceEngineSettings({ keysLink = true }: { keysLink?: boolean })
           )}
         />
       )}
+
+      <DescribedRow label={t("voice.noDashes.title")} description={t("voice.noDashes.short")} rowId="voiceNoDashes">
+        <Switch checked={noDashes} aria-label={t("voice.noDashes.title")} onClick={() => setVoiceDashes(!noDashes)} />
+      </DescribedRow>
 
       {error && <div role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{error}</div>}
     </>

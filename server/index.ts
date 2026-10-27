@@ -1046,6 +1046,7 @@ import { createComputerTeachRoutes } from "./routes/computer-teach.ts";
 import { ComputerTeachRecordings } from "./computer-teach.ts";
 import { createLocalComputerAutoRoutes } from "./routes/local-computer-auto.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
+import { replaceDashes, voiceDashesEnabled, VOICE_DASHES_PREFERENCE } from "../shared/voice-dashes.ts";
 import { createUserPreferenceStore, preferencesFrameAllowed, type PersonPreferences } from "./user-preferences.ts";
 import { createViewerBotOverrideRoutes } from "./routes/viewer-bot-overrides.ts";
 import { createViewerBotOverrideStore } from "./viewer-bot-overrides.ts";
@@ -14815,6 +14816,7 @@ bus.subscribe((event: RuntimeEvent) => {
       pushStoppedTurn(turnId);
       return;
     }
+    spoken.text = dashFreeReply(spoken.text, event.threadId, bot);
     // "👍" written after reacting 👍 says the same thing twice: the
     // reaction stands alone and no bubble is written.
     const reactor = bot?.id ?? speaker?.botId;
@@ -30907,6 +30909,22 @@ const cwActionPasses = createCwActionPasses();
  * `omb-language`, else the server's default (server/person-language.ts). */
 function languageOfPerson(person: string | null | undefined): string {
   return personLanguageOf(person, (id) => userPreferenceStore.get(id).preferences, cfg.language);
+}
+
+/** The final text of a bot reply without em or en dashes (#1208), when the
+ * person it answers wants that: their own setting, else on for French
+ * (shared/voice-dashes.ts). Only this text; tool calls, reasoning and code
+ * are never passed in or are kept as they are. */
+function dashFreeReply(text: string, threadId: string, bot: { ownerUserId?: unknown } | undefined): string {
+  if (!/[\u2013\u2014]/.test(text)) return text;
+  try {
+    const person = connectorSetupSpeaker(threadId) ?? (bot ? effectiveBotOwner(bot) : undefined) ?? undefined;
+    const language = languageOfPerson(person);
+    const preference = IDENTITY.kind === "perspicax" && person ? userPreferenceStore.get(person).preferences[VOICE_DASHES_PREFERENCE] : undefined;
+    return voiceDashesEnabled(preference, language) ? replaceDashes(text, language) : text;
+  } catch {
+    return text;
+  }
 }
 
 function languageOfRequest(auth: RequestAuth): string {
