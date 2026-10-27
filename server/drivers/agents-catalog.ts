@@ -12,7 +12,7 @@
 // then update the goldens there.
 import { CREDENTIAL_TARGETS } from "../../shared/credential-request.ts";
 import { BOT_REACTIONS } from "../../shared/reactions.ts";
-import { OPTIONS_CARD_LIMITS, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
+import { ASK_CHOICE_LIMITS, ASK_CHOICE_TOOL, OPTIONS_CARD_LIMITS, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
 import { agentToolAnnotations } from "../agent-tool-policy.ts";
 import { PAGE_TOOL_DEFINITIONS } from "./agents-page-tools.ts";
 import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
@@ -308,6 +308,28 @@ const toolDefinitions = (externalRuntime: boolean) => [
         },
       },
       required: ["title", "subtitle", "options"],
+    },
+  },
+  {
+    name: ASK_CHOICE_TOOL,
+    description:
+      "Ask the person to choose, with clickable options, when you need a decision and your engine has no question tool of its own (or yours is not offered). Put the option you recommend first. The card also has an Other field for a typed answer. Call it instead of writing the question or a list of choices in your reply, then end your turn: the person's click arrives as their next message. For an open question that does not reduce to choices, write it in your reply.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        question: { type: "string", minLength: 1, maxLength: ASK_CHOICE_LIMITS.question, description: "The question, with enough context to answer at a glance." },
+        title: { type: "string", minLength: 1, maxLength: ASK_CHOICE_LIMITS.title, description: "Optional short heading for the card." },
+        options: {
+          type: "array",
+          minItems: OPTIONS_CARD_LIMITS.minOptions,
+          maxItems: OPTIONS_CARD_LIMITS.maxOptions,
+          uniqueItems: true,
+          items: { type: "string", minLength: 1, maxLength: OPTIONS_CARD_LIMITS.option },
+          description: "2-6 short answers, the recommended one first.",
+        },
+      },
+      required: ["question", "options"],
     },
   },
   {

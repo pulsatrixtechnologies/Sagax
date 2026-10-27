@@ -15,6 +15,7 @@ import { parsePageProposal, type PageKind } from "../shared/published-pages.ts";
 import type { MausColor } from "../shared/wire.ts";
 import { createAppCard, isAppTool } from "./chat-apps.ts";
 import { createOptionsCard } from "./options-card.ts";
+import { ASK_CHOICE_TOOL, parseAskChoiceInput } from "../shared/options-card.ts";
 import { isSecretName, mask, redactSecretsInText } from "./redact.ts";
 import type { Message } from "./store.ts";
 
@@ -139,6 +140,7 @@ export function createAgentCard(args: {
 }): AgentCardResult {
   const { store, bot, threadId, input } = args;
   if (!isRecord(input) || input.tool === undefined) return createOptionsCard(args);
+  if (input.tool === ASK_CHOICE_TOOL) return createChoiceCard(args, input);
   if (input.tool === "propose_page") return proposePageCard(args, input);
   if (isAppTool(input.tool)) return createAppCard({ store, bot, threadId, input, authored: args.authored });
   if (input.tool !== "show_widget" && input.tool !== "update_widget") {
@@ -170,6 +172,19 @@ export function createAgentCard(args: {
   if (!patched) return { ok: false, status: 404, error: NO_SUCH_WIDGET };
   args.authored?.(patched.id);
   return { ok: true, messageId: patched.id, ...(widget.masked ? { masked: true as const } : {}) };
+}
+
+/** ask_choice: any bot may draw the passive choice card. */
+function createChoiceCard(args: Parameters<typeof createAgentCard>[0], input: Record<string, unknown>): AgentCardResult {
+  const parsed = parseAskChoiceInput(input);
+  if (!parsed.ok) return { ok: false, status: 400, error: parsed.error };
+  const message = args.store.appendMessage(args.threadId, {
+    role: "bot", kind: "options", card: parsed.value,
+    // a direct thread replays a bot row that carries `from` as another bot's line
+    ...(args.store.groupByThread(args.threadId) ? { from: { botId: args.bot.id, name: args.bot.name, color: args.bot.color } } : {}),
+  });
+  args.authored?.(message.id);
+  return { ok: true, messageId: message.id };
 }
 
 /** A bot's page proposal: the version is stored as proposed and the row the

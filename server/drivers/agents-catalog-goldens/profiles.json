@@ -1,8 +1,9 @@
 {
   "direct": {
-    "bytes": 84653,
-    "sha256": "49abe051ea5e5053e9672a454d333b114bb01a556d784c9b528f861339f083db",
+    "bytes": 83671,
+    "sha256": "79537e3d85c020fc174b69acf1e3ea7335cd55259232e1cabf9d7fb94576703b",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_bots",
       "list_rooms",
@@ -45,9 +46,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -82,9 +80,10 @@
     ]
   },
   "direct+voice": {
-    "bytes": 85394,
-    "sha256": "f7641c9ff2286a99ee0cfd551dc277e2c665e62975fdecb340e244444783d265",
+    "bytes": 84412,
+    "sha256": "c4673ee3cb8aeb2af6b6e1f226ebc5fd26bc938fe18a25a3c3a5c9767bd9b9bc",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_bots",
       "list_rooms",
@@ -128,9 +127,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -165,9 +161,10 @@
     ]
   },
   "direct+shared": {
-    "bytes": 86398,
-    "sha256": "58e27435abd3f97eb5b9d9df6f80b2cf9e3f8b3571a248738954a44bf0f5fbe1",
+    "bytes": 85416,
+    "sha256": "437f7e250de42c4e4202c4980189c27036cff3294b3a22b66d537778479f1c52",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -212,9 +209,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -249,9 +243,10 @@
     ]
   },
   "direct+shared+voice": {
-    "bytes": 87139,
-    "sha256": "eb43bf4e877df8af50021103566afa4f6d18c3e12c7c7059f5f88928320c95b9",
+    "bytes": 86157,
+    "sha256": "9354975378d1837cf2a9b86b0186d247ae5343300151f1bb9d1a54d97e121ad2",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -297,9 +292,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -334,9 +326,10 @@
     ]
   },
   "direct+skills": {
-    "bytes": 86706,
-    "sha256": "551454a8ec9f7d71d8a8eaf26936f3eaf06642c9dff3ea6d6607785908670af6",
+    "bytes": 85724,
+    "sha256": "fc7f049058a734ef1e4ff9f2899b42255a4374e9f7c829ff7c3d998b35f3a33f",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_bots",
       "list_rooms",
@@ -379,9 +372,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -418,9 +408,10 @@
     ]
   },
   "direct+skills+voice": {
-    "bytes": 87447,
-    "sha256": "2b6e363b5d305712005b2afa929b79fc72997df451c19f026317c3a5f2581526",
+    "bytes": 86465,
+    "sha256": "ac57bcc388418fb69fcf232eeaebf3f8d7b341e0ba2e577b640de4ec5b2e3f5f",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_bots",
       "list_rooms",
@@ -464,9 +455,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -503,9 +491,10 @@
     ]
   },
   "direct+skills+shared": {
-    "bytes": 88451,
-    "sha256": "bf6dbb284f16bae627abe4947e1861d442c96322933f476e7f54d9cdd15d62a4",
+    "bytes": 87469,
+    "sha256": "c8af195d27c5ed12475845c06ec08d7390ec7c2a1477d2687cd5f03c1262059e",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -550,9 +539,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -589,9 +575,10 @@
     ]
   },
   "direct+skills+shared+voice": {
-    "bytes": 89192,
-    "sha256": "fe561444cfe52ec0d27bc0eb3d4413a2fb82e349725c244ac55275825ef485d1",
+    "bytes": 88210,
+    "sha256": "e96cf0afffab55db84fb5bc9a01047e62c7e29d4166ccccfc0fbae1770a8d3a1",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -637,9 +624,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -676,9 +660,10 @@
     ]
   },
   "room": {
-    "bytes": 82117,
-    "sha256": "2ba6a4659be6e27437570bbc60b802e8bc07dde0512af89ff947010fac3dc762",
+    "bytes": 81135,
+    "sha256": "5d01f06c70412878037d0014896430330b07e705509b94014518bf6b2e3913b5",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -718,9 +703,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -755,9 +737,10 @@
     ]
   },
   "room+voice": {
-    "bytes": 82858,
-    "sha256": "f991616e1d82c5c7bbf24066c636a99f5413bac8aa16db01b9d59c9646dcd0d2",
+    "bytes": 81876,
+    "sha256": "ce3ae401786054a73788f52d4e926b6c38dd3016802f4f52357d2cfbce489961",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -798,9 +781,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -835,9 +815,10 @@
     ]
   },
   "room+shared": {
-    "bytes": 83862,
-    "sha256": "78ce603e23275dd0898189b9fab97518e87a178f0612367fb924d619bb037b8a",
+    "bytes": 82880,
+    "sha256": "a87508cb2f99581a7e17c4c6af293045d6d064e6d0233ee6d936e5928982cc9e",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -879,9 +860,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -916,9 +894,10 @@
     ]
   },
   "room+shared+voice": {
-    "bytes": 84603,
-    "sha256": "8fdd1a59fee026a0fd1062a9570007141d3c55ef22f322d68279a34f9b81a9e0",
+    "bytes": 83621,
+    "sha256": "43292dc1c81aacf0c5cc5d15c282da10d7ec0f69da131b48aacb321c2af22b04",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -961,9 +940,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -998,9 +974,10 @@
     ]
   },
   "room+skills": {
-    "bytes": 84170,
-    "sha256": "531d412176cc93e852d1a529c60e9eb0c186af0d93cf7559713ab8703654cfcf",
+    "bytes": 83188,
+    "sha256": "edceafd25611f7a626bc50fd103ed1b6ab521d94416e4a2873025640b83972d1",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -1040,9 +1017,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1079,9 +1053,10 @@
     ]
   },
   "room+skills+voice": {
-    "bytes": 84911,
-    "sha256": "af21b7917a57a5fdc273b7b7072092489a0a5e82d145e422f35f31b7879809f8",
+    "bytes": 83929,
+    "sha256": "11a490abfe11b11fd0113ff5321d99cf6fc57fdbc38b76f01ea12d7a04a6fed5",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -1122,9 +1097,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1161,9 +1133,10 @@
     ]
   },
   "room+skills+shared": {
-    "bytes": 85915,
-    "sha256": "deed23c093c41788ff60b40581267e0638c2b21330a9547b08b3438ea99ec44a",
+    "bytes": 84933,
+    "sha256": "0136665f840864792dc48d08770fd9143833fab2ecf83955f2ecc1b77cad5902",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -1205,9 +1178,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1244,9 +1214,10 @@
     ]
   },
   "room+skills+shared+voice": {
-    "bytes": 86656,
-    "sha256": "1c3faba4cc5eee1c848911379ae562cdb8d0e7e2a5a15d50a8d8acc52a09d3bf",
+    "bytes": 85674,
+    "sha256": "6ad6e4e43f1dc8abe662ec81500aa701f1fd4f53ac2895703d5b0456e8155de4",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -1289,9 +1260,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1328,9 +1296,10 @@
     ]
   },
   "room+own-thread": {
-    "bytes": 84250,
-    "sha256": "441384c992a6956e12af60b780355f77edc12d3f61ddefff9e506b101b176fa8",
+    "bytes": 83268,
+    "sha256": "33a4e569bc838c367f0ceca54c4006a9a969a887a4b3d91c47718b0c5d8f961c",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -1371,9 +1340,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1408,9 +1374,10 @@
     ]
   },
   "room+own-thread+voice": {
-    "bytes": 84991,
-    "sha256": "4e16c49860dae992700afc6b23346fb1df1991bc705d337141db6821210d744d",
+    "bytes": 84009,
+    "sha256": "f10eb9f8ed431213f705a8d90249742d0acdb29c8a9596184bd7b3b5df36363c",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -1452,9 +1419,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1489,9 +1453,10 @@
     ]
   },
   "room+own-thread+shared": {
-    "bytes": 85995,
-    "sha256": "21157c51f4dbb6ddb7ca5de61bfb7abed58aa757dbc877e627769812b34d3602",
+    "bytes": 85013,
+    "sha256": "3d4d3447296b93fb6a959510000d36de604b040ba0dbb372d603c2d319c0e931",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -1534,9 +1499,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1571,9 +1533,10 @@
     ]
   },
   "room+own-thread+shared+voice": {
-    "bytes": 86736,
-    "sha256": "171627a2beceaaa82dab27680fd85a79122d9f59c84887c32abfb38390eff8ea",
+    "bytes": 85754,
+    "sha256": "650ee4a756d0b9a7b5e972d23068e9e6d34c900a78fef0017038d964aa0bc56b",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -1617,9 +1580,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1654,9 +1614,10 @@
     ]
   },
   "room+own-thread+skills": {
-    "bytes": 86303,
-    "sha256": "6d55a2b177f45bf8b36365ef656d6fd48ad769e73970a1cacc2c27100b8847e9",
+    "bytes": 85321,
+    "sha256": "4cfb1341f64470c4d5f5ce7f1a522a3c550133ee31a7b216d5f5e56be55d125a",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -1697,9 +1658,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1736,9 +1694,10 @@
     ]
   },
   "room+own-thread+skills+voice": {
-    "bytes": 87044,
-    "sha256": "a3fd1ae68a6b46a24d2fedd0d3cb15f46a70fd9e33c22d910b8a5d05794897ad",
+    "bytes": 86062,
+    "sha256": "1fe0335976aaaec0271e856bedafe00ffbd76db9b85feee32951165b89debfa3",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -1780,9 +1739,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1819,9 +1775,10 @@
     ]
   },
   "room+own-thread+skills+shared": {
-    "bytes": 88048,
-    "sha256": "410629d05a6828e290478edf48a248106b07fc954480f15c88b6b6b394cb947f",
+    "bytes": 87066,
+    "sha256": "0658fd35784a6e3f79de6e63d4651c876ff2e415eb65f6d1ad15818146775501",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -1864,9 +1821,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1903,9 +1857,10 @@
     ]
   },
   "room+own-thread+skills+shared+voice": {
-    "bytes": 88789,
-    "sha256": "5e0d78bd77e6c94a85b6f3f59e7c09895da222b08600fd650ef6562e9649c3e1",
+    "bytes": 87807,
+    "sha256": "a6acc65c03ba3246755cdcae0a320fe4aa3f87dfb260ad5d589f4b15565ced0c",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -1949,9 +1904,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -1988,9 +1940,10 @@
     ]
   },
   "direct+non-chief": {
-    "bytes": 73477,
-    "sha256": "9fe923eb8af0d5f797b5b360752a8073575c4a85d87abaaa74da2bf1832218a5",
+    "bytes": 72495,
+    "sha256": "600674fe0c4d71527f6c14478f3410151432cbb81b99676d479e2ff321e44620",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_bots",
       "list_rooms",
@@ -2025,9 +1978,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2061,9 +2011,10 @@
     ]
   },
   "direct+voice+non-chief": {
-    "bytes": 74218,
-    "sha256": "c9ec90406276bf641a87a2c4c514205bd711252e6f18f1746ed870033980df90",
+    "bytes": 73236,
+    "sha256": "b4037c026cdc20f83a25b439f0eba0c9d29756ce68ab4282257cb7aced267450",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_bots",
       "list_rooms",
@@ -2099,9 +2050,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2135,9 +2083,10 @@
     ]
   },
   "direct+shared+non-chief": {
-    "bytes": 75222,
-    "sha256": "0404b6fbddac2a8783138b50efd70e4e2904e6aaf90e5951b34661c12fe7a736",
+    "bytes": 74240,
+    "sha256": "0602423276d32c3f1742fd15e9d791885322d8a026332139b63695b7c0b46d4c",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -2174,9 +2123,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2210,9 +2156,10 @@
     ]
   },
   "direct+shared+voice+non-chief": {
-    "bytes": 75963,
-    "sha256": "b3bcacc551f9b04abd247eb8d241faed4190f3dad93526c7b746baaa073b2475",
+    "bytes": 74981,
+    "sha256": "6234dd0838c98173c9c539a3da4c49dd50522880d0dd45ad030c24d66a862c7c",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -2250,9 +2197,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2286,9 +2230,10 @@
     ]
   },
   "direct+skills+non-chief": {
-    "bytes": 75530,
-    "sha256": "ee3f2b6672437ccf95d9c71ec7abc9d1b6b57b34def54808c50e14e88163a42f",
+    "bytes": 74548,
+    "sha256": "f567291146c3bef85380cbfd43ebececf2dfaa0d9fd40ba2ab70ae05f49e58b4",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_bots",
       "list_rooms",
@@ -2323,9 +2268,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2361,9 +2303,10 @@
     ]
   },
   "direct+skills+voice+non-chief": {
-    "bytes": 76271,
-    "sha256": "06e1f36e875ae3e3e5b6cc602ef31d6fdbee0723703a0e5cbb5d27953fe8e9bb",
+    "bytes": 75289,
+    "sha256": "9c136cc1dd714f17db90804a50527967ec88c16a4a6038ffea797bf804a46ab2",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_bots",
       "list_rooms",
@@ -2399,9 +2342,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2437,9 +2377,10 @@
     ]
   },
   "direct+skills+shared+non-chief": {
-    "bytes": 77275,
-    "sha256": "63605b2d37d805335006eb0e803f941eac5cc0ac0da076800e4cc971ef668411",
+    "bytes": 76293,
+    "sha256": "dbca8eecc67c4e8ffbae6909f6eacccb1ac54d67309dab1b3eb61cdd514e4696",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -2476,9 +2417,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2514,9 +2452,10 @@
     ]
   },
   "direct+skills+shared+voice+non-chief": {
-    "bytes": 78016,
-    "sha256": "af0505ab2162dbf340b55d1452a171d0481ff677fe29755a7f85787bc5457b6e",
+    "bytes": 77034,
+    "sha256": "f1b50a64f5896ae88bd3a2de7c5ede8918608f3bd57248f669d08b6dd1cadc69",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -2554,9 +2493,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2592,9 +2528,10 @@
     ]
   },
   "room+non-chief": {
-    "bytes": 70941,
-    "sha256": "44a229732f365983ff2666f9492b0e0b3074340e9ad0d2a24af931d5ccbd3263",
+    "bytes": 69959,
+    "sha256": "2d2cfab90d9df68c85c0fbf699112bff788fb249689132687763560a9b7f86bc",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -2626,9 +2563,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2662,9 +2596,10 @@
     ]
   },
   "room+voice+non-chief": {
-    "bytes": 71682,
-    "sha256": "f667c85f71e701cff5b3fb017c8e61d9c049b54afee616fcf9615e042ffcf8b1",
+    "bytes": 70700,
+    "sha256": "f5e444346d2418c4b8acd731a218551868eeef956da439f38c29da23c495929f",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -2697,9 +2632,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2733,9 +2665,10 @@
     ]
   },
   "room+shared+non-chief": {
-    "bytes": 72686,
-    "sha256": "2899ff45f234eba63011fca1a0da5fe65824d3efa67fb3a252d1dfb94c7b2dcd",
+    "bytes": 71704,
+    "sha256": "581d91f1ae72938c97d547c6ad8b030059288df77d578d682625d0b173f3c18e",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -2769,9 +2702,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2805,9 +2735,10 @@
     ]
   },
   "room+shared+voice+non-chief": {
-    "bytes": 73427,
-    "sha256": "c5554ac9eccb5873fddccea6c5164ea9c798fffb268d500feda7971d40c6712c",
+    "bytes": 72445,
+    "sha256": "26394cfecbb59f72f582f6bb1224aba682e2582c916a5218eda6cb6b5b9d77b3",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -2842,9 +2773,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2878,9 +2806,10 @@
     ]
   },
   "room+skills+non-chief": {
-    "bytes": 72994,
-    "sha256": "d25f1711cebd32e06a84f74029214a3cbda0b68d91764928d1a16a1aa42ef1e0",
+    "bytes": 72012,
+    "sha256": "d69be5b6f8f9c9669d44306eafaf55051dfc0602a6165d6d6db6fe5d7f71a89f",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -2912,9 +2841,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -2950,9 +2876,10 @@
     ]
   },
   "room+skills+voice+non-chief": {
-    "bytes": 73735,
-    "sha256": "35ab5d438bcdced5686b0e400371fb9ae39642cf5e494fc7e59e6aff23f0f8d7",
+    "bytes": 72753,
+    "sha256": "7ae11f8af0479310828fe5c88c3c9e3f24feb54e7e86e6549676bc1154d8089b",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -2985,9 +2912,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3023,9 +2947,10 @@
     ]
   },
   "room+skills+shared+non-chief": {
-    "bytes": 74739,
-    "sha256": "b2c8822f095cca4a1afeed987cdb4a2284d8ac6605fd1c737e56dc269c8ae8db",
+    "bytes": 73757,
+    "sha256": "fd292db31372ecfdf790b6ab3e51f86eac8ea04708b6b7ed1b60499630bfecf6",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -3059,9 +2984,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3097,9 +3019,10 @@
     ]
   },
   "room+skills+shared+voice+non-chief": {
-    "bytes": 75480,
-    "sha256": "851504526bed0afbba1e5a4d0f4054be85ddf1a2500fbb0fcaa9033b727855c1",
+    "bytes": 74498,
+    "sha256": "236237040020dd3e942b7c3a1706bd816402a0abf232a9d3ca47fc56f04185c6",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -3134,9 +3057,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3172,9 +3092,10 @@
     ]
   },
   "room+own-thread+non-chief": {
-    "bytes": 73074,
-    "sha256": "c28f31e2e128739a6e60cba7312c53b7331a3e9bcb15c1db3b11657e57bae533",
+    "bytes": 72092,
+    "sha256": "387183a004b040458604fc548e636030bf381a40c3f712d0fe3d8b5f8e67939b",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -3207,9 +3128,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3243,9 +3161,10 @@
     ]
   },
   "room+own-thread+voice+non-chief": {
-    "bytes": 73815,
-    "sha256": "b5ad64c5c68993e9a2fddec31792476047af4ef3c2582bd902f009b670d1be7d",
+    "bytes": 72833,
+    "sha256": "4e95b9cf462854f15dd1d55f11621e0ca495ab6f6623f4d9a71f93ef35e97ce1",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -3279,9 +3198,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3315,9 +3231,10 @@
     ]
   },
   "room+own-thread+shared+non-chief": {
-    "bytes": 74819,
-    "sha256": "68eb6c92923f4a4630a457ffb9fe5a87326f6babe32872387467c0b5dd9a7ad7",
+    "bytes": 73837,
+    "sha256": "e346153b1a74242919a86cae56282aba4f5377d2be6d7d082d8470a1fd15c697",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -3352,9 +3269,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3388,9 +3302,10 @@
     ]
   },
   "room+own-thread+shared+voice+non-chief": {
-    "bytes": 75560,
-    "sha256": "90e85f40bb67a31c8ff61e3cafe4c2c28d9bdad6656385f2f64ba9440777ade4",
+    "bytes": 74578,
+    "sha256": "b75a1315f5468bcc4b4c55a15da3ffb1ab346868694cd696046ee2f3b7b18ed6",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -3426,9 +3341,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3462,9 +3374,10 @@
     ]
   },
   "room+own-thread+skills+non-chief": {
-    "bytes": 75127,
-    "sha256": "01fb43c26e8f24e2f9576309ca0788acb2313840a2ef8ab5cda76bce32029519",
+    "bytes": 74145,
+    "sha256": "77d98dab8dfb0ad145a0093ac98d87c54289f3598643c9c5474198464a19d2e3",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -3497,9 +3410,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3535,9 +3445,10 @@
     ]
   },
   "room+own-thread+skills+voice+non-chief": {
-    "bytes": 75868,
-    "sha256": "0991f30e7b1d82e01401605055754c7be09909917dd161608ee52861f4f8473f",
+    "bytes": 74886,
+    "sha256": "f27aaab2b78e6c27767f4671b806e6c63e79a1348688c8b4dea5b1a9545beedc",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_room_targets",
       "coordinate_bots",
@@ -3571,9 +3482,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3609,9 +3517,10 @@
     ]
   },
   "room+own-thread+skills+shared+non-chief": {
-    "bytes": 76872,
-    "sha256": "568d290a8937d1513c16a4099a389cc08cd2c32e9334100505ec6f8a2f79e702",
+    "bytes": 75890,
+    "sha256": "92686d0d89c5372298ac1a39adb080682018ece5e6b831145eaf063078ed22d9",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -3646,9 +3555,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -3684,9 +3590,10 @@
     ]
   },
   "room+own-thread+skills+shared+voice+non-chief": {
-    "bytes": 77613,
-    "sha256": "94a164ceed0a3aba9bf032471ee0bc9345c6ee29f46db812ad8d57d7f63eb1ee",
+    "bytes": 76631,
+    "sha256": "c42b9b7c7c09abeed87f2e3719a0f9d94514807704fdad914dd6f8fed7592536",
     "tools": [
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -3722,9 +3629,6 @@
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
-      "publish_remote_session",
-      "remote_session_snapshot",
-      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
