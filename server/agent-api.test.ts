@@ -3,7 +3,7 @@ import { guardDecision } from "./tool-guard.ts";
 import { describe, expect, it } from "vitest";
 
 import {
-  AGENT_TOOL_NAMES, AGENT_TOOL_POLICY, COLD_PAGE_SIZE, createAgentApi, ENTRY_TEXT_MAX, decodeCursor, encodeCursor, FIND_LIMIT_MAX,
+  AGENT_TOOL_NAMES, AGENT_TOOL_POLICY, agentPromptWithFiles, COLD_PAGE_SIZE, createAgentApi, ENTRY_TEXT_MAX, decodeCursor, encodeCursor, FIND_LIMIT_MAX,
   matchScore, SEND_FILES_MAX, signHandle, signTurnHandle, turnLabel, verifyHandle,
   type AgentApiDeps, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type StoredMessage, type TurnState,
 } from "./agent-api.ts";
@@ -121,6 +121,17 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
 
 const bot = (id: string, scopes: AgentScope[] = ALL): AgentCaller => ({ kind: "bot", id, name: id, scopes: new Set(scopes), via: "agents-mcp", sourceThreadId: `src-${id}` });
 const person = (id: string, scopes: AgentScope[] = ALL): AgentCaller => ({ kind: "person", id, name: id, scopes: new Set(scopes), via: "perspicax-mcp" });
+
+describe("send_prompt file prompt (#1169)", () => {
+  it("names workspace_read and the relative inbox path", () => {
+    const text = agentPromptWithFiles("sum the invoices", ["inbox/bob/invoices.txt"]);
+    expect(text.startsWith("sum the invoices")).toBe(true);
+    expect(text).toContain("inbox/bob/invoices.txt");
+    expect(text).toContain("workspace_read");
+    expect(text).not.toMatch(/host file tools/);
+    expect(agentPromptWithFiles("hello", [])).toBe("hello");
+  });
+});
 
 describe("agent API policy", () => {
   it("declares twelve tools, each with a scope, an access level and a read-only flag", () => {

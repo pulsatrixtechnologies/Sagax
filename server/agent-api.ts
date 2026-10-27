@@ -86,6 +86,16 @@ export const FIND_LIMIT_DEFAULT = 8;
 export const PROMPT_MAX_CHARS = 32_000;
 export const SEND_FILES_MAX = 8;
 export const SEND_FILE_MAX_BYTES = 25 * 1024 * 1024;
+
+/** The prompt a send_prompt turn sees after files are staged under
+ * workspaces/<bot>/inbox/<sender>/. The paths are relative to that
+ * workspace. workspace_read opens them there; host file tools are withheld
+ * on an organization server and resolve a relative path against the turn
+ * folder, which is not the inbox. */
+export function agentPromptWithFiles(prompt: string, staged: readonly string[]): string {
+  if (!staged.length) return prompt;
+  return `${prompt}\n\n[Files sent with this message, now in your Sagax workspace folder: ${staged.join(", ")}. Read them with workspace_read using those paths (they are relative to your workspace). workspace_read reads text. If you work on a VM or cloud computer, the files are not there until you copy them over (read here with workspace_read, then write them there).]`;
+}
 export const TIMEOUT_MS_MIN = 1_000;
 export const TIMEOUT_MS_MAX = 600_000;
 export const TIMEOUT_MS_DEFAULT = 120_000;

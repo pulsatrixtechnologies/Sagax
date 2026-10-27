@@ -148,9 +148,10 @@ The files are copied to the target's workspace under `inbox/<sender>/`, and
 the prompt names them.
 
 **On a computer.** The files land in the Sagax workspace on the host, and
-the prompt says so. A bot that works on a VM, a cloud computer or a shared
-desktop reads them with its host file tools and copies over what it needs.
-Nothing syncs them automatically.
+the prompt says so. A bot reads them with `workspace_read` and the relative
+path the prompt names (for example `inbox/<sender>/name`). That tool reads
+text. A bot that works on a VM, a cloud computer or a shared desktop copies
+over what it needs. Nothing syncs them automatically.
 
 **Size per call.** An AI client's request through Perspicax carries base64,
 which is a third larger than the files themselves. Keep one call under about
