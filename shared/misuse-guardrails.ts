@@ -150,7 +150,9 @@ const BLOCK_RULES: ReadonlyArray<{ category: MisuseCategory; pattern: RegExp; ow
 ];
 
 const DEFENSIVE_RULES: ReadonlyArray<RegExp> = [
-  /\b(sentinelone|sentinelctl|crowdstrike)\b/,
+  /\b(sentinelone|crowdstrike)\b/,
+  // an endpoint agent's own control command (protection off, quarantine)
+  /\b[a-z0-9]+ctl\s+(?:unprotect|quarantine|unquarantine)\b/,
   /sentinel one/,
   /falcon sensor/,
   /\b(edr|siem)\b/,
