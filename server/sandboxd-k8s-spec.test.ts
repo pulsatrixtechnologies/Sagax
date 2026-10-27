@@ -271,9 +271,10 @@ describe("image scripts and manifests", () => {
     expect(rbac).toContain("sagax-sandbox-workload");
     expect(rbac).toMatch(/resources: \["events"\]\r?\n\s+verbs: \["create"\]/);
     expect(rbac).toMatch(/resources: \["resourcequotas"\]\r?\n\s+verbs: \["get"\]/);
-    // Only the verbs the backend uses: exec is create alone, no patch on Pods
+    // Only the verbs the backend uses: exec is get and create (the websocket
+    // upgrade is a GET), no patch on Pods
     // or NetworkPolicies, no pods/log; the readiness check reads its namespace.
-    expect(rbac).toMatch(/resources: \["pods\/exec"\]\r?\n\s+verbs: \["create"\]/);
+    expect(rbac).toMatch(/resources: \["pods\/exec"\]\r?\n\s+verbs: \["get", "create"\]/);
     expect(rbac).toMatch(/resources: \["pods"\]\r?\n\s+verbs: \["get", "list", "create", "delete"\]/);
     expect(rbac).toMatch(/resources: \["networkpolicies"\]\r?\n\s+verbs: \["get", "list", "create", "delete"\]/);
     expect(rbac).not.toContain("pods/log");

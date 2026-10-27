@@ -18,8 +18,9 @@ kind: Role
 metadata:
   name: sagax-sandboxd
   namespace: sandboxes
-# Only the verbs server/sandboxd-k8s.ts uses. Exec is `create` alone (the
-# websocket upgrade is authorized as create since Kubernetes 1.30). No
+# Only the verbs server/sandboxd-k8s.ts uses. Exec keeps `get` and `create`:
+# the websocket upgrade is a GET and is still refused without `get` (checked
+# on Kubernetes 1.35). No
 # patch on Pods or NetworkPolicies, no log reads, no LimitRange. What the
 # provisioner may exec into and which NetworkPolicies it may write is
 # bounded further by the chart's admission.provisionerGuard.
@@ -33,7 +34,7 @@ rules:
     verbs: ["get", "list", "create", "delete", "patch"]
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["create"]
+    verbs: ["get", "create"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["get", "list", "create", "delete"]
