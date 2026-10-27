@@ -827,18 +827,19 @@ describe("Store", () => {
     expect(saved[2].turnSucceeded).toBe(false);
   });
 
-  it("creates explicitly scoped tasks atomically without inheriting remembered grants or changing siblings", () => {
+  it("creates a thread at the bot's current level, including its standing allows, without changing siblings", () => {
     const store = new Store(selection);
     const bot = store.createBot();
     store.patchBot(bot.id, { approvalMode: "full", autoApprove: false, alwaysAllow: ["old-tool"] });
     const old = store.activeTask(bot.id)!;
     const before = structuredClone(old);
     const save = vi.spyOn(store as unknown as { saveBots(): void }, "saveBots");
-    const ask = store.createTask(bot.id, "Explicit Ask", true, undefined, undefined, "ask")!;
+    // The level argument is ignored: a thread cannot keep a level of its own.
+    const namedAsk = store.createTask(bot.id, "Named Ask", true, undefined, undefined, "ask")!;
     expect(save).toHaveBeenCalledTimes(1);
-    expect(ask).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
-    const full = store.createTask(bot.id, "Authorized Full", true, undefined, undefined, "full")!;
-    expect(full).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: [] });
+    expect(namedAsk).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: ["old-tool"] });
+    const namedFull = store.createTask(bot.id, "Named Full", true, undefined, undefined, "full")!;
+    expect(namedFull).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: ["old-tool"] });
     expect(old).toEqual(before);
     expect(bot).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: ["old-tool"] });
   });
@@ -1095,7 +1096,7 @@ describe("Store", () => {
     expect(reloaded.projectBotForTask(bot.id, target.threadId)?.approvalMode).toBe("ask");
   });
 
-  it.each(["prepared", "confirmed", "activated", "committed"] as const)("recovers a composer-only grant in phase %s without downgrading other threads", (phase) => {
+  it.each(["prepared", "confirmed", "activated", "committed"] as const)("recovers a composer-only grant in phase %s and every thread follows the bot", (phase) => {
     const store = new Store(selection);
     const bot = store.createBot();
     const target = store.createTask(bot.id, "Target")!;
@@ -1110,7 +1111,8 @@ describe("Store", () => {
     const reloaded = new Store(selection);
     expect(reloaded.bot(bot.id)?.approvalMode).toBe("full");
     expect(reloaded.bot(bot.id)?.approvalGrant).toBeUndefined();
-    expect(reloaded.projectBotForTask(bot.id, target.threadId)?.approvalMode).toBe("ask");
+    // The uncommitted grant is gone. Both threads run at the bot's Full.
+    expect(reloaded.projectBotForTask(bot.id, target.threadId)?.approvalMode).toBe("full");
     expect(reloaded.projectBotForTask(bot.id, sibling.threadId)?.approvalMode).toBe("full");
   });
 
@@ -2698,8 +2700,8 @@ describe("soul", () => {
     expect(reloaded.bot(chief.id)?.managedSections).toContain(name);
     expect(reloaded.bot(chief.id)?.lastTeamSetupReceipt?.requestId).toBe(request.requestId);
     expect(reloaded.bot(bot.id)).toMatchObject({ section: name, modelSelection: { instanceId: "codex", model: "fixture" } });
-    // The legacy thread follows the bot onto Codex and keeps its frozen
-    // level and approvals: a model switch never resets permissions.
+    // The legacy thread follows the bot onto Codex and stores the bot's
+    // level and standing allows: a model switch never resets permissions.
     expect(reloaded.bot(bot.id)?.tasks?.[0]).toMatchObject({ approvalMode: "edits", autoApprove: false, alwaysAllow: ["Read"] });
     expect(reloaded.bot(bot.id)?.tasks?.[0].modelSelection).toBeUndefined();
     expect(reloaded.projectBotForTask(bot.id, bot.threadId)?.modelSelection).toEqual({ instanceId: "codex", model: "fixture" });

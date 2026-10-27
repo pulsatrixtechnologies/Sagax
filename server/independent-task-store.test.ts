@@ -41,45 +41,90 @@ describe("independent bot task state", () => {
     expect(new Store(selection).tasks(bot.id).every(task => task.approvalMode === "ask")).toBe(true);
   });
 
-  it("refreshes one thread's permissions from the bot default and leaves the rest", () => {
+  it("stores the bot's level on every unlocked thread and copies standing allows onto one", () => {
     const store = new Store(selection);
     const bot = store.createBot({}, { seedMessages: false });
     const first = bot.threadId;
-    // The opening thread inherits until it has its own copy. A later thread,
-    // and any thread whose level was chosen in the composer, keeps that copy.
     store.patchBot(bot.id, { approvalMode: "ask", autoApprove: false });
-    store.patchTask(bot.id, first, { approvalMode: "ask", autoApprove: false, alwaysAllow: ["Read"] });
+    store.patchTask(bot.id, first, { alwaysAllow: ["Read"] });
     const model = store.projectBotForTask(bot.id, first)?.modelSelection;
     store.appendMessage(first, { role: "user", kind: "text", text: "Keep this conversation" });
     const history = store.messagesFor(first);
     const sibling = store.createTask(bot.id, "Sibling", false)!;
     store.patchBot(bot.id, { approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
-    expect(store.taskByThread(bot.id, first)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: ["Read"] });
+    expect(store.taskByThread(bot.id, first)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read"] });
     expect(store.projectBotForTask(bot.id, first)?.modelSelection).toEqual(model);
-    expect(store.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", alwaysAllow: [] });
+    expect(store.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: [] });
 
     const refreshed = store.refreshTaskPermissions(bot.id, first);
     expect(refreshed).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
     expect(store.projectBotForTask(bot.id, first)?.modelSelection).toEqual(model);
-    expect(store.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+    // Standing allows stay on the thread that was not refreshed.
+    expect(store.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: [] });
     expect(store.bot(bot.id)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
     expect(store.messagesFor(first)).toEqual(history);
     expect(store.refreshTaskPermissions(bot.id, "missing")).toBeNull();
 
     const reloaded = new Store(selection);
     expect(reloaded.taskByThread(bot.id, first)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: ["Read", "Bash"] });
-    expect(reloaded.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "ask", alwaysAllow: [] });
+    expect(reloaded.taskByThread(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "auto", autoApprove: true, alwaysAllow: [] });
     expect(reloaded.messagesFor(first)).toEqual(history);
 
     reloaded.patchBot(bot.id, {
       approvalMode: "full",
       approvalGrant: { requestId: "grant-1", mode: "full", phase: "prepared", threadId: first, threadOnly: true, refreshPermissions: true },
     });
+    // The grant has not committed, so a turn still asks. The stored level is Full.
     expect(approvalModeFor(reloaded.bot(bot.id)!)).toBe("ask");
+    expect(reloaded.taskByThread(bot.id, first)?.approvalMode).toBe("full");
     const caughtUp = reloaded.refreshTaskPermissions(bot.id, sibling.threadId);
     expect(caughtUp).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: ["Read", "Bash"] });
-    expect(reloaded.taskByThread(bot.id, first)?.approvalMode).toBe("auto");
     expect(reloaded.bot(bot.id)?.approvalMode).toBe("full");
+  });
+
+  it("a hidden thread follows a later Full access change on the bot", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const hidden = store.createTask(bot.id, "AI client", false, undefined, undefined, "ask", undefined, undefined, true)!;
+    expect(hidden).toMatchObject({ hidden: true, approvalMode: "auto", autoApprove: true });
+    store.patchBot(bot.id, { approvalMode: "full", autoApprove: false });
+    expect(store.taskByThread(bot.id, hidden.threadId)).toMatchObject({ approvalMode: "full", autoApprove: false, hidden: true });
+    expect(store.projectBotForTask(bot.id, hidden.threadId)?.approvalMode).toBe("full");
+  });
+
+  it("aligns every stored thread, hidden ones included, to the bot's level once", () => {
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(join(DATA_DIR, "bots.json"), JSON.stringify([{
+      id: "full-bot", name: "Full", threadId: "main", soul: "", approvalMode: "full", autoApprove: false,
+      tasks: [
+        { threadId: "main", title: "Main", approvalMode: "ask", autoApprove: false },
+        { threadId: "hidden", title: "AI client", approvalMode: "ask", autoApprove: true, hidden: true },
+      ],
+    }]));
+    const store = new Store(selection);
+    expect(store.taskByThread("full-bot", "main")).toMatchObject({ approvalMode: "full", autoApprove: false });
+    expect(store.taskByThread("full-bot", "hidden")).toMatchObject({ approvalMode: "full", autoApprove: false, hidden: true });
+    expect(existsSync(join(DATA_DIR, "approval-inheritance.v1"))).toBe(true);
+    const raw = savedBots();
+    raw[0]!.tasks!.find((task) => task.threadId === "main")!.approvalMode = "ask";
+    writeFileSync(join(DATA_DIR, "bots.json"), JSON.stringify(raw));
+    const again = new Store(selection);
+    expect(again.taskByThread("full-bot", "main")?.approvalMode).toBe("ask");
+    expect(again.projectBotForTask("full-bot", "main")?.approvalMode).toBe("full");
+    expect(again.projectBotForTask("full-bot", "hidden")?.approvalMode).toBe("full");
+  });
+
+  it("a read-only thread stays on Ask when the bot moves to Full access", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({}, { seedMessages: false });
+    const locked = store.createTask(bot.id, "Read only", false)!;
+    store.lockTaskAsk(bot.id, locked.threadId);
+    store.patchBot(bot.id, { approvalMode: "full", autoApprove: false, alwaysAllow: ["Read"] });
+    expect(store.taskByThread(bot.id, locked.threadId)).toMatchObject({
+      approvalLock: "ask", approvalMode: "ask", autoApprove: false, alwaysAllow: [],
+    });
+    expect(store.projectBotForTask(bot.id, locked.threadId)?.approvalMode).toBe("ask");
+    expect(store.projectBotForTask(bot.id, bot.threadId)?.approvalMode).toBe("full");
   });
 
   it("does not partially elevate any thread when saving the all-threads change fails", () => {
@@ -245,7 +290,9 @@ describe("independent bot task state", () => {
     });
     expect(store.projectBotForTask(bot.id, first)).toMatchObject({
       modelSelection: { instanceId: "codex", model: "first", effort: "high" },
-      approvalMode: "auto",
+      // The thread's own stored level does not outlive the bot's. The bot
+      // was set to Ask, so this conversation asks too. Its standing allow stays.
+      approvalMode: "ask",
       alwaysAllow: ["Bash:git"],
     });
     // No model of its own: it moved with the bot's.
@@ -452,7 +499,7 @@ describe("independent bot task state", () => {
     expect(store.taskByThread("plain-bot", "p1")).toMatchObject({ approvalMode: "auto" });
     expect(store.bot("full-bot")?.approvalMode).toBe("full");
     expect(store.taskByThread("full-bot", "f1")?.approvalMode).toBe("full");
-    expect(store.taskByThread("full-bot", "f2")?.approvalMode).toBe("auto");
+    expect(store.taskByThread("full-bot", "f2")?.approvalMode).toBe("full");
     expect(store.bot("local-bot")).toMatchObject({ approvalMode: "ask" });
     expect(store.taskByThread("local-bot", "l1")?.approvalMode).toBe("ask");
     expect(store.bot("edits-bot")?.approvalMode).toBe("edits");

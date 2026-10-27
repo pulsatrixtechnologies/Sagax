@@ -143,7 +143,7 @@ describe("moving saved bots off the engine", () => {
     expect(reloaded.taskByThread(bot.id, bot.threadId)?.surface).toBeUndefined();
   });
 
-  it("sets a level the new engine would have to confirm back to Ask, as every engine switch does", () => {
+  it("keeps Full access when the new engine runs it, and drops it for one that cannot", () => {
     const store = new Store(newBotDefault);
     const full = store.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
     store.patchBot(full.id, { approvalMode: "full", alwaysAllow: ["Bash(ls:*)"] });
@@ -151,59 +151,56 @@ describe("moving saved bots off the engine", () => {
     const auto = store.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
     store.patchBot(auto.id, { approvalMode: "auto" });
     store.patchTask(auto.id, auto.threadId, { approvalMode: "auto" });
-
     const moves = store.retireInstances(removed, replacement, noBoat);
-
     const reloaded = new Store(newBotDefault);
-    expect(reloaded.bot(full.id)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
-    expect(reloaded.taskByThread(full.id, full.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
-    expect(moves.find(move => move.botId === full.id)?.askNow).toBe(true);
-    // A level the new engine has as well carries across, as on any switch.
+    // Claude runs Full, so the level and the standing allow carry (2026-10-26).
+    expect(reloaded.bot(full.id)).toMatchObject({ approvalMode: "full", alwaysAllow: ["Bash(ls:*)"] });
+    expect(reloaded.taskByThread(full.id, full.threadId)).toMatchObject({ approvalMode: "full", alwaysAllow: ["Bash(ls:*)"] });
+    expect(moves.find(move => move.botId === full.id)?.askNow).toBe(false);
     expect(reloaded.bot(auto.id)?.approvalMode).toBe("auto");
     expect(reloaded.taskByThread(auto.id, auto.threadId)?.approvalMode).toBe("auto");
     expect(moves.find(move => move.botId === auto.id)?.askNow).toBe(false);
+
+    // An engine that cannot run Full drops the bot, and every thread follows.
+    const drop = new Store(newBotDefault);
+    const dropped = drop.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
+    drop.patchBot(dropped.id, { approvalMode: "full", alwaysAllow: ["Bash(ls:*)"] });
+    drop.retireInstances(removed, replacement, { ...noBoat, driverKind: "hermesAgent" });
+    const after = new Store(newBotDefault);
+    expect(after.bot(dropped.id)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+    expect(after.taskByThread(dropped.id, dropped.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
   });
 
-  it("keeps the level of a conversation on another engine when the bot's own level goes back to Ask", () => {
+  it("a conversation that stayed on another engine follows the bot and keeps its standing allows", () => {
     const store = new Store(newBotDefault);
-    // The first conversation has no level of its own: it follows the bot's.
     const bot = store.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
-    // Sagax starts a new bot's thread on its own Approve for me level; this
-    // case is about a thread with none, so it is cleared here.
-    store.patchTask(bot.id, bot.threadId, { approvalMode: undefined, autoApprove: undefined });
     store.patchBot(bot.id, { approvalMode: "full", alwaysAllow: ["Bash(ls:*)"] });
     const elsewhere = bot.threadId;
     store.patchTask(bot.id, elsewhere, { modelSelection: { instanceId: "codex", model: "codex-model" } });
     expect(store.projectBotForTask(bot.id, elsewhere)).toMatchObject({ approvalMode: "full", alwaysAllow: ["Bash(ls:*)"] });
 
-    const moves = store.retireInstances(removed, replacement, noBoat);
-
+    // Hermes cannot run Full: the bot asks, and the conversation that did
+    // not itself move asks with it and keeps the standing allow.
+    const moves = store.retireInstances(removed, replacement, { ...noBoat, driverKind: "hermesAgent" });
     const reloaded = new Store(newBotDefault);
-    // The bot moved and its Full access goes back to Ask, as on any switch.
     expect(reloaded.bot(bot.id)).toMatchObject({ modelSelection: replacement, approvalMode: "ask", alwaysAllow: [] });
-    // The conversation stays on Codex, so nothing about its level changes.
     expect(reloaded.projectBotForTask(bot.id, elsewhere)).toMatchObject({
-      modelSelection: { instanceId: "codex", model: "codex-model" }, approvalMode: "full", alwaysAllow: ["Bash(ls:*)"],
+      modelSelection: { instanceId: "codex", model: "codex-model" }, approvalMode: "ask", alwaysAllow: ["Bash(ls:*)"],
     });
-    // It is the bot's open conversation, so it still hears what moved: the
-    // bot's own engine and level, not its own.
     expect(moves).toEqual([
       { botId: bot.id, threadId: elsewhere, scope: "bot-only", cloud: false, noComputer: false, askNow: true },
     ]);
   });
 
-  it("tells a moved conversation that follows the bot's level that it is now Ask", () => {
+  it("tells a moved conversation that follows the bot when that level can no longer run", () => {
     const store = new Store(newBotDefault);
     const bot = store.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
-    // As above: a thread with no level of its own, which Sagax never starts with.
-    store.patchTask(bot.id, bot.threadId, { approvalMode: undefined, autoApprove: undefined });
     store.patchBot(bot.id, { approvalMode: "full" });
     const first = bot.threadId;
     // A newer conversation becomes the open one; the first keeps following the bot.
     store.createTask(bot.id, "Newer", true);
 
-    const moves = store.retireInstances(removed, replacement, noBoat);
-
+    const moves = store.retireInstances(removed, replacement, { ...noBoat, driverKind: "hermesAgent" });
     expect(moves.find(move => move.threadId === first)).toMatchObject({ scope: "conversation", askNow: true });
     expect(new Store(newBotDefault).projectBotForTask(bot.id, first)).toMatchObject({ approvalMode: "ask" });
   });

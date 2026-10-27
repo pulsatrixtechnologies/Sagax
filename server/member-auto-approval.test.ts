@@ -44,8 +44,7 @@ describe("memberRoomTurnLevel (a Primary Bot's handoff in a room)", () => {
     const body = source.slice(start, source.indexOf("\n}\n", start));
     expect(start).toBeGreaterThan(-1);
     expect(body).toMatch(/if \(memberOwnedInOrg\(bot\)\) return memberRoomTurnLevel\(level, memberAutoApprovalAllowed\(cfg\.organization\)\);/);
-    // applied after the handoff's delegated level, not before
-    expect(body.indexOf("delegatedLevel(")).toBeLessThan(body.indexOf("memberRoomTurnLevel("));
+    expect(body).not.toMatch(/delegatedLevel\(/);
   });
 
   it("the owner route of a member's bot runs as Approval while the setting is off (index.ts ownerModeForTurn autoAllowed)", () => {

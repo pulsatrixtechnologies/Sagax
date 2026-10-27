@@ -158,7 +158,7 @@ describe("threads follow their bot's model", () => {
     expect(ownModel(open(), "legacy", "copy")).toBeUndefined();
   });
 
-  it("followBotModel clears exactly the listed threads' own model, in one write, and keeps every level", () => {
+  it("followBotModel clears exactly the listed threads' own model, in one write, and leaves the stored level copy", () => {
     const store = open();
     const bot = store.createBot();
     const first = bot.threadId;
@@ -179,6 +179,9 @@ describe("threads follow their bot's model", () => {
     expect(moved.sort()).toEqual([full.threadId, asks.threadId, same.threadId].sort());
     expect(store.taskByThread(bot.id, full.threadId)).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: ["Bash"], rewound: true });
     expect(store.taskByThread(bot.id, full.threadId)?.modelSelection).toBeUndefined();
+    // The stored copy can still say Full. A turn reads the bot, which is Approve for me.
+    expect(store.projectBotForTask(bot.id, full.threadId)?.approvalMode).toBe("auto");
+    expect(store.projectBotForTask(bot.id, asks.threadId)?.approvalMode).toBe("auto");
     expect(store.taskByThread(bot.id, asks.threadId)).toMatchObject({ approvalMode: "ask" });
     expect(store.taskByThread(bot.id, same.threadId)).toMatchObject({ approvalMode: "full" });
     expect(ownModel(store, bot.id, untouched.threadId)).toEqual(opus);
@@ -189,7 +192,7 @@ describe("threads follow their bot's model", () => {
     expect(ownModel(reloaded, bot.id, untouched.threadId)).toEqual(opus);
   });
 
-  it("a following thread keeps its Full access and approvals when the bot moves to another engine", () => {
+  it("a model move rewrites the stored level to the bot's, and a turn reads the bot", () => {
     const store = open();
     const bot = store.createBot();
     const full = store.createTask(bot.id, "Full")!;
@@ -203,7 +206,8 @@ describe("threads follow their bot's model", () => {
     const other = store.createTask(bot.id, "Full again")!;
     store.patchTask(bot.id, other.threadId, { approvalMode: "full", autoApprove: false });
     store.applyModelDefault(bot.id, sonnet);
-    expect(store.taskByThread(bot.id, other.threadId)?.approvalMode).toBe("full");
+    expect(store.taskByThread(bot.id, other.threadId)?.approvalMode).toBe("auto");
+    expect(store.projectBotForTask(bot.id, full.threadId)?.approvalMode).toBe("auto");
   });
 
   it("the wire carries the model a thread runs on and whether it follows the bot", () => {

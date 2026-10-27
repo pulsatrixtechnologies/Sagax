@@ -30,7 +30,7 @@ import { newId, type ModelSelection } from "./contracts.ts";
 import { pickBotName } from "./names.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { AVATAR_FOCUS_CENTER, AVATAR_ZOOM_MIN, botAvatarProfile, clampAvatarFocus, clampAvatarZoom } from "../shared/bot-avatar.ts";
-import { approvalModeFor, isApprovalMode, modelSwitchNeedsAsk } from "../shared/approval-mode.ts";
+import { approvalModeFor, isApprovalMode, modelSwitchNeedsAsk, type ApprovalMode } from "../shared/approval-mode.ts";
 import { lastChangeRequestUrl } from "../shared/thread-link.ts";
 import { REMOVED_COMPUTER_DRIVER, type ComputerEngineMove } from "./computer-engine-removal.ts";
 import type { ProfileRequestChanges } from "../shared/profile-request.ts";
@@ -149,6 +149,10 @@ export interface TaskRecord extends Omit<WireTask, TaskWireDerivedKeys> {
    * call recall_topic. Only `true` is stored; a send from a client showing
    * threads clears it. Never set on a confidential thread. */
   streamSegment?: true;
+  /** Read-only sub-agent thread (start_thread read_only) stays on Ask
+   * whatever the bot's level. Server-private. The chip shows Ask and the
+   * opening line says the thread is read-only. */
+  approvalLock?: "ask";
   /** The digest other stream turns read about this thread, anchored to the
    * newest message it saw. Server-private, dropped when the thread turns
    * confidential. */
@@ -167,7 +171,7 @@ export const ENGINE_SESSIONS_KEPT = 64;
 /** TaskRecord fields no client may see. Everything else must be on WireTask:
  * the exactness assertion below fails to compile when either side drifts,
  * so a new server field forces a decision — wire-visible or private here. */
-export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages" | "appliedCompactionId" | "contextSummaries" | "contextFloor" | "lastContextModel" | "surfaceSource" | "askedAt" | "autoWorkspace" | "streamSegment" | "segmentDigest" | "engineSessions";
+export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages" | "appliedCompactionId" | "contextSummaries" | "contextFloor" | "lastContextModel" | "surfaceSource" | "askedAt" | "autoWorkspace" | "streamSegment" | "segmentDigest" | "engineSessions" | "approvalLock";
 /** WireTask fields computed by toWireTask and never stored on a TaskRecord. */
 export type TaskWireDerivedKeys = "surfaceAuto" | "followsBotModel";
 export type TaskWireProjection = Pick<TaskRecord, Exclude<keyof TaskRecord, TaskWirePrivateKeys>> & Pick<WireTask, TaskWireDerivedKeys>;
@@ -186,7 +190,7 @@ export function toWireTask(task: TaskRecord, botModel: ModelSelection): WireTask
   const { resumeCursors: _resumeCursors, lastInstanceId: _lastInstanceId, handedMessages: _handedMessages,
     appliedCompactionId: _appliedCompactionId, contextSummaries: _contextSummaries, contextFloor: _contextFloor, lastContextModel: _lastContextModel,
     surfaceSource, askedAt: _askedAt, autoWorkspace: _autoWorkspace, streamSegment: _streamSegment, segmentDigest: _segmentDigest,
-    engineSessions: _engineSessions, ...stored } = task;
+    engineSessions: _engineSessions, approvalLock: _approvalLock, ...stored } = task;
   const wire: WireTask = { ...stored, modelSelection: structuredClone(task.modelSelection ?? botModel), followsBotModel: task.modelSelection === undefined };
   // Who pinned stays private. A client learns only whether the pin is the
   // machine's own record, so it never presents one as the person's choice.
@@ -1138,10 +1142,34 @@ export class Store {
         }
       }
     }
+    // The approval level belongs to the bot (#1169, #1170). Every unlocked
+    // thread, hidden ones included, stores the bot's current level. A
+    // read-only thread (approvalLock) stays on Ask. Written after the save
+    // so a crash before the write retries. Idempotent.
+    const approvalInheritanceMarker = join(DATA_DIR, "approval-inheritance.v1");
+    const approvalInheritancePending = !existsSync(approvalInheritanceMarker);
+    if (approvalInheritancePending) {
+      for (const b of this.bots) {
+        const mode = approvalModeFor({ ...b, approvalGrant: undefined });
+        const autoApprove = mode === "auto";
+        for (const task of b.tasks ?? []) {
+          if (task.approvalLock === "ask") continue;
+          if (task.approvalMode !== mode || task.autoApprove !== autoApprove) {
+            task.approvalMode = mode;
+            task.autoApprove = autoApprove;
+            botsMigrated = true;
+          }
+        }
+      }
+    }
     if (botsMigrated) this.saveBots();
     if (approvalDefaultPending) {
       try { writeFileAtomic(approvalDefaultMarker, "auto\n", { mode: 0o600 }); }
       catch (error) { console.warn("store: approval default marker was not saved", error); }
+    }
+    if (approvalInheritancePending) {
+      try { writeFileAtomic(approvalInheritanceMarker, "bot\n", { mode: 0o600 }); }
+      catch (error) { console.warn("store: approval inheritance marker was not saved", error); }
     }
     if (clearModelCopies) writeFileAtomic(THREAD_MODEL_COPIES_CLEARED, "Threads follow their bot's model; the copies older builds made are cleared.\n", { mode: 0o600 });
     // Search reads SQLite directly, so migrate every known legacy transcript
@@ -2302,19 +2330,25 @@ export class Store {
   }
 
   /** A bot's threads as a change of its model to `next` leaves them. Each
-   * keeps the level it runs at now (older threads may still inherit the
-   * bot's, which may change in the same write); one that follows the bot
-   * moves with it, at the same level; a thread's own model stays. */
+   * unlocked thread stores the bot's current approval level. A thread's
+   * own model stays. */
   private withDefaultModel(bot: BotRecord): TaskRecord[] | undefined {
-    return bot.tasks?.map((task) => ({
+    const durable = this.durableApproval(bot);
+    return bot.tasks?.map((task) => {
       // 2026-10-20 (prod: routines left on the old instance): a thread whose
       // own model is the bot's old default was only a copy of it and follows
       // the bot like the others; a model the person picked there stays
-      ...(task.modelSelection !== undefined && sameModelSelection(task.modelSelection, bot.modelSelection) ? withoutModel(task) : task),
-      approvalMode: approvalModeFor(this.projectBotForTask(bot.id, task.threadId)!),
-      autoApprove: task.autoApprove ?? bot.autoApprove,
-      alwaysAllow: structuredClone(task.alwaysAllow ?? bot.alwaysAllow ?? []),
-    }));
+      const followed = task.modelSelection !== undefined && sameModelSelection(task.modelSelection, bot.modelSelection) ? withoutModel(task) : task;
+      if (task.approvalLock === "ask") {
+        return { ...followed, approvalMode: "ask" as const, autoApprove: false, alwaysAllow: [] as string[] };
+      }
+      return {
+        ...followed,
+        approvalMode: durable.approvalMode,
+        autoApprove: durable.autoApprove,
+        alwaysAllow: structuredClone(task.alwaysAllow ?? bot.alwaysAllow ?? []),
+      };
+    });
   }
 
   /** One reviewed default-model change (propose_model), with
@@ -2427,6 +2461,30 @@ export class Store {
     return bot;
   }
 
+  /** The bot's committed approval level, ignoring a grant that has not
+   * committed yet. Threads store this so a reload shows the same level
+   * the next turn runs at. */
+  private durableApproval(bot: BotRecord): { approvalMode: ApprovalMode; autoApprove: boolean } {
+    const approvalMode = approvalModeFor({ ...bot, approvalGrant: undefined });
+    return { approvalMode, autoApprove: approvalMode === "auto" };
+  }
+
+  /** Every unlocked thread stores the bot's current level. A read-only
+   * thread stays on Ask. Standing allows on an unlocked thread stay. */
+  private syncUnlockedTasks(bot: BotRecord): void {
+    const durable = this.durableApproval(bot);
+    for (const task of bot.tasks ?? []) {
+      if (task.approvalLock === "ask") {
+        task.approvalMode = "ask";
+        task.autoApprove = false;
+        task.alwaysAllow = [];
+        continue;
+      }
+      task.approvalMode = durable.approvalMode;
+      task.autoApprove = durable.autoApprove;
+    }
+  }
+
   patchBot(id: string, patch: Partial<BotRecord>): BotRecord | null {
     const bot = this.bot(id);
     if (!bot) return null;
@@ -2444,6 +2502,9 @@ export class Store {
     // Runtime revocations must become effective in memory even when disk is
     // unavailable. Profile edits use the separate atomic path below.
     Object.assign(bot, patch);
+    if (Object.hasOwn(patch, "approvalMode") || Object.hasOwn(patch, "autoApprove")) {
+      this.syncUnlockedTasks(bot);
+    }
     const task = this.activeTask(id);
     if (task) {
       for (const key of ["resumeCursors", "rewound", "pinnedMessageId", "unread"] as const) {
@@ -2844,11 +2905,14 @@ export class Store {
         // Read before anything changes: a conversation that follows the bot's
         // level has the bot's level here.
         const before = this.projectBotForTask(bot.id, task.threadId)!;
-        // The bot's own level goes back to Ask, so a conversation that
-        // followed it keeps the level it had (as switchTaskModel does).
-        if (botAsk) {
+        // The bot's own level goes back to Ask, so every unlocked
+        // conversation follows it. One that did not itself move keeps the
+        // standing allows it already had.
+        if (botAsk && task.approvalLock !== "ask") {
           Object.assign(taskPatch, {
-            approvalMode: before.approvalMode, autoApprove: before.autoApprove, alwaysAllow: structuredClone(before.alwaysAllow ?? []),
+            approvalMode: "ask" as const,
+            autoApprove: false,
+            alwaysAllow: structuredClone(task.alwaysAllow ?? before.alwaysAllow ?? []),
           });
         }
         // The engine this conversation ran on: its own, else the bot's.
@@ -3203,9 +3267,9 @@ export class Store {
       approvalGrant: bot.approvalGrant?.threadOnly && bot.approvalGrant.threadId !== threadId ? undefined : bot.approvalGrant,
       modelSelection: structuredClone(task.modelSelection ?? bot.modelSelection),
       resumeCursors: structuredClone(task.resumeCursors),
-      approvalMode: task.approvalMode ?? (task.autoApprove === undefined ? bot.approvalMode : undefined),
-      autoApprove: task.autoApprove ?? bot.autoApprove,
-      alwaysAllow: structuredClone(task.alwaysAllow ?? bot.alwaysAllow),
+      approvalMode: task.approvalLock === "ask" ? "ask" : bot.approvalMode,
+      autoApprove: task.approvalLock === "ask" ? false : bot.autoApprove,
+      alwaysAllow: task.approvalLock === "ask" ? [] : structuredClone(task.alwaysAllow ?? bot.alwaysAllow),
       unread: Boolean(task.unread),
       rewound: task.rewound,
       pinnedMessageId: task.pinnedMessageId,
@@ -3258,10 +3322,12 @@ export class Store {
    * every screen, and lifting it would widen what the bot may reach.
    * A bot or a conversation that was kept off this computer (Cloud, Local
    * VM or Browser, by Works on or by a person's or a legacy pin) may reach
-   * it on Auto, so it starts again on Ask, as on an engine switch, and a
-   * prepared grant is dropped: nothing it may now do on this computer runs
-   * without asking until a person raises the level again. An auto pin
-   * recorded where Auto had landed held nothing back, so it changes no level.
+   * it on Auto, so the bot and every unlocked conversation start again on
+   * Ask, as on an engine switch, and a prepared grant is dropped: nothing
+   * it may now do on this computer runs without asking until a person
+   * raises the level again. An auto pin recorded where Auto had landed
+   * held nothing back by itself; a pin that kept the bot off this computer
+   * drops the whole bot to Ask, because the level is the bot's.
    * Idempotent; one save when anything changed. */
   retireFixedWorkspaces(): { bots: number; pins: number; asked: number } {
     let bots = 0;
@@ -3272,15 +3338,24 @@ export class Store {
     const narrower = (place: unknown) => place === "cloud" || place === "vm" || place === "browser";
     for (const bot of this.bots) {
       const botKeptOff = narrower(bot.computer);
+      const pinKeptOff = (bot.tasks ?? []).some((task) => narrower(task.surface) && task.surfaceSource !== "auto");
+      if ((botKeptOff || pinKeptOff) && approvalModeFor(bot) !== "ask") {
+        Object.assign(bot, structuredClone(askNow));
+        delete bot.approvalGrant;
+        asked++;
+        touched.add(bot.id);
+        for (const task of bot.tasks ?? []) {
+          if (task.approvalLock === "ask") continue;
+          if (task.approvalMode !== "ask" || task.autoApprove !== false) asked++;
+          Object.assign(task, structuredClone(askNow));
+        }
+      }
       for (const task of bot.tasks ?? []) {
         // A conversation held off this computer, by the bot's Works on or by
-        // its own pin, may reach it on Auto: back to Ask.
+        // its own pin, may reach it on Auto. The bot already asked above
+        // when that narrowing was still ahead of it.
         const keptOff = botKeptOff || (narrower(task.surface) && task.surfaceSource !== "auto");
-        // its own level, else the bot's that it follows (a pin alone held it
-        // off, so the bot keeps its own level and this conversation asks)
-        const ownLevel = task.approvalMode !== undefined || task.autoApprove !== undefined;
-        const level = ownLevel || botKeptOff ? approvalModeFor(task) : approvalModeFor(bot);
-        if (keptOff && level !== "ask") {
+        if (keptOff && task.approvalLock !== "ask" && (task.approvalMode !== "ask" || task.autoApprove !== false)) {
           Object.assign(task, structuredClone(askNow));
           asked++;
           touched.add(bot.id);
@@ -3364,9 +3439,10 @@ export class Store {
 
   /** These threads follow their bot's model again: each one's own model is
    * cleared ("Switch them too", "Use the bot's model", or a model that can't
-   * run here). The level of each stays as it is, and `reset` adds what a changed model
-   * needs (a hosted workspace's fresh session). One write. Returns the
-   * threads that changed; a listed thread that already follows stays as it is. */
+   * run here). The stored level copy stays; a turn reads the bot. `reset`
+   * adds what a changed model needs (a hosted workspace's fresh session).
+   * One write. Returns the threads that changed; a listed thread that
+   * already follows stays as it is. */
   followBotModel(botId: string, threadIds: readonly string[],
     reset: (from: ModelSelection, to: ModelSelection) => Partial<TaskRecord> = () => ({})): string[] {
     const bot = this.bot(botId);
@@ -3391,8 +3467,10 @@ export class Store {
   setAllThreadApprovalMode(botId: string, mode: "full" | "ask"): BotRecord | null {
     const bot = this.bot(botId);
     if (!bot) return null;
-    const patch = { approvalMode: mode, autoApprove: false, alwaysAllow: [] };
-    const tasks = (bot.tasks ?? []).map(task => ({ ...task, ...patch }));
+    const patch = { approvalMode: mode, autoApprove: false, alwaysAllow: [] as string[] };
+    const tasks = (bot.tasks ?? []).map(task => task.approvalLock === "ask"
+      ? { ...task, approvalMode: "ask" as const, autoApprove: false, alwaysAllow: [] as string[] }
+      : { ...task, ...patch });
     const next = { ...bot, ...patch, approvalGrant: undefined, tasks };
     this.saveBots(this.bots.map(candidate => candidate === bot ? next : candidate));
     bot.tasks?.forEach((task, index) => Object.assign(task, tasks[index]));
@@ -3401,15 +3479,14 @@ export class Store {
     return bot;
   }
 
-  /** Copy this bot's saved approval level and standing approvals onto one
-   * thread. A new thread already gets them; this is how an existing
-   * conversation catches up. Other threads, the transcript, and the bot
-   * default stay put. A grant that has not committed yet is ignored, so a
-   * refresh cannot copy the temporary Ask mask. */
+  /** Copy this bot's saved standing approvals onto one thread. The level
+   * already follows the bot on every unlocked thread. A grant that has not
+   * committed yet is ignored, so a refresh cannot copy the temporary Ask mask. */
   refreshTaskPermissions(botId: string, threadId: string): TaskRecord | null {
     const bot = this.bot(botId);
     const task = this.taskByThread(botId, threadId);
     if (!bot || !task) return null;
+    if (task.approvalLock === "ask") return task;
     const mode = approvalModeFor({ ...bot, approvalGrant: undefined });
     const alwaysAllow = structuredClone(bot.alwaysAllow ?? []);
     const autoApprove = mode === "auto";
@@ -3446,9 +3523,10 @@ export class Store {
   }
 
   /** A new task record, not yet in the bot's list. */
-  private buildTask(bot: BotRecord, title?: string, projectId?: string, openedBy?: TaskOpenedBy, approvalMode?: "ask" | "full",
+  private buildTask(bot: BotRecord, title?: string, projectId?: string, openedBy?: TaskOpenedBy, _approvalMode?: "ask" | "full",
     ownerPrincipalId?: string, modelSelection?: ModelSelection, hidden = false, cwd?: string, confidential = false): TaskRecord {
     const createdAt = Date.now();
+    const durable = this.durableApproval(bot);
     return {
       threadId: newId(),
       title: threadTitleFrom(title),
@@ -3463,9 +3541,9 @@ export class Store {
       ...(ownerPrincipalId?.trim() ? { ownerPrincipalId: ownerPrincipalId.trim().toLowerCase() } : {}),
       resumeCursors: {},
       ...(modelSelection && !sameModelSelection(modelSelection, bot.modelSelection) ? { modelSelection: structuredClone(modelSelection) } : {}),
-      approvalMode: approvalMode ?? approvalModeFor(bot),
-      autoApprove: approvalMode ? false : Boolean(bot.autoApprove),
-      alwaysAllow: approvalMode ? [] : [...(bot.alwaysAllow ?? [])],
+      approvalMode: durable.approvalMode,
+      autoApprove: durable.autoApprove,
+      alwaysAllow: [...(bot.alwaysAllow ?? [])],
       unread: false,
       activity: "idle",
       busy: false,
@@ -3474,6 +3552,22 @@ export class Store {
       // thread is never briefly an ordinary one.
       ...(confidential ? { confidential: true as const } : {}),
     };
+  }
+
+  /** A read-only sub-agent thread stays on Ask, with no standing allows,
+   * whatever the bot's level becomes later. */
+  lockTaskAsk(botId: string, threadId: string): TaskRecord | null {
+    const bot = this.bot(botId);
+    const task = this.taskByThread(botId, threadId);
+    if (!bot || !task) return null;
+    this.commitBotChange(bot, "the read-only thread", () => {
+      task.approvalLock = "ask";
+      task.approvalMode = "ask";
+      task.autoApprove = false;
+      task.alwaysAllow = [];
+    });
+    this.emit({ type: "bot", botId });
+    return task;
   }
 
   /** Hide (or show again) an AI client's conversation (#291). A hidden

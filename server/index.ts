@@ -83,7 +83,6 @@ import {
   approvalModeFor,
   engineApprovalMode,
   approvalModeWidens,
-  hasNativeAutoReview,
   modelSwitchNeedsAsk,
   isEmergencyApprovalDowngrade,
   isApprovalMode,
@@ -115,7 +114,7 @@ import { createCredentialVaultRoutes, vaultPrincipalFor } from "./routes/credent
 import { createCredentialVaultInternalRoutes } from "./routes/credential-vault-internal.ts";
 
 import { createRoomTurnLevels } from "./room-turn-level.ts";
-import { HELD_NOTE, approvalHeldNote, approvalHeldReason, approvalModeForOrigin, autoVerdict, deliverFullAccessApproval, delegatedApprovalMode } from "./auto-approve.ts";
+import { HELD_NOTE, approvalHeldNote, approvalHeldReason, approvalModeForOrigin, autoVerdict, deliverFullAccessApproval } from "./auto-approve.ts";
 import { CommandAllowlistStore, commandAllowlistCandidate } from "./command-allowlist.ts";
 import type { CommandAllowlistCandidate, CommandAllowlistResponse } from "../shared/command-allowlist.ts";
 import { updateClaudeCli } from "./claude-update.ts";
@@ -1030,7 +1029,7 @@ import { roomMentionNotification, roomMentionReadPatch } from "./room-mentions.t
 import { PERSONAL_STDIO_TOOL_SERVER } from "./user-sandbox-proxy.ts";
 import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
-import { autoReviewThreadMode, createBotSettingsStore, defaultOrgTimeZone, hostTimeZone } from "./bot-settings.ts";
+import { createBotSettingsStore, defaultOrgTimeZone, hostTimeZone } from "./bot-settings.ts";
 import { turnClockEnabled, turnTimeZone, withTurnClock } from "./turn-clock.ts";
 import { createComputerInputRoutes, createVmScreenshotRoute, type ComputerShell } from "./routes/computer-input.ts";
 import { createComputerTeachRoutes } from "./routes/computer-teach.ts";
@@ -2700,24 +2699,11 @@ function teamMemoryWriteRefusal(auth: RequestAuth, method: string): string | nul
     : null;
 }
 
-/** Settings > Bot > Auto-review (server/bot-settings.ts): when the caller
- * (their own setting on an organization server, the server's elsewhere) has
- * it on, a conversation they just opened starts in the reviewed level. */
-function applyAutoReviewDefault(auth: RequestAuth, botId: string, threadId: string): void {
-  const principalId = IDENTITY.kind === "perspicax" && auth.kind === "session" ? auth.session.principalId : undefined;
-  const settings = principalId && isPrincipalId(principalId) ? botSettings.person(principalId) : botSettings.server();
-  if (!settings.autoReviewDefault) return;
-  if (CLOUD_HOME && !cloudOwnerSession(auth)) return;
-  const thread = store.projectBotForTask(botId, threadId);
-  if (!thread || thread.approvalGrant) return;
-  const mode = autoReviewThreadMode({
-    current: approvalModeFor(thread),
-    nativeReviewer: hasNativeAutoReview(registry.cliTarget(thread.modelSelection.instanceId)?.driverKind),
-    supportsAuto: supportsApprovalMode(thread.modelSelection, "auto"),
-    thisComputer: thread.computer === "local",
-  });
-  // never an automatic level the organization refuses for a member's bot
-  if (mode && !memberAutoRefused(thread, [approvalModeFor(thread)], mode)) store.patchTask(botId, threadId, { approvalMode: mode, autoApprove: mode === "auto" });
+/** Settings > Bot > Auto-review used to start one new conversation at a
+ * reviewed level. The approval level belongs to the bot, so opening a
+ * conversation does not change it (#1169). */
+function applyAutoReviewDefault(_auth: RequestAuth, _botId: string, _threadId: string): void {
+  return;
 }
 
 function canManageCommandAllowlist(auth: RequestAuth): boolean {
@@ -6569,9 +6555,9 @@ try {
       })),
     })));
     for (const patch of patches) {
-      if (patch.level) store.patchBot(patch.botId, { approvalMode: patch.level, autoApprove: false });
-      for (const task of patch.tasks) store.patchTask(patch.botId, task.threadId, { approvalMode: task.level, autoApprove: false });
-      console.info(`[approval] permission mode carried into the approval level of one bot (${patch.level ?? "conversations only"})`);
+      if (!patch.level) continue;
+      store.patchBot(patch.botId, { approvalMode: patch.level, autoApprove: false });
+      console.info(`[approval] permission mode carried into the approval level of one bot`);
     }
     ownerApprovals.dropLegacyModes();
   }
@@ -7961,19 +7947,25 @@ async function botOverview(bot: BotRecord): Promise<BotOverview> {
   });
 }
 
-/** Defense in depth for hand-edited/corrupt durable records: elevated
- * approval semantics require an implemented provider mapping. The trusted transition enforces
- * this too, but no provider dispatch or later permission callback relies on
- * persistence having been produced exclusively by that route. Delegation
- * uses the receiving bot's grant, never the sender's (approvalModeForOrigin) —
- * with one deliberate exception: a Primary Bot's level flows down to the
- * threads it delegates (delegatedLevel), so the level the person gave the
- * Primary Bot covers the work the Primary Bot hands out. */
+/** Defense in depth for hand-edited or corrupt durable records: elevated
+ * approval semantics require an implemented provider mapping. The trusted
+ * transition enforces this too, but no provider dispatch or later permission
+ * callback relies on persistence having been produced exclusively by that
+ * route. The level is the bot's current one, read live (#1169, #1170).
+ * Delegation uses the receiving bot's own level. */
 const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = bot.threadId): ApprovalMode => {
+  const live = store.bot(bot.id);
+  const task = threadId ? store.taskByThread(bot.id, threadId) : undefined;
+  if (task?.approvalLock === "ask") return "ask";
+  const source = {
+    ...bot,
+    ...(live ? { approvalMode: live.approvalMode, autoApprove: live.autoApprove, approvalGrant: live.approvalGrant } : {}),
+    threadId,
+  };
   // Organization server: Full runs as Full only while the organization
   // allows it and the bot's current owner confirmed it (org-full-access.ts);
   // otherwise Ask. Host tools stay withheld either way (withholdHostTools).
-  const stored = approvalModeFor(bot);
+  const stored = approvalModeFor(source);
   if (stored === "full" && orgDeniesFull(bot)) return "ask";
   // A member's bot on an organization server: Custom (a config.toml on the
   // shared server) stays Ask. Its Auto and Auto-accept edits run as such
@@ -7994,7 +7986,7 @@ const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = b
   if (cloudGuestDriven(threadId)) return "ask";
   // A mail-woken routine run (bot email, S2): Ask, whatever the bot's level.
   if (botmailConfined(threadId)) return "ask";
-  const mode = approvalModeForOrigin(approvalModeFor(bot), { peerInitiated });
+  const mode = approvalModeForOrigin(stored, { peerInitiated });
   if (!supportsApprovalMode(bot.modelSelection, mode)) {
     return "ask";
   }
@@ -8085,79 +8077,23 @@ function peerReviewRequired(bot: BotRecord, threadId: string): boolean {
   return Boolean(bot.approvePeerComms && !fullAccessForSource(bot.id, threadId));
 }
 
-/** A Primary Bot's level flows down its delegation. The person set the
- * Primary Bot's level so its work runs that way; a teammate the Primary Bot brings in
- * starting at "Ask for approval" meant switching every such thread by hand,
- * all day, for the whole team. So a teammate a Primary Bot delegates to starts at
- * the Primary Bot's level for that work: Auto-accept edits, Approve for me or Full
- * access (delegatedApprovalMode: never lower than the teammate's own level,
- * capped at what its engine implements). Only a Primary Bot passes its level on —
- * an ordinary bot's delegation still uses the recipient's setting. Returns
- * null to keep the recipient's own level. */
-function delegatedLevel(from: BotRecord, fromThreadId: string, target: BotRecord, recipientMode: ApprovalMode): ApprovalMode | null {
-  return delegatedApprovalMode({
-    senderIsChief: Boolean(from.chiefOfStaff),
-    senderMode: sourceApprovalMode(from.id, fromThreadId),
-    sameBot: from.id === target.id,
-    recipientMode,
-    recipientDriverKind: registry.cliTarget(target.modelSelection.instanceId)?.driverKind,
-    // Organization server: only a bot whose owner allowed Full access (and
-    // while the organization allows it) inherits a Primary Bot's Full.
-    recipientMemberOwned: orgDeniesFull(target),
-  });
+/** A delegated thread runs at the working bot's current level, read live
+ * at turn start (#1169). Nothing is copied onto the thread. */
+function applyDelegatedLevel(_from: BotRecord, _fromThreadId: string, _target: BotRecord, _threadId: string): void {
 }
 
-/** The teammate's own level for a thread of its own, before any delegation. */
-function ownThreadLevel(target: BotRecord, threadId: string): ApprovalMode {
-  return approvalModeForTurn(store.projectBotForTask(target.id, threadId) ?? target, false, threadId);
-}
-
-const DELEGATED_LEVEL_NAMES: Partial<Record<ApprovalMode, string>> = { edits: "Auto-accept edits", auto: "Approve for me", full: "Full access" };
-
-/** Start a thread the Chief opened at the Chief's level, and say so in it
- * once, so the level the chip shows and the level the turns run at agree,
- * and the person can see where it came from (and change it there). */
-function applyDelegatedLevel(from: BotRecord, fromThreadId: string, target: BotRecord, threadId: string): void {
-  const level = delegatedLevel(from, fromThreadId, target, ownThreadLevel(target, threadId));
-  if (!level || store.taskByThread(target.id, threadId)?.approvalMode === level) return;
-  // 2026-10-17 (re-review of #688): a Primary Bot's Auto or Auto-accept
-  // edits is never saved on a member's thread while the organization turned
-  // automatic levels off for members' bots; the thread keeps its own level.
-  if (memberAutoRefused(target, [store.taskByThread(target.id, threadId)?.approvalMode], level)) {
-    store.appendMessage(threadId, {
-      role: "bot",
-      kind: "activity",
-      tool: { name: `${DELEGATED_LEVEL_NAMES[level] ?? level} not passed on by ${from.name}: automatic levels are off for members' bots in this organization`, ok: false },
-    });
-    return;
-  }
-  store.patchTask(target.id, threadId, { approvalMode: level, autoApprove: false, alwaysAllow: [] });
-  const name = DELEGATED_LEVEL_NAMES[level] ?? level;
-  store.appendMessage(threadId, {
-    role: "bot",
-    kind: "activity",
-    tool: { name: `${name} — delegated by ${from.name}, a Primary Bot on ${name}`, ok: true },
-  });
-}
-
-/** A room member's level for one turn. Work a Primary Bot hands out in a room runs
- * at the Primary Bot's level for that turn: the room thread is shared, so the
- * level is not stored on it — it rides the handoff. */
+/** A room member's level for one turn. The room thread is shared, so the
+ * level is the working bot's current one, read live. */
 function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: GroupTurnOrchestration): ApprovalMode {
   // On a Cloud home a room turn a guest drives runs in Ask (cloudGuestDriven).
   if (cloudGuestDriven(threadId)) return "ask";
-  const handoff = orchestration?.roomHandoffId ? coordinator.node(orchestration.roomHandoffId) : undefined;
-  const source = handoff?.parentId ? coordinator.node(handoff.parentId) : undefined;
-  const from = source ? store.bot(source.botId) : undefined;
-  // On an organization server a bot runs Full, even for a Primary Bot's
-  // handoff, only when its owner allowed it and the organization does.
+  // On an organization server a bot runs Full only when its owner allowed
+  // it and the organization does.
   if (memberOwnedInOrg(bot) && orgDeniesFull(bot)) return "ask";
-  const own = approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId), threadId);
-  const level = (from && source && delegatedLevel(from, source.threadId, bot, own)) || own;
-  // A member's bot: a Primary Bot's handoff never lifts it past what the
-  // organization allows members' bots (member-auto-approval.ts): Custom
-  // stays Ask, and Auto or Auto-accept edits run as Ask while an admin has
-  // turned organization.memberAutoApproval off (2026-10-17, review of #688).
+  const level = approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId), threadId);
+  // A member's bot: Custom stays Ask, and Auto or Auto-accept edits run as
+  // Ask while an admin has turned organization.memberAutoApproval off
+  // (2026-10-17, review of #688).
   if (memberOwnedInOrg(bot)) return memberRoomTurnLevel(level, memberAutoApprovalAllowed(cfg.organization));
   return level;
 }
@@ -8219,7 +8155,7 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
       } else if (grant.refreshPermissions && grant.threadId) {
         store.refreshTaskPermissions(botId, grant.threadId);
       } else if (grant.threadId) {
-        store.patchTask(botId, grant.threadId, { approvalMode: mode, autoApprove: false });
+        store.patchBot(botId, { approvalMode: mode, autoApprove: false });
       }
       // The person confirmed the warning in the desktop app: remember it for
       // this bot, so the next grant asks no more (org-full-access.ts).
@@ -8512,7 +8448,7 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
       store.patchBot(botId, { approvalGrant: { requestId, mode, phase: "prepared", threadId: target.threadId, threadOnly: true } });
     } else {
       if (clearsOwnGrant) clearGrant(existing);
-      store.patchTask(botId, target.threadId, { approvalMode: mode, autoApprove: mode === "auto", alwaysAllow: [] });
+      store.patchBot(botId, { approvalMode: mode, autoApprove: mode === "auto" });
     }
     respond({ ok: true, bot: wireTrustedApprovalBot(store.bot(botId)!) });
     return true;
@@ -9554,12 +9490,10 @@ const coordinator: Coordinator = createCoordinator({
     // conversation the person started the work in gets it too.
     park: (node, question, restored) => postInputRequest(node, question, false, restored),
     remind: (node, question) => postInputRequest(node, question, true),
-    // The level the target thread really runs with (invariant I6): the same
-    // decision a coordinated turn makes at dispatch — the thread's own bot
-    // (a delegated level is stored on it by applyDelegatedLevel), as a peer-
-    // initiated turn (Custom reads as Auto), capped by the engine and by a
-    // guest-driven conversation (approvalModeForTurn). The engine kind comes
-    // from the registry, as delegatedLevel reads it.
+    // The level the target thread really runs with (invariant I6): the
+    // working bot's current level, read live, as a peer-initiated turn
+    // (Custom reads as Auto), capped by the engine and by a guest-driven
+    // conversation (approvalModeForTurn).
     levelOf: target => {
       const bot = store.bot(target.botId);
       if (!bot) return { level: "ask" };
@@ -17887,6 +17821,7 @@ async function startParallelTask(input: {
     // a parallel task of a confidential conversation is confidential too, its owner's
     false, undefined, parentTask.confidential === true);
   if (!child) throw Object.assign(new Error("couldn't create the parallel task"), { status: 500 });
+  if (input.approvalMode === "ask") store.lockTaskAsk(bot.id, child.threadId);
   // Where it works: a worktree of the conversation's repository, else the
   // same folder (the brief says it is shared), else its own task folder.
   const parentProjected = store.projectBotForTask(bot.id, input.threadId) ?? bot;
@@ -40362,7 +40297,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // nothing of a confidential conversation goes into one that is not
           if (store.isConfidentialThread(fromThreadId)) return json(res, 403, { error: CONFIDENTIAL_PEER_REFUSED, code: "confidential_thread" });
           // read-only narrows the thread for good: Ask, no standing grants
-          if (readOnly) store.patchTask(from.id, resumed.threadId, { approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
+          if (readOnly) store.lockTaskAsk(from.id, resumed.threadId);
           internalCapability.openedThreads += 1;
           const chip: Omit<Message, "id" | "at"> = {
             role: "bot",
@@ -40404,8 +40339,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const inherited = parentThreadModel(from.id, fromThreadId);
           // a thread a confidential conversation opens is confidential, its owner's
           const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() },
-            readOnly ? "ask" : inherited.approvalMode, openedThreadOwner(from, fromThreadId, from), inherited.modelSelection, false, undefined, store.isConfidentialThread(fromThreadId));
+            undefined, openedThreadOwner(from, fromThreadId, from), inherited.modelSelection, false, undefined, store.isConfidentialThread(fromThreadId));
           if (!task) return json(res, 500, { error: "couldn't create that thread" });
+          if (readOnly) store.lockTaskAsk(from.id, task.threadId);
           if (autoWorkspace) store.patchTask(from.id, task.threadId, { autoWorkspace });
           threadStarters.set(task.threadId, openerFrom(fromThreadId));
           internalCapability.openedThreads += 1;
@@ -46507,12 +46443,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
       }
       const modeBefore = approvalModeFor(current);
+      const requestedMode = patch.approvalMode;
+      if (requestedMode) {
+        store.patchBot(m[1], { approvalMode: requestedMode, autoApprove: patch.autoApprove === true });
+        delete patch.approvalMode;
+        delete patch.autoApprove;
+      }
       if (orgFullGrant) store.patchBot(m[1], { fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() } });
       const task = patch.modelSelection
         ? store.switchTaskModel(m[1], m[2], patch.modelSelection, body.updateBotDefault === true,
           { ...patch, ...hostedModels?.resetTask(current.modelSelection, patch.modelSelection) })!
         : store.patchTask(m[1], m[2], patch)!;
-      if (patch.approvalMode) auditApprovalModeChange(auth, m[1], modeBefore, patch.approvalMode, m[2]);
+      if (requestedMode) auditApprovalModeChange(auth, m[1], modeBefore, requestedMode, m[2]);
       return json(res, 200, { task: wireTask(task, store.bot(m[1])!.modelSelection), bot: projectBotTranscript(publicBot(store.bot(m[1])!), viewerForApproval(auth)) });
     }
     if (m && method === "DELETE") {
