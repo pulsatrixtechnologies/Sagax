@@ -10,6 +10,7 @@
 //                  | compaction-recovery-upstream | prompt-reject | omp-chunk
 //   FAKE_PI_MODELS comma-separated provider/model pairs (default "ollama-cloud/glm-5.2,openai/gpt-4o")
 //   FAKE_PI_ERROR  the turn-error mode's errorMessage
+//   FAKE_PI_SET_MODEL_REFUSE refuse every set_model
 //   FAKE_PI_DUMP   path to append {argv, env} JSON, so a test can assert argv shape
 //                  and env hygiene (no leaked secrets into the pi child).
 //   FAKE_PI_STEER_REFUSE script an explicit success:false steer refusal
@@ -380,6 +381,11 @@ function handle(cmd: any) {
         } catch {
           /* never let dumping break a run */
         }
+      }
+      // FAKE_PI_SET_MODEL_REFUSE: like pi when models.json does not list the provider
+      if (process.env.FAKE_PI_SET_MODEL_REFUSE) {
+        send({ type: "response", command: "set_model", success: false, error: `Model not found: ${cmd.provider}/${cmd.modelId}` });
+        return;
       }
       send({ type: "response", command: "set_model", success: true, data: { id: cmd.modelId, provider: cmd.provider } });
       return;
