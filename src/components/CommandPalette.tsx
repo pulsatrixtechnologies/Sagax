@@ -325,6 +325,7 @@ export function CommandPalette({
       <button
         key={`${recent ? "recent:" : ""}${item.id}`}
         type="button"
+        id={`command-palette-option-${index}`}
         role="option"
         aria-selected={index === selected}
         ref={index === selected ? selectedRef : undefined}
@@ -335,7 +336,8 @@ export function CommandPalette({
         className={cn(
           "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left",
           hit && "flex-col items-stretch gap-0.5",
-          index === selected ? "bg-raised" : "hover:bg-raised/50",
+          // accent tint + inset ring: raised on card is too faint in dark skins
+          index === selected ? "bg-accent/20 ring-1 ring-inset ring-accent/60" : "hover:bg-raised/50",
         )}
       >
         {hit ? (
@@ -389,6 +391,7 @@ export function CommandPalette({
             placeholder={t("palette.placeholder")}
             aria-label={t("palette.placeholder")}
             aria-controls="command-palette-list"
+            aria-activedescendant={entries.length ? `command-palette-option-${selected}` : undefined}
             className="w-full bg-transparent text-[14px] text-ink placeholder:text-ink-secondary focus:outline-none"
           />
           <kbd className="shrink-0 rounded-md border border-hairline/40 px-1.5 py-0.5 text-[11px] text-ink-secondary">
