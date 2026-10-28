@@ -1,0 +1,55 @@
+// The Share popover (src/components/PageShare.tsx): a page not shared yet is
+// shared only by the person's own gesture, with the access they chose; a
+// shared one changes in place; invites are whole lists, without duplicates.
+import { describe, expect, it } from "vitest";
+
+import { sharePlan, teamCandidates, withInvite } from "./PageShare";
+
+const now = 1_000_000;
+const draft = { status: "draft" as const, access: "private" as const, expiresAt: null, currentVersion: null };
+const live = { status: "published" as const, access: "org" as const, expiresAt: now + 5_000, currentVersion: 2 };
+
+describe("what one gesture sends", () => {
+  it("a page not shared yet: choosing who can see it, adding someone or copying the link publishes the version on screen", () => {
+    expect(sharePlan(draft, 3, { kind: "access", access: "org" }, now)).toEqual([{ method: "POST", path: "/publish", body: { version: 3, access: "org", expiresAt: null } }]);
+    expect(sharePlan(draft, 3, { kind: "invites", invites: { people: ["pr_b"], teams: [] } }, now)).toEqual([
+      { method: "POST", path: "/invite", body: { people: ["pr_b"], teams: [] } },
+      { method: "POST", path: "/publish", body: { version: 3, access: "private", expiresAt: null } },
+    ]);
+    expect(sharePlan(draft, 3, { kind: "link" }, now)).toEqual([{ method: "POST", path: "/publish", body: { version: 3, access: "private", expiresAt: null } }]);
+    // nothing to stop, no expiry to change
+    expect(sharePlan(draft, 3, { kind: "stop" }, now)).toEqual([]);
+    expect(sharePlan(draft, 3, { kind: "expiry", hours: 24 }, now)).toEqual([]);
+  });
+
+  it("a shared page changes in place and is never published again by a copy", () => {
+    expect(sharePlan(live, 2, { kind: "access", access: "link" }, now)).toEqual([{ method: "PATCH", path: "", body: { access: "link" } }]);
+    expect(sharePlan(live, 2, { kind: "access", access: "org" }, now)).toEqual([]);
+    expect(sharePlan(live, 2, { kind: "link" }, now)).toEqual([]);
+    expect(sharePlan(live, 2, { kind: "invites", invites: { people: [], teams: ["t1"] } }, now)).toEqual([{ method: "POST", path: "/invite", body: { people: [], teams: ["t1"] } }]);
+    expect(sharePlan(live, 2, { kind: "stop" }, now)).toEqual([{ method: "POST", path: "/revoke", body: {} }]);
+    expect(sharePlan(live, 2, { kind: "expiry", hours: 24 }, now)).toEqual([{ method: "PATCH", path: "", body: { expiresAt: now + 24 * 3_600_000 } }]);
+  });
+
+  it("a newer version on screen is shared only by its own button, keeping the access and a future expiry", () => {
+    expect(sharePlan(live, 2, { kind: "version" }, now)).toEqual([]);
+    expect(sharePlan(live, 4, { kind: "version" }, now)).toEqual([{ method: "POST", path: "/publish", body: { version: 4, access: "org", expiresAt: now + 5_000 } }]);
+    expect(sharePlan({ ...live, expiresAt: now - 1 }, 4, { kind: "version" }, now)[0]!.body.expiresAt).toBeNull();
+  });
+});
+
+describe("the invite lists", () => {
+  it("adds once, removes case-insensitively", () => {
+    const one = withInvite(undefined, { kind: "person", id: "pr_b" }, true);
+    expect(one).toEqual({ people: ["pr_b"], teams: [] });
+    expect(withInvite(one, { kind: "person", id: "PR_B" }, true)).toEqual({ people: ["PR_B"], teams: [] });
+    expect(withInvite(one, { kind: "person", id: "PR_B" }, false)).toEqual({ people: [], teams: [] });
+    expect(withInvite(one, { kind: "team", id: "t1" }, true)).toEqual({ people: ["pr_b"], teams: ["t1"] });
+  });
+
+  it("offers the teams whose name matches, never one already invited", () => {
+    const teams = [{ id: "t1", name: "Support", managers: [], members: ["a"] }, { id: "t2", name: "Sales support", managers: [], members: [] }, { id: "t3", name: "Finance", managers: [], members: [] }];
+    expect(teamCandidates(teams, ["t1"], "supp").map((team) => team.id)).toEqual(["t2"]);
+    expect(teamCandidates(teams, [], "").length).toBe(3);
+  });
+});

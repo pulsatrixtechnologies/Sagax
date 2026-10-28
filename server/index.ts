@@ -8275,6 +8275,8 @@ function publishedPageOptions(): PublicPageOptions {
       const person = principals.byId(viewer.principalId);
       return Boolean(person && person.kind === "human" && person.disabledAt === undefined && !person.consoleDisabled);
     },
+    // a page shared with a team reads for that team's people (Share)
+    teamsOf: (principalId) => IDENTITY.kind === "perspicax" ? (principals.byId(principalId)?.teams ?? []).map((team) => team.id) : [],
     pagesHost: PAGES_ORIGIN?.host ?? null,
     appOrigin: (() => {
       try {

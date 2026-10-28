@@ -42,6 +42,7 @@ import {
   type PageAccess,
   type PageAnchor,
   type PageComment,
+  type PageInvites,
   type PageKind,
   type PageStatus,
   type PageVersionState,
@@ -75,7 +76,7 @@ export interface PageVersionRecord {
 
 export interface PageHistoryEntry {
   at: number;
-  action: "propose" | "publish" | "decline" | "access" | "expiry" | "revoke" | "rename" | "edit" | "reader-comments" | "reader-comment" | "reader-comment-approve" | "reader-comment-remove" | "audience" | "pin" | "live" | "keep";
+  action: "propose" | "publish" | "decline" | "access" | "expiry" | "revoke" | "rename" | "edit" | "reader-comments" | "reader-comment" | "reader-comment-approve" | "reader-comment-remove" | "audience" | "pin" | "live" | "keep" | "invite";
   version?: number;
   by?: string;
 }
@@ -112,6 +113,8 @@ export interface PageRecord {
   /** The person allows the bot (and their own later edit) to replace the
    * published version. Never set by the bot. Off unless they turn it on. */
   keepUpdated?: boolean;
+  /** The people and teams the person invited to read it (Share). */
+  invites?: PageInvites;
 }
 
 export type PageError = { ok: false; status: 400 | 404 | 409; error: string; code: string };
@@ -550,6 +553,19 @@ export class PublishedPages {
     });
   }
 
+  /** The person's Share > Add people or groups: who else reads the page
+   * while it is shared with "People you invite". Replaces both lists. */
+  setInvites(id: string, invites: PageInvites, by?: string): PageRecord | PageError {
+    return this.mutate(id, (page, now) => {
+      const before = JSON.stringify(page.invites ?? { people: [], teams: [] });
+      if (before !== JSON.stringify(invites)) {
+        page.invites = { people: [...invites.people], teams: [...invites.teams] };
+        page.history.push({ at: now, action: "invite", ...(by ? { by } : {}) });
+      }
+      return page;
+    });
+  }
+
   /** The person's switch: the bot may replace the published version. */
   setKeepUpdated(id: string, on: boolean, by?: string): PageRecord | PageError {
     return this.mutate(id, (page, now) => {
@@ -670,6 +686,7 @@ export class PublishedPages {
       audience: pageAudienceOf(page.audience),
       pinned: page.pinned === true,
       keepUpdated: page.keepUpdated === true,
+      invites: { people: [...(page.invites?.people ?? [])], teams: [...(page.invites?.teams ?? [])] },
       versions,
       ...(page.comments?.length ? { comments: page.comments.length } : {}),
       ...(page.readerComments ? { readerComments: true } : {}),

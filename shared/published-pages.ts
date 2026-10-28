@@ -254,6 +254,55 @@ export interface PageVersionSummary {
 }
 
 /** What the owner's list and the card read. Never the content. */
+/** The people and the teams of the organization a page's person invited to
+ * read it (2026-10-28, Share > Add people or groups). While the page is
+ * shared with "People you invite" (`private`), only its person and these
+ * read it; "Anyone in your organization" and "Anyone with the link" reach
+ * them anyway. Principal ids and team ids, never a name. */
+export interface PageInvites {
+  people: string[];
+  teams: string[];
+}
+export const PAGE_INVITE_LIMIT = 100;
+const INVITE_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
+
+/** The invite lists as a request gives them: checked, without duplicates
+ * (case-insensitive) and without the page's own person; null for anything
+ * malformed. Pure. */
+export function parsePageInvites(value: unknown, ownerId?: string): PageInvites | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const list = (raw: unknown, skip?: string): string[] | null => {
+    if (raw === undefined) return [];
+    if (!Array.isArray(raw) || raw.length > PAGE_INVITE_LIMIT) return null;
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== "string" || !INVITE_ID.test(entry.trim())) return null;
+      const id = entry.trim();
+      const key = id.toLowerCase();
+      if (seen.has(key) || (skip && key === skip.toLowerCase())) continue;
+      seen.add(key);
+      out.push(id);
+    }
+    return out;
+  };
+  const people = list(record.people, ownerId);
+  const teams = list(record.teams);
+  return people && teams ? { people, teams } : null;
+}
+
+/** Whether a reader is one of the page's invited people, or in one of its
+ * invited teams. Pure. */
+export function pageInvites(invites: PageInvites | undefined, principalId: string | undefined, teams: readonly string[] = []): boolean {
+  if (!invites || !principalId) return false;
+  const me = principalId.toLowerCase();
+  const people = Array.isArray(invites.people) ? invites.people : [];
+  if (people.some((id) => typeof id === "string" && id.toLowerCase() === me)) return true;
+  const mine = new Set(teams.map((id) => id.toLowerCase()));
+  return (Array.isArray(invites.teams) ? invites.teams : []).some((id) => typeof id === "string" && mine.has(id.toLowerCase()));
+}
+
 export interface PublishedPageSummary {
   id: string;
   title: string;
@@ -284,6 +333,8 @@ export interface PublishedPageSummary {
   pinned?: boolean;
   /** The person allowed the bot to replace the published version. */
   keepUpdated?: boolean;
+  /** The people and teams invited to read it (Share). */
+  invites?: PageInvites;
 }
 
 /** The message field a proposal writes on its bot row (`pagePublish`). */

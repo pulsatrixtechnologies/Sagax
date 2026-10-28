@@ -11,7 +11,8 @@
 //   - the page itself, whole and interactive, in the app's theme.
 // Earlier lots (Grok Bot parity R8, chat rows 31 to 34) are all still here:
 // rename, versions, the person's own edit, comments, the annotation mode
-// that sends numbered notes to the bot, sharing and Present.
+// that sends numbered notes to the bot, and Present. Sharing is the Share
+// popover (src/components/PageShare.tsx), the one place for it.
 //
 // The page is always the server's preview wrapper and its sandboxed frame
 // (shared/published-pages.ts): never a srcdoc. Inside the app the wrapper
@@ -36,14 +37,14 @@ import {
   PAGE_LIMITS,
   parseAnnotationMessage,
   parseScrollMessage,
-  type PageAccess,
   type PageAnchor,
   type PageComment,
   type PageKind,
   type PublishedPageSummary,
   type ReaderComment,
 } from "../../shared/published-pages";
-import { AccessPicker, ACCESS_LABEL, ExpirySelect, expiryFromHours, LinkRow, needsLinkConfirm, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
+import { ACCESS_LABEL, needsLinkConfirm, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
+import { PageSharePopover } from "./PageShare";
 import { SwitchRow } from "./SettingsPrimitives";
 import { useWidgetTheme } from "./WidgetFrame";
 import { MenuItem, PopoverMenu } from "./bot-settings/FilesSection";
@@ -109,7 +110,7 @@ const KIND_LABEL: Record<PageKind, "pages.kind.html" | "pages.kind.markdown" | "
   presentation: "pages.kind.presentation",
 };
 
-type Panel = "edit" | "comments" | "share" | "annotate" | "versions" | null;
+type Panel = "edit" | "comments" | "annotate" | "versions" | null;
 
 const BUTTON = "inline-flex items-center gap-1.5 rounded-lg border border-hairline/60 px-2.5 py-1 text-[12.5px] text-ink hover:bg-raised disabled:opacity-40";
 const PRIMARY = "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white disabled:opacity-40";
@@ -193,6 +194,7 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [sent, setSent] = useState(false);
   const [reloads, setReloads] = useState(0);
+  const [sharing, setSharing] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const theme = useWidgetTheme(rootRef).scheme;
@@ -341,9 +343,13 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
               )}
             </PopoverMenu>
           )}
-          <button type="button" data-page-share aria-pressed={panel === "share"} disabled={!page} className={PILL} onClick={() => toggle("share")}>
+          <button type="button" data-page-share aria-expanded={sharing} aria-haspopup="dialog" disabled={!page || version === null} className={PILL} onClick={() => setSharing((open) => !open)}>
             <Share size={14} />{t("pages.share")}
           </button>
+          {sharing && page && version !== null && (
+            <PageSharePopover page={page} version={version} linkOff={!policy.linkSharing} onChange={update} onClose={() => setSharing(false)}
+              className="absolute right-3 top-[52px]" />
+          )}
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
@@ -388,9 +394,6 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
                 onSaved={(next, n) => { update(next); setVersion(n); setReloads((count) => count + 1); }} />
             )}
             {panel === "comments" && <CommentsPanel pageId={pageId} version={version} call={call} onCount={(count) => update({ ...page, comments: count })} />}
-            {panel === "share" && version !== null && (
-              <SharePanel page={page} version={version} busy={busy} linkOff={!policy.linkSharing} call={call} onChange={update} />
-            )}
           </aside>
         )}
       </div>
@@ -603,96 +606,6 @@ function CommentsPanel({ pageId, version, call, onCount }: { pageId: string; ver
       <textarea aria-label={t("pages.comments.add")} placeholder={t("pages.comments.placeholder")} value={text} rows={3} maxLength={2000} onChange={(event) => setText(event.target.value)}
         className="w-full rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]" />
       <button type="button" disabled={!text.trim()} className={PRIMARY} onClick={() => void add()}>{t("pages.comments.add")}</button>
-    </section>
-  );
-}
-
-function SharePanel({ page, version, busy, linkOff, call, onChange }: {
-  page: PublishedPageSummary;
-  version: number;
-  busy: boolean;
-  linkOff: boolean;
-  call: Call;
-  onChange(page: PublishedPageSummary): void;
-}) {
-  const [access, setAccess] = useState<PageAccess>("private");
-  const [hours, setHours] = useState(0);
-  const [confirmLink, setConfirmLink] = useState(false);
-  const [confirmUnpublish, setConfirmUnpublish] = useState(false);
-  const [pendingAccess, setPendingAccess] = useState<PageAccess | null>(null);
-  const live = page.status === "published";
-  const act = async (path: string, init: RequestInit) => {
-    const answer = await call<{ page: PublishedPageSummary }>(path, init);
-    if (answer) onChange(answer.page);
-    setConfirmLink(false);
-    setConfirmUnpublish(false);
-    setPendingAccess(null);
-  };
-  const changeAccess = (next: PageAccess) => {
-    if (needsLinkConfirm(page.access, next)) return setPendingAccess(next);
-    void act("", { method: "PATCH", body: JSON.stringify({ access: next }) });
-  };
-  const shown = page.versions.find((entry) => entry.n === version);
-  return (
-    <section aria-label={t("pages.share")} className="flex flex-col gap-3">
-      <h3 className="text-[13px] font-medium text-ink">{t("pages.whoCanAccess")}</h3>
-      {live ? (
-        <>
-          <LinkRow page={page} />
-          <label className="flex items-center gap-2 text-ink">
-            {t("pages.whoCanSee")}
-            <select value={pendingAccess ?? page.access} disabled={busy} onChange={(event) => changeAccess(event.target.value as PageAccess)}
-              className="rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]">
-              {(["private", "org", "link"] as const).map((entry) => (
-                <option key={entry} value={entry} disabled={entry === "link" && linkOff && page.access !== "link"}>{t(ACCESS_LABEL[entry])}</option>
-              ))}
-            </select>
-          </label>
-          {pendingAccess && (
-            <div role="alert" className="flex flex-col gap-2">
-              <p className="text-warning">{t("pages.confirmLinkChange")}</p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={busy} className={PRIMARY} onClick={() => void act("", { method: "PATCH", body: JSON.stringify({ access: pendingAccess }) })}>{t("pages.publishConfirm")}</button>
-                <button type="button" className={BUTTON} onClick={() => setPendingAccess(null)}>{t("pages.cancel")}</button>
-              </div>
-            </div>
-          )}
-          {linkOff && page.access === "link" && <p className="text-warning">{t("pages.linkOffActive")}</p>}
-          <ExpirySelect value={-1} disabled={busy} onChange={(next) => void act("", { method: "PATCH", body: JSON.stringify({ expiresAt: expiryFromHours(next) }) })} />
-          {page.currentVersion !== version && shown?.state !== "declined" && (
-            <button type="button" disabled={busy} className={BUTTON} onClick={() => void act("/publish", { method: "POST", body: JSON.stringify(republishBody(page, version)) })}>
-              {t("pages.publishThis")}
-            </button>
-          )}
-          {confirmUnpublish ? (
-            <div role="alert" className="flex flex-wrap items-center gap-2">
-              <span>{t("pages.unpublishConfirm", { name: page.title })}</span>
-              <button type="button" disabled={busy} className="rounded px-1.5 py-1 text-danger hover:bg-danger/10" onClick={() => void act("/revoke", { method: "POST", body: "{}" })}>{t("pages.unpublish")}</button>
-              <button type="button" className="rounded px-1.5 py-1 text-ink-secondary hover:bg-hover" onClick={() => setConfirmUnpublish(false)}>{t("pages.cancel")}</button>
-            </div>
-          ) : (
-            <button type="button" data-page-unpublish className="inline-flex w-fit items-center gap-1 rounded px-1.5 py-1 text-danger hover:bg-danger/10" onClick={() => setConfirmUnpublish(true)}>
-              <XCircle size={13} />{t("pages.unpublish")}
-            </button>
-          )}
-        </>
-      ) : shown?.state === "declined" ? (
-        <p className="text-ink-secondary">{t("pages.declined")}</p>
-      ) : (
-        <>
-          <p className="text-ink-secondary">{t("pages.reviewIntro")}</p>
-          <AccessPicker value={access} onChange={(next) => { setAccess(next); setConfirmLink(false); }} name={`page-share-${page.id}`} disabled={busy} linkOff={linkOff} />
-          <ExpirySelect value={hours} onChange={setHours} disabled={busy} />
-          {confirmLink && <p role="alert" className="text-warning">{t("pages.confirmLink")}</p>}
-          <button type="button" disabled={busy} className={PRIMARY}
-            onClick={() => {
-              if (access === "link" && !confirmLink) return setConfirmLink(true);
-              void act("/publish", { method: "POST", body: JSON.stringify({ version, access, expiresAt: expiryFromHours(hours) }) });
-            }}>
-            {confirmLink ? t("pages.publishConfirm") : t("pages.publish")}
-          </button>
-        </>
-      )}
     </section>
   );
 }

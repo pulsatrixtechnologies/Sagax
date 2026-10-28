@@ -637,6 +637,55 @@ describe("the app's own look of its preview (2026-10-28, the page view)", () => 
   });
 });
 
+describe("Share > Add people or groups (2026-10-28)", () => {
+  const alice: PageViewer = { principalId: "pr_alice", computerOwner: false };
+  const bob: PageViewer = { principalId: "pr_bob", computerOwner: false };
+  const carol: PageViewer = { principalId: "pr_carol", computerOwner: false };
+
+  it("a page shared with People you invite reads for its person and the invited people only", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "private", "pr_alice");
+    expect((await read(pages, path, bob)).wrapper.status).toBe(404);
+    const answer = await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, { people: ["pr_bob", "PR_BOB", "pr_alice"], teams: [] });
+    expect(answer.status).toBe(200);
+    // no duplicate, never the page's own person
+    expect(answer.body!.page.invites).toEqual({ people: ["pr_bob"], teams: [] });
+    const { wrapper, frame } = await read(pages, path, bob);
+    expect(wrapper.status).toBe(200);
+    expect(frame!.status).toBe(200);
+    expect((await read(pages, path, carol)).wrapper.status).toBe(404);
+    expect((await read(pages, path, null)).wrapper.status).toBe(404);
+    expect((await read(pages, path, alice)).wrapper.status).toBe(200);
+  });
+
+  it("an invited team reads it through its people; a person out of it does not", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "private", "pr_alice");
+    await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, { people: [], teams: ["team_ops"] });
+    const withTeams = (viewer: PageViewer): PublicPageOptions => ({ ...options(pages, viewer), teamsOf: (who) => (who === "pr_bob" ? ["team_ops"] : ["team_other"]) });
+    expect((await hit(withTeams(bob), path)).status).toBe(200);
+    expect((await hit(withTeams(carol), path)).status).toBe(404);
+  });
+
+  it("only the page's person invites; another person's page reads as missing; a bad list is refused", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "private", "pr_alice");
+    expect((await call(routes(pages), session("pr_bob"), "POST", `/api/pages/${id}/invite`, { people: ["pr_bob"] })).status).toBe(404);
+    expect((await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, { people: ["<script>"] })).status).toBe(400);
+    expect((await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, { people: Array.from({ length: 101 }, (_, n) => `pr_${n}`) })).status).toBe(400);
+    expect((await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, "x")).status).toBe(400);
+  });
+
+  it("the organization's switch for public links still holds: an invite never opens a link, and link reads as organization when off", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "private", "pr_alice");
+    pages.setPolicy({ linkSharing: false });
+    expect((await call(routes(pages), session("pr_alice"), "PATCH", `/api/pages/${id}`, { access: "link" })).body!.code).toBe("link_sharing_off");
+    await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, { people: ["pr_bob"] });
+    expect((await read(pages, path, null)).wrapper.status).toBe(404);
+  });
+});
+
 describe("the frame checks its reader again (review of #646, round 2)", () => {
   it("on the app's origin: the live session, not only the ticket", async () => {
     const { pages } = store();

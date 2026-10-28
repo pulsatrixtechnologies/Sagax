@@ -73,7 +73,18 @@ edit, comments, decline) is in « ⋯ ». The app's own preview takes `bare=1`
 small script that scrolls to `y` and posts `sagax-page-scroll` with a number
 to the app, so a new version the bot proposes is drawn in place at the same
 place. A reading link never takes these. Sandbox, CSP and isolation are
-unchanged. Tests: `server/published-pages.test.ts` (app's own look),
+unchanged.
+
+Share is one popover (src/components/PageShare.tsx), the only place a page's
+sharing is chosen (open page, Settings > Published pages, the Library):
+Add people or groups (directory people and teams, `POST /api/pages/:id/invite`
+`{ people, teams }`), who has access (Owner, invited), General access
+(People you invite = `private`, Anyone in your organization = `org`, Anyone
+with the link = `link` while the organization's `linkSharing` allows it),
+expiry, Unpublish, Copy link, Open in browser. A `private` page reads for its
+person and the invited people and teams' people (`pageReadable`,
+`teamsOf`). A page not shared yet is published by the person's gesture there.
+No admin: a member shares their own page within the organization's policy. Tests: `server/published-pages.test.ts` (app's own look),
 `src/components/PageViewer.surface.dom.test.ts`, `src/lib/open-page.test.ts`.
 
 ## Routine folders (2026-10-28)
