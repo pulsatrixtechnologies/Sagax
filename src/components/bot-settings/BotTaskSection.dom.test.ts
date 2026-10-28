@@ -2,7 +2,8 @@
 // 2026-10-28: a newer app against an older server. The server without the
 // task list route answers "no route" (404), or refuses a member's session on
 // the admin scope (403). The panel says the list comes with the server
-// update, never the red error. The background brief does the same.
+// update, never the red error. The background brief does the same. A list
+// that cannot be read at all is not shown (see the second block below).
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +18,7 @@ import { createBotTaskStore } from "../../../server/bot-task-list";
 import { createBotTaskInternalRoutes } from "../../../server/routes/bot-task-list";
 import type { BotTasksFrame } from "../../../shared/bot-task-list";
 import { BackgroundBriefCard } from "./BackgroundBriefCard";
-import { BotTaskSection, botTaskAnswerDraft } from "./BotTaskSection";
+import { BotTaskSection, botTaskAnswerDraft, taskListRetryDelay } from "./BotTaskSection";
 import { BotEditorStore } from "@/state/store";
 import { getDraft } from "@/lib/drafts";
 import type { BotTask } from "../../../shared/bot-task-list";
@@ -64,18 +65,105 @@ describe("bot task list against an older server", () => {
     expect(host.querySelector(".text-danger")).toBeNull();
   });
 
-  it("shows an empty list on the current server, and keeps the error for a real failure", async () => {
+  it("shows an empty list on the current server as nothing at all", async () => {
     vi.stubGlobal("fetch", answer(200, { tasks: [] }));
     await mount(createElement(BotTaskSection, { botId: "bot-1" }));
     expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
     expect(host.textContent).toBe("");
     expect(host.querySelector(".text-danger")).toBeNull();
+  });
+});
 
-    act(() => root.unmount());
-    root = createRoot(host);
-    vi.stubGlobal("fetch", answer(500, { error: "boom" }));
-    await mount(createElement(BotTaskSection, { botId: "bot-2" }));
-    expect(host.querySelector(".text-danger")?.textContent).toBe("The task list could not be loaded.");
+// JC 2026-10-28: "if it cannot be loaded, do not show it." A list that cannot
+// be read hides the section like an empty list, with no red line; the cause
+// goes to the console; the section comes back when a read works.
+describe("bot task list that cannot be loaded", () => {
+  const failures: Array<[string, () => ReturnType<typeof vi.fn>]> = [
+    ["a 5xx", () => answer(500, { error: "boom" })],
+    ["a 502 from the proxy while the server restarts", () => answer(502, {})],
+    ["a 403 that is not the older server", () => answer(403, { error: "forbidden" })],
+    ["a network error", () => vi.fn(async () => { throw new TypeError("Failed to fetch"); })],
+    ["an answer that is not a list", () => answer(200, { tasks: "nope" })],
+  ];
+  const waiting: BotTask = { id: "task_waiting01", botId: "bot-1", title: "Pick a meeting time", state: "waiting", createdAt: 1, updatedAt: 2 };
+  const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+  beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  for (const [label, make] of failures) {
+    it(`does not render the section on ${label}, and notes the error in the console`, async () => {
+      vi.stubGlobal("fetch", make());
+      await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+      expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
+      expect(host.textContent).toBe("");
+      expect(host.querySelector(".text-danger")).toBeNull();
+      expect(console.warn).toHaveBeenCalled();
+    });
+  }
+
+  it("does not render the section on a 404 no such bot either", async () => {
+    vi.stubGlobal("fetch", answer(404, { error: "no such bot", code: "not_found" }));
+    await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+    expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
+  });
+
+  it("comes back by itself after a failure when a read works (live event, window focus)", async () => {
+    let ok = false;
+    vi.stubGlobal("fetch", vi.fn(async () => ok
+      ? new Response(JSON.stringify({ tasks: [waiting] }), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ error: "boom" }), { status: 500, headers: { "content-type": "application/json" } })));
+    await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+    expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
+
+    ok = true;
+    act(() => { window.dispatchEvent(new CustomEvent(BOT_TASKS_EVENT, { detail: { botId: "bot-1" } })); });
+    await settle();
+    expect(host.querySelector('[data-bot-task="waiting"]')?.textContent).toContain("Pick a meeting time");
+  });
+
+  it("reads again by itself with a backoff, with no event at all", async () => {
+    vi.useFakeTimers();
+    try {
+      let ok = false;
+      vi.stubGlobal("fetch", vi.fn(async () => ok
+        ? new Response(JSON.stringify({ tasks: [waiting] }), { status: 200, headers: { "content-type": "application/json" } })
+        : new Response("bad gateway", { status: 502 })));
+      await act(async () => { root.render(createElement(BotTaskSection, { botId: "bot-1" })); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
+      ok = true;
+      await act(async () => { await vi.advanceTimersByTimeAsync(taskListRetryDelay(0) + 10); });
+      expect(host.querySelector('[data-bot-task="waiting"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the last known list while a later read fails, then shows the new one", async () => {
+    const next: BotTask = { ...waiting, id: "task_waiting02", title: "Renew the licence" };
+    let mode: "ok" | "fail" | "ok2" = "ok";
+    vi.stubGlobal("fetch", vi.fn(async () => mode === "fail"
+      ? new Response(JSON.stringify({ error: "boom" }), { status: 503, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({ tasks: [mode === "ok" ? waiting : next] }), { status: 200, headers: { "content-type": "application/json" } })));
+    await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+    expect(host.querySelector('[data-bot-task="waiting"]')?.textContent).toContain("Pick a meeting time");
+
+    mode = "fail";
+    act(() => { window.dispatchEvent(new CustomEvent(BOT_TASKS_EVENT, { detail: { botId: "bot-1" } })); });
+    await settle();
+    expect(console.warn).toHaveBeenCalled();
+    expect(host.querySelector('[data-bot-task="waiting"]')?.textContent).toContain("Pick a meeting time");
+    expect(host.querySelector(".text-danger")).toBeNull();
+
+    mode = "ok2";
+    act(() => { window.dispatchEvent(new CustomEvent(BOT_TASKS_EVENT, { detail: { botId: "bot-1" } })); });
+    await settle();
+    expect(host.querySelector('[data-bot-task="waiting"]')?.textContent).toContain("Renew the licence");
+  });
+
+  it("backs off: 2 s, doubling, never past 60 s", () => {
+    expect([0, 1, 2, 3, 10].map(taskListRetryDelay)).toEqual([2_000, 4_000, 8_000, 16_000, 60_000]);
   });
 });
 

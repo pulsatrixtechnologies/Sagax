@@ -1025,7 +1025,6 @@
   "botTasks.doing": "En cours",
   "botTasks.done": "Terminées",
   "botTasks.reopen": "Rouvrir",
-  "botTasks.error": "La liste de tâches n'a pas pu être chargée.",
   "botTasks.answer": "Répondre",
   "botTasks.complete": "Marquer terminée",
   "botTasks.resume": "Remettre en cours",

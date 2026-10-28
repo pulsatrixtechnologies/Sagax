@@ -100,6 +100,15 @@ final class BotTodoListTests: XCTestCase {
         XCTAssertEqual(BotTodoList.outcome(of: APIError.transport("offline")), .failed)
     }
 
+    /// A list that cannot be read is hidden like an empty one: only the older
+    /// server's line shows, and the read comes back by itself (backoff).
+    func testFailedReadHidesTheSectionAndRetriesWithBackoff() {
+        XCTAssertTrue(BotTodoList.sectionHidden(needsUpdate: false, listedIsEmpty: true))
+        XCTAssertFalse(BotTodoList.sectionHidden(needsUpdate: false, listedIsEmpty: false), "the last known list stays")
+        XCTAssertFalse(BotTodoList.sectionHidden(needsUpdate: true, listedIsEmpty: true))
+        XCTAssertEqual([0, 1, 2, 3, 10].map { BotTodoList.retryDelay(attempt: $0) }, [2, 4, 8, 16, 60])
+    }
+
     func testPathsAndMethods() {
         XCTAssertEqual(BotTodoList.listPath(botId: "bot-1"), "/api/bots/bot-1/task-list")
         XCTAssertNil(BotTodoList.listPath(botId: "../x"))
