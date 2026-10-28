@@ -724,7 +724,7 @@ import { teamMemoryReviewRefusal } from "./team-memory-review.ts";
 import { teamMemoryCardSettled, teamMemoryLateAnswer } from "./team-memory-cards.ts";
 import { isTeamMemorySharing, storedTeamMemorySharing, teamMemoryCardReachesMember, teamMemorySharingOf } from "../shared/team-memory-sharing.ts";
 import { readBotActivity, readToolRuns } from "./activity.ts";
-import { COMPACT_VOLATILE_SECTIONS, KNOWN_USE_CALLS, compactVolatileOrder, compactMemoryDir, compactPins, parseLocalPromptMode, toolUsage, usesCompactPrompt, type ToolUse } from "./compact-prompt.ts";
+import { COMPACT_VOLATILE_SECTIONS, KNOWN_USE_CALLS, compactVolatileOrder, compactMemoryDir, compactPins, parseLocalPromptMode, toolUsage, usesCompactPrompt, usesStablePrompt, type ToolUse } from "./compact-prompt.ts";
 import { buildJournal, journalWire, replayable, testRuleOnJournal, type JournalRow } from "./action-journal.ts";
 import { JOURNAL_SELF, RULE_TEST_DAYS, type JournalPayload, type RuleTestDraft, type RuleTestResult } from "../shared/action-journal.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
@@ -21094,13 +21094,16 @@ async function startTurn(
       const streamPart = !onCall && streamTurn(bot, threadId, { person: commsDepth === 0 && !coordinationNode && !opts?.automationSource && !opts?.unattended && !warmOnly && !userMessage.peerAsk })
         ? streamDigestPrompt(bot, threadId) : null;
       if (streamPart?.text) refreshStreamDigests(bot.id, threadId);
-      // #1276: a turn on a local model sends a compact, stable prompt.
-      const compactPrompt = usesCompactPrompt({
-        driverKind: instance.driverKind,
-        model,
+      // Stable prefix on every engine. Compact tool list on Claude Code only,
+      // local or cloud: Grok, Codex and Pi discover tools from the full list.
+      const promptMode = {
         bot: parseLocalPromptMode((liveBot ?? bot).localPrompt),
         engine: parseLocalPromptMode(process.env.SAGAX_LOCAL_PROMPT),
-      }) ? compactPromptFor(liveBot ?? bot, typeof turnPrincipal === "string" && turnPrincipal ? turnPrincipal : effectiveBotOwner(bot)) : undefined;
+      };
+      const stablePrompt = usesStablePrompt(promptMode);
+      const compactPrompt = usesCompactPrompt({ ...promptMode, driverKind: instance.driverKind, model })
+        ? compactPromptFor(liveBot ?? bot, typeof turnPrincipal === "string" && turnPrincipal ? turnPrincipal : effectiveBotOwner(bot))
+        : undefined;
       const builtPrompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         { id: "ai-client", label: "AI client", text: aiClientThreadPerson(bot, threadId, commsDepth, userMessage) },
@@ -21109,9 +21112,10 @@ async function startTurn(
         // to a turn whose engine actually mounted them (setupMode is already
         // false when they are not — see agentsMounted above)
         { id: "setup", label: "Setup", text: setupSystemPrompt(setupMode, { skills: skillAuthoring, cwd: liveBot?.cwd ?? bot.cwd }) },
-        { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, confidential: store.isConfidentialThread(threadId), relativePaths: instance.driverKind === "claudeAgent", ...(compactPrompt ? { cwdElsewhere: true } : {}) }) : "" },
-        // #1276: in a compact prompt only the conversation's own folder changes per conversation
-        { id: "files-cwd", label: "Current working folder", text: compactPrompt && worksInWorkspace ? workspaceCwdPrompt(cwd) : "" },
+        { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, confidential: store.isConfidentialThread(threadId), relativePaths: instance.driverKind === "claudeAgent", ...(stablePrompt ? { cwdElsewhere: true } : {}) }) : "" },
+        // The conversation's own folder, on its own line, so the rest of the
+        // file locations is the same bytes in every conversation of this bot.
+        { id: "files-cwd", label: "Current working folder", text: stablePrompt && worksInWorkspace ? workspaceCwdPrompt(cwd) : "" },
         { id: "shell", label: "Long-running commands", text: worksInWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
         { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
         { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
@@ -21167,10 +21171,13 @@ async function startTurn(
         { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => uniquePeerName(b, sectionPeers) ? peerName(b.name) : `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed (a unique name works as its bot_ids entry), with relay=true when the user only wants one teammate's own answer passed back; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
         // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
         { id: "voice-call", label: "Phone call", text: voiceCallText },
-      ], instance.driverKind === "claudeAgent"
-        ? (compactPrompt ? new Set([...CLAUDE_REUSE_VOLATILE_SECTIONS, ...COMPACT_VOLATILE_SECTIONS]) : CLAUDE_REUSE_VOLATILE_SECTIONS)
+      ], stablePrompt || instance.driverKind === "claudeAgent"
+        ? new Set([
+          ...(instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : []),
+          ...(stablePrompt ? COMPACT_VOLATILE_SECTIONS : []),
+        ])
         : undefined);
-      const prompt = compactPrompt ? compactVolatileOrder(builtPrompt) : builtPrompt;
+      const prompt = stablePrompt ? compactVolatileOrder(builtPrompt) : builtPrompt;
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
       if (!warmOnly) turnTrace(threadId, "prompt-built");
       // the Files list's "last used": what this turn's prompt carried
@@ -24542,10 +24549,19 @@ async function runGroupMemberTurn(
   // #1154: the model this room turn really runs on (the person's own one
   // when the bot's cannot run for them), so the bot never names another.
   const roomModel = roomTurnSelection(readyBot).model;
-  const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
+  const roomPromptMode = {
+    bot: parseLocalPromptMode(readyBot.localPrompt),
+    engine: parseLocalPromptMode(process.env.SAGAX_LOCAL_PROMPT),
+  };
+  const roomStable = usesStablePrompt(roomPromptMode);
+  const roomCompactPrompt = usesCompactPrompt({ ...roomPromptMode, driverKind: instance.driverKind, model: roomModel })
+    ? compactPromptFor(readyBot, roomSpeakerId || effectiveBotOwner(readyBot))
+    : undefined;
+  const roomBuilt = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     { id: "model", label: "Model", text: modelPrompt({ engine: engineDisplayName(instance), model: roomModel, actual: modelFallbackByPayer.get(modelFallbackPayerKey(threadId, instance.instanceId, roomModel)) }) },
-    { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE }) : "" },
+    { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, ...(roomStable ? { cwdElsewhere: true } : {}) }) : "" },
+    { id: "files-cwd", label: "Current working folder", text: roomStable && workspace ? workspaceCwdPrompt(cwd) : "" },
     { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
@@ -24580,7 +24596,13 @@ async function runGroupMemberTurn(
     { id: "skills", label: "Skills index", text: workspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
     { id: "skill-instructions", label: "Skill instructions", text: renderSkillInstructions(selectedSkills, { includeRoot: Boolean(workspace) }) },
     { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(text, bot.playbooks) },
-  ], instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
+  ], roomStable || instance.driverKind === "claudeAgent"
+    ? new Set([
+      ...(instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : []),
+      ...(roomStable ? COMPACT_VOLATILE_SECTIONS : []),
+    ])
+    : undefined);
+  const roomSystem = roomStable ? compactVolatileOrder(roomBuilt) : roomBuilt;
 
   // The engines read at start is part of setup (it learns what this engine
   // supports): wait for it before the claim below.
@@ -24736,6 +24758,7 @@ async function runGroupMemberTurn(
       return instance.adapter.sendTurn({
         threadId,
         botId: readyBot.id,
+        ...(roomCompactPrompt ? { compactPrompt: roomCompactPrompt } : {}),
         ...(roomTurnAccess ? { access: roomTurnAccess } : {}),
         text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
         ...(roomRecalled && !engineCommand ? { recalled: roomRecalled } : {}),

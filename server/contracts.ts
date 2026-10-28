@@ -135,8 +135,8 @@ export interface TurnAccessInput {
   engineHome?: string;
 }
 
-/** #1276: a turn on a local model sends a compact, stable prompt
- * (server/compact-prompt.ts). */
+/** #1276: Claude Code, local or cloud, sends a compact tool list. The
+ * stable prefix is every engine (server/compact-prompt.ts). */
 export interface CompactPromptInput {
   /** Claude Code's auto memory folder: one per bot and person, the same for
    * every conversation, so the system prompt does not change between them. */
@@ -151,7 +151,8 @@ export interface CompactPromptInput {
 
 export interface SendTurnInput {
   threadId: ThreadId;
-  /** #1276: send a compact, stable prompt (a local model). Absent: as before. */
+  /** #1276: compact tool list for this turn (Claude Code). Absent: the
+   * full tools/list, as before. */
   compactPrompt?: CompactPromptInput;
   /** The bot this turn belongs to. threadIds are meant to be unique per bot
    * task, but a driver's process-level resource maps (permission-broker

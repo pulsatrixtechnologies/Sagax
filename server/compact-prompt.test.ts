@@ -10,6 +10,7 @@ import {
   parseLocalPromptMode,
   toolUsage,
   usesCompactPrompt,
+  usesStablePrompt,
 } from "./compact-prompt.ts";
 import { availableTools, catalogProfileFromEnv, compactListed, compactToolsFromEnv } from "./drivers/agents-catalog.ts";
 import { parseGateSearch, searchedCatalog } from "./mcp-gate-search.ts";
@@ -17,15 +18,24 @@ import { searchedToolCall } from "../shared/searched-tool-call.ts";
 import { workspaceCwdPrompt, workspaceLocationsPrompt } from "./workspace.ts";
 
 describe("usesCompactPrompt (#1276)", () => {
-  it("is on for Claude Code on a local model only", () => {
+  it("compacts Claude Code on every model, and keeps the full tool list elsewhere", () => {
     expect(usesCompactPrompt({ driverKind: "claudeAgent", model: "omlx::local-35b" })).toBe(true);
-    expect(usesCompactPrompt({ driverKind: "claudeAgent", model: "claude-sonnet-5" })).toBe(false);
+    expect(usesCompactPrompt({ driverKind: "claudeAgent", model: "claude-sonnet-5" })).toBe(true);
+    expect(usesCompactPrompt({ driverKind: "claudeAgent", model: null })).toBe(true);
     expect(usesCompactPrompt({ driverKind: "codex", model: "omlx::local-35b" })).toBe(false);
-    expect(usesCompactPrompt({ driverKind: "claudeAgent", model: null })).toBe(false);
+    expect(usesCompactPrompt({ driverKind: "grok", model: "grok-4.7" })).toBe(false);
+    expect(usesCompactPrompt({ driverKind: "pi", model: "pi" })).toBe(false);
+  });
+
+  it("stabilizes the prefix for every engine", () => {
+    expect(usesStablePrompt({})).toBe(true);
+    expect(usesStablePrompt({ bot: "compact" })).toBe(true);
+    expect(usesStablePrompt({ bot: "full" })).toBe(false);
+    expect(usesStablePrompt({ engine: "full" })).toBe(false);
   });
 
   it("goes back to the whole prompt when the bot or the server says full", () => {
-    expect(usesCompactPrompt({ driverKind: "claudeAgent", model: "omlx::local-35b", bot: "full" })).toBe(false);
+    expect(usesCompactPrompt({ driverKind: "claudeAgent", model: "claude-sonnet-5", bot: "full" })).toBe(false);
     expect(usesCompactPrompt({ driverKind: "claudeAgent", model: "omlx::local-35b", engine: "full" })).toBe(false);
     expect(usesCompactPrompt({ driverKind: "claudeAgent", model: "omlx::local-35b", bot: "compact" })).toBe(true);
     expect(parseLocalPromptMode("full")).toBe("full");

@@ -1,15 +1,19 @@
-// A compact, stable prompt for a bot turn on a local model (#1276).
+// A stable prompt for every engine, and a compact tool list for Claude Code
+// on any model (#1276, extended past local models).
 //
-// A local model reads the whole prompt before its first token, at a few
-// hundred tokens a second, and only a byte-identical prefix is served from
-// its cache. A turn of a bot on an organization server sent about 90,000
-// tokens (Claude Code's prompt, Sagax's, and every tool of every MCP server),
-// and two new conversations shared only the first 2,800 characters (Claude
-// Code's auto memory path and the conversation's working folder both differ).
-// The first token of a new conversation came after minutes.
+// A turn was sending the whole agents catalog (about 80,000 to 120,000
+// characters, about 20,000 to 30,000 tokens) plus a system prompt whose first
+// bytes changed in every conversation (the working folder, the auto memory
+// path). A local model re-reads that before its first token. A cloud model
+// re-prefills it on every cache miss. Production prefills of about 94,000 to
+// 173,000 tokens were already measured on the cloud path.
 //
-// A compact turn (Claude Code on a local model, unless the bot or its engine
-// says "full"):
+// Stable prefix, every engine, unless the bot or the server says "full":
+// the conversation's folder and the sections that differ between two new
+// conversations ride at the end of the volatile half. Every rule and every
+// section is still sent. Nothing is reworded.
+//
+// Compact tool list, Claude Code only (local or cloud), same switch:
 // - lists the agents tools Claude Code would load up front, or, once the
 //   bot's own use is known, the heart of a chat turn plus the tools it uses;
 //   every other agents tool is found with search_tools and run with
@@ -17,18 +21,16 @@
 // - gates every MCP server the bot owns with the gate's own search
 //   (mcp-gate-search.ts): a big catalog lists whole only the tools this bot
 //   used, the rest are searched;
-// - keeps the system prompt the same for every conversation of the bot and
-//   person: Claude Code's auto memory sits in one folder per bot and person,
-//   and the conversation's file locations ride in its first message;
+// - keeps Claude Code's auto memory in one folder per bot and person;
 // - turns Claude Code's own tool search off, so what is listed is exactly
 //   what Sagax lists, in the same order every time.
-// Nothing is removed: every tool stays reachable, every rule and section is
-// still sent, and approvals read the tool a call_tool runs.
+// Other engines keep the full tools/list. Grok, Codex and Pi discover a tool
+// from that list. Hiding one there would make it unreachable. Approvals on
+// Claude Code still read the tool a call_tool runs.
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 import type { CompactPromptInput } from "./contracts.ts";
-import { isLocalModelId } from "./drivers/local-inject.ts";
 
 export type LocalPromptMode = "compact" | "full";
 
@@ -55,18 +57,23 @@ export function compactVolatileOrder<T extends { volatile: string; volatileSecti
   return { ...prompt, volatileSections: sections, volatile: sections.map((section) => section.text).join("") };
 }
 
-/** Whether a turn sends the compact prompt: Claude Code on a local model
- * (a `host::model` row of a local server or of the person's computer),
- * unless the bot or its engine is set to "full". */
+/** Stable prefix for every engine. Off only when the bot or the server says
+ * "full", which also restores the full tool list on Claude Code. */
+export function usesStablePrompt(input: { bot?: LocalPromptMode; engine?: LocalPromptMode }): boolean {
+  return input.bot !== "full" && input.engine !== "full";
+}
+
+/** Compact tool list: Claude Code, local or cloud. Other engines find tools
+ * from the full tools/list, so they stay on that list. `model` is accepted
+ * and ignored: the list does not depend on which model the engine runs. */
 export function usesCompactPrompt(input: {
   driverKind: string | undefined;
-  model: string | null | undefined;
+  model?: string | null;
   bot?: LocalPromptMode;
   engine?: LocalPromptMode;
 }): boolean {
   if (input.driverKind !== "claudeAgent") return false;
-  if (!isLocalModelId(input.model)) return false;
-  return input.bot !== "full" && input.engine !== "full";
+  return usesStablePrompt(input);
 }
 
 /** A stored setting, or undefined. */
