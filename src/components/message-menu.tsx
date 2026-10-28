@@ -5,6 +5,8 @@ import { t } from "@/lib/i18n";
 import type { ConfigStatus } from "@/state/store";
 import { ACTION_ICON, type MessageMenuItem } from "@/components/MessageActions";
 import { useSpeakAction } from "@/components/SpeakButton";
+import { appVersion } from "@/lib/app-links";
+import { openBugReport } from "@/lib/bug-report";
 import { speaker } from "@/lib/tts";
 import { voiceSummary } from "@/lib/voice-summary";
 
@@ -83,6 +85,21 @@ export function useBotMessageMenu({
       icon: viewRaw ? <Eye {...ACTION_ICON} /> : <Code {...ACTION_ICON} />,
       label: t(viewRaw ? "chat.showRenderedMarkdown" : "chat.showRawMarkdown"),
       onSelect: onToggleRaw,
+      section: "view",
+    });
+    items.push({
+      key: "report",
+      icon: <Flag {...ACTION_ICON} />,
+      label: t("chat.reportBug"),
+      title: t("chat.reportBugTitle"),
+      onSelect: () => {
+        openBugReport({
+          excerpt: text,
+          version: appVersion(),
+          confirm: (preview) => window.confirm(`${t("chat.reportBugConfirm")}\n\n${preview}`),
+          open: (url) => { window.open(url, "_blank", "noopener"); },
+        });
+      },
       section: "view",
     });
   }

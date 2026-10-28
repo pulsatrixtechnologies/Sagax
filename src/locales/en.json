@@ -11415,5 +11415,8 @@
   "openAtLogin.setting": "Open when I sign in",
   "openAtLogin.settingHelp": "Your choice on this Mac. Sagax does not start at sign-in until you turn this on.",
   "chat.voiceSummary": "Read a short summary",
-  "chat.voiceSummaryTitle": "The full reply stays in the chat. This only reads a short summary aloud."
+  "chat.voiceSummaryTitle": "The full reply stays in the chat. This only reads a short summary aloud.",
+  "chat.reportBug": "Report a bug",
+  "chat.reportBugTitle": "Draft a note to the team. Nothing is sent until you agree.",
+  "chat.reportBugConfirm": "Open a mail draft with this report? Nothing is sent until you send the mail yourself."
 }
