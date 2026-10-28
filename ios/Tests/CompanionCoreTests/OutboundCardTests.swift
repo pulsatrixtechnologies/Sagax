@@ -58,4 +58,75 @@ final class OutboundCardTests: XCTestCase {
         XCTAssertEqual(OutboundCardRules.money("12.5", currency: nil), "12.5")
         XCTAssertEqual(OutboundCardRules.money(nil, currency: "USD"), "")
     }
+
+    // MARK: Conversation call (place_phone_call mode conversation)
+
+    func testAConversationCallDecodesWithItsObjectiveAndLimit() throws {
+        let message = try JSONDecoder().decode(Message.self, from: Data(#"""
+        {"id":"m","role":"bot","kind":"text","at":1,"text":"Phone call to +1 514 555 0142",
+         "outbound":{"kind":"call","id":"call_0123456789abcdef","status":"pending","botName":"Rocket","destination":"+1 514 555 0142",
+                     "mode":"conversation","objective":"Book the service","instructions":"Stay brief","maxMinutes":5,
+                     "voicemail":"Alex will call back","language":"fr","script":"Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex."}}
+        """#.utf8))
+        let card = try XCTUnwrap(message.outbound)
+        XCTAssertTrue(card.isConversation)
+        XCTAssertEqual(card.objective, "Book the service")
+        XCTAssertEqual(card.maxMinutes, 5)
+        XCTAssertEqual(card.voicemail, "Alex will call back")
+        XCTAssertNil(card.result)
+        XCTAssertNil(OutboundCardRules.status(card))
+        XCTAssertEqual(OutboundCardRules.status(card, status: "done"), .callInProgress)
+        XCTAssertEqual(OutboundCardRules.answerPath(card), "/api/me/phone-calls/call_0123456789abcdef/answer")
+    }
+
+    func testAConversationResultDecodes() throws {
+        let message = try JSONDecoder().decode(Message.self, from: Data(#"""
+        {"id":"m","role":"bot","kind":"text","at":1,"text":"x",
+         "outbound":{"kind":"call","id":"call_1","status":"done","botName":"Rocket","mode":"conversation",
+                     "result":{"outcome":"completed","endedBy":"stop-request","doNotCallAgain":true,"durationSec":247,
+                               "points":["Tuesday 9 am"],"commitments":[],"truncated":true,"endedAt":1798000000000,
+                               "transcript":[{"speaker":"bot","text":"Hello"},{"speaker":"callee","text":"**Hi**"}]}}}
+        """#.utf8))
+        let card = try XCTUnwrap(message.outbound)
+        let result = try XCTUnwrap(card.result)
+        XCTAssertEqual(result.outcome, .completed)
+        XCTAssertEqual(result.endedBy, .stopRequest)
+        XCTAssertTrue(result.doNotCallAgain)
+        XCTAssertEqual(OutboundCallResult.duration(result.durationSec), "4:07")
+        XCTAssertEqual(result.points, ["Tuesday 9 am"])
+        XCTAssertTrue(result.commitments.isEmpty)
+        XCTAssertEqual(result.transcript.map(\.isBot), [true, false])
+        XCTAssertEqual(result.transcript.last?.text, "**Hi**")
+        XCTAssertTrue(result.truncated)
+        XCTAssertFalse(result.transcriptExpired)
+        XCTAssertNil(OutboundCardRules.status(card), "the result says how it ended")
+    }
+
+    func testAnUnknownOutcomeOrReasonKeepsTheMessage() throws {
+        let message = try JSONDecoder().decode(Message.self, from: Data(#"""
+        {"id":"m","role":"bot","kind":"text","at":1,"text":"x",
+         "outbound":{"kind":"call","id":"call_1","status":"done","botName":"Rocket","mode":"conversation","maxMinutes":"five",
+                     "result":{"outcome":"transferred","endedBy":"elsewhere","durationSec":3.6,"points":"oops","commitments":["Call back"],"transcriptExpired":true}}}
+        """#.utf8))
+        let card = try XCTUnwrap(message.outbound)
+        XCTAssertNil(card.maxMinutes)
+        let result = try XCTUnwrap(card.result)
+        XCTAssertEqual(result.outcome, .unknown)
+        XCTAssertEqual(result.endedBy, .unknown)
+        XCTAssertEqual(result.durationSec, 4)
+        XCTAssertTrue(result.points.isEmpty)
+        XCTAssertEqual(result.commitments, ["Call back"])
+        XCTAssertTrue(result.transcriptExpired)
+        XCTAssertEqual(message.text, "x")
+    }
+
+    func testTheOneWayCallIsUnchanged() {
+        var card = OutboundCardData(kind: .call, id: "call_1", status: "done", botName: "Nova")
+        XCTAssertFalse(card.isConversation)
+        XCTAssertEqual(OutboundCardRules.status(card), .callDone)
+        card.mode = "broadcast"
+        XCTAssertFalse(card.isConversation, "a mode from a newer server is drawn as the one-way card")
+        XCTAssertEqual(OutboundCallResult.duration(0), "0:00")
+        XCTAssertEqual(OutboundCallResult.duration(65), "1:05")
+    }
 }

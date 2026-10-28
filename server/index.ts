@@ -7435,8 +7435,21 @@ const outbound = outboundWiring({
   twilio: (turn, args) => perspicaxMcp
     ? perspicaxMcp.callTool({ ...turn, name: "twilio_api__write", args })
     : Promise.resolve({ ok: false as const, code: "profile_not_mounted" as const, error: "Perspicax is not linked on this server" }),
+  // 2026-10-28: a conversation call, from the person's own Perspicax Voice
+  // line and Twilio key (the turn's speaker, never another member's key)
+  voice: (turn, args) => perspicaxMcp
+    ? perspicaxMcp.callTool({ ...turn, name: "voice_call", args })
+    : Promise.resolve({ ok: false as const, code: "profile_not_mounted" as const, error: "Perspicax is not linked on this server" }),
+  principalName: (principalId) => personDisplayName(principals.byId(principalId)) || undefined,
+  principalSub: (principalId) => {
+    if (IDENTITY.kind !== "perspicax") return null;
+    const person = principals.byId(principalId);
+    return person?.subject && person.subject.iss === IDENTITY.issuer ? person.subject.sub : null;
+  },
   wake: (botId, threadId, messageId, prompt) => dispatchSecretResume({ botId, threadId, messageId, label: "outbound", outcome: "provided", prompt }),
 });
+// a conversation call's transcript leaves its card 30 days after the call
+setInterval(() => { try { outbound.sweepTranscripts(); } catch { /* the next sweep tries again */ } }, 60 * 60_000).unref?.();
 const onePassword = new OnePassword({ organization: () => IDENTITY.kind === "perspicax" });
 /** 2026-10-21 (parité R10, ligne 80): the app a screen action of this Mac
  * acts on (server/computer-app.ts), and the turns whose mounted computer is
@@ -30226,6 +30239,7 @@ const inboundTelephony = createBotInboundTelephonyRoute({
   owner: (id) => botMailOwner(id),
   triggers: (botId) => webhooks.list().filter((hook) => hook.enabled && hook.botId === botId && hook.source?.type === "telephony").map((hook) => hook.id),
   ingest: (id, event, key) => webhooks.ingest(id, event, key),
+  callResult: (input) => outbound.callResult(input),
   record: (row) => appendAdminAction(DATA_DIR, {
     category: "webhook",
     action: row.notice ? "bot-phone.notice" : "bot-phone.delivered",

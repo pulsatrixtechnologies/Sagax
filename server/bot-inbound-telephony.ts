@@ -25,7 +25,13 @@
 //   - `sms`, `call_request`, `call_summary` wake the bot with the text
 //     (`sms.received`, `call.requested`, `call.summary`);
 //   - `call_started`, `pin_locked`, `call_rejected` are notices: metadata
-//     only, one admin activity row, no run.
+//     only, one admin activity row, no run;
+//   - `call_result` (2026-10-28) ends a conversation call the bot placed
+//     with place_phone_call: it goes to that call's card and conversation
+//     (`callResult`, server/outbound-calls.ts applyResult), never to the
+//     phone triggers. Only the person whose line placed the call (the
+//     assertion's `sub`) can settle it, once. Its texts (summary, the
+//     other party's words) are data, never instructions.
 //
 // Rules, none optional:
 //   - answered before the session gate and before loopback trust, like the
@@ -62,14 +68,16 @@ export const TELEPHONY_PATH = "/api/org/telephony/inbound";
 export const TELEPHONY_CONTRACT = "perspicax-voice/1";
 /** The only actor this route accepts, and the only route that accepts it. */
 export const TELEPHONY_ASSERTION_ACTORS: readonly ConsoleAssertionActor[] = ["perspicax-voice"];
-export const TELEPHONY_BODY_MAX = 64 * 1024;
+/** A call_result carries a transcript (at most 40 000 characters). */
+export const TELEPHONY_BODY_MAX = 128 * 1024;
+export const CALL_RESULT_TRANSCRIPT_MAX = 40_000;
 export const TELEPHONY_TEXT_MAX = 4_000;
 /** Event ids remembered by the route (notices included). */
 export const TELEPHONY_SEEN_MAX = 2_000;
 export const TELEPHONY_SEEN_MS = 24 * 60 * 60_000;
 const MAX_TOKEN_CHARS = 8_192;
 
-export const TELEPHONY_EVENTS = ["sms", "call_started", "call_request", "call_summary", "pin_locked", "call_rejected"] as const;
+export const TELEPHONY_EVENTS = ["sms", "call_started", "call_request", "call_summary", "pin_locked", "call_rejected", "call_result"] as const;
 export type TelephonyEventType = (typeof TELEPHONY_EVENTS)[number];
 /** The events that wake the bot, and the trigger kind each one becomes. */
 export const TELEPHONY_WAKE_KINDS: Readonly<Partial<Record<TelephonyEventType, string>>> = {
@@ -92,6 +100,24 @@ const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2
 const printable = (max: number) => z.string().max(max).refine((value) => !/[^\P{Cc}\t\n\r]/u.test(value));
 /** One line: no control character at all. */
 const oneLine = (min: number, max: number) => z.string().min(min).max(max).refine((value) => !/\p{Cc}/u.test(value));
+
+const resultText = (max: number) => printable(max).transform((value) => value.trim()).refine((value) => value.length > 0);
+
+/** The result of a conversation call (event `call_result`). */
+const callResultSchema = z.object({
+  ref: z.string().regex(/^call_[0-9a-f]{16}$/),
+  callSid: z.string().regex(/^CA[0-9a-f]{32}$/),
+  outcome: z.enum(["completed", "voicemail", "no-answer", "busy", "failed"]),
+  endedBy: z.enum(["goal", "callee", "stop-request", "time-limit", "hang-up"]).optional(),
+  durationSec: z.number().int().min(0).max(24 * 60 * 60),
+  points: z.array(resultText(600)).max(8),
+  commitments: z.array(resultText(600)).max(8),
+  transcript: z.array(z.object({ speaker: z.enum(["bot", "callee"]), text: resultText(CALL_RESULT_TRANSCRIPT_MAX) })).max(2_000).optional(),
+  truncated: z.boolean().optional(),
+  doNotCallAgain: z.boolean().optional(),
+}).refine((value) => (value.transcript ?? []).reduce((sum, line) => sum + line.text.length, 0) <= CALL_RESULT_TRANSCRIPT_MAX, { message: "transcript too long" });
+
+export type CallResultBody = z.output<typeof callResultSchema>;
 
 const telephonySchema = z.object({
   contract: z.literal(TELEPHONY_CONTRACT),
@@ -123,7 +149,10 @@ const telephonySchema = z.object({
       z.enum(["psa_contact", "provided"]),
     ),
   }),
+  result: callResultSchema.optional(),
 }).superRefine((value, ctx) => {
+  // a call_result, and only a call_result, carries its result
+  if ((value.event === "call_result") !== (value.result !== undefined)) ctx.addIssue({ code: "custom", path: ["result"], message: "result goes with call_result only" });
   if (!value.eventId.startsWith(`${value.event}:`)) ctx.addIssue({ code: "custom", path: ["eventId"], message: "eventId must start with the event" });
   // pin_locked and call_rejected carry a masked number (`***1234`), the others the real one.
   const pattern = MASKED_FROM.has(value.event) ? MASKED : E164;
@@ -203,6 +232,9 @@ export interface TelephonyRouteDeps {
   owner(botId: string): { principalId: string; sub: string | null; active: boolean } | null;
   /** Ids of the bot's ENABLED triggers of source `telephony`. */
   triggers(botId: string): string[];
+  /** A conversation call's result (event call_result) for the person
+   * `sub`. Absent: the event is refused like an unknown one. */
+  callResult?(input: { sub: string; result: CallResultBody }): "applied" | "unknown" | "not_yours" | "already";
   /** WebhookManager.ingest: throws an Error with `status` on a refusal. */
   ingest(triggerId: string, event: NormalizedTriggerEvent, dedupeKey: string): WebhookReceiveResult | null;
   record(row: TelephonyDeliveryRow): void;
@@ -319,8 +351,23 @@ export function createBotInboundTelephonyRoute(deps: TelephonyRouteDeps): (req: 
     if (!owner?.sub || owner.sub !== assertion.sub) return send(res, 403, { error: "not_owner" });
     if (!owner.active) return send(res, 403, { error: "owner_inactive" });
 
-    const notice = isTelephonyNotice(event.event);
     const seenKey = `${bot.id}\n${event.eventId}`;
+    // A conversation call's result: its card and conversation, never the
+    // phone triggers (and never a notice row of its own).
+    if (event.event === "call_result") {
+      if (!deps.callResult || !event.result) return send(res, 400, { error: "invalid" });
+      if (seen.has(seenKey, now())) return send(res, 202, { event: event.event, applied: false, reason: "duplicate" });
+      const outcome = deps.callResult({ sub: assertion.sub, result: event.result });
+      if (outcome === "not_yours") return send(res, 403, { error: "not_owner" });
+      if (outcome === "unknown") return send(res, 404, { error: "no_call" });
+      seen.add(seenKey, now());
+      deps.record({
+        botId: bot.id, botName: bot.name, ownerPrincipalId: owner.principalId, event: event.event, notice: false,
+        caller: maskedCaller(event.from), authenticated: false, triggers: 0, delivered: outcome === "applied" ? 1 : 0, duplicate: outcome === "already" ? 1 : 0, ignored: 0,
+      });
+      return send(res, 202, { event: event.event, applied: outcome === "applied", ...(outcome === "already" ? { reason: "duplicate" } : {}) });
+    }
+    const notice = isTelephonyNotice(event.event);
     if (seen.has(seenKey, now())) {
       return send(res, 202, { event: event.event, notice, triggers: 0, delivered: 0, duplicate: 1, ignored: 0, reason: "duplicate" });
     }

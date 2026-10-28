@@ -55,6 +55,27 @@ reads logs and databases without modifying them and writes
 `health-reports/latest.md`. `GET /api/me/health-report` shows that file.
 It does not call a model and it does not open a ticket.
 
+## Conversation phone calls (2026-10-28)
+
+Decision: a bot can call someone, talk with them in real time and report
+back (`place_phone_call` mode `conversation`). Spec: section 10 of
+`docs/specs/bot-telephony.md`.
+
+- The call leaves from the speaking person's own Perspicax Voice line and
+  Twilio key (`voice_call` with the turn's Perspicax access), after the same
+  one-call approval card (number, objective, maximum length, the AI
+  disclosure as it is said). The line says the disclosure first; the
+  realtime voice is Perspicax Voice's, the same as inbound calls.
+- The result comes back as `call_result` on `/api/org/telephony/inbound`,
+  accepted only for the person whose line placed that call sid, once. The
+  card becomes the result card; the bot gets the result in a new turn with
+  the other party's words wrapped as untrusted data.
+- The transcript lives on the conversation's message only (sealed with the
+  person's content key) and is dropped 30 days after the call; the records
+  file keeps metadata, never a word said. A callee who asks to stop goes on
+  the person's own stop list for good.
+- Tests: `server/outbound-conversation.test.ts`.
+
 ## Web search with the person's own key (2026-10-26)
 
 Decision: an engine with no web search of its own (OpenAI-compatible

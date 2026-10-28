@@ -331,7 +331,7 @@ final class Session: ObservableObject {
         }
         if (arguments.contains("-store-preview") || arguments.contains("-computer-switcher-preview")),
            let url = Bundle.main.url(
-               forResource: arguments.contains("-cards-preview") ? "CardsPreview" : arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : arguments.contains("-open-thread-preview") ? "OpenThreadPreview" : arguments.contains("-bot-conversation-preview") ? "BotConversationPreview" : "StorePreview",
+               forResource: arguments.contains("-outbound-preview") ? "OutboundPreview" : arguments.contains("-cards-preview") ? "CardsPreview" : arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : arguments.contains("-open-thread-preview") ? "OpenThreadPreview" : arguments.contains("-bot-conversation-preview") ? "BotConversationPreview" : "StorePreview",
                withExtension: "json"
            ),
            let data = try? Data(contentsOf: url),
@@ -380,6 +380,12 @@ final class Session: ObservableObject {
                 client = CompanionClient(connection: preview, token: "voice-fixture-token", session: URLSession(configuration: config))
             }
             state.hydrate(fleet)
+            if arguments.contains("-outbound-preview"),
+               let flag = arguments.firstIndex(of: "-outbound-set"), arguments.indices.contains(flag + 1) {
+                // One set of the outbound call cards per screenshot (OutboundPreview.json).
+                let keep = "preview-outbound-\(arguments[flag + 1])"
+                state.bots.removeAll { $0.id != keep }
+            }
             if arguments.contains("-chat-focus-preview") {
                 // Put the requested reply several screens inside the fold.
                 var messages = state.messages["preview-gmail"] ?? []

@@ -1,0 +1,351 @@
+{
+ "bots": [
+  {
+   "id": "preview-outbound-approval",
+   "threadId": "preview-thread-outbound-approval",
+   "name": "Rocket",
+   "title": "Assistant",
+   "description": "Appels et rendez-vous.",
+   "notifications": true,
+   "color": "cyan",
+   "unread": false,
+   "modelSelection": {
+    "instanceId": "preview",
+    "model": "preview"
+   },
+   "createdAt": 1787000000000,
+   "activeLeafId": "o-approval-1",
+   "tasks": [
+    {
+     "threadId": "preview-thread-outbound-approval",
+     "title": "Thermopompe",
+     "createdAt": 1787000000000
+    }
+   ],
+   "messages": [
+    {
+     "id": "o-approval-u",
+     "role": "user",
+     "kind": "text",
+     "text": "Appelle la compagnie pour l'entretien de la thermopompe.",
+     "at": 1787028500000
+    },
+    {
+     "id": "o-approval-0",
+     "role": "bot",
+     "kind": "text",
+     "text": "Appel vers +1 514 555 0142",
+     "at": 1787028510000,
+     "parentId": "o-approval-u",
+     "outbound": {
+      "kind": "call",
+      "id": "call_0000000000000001",
+      "status": "pending",
+      "botName": "Rocket",
+      "destination": "+1 514 555 0142",
+      "from": "+1 438 555 0100",
+      "purpose": "Confirmer le rendez-vous de mardi.",
+      "script": "Alex confirme le rendez-vous de mardi à 10 h. Merci de rappeler au besoin.",
+      "language": "fr",
+      "callback": "+1 438 555 0199"
+     }
+    },
+    {
+     "id": "o-approval-1",
+     "role": "bot",
+     "kind": "text",
+     "text": "Appel vers +1 514 555 0142",
+     "at": 1787028511000,
+     "parentId": "o-approval-0",
+     "outbound": {
+      "kind": "call",
+      "botName": "Rocket",
+      "destination": "+1 514 555 0142",
+      "mode": "conversation",
+      "language": "fr",
+      "maxMinutes": 5,
+      "objective": "Prendre rendez-vous pour l'entretien de la thermopompe la semaine prochaine, idéalement en matinée.",
+      "script": "Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex.",
+      "id": "call_0000000000000011",
+      "status": "pending",
+      "instructions": "Rester bref et poli. Proposer mardi ou mercredi entre 8 h et 11 h.",
+      "voicemail": "Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex. Alex vous rappellera."
+     }
+    }
+   ]
+  },
+  {
+   "id": "preview-outbound-progress",
+   "threadId": "preview-thread-outbound-progress",
+   "name": "Rocket",
+   "title": "Assistant",
+   "description": "Appels et rendez-vous.",
+   "notifications": true,
+   "color": "cyan",
+   "unread": false,
+   "modelSelection": {
+    "instanceId": "preview",
+    "model": "preview"
+   },
+   "createdAt": 1787000000000,
+   "activeLeafId": "o-progress-1",
+   "tasks": [
+    {
+     "threadId": "preview-thread-outbound-progress",
+     "title": "Thermopompe",
+     "createdAt": 1787000000000
+    }
+   ],
+   "messages": [
+    {
+     "id": "o-progress-u",
+     "role": "user",
+     "kind": "text",
+     "text": "Appelle la compagnie pour l'entretien de la thermopompe.",
+     "at": 1787028500000
+    },
+    {
+     "id": "o-progress-0",
+     "role": "bot",
+     "kind": "text",
+     "text": "Appel vers +1 514 555 0142",
+     "at": 1787028510000,
+     "parentId": "o-progress-u",
+     "outbound": {
+      "kind": "call",
+      "botName": "Rocket",
+      "destination": "+1 514 555 0142",
+      "mode": "conversation",
+      "language": "fr",
+      "maxMinutes": 5,
+      "objective": "Prendre rendez-vous pour l'entretien de la thermopompe la semaine prochaine, idéalement en matinée.",
+      "script": "Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex.",
+      "id": "call_0000000000000012",
+      "status": "done",
+      "via": "Chef"
+     }
+    },
+    {
+     "id": "o-progress-1",
+     "role": "bot",
+     "kind": "text",
+     "text": "Appel vers +1 514 555 0142",
+     "at": 1787028511000,
+     "parentId": "o-progress-0",
+     "outbound": {
+      "kind": "call",
+      "botName": "Rocket",
+      "destination": "+1 514 555 0142",
+      "mode": "conversation",
+      "language": "fr",
+      "maxMinutes": 5,
+      "objective": "Prendre rendez-vous pour l'entretien de la thermopompe la semaine prochaine, idéalement en matinée.",
+      "script": "Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex.",
+      "id": "call_0000000000000014",
+      "status": "done",
+      "result": {
+       "outcome": "voicemail",
+       "durationSec": 21,
+       "endedAt": 1798000000000,
+       "points": [
+        "Message laissé dans la boîte vocale de la compagnie."
+       ],
+       "commitments": [],
+       "transcriptExpired": true
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "preview-outbound-completed",
+   "threadId": "preview-thread-outbound-completed",
+   "name": "Rocket",
+   "title": "Assistant",
+   "description": "Appels et rendez-vous.",
+   "notifications": true,
+   "color": "cyan",
+   "unread": false,
+   "modelSelection": {
+    "instanceId": "preview",
+    "model": "preview"
+   },
+   "createdAt": 1787000000000,
+   "activeLeafId": "o-completed-0",
+   "tasks": [
+    {
+     "threadId": "preview-thread-outbound-completed",
+     "title": "Thermopompe",
+     "createdAt": 1787000000000
+    }
+   ],
+   "messages": [
+    {
+     "id": "o-completed-u",
+     "role": "user",
+     "kind": "text",
+     "text": "Appelle la compagnie pour l'entretien de la thermopompe.",
+     "at": 1787028500000
+    },
+    {
+     "id": "o-completed-0",
+     "role": "bot",
+     "kind": "text",
+     "text": "Appel vers +1 514 555 0142",
+     "at": 1787028510000,
+     "parentId": "o-completed-u",
+     "outbound": {
+      "kind": "call",
+      "botName": "Rocket",
+      "destination": "+1 514 555 0142",
+      "mode": "conversation",
+      "language": "fr",
+      "maxMinutes": 5,
+      "objective": "Prendre rendez-vous pour l'entretien de la thermopompe la semaine prochaine, idéalement en matinée.",
+      "script": "Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex.",
+      "id": "call_0000000000000013",
+      "status": "done",
+      "result": {
+       "outcome": "completed",
+       "endedBy": "goal",
+       "durationSec": 247,
+       "endedAt": 1798000000000,
+       "points": [
+        "Rendez-vous fixé mardi 4 novembre à 9 h.",
+        "Le technicien prévoit environ une heure sur place.",
+        "Le prix de l'entretien annuel est de 149 $ avant taxes."
+       ],
+       "commitments": [
+        "Laisser l'accès au sous-sol libre le matin du rendez-vous.",
+        "La compagnie envoie une confirmation par texto lundi."
+       ],
+       "transcript": [
+        {
+         "speaker": "bot",
+         "text": "Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex. J'aimerais prendre rendez-vous pour l'entretien d'une thermopompe."
+        },
+        {
+         "speaker": "callee",
+         "text": "Oui, bonjour. J'ai de la place mardi à 9 h, est-ce que ça irait?"
+        },
+        {
+         "speaker": "bot",
+         "text": "Mardi à 9 h, c'est parfait. Combien de temps faut-il prévoir?"
+        },
+        {
+         "speaker": "callee",
+         "text": "Environ une heure. C'est 149 $ avant taxes, et on envoie une confirmation par texto lundi."
+        },
+        {
+         "speaker": "bot",
+         "text": "Merci beaucoup, bonne journée!"
+        }
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "preview-outbound-ended",
+   "threadId": "preview-thread-outbound-ended",
+   "name": "Rocket",
+   "title": "Assistant",
+   "description": "Appels et rendez-vous.",
+   "notifications": true,
+   "color": "cyan",
+   "unread": false,
+   "modelSelection": {
+    "instanceId": "preview",
+    "model": "preview"
+   },
+   "createdAt": 1787000000000,
+   "activeLeafId": "o-ended-1",
+   "tasks": [
+    {
+     "threadId": "preview-thread-outbound-ended",
+     "title": "Thermopompe",
+     "createdAt": 1787000000000
+    }
+   ],
+   "messages": [
+    {
+     "id": "o-ended-u",
+     "role": "user",
+     "kind": "text",
+     "text": "Appelle la compagnie pour l'entretien de la thermopompe.",
+     "at": 1787028500000
+    },
+    {
+     "id": "o-ended-0",
+     "role": "bot",
+     "kind": "text",
+     "text": "Appel vers +1 514 555 0142",
+     "at": 1787028510000,
+     "parentId": "o-ended-u",
+     "outbound": {
+      "kind": "call",
+      "botName": "Rocket",
+      "destination": "+1 514 555 0142",
+      "mode": "conversation",
+      "language": "fr",
+      "maxMinutes": 5,
+      "objective": "Prendre rendez-vous pour l'entretien de la thermopompe la semaine prochaine, idéalement en matinée.",
+      "script": "Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex.",
+      "id": "call_0000000000000015",
+      "status": "done",
+      "result": {
+       "outcome": "no-answer",
+       "durationSec": 0,
+       "endedAt": 1798000000000,
+       "points": [],
+       "commitments": []
+      }
+     }
+    },
+    {
+     "id": "o-ended-1",
+     "role": "bot",
+     "kind": "text",
+     "text": "Appel vers +1 514 555 0142",
+     "at": 1787028511000,
+     "parentId": "o-ended-0",
+     "outbound": {
+      "kind": "call",
+      "botName": "Rocket",
+      "destination": "+1 514 555 0142",
+      "mode": "conversation",
+      "language": "fr",
+      "maxMinutes": 5,
+      "objective": "Prendre rendez-vous pour l'entretien de la thermopompe la semaine prochaine, idéalement en matinée.",
+      "script": "Bonjour, ici Rocket, un assistant IA qui appelle au nom d'Alex.",
+      "id": "call_0000000000000016",
+      "status": "done",
+      "result": {
+       "outcome": "completed",
+       "endedBy": "stop-request",
+       "doNotCallAgain": true,
+       "durationSec": 34,
+       "endedAt": 1798000000000,
+       "points": [
+        "L'interlocuteur ne souhaite pas recevoir d'appels d'un assistant IA."
+       ],
+       "commitments": [],
+       "transcript": [
+        {
+         "speaker": "bot",
+         "text": "Bonjour, ici Rocket."
+        },
+        {
+         "speaker": "callee",
+         "text": "Non merci, ne rappelez plus."
+        }
+       ]
+      }
+     }
+    }
+   ]
+  }
+ ],
+ "groups": []
+}

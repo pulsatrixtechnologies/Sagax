@@ -1493,6 +1493,37 @@ export interface PurchaseFlight {
   passenger?: string;
 }
 
+/** How a conversation call ended (OutboundCard.result). Lives on the
+ * conversation's message, so it is sealed with the person's content key
+ * like the rest of their conversation; the transcript is dropped 30 days
+ * after the call (`transcriptExpired`), the summary stays. */
+export interface OutboundCallResult {
+  outcome: "completed" | "voicemail" | "no-answer" | "busy" | "failed";
+  /** Why a call that was answered ended. */
+  endedBy?: "goal" | "callee" | "stop-request" | "time-limit" | "hang-up";
+  /** The callee asked not to be called again: the bot never calls this
+   * number again for the person. */
+  doNotCallAgain?: boolean;
+  /** Whole seconds of conversation (0 when nobody answered). */
+  durationSec: number;
+  /** Three to five points (fewer for a short call). */
+  points: string[];
+  /** Commitments or next steps, possibly none. */
+  commitments: string[];
+  transcript?: OutboundTranscriptLine[];
+  /** The transcript was cut to its first part. */
+  truncated?: boolean;
+  /** The transcript passed its 30 days and was dropped. */
+  transcriptExpired?: boolean;
+  /** epoch ms */
+  endedAt: number;
+}
+
+export interface OutboundTranscriptLine {
+  speaker: "bot" | "callee";
+  text: string;
+}
+
 /** The card of an outward action (WireMessage.outbound). Never a card
  * number, never a security code, never an id in its words. */
 export interface OutboundCard {
@@ -1510,6 +1541,18 @@ export interface OutboundCard {
   purpose?: string;
   script?: string;
   language?: "fr" | "en";
+  /** A call: `conversation` when the bot talks with the person it calls
+   * (place_phone_call mode conversation); absent for the one-way message. */
+  mode?: "conversation";
+  /** A conversation call: what the bot must obtain or say, its guidance,
+   * the most it may last, and the short message it leaves on voicemail. */
+  objective?: string;
+  instructions?: string;
+  maxMinutes?: number;
+  voicemail?: string;
+  /** A conversation call once it ended. Placed without a result yet: the
+   * call is under way. */
+  result?: OutboundCallResult;
   /** A purchase: the shop, the amount, the card's brand and last four
    * digits, what it buys, and once done, the receipt. */
   merchant?: string;
