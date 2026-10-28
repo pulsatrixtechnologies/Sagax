@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { writeFileAtomic } from "./atomic.ts";
 import { holdPlain, isAtRestRefusal, noteAtRestWrite, plainSizeFor, readAtRestTextSync, registerAtRestRoot } from "./content-at-rest.ts";
 import { alwaysCore, isExpired, isMemoryDate, parseMemoryEntries, untilMark, withoutExpired, type MemoryEntryLine } from "./memory-entries.ts";
+import { readersToken, withoutWiderAudience, type MemoryDestination, type MemoryReaders } from "./memory-audience.ts";
 import { parseTopicHeader, readTopicHead, renderTopicIndex } from "./memory-topics.ts";
 import { indexMemoryFile, indexedMemoryFiles, recallMemory, removeMemoryFile, type MemoryHit, type SearchMode } from "./message-db.ts";
 import { redactSecretsInText } from "./redact.ts";
@@ -227,7 +228,7 @@ export function memoryOverBudget(text: string): boolean {
  * is missing or effectively empty (seed-only counts as empty). `lines` and
  * `bytes` describe the WHOLE file, so a truncation note can say how far
  * over budget it is rather than only that it was cut. */
-export function loadMemory(botId: string, opts: { now?: Date } = {}): { text: string; truncated: boolean; lines: number; bytes: number; expired: number } | null {
+export function loadMemory(botId: string, opts: { now?: Date; audience?: MemoryDestination } = {}): { text: string; truncated: boolean; lines: number; bytes: number; expired: number } | null {
   let raw: string;
   try {
     raw = readMemoryText(join(workspaceDir(botId), "MEMORY.md"));
@@ -241,7 +242,9 @@ export function loadMemory(botId: string, opts: { now?: Date } = {}): { text: st
   // A fact past its `until` day is no longer true: it stays in the file
   // (the tidy-up archives it, the person can read it) but no turn sees it.
   const visible = withoutExpired(raw, memoryDate(opts.now));
-  let text = visible.text;
+  // A captured fact stamped for a narrower place does not ride into a
+  // group, a room or a public copy. A line with no stamp stays.
+  let text = opts.audience ? withoutWiderAudience(visible.text, opts.audience).text : visible.text;
   const lines = text.split("\n");
   if (memoryLineCount(text) > MEMORY_MAX_LINES) {
     text = lines.slice(0, MEMORY_MAX_LINES).join("\n");
@@ -405,6 +408,9 @@ export interface MemoryUpdateOptions {
   now?: Date;
   /** YYYY-MM-DD: the last day the entry holds, written as ` · until <day>`. */
   until?: string;
+  /** Who may be shown this entry. Absent: no stamp, so it stays visible
+   * wherever the file already was. */
+  readers?: MemoryReaders;
 }
 
 export type MemoryUpdateResult =
@@ -425,11 +431,11 @@ export function memoryDate(now: Date = new Date()): string {
  * A middle dot so a fact that itself contains a hyphen or colon stays
  * readable; sources are scrubbed of it so the prefix parses back. */
 const SEP = " · ";
-const DATED_ENTRY = /^(- \d{4}-\d{2}-\d{2} · (?:from [^·\n]* · )?)(.*)$/;
+const DATED_ENTRY = /^(- \d{4}-\d{2}-\d{2} · (?:from [^·\n]* · )?(?:readers (?:person|group:[A-Za-z0-9_-]{1,64}|room:[A-Za-z0-9_-]{1,64}) · )?)(.*)$/;
 const UPDATED_MARK = / · updated \d{4}-\d{2}-\d{2}$/;
 /** A prefix the model typed itself, copying the shape of the file: the
  * entry's real prefix is the harness's to assign, so this one is dropped. */
-const TYPED_PREFIX = /^\s*- \d{4}-\d{2}-\d{2} · (?:from [^·\n]* · )?/;
+const TYPED_PREFIX = /^\s*- \d{4}-\d{2}-\d{2} · (?:from [^·\n]* · )?(?:readers (?:person|group:[A-Za-z0-9_-]{1,64}|room:[A-Za-z0-9_-]{1,64}) · )?/;
 const BULLET = /^(?:[-*•]|\d+[.)])\s+/;
 
 /** A thread title can hold anything; keep it to one short line with no
@@ -466,7 +472,8 @@ const SOURCE_NAME_MAX = 60;
 /** One dated, sourced entry line. `- 2026-09-10 · from chat "Follow-up" · text` */
 export function memoryEntry(text: string, opts: MemoryUpdateOptions = {}): string {
   const source = cleanSource(opts.source);
-  return `- ${memoryDate(opts.now)}${SEP}${source ? `from ${source}${SEP}` : ""}${normaliseEntryText(text).replace(/ · until \d{4}-\d{2}-\d{2}$/, "")}${untilMark(opts.until)}`;
+  const readers = opts.readers ? `${readersToken(opts.readers)}${SEP}` : "";
+  return `- ${memoryDate(opts.now)}${SEP}${source ? `from ${source}${SEP}` : ""}${readers}${normaliseEntryText(text).replace(/ · until \d{4}-\d{2}-\d{2}$/, "")}${untilMark(opts.until)}`;
 }
 
 /** The dated prefix and the body of an entry line, or null for a line the
@@ -848,10 +855,11 @@ function withCompany(text: string, company: string | undefined): string {
  * it has written anything. Content from other bots or imported files must
  * never be recorded as fact. memory is a prompt-injection persistence
  * vector the moment a bot copies untrusted text into it. `company` is
- * memory/company.md for this person's bots only. */
-export function memorySystemPrompt(botId: string, opts: { managedWrites?: boolean; fileTools?: boolean; enabled?: boolean; company?: string } = {}): string {
+ * memory/company.md for this person's bots only. `audience` hides a fact
+ * stamped for a narrower place. */
+export function memorySystemPrompt(botId: string, opts: { managedWrites?: boolean; fileTools?: boolean; enabled?: boolean; company?: string; audience?: MemoryDestination } = {}): string {
   if (opts.enabled === false) return "";
-  const memory = loadMemory(botId);
+  const memory = loadMemory(botId, opts.audience ? { audience: opts.audience } : {});
   const memoryFile = join(workspaceDir(botId), "MEMORY.md");
   const topicDir = join(workspaceDir(botId), "memory");
   if (opts.fileTools === false && !opts.managedWrites) {

@@ -335,7 +335,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
         byTopic.set(candidate.topic, [...(byTopic.get(candidate.topic) ?? []), candidate]);
         continue;
       }
-      if (updateMemory(botId, { action: "append", text: candidate.text, ...(candidate.until ? { until: candidate.until } : {}) }, { source, now: now() }).ok) added += 1;
+      if (updateMemory(botId, { action: "append", text: candidate.text, ...(candidate.until ? { until: candidate.until } : {}) }, { source, now: now(), readers: { kind: "person" } }).ok) added += 1;
     }
     // Older entries the appends moved out are journaled first, as the
     // tidy-up does, so undoing the newest row (MEMORY.md) brings them back.
@@ -354,7 +354,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       const unseen = group.filter((candidate) => !seen.has(factIdentity(candidate.text)));
       known += group.length - unseen.length;
       const lines = unseen
-        .map((candidate) => memoryEntry(candidate.text, { source, now: now(), ...(candidate.until ? { until: candidate.until } : {}) }));
+        .map((candidate) => memoryEntry(candidate.text, { source, now: now(), readers: { kind: "person" }, ...(candidate.until ? { until: candidate.until } : {}) }));
       if (!lines.length) continue;
       const title = name.replace(/\.md$/, "").replace(/-/g, " ");
       const aliases = [...new Set(group.flatMap((candidate) => candidate.topicAliases ?? []))];
