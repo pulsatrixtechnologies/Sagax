@@ -92,7 +92,12 @@ export function renderRecall(passages: readonly RecallPassage[], maxChars = RECA
   let length = lines.join("\n").length + RECALL_CLOSE.length + 1;
   let notes = 0;
   let conversations = 0;
+  // the same words found twice (two copies of one message) say nothing new
+  const shown = new Set<string>();
   for (const passage of passages) {
+    const said = clean(passage.snippet);
+    if (shown.has(said)) continue;
+    shown.add(said);
     const line = `[${notes + conversations + 1}] ${passage.label} (${day(passage.at)}): ${clean(passage.snippet)}`;
     if (length + line.length + 1 > maxChars) continue;
     lines.push(line);
@@ -109,11 +114,17 @@ export function renderRecall(passages: readonly RecallPassage[], maxChars = RECA
 export interface RecallBudget {
   notes: number;
   chars: number;
+  /** Conversation passages kept (default CONVERSATION_HITS). */
+  conversations?: number;
 }
 
 /** A turn said on a live call: a couple of short notes, no conversations
  * (the engine reads all of it before it can say a word). */
 export const CALL_RECALL_BUDGET: RecallBudget = { notes: 2, chars: 1_200 };
+
+/** #1276: a turn on a local model reads every recalled word on the person's
+ * own machine before it answers: two notes and two conversation passages. */
+export const LOCAL_RECALL_BUDGET: RecallBudget = { notes: 2, chars: 1_500, conversations: 2 };
 
 export interface RecallInput {
   botId: string;
@@ -240,7 +251,7 @@ export function conversationPassages(input: RecallInput, query: string): RecallP
   }
   return hits
     .filter((hit) => enoughMatches(query, hit.snippet))
-    .slice(0, CONVERSATION_HITS)
+    .slice(0, input.budget?.conversations ?? CONVERSATION_HITS)
     .map((hit) => ({
       source: "conversation" as const,
       label: input.label(hit.threadId),
@@ -258,7 +269,7 @@ export function buildRecall(input: RecallInput): RecallResult | null {
   const notes = [...topics, ...memoryPassages(input.botId, query, input.audience).filter((passage) => !named.has(passage.label))].slice(0, input.budget?.notes ?? MEMORY_HITS);
   const lexical = [...notes, ...conversationPassages(input, query)];
   // FTS5 fills the block first. Vectors, when a local index is ready, only take a free slot.
-  const cap = (input.budget?.notes ?? MEMORY_HITS) + (input.threadIds.length ? CONVERSATION_HITS : 0);
+  const cap = (input.budget?.notes ?? MEMORY_HITS) + (input.threadIds.length ? input.budget?.conversations ?? CONVERSATION_HITS : 0);
   const vectors = input.semantic
     ? semanticPassages(input.botId, query, cap).filter((passage) => input.threadIds.length > 0 || passage.source !== "conversation")
     : [];

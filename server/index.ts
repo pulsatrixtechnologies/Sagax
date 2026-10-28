@@ -223,7 +223,7 @@ import {
   vpsAliasResourceChangeError,
 } from "./cloud-backend.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
-import { buildRecall, CALL_RECALL_BUDGET, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
+import { buildRecall, CALL_RECALL_BUDGET, LOCAL_RECALL_BUDGET, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { BriefStore } from "./background-brief.ts";
 import { listBriefApps, readBriefTool } from "./background-brief-apps.ts";
@@ -467,7 +467,7 @@ import { openApprovalCardMessages, readMessageText, recallMessages, recentMessag
 import { ContentKeyUnavailable, WORKSPACE_OWNER } from "./content-keys.ts";
 import { contentEncryptionFromEnv } from "./content-encryption-env.ts";
 import { briefCrossingLabel, claimRecallCrossings, recallCrossingLabel } from "./recall-disclosure.ts";
-import { parseSince, parseUntil, recentWork, recentWorkPrompt, turnOutcomeLine } from "./recent-work.ts";
+import { LOCAL_RECENT_WORK_LINES, parseSince, parseUntil, recentWork, recentWorkPrompt, turnOutcomeLine } from "./recent-work.ts";
 import { chiefForBot, INCIDENTS_THREAD_TITLE, IncidentLedger, incidentChip, incidentRequest, incidentText, type Incident, type IncidentKind } from "./incidents.ts";
 
 /** A session_read answer competes with the transcript for the context
@@ -22298,7 +22298,7 @@ async function startTurn(
         // what the bot said lately in its other conversations, so a task
         // never redoes — or forgets — what another one already did
         // not on a call: a phone turn stays short (docs/voice-mode-xai.md, "Latency")
-        { id: "recent", label: "Recent work", text: onCall ? "" : recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) }).filter((line) => !streamPart?.threadIds.has(line.threadId))) },
+        { id: "recent", label: "Recent work", text: onCall ? "" : recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) }).filter((line) => !streamPart?.threadIds.has(line.threadId)).slice(0, compactPrompt ? LOCAL_RECENT_WORK_LINES : undefined)) },
         { id: "stream", label: "Earlier topics", text: streamPart?.text ?? "" },
         // RULES.md: listed here, placed right after the soul by buildSystemPrompt
         { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
@@ -22345,7 +22345,7 @@ async function startTurn(
         // reads before it can answer is the pause the person hears.
         conversations: commsDepth === 0 && !coordinationNode && !opts?.automationSource && !opts?.unattended && !onCall,
         userName: botUserName(bot),
-        ...(onCall ? { budget: CALL_RECALL_BUDGET } : {}),
+        ...(onCall ? { budget: CALL_RECALL_BUDGET } : compactPrompt ? { budget: LOCAL_RECALL_BUDGET } : {}),
       });
       runningTurnEngines.set(threadId, instance);
       if (!warmOnly) limitFailover.noteDispatch(threadId, {
