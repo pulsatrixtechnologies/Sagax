@@ -1670,7 +1670,10 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           turn.system,
           turn.text,
           Boolean(turn.mentionTurn),
-          PI_PROMPT_RE_ANCHOR_TURNS,
+          // #1276: on a local model the full prompt goes again
+          // only after a compaction pi reports, not every few turns: a periodic
+          // re-anchor cost a slow turn (12 to 21 s) for a backstop.
+          turn.compactPrompt ? 0 : PI_PROMPT_RE_ANCHOR_TURNS,
           turn.systemVolatileSections,
         );
         message = composed.text;
