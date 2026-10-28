@@ -596,7 +596,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (status >= 400 || body.error) return { text: text || "The change was refused.", isError: true };
     return { text: text || "Done." };
   }
-  // sagax_approvals (server/primary-approvals.ts): the person's cards, at their request
+  // sagax_approvals (server/primary-approvals.ts): the person's cards, from their own message
   if (APPROVALS_TOOL_NAMES.has(name)) {
     if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
     const { status, body } = await apiResponse("/api/internal/approvals", { method: "POST", body: JSON.stringify(args ?? {}) });

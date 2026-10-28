@@ -96,7 +96,7 @@ function profiles(): Record<string, Profile> {
 
 const PROFILES = profiles();
 /** Refused by the server to every bot that is not a Primary Bot. */
-const CHIEF_ONLY_TOOLS = ["create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "archive_bot", "create_room", "manage_room", "retry_thread", "sagax_approvals"];
+const CHIEF_ONLY_TOOLS = ["create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "archive_bot", "create_room", "manage_room", "retry_thread"];
 /** Their for_bot_id, changing another bot, is a Primary Bot's alone. */
 const CHIEF_TARGET_TOOLS = ["propose_profile", "propose_model"];
 const CHIEF_PROFILE_TARGET = " A Primary Bot may pass for_bot_id (from list_bots) for a requested change to any bot of its person.";
@@ -140,6 +140,9 @@ const FULL = { direct: "direct+skills+shared+voice", room: "room+own-thread+skil
 // propose_routine and propose_routine_action, and the tool changes merged
 // since 0.8.3 add more to the non-chief profiles; the baselines out of 2%
 // move to the measured bytes.
+// 2026-10-27: sagax_approvals is offered to every owned bot (750 B, plus the
+// list comma). The six direct non-chief profiles already near the ceiling
+// move to the measured bytes.
 const BUDGET_BASELINE: Record<string, number> = {
   "direct": 84256,
   "direct+voice": 84997,
@@ -167,12 +170,12 @@ const BUDGET_BASELINE: Record<string, number> = {
   "room+own-thread+skills+shared+voice": 87917,
   "direct+non-chief": 74167,
   "direct+voice+non-chief": 74908,
-  "direct+shared+non-chief": 74825,
-  "direct+shared+voice+non-chief": 75566,
-  "direct+skills+non-chief": 75133,
-  "direct+skills+voice+non-chief": 75874,
-  "direct+skills+shared+non-chief": 76878,
-  "direct+skills+shared+voice+non-chief": 77619,
+  "direct+shared+non-chief": 76663,
+  "direct+shared+voice+non-chief": 77404,
+  "direct+skills+non-chief": 76971,
+  "direct+skills+voice+non-chief": 77712,
+  "direct+skills+shared+non-chief": 78716,
+  "direct+skills+shared+voice+non-chief": 79457,
   "room+non-chief": 71631,
   "room+voice+non-chief": 72372,
   "room+shared+non-chief": 73376,

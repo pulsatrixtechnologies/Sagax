@@ -2470,9 +2470,11 @@ describe("with computer sharing off and no Chief of Staff (the defaults)", () =>
   it("shows a bot that is not a Chief none of the Chief-only tools or parameters", async () => {
     type ListedTool = { name: string; description: string; inputSchema: { properties: Record<string, unknown> } };
     const tools = new Map(((await gatedRpc("tools/list")).result.tools as ListedTool[]).map((tool) => [tool.name, tool]));
-    for (const name of ["create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "create_room", "manage_room", "retry_thread", "sagax_approvals"]) {
+    for (const name of ["create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "create_room", "manage_room", "retry_thread"]) {
       expect(tools.has(name), name).toBe(false);
     }
+    // 2026-10-27: any owned bot answers the person's cards from their own message
+    expect(tools.has("sagax_approvals")).toBe(true);
     for (const name of ["propose_profile", "propose_model"]) {
       expect(tools.get(name)!.inputSchema.properties).not.toHaveProperty("for_bot_id");
       expect(tools.get(name)!.description).not.toContain("for_bot_id");
