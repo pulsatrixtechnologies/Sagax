@@ -22,7 +22,7 @@ const now = Date.now();
 const status: DesktopBridgeStatus = {
   connected: true,
   tunnel: false,
-  workplace: { routines: false, network: "all", place: "auto" } as DesktopBridgeStatus["workplace"],
+  workplace: { routines: false, network: "all", place: "computer" },
   activity: [],
   desktops: [
     { id: "d1", name: "MacBook de Julie", platform: "darwin", online: true, busy: false, lastSeenAt: now },

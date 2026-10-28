@@ -41,7 +41,7 @@
     "eval": "node --experimental-strip-types evals/runners/run-evals.ts",
     "dev:desktop": "node scripts/prepare-cloudflared.mjs --current && node scripts/dev-desktop.mjs",
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
-    "typecheck": "tsc -b && tsc -p tsconfig.server.json",
+    "typecheck": "tsc -b && tsc -p tsconfig.server.json && tsc -p tsconfig.gallery.json",
     "test": "vitest run && pnpm test:electron && pnpm test:packaged-server",
     "test:electron": "node --test \"electron/*.node-test.mjs\"",
     "voice:acceptance": "node --experimental-transform-types --import ./scripts/voice-benchmark/register-asset-urls.mjs scripts/voice-benchmark/cli.ts",

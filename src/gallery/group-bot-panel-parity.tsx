@@ -47,8 +47,8 @@ function BotHeader() {
           </div>
           <InlineEditableText value={lead.title} maxLength={60} ariaLabel={t("botPanel.label.edit")} muted className="mt-0.5 text-[12.5px] leading-4" />
           <div className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-0.5">
-            {["details", "library"].map((id, index) => (
-              <span key={id} className={`rounded-md px-1.5 py-1 text-[13px] leading-5 ${index === 0 ? "bg-elevated-hover text-ink" : "text-ink-secondary"}`}>{t(`botPanel.tab.${id}`)}</span>
+            {(["botPanel.tab.details", "botPanel.tab.library"] as const).map((id, index) => (
+              <span key={id} className={`rounded-md px-1.5 py-1 text-[13px] leading-5 ${index === 0 ? "bg-elevated-hover text-ink" : "text-ink-secondary"}`}>{t(id)}</span>
             ))}
           </div>
         </div>
