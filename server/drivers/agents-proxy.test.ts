@@ -530,6 +530,8 @@ beforeAll(async () => {
       // A Chief's turn, so the Chief-only team tools are mounted too.
       SAGAX_CHIEF_OF_STAFF: "1",
       SAGAX_PERSPICAX_TOOLS: "1",
+      // Full catalog. The proxy default is find_tool and use_tool.
+      SAGAX_CATALOG_BRIDGE: "0",
     },
     stdio: ["pipe", "pipe", "inherit"],
   });
@@ -2322,7 +2324,7 @@ describe("standing external runtime", () => {
       env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker",
         SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0",
         SAGAX_EXTERNAL_RUNTIME: "1", SAGAX_ROOM_TURN: "1", SAGAX_OWN_THREAD_CREATION: "1",
-        SAGAX_SKILL_AUTHORING_ENABLED: "1", SAGAX_SHARED_COMPUTERS_ENABLED: "1" },
+        SAGAX_SKILL_AUTHORING_ENABLED: "1", SAGAX_SHARED_COMPUTERS_ENABLED: "1", SAGAX_CATALOG_BRIDGE: "0" },
       stdio: ["pipe", "pipe", "inherit"],
     });
     let buffer = "";
@@ -2426,6 +2428,7 @@ describe("with computer sharing off and no Chief of Staff (the defaults)", () =>
         SAGAX_COMMS_TOKEN: TOKEN,
         SAGAX_TURN_DEPTH: "0",
         SAGAX_SKILL_AUTHORING_ENABLED: "1",
+        SAGAX_CATALOG_BRIDGE: "0",
         // deliberately no SAGAX_SHARED_COMPUTERS_ENABLED or SAGAX_CHIEF_OF_STAFF
       },
       stdio: ["pipe", "pipe", "inherit"],
@@ -2521,6 +2524,7 @@ describe("coordinate_bots arguments (room turn)", () => {
         SAGAX_COMMS_TOKEN: TOKEN,
         SAGAX_TURN_DEPTH: "0",
         SAGAX_ROOM_TURN: "1",
+        SAGAX_CATALOG_BRIDGE: "0",
       },
       stdio: ["pipe", "pipe", "inherit"],
     });
@@ -2694,6 +2698,7 @@ describe("permissions in enforce mode", () => {
     });
 
   beforeAll(async () => {
+    // The bridge stays on. A direct name and use_tool share this guard.
     guarded = spawn(process.execPath, [PROXY], {
       env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker", SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0", SAGAX_MCP_PERMISSIONS: "enforce", SAGAX_MCP_ROLE: "viewer", SAGAX_MCP_PRINCIPAL: "pr_viewer" },
       stdio: ["pipe", "pipe", "inherit"],
@@ -2729,6 +2734,24 @@ describe("permissions in enforce mode", () => {
 
   it("still lets a viewer read", async () => {
     const list = await ask("tools/call", { name: "list_bots", arguments: {} });
+    expect(list.result.content[0].text).not.toMatch(/Permission denied/);
+  });
+
+  it("use_tool of run_routine is the same refusal and the same audit row", async () => {
+    lastRoutineRunBody = null;
+    auditPosts.length = 0;
+    const refused = await ask("tools/call", { name: "use_tool", arguments: { name: "run_routine", arguments: { routine_id: "routine-1" } } });
+    expect(refused.result.isError).toBe(true);
+    expect(refused.result.content[0].text).toMatch(/^Permission denied: routines:run/);
+    expect(lastRoutineRunBody).toBeNull();
+    await vi.waitFor(() => expect(auditPosts).toHaveLength(1));
+    expect(auditPosts[0]).toMatchObject({ principal: "pr_viewer", role: "viewer", tool: "run_routine", decision: "denied", enforced: true });
+    expect(JSON.stringify(auditPosts[0])).not.toContain("routine-1");
+  });
+
+  it("use_tool of list_bots still lets a viewer read", async () => {
+    const list = await ask("tools/call", { name: "use_tool", arguments: { name: "list_bots", arguments: {} } });
+    expect(list.result.isError).toBeFalsy();
     expect(list.result.content[0].text).not.toMatch(/Permission denied/);
   });
 });

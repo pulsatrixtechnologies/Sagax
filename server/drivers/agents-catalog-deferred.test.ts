@@ -1,7 +1,8 @@
 // Rare agents tools wait for tool search on Claude Code (2026-10-19 perf
 // parity): the proxy marks them `_meta["anthropic/alwaysLoad"] = false` only
-// when the Claude driver asks (SAGAX_DEFER_RARE_TOOLS=1). Every other engine
-// gets the catalog exactly as before.
+// when the Claude driver asks (SAGAX_DEFER_RARE_TOOLS=1). The default listing
+// is find_tool and use_tool. This file pins the full catalog
+// (SAGAX_CATALOG_BRIDGE=0), which is what those two tools search.
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +28,7 @@ const ALWAYS_LOADED = [
 ];
 
 async function listTools(env: Record<string, string>): Promise<Array<{ name: string; _meta?: Record<string, unknown> }>> {
-  const child = spawn(process.execPath, [PROXY], { env: { ...childEnv(), SAGAX_HARNESS_URL: "http://127.0.0.1:9", SAGAX_COMMS_TOKEN: "t", ...env }, stdio: ["pipe", "pipe", "inherit"] });
+  const child = spawn(process.execPath, [PROXY], { env: { ...childEnv(), SAGAX_HARNESS_URL: "http://127.0.0.1:9", SAGAX_COMMS_TOKEN: "t", ...env, SAGAX_CATALOG_BRIDGE: "0" }, stdio: ["pipe", "pipe", "inherit"] });
   try {
     const reply = await new Promise<any>((resolve, reject) => {
       let buf = "";

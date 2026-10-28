@@ -30,6 +30,9 @@ import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, permissionMo
 
 const PROFILE = catalogProfileFromEnv(process.env);
 const AVAILABLE_TOOLS = availableTools(PROFILE);
+// On unless SAGAX_CATALOG_BRIDGE=0. The model is shown find_tool and
+// use_tool. use_tool calls the named catalog tool through the same path,
+// checks and approvals as a direct call. No catalog tool is removed.
 // Claude Code only (SAGAX_DEFER_RARE_TOOLS=1): rare tools wait for tool search.
 // #1276, a compact prompt (a local model, SAGAX_COMPACT_TOOLS): the core of a
 // chat turn and the bot's own most used tools are listed whole; every other

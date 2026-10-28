@@ -1,9 +1,10 @@
 // find_tool / use_tool for Sagax's own agents catalog.
 //
-// Off unless SAGAX_CATALOG_BRIDGE=1. With it off, a turn is shown the
-// catalog exactly as before. With it on, the model is shown two tools:
+// On unless SAGAX_CATALOG_BRIDGE=0. The model is shown two tools:
 // find_tool searches the catalog, use_tool calls one result by name.
-// The call still goes through the same checks as a listed tool.
+// Nothing is removed. Every catalog tool stays findable, and the call
+// goes through the same checks and approvals as a listed tool.
+// SAGAX_CATALOG_BRIDGE=0 lists the catalog in full, exactly as before.
 
 export interface CatalogBridgeTool {
   name: string;
@@ -11,7 +12,7 @@ export interface CatalogBridgeTool {
 }
 
 export function catalogBridgeOn(env: Record<string, string | undefined>): boolean {
-  return env.SAGAX_CATALOG_BRIDGE === "1";
+  return env.SAGAX_CATALOG_BRIDGE !== "0";
 }
 
 export function catalogBridgeDefinitions(): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {

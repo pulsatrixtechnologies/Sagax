@@ -256,18 +256,18 @@ describe("a bot's external runtime", () => {
     try {
       await client.rpc("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "fixture", version: "1" } });
       const tools = await client.rpc("tools/list");
-      expect(tools.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
-        "ask_bot", "check_delegation", "delegate_bot", "list_bots", "wait_delegation",
-      ]);
-      const roster = await client.rpc("tools/call", { name: "list_bots", arguments: {} });
+      expect(tools.tools.map((tool: { name: string }) => tool.name)).toEqual(["find_tool", "use_tool"]);
+      const found = JSON.parse((await client.rpc("tools/call", { name: "find_tool", arguments: { query: "list bots" } })).content[0].text) as { matches: Array<{ name: string }> };
+      expect(found.matches.some((match) => match.name === "list_bots")).toBe(true);
+      const roster = await client.rpc("tools/call", { name: "use_tool", arguments: { name: "list_bots", arguments: {} } });
       expect(roster.content[0].text).toContain("MCP teammate");
-      const delegated = await client.rpc("tools/call", { name: "delegate_bot", arguments: { bot_id: peer.id, message: "Bridge acceptance task" } });
+      const delegated = await client.rpc("tools/call", { name: "use_tool", arguments: { name: "delegate_bot", arguments: { bot_id: peer.id, message: "Bridge acceptance task" } } });
       expect(delegated.isError).not.toBe(true);
       const taskId = /Task id: ([\w-]+)\./.exec(delegated.content[0].text)?.[1];
       expect(taskId).toBeTruthy();
       await expect.poll(async () => (await asRuntime("GET", `/api/internal/delegations/${taskId}`)).body.status,
         { timeout: 15_000 }).toBe("done");
-      const receipt = await client.rpc("tools/call", { name: "check_delegation", arguments: { task_id: taskId } });
+      const receipt = await client.rpc("tools/call", { name: "use_tool", arguments: { name: "check_delegation", arguments: { task_id: taskId } } });
       expect(receipt.isError).not.toBe(true);
       expect(receipt.content[0].text).toContain("finished task");
       // The runtime reads its own result; the bot's engine is not woken on

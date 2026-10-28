@@ -1,6 +1,7 @@
 // sagax_help through the real mounted agents MCP of a disposable fixture:
-// the tool is in the catalog, a call reaches /api/internal/self-knowledge
-// with the turn's capability, and the answer names the solo server.
+// the turn is shown find_tool and use_tool, use_tool calls sagax_help on
+// the same path, the call reaches /api/internal/self-knowledge with the
+// turn's capability, and the answer names the solo server.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -39,9 +40,9 @@ it("answers sagax_help from the generated base in a real turn", async () => {
       proxy.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
     });
     await rpc("initialize", { protocolVersion: "2024-11-05" });
-    const listed = (await rpc("tools/list")).result.tools as Array<{ name: string; annotations?: { readOnlyHint?: boolean } }>;
-    expect(listed.find((tool) => tool.name === "sagax_help")?.annotations?.readOnlyHint).toBe(true);
-    const answer = (await rpc("tools/call", { name: "sagax_help", arguments: { question: "Où sont mes routines ?" } })).result;
+    const listed = (await rpc("tools/list")).result.tools as Array<{ name: string }>;
+    expect(listed.map((tool) => tool.name)).toEqual(["find_tool", "use_tool"]);
+    const answer = (await rpc("tools/call", { name: "use_tool", arguments: { name: "sagax_help", arguments: { question: "Où sont mes routines ?" } } })).result;
     expect(answer.isError).toBeFalsy();
     const text = answer.content[0].text as string;
     expect(text).toContain("a person's own Sagax (solo, no organization)");
