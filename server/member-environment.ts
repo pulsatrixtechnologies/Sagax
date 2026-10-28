@@ -183,8 +183,9 @@ function ownLineageTurn(input: Parameters<typeof ownEnvironmentTurnOrigin>[0]): 
   // or a manual run; a webhook, a typed trigger or an unknown source is not
   if ((input.automation || input.unattended) && !ownTrigger) return false;
   if (trigger !== undefined && !ownTrigger) return false;
-  // a routine lineage is the person's only on the routine's own turn
-  if (input.routineLineage && input.speaker.origin !== "owner-routine") return false;
+  // 2026-10-27 (#1098): a hop between the person's own bots from their own
+  // routine is theirs too; ownerLineageOrigin checks the trigger the hop
+  // carries (schedule or manual only)
   return ownerLineageOrigin({
     speaker: input.speaker,
     ownerPrincipalId: owner,

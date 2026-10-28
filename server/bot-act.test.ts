@@ -60,14 +60,14 @@ describe("bot act", () => {
     expect(performed).toEqual([{ actor: { kind: "person", sessionId: "wide", personKey: person, scopes: ["client"] }, method: "GET", path: "/api/bots" }]);
   });
 
-  it("2026-10-20: a change to rules or permissions has no Always allow, a plain one keeps its own", async () => {
+  it("#1098: a change to rules or permissions offers Always allow too; only an explicit noRule offers none", async () => {
     const { service, cards } = harness();
     const base = { facts: facts(), target: { kind: "route" as const, method: "PATCH", path: "/api/bots/b2" }, threadId: "t", botId: "b", botName: "Ada", botColor: "green" };
     const rule = { tool: "sagax_settings" as const, scope: { setting: "bot.title" }, description: "Title" };
     await service.handlePlanned({ ...base, plan: { effect: "hold", summary: "a", stepUpClasses: ["rule-change"], rule } });
     await service.handlePlanned({ ...base, plan: { effect: "hold", summary: "b", stepUpClasses: [], rule, noRule: true } });
     await service.handlePlanned({ ...base, plan: { effect: "hold", summary: "c", stepUpClasses: [], rule } });
-    expect(cards.map((card) => Boolean(card.rule))).toEqual([false, false, true]);
+    expect(cards.map((card) => Boolean(card.rule))).toEqual([true, false, true]);
   });
 
   it("holds a write until the answering session allows it, and a deny does not perform", async () => {

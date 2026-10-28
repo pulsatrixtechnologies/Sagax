@@ -117,7 +117,7 @@ import { withCommandVariables } from "./credential-command-env.ts";
 
 import { createRoomTurnLevels } from "./room-turn-level.ts";
 import { HELD_NOTE, approvalHeldNote, approvalHeldReason, approvalModeForOrigin, autoVerdict, deliverFullAccessApproval, delegatedApprovalMode } from "./auto-approve.ts";
-import { CommandAllowlistStore, commandAllowlistCandidate } from "./command-allowlist.ts";
+import { CommandAllowlistStore, commandAllowlistCandidate, sandboxCommandCandidate } from "./command-allowlist.ts";
 import type { CommandAllowlistCandidate, CommandAllowlistResponse } from "../shared/command-allowlist.ts";
 import { updateClaudeCli } from "./claude-update.ts";
 import { configuredAccountDirectory, assertSeparateClaudeAccount, claudeAccountInfo, createClaudeAccountSchema, instanceSettingsSchema, newClaudeAccount } from "./claude-accounts.ts";
@@ -203,7 +203,7 @@ import { resumeOpening, resumeRefusal, subagentRequest } from "./subagent-thread
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
 import { boatCreateRecoverySnapshot, retireDeletedBoatCreate } from "./boat-create-idempotency.ts";
 import { boatDeletionSnapshot } from "./boat-delete-journal.ts";
-import { liveCardKind, liveDecisionRefusal } from "../shared/live-approval.ts";
+import { liveCardKind, liveDecisionRefusal, liveProposal } from "../shared/live-approval.ts";
 import {
   boatAccountResourceChangeError,
   cloudBackendChangeError,
@@ -736,7 +736,7 @@ import { bindThreadLogCapProvider } from "./thread-log-rotation.ts";
 import { listenWebhookIngress, triggerSourceSetup, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
 import { assertModelVariantSupported, memberTurnSelection } from "./member-turn.ts";
 import { WebhookManager } from "./webhooks.ts";
-import { orgServerExecRouting, webhookExecTargetAdminOnly, workplaceIsBotComputer } from "./exec-target.ts";
+import { cardStandingGrants, orgServerExecRouting, webhookExecTargetAdminOnly, workplaceIsBotComputer } from "./exec-target.ts";
 import { GraphSubscriptions, graphConnectorOptions, type GraphTokenSource } from "./graph-subscriptions.ts";
 import { TriggerPollers } from "./trigger-pollers.ts";
 import { pollerCredentialInputSchema, TriggerPollerCredentials } from "./trigger-poller-credentials.ts";
@@ -1217,7 +1217,7 @@ import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachm
 import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
 import { runPermissionModeMigration } from "./approval-level-migration.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
-import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant } from "./org-full-access.ts";
+import { newConversationFullAllowed, ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
@@ -12504,7 +12504,11 @@ const unansweredApprovals = new UnansweredApprovals();
 const pendingCommandRules = new Map<string, { botId: string; candidate: CommandAllowlistCandidate }>();
 
 function commandRememberRefusal(auth: RequestAuth, threadId: string, requestId: string, behavior: string): string | null {
-  if (!canManageCommandAllowlist(auth)) return COMMAND_ALLOWLIST_ADD_REFUSAL;
+  // 2026-10-27 (#1098): a command in the person's own sandbox is saved by
+  // whoever answers its card (approvalAnswerRefusal ran first: the owner);
+  // on the shared host it stays an admin's or a host.shell holder's.
+  const sandboxCard = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId)?.card?.ownSandbox === true;
+  if (!cardStandingGrants({ memberOwned: true, ownSandbox: sandboxCard, callerManagesHostCommands: canManageCommandAllowlist(auth) }).ownerSavesCommand) return COMMAND_ALLOWLIST_ADD_REFUSAL;
   if (behavior !== "allow" || !pendingCommandRules.has(`${threadId}:${requestId}`)) {
     return "This live request does not contain a command that can be saved. Allow it once instead.";
   }
@@ -12529,14 +12533,9 @@ async function answerRequest(
 ): Promise<RequestOutcome> {
   // A member's bot on an organization server takes no session allow (the
   // engine's own suggestion could reach past the bot) and no entry in the
-  // installation's saved command list. Its Always allow is an owner rule
+  // installation's saved command list (below, after the card is read). Its Always allow is an owner rule
   // for this bot (saveOwnerRuleFromCard, 2026-10-21: the program on an
   // admin's card), which the bot's owner or an admin may remove.
-  const decidingBot = decidedFor ? store.bot(decidedFor.id) : undefined;
-  if (decidingBot && memberOwnedInOrg(decidingBot)) {
-    always = false;
-    rememberCommand = false;
-  }
   // Snapshot the card BEFORE delivering the answer: a delivered answer
   // resolves the request synchronously through the fold, which consumes
   // the askMessageByRequest entry — by the time the await returns, nobody
@@ -12549,6 +12548,14 @@ async function answerRequest(
     ? thread.find((m) => m.id === cardMessageId)
     : thread.find((m) => m.card?.requestId === requestId);
   const card = cardMessage?.card;
+  // 2026-10-27 (#1098): except for a command in the person's own sandbox
+  // (`ownSandbox` on the card), which is theirs: there the session allow
+  // and the saved command are offered to the owner like on a solo bot.
+  const decidingBot = decidedFor ? store.bot(decidedFor.id) : undefined;
+  if (decidingBot && !cardStandingGrants({ memberOwned: memberOwnedInOrg(decidingBot), ownSandbox: card?.ownSandbox === true, callerManagesHostCommands: false }).offered) {
+    always = false;
+    rememberCommand = false;
+  }
   const remembered = rememberCommand ? pendingCommandRules.get(`${threadId}:${requestId}`) : undefined;
   // Cloud routing and a model change can differ from the bot's current
   // settings. The live turn owns this question, just as it owns Stop/steer.
@@ -12682,6 +12689,13 @@ async function respondToCard(input: {
   if (refused) return { ok: false, status: 409, error: refused };
   let result: CardRespondResult = { ok: true };
   await answeringCardAs(auth, threadId, requestId, async () => {
+    // 2026-10-27 (#1098): a proposal (routine, profile, default model, team
+    // setup, a meeting) decided by voice goes to its own resolver, as the
+    // screen's /respond route sends it (a key it needs was asked above)
+    if (card && liveProposal(card) && behavior !== "answer") {
+      result = await resolveLiveProposal(auth, bot, threadId, requestId, behavior);
+      return;
+    }
     // peer-approval intercept, as the route: only a card on this thread
     if (card && resolvePeerComms(approvalBus, requestId, behavior)) return;
     if (card?.terminalRequest) {
@@ -12725,6 +12739,44 @@ async function respondToCard(input: {
     }
   }, "call");
   return result;
+}
+
+/** A reply captured from a resolver that writes to a response, for a path
+ * with no HTTP response of its own (a Live call). */
+function capturedReply(): { res: ServerResponse; reply: () => { status: number; body: Record<string, unknown> } | null } {
+  let status = 0;
+  let text = "";
+  const res = {
+    req: { method: "POST", headers: {} },
+    writeHead(code: number) { status = code; return res; },
+    setHeader() { return res; },
+    getHeader() { return undefined; },
+    hasHeader() { return false; },
+    end(data?: unknown) { text = typeof data === "string" ? data : Buffer.isBuffer(data) ? data.toString("utf8") : ""; return res; },
+  } as unknown as ServerResponse;
+  return {
+    res,
+    reply: () => {
+      if (!status) return null;
+      try { return { status, body: JSON.parse(text) as Record<string, unknown> }; } catch { return { status, body: {} }; }
+    },
+  };
+}
+
+/** 2026-10-27 (#1098): settle a proposal card decided by voice through the
+ * same resolvers as the screen's answer (POST /api/bots/:id/respond). */
+async function resolveLiveProposal(auth: RequestAuth, bot: BotRecord, threadId: string, requestId: string, behavior: "allow" | "deny"): Promise<CardRespondResult> {
+  const { res, reply } = capturedReply();
+  const args = { botId: bot.id, botName: bot.name, threadId, requestId, behavior };
+  const handled = await resolveAndSendTeamSetup(res, args, teamSetupApplyRefusal(auth, { headers: {} } as IncomingMessage))
+    || resolveAndSendRoutine(res, { ...args, ...routineActor(auth) }, auth.kind === "session" && cloudOwnerSession(auth), routineKeyReveal(auth))
+    || resolveAndSendProfile(res, args)
+    || resolveAndSendModel(res, args)
+    || await resolveAndSendMeeting(res, auth, threadId, requestId, behavior);
+  const answered = reply();
+  if (!handled || !answered) return { ok: false, status: 409, error: "The request is no longer open." };
+  if (answered.status >= 400) return { ok: false, status: answered.status, error: typeof answered.body.error === "string" ? answered.body.error : "The request is no longer open." };
+  return { ok: true };
 }
 
 /** Close every provider-owned approval still open on a thread. Interrupting a
@@ -15246,6 +15298,14 @@ bus.subscribe((event: RuntimeEvent) => {
       // Local VM) on someone else's bot, while the organization allows it;
       // never their mode, and never on their real computer.
       const speakerEnvironmentRules = Boolean(destinationAnswerer && ownEnvironmentTool(event.mcpTool ?? event.tool) && memberEnvironmentAutonomyAllowed(cfg.organization));
+      // 2026-10-27 (#1098): a call in the person's own sandbox (their cloud
+      // computer or Local VM, mounted for this turn, never a guest's turn or
+      // someone else's place): its standing grants (session allow, saved
+      // command, Always allow key) are the person's own on a member's bot
+      // too, and the organization's "Toujours permettre" switch does not
+      // take their Allow rules away there. The shared host keeps its rule.
+      const ownSandboxCall = Boolean(permission && asker && event.requestId && !guestDriven && !foreignDestination && (ownEnvironment || speakerEnvironmentRules));
+      const grantsOffered = cardStandingGrants({ memberOwned: memberAsker, ownSandbox: ownSandboxCall, callerManagesHostCommands: false }).offered;
 
       // 2026-10-19 (prod 0.5.27, #810 follow-up): computer_select only picks
       // among the places this turn mounted for the person it is for (their
@@ -15356,7 +15416,10 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       const command = permission && asker && event.requestId && !event.requiresExplicitApproval && event.command && !strictCard && !guestDriven
         ? commandAllowlistCandidate({ ...event.command, providerInstanceId: event.providerInstanceId ?? asker.modelSelection.instanceId })
-        : null;
+        // #1098: a command in the person's own sandbox can be saved too
+        : permission && asker && event.requestId && !event.requiresExplicitApproval && ownSandboxCall && !strictCard
+          ? sandboxCommandCandidate(event.mcpTool ?? event.tool, event.input, event.providerInstanceId ?? asker.modelSelection.instanceId)
+          : null;
       // a Sagax gate card can be remembered as an Allow rule for this exact tool
       const gateAllowKey = permission && event.sagaxGate && event.mcpTool ? mcpAllowKey(event.mcpTool) : undefined;
       // 2026-10-16: the person's custom rules, in their own words
@@ -15378,7 +15441,7 @@ bus.subscribe((event: RuntimeEvent) => {
         }
         : null;
       const customReview = customCall && asker
-        ? reviewCustomRules(customRules.rulesOf(cardAnswerer, asker.id), customCall, asker.id)
+        ? reviewCustomRules(customRules.rulesOf(cardAnswerer, asker.id, { ownSandbox: ownSandboxCall }), customCall, asker.id)
         : null;
       const customDecision = customReview?.decision.kind === "allow"
         && (strictCard || guestDriven || safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true)
@@ -15451,6 +15514,7 @@ bus.subscribe((event: RuntimeEvent) => {
             })
             : selfAnswerStepUp,
           ruleChange: toolChangesRules(event.mcpTool ?? event.tool),
+          ownSandbox: ownSandboxCall,
         })
         : null;
       // 2026-10-14 (bot owner permissions): what the owner decided ahead of
@@ -15483,7 +15547,7 @@ bus.subscribe((event: RuntimeEvent) => {
         : undefined;
       const offeredApp = screenApp && appRuleOffered(screenApp) ? screenApp : undefined;
       const ownerCall = ownerLayer && asker
-        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(ruleInput !== undefined ? { input: ruleInput } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}), ...(offeredApp ? { app: offeredApp } : {}) }
+        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(ruleInput !== undefined ? { input: ruleInput } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}), ...(offeredApp ? { app: offeredApp } : {}), ...(ownSandboxCall ? { ownSandbox: true } : {}) }
         : null;
       // 2026-10-17 (re-review of #690): the owner's permission mode (auto,
       // bypass) and Always allow rules never answer what Sagax itself would
@@ -15756,18 +15820,20 @@ bus.subscribe((event: RuntimeEvent) => {
             ? { version: 1, questions, ...(event.origin === "output" ? { origin: "output" as const } : {}) }
             : undefined,
           commandAllowlist: command ?? undefined,
-          ...(gateAllowKey && !strictCard && !memberAsker && !guestDriven && !gateGrantBlocked ? { allowKey: gateAllowKey } : {}),
+          ...(gateAllowKey && !strictCard && grantsOffered && !guestDriven && !gateGrantBlocked ? { allowKey: gateAllowKey } : {}),
           // Provider-owned session grants remain separate from exact commands.
           // a member's bot is approved one action at a time: a session rule
-          // (Claude's own suggestion) could reach past its workspace. Never on
+          // (Claude's own suggestion) could reach past its workspace, except
+          // in the person's own sandbox (grantsOffered, #1098). Never on
           // a guest's turn either: an "always" for it would outlive it.
           // Review of #943: never on an outward call (a send, an engine
           // connector's write): each one is approved on its own card.
-          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && !memberAsker && !guestDriven && !destinationAnswerer && !foreignDestination && safetyEffect?.kind !== "hold"
+          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && grantsOffered && !guestDriven && !destinationAnswerer && !foreignDestination && safetyEffect?.kind !== "hold"
             && event.outbound !== true && !isOutboundTool(event.mcpTool ?? event.tool) ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
           ...(destinationAnswerer ? { destinationAnswerer } : {}),
           ...(serverCommandHolder ? { serverCommandHolder: true } : {}),
+          ...(ownSandboxCall ? { ownSandbox: true } : {}),
           // who will answer it, for the member's waiting line
           ...(adminApproval && orgAdminNames().length ? { adminNames: orgAdminNames() } : {}),
           // The text stays for cards saved before heldCode existed, and for
@@ -45302,7 +45368,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // answerer checks below still refuse anyone else's bot, and an
       // organization that turned standing grants off keeps them off.
       if (pending.card?.adminApproval) return json(res, 403, ADMIN_APPROVAL_REQUIRED);
-      if (memberOwnedInOrg(bot) && !standingGrantsAllowed()) {
+      // #1098: never in the person's own sandbox, where the grant is theirs
+      if (memberOwnedInOrg(bot) && !standingGrantsAllowed({ ownSandbox: pending.card?.ownSandbox === true })) {
         return json(res, 409, { error: "Your organization requires an approval each time, so this cannot be always allowed.", code: "standing_grants_off" });
       }
       // A standing grant is an approval: the same people who may approve
@@ -47659,8 +47726,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 400, { error: "new task approvalMode must be ask or full" });
       }
       if (body.approvalMode === "full") {
-        if (memberOwnedInOrg(bot)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
-        if (auth.kind !== "loopback" || !sharedWorkspaceFullAccessEnabled()) {
+        // 2026-10-27 (#1098): the bot's owner who already confirmed Full
+        // access for this bot opens a new conversation on Full, from any of
+        // their apps: on an organization server the signed-in owner holding
+        // that confirmation, on a solo server the operator (this computer or
+        // one of their admin devices) once the desktop app confirmed it.
+        const ownerConfirmedFull = (IDENTITY.kind !== "perspicax" || (!callerBotsReadOnly(auth) && orgFullAccessRefusalFor(auth, bot, false) === null))
+          && newConversationFullAllowed({
+            identity: IDENTITY.kind,
+            callerPrincipalId: sessionPrincipal(auth),
+            ownerPrincipalId: effectiveBotOwner(bot),
+            soloOwner: (auth.kind === "loopback" && auth.trust !== "service") || (auth.kind === "session" && auth.scopes.includes("admin")),
+            localPrincipalId: localPrincipalId().trim().toLowerCase(),
+            consent: bot.fullAccessConsent,
+          });
+        if (!ownerConfirmedFull && memberOwnedInOrg(bot)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
+        if (!ownerConfirmedFull && (auth.kind !== "loopback" || !sharedWorkspaceFullAccessEnabled())) {
           return json(res, 403, { error: "New Full tasks require the operator's dedicated shared-workspace policy" });
         }
         if (bot.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });

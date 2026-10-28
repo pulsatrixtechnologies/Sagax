@@ -7,17 +7,26 @@ import type { OptionCardData } from "./wire.ts";
 export type LiveCardKind = "approval" | "review" | "question";
 
 /** "approval": a provider or peer ask the voice may decide by voice, with
- * the two options of every call: allow once, or deny.
- * "review": a harness-native proposal (skill, routine, profile, default
- * model, team setup, a meeting to join) that must be reviewed on screen.
+ * the two options of every call: allow once, or deny. 2026-10-27 (#1098):
+ * a harness-native proposal (routine, profile, default model, team setup, a
+ * meeting to join) too: the spoken answer goes to that proposal, and a card
+ * the person protects with a security key is still answered on screen
+ * (respondToCard asks the step-up gate first).
+ * "review": a skill to enable or update, whose whole content is reviewed on
+ * screen (its Allow carries the digest of what the person read).
  * "question": a provider question. An expired proposal is settled: nothing
  * can answer it any more. */
 export function liveCardKind(card: OptionCardData | undefined): LiveCardKind | null {
   if (!card?.requestId || card.answered || card.dismissed || card.expired) return null;
-  if (card.skillRequest || card.routineRequest || card.profileRequest || card.modelRequest || card.teamSetupRequest || card.meetingRequest) {
-    return "review";
-  }
+  if (card.skillRequest) return "review";
+  if (liveProposal(card)) return "approval";
   return card.tool ? "approval" : "question";
+}
+
+/** A harness-native proposal decided by voice (#1098): its own resolver
+ * settles it, never the engine's request. */
+export function liveProposal(card: OptionCardData | undefined): boolean {
+  return Boolean(card && (card.routineRequest || card.profileRequest || card.modelRequest || card.teamSetupRequest || card.meetingRequest));
 }
 
 /** Why a decision made on a Live call must not reach this card, or null to
@@ -94,6 +103,8 @@ function brief(text: string, limit = DETAIL_LIMIT): string {
 // separate "backend" (seen in the first test calls).
 
 export function spokenApprovalPrompt(card: OptionCardData): string {
+  // a proposal is named by its own title, never as a tool call
+  if (liveProposal(card)) return `I need your decision: ${brief(card.title || "a proposal", 200)}. Allow once, or deny?`;
   const detail = brief(card.subtitle);
   return `I want to ${toolPhrase(card.tool)}.${detail ? ` ${detail}.` : ""} Allow once, or deny?`;
 }

@@ -1050,6 +1050,12 @@ export interface OptionCardData {
    * host.commands, answered by that owner by hand; the right is checked
    * again when the card is answered. */
   serverCommandHolder?: boolean;
+  /** 2026-10-27 (#1098): the call runs in the bot owner's own isolated
+   * environment (their sandbox: their cloud computer, their Local VM),
+   * mounted for this turn. Its standing grants (session allow, saved
+   * command, Always allow) are the person's own, whatever the
+   * organization's "Toujours permettre" switch says. */
+  ownSandbox?: boolean;
   /** 2026-10-19 (PR 3): the person whose own destination (cloud computer,
    * Local VM, own computer) this call acts on, when that is not the bot's
    * owner: the speaker in their own conversation with a shared bot. They

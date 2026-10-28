@@ -52,6 +52,21 @@ export function commandAllowlistCandidate(value: unknown): CommandAllowlistCandi
   try { return validateCommandAllowlistCandidate(value); } catch { return null; }
 }
 
+/** 2026-10-27 (#1098): the saved-command scope of a command the bot runs in
+ * its owner's own sandbox (the server environment's run_command, mounted for
+ * this turn): the exact command line, the sandbox's working folder, and the
+ * engine marked with the environment, so a command saved there never answers
+ * a shell line of the same text anywhere else (the host's native shell, the
+ * person's own computer). Null for any other tool or unreadable arguments. */
+export const SANDBOX_COMMAND_SUFFIX = "@sagax-environment";
+export function sandboxCommandCandidate(tool: string | undefined, input: unknown, providerInstanceId: string): CommandAllowlistCandidate | null {
+  if (!/^(?:mcp__)?sagax-environment__run_command$/.test((tool ?? "").trim())) return null;
+  let args: unknown;
+  try { args = typeof input === "string" ? JSON.parse(input) : input; } catch { return null; }
+  if (!record(args) || typeof args.command !== "string") return null;
+  return commandAllowlistCandidate({ command: args.command, cwd: "/workspace", providerInstanceId: `${providerInstanceId}${SANDBOX_COMMAND_SUFFIX}` });
+}
+
 function validateBotId(botId: string): void {
   if (typeof botId !== "string" || !BOT_ID.test(botId)) throw invalid("A valid bot id is required.");
 }

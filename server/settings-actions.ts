@@ -455,7 +455,9 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     // 2026-10-19 ("Toujours permettre" on every card): what Always allow
     // keeps: this setting of this target, and its exact value when the
     // change is more than a simple one
-    const exactValue = classes.some((name) => name !== "own");
+    // 2026-10-27 (#1098): a change to rules or permissions is always bound
+    // to its exact value
+    const exactValue = classes.some((name) => name !== "own") || spec.family === "rules";
     const rule: ActRuleCandidate = {
       tool: "sagax_settings",
       scope: { setting: spec.key, ...(ids.target ? { target: ids.target } : {}), ...(exactValue ? { value: valueDigest(value) } : {}) },
@@ -469,8 +471,9 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         summary,
         stepUpClasses,
         rule,
-        // 2026-10-20 (security review): rules and permissions keep their card
-        ...(classes.includes("rule-change") || spec.family === "rules" ? { noRule: true } : {}),
+        // 2026-10-27 (#1098): rules and permissions keep their card at every
+        // level (decideSettingEffect), and offer Always allow for this exact
+        // value like any other change
         // 2026-10-20: the person's own request, so the route takes the
         // change as theirs (a level of a bot that is working included)
         ...(asked === true && typeof proof === "object" && proof.primary ? { primary: proof.primary } : {}),

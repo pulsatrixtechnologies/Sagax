@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { orgServerExecRouting, webhookExecTargetAdminOnly, workplaceIsBotComputer } from "./exec-target.ts";
+import { cardStandingGrants, orgServerExecRouting, webhookExecTargetAdminOnly, workplaceIsBotComputer } from "./exec-target.ts";
 
 describe("orgServerExecRouting", () => {
   it("defaults a non-admin's command to the bot's own computer when it has one", () => {
@@ -42,5 +42,14 @@ describe("webhookExecTargetAdminOnly", () => {
   it("requires admin only for a target on the shared organization server", () => {
     expect(webhookExecTargetAdminOnly("server")).toBe(true);
     expect(webhookExecTargetAdminOnly("org-server")).toBe(true);
+  });
+});
+
+describe("standing grants of a card (#1098)", () => {
+  it("opens the session allow, the saved command and the key to the owner in their own sandbox, keeps the shared host's rule", () => {
+    expect(cardStandingGrants({ memberOwned: true, ownSandbox: true, callerManagesHostCommands: false })).toEqual({ offered: true, ownerSavesCommand: true });
+    expect(cardStandingGrants({ memberOwned: true, ownSandbox: false, callerManagesHostCommands: false })).toEqual({ offered: false, ownerSavesCommand: false });
+    expect(cardStandingGrants({ memberOwned: true, ownSandbox: false, callerManagesHostCommands: true }).ownerSavesCommand).toBe(true);
+    expect(cardStandingGrants({ memberOwned: false, ownSandbox: false, callerManagesHostCommands: false }).offered).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import {
   fullAccessConsentedBy,
   orgFullAccessAllowed,
   orgFullAccessGrandfathered,
+  newConversationFullAllowed,
   orgFullAccessGrantRefusal,
   orgFullAccessHolds,
   orgNewBotApprovalMode,
@@ -36,14 +37,14 @@ describe("organization Full access policy", () => {
 });
 
 describe("the level a new bot starts on in an organization (2026-10-11)", () => {
-  it("is Approve for me only when the policy says so, else Ask", () => {
+  it("is Approve for me as on a solo server, Ask only when the organization chose Ask (#1098)", () => {
     expect(orgNewBotApprovalMode("auto")).toBe("auto");
     expect(orgNewBotApprovalMode("ask")).toBe("ask");
-    expect(orgNewBotApprovalMode(undefined)).toBe("ask");
-    expect(orgNewBotApprovalMode(null)).toBe("ask");
-    expect(orgNewBotApprovalMode("full")).toBe("ask");
-    expect(orgNewBotApprovalMode("custom")).toBe("ask");
-    expect(orgNewBotApprovalMode("edits")).toBe("ask");
+    expect(orgNewBotApprovalMode(undefined)).toBe("auto");
+    expect(orgNewBotApprovalMode(null)).toBe("auto");
+    expect(orgNewBotApprovalMode("full")).toBe("auto");
+    expect(orgNewBotApprovalMode("custom")).toBe("auto");
+    expect(orgNewBotApprovalMode("edits")).toBe("auto");
   });
 });
 
@@ -92,5 +93,21 @@ describe("organization Full access grants", () => {
     expect(threadFollowsFullGrant({ threadId: "talk", knownThread: false, threadBusy: false })).toBeNull();
     expect(threadFollowsFullGrant({ threadId: "talk", knownThread: true, threadBusy: true })).toBeNull();
     expect(threadFollowsFullGrant({ knownThread: true, threadBusy: false })).toBeNull();
+  });
+});
+
+describe("a new conversation on Full access (#1098)", () => {
+  const base = { callerPrincipalId: "alice", ownerPrincipalId: "alice", soloOwner: false, localPrincipalId: "local", consent };
+  it("opens for the organization owner who already confirmed Full for this bot", () => {
+    expect(newConversationFullAllowed({ ...base, identity: "perspicax" })).toBe(true);
+    expect(newConversationFullAllowed({ ...base, identity: "perspicax", consent: undefined })).toBe(false);
+    expect(newConversationFullAllowed({ ...base, identity: "perspicax", callerPrincipalId: "bob" })).toBe(false);
+    expect(newConversationFullAllowed({ ...base, identity: "perspicax", callerPrincipalId: null })).toBe(false);
+  });
+  it("opens on a solo server from any of the operator's apps once the desktop confirmed it", () => {
+    const solo = { ...base, identity: "solo" as const, consent: { principalId: "local", at: 1 } };
+    expect(newConversationFullAllowed({ ...solo, soloOwner: true })).toBe(true);
+    expect(newConversationFullAllowed({ ...solo, soloOwner: false })).toBe(false);
+    expect(newConversationFullAllowed({ ...solo, soloOwner: true, consent: undefined })).toBe(false);
   });
 });

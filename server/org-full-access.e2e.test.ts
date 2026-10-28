@@ -138,8 +138,9 @@ posixOnly("organization Full access", () => {
     erinId = (await api("GET", "/api/auth/session", erin)).body.principalId;
     const created = await api("POST", "/api/bots", erin, { name: "Zed" });
     expect(created.status, created.text).toBe(201);
-    // 2026-10-11: no policy saved, so a new bot of the organization starts on Ask
-    expect(created.body.bot.approvalMode).toBe("ask");
+    // #1098: no policy saved, so a new bot of the organization starts on
+    // Approve for me, as on a solo server
+    expect(created.body.bot.approvalMode).toBe("auto");
     const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, erin, { modelSelection: { instanceId: "claude", model: "fake-model" } });
     expect(patched.status, patched.text).toBe(200);
     zed = { id: created.body.bot.id, threadId: created.body.bot.threadId };

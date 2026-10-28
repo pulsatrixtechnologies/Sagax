@@ -127,6 +127,24 @@ describe("Always allow off in the deciders", () => {
     expect(ruleCoversExactScope(rule("allow"), "cw__get_ticket", {})).toBe(true);
   });
 
+  it("#1098: never in the person's own sandbox, where their Allow rules keep answering and saving", () => {
+    const store = new CustomRuleStore(storeFile());
+    store.setOrgAlwaysAllow(false);
+    expect(standingGrantsAllowed()).toBe(false);
+    expect(standingGrantsAllowed({ ownSandbox: true })).toBe(true);
+    const sandbox = { ownSandbox: true };
+    expect(autoVerdict("ask", "mcp__sagax-environment__run_command", { commandAllowed: true, ...sandbox }).source).toBe("command-allowlist");
+    expect(autoVerdict("ask", "mcp__sagax-environment__run_command", { sagaxGate: true, ruleAllowed: true, ...sandbox }).approve).not.toBeNull();
+    const rule: OwnerRule = { id: "r_allow", ownerId: "bob", botId: null, tool: "sagax-environment__run_command", scope: {}, behavior: "allow", description: "", createdAt: 0, updatedAt: 0 };
+    const call = { ownerId: "bob", botId: "bot-b", tool: "mcp__sagax-environment__run_command", input: "{}" };
+    expect(matchOwnerRule([rule], call)).toBeUndefined();
+    expect(matchOwnerRule([rule], { ...call, ownSandbox: true })?.behavior).toBe("allow");
+    const base = { keys: { required: () => [] } as never, person: "bob", threadId: "t", requestId: "r", behavior: "allow", risks: [], stepUp: undefined };
+    const card = { title: "Approval needed", subtitle: "npm test", options: ["Allow", "Deny"], requestId: "r", tool: "mcp__sagax-environment__run_command" };
+    expect(approvalStepUp({ ...base, card, answer: { always: true } })).toMatchObject({ body: { code: "org_always_allow_off" } });
+    expect(approvalStepUp({ ...base, card: { ...card, ownSandbox: true }, answer: { always: true } })).toBeNull();
+  });
+
   it("an organization Refuse rule refuses even an approved email draft", () => {
     expect(autoVerdict("ask", "send_email", { emailDraftApproved: true, customRule: { behavior: "deny", id: "orule_1" } }).source).toBe("custom-rule-deny");
     expect(autoVerdict("ask", "send_email", { emailDraftApproved: true, customRule: { behavior: "deny", id: "crule_1" } }).source).toBe("email-draft-approval");

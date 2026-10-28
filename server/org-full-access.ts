@@ -82,14 +82,15 @@ export function orgFullAccessGrandfathered(
     (bot.approvalMode === "full" || (bot.tasks ?? []).some((task) => task.approvalMode === "full")));
 }
 
-/** 2026-10-11: the approval level a new bot starts on, on an organization
- * server. The policy is `defaults.approvalMode` (the console's New bot
- * default, `newBotDefaults.profile.approvalMode`): Approve for me when it
- * says so, otherwise Ask, also when no policy was ever saved. Full and
- * Custom need the owner's own confirmation for that bot, which a bot that
- * does not exist yet cannot have, so they start on Ask too. */
+/** The approval level a new bot starts on, on an organization server.
+ * 2026-10-27 (#1098): Approve for me, as on a solo server, the person's
+ * bot working in the person's own environment. Only an explicit Ask the
+ * organization chose as its New bot default (`defaults.approvalMode`,
+ * `newBotDefaults.profile.approvalMode`) starts on Ask. Full and Custom need
+ * the owner's own confirmation for that bot, which a bot that does not exist
+ * yet cannot have, so they start on Approve for me. */
 export function orgNewBotApprovalMode(policy: unknown): "ask" | "auto" {
-  return policy === "auto" ? "auto" : "ask";
+  return policy === "ask" ? "ask" : "auto";
 }
 
 export function parseFullAccessConsent(value: unknown): FullAccessConsent | null {
@@ -120,6 +121,30 @@ export function orgFullAccessGrantRefusal(input: {
   if (!caller || caller !== input.ownerPrincipalId.trim().toLowerCase()) return FULL_ACCESS_OWNER_ONLY;
   if (!input.confirmed && !fullAccessConsentedBy(input.consent, caller)) return FULL_ACCESS_CONFIRM_REQUIRED;
   return null;
+}
+
+/** 2026-10-27 (#1098): whether a new conversation may open on Full access
+ * for this bot: its owner, who already confirmed Full access for this bot
+ * (`fullAccessConsent`), asks, from any of their apps. On an organization
+ * server the signed-in owner (orgFullAccessGrantRefusal with no new
+ * confirmation); on a solo server the operator (`soloOwner`: this computer
+ * or one of their admin devices), once the desktop app confirmed it for this
+ * bot. Anyone else, or a bot never confirmed, keeps the old answer. */
+export function newConversationFullAllowed(input: {
+  identity: "solo" | "perspicax";
+  /** Organization: the signed-in person asking, null for anyone else. */
+  callerPrincipalId: string | null;
+  ownerPrincipalId: string;
+  /** Solo: the caller is the operator (loopback, or an admin session). */
+  soloOwner: boolean;
+  /** Solo: the operator's own principal, who confirms in the desktop app. */
+  localPrincipalId: string;
+  consent: unknown;
+}): boolean {
+  if (input.identity === "perspicax") {
+    return orgFullAccessGrantRefusal({ policyAllowed: true, callerPrincipalId: input.callerPrincipalId, ownerPrincipalId: input.ownerPrincipalId, confirmed: false, consent: input.consent }) === null;
+  }
+  return input.soloOwner && fullAccessConsentedBy(input.consent, input.localPrincipalId);
 }
 
 /** Whether a stored Full runs as Full for one turn on an organization

@@ -56,3 +56,18 @@ const BOT_OWN_RUN_TARGETS: ReadonlySet<string> = new Set(["", "maus", "cloud"]);
 export function webhookExecTargetAdminOnly(runOn: string | undefined): boolean {
   return !BOT_OWN_RUN_TARGETS.has((runOn ?? "").trim().toLowerCase());
 }
+
+/** 2026-10-27 (#1098): whether a card offers its standing grants (the
+ * engine's session allow, the saved command list, an Always allow key) and
+ * who saves a command from it. A member's bot on an organization server gets
+ * them only for a call in the person's own sandbox (their cloud computer or
+ * Local VM, mounted for this turn), where the owner answers and saves; on the
+ * shared host they stay an admin's or a host.shell holder's
+ * (`callerManagesHostCommands`). Any other bot keeps them as before. */
+export function cardStandingGrants(input: { memberOwned: boolean; ownSandbox: boolean; callerManagesHostCommands: boolean }): { offered: boolean; ownerSavesCommand: boolean } {
+  return {
+    offered: !input.memberOwned || input.ownSandbox,
+    ownerSavesCommand: input.ownSandbox || input.callerManagesHostCommands,
+  };
+}
+

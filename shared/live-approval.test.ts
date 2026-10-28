@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LIVE_COPY, liveCardKind, liveStepLabel, liveDecisionRefusal, spokenApprovalPrompt, spokenQuestionPrompt, spokenReviewPrompt, toolPhrase } from "./live-approval.ts";
+import { LIVE_COPY, liveCardKind, liveProposal, liveStepLabel, liveDecisionRefusal, spokenApprovalPrompt, spokenQuestionPrompt, spokenReviewPrompt, toolPhrase } from "./live-approval.ts";
 import type { OptionCardData } from "./wire.ts";
 
 const card = (extra: Partial<OptionCardData>): OptionCardData => ({ title: "Approval needed", subtitle: "rm -rf build", options: ["Allow", "Deny"], ...extra });
@@ -9,15 +9,19 @@ describe("liveCardKind", () => {
   it("classifies open provider approvals, harness reviews and questions", () => {
     expect(liveCardKind(card({ requestId: "r1", tool: "Bash" }))).toBe("approval");
     expect(liveCardKind(card({ requestId: "r1", tool: "stage_skill", skillRequest: { action: "create" } as OptionCardData["skillRequest"] }))).toBe("review");
-    expect(liveCardKind(card({ requestId: "r1", tool: "schedule_routine", routineRequest: {} as OptionCardData["routineRequest"] }))).toBe("review");
+    // #1098: a proposal is decided by voice, through its own resolver
+    expect(liveCardKind(card({ requestId: "r1", tool: "schedule_routine", routineRequest: {} as OptionCardData["routineRequest"] }))).toBe("approval");
     expect(liveCardKind(card({ requestId: "r1" }))).toBe("question");
   });
-  it("sends a default-model proposal to the screen, though it names a tool", () => {
-    // propose_model cards carry update_model; a spoken yes must never reach
-    // them as an approval
-    expect(liveCardKind(card({ requestId: "r1", tool: "update_model", modelRequest: {} as OptionCardData["modelRequest"] }))).toBe("review");
-    expect(liveDecisionRefusal(card({ requestId: "r1", tool: "update_model", modelRequest: {} as OptionCardData["modelRequest"] })))
-      .toBe("This request is reviewed on screen.");
+  it("decides a proposal by voice, named by its title, never as the tool it names (#1098)", () => {
+    // propose_model cards carry update_model: the spoken yes goes to the
+    // proposal's own resolver (liveProposal), never to the engine
+    const model = card({ requestId: "r1", title: "Use Sonnet by default", tool: "update_model", modelRequest: {} as OptionCardData["modelRequest"] });
+    expect(liveCardKind(model)).toBe("approval");
+    expect(liveProposal(model)).toBe(true);
+    expect(liveDecisionRefusal(model)).toBeNull();
+    expect(spokenApprovalPrompt(model)).toBe("I need your decision: Use Sonnet by default. Allow once, or deny?");
+    expect(liveProposal(card({ requestId: "r1", tool: "Bash" }))).toBe(false);
   });
   it("ignores settled cards and cards without a request", () => {
     expect(liveCardKind(card({ requestId: "r1", tool: "Bash", answered: "allow" }))).toBeNull();
