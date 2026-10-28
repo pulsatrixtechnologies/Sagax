@@ -2,11 +2,9 @@
 // marketplaces (server/plugin-marketplaces.ts).
 //
 //   GET    /api/marketplaces                              { marketplaces }
-//   POST   /api/marketplaces { source, ref?, token? }      add or fetch again
+//   POST   /api/marketplaces { source, ref?, credential?, visibility? }  add or fetch again
 //   POST   /api/marketplaces/:name/refresh
 //   DELETE /api/marketplaces/:name                         (no plugin installed)
-//   PUT    /api/marketplaces/:name/token { token }         the installation's token
-//   DELETE /api/marketplaces/:name/token
 //   PUT    /api/marketplaces/:name/credential { credential: id | null }   pick one of the list, or Automatic
 //   POST   /api/marketplaces/:name/plugins/:plugin         install: MCP servers + skills
 //   POST   /api/marketplaces/:name/plugins/:plugin/update  update them in place
@@ -16,12 +14,11 @@
 // organization server the clone and the install happen on that server for
 // its administrators, and on a personal server for its owner.
 //
-// The installation's token per marketplace (`workspace`, kept by
-// server/marketplace-tokens.ts under the `workspace` key) lets a private
-// GitHub marketplace work for everyone: an admin only (`mayManageTokens`),
-// audited (`marketplace.token_set`, `marketplace.token_remove`), never sent
-// back (`hasToken` only). Reads use it first, then the acting person's
-// GitHub connection, then the organization's tokens.
+// A private marketplace reads with the credential the installation picks
+// for it (the one list, Connect apps > My accounts > GitHub), else the
+// acting person's GitHub connection, then their other credentials and the
+// organization's. The pick is audited (`marketplace.credential`) and never
+// carries a token (`hasToken` only says there is one).
 import type { IncomingMessage } from "node:http";
 
 import { MarketplaceError, type MarketplaceView, type MarketplaceViewer, type MarketplaceVisibility, type PluginMarketplaces } from "../plugin-marketplaces.ts";
@@ -48,28 +45,18 @@ export interface MarketplaceRouteDeps {
     Promise<{ status: number; body: Record<string, unknown> }>;
   /** One admin activity row for a plugin updated (written on success). */
   audit: (auth: RequestAuth, row: { action: string; target: { kind: string; id: string; name: string }; before?: Record<string, unknown>; after?: Record<string, unknown> }) => void;
-  /** The installation's token per marketplace (server/bot-plugins.ts). */
+  /** The installation's pick per marketplace (server/bot-plugins.ts). */
   workspace?: {
-    addWorkspaceMarketplace(input: { source: string; ref?: string; token?: string; credential?: string; visibility?: MarketplaceVisibility }, actor: string | undefined): Promise<MarketplaceView>;
+    addWorkspaceMarketplace(input: { source: string; ref?: string; credential?: string; visibility?: MarketplaceVisibility }, actor: string | undefined): Promise<MarketplaceView>;
     refreshWorkspaceMarketplace(name: string, actor: string | undefined): Promise<unknown>;
-    setWorkspaceMarketplaceToken(name: string, token: string | null, actor: string | undefined): void;
     /** pick a credential of the one list for everyone, or (null) Automatic */
     chooseWorkspaceMarketplaceCredential?(name: string, credential: string | null, actor: string | undefined): void;
     workspaceCredential?(source: string, viewer: string | undefined): MarketplaceCredentialView | undefined;
     removeWorkspaceMarketplace(name: string): Promise<void>;
     workspaceTokenSources(): Set<string>;
   };
-  /** Who may save or remove the installation's token: an admin only. */
-  mayManageTokens?: (auth: RequestAuth) => boolean;
 }
 
-const TOKEN = /^[\x21-\x7e]{8,4096}$/;
-/** undefined: none sent; null: not a token. */
-function tokenField(value: unknown): string | null | undefined {
-  if (value === undefined || value === null || value === "") return undefined;
-  if (typeof value !== "string" || !TOKEN.test(value.trim())) return null;
-  return value.trim();
-}
 /** undefined: none sent (defaults to private in the store); null: invalid. */
 function visibilityField(value: unknown): MarketplaceVisibility | null | undefined {
   if (value === undefined || value === null || value === "") return undefined;
@@ -77,7 +64,7 @@ function visibilityField(value: unknown): MarketplaceVisibility | null | undefin
 }
 
 const NAME = "[A-Za-z0-9][A-Za-z0-9._-]{0,63}";
-const MARKET = new RegExp(`^/api/marketplaces/(${NAME})(?:/(refresh|token|visibility|credential))?$`);
+const MARKET = new RegExp(`^/api/marketplaces/(${NAME})(?:/(refresh|visibility|credential))?$`);
 const CREDENTIAL = /^gt_[0-9a-f]{16}$/;
 const PLUGIN = new RegExp(`^/api/marketplaces/(${NAME})/plugins/(${NAME})$`);
 const UPDATE = new RegExp(`^/api/marketplaces/(${NAME})/plugins/(${NAME})/update$`);
@@ -121,9 +108,6 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandle
         const source = typeof body?.source === "string" ? body.source.trim() : "";
         const ref = typeof body?.ref === "string" && body.ref.trim() ? body.ref.trim() : undefined;
         if (!source || source.length > 500) return json(res, 400, { error: "Enter owner/repo, an https git address or the address of a marketplace.json." });
-        const token = tokenField(body?.token);
-        if (token === null) return json(res, 400, { error: "The token must be one line of printable characters.", code: "invalid_token" });
-        if (token && (!deps.workspace || !deps.mayManageTokens?.(auth))) return json(res, 403, { error: "Only an admin can save a marketplace token for everyone.", code: "marketplace_token_admin_only" });
         const visibility = visibilityField(body?.visibility);
         if (visibility === null) return json(res, 400, { error: "visibility must be \"private\" or \"org\".", code: "invalid_visibility" });
         if (visibility === "org" && deps.mayShareOrgWide && !deps.mayShareOrgWide(auth)) {
@@ -135,9 +119,8 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandle
         }
         const actor = deps.actor(auth);
         const added: MarketplaceView = deps.workspace
-          ? await deps.workspace.addWorkspaceMarketplace({ source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), ...(credential ? { credential } : {}), ...(visibility ? { visibility } : {}) }, actor)
+          ? await deps.workspace.addWorkspaceMarketplace({ source, ...(ref ? { ref } : {}), ...(credential ? { credential } : {}), ...(visibility ? { visibility } : {}) }, actor)
           : await deps.store.add({ source, ...(ref ? { ref } : {}) }, actor, { viewer, ...(visibility ? { visibility } : {}) });
-        if (token) deps.audit(auth, { action: "marketplace.token_set", target: { kind: "marketplace", id: added.name, name: added.name }, after: { scope: "workspace", source: added.source } });
         const marketplaces = views();
         return json(res, 201, { marketplace: marketplaces.find((market) => market.name === added.name) ?? added, marketplaces });
       }
@@ -215,25 +198,6 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandle
           }
           deps.workspace.chooseWorkspaceMarketplaceCredential(name!, sent, deps.actor(auth));
           deps.audit(auth, { action: "marketplace.credential", target: { kind: "marketplace", id: name!, name: name! }, after: { scope: "workspace", credential: sent ?? "automatic" } });
-          return list();
-        }
-        if (action === "token") {
-          if (!deps.workspace) return json(res, 404, { error: "not found" });
-          if (!deps.mayManageTokens?.(auth)) return json(res, 403, { error: "Only an admin can change a marketplace token for everyone.", code: "marketplace_token_admin_only" });
-          if (method !== "PUT" && method !== "DELETE") return json(res, 405, { error: "PUT or DELETE" });
-          let token: string | null = null;
-          if (method === "PUT") {
-            const body = await readBody(req) as Record<string, unknown> | null;
-            const sent = tokenField(body?.token);
-            if (!sent) return json(res, 400, { error: "send { token }: one line of printable characters", code: "invalid_token" });
-            token = sent;
-          }
-          deps.workspace.setWorkspaceMarketplaceToken(name!, token, deps.actor(auth));
-          deps.audit(auth, {
-            action: token ? "marketplace.token_set" : "marketplace.token_remove",
-            target: { kind: "marketplace", id: name!, name: name! },
-            ...(token ? { after: { scope: "workspace" } } : { before: { scope: "workspace" } }),
-          });
           return list();
         }
         if (!action && method === "DELETE") {

@@ -3,14 +3,12 @@
 //
 //   GET    /api/bots/:id/plugins
 //          { marketplaces: [MarketplaceListing], plugins: [InstalledBotPlugin], policy, engine }
-//   POST   /api/bots/:id/plugins/marketplaces { source, ref?, token? }  add (or refresh) one, for everyone's list;
-//          a token is tried first and saved (encrypted) for this bot once the clone works
+//   POST   /api/bots/:id/plugins/marketplaces { source, ref?, credential?, visibility? }  add (or refresh) one,
+//          for everyone's list; a credential of the one list is tried first and picked once the clone works
 //   POST   /api/bots/:id/plugins/marketplaces/:name/update
-//   PUT    /api/bots/:id/plugins/marketplaces/:name/token { token }   save or replace this bot's token
-//   DELETE /api/bots/:id/plugins/marketplaces/:name/token             forget it
 //   PUT    /api/bots/:id/plugins/marketplaces/:name/credential { credential: id | null }
 //          pick a credential of the one list (the caller's own or the organization's), or Automatic
-//   DELETE /api/bots/:id/plugins/marketplaces/:name                  this bot's plugins from it (and its token); the
+//   DELETE /api/bots/:id/plugins/marketplaces/:name                  this bot's plugins from it (and its pick); the
 //          marketplace too when the caller may remove it (an admin, or who added it) and nothing uses it
 //   POST   /api/bots/:id/plugins/install { marketplace, plugin }     install or update
 //   PATCH  /api/bots/:id/plugins/:key { enabled }
@@ -55,15 +53,7 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   changed?: (bot: B, action: string, detail: Record<string, unknown>, auth: RequestAuth) => void;
 }
 
-const ROUTE = /^\/api\/bots\/([\w-]+)\/plugins(?:\/(marketplaces|install)(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\/(update|token|credential))?)?|\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63})(\/config)?)?$/;
-const TOKEN = /^[\x21-\x7e]{8,4096}$/;
-
-function tokenField(value: unknown): string | null | undefined {
-  if (value === undefined || value === null || value === "") return undefined;
-  if (typeof value !== "string" || !TOKEN.test(value.trim())) return null;
-  return value.trim();
-}
-
+const ROUTE = /^\/api\/bots\/([\w-]+)\/plugins(?:\/(marketplaces|install)(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\/(update|credential))?)?|\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63})(\/config)?)?$/;
 const CREDENTIAL = /^gt_[0-9a-f]{16}$/;
 /** undefined: none sent; null: not a credential id. */
 function credentialField(value: unknown): string | null | undefined {
@@ -115,15 +105,13 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
         const source = typeof body?.source === "string" ? body.source : "";
         const ref = typeof body?.ref === "string" && body.ref.trim() ? body.ref.trim() : undefined;
         if (!source.trim() || source.length > 500) return json(res, 400, { error: "send { source: owner/repo or an https git URL }", code: "invalid_source" });
-        const token = tokenField(body?.token);
-        if (token === null) return json(res, 400, { error: "The token must be one line of printable characters.", code: "invalid_token" });
         const visibility = body?.visibility === "private" || body?.visibility === "org" ? body.visibility as MarketplaceVisibility : undefined;
         if (visibility === "org" && deps.mayShareOrgWide && !deps.mayShareOrgWide(auth)) {
           return json(res, 403, { error: "Only an administrator can share a marketplace with the whole organization.", code: "marketplace_org_admin_only" });
         }
         const credential = credentialField(body?.credential);
         if (credential === null) return json(res, 400, { error: "credential must be the id of one of your credentials.", code: "invalid_credential" });
-        const added = await deps.plugins.addMarketplace(bot.id, { source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), ...(credential ? { credential } : {}), ...(visibility ? { visibility } : {}) }, actor);
+        const added = await deps.plugins.addMarketplace(bot.id, { source, ...(ref ? { ref } : {}), ...(credential ? { credential } : {}), ...(visibility ? { visibility } : {}) }, actor);
         deps.changed?.(bot, "plugin.marketplace_add", { marketplace: added.name, source: added.source }, auth);
         return json(res, 201, { marketplace: added, ...listing() });
       }
@@ -139,19 +127,6 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
         }
         const market = deps.plugins.chooseMarketplaceCredential(bot.id, name, credential, actor);
         deps.changed?.(bot, "plugin.marketplace_credential", { marketplace: name, credential: credential ?? "automatic" }, auth);
-        return json(res, 200, { marketplace: market, ...listing() });
-      }
-      if (section === "marketplaces" && name && update === "token") {
-        if (method === "DELETE") {
-          const market = deps.plugins.setMarketplaceToken(bot.id, name, null, actor);
-          deps.changed?.(bot, "plugin.marketplace_token_remove", { marketplace: name }, auth);
-          return json(res, 200, { marketplace: market, ...listing() });
-        }
-        if (method !== "PUT") return json(res, 405, { error: "PUT or DELETE" });
-        const token = tokenField(body?.token);
-        if (!token) return json(res, 400, { error: "send { token }: one line of printable characters", code: "invalid_token" });
-        const market = deps.plugins.setMarketplaceToken(bot.id, name, token, actor);
-        deps.changed?.(bot, "plugin.marketplace_token_set", { marketplace: name }, auth);
         return json(res, 200, { marketplace: market, ...listing() });
       }
       if (section === "marketplaces" && name) {

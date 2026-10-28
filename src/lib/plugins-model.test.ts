@@ -215,3 +215,20 @@ describe("a marketplace plugin's mark (2026-10-28)", () => {
     expect(items.find((item) => item.id === "plain@kit")?.domain).toBeUndefined();
   });
 });
+
+describe("the GitHub plugin's server reads the person's GitHub account (2026-10-28)", () => {
+  const server = (github?: "connected" | "missing") => ({
+    name: "github-github", enabled: true, url: "https://api.githubcopilot.com/mcp/", auth: "none", source: "claude-plugins-official",
+    ...(github ? { github } : {}),
+  });
+
+  it("is connected only when the account is, whatever its own sign-in state says", () => {
+    const missing = buildPluginItems({ servers: [server("missing")] }).find((item) => item.key === "mcp:github-github");
+    expect(missing).toMatchObject({ status: "needs_auth", githubAccount: "missing" });
+    const connected = buildPluginItems({ servers: [{ ...server("connected"), auth: "error" }] }).find((item) => item.key === "mcp:github-github");
+    expect(connected).toMatchObject({ status: "connected", githubAccount: "connected" });
+    // any other server keeps its own state
+    expect(buildPluginItems({ servers: [server()] }).find((item) => item.key === "mcp:github-github")).toMatchObject({ status: "connected" });
+    expect(buildPluginItems({ servers: [server()] }).find((item) => item.key === "mcp:github-github")?.githubAccount).toBeUndefined();
+  });
+});

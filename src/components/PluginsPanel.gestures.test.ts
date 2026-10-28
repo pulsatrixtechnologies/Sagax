@@ -178,7 +178,7 @@ describe("Connect Apps, driven like the owner did", () => {
     await open();
     await click($('[data-plugins-tab="accounts"]'));
     const pills = [...host.querySelectorAll("[data-accounts-service-pill]")].map((pill) => pill.textContent);
-    expect(pills.slice(0, 3)).toEqual(["All", "Claude", "Grok"]);
+    expect(pills.slice(0, 4)).toEqual(["All", "GitHub", "Claude", "Grok"]);
     expect([...host.querySelectorAll("[data-harness-group]")].map((group) => group.getAttribute("data-harness-group"))).toEqual(["claude", "grok"]);
     expect($('[data-harness-group="claude"]')?.textContent).toContain("Connectors of your Claude account");
     expect($('[data-harness-notice="not_signed_in"]')?.textContent).toContain("not signed in to Claude");
@@ -193,5 +193,30 @@ describe("Connect Apps, driven like the owner did", () => {
     expect($('[data-harness-connector="claude:Gmail"]')).not.toBeNull();
     expect($('[data-harness-connector="claude:Canva"] [data-harness-status="needs_auth"]')).not.toBeNull();
     expect($('[data-harness-group="claude"] [data-harness-notice]')).toBeNull();
+  });
+
+  it("GitHub lives in My accounts: Sources lists marketplaces only, and the GitHub plugin's page leads to the account it reads", async () => {
+    const servers = (API["/api/mcp/servers"] as { servers: Array<Record<string, unknown>> }).servers;
+    const plugin = servers.find((server) => server.name === "github-github")!;
+    plugin.github = "missing";
+    try {
+      await open();
+      await click($('[data-plugins-tab="sources"]'));
+      expect($("[data-plugins-marketplaces]")).not.toBeNull();
+      expect($("[data-accounts-github]")).toBeNull();
+      expect($("[data-github-credentials]")).toBeNull();
+      expect($('[data-plugins-manage="sources"]')?.textContent).not.toContain("Your GitHub account");
+      await click($('[data-plugins-tab="installed"]'));
+      const row = [...host.querySelectorAll<HTMLElement>("[data-installed-entry] button[aria-label]")].find((button) => button.textContent?.includes("GitHub"))!;
+      await click(row);
+      expect($('[data-plugin-github-account="missing"]')?.textContent).toContain("It uses your GitHub account, which is not connected yet.");
+      await click($('[data-plugin-github-account] button'));
+      expect(tabs()).toEqual(["discover", "installed", "accounts*", "sources"]);
+      expect($('[data-accounts-service-pill="github"]')?.getAttribute("aria-pressed")).toBe("true");
+      expect($("[data-accounts-github]")).not.toBeNull();
+      expect($("[data-harness-group]")).toBeNull();
+    } finally {
+      delete plugin.github;
+    }
   });
 });

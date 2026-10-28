@@ -10,6 +10,7 @@
 // saved off (the person turns it on again), its sign-ins are forgotten, the
 // bots that listed the old name list the new one and drop their account
 // choice for it. Admin scope (server/request-auth.ts: not a client path).
+import type { RequestAuth } from "../request-auth.ts";
 import { renameReservedMcpServer, type StoredMcpServer } from "../mcp-registry.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -29,12 +30,13 @@ export interface McpServerRenameDeps {
   renameInBots: (from: string, to: string) => void;
   /** After the save (a remote server is asked whether it wants a sign-in). */
   afterRename: (to: string, server: StoredMcpServer) => Promise<void>;
-  response: () => unknown;
+  /** The listing, as the person who asked sees it. */
+  response: (auth: RequestAuth) => unknown;
   log?: (line: string) => void;
 }
 
 export function createMcpServerRenameRoutes(deps: McpServerRenameDeps): RouteHandler {
-  return async ({ req, res, path, method, json, readBody }) => {
+  return async ({ req, res, path, method, auth, json, readBody }) => {
     const match = RENAME_PATH.exec(path);
     if (!match) return PASS;
     if (method !== "POST") return json(res, 405, { error: "method not allowed" });
@@ -58,7 +60,7 @@ export function createMcpServerRenameRoutes(deps: McpServerRenameDeps): RouteHan
       deps.renameInBots(from, name);
       (deps.log ?? console.log)(`MCP server ${JSON.stringify(from)} renamed to ${JSON.stringify(name)} (reserved name); saved off until turned on`);
       await deps.afterRename(name, renamed.server).catch(() => undefined);
-      return json(res, 200, { ...(deps.response() as object), renamed: { from, to: name } });
+      return json(res, 200, { ...(deps.response(auth) as object), renamed: { from, to: name } });
     } finally {
       deps.release();
     }

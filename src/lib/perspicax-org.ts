@@ -8,7 +8,6 @@ import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { personAvatarSrc } from "@/lib/profile-management";
 import { PERSON_AVATAR_EVENT } from "@/lib/person-avatars";
-import type { OrgGithubTokenPublic } from "../../shared/org-github-tokens";
 import { personLabel } from "@/lib/human-label";
 import { setAttachmentHostShared } from "@/lib/composer-attachments";
 
@@ -40,10 +39,6 @@ export interface PerspicaxOrg {
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     /** The organization's GitHub OAuth App for "Connecter GitHub". */
     github?: { clientId: string | null; fromEnvironment: boolean };
-    /** Admin only: labeled GitHub access tokens. Labels and hints, never the token. */
-    githubTokens?: OrgGithubTokenPublic[];
-    /** Admin only: the encrypted list could not be read. Nothing was cleared. */
-    githubTokensUnavailable?: boolean;
   };
 }
 

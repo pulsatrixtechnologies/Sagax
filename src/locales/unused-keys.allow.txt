@@ -607,7 +607,6 @@ planUsage.notSignedIn
 planUsage.subtitle
 planUsage.title
 planUsage.tryAgain
-plugins.tokenSaved
 pro.disclaimer
 pro.fromPrice
 pro.launchPriceLabel

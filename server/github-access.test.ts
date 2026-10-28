@@ -14,7 +14,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { githubAccessFailure, githubSkillFetch, probeGithubRepo, type GithubCredential } from "./github-access.ts";
 import { BotPluginError, BotPlugins, type GitRunner } from "./bot-plugins.ts";
 import { botPluginsWithMarketplaces } from "./testing/plugin-stores.ts";
-import { MarketplaceTokens, WORKSPACE_TOKEN_KEY } from "./marketplace-tokens.ts";
+import { WORKSPACE_TOKEN_KEY } from "./marketplace-tokens.ts";
+import { GithubCredentials } from "./github-credentials.ts";
 import { fetchSkillFromSource } from "./skill-fetch.ts";
 import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
@@ -152,6 +153,29 @@ function vaultKey() {
   return () => ({ kind: "key" as const, key });
 }
 
+/** The one list of credentials (server/github-credentials.ts), wired the
+ * way server/index.ts gives it to BotPlugins; pr_a and pr_admin may pick
+ * their own. */
+function credentialList(dataDir: string) {
+  const list = new GithubCredentials(dataDir, vaultKey());
+  const tokens = {
+    get: (scope: string, source: string) => list.get(scope, source),
+    chosen: (scope: string, source: string) => list.chosenSecret(scope, source),
+    choose: (scope: string, source: string, id: string | null) => list.choose(scope, source, id),
+    usable: (id: string, actor: string | undefined) => (list.ownerOf(id) === actor ? { id, label: "", token: list.tokenFor(id)! } : undefined),
+    noteUsed: (scope: string, source: string, used: { via: "person" | "credential" | "none"; credential?: string; login?: string }) => list.noteUsed(scope, source, used),
+    describe: (scope: string, source: string, viewer: string | undefined) => list.describe(scope, source, viewer ?? ""),
+    remove: (scope: string, source: string) => list.unpick(scope, source),
+    sourcesFor: (scope: string) => list.sourcesFor(scope),
+    forgetBot: (scope: string) => list.forgetScope(scope),
+  };
+  const add = (owner: string, token: string) => {
+    list.change(owner, { op: "add", label: `Credential ${list.list(owner, { org: false }).length + 1}`, token });
+    return list.list(owner, { org: false }).at(-1)!.id;
+  };
+  return { list, tokens, add };
+}
+
 async function plugins(options: { person?: string } = {}) {
   const github = await fakeGithub();
   const dataDir = temp();
@@ -165,30 +189,31 @@ async function plugins(options: { person?: string } = {}) {
     if (token !== "good-token-123") throw new BotPluginError("The git host did not let Sagax read this repository.", "repository_unreadable", 422, "connect_or_token");
     cpSync(repo, args[args.indexOf("--") + 2]!, { recursive: true });
   };
-  const tokens = new MarketplaceTokens(dataDir, vaultKey());
+  const { list, tokens, add } = credentialList(dataDir);
   const store = botPluginsWithMarketplaces({
     dataDir, git, gitEnvironment: () => ({}), tokens, policy: () => undefined,
     credentials: () => (options.person ? [{ token: options.person, via: "person" as const }] : []),
     probe: (repoName, credentials) => probeGithubRepo(repoName, credentials, { env: env(github.origin) }),
   });
-  return { store, tokens, runs, dataDir, github };
+  return { store, tokens, list, add, runs, dataDir, github };
 }
 
 describe("a bot's private marketplace", () => {
-  it("names the cause without a token, then adds with one, keeps it encrypted, and never puts it on the argv", async () => {
-    const { store, tokens, runs, dataDir } = await plugins();
+  it("names the cause without a credential, then adds with a picked one, keeps it encrypted, and never puts it on the argv", async () => {
+    const { store, tokens, add, runs, dataDir } = await plugins();
     await expect(store.addMarketplace("bot-1", { source: "acme/private" }, "pr_a")).rejects.toMatchObject({ code: "private_needs_token", fix: "connect_or_token", status: 422 });
     expect(runs).toHaveLength(0);
-    await expect(store.addMarketplace("bot-1", { source: "acme/private", token: "bad" }, "pr_a")).rejects.toMatchObject({ code: "bad_token" });
+    await expect(store.addMarketplace("bot-1", { source: "acme/private", credential: add("pr_a", "wrong-credential") }, "pr_a")).rejects.toMatchObject({ code: "not_found_or_no_access" });
     expect(tokens.sourcesFor("bot-1").size).toBe(0);
-    const added = await store.addMarketplace("bot-1", { source: "https://github.com/acme/private", token: "good-token-123" }, "pr_a");
+    const good = add("pr_a", "good-token-123");
+    const added = await store.addMarketplace("bot-1", { source: "https://github.com/acme/private", credential: good }, "pr_a");
     expect(added).toMatchObject({ name: "acme-private", source: "acme/private", hasToken: true });
     expect(runs.at(-1)!.args.join(" ")).not.toContain("good-token-123");
     expect(runs.at(-1)!.env).toMatchObject({ GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_TERMINAL_PROMPT: "0" });
     // at rest: encrypted, never in the one marketplace list's state
-    expect(readFileSync(join(dataDir, "marketplace-tokens.enc"), "utf8")).not.toContain("good-token-123");
+    expect(readFileSync(join(dataDir, "github-credentials.enc"), "utf8")).not.toContain("good-token-123");
     expect(readFileSync(join(dataDir, "marketplaces", "state.json"), "utf8")).not.toContain("good-token-123");
-    // Update reads with the saved token; another bot has none
+    // Update reads with the pick; another bot has none
     await store.updateMarketplace("bot-1", "acme-private", undefined);
     expect(tokens.get("bot-2", "acme/private")).toBeUndefined();
     await store.install("bot-1", { marketplace: "acme-private", plugin: "reviewer" }, undefined);
@@ -197,14 +222,14 @@ describe("a bot's private marketplace", () => {
     expect(tokens.sourcesFor("bot-1").size).toBe(0);
   });
 
-  it("reads with the person's GitHub connection when there is no marketplace token", async () => {
+  it("reads with the person's GitHub connection by default, with no pick", async () => {
     const { store, tokens } = await plugins({ person: "good-token-123" });
-    expect(await store.addMarketplace("bot-1", { source: "acme/private" }, "pr_a")).toMatchObject({ hasToken: false });
+    expect(await store.addMarketplace("bot-1", { source: "acme/private" }, "pr_a")).toMatchObject({ hasToken: false, credential: { used: { via: "person" } } });
     expect(tokens.sourcesFor("bot-1").size).toBe(0);
   });
 
-  it("the routes take a token on add, set and remove it, and answer the cause with its fix", async () => {
-    const { store } = await plugins();
+  it("the routes add with a picked credential, refuse a token field, and answer the cause with its fix", async () => {
+    const { store, add } = await plugins();
     const owner: RequestAuth = { kind: "session", via: "cookie", scopes: ["client"], session: { id: "s", principalId: "pr_a", label: "a", scopes: ["client"], createdAt: 0, expiresAt: 0, lastUsedAt: 0 } as never };
     const routes = [createBotPluginRoutes<{ id: string }>({
       plugins: store, bot: (id) => (id === "bot-1" ? { id } : undefined), mayRead: () => true, mayChange: () => true,
@@ -223,14 +248,16 @@ describe("a bot's private marketplace", () => {
     };
     const refused = await call("POST", "/marketplaces", { source: "acme/private" });
     expect(refused).toMatchObject({ status: 422, body: { code: "private_needs_token", fix: "connect_or_token" } });
-    expect(refused.body.error).toContain("Connect your GitHub account");
-    expect((await call("POST", "/marketplaces", { source: "acme/private", token: "no spaces allowed" })).body.code).toBe("invalid_token");
-    const added = await call("POST", "/marketplaces", { source: "acme/private", token: "good-token-123" });
+    expect(refused.body.error).toContain("Connect your GitHub account in Connect apps > My accounts > GitHub");
+    // a token sent here is not kept: the one list is the only place for one
+    expect((await call("POST", "/marketplaces", { source: "acme/private", token: "good-token-123" })).status).toBe(422);
+    const added = await call("POST", "/marketplaces", { source: "acme/private", credential: add("pr_a", "good-token-123") });
     expect(added.status).toBe(201);
     expect(JSON.stringify(added.body)).not.toContain("good-token-123");
     expect(added.body.marketplaces[0]).toMatchObject({ name: "acme-private", hasToken: true });
-    expect((await call("DELETE", "/marketplaces/acme-private/token")).body.marketplaces[0].hasToken).toBe(false);
-    expect((await call("PUT", "/marketplaces/acme-private/token", { token: "good-token-123" })).body.marketplaces[0].hasToken).toBe(true);
+    // the former token routes are gone
+    expect((await call("PUT", "/marketplaces/acme-private/token", { token: "good-token-123" })).status).toBe(404);
+    expect((await call("PUT", "/marketplaces/acme-private/credential", { credential: null })).body.marketplaces[0].hasToken).toBe(false);
   });
 });
 
@@ -247,7 +274,7 @@ describe("the installation's private marketplace (Connect apps, Everyone)", () =
       if (token !== "good-token-123") throw new BotPluginError("The git host did not let Sagax read this repository.", "repository_unreadable", 422, "connect_or_token");
       cpSync(repo, args[args.indexOf("--") + 2]!, { recursive: true });
     };
-    const tokens = new MarketplaceTokens(dataDir, vaultKey());
+    const { tokens, add } = credentialList(dataDir);
     const marketplaces = new PluginMarketplaces({ dataDir, git, gitEnvironment: () => ({}), policy: () => undefined, inUse: () => [] });
     const store = new BotPlugins({
       dataDir, git, marketplaces, gitEnvironment: () => ({}), tokens, policy: () => undefined, credentials: () => [],
@@ -261,7 +288,6 @@ describe("the installation's private marketplace (Connect apps, Everyone)", () =
       install: async () => ({ status: 200, body: {} }), uninstall: async () => ({ status: 200, body: {} }), update: async () => ({ status: 200, body: {} }),
       audit: (_auth, row) => { audits.push(row); },
       workspace: store,
-      mayManageTokens: (caller) => caller.kind === "loopback" && caller.trust !== "service",
     })];
     let caller: RequestAuth = ADMIN;
     const server = createServer(async (req, res) => {
@@ -276,43 +302,40 @@ describe("the installation's private marketplace (Connect apps, Everyone)", () =
       const response = await fetch(`${base}${path}`, { method, headers: { "content-type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
       return { status: response.status, body: await response.json() as Record<string, any> };
     };
-    return { store, tokens, audits, runs, dataDir, call, ADMIN, MANAGER };
+    return { store, tokens, add, audits, runs, dataDir, call, ADMIN, MANAGER };
   }
 
-  it("an admin adds it with a token kept for everyone, never sent back, and audited", async () => {
-    const { tokens, audits, runs, dataDir, call, ADMIN, MANAGER } = await workspace();
-    expect(await call(ADMIN, "POST", "", { source: "acme/private" })).toMatchObject({ status: 422, body: { code: "private_needs_token" } });
-    // a manager who is not an admin may not keep a token for everyone
-    expect(await call(MANAGER, "POST", "", { source: "acme/private", token: "good-token-123" })).toMatchObject({ status: 403, body: { code: "marketplace_token_admin_only" } });
+  it("a manager adds it with a picked credential for everyone, never sent back, and audited", async () => {
+    const { tokens, add, audits, runs, dataDir, call, MANAGER } = await workspace();
+    expect(await call(MANAGER, "POST", "", { source: "acme/private" })).toMatchObject({ status: 422, body: { code: "private_needs_token" } });
+    // a token field is not kept: nothing is picked
+    expect(await call(MANAGER, "POST", "", { source: "acme/private", token: "good-token-123" })).toMatchObject({ status: 422 });
     expect(tokens.sourcesFor(WORKSPACE_TOKEN_KEY).size).toBe(0);
-    const added = await call(ADMIN, "POST", "", { source: "acme/private", token: "good-token-123" });
+    const credential = add("pr_admin", "good-token-123");
+    const added = await call(MANAGER, "POST", "", { source: "acme/private", credential });
     expect(added.status).toBe(201);
     expect(JSON.stringify(added.body)).not.toContain("good-token-123");
     expect(added.body.marketplace).toMatchObject({ name: "acme-private", hasToken: true });
     expect(runs.at(-1)!.args.join(" ")).not.toContain("good-token-123");
-    expect(readFileSync(join(dataDir, "marketplace-tokens.enc"), "utf8")).not.toContain("good-token-123");
+    expect(readFileSync(join(dataDir, "github-credentials.enc"), "utf8")).not.toContain("good-token-123");
     expect(tokens.get(WORKSPACE_TOKEN_KEY, "acme/private")).toBe("good-token-123");
-    expect(audits.at(-1)).toEqual({ action: "marketplace.token_set", target: { kind: "marketplace", id: "acme-private", name: "acme-private" }, after: { scope: "workspace", source: "acme/private" } });
     expect(JSON.stringify(audits)).not.toContain("good-token-123");
-    // refresh reads with it; the listing says a token is kept, never which
+    // refresh reads with it; the listing says one is picked, never which token
     expect((await call(MANAGER, "POST", "/acme-private/refresh")).body.marketplaces[0]).toMatchObject({ hasToken: true });
-    expect(await call(MANAGER, "DELETE", "/acme-private/token")).toMatchObject({ status: 403 });
-    expect(await call(ADMIN, "PUT", "/acme-private/token", { token: "two words" })).toMatchObject({ status: 400, body: { code: "invalid_token" } });
-    const removed = await call(ADMIN, "DELETE", "/acme-private/token");
-    expect(removed.body.marketplaces[0]).toMatchObject({ hasToken: false });
-    expect(audits.at(-1)).toMatchObject({ action: "marketplace.token_remove", before: { scope: "workspace" } });
-    expect(await call(ADMIN, "POST", "/acme-private/refresh")).toMatchObject({ status: 422, body: { code: "private_needs_token" } });
-    const put = await call(ADMIN, "PUT", "/acme-private/token", { token: "good-token-123" });
-    expect(put.body.marketplaces[0]).toMatchObject({ hasToken: true });
-    expect(JSON.stringify(put.body)).not.toContain("good-token-123");
-    // Remove takes the token with it
-    expect((await call(ADMIN, "DELETE", "/acme-private")).status).toBe(200);
+    expect(await call(MANAGER, "PUT", "/acme-private/token", { token: "good-token-123" })).toMatchObject({ status: 404 });
+    const automatic = await call(MANAGER, "PUT", "/acme-private/credential", { credential: null });
+    expect(automatic.body.marketplaces[0]).toMatchObject({ hasToken: false });
+    expect(audits.at(-1)).toMatchObject({ action: "marketplace.credential", after: { scope: "workspace", credential: "automatic" } });
+    expect(await call(MANAGER, "POST", "/acme-private/refresh")).toMatchObject({ status: 422, body: { code: "private_needs_token" } });
+    expect((await call(MANAGER, "PUT", "/acme-private/credential", { credential })).body.marketplaces[0]).toMatchObject({ hasToken: true });
+    // Remove takes the pick with it
+    expect((await call(MANAGER, "DELETE", "/acme-private")).status).toBe(200);
     expect(tokens.sourcesFor(WORKSPACE_TOKEN_KEY).size).toBe(0);
   });
 
-  it("a bot without its own token reads the marketplace with everyone's, and keeps none of its own", async () => {
-    const { store, tokens, call, ADMIN } = await workspace();
-    await call(ADMIN, "POST", "", { source: "acme/private", token: "good-token-123" });
+  it("a bot without its own pick reads the marketplace with everyone's, and keeps none of its own", async () => {
+    const { store, tokens, add, call, MANAGER } = await workspace();
+    await call(MANAGER, "POST", "", { source: "acme/private", credential: add("pr_admin", "good-token-123") });
     await store.updateMarketplace("bot-1", "acme-private", "pr_member");
     expect(store.listMarketplaces("bot-1")[0]).toMatchObject({ name: "acme-private", hasToken: false });
     expect(tokens.sourcesFor("bot-1").size).toBe(0);

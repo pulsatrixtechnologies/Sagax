@@ -62,7 +62,7 @@ describe("one list of GitHub credentials", () => {
     const result = migrate(dir, store);
     expect(result.imported).toBe(4); // two org tokens, the workspace's, one shared bot token
     // the organization's keep their ids and labels
-    expect(store.listOrg().map((entry) => [entry.id, entry.label])).toEqual(
+    expect(store.list("p-nobody", { org: true }).filter((entry) => entry.owner === "org").map((entry) => [entry.id, entry.label])).toEqual(
       expect.arrayContaining([[orgIds[0], "Other organization"], [orgIds[1], "Repository group"], [expect.any(String), "example-org/private-market"]]),
     );
     // every marketplace reads with the same token as before
@@ -128,7 +128,7 @@ describe("one list of GitHub credentials", () => {
   it("remembers which credential read a marketplace, by label, never the token", () => {
     const { store } = open();
     store.change(ORG_OWNER, { op: "add", label: "Other organization", token: ORG_A });
-    const [org] = store.listOrg();
+    const [org] = store.list("p-nobody", { org: true });
     store.noteUsed("bot-a", "example-org/team-market", { via: "credential", credential: org!.id });
     const view = store.describe("bot-a", "example-org/team-market", "p-alice");
     expect(view.used).toMatchObject({ via: "credential", label: "Other organization" });
@@ -151,14 +151,18 @@ describe("one list of GitHub credentials", () => {
     expect(() => store.change("p-bob", { op: "remove", id: alice[0]!.id })).toThrow(/No credential/);
   });
 
-  it("the former token field becomes a credential kept for that marketplace, and goes with it", () => {
-    const { store } = open();
-    const id = store.setMarketplaceToken("bot-a", "gitlab.example.com/team/market", BOT, "p-alice", "gitlab.example.com/team/market (Rocket)");
-    expect(store.list("p-alice", { org: false })).toEqual([expect.objectContaining({ id, onlyWhereChosen: true, chosenBy: 1 })]);
-    // replacing the token keeps the same credential
-    expect(store.setMarketplaceToken("bot-a", "gitlab.example.com/team/market", MINE, "p-alice", "x")).toBe(id);
-    expect(store.get("bot-a", "gitlab.example.com/team/market")).toBe(MINE);
-    store.removeMarketplaceToken("bot-a", "gitlab.example.com/team/market");
+  it("a migrated marketplace token stays picked by its marketplaces, and goes with the last of them", () => {
+    const { dir, store } = open();
+    legacy(dir);
+    migrate(dir, store);
+    const [kept] = store.list("p-alice", { org: false });
+    expect(kept).toMatchObject({ onlyWhereChosen: true, chosenBy: 2 });
+    // the marketplace left one bot: the other still reads with it
+    store.unpick("bot-a", "example-org/team-market");
+    expect(store.get("bot-b", "example-org/other-market")).toBe(BOT_SAME);
+    expect(store.list("p-alice", { org: false })).toEqual([expect.objectContaining({ id: kept!.id, chosenBy: 1 })]);
+    // and the last one: nothing keeps it any more
+    store.unpick("bot-b", "example-org/other-market");
     expect(store.list("p-alice", { org: false })).toEqual([]);
   });
 

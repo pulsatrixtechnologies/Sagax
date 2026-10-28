@@ -32,7 +32,7 @@ import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
-import { MAX_ORG_GITHUB_TOKENS, orgGithubTokenHint, type OrgGithubTokenPublic } from "../shared/org-github-tokens.ts";
+import { MAX_ORG_GITHUB_TOKENS, orgGithubTokenHint } from "../shared/org-github-tokens.ts";
 import { MAX_PERSON_GITHUB_CREDENTIALS, type GithubCredentialPublic, type MarketplaceCredentialView } from "../shared/github-credentials.ts";
 
 const FILE = "github-credentials.enc";
@@ -199,12 +199,6 @@ export class GithubCredentials {
       .sort((a, b) => (a.owner === b.owner ? 0 : a.owner === "mine" ? -1 : 1));
   }
 
-  /** The organization's credentials in the shape of the former list
-   * (GET /api/org settings.githubTokens). */
-  listOrg(): OrgGithubTokenPublic[] {
-    return this.read().credentials.filter((entry) => entry.owner === ORG_OWNER).map((entry) => ({ id: entry.id, label: entry.label, hint: orgGithubTokenHint(entry.token) }));
-  }
-
   /** The stored secret, for the server's own use. Never send it to a client. */
   tokenFor(id: string): string | undefined {
     return this.read().credentials.find((entry) => entry.id === id)?.token;
@@ -296,34 +290,9 @@ export class GithubCredentials {
     this.write({ ...document, choices });
   }
 
-  /** The former token field of a marketplace (a bot's `act`, an older
-   * client): the token becomes a credential of `owner`, labeled `label`,
-   * kept for this marketplace only, and picked by it. */
-  setMarketplaceToken(scope: string, source: string, token: string, owner: string, label: string): string {
-    const clean = cleanToken(token);
-    const document = this.read();
-    const credentials = document.credentials.map((entry) => ({ ...entry }));
-    const current = document.choices.find((choice) => choice.scope === scope && choice.source === source)?.credential;
-    const kept = current ? credentials.find((entry) => entry.id === current && entry.owner === owner && entry.onlyWhereChosen) : undefined;
-    let id: string;
-    if (kept && document.choices.filter((choice) => choice.credential === kept.id).length === 1) {
-      kept.token = clean;
-      id = kept.id;
-    } else {
-      if (credentials.length >= MAX_TOTAL) throw new GithubCredentialsError("Too many credentials.", "too_many");
-      id = this.newId(credentials);
-      const name = shortLabel(label);
-      credentials.push({ id, label: labelHoldsToken(name, clean) ? "Marketplace" : name, token: clean, owner, addedAt: Date.now(), onlyWhereChosen: true });
-    }
-    const choices = document.choices.filter((choice) => !(choice.scope === scope && choice.source === source));
-    choices.push({ scope, source, credential: id });
-    this.write({ ...document, credentials, choices });
-    return id;
-  }
-
-  /** The former "remove token": back to Automatic; a credential kept for
+  /** A marketplace left `scope`: back to Automatic; a credential kept for
    * this marketplace only, and picked by nothing else, goes too. */
-  removeMarketplaceToken(scope: string, source: string): boolean {
+  unpick(scope: string, source: string): boolean {
     const document = this.read();
     const current = document.choices.find((choice) => choice.scope === scope && choice.source === source);
     if (!current) return false;
@@ -375,7 +344,7 @@ export class GithubCredentials {
   /** A marketplace leaves a scope: its pick goes (a credential kept for it
    * only goes with it). */
   forgetSource(scope: string, source: string): void {
-    this.removeMarketplaceToken(scope, source);
+    this.unpick(scope, source);
   }
 
   // ── migration ──────────────────────────────────────────────────────────

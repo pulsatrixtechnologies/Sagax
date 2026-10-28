@@ -87,7 +87,6 @@ const ORG: PerspicaxOrg = {
   settings: {
     pluginMarketplaces: { mode: "list", allow: ["example-org/*", "anthropics/claude-plugins-official"] },
     github: { clientId: "Ov23liExample0001", fromEnvironment: false },
-    githubTokens: [{ id: "gt_0000000000000001", label: "Private repositories", hint: "4f2a" }],
   },
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -102,7 +101,7 @@ const MANAGE_API: Record<string, unknown> = {
     { id: "bot-b", name: "Atlas", instanceId: "grok-main", model: "default", ownerUserId: "p-1", mcpServers: ["twilio-docs"], threads: [], messages: [] },
   ], groups: [], sections: [] },
   "/api/org": ORG,
-  // Sources > GitHub: one list of credentials (2026-10-28)
+  // My accounts > GitHub: the account, and one list of other credentials (2026-10-28)
   "/api/me/github/credentials": { canManageOrg: admin, deviceFlow: true, credentials: [
     { id: "gt_0000000000000011", label: "Second GitHub organization", hint: "9c1d", owner: "mine", chosenBy: 1 },
     { id: "gt_0000000000000001", label: "Private repositories", hint: "4f2a", owner: "org", chosenBy: 0 },
@@ -113,7 +112,8 @@ const MANAGE_API: Record<string, unknown> = {
   "/api/mcp/servers": { servers: [
     { name: "twilio-docs", type: "http", url: "https://mcp.twilio.com/docs", enabled: true, source: "twilio", headerKeys: [], auth: "none" },
     { name: "github", type: "http", url: "https://api.githubcopilot.com/mcp/", enabled: true, headerKeys: ["Authorization"], auth: "none" },
-    { name: "github-github", type: "http", url: "https://api.githubcopilot.com/mcp/", enabled: true, source: "claude-plugins-official", headerKeys: ["Authorization"], auth: "none" },
+    // the GitHub plugin's server reads the person's GitHub account (not connected here)
+    { name: "github-github", type: "http", url: "https://api.githubcopilot.com/mcp/", enabled: true, source: "claude-plugins-official", headerKeys: ["Authorization"], auth: "none", github: "missing" },
   ], reserved: [] },
   "/api/marketplaces": { marketplaces: [
     { name: "claude-plugins-official", source: "anthropics/claude-plugins-official", visibility: "org", plugins: [

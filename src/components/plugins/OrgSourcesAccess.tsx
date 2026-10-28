@@ -3,7 +3,7 @@
 // 2026-10-27 it is the admin part of Sources; Settings > Organization keeps
 // one link): "Allowed marketplaces". Since 2026-10-28 (owner: one option,
 // one place) the organization's GitHub access tokens are in the one
-// credential list of Sources > GitHub (marked Organization), and the GitHub
+// credential list of My accounts > GitHub (marked Organization), and the GitHub
 // OAuth App's client id, a server setting, is in Settings > Organization
 // (OrgGithubApp).
 //
@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 
 import { t } from "@/lib/i18n";
+import { readableError } from "@/lib/plain-error";
 import { loadPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
 
@@ -72,7 +73,7 @@ export function OrgSourcesAccess({ initial, flat = false }: { initial: Settings;
       setStatus({ block, kind: "saved", text: t("organization.plugins.saved") });
       return true;
     } catch (failure) {
-      setStatus({ block, kind: "error", text: failure instanceof Error ? failure.message : String(failure) });
+      setStatus({ block, kind: "error", text: readableError(failure) });
       return false;
     } finally {
       setBusy(false);

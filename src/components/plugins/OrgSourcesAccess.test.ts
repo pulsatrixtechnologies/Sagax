@@ -1,7 +1,7 @@
 // Organization sources and access: since 2026-10-27 in Connect apps >
 // Sources, its admin part; Settings > Organization keeps one link there. An
 // organization admin only, as before. Since 2026-10-28 the organization's
-// GitHub tokens are in the one list of Sources > GitHub, and the GitHub
+// GitHub tokens are in the one list of My accounts > GitHub, and the GitHub
 // OAuth App's client id in Settings > Organization.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,7 +10,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { openSettings } from "@/lib/settings-link";
-import type { OrgGithubTokenPublic } from "../../../shared/org-github-tokens";
 import { PerspicaxOrgSettings } from "../PerspicaxOrgSettings";
 import { marketplacePolicyBody, OrgSourcesAccess } from "./OrgSourcesAccess";
 
@@ -29,15 +28,11 @@ function page(settings: Partial<Settings> = {}) {
   return renderToStaticMarkup(createElement(OrgSourcesAccess, { initial: { ...base, ...settings } }));
 }
 
-function entry(index: number, hint = "1111"): OrgGithubTokenPublic {
-  return { id: `gt_${index.toString(16).padStart(16, "0")}`, label: `Group ${index}`, hint };
-}
-
 const org = (viewerRole: "admin" | "member"): PerspicaxOrg => ({
   org: { name: "Acme", identity: { kind: "perspicax", issuer: "https://px.example.test" } },
   link: { state: "ok" },
   viewerRole,
-  settings: { ...base, githubTokens: [entry(1)] },
+  settings: base,
 });
 
 describe("Organization sources and access", () => {
@@ -58,8 +53,8 @@ describe("Organization sources and access", () => {
     expect(member).not.toContain("organization.githubApp");
   });
 
-  it("keeps the allowed marketplaces only: the tokens are in Sources > GitHub, the OAuth App in Settings", () => {
-    const html = page({ githubTokens: [entry(1)] });
+  it("keeps the allowed marketplaces only: the tokens are in My accounts > GitHub, the OAuth App in Settings", () => {
+    const html = page();
     expect(html).toContain("data-plugins-org-access");
     expect(html).toContain("Allowed marketplaces");
     expect(html).not.toContain("GitHub OAuth App (Connect GitHub)");
@@ -72,7 +67,7 @@ describe("Organization sources and access", () => {
     setLocale("fr");
     const html = page();
     expect(html).toContain("Marketplaces autorisés");
-    expect(html).toContain("dans GitHub, plus haut");
+    expect(html).toContain("dans Mes comptes &gt; GitHub");
   });
 
   it("sends the marketplace list the route accepts", () => {

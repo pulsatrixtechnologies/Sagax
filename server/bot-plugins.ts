@@ -20,7 +20,7 @@
 //     plugin for everyone); a person's private marketplace serves their
 //     own bots whatever the list says.
 //   - A private marketplace is read with, in order: the credential this
-//     bot picks for it (Connect apps > Sources > GitHub, one list,
+//     bot picks for it (Connect apps > My accounts > GitHub, one list,
 //     server/github-credentials.ts), else the one the installation picks
 //     (Everyone), then Automatic: the acting person's own GitHub connection
 //     (server/github-connect.ts), their other credentials, then the
@@ -451,7 +451,7 @@ export const runGit: GitRunner = (args, options) => new Promise((resolvePromise,
     if (!error) return resolvePromise();
     const detail = String(stderr ?? "");
     if (/Authentication failed|could not read Username|terminal prompts disabled|Repository not found|403/i.test(detail)) {
-      reject(new BotPluginError("The git host did not let Sagax read this repository. If it is private, connect GitHub in Connect apps > Sources > GitHub, or add a credential there and pick it for this marketplace.", "repository_unreadable", 422, "connect_or_token"));
+      reject(new BotPluginError("The git host did not let Sagax read this repository. If it is private, connect GitHub in Connect apps > My accounts > GitHub, or add a credential there and pick it for this marketplace.", "repository_unreadable", 422, "connect_or_token"));
       return;
     }
     if (/Could not resolve host|unable to access|timed out|Connection refused/i.test(detail) || (error as { killed?: boolean }).killed) {
@@ -493,7 +493,7 @@ export interface BotPluginsOptions {
     /** what read a marketplace last */
     noteUsed?(botId: string, source: string, used: { via: "person" | "credential" | "none"; credential?: string; login?: string }): void;
     describe?(botId: string, source: string, viewer: string | undefined): MarketplaceCredentialView;
-    set(botId: string, source: string, token: string, addedBy?: string): void;
+    /** back to Automatic (the marketplace left); a credential kept for it alone goes too */
     remove(botId: string, source: string): boolean;
     sourcesFor(botId: string): Set<string>;
     forgetBot(botId: string): void;
@@ -565,7 +565,7 @@ export class BotPlugins {
   /** The git environment that reads `source` for this bot, or the reason
    * nothing can. `marketplaceSource` names whose saved token applies (a
    * plugin in another repository uses its marketplace's token). */
-  private async cloneEnvironment(botId: string, source: GitSource, actor: string | undefined, options: { token?: string; credential?: { id: string; label: string; token: string }; marketplaceSource?: string }): Promise<Record<string, string>> {
+  private async cloneEnvironment(botId: string, source: GitSource, actor: string | undefined, options: { credential?: { id: string; label: string; token: string }; marketplaceSource?: string }): Promise<Record<string, string>> {
     const key = options.marketplaceSource ?? source.id;
     // the credential this bot picks first, then the installation's (Everyone scope)
     const tokens = this.options.tokens;
@@ -573,8 +573,7 @@ export class BotPlugins {
       const token = tokens?.get(scope, key);
       return token ? { id: "", label: "", token } : undefined;
     })();
-    const picked = options.credential ?? (options.token ? { id: "", label: "", token: options.token } : undefined)
-      ?? pick(botId) ?? (botId === WORKSPACE_TOKEN_KEY ? undefined : pick(WORKSPACE_TOKEN_KEY));
+    const picked = options.credential ?? pick(botId) ?? (botId === WORKSPACE_TOKEN_KEY ? undefined : pick(WORKSPACE_TOKEN_KEY));
     const saved = picked?.token;
     const note = (credential: GithubCredential | null) => {
       if (!tokens?.noteUsed) return;
@@ -712,27 +711,25 @@ export class BotPlugins {
   }
 
   /** Add (or fetch again) a marketplace of the one list, from a bot. The
-   * clone reads with this bot's token for it first (a `token` sent here is
-   * tried first and saved for this bot and marketplace once the clone
-   * works), then the person's GitHub connection, then the organization's
-   * tokens (`cloneEnvironment`). */
-  async addMarketplace(botId: string, input: { source: string; ref?: string; token?: string; credential?: string; visibility?: MarketplaceVisibility }, actor: string | undefined): Promise<MarketplaceListing> {
+   * clone reads with the credential this bot picks for it (a `credential`
+   * sent here is tried first and picked once the clone works), then the
+   * person's GitHub connection, then their other credentials and the
+   * organization's (`cloneEnvironment`). */
+  async addMarketplace(botId: string, input: { source: string; ref?: string; credential?: string; visibility?: MarketplaceVisibility }, actor: string | undefined): Promise<MarketplaceListing> {
     this.root(botId);
-    if (input.token && !this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
     const credential = input.credential ? this.usableCredential(input.credential, actor) : undefined;
     let cloned: GitSource | undefined;
     const added = await this.options.marketplaces.add({ source: input.source, ...(input.ref ? { ref: input.ref } : {}) }, actor, {
       ...(input.visibility ? { visibility: input.visibility } : {}),
       ...(actor ? { viewer: { principal: actor } } : {}),
       environment: async (source) => {
-        const env = await this.cloneEnvironment(botId, source, actor, credential ? { credential } : input.token ? { token: input.token } : {});
+        const env = await this.cloneEnvironment(botId, source, actor, credential ? { credential } : {});
         cloned = source;
         return env;
       },
     });
-    // A manifest address is read over https without a token: none is kept.
-    if (input.token && cloned) this.options.tokens!.set(botId, added.source, input.token, actor);
-    else if (credential && cloned) this.options.tokens!.choose!(botId, added.source, credential.id);
+    // A manifest address is read over https without a credential: none is picked.
+    if (credential && cloned) this.options.tokens!.choose!(botId, added.source, credential.id);
     return this.listMarketplaces(botId).find((listing) => listing.name === added.name)!;
   }
 
@@ -1073,19 +1070,6 @@ export class BotPlugins {
     return { marketplaces: [...new Set(moved.names.values())].sort(), plugins: Object.keys(moved.plugins).sort() };
   }
 
-  /** Save, replace or (with null) remove this bot's token for a marketplace
-   * of the one list (server/marketplace-tokens.ts, keyed by bot and source). */
-  setMarketplaceToken(botId: string, name: string, token: string | null, actor: string | undefined): MarketplaceListing {
-    this.root(botId);
-    const record = this.options.marketplaces.record(name);
-    if (!record) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
-    if (record.manifestUrl) throw new BotPluginError("A marketplace added by the address of its marketplace.json is read without a token.", "manifest_only", 422);
-    if (!this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
-    if (token === null) this.options.tokens.remove(botId, record.source);
-    else this.options.tokens.set(botId, record.source, token, actor);
-    return this.listMarketplaces(botId).find((listing) => listing.name === name)!;
-  }
-
   // The "Everyone" scope of Connect apps (server/routes/marketplaces.ts):
   // the installation's own token per marketplace, kept under the
   // `workspace` key. The same order as a bot: this token, then the acting
@@ -1101,14 +1085,13 @@ export class BotPlugins {
   }
 
   /** The git environment reading `source` for the Everyone scope. */
-  workspaceEnvironment(source: GitSource, actor: string | undefined, token?: string): Promise<Record<string, string>> {
-    return this.cloneEnvironment(WORKSPACE_TOKEN_KEY, source, actor, token ? { token } : {});
+  workspaceEnvironment(source: GitSource, actor: string | undefined): Promise<Record<string, string>> {
+    return this.cloneEnvironment(WORKSPACE_TOKEN_KEY, source, actor, {});
   }
 
-  /** Add (or fetch again) a marketplace for everyone; a `token` sent here
-   * is tried first and kept for the installation once the clone works. */
-  async addWorkspaceMarketplace(input: { source: string; ref?: string; token?: string; credential?: string; visibility?: MarketplaceVisibility }, actor: string | undefined) {
-    if (input.token && !this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
+  /** Add (or fetch again) a marketplace for everyone; a `credential` sent
+   * here is tried first and picked for the installation once the clone works. */
+  async addWorkspaceMarketplace(input: { source: string; ref?: string; credential?: string; visibility?: MarketplaceVisibility }, actor: string | undefined) {
     const credential = input.credential ? this.usableCredential(input.credential, actor) : undefined;
     let cloned = false;
     const added = await this.options.marketplaces.add({ source: input.source, ...(input.ref ? { ref: input.ref } : {}) }, actor, {
@@ -1116,32 +1099,20 @@ export class BotPlugins {
       environment: async (source) => {
         const env = credential
           ? await this.cloneEnvironment(WORKSPACE_TOKEN_KEY, source, actor, { credential })
-          : await this.workspaceEnvironment(source, actor, input.token);
+          : await this.workspaceEnvironment(source, actor);
         cloned = true;
         return env;
       },
     });
-    // A manifest address is read over https without a token: none is kept.
-    if (input.token && cloned) this.options.tokens!.set(WORKSPACE_TOKEN_KEY, added.source, input.token, actor);
-    else if (credential && cloned) this.options.tokens!.choose!(WORKSPACE_TOKEN_KEY, added.source, credential.id);
+    // A manifest address is read over https without a credential: none is picked.
+    if (credential && cloned) this.options.tokens!.choose!(WORKSPACE_TOKEN_KEY, added.source, credential.id);
     return added;
   }
 
-  /** Fetch a marketplace again for everyone, with the installation's token first. */
+  /** Fetch a marketplace again for everyone, with the installation's pick first. */
   refreshWorkspaceMarketplace(name: string, actor: string | undefined) {
     if (!this.options.marketplaces.record(name)) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
     return this.options.marketplaces.refresh(name, actor, { environment: (source) => this.workspaceEnvironment(source, actor) });
-  }
-
-  /** Save, replace or (with null) remove the installation's token for a
-   * marketplace. Admin only (the route checks). */
-  setWorkspaceMarketplaceToken(name: string, token: string | null, actor: string | undefined): void {
-    const record = this.options.marketplaces.record(name);
-    if (!record) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
-    if (record.manifestUrl) throw new BotPluginError("A marketplace added by the address of its marketplace.json is read without a token.", "manifest_only", 422);
-    if (!this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
-    if (token === null) this.options.tokens.remove(WORKSPACE_TOKEN_KEY, record.source);
-    else this.options.tokens.set(WORKSPACE_TOKEN_KEY, record.source, token, actor);
   }
 
   /** Pick a credential of the one list for a marketplace for everyone, or

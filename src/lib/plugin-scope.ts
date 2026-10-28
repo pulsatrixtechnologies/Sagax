@@ -91,7 +91,7 @@ export function marketplaceRoute(input: { workspaceManager: boolean; scope: Plug
 }
 
 /** Each marketplace's pick of a credential of the one list (Connect apps >
- * Sources > GitHub, 2026-10-28), in place of a token field: the bot's
+ * My accounts > GitHub, 2026-10-28), in place of a token field: the bot's
  * (`/api/bots/:id/plugins/.../credential`, its owner or a manager) or the
  * installation's (`/api/marketplaces/:name/credential`, the workspace's
  * managers). After a pick the marketplace is fetched again with it. */
