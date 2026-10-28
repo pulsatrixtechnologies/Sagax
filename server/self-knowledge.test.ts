@@ -26,7 +26,7 @@ describe("sagax_help", () => {
     expect(top("Peux-tu changer le thème de l'app en sombre ?")).toContain("setting:appearance");
     expect(top("Peux-tu réagir avec un emoji à mon message ?")).toContain("tool:react_to_message");
     expect(top("Peux-tu chercher dans nos anciennes conversations ?")).toContain("tool:session_search");
-    expect(top("Où je mets mon mot de passe pour que tu remplisses un formulaire ?")).toContain("setting:account"); // Credentials is a part of the Account page now
+    expect(top("Où je mets mon mot de passe pour que tu remplisses un formulaire ?")).toContain("setting:credentials"); // the vault has its own page since the settings split
   });
 
   it("maps French words to the base's English", () => {
