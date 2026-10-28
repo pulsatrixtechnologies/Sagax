@@ -4559,6 +4559,8 @@ const artifactWindows = createArtifactWindows({
   // the page on screen drives it (each account has its page)
   getMainWindow: () => pageHandle(mainPage()),
   isTrustedMain: (event) => isDesktopUiSender(event),
+  blockFrame: blockPageFrameNavigation,
+  expectFrame: (url) => bundledPageFrames.expect(url),
   openExternal: (url) => {
     try {
       void shell.openExternal(externalOpenUrl(url)).catch(() => {});
