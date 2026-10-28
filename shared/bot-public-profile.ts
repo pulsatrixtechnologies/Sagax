@@ -4,9 +4,9 @@
 // settings, instructions, memory, routines or other threads.
 import type { BotAvatarCrop } from "./bot-avatar.ts";
 import type { MascotBodyId } from "./mascot-bodies.ts";
+import type { MascotColorName as MausColor } from "./mascot-colors.ts";
 import type { MascotLook } from "./mascot-look.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
-import type { MausColor } from "./wire.ts";
 
 export interface BotPublicProfile {
   id: string;

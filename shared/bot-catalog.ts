@@ -3,10 +3,14 @@
 // GET /api/bot-catalog and GET /api/bot-catalog/:id (server/routes/bot-catalog.ts).
 // The modal is src/components/bot-catalog/.
 import type { MascotBodyId } from "./mascot-bodies.ts";
+import type { MascotColorName as MausColor } from "./mascot-colors.ts";
 import type { MascotLook } from "./mascot-look.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { BotAvatarCrop } from "./bot-avatar.ts";
-import type { MausColor, MausExpression } from "./wire.ts";
+
+/** Same plain string as `MausExpression` on the wire. Named here so this
+ * module does not import `wire.ts`, which already imports this catalogue. */
+type MausExpression = string;
 
 /** Stored on the bot record (`catalog`): the bot is offered to everyone in
  * the organisation. Set by its owner or an organisation admin; only an
