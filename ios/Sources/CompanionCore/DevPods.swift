@@ -352,6 +352,7 @@ public struct DevContextShare: Equatable, Sendable {
     public var tone: DevContextTone
     /// Bytes of the assembled system prompt, when the server measured it.
     public var promptBytes: Int?
+    public var buckets: TaskUsage.Context.Buckets?
 
     public init?(_ usage: TaskUsage?) {
         guard let context = usage?.context, context.tokens > 0 else { return nil }
@@ -360,6 +361,7 @@ public struct DevContextShare: Equatable, Sendable {
         percent = window.map { min(999, Int((Double(context.tokens) / Double($0) * 100).rounded())) }
         tone = percent.map { $0 >= 80 ? .danger : $0 >= 50 ? .warning : .quiet } ?? .quiet
         promptBytes = context.promptBytes.flatMap { $0 > 0 ? $0 : nil }
+        buckets = context.buckets
     }
 
     /// "52%" or "142k" when the window is unknown.

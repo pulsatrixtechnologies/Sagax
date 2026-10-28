@@ -17,5 +17,8 @@ describe("context reading", () => {
     const prev = { tokens: 100, window: 1000, promptBytes: 10 };
     expect(nextContext(prev, { tokens: 0, promptBytes: 40 })).toEqual({ tokens: 100, window: 1000, promptBytes: 40 });
     expect(nextContext(prev, {})).toEqual(prev);
+    expect(nextContext(undefined, { buckets: { messages: 4, prompt: 10 } })).toBeUndefined();
+    expect(nextContext(prev, { tokens: 0, buckets: { messages: 4, tools: 0 } })).toEqual({ ...prev, buckets: { messages: 4 } });
+    expect(nextContext({ ...prev, buckets: { messages: 2 } }, { tokens: 50 })).toEqual({ tokens: 50, promptBytes: 10, buckets: { messages: 2 } });
   });
 });

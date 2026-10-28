@@ -191,11 +191,11 @@ describe("bot zip round trip", () => {
     expect(after.soul).toContain("«redacted");
     delete before.soul;
     delete after.soul;
-    // Workspace is always Auto(2026-10-18): only Off travels, so the
-    // source's This computer arrives as Auto.
+    // This computer travels with the bot.
     expect(before.computer).toBe("local");
-    expect(after.computer).toBeUndefined();
+    expect(after.computer).toBe("local");
     delete before.computer;
+    delete after.computer;
     expect(after).toEqual(before);
 
     // the files of the desk and the bot folder
@@ -408,8 +408,7 @@ describe("bot zip import rules", () => {
     const member = await importBotZip(fx.host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000002", asMember: true, conversations: false, sharing: false });
     const copy = fx.store.bot(member.botId)!;
     // 2026-10-26: these work in the member's own environment
-    expect(copy).toMatchObject({ browser: true, alwaysAllow: ["Bash"] });
-    expect(copy.computer).toBeUndefined();
+    expect(copy).toMatchObject({ browser: true, alwaysAllow: ["Bash"], computer: "local" });
     // what stays an admin's on the shared server does not travel; a package
     // is not provably the member's own bot, so no MCP server either
     expect(copy.mcpServers).toEqual([]);
@@ -419,9 +418,7 @@ describe("bot zip import rules", () => {
     expect(copy.approvalMode).toBe("ask");
     expect(copy.tasks).toHaveLength(1);
     const admin = await importBotZip(fx.host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000001", asMember: false, conversations: false, sharing: false });
-    // Workspace is always Auto(2026-10-18): a place does not travel.
-    expect(fx.store.bot(admin.botId)).toMatchObject({ browser: true, mcpServers: ["docs"], alwaysAllow: ["Bash"], approvalMode: "ask" });
-    expect(fx.store.bot(admin.botId)!.computer).toBeUndefined();
+    expect(fx.store.bot(admin.botId)).toMatchObject({ browser: true, mcpServers: ["docs"], alwaysAllow: ["Bash"], approvalMode: "ask", computer: "local" });
     expect(fx.store.bot(admin.botId)!.name).toBe("Atlas 3");
     if (inspected.kind === "zip") inspected.reader.close();
   });

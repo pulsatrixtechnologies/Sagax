@@ -7,6 +7,9 @@ import { dedupeConnectors, mcpServersForBot, useMcpServers } from "@/lib/mcp-ser
 import { contextDetail, contextShare, contextValue, formatTokens, type ContextTone } from "@/lib/usage";
 import { registerDevPod, type DevPodContext } from "../registry";
 
+const BUCKETS = ["messages", "tools", "memory", "skills", "agents", "prompt"] as const;
+type BucketKey = typeof BUCKETS[number];
+
 export interface ContextData {
   value: string;
   detail: string;
@@ -14,30 +17,50 @@ export interface ContextData {
   tone: ContextTone;
   /** "N% used, X / max" when the window is a real limit. Absent otherwise. */
   usedOf?: string;
-  /** Bytes of the assembled system prompt, when the server measured it. */
-  promptBytes?: number;
+  /** Measured buckets. A missing key was not measured. Never a made-up share. */
+  buckets?: Partial<Record<BucketKey, number>>;
   /** Mounted connector names. Absent until the list has loaded. */
   tools?: string[];
+}
+
+function measuredBuckets(value: unknown): ContextData["buckets"] {
+  if (!value || typeof value !== "object") return undefined;
+  const out: Partial<Record<BucketKey, number>> = {};
+  for (const key of BUCKETS) {
+    const raw = (value as Record<string, unknown>)[key];
+    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) out[key] = Math.trunc(raw);
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 export function contextData(task: DevPodContext["task"]): ContextData | null {
   const usage = task?.usage;
   if (!usage) return null;
+  const buckets = measuredBuckets(usage.context?.buckets);
   const share = contextShare(usage);
-  if (!share) return null;
-  const promptBytes = usage.context?.promptBytes;
-  const usedOf = share.window && share.percent !== undefined
+  if (!share && !buckets) return null;
+  const usedOf = share?.window && share.percent !== undefined
     ? t("devPods.context.usedOf", { percent: String(share.percent), tokens: formatTokens(share.tokens), window: formatTokens(share.window) })
     : undefined;
+  const value = share ? contextValue(usage) : buckets?.messages !== undefined ? String(buckets.messages) : "";
   return {
-    value: contextValue(usage),
-    detail: contextDetail(usage) ?? "",
-    percent: share.percent,
-    tone: share.tone,
+    value,
+    detail: share ? contextDetail(usage) ?? "" : "",
+    ...(share?.percent !== undefined ? { percent: share.percent } : {}),
+    tone: share?.tone ?? "quiet",
     ...(usedOf ? { usedOf } : {}),
-    ...(typeof promptBytes === "number" && promptBytes > 0 ? { promptBytes } : {}),
+    ...(buckets ? { buckets } : {}),
   };
 }
+
+const BUCKET_LABEL: Record<BucketKey, "devPods.context.messages" | "devPods.context.tools" | "devPods.context.memory" | "devPods.context.skills" | "devPods.context.agents" | "devPods.context.prompt"> = {
+  messages: "devPods.context.messages",
+  tools: "devPods.context.tools",
+  memory: "devPods.context.memory",
+  skills: "devPods.context.skills",
+  agents: "devPods.context.agents",
+  prompt: "devPods.context.prompt",
+};
 
 const TONE_TEXT: Record<ContextTone, string> = { quiet: "text-ink-secondary", warning: "text-warning", danger: "text-warning" };
 const TONE_BAR: Record<ContextTone, string> = { quiet: "bg-ink-secondary", warning: "bg-warning", danger: "bg-warning" };
@@ -71,10 +94,17 @@ function ContextBody({ data, ctx }: { data: ContextData; ctx: DevPodContext }) {
         )}
         <span data-context-detail="" className="truncate text-[12px] text-ink-secondary">{data.usedOf ?? data.detail}</span>
       </button>
-      {data.promptBytes !== undefined && (
-        <p data-context-prompt="" className="text-[12px] text-ink-secondary">{t("devPods.context.systemPrompt", { bytes: data.promptBytes.toLocaleString("en-US") })}</p>
+      {data.buckets && (
+        <ul data-context-buckets="" className="flex flex-col">
+          {BUCKETS.filter((key) => data.buckets?.[key] !== undefined).map((key) => (
+            <li key={key} data-context-bucket={key} className="text-[12px] text-ink-secondary">
+              {key === "messages"
+                ? t(BUCKET_LABEL[key], { count: String(data.buckets?.[key]) })
+                : t(BUCKET_LABEL[key], { bytes: (data.buckets?.[key] ?? 0).toLocaleString("en-US") })}
+            </li>
+          ))}
+        </ul>
       )}
-      <p data-context-unsplit="" className="text-[12px] text-ink-secondary">{t("devPods.context.notSplit")}</p>
       {tools && tools.length > 0 && (
         <details data-context-tools="">
           <summary className="cursor-pointer text-[12px] text-ink-secondary">{t("devPods.context.mcpTools", { count: String(tools.length) })}</summary>

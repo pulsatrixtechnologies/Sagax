@@ -34,6 +34,7 @@ export interface PullStats {
   state: "open" | "closed" | "merged";
   draft?: boolean;
   canAct?: boolean;
+  autoMerge?: boolean;
 }
 
 const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover";
@@ -76,7 +77,13 @@ function lineCounts(stats: PullStats | undefined): string | null {
   return `+${stats.additions} -${stats.deletions}`;
 }
 
-function ChangeRow({ change, ctx, stats, onAct }: { change: DevChange; ctx: DevPodContext; stats?: PullStats; onAct?: (action: "draft" | "close") => void }) {
+function ChangeRow({ change, ctx, stats, notice, onAct }: {
+  change: DevChange;
+  ctx: DevPodContext;
+  stats?: PullStats;
+  notice?: string;
+  onAct?: (action: "draft" | "close" | "autofix" | "merge-ready" | "archive") => void;
+}) {
   const [open, setOpen] = useState(false);
   const Icon = change.kind === "pull" ? GitPullRequest : GitCommitHorizontal;
   const where = change.kind === "pull"
@@ -93,14 +100,24 @@ function ChangeRow({ change, ctx, stats, onAct }: { change: DevChange; ctx: DevP
           {stats && <span data-change-state={stats.draft ? "draft" : stats.state} className="shrink-0 font-sans">{t(stats.draft ? "devPods.changes.state.draft" : PULL_STATE[stats.state])}</span>}
           {lineCounts(stats) && <span data-change-lines="" className="shrink-0 font-sans tabular-nums">{lineCounts(stats)}</span>}
         </span>
-        {stats?.canAct && stats.state === "open" && onAct && (
-          <span className="mt-0.5 flex gap-1">
-            {!stats.draft && (
+        {stats?.canAct && onAct && (
+          <span className="mt-0.5 flex flex-wrap gap-1">
+            {stats.state === "open" && !stats.draft && (
               <button type="button" data-change-draft="" className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink" onClick={() => onAct("draft")}>{t("devPods.changes.draft")}</button>
             )}
-            <button type="button" data-change-dismiss="" className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink" onClick={() => onAct("close")}>{t("devPods.changes.dismiss")}</button>
+            {stats.state === "open" && (
+              <button type="button" data-change-dismiss="" className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink" onClick={() => onAct("close")}>{t("devPods.changes.dismiss")}</button>
+            )}
+            {stats.state === "open" && (
+              <button type="button" data-change-autofix="" className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink" onClick={() => onAct("autofix")}>{t("devPods.changes.autoFix")}</button>
+            )}
+            {stats.state === "open" && (
+              <button type="button" data-change-merge-ready="" aria-pressed={stats.autoMerge === true} className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink" onClick={() => onAct("merge-ready")}>{t("devPods.changes.mergeReady")}</button>
+            )}
+            <button type="button" data-change-archive="" className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink" onClick={() => onAct("archive")}>{t("devPods.changes.autoArchive")}</button>
           </span>
         )}
+        {notice && <span data-change-notice="" className="text-[12px] text-danger">{notice}</span>}
       </div>
       <button
         type="button"
@@ -120,6 +137,7 @@ function ChangeRow({ change, ctx, stats, onAct }: { change: DevChange; ctx: DevP
 
 function ChangesBody({ data, ctx }: { data: DevChange[]; ctx: DevPodContext }) {
   const [stats, setStats] = useState<Record<string, PullStats>>({});
+  const [notices, setNotices] = useState<Record<string, string>>({});
   const pulls = data.filter((change) => change.kind === "pull" && change.repo && change.number);
   const key = pulls.map((change) => change.key).join(",");
   useEffect(() => {
@@ -135,19 +153,35 @@ function ChangesBody({ data, ctx }: { data: DevChange[]; ctx: DevPodContext }) {
     }
     return () => { live = false; };
   }, [ctx.bot.id, ctx.bot.threadId, key]);
-  const act = (change: DevChange, action: "draft" | "close") => {
-    void api(`/api/bots/${encodeURIComponent(ctx.bot.id)}/code/pull`, {
+  const act = (change: DevChange, action: "draft" | "close" | "autofix" | "merge-ready" | "archive") => {
+    const known = stats[change.key];
+    const on = action === "merge-ready" ? known?.autoMerge !== true : undefined;
+    void api<{ pull?: Omit<PullStats, "canAct"> | null; restarted?: number }>(`/api/bots/${encodeURIComponent(ctx.bot.id)}/code/pull`, {
       method: "POST",
-      body: JSON.stringify({ threadId: ctx.bot.threadId, repo: change.repo, number: change.number, action }),
-    }).then(() => setStats((current) => {
-      const known = current[change.key];
-      if (!known) return current;
-      return { ...current, [change.key]: action === "close" ? { ...known, state: "closed", canAct: false } : { ...known, draft: true } };
-    })).catch(() => { /* the row stays as the forge last said it */ });
+      body: JSON.stringify({ threadId: ctx.bot.threadId, repo: change.repo, number: change.number, action, ...(on === undefined ? {} : { on }) }),
+    }).then((body) => {
+      setNotices((current) => {
+        const next = { ...current };
+        delete next[change.key];
+        return next;
+      });
+      setStats((current) => {
+        const row = current[change.key];
+        if (!row) return current;
+        if (body.pull) return { ...current, [change.key]: { ...body.pull, canAct: row.canAct } };
+        if (action === "close") return { ...current, [change.key]: { ...row, state: "closed", canAct: false } };
+        if (action === "draft") return { ...current, [change.key]: { ...row, draft: true } };
+        if (action === "merge-ready") return { ...current, [change.key]: { ...row, autoMerge: on === true } };
+        return current;
+      });
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setNotices((current) => ({ ...current, [change.key]: message }));
+    });
   };
   return (
     <ul className="flex flex-col">
-      {data.map((change) => <ChangeRow key={change.key} change={change} ctx={ctx} stats={stats[change.key]} onAct={(action) => act(change, action)} />)}
+      {data.map((change) => <ChangeRow key={change.key} change={change} ctx={ctx} stats={stats[change.key]} notice={notices[change.key]} onAct={(action) => act(change, action)} />)}
     </ul>
   );
 }

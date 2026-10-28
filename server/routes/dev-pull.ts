@@ -1,5 +1,6 @@
 // A pull request this conversation already opened: its forge counts, and the
-// two verbs the bot already runs (`gh pr ready --undo`, `gh pr close`).
+// verbs the bot already runs (`gh pr ready --undo`, `gh pr close`,
+// `gh pr merge --auto`, `gh run rerun --failed`, deleting the head ref).
 // The same person's GitHub connection and the same thread.post guard as the
 // branch actions (server/routes/bot-code-branches.ts). A pull request the
 // conversation did not open is refused, so this is not a general forge proxy.
@@ -77,7 +78,23 @@ export function createDevPullRoutes(deps: DevPullRouteDeps): RouteHandler {
         deps.audit(auth, "code.pull.close", { botId, branch: `#${query.number}`, repo: query.repo });
         return json(res, 200, { ok: true });
       }
-      return json(res, 400, { error: "action must be draft or close" });
+      if (body?.action === "merge-ready") {
+        const on = (body as { on?: unknown }).on !== false;
+        await pulls.mergeWhenReady(query.number, on);
+        deps.audit(auth, on ? "code.pull.merge-ready" : "code.pull.merge-ready.off", { botId, branch: `#${query.number}`, repo: query.repo });
+        return json(res, 200, { ok: true, pull: await pulls.view(query.number) });
+      }
+      if (body?.action === "autofix") {
+        const restarted = await pulls.autoFix(query.number);
+        deps.audit(auth, "code.pull.autofix", { botId, branch: `#${query.number}`, repo: query.repo });
+        return json(res, 200, { ok: true, restarted });
+      }
+      if (body?.action === "archive") {
+        const archived = await pulls.autoArchive(query.number);
+        deps.audit(auth, "code.pull.archive", { botId, branch: `#${query.number}`, repo: query.repo });
+        return json(res, 200, { ok: true, archived, pull: await pulls.view(query.number) });
+      }
+      return json(res, 400, { error: "action must be draft, close, merge-ready, autofix or archive" });
     } catch (error) {
       if (error instanceof BranchActionError) return json(res, error.status, { error: error.message, code: error.code });
       return json(res, 500, { error: "The pull request could not be read." });

@@ -99,8 +99,8 @@ describe("bot zip routes", () => {
     const result = await imported.json() as { botId: string; name: string };
     expect(result.name).toBe("Mine");
     expect(store.bot(result.botId)).toMatchObject({ ownerUserId: member, browser: true, soul: "Be brief." });
-    // Workspace is always Auto: only Off travels, so the computer is the default
-    expect(store.bot(result.botId)!.computer).toBeUndefined();
+    // This computer travels: it works in the member's own environment.
+    expect(store.bot(result.botId)!.computer).toBe("local");
     // the working folder stays an admin's on the shared server
     expect(store.bot(result.botId)!.cwd).toBeUndefined();
     expect(audit.at(-1)).toMatchObject({ action: "bot.import", target: { id: result.botId, name: "Mine" }, after: { memberDefaults: true } });

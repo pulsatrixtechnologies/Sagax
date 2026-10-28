@@ -1,6 +1,6 @@
-// Workspace is always Auto (owner 2026-10-18), through the real server and its
-// HTTP API: an app that still sends a place (an older desktop or iPhone
-// build) gets no error and no fixed place; Off stays a restriction.
+// This computer and the cloud computer are saved through the HTTP API.
+// A Local VM or the browser still arrives as Auto. Off stays a restriction.
+// A conversation is still not pinned to a place.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { launchVerificationServer, type VerificationServer } from "../scripts/control-omb.ts";
@@ -21,9 +21,15 @@ describe("Workspace is always Auto over HTTP", () => {
   }, 60_000);
   afterAll(async () => { await session?.close(); });
 
-  it("reads a requested place as Auto, keeps Off, and accepts null and auto", async () => {
+  it("saves this computer and the cloud computer, reads the rest as Auto, and keeps Off", async () => {
     const bot = (await api("POST", "/api/bots")).body.bot;
-    for (const place of ["cloud", "vm", "local", "browser"]) {
+    for (const place of ["local", "cloud"] as const) {
+      // Auto on this computer still needs the warning the desktop sends.
+      const patched = await api("PATCH", `/api/bots/${bot.id}`, { computer: place, ...(place === "local" ? { acknowledgeLocalAuto: true } : {}) });
+      expect(patched.status, place).toBe(200);
+      expect(patched.body.bot.computer, place).toBe(place);
+    }
+    for (const place of ["vm", "browser"]) {
       const patched = await api("PATCH", `/api/bots/${bot.id}`, { computer: place });
       expect(patched.status, place).toBe(200);
       expect(patched.body.bot, place).not.toHaveProperty("computer");
@@ -40,10 +46,13 @@ describe("Workspace is always Auto over HTTP", () => {
     expect(malformed.status).toBe(400);
   });
 
-  it("creates an Auto bot when the request names a place, and an Off bot when it says Off", async () => {
+  it("creates a bot on this computer when the request names it, and an Off bot when it says Off", async () => {
     const placed = await api("POST", "/api/bots", { settings: { computer: "local" } });
     expect(placed.status).toBe(201);
-    expect(placed.body.bot).not.toHaveProperty("computer");
+    expect(placed.body.bot.computer).toBe("local");
+    const browser = await api("POST", "/api/bots", { settings: { computer: "browser" } });
+    expect(browser.status).toBe(201);
+    expect(browser.body.bot).not.toHaveProperty("computer");
     const off = await api("POST", "/api/bots", { settings: { computer: "off" } });
     expect(off.status).toBe(201);
     expect(off.body.bot.computer).toBe("off");

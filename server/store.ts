@@ -3002,7 +3002,10 @@ export class Store {
   addTaskUsage(
     botId: string,
     threadId: string,
-    turn: { input?: number; output?: number; cachedInput?: number; costUsd: number | null; context?: { tokens?: number; window?: number; promptBytes?: number } },
+    turn: {
+      input?: number; output?: number; cachedInput?: number; costUsd: number | null;
+      context?: { tokens?: number; window?: number; promptBytes?: number; buckets?: NonNullable<TaskUsage["context"]>["buckets"] };
+    },
   ): TaskUsage | null {
     const task = this.taskByThread(botId, threadId);
     if (!task) return null;
@@ -3364,9 +3367,9 @@ export class Store {
     return this.patchTask(botId, threadId, { link: url, linkAuto: true });
   }
 
-  /** Workspace is always Auto (2026-10-18): a Works on that fixed a
-   * place (Cloud, Local VM, This computer, Browser) goes back to Auto, and
-   * every conversation pin goes, whoever set it. Off stays: it withholds
+  /** A Local VM or the browser on Works on goes back to Auto, and every
+   * conversation pin goes, whoever set it. This computer and the cloud
+   * computer stay. Off stays: it withholds
    * every screen, and lifting it would widen what the bot may reach.
    * Levels are never touched (#1098, 2026-10-27): the one-time move of
    * 2026-10-18 that put a bot or a conversation kept off this computer back

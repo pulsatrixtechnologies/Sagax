@@ -1,8 +1,7 @@
-// Workspace is always Auto (owner 2026-10-18): nobody picks a place for a bot
-// or a conversation any more; the bot picks where each task runs. These pin
-// the rule (autoOnlyDestination) and the one-time, idempotent move of what
-// an older build saved (Store.retireFixedWorkspaces). Off is a restriction,
-// not a place, and stays.
+// This computer and the cloud computer stay (the dev panel writes them).
+// A Local VM, the browser, and every conversation pin still go back to Auto.
+// Off is a restriction, not a place, and stays.
+// Levels are never touched (#1098): the one-time move to Ask is not replayed.
 import { rmSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -11,9 +10,11 @@ import { Store } from "./store.ts";
 import { autoOnlyDestination } from "./surface.ts";
 
 describe("a Works on from a request", () => {
-  it("reads every place as Auto and keeps Off", () => {
-    for (const place of ["cloud", "vm", "local", "browser", "auto", null, undefined, 42]) expect(autoOnlyDestination(place)).toBeUndefined();
+  it("keeps this computer, the cloud computer and Off, and reads the rest as Auto", () => {
+    expect(autoOnlyDestination("local")).toBe("local");
+    expect(autoOnlyDestination("cloud")).toBe("cloud");
     expect(autoOnlyDestination("off")).toBe("off");
+    for (const place of ["vm", "browser", "auto", null, undefined, 42]) expect(autoOnlyDestination(place)).toBeUndefined();
   });
 });
 
@@ -21,7 +22,7 @@ describe("the start sweep", () => {
   beforeEach(() => { rmSync(DATA_DIR, { recursive: true, force: true }); });
   const newBotDefault = () => ({ instanceId: "claude", model: "claude-model" });
 
-  it("moves a fixed Works on and every conversation pin back to Auto, keeps Off, and is idempotent", () => {
+  it("keeps this computer and the cloud computer, moves every conversation pin back to Auto, keeps Off, and is idempotent", () => {
     const store = new Store(newBotDefault);
     const cloud = store.createBot({}, { seedMessages: false });
     const local = store.createBot({}, { seedMessages: false });
@@ -36,11 +37,12 @@ describe("the start sweep", () => {
     store.patchTask(auto.id, auto.threadId, { surface: "browser" });
     store.patchTask(off.id, off.threadId, { surface: "local", surfaceSource: "auto" });
 
-    expect(store.retireFixedWorkspaces()).toEqual({ bots: 2, pins: 3 });
+    expect(store.retireFixedWorkspaces()).toEqual({ bots: 0, pins: 3 });
 
     const reloaded = new Store(newBotDefault);
-    expect(reloaded.bot(cloud.id)?.computer).toBeUndefined();
-    expect(reloaded.bot(local.id)?.computer).toBeUndefined();
+    expect(reloaded.bot(cloud.id)?.computer).toBe("cloud");
+    expect(reloaded.bot(local.id)?.computer).toBe("local");
+    expect(reloaded.bot(cloud.id)?.approvalMode).toBe("ask");
     // Off withholds every screen; lifting it would widen what the bot may reach.
     expect(reloaded.bot(off.id)?.computer).toBe("off");
     for (const [botId, threadId] of [[auto.id, auto.threadId], [auto.id, second.threadId], [off.id, off.threadId]] as const) {

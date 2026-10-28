@@ -39,10 +39,10 @@ function control(organization: boolean, value: WorksOnMode = null) {
   return renderToStaticMarkup(createElement(WorksOnControl, { value, organization, onChange: () => {} }));
 }
 
-describe("one Works on control: Auto or Off (Owner 2026-10-18)", () => {
-  it("offers no place on a solo or an organization server, only Auto and Off", () => {
-    expect(labels(control(false))).toEqual(["Auto", "Off"]);
-    expect(labels(control(true))).toEqual(["Auto · picks per task", "Off"]);
+describe("Works on: Auto, this computer, the cloud computer, or Off", () => {
+  it("offers this computer and the cloud computer on a solo or an organization server", () => {
+    expect(labels(control(false))).toEqual(["Auto", "This computer", "Cloud computer", "Off"]);
+    expect(labels(control(true))).toEqual(["Auto · picks per task", "This computer", "Cloud (server environment)", "Off"]);
   });
 
   it("says the bot picks the place for each task, and what Off withholds", () => {
@@ -53,11 +53,13 @@ describe("one Works on control: Auto or Off (Owner 2026-10-18)", () => {
     expect(worksOnTip("off")).toBe("No computer access");
   });
 
-  it("reads a place an older build saved as Auto, and keeps Off", () => {
+  it("keeps this computer and the cloud computer, and reads a Local VM or the browser as Auto", () => {
     expect(worksOnMode(undefined)).toBeNull();
-    for (const place of ["cloud", "vm", "local", "browser"] as const) expect(worksOnMode(place)).toBeNull();
+    expect(worksOnMode("local")).toBe("local");
+    expect(worksOnMode("cloud")).toBe("cloud");
+    for (const place of ["vm", "browser"] as const) expect(worksOnMode(place)).toBeNull();
     expect(worksOnMode("off")).toBe("off");
-    expect(control(false, worksOnMode("local"))).toMatch(/aria-checked="true"[^>]*data-works-on-choice="auto"/);
+    expect(control(false, worksOnMode("local"))).toMatch(/aria-checked="true"[^>]*data-works-on-choice="local"/);
     expect(control(false, "off")).toMatch(/aria-checked="true"[^>]*data-works-on-choice="off"/);
   });
 

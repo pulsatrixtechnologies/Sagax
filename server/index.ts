@@ -1234,6 +1234,7 @@ import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
 import { PERSPICAX_TOOL_NAMES } from "./drivers/agents-catalog.ts";
+import { measureContextBuckets, toolDefinitionBytes } from "./context-buckets.ts";
 import { PERSPICAX_PROTOCOL_VERSION, PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { withClaimsFlag } from "./perspicax-claims.ts";
 import { createPerspicaxClaimsInternalRoutes } from "./routes/perspicax-claims-internal.ts";
@@ -2038,9 +2039,13 @@ const FIXED_WORKSPACE_SEAM = process.env.SAGAX_TEST_FIXED_WORKSPACE === "1" &&
 if (process.env.SAGAX_TEST_FIXED_WORKSPACE === "1" && !FIXED_WORKSPACE_SEAM) {
   console.warn("SAGAX_TEST_FIXED_WORKSPACE is set but ignored (needs VITEST or SAGAX_TEST_SEAMS=1, and NODE_ENV other than production)");
 }
-/** A Works on from a request: Off, else Auto (undefined), except under the
- * test seam above. */
-const requestedWorksOn = <T>(value: T): T | "off" | undefined => FIXED_WORKSPACE_SEAM ? value : autoOnlyDestination(value);
+/** A Works on from a request: Off, this computer, or the cloud computer.
+ * Anything else is Auto (undefined), except under the test seam above. */
+const requestedWorksOn = (value: unknown): "off" | "local" | "cloud" | "vm" | "browser" | undefined => {
+  if (!FIXED_WORKSPACE_SEAM) return autoOnlyDestination(value);
+  if (value === "off" || value === "local" || value === "cloud" || value === "vm" || value === "browser") return value;
+  return undefined;
+};
 // SAGAX_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
 // each message as one JSON line to this file. Requires an explicit test
 // marker (VITEST, set by the test runner itself, or SAGAX_TEST_SEAMS=1 for a
@@ -4589,6 +4594,8 @@ const directTurnBots = new Map<string, BotRecord>();
  * books them next to its token usage: stable bytes ride the cacheable
  * prefix, volatile bytes are the part that legitimately changes. */
 const turnPromptBytes = new Map<string, { stable: number; volatile: number }>();
+/** Bucket sizes for the turn in flight, measured from what that turn already held. */
+const turnContextBuckets = new Map<string, NonNullable<ReturnType<typeof measureContextBuckets>>>();
 let providerFleetReloading = false;
 const turnResources = new TurnResources();
 const sharedComputerControl = new SharedComputerControl(turnResources, () => store.bots.some(bot => botComputerControlSnapshot(bot.id).held));
@@ -16884,6 +16891,7 @@ bus.subscribe((event: RuntimeEvent) => {
         const contextModel = store.taskByThread(bot.id, event.threadId)?.modelSelection?.model ?? bot.modelSelection.model;
         const promptBytes = turnPromptBytes.get(event.threadId);
         const promptSize = promptBytes ? promptBytes.stable + promptBytes.volatile : 0;
+        const buckets = turnContextBuckets.get(event.threadId);
         store.addTaskUsage(bot.id, event.threadId, {
           input: tokens?.input,
           output: tokens?.output,
@@ -16893,6 +16901,7 @@ bus.subscribe((event: RuntimeEvent) => {
             tokens: lastContext?.tokens,
             window: lastContext?.window ?? modelContextWindow(contextModel),
             ...(promptSize > 0 ? { promptBytes: promptSize } : {}),
+            ...(buckets ? { buckets } : {}),
           },
         });
         // and write the same figures to the month's ledger, which outlives
@@ -16905,6 +16914,7 @@ bus.subscribe((event: RuntimeEvent) => {
         store.patchTask(bot.id, event.threadId, { lastContextModel: Number.isFinite(lastContext?.tokens) && (lastContext?.tokens ?? 0) > 0
           ? `${measuredSelection.instanceId}:${measuredSelection.model}` : undefined });
         turnPromptBytes.delete(event.threadId);
+        turnContextBuckets.delete(event.threadId);
         bookTurnUsage({
           botId: bot.id,
           botName: bot.name,
@@ -16999,6 +17009,7 @@ bus.subscribe((event: RuntimeEvent) => {
         const selection = speakingBot?.modelSelection;
         const promptBytes = turnPromptBytes.get(event.threadId);
         turnPromptBytes.delete(event.threadId);
+        turnContextBuckets.delete(event.threadId);
         bookTurnUsage({
           botId: speaker.botId,
           botName: speaker.name,
@@ -21819,6 +21830,16 @@ async function startTurn(
         : undefined);
       const prompt = stablePrompt ? compactVolatileOrder(builtPrompt) : builtPrompt;
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
+      const catalogBytes = toolDefinitionBytes(integrations.agents?.env);
+      const buckets = measureContextBuckets({
+        sections: prompt.sections,
+        promptBytes: Buffer.byteLength(prompt.stable) + Buffer.byteLength(prompt.volatile),
+        messages: transcript.length,
+        toolsBytes: catalogBytes.tools,
+        agentsBytes: catalogBytes.agents,
+      });
+      if (buckets) turnContextBuckets.set(threadId, buckets);
+      else turnContextBuckets.delete(threadId);
       if (!warmOnly) turnTrace(threadId, "prompt-built");
       // the Files list's "last used": what this turn's prompt carried
       markWorkspaceUse(bot.id, promptSectionPaths(prompt.sections));
@@ -46027,8 +46048,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const resolvedPreset = typeof body.preset === "string" ? presetStore.resolve(body.preset) : null;
       const preset = resolvedPreset && presetOffered(resolvedPreset.row, orgInstallStatuses()) ? resolvedPreset : null;
       if (body.preset !== undefined && !preset) return json(res, 404, { error: PRESET_UNAVAILABLE_MESSAGE });
-      // Workspace is always Auto (2026-10-18): New bot defaults or a
-      // request naming a place create an Auto bot. Off stays.
+      // This computer and the cloud computer are kept. A Local VM or the
+      // browser still creates an Auto bot. Off stays.
       // A request that named This computer keeps its guards: the Approve
       // for me warning, and Ask as the starting level.
       const namedThisComputer = settings.computer === "local";
@@ -46666,12 +46687,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           typeof body.computer === "string" &&
           ["auto", "cloud", "vm", "local", "browser", "off"].includes(body.computer)
         ) {
-          // Workspace is always Auto (2026-10-18): a place an older app
-          // still sends reads as Auto, without an error. Off stays.
+          // This computer and the cloud computer are saved. A Local VM or
+          // the browser still reads as Auto, without an error. Off stays.
           requestedComputer = body.computer === "auto" ? undefined : requestedWorksOn(body.computer);
           patch.computer = requestedComputer;
         } else {
-          return json(res, 400, { error: "computer must be null or auto (Auto), or off" });
+          return json(res, 400, { error: "computer must be null, auto, local, cloud, or off" });
         }
       }
       if (normalizedSelection) patch.modelSelection = normalizedSelection;
