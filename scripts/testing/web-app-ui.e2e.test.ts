@@ -127,8 +127,11 @@ async function connect(url: string) {
     await expect.poll(() => evaluate("document.body.textContent.includes('Phone web app fixture message')"), { timeout: 15_000 }).toBe(true);
     const messages = await fetch(`${url}/api/threads/${bot.activeTaskId}/messages?limit=50`).then(r => r.json());
     expect(messages.messages.filter((message: { role: string; text: string }) => message.role === "user" && message.text === "Phone web app fixture message")).toHaveLength(1);
-    expect(await evaluate("caches.keys()" )).toEqual([]);
-    expect(await evaluate("navigator.serviceWorker.getRegistrations().then(items=>items.length)")).toBe(0);
+    // The page registers one shell worker (public/sw.js) so the last shell opens
+    // offline. It used to expect zero workers and an empty cache, which was true
+    // before that shell. API requests are not cached.
+    await expect.poll(() => evaluate("navigator.serviceWorker.getRegistrations().then(items=>items.length)"), { timeout: 15_000 }).toBe(1);
+    await expect.poll(() => evaluate("caches.keys().then(keys => keys.includes('sagax-shell-v1'))"), { timeout: 15_000 }).toBe(true);
     writeFileSync(`${logPath}.web-app.json`, JSON.stringify({ installability, platform: process.platform }, null, 2));
     console.log(`Web app evidence: ${logPath}.web-app.json`);
   } finally {
