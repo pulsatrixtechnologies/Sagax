@@ -4309,7 +4309,19 @@ function mcpIdentityOf(botId: string, threadId: string): Parameters<typeof mcpId
     // 2026-10-26: a call to another of the person's own bots or rooms is
     // theirs, not a team call (mcp-permissions.ts scopeForCall)
     ...(speakerId ? personOwnScope(speakerId) : {}),
+    // 2026-10-28: ask_bot and delegate_bot to a bot shared with them at run
+    ...(speakerId ? { runBotIds: personRunBots(speakerId) } : {}),
   };
+}
+/** 2026-10-28: the bots someone else owns that this person may run (a
+ * share at `run` or above): ask_bot and delegate_bot reach them at the
+ * person's own scope (mcp-permissions.ts ScopeOwners.runBot). */
+function personRunBots(principalId: string): string[] {
+  const person = principalId.trim().toLowerCase();
+  const viewer = authzViewerFromId(principalId);
+  if (!viewer) return [];
+  return store.bots.filter((bot) => !bot.hidden && effectiveBotOwner(bot).trim().toLowerCase() !== person
+    && atLeast(botLevel({ viewer, ...botFacts(bot) }), "run")).map((bot) => bot.id);
 }
 /** The bots and rooms this person owns (mcp-permissions.ts scopeOwnersFromEnv). */
 function personOwnScope(principalId: string): { ownBotIds: string[]; ownRoomIds: string[] } {
@@ -4397,8 +4409,9 @@ function agentsIntegration(
       // join_meeting: Settings > Experimental > Meeting notetaker, direct
       // conversations only. The internal route re-checks both.
       SAGAX_MEETINGS: meetingNotetakerEnabled(cfg) && !store.groupByThread(threadId) ? "1" : "0",
-      // phone_tool: the person speaking owns this bot, in a 1:1 turn of their
-      // own, and a phone of theirs offers tools now. The route re-checks.
+      // phone_tool: the person speaking, in a 1:1 turn of their own words
+      // (their own phone, on their bot or one shared with them, 2026-10-28),
+      // and a phone of theirs offers tools now. The route re-checks.
       // vault_http_request: this bot may send an API key of the person here
       // (server/credential-http.ts). The route re-checks every call.
       SAGAX_VAULT_HTTP: vaultHttpMounted(botId, threadId) ? "1" : "0",
@@ -4411,8 +4424,7 @@ function agentsIntegration(
           depth,
           speakerOrigin: turnSpeakers.get(threadId)?.origin,
           speakerPrincipal: turnSpeakerPrincipals.get(threadId),
-          ownerPrincipal: effectiveBotOwner(bot),
-          ownTurn: ownEnvironmentOrigin(bot, threadId) === "owner",
+          ownTurn: speakerOwnWordsTurn(bot, threadId),
           tainted: phoneToolTaintedThreads.has(threadId),
         });
         return "error" in turn ? "" : phoneTools.botTools(turn.person).join(",");
@@ -7436,11 +7448,11 @@ const openApiStore = new OpenApiStore(DATA_DIR);
 function openApiToolsEnv(botId: string, threadId: string): string {
   if (store.groupByThread(threadId)) return "";
   const organization = IDENTITY.kind === "perspicax";
+  // 2026-10-28: the operations of the person this turn is for (who speaks,
+  // or a routine's owner), on their own bot or one shared with them: a
+  // conversation uses the credentials of who speaks, never the owner's.
   const principal = organization ? vaultPrincipalForThread(threadId) : null;
-  if (organization) {
-    const bot = store.bot(botId);
-    if (!bot || !principal || effectiveBotOwner(bot).toLowerCase() !== principal.toLowerCase()) return "";
-  }
+  if (organization && (!store.bot(botId) || !principal)) return "";
   const scope = openApiScope(organization, principal);
   if (!scope) return "";
   const operations = openApiStore.publicOperations(scope);
@@ -29743,8 +29755,7 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
         depth: capability.depth ?? 0,
         speakerOrigin: turnSpeakers.get(capability.threadId)?.origin,
         speakerPrincipal: turnSpeakerPrincipals.get(capability.threadId),
-        ownerPrincipal: effectiveBotOwner(bot),
-        ownTurn: ownEnvironmentOrigin(bot, capability.threadId) === "owner",
+        ownTurn: speakerOwnWordsTurn(bot, capability.threadId),
         tainted: phoneToolTaintedThreads.has(capability.threadId),
       });
       return "error" in turn ? turn : { person: turn.person, botName: bot.name };
@@ -33503,6 +33514,22 @@ function turnStartFor(threadId: string): TurnStart {
  * environment (member-environment.ts ownEnvironmentTurnOrigin). Only the
  * owner's own request counts as theirs; another bot's hop, a routine, a
  * webhook or trigger, an email or any automation does not. */
+/** 2026-10-28: the person speaking started this turn with their own
+ * words (not an internal turn, a routine lineage, an automation or an
+ * unattended run), whoever owns the bot: what the phone tools of that
+ * person need on a bot shared with them. */
+function speakerOwnWordsTurn(bot: BotRecord, threadId: string): boolean {
+  const speaker = turnSpeakers.get(threadId);
+  const principal = speaker?.origin === "person" ? speaker.principalId?.trim() : undefined;
+  return ownEnvironmentTurnOrigin({
+    speaker,
+    ownerPrincipalId: speaker?.origin === "operator" ? effectiveBotOwner(bot) : principal ?? "",
+    internalTurn: isInternalTurn(threadId),
+    routineLineage: turnRoutineLineage.has(threadId),
+    automation: Boolean(directRequestOwners.get(threadId)?.automation),
+    unattended: isUnattended(bot.id, threadId),
+  }) === "owner";
+}
 function ownEnvironmentOrigin(bot: BotRecord, threadId: string): "owner" | "other" {
   return ownEnvironmentTurnOrigin({
     speaker: turnSpeakers.get(threadId),

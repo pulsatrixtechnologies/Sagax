@@ -170,6 +170,20 @@ describe("reachability guard: the self-knowledge base (sagax_help)", () => {
   });
 });
 
+describe("reachability guard: a bot shared with the person speaking (2026-10-28)", () => {
+  // The harness now hands a shared bot the speaker's own phone tools and
+  // OpenAPI operations (server/index.ts phoneToolTurn, openApiToolsEnv); the
+  // catalog must then offer them in that person's direct chat, never in a room.
+  const speakerOwn = { SAGAX_PHONE_TOOLS: "location", SAGAX_OPENAPI_TOOLS: JSON.stringify([{ name: "list_notes", method: "get", path: "/notes", summary: "List notes" }]) };
+  it("offers the speaker's own phone and API operations in their direct chat", () => {
+    for (const turn of [TURNS.direct, TURNS["direct-card"]]) {
+      const shown = names({ ...turn, ...ROLES.member, ...speakerOwn });
+      expect(shown).toContain("phone_tool");
+      expect([...shown].some((name) => name.startsWith("openapi_"))).toBe(true);
+    }
+  });
+});
+
 describe("reachability guard: what a person's direct chat is told", () => {
   // server/index.ts startTurn: a person's own message, boundedCoordination on
   const team = [{ id: "chief", name: "Atlas" }, { id: "b2", name: "Nova" }];

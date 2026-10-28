@@ -378,22 +378,33 @@ export interface ScopeOwners {
   /** 2026-10-27 (#1098): a bot this person created after the list was
    * handed over (a warm proxy keeps its spawn environment): theirs. */
   learnBot?(botId: string): void;
+  /** 2026-10-28: a bot someone else owns and shares with this person at
+   * `run` or above. Asking or delegating to it (DISPATCH_TO_SHARED_TOOLS)
+   * is the person's own work; nothing else about it is (archiving it,
+   * changing it, posting in its rooms stay the team scope). */
+  runBot?(botId: string): boolean;
 }
+
+/** 2026-10-28: the tools that hand work to a bot shared with the person at
+ * `run`: the sharing level is exactly that right. */
+export const DISPATCH_TO_SHARED_TOOLS: ReadonlySet<string> = new Set(["ask_bot", "delegate_bot"]);
 
 /** The scope a call reaches, read from its arguments. Anything naming a bot
  * other than the caller, a room or a team is team, unless `owners` says
  * that bot or room is the acting person's own (then self); an explicit org
  * scope or an all-organization flag is org. Otherwise self. Conservative on
  * purpose: a wider guess only ever needs a wider grant. */
-export function scopeForCall(args: Record<string, unknown> | undefined, ownBotId: string, owners?: ScopeOwners): McpScope {
+export function scopeForCall(args: Record<string, unknown> | undefined, ownBotId: string, owners?: ScopeOwners, tool?: string): McpScope {
   if (!args) return "self";
   if (args.scope === "org" || args.all === true || args.organization === true) return "org";
   if (args.scope === "team") return "team";
   const person = owners?.principalId.trim().toLowerCase() ?? "";
   const mine = (owner: string | undefined) => Boolean(person) && typeof owner === "string" && owner.trim().toLowerCase() === person;
+  // 2026-10-28: ask_bot or delegate_bot to a bot shared with the person at run
+  const runnable = (botId: string) => tool !== undefined && DISPATCH_TO_SHARED_TOOLS.has(tool) && owners?.runBot?.(botId) === true;
   for (const key of ["bot_id", "for_bot_id", "agent_id", "to_bot_id", "target_bot_id"]) {
     const value = args[key];
-    if (typeof value === "string" && value && value !== ownBotId && !mine(owners?.botOwner?.(value))) return "team";
+    if (typeof value === "string" && value && value !== ownBotId && !mine(owners?.botOwner?.(value)) && !runnable(value)) return "team";
   }
   for (const key of ["room_id", "group_id", "team_id", "section"]) {
     const value = args[key];
@@ -413,11 +424,13 @@ export function scopeOwnersFromEnv(env: NodeJS.ProcessEnv, principalId: string):
   const list = (value: string | undefined) => new Set((value ?? "").split(",").map((id) => id.trim()).filter(Boolean));
   const bots = list(env.SAGAX_MCP_OWN_BOTS);
   const rooms = list(env.SAGAX_MCP_OWN_ROOMS);
+  const runBots = list(env.SAGAX_MCP_RUN_BOTS);
   return {
     principalId,
     botOwner: (botId) => (bots.has(botId) ? principalId : undefined),
     roomOwner: (roomId) => (rooms.has(roomId) ? principalId : undefined),
     learnBot: (botId) => { if (botId.trim()) bots.add(botId.trim()); },
+    runBot: (botId) => runBots.has(botId),
   };
 }
 
@@ -566,7 +579,7 @@ export function auditSampleFromEnv(env: NodeJS.ProcessEnv): number {
 /** Wraps one tool call. The audit hook never throws into the call. */
 export async function guardToolCall<R extends GuardedResult>(options: GuardOptions, tool: string, args: Record<string, unknown> | undefined, run: () => Promise<R>): Promise<R | GuardedResult> {
   if (options.mode === "off") return run();
-  const scope = scopeForCall(args, options.ownBotId, options.owners);
+  const scope = scopeForCall(args, options.ownBotId, options.owners, tool);
   let decision = decide(options.principal, tool, scope, { external: options.external === true });
   const resource = resourceKeyForCall(tool, args, options.catalog) ?? undefined;
   if (decision.allowed && resource && resourceDenied(resource, options.deniedResources ?? [])) {
@@ -611,18 +624,21 @@ export function mcpPolicyEnv(env: NodeJS.ProcessEnv): Record<string, string> {
  * rule 5). A turn with no person speaking (a routine, a webhook) is a
  * service; the Perspicax role maps admin to admin, manager to operator,
  * anyone else to member. Nothing here is a credential. */
-export function mcpIdentityEnv(input: { botId: string; principalId?: string; perspicaxRole?: string; teamIds?: readonly string[]; ownBotIds?: readonly string[]; ownRoomIds?: readonly string[] }): Record<string, string> {
+export function mcpIdentityEnv(input: { botId: string; principalId?: string; perspicaxRole?: string; teamIds?: readonly string[]; ownBotIds?: readonly string[]; ownRoomIds?: readonly string[]; runBotIds?: readonly string[] }): Record<string, string> {
   const role: McpRole = !input.principalId ? "service" : input.perspicaxRole === "admin" ? "admin" : input.perspicaxRole === "manager" ? "operator" : "member";
   const ids = (list: readonly string[] | undefined) => (list ?? []).filter((id) => /^[\w.:-]{1,128}$/.test(id)).join(",");
   // the person's own bots and rooms (scopeOwnersFromEnv), only when a person speaks
   const ownBots = input.principalId ? ids(input.ownBotIds) : "";
   const ownRooms = input.principalId ? ids(input.ownRoomIds) : "";
+  // 2026-10-28: bots shared with the person at run (ScopeOwners.runBot)
+  const runBots = input.principalId ? ids(input.runBotIds) : "";
   return {
     SAGAX_MCP_ROLE: role,
     SAGAX_MCP_PRINCIPAL: input.principalId || input.botId,
     SAGAX_MCP_TEAMS: ids(input.teamIds),
     ...(ownBots ? { SAGAX_MCP_OWN_BOTS: ownBots } : {}),
     ...(ownRooms ? { SAGAX_MCP_OWN_ROOMS: ownRooms } : {}),
+    ...(runBots ? { SAGAX_MCP_RUN_BOTS: runBots } : {}),
   };
 }
 

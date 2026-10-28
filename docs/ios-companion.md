@@ -474,7 +474,9 @@ Health is not offered.
   Parallel tasks the owner opens in their own turn inherit the owner's
   access; the card on the phone still asks.
 - The bot sees one tool, `phone_tool` (`server/drivers/agents-phone-tools.ts`),
-  only in a 1:1 turn the bot's owner started, and only while a phone of
+  only in a 1:1 turn the person speaking started with their own words (on
+  their own bot, or since 2026-10-28 on a bot shared with them: it is the
+  speaker's phone, never the owner's), and only while a phone of
   theirs offers tools (it registered in the last 15 minutes, or in the last
   day when the server can push to it). Its `tool` enum lists exactly what
   the phone offers. Never in a room, a routine, a webhook turn or a turn

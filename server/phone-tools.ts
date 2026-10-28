@@ -275,7 +275,7 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       if (!this.availableTools(person).includes(input.tool)) {
         const local = [...(devices.get(person)?.values() ?? [])].some((device) => device.transport !== "protected" && device.tools.includes(input.tool) && reachable(person, device));
         if (local) throw new PhoneToolUnavailable(PHONE_TOOLS_NEED_PROTECTED_TRANSPORT);
-        throw new PhoneToolUnavailable("No phone of this person can do that right now. Ask them to open Sagax on their iPhone, then try again.");
+        throw new PhoneToolUnavailable("No phone of the person speaking can do that right now (their own paired iPhone, never the bot owner's). Ask them to open Sagax on their iPhone, then try again.");
       }
       if ((refusedUntil.get(refusalKey(person, input.botId, input.tool)) ?? 0) > now()) {
         throw new PhoneToolUnavailable("The person refused this on their phone a moment ago. Do not ask again right away; ask them in the chat if it is still needed.", 429);
@@ -432,9 +432,9 @@ export function phoneToolTurn(input: {
   depth: number;
   speakerOrigin?: "person" | "operator" | "owner-routine" | "peer";
   speakerPrincipal?: string;
-  ownerPrincipal: string;
-  /** ownEnvironmentOrigin in index.ts says "owner": not an internal turn, a
-   * routine lineage, an automation or an unattended run. */
+  /** The person's own words started this turn (speakerOwnWords in
+   * index.ts): not an internal turn, a routine lineage, an automation or an
+   * unattended run. */
   ownTurn: boolean;
   /** Another bot's words were folded into this live turn (an aside): the
    * turn no longer speaks only for its person (review of #960). */
@@ -443,13 +443,14 @@ export function phoneToolTurn(input: {
   if (!input.ownsThread) return { error: "source conversation does not belong to sender" };
   if (input.tainted) return { error: "Another bot's message joined this turn: the phone is used only in a turn the person alone started. Ask the person to ask again." };
   if (!input.ownTurn) return { error: "Only the person's own message can use their phone: not a routine, a webhook, an automation or an unattended run." };
-  if (input.inRoom) return { error: "A phone tool is used in a direct conversation with the bot's owner, not in a room." };
+  if (input.inRoom) return { error: "A phone tool is used in a direct conversation, not in a room." };
   if (input.depth > 0 || (input.speakerOrigin !== "person" && input.speakerOrigin !== "operator")) {
     return { error: "Only the person's own message can use their phone: not a routine, a webhook or another bot." };
   }
+  // 2026-10-28: a conversation uses the credentials of who speaks. On a bot
+  // shared with them, that is the speaker's own phone, never the owner's.
   const person = (input.speakerPrincipal ?? "").trim().toLowerCase();
-  const owner = input.ownerPrincipal.trim().toLowerCase();
-  if (!person || person !== owner) return { error: "Only the bot's owner can use their own phone through it." };
+  if (!person) return { error: "No signed-in person is speaking in this turn, so there is no phone to use." };
   return { person };
 }
 
