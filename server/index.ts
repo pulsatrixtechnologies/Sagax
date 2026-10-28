@@ -225,7 +225,7 @@ import { companyTextForBots } from "./memory-company.ts";
 import { procedureSignal, recordProcedure } from "./memory-procedures.ts";
 import type { CaptureTurn } from "./memory-capture.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
-import { archivedAgent, canAccessBot, canAccessTeam, primaryCovers, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, sameOwnerBots, setPeerScope, setPrimaryCover, setSameOwner, roomPeerRosterSystemPrompt, roomRosterLine, uniquePeerName, PEER_ACCESS_HELP } from "./peer-roster.ts";
+import { archivedAgent, canAccessBot, canAccessTeam, primaryCovers, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, roomRecruitIds, sameOwnerBots, setPeerScope, setPrimaryCover, setSameOwner, roomPeerRosterSystemPrompt, roomRosterLine, uniquePeerName, PEER_ACCESS_HELP } from "./peer-roster.ts";
 import { orgPeerInScope } from "./peer-scope.ts";
 import {
   containerComputerAction,
@@ -43199,7 +43199,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         // Section labels are a permission boundary, not bot-owned organization.
         // A Primary Bot may not recruit excluded peers or acquire a foreign transcript.
-        const allowedIds = new Set([chief.id, ...reachablePeers(store.bots, chief).map((bot) => bot.id)]);
+        // #1098 lets it message every bot of its person past its peer list; a
+        // room still honors that list (roomRecruitIds, #1366).
+        const allowedIds = new Set(roomRecruitIds(store.bots, chief));
         const allowedRoster = (ids: string[]) => ids.includes(chief.id) && ids.every((id) => allowedIds.has(id));
         if (body.section !== undefined && (typeof body.section !== "string" || sectionKey(body.section) !== sectionKey(chief.section))) {
           return json(res, 403, { error: "rooms must stay in your own section; ask the user to move them" });

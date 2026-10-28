@@ -208,6 +208,20 @@ export function reachablePeers<T extends RosterMember>(bots: readonly T[], from:
   return bots.filter(bot => canReachPeer(from, bot));
 }
 
+/** The operator's peer allow-list, with no Primary Bot exception.
+ * Unset or not an array keeps the open default (peerAllowed). */
+function explicitPeerListAllows(from: { peers?: string[] }, targetId: string): boolean {
+  return !Array.isArray(from.peers) || from.peers.includes(targetId);
+}
+
+/** Ids a bot may put in a room: itself, plus bots it can reach whose ids its
+ * explicit peer list still names. #1098 lets a Primary Bot message every bot
+ * of its person past that list; a room is a shared transcript and still
+ * honors it (#1366). Hidden bots and other scope gates stay in reachablePeers. */
+export function roomRecruitIds<T extends RosterMember>(bots: readonly T[], from: RosterMember): string[] {
+  return [from.id, ...reachablePeers(bots, from).map((bot) => bot.id).filter((id) => explicitPeerListAllows(from, id))];
+}
+
 /** What a bot wrote in a bot-id slot, resolved to a teammate.
  *
  * Models copy ids from list_bots most of the time, but a Primary Bot reading its
