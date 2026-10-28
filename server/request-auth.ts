@@ -661,6 +661,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "PATCH", "DELETE"], path: /^\/api\/pages\/[\w-]+$/ },
   { methods: ["GET"], path: /^\/api\/pages\/[\w-]+\/versions\/\d+$/ },
   { methods: ["POST"], path: /^\/api\/pages\/[\w-]+\/(?:publish|decline|revoke)$/ },
+  // The person's own share and the check that a person-marked page does not
+  // enter a room or a group (server/routes/published-pages.ts). Not an admin route.
+  { methods: ["POST"], path: /^\/api\/pages\/[\w-]+\/(?:share|place)$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/cards\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/secret-cards\/[\w-]+\/(?:resume|dismiss)$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/ },

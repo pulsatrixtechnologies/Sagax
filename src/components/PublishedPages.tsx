@@ -7,12 +7,13 @@
 // the person, its link, who can see it, its expiry, its versions, Revoke
 // and Delete.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, FileText, Loader2, Maximize2, Trash2, XCircle } from "lucide-react";
+import { Eye, EyeOff, FileText, Loader2, Maximize2, Pin, Trash2, XCircle } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { PillSelect, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow, SwitchRow } from "./SettingsPrimitives";
 import { api, useStore, type Message } from "@/state/store";
+import { shareAudienceBody } from "../../shared/page-audience";
 import {
   PAGE_ACCESS,
   type PageAccess,
@@ -174,6 +175,56 @@ export function PagePublishCard({ message }: { message: Message }) {
   );
 }
 
+/** The person's audience. Rooms and groups are the ones already in the
+ * app. An empty list is said as empty. Nothing is invented. */
+function PageAudienceRow({ page, busy, onShare }: { page: PublishedPageSummary; busy: boolean; onShare(body: { audience: string; id?: string }): void }) {
+  const { state } = useStore();
+  const mark = page.audience?.kind === "room" || page.audience?.kind === "group" ? `${page.audience.kind}:${page.audience.id}` : "person";
+  const [kind, setKind] = useState(page.audience?.kind ?? "person");
+  const [id, setId] = useState(page.audience?.kind === "room" || page.audience?.kind === "group" ? page.audience.id : "");
+  useEffect(() => {
+    if (page.audience?.kind === "room" || page.audience?.kind === "group") {
+      setKind(page.audience.kind);
+      setId(page.audience.id);
+    } else {
+      setKind("person");
+      setId("");
+    }
+  }, [mark]);
+  const places = state.groups;
+  const body = shareAudienceBody(kind, id);
+  const known = places.some((group) => group.id === id);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink">
+        <span>{t("pages.audience")}</span>
+        <PillSelect
+          ariaLabel={t("pages.audience")}
+          value={kind}
+          disabled={busy}
+          onChange={(next) => { setKind(next); if (next === "person") setId(""); }}
+          options={[
+            { value: "person", label: t("pages.audience.person") },
+            { value: "room", label: t("pages.audience.room") },
+            { value: "group", label: t("pages.audience.group") },
+          ]}
+        />
+        {kind !== "person" && (
+          <select aria-label={t("pages.audience.pick")} disabled={busy || places.length === 0} value={id} onChange={(event) => setId(event.target.value)}
+            className="max-w-48 rounded border border-hairline/60 bg-raised px-2 py-1 text-[12px] text-ink">
+            <option value="">{places.length === 0 ? t("pages.audience.none") : t("pages.audience.pick")}</option>
+            {places.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+            {!known && id ? <option value={id}>{id}</option> : null}
+          </select>
+        )}
+        <button type="button" disabled={busy || !body} onClick={() => { if (body) onShare(body); }}
+          className="rounded px-1.5 py-1 text-accent hover:bg-hover disabled:opacity-40">{t("pages.audience.share")}</button>
+      </div>
+      {kind === "person" && <p className="text-[11.5px] text-ink-tertiary">{t("pages.audience.personHint")}</p>}
+    </div>
+  );
+}
+
 function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSummary; linkOff: boolean; onChange(page: PublishedPageSummary): void; onRemoved(id: string): void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -203,6 +254,10 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
       <div className="flex items-center gap-2">
         <FileText size={14} aria-hidden="true" className="text-ink-secondary" />
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{page.title}</span>
+        <button type="button" aria-pressed={page.pinned === true} disabled={busy} onClick={() => void call("", { method: "PATCH", body: JSON.stringify({ pinned: page.pinned !== true }) })}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink disabled:opacity-40">
+          <Pin size={12} />{page.pinned ? t("pages.unpin") : t("pages.pin")}
+        </button>
         <span className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-ink-secondary">{status}</span>
         <button ref={openButton} type="button" data-page-open aria-label={t("pages.openFull")} title={t("pages.openFull")} onClick={() => setViewing(true)}
           className="rounded p-1 text-ink-secondary hover:bg-hover hover:text-ink">
@@ -210,6 +265,10 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
         </button>
       </div>
       {viewing && <PageViewerDialog pageId={page.id} returnFocus={openButton.current} onClose={() => setViewing(false)} onChange={onChange} />}
+      <PageAudienceRow page={page} busy={busy} onShare={(body) => void call("/share", { method: "POST", body: JSON.stringify(body) })} />
+      <p className="text-[12px] text-ink-secondary">{t("pages.coedit")}</p>
+      <SwitchRow label={t("pages.keepUpdated")} description={t("pages.keepUpdatedHint")} checked={page.keepUpdated === true} disabled={busy}
+        onChange={(next) => void call("", { method: "PATCH", body: JSON.stringify({ keepUpdated: next }) })} />
       <p className="text-[11.5px] text-ink-tertiary">
         {t("pages.updated", { when: when(page.updatedAt) })}
         {page.expiresAt !== null && ` · ${t("pages.expiresOn", { when: when(page.expiresAt) })}`}

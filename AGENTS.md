@@ -7089,6 +7089,26 @@ The reference design parity, chat rows 31 to 34. Covered by
 - Not done here: iOS (C11, annotation is desktop only on Grok too; #937 holds
   the phone screens), multi-file pages.
 
+## Pages: audience, pin, co-edit, kept up to date
+
+The person chooses who sees a page inside Sagax (`shared/page-audience.ts`,
+`POST /api/pages/:id/share`). The mark is `person` (only them), `room` (one
+room) or `group` (one group). A page marked person does not enter a room or
+a group: `POST /api/pages/:id/place` answers 403 `page_audience_person` and
+writes nothing. A room mark enters only that room. A group mark enters only
+that group. The bot cannot change the mark. No admin route does either.
+The public reading link (private, organization, link) is unchanged.
+
+Pin is the person's (`PATCH { pinned }`). Their list shows pinned pages
+first. Co-edit is the person's own version (`POST /api/pages/:id/versions`)
+and the bot's `propose_page`. `PATCH { keepUpdated: true }` is the person's
+switch: on a page they already published, the next version from either of
+them replaces the published one. Access, audience, expiry and the link stay.
+A draft is not published by that switch. Artifacts (the widget and its
+refresh) are a different object and are not changed here.
+
+Covered by `shared/page-audience.test.ts` and `server/page-share.test.ts`.
+
 ## Voice notes, microphone choice, logs and feedback (2026-10-16)
 
 - Voice notes (+ > Record a voice note, `src/components/useVoiceNoteRecorder.ts`,
