@@ -2,10 +2,11 @@
 // the Featured row, then one section per source (Shared with me, My Bots,
 // Organization, Templates) in two columns, each with View all. Templates
 // also carries the old Templates library's tools (Import, From a folder,
-// Share a team) and, in its own view, chips for the apps templates use.
+// Share a team) and, in its own view, chips for the apps templates use. The
+// xAI Bot Marketplace is a section of its own, with Refresh and its errors.
 // Purely presentational: BotCatalogModal.tsx owns the data and the actions.
 import type { ReactNode } from "react";
-import { ExternalLink, Search } from "lucide-react";
+import { ExternalLink, RefreshCw, Search } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -163,6 +164,40 @@ export interface BotCatalogViewProps {
   /** The community templates' repository, linked from the Templates view. */
   repositoryUrl?: string;
   onOpenRepository?: (url: string) => void;
+  /** The xAI Bot Marketplace section's state: reading, the error line, its page. */
+  xai?: XaiSectionState;
+}
+
+export interface XaiSectionState {
+  loading: boolean;
+  /** A clear line (never the raw error); empty when the list was read. */
+  error: string;
+  url?: string;
+  onRefresh: () => void;
+  onOpenSource: (url: string) => void;
+}
+
+/** Beside the xAI Bot Marketplace's title: its page on x.ai, then Refresh. */
+function XaiSectionTools({ xai }: { xai: XaiSectionState }) {
+  return (
+    <span className="flex items-center gap-3" data-catalog-xai-tools="">
+      {xai.url && (
+        <button type="button" onClick={() => xai.onOpenSource(xai.url!)} data-catalog-xai-source="" className="flex items-center gap-1 text-[12px] text-ink-secondary hover:text-ink">
+          {t("botCatalog.xai.open")}<ExternalLink size={11} aria-hidden="true" />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={xai.onRefresh}
+        disabled={xai.loading}
+        data-catalog-xai-refresh=""
+        className="flex items-center gap-1 rounded-full border border-border px-2.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink disabled:opacity-60"
+      >
+        <RefreshCw size={11} aria-hidden="true" className={cn(xai.loading && "animate-spin motion-reduce:animate-none")} />
+        {xai.loading ? t("botCatalog.xai.refreshing") : t("botCatalog.xai.refresh")}
+      </button>
+    </span>
+  );
 }
 
 /** Templates' tools, beside the section's title. */
@@ -287,6 +322,7 @@ export function BotCatalogView(props: BotCatalogViewProps) {
                     {!expanded && <h3 className={CATEGORY_MODAL.sectionTitle}>{t(SECTION_LABEL[section.id])}</h3>}
                     <div className="ml-auto flex items-center gap-3">
                       {section.id === "templates" && props.onTemplateTool && <TemplateToolButtons onTool={props.onTemplateTool} />}
+                      {section.id === "xai" && props.xai && <XaiSectionTools xai={props.xai} />}
                       {section.id === "templates" && expanded === "templates" && props.repositoryUrl && (
                         <button type="button" onClick={() => props.onOpenRepository?.(props.repositoryUrl!)} data-catalog-repository="" className="flex items-center gap-1 text-[12px] text-ink-secondary hover:text-ink">
                           {t("botCatalog.template.repository")}<ExternalLink size={11} aria-hidden="true" />
@@ -305,8 +341,12 @@ export function BotCatalogView(props: BotCatalogViewProps) {
                       )}
                     </div>
                   </div>
+                  {section.id === "xai" && props.xai?.error && (
+                    <p role="alert" data-catalog-xai-error="" className="mb-2 rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-danger">{props.xai.error}</p>
+                  )}
                   {shown.length === 0 ? (
-                    <p className="px-2.5 py-2 text-[12.5px] text-ink-tertiary">{t("botCatalog.empty.section")}</p>
+                    section.id === "xai" && props.xai?.error ? null
+                    : <p className="px-2.5 py-2 text-[12.5px] text-ink-tertiary">{section.id === "xai" && props.xai?.loading ? t("botCatalog.xai.loading") : t("botCatalog.empty.section")}</p>
                   ) : (
                     <div className={CATEGORY_MODAL.grid}>
                       {shown.map((item) => (

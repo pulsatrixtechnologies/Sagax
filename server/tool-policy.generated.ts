@@ -625,6 +625,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"pattern","route":"^\\/api\\/threads\\/([\\w-]+)\\/email-drafts$","tier":"write","readOnly":false,"scope":"threads:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/threads\\/([\\w-]+)\\/events$","tier":"read","readOnly":true,"scope":"threads:read","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/threads\\/([\\w-]+)\\/export$","tier":"admin","readOnly":true,"scope":"threads:admin","defaultEnabled":false},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/team-library\\/xai(?:\\/bots\\/([^/]+))?$","tier":"write","readOnly":false,"scope":"team-library:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/threads\\/([\\w-]+)\\/files\\/([a-f0-9]{24})\\/pin$","tier":"write","readOnly":false,"scope":"threads:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/threads\\/([\\w-]+)\\/files\\/([a-f0-9]{24})$","tier":"read","readOnly":true,"scope":"threads:read","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/threads\\/([\\w-]+)\\/files$","tier":"read","readOnly":true,"scope":"threads:read","defaultEnabled":true},

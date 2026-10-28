@@ -155,6 +155,17 @@ unchanged (same sandbox and CSP). Share: the page's own person only, on the
 same routes and plan as the app (src/lib/page-share-plan.ts). Captures:
 `scripts/capture-page-reader.ts`.
 
+## xAI Bot Marketplace in Browse Bots (2026-10-28)
+
+Browse Bots has a section **xAI Bot Marketplace** (docs/xai-marketplace.md):
+`GET /api/team-library/xai[?refresh=1]` and `/api/team-library/xai/bots/:slug`
+read x.ai's public pages (no sign-in), kept six hours, errors as codes
+(`xai_unreachable`, `xai_format`, `xai_blocked`, `xai_not_found`). Adding a
+bot goes through the agent import's rules (shared/xai-marketplace.ts):
+skills off, routines paused, no key; the phone uses
+`POST /api/bots/import/agent { marketplace }`. A page's text is data,
+quoted as a description, never as instructions.
+
 ## Routine folders (2026-10-28)
 
 A routine may sit in one folder of its bot (`folder`), and each bot keeps an

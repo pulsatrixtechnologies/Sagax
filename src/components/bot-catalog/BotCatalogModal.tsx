@@ -10,7 +10,11 @@
 // organisation; server/routes/bot-catalog.ts) and the templates: the
 // organization library's packages (GET /api/org-library), New bot's presets
 // (an admin read), the community teams (GET /api/team-library/catalog) and
-// the built-in roles. Actions: show or hide a shared bot in the sidebar
+// the built-in roles, and the xAI Bot Marketplace (GET /api/team-library/xai,
+// its own section with Refresh; a bot's page through
+// /api/team-library/xai/bots/:slug, made into a package here and added
+// through the bot import, as the agent import does: AgentImport.tsx).
+// Actions: show or hide a shared bot in the sidebar
 // (src/lib/sidebar-hidden.ts), Import Bot (POST /api/bot-catalog/:id/import),
 // Use this template (a role or a preset through New bot's own creation, a
 // community team through its preview and POST /api/teams/import, an
@@ -27,7 +31,12 @@ import { orgCardAction, orgPackagePreview, type OrgLibraryListing, type OrgLibra
 import { teamImportPreview, type PendingTeamImport } from "@/lib/team-import";
 import type { Routine } from "@/lib/routines";
 import type { PackageDocument } from "../../../shared/package-format";
-import { api, closeBotCatalog, useStore, type Bot, type Group } from "@/state/store";
+import { api, closeBotCatalog, useStore, type ApiError, type Bot, type Group } from "@/state/store";
+import { XAI_MARKETPLACE_LABEL, xaiMarketplaceToPackage, type XaiMarketplaceBotAnswer, type XaiMarketplaceList } from "../../../shared/xai-marketplace";
+import { GrokImportError, type GrokLeftOut } from "../../../shared/grok-import";
+import { AgentImportSummary, packageFile } from "../AgentImport";
+import { BotZipImportPanel } from "../BotZipImport";
+import { GrokLeftOutList } from "../GrokImportBox";
 import { useOrgPeople } from "@/lib/perspicax-org";
 import { personAvatarSrc } from "@/lib/profile-management";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -51,6 +60,7 @@ import {
   type CatalogItem,
   type CatalogSectionId,
   catalogCategoryLabel,
+  xaiErrorText,
 } from "@/lib/bot-catalog";
 import { DEFAULT_BOT_CATALOG_CATEGORIES, type BotCatalogListing } from "../../../shared/bot-catalog";
 import { isBackShortcut } from "@/lib/back-shortcut";
@@ -77,6 +87,15 @@ export function teamImportedText(result: TeamImportResult): string {
 /** A template that is a team (a community one or an organization package):
  * its detail shows the import preview. */
 type TeamPreview = { pending: PendingTeamImport | null; loading: boolean; error: string };
+
+/** A bot of the xAI Bot Marketplace, made into a package for the bot import. */
+type XaiPreview = { made: { file: Blob; pending: PendingTeamImport; leftOut: GrokLeftOut[] } | null; loading: boolean; error: string };
+
+function timeZone(): string {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; }
+}
+
+const apiCode = (error: unknown) => (error as ApiError | undefined)?.body?.code;
 
 type Feedback = { error: boolean; text: string } | null;
 
@@ -222,6 +241,11 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
   const [tool, setTool] = useState<TemplateTool | null>(state.botCatalogTarget?.installUrl ? "import" : null);
   const [installUrl, setInstallUrl] = useState<string | undefined>(state.botCatalogTarget?.installUrl);
   const [teamPreview, setTeamPreview] = useState<TeamPreview | null>(null);
+  const [xaiPreview, setXaiPreview] = useState<XaiPreview | null>(null);
+  const [xai, setXai] = useState<XaiMarketplaceList | null>(null);
+  const [xaiError, setXaiError] = useState("");
+  const [xaiLoading, setXaiLoading] = useState(true);
+  const [xaiRefresh, setXaiRefresh] = useState(0);
   const toolsBack = useRef<(() => boolean) | null>(null);
   // The old library was a desktop feature: files, folders and the team
   // sources stay off on a remote client (it keeps My Bots and the roles).
@@ -272,6 +296,23 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
     return () => { alive = false; };
   }, [remoteClient, reload]);
 
+  // The xAI Bot Marketplace: kept a few hours on the server; Refresh reads
+  // x.ai again. A failure is a clear line in its section, never the raw error.
+  useEffect(() => {
+    let alive = true;
+    setXaiLoading(true);
+    setXaiError("");
+    api<XaiMarketplaceList>(`/api/team-library/xai${xaiRefresh ? "?refresh=1" : ""}`)
+      .then((result) => {
+        if (!alive) return;
+        setXai(result);
+        if (result.stale) setXaiError([xaiErrorText(result.stale.code), t("botCatalog.xai.staleNote")].join(" "));
+      })
+      .catch((error) => { if (alive) setXaiError(xaiErrorText(apiCode(error))); })
+      .finally(() => { if (alive) setXaiLoading(false); });
+    return () => { alive = false; };
+  }, [xaiRefresh]);
+
   useEffect(() => {
     let alive = true;
     // New bot's presets are an admin read; a member keeps the built-in roles.
@@ -287,6 +328,22 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
     setTab("soul");
     setPublishing(false);
     setTeamPreview(null);
+    setXaiPreview(null);
+    if (selected.kind === "template" && selected.template.xai) {
+      // A marketplace bot: its page, made into the same package as the agent import.
+      setDetail(templateDetail(selected));
+      const slug = selected.template.xai.slug;
+      let alive = true;
+      setXaiPreview({ made: null, loading: true, error: "" });
+      api<XaiMarketplaceBotAnswer>(`/api/team-library/xai/bots/${encodeURIComponent(slug)}`)
+        .then((answer) => {
+          if (!alive) return;
+          const { document, leftOut } = xaiMarketplaceToPackage(answer.bot, { timeZone: timeZone() });
+          setXaiPreview({ made: { file: packageFile(document), pending: teamImportPreview(document), leftOut }, loading: false, error: "" });
+        })
+        .catch((error) => { if (alive) setXaiPreview({ made: null, loading: false, error: xaiErrorText(apiCode(error) ?? (error instanceof GrokImportError ? "xai_format" : undefined)) }); });
+      return () => { alive = false; };
+    }
     if (selected.kind === "template") {
       setDetail(templateDetail(selected));
       const { community: team, orgPackage } = selected.template;
@@ -323,8 +380,8 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
   const admin = data?.viewer.admin ?? false;
   const canCreate = data ? data.viewer.canCreate : viewerCanCreateBots(state.config) && !viewerBotsReadOnly(state.config);
   const templates = useMemo(
-    () => catalogTemplates(presets, undefined, { community: community?.teams ?? [], orgPackages: orgListing?.organization ? orgListing.packages : [] }),
-    [presets, community, orgListing],
+    () => catalogTemplates(presets, undefined, { community: community?.teams ?? [], orgPackages: orgListing?.organization ? orgListing.packages : [], xai: xai?.bots ?? [] }),
+    [presets, community, orgListing, xai],
   );
   const apps = useMemo(() => templateApps(templates), [templates]);
   const sections = useMemo(
@@ -415,8 +472,8 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
     const done = () => { setFeedback({ error: false, text: t("botCatalog.feedback.imported", { name }) }); setReload((value) => value + 1); };
     setFeedback(null);
     if (item.kind === "template" && item.template.orgPackage) { await addOrgPackage(item.template.orgPackage); return; }
-    // A community team previews what it adds first: its detail view.
-    if (item.kind === "template" && item.template.community) { setSelected(item); return; }
+    // A community team, or a marketplace bot, previews what it adds first: its detail view.
+    if (item.kind === "template" && (item.template.community || item.template.xai)) { setSelected(item); return; }
     if (item.kind === "template" && item.template.role) {
       dispatch({ type: "newBot", role: item.template.role, preserveSelection: true, onCreated: done, onError: (message) => setFeedback({ error: true, text: message }) });
       return;
@@ -497,7 +554,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
   };
 
   // A community team's Add is in its preview, under what it adds.
-  const renderDetailActions = (item: CatalogItem): ReactNode => item.kind === "template" && item.template.community ? null
+  const renderDetailActions = (item: CatalogItem): ReactNode => item.kind === "template" && (item.template.community || item.template.xai) ? null
     : item.kind === "template" && item.template.orgPackage && orgCardAction(item.template.orgPackage) !== "add" ? <OrgPackageState entry={item.template.orgPackage} />
     : catalogActions(item, ctx).map((action, index) => (
     <button
@@ -532,6 +589,25 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
   );
 
   const templatePreview = (item: CatalogItem): ReactNode | undefined => {
+    if (item.kind === "template" && item.template.xai && xaiPreview) {
+      if (xaiPreview.loading) return <p className="text-[13px] text-ink-secondary" role="status">{t("botCatalog.loading")}</p>;
+      if (!xaiPreview.made) return <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-danger" data-catalog-xai-error="">{xaiPreview.error}</p>;
+      const { made } = xaiPreview;
+      if (!canCreate) return <TeamImportDetails pending={made.pending} importedNames={made.pending.members.map((member) => member.name)} />;
+      return (
+        <div data-catalog-xai-preview="">
+          <BotZipImportPanel
+            key={item.key}
+            file={made.file}
+            sourceLabel={t("agentImport.from", { source: XAI_MARKETPLACE_LABEL })}
+            summary={<AgentImportSummary pending={made.pending} />}
+            extra={<GrokLeftOutList leftOut={made.leftOut} />}
+            onCancel={() => { setSelected(null); setFeedback(null); }}
+            onImported={(result) => teamImported({ name: result.name, members: 1 })}
+          />
+        </div>
+      );
+    }
     if (item.kind !== "template" || !teamPreview) return undefined;
     if (teamPreview.loading) return <p className="text-[13px] text-ink-secondary" role="status">{t("botCatalog.loading")}</p>;
     if (!teamPreview.pending) return <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-danger">{teamPreview.error || t("botCatalog.loadError")}</p>;
@@ -611,6 +687,13 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
           onTemplateApp={setTemplateApp}
           repositoryUrl={community?.repositoryUrl}
           onOpenRepository={(url) => void openExternal(url)}
+          xai={{
+            loading: xaiLoading,
+            error: xaiError,
+            url: xai?.url,
+            onRefresh: () => setXaiRefresh((value) => value + 1),
+            onOpenSource: (url) => void openExternal(url),
+          }}
         />
       )}
     </>

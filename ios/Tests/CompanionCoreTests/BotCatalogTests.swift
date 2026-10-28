@@ -75,7 +75,7 @@ final class BotCatalogTests: XCTestCase {
         let roles = Array(NewBotRules.builtInRoles.prefix(1))
         let templates = BotCatalogRules.templates(presets: [], community: [], roles: roles)
         let sections = BotCatalogRules.sections(data, templates: templates, filter: BotCatalogFilter())
-        XCTAssertEqual(sections.map(\.id), [.featured, .shared, .mine, .organization, .templates])
+        XCTAssertEqual(sections.map(\.id), [.featured, .shared, .mine, .organization, .templates, .xai])
         XCTAssertEqual(sections[0].items.map(\.id), ["bot:feat"])
         XCTAssertEqual(sections[1].items.map(\.id), ["bot:share"])
         XCTAssertEqual(sections[2].items.map(\.id), ["bot:mine"], "archived only with Show archived")
@@ -89,7 +89,51 @@ final class BotCatalogTests: XCTestCase {
         XCTAssertEqual(sales[4].items, [])
 
         let solo = BotCatalogRules.sections(response(organization: false, [entry("mine", .mine)]), templates: [], filter: BotCatalogFilter())
-        XCTAssertEqual(solo.map(\.id), [.mine, .templates])
+        XCTAssertEqual(solo.map(\.id), [.mine, .templates, .xai])
+    }
+
+    func testXaiMarketplaceIsItsOwnSectionAndStagesThroughTheAgentImport() async throws {
+        let json = #"""
+        {"label":"xAI Bot Marketplace","url":"https://x.ai/bot/marketplace","fetchedAt":1,"bots":[
+          {"slug":"sample-desk","name":"Sample Desk","creator":"Alex Example","description":"Writes a brief.","categories":["Sales"],
+           "color":"violet","shape":"teardrop","url":"https://x.ai/bot/marketplace/bots/sample-desk",
+           "look":{"color":"violet","mascotLook":{"character":"shape","shape":"drop"}},"category":"sales"}
+        ],"stale":{"code":"xai_unreachable"}}
+        """#
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CatalogStub.self]
+        let urlSession = URLSession(configuration: configuration)
+        defer { urlSession.invalidateAndCancel() }
+        let client = CompanionClient(connection: Connection(name: "Org", host: "127.0.0.1", port: 8810), token: "t", session: urlSession)
+        CatalogStub.status = 200
+        CatalogStub.body = Data(json.utf8)
+        let list = try await client.xaiMarketplace(refresh: true)
+        XCTAssertEqual(CatalogStub.captured?.url?.path, "/api/team-library/xai")
+        XCTAssertEqual(CatalogStub.captured?.url?.query, "refresh=1")
+        XCTAssertEqual(list.stale?.code, "xai_unreachable")
+
+        let templates = BotCatalogRules.templates(presets: [], community: [], roles: [], xai: list.bots)
+        let sections = BotCatalogRules.sections(response(organization: false, []), templates: templates, filter: BotCatalogFilter())
+        XCTAssertEqual(sections.first { $0.id == .templates }?.items, [])
+        let item = try XCTUnwrap(sections.first { $0.id == .xai }?.items.first)
+        guard case let .template(template) = item else { return XCTFail("a template") }
+        XCTAssertEqual(template.id, "xai:sample-desk")
+        XCTAssertEqual(template.creator, "Alex Example")
+        XCTAssertEqual(template.category, "sales")
+        XCTAssertEqual(template.color, "violet")
+        XCTAssertEqual(template.xaiSlug, "sample-desk")
+        XCTAssertNotNil(template.look)
+        XCTAssertNil(BotCatalogRules.draft(for: template), "imported through the agent import, never created as a blank bot")
+        XCTAssertEqual(BotCatalogRules.actions(item, organization: false, admin: false, canCreate: true, inSidebar: { _ in true }), [.useTemplate])
+        XCTAssertTrue(XaiMarketplaceRules.errorText(code: "xai_format").contains("changed its page"))
+
+        CatalogStub.body = Data(#"{"id":"s1","preview":{"kind":"legacy","name":"Sample Desk","bot":{"name":"Sample Desk"},"includes":{"skills":1,"routines":2}},"leftOut":[]}"#.utf8)
+        _ = try? await client.stageXaiMarketplaceImport(slug: "sample-desk", timeZone: "UTC")
+        XCTAssertEqual(CatalogStub.captured?.httpMethod, "POST")
+        XCTAssertEqual(CatalogStub.captured?.url?.path, "/api/bots/import/agent")
+        let sent = try JSONSerialization.jsonObject(with: XCTUnwrap(CatalogStub.capturedBody)) as? [String: Any]
+        XCTAssertEqual(sent?["marketplace"] as? String, "sample-desk")
+        XCTAssertEqual(sent?["timeZone"] as? String, "UTC")
     }
 
     func testSearchIgnoresCaseAndAccentsAndMatchesTheCreator() {

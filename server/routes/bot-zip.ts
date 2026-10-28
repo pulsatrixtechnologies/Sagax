@@ -14,6 +14,9 @@
 //          package here (shared/grok-import.ts) and staged like an upload:
 //          { id, preview, leftOut }. For the phone, which has no copy of the
 //          converter; the desktop makes the package itself (AgentImport.tsx).
+//          { marketplace: slug, timeZone? } instead: a bot of the xAI Bot
+//          Marketplace (shared/xai-marketplace.ts), read on the server and
+//          made into a package the same way.
 //
 // Import needs the right to create bots. An organization member's copy
 // drops host settings (memberImportReset). Member scope (request-auth.ts
@@ -35,6 +38,8 @@ import {
   type BotZipHost,
 } from "../bot-zip.ts";
 import { GROK_EXPORT_PROMPT, GrokImportError, grokExportToPackage, parseGrokExport } from "../../shared/grok-import.ts";
+import { xaiMarketplaceToPackage, type XaiMarketplaceBot } from "../../shared/xai-marketplace.ts";
+import { XaiMarketplaceError } from "../xai-marketplace.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -67,6 +72,8 @@ export interface BotZipRouteDeps {
   imported?(botId: string): void;
   /** The new bot as the client sees it, for the import's answer. */
   wireBot?(botId: string): unknown;
+  /** A bot of the xAI Bot Marketplace (server/xai-marketplace.ts), for the phone's import. */
+  xaiMarketplaceBot?(slug: string): Promise<XaiMarketplaceBot>;
   now?(): number;
 }
 
@@ -153,12 +160,20 @@ export function createBotZipRoutes(deps: BotZipRouteDeps): RouteHandler {
     if (importId === "agent" && !preview) {
       if (method === "GET") return json(res, 200, { prompt: GROK_EXPORT_PROMPT });
       if (method !== "POST") return json(res, 405, { error: "GET or POST only" });
-      const body = await readBody(req, AGENT_TEXT_MAX + 4_096).catch(() => null) as { text?: unknown; timeZone?: unknown } | null;
-      if (typeof body?.text !== "string" || !body.text.trim()) return json(res, 400, { error: "Paste the reply your bot on x.ai wrote." });
+      const body = await readBody(req, AGENT_TEXT_MAX + 4_096).catch(() => null) as { text?: unknown; timeZone?: unknown; marketplace?: unknown } | null;
+      const timeZone = typeof body?.timeZone === "string" ? body.timeZone : undefined;
+      const marketplace = typeof body?.marketplace === "string" ? body.marketplace.trim() : "";
+      if (!marketplace && (typeof body?.text !== "string" || !body.text.trim())) return json(res, 400, { error: "Paste the reply your bot on x.ai wrote." });
       let made;
       try {
-        made = grokExportToPackage(parseGrokExport(body.text), { timeZone: typeof body.timeZone === "string" ? body.timeZone : undefined });
+        if (marketplace) {
+          if (!deps.xaiMarketplaceBot) return json(res, 404, { error: "The xAI Bot Marketplace is not offered here.", code: "xai_not_found" });
+          made = xaiMarketplaceToPackage(await deps.xaiMarketplaceBot(marketplace), { timeZone });
+        } else {
+          made = grokExportToPackage(parseGrokExport(body!.text as string), { timeZone });
+        }
       } catch (error) {
+        if (error instanceof XaiMarketplaceError) return json(res, error.status, { error: error.message, code: error.code });
         if (error instanceof GrokImportError) return json(res, 400, { error: error.message, code: "invalid_export" });
         throw error;
       }

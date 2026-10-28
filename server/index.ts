@@ -1066,6 +1066,8 @@ import { workingBots, type WorkingBotHold } from "./computer-working-bots.ts";
 import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
 import { createMyChromeRoutes } from "./routes/my-chrome.ts";
 import { createTeamLibraryGrokRoutes } from "./routes/team-library-grok.ts";
+import { createXaiMarketplaceRoutes } from "./routes/xai-marketplace.ts";
+import { XaiMarketplaceSource } from "./xai-marketplace.ts";
 import { MyChromeService } from "./browser/my-chrome/service.ts";
 import { hasShellOnThisComputer, MY_CHROME_SHELL_PROMPT } from "./browser/my-chrome/shell.ts";
 import { MY_CHROME_PROFILE, MY_CHROME_SYSTEM_PROMPT, myChromeToolRefusal, runMyChromeTool, toolName as browserToolName } from "./browser/my-chrome/pilot.ts";
@@ -30608,6 +30610,9 @@ const inboundTelephony = createBotInboundTelephonyRoute({
 });
 // An imported bot's public card (port of OpenMausBot #3073).
 ROUTES.push(createTeamLibraryGrokRoutes());
+// The xAI Bot Marketplace, a template source of Browse Bots (read a few hours at a time).
+const xaiMarketplace = new XaiMarketplaceSource();
+ROUTES.push(createXaiMarketplaceRoutes({ source: xaiMarketplace }));
 ROUTES.push(createMyChromeRoutes({
   service: () => myChrome,
   botsWithShell: () => store.bots.filter((bot) => myChromeBotHasShell(bot.id)).map((bot) => bot.id),
@@ -38665,6 +38670,7 @@ ROUTES.push(createBotZipRoutes({
     const bot = store.bot(botId);
     return bot ? publicBot(bot) : undefined;
   },
+  xaiMarketplaceBot: async (slug) => (await xaiMarketplace.bot(slug)).bot,
 }));
 
 /** The console's Routines and Approvals (server/org-admin-routines.ts). */

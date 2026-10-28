@@ -17,6 +17,7 @@ import {
   catalogTemplates,
   matchesCatalogQuery,
   templateApps,
+  xaiErrorText,
   type BotCatalogEntry,
   type CommunityTemplate,
   type CatalogActionContext,
@@ -56,7 +57,7 @@ const ids = (items: CatalogItem[]) => items.map((item) => item.kind === "bot" ? 
 describe("catalogue sections", () => {
   it("are Featured, Shared with me, My Bots, Organization and Templates on an organization server", () => {
     const sections = catalogSections({ organization: true, entries }, templates, filter);
-    expect(sections.map((section) => section.id)).toEqual(["featured", "shared", "mine", "organization", "templates"]);
+    expect(sections.map((section) => section.id)).toEqual(["featured", "shared", "mine", "organization", "templates", "xai"]);
     const by = Object.fromEntries(sections.map((section) => [section.id, ids(section.items)]));
     expect(by.featured).toEqual(["Pixel"]);
     expect(by.shared).toEqual(["Closer"]);
@@ -67,7 +68,7 @@ describe("catalogue sections", () => {
 
   it("are My Bots and Templates only on a solo server", () => {
     const sections = catalogSections({ organization: false, entries: [entry("Notes")] }, templates, filter);
-    expect(sections.map((section) => section.id)).toEqual(["mine", "templates"]);
+    expect(sections.map((section) => section.id)).toEqual(["mine", "templates", "xai"]);
   });
 
   it("show archived bots in My Bots only with the filter on", () => {
@@ -149,6 +150,41 @@ function view(props: Partial<BotCatalogViewProps> = {}): string {
     ...props,
   }));
 }
+
+describe("the xAI Bot Marketplace source", () => {
+  const xai = [{
+    slug: "sample-desk", name: "Sample Desk", creator: "Alex Example", description: "Writes a weekly brief.",
+    categories: ["Staff Picks", "Sales"], color: "violet", shape: "teardrop", shareId: "AbCdEfGhIjKlMnOpQrStU",
+    url: "https://x.ai/bot/marketplace/bots/sample-desk",
+  }];
+  const withXai = catalogTemplates([], undefined, { xai });
+
+  it("lists its bots in a section of their own, as templates with the page's look, creator and category", () => {
+    const sections = catalogSections({ organization: false, entries: [] }, withXai, filter);
+    expect(ids(sections.find((section) => section.id === "templates")!.items)).not.toContain("xai:sample-desk");
+    const item = sections.find((section) => section.id === "xai")!.items[0]!;
+    expect(item.kind === "template" && item.template).toMatchObject({
+      source: "xai", name: "Sample Desk", creator: "Alex Example", category: "sales", description: "Writes a weekly brief.",
+      look: { color: "violet", mascotLook: { character: "shape", shape: "drop" } },
+    });
+    expect(catalogActions(item, { organization: false, admin: false, canCreate: true, inSidebar: () => true })).toEqual(["useTemplate"]);
+    expect(catalogSections({ organization: false, entries: [] }, withXai, { ...filter, query: "alex" }).find((section) => section.id === "xai")!.items).toHaveLength(1);
+  });
+
+  it("titles the section, offers Refresh and its page, and shows a clear line in place of an error", () => {
+    const sections = catalogSections({ organization: false, entries: [] }, withXai, filter);
+    const state = { loading: false, error: "", url: "https://x.ai/bot/marketplace", onRefresh: () => {}, onOpenSource: () => {} };
+    const html = view({ sections, organization: false, xai: state });
+    expect(html).toContain("xAI Bot Marketplace");
+    expect(html).toContain('data-catalog-xai-refresh=""');
+    expect(html).toContain('data-catalog-row="xai:sample-desk"');
+    const failed = view({ sections: catalogSections({ organization: false, entries: [] }, templates, filter), organization: false, xai: { ...state, error: xaiErrorText("xai_format") } });
+    expect(failed).toContain('data-catalog-xai-error=""');
+    expect(failed).toContain("changed its page");
+    expect(xaiErrorText(undefined)).toBe(xaiErrorText("xai_unreachable"));
+    expect(xaiErrorText("anything else")).toContain("could not be reached");
+  });
+});
 
 describe("the home pane", () => {
   it("shows the title, the chips, the search, the Featured row and one section per source", () => {

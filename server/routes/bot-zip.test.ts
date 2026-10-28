@@ -15,7 +15,9 @@ import { botPluginsWithMarketplaces } from "../testing/plugin-stores.ts";
 import type { BotZipHost } from "../bot-zip.ts";
 import { json, readBody } from "../harness/http.ts";
 import type { RequestAuth } from "../request-auth.ts";
-import { createBotZipRoutes, type BotZipAuditRow } from "./bot-zip.ts";
+import { createBotZipRoutes, type BotZipAuditRow, type BotZipRouteDeps } from "./bot-zip.ts";
+import { XaiMarketplaceError } from "../xai-marketplace.ts";
+import type { XaiMarketplaceBot } from "../../shared/xai-marketplace.ts";
 import { dispatchRoutes } from "./table.ts";
 
 const servers: Server[] = [];
@@ -31,7 +33,7 @@ const person = (principalId: string): RequestAuth => ({
   session: { id: principalId, principalId, label: principalId, scopes: ["client"], createdAt: 0, expiresAt: 0, lastUsedAt: 0 } as never,
 });
 
-async function boot() {
+async function boot(extra: Partial<BotZipRouteDeps> = {}) {
   const store = new Store(() => ({ instanceId: "fixture", model: "m" }));
   const plugins = botPluginsWithMarketplaces({ dataDir: DATA_DIR, gitEnvironment: () => ({}), policy: () => undefined });
   const host: BotZipHost = {
@@ -53,6 +55,7 @@ async function boot() {
       canCreate: auth.session.principalId !== "pr_readonly", asMember: auth.session.principalId !== owner,
     },
     audit: (_auth, row) => { audit.push(row); },
+    ...extra,
   })];
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -149,5 +152,35 @@ describe("the phone's agent import (POST /api/bots/import/agent)", () => {
     expect(bad.status).toBe(400);
     const readOnly = await fetch(`${base}/api/bots/import/agent`, { method: "POST", headers: { "x-person": "pr_readonly", "content-type": "application/json" }, body: JSON.stringify({ text: reply }) });
     expect(readOnly.status).toBe(403);
+  });
+});
+
+describe("the phone's xAI Bot Marketplace import (POST /api/bots/import/agent { marketplace })", () => {
+  const sample: XaiMarketplaceBot = {
+    slug: "sample-desk", name: "Sample Desk", creator: "Alex Example", description: "Writes a weekly brief.", categories: ["Sales"],
+    color: "magenta", shape: "pebble", shareId: "AbCdEfGhIjKlMnOpQrStU", url: "https://x.ai/bot/marketplace/bots/sample-desk",
+    instructions: "", memories: ["I keep a weekly brief."], skills: [{ name: "Weekly brief", description: "Write the brief." }],
+    routines: [{ name: "Friday recap", summary: "Every Friday, what went out this week." }], integrations: [{ name: "notion-workspace", description: "Keep the brief." }],
+  };
+  const stage = (base: string, body: unknown) => fetch(`${base}/api/bots/import/agent`, {
+    method: "POST", headers: { "x-person": "pr_member", "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+
+  it("reads the bot on the server and stages it like a pasted agent reply", async () => {
+    const { base } = await boot({ xaiMarketplaceBot: async (slug) => ({ ...sample, slug }) });
+    const staged = await stage(base, { marketplace: "sample-desk", timeZone: "UTC" });
+    expect(staged.status).toBe(200);
+    const body = await staged.json() as { id: string; preview: { name: string; includes: { routines: number } }; leftOut: unknown[] };
+    expect(body.preview).toMatchObject({ name: "Sample Desk", includes: { routines: 1 } });
+    expect(body.leftOut).toEqual([]);
+  });
+
+  it("answers the source's own code when x.ai cannot be read, and 404 where the source is not offered", async () => {
+    const down = await boot({ xaiMarketplaceBot: async () => { throw new XaiMarketplaceError("xai_unreachable"); } });
+    const failed = await stage(down.base, { marketplace: "sample-desk" });
+    expect(failed.status).toBe(502);
+    expect(await failed.json()).toMatchObject({ code: "xai_unreachable" });
+    const none = await boot();
+    expect((await stage(none.base, { marketplace: "sample-desk" })).status).toBe(404);
   });
 });
