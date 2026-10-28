@@ -2,25 +2,11 @@ import type { DragEvent, FocusEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { lastInputWasPointer, trackInputModality } from "@/lib/input-modality";
 import {
   sidebarAttentionLabel,
   type SidebarSectionAttention,
 } from "@/lib/sidebar-attention";
-
-// How focus last moved: a click (or a right click that opened the group's
-// menu and handed focus back on close) must not draw the blue focus frame on
-// the header; Tab or an arrow key does (2026-10-15). Chromium counts a
-// programmatic focus() after a menu as :focus-visible, hence this flag.
-let lastInput: "pointer" | "keyboard" = "keyboard";
-let listening = false;
-function trackInput() {
-  if (listening || typeof document === "undefined") return;
-  listening = true;
-  document.addEventListener("pointerdown", () => { lastInput = "pointer"; }, true);
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Tab" || event.key.startsWith("Arrow")) lastInput = "keyboard";
-  }, true);
-}
 
 export function SidebarSectionHeader({
   name,
@@ -48,9 +34,11 @@ export function SidebarSectionHeader({
   onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
   const attentionLabel = attention ? sidebarAttentionLabel(attention) : "";
-  trackInput();
+  // a click must not draw the focus frame on the header; Tab or an arrow
+  // key does (2026-10-15, src/lib/input-modality.ts)
+  trackInputModality();
   const onHeaderFocus = (event: FocusEvent<HTMLButtonElement>) => {
-    if (lastInput === "pointer") event.currentTarget.dataset.pointerFocus = "";
+    if (lastInputWasPointer()) event.currentTarget.dataset.pointerFocus = "";
     else delete event.currentTarget.dataset.pointerFocus;
   };
   const onHeaderKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
