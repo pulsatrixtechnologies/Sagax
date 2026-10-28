@@ -1,8 +1,8 @@
 // Phone tools (the reference design parity, audit row 81 2026-10-21): a bot asks
 // the person's own iPhone for something only the phone knows (where it is,
-// a contact, a reminder, the calendar, a photo the person picks, a
-// shortcut, the clipboard, battery and network). The person approves each
-// request ON the phone (Refuser / Toujours permettre / Permettre une fois),
+// a contact, a reminder, the calendar, the home, an alarm, a photo the
+// person picks, a shortcut, the clipboard, battery and network). The person
+// approves each request ON the phone (Refuser / Toujours permettre / Permettre une fois),
 // the phone runs the iOS API in the foreground, and the answer goes back to
 // the bot's turn. Nothing runs in the background, nothing is kept: the
 // server holds a result only until the waiting turn reads it.
@@ -17,7 +17,7 @@ import { z } from "zod";
 
 import { isSealedCard } from "./phone-card-seal.ts";
 
-export const PHONE_TOOLS = ["location", "contacts", "reminders", "calendar", "photos", "shortcut", "clipboard", "status"] as const;
+export const PHONE_TOOLS = ["location", "contacts", "reminders", "calendar", "home", "alarms", "photos", "shortcut", "clipboard", "status"] as const;
 export type PhoneToolId = typeof PHONE_TOOLS[number];
 
 export function isPhoneTool(value: unknown): value is PhoneToolId {
@@ -94,6 +94,30 @@ export const phoneToolArgsSchemas = {
       notes: z.string().trim().max(1_000).optional(),
     }).strict().refine((args) => Date.parse(args.end) >= Date.parse(args.start), "end is not before start"),
   ]),
+  home: z.discriminatedUnion("action", [
+    z.object({
+      action: z.literal("list"),
+      reason,
+      home: z.string().trim().min(1).max(80).optional(),
+      limit: z.number().int().min(1).max(20).optional(),
+    }).strict(),
+    z.object({
+      action: z.literal("run"),
+      reason,
+      scene: z.string().trim().min(1).max(80),
+      home: z.string().trim().min(1).max(80).optional(),
+    }).strict(),
+  ]),
+  alarms: z.discriminatedUnion("action", [
+    z.object({ action: z.literal("list"), reason, limit: z.number().int().min(1).max(50).optional() }).strict(),
+    z.object({
+      action: z.literal("create"),
+      reason,
+      label: z.string().trim().min(1).max(80),
+      hour: z.number().int().min(0).max(23),
+      minute: z.number().int().min(0).max(59),
+    }).strict(),
+  ]),
   photos: z.object({ reason, max: z.number().int().min(1).max(3).optional() }).strict(),
   shortcut: z.object({ reason, name: z.string().trim().min(1).max(120), input: z.string().max(1_000).optional() }).strict(),
   clipboard: z.object({ reason }).strict(),
@@ -118,7 +142,8 @@ export function parsePhoneToolArgs(tool: unknown, raw: unknown): ParsedPhoneTool
 
 /** Whether a request reads the phone or changes it. */
 export function phoneToolAccess(tool: PhoneRequestKind, args: Record<string, unknown>): PhoneToolAccess {
-  if ((tool === "reminders" || tool === "calendar") && args.action === "create") return "write";
+  if ((tool === "reminders" || tool === "calendar" || tool === "alarms") && args.action === "create") return "write";
+  if (tool === "home" && args.action === "run") return "write";
   if (tool === "shortcut") return "write";
   return "read";
 }
@@ -128,12 +153,13 @@ export function phoneToolAccess(tool: PhoneRequestKind, args: Record<string, unk
  * wider, for one bot (the grant is saved per bot, so another bot asks
  * again). Status; the approximate and the precise position, each its own
  * key; contacts with that very set of fields; reading reminders, the
- * calendar or the clipboard; creating a reminder or creating an event,
- * each its own key, never a read. A shortcut and photos are asked each
- * time. */
+ * calendar, the home, alarms or the clipboard; creating a reminder, creating
+ * an event, running one home scene or creating an alarm, each its own key,
+ * never a read. A shortcut and photos are asked each time. */
 export function phoneToolGrantKey(tool: PhoneRequestKind, args: Record<string, unknown>): string | null {
   if (PHONE_TOOLS_ONCE_ONLY.has(tool)) return null;
-  if ((tool === "reminders" || tool === "calendar") && phoneToolAccess(tool, args) === "write") return `${tool}:write:create`;
+  if ((tool === "reminders" || tool === "calendar" || tool === "alarms") && phoneToolAccess(tool, args) === "write") return `${tool}:write:create`;
+  if (tool === "home" && phoneToolAccess(tool, args) === "write") return "home:write:run";
   if (phoneToolAccess(tool, args) === "write") return null;
   if (tool === "location") return args.precise === true ? "location:read:precise" : "location:read:approximate";
   if (tool === "contacts") {
@@ -165,6 +191,18 @@ const contactSchema = z.object({
 });
 
 const reminderSchema = z.object({ title: short, due: text(40).optional(), list: short.optional() });
+const homeAccessorySchema = z.object({ name: short, room: short.optional(), on: z.boolean().optional() });
+const homeSchema = z.object({
+  name: short,
+  scenes: list(short, 50).optional(),
+  accessories: list(homeAccessorySchema, 50).optional(),
+});
+const alarmSchema = z.object({
+  label: short,
+  hour: z.number().int().min(0).max(23),
+  minute: z.number().int().min(0).max(59),
+  enabled: z.boolean().optional(),
+});
 const eventSchema = z.object({
   title: short,
   start: text(40),
@@ -189,6 +227,11 @@ export const phoneToolResultSchemas = {
   contacts: z.object({ contacts: list(contactSchema, 10) }),
   reminders: z.object({ reminders: list(reminderSchema, 50).optional(), created: reminderSchema.optional() }),
   calendar: z.object({ events: list(eventSchema, 100).optional(), created: eventSchema.optional() }),
+  home: z.object({
+    homes: list(homeSchema, 20).optional(),
+    ran: z.object({ home: short, scene: short }).optional(),
+  }),
+  alarms: z.object({ alarms: list(alarmSchema, 50).optional(), created: alarmSchema.optional() }),
   photos: z.object({ images: list(imageSchema, 3) }),
   shortcut: z.object({ started: z.boolean() }),
   clipboard: z.object({ text: text(4_000).optional(), empty: z.boolean().optional() }),
@@ -258,6 +301,16 @@ export function checkPhoneToolResult(tool: PhoneRequestKind, args: Record<string
   if (tool === "calendar" && args.action === "list" && Array.isArray(result.events)) {
     const limit = typeof args.limit === "number" ? args.limit : 50;
     return { ok: true, result: { events: result.events.slice(0, limit) } };
+  }
+  if (tool === "home" && args.action === "list" && Array.isArray(result.homes)) {
+    const limit = typeof args.limit === "number" ? args.limit : 20;
+    const want = typeof args.home === "string" ? args.home.toLowerCase() : "";
+    const homes = (result.homes as Array<{ name?: string }>).filter((home) => !want || String(home.name ?? "").toLowerCase() === want).slice(0, limit);
+    return { ok: true, result: { homes } };
+  }
+  if (tool === "alarms" && args.action === "list" && Array.isArray(result.alarms)) {
+    const limit = typeof args.limit === "number" ? args.limit : 20;
+    return { ok: true, result: { alarms: result.alarms.slice(0, limit) } };
   }
   if (tool === "photos") {
     const max = typeof args.max === "number" ? args.max : 1;

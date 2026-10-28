@@ -147,6 +147,8 @@ enum PhoneToolWords {
         case .contacts: "person.crop.circle"
         case .reminders: "checklist"
         case .calendar: "calendar"
+        case .home: "house"
+        case .alarms: "alarm"
         case .photos: "photo.on.rectangle"
         case .shortcut: "square.stack.3d.up"
         case .clipboard: "doc.on.clipboard"
@@ -162,6 +164,8 @@ enum PhoneToolWords {
         case .contacts: String(localized: "Contacts")
         case .reminders: String(localized: "Reminders")
         case .calendar: String(localized: "Calendar")
+        case .home: String(localized: "Home")
+        case .alarms: String(localized: "Alarms")
         case .photos: String(localized: "Photos")
         case .shortcut: String(localized: "Shortcuts")
         case .clipboard: String(localized: "Clipboard")
@@ -189,6 +193,12 @@ enum PhoneToolWords {
             let from = PhoneToolShaping.date(request.string("from")).map { $0.formatted(date: .abbreviated, time: .omitted) } ?? ""
             let to = PhoneToolShaping.date(request.string("to")).map { $0.formatted(date: .abbreviated, time: .omitted) } ?? ""
             return String(localized: "Read your calendar from \(from) to \(to).")
+        case .home:
+            if request.action == "run" { return String(localized: "Run the scene “\(request.string("scene") ?? "")”.") }
+            return String(localized: "Read the scenes and accessories in your home.")
+        case .alarms:
+            if request.action == "create" { return String(localized: "Add the alarm “\(request.string("label") ?? "")”.") }
+            return String(localized: "Read your alarms.")
         case .photos:
             return String(localized: "Pick up to \(max(1, min(request.int("max") ?? 1, 3))) photos to send.")
         case .shortcut:
@@ -213,6 +223,10 @@ enum PhoneToolWords {
         case "start": String(localized: "Starts")
         case "end": String(localized: "Ends")
         case "location": String(localized: "Place")
+        case "scene": String(localized: "Scene")
+        case "home": String(localized: "Home")
+        case "label": String(localized: "Label")
+        case "time": String(localized: "Time")
         case "name": String(localized: "Shortcut")
         default: String(localized: "Text sent to the shortcut")
         }

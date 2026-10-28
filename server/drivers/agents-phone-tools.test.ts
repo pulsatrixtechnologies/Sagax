@@ -15,8 +15,10 @@ describe("phone_tool", () => {
   it("is shown only while a phone of the person offers tools, listing exactly those", () => {
     expect(phoneTool(PROFILE)).toBeUndefined();
     expect(phoneTool({ ...PROFILE, phoneTools: [] })).toBeUndefined();
-    const tool = phoneTool({ ...PROFILE, phoneTools: ["status", "location"] });
-    expect(tool?.inputSchema.properties.tool.enum).toEqual(["location", "status"]);
+    const tool = phoneTool({ ...PROFILE, phoneTools: ["status", "location", "home", "alarms"] });
+    expect(tool?.inputSchema.properties.tool.enum).toEqual(["location", "home", "alarms", "status"]);
+    expect(tool?.description).toContain("home:");
+    expect(tool?.description).toContain("alarms:");
     expect(tool?.description).toContain("location:");
     expect(tool?.description).not.toContain("clipboard:");
     expect(phoneTool({ ...PROFILE, externalRuntime: true, phoneTools: ["status"] })).toBeUndefined();

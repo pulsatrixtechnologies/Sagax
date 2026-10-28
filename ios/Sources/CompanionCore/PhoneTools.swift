@@ -5,12 +5,12 @@ import Foundation
 // the routes are server/routes/phone-tools.ts. Everything here is pure: the
 // requests, the card's choices, when a request may run, and the shaping of
 // each answer so the phone sends only what was asked. The iOS calls
-// (Core Location, Contacts, EventKit, Photos, Shortcuts, the pasteboard)
+// (Core Location, Contacts, EventKit, Home, Alarms, Photos, Shortcuts, the pasteboard)
 // live in the app target (Features/PhoneTools).
 
 /// The tools a bot may ask this phone for.
 public enum PhoneTool: String, CaseIterable, Codable, Sendable, Identifiable {
-    case location, contacts, reminders, calendar, photos, shortcut, clipboard, status
+    case location, contacts, reminders, calendar, home, alarms, photos, shortcut, clipboard, status
     /// "Scanner avec l'iPhone" (audit row 84): only the person's own
     /// computer asks it, from the vault's New card form; never a bot.
     case cardScan = "card_scan"
@@ -70,7 +70,7 @@ public struct PhoneToolRequest: Decodable, Equatable, Sendable, Identifiable {
     public func flag(_ key: String) -> Bool { args[key]?.bool ?? false }
     /// Why the bot asks, as it wrote it (shown on the card).
     public var reason: String? { string("reason") }
-    /// `create` on reminders and the calendar; nil for the other tools.
+    /// `create` on reminders, the calendar and alarms; `run` on home; nil otherwise.
     public var action: String? { string("action") }
     public var writes: Bool { access == "write" }
 }
@@ -219,6 +219,44 @@ public struct PhoneEvent: Equatable, Sendable {
     }
 }
 
+/// One accessory the phone may name, never its identifier.
+public struct PhoneAccessory: Equatable, Sendable {
+    public var name: String
+    public var room: String?
+    public var on: Bool?
+    public init(name: String, room: String? = nil, on: Bool? = nil) {
+        self.name = name
+        self.room = room
+        self.on = on
+    }
+}
+
+/// One home: scene names and accessories, nothing else.
+public struct PhoneHome: Equatable, Sendable {
+    public var name: String
+    public var scenes: [String]
+    public var accessories: [PhoneAccessory]
+    public init(name: String, scenes: [String] = [], accessories: [PhoneAccessory] = []) {
+        self.name = name
+        self.scenes = scenes
+        self.accessories = accessories
+    }
+}
+
+/// One alarm at an hour and a minute. The label is what the person sees.
+public struct PhoneAlarm: Equatable, Sendable {
+    public var label: String
+    public var hour: Int
+    public var minute: Int
+    public var enabled: Bool
+    public init(label: String, hour: Int, minute: Int, enabled: Bool = true) {
+        self.label = label
+        self.hour = hour
+        self.minute = minute
+        self.enabled = enabled
+    }
+}
+
 /// Each answer cut down to what the request asked for, before it leaves
 /// the phone. The server cuts it again (shared/phone-tools.ts).
 public enum PhoneToolShaping {
@@ -277,6 +315,24 @@ public enum PhoneToolShaping {
 
     public static func createdEvent(_ event: PhoneEvent) -> WidgetJSON {
         .object(["created": eventRow(event)])
+    }
+
+    public static func homes(_ found: [PhoneHome], limit: Int?) -> WidgetJSON {
+        let rows: [WidgetJSON] = found.prefix(min(max(limit ?? 20, 1), 20)).map(homeRow)
+        return .object(["homes": .array(rows)])
+    }
+
+    public static func ranHome(home: String, scene: String) -> WidgetJSON {
+        .object(["ran": .object(["home": .string(String(home.prefix(200))), "scene": .string(String(scene.prefix(200)))])])
+    }
+
+    public static func alarms(_ found: [PhoneAlarm], limit: Int?) -> WidgetJSON {
+        let rows: [WidgetJSON] = found.prefix(min(max(limit ?? 20, 1), 50)).map(alarmRow)
+        return .object(["alarms": .array(rows)])
+    }
+
+    public static func createdAlarm(_ alarm: PhoneAlarm) -> WidgetJSON {
+        .object(["created": alarmRow(alarm)])
     }
 
     public static func clipboard(_ text: String?) -> WidgetJSON {
@@ -382,6 +438,26 @@ public enum PhoneToolShaping {
         if let calendar = event.calendar { row["calendar"] = .string(String(calendar.prefix(200))) }
         return .object(row)
     }
+
+    private static func homeRow(_ home: PhoneHome) -> WidgetJSON {
+        let scenes = home.scenes.prefix(50).map { WidgetJSON.string(String($0.prefix(200))) }
+        let accessories = home.accessories.prefix(50).map { accessory -> WidgetJSON in
+            var row: [String: WidgetJSON] = ["name": .string(String(accessory.name.prefix(200)))]
+            if let room = accessory.room, !room.isEmpty { row["room"] = .string(String(room.prefix(200))) }
+            if let on = accessory.on { row["on"] = .bool(on) }
+            return .object(row)
+        }
+        return .object(["name": .string(String(home.name.prefix(200))), "scenes": .array(scenes), "accessories": .array(accessories)])
+    }
+
+    private static func alarmRow(_ alarm: PhoneAlarm) -> WidgetJSON {
+        .object([
+            "label": .string(String(alarm.label.prefix(200))),
+            "hour": .number(Double(min(max(alarm.hour, 0), 23))),
+            "minute": .number(Double(min(max(alarm.minute, 0), 59))),
+            "enabled": .bool(alarm.enabled),
+        ])
+    }
 }
 
 public extension CompanionClient {
@@ -426,10 +502,18 @@ public enum PhoneToolDetails {
         switch request.tool {
         case .reminders where request.action == "create": keys = ["title", "due", "list", "notes"]
         case .calendar where request.action == "create": keys = ["title", "start", "end", "location", "notes"]
+        case .home where request.action == "run": keys = ["scene", "home"]
+        case .alarms where request.action == "create": keys = ["label"]
         case .shortcut: keys = ["name", "input"]
         default: keys = []
         }
-        return keys.compactMap { key in request.string(key).map { Field(key: key, value: $0) } }
+        var rows = keys.compactMap { key in request.string(key).map { Field(key: key, value: $0) } }
+        if request.tool == .alarms, request.action == "create",
+           let hour = request.int("hour"), let minute = request.int("minute"),
+           (0...23).contains(hour), (0...59).contains(minute) {
+            rows.append(Field(key: "time", value: String(format: "%02d:%02d", hour, minute)))
+        }
+        return rows
     }
 
     /// A shortcut can send a message, pay or change things: the card says so.

@@ -4,9 +4,11 @@
 // InfoPlist.xcstrings) and reads only what the request needs. Shaping is
 // CompanionCore's (PhoneToolShaping): the answer carries the fields asked
 // for and nothing else. Errors are in English: the bot reads them.
+import AlarmKit
 import Contacts
 import CoreLocation
 import EventKit
+import HomeKit
 import Intents
 import Network
 import UIKit
@@ -35,6 +37,8 @@ enum PhoneToolRunner {
         case .contacts: return try await contacts(request)
         case .reminders: return try await reminders(request)
         case .calendar: return try await calendar(request)
+        case .home: return try await home(request)
+        case .alarms: return try await alarms(request)
         case .photos:
             guard let photos else { throw PhoneToolError.invalid("No photo was picked.") }
             return PhoneToolShaping.photos(photos, max: request.int("max"))
@@ -150,6 +154,78 @@ enum PhoneToolRunner {
         return PhoneToolShaping.events(found, limit: request.int("limit"))
     }
 
+    // MARK: Home: list scenes and accessories, or run one scene
+
+    private static func home(_ request: PhoneToolRequest) async throws -> WidgetJSON {
+        let lookup = HomeLookup()
+        let homes = try await lookup.load()
+        if request.action == "run" {
+            guard let sceneName = request.string("scene") else { throw PhoneToolError.invalid("home run needs scene.") }
+            let wanted = request.string("home")
+            for house in homes where wanted == nil || house.name.localizedCaseInsensitiveCompare(wanted!) == .orderedSame {
+                if let scene = house.actionSets.first(where: { $0.name.localizedCaseInsensitiveCompare(sceneName) == .orderedSame }) {
+                    try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+                        scene.execute { error in
+                            if let error { done.resume(throwing: error) } else { done.resume() }
+                        }
+                    }
+                    return PhoneToolShaping.ranHome(home: house.name, scene: scene.name)
+                }
+            }
+            throw PhoneToolError.unavailable("No scene with that name is on this phone.")
+        }
+        let wanted = request.string("home")
+        let rows = homes.filter { wanted == nil || $0.name.localizedCaseInsensitiveCompare(wanted!) == .orderedSame }.map(snapshot)
+        return PhoneToolShaping.homes(rows, limit: request.int("limit"))
+    }
+
+    private static func snapshot(_ house: HMHome) -> PhoneHome {
+        let power = HMCharacteristicTypePowerState
+        let accessories = house.accessories.map { accessory in
+            let on = accessory.services.lazy.flatMap(\.characteristics).first { $0.characteristicType == power }?.value as? Bool
+            return PhoneAccessory(name: accessory.name, room: accessory.room?.name, on: on)
+        }
+        return PhoneHome(name: house.name, scenes: house.actionSets.map(\.name), accessories: accessories)
+    }
+
+    // MARK: Alarms: list, or add one at an hour and a minute
+
+    private static func alarms(_ request: PhoneToolRequest) async throws -> WidgetJSON {
+        guard #available(iOS 26.0, *) else {
+            throw PhoneToolError.unavailable("Alarms on this phone need a newer system. Update the phone, then ask again.")
+        }
+        return try await alarmsOnModernSystem(request)
+    }
+
+    @available(iOS 26.0, *)
+    private static func alarmsOnModernSystem(_ request: PhoneToolRequest) async throws -> WidgetJSON {
+        let manager = AlarmManager.shared
+        let state = try await manager.requestAuthorization()
+        guard state == .authorized else { throw PhoneToolError.permission("Alarms") }
+        if request.action == "create" {
+            guard let label = request.string("label"),
+                  let hour = request.int("hour"), (0...23).contains(hour),
+                  let minute = request.int("minute"), (0...59).contains(minute)
+            else { throw PhoneToolError.invalid("alarms create needs label, hour and minute.") }
+            let stop = AlarmButton(text: "Stop", textColor: .white, systemImageName: "stop.circle")
+            let alert = AlarmPresentation.Alert(title: LocalizedStringResource(stringLiteral: label), stopButton: stop)
+            let attributes = AlarmAttributes<PhoneAlarmMetadata>(presentation: AlarmPresentation(alert: alert), tintColor: .orange)
+            let time = Alarm.Schedule.Relative.Time(hour: hour, minute: minute)
+            let schedule = Alarm.Schedule.relative(.init(time: time, repeats: .never))
+            let configuration = AlarmManager.AlarmConfiguration<PhoneAlarmMetadata>.alarm(schedule: schedule, attributes: attributes)
+            _ = try await manager.schedule(id: UUID(), configuration: configuration)
+            return PhoneToolShaping.createdAlarm(PhoneAlarm(label: label, hour: hour, minute: minute, enabled: true))
+        }
+        let found = manager.alarms.compactMap(listedAlarm)
+        return PhoneToolShaping.alarms(found, limit: request.int("limit"))
+    }
+
+    @available(iOS 26.0, *)
+    private static func listedAlarm(_ alarm: Alarm) -> PhoneAlarm? {
+        guard let schedule = alarm.schedule, case .relative(let relative) = schedule else { return nil }
+        return PhoneAlarm(label: "Alarm", hour: relative.time.hour, minute: relative.time.minute, enabled: true)
+    }
+
     /// Full access (iOS 17 asks for it by name); iOS 16 has one kind.
     private static func access(_ store: EKEventStore, to type: EKEntityType) async -> Bool {
         if #available(iOS 17.0, *) {
@@ -205,6 +281,33 @@ enum PhoneToolRunner {
         return center.focusStatus.isFocused
     }
 }
+
+/// Kept until the home list arrives. The phone asks the first time.
+private final class HomeLookup: NSObject, HMHomeManagerDelegate {
+    private let manager = HMHomeManager()
+    private var wait: CheckedContinuation<[HMHome], Error>?
+
+    func load() async throws -> [HMHome] {
+        try await withCheckedThrowingContinuation { continuation in
+            wait = continuation
+            manager.delegate = self
+        }
+    }
+
+    func homeManagerDidUpdateHomes(_ manager: HMHomeManager) {
+        let pending = wait
+        wait = nil
+        if manager.authorizationStatus == .restricted {
+            pending?.resume(throwing: PhoneToolError.permission("Home"))
+        } else {
+            pending?.resume(returning: manager.homes)
+        }
+    }
+}
+
+/// No extra fields travel with an alarm. The label is the alert title.
+@available(iOS 26.0, *)
+private struct PhoneAlarmMetadata: AlarmMetadata {}
 
 /// One Core Location fix, with a 15 s limit. Asks When In Use the first time.
 @MainActor

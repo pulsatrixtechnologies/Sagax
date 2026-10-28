@@ -2151,6 +2151,8 @@
   "step.phone.tool.contacts": "Contacts",
   "step.phone.tool.reminders": "Reminders",
   "step.phone.tool.calendar": "Calendar",
+  "step.phone.tool.home": "Home",
+  "step.phone.tool.alarms": "Alarms",
   "step.phone.tool.photos": "Photos",
   "step.phone.tool.shortcut": "Shortcut",
   "step.phone.tool.clipboard": "Clipboard",

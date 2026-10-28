@@ -452,7 +452,8 @@ on an organization server (`orgDirectory`), as before.
 
 A bot can ask the person's own iPhone for something only the phone knows:
 its position once, a contact by name (only the fields asked for), reminders
-and calendar events (read, or add one), photos the person picks, one of
+and calendar events (read, or add one), the home (list scenes and
+accessories, or run one scene) and alarms (list, or add one), photos the person picks, one of
 their Shortcuts by name, the clipboard text, and battery, network and Focus.
 Health is not offered.
 
@@ -483,7 +484,8 @@ Health is not offered.
   push uses the question category, without Allow. Toujours permettre is
   saved for exactly what was allowed (`<data>/phone-tools/grants.json`):
   status, the approximate position, contacts with that very set of fields,
-  reading reminders or the calendar. Never for a precise position,
+  reading reminders, the calendar, the home or alarms. Running one home
+  scene and adding one alarm each have their own key. Never for a precise position,
   creating a reminder or an event, a shortcut, the clipboard or photos. It
   runs only while the app is open on screen, and a banner says which bot
   used which tool each time. After a refusal the same bot cannot show the

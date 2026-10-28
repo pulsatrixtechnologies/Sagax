@@ -109,6 +109,42 @@
         }
       }
     },
+    "NSHomeKitUsageDescription": {
+      "comment": "Phone tools (Features/PhoneTools): iOS permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When you allow it on your phone, Sagax reads the scenes and accessories in your home, or runs the one scene a bot asked for."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quand vous l'autorisez sur votre téléphone, Sagax lit les scènes et les accessoires de votre maison, ou lance la scène demandée par un bot."
+          }
+        }
+      }
+    },
+    "NSAlarmKitUsageDescription": {
+      "comment": "Phone tools (Features/PhoneTools): iOS permission prompt",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When you allow it on your phone, Sagax reads your alarms or adds the one alarm a bot asked for."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quand vous l'autorisez sur votre téléphone, Sagax lit vos alarmes ou ajoute l'alarme demandée par un bot."
+          }
+        }
+      }
+    },
     "NSFocusStatusUsageDescription": {
       "comment": "Phone tools (Features/PhoneTools): iOS permission prompt",
       "extractionState": "manual",
