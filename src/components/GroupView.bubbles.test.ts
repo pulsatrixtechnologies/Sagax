@@ -77,13 +77,14 @@ describe("group chat bubbles", () => {
     for (const row of rows(markup)) {
       expect(row.cls).toContain(row.author === "self" ? "items-end" : "items-start");
     }
-    // Your bubble is yours; another person's is the neutral one; a bot reads
-    // flat like Grok Bot: no card, no bubble shape.
+    // Your bubble is the accent; another person's and a bot's are the neutral grey.
     expect(bubble(markup, "adawdawdawd")).toContain("bg-bubble-user");
-    expect(bubble(markup, "Test sam")).toContain("bg-raised");
+    expect(bubble(markup, "Test sam")).toContain("bg-bubble-bot");
     expect(bubble(markup, "Test sam")).not.toContain("bg-bubble-user");
+    expect(bubble(markup, "adawdawdawd")).not.toContain("bg-bubble-bot");
+    expect(bubble(markup, "Hi")).toContain("bg-bubble-bot");
+    expect(bubble(markup, "Hi")).not.toContain("bg-bubble-user");
     expect(bubble(markup, "Hi")).not.toContain("bg-card");
-    expect(bubble(markup, "Hi")).not.toContain("rounded-[18px]");
     expect(bubble(markup, "Hi")).toContain("text-ink");
   });
 

@@ -180,7 +180,7 @@ public struct DesktopSkinTokens: Sendable {
     public var app, panel, raised, raisedHover, card, menu, inset, control, hairline: SkinColor
     public var ink, inkSecondary, inkTertiary: SkinColor
     public var accent, accentBorder, accentText, focus, accentInk: SkinColor
-    public var bubbleUser, bubbleUserInk: SkinColor
+    public var bubbleUser, bubbleUserInk, bubbleBot: SkinColor
     public var success, danger, dangerInk, successInk, warning: SkinColor
     public var composer: SkinColor
     /// `--color-unread` (#182): the skin's accent in a chromatic skin,
@@ -248,7 +248,8 @@ public struct SkinPalette: Equatable, Sendable {
     }
 
     /// The parity reference: every value measured from the 21 screenshots.
-    public static let black = SkinPalette(
+    public static let black: SkinPalette = blackBase.bubbled()
+    private static let blackBase = SkinPalette(
         id: .black, isDark: true,
         bg: SkinColor(0x141414), card: SkinColor(0x202020), cardRaised: SkinColor(0x2E2E30),
         hairline: SkinColor(0x313131), tabHairline: SkinColor(0x262626),
@@ -279,7 +280,7 @@ public struct SkinPalette: Equatable, Sendable {
 
     /// Black lifted one step: the same family on the iOS grouped greys.
     public static let dim: SkinPalette = {
-        var p = black
+        var p = blackBase
         p.id = .dim
         p.bg = SkinColor(0x1C1C1E)
         p.desktop = p.bg
@@ -293,8 +294,6 @@ public struct SkinPalette: Equatable, Sendable {
         p.pill = SkinColor(0x333335)
         p.pillBorder = SkinColor(0x3E3D3F)
         p.menuGlass = SkinColor(0x444345)
-        p.bubbleAssistant = SkinColor(0x2C2C2E)
-        p.bubbleUser = SkinColor(0x3A3A3C)
         p.attentionSurface = SkinColor(0x2C2C2E)
         p.textTertiary = SkinColor(0x6E6D72)
         p.chatTimestamp = SkinColor(0x6A6A6E)
@@ -302,7 +301,7 @@ public struct SkinPalette: Equatable, Sendable {
         p.attentionSecondary = SkinColor(0xA3A2A8)
         // #2F6CE7 measures 2.9:1 on the lifted card; one step brighter clears 3:1
         p.accentText = SkinColor(0x4A85F2)
-        return p
+        return p.bubbled()
     }()
 
     /// Hibou 98: grey 3D faces, white sunken fields, navy selection, and
@@ -326,15 +325,13 @@ public struct SkinPalette: Equatable, Sendable {
         p.menuGlass = SkinColor(0xC0C0C0)
         p.primaryFill = SkinColor(0xC0C0C0)
         p.primaryInk = SkinColor(0x000000)
-        p.bubbleAssistant = SkinColor(0xFFFFFF)
-        p.bubbleUser = SkinColor(0xFFFFE1)    // the 98 tooltip yellow
         p.attentionSurface = SkinColor(0xFFFFFF)
         p.attentionBorder = SkinColor(0x000080)
         p.toggleOn = SkinColor(0x000080)
         p.toggleOff = SkinColor(0x808080)
         p.textTertiary = SkinColor(0x3C3C3C)
         p.chatTimestamp = SkinColor(0x3C3C3C)
-        return p
+        return p.bubbled()
     }()
 
     /// A desktop skin on the phone: the desktop's tokens, placed on the
@@ -366,7 +363,7 @@ public struct SkinPalette: Equatable, Sendable {
             // #188: on, paused and waiting read in the accent; green stays
             // for a real success, red for an error
             routineActive: t.accent, routinePaused: t.accentText, selectionRing: quiet,
-            bubbleAssistant: t.card == t.app ? t.raised : t.card, bubbleAssistantText: t.ink,
+            bubbleAssistant: t.bubbleBot, bubbleAssistantText: t.ink,
             bubbleUser: t.bubbleUser, bubbleUserText: t.bubbleUserInk,
             chatTimestamp: quiet, bulletDot: quiet,
             composerPlaceholder: quiet, composerMic: t.inkSecondary,

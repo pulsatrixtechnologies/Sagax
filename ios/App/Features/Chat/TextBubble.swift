@@ -62,17 +62,9 @@ struct TextBubble: View {
         return (filename, diff)
     }
 
-    /// #1024 (Grok Bot): the bot's reply reads flat, at the column's width,
-    /// with no bubble or card; only the person's own message is a bubble. A
-    /// webhook's or a diff's card keeps its card.
-    private var flat: Bool {
-        message.role != .user && message.webhookContent == nil && parsedDiff == nil
-    }
-
     var body: some View {
         let mine = message.role == .user
         let customCard = parsedDiff != nil
-        let flat = flat
         // rooms attribute each line to the member who said it
         let speaker = message.from
         // No face beside the bubble: the bot's face is in the header, and in
@@ -121,7 +113,7 @@ struct TextBubble: View {
                     ForEach(message.generatedImages, id: \.path) { attachment in
                         TranscriptAttachmentView(
                             attachment: attachment, threadId: chat.threadId,
-                            messageId: message.id, foreground: mine ? BubbleColor.mineText : (flat ? Theme.textPrimary : BubbleColor.theirsText)
+                            messageId: message.id, foreground: mine ? BubbleColor.mineText : BubbleColor.theirsText
                         )
                     }
                 }
@@ -218,7 +210,7 @@ struct TextBubble: View {
                     ) { url in
                         openLink(url, message)
                     }
-                        .foregroundStyle(desktop?.ink ?? (flat ? Theme.textPrimary : BubbleColor.theirsText))
+                        .foregroundStyle(desktop?.ink ?? BubbleColor.theirsText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         // Chrome measures Geist a hair wider than Core Text: a
@@ -226,14 +218,14 @@ struct TextBubble: View {
                         .padding(.trailing, desktop != nil && desktopFills(mine: false) ? 1.5 : 0)
                 }
             }
-            .frame(maxWidth: flat || desktopFills(mine: mine) ? .infinity : nil, alignment: .leading)
-            .padding(.horizontal, customCard || flat ? 0 : (desktop != nil ? DesktopChatMetrics.bubblePadding.leading : Theme.Chat.bubblePaddingH))
-            .padding(.vertical, customCard ? 0 : flat ? 2 : (desktop != nil ? DesktopChatMetrics.bubblePadding.top : Theme.Chat.bubblePaddingV))
-            // No tail (reference 02): your message is a bubble one step
-            // lighter than the chat; the bot's reply has none (#1024).
+            .frame(maxWidth: desktopFills(mine: mine) ? .infinity : nil, alignment: .leading)
+            .padding(.horizontal, customCard ? 0 : (desktop != nil ? DesktopChatMetrics.bubblePadding.leading : Theme.Chat.bubblePaddingH))
+            .padding(.vertical, customCard ? 0 : (desktop != nil ? DesktopChatMetrics.bubblePadding.top : Theme.Chat.bubblePaddingV))
+            // No tail (reference 02): your message is a bubble in the accent,
+            // the bot's reply one in a quiet grey (2026-10-28).
             .background(
                 Group {
-                    if !customCard && !flat {
+                    if !customCard {
                         RoundedRectangle(cornerRadius: desktop != nil ? DesktopChatMetrics.bubbleRadius : Theme.Metric.bubbleRadius, style: .continuous)
                             .fill(bubbleFill(mine: mine))
                     }
@@ -242,27 +234,17 @@ struct TextBubble: View {
 
             // the hover row beside the bubble, outside its layout: the cap
             // (100 % - 82) already leaves it room, as on the desktop
-            .overlay(alignment: mine ? .bottomLeading : (flat ? .bottomLeading : .bottomTrailing)) {
+            .overlay(alignment: mine ? .bottomLeading : .bottomTrailing) {
                 if let hoverActions, desktop != nil {
-                    if flat {
-                        // a flat reply fills the column: the row goes under
-                        // its last line instead of beside it
-                        DesktopMessageHoverStrip(model: hoverActions, mine: false, hovering: hovering || parityHover)
-                            .fixedSize()
-                            .alignmentGuide(.bottom) { d in d[.top] - 2 }
-                    } else {
-                        DesktopMessageHoverStrip(model: hoverActions, mine: mine, hovering: hovering || parityHover)
-                            .fixedSize()
-                            .alignmentGuide(.leading) { d in d[.trailing] + 6 }
-                            .alignmentGuide(.trailing) { d in d[.leading] - 6 }
-                    }
+                    DesktopMessageHoverStrip(model: hoverActions, mine: mine, hovering: hovering || parityHover)
+                        .fixedSize()
+                        .alignmentGuide(.leading) { d in d[.trailing] + 6 }
+                        .alignmentGuide(.trailing) { d in d[.leading] - 6 }
                 }
             }
-            // the bot's flat reply takes the column's measure, as on the
-            // desktop (no bubble cap)
-            .modifier(DesktopBubbleCapModifier(cap: flat ? nil : desktopCap(mine: mine), mine: mine))
+            .modifier(DesktopBubbleCapModifier(cap: desktopCap(mine: mine), mine: mine))
 
-            if !mine && !flat { Spacer(minLength: desktop == nil ? Theme.Chat.bubbleTrailingGap : 0) }
+            if !mine { Spacer(minLength: desktop == nil ? Theme.Chat.bubbleTrailingGap : 0) }
         }
         .onHover { hovering = $0 }
     }
@@ -279,7 +261,7 @@ struct TextBubble: View {
         _ = bubblePrefs.botBubble
         _ = openBot.openBotColor
         if !mine, let paint = BotBubblePaint.current { return paint.fill }
-        if let desktop { return mine ? desktop.bubbleUser : desktop.card }
+        if let desktop { return mine ? desktop.bubbleUser : (message.webhookContent == nil ? desktop.bubbleBot : desktop.card) }
         return mine ? BubbleColor.mine : BubbleColor.theirs
     }
 

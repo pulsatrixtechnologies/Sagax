@@ -370,18 +370,19 @@ function RoomTextMessage({
             "text-[13px] leading-5",
             !user && emerging && "turn-answer",
             !user
-              // A bot reads flat like Grok Bot: no card, the column's measure,
-              // aligned to the rail; its name labels the run above (RoomBotLabel).
-              // An attachments-only line keeps its tighter fit.
+              // A bot's reply is a quiet grey bubble (--color-bubble-bot); its name
+              // labels the run above (RoomBotLabel). An attachments-only line keeps
+              // its tighter fit and no bubble.
               ? (!m.text?.trim() && !m.replyToId && m.attachments?.length
                   ? "w-fit max-w-[min(80%,560px,calc(100%-82px))] text-ink"
-                  : "w-full max-w-[calc(100%-82px)] text-ink")
-              // A person (you or another) keeps a rounded bubble.
+                  : "w-fit max-w-[min(94%,780px,calc(100%-82px))] rounded-[18px] bg-bubble-bot px-3 py-[7px] text-ink")
+              // A person keeps a rounded bubble: yours in the accent (--color-bubble-user),
+              // another person's in the bot's grey.
               : cn(
                   "rounded-[18px] w-fit max-w-[min(80%,560px,calc(100%-82px))]",
                   mine
                     ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink"
-                    : "chat-text whitespace-pre-wrap bg-raised px-3 py-[7px] text-ink ring-1 ring-inset ring-hairline/40",
+                    : "chat-text whitespace-pre-wrap bg-bubble-bot px-3 py-[7px] text-ink",
                   runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
                 ),
           )}

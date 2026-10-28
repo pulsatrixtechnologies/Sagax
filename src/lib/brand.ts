@@ -2,6 +2,7 @@
 // by GET /api/brand from a brand.json on the server and applied once before
 // the first paint. The default name is Sagax.
 // Pure helpers live here so they can be unit-tested without a DOM.
+import { BRAND_BUBBLE_VARS, brandBubbleVars } from "./bubble-colors";
 import { BRAND_SWITCH_VARS, brandSwitchVars } from "./switch-colors";
 
 export interface Brand {
@@ -66,6 +67,7 @@ export function brandVars(b: Brand): Record<string, string> {
     "--color-accent-ink": accentInk(b.accent),
     // the switch's on track, at a lightness that carries its white thumb
     ...brandSwitchVars(b.accent),
+    ...brandBubbleVars(b.accent),
   };
 }
 
@@ -105,7 +107,7 @@ export function applyBrand(status: BrandStatus): void {
   document.title = status.brand.name;
   applyIcon(status.brand.favicon);
   const root = document.documentElement;
-  for (const name of ["--color-accent", "--color-accent-border", "--color-focus", "--color-accent-text", "--color-accent-ink", ...BRAND_SWITCH_VARS]) {
+  for (const name of ["--color-accent", "--color-accent-border", "--color-focus", "--color-accent-text", "--color-accent-ink", ...BRAND_SWITCH_VARS, ...BRAND_BUBBLE_VARS]) {
     root.style.removeProperty(name);
   }
   for (const [name, value] of Object.entries(brandVars(status.brand))) root.style.setProperty(name, value);

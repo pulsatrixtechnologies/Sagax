@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { accentInk } from "@/lib/brand";
 import { SKIN_IDS, type SkinId } from "@/lib/skins";
+import { BRAND_BUBBLE_VARS, brandBubbleVars } from "@/lib/bubble-colors";
 import { BRAND_SWITCH_VARS, brandSwitchVars } from "@/lib/switch-colors";
 
 export interface FloatingTheme {
@@ -18,7 +19,7 @@ export interface FloatingTheme {
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
-const ACCENT_VARS = ["--color-accent", "--color-accent-border", "--color-focus", "--color-accent-text", "--color-accent-ink", ...BRAND_SWITCH_VARS] as const;
+const ACCENT_VARS = ["--color-accent", "--color-accent-border", "--color-focus", "--color-accent-text", "--color-accent-ink", ...BRAND_SWITCH_VARS, ...BRAND_BUBBLE_VARS] as const;
 
 export const isSkinId = (value: unknown): value is SkinId => typeof value === "string" && (SKIN_IDS as readonly string[]).includes(value);
 
@@ -73,6 +74,7 @@ export function themeVars(theme: FloatingTheme | undefined): Record<string, stri
     "--color-accent-text": theme.accent,
     "--color-accent-ink": accentInk(theme.accent),
     ...brandSwitchVars(theme.accent),
+    ...brandBubbleVars(theme.accent),
   };
 }
 

@@ -169,7 +169,7 @@ public extension SkinPalette {
             p.bg = tokens.panel
             p.desktop = tokens.panel
             p.card = tokens.app
-            p.bubbleAssistant = tokens.app
+            p.bubbleAssistant = tokens.bubbleBot
             p.attentionSurface = tokens.app
             p.glassFill = tokens.raised
         }
@@ -192,17 +192,21 @@ public extension DesktopSkins {
             return SkinColor(css: value) ?? SkinColor(0xFF00FF)
         }
         guard raw["app"] != nil else { return nil }
+        // the bubbles come from the accent and the page (BubbleColors), not from
+        // the skin blocks' own bubble tokens
+        let dark = raw["code-scheme"] == "dark"
+        let user = BubbleColors.user(accent: c("accent"))
         return DesktopSkinTokens(
             app: c("app"), panel: c("panel"), raised: c("raised"), raisedHover: c("raised-hover"),
             card: c("card"), menu: c("menu"), inset: c("inset"), control: c("control"), hairline: c("hairline"),
             ink: c("ink"), inkSecondary: c("ink-secondary"), inkTertiary: c("ink-tertiary"),
             accent: c("accent"), accentBorder: c("accent-border"), accentText: c("accent-text"),
             focus: c("focus"), accentInk: c("accent-ink"),
-            bubbleUser: c("bubble-user"), bubbleUserInk: c("bubble-user-ink"),
+            bubbleUser: user.fill, bubbleUserInk: user.ink, bubbleBot: BubbleColors.bot(app: c("app"), dark: dark),
             success: c("success"), danger: c("danger"), dangerInk: c("danger-ink"),
             successInk: c("success-ink"), warning: c("warning"), composer: c("composer"),
             unread: c("unread"),
-            dark: raw["code-scheme"] == "dark"
+            dark: dark
         )
     }
 }

@@ -22,6 +22,8 @@
 @import "./styles/skin-texture.css";
 /* The switch's tracks per skin and variant, generated (pnpm gen:switch). */
 @import "./styles/skin-switch.css";
+/* The conversation bubbles per skin and variant, generated (pnpm gen:bubble). Its selectors outweigh the skin blocks' own --color-bubble-user. */
+@import "./styles/skin-bubble.css";
 
 /* Phones and tablets have no hover, and Tailwind only applies `hover:` and
    `group-hover:` under `@media (hover: hover)`. A control revealed on hover
@@ -325,6 +327,7 @@
   --color-focus: #bdbdbd;
   --color-accent-text: #e8e8e8;
   --color-bubble-user: #5a5a5a;
+  --color-bubble-bot: #252525;
   --color-success: #38d591;
   --color-danger: #ff5667;
   --color-warning: #ff9800;
@@ -2985,61 +2988,38 @@ html[data-animations-paused] *::after {
 .bg-success {
   color: var(--color-success-ink);
 }
-/* Same mechanism, one skin deeper: Daylight paints the user's own bubble in
-   near-black on a near-white page, and the `text-ink` the composer and the
-   thread hardcode would be black on black. */
+/* The person's own bubble is filled with the accent (src/styles/skin-bubble.css:
+   the accent at a lightness that carries its text at 4.5:1, in every skin,
+   colour, duo-tone and mood), so the ink inside it is the bubble's ink and not
+   the page's: the `text-ink` the composer and the thread hardcode would be
+   dark on a dark accent. Everything a bubble holds (a link, inline code, a
+   quote, a reference chip, the inline editor, an attachment control) reads its
+   tokens from here, cut from the bubble's own two colours, so each keeps
+   4.5:1 whatever the accent. A nested skin (a picker preview) keeps its own
+   palette: its blocks set these tokens on the nested element itself. */
 .bg-bubble-user {
   color: var(--color-bubble-user-ink);
+  --color-ink: var(--color-bubble-user-ink);
+  /* no faded ink here: a fade of the bubble's ink is under 4.5:1 on the accent */
+  --color-ink-secondary: var(--color-bubble-user-ink);
+  --color-ink-tertiary: var(--color-bubble-user-ink);
+  --color-panel: color-mix(in srgb, var(--color-bubble-user-ink) 8%, var(--color-bubble-user));
+  --color-inset: color-mix(in srgb, var(--color-bubble-user-ink) 12%, var(--color-bubble-user));
+  --color-raised: color-mix(in srgb, var(--color-bubble-user-ink) 16%, var(--color-bubble-user));
+  --color-raised-hover: color-mix(in srgb, var(--color-bubble-user-ink) 24%, var(--color-bubble-user));
+  --color-control: color-mix(in srgb, var(--color-bubble-user-ink) 16%, var(--color-bubble-user));
+  --color-hairline: color-mix(in srgb, var(--color-bubble-user-ink) 55%, var(--color-bubble-user));
+  --color-accent: var(--color-bubble-user-ink);
+  --color-accent-text: var(--color-bubble-user-ink);
+  --color-accent-border: var(--color-bubble-user-ink);
+  --color-accent-ink: var(--color-bubble-user);
+  --color-focus: var(--color-bubble-user-ink);
 }
-
-/* Daylight's inverted bubble is a dark surface, including its editor,
-   quoted replies and attachment controls. Keep their normal semantic tokens
-   together; overriding only the parent's color leaves explicit child ink dark.
-   Stop at a nested skin so the picker previews retain their own palettes. */
-@scope ([data-skin="daylight"]) to ([data-skin]) {
-  .bg-bubble-user {
-    --color-ink: #fcfcfc;
-    --color-ink-secondary: #c4c4c4;
-    --color-ink-tertiary: #aaaaaa;
-    --color-panel: #111111;
-    --color-inset: #191919;
-    --color-raised: #2f2f2f;
-    --color-raised-hover: #3d3d3d;
-    --color-control: #2f2f2f;
-    --color-hairline: #666666;
-    --color-accent: #e8e8e8;
-    --color-accent-text: #e8e8e8;
-    --color-accent-ink: #111111;
-    --color-focus: #e8e8e8;
-    --color-danger: #ff7788;
-    --color-danger-ink: #070707;
-    --color-success: #63b58a;
-    --color-success-ink: #070707;
-  }
-}
-
-/* Meadow's own bubble is green-black on white: the same inverted context as
-   Daylight's, tuned to the green ink. */
-@scope ([data-skin="meadow"]) to ([data-skin]) {
-  .bg-bubble-user {
-    --color-ink: #ffffff;
-    --color-ink-secondary: #c3d6ca;
-    --color-ink-tertiary: #a9bfb1;
-    --color-panel: #142219;
-    --color-inset: #1b2b21;
-    --color-raised: #2a3b30;
-    --color-raised-hover: #35493c;
-    --color-control: #2a3b30;
-    --color-hairline: #5f7266;
-    --color-accent: #7fdca8;
-    --color-accent-text: #7fdca8;
-    --color-accent-ink: #0f1a13;
-    --color-focus: #7fdca8;
-    --color-danger: #ff7788;
-    --color-danger-ink: #0f1a13;
-    --color-success: #7fdca8;
-    --color-success-ink: #0f1a13;
-  }
+/* The bot's bubble (and another person's in a room): a quiet grey a step off
+   the page, the page's own ink on it. Cards, tables and code blocks inside it
+   keep their own surfaces. */
+.bg-bubble-bot {
+  color: var(--color-ink);
 }
 
 /* Disabled buttons.

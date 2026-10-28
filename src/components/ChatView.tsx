@@ -621,10 +621,6 @@ const Bubble = memo(function Bubble({
   const attachmentsOnly = !webhookView && !replyTarget && !visibleText.trim() &&
     (user ? hasAttachments : generatedPaths.length + linkedFiles.length > 0);
   const remoteCard = !user && Boolean(message.remoteSession || message.resourceUsage || message.connectorSetup);
-  // A plain bot answer draws flat like Grok Bot (no card). A person's message,
-  // a webhook card, a remote/resource card and an attachments-only line keep
-  // their own treatment just below.
-  const flatBot = !user && !webhookView && !remoteCard && !attachmentsOnly;
   const collapsible =
     user && !webhookView && !expanded && (visibleText.length > USER_COLLAPSE_CHARS || visibleText.split("\n").length > USER_COLLAPSE_LINES);
   useEffect(() => {
@@ -704,24 +700,21 @@ const Bubble = memo(function Bubble({
           className={cn(
             "text-[13px] leading-5",
             emerging && "turn-answer",
-            flatBot
-              // A bot answer reads flat like Grok Bot: no card, no bubble shape,
-              // the column's measure, aligned to the rail. Only the person's own
-              // message keeps a bubble. Cards (webhook, remote) stay carded below.
-              ? "w-full max-w-[calc(100%-82px)] text-ink"
-              : cn(
-                  "rounded-[18px]",
-                  CHAT_BUBBLE_WIDTH_CLASS[chatBubbleWidth({ terminal: !user && Boolean(message.terminalEmbed), wide: wideBubble || remoteCard })],
-                  user && webhookView
-                    ? "overflow-hidden border border-accent/25 bg-card text-ink shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
-                    : remoteCard && !visibleText.trim()
-                      ? "text-ink"
-                    : attachmentsOnly
-                      ? "text-ink"
-                      : user
-                        ? "bg-bubble-user px-3 py-[7px] whitespace-pre-wrap text-ink"
-                        : "bg-card px-3 py-[7px] text-ink",
-                ),
+            "rounded-[18px]",
+            CHAT_BUBBLE_WIDTH_CLASS[chatBubbleWidth({ terminal: !user && Boolean(message.terminalEmbed), wide: wideBubble || remoteCard })],
+            user && webhookView
+              ? "overflow-hidden border border-accent/25 bg-card text-ink shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
+              : remoteCard && !visibleText.trim()
+                ? "text-ink"
+                : remoteCard
+                  ? "bg-card px-3 py-[7px] text-ink"
+                  : attachmentsOnly
+                  ? "text-ink"
+                  : user
+                    // the person's own message: a bubble in the accent (--color-bubble-user)
+                    ? "bg-bubble-user px-3 py-[7px] whitespace-pre-wrap text-ink"
+                    // a bot's reply: a quiet grey bubble; its tables, code and cards keep their own look
+                    : "bg-bubble-bot px-3 py-[7px] text-ink",
           )}
           title={new Date(message.at).toLocaleString(activeLocale())}
         >

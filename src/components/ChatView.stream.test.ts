@@ -146,7 +146,7 @@ describe("the single stream in the main chat", () => {
     expect(markup.indexOf('data-topic-divider="now"')).toBeLessThan(markup.indexOf("Live answer"));
   });
 
-  it("draws a bot answer flat like Grok Bot: no card, no bubble shape", () => {
+  it("draws a bot answer in the grey bubble, never the person's accent bubble", () => {
     preferences.setShowThreads(false);
     const markup = render(bot);
     // the bubble wrapper that holds the bot's answer
@@ -155,8 +155,9 @@ describe("the single stream in the main chat", () => {
     const start = markup.indexOf('class="', marker) + 'class="'.length;
     const cls = markup.slice(start, markup.indexOf('"', start));
     expect(cls).toContain("text-ink");
+    expect(cls).toContain("bg-bubble-bot");
+    expect(cls).toContain("rounded-[18px]");
     expect(cls).not.toContain("bg-card");
-    expect(cls).not.toContain("rounded-[18px]");
     expect(cls).not.toContain("bg-bubble-user");
   });
 

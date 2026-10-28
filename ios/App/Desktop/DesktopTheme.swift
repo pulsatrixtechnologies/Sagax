@@ -42,7 +42,7 @@ struct DesktopTheme: Equatable {
     // ink and accents
     var ink, inkSecondary, inkTertiary: Color
     var accent, accentBorder, accentText, focus, accentInk: Color
-    var bubbleUser, bubbleUserInk: Color
+    var bubbleUser, bubbleUserInk, bubbleBot: Color
     var success, danger, warning: Color
 
     /// `color-mix` of ink (src/styles.css:203-217), as alpha over the surface.
@@ -198,7 +198,7 @@ struct DesktopTheme: Equatable {
         ink = t.ink.color; inkSecondary = t.inkSecondary.color; inkTertiary = t.inkTertiary.color
         accent = t.accent.color; accentBorder = t.accentBorder.color; accentText = t.accentText.color
         focus = t.focus.color; accentInk = t.accentInk.color
-        bubbleUser = t.bubbleUser.color; bubbleUserInk = t.bubbleUserInk.color
+        bubbleUser = t.bubbleUser.color; bubbleUserInk = t.bubbleUserInk.color; bubbleBot = t.bubbleBot.color
         success = t.success.color; danger = t.danger.color; warning = t.warning.color
         elevated = t.ink.opacity(0.03).over(t.panel).color
         glow = e.glow
@@ -221,7 +221,7 @@ struct DesktopTheme: Equatable {
             ink: p.textPrimary.color, inkSecondary: p.textSecondary.color, inkTertiary: p.textTertiary.color,
             accent: p.accent.color, accentBorder: p.accent.color, accentText: p.accentText.color,
             focus: p.focus.color, accentInk: p.accentInk.color,
-            bubbleUser: p.bubbleUser.color, bubbleUserInk: p.bubbleUserText.color,
+            bubbleUser: p.bubbleUser.color, bubbleUserInk: p.bubbleUserText.color, bubbleBot: p.bubbleAssistant.color,
             success: p.success.color, danger: p.danger.color, warning: p.warning.color,
             elevated: p.textPrimary.opacity(0.03).over(p.inset).color,
             glow: (0, 0), radiusLg: 8, radiusXl: 12, face: .geist
@@ -236,7 +236,7 @@ struct DesktopTheme: Equatable {
         sidebarHairline: Color, hairline: Color, composerRing: Color,
         ink: Color, inkSecondary: Color, inkTertiary: Color,
         accent: Color, accentBorder: Color, accentText: Color, focus: Color, accentInk: Color,
-        bubbleUser: Color, bubbleUserInk: Color, success: Color, danger: Color, warning: Color,
+        bubbleUser: Color, bubbleUserInk: Color, bubbleBot: Color, success: Color, danger: Color, warning: Color,
         elevated: Color, glow: (Double, Double), radiusLg: CGFloat, radiusXl: CGFloat, face: Face
     ) {
         self.skin = skin; self.dark = dark
@@ -248,7 +248,7 @@ struct DesktopTheme: Equatable {
         self.ink = ink; self.inkSecondary = inkSecondary; self.inkTertiary = inkTertiary
         self.accent = accent; self.accentBorder = accentBorder; self.accentText = accentText
         self.focus = focus; self.accentInk = accentInk
-        self.bubbleUser = bubbleUser; self.bubbleUserInk = bubbleUserInk
+        self.bubbleUser = bubbleUser; self.bubbleUserInk = bubbleUserInk; self.bubbleBot = bubbleBot
         self.success = success; self.danger = danger; self.warning = warning
         self.elevated = elevated; self.glow = glow
         self.radiusLg = radiusLg; self.radiusXl = radiusXl; self.face = face
