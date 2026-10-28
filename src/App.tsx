@@ -8,6 +8,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { mainConversation } from "@/lib/main-view";
 import { GuidedTour } from "@/components/onboarding/GuidedTour";
+import { OpenAtLoginOffer } from "@/components/OpenAtLoginOffer";
 import { LiveCallHost } from "@/components/LiveCallHost";
 import { ThreadRefsProvider } from "@/components/ThreadRefs";
 import { initAnalytics } from "@/lib/analytics";
@@ -650,6 +651,7 @@ function Application() {
         </ThreadRefsProvider>
         <WelcomeGate viewer={viewer} />
         <GuidedTour />
+        <OpenAtLoginOffer />
         <LiveCallHost />
         <DataWindowViewSync />
         <BotAccentSync />

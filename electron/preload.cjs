@@ -122,6 +122,10 @@ const bridge = {
     menu: () => ipcRenderer.invoke("workspaces:menu"),
   },
   getCapabilities: () => ipcRenderer.invoke("desktop:capabilities"),
+  openAtLogin: {
+    get: () => ipcRenderer.invoke("open-at-login:get"),
+    set: (choice) => ipcRenderer.invoke("open-at-login:set", choice === "on" ? "on" : "off"),
+  },
   /** True once when this is the credential the app just brought back from
    * "Sign in with Pulsatrix" to this page (/pair redeems it without asking).
    * Main checks the window, the frame, the origin and the credential. */

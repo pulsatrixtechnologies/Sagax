@@ -11396,5 +11396,11 @@
   "connectApps.accounts.servicesAria": "Filter by service",
   "connectApps.sources.adminsOnly": "Admins only",
   "organization.plugins.moved": "Allowed marketplaces, the GitHub access tokens and the GitHub OAuth App are managed in Connect Apps > Sources.",
-  "organization.plugins.open": "Open Sources"
+  "organization.plugins.open": "Open Sources",
+  "openAtLogin.title": "Open Sagax when you sign in",
+  "openAtLogin.body": "Sagax can open when you sign in to this Mac. It stays off until you accept here. You can change it later in Settings.",
+  "openAtLogin.accept": "Open at sign-in",
+  "openAtLogin.notNow": "Not now",
+  "openAtLogin.setting": "Open when I sign in",
+  "openAtLogin.settingHelp": "Your choice on this Mac. Sagax does not start at sign-in until you turn this on."
 }

@@ -11396,5 +11396,11 @@
   "connectApps.accounts.servicesAria": "Filtrer par service",
   "connectApps.sources.adminsOnly": "Admins seulement",
   "organization.plugins.moved": "Les marketplaces autorisés, les jetons d'accès GitHub et l'application OAuth GitHub sont gérés dans Connecter des applications > Sources.",
-  "organization.plugins.open": "Ouvrir Sources"
+  "organization.plugins.open": "Ouvrir Sources",
+  "openAtLogin.title": "Ouvrir Sagax à l'ouverture de session",
+  "openAtLogin.body": "Sagax peut s'ouvrir quand vous ouvrez votre session sur ce Mac. Il reste éteint tant que vous n'acceptez pas ici. Vous pourrez le changer dans les réglages.",
+  "openAtLogin.accept": "Ouvrir à la session",
+  "openAtLogin.notNow": "Pas maintenant",
+  "openAtLogin.setting": "Ouvrir quand j'ouvre ma session",
+  "openAtLogin.settingHelp": "Votre choix sur ce Mac. Sagax ne démarre pas à l'ouverture de session tant que vous ne l'activez pas."
 }

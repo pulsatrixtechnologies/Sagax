@@ -124,6 +124,11 @@ const __BASE_VERSION__: string;
     floatingBotWindow?: import("../components/floating-bots/protocol").FloatingWindowBridge;
     ogb?: {
       platform: NodeJS.Platform;
+      /** This Mac only: open the app when the person signs in. Unset until they choose. */
+      openAtLogin?: {
+        get(): Promise<{ choice: "unset" | "on" | "off"; platform: string }>;
+        set(choice: "on" | "off"): Promise<{ choice: "on" | "off"; platform: string }>;
+      };
       /** Desktop only: true once when the main process handed this exact
        * credential to /pair from a "Sign in with Pulsatrix" return it was
        * waiting for (electron/oidc-system-sign-in.cjs createSignInHandoff). */
