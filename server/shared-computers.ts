@@ -8,8 +8,11 @@ export const sharedComputerRegistration = z.object({
 }).strict();
 export const sharedComputerOperation = z.object({
   computer_id: z.string().uuid(),
-  action: z.enum(["list_files", "read_file", "write_file", "run_command", "computer_tools", "computer_call"]),
+  action: z.enum(["list_files", "read_file", "write_file", "run_command", "computer_tools", "computer_call", "read_copy"]),
   folder_id: z.string().uuid().optional(), path: z.string().max(2048).optional(),
+  /** read_copy: the person's stored chrome list or lent folder, not a live call. */
+  kind: z.enum(["chrome", "folder"]).optional(),
+  name: z.string().min(1).max(80).optional(),
   content: z.string().max(350_000).optional(), encoding: z.enum(["utf8", "base64"]).optional(),
   expected_sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   command: z.string().max(8000).optional(), tool_name: z.string().max(100).optional(),
@@ -46,6 +49,8 @@ export function sharedComputerScopeRefusal(registration: Registration, operation
     case "computer_tools":
     case "computer_call":
       return registration.computer ? null : "Apps and screen are not lent to this server.";
+    case "read_copy":
+      return "A stored copy is read on the server. It is not a live action on the desktop.";
     case "list_files":
     case "read_file":
     case "write_file": {

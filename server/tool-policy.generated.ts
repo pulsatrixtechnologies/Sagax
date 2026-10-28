@@ -292,6 +292,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"prefix","route":"/api/shared-computers/","tier":"write","readOnly":false,"scope":"shared-computers:write","defaultEnabled":true},
   {"method":"POST","kind":"prefix","route":"/api/shared-computers/","tier":"write","readOnly":false,"scope":"shared-computers:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/shared-computers/connect","tier":"write","readOnly":false,"scope":"shared-computers:write","defaultEnabled":true},
+  {"method":"POST","kind":"exact","route":"/api/shared-computers/copy","tier":"write","readOnly":false,"scope":"shared-computers:write","defaultEnabled":true},
   {"method":"DELETE","kind":"exact","route":"/api/sidebar-sections","tier":"admin","readOnly":false,"scope":"sidebar-sections:admin","defaultEnabled":false,"destructive":true},
   {"method":"GET","kind":"exact","route":"/api/sidebar-sections","tier":"read","readOnly":true,"scope":"sidebar-sections:read","defaultEnabled":true},
   {"method":"PATCH","kind":"exact","route":"/api/sidebar-sections","tier":"write","readOnly":false,"scope":"sidebar-sections:write","defaultEnabled":true},

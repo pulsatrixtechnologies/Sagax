@@ -20,6 +20,14 @@ export function hasShellOnThisComputer(facts: ShellFacts): boolean {
   return !(facts.cloudOnly || facts.teamComputer);
 }
 
+/** The live screen stays with its owner. cloudOnly is not an input: it does
+ * not hand that screen to another member. A cloud bot reads the owner's copy. */
+export function liveScreenForMember(owner: string, reader: string): boolean {
+  const left = owner.trim();
+  const right = reader.trim();
+  return left.length > 0 && left === right;
+}
+
 /** The sentence a bot reads (browser prompt, tool refusal) and the person sees on the bot's card. */
 export const MY_CHROME_SHELL_NOTE = "This bot has a terminal on your computer: it uses its own browser.";
 export const MY_CHROME_SHELL_NOTE_FR = "Ce bot a un terminal sur ton ordinateur : il utilise son propre navigateur.";
