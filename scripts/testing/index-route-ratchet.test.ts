@@ -20,6 +20,7 @@ const EXACT: Record<string, number> = {
   'path === "/': 186,
   // 91: the thread file pin and the bot history routes moved to server/routes (#1099), after the
   // library pin (#1112) and the history owner rule (#1107) had taken it over 93.
+  // GET /api/bots/:id/send-state (#1259) lives in server/routes/bot-send-state.ts, so the count stays at 91.
   "path.match(": 91,
   "path.startsWith(": 14,
   ".exec(path)": 24,
