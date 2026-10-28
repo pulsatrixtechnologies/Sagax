@@ -117,7 +117,11 @@ reads the entries just before it.
   `await_turn` accepts it for that caller and agent. The fresh thread stays
   visible to the recipient.
 - **One hop**: a prompt a bot received from another agent cannot be passed on
-  (409 `too_deep`).
+  (409 `too_deep`). That bot still keeps its own Sagax tools (memory, files,
+  pages, tasks, widgets); only the tools that would start another hop
+  (`ask_bot`, `delegate_bot`, `coordinate_bots`, `send_to_bot`, `start_thread`,
+  `send_prompt`, `await_turn`, `create_agent`, `delete_agent` and their
+  companions) are left out of its catalog (`SAGAX_PEER_HOP`, 2026-10-28).
 - **Approval gate**: a bot whose peer contact needs review raises the
   `delegate_bot` card before its prompt goes out.
 - **Scopes**:

@@ -4265,9 +4265,18 @@ function internalCapabilityIsActive(capability: InternalCapability): boolean {
   );
 }
 // Cap message chains: depth 0 = a user-initiated turn (may ask a peer);
-// a peer invoked via ask_bot runs at depth 1 and gets NO agents tool, so
-// A→B is allowed but B→C (and A→B→A loops) never start.
+// a peer invoked via ask_bot runs at depth 1. Since 2026-10-28 it keeps its
+// Sagax tools (memory, files, pages, tasks) and loses only the ones that
+// start another hop (agents-catalog.ts PEER_HOP_ABSENT_TOOLS, SAGAX_PEER_HOP),
+// so A→B is allowed but B→C (and A→B→A loops) never start. The routes
+// refuse a second hop whatever the catalog shows.
 const MAX_COMMS_DEPTH = 1;
+/** 2026-10-28: a teammate's turn one hop away that is not a coordinated
+ * node (coordinate_bots, a room handoff): its agents tools are mounted
+ * without the peer tools (SAGAX_PEER_HOP). */
+function peerHopTurn(depth: number, coordinated: boolean): boolean {
+  return depth >= MAX_COMMS_DEPTH && !coordinated;
+}
 const MAX_WORKSPACE_BOTS = 100;
 const createSidebarSectionSchema = z.object({
   name: z.string(),
@@ -4371,6 +4380,8 @@ function agentsIntegration(
       SAGAX_COMMS_TOKEN: token,
       SAGAX_TURN_DEPTH: String(depth),
       SAGAX_ROOM_TURN: roomCoordination ? "1" : "0",
+      // 2026-10-28: a teammate one hop away keeps its tools, not the peer ones
+      SAGAX_PEER_HOP: peerHopTurn(depth, roomCoordination) ? "1" : "0",
       // A real room (group conversation). A person's direct chat also sets
       // SAGAX_ROOM_TURN (bounded coordination), so a tool absent from rooms
       // only (propose_page) reads this, never SAGAX_ROOM_TURN.
@@ -20823,7 +20834,13 @@ async function startTurn(
     }
   }
 
-  const agentsMounted = (commsDepth < MAX_COMMS_DEPTH || coordinated) && instance.adapter.capabilities.agentsMcp === true;
+  // 2026-10-28: every turn of an engine that mounts the agents server gets
+  // it; a teammate one hop away gets it without the peer tools (peerHop).
+  // The person-facing parts (setup, skill authoring, the computer choice,
+  // the team roster) stay with the turns that may reach a peer.
+  const peerHop = peerHopTurn(commsDepth, coordinated);
+  const agentsMounted = instance.adapter.capabilities.agentsMcp === true;
+  const peerToolsMounted = agentsMounted && !peerHop;
 
   // busy flips immediately so the composer locks; the dispatch itself runs
   // in the background — boat provisioning can take ~90s and must never
@@ -21036,7 +21053,7 @@ async function startTurn(
       // the setup prompt block, and the peer-comms integration below: a driver
       // that never mounts agent tools (or a turn already at the comms-depth cap)
       // must not be steered into — or told about — tools it cannot call.
-      const skillAuthoring = personalFeatureOn("skillAuthoring", skillAuthoringEnabled(cfg), vaultPrincipalForThread(threadId)) && agentsMounted;
+      const skillAuthoring = personalFeatureOn("skillAuthoring", skillAuthoringEnabled(cfg), vaultPrincipalForThread(threadId)) && peerToolsMounted;
       // Setup mode's turn-text rewrite (parseSetupCommand/expandSetupTurnText)
       // must not run ahead of a system prompt that can't explain it: a driver
       // without agent tools sees the user's literal "/setup ..." message. The
@@ -21055,7 +21072,7 @@ async function startTurn(
         skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined,
         { inline: !supportsWorkspaceFiles(instance.driverKind) },
       );
-      const setupText = agentsMounted ? expandSetupTurnText(skillCommandText) : skillCommandText;
+      const setupText = peerToolsMounted ? expandSetupTurnText(skillCommandText) : skillCommandText;
       const userTurnText = promptWithReply(
         skillAuthoring ? expandLearnTurnText(setupText) : setupText,
         opts?.replyTo,
@@ -21725,7 +21742,7 @@ async function startTurn(
       // @mentions in the user's message (the composer's tagging UI) become
       // an explicit coordination nudge. The agent still chooses the matching
       // peer tool, so the harness stays the single owner of turns/permissions.
-      const tagged = integrations.agents
+      const tagged = integrations.agents && !peerHop
         ? mentionedBots(
             providerText,
             sectionPeers,
@@ -21741,17 +21758,17 @@ async function startTurn(
         ? chiefOfStaffSystemPrompt(
             bot.id,
             store.bots,
-            Boolean(integrations.agents),
+            Boolean(integrations.agents) && !peerHop,
             boundedCoordination,
           )
-        : integrations.agents && sectionPeers.length > 0
+        : integrations.agents && !peerHop && sectionPeers.length > 0
           // Ordinary bots could always CALL the peer tools; until now the
           // one generic sentence they got never named a teammate, so the
           // first move of any collaboration was a list_bots round trip the
           // model mostly did not think to make.
           ? peerRosterSystemPrompt(sectionPeers, boundedCoordination, botCreationOffered(bot, ownerBotsReadOnly(bot)), sameOwnerRosterMember(bot))
           : "";
-      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + (boundedCoordination ? "" : THREADS_PROMPT) + WIDGET_PROMPT + WIDGET_APPROVAL_PROMPT : "";
+      const credentialPrompt = integrations.agents ? CREDENTIAL_PROMPT + (boundedCoordination || peerHop ? "" : THREADS_PROMPT) + WIDGET_PROMPT + WIDGET_APPROVAL_PROMPT : "";
       const routinePrompt = integrations.agents ? ROUTINE_PROMPT : "";
       const profilePrompt = integrations.agents ? botProfilePrompt(bot) : "";
       const recallPrompt = integrations.agents && bot.memoryEnabled !== false ? SESSION_SEARCH_SYSTEM_PROMPT : "";
@@ -21785,7 +21802,7 @@ async function startTurn(
       // of the two disagreeing about whether setup mode is still active.
       const liveBot = store.bot(bot.id);
       const setupMode =
-        agentsMounted &&
+        peerToolsMounted &&
         setupModeActive({
           soul: liveBot?.soul ?? bot.soul,
           description: liveBot?.description ?? bot.description,
@@ -24792,7 +24809,9 @@ async function runGroupMemberTurn(
     !skillAuthoringClaim.claimed &&
     !cardContinuation &&
     instance.adapter.capabilities.agentsMcp === true;
-  if ((hop < MAX_COMMS_DEPTH || orchestration?.roomHandoffId) && instance.adapter.capabilities.agentsMcp === true) {
+  // 2026-10-28: a room hop keeps its tools too; past one hop without a
+  // handoff it is mounted without the peer tools (SAGAX_PEER_HOP).
+  if (instance.adapter.capabilities.agentsMcp === true) {
     integrations.agents = agentsIntegration(bot.id, threadId, hop, skillAuthoring, internalGeneration, orchestration?.roomHandoffId, !orchestration || Boolean(orchestration.roomHandoffId), false, supportsWorkspaceFiles(instance.driverKind), !engineHasNativeWebSearch(instance.driverKind, withholdHostToolsFor(instance), roomTurnSelection(bot).model));
   }
   if (instance.adapter.capabilities.hooks === true && hooksEnabled()) {
@@ -25239,7 +25258,10 @@ async function runGroupMemberTurn(
   // like @Name") sends the model after a teammate who will never see it.
   // Same reachability rule as list_bots, minus the room's own members, and
   // only on a turn that is not answering a room request.
-  const outsideRoom = integrations.agents && orchestration && !orchestration.roomHandoffId
+  // 2026-10-28: a room hop past the first keeps its tools but no peer tool
+  // (SAGAX_PEER_HOP): no roster and no threads paragraph point to them.
+  const roomPeerHop = peerHopTurn(hop, !orchestration || Boolean(orchestration.roomHandoffId));
+  const outsideRoom = integrations.agents && !roomPeerHop && orchestration && !orchestration.roomHandoffId
     ? reachablePeers(store.bots, bot).filter((peer) => !readyGroup.memberIds.includes(peer.id))
     : [];
   const system = [
@@ -25250,7 +25272,7 @@ async function runGroupMemberTurn(
     readyGroup.bulletin.trim() && `Room bulletin (shared instructions for everyone):\n${readyGroup.bulletin.trim()}`,
     `Reply as yourself, briefly and conversationally. To bring a teammate in, mention them like @Name — they'll see the conversation and respond.`,
     outsideRoom.length > 0 && roomPeerRosterSystemPrompt(outsideRoom),
-    integrations.agents && (CREDENTIAL_PROMPT + REACTION_PROMPT + (orchestration && !orchestration.roomHandoffId ? THREADS_PROMPT : "")).trim(),
+    integrations.agents && (CREDENTIAL_PROMPT + REACTION_PROMPT + (orchestration && !orchestration.roomHandoffId && !roomPeerHop ? THREADS_PROMPT : "")).trim(),
     integrations.agents && (!orchestration || orchestration.roomHandoffId) && "For actual Sagax teamwork, discover IDs with list_room_targets and use coordinate_bots for advice or work in this or another room. Do not substitute native coding helpers for these named bots. Consult only when needed to make a decision; no discussion step is mandatory. Give concrete responsibilities, exact accessible paths and acceptance checks. End your turn after assigning; busy teammates queue and results automatically resume you. When they return, finish the requested verification and give the user one final answer. Native helper names are not evidence that a Sagax teammate participated. Plain @mentions are only for conversational replies in this room.",
     integrations.agents && ROUTINE_PROMPT.trim(),
     integrations.agents && botProfilePrompt(bot).trim(),

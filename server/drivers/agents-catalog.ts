@@ -43,6 +43,12 @@ export interface CatalogProfile {
    * coordinating: a person's ordinary direct chat coordinates too. Absent is
    * a direct conversation. */
   room?: boolean;
+  /** 2026-10-28: a teammate's own turn one hop away (a bot asked through
+   * ask_bot, delegate_bot or the agent API), SAGAX_PEER_HOP. It keeps every
+   * Sagax tool (memory, files, pages, tasks) and loses only the tools that
+   * would start another hop (PEER_HOP_ABSENT_TOOLS): the one stop against
+   * A to B to C chains and loops. The routes refuse a second hop anyway. */
+  peerHop?: boolean;
   /** In a coordinating turn, may the bot open separate jobs on itself. */
   ownThreadCreation: boolean;
   skillAuthoring: boolean;
@@ -112,6 +118,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     externalRuntime,
     coordinating: !externalRuntime && env.SAGAX_ROOM_TURN === "1",
     room: !externalRuntime && env.SAGAX_GROUP_TURN === "1",
+    ...(!externalRuntime && env.SAGAX_PEER_HOP === "1" ? { peerHop: true } : {}),
     ownThreadCreation: env.SAGAX_OWN_THREAD_CREATION === "1",
     skillAuthoring: env.SAGAX_SKILL_AUTHORING_ENABLED === "1",
     sharedComputers: env.SAGAX_SHARED_COMPUTERS_ENABLED === "1",
@@ -1777,6 +1784,14 @@ const ROOM_REPLACED_TOOLS = new Set(["ask_bot", "delegate_bot", "check_delegatio
 // Widgets and live HTML apps are one-to-one too (chat-widgets.ts and
 // chat-apps.ts refuse a room): offered where they work, not where they fail.
 const ROOM_ABSENT_TOOLS = new Set(["propose_page", "show_widget", "update_widget", "show_html", "update_html"]);
+// 2026-10-28: what a teammate's turn one hop away (profile.peerHop) is not
+// shown: every tool that would start another bot's turn, a job of its own,
+// or an agent-API prompt. The routes refuse these past one hop
+// (server/index.ts MAX_COMMS_DEPTH); everything else stays.
+export const PEER_HOP_ABSENT_TOOLS: ReadonlySet<string> = new Set([
+  "list_room_targets", "coordinate_bots", "send_to_bot", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation",
+  "start_thread", "route_message", "send_prompt", "await_turn", "create_agent", "delete_agent",
+]);
 const EXTERNAL_TOOL_NAMES = new Set(["list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation"]);
 const WATCHER_TOOL_NAMES = new Set(["create_options_card"]);
 
@@ -1883,6 +1898,8 @@ const OFFERED_REFERENCES: ReadonlyArray<{ tool: string; missing: string; from: s
   { tool: "send_to_bot", missing: "await_turn", from: " The answer includes {threadId, handle} for await_turn.", to: "" },
   { tool: "save_artifact", missing: "propose_page", from: "; to share a page with others through a link, use propose_page instead.", to: "." },
   { tool: "await_turn", missing: "send_to_bot", from: "with the handle send_prompt or send_to_bot gave", to: "with the handle send_prompt gave" },
+  // 2026-10-28: a teammate one hop away reads transcripts but starts no turn
+  { tool: "read_latest_page", missing: "await_turn", from: " Do not poll: use await_turn.", to: " Do not poll." },
 ];
 
 function withOfferedReferences<T extends { name: string; description: string; inputSchema?: unknown }>(tools: T[]): T[] {
@@ -1909,7 +1926,8 @@ function withOfferedReferences<T extends { name: string; description: string; in
 
 /** The tools one turn is shown, exactly as tools/list serializes them. */
 export function availableTools(profile: CatalogProfile) {
-  const tools = withOfferedReferences(catalogTools(profile));
+  const all = catalogTools(profile);
+  const tools = withOfferedReferences(profile.peerHop ? all.filter((tool) => !PEER_HOP_ABSENT_TOOLS.has(tool.name)) : all);
   return profile.cloudHome
     ? tools.filter(tool => !LOCAL_VM_TOOL_NAMES.has(tool.name)).map(tool => tool.name === "select_computer"
       ? { ...tool, inputSchema: { ...tool.inputSchema, properties: { surface: CLOUD_HOME_SURFACE } } }

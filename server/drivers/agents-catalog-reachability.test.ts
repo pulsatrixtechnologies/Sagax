@@ -45,6 +45,9 @@ const TURNS: Record<string, Env> = {
   "room": { SAGAX_ROOM_TURN: "1", SAGAX_GROUP_TURN: "1" },
   // a routine run, or a delegated turn: no bounded coordination
   "routine": { SAGAX_ROOM_TURN: "0", SAGAX_AGENT_API: "1" },
+  // 2026-10-28: a teammate asked through ask_bot, delegate_bot or the agent
+  // API, one hop away: its tools without the peer ones
+  "teammate": { SAGAX_ROOM_TURN: "0", SAGAX_AGENT_API: "1", SAGAX_PEER_HOP: "1" },
 };
 const ROLES: Record<string, Env> = { chief: { SAGAX_CHIEF_OF_STAFF: "1" }, member: { SAGAX_CHIEF_OF_STAFF: "0" } };
 
@@ -141,6 +144,35 @@ function promisedTurns(where: string): { turns: string[]; env: Env; roles: strin
   if (label.startsWith("when the person's phone offers tools now")) return flag({ SAGAX_PHONE_TOOLS: "location" });
   return null;
 }
+
+describe("reachability guard: a teammate one hop away (ask_bot, delegate_bot, agent API)", () => {
+  // 2026-10-28: MAX_COMMS_DEPTH used to drop the whole agents server from a
+  // teammate's turn. It keeps its tools; only the ones that start another
+  // hop are gone, the one stop against chains and loops.
+  const PEER_TOOLS = ["ask_bot", "delegate_bot", "check_delegation", "wait_delegation", "coordinate_bots", "send_to_bot",
+    "list_room_targets", "start_thread", "route_message", "send_prompt", "await_turn", "create_agent", "delete_agent"];
+  const KEPT = ["memory_update", "memory_log", "attach_file", "propose_page", "show_widget", "make_video", "session_search",
+    "save_artifact", "request_credential", "list_bots"];
+
+  it("keeps the teammate's own tools for every role", () => {
+    for (const role of Object.values(ROLES)) {
+      const shown = names({ ...TURNS.teammate, ...role, ...EVERY_SWITCH });
+      for (const name of KEPT) expect(shown, name).toContain(name);
+    }
+  });
+
+  it("shows no tool that starts another hop", () => {
+    for (const role of Object.values(ROLES)) for (const extra of [{}, EVERY_SWITCH, { SAGAX_ROOM_TURN: "1" }]) {
+      const shown = names({ ...TURNS.teammate, ...role, ...extra });
+      for (const name of PEER_TOOLS) expect(shown.has(name), name).toBe(false);
+    }
+  });
+
+  it("is off unless the harness says so", () => {
+    expect(names({ ...TURNS.routine, ...ROLES.member })).toContain("ask_bot");
+    expect(names({ ...TURNS.routine, ...ROLES.member, SAGAX_PEER_HOP: "0" })).toContain("ask_bot");
+  });
+});
 
 describe("reachability guard: the self-knowledge base (sagax_help)", () => {
   const knowledge = JSON.parse(readFileSync(join(HERE, "..", "self-knowledge", "knowledge.generated.json"), "utf8")) as {
