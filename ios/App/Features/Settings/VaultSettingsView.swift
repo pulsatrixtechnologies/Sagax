@@ -8,6 +8,10 @@ struct VaultSettingsView: View {
     @EnvironmentObject private var session: Session
     @State private var items: [VaultItemPublic] = []
     @State private var purchases: [VaultPurchasePublic] = []
+    @State private var wallets: [String: WalletLinkPublic]?
+    @State private var onePassword: OnePasswordStatusPublic?
+    @State private var opItems: [OnePasswordPickerItem]?
+    @State private var opQuery = ""
     @State private var revealed: String?
     @State private var error: String?
     @State private var busy = false
@@ -22,6 +26,25 @@ struct VaultSettingsView: View {
         SettingsPage(title: "Vault") {
             if let error {
                 Text(verbatim: error).font(.footnote).foregroundStyle(.red).padding(.horizontal, 24)
+            }
+            if !VaultWallet.rows(wallets).isEmpty {
+                SettingsSectionLabel(text: "One-time card")
+                SettingsCard {
+                    SettingsFooter(text: "Shop Pay and Link are wallets you already have. Sagax asks that wallet for a one-time card only after you allow the purchase. The site does not receive a saved card number, and the bot never sees it. This install cannot ask for that card yet.")
+                    ForEach(VaultWallet.rows(wallets), id: \.id) { entry in
+                        SettingsRow(
+                            title: LocalizedStringKey(VaultWallet.label(entry.id)),
+                            subtitle: entry.row.chosen
+                                ? "Chosen. Not live yet: \(entry.row.missing). Nothing is charged."
+                                : "Not connected. Turn this on to use the account you already have. Nothing is charged.",
+                            accessory: .toggle(Binding(
+                                get: { wallets?[entry.id]?.chosen == true },
+                                set: { value in Task { await chooseWallet(entry.id, value) } }
+                            )),
+                            identifier: "vault-wallet-\(entry.id)"
+                        )
+                    }
+                }
             }
             if !purchases.isEmpty {
                 SettingsSectionLabel(text: "Purchases")
@@ -39,6 +62,44 @@ struct VaultSettingsView: View {
                         }
                         .padding(.horizontal, SettingsMetrics.rowInset)
                         .padding(.vertical, 10)
+                    }
+                }
+            }
+            if OnePasswordSettings.shown(onePassword), let status = onePassword {
+                SettingsSectionLabel(text: "1Password")
+                SettingsCard {
+                    Text(verbatim: OnePasswordSettings.subtitle(status))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, SettingsMetrics.rowInset)
+                        .padding(.vertical, 8)
+                    if !status.available {
+                        SettingsFooter(text: "To connect 1Password: install the app and the CLI, turn on Integrate with 1Password CLI, unlock 1Password, then check again.")
+                        SettingsRow(title: "Check again", accessory: .none, identifier: "vault-onepassword-recheck") {
+                            Task { await recheckOnePassword() }
+                        }
+                    } else {
+                        SettingsFooter(text: "A bot's sign-in request shows your 1Password items for that site. Allow once covers that one request. Read only: Sagax never changes your 1Password items.")
+                        if opItems == nil {
+                            SettingsRow(title: "Choose from 1Password", accessory: .none, identifier: "vault-onepassword-pick") {
+                                Task { await loadOnePassword() }
+                            }
+                        } else {
+                            VaultField(text: $opQuery, prompt: "Search 1Password", identifier: "vault-onepassword-search")
+                            ForEach(filteredOnePassword) { item in
+                                SettingsRow(
+                                    title: LocalizedStringKey(item.title),
+                                    subtitle: item.domains.isEmpty ? item.vaultName : "\(item.vaultName) · \(item.domains.joined(separator: ", "))",
+                                    accessory: .none,
+                                    identifier: "vault-onepassword-add"
+                                ) {
+                                    Task { await importOnePassword(item) }
+                                }
+                            }
+                            if filteredOnePassword.isEmpty {
+                                SettingsFooter(text: "No matching item.")
+                            }
+                        }
                     }
                 }
             }
@@ -91,6 +152,8 @@ struct VaultSettingsView: View {
             let list = try await client.vaultItems()
             items = list.items
             purchases = list.purchases
+            wallets = list.wallets
+            onePassword = list.onePassword
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -125,6 +188,49 @@ struct VaultSettingsView: View {
         guard let client = session.settingsClient else { return }
         do {
             try await client.deleteVaultItem(id: item.id)
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private var filteredOnePassword: [OnePasswordPickerItem] {
+        let query = opQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return (opItems ?? []).filter { item in
+            query.isEmpty || item.title.lowercased().contains(query) || item.domains.contains { $0.lowercased().contains(query) }
+        }.prefix(50).map { $0 }
+    }
+
+    private func chooseWallet(_ id: String, _ chosen: Bool) async {
+        guard let client = session.settingsClient else { return }
+        do {
+            wallets = try await client.chooseWallet(id, chosen: chosen)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func recheckOnePassword() async {
+        guard let client = session.settingsClient else { return }
+        _ = try? await client.onePasswordItems()
+        await load()
+    }
+
+    private func loadOnePassword() async {
+        guard let client = session.settingsClient else { return }
+        do {
+            opItems = try await client.onePasswordItems()
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func importOnePassword(_ item: OnePasswordPickerItem) async {
+        guard !item.domains.isEmpty, let client = session.settingsClient else { return }
+        do {
+            try await client.importOnePassword(vaultId: item.vaultId, itemId: item.id)
             await load()
         } catch {
             self.error = error.localizedDescription

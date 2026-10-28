@@ -355,6 +355,12 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
   Slack, Teams) never get one. The card says "<bot> peut voir <app>, y
   cliquer et y saisir du texte sur cet ordinateur". The desktop bridge of
   an organization server, a Local VM and a cloud computer read no app.
+- **1Password on iPhone**: Settings > Vault shows the same connection as
+  the desktop (`OnePasswordSettings`, `POST /api/me/credentials/onepassword/items`
+  and `.../import`). The CLI stays on the computer. The phone stores a
+  reference, never a secret. Shop Pay and Link are the one-time card
+  switches (`POST /api/me/credentials/wallets`, contract in #1322). Turning
+  one on does not charge anything and does not send a saved number.
 - **1Password per request**: the sign-in card (`VaultRequestCard`, iOS
   `VaultLoginCardView`) lists the person's 1Password items of the card's
   site (`POST /api/bots/:id/vault-cards/:msg/onepassword`, names, vault and
