@@ -19,7 +19,12 @@
 // Files: DATA_DIR/marketplaces/{state.json, repos/<name>/, plugins/<name>/<plugin>/}.
 // The clone is shallow and uses this computer's git credentials, or the
 // acting person's GitHub connection for github.com: no token is stored here.
-// The organization's allowed-marketplaces policy applies in both scopes.
+// The organization's allowed-marketplaces policy applies to what is shared:
+// a marketplace shared with everyone ("org"), and every plugin installed for
+// everyone. 2026-10-27 (#1098): a private marketplace (its author's only)
+// for the person's own bots is theirs, and the policy does not limit it; it
+// applies again the moment it is shared or a plugin of it is installed for
+// everyone.
 // A marketplace a bot still has plugins from is not removed (`inUse`).
 // Added or fetched again from a bot ("For this bot"), the clone uses the
 // environment the bot's store worked out (server/bot-plugins.ts: that bot's
@@ -87,6 +92,12 @@ export interface MarketplaceViewer {
   principal?: string;
   /** the host operator / solo owner, who manages every marketplace */
   seesAll?: boolean;
+}
+
+/** The source a stored marketplace was added from, as the policy reads it. */
+function marketSource(market: { source: string; url: string; ref?: string; manifestUrl?: string }): GitSource {
+  if (market.manifestUrl) return { id: market.manifestUrl.toLowerCase(), url: market.manifestUrl };
+  return parseGitSource(market.source.includes("://") ? market.url : market.source, market.ref);
 }
 
 /** A marketplace's visibility, failing closed to "private". */
@@ -581,19 +592,22 @@ export class PluginMarketplaces {
       const state = this.read();
       const staging = join(this.root, "repos", `.incoming-${this.now()}`);
       const manifestUrl = isManifestUrl(input.source) ? input.source.trim() : undefined;
+      // #1098: only a marketplace shared with everyone is held to the
+      // organization's list here (a refresh of a shared one is checked below).
+      const shared = options.visibility === "org";
       let source: GitSource;
       try {
         if (manifestUrl) {
           const url = new URL(manifestUrl);
           if (url.username || url.password) throw new BotPluginError("Put no credentials in the address.", "invalid_source");
           source = { id: manifestUrl.toLowerCase(), url: manifestUrl };
-          this.checkPolicy(source);
+          if (shared) this.checkPolicy(source);
           const text = await this.fetchText(manifestUrl);
           mkdirSync(join(staging, ".claude-plugin"), { recursive: true });
           writeFileSync(join(staging, ".claude-plugin", "marketplace.json"), text);
         } else {
           source = parseGitSource(input.source, input.ref?.trim() || undefined);
-          this.checkPolicy(source);
+          if (shared) this.checkPolicy(source);
           await this.clone(source, staging, actor, options.environment ? await options.environment(source) : undefined);
         }
         const manifest = readMarketplaceManifest(staging);
@@ -610,6 +624,7 @@ export class PluginMarketplaces {
         if (taken && (taken.manifestUrl ?? taken.source) !== sourceId) {
           throw new BotPluginError(`A marketplace named ${name} is already added from ${taken.manifestUrl ?? taken.source}.`, "name_taken", 409);
         }
+        if (taken && marketplaceVisibility(taken) === "org") this.checkPolicy(source);
         if (!taken && Object.keys(state.marketplaces).length >= MAX_MARKETPLACES) {
           throw new BotPluginError(`Add at most ${MAX_MARKETPLACES} marketplaces.`, "too_many", 400);
         }
@@ -660,6 +675,8 @@ export class PluginMarketplaces {
       const market = state.marketplaces[name];
       if (!market || !marketplaceVisibleTo(market, viewer)) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
       if (!marketplaceOwnedBy(market, viewer)) throw new BotPluginError("Only the person who added this marketplace can change who can see it.", "marketplace_not_owner", 403);
+      // #1098: shared with everyone, it is held to the organization's list
+      if (visibility === "org") this.checkPolicy(marketSource(market));
       state.marketplaces[name] = { ...market, visibility, updatedAt: this.now() };
       this.write(state);
       return this.list(viewer).find((view) => view.name === name)!;
@@ -712,6 +729,10 @@ export class PluginMarketplaces {
       const state = this.read();
       const market = state.marketplaces[marketplace];
       if (!market || !marketplaceVisibleTo(market, viewer)) throw new BotPluginError("No marketplace with that name.", "not_found", 404);
+      // #1098: a plugin installed for everyone comes from a marketplace the
+      // organization allows, even when its author kept it private (a shared
+      // one was checked when it was shared)
+      if (marketplaceVisibility(market) === "private") this.checkPolicy(marketSource(market));
       const repo = this.repoDir(marketplace);
       const entry = readMarketplaceManifest(repo).plugins.find((candidate) => candidate.name === plugin);
       if (!entry) throw new BotPluginError("That plugin is not in this marketplace.", "not_found", 404);

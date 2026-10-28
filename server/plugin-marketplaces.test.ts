@@ -147,12 +147,29 @@ describe("the installation's marketplaces", () => {
     expect(prepared.plan.servers).toEqual([{ name: "docs", entry: { type: "sse", url: "https://mcp.example.com/sse" } }]);
   });
 
-  it("applies the organization's allowed marketplaces", async () => {
+  it("applies the organization's allowed marketplaces to a shared one", async () => {
     const markets = new PluginMarketplaces({
       dataDir: join(dir, "data"), gitEnvironment: () => ({}), policy: () => ({ mode: "list", allow: ["acme/*"] }),
       git: async () => { throw new Error("must not clone"); },
     });
-    await expect(markets.add({ source: "other/plugins" }, undefined)).rejects.toMatchObject({ code: "marketplace_not_allowed" });
+    await expect(markets.add({ source: "other/plugins" }, undefined, { visibility: "org" })).rejects.toMatchObject({ code: "marketplace_not_allowed" });
+  });
+
+  it("lets a person keep a private marketplace outside the list for their own bots, never shared or installed for everyone (#1098)", async () => {
+    const source = join(dir, "repo");
+    marketplaceRepo(source);
+    const markets = new PluginMarketplaces({
+      dataDir: join(dir, "data"), gitEnvironment: () => ({}), policy: () => ({ mode: "list", allow: ["acme/*"] }),
+      now: () => 1_000,
+      git: async (args) => { cpSync(source, args.at(-1)!, { recursive: true }); },
+    });
+    const viewer = { principal: "person-1" };
+    const view = await markets.add({ source: "other/plugins" }, "person-1", { viewer });
+    expect(view).toMatchObject({ name: "devjc", visibility: "private" });
+    await expect(markets.setVisibility("devjc", "org", viewer)).rejects.toMatchObject({ code: "marketplace_not_allowed" });
+    await expect(markets.prepare("devjc", "notes", "person-1", viewer)).rejects.toMatchObject({ code: "marketplace_not_allowed" });
+    // fetched again, it stays the person's own
+    await expect(markets.refresh("devjc", "person-1", { viewer })).resolves.toMatchObject({ visibility: "private" });
   });
 });
 

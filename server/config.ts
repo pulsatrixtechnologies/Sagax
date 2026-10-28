@@ -1186,12 +1186,14 @@ export function sharedComputersEnabled(cfg: AppConfig): boolean {
 }
 
 /** Claude bots also see the MCP servers of this machine's own Claude Code
- * setup — the way Codex bots already read ~/.codex/config.toml. Off unless
- * the person switched it on under Plugins → MCP servers; the Claude driver
- * then omits --strict-mcp-config while keeping skills, hooks and the
- * personal CLAUDE.md out. */
-export function claudeUserMcpEnabled(cfg: AppConfig): boolean {
-  return cfg.features?.claudeUserMcp === true;
+ * setup, the way Codex bots already read ~/.codex/config.toml. The switch
+ * is under Plugins → MCP servers; the Claude driver then omits
+ * --strict-mcp-config while keeping skills, hooks and the personal
+ * CLAUDE.md out. 2026-10-27 (#1098): unset, it is on for a solo server (the
+ * person's own computer and Claude Code setup) and off on an organization's
+ * shared server, whose Claude Code setup is not any one person's. */
+export function claudeUserMcpEnabled(cfg: AppConfig, organization = false): boolean {
+  return cfg.features?.claudeUserMcp ?? !organization;
 }
 
 /** Opt-in generated titles for new bot threads: a cheap provider one-shot

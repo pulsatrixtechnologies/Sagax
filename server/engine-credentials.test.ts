@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { TurnSpeaker } from "./engine-access.ts";
-import { materializeEngineAccess, providerOfDriver, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type EngineCredentialInput, type PersonFacts } from "./engine-credentials.ts";
+import { materializeEngineAccess, paidByPerson, providerOfDriver, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type EngineCredentialInput, type PersonFacts } from "./engine-credentials.ts";
 import type { ModelProvider, ProviderKeyResult } from "./perspicax-link.ts";
 
 const OWNER = "pr_00000000-0000-4000-8000-000000000001";
@@ -307,6 +307,20 @@ describe("resolveEngineAccess: the organization's key per person", () => {
   it("no organization key: the list changes nothing", () => {
     expect(resolveEngineAccess(input({ speaker: bob, instance: GROK, serverEngineAllowed: given({}) })))
       .toEqual({ ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB });
+  });
+});
+
+describe("an engine outside the organization's list (#1098)", () => {
+  it("runs on the person's own subscription or key, never on the organization's key", () => {
+    const own = resolveEngineAccess(input({ speaker: bob, instance: GROK, keyBacked: true, signedIn: [`${BOB}/grokAgent`], orgEngineAllowed: false }));
+    expect(own).toEqual({ ok: true, via: "subscription", payer: "speaker", payerPrincipalId: BOB });
+    expect(paidByPerson(own)).toBe(true);
+    const key = resolveEngineAccess(input({ speaker: bob, instance: GROK, keyBacked: true, keys: ["SUB-BOB/xai"], orgEngineAllowed: false }));
+    expect(paidByPerson(key)).toBe(true);
+    const org = resolveEngineAccess(input({ instance: GROK, keyBacked: true, orgEngineAllowed: false }));
+    expect(org).toEqual({ ok: false, reason: "no_access", cause: "server_engine_not_allowed", payer: "owner", payerPrincipalId: OWNER });
+    expect(paidByPerson(org)).toBe(false);
+    expect(paidByPerson(resolveEngineAccess(input({ instance: GROK, keyBacked: true })))).toBe(false);
   });
 });
 

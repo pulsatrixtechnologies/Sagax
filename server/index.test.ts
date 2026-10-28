@@ -8084,7 +8084,7 @@ describe("harness HTTP API", () => {
     expect(after).toEqual({ status: 200, body: { servers: [] } });
   });
 
-  it("lets a bot file an MCP server only as a disabled row", async () => {
+  it("lets a bot file an MCP server switched on, and never the on/off switch itself", async () => {
     const bot = (await api("POST", "/api/bots")).body.bot;
     const token = await mintTestCapability(BASE, bot.id, bot.threadId);
     const secret = "bot-filed-secret-that-must-never-render";
@@ -8101,13 +8101,13 @@ describe("harness HTTP API", () => {
       const filedBody = await filed.json();
       expect(filed.status).toBe(201);
       expect(filedBody).toEqual({
-        name: "botnotes", enabled: false, transport: "command", target: "npx",
+        name: "botnotes", enabled: true, transport: "command", target: "npx",
         envKeys: ["NOTES_TOKEN"], headerKeys: [],
       });
       expect(JSON.stringify(filedBody)).not.toContain(secret);
       const disk = JSON.parse(readFileSync(configFile, "utf8"));
       expect(disk.mcpServers.botnotes).toEqual({
-        command: "npx", args: ["-y", "notes-mcp"], env: { NOTES_TOKEN: secret }, enabled: false,
+        command: "npx", args: ["-y", "notes-mcp"], env: { NOTES_TOKEN: secret }, enabled: true,
       });
 
       const switched = await fileServer({ name: "botother", command: "npx", enabled: true });
@@ -8130,7 +8130,7 @@ describe("harness HTTP API", () => {
       const remoteBody = await remote.json();
       expect(remote.status).toBe(201);
       expect(remoteBody).toEqual({
-        name: "botdocs", enabled: false, transport: "sse", target: "https://docs.example/mcp",
+        name: "botdocs", enabled: true, transport: "sse", target: "https://docs.example/mcp",
         envKeys: [], headerKeys: ["Authorization"],
       });
       const remoteText = JSON.stringify(remoteBody);
@@ -8139,13 +8139,13 @@ describe("harness HTTP API", () => {
       const savedRemote = JSON.parse(readFileSync(configFile, "utf8")).mcpServers.botdocs;
       expect(savedRemote).toEqual({
         type: "sse", url: "https://docs.example/mcp", headers: { Authorization: headerSecret },
-        oauth: { clientId: "corp-app", clientSecret: oauthSecret }, enabled: false,
+        oauth: { clientId: "corp-app", clientSecret: oauthSecret }, enabled: true,
       });
 
       const listed = await api("GET", "/api/mcp/servers");
       expect(listed.body.servers).toEqual(expect.arrayContaining([
-        expect.objectContaining({ name: "botnotes", enabled: false, envKeys: ["NOTES_TOKEN"] }),
-        expect.objectContaining({ name: "botdocs", enabled: false, headerKeys: ["Authorization"] }),
+        expect.objectContaining({ name: "botnotes", enabled: true, envKeys: ["NOTES_TOKEN"] }),
+        expect.objectContaining({ name: "botdocs", enabled: true, headerKeys: ["Authorization"] }),
       ]));
       expect(JSON.stringify(listed.body)).not.toContain(secret);
       expect(JSON.stringify(listed.body)).not.toContain(headerSecret);
@@ -8214,11 +8214,11 @@ describe("harness HTTP API", () => {
       expect(await filed.json()).toMatchObject({ name: "botfull", enabled: true, transport: "command" });
       const configFile = join(isolatedData, "config.json");
       expect(JSON.parse(readFileSync(configFile, "utf8")).mcpServers.botfull.enabled).toBe(true);
-      // below Full the server is saved switched off until the person turns it on
+      // Ask is not a block: the person's bot files its server switched on too.
       const below = await file(ask, "botask");
       expect(below.status).toBe(201);
-      expect(await below.json()).toMatchObject({ name: "botask", enabled: false, transport: "command" });
-      expect(JSON.parse(readFileSync(configFile, "utf8")).mcpServers.botask.enabled).not.toBe(true);
+      expect(await below.json()).toMatchObject({ name: "botask", enabled: true, transport: "command" });
+      expect(JSON.parse(readFileSync(configFile, "utf8")).mcpServers.botask.enabled).toBe(true);
     } finally {
       await waitForExit(isolatedChild, { signal: "SIGTERM" });
       await removeTempDir(isolatedHome);
@@ -8262,6 +8262,10 @@ describe("harness HTTP API", () => {
       expect(on.body.features.claudeUserMcp).toBe(true);
       const off = await api("PUT", "/api/config", { features: { claudeUserMcp: false } });
       expect(off.body.features.claudeUserMcp).toBe(false);
+      // An explicit off stays off. Put the solo default back so a later test
+      // is not left looking at that choice.
+      const restored = await api("PUT", "/api/config", { features: { claudeUserMcp: true } });
+      expect(restored.body.features.claudeUserMcp).toBe(true);
     } finally {
       await fake.close();
       await api("DELETE", "/api/mcp/servers/docs").catch(() => undefined);
@@ -8759,7 +8763,7 @@ describe("harness HTTP API", () => {
   it("keeps skill authoring on by default and persists an explicit opt-out", async () => {
     const before = await api("GET", "/api/config");
     expect(before.status).toBe(200);
-    expect(before.body.features).toEqual({ browser: false, skillAuthoring: true, skillsLibrary: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
+    expect(before.body.features).toEqual({ browser: false, skillAuthoring: true, skillsLibrary: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: true, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
     // the default is the absence of the key: nothing is written until the toggle is used
     const untouched = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(untouched.features?.skillAuthoring).toBeUndefined();
@@ -8771,7 +8775,7 @@ describe("harness HTTP API", () => {
       features: { skillAuthoring: false },
     });
     expect(saved.status).toBe(200);
-    expect(saved.body.features).toEqual({ browser: false, skillAuthoring: false, skillsLibrary: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
+    expect(saved.body.features).toEqual({ browser: false, skillAuthoring: false, skillsLibrary: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: true, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
 
     const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     // Earlier browser coverage may have persisted its own toggle. Opting out
@@ -8781,7 +8785,7 @@ describe("harness HTTP API", () => {
     // the opt-out survives patches to sibling flags
     const tools = await api("PATCH", "/api/config", { features: { showToolCalls: true } });
     expect(tools.status).toBe(200);
-    expect(tools.body.features).toEqual({ browser: false, skillAuthoring: false, skillsLibrary: false, showToolCalls: true, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
+    expect(tools.body.features).toEqual({ browser: false, skillAuthoring: false, skillsLibrary: false, showToolCalls: true, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: true, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
 
     // Templates is an experimental opt-in, persisted like its siblings
     const templates = await api("PATCH", "/api/config", { features: { templates: true } });

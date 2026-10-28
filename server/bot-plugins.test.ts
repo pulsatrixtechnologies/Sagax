@@ -136,15 +136,28 @@ describe("BotPlugins", () => {
     await expect(plugins.install("bot-1", { marketplace: "acme-tools", plugin: "escape" }, undefined)).rejects.toMatchObject({ code: "invalid_plugin" });
   });
 
-  it("applies the organization's marketplace list, including a plugin's own repository", async () => {
+  it("applies the organization's marketplace list to a shared marketplace, including a plugin's own repository", async () => {
     const repo = marketplaceRepo();
     const plugins = botPluginsWithMarketplaces({
       dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": repo }, []), gitEnvironment: () => ({}),
       policy: () => ({ mode: "list", allow: ["acme/*"] }),
     });
-    await expect(plugins.addMarketplace("bot-1", { source: "evil/tools" }, undefined)).rejects.toMatchObject({ code: "marketplace_not_allowed", status: 403 });
-    await plugins.addMarketplace("bot-1", { source: "acme/tools" }, undefined);
+    await expect(plugins.addMarketplace("bot-1", { source: "evil/tools", visibility: "org" }, undefined)).rejects.toMatchObject({ code: "marketplace_not_allowed", status: 403 });
+    await plugins.addMarketplace("bot-1", { source: "acme/tools", visibility: "org" }, undefined);
     await expect(plugins.install("bot-1", { marketplace: "acme-tools", plugin: "remote" }, undefined)).rejects.toMatchObject({ code: "marketplace_not_allowed" });
+  });
+
+  it("lets a person's private marketplace serve their own bot outside the organization's list (#1098)", async () => {
+    const remote = temp();
+    write(remote, "commands/go.md", "Go");
+    const plugins = botPluginsWithMarketplaces({
+      dataDir: temp(),
+      git: fakeGit({ "https://github.com/evil/tools.git": marketplaceRepo(), "https://github.com/other/plugin-repo.git": remote }, []),
+      gitEnvironment: () => ({}),
+      policy: () => ({ mode: "list", allow: ["acme/*"] }),
+    });
+    await expect(plugins.addMarketplace("bot-1", { source: "evil/tools" }, "pr_alice")).resolves.toMatchObject({ name: "acme-tools" });
+    await expect(plugins.install("bot-1", { marketplace: "acme-tools", plugin: "remote" }, "pr_alice")).resolves.toMatchObject({ name: "remote" });
   });
 
   it("refuses a repository that is not a marketplace and removes a marketplace with its plugins", async () => {

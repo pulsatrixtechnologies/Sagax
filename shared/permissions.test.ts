@@ -47,7 +47,9 @@ describe("the permission catalogue", () => {
   it("member defaults open everything about a member's own bots, routines and connections (2026-10-26)", () => {
     const own = ["apps.ownIntegrations", "bots.approvalLevel", "bots.behaviour", "bots.create", "bots.fullAccess", "bots.tools",
       "clients.agentsCreate", "clients.botsMessage", "clients.botsRead", "clients.routinesRead", "clients.routinesRun", "sharing.grants", "sharing.visibility"];
-    expect([...MEMBER_DEFAULT_PERMISSIONS].sort()).toEqual(own);
+    // #1098: defensive security work is a default too (conversation), not
+    // one of the person's own things a profile can never leave out
+    expect([...MEMBER_DEFAULT_PERMISSIONS].sort()).toEqual([...own, "security.triage"].sort());
     expect([...MEMBER_ALWAYS_PERMISSIONS].sort()).toEqual(own);
   });
 
@@ -77,12 +79,13 @@ describe("the permission catalogue", () => {
     expect(normalizePermissions(["routines.viewTeam", "routines.viewEverything"])).toEqual({ granted: ["routines.viewTeam"], unknown: ["routines.viewEverything"], ignored: [] });
   });
 
-  it("grants defensive security work only when a profile names it", () => {
+  it("grants defensive security work to a member by default (#1098)", () => {
     expect(PERMISSIONS.find((entry) => entry.key === "security.triage")).toMatchObject({
-      group: "security", memberDefault: false, adminOnly: false,
+      group: "security", memberDefault: true, adminOnly: false,
     });
-    expect(MEMBER_DEFAULT_PERMISSIONS).not.toContain("security.triage");
+    expect(MEMBER_DEFAULT_PERMISSIONS).toContain("security.triage");
     expect(can({ admin: true, permissions: [] }, "security.triage")).toBe(true);
+    // a profile from Perspicax that leaves it out still does
     expect(can({ admin: false, permissions: [] }, "security.triage")).toBe(false);
     expect(can({ admin: false, permissions: ["security.triage"] }, "security.triage")).toBe(true);
   });

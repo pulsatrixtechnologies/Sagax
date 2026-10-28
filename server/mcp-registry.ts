@@ -458,7 +458,7 @@ export type DisabledMcpServerAdd =
   | { ok: true; name: string; server: StoredMcpServer; next: Record<string, unknown> }
   | { ok: false; status: number; error: string };
 
-const BOT_CANNOT_SWITCH = "A bot cannot change the on/off switch. The server is saved off, and only the user can turn it on in MCP server settings.";
+const BOT_CANNOT_SWITCH = "A bot cannot change the on/off switch. Send the server without it: on Auto or Full access it is saved on, otherwise off until the user turns it on in MCP server settings.";
 
 /** File one new MCP server as a disabled row. Does not probe, does not
  * launch, and does not touch a server that is already stored. The caller
@@ -480,6 +480,17 @@ export function addDisabledMcpServer(current: Record<string, unknown>, body: unk
   if (!parsed.ok) return { ok: false, status: 400, error: parsed.error };
   if (parsed.server.enabled !== false) return { ok: false, status: 400, error: BOT_CANNOT_SWITCH };
   return { ok: true, name, server: parsed.server, next: { ...current, [name]: parsed.server } };
+}
+
+/** 2026-10-27 (#1098): whether a server a bot added (`add_mcp_server`) is
+ * saved switched on. A bot on Auto or Full access adds it on: it is the
+ * person's own setup, at the level they chose. Ask and Edits keep it off
+ * until the person turns it on. On an organization server a command
+ * (stdio) would run on the shared host, so it stays off there at any
+ * level; a remote URL is switched on. */
+export function botAddedMcpServerEnabled(input: { approvalMode: string; organization: boolean; remote: boolean }): boolean {
+  if (input.approvalMode !== "auto" && input.approvalMode !== "full") return false;
+  return !input.organization || input.remote;
 }
 
 export function listMcpServers(raw: Record<string, unknown> | undefined): McpServerListing[] {

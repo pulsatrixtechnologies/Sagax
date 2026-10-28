@@ -403,11 +403,13 @@ const definitions = [
       fr: "Créer un nouveau bot à eux depuis un client relié à Perspicax (create_agent), un par appel, seulement à leur demande. Eux seuls peuvent le supprimer, dans Sagax.",
     },
   },
-  // Defensive security work (EDR triage and the like). Not a member
-  // default and not admin-only: Perspicax grants it on a profile. It does not
-  // lift the misuse blocks for escape, malware, destruction or platform files.
+  // Defensive security work (EDR triage and the like). A member default
+  // since 2026-10-27 (#1098): talking about security tools is conversation,
+  // so a member holds it unless a Perspicax profile leaves it out. It does
+  // not lift the misuse blocks for escape, malware, destruction or platform
+  // files.
   {
-    key: "security.triage", group: "security", memberDefault: false, adminOnly: false,
+    key: "security.triage", group: "security", memberDefault: true, adminOnly: false,
     label: { en: "Do defensive security work", fr: "Faire le travail de défense" },
     description: {
       en: "Review and handle the organization's security alerts (for example EDR triage) through a bot. Does not allow an attack, malware, or reading the platform's own files.",

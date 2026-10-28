@@ -396,6 +396,7 @@ import { decodeGeneratedImage } from "./generated-image.ts";
 import {
   MAX_DISABLED_TOOLS,
   addDisabledMcpServer,
+  botAddedMcpServerEnabled,
   MAX_MCP_SERVERS,
   isRemoteMcpServer,
   listMcpServers,
@@ -910,7 +911,7 @@ import { recentPersonSignIn } from "./recent-sign-in.ts";
 import { createAuthRefusalLogger } from "./auth-refusal-log.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
-import { keyVia, materializeEngineAccess, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
+import { keyVia, materializeEngineAccess, paidByPerson, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { configKeyPatch, engineKeyScope, engineKeyTarget, EngineKeyError, fileKeyConfigured, hermesProviderEnv, normalizeEngineKey, writeFileEngineKey } from "./engine-api-keys.ts";
 import { isLoginDriver, LOGIN_MARKER, loginCliFor, PrincipalEngineLogins } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
@@ -6130,7 +6131,7 @@ async function memberDefaultSelection(principalId: string | null | undefined): P
     return own ?? hostedModels.select(organization ?? cfg.defaultModelSelection ?? undefined);
   }
   return memberNewBotSelection(selectableInstances<SelectableInstance>(await registry.describe()),
-    { person, organization, server: cfg.defaultModelSelection ?? null }, selectionContext);
+    { person, organization, server: cfg.defaultModelSelection ?? null }, selectionContextFor(principalId));
 }
 /** Engines that are not the person's own: a Company one. A working engine
  * of their own wins over it; the organization's engine policy applies. */
@@ -6138,6 +6139,13 @@ const selectionContext = {
   company: (instanceId: string) => managedDesktop.owns(instanceId),
   refusal: (instance: SelectableInstance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
 };
+/** #1098: the same for one person, who may pick an engine they pay for. */
+function selectionContextFor(principalId: string | null | undefined) {
+  return {
+    ...selectionContext,
+    refusal: (instance: SelectableInstance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId, principalId),
+  };
+}
 
 /** First-run setup can create its bot before an account or model list is
  * ready. Fill only genuinely unset choices when an engine becomes ready;
@@ -6269,6 +6277,9 @@ function checkedModelSelection(
   raw: unknown,
   current?: { selection: ModelSelection; busy: boolean },
   requireAvailableModel = false,
+  /** #1098: the person choosing, who may pick an engine outside the
+   * organization's list that they pay for themselves. */
+  payer?: string | null,
 ): { ok: true; selection: ModelSelection } | { ok: false; status: number; error: string } {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, status: 400, error: "modelSelection must be an object" };
@@ -6287,7 +6298,7 @@ function checkedModelSelection(
   if (hostedModels && !hostedModels.allows(selection)) return { ok: false, status: 400, error: hostedModels.error() };
   // The organization's allowed providers; the engine a bot already runs on
   // stays writable (its effort) until the fallback moves it.
-  if ((!current || current.selection.instanceId !== selection.instanceId) && orgEngineAllowRefusal(selection.instanceId)) {
+  if ((!current || current.selection.instanceId !== selection.instanceId) && orgEngineAllowRefusal(selection.instanceId, payer)) {
     return { ok: false, status: 403, error: ORG_ENGINE_NOT_ALLOWED };
   }
   // Auto (docs/plans/2026-10-08-auto-model.md): only true is stored.
@@ -6380,13 +6391,13 @@ function checkedTaskModelSwitch(current: BotRecord, raw: unknown, updateBotDefau
   if (current.approvalGrant) return { ok: false as const, status: 409, error: "Wait for the approval change to finish before switching models" };
   const checked = checkedModelSelection(raw, {
     selection: current.modelSelection, busy: threadBusy(current.id, current.threadId),
-  }, requireAvailableModel);
+  }, requireAvailableModel, effectiveBotOwner(current));
   if (!checked.ok) return checked;
   const profile = store.bot(current.id)!;
   if (updateBotDefault) {
     const defaults = checkedModelSelection(checked.selection, {
       selection: profile.modelSelection, busy: Boolean(activeGroupTurnForBot(current.id)),
-    });
+    }, false, effectiveBotOwner(current));
     if (!defaults.ok) return defaults;
   }
   return checked;
@@ -6414,7 +6425,7 @@ function threadModelGivingWay(botId: string, threadId: string): ModelSelection |
   const own = store.taskByThread(botId, threadId)?.modelSelection;
   if (!bot || !own) return null;
   return threadModelFallback(own, bot.modelSelection, threadEngine, {
-    refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
+    refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId, effectiveBotOwner(bot)),
     ...(hostedModels ? { allows: (selection: ModelSelection) => hostedModels!.allows(selection) } : {}),
   }) ? own : null;
 }
@@ -12886,7 +12897,7 @@ const limitFailover = createLimitFailoverHost({
     if (threadBusy(botId, threadId)) return "the conversation is working";
     const target = registry.get(to.instanceId);
     if (!target?.enabled) return "the engine is unavailable";
-    const refusal = policyModelRefusal(target) ?? orgEngineAllowRefusal(to.instanceId);
+    const refusal = policyModelRefusal(target) ?? orgEngineAllowRefusal(to.instanceId, effectiveBotOwner(current));
     if (refusal) return refusal;
     const checked = checkedTaskModelSwitch(current, to, false, true);
     if (!checked.ok) return checked.error;
@@ -19720,7 +19731,15 @@ async function startTurn(
   }
   const policyRefusal = policyModelRefusal(instance);
   if (policyRefusal) throw Object.assign(new Error(policyRefusal), { status: 409, code: "managed_policy" });
-  const orgRefusal = orgEngineAllowRefusal(instance.instanceId);
+  // #1098: outside the organization's list, the turn runs only on its
+  // payer's own subscription or key
+  const orgRefusal = orgEngineTurnRefusal(bot, instance, resolveTurnSpeaker({
+    speaker: opts?.speaker,
+    sender: opts?.sender ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.sender),
+    peerAsk: opts?.peerAsk ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.peerAsk),
+    trigger: opts?.trigger,
+    automationSource: opts?.automationSource,
+  }));
   if (orgRefusal) throw Object.assign(new Error(orgRefusal), { status: 409, code: "engine_not_allowed" });
   const toolScope = toolScopeForTurn(bot.id);
   // On a Cloud home a guest's turn never gets a shell or reads outside its
@@ -21233,7 +21252,7 @@ async function startTurn(
             botId: bot.id,
             ...(cwd ? { cwd } : {}),
             ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
-            mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+            mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
           },
           speaker,
           ...(turnAccess ? { access: turnAccess } : {}),
@@ -21320,7 +21339,7 @@ async function startTurn(
         // goes through it only when the Workspace is fixed there.
         ...(() => { const networkProxy = turnAuto?.auto ? undefined : turnNetworkProxy(threadId, bot.id, turnPlace); return networkProxy ? { networkProxy } : {}; })(),
         ...(integrations.browser && browserIsThePlace(plan) ? { preloadBrowserTools: true } : {}),
-        mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         grokCloudConnectors: grokCloudConnectorsForTurn(accountConnectorInput(bot, instance, speaker, turnAccess?.via)),
         ...pluginDirsFor(bot, instance),
@@ -21530,7 +21549,7 @@ async function startTurn(
       // The bot's own recovery setting (server/bot-runtime-settings.ts).
       const backups = botRecoveryBackups(current, cfg);
       const nextIndex = backups.findIndex((candidate, index) => index >= (opts?.automaticRecoveryIndex ?? 0) &&
-        registry.get(candidate.instanceId)?.enabled && !orgEngineAllowRefusal(candidate.instanceId) &&
+        registry.get(candidate.instanceId)?.enabled && !orgEngineTurnRefusal(bot, registry.get(candidate.instanceId)!, opts?.speaker ?? { origin: "person" }) &&
         (!(e instanceof TurnAuthenticationRefusedError) || candidate.instanceId !== instanceId) &&
         (candidate.instanceId !== instanceId || candidate.model !== model));
       const backup = backups[nextIndex];
@@ -22833,7 +22852,7 @@ const chiefPeerTargetRule = (noun: string) => (proposerBotId: string, targetBotI
  * selection must resolve, and the destination driver must still support the
  * bot's existing approval setup. */
 const validateModelProposal = (selection: ModelSelection, current?: BotRecord): string | null => {
-  const checked = checkedModelSelection(selection, undefined, true);
+  const checked = checkedModelSelection(selection, undefined, true, current ? effectiveBotOwner(current) : undefined);
   if (!checked.ok) return checked.error;
   if (current?.approvalGrant) return "Wait for the approval-level confirmation before changing this bot's model";
   if (current) {
@@ -24717,7 +24736,7 @@ async function runGroupMemberTurn(
           botId: readyBot.id,
           ...(cwd ? { cwd } : {}),
           ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
-          mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+          mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
         },
         speaker: roomSpeaker,
         ...(roomTurnAccess ? { access: roomTurnAccess } : {}),
@@ -24754,7 +24773,7 @@ async function runGroupMemberTurn(
         ...turnCommandEnvironment(instance, readyBot.id, threadId),
         ...(() => { const networkProxy = turnNetworkProxy(threadId, readyBot.id, roomPlace); return networkProxy ? { networkProxy } : {}; })(),
         ...(integrations.browser && browserIsThePlace(roomPlan) ? { preloadBrowserTools: true } : {}),
-        mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         grokCloudConnectors: grokCloudConnectorsForTurn(accountConnectorInput(readyBot, instance, roomSpeaker, roomTurnAccess?.via)),
         ...pluginDirsFor(readyBot, instance),
@@ -27019,7 +27038,7 @@ function configStatus() {
       sharedComputers: sharedComputersEnabled(cfg),
       // Plugins → MCP servers switch: Claude bots also see this machine's
       // own Claude Code MCP servers
-      claudeUserMcp: claudeUserMcpEnabled(cfg),
+      claudeUserMcp: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax"),
       autoRecall: autoRecallEnabled(cfg),
       // hand-edited config.json only; the thread menu offers Regenerate title from it
       llmThreadTitles: llmThreadTitlesEnabled(cfg),
@@ -27412,6 +27431,7 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     hasLocalKey: (principalId, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId }, driver),
     serverEngineAllowed: serverEngineAllowedFor,
     payerMode: speakerPayerMode(bot, speaker),
+    orgEngineAllowed: consoleEngineAllowed(instance.instanceId),
   };
 }
 /** #1137 (shared/turn-payer.ts): the default "who pays" of a bot with no
@@ -27535,7 +27555,7 @@ function speakerTurnSelection(bot: BotRecord, speaker: TurnSpeaker): TurnModelSw
     speakerPays: speakerPayerMode(bot, speaker) === "speaker",
     access: (selection) => {
       const instance = registry.get(selection.instanceId);
-      if (!instance?.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance) || orgEngineAllowRefusal(instance.instanceId)) return false;
+      if (!instance?.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance) || orgEngineTurnRefusal(bot, instance, speaker)) return false;
       if (hostedModels && !hostedModels.allows({ instanceId: instance.instanceId, model: selection.model })) return false;
       if (isDesktopInjectModel(selection.model) && !desktopLocalModels.available(person, selection.model)) return false;
       return !orgEngineRefusal(bot, instance, speaker);
@@ -27737,7 +27757,7 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
   }
   for (const instance of registry.instances()) {
     if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
-    if (orgEngineAllowRefusal(instance.instanceId)) continue;
+    if (orgEngineTurnRefusal(bot, instance, speaker)) continue;
     // A guest's turn on a Cloud home runs only on an engine that confines it.
     if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
     const own = instance.instanceId === base?.instanceId;
@@ -28129,11 +28149,24 @@ async function describeInstances() {
 async function instancesForViewer(person: string | null) {
   const instances = await describeInstances();
   if (IDENTITY.kind !== "perspicax") return instances;
-  return desktopLocalModels.overlay(orgOfferedEngines(instances), person);
+  return desktopLocalModels.overlay(orgOfferedEngines(instances, person), person);
 }
-/** Organization server: the engines its list allows, in order (solo: all). */
-function orgOfferedEngines<T extends { instanceId: string }>(instances: readonly T[]): T[] {
-  return offeredEngines(instances, { organization: IDENTITY.kind === "perspicax", allowedEngines: orgAllowedEngines() }, "settings");
+/** Organization server: the engines its list allows, in order (solo: all).
+ * 2026-10-27 (#1098): with a person, an engine outside the list stays when
+ * that person can pay for it themselves (their own subscription sign-in or
+ * a key): the app offers it once theirs serves it (shared/offered-engines.ts,
+ * GET /api/me/engines `orgNotAllowed`), and Settings shows it to connect. */
+function orgOfferedEngines<T extends { instanceId: string }>(instances: readonly T[], person?: string | null): T[] {
+  const allowed = offeredEngines(instances, { organization: IDENTITY.kind === "perspicax", allowedEngines: orgAllowedEngines() }, "settings");
+  if (!person || IDENTITY.kind !== "perspicax" || allowed.length === instances.length) return allowed;
+  return instances.filter((instance) => allowed.includes(instance) || personalEngine(instance.instanceId, person));
+}
+/** #1098: an engine a person can run on their own account or key: one they
+ * can sign in to or keep a key for, or one theirs already serves. */
+function personalEngine(instanceId: string, person: string): boolean {
+  const entry = registry.entries().find((candidate) => candidate.instanceId === instanceId);
+  const driver = entry?.shadow?.driverKind ?? entry?.live?.driverKind ?? "";
+  return subscriptionDriver(driver) || providersOfDriver(driver).length > 0 || personPaysEngine(person, instanceId);
 }
 
 /** An organization member's copy of one engine (GET /api/instances on a
@@ -34368,19 +34401,24 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
     const person = principals.byId(principalId);
     const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
     if (method === "GET" && path === "/api/me/engines") {
-      const engines = orgOfferedEngines(registry.entries()).map((entry) => {
+      const engines = orgOfferedEngines(registry.entries(), principalId).map((entry) => {
         const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
+        // #1098: outside the organization's list only the person's own
+        // account or key runs it, never the organization's key
+        const orgNotAllowed = !consoleEngineAllowed(entry.instanceId);
         const installed = engineInstalled(entry.instanceId);
         const supported = isLoginDriver(driver);
         const signedIn = supported && logins.signedIn(principalId, driver);
         const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
         const myKey = providersOfDriver(driver).some((provider) => held.includes(provider));
-        const orgKeySet = driverKeyBacked(cfg, driver, entry.instanceId);
+        // a key sealed for this person on this server serves their turns too (engine-credentials.ts 4b)
+        const localKey = fileKeyConfigured(DATA_DIR, { organization: true, principalId }, driver);
+        const orgKeySet = !orgNotAllowed && driverKeyBacked(cfg, driver, entry.instanceId);
         // 2026-10-16: the organization's key serves this person only when
         // Perspicax gives them this engine (an admin always).
         const orgKey = orgKeySet && serverEngineAllowedFor(principalId, entry.instanceId);
         // the order of engine-credentials.ts for this person speaking
-        const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey ? "key" : orgKey ? "org-key" : "none";
+        const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey || localKey ? "key" : orgKey ? "org-key" : "none";
         const live = registry.get(entry.instanceId);
         const notAvailable = installed ? undefined : engineNotAvailableReason(entry.instanceId);
         return {
@@ -34395,6 +34433,7 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
           myKey,
           orgKey,
           ...(orgKeySet && !orgKey ? { orgKeyNotGiven: true } : {}),
+          ...(orgNotAllowed ? { orgNotAllowed: true } : {}),
           myTurns,
         };
       });
@@ -35631,7 +35670,7 @@ function harnessCommandSource(bot: BotRecord, threadId: string | undefined, opti
         botId: bot.id,
         ...(cwd ? { cwd } : {}),
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
-        mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
         ...pluginDirsFor(bot, instance),
       }),
       ...account,
@@ -37055,9 +37094,40 @@ function orgAllowedEngines(): string[] | null {
   // [] is "none" (2026-10-17): only null or absent means every engine
   return IDENTITY.kind === "perspicax" && Array.isArray(allowed) ? allowed : null;
 }
-/** Why a turn or a model choice may not use this engine here, if it may not. */
-function orgEngineAllowRefusal(instanceId: string): string | undefined {
-  return consoleEngineAllowed(instanceId) ? undefined : ORG_ENGINE_NOT_ALLOWED;
+/** Why a model choice may not use this engine here, if it may not.
+ * 2026-10-27 (#1098): an engine outside the organization's list stays
+ * open to a person (`payer`) who pays for it with their own subscription or
+ * key: their bill, not the organization's. */
+function orgEngineAllowRefusal(instanceId: string, payer?: string | null): string | undefined {
+  if (consoleEngineAllowed(instanceId)) return undefined;
+  return payer && personPaysEngine(payer, instanceId) ? undefined : ORG_ENGINE_NOT_ALLOWED;
+}
+/** #1098: the organization's engine list for one turn: an engine outside
+ * it runs when the turn's payer pays with their own subscription or key. */
+function orgEngineTurnRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): string | undefined {
+  if (consoleEngineAllowed(instance.instanceId)) return undefined;
+  return paidByPerson(resolveEngineAccess(orgEngineInput(bot, instance, speaker))) ? undefined : ORG_ENGINE_NOT_ALLOWED;
+}
+/** #1098: this person's own subscription or key would pay for their turn
+ * on this engine (engine-credentials.ts steps 3 and 4). */
+function personPaysEngine(principalId: string, instanceId: string): boolean {
+  if (IDENTITY.kind !== "perspicax") return false;
+  const id = principalId.trim().toLowerCase();
+  if (!id || !isPrincipalId(id)) return false;
+  const entry = registry.entries().find((candidate) => candidate.instanceId === instanceId);
+  const driverKind = entry?.shadow?.driverKind ?? entry?.live?.driverKind ?? "";
+  if (!driverKind) return false;
+  const person = principals.byId(id);
+  return paidByPerson(resolveEngineAccess({
+    identity: IDENTITY.kind,
+    speaker: { origin: "person", principalId: id },
+    owner: { principalId: id, ...orgPersonFacts(person) },
+    instance: { instanceId, driver: driverKind, installed: engineInstalled(instanceId) },
+    subscriptionSignedIn: (pid, driver) => engineLogins?.signedIn(pid, driver) ?? false,
+    hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
+    keyBacked: false,
+    hasLocalKey: (pid, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId: pid }, driver),
+  }));
 }
 /** The engines as the console's Model providers card lists them (GET
  * capabilities, api 4): the same access groups as the model picker's
@@ -37112,7 +37182,10 @@ function applyOrgEngineAllowList(): void {
   for (const { id } of store.bots) {
     const bot = store.bot(id);
     if (!bot) continue;
-    const next = allowedFallbackSelection(bot.modelSelection, allowed, engines, preferred);
+    // #1098: an engine its owner pays for with their own subscription or
+    // key is theirs to keep, whatever the organization's list says
+    const owner = effectiveBotOwner(bot);
+    const next = personPaysEngine(owner, bot.modelSelection.instanceId) ? null : allowedFallbackSelection(bot.modelSelection, allowed, engines, preferred);
     if (next) {
       store.applyModelDefault(id, next);
       console.log(`[org] bot=${id} engine ${bot.modelSelection.instanceId} is not allowed by the organization; now on Auto (${next.instanceId})`);
@@ -37123,7 +37196,7 @@ function applyOrgEngineAllowList(): void {
       if (bot.threadId) store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
     }
     const stray = (store.bot(id)?.tasks ?? [])
-      .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId))
+      .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId) && !personPaysEngine(owner, task.modelSelection.instanceId))
       .map((task) => task.threadId);
     if (stray.length) store.followBotModel(id, stray, (from, to) => hostedModels?.resetTask(from, to) ?? {});
   }
@@ -40648,7 +40721,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // 2026-10-20: every bot of the person (canAccessBot), whatever its
           // team; an archived bot or temporary agent is not listed
           bots: setupBots,
-          instances: orgOfferedEngines(instances).map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
+          instances: orgOfferedEngines(instances, effectiveBotOwner(chief)).filter((instance) => consoleEngineAllowed(instance.instanceId) || personPaysEngine(effectiveBotOwner(chief), instance.instanceId)).map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
           scope: "Every bot of the person is listed, whatever its team. A new default model: threads following the bot (main, routines) move at their next turn. Full Access applies requested team setup immediately; Approve for me applies it too when the person asked in their own message and every bot it touches is theirs; other modes, and a suggestion, return a review card.",
         });
@@ -42108,7 +42181,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const chiefSelection = store.projectBotForTask(chief.id, fromThreadId)?.modelSelection ?? chief.modelSelection;
           if (chiefSelection.auto === true && selection.instanceId) selection = { ...selection, auto: true };
         } else {
-          const checked = checkedModelSelection(body.modelSelection, undefined, true);
+          const checked = checkedModelSelection(body.modelSelection, undefined, true, effectiveBotOwner(chief));
           if (!checked.ok) return json(res, checked.status, { error: checked.error });
           selection = checked.selection;
         }
@@ -42330,12 +42403,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
           const server = added.server;
           const remote = isRemoteMcpServer(server);
-          // 2026-10-26: a bot on Full access (bypass) adds the server
-          // switched on; below Full it stays off until the person turns it
+          // 2026-10-27 (#1098): a bot on Auto or Full access adds the server
+          // switched on; Ask and Edits keep it off until the person turns it
           // on. On an organization server a command (stdio) would run on the
           // shared host, so it stays off there whatever the level; a remote
           // URL is switched on. The list itself stays where it was.
-          const enabled = fullAccessForSource(internalSender.id, internalCapability.threadId) && (IDENTITY.kind !== "perspicax" || remote);
+          const enabled = botAddedMcpServerEnabled({
+            approvalMode: sourceApprovalMode(internalSender.id, internalCapability.threadId),
+            organization: IDENTITY.kind === "perspicax",
+            remote,
+          });
           persistMcpServers(enabled ? { ...added.next, [added.name]: { ...server, enabled: true } } : added.next);
           return json(res, 201, {
             name: added.name,
@@ -45070,7 +45147,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // person's own model first, then the organization's (#1074, #1060).
         selection = memberCreate ? await memberDefaultSelection(sessionPrincipal(auth)) : await defaultSelection();
       } else {
-        const checked = checkedModelSelection(body.modelSelection, undefined, body.requireAvailableModel === true);
+        const checked = checkedModelSelection(body.modelSelection, undefined, body.requireAvailableModel === true, sessionPrincipal(auth));
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
         selection = checked.selection;
       }
@@ -45274,10 +45351,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         body,
         { selection: selected.modelSelection, busy: threadBusy(selected.id, selected.threadId) },
         true,
+        sessionPrincipal(auth),
       );
       if (!checked.ok) return json(res, checked.status, { error: checked.error });
       if (activeGroupTurnForBot(existing.id)) {
-        const groupChecked = checkedModelSelection(checked.selection, { selection: existing.modelSelection, busy: true });
+        const groupChecked = checkedModelSelection(checked.selection, { selection: existing.modelSelection, busy: true }, false, sessionPrincipal(auth));
         if (!groupChecked.ok) return json(res, groupChecked.status, { error: groupChecked.error });
       }
       // patchBot persists first and emits the canonical bot change, which the
@@ -45572,11 +45650,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           rawSelection,
           selectedTask ? { selection: selectedTask.modelSelection, busy: threadBusy(selectedTask.id, selectedTask.threadId) } : undefined,
           body.requireAvailableModel === true,
+          sessionPrincipal(auth),
         );
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
         normalizedSelection = checked.selection;
         if (existingBot && activeGroupTurnForBot(existingBot.id)) {
-          const groupChecked = checkedModelSelection(normalizedSelection, { selection: existingBot.modelSelection, busy: true });
+          const groupChecked = checkedModelSelection(normalizedSelection, { selection: existingBot.modelSelection, busy: true }, false, sessionPrincipal(auth));
           if (!groupChecked.ok) return json(res, groupChecked.status, { error: groupChecked.error });
         }
       }
@@ -46096,10 +46175,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (normalizedSelection && selectedTask) {
         const current = store.projectBotForTask(selectedTask.id, selectedTask.threadId);
         if (!current) return json(res, 404, { error: "no such task" });
-        const checked = checkedModelSelection(normalizedSelection, { selection: current.modelSelection, busy: threadBusy(current.id, current.threadId) });
+        const checked = checkedModelSelection(normalizedSelection, { selection: current.modelSelection, busy: threadBusy(current.id, current.threadId) }, false, sessionPrincipal(auth));
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
         if (freshBrowserBot && activeGroupTurnForBot(freshBrowserBot.id)) {
-          const groupChecked = checkedModelSelection(normalizedSelection, { selection: freshBrowserBot.modelSelection, busy: true });
+          const groupChecked = checkedModelSelection(normalizedSelection, { selection: freshBrowserBot.modelSelection, busy: true }, false, sessionPrincipal(auth));
           if (!groupChecked.ok) return json(res, groupChecked.status, { error: groupChecked.error });
         }
       }
@@ -47964,7 +48043,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (body.modelSelection !== undefined) {
         if (current.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
-        const checked = checkedModelSelection(body.modelSelection, { selection: current.modelSelection, busy: threadBusy(current.id, current.threadId) }, body.requireAvailableModel === true);
+        const checked = checkedModelSelection(body.modelSelection, { selection: current.modelSelection, busy: threadBusy(current.id, current.threadId) }, body.requireAvailableModel === true, sessionPrincipal(auth));
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
         patch.modelSelection = checked.selection;
       }

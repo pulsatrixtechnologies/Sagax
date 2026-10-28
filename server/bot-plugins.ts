@@ -15,7 +15,10 @@
 //   - Who: the bot's owner or a person with manage on it (the route checks);
 //     reads need use. The organization admin may restrict marketplaces
 //     (organization.pluginMarketplaces: any by default, or a list of
-//     owner/repo, owner/* or exact https URLs).
+//     owner/repo, owner/* or exact https URLs). 2026-10-27 (#1098): the
+//     list holds what is shared (a marketplace shared with everyone, a
+//     plugin for everyone); a person's private marketplace serves their
+//     own bots whatever the list says.
 //   - A private marketplace is read with, in order: the token saved for it
 //     on this bot (server/marketplace-tokens.ts), else the installation's
 //     own token for it (Connect apps > Everyone, an admin's), the acting
@@ -734,7 +737,9 @@ export class BotPlugins {
       if (entry.source.kind === "path") {
         result = copySanitizedPlugin(insideRoot(marketRoot, entry.source.path), target, rawEntry);
       } else {
-        this.checkPolicy(entry.source.git);
+        // #1098: a private marketplace (its author's own) for a bot is not
+        // held to the organization's list; a shared one is
+        if (market.visibility === "org") this.checkPolicy(entry.source.git);
         const checkout = join(this.root(botId), "plugins", ".checkout");
         await this.clone(entry.source.git, checkout, await this.cloneEnvironment(botId, entry.source.git, actor, { marketplaceSource: market.source }));
         try {

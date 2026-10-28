@@ -100,8 +100,8 @@ export function sharedComputersEnabled(config: FeatureFlagConfig | null | undefi
 }
 
 /** Claude bots also see the MCP servers of this machine's own Claude Code
- * setup (Plugins → MCP servers). Off by default — every extra tool costs
- * tokens on each message — and mirrors the server's claudeUserMcpEnabled. */
+ * setup (Plugins → MCP servers). The server sends the effective value
+ * (claudeUserMcpEnabled: on by default solo, off on an organization server). */
 export function claudeUserMcpEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.claudeUserMcp === true;
 }

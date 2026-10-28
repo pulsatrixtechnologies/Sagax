@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "./schema.ts";
 
 import { cacheUntilConfigChanges,
+  claudeUserMcpEnabled,
   foldGrokVoiceKeyPatch,
   changedInstanceIds,
   customMcpServers,
@@ -2599,4 +2600,13 @@ describe("a value derived from config.json", () => {
       }
     },
   );
+});
+
+describe("the Claude Code MCP servers switch (#1098)", () => {
+  it("is on by default solo, off by default on an organization server, and keeps an explicit choice", () => {
+    expect(claudeUserMcpEnabled({} as AppConfig)).toBe(true);
+    expect(claudeUserMcpEnabled({} as AppConfig, true)).toBe(false);
+    expect(claudeUserMcpEnabled({ features: { claudeUserMcp: false } } as AppConfig)).toBe(false);
+    expect(claudeUserMcpEnabled({ features: { claudeUserMcp: true } } as AppConfig, true)).toBe(true);
+  });
 });
