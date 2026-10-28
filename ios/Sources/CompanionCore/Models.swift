@@ -589,6 +589,9 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     public var video: WireVideoWidget? = nil
     /// `kind == .widget`: the bot's widget tree (ChatWidget.swift).
     public var widget: ChatWidgetPayload? = nil
+    /// A page the bot proposed (`propose_page`, shared/wire.ts
+    /// `pagePublish`): drawn as the card the person publishes it from.
+    public var pagePublish: PagePublishRef? = nil
 
     public var date: Date { Date(timeIntervalSince1970: at / 1000) }
 
