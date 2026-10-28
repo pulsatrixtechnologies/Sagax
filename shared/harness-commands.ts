@@ -39,7 +39,7 @@ export interface HarnessCommandList {
 }
 
 /** Sagax's own composer commands. They always win a collision. */
-export const SAGAX_COMMAND_NAMES = ["goal", "learn", "setup"] as const;
+export const SAGAX_COMMAND_NAMES = ["goal", "learn", "loop", "setup"] as const;
 /** The prefix that reaches an engine command shadowed by a Sagax one. */
 export const ENGINE_COMMAND_PREFIX = "engine:";
 
