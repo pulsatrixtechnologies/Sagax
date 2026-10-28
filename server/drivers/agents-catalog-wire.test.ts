@@ -156,6 +156,8 @@ const FULL = { direct: "direct+skills+shared+voice", room: "room+own-thread+skil
 // place_phone_call in a person's direct chat, descriptions that name only
 // tools the turn is shown, widgets and live HTML apps out of rooms, which
 // refuse them) moves the profiles out of 2% to the measured bytes.
+// 2026-10-28: routine folders add a `folder` field to the routine tools; the
+// six direct non-chief profiles move to the measured bytes.
 const BUDGET_BASELINE: Record<string, number> = {
   "direct": 86070,
   "direct+voice": 86811,
@@ -183,12 +185,12 @@ const BUDGET_BASELINE: Record<string, number> = {
   "room+own-thread+skills+shared+voice": 86361,
   "direct+non-chief": 75964,
   "direct+voice+non-chief": 76931,
-  "direct+shared+non-chief": 76663,
-  "direct+shared+voice+non-chief": 77404,
-  "direct+skills+non-chief": 76971,
-  "direct+skills+voice+non-chief": 77712,
-  "direct+skills+shared+non-chief": 78716,
-  "direct+skills+shared+voice+non-chief": 79457,
+  "direct+shared+non-chief": 78605,
+  "direct+shared+voice+non-chief": 79572,
+  "direct+skills+non-chief": 78657,
+  "direct+skills+voice+non-chief": 79624,
+  "direct+skills+shared+non-chief": 80658,
+  "direct+skills+shared+voice+non-chief": 81625,
   "room+non-chief": 68647,
   "room+voice+non-chief": 69614,
   "room+shared+non-chief": 70648,
