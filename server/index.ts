@@ -14,6 +14,7 @@ import { harnessMcpHttpKind, serveHarnessMcpHttp } from "./harness-mcp-http.ts";
 import "./network-guard.ts";
 // The console's server log tail captures from here on (server-log-ring.ts).
 import { serverLog } from "./server-log-capture.ts";
+import { startEventLoopLagMonitor } from "./event-loop-lag.ts";
 import { settledChipLabel } from "./waiting-chip.ts";
 import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -1409,6 +1410,13 @@ const ENVIRONMENT_ID = loadEnvironmentId(DATA_DIR);
 // restart, after ensureDirs (server/server-log-ring.ts): a bounded window on disk.
 serverLog.persistTo(join(DATA_DIR, "server-log"));
 process.once("exit", () => serverLog.flush());
+// 2026-10-28: event loop lag (p50/p99/max every minute) and any block over
+// 1 s, with the blocked stack when the inspector can read it, in the same
+// log (server/event-loop-lag.ts). SAGAX_LOOP_LAG=0 turns it off.
+if (process.env.SAGAX_LOOP_LAG !== "0") {
+  // console, so the line reaches both docker logs and the log tail (captureConsole).
+  startEventLoopLagMonitor({ info: (m) => console.log(m), warn: (m) => console.warn(m) });
+}
 // Who signs people in here (SAGAX_IDENTITY): a solo server keeps its email
 // sign-in list, invitations and mailer; an organization server signs people
 // in with Pulsatrix only (Perspicax owns accounts), so the list is empty
