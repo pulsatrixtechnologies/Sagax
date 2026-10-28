@@ -274,6 +274,20 @@ describe("parseMcpServersImport", () => {
     expect(parseMcpServersImport('{"mcpServers": {"computer": {"command": "x"}}}')).toMatchObject({ ok: false, error: expect.stringMatching(/reserved/i) });
     expect(parseMcpServersImport('{"mcpServers": {"ok": {"command": "x", "env": {"SAGAX_TOKEN": "1"}}}}')).toMatchObject({ ok: false });
     expect(parseMcpServersImport("not json")).toMatchObject({ ok: false, error: expect.stringMatching(/JSON/i) });
+    expect(parseMcpServersImport("npx -y @scope/notes-mcp --read-only")).toEqual({
+      ok: true,
+      servers: { "notes-mcp": { command: "npx", args: ["-y", "@scope/notes-mcp", "--read-only"], env: {}, enabled: false } },
+    });
+    expect(parseMcpServersImport('npx -y pkg "arg with spaces"')).toMatchObject({
+      ok: true,
+      servers: { pkg: { command: "npx", args: ["-y", "pkg", "arg with spaces"], enabled: false } },
+    });
+    expect(parseMcpServersImport("bash -c id")).toMatchObject({ ok: false, error: expect.stringMatching(/shell/i) });
+    expect(parseMcpServersImport("npx -y pkg | sh")).toMatchObject({ ok: false, error: expect.stringMatching(/shell/i) });
+    expect(parseMcpServersImport("/opt/tools/server --flag")).toMatchObject({
+      ok: true,
+      servers: { server: { command: "/opt/tools/server", args: ["--flag"], enabled: false } },
+    });
     expect(parseMcpServersImport("[]")).toMatchObject({ ok: false });
   });
 });

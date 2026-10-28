@@ -121,7 +121,11 @@ it the same way, with the same header.
 
 **Paste config** accepts an `mcpServers` JSON block, a server-name map, or a
 single named entry — commands and URL servers alike, in the shape Claude Code,
-Cursor and Claude Desktop write. Import is all-or-nothing, refuses existing
+Cursor and Claude Desktop write. It also accepts one command line, for example
+`npx -y @scope/server --read-only`, or a path to a program with its arguments.
+The line is split into a program and arguments and started the same way as a
+command server. It is not a shell: pipes, redirects and substitutions are
+refused, and a shell program is refused. Import is all-or-nothing, refuses existing
 names, and adds servers switched off—even if the pasted config says enabled.
 It does not install, execute or connect to them. Test explicitly, then enable
 the servers you trust.

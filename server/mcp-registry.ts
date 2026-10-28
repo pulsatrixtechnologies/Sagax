@@ -542,9 +542,67 @@ function pickEntry(record: Record<string, unknown>, keys: readonly string[]): Re
  * Names are slugged into the registry's format; every entry goes through the
  * same rules as the form and lands disabled until explicitly enabled.
  */
+const MCP_SHELLS = new Set(["sh", "bash", "zsh", "fish", "dash", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"]);
+const MCP_LAUNCHERS = new Set(["npx", "npm", "pnpm", "node", "python", "python3", "uvx", "uv", "deno", "bun"]);
+
+/** Split one command line into a program and arguments. Not a shell: no
+ * pipes, redirects or substitutions, and the program is a path or a known
+ * launcher such as npx. */
+export function parseMcpCommandLine(line: string): { ok: true; command: string; args: string[] } | { ok: false; error: string } {
+  const text = line.trim();
+  if (!text || /[\r\n]/.test(line)) return { ok: false, error: "Paste one command on one line, or a JSON block." };
+  const tokens: string[] = [];
+  let current = "";
+  let quote: "'" | "\"" | null = null;
+  for (const char of text) {
+    if (quote) {
+      if (char === quote) quote = null;
+      else current += char;
+      continue;
+    }
+    if (char === "'" || char === "\"") { quote = char; continue; }
+    if (char === " " || char === "\t") {
+      if (current) tokens.push(current);
+      current = "";
+      continue;
+    }
+    if ("|&;<>`$".includes(char)) return { ok: false, error: "This is a program and its arguments, not a shell line." };
+    current += char;
+  }
+  if (quote) return { ok: false, error: "The quotes in that command do not close." };
+  if (current) tokens.push(current);
+  if (tokens.length === 0 || tokens.length > 65) return { ok: false, error: "Paste one program and at most 64 arguments." };
+  const [command, ...args] = tokens;
+  if (!command || command.includes("=")) return { ok: false, error: "Set environment variables in the form, not in front of the command." };
+  const base = command.split(/[/\\]/).pop()?.toLowerCase() ?? "";
+  if (MCP_SHELLS.has(base)) return { ok: false, error: "A shell is not a server command. Paste the program itself, for example npx." };
+  const pathLike = command.includes("/") || command.includes("\\");
+  if (!pathLike && !MCP_LAUNCHERS.has(base)) {
+    return { ok: false, error: "That is not valid JSON, and it is not a server command. Paste a JSON block, or one line that starts with npx, node, or a path." };
+  }
+  if (command.length > 1_024 || args.some((arg) => arg.length > 4_096)) return { ok: false, error: "That command is too long." };
+  return { ok: true, command, args };
+}
+
+function mcpCommandServerName(command: string, args: string[]): string {
+  const base = command.split(/[/\\]/).pop()?.toLowerCase() ?? "";
+  const packageArg = MCP_LAUNCHERS.has(base) ? args.find((arg) => arg && !arg.startsWith("-")) : base;
+  const leaf = (packageArg ?? base).split("/").pop()?.replace(/^@/, "") ?? "";
+  return slugMcpName(leaf);
+}
+
 export function parseMcpServersImport(
   text: string,
 ): { ok: true; servers: Record<string, StoredMcpServer> } | { ok: false; error: string } {
+  const trimmed = text.trim();
+  if (trimmed && !trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    const command = parseMcpCommandLine(trimmed);
+    if (!command.ok) return command;
+    const name = mcpCommandServerName(command.command, command.args);
+    const result = parseMcpServerMutation(name, { command: command.command, args: command.args });
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true, servers: { [name]: result.server } };
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
