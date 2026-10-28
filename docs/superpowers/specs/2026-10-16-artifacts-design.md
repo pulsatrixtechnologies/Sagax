@@ -53,8 +53,8 @@ turn's capability). The bot is always the capability's: a bot never sees or
 changes another bot's artifacts. `list_artifacts` is a reviewed read. The
 tools add about 3.3 KB to every non-external catalog profile.
 
-The settings are the bot's. The person's UI only opens, pops out or back,
-stars, refreshes now and deletes (with a confirmation); a PATCH with any other
+The settings are the bot's. The person's UI only opens (in its own window),
+closes that window, stars, refreshes now and deletes (with a confirmation); a PATCH with any other
 field is refused with "Ask the bot".
 
 ## Person's routes (`server/routes/artifacts.ts`, member scope)
@@ -83,7 +83,7 @@ reloads the document.
 ## Refresh (`server/artifact-refresh.ts`)
 
 Sober choice: a source runs only while its artifact is visible or a favorite.
-Visible means open somewhere (the dialog or a floating window): the client
+Visible means open somewhere (its own window): the client
 renews a 90 second lease with `POST /api/artifacts/watch` every 45 seconds
 while a frame is mounted. A row in the list shows no data and holds no lease.
 Favorites refresh on their interval even when no window is open, so the
@@ -114,21 +114,38 @@ A run that fails counts a failure; three in a row pause the artifact
 (`paused`); the bot resumes it (`update_artifact` with `paused: false`) or
 the person presses Refresh now. At most two runs at once, 30 seconds each.
 
-## Floating windows
+## Floating windows (removed 2026-10-28)
 
-Pop out opens the artifact in a floating window, several at once, built on
-the generic floating window manager (`src/lib/floating-windows.ts`,
-`src/components/floating/`, shared with the terminal; no second system).
-`popped` is on the server: the bot may set it, the person's Pop out and Dock
-(or the window's close button) change it. The position and size are per
-device, remembered by the manager in `localStorage` under the stable id
-`artifact:<id>`, with the bot's `bounds` as the first position only. A popped
-window is `persist`, so at start it is back at its place before the server
-answers; then `reconcileArtifactWindows` (artifact-windows.ts) makes the
-windows match the server's list: a docked or deleted artifact's window
-closes, a popped one opens. A docked artifact never reopens. The palette's
-Artifacts group pops the chosen favorite out. An open window holds a watch
-lease, so its source refreshes while it is on screen.
+Until 2026-10-28, Pop out opened the artifact in a floating window drawn
+inside Sagax (`src/lib/floating-windows.ts`), and a desktop window of its own
+(#1140, #1464) was a second, separate option. Decision of 2026-10-28: an
+artifact opens in one way only, its own window; a window inside Sagax is
+useless. The floating panel, Pop out, the open dialog, the drag out of the app
+and `contain` are gone (the generic manager stays for the terminal).
+
+## An artifact's own window (2026-10-28)
+
+- Open (the Library row, its menu, the palette) opens the artifact in its
+  system window in the desktop app (`openArtifactInOwnWindow`,
+  `electron/artifact-window.mjs`): one window per artifact, opening it again
+  brings it forward, its place is kept per artifact and it can sit on another
+  screen. The bot's `bounds` give its first size.
+- In a browser (no `window.ogb.artifactWindow`) Open opens
+  `/artifact-window#bot=<botId>&artifact=<id>` in a new tab
+  (`window.open`, `noopener`). Never a panel inside the app.
+- `popped` on the server is "open in its window": Open sets it, closing the
+  window (or Close window in the Library menu or in the window) clears it,
+  the bot may set it. `reconcileArtifactWindows` reopens the windows of
+  popped artifacts at start with `focus: false` and closes those docked or
+  deleted.
+- Migration: floating panels of kind `artifact` restored from
+  `omb.floatingWindows.v1` are dropped with their places, and
+  `omb.artifactOwnWindows.v1` is erased (`migrateLegacyArtifactPanels`); the
+  `popped` flag reopens them in their system window.
+- Page windows share the bridge with an id `page:<pageId>`
+  (`isPageWindowId`): the close event and reconcile ignore them.
+- An open window holds a watch lease, so its source refreshes while it is on
+  screen.
 
 ## Delivery
 

@@ -7383,6 +7383,16 @@ A bot saves a widget as an artifact (`save_artifact`, `update_artifact`,
 - The settings (HTML, source, interval, favorite, popped, bounds) are the
   bot's. The person's routes change `favorite` and `popped` only, and
   delete; any other field is a 400 that says to ask the bot.
+- 2026-10-28: an artifact opens only in its own window, never inside
+  Sagax. Desktop: the system window (`openArtifactInOwnWindow`,
+  electron/artifact-window.mjs, one per artifact); browser: a new tab on
+  `/artifact-window#bot=…&artifact=…`. No floating panel, Pop out, open
+  dialog or drag out of the app for artifacts (floating-windows.ts stays for
+  the terminal). `popped` = open in its window; reconcile reopens them at
+  start with `focus: false`; old floating panels are dropped
+  (`migrateLegacyArtifactPanels`). Window ids `page:<id>` on the same bridge
+  are page windows: `isPageWindowId`, ignored on close and by reconcile.
+  Tests: `src/components/artifacts/artifact-windows.test.ts`.
 - A bot reaches only its own artifacts: the bot is the turn capability's,
   never the body's. On a server with private threads a member sees only the
   artifacts saved from their own conversations.

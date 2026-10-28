@@ -1,11 +1,12 @@
 /**
  * An artifact in a window of its own, outside the app's frame (#1140).
  *
- * A popped-out artifact is a floating window drawn inside Sagax's window
- * (src/components/artifacts/artifact-windows.ts), so it cannot leave it. This
- * opens the same artifact in a real desktop window that can be moved beside the
- * app, resized and put on another monitor. One window per artifact: asking
- * again brings it forward.
+ * Since 2026-10-28 this is the only way an artifact opens in the desktop app
+ * (src/components/artifacts/artifact-windows.ts): a real desktop window that
+ * can be moved beside the app, resized and put on another monitor, never a
+ * panel drawn inside Sagax's window. One window per artifact: asking again
+ * brings it forward. Page windows reuse this bridge with an `artifactId` of
+ * `page:<pageId>`; the renderer keeps those apart (isPageWindowId).
  *
  *   main renderer  --artifact-window:open {botId, artifactId, title, width?, height?}-->  main
  *                  -->  BrowserWindow(<page origin>/artifact-window#bot=…&artifact=…)
@@ -22,9 +23,8 @@
  * Each artifact's window keeps its place: its bounds (and whether it was
  * maximized) are saved per artifact id through `boundsStore` and put back the
  * next time it opens. A place on a screen that is gone comes back on the
- * primary screen (window-state.cjs). A window dragged out of the app (the
- * floating panel's title bar let go outside the app) opens where the pointer
- * was. The windows go with the main window: they are driven by its page, so
+ * primary screen (window-state.cjs). A request may name a screen point
+ * (`x`, `y`) to open at. The windows go with the main window: they are driven by its page, so
  * none is left behind to keep the app from quitting. `onChange` tells main the
  * list changed, so the Window menu names them.
  */
@@ -53,7 +53,7 @@ const screenCoordinate = (value) =>
 
 /** The request as the renderer sent it, or null: the bot and artifact ids, a
  * short plain title, an optional size, an optional screen point to open at
- * (`x`, `y`: where a dragged-out panel was let go) and `focus` (false: open or
+ * (`x`, `y`) and `focus` (false: open or
  * keep it without taking the focus, as when the app restores its windows). */
 export function sanitizeArtifactWindowRequest(raw) {
   if (!raw || typeof raw !== "object") return null;

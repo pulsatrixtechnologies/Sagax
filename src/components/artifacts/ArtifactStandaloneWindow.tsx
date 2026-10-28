@@ -1,17 +1,75 @@
-// An artifact in a window of its own (#1140): the page behind
-// `/artifact-window#bot=<id>&artifact=<id>`, drawn by the desktop app in a
-// separate BrowserWindow (electron/artifact-window.mjs) that can sit outside
-// the app's frame, beside the work or on another monitor. It shows what the
-// floating window shows (the widget, its status, Refresh now, Dock back) and
-// has its own store, like any other tab of the app. Closing the window docks
-// the artifact; Dock back does the same and the app closes the window.
+// An artifact in a window of its own (#1140; the only way an artifact opens
+// since 2026-10-28): the page behind `/artifact-window#bot=<id>&artifact=<id>`,
+// drawn by the desktop app in a separate BrowserWindow
+// (electron/artifact-window.mjs) that can sit outside the app's frame, beside
+// the work or on another monitor, or opened in a browser tab where there is no
+// desktop app. It shows the widget, its status, Refresh now and Close window,
+// and has its own store, like any other tab of the app. Closing the window
+// docks the artifact; Close window does the same.
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { LoaderCircle, RefreshCw, X } from "lucide-react";
 
 import { StoreProvider, useStore } from "@/state/store";
+import { cn } from "@/lib/cn";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { setLocale, t } from "@/lib/i18n";
-import { useArtifact } from "@/lib/artifacts";
-import { ArtifactWindowBody } from "./ArtifactsHost";
+import { refreshArtifact, useArtifact, useArtifactWatch } from "@/lib/artifacts";
+import { ArtifactFrame } from "./ArtifactFrame";
+import { ArtifactStatusLine } from "./ArtifactsSection";
+import { dockArtifactWindow, type ArtifactWindowData } from "./artifact-windows";
+
+const TOOL = "flex size-7 items-center justify-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-40";
+
+/** One artifact's window body: its widget, its state, Refresh now and Close
+ * window. Mounted means visible, so it holds a watch lease. */
+export function ArtifactWindowBody({ data }: { data: ArtifactWindowData }) {
+  const { artifact, error } = useArtifact(data.botId, data.artifactId);
+  useArtifactWatch(data.artifactId);
+  const [refreshing, setRefreshing] = useState(false);
+  return (
+    <div className="flex size-full flex-col" data-artifact-window={data.artifactId}>
+      <div className="flex shrink-0 items-center gap-1 border-b border-hairline/30 px-2 py-1">
+        <span className="min-w-0 flex-1">{artifact && <ArtifactStatusLine artifact={{ ...artifact, ...(artifact.data ? { dataAt: artifact.data.at } : {}) }} />}</span>
+        {artifact?.source && (
+          <button
+            type="button"
+            className={TOOL}
+            disabled={refreshing}
+            aria-label={t("artifacts.refreshNow")}
+            title={t("artifacts.refreshNow")}
+            onClick={() => {
+              setRefreshing(true);
+              void refreshArtifact(data.botId, data.artifactId).catch(() => {}).finally(() => setRefreshing(false));
+            }}
+          >
+            <RefreshCw size={13} aria-hidden="true" className={cn(refreshing && "animate-spin motion-reduce:animate-none")} />
+          </button>
+        )}
+        <button
+          type="button"
+          className={TOOL}
+          data-artifact-close-window
+          aria-label={t("artifacts.closeWindow")}
+          title={t("artifacts.closeWindow")}
+          onClick={() => void dockArtifactWindow({ id: data.artifactId, botId: data.botId }).catch(() => {}).finally(() => window.close())}
+        >
+          <X size={13} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 p-2">
+        {artifact ? (
+          <ArtifactFrame artifact={artifact} fill />
+        ) : error ? (
+          <p role="alert" className="p-2 text-[12.5px] text-danger">{t("artifacts.error")}</p>
+        ) : (
+          <span role="status" className="flex items-center gap-2 p-2 text-[12.5px] text-ink-secondary">
+            <LoaderCircle size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> {t("artifacts.loading")}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const ID = /^[a-zA-Z0-9:_-]{1,128}$/;
 
