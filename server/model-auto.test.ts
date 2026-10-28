@@ -113,7 +113,7 @@ describe("classifyTask", () => {
     ["a bug in French", { text: "Corrige le bogue dans la fonction de facturation et ajoute des tests unitaires." }, "coding"],
     ["a plan", { text: "Design the architecture for the new billing flow and weigh the trade-offs of each option before we decide." }, "reasoning"],
     ["a plan in French", { text: "Planifie la feuille de route du trimestre et évalue les compromis." }, "reasoning"],
-    ["tool-heavy work", { text: "Sync the tickets from ConnectWise, export them, then upload the backup to the shared drive." }, "automation"],
+    ["tool-heavy work", { text: "Sync the tickets from the service desk, export them, then upload the backup to the shared drive." }, "automation"],
     ["a lookup", { text: "Translate this line to Spanish." }, "quick"],
     ["a short message with no signal", { text: "hello there" }, "quick"],
     ["a long message with no signal", { text: "We talked about many things yesterday at the meeting and ".repeat(8) }, "general"],
@@ -403,7 +403,7 @@ describe("the fast model (#1209)", () => {
     expect(pickOrchestrationModel(request).selection.instanceId).toBe("claude");
   });
   it("runs light parallel subtasks on the fast model and heavy ones on the tier's model", () => {
-    const light = pickWorkerModel({ ...request, task: { text: "Sync the tickets from ConnectWise, export them, then upload the backup to the shared drive." } });
+    const light = pickWorkerModel({ ...request, task: { text: "Sync the tickets from the service desk, export them, then upload the backup to the shared drive." } });
     expect(light.selection.model).toBe("local-fast");
     expect(light.role).toBe("worker");
     const heavy = pickWorkerModel({ ...request, task: { text: "Refactor the session store so the tests stop flaking, then fix the bug in server/store.ts." } });

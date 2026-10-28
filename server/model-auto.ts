@@ -228,7 +228,7 @@ const KEYWORDS: Readonly<Record<Exclude<TaskClass, "general" | "large-context">,
   automation: [
     words("run", "exécute[rz]?", "lance[rz]?", "sync\\w*", "synchronis\\w*", "import\\w*", "export\\w*", "upload", "télévers\\w*", "download",
       "télécharge[rz]?", "browser", "navigateur", "click", "clique[rz]?", "fill (in|out)", "remplis", "scrape", "crawl", "tickets?", "billets?",
-      "connectwise", "api", "webhook", "schedule", "planifie une tâche", "cron", "deploy\\w*", "déplo\\w*", "migrate", "migre[rz]?", "backup",
+      "api", "webhook", "schedule", "planifie une tâche", "cron", "deploy\\w*", "déplo\\w*", "migrate", "migre[rz]?", "backup",
       "sauvegarde", "install\\w*", "configure[rz]?", "send (an? )?emails?", "envoie[rz]? (un )?courriels?"),
   ],
   quick: [
