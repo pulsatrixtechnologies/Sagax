@@ -14,6 +14,24 @@ export interface Crumb {
   onSelect: () => void;
 }
 
+/** The round back button of a page (the breadcrumb's, the Achievements
+ * page's header): Escape and Cmd/Ctrl+[ in its tooltip. */
+export function BackButton({ onBack, data }: { onBack: () => void; data?: Record<string, string> }) {
+  const label = t("breadcrumb.back");
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      aria-label={label}
+      title={`${label} (${shortcutBackLabel()})`}
+      className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-hover hover:text-ink"
+      {...data}
+    >
+      <ChevronLeft size={16} aria-hidden="true" />
+    </button>
+  );
+}
+
 export function Breadcrumb({ trail, current, onBack, backData }: {
   /** The levels above the current page, the outermost first. */
   trail: readonly Crumb[];
@@ -23,20 +41,9 @@ export function Breadcrumb({ trail, current, onBack, backData }: {
   /** Extra data attribute on the back button (tests, tours). */
   backData?: Record<string, string>;
 }) {
-  const label = t("breadcrumb.back");
   return (
     <div className="-ml-1.5 mb-1 flex min-w-0 items-center gap-1" data-breadcrumb="">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label={label}
-        title={`${label} (${shortcutBackLabel()})`}
-        className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-hover hover:text-ink"
-        data-breadcrumb-back=""
-        {...backData}
-      >
-        <ChevronLeft size={16} aria-hidden="true" />
-      </button>
+      <BackButton onBack={onBack} data={{ "data-breadcrumb-back": "", ...backData }} />
       <nav aria-label={t("breadcrumb.aria")} className="min-w-0">
         <ol className="flex min-w-0 items-center gap-0.5 text-[12.5px] leading-[18px]">
           {trail.map((crumb, index) => (

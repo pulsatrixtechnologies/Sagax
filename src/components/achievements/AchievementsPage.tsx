@@ -6,7 +6,8 @@
 // it, when there are enough people to say so) and what it unlocks. The
 // page's left column picks the category; unlocked or locked, reward and
 // search narrow the list together. The settings that hide the points or the
-// toasts are their own entry in the left column (AchievementSettingsPage).
+// toasts open from the gear in the page's top-right corner
+// (AchievementSettingsPage).
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Flame, Lock, Search, Trophy } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
@@ -148,7 +149,7 @@ function saveCardSetting(patch: Parameters<typeof saveAchievementSettings>[0]): 
   void saveAchievementSettings(patch).then(forgetPublicAchievements);
 }
 
-/** The left column's label for a category, "All" included. */
+/** A category's label, "All" included, and the settings' heading. */
 export function achievementCategoryLabel(id: AchievementCategory | "all" | "settings"): string {
   return id === "all" ? t("achievements.category.all") : id === "settings" ? t("achievements.settings.title") : t(CATEGORY_LABEL[id]);
 }
@@ -178,8 +179,8 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
   const recent = snapshot.recent.map((id) => ACHIEVEMENTS.find((item) => item.id === id)).filter((item): item is AchievementDefinition => Boolean(item));
 
   // 2026-10-16 : drawn like Settings: the progress card, then grey
-  // headings over the recent unlocks and the tiles. The settings have their
-  // own entry in the modal's left column (AchievementSettingsPage).
+  // headings over the recent unlocks and the tiles. The settings open from
+  // the page's gear (AchievementSettingsPage).
   return (
     <div className="flex flex-col gap-5" data-achievements-page="">
       <section className="flex flex-wrap items-center gap-4 rounded-xl border-[0.5px] border-border bg-elevated p-4">
@@ -276,7 +277,7 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
 }
 
 /** The feature-wide settings (card, title, toasts, public card), shown alone
- * under their own entry of the modal's left column instead of at the bottom of
+ * in the pane when the page's gear is pressed instead of at the bottom of
  * every category page. */
 export function AchievementSettingsPage() {
   const { status, snapshot } = useAchievements();
