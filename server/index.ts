@@ -650,6 +650,7 @@ import { botSkillTemplateSchema, newBotDefaultsSchema, resolveBotCreationDefault
 import { greetingLanguage } from "./new-bot-greeting.ts";
 import { introAdvance } from "./intro-tour.ts";
 import { SoloGoals, soloGoalCommand, soloGoalPrompt, soloGoalStatusText } from "./solo-goal.ts";
+import { handoffModel } from "../shared/handoff-model.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -18552,6 +18553,18 @@ const runDelegatedTurn: DelegationRunner = (toBotId, rawText, commsDepth, source
         tool: failedTurnTool(`delegation to @${bot?.name ?? toBotId} could not start — ${why}`),
       });
     };
+    if (target && targetThreadId) {
+      const live = registry.get(target.modelSelection.instanceId);
+      const chosen = handoffModel({
+        instanceId: target.modelSelection.instanceId,
+        requested: target.modelSelection.model,
+        models: live?.models.options.map((option) => option.id) ?? [],
+        defaultModel: live?.models.default,
+      });
+      if (chosen && chosen.model !== target.modelSelection.model) {
+        store.switchTaskModel(toBotId, targetThreadId, { ...target.modelSelection, model: chosen.model }, false);
+      }
+    }
     return startTurn(toBotId, text, {
       threadId: targetThreadId,
       commsDepth,

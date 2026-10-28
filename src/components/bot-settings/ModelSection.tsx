@@ -9,6 +9,7 @@ import { canEditBotField } from "@/lib/bot-capabilities";
 import { CompactRow, HelpTip, PillSelect, SettingsGroup } from "../SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { engineLabel } from "@/lib/human-label";
+import { fallbackWithModel } from "../../../shared/handoff-model";
 import { currentTaskBot, useStore, visibleMessages, type Bot } from "@/state/store";
 import { pendingApprovals } from "../PendingApproval";
 import { engineOfferContext, useOfferedInstances } from "@/lib/offered-instances";
@@ -174,9 +175,23 @@ function FallbackChain({ bot, onChange }: { bot: Bot; onChange: (fallback: Bot["
       groupId="botBackups"
       accessory={<HelpTip label={t("settings.moreAbout", { title })}>{t("botPanel.model.backupsHelp")}</HelpTip>}
     >
-      {chain.map((entry, index) => (
+      {chain.map((entry, index) => {
+        const models = state.instances.find((instance) => instance.instanceId === entry.instanceId)?.models.options ?? [];
+        const allowed = models.map((model) => model.id);
+        return (
         <CompactRow key={entry.instanceId} label={`${index + 1}. ${nameOf(entry.instanceId)}`}>
-          <span className="min-w-0 max-w-[180px] truncate text-[12px] text-ink-secondary">{entry.model}</span>
+          <PillSelect
+            value={entry.model}
+            ariaLabel={t("botPanel.model.backupModel")}
+            onChange={(model) => {
+              const next = fallbackWithModel(chain, entry.instanceId, model, allowed.length ? allowed : [model]);
+              if (next) onChange(next);
+            }}
+            options={[
+              ...(allowed.includes(entry.model) ? [] : [{ value: entry.model, label: entry.model }]),
+              ...models.map((model) => ({ value: model.id, label: model.label })),
+            ]}
+          />
           <button
             type="button"
             onClick={() => onChange(chain.filter((candidate) => candidate.instanceId !== entry.instanceId))}
@@ -186,7 +201,8 @@ function FallbackChain({ bot, onChange }: { bot: Bot; onChange: (fallback: Bot["
             <X size={13} aria-hidden="true" />
           </button>
         </CompactRow>
-      ))}
+        );
+      })}
       {chain.length < 5 && (
         <CompactRow label={t("botPanel.model.addFallback")}>
           <PillSelect
