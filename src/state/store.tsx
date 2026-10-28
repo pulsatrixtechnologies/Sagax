@@ -102,6 +102,7 @@ import { StoreSourceContext, usePublishedStoreSource } from "./store-source";
 import { ThreadPrefetchContext } from "./thread-prefetch";
 import { createThreadPrefetcher, ThreadPageCache, type ThreadPage } from "@/lib/thread-page-cache";
 import { ARTIFACTS_EVENT } from "@/lib/artifact-events";
+import { BOT_TASKS_EVENT } from "@/lib/bot-task-events";
 import { makeConfidentialBody } from "@/lib/confidential-thread";
 import { bindModerationApi, blockedDmSender, notifyReportsChanged } from "@/lib/moderation";
 
@@ -5703,6 +5704,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "artifacts":
           // Ids only (server/artifacts.ts): the Files tab and the palette fetch again.
           window.dispatchEvent(new CustomEvent(ARTIFACTS_EVENT, { detail: { botId: frame.botId, artifactId: frame.artifactId, deleted: frame.deleted === true } }));
+          break;
+        case "bot.tasks":
+          // Ids only (server/bot-task-list.ts): the bot's Tasks section reads its list again.
+          window.dispatchEvent(new CustomEvent(BOT_TASKS_EVENT, { detail: { botId: frame.botId } }));
           break;
         case "live.call": {
           const framed = liveCallFromFrame(frame);

@@ -233,6 +233,10 @@ private struct PhoneBotPanelContent: View {
                     BotSuggestionsCard(bot: current) { runSuggestion($0) }
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
+                    // the desktop's Details > Tasks: the to-do list the bot keeps
+                    BotTaskListCard(bot: current) { openThread($0) }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
                     AnyView(overviewCard)
                         .padding(.top, 8)
                     if let mailRow {

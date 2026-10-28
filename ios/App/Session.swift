@@ -1421,6 +1421,10 @@ final class Session: ObservableObject {
                     if case let .unknown(kind) = frame.frame, kind.hasPrefix("routine") {
                         Task { await AccountRowModel.shared.refresh(self) }
                     }
+                    // a bot's task list changed: its Tasks card reads it again
+                    if case let .botTasks(botId) = frame.frame {
+                        NotificationCenter.default.post(name: .sagaxBotTasksChanged, object: botId)
+                    }
                     // a nudge addressed to this person: wizz, buzz and a
                     // notification that opens its conversation (#222)
                     if case let .nudge(nudge) = frame.frame {

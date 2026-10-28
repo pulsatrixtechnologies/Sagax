@@ -84,12 +84,17 @@ public enum Frame: Sendable {
     /// `voice.call.ended`: the person or the bot hung up this call.
     /// The phone leaves the call after a goodbye finishes.
     case voiceCallEnded(threadId: String, callId: String, by: String)
+    /// `bot.tasks`: this bot's task list changed (ids only). The panel
+    /// reads the list again with its own rights.
+    case botTasks(botId: String)
     case unknown(kind: String)
 }
 
 extension Notification.Name {
     /// The server ended a live voice call (`voice.call.ended`).
     public static let sagaxVoiceCallEnded = Notification.Name("ca.pulsatrix.sagax.voiceCallEnded")
+    /// A bot's task list changed (`bot.tasks`); `object` is the bot id.
+    public static let sagaxBotTasksChanged = Notification.Name("ca.pulsatrix.sagax.botTasksChanged")
 }
 
 extension Frame: Decodable {
@@ -214,6 +219,12 @@ extension Frame: Decodable {
                 return
             }
             self = .voiceCallEnded(threadId: threadId, callId: callId, by: by)
+        case "bot.tasks":
+            guard let botId = try? container.decode(String.self, forKey: .botId), !botId.isEmpty else {
+                self = .unknown(kind: kind)
+                return
+            }
+            self = .botTasks(botId: botId)
         default:
             // routines, and whatever the harness adds next
             self = .unknown(kind: kind)

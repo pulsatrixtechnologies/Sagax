@@ -7,9 +7,20 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { setLocale } from "@/lib/i18n";
+import { BOT_TASKS_EVENT } from "@/lib/bot-task-events";
+import { createBotTaskStore } from "../../../server/bot-task-list";
+import { createBotTaskInternalRoutes } from "../../../server/routes/bot-task-list";
+import type { BotTasksFrame } from "../../../shared/bot-task-list";
 import { BackgroundBriefCard } from "./BackgroundBriefCard";
-import { BotTaskSection } from "./BotTaskSection";
+import { BotTaskSection, botTaskAnswerDraft } from "./BotTaskSection";
+import { BotEditorStore } from "@/state/store";
+import { getDraft } from "@/lib/drafts";
+import type { BotTask } from "../../../shared/bot-task-list";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -56,7 +67,7 @@ describe("bot task list against an older server", () => {
   it("shows an empty list on the current server, and keeps the error for a real failure", async () => {
     vi.stubGlobal("fetch", answer(200, { tasks: [] }));
     await mount(createElement(BotTaskSection, { botId: "bot-1" }));
-    expect(host.textContent).toContain("No tasks.");
+    expect(host.querySelector("[data-bot-tasks-empty]")?.textContent).toContain("Ask your bot to note one");
     expect(host.querySelector(".text-danger")).toBeNull();
 
     act(() => root.unmount());
@@ -73,5 +84,159 @@ describe("background brief against an older server", () => {
     await mount(createElement(BackgroundBriefCard, { botId: "bot-1" }));
     expect(host.querySelector("[data-brief-needs-update]")?.textContent).toBe("Available after the server update.");
     expect(host.querySelector("[role=alert]")).toBeNull();
+  });
+});
+
+// Regression: the bot added tasks with its tool, read them back on the
+// server, and the open panel still said "No tasks." It read the list once,
+// when it opened, and nothing told it the list had changed.
+describe("bot task list stays live", () => {
+  it("shows a task the bot adds with its tool, without reopening the panel", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-tasks-dom-"));
+    try {
+      // the server's store, with its frame relayed the way src/state/store.tsx does
+      const frames: BotTasksFrame[] = [];
+      const store = createBotTaskStore({
+        file: join(dir, "bot-tasks.json"),
+        onChange: (frame) => {
+          frames.push(frame);
+          window.dispatchEvent(new CustomEvent(BOT_TASKS_EVENT, { detail: { botId: frame.botId } }));
+        },
+      });
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({ tasks: store.list("bot-1") }), { status: 200, headers: { "content-type": "application/json" } }));
+      vi.stubGlobal("fetch", fetchMock);
+      await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+      expect(host.querySelector("[data-bot-tasks-empty]")).not.toBeNull();
+
+      // the bot's task_list tool: add one doing, one waiting, and finish a third
+      const internal = createBotTaskInternalRoutes({ tasks: () => store, ownsThread: () => true, speaker: () => "pr_a" });
+      const call = async (body: Record<string, unknown>) => {
+        let answer: unknown;
+        await internal({
+          res: {} as never, path: "/api/internal/task-list", method: "POST",
+          json: ((_res: unknown, _status: number, value: unknown) => { answer = value; }) as never,
+          readBody: async () => body,
+          capability: { botId: "bot-1", threadId: "t-1", generation: "g" },
+        });
+        return answer as { task: { id: string } };
+      };
+      await act(async () => {
+        await call({ action: "add", title: "Draft the summary" });
+        await call({ action: "add", title: "Pick a meeting time", state: "waiting" });
+        const third = await call({ action: "add", title: "Renew the domain" });
+        await call({ action: "complete", task_id: third.task.id });
+      });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+
+      expect(frames.every((frame) => frame.kind === "bot.tasks" && frame.botId === "bot-1" && frame.audience === "pr_a")).toBe(true);
+      expect(host.querySelector("[data-bot-tasks-empty]")).toBeNull();
+      // what waits for the person comes first, then in progress, then Done folded with its count
+      const groups = Array.from(host.querySelectorAll("[data-bot-task-group]")).map((node) => node.getAttribute("data-bot-task-group"));
+      expect(groups).toEqual(["waiting", "doing", "done"]);
+      expect(host.querySelector('[data-bot-task="waiting"]')?.textContent).toContain("Pick a meeting time");
+      expect(host.querySelector('[data-bot-task="doing"]')?.textContent).toContain("Draft the summary");
+      expect(host.querySelector('[data-bot-task="done"]')).toBeNull();
+      expect(host.querySelector("[data-bot-tasks-done-toggle]")?.textContent).toBe("Done1");
+      await act(async () => { (host.querySelector("[data-bot-tasks-done-toggle]") as HTMLButtonElement).click(); });
+      expect(host.querySelector('[data-bot-task="done"]')?.textContent).toContain("Renew the domain");
+      // the panel read again on each change, never remounted
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// JC: "I cannot even interact with the task." A task opens in place, its
+// menu moves or removes it, Answer opens the conversation with the task
+// named in the composer, and all of it works from the keyboard.
+describe("bot task interaction", () => {
+  const H = 3_600_000;
+  const now = Date.now();
+  const tasks: BotTask[] = [
+    { id: "task_waiting01", botId: "bot-1", threadId: "t-7", title: "Choose between the two meeting times for Thursday afternoon", state: "waiting", note: "Both rooms are free.\nThe second one has a screen.", history: [{ state: "doing", at: now - 3 * H, by: "bot" }, { state: "waiting", at: now - H, by: "bot" }], createdAt: now - 3 * H, updatedAt: now - H },
+    { id: "task_doing0001", botId: "bot-1", title: "Draft the weekly summary", state: "doing", createdAt: now - 2 * H, updatedAt: now - 2 * H },
+    { id: "task_done00001", botId: "bot-1", title: "Demo task: tasks panel works", state: "done", createdAt: now - 5 * H, updatedAt: now - 4 * H },
+  ];
+  function serve() {
+    const calls: Array<{ method: string; path: string }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), "http://x").pathname;
+      calls.push({ method: init?.method ?? "GET", path });
+      const body = path.endsWith("/task-list") ? { tasks } : { task: tasks[0] };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+    return calls;
+  }
+  const press = (target: Element, key: string, extra: KeyboardEventInit = {}) =>
+    act(async () => { target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...extra })); });
+
+  it("shows each state where the server put it, done folded and checked", async () => {
+    serve();
+    await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+    expect(host.querySelector('[data-bot-task-group="waiting"] [data-bot-task="waiting"]')?.textContent).toContain("Choose between");
+    expect(host.querySelector('[data-bot-task-group="doing"] [data-bot-task="doing"]')?.textContent).toContain("Draft the weekly summary");
+    // the done one is never shown in progress
+    expect(host.querySelector('[data-bot-task-group="doing"]')?.textContent).not.toContain("Demo task");
+    expect(host.querySelector("[data-bot-tasks-done-toggle]")?.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => { (host.querySelector("[data-bot-tasks-done-toggle]") as HTMLButtonElement).click(); });
+    expect(host.querySelector('[data-bot-task-group="done"] [data-bot-task="done"]')?.textContent).toContain("Demo task");
+    // the full title stays readable: two lines and a tooltip
+    const title = host.querySelector('[data-bot-task="waiting"] [title]');
+    expect(title?.getAttribute("title")).toBe(tasks[0]!.title);
+    expect(title?.className).toContain("line-clamp-2");
+  });
+
+  it("opens a task in place with its note and history, and Escape gives the focus back", async () => {
+    serve();
+    await mount(createElement("div", { className: "relative" }, createElement(BotTaskSection, { botId: "bot-1" })));
+    const row = host.querySelector('[data-bot-task-open="task_waiting01"]') as HTMLButtonElement;
+    await act(async () => { row.click(); });
+    const detail = host.querySelector('[data-bot-task-detail="task_waiting01"]')!;
+    expect(detail.textContent).toContain(tasks[0]!.title);
+    expect(detail.querySelector("[data-bot-task-note]")?.textContent).toBe("Both rooms are free.\nThe second one has a screen.");
+    expect(Array.from(detail.querySelectorAll("[data-bot-task-history] li")).map((item) => item.textContent?.split(" · ")[0])).toEqual(["Needs you", "In progress"]);
+    await press(detail, "Escape");
+    expect(host.querySelector("[data-bot-task-detail]")).toBeNull();
+    expect(document.activeElement).toBe(host.querySelector('[data-bot-task-open="task_waiting01"]'));
+  });
+
+  it("moves and removes a task from its menu, opened with the keyboard", async () => {
+    const calls = serve();
+    await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+    const row = host.querySelector('[data-bot-task-open="task_waiting01"]') as HTMLButtonElement;
+    row.focus();
+    await press(row, "F10", { shiftKey: true });
+    const menu = document.querySelector('[data-bot-task-menu-open="task_waiting01"]')!;
+    const items = Array.from(menu.querySelectorAll("[data-bot-task-action]")).map((item) => item.getAttribute("data-bot-task-action"));
+    expect(items).toEqual(["open", "complete", "resume", "remove"]);
+    expect(document.activeElement?.getAttribute("data-bot-task-action")).toBe("open");
+    await press(menu, "ArrowDown");
+    expect(document.activeElement?.getAttribute("data-bot-task-action")).toBe("complete");
+    await act(async () => { (document.activeElement as HTMLButtonElement).click(); });
+    expect(calls).toContainEqual({ method: "POST", path: "/api/bots/bot-1/task-list/task_waiting01/complete" });
+
+    await act(async () => { (host.querySelector('[data-bot-task-menu="task_doing0001"]') as HTMLButtonElement).click(); });
+    await act(async () => { (document.querySelector('[data-bot-task-menu-open="task_doing0001"] [data-bot-task-action="remove"]') as HTMLButtonElement).click(); });
+    expect(calls).toContainEqual({ method: "DELETE", path: "/api/bots/bot-1/task-list/task_doing0001" });
+
+    // a done task offers Reopen
+    await act(async () => { (host.querySelector("[data-bot-tasks-done-toggle]") as HTMLButtonElement).click(); });
+    await act(async () => { (host.querySelector('[data-bot-task-menu="task_done00001"]') as HTMLButtonElement).click(); });
+    const reopen = document.querySelector('[data-bot-task-menu-open="task_done00001"] [data-bot-task-action="reopen"]') as HTMLButtonElement;
+    await act(async () => { reopen.click(); });
+    expect(calls).toContainEqual({ method: "POST", path: "/api/bots/bot-1/task-list/task_done00001/reopen" });
+  });
+
+  it("Answer opens the conversation of the task with the task named in the composer", async () => {
+    serve();
+    const dispatch = vi.fn();
+    const bot = { id: "bot-1", threadId: "t-main", name: "Bot", messages: [] };
+    const value = { state: { bots: [bot] }, dispatch } as never;
+    await mount(createElement(BotEditorStore, { value, children: createElement(BotTaskSection, { botId: "bot-1" }) }));
+    await act(async () => { (host.querySelector('[data-bot-task="waiting"] [data-bot-task-answer]') as HTMLButtonElement).click(); });
+    expect(dispatch).toHaveBeenCalledWith({ type: "switchTask", botId: "bot-1", threadId: "t-7" });
+    expect(getDraft(localStorage, "bot:bot-1:t-7")).toBe(botTaskAnswerDraft(tasks[0]!));
+    expect(botTaskAnswerDraft(tasks[0]!)).toBe(`About the task \u201c${tasks[0]!.title}\u201d: `);
   });
 });

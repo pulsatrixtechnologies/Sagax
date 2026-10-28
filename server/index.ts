@@ -1185,6 +1185,7 @@ import { createPreferenceImportRoutes } from "./routes/preference-import.ts";
 import { createArtifactInternalRoutes, createArtifactRoutes } from "./routes/artifacts.ts";
 import { createBotTaskInternalRoutes, createBotTaskRoutes } from "./routes/bot-task-list.ts";
 import { createBotTaskStore } from "./bot-task-list.ts";
+import { botTasksFrameAllowed, sameBotTaskOwner } from "../shared/bot-task-list.ts";
 import { createArtifactRefresher } from "./artifact-refresh.ts";
 import { createArtifactSourceRunner, toolResultValue, type ToolAnswer } from "./artifact-sources.ts";
 import { createRoutineWatchEvaluator, RoutineWatchStates, type RoutineWatchDeps, type WatchPlace, type WatchRoutine } from "./routine-watch.ts";
@@ -1977,7 +1978,8 @@ const securityKeyCeremonies = securityKeyCeremonyRoutes({ keys: securityKeys });
 // only and fetch the change with their own rights.
 const artifactStore = createArtifactStore({ file: join(DATA_DIR, "artifacts.json"), onChange: (frame) => broadcast({ ...frame }) });
 const preferenceStore = createPreferenceStore({ file: join(DATA_DIR, "bot-preferences.json") });
-const botTaskStore = createBotTaskStore({ file: join(DATA_DIR, "bot-tasks.json") });
+// Ids only (frame `bot.tasks`): the bot's panel reads the list again live.
+const botTaskStore = createBotTaskStore({ file: join(DATA_DIR, "bot-tasks.json"), onChange: (frame) => broadcast({ ...frame }) });
 // The files pinned in a conversation's Library tab (server/thread-file-pins.ts).
 const threadFilePins = createThreadFilePins({ file: join(DATA_DIR, "thread-file-pins.json") });
 // 2026-10-16: people's custom auto-review rules, in their own words
@@ -13213,6 +13215,8 @@ function sseFrameFor(
   // A Data sheet reaches the person whose scope it is (data/scope.ts).
   // This is before the admin short-circuit: an admin does not see it.
   if (payload?.kind === "data" && !dataFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  // a bot's task list changed: that person's streams only (shared/bot-task-list.ts)
+  if (payload && !botTasksFrameAllowed(payload, client.viewerId || undefined, localPrincipalId())) return null;
   if (payload?.kind === "bot-act" && !botActFrameAllowed(typeof payload.audience === "string" ? payload.audience : "", client.viewerId, localPrincipalId())) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
@@ -29930,11 +29934,8 @@ ROUTES.push(createBotTaskRoutes({
     return Boolean(viewer && canOnBot(viewer, "bot.use", botFacts(bot)));
   },
   owner: (auth) => channelFilterViewerId(auth) ?? undefined,
-  mayView: (auth, task) => {
-    const viewerId = channelFilterViewerId(auth);
-    if (!viewerId) return true;
-    return !task.ownerId || task.ownerId === viewerId;
-  },
+  // the same rule as the bot's own list (sameBotTaskOwner, without case)
+  mayView: (auth, task) => sameBotTaskOwner(task.ownerId, channelFilterViewerId(auth)),
 }));
 ROUTES.push(createArtifactRoutes({
   artifacts: () => artifactStore,
