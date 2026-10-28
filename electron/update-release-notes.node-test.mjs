@@ -11,7 +11,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { embedReleaseNotes } from "../scripts/embed-feed-release-notes.mjs";
-import { configureUpdateFeed, fetchReleaseNotes, releaseApiUrl } from "./update-feed.mjs";
+import { compareReleaseVersions, configureUpdateFeed, fetchReleaseNotes, fetchSkippedReleaseNotes, releaseApiUrl, releasesApiUrl } from "./update-feed.mjs";
 
 const require = createRequire(import.meta.url);
 const fixture = (name) => readFileSync(new URL(`./fixtures/update-feed/${name}`, import.meta.url), "utf8");
@@ -117,4 +117,47 @@ test("the fallback never asks for anything but a version and never fails the upd
   assert.equal(await fetchReleaseNotes("0.5.4", { fetch: answer({ ok: true, json: async () => ({ ...RELEASE, draft: true }) }) }), null);
   assert.equal(await fetchReleaseNotes("0.5.4", { fetch: answer({ ok: true, json: async () => ({ ...RELEASE, body: "  " }) }) }), null);
   assert.equal(await fetchReleaseNotes("0.5.4", { fetch: async () => { throw new Error("offline"); } }), null);
+});
+
+test("release versions compare as semver, pre-releases before their release", () => {
+  assert.ok(compareReleaseVersions("0.8.9", "0.8.10") < 0);
+  assert.ok(compareReleaseVersions("0.9.0", "0.8.10") > 0);
+  assert.ok(compareReleaseVersions("0.8.9-beta.1", "0.8.9") < 0);
+  assert.ok(compareReleaseVersions("0.8.9-beta.2", "0.8.9-beta.10") < 0);
+  assert.equal(compareReleaseVersions("0.8.8", "0.8.8"), 0);
+});
+
+test("one update over several releases reads the notes of every version it skips", async () => {
+  const requested = [];
+  const releases = [
+    { tag_name: "pulsa-v0.8.9", body: "notes 0.8.9" },
+    { tag_name: "pulsa-v0.8.9-beta.1", prerelease: true, body: "beta" },
+    { tag_name: "pulsa-v0.8.8", body: "notes 0.8.8" },
+    { tag_name: "pulsa-v0.8.7", body: " notes 0.8.7 " },
+    { tag_name: "pulsa-v0.8.6", body: "notes 0.8.6" },
+    { tag_name: "pulsa-v0.8.5", body: "notes 0.8.5" },
+    { tag_name: "pulsa-v0.8.7-draft", draft: true, body: "draft" },
+    { tag_name: "other-v0.8.7", body: "not ours" },
+  ];
+  const fetch = async (url) => {
+    requested.push(url);
+    return { ok: true, json: async () => releases };
+  };
+  const notes = await fetchSkippedReleaseNotes("0.8.6", "0.8.9", { fetch });
+  assert.deepEqual(requested, [releasesApiUrl()]);
+  assert.match(releasesApiUrl(), /^https:\/\/api\.github\.com\/repos\/pulsatrixtechnologies\/sagax\/releases\?/);
+  assert.deepEqual(notes, [
+    { version: "0.8.8", note: "notes 0.8.8" },
+    { version: "0.8.7", note: "notes 0.8.7" },
+  ]);
+  const withBeta = await fetchSkippedReleaseNotes("0.8.8", "0.8.9", { fetch, allowPrerelease: true });
+  assert.deepEqual(withBeta, [{ version: "0.8.9-beta.1", note: "beta" }]);
+});
+
+test("skipped notes never fail an update", async () => {
+  assert.deepEqual(await fetchSkippedReleaseNotes("0.8.8", "0.8.9", { fetch: async () => { throw new Error("offline"); } }), []);
+  assert.deepEqual(await fetchSkippedReleaseNotes("0.8.8", "0.8.9", { fetch: async () => ({ ok: false }) }), []);
+  assert.deepEqual(await fetchSkippedReleaseNotes("0.8.8", "0.8.9", { fetch: async () => ({ ok: true, json: async () => ({}) }) }), []);
+  assert.deepEqual(await fetchSkippedReleaseNotes("0.8.9", "0.8.8", { fetch: () => assert.fail("nothing to read") }), []);
+  assert.deepEqual(await fetchSkippedReleaseNotes("bad", "0.8.9", { fetch: () => assert.fail("nothing to read") }), []);
 });
