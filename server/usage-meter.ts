@@ -45,7 +45,13 @@ function load(file: string): Saved {
 }
 
 export class UsageMeter {
-  constructor(private readonly dataDir: string, private readonly now: () => number = () => Date.now()) {}
+  private readonly dataDir: string;
+  private readonly now: () => number;
+
+  constructor(dataDir: string, now: () => number = () => Date.now()) {
+    this.dataDir = dataDir;
+    this.now = now;
+  }
 
   private path(scope: UsageMeterScope): string {
     return fileFor(this.dataDir, scope);
