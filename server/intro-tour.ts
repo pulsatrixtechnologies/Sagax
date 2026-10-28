@@ -1,6 +1,12 @@
 // The first conversation of a new bot: two questions, then a closing line.
 // Typing anything else dismisses the card and the turn runs as usual.
-import type { Message } from "../shared/wire.ts";
+
+interface IntroMessage {
+  role?: string;
+  kind?: string;
+  text?: string;
+  card?: { title: string; subtitle: string; options: string[]; requestId?: string; dismissed?: boolean };
+}
 
 export type IntroLanguage = "fr" | "en";
 
@@ -58,7 +64,7 @@ export type IntroAdvance =
   | { kind: "done"; text: string };
 
 /** The next scripted step when the person picked an option on the open card. */
-export function introAdvance(messages: readonly Pick<Message, "role" | "kind" | "text" | "card">[], text: string): IntroAdvance | null {
+export function introAdvance(messages: readonly IntroMessage[], text: string): IntroAdvance | null {
   const open = [...messages].reverse().find((message) =>
     message.kind === "options" && message.card && !message.card.requestId && !message.card.dismissed);
   if (!open?.card) return null;
