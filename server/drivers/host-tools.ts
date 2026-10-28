@@ -166,16 +166,20 @@ export const GROK_HOST_TOOL_NAMES: readonly string[] = [
   "enter_plan_mode", "exit_plan_mode",
   "ask_user_question", "send_feedback",
   "web_search", "web_fetch",
-  "image_gen", "image_edit", "image_to_video", "reference_to_video",
+  "image_gen", "image_edit",
 ];
 
-/** The only Grok tools an organization turn may keep. */
+/** Video on an organization turn. These are not the shell: they stay when
+ * host tools are withheld. Image tools that are not video stay withheld. */
+export const GROK_VIDEO_TOOLS: readonly string[] = ["image_to_video", "reference_to_video"];
+
+/** The MCP tools an organization turn must keep. */
 export const GROK_MCP_TOOLS: readonly string[] = ["search_tool", "use_tool"];
 
-/** What a withheld Grok 1.0.46 turn offers a model: the MCP tools above,
+/** What a withheld turn offers a model: the MCP tools, the video tools,
  * and `session_title` in the separate request that names the conversation
  * (never offered to the agent, nothing of this machine). */
-export const GROK_ORG_TOOLS: readonly string[] = [...GROK_MCP_TOOLS, "session_title"];
+export const GROK_ORG_TOOLS: readonly string[] = [...GROK_MCP_TOOLS, ...GROK_VIDEO_TOOLS, "session_title"];
 
 /** Permission classes `--deny` still gates. On `grok agent stdio` these do
  * not remove tools from the advertised list (verified 1.0.46); the ACP
@@ -202,10 +206,12 @@ export interface GrokOrgAgentProfile {
   disallowedTools: string[];
 }
 
-/** ACP `session/new` profile that leaves Grok with Sagax MCP tools only.
- * Verified on grok 1.0.46 `agent stdio`: `available_commands_update` then
- * lists `search_tool` and `use_tool` and nothing else. No `toolConfig`
- * ids, so it does not depend on the 1.0.41 registry pin. */
+/** ACP `session/new` profile for a withheld turn: Sagax MCP tools, plus the
+ * video tools. The shell, files, web and image tools stay off. No
+ * `toolConfig` ids, so it does not depend on the 1.0.41 registry pin.
+ * The pinned inventory (engine-native-tools.json) was captured before video
+ * was kept; the allowlist here is the decision, and a later capture should
+ * list these two on the organization side. */
 export function grokOrgAgentProfile(scope: unknown, hasMcp: boolean): GrokOrgAgentProfile {
   const parsed = parseToolScope(scope);
   if (!parsed.ok) throw new Error(parsed.error);
@@ -215,11 +221,12 @@ export function grokOrgAgentProfile(scope: unknown, hasMcp: boolean): GrokOrgAge
       ? "Grok requires native:search_tool and native:use_tool to find and call selected MCP tools. Allow both explicitly or use Pi."
       : "Grok on an organization server keeps only its MCP tools. Allow native:search_tool and native:use_tool, or clear the tool selection.");
   }
+  const video = GROK_VIDEO_TOOLS.filter((name) => allowsTool(scope, { kind: "native", name }));
   return {
     name: "sagax-org",
-    description: "Sagax MCP tools only. Host shell, files and web stay off.",
+    description: "Sagax MCP tools and video. Host shell, files and web stay off.",
     injectDefaultTools: false,
-    tools: [...tools],
+    tools: [...tools, ...video],
     disallowedTools: [...GROK_HOST_TOOL_NAMES],
   };
 }
@@ -645,7 +652,7 @@ export interface OrgEngineTools {
 export const ORG_ENGINE_TOOLS: Readonly<Record<string, OrgEngineTools>> = {
   claude: { allow: CLAUDE_ORG_TOOLS, deny: [...CLAUDE_HOST_TOOLS, ...CLAUDE_UNUSED_TOOLS], allowName: "CLAUDE_ORG_TOOLS", denyName: "CLAUDE_HOST_TOOLS or CLAUDE_UNUSED_TOOLS", enforced: "allowlist" },
   codex: { allow: CODEX_ORG_TOOLS, deny: CODEX_HOST_TOOLS, allowName: "CODEX_ORG_TOOLS", denyName: "CODEX_HOST_TOOLS (and switch it off in codexHostToolArgs)", enforced: "pinned inventory" },
-  grok: { allow: GROK_ORG_TOOLS, deny: GROK_HOST_TOOL_NAMES, allowName: "GROK_ORG_TOOLS (GROK_MCP_TOOLS for the profile)", denyName: "GROK_HOST_TOOL_NAMES", enforced: "allowlist" },
+  grok: { allow: GROK_ORG_TOOLS, deny: GROK_HOST_TOOL_NAMES, allowName: "GROK_ORG_TOOLS (GROK_MCP_TOOLS and GROK_VIDEO_TOOLS for the profile)", denyName: "GROK_HOST_TOOL_NAMES", enforced: "allowlist" },
   pi: { allow: [], deny: PI_HOST_TOOLS, allowName: "(none: --no-builtin-tools)", denyName: "PI_HOST_TOOLS", enforced: "allowlist" },
   gemini: { allow: GEMINI_ORG_TOOLS, deny: GEMINI_HOST_TOOLS, allowName: "GEMINI_ORG_TOOLS", denyName: "GEMINI_HOST_TOOLS", enforced: "pinned inventory" },
   qwen: { allow: QWEN_ORG_TOOLS, deny: QWEN_HOST_TOOLS, allowName: "QWEN_ORG_TOOLS (and QWEN_KEPT_TOOLS for --core-tools)", denyName: "QWEN_HOST_TOOLS", enforced: "allowlist" },
