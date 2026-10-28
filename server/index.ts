@@ -683,7 +683,7 @@ import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-r
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserProfileChangeRefusal, browserRuntimeEnv } from "./browser-runtime.ts";
-import { browserEgress, sameOwnerBots } from "./browser/egress/registry.ts";
+import { browserEgress, sameOwnerBots as sameOwnerBrowserBots } from "./browser/egress/registry.ts";
 import { BrowserLive } from "./browser-live.ts";
 import { BrowserNetworkDebug } from "./browser-network-debug.ts";
 import {
@@ -4996,7 +4996,7 @@ const sharedEgressHost = !DESKTOP_MANAGED && (IDENTITY.kind === "perspicax" || H
 const browserSessionBots = new Map<string, string>();
 browserEgress.configure({
   host: DESKTOP_MANAGED ? "desktop" : CLOUD_HOME ? "cloud" : "server", config: () => cfg.browserEngine?.egress,
-  ...(sharedEgressHost ? { sameOwner: (session: string, engineBot: string | undefined) => sameOwnerBots(browserSessionBots.get(session), engineBot, (id) => store.bot(id)) } : {}),
+  ...(sharedEgressHost ? { sameOwner: (session: string, engineBot: string | undefined) => sameOwnerBrowserBots(browserSessionBots.get(session), engineBot, (id) => store.bot(id)) } : {}),
 });
 const browserRuntime = new BrowserRuntime({
   egressNotice: (session) => browserEgress.takeNotice(session),
