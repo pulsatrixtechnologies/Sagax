@@ -82,6 +82,7 @@ import { threadLinkUrl } from "../shared/thread-link.ts";
 import { failedTurnCause, failedTurnTool } from "../shared/failed-turn.ts";
 import { STOPPED_TURN_NAME, assistantTranscript, errorTranscript } from "../shared/client-cancel.ts";
 import { isStopIntent } from "../shared/stop-intent.ts";
+import { SAFE_POINT_NOTE, SafePointPreempts } from "./safe-point-preempt.ts";
 import { phonePairingLink } from "../shared/pairing-link.ts";
 import { canWorkOnCloud, type CloudEngine } from "../shared/cloud-computer.ts";
 import {
@@ -13446,6 +13447,31 @@ function closeCutToolRows(threadId: string): number {
   return closed;
 }
 
+/** Tool calls of this thread's turn still running. */
+function toolsRunning(threadId: string): number {
+  const prefix = `${threadId}:`;
+  let running = 0;
+  for (const key of toolMessageByItem.keys()) if (key.startsWith(prefix)) running += 1;
+  return running;
+}
+
+/** Messages waiting for a running turn that cannot take them live: the turn
+ * is interrupted at its next safe point (server/safe-point-preempt.ts). */
+const safePoints = new SafePointPreempts();
+
+/** The person wrote to a turn whose engine cannot take words live: stop
+ * that turn at the end of its running tool, so the queue starts a turn with
+ * the words now instead of when the work is done. Not a person's Stop: what
+ * the turn already took stays offered, and the queue drains as it settles. */
+function preemptAtSafePoint(botId: string, threadId: string): void {
+  safePoints.request(threadId, toolsRunning(threadId), () => {
+    if (!threadBusy(botId, threadId) || !hasQueuedSteeredMessages(botId, threadId)) return;
+    console.log(`[safe-point] ${botId}/${threadId} interrupted to read a waiting message`);
+    markThreadStopping(threadId);
+    void interruptDirectThread(botId, threadId).then(() => closeCutToolRows(threadId)).catch(() => {});
+  });
+}
+
 /** One "Stopped" line after the person's stop, unless the turn already
  * wrote its own since their last message. */
 function confirmStop(threadId: string, turnId: string | undefined): void {
@@ -16148,6 +16174,8 @@ bus.subscribe((event: RuntimeEvent) => {
             appPiecesByThread.set(event.threadId, kept.slice(-8));
           }
         }
+        // the end of a call is the safe point a waiting message needs
+        if (bot) safePoints.toolEnded(event.threadId, toolsRunning(event.threadId));
         for (const videoMsg of event.output ? videoMessagesFromTool(toolName, event.output, event.threadId, latestPersonText(event.threadId)) : []) {
           pushMessage(videoMsg);
         }
@@ -17218,6 +17246,7 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       break;
     case "turn.completed": {
+      safePoints.clear(event.threadId);
       autoApprovals.clear(event.threadId);
       appPiecesByThread.delete(event.threadId);
       settleWaitingOnPersonChips(event.threadId);
@@ -49258,17 +49287,29 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               if (!after.busy) return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall, undefined, undefined, dataContext);
               if (decided.mode === "parallel") return startParallelTask({ botId: bot.id, threadId, text, ...routeContext });
             }
+            // 2026-10-28: the person's words never wait for the whole turn.
+            // The running turn stops at its next safe point (the end of its
+            // tool call) and the queue answers them at once. Only their own
+            // 1:1 turn: a routine run, another person's turn on an
+            // organization server, a call or a turn being stopped keep the
+            // queue as before.
+            const preempt = !voiceCall && !stoppingThreads.has(threadId)
+              && (auth.kind === "session" || DESKTOP_MANAGED || IDENTITY.kind !== "perspicax")
+              && !store.taskByThread(bot.id, threadId)?.routineRunId && !store.groupByThread(threadId)
+              && orgJoinsRunningTurn(current, threadId, speakerFor(auth));
+            const words = promptWithReply(promptWithDataContext(text, dataContext), replyTo, cfg.profile?.name?.trim() || "User");
             const queued = queueSteeredMessage(current.id, threadId, text, {
               replyToId: replyTo?.id,
               sendId,
               ...(dataContext ? { dataContext } : {}),
-              prompt: promptWithReply(promptWithDataContext(text, dataContext), replyTo, cfg.profile?.name?.trim() || "User"),
+              prompt: preempt ? `${SAFE_POINT_NOTE}\n${words}` : words,
               sender: messageSender(auth),
               trigger,
               speaker: speakerFor(auth),
               ...(voiceCall ? { voiceCall } : {}),
             });
-            return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
+            if (preempt) preemptAtSafePoint(current.id, threadId);
+            return { ok: true as const, queued: true as const, queueId: queued.id, threadId, ...(preempt ? { preempting: true as const } : {}) };
           }
           return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall, undefined, undefined, dataContext);
         },

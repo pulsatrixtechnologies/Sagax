@@ -480,7 +480,9 @@ posixOnly("mid-turn steering e2e", () => {
     expect((await api("POST", `/api/bots/${created.id}/messages`, { text: "first" })).status).toBe(202);
     await waitFor(async () => (await getBot(created.id)).busy === true, "the hung turn to start");
     const person = await asPairedPerson();
-    const queued = await person("POST", `/api/bots/${created.id}/messages`, { text: "second" });
+    // "after": the person asked to wait for the running turn. A plain send
+    // stops that turn at its safe point instead (live-steer.e2e.test.ts).
+    const queued = await person("POST", `/api/bots/${created.id}/messages`, { text: "second", busyMode: "after" });
     expect(queued.status).toBe(202);
     expect(queued.body.queued).toBe(true);
     // The receipt is the only place a held message exists for a client:
@@ -622,7 +624,7 @@ posixOnly("mid-turn steering e2e", () => {
     await api("PATCH", `/api/bots/${created.id}`, { modelSelection: { instanceId: "acp", model: "fake-model" } });
     expect((await api("POST", `/api/bots/${created.id}/messages`, { text: "first" })).status).toBe(202);
     await waitFor(async () => (await getBot(created.id)).busy === true, "the hung turn to start");
-    const queued = await api("POST", `/api/bots/${created.id}/messages`, { text: "second" });
+    const queued = await api("POST", `/api/bots/${created.id}/messages`, { text: "second", busyMode: "after" });
     expect(queued.body.queued).toBe(true);
 
     // the endpoint never interrupts on an incapable engine: the queue waits
