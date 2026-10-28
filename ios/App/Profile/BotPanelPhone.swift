@@ -82,6 +82,9 @@ private struct PhoneBotPanelContent: View {
     @State private var addingRoutine = false
     @State private var runLogs = false
     @State private var deletingRoutine: Routine?
+    /// 2026-10-28: this bot's folder order (RoutineFolders) and its prompts.
+    @State private var routineFolders: [String] = []
+    @StateObject private var folderController = RoutineFolderController()
 
     init(bot: Bot, startTab: DesktopPanelTab, startSection: DesktopPanelSection? = nil) {
         self.bot = bot
@@ -195,6 +198,7 @@ private struct PhoneBotPanelContent: View {
         } message: {
             Text("Past run receipts remain available.")
         }
+        .routineFolderPrompts(folderController, session: session, folders: { _ in folderOrder }) { await loadRoutines() }
         .onValueChange(of: current.color) { _ in syncDraft() }
         .onValueChange(of: current.mascotLook) { _ in syncDraft() }
         .onValueChange(of: current.mascotSkin) { _ in syncDraft() }
@@ -603,32 +607,23 @@ private struct PhoneBotPanelContent: View {
                 .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, minHeight: Theme.Profile.row)
             }
-            ForEach(botRoutines) { routine in
-                Button {
-                    Haptics.selection()
-                    path.append(PanelRoutineRoute(id: routine.id, instruction: false))
-                } label: {
-                    ProfileRow(
-                        icon: ProfileRowIcon(systemImage: "clock", size: 17,
-                                             color: routine.enabled ? Theme.routineActive : Theme.routinePaused),
-                        title: Text(verbatim: routine.name),
-                        // #1202: "Runs on change" first, as the list's badge (a long schedule cuts its end)
-                        subtitle: (routine.runsOnChange ? Text("Runs on change") + Text(verbatim: " · ") : Text(verbatim: ""))
-                            + Text(verbatim: RoutineWording.subtitle(routine)),
-                        height: Theme.Profile.routineRow
-                    ) { ProfileChevronTrailing() }
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    if let expression = routine.schedule.expression, routine.schedule.type == .cron {
-                        Button(String(localized: "Copy cron expression"), systemImage: "doc.on.doc") { PlatformBridge.copyToPasteboard(expression) }
+            // 2026-10-28: no folder first, then each folder of the bot in
+            // its order, folded or open (kept per bot on this phone)
+            let groups = RoutineFolders.group(botRoutines, order: routineFolders, botId: bot.id)
+            ForEach(groups.first?.routines ?? []) { routine in routineCardRow(routine) }
+            ForEach(groups.dropFirst()) { group in
+                if let folder = group.folder {
+                    RoutineFolderHeader(group: group, botId: bot.id, folder: folder, controller: folderController) { enabled in
+                        Task { await folderController.setEnabled(group.routines, enabled: enabled, session: session) { await loadRoutines() } }
                     }
-                    if gate.allows(.routineDelete) {
-                        Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { deletingRoutine = routine }
+                    .padding(.leading, Theme.Profile.textInset)
+                    .padding(.trailing, 8)
+                    .frame(minHeight: Theme.Profile.row)
+                    ProfileDivider()
+                    if !folderController.isCollapsed(botId: bot.id, folder: folder) {
+                        ForEach(group.routines) { routine in routineCardRow(routine).padding(.leading, 12) }
                     }
                 }
-                .accessibilityIdentifier("profile-routine.\(routine.name)")
-                ProfileDivider()
             }
             Button {
                 Haptics.selection()
@@ -650,6 +645,44 @@ private struct PhoneBotPanelContent: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("panel-run-logs")
         }
+    }
+
+    private var folderOrder: [String] { RoutineFolders.ordered(routineFolders, routines: botRoutines) }
+
+    /// One routine of the card: opens its detail; the menu copies the cron,
+    /// files it in a folder, deletes it.
+    @ViewBuilder
+    private func routineCardRow(_ routine: Routine) -> some View {
+        Button {
+            Haptics.selection()
+            path.append(PanelRoutineRoute(id: routine.id, instruction: false))
+        } label: {
+            ProfileRow(
+                icon: ProfileRowIcon(systemImage: "clock", size: 17,
+                                     color: routine.enabled ? Theme.routineActive : Theme.routinePaused),
+                title: Text(verbatim: routine.name),
+                // #1202: "Runs on change" first, as the list's badge (a long schedule cuts its end)
+                subtitle: (routine.runsOnChange ? Text("Runs on change") + Text(verbatim: " · ") : Text(verbatim: ""))
+                    + Text(verbatim: RoutineWording.subtitle(routine)),
+                height: Theme.Profile.routineRow
+            ) { ProfileChevronTrailing() }
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if let expression = routine.schedule.expression, routine.schedule.type == .cron {
+                Button(String(localized: "Copy cron expression"), systemImage: "doc.on.doc") { PlatformBridge.copyToPasteboard(expression) }
+            }
+            if routine.mayEdit {
+                RoutineFolderMoveMenu(routine: routine, folders: folderOrder, controller: folderController) { folder in
+                    Task { await folderController.perform(.move(botId: bot.id, routineIds: [routine.id], folder: folder), session: session) { await loadRoutines() } }
+                }
+            }
+            if gate.allows(.routineDelete) {
+                Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { deletingRoutine = routine }
+            }
+        }
+        .accessibilityIdentifier("profile-routine.\(routine.name)")
+        ProfileDivider()
     }
 
     // MARK: Edit bot
@@ -747,7 +780,9 @@ private struct PhoneBotPanelContent: View {
     }
 
     private func loadRoutines() async {
-        routines = await session.loadRoutines().routines
+        let listing = await session.loadRoutineListing()
+        routines = listing.routines
+        routineFolders = listing.folders[bot.id] ?? []
         routinesLoaded = true
     }
 

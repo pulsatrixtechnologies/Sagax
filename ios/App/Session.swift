@@ -3115,6 +3115,31 @@ final class Session: ObservableObject {
         catch { actionError = error.localizedDescription; return ([], []) }
     }
 
+    /// The listing with each bot's folder order (2026-10-28, RoutineFolders).
+    /// An older server sends no folders: every routine is in no folder.
+    func loadRoutineListing() async -> RoutineListing {
+        guard let client else { return RoutineListing(routines: [], runs: []) }
+        do { return try await client.routineListing() }
+        catch { actionError = error.localizedDescription; return RoutineListing(routines: [], runs: []) }
+    }
+
+    /// One action on a bot's routine folders: create, rename, delete (its
+    /// routines go back to no folder), reorder, move, Sort by prefix and its
+    /// Undo. Whoever may change the bot's routines; no admin right.
+    @discardableResult
+    func routineFolderAction(_ action: RoutineFolderAction) async -> RoutineFolderResult? {
+        guard let client else { return nil }
+        do { return try await client.routineFolders(action) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
+    /// Pause or resume every routine of a folder the person may change,
+    /// one PATCH each (`setRoutineEnabled`).
+    func setRoutinesEnabled(_ routines: [Routine], enabled: Bool) async {
+        let targets = enabled ? RoutinePauseAll.resumable(routines) : RoutinePauseAll.pausable(routines)
+        for routine in targets { _ = await setRoutineEnabled(routine, enabled: enabled) }
+    }
+
     /// AU20: the Automations listing in a scope. A scope the server refuses
     /// (a permission taken back since) falls back to Mine.
     func loadScopedRoutines(_ query: RoutineScopeQuery) async -> ScopedRoutines {

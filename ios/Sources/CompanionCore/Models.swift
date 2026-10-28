@@ -2088,6 +2088,9 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     /// ("Only when something changes", RoutineWatch.swift) or a condition
     /// set elsewhere. An edit sends it only when the person changed it.
     public var precheck: WidgetJSON? = nil
+    /// 2026-10-28 (RoutineFolders.swift): the folder of its bot it sits in.
+    /// Absent: no folder (and on an older server).
+    public var folder: String? = nil
 }
 
 public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
@@ -2376,6 +2379,8 @@ struct RoutinesResponse: Codable, Sendable {
     var scope: RoutineScope? = nil
     var allowed: RoutineScopeAllowed? = nil
     var facets: RoutineScopeFacets? = nil
+    /// 2026-10-28: each bot's folder order; absent from an older server.
+    var folders: [String: [String]]? = nil
 }
 
 struct RoutineResponse: Codable, Sendable { var routine: Routine }

@@ -80980,6 +80980,96 @@
           }
         }
       }
+    },
+    "New folder…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "New folder…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nouveau dossier…" } }
+      }
+    },
+    "Remove from folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Remove from folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Retirer du dossier" } }
+      }
+    },
+    "Rename folder…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rename folder…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Renommer le dossier…" } }
+      }
+    },
+    "Rename folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rename folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Renommer le dossier" } }
+      }
+    },
+    "Pause all in folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pause all in folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mettre tout le dossier en pause" } }
+      }
+    },
+    "Resume all in folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Resume all in folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Reprendre tout le dossier" } }
+      }
+    },
+    "Delete folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Delete folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Supprimer le dossier" } }
+      }
+    },
+    "Folder actions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Folder actions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actions du dossier" } }
+      }
+    },
+    "Delete the folder %@?": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Delete the folder %@?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Supprimer le dossier %@ ?" } }
+      }
+    },
+    "Its routines go back to no folder. No routine is deleted.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Its routines go back to no folder. No routine is deleted." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ses routines reviennent hors dossier. Aucune routine n'est supprimée." } }
+      }
+    },
+    "The routine moves into the new folder.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The routine moves into the new folder." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La routine passe dans le nouveau dossier." } }
+      }
+    },
+    "Collapsed, %lld routines": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Collapsed, %lld routines" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Replié, %lld routines" } }
+      }
+    },
+    "Expanded, %lld routines": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Expanded, %lld routines" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Déplié, %lld routines" } }
+      }
+    },
+    "No routines in this folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No routines in this folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune routine dans ce dossier" } }
+      }
+    },
+    "Folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dossier" } }
+      }
     }
   },
   "version": "1.0"
