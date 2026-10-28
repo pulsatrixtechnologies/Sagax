@@ -326,7 +326,8 @@ export class PublishedPages {
   }
 
   /** A bot's proposal: a new page, or a new version of one of this
-   * conversation's pages. Never published here. */
+   * conversation's pages (or of this bot's page for the same person). Never
+   * published here. */
   propose(input: { pageId?: string; ownerId?: string; botId: string; threadId: string; title: string; kind: PageKind; content: string; author?: "person"; by?: string }):
     { ok: true; page: PageRecord; version: PageVersionRecord } | PageError {
     const pages = this.snapshot();
@@ -334,7 +335,10 @@ export class PublishedPages {
     const bytes = Buffer.byteLength(input.content);
     if (bytes > PAGE_LIMITS.contentBytes) return refuse(400, "too_large", `content: at most ${PAGE_LIMITS.contentBytes / 1024} KB.`);
     let page = input.pageId ? pages.find((entry) => entry.id === input.pageId) : undefined;
-    if (input.pageId && (!page || page.threadId !== input.threadId)) {
+    // A page of this conversation, or (2026-10-28, the page view) one of this
+    // bot's pages for the same person, opened from another topic. Never
+    // another bot's page, never another person's.
+    if (input.pageId && (!page || (page.threadId !== input.threadId && (page.botId !== input.botId || !sameOwner(page.ownerId, input.ownerId))))) {
       return refuse(404, "not_found", "page_id: no page of this conversation has that id. Leave it out to propose a new page.");
     }
     const sizeOf = (entry: PageRecord) => entry.versions.reduce((inner, version) => inner + version.bytes, 0);

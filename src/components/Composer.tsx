@@ -1,4 +1,5 @@
 import { track } from "@/lib/analytics";
+import { currentOpenPage } from "@/lib/open-page";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { ArrowUp, Clock, Repeat, Target, Users, X } from "lucide-react";
 import { ComposerSendBlock } from "@/components/ComposerSendBlock";
@@ -62,6 +63,7 @@ import {
   clipboardOtherFiles,
   composeMessage,
   dataContextFor,
+  withPageContext,
   composerShouldRefocus,
   composerTakesFocusOnOpen,
   imageAttachmentFromFile,
@@ -965,7 +967,14 @@ export function Composer({
     // The viewed Data result (in this bot's Data window) travels as its own
     // field of the send, never in the words: only for this bot's own thread,
     // and never ahead of an opening command the server parses first.
-    const dataContext = dataContextFor(body, dataWindowEnabled(config) ? getState().dataView : null, !group && bot ? { botId: bot.id, threadId } : undefined);
+    // A page open over this conversation (src/lib/open-page.ts): the message
+    // is about it; the chip shows on the message and the bot gets the page.
+    const dataContext = withPageContext(
+      dataContextFor(body, dataWindowEnabled(config) ? getState().dataView : null, !group && bot ? { botId: bot.id, threadId } : undefined),
+      body,
+      currentOpenPage(),
+      !group && bot ? { botId: bot.id } : undefined,
+    );
     const sentDraft: ComposerDraftSnapshot = {
       draftId,
       revision: draftRevision(draftId),
@@ -1420,7 +1429,7 @@ export function Composer({
           <div
             aria-hidden
             data-composer-backdrop
-            className="pointer-events-none absolute -left-[50vw] -right-[50vw] -bottom-4 top-1/2 bg-app"
+            className="pointer-events-none absolute -left-[50vw] -right-[50vw] -bottom-4 top-1/2 bg-app [[data-over-page]_&]:hidden"
           />
         {/* One row while it fits: chips, editor, mic. Below the container
             width where the chips and the placeholder cannot share a line,

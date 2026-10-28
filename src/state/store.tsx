@@ -255,7 +255,7 @@ export interface SecretRequestCardData {
   error?: string;
 }
 
-export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "app" | "routineToggle" | "pagePublish" | "requested" | "outbound"> {
+export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "app" | "routineToggle" | "pagePublish" | "requested" | "outbound" | "dataContext"> {
   id: string;
   role: "bot" | "user";
   kind: "text" | "options" | "activity" | "screen" | "video" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "app" | "routines";
@@ -3342,6 +3342,8 @@ export function reducer(state: AppState, action: Action): AppState {
         undefined,
         voiceCall,
       );
+      // sent from an open page: its chip shows at once (the server's row keeps it)
+      if (action.dataContext?.page) message.dataContext = { page: action.dataContext.page };
       return bumpThreadUpdatedAt(updateBot(animated, bot.id, (current) => ({
         ...current,
         messages: [...current.messages, message],

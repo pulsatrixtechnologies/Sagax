@@ -15,6 +15,8 @@ export interface OpenPage {
   title: string;
   /** The version to show first; absent: the newest. */
   version?: number;
+  /** When it was opened: the bot's line over the composer shows what came after. */
+  openedAt?: number;
 }
 
 const ID = /^[A-Za-z0-9_-]{8,40}$/;
@@ -31,7 +33,14 @@ function emit(): void {
 /** Open a page over its conversation (another open page is replaced). */
 export function openPagePanel(page: OpenPage): void {
   if (!ID.test(page.pageId)) return;
-  current = { ...page };
+  current = { ...page, openedAt: page.openedAt ?? Date.now() };
+  emit();
+}
+
+/** The open page was renamed: a message sent from it names the new title. */
+export function renameOpenPage(pageId: string, title: string): void {
+  if (!current || current.pageId !== pageId || current.title === title) return;
+  current = { ...current, title };
   emit();
 }
 

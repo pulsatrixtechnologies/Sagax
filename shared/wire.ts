@@ -908,11 +908,12 @@ export interface WireMessage {
   outbound?: OutboundCard;
   /** A published Data result, linked to its bot's main viewer. */
   dataResult?: { botId: string; cardId: string; title: string; kind: "table" | "chart" | "text"; sql?: string };
-  /** user messages: the Data result the person was viewing when they sent
+  /** user messages: the Data result, or the page (`page`, 2026-10-28: the
+   * app draws it as a chip over the words), the person was viewing when they sent
    * this (shared/data-context.ts). Its own field, so `text` stays exactly
    * what they typed; the server puts the hint in front of the text it
    * sends the model for this turn and for every retry of it. */
-  dataContext?: { cardId: string; draftSql?: string };
+  dataContext?: { cardId?: string; draftSql?: string; page?: { pageId: string; title: string; version?: number } };
   /** user messages waiting in the steer-queue while the bot is mid-turn. */
   queued?: boolean;
   /** A parallel task this line belongs to (shared/parallel-tasks.ts): the

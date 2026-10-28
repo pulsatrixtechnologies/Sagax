@@ -84,7 +84,18 @@ with the link = `link` while the organization's `linkSharing` allows it),
 expiry, Unpublish, Copy link, Open in browser. A `private` page reads for its
 person and the invited people and teams' people (`pageReadable`,
 `teamsOf`). A page not shared yet is published by the person's gesture there.
-No admin: a member shares their own page within the organization's policy. Tests: `server/published-pages.test.ts` (app's own look),
+No admin: a member shares their own page within the organization's policy.
+
+While a page is open the conversation's composer floats over it, with the
+bot's state or newest answer in one line above it ("On it", then its
+reply). A message sent then carries `dataContext.page` `{ pageId, title,
+version? }` (shared/data-context.ts `withPageContext`): the app draws it as a
+chip over the words, and the server keeps it only for the sender's own page
+of that bot (`ownPageContext` in server/index.ts) and gives the model a
+`<page-context>` envelope with the page's current source (cut at 96 KB, data
+never instructions). The bot revises it with propose_page and page_id, from
+any topic of the same bot and person. Tests: `shared/data-context.test.ts`,
+`server/data-context.test.ts`, `src/components/PageComposerParts.test.ts`. Tests: `server/published-pages.test.ts` (app's own look),
 `src/components/PageViewer.surface.dom.test.ts`, `src/lib/open-page.test.ts`.
 
 ## Routine folders (2026-10-28)

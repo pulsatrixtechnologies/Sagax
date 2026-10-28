@@ -12,7 +12,7 @@ const page = { pageId: "abcdefgh12345678", botId: "b1", threadId: "t1", title: "
 describe("the open page", () => {
   it("opens one page, closes it by its own id, and keeps its place across a close and a reopen", () => {
     openPagePanel(page);
-    expect(currentOpenPage()).toEqual(page);
+    expect(currentOpenPage()).toMatchObject(page);
     rememberPagePlace(page.pageId, 480);
     closePagePanel("someotherpage123");
     expect(currentOpenPage()).not.toBeNull();
@@ -31,7 +31,7 @@ describe("the open page", () => {
   });
 
   it("belongs to its bot's conversation only", () => {
-    expect(openPageFor(page, "b1", undefined)).toEqual(page);
+    expect(openPageFor(page, "b1", undefined)).toMatchObject(page);
     expect(openPageFor(page, "b2", undefined)).toBeNull();
     expect(openPageFor(page, "b1", "t2")).toBeNull();
   });

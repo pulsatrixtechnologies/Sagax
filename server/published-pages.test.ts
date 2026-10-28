@@ -685,6 +685,17 @@ describe("Share > Add people or groups (2026-10-28)", () => {
   });
 });
 
+describe("a new version from another topic of the same conversation (2026-10-28)", () => {
+  it("the same bot revises its page for the same person from another thread; never another bot's or another person's", () => {
+    const { pages } = store();
+    const first = pages.propose({ ownerId: "pr_alice", botId: "bot1", threadId: "t1", title: "Rapport", kind: "html", content: HTML });
+    if (!first.ok) throw new Error("propose");
+    expect(pages.propose({ pageId: first.page.id, ownerId: "pr_alice", botId: "bot1", threadId: "t9", title: "Rapport", kind: "html", content: "<p>v2</p>" })).toMatchObject({ ok: true, version: { n: 2 } });
+    expect(pages.propose({ pageId: first.page.id, ownerId: "pr_alice", botId: "bot2", threadId: "t9", title: "x", kind: "html", content: "x" }).ok).toBe(false);
+    expect(pages.propose({ pageId: first.page.id, ownerId: "pr_bob", botId: "bot1", threadId: "t9", title: "x", kind: "html", content: "x" }).ok).toBe(false);
+  });
+});
+
 describe("the frame checks its reader again (review of #646, round 2)", () => {
   it("on the app's origin: the live session, not only the ticket", async () => {
     const { pages } = store();
