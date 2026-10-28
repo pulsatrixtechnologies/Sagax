@@ -24,11 +24,14 @@ import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
 import { parseAskQuestions, questionAnswersByQuestion, type AskQuestion } from "../shared/ask-question.ts";
 import { allowsTool, parseToolScope } from "../shared/tool-scope.ts";
-import { searchedServersFromEnv, searchedToolCall } from "../shared/searched-tool-call.ts";
+import { permissionRoute, preallowedFromEnv, searchedServersFromEnv } from "../shared/searched-tool-call.ts";
 
 // #1276: the servers whose catalog is searched; a call_tool there is asked
 // about as the tool it runs (shared/searched-tool-call.ts).
 const SEARCHED = searchedServersFromEnv(process.env.SAGAX_PERMISSION_SEARCHED);
+// #1374: what the turn pre-allows by name (claude.ts), so a call_tool or the
+// agents bridge's use_tool runs unasked exactly when its target would have.
+const PREALLOWED = preallowedFromEnv(process.env.SAGAX_PERMISSION_PREALLOWED);
 
 const selection = parseToolScope(process.env.SAGAX_PERMISSION_TOOL_SCOPE === undefined
   ? undefined : (() => { try { return JSON.parse(process.env.SAGAX_PERMISSION_TOOL_SCOPE); } catch { return null; } })());
@@ -239,11 +242,16 @@ async function handle(msg: any) {
     // A call_tool on a searched server is asked about as the tool it runs,
     // so its card, its rules and Always allow are that tool's. Claude's own
     // suggested rule would allow every call_tool of the server: never handed back.
-    const runs = isQuestion || typeof args.tool_name !== "string" ? null : searchedToolCall(args.tool_name, args.input, SEARCHED);
+    // #1374: the agents bridge's use_tool likewise; one naming no tool, or
+    // another meta tool, runs nothing and is refused without a card.
+    const route = isQuestion || typeof args.tool_name !== "string" ? null : permissionRoute(args.tool_name, args.input, SEARCHED, PREALLOWED);
+    if (route?.kind === "deny") return reply(JSON.stringify({ behavior: "deny", message: route.message }));
+    if (route?.kind === "allow") return reply(JSON.stringify({ behavior: "allow", updatedInput: args.input ?? {} } satisfies AllowPermissionResult));
+    const runs = route?.kind === "ask" ? route : null;
     const answer: any = await askBroker(
       isQuestion
         ? { t: "ask", id: askId, kind: "question", tool: "ask_user", input: { question: args.question, choices: args.choices, ...(picksSeveral ? { questions: picksSeveral } : {}) } }
-        : { t: "ask", id: askId, tool: runs?.searched ? runs.name : args.tool_name, input: runs?.searched ? runs.input : args.input },
+        : { t: "ask", id: askId, tool: runs?.searched ? runs.tool : args.tool_name, input: runs?.searched ? runs.input : args.input },
     );
     let text = answer.message || "No answer was given — use your best judgment.";
     // The card answers in its Q:/A: form; hand back just the picks, the way

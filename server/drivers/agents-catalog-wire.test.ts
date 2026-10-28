@@ -11,9 +11,9 @@
 //    The proxy is spawned the way a driver's mcpServers entry spawns it, from
 //    source and from the esbuild bundle every packaged build ships, so "the
 //    same bytes" is a statement about the real process, not about a helper.
-//    The default listing is find_tool and use_tool. These goldens pin the
-//    full catalog (SAGAX_CATALOG_BRIDGE=0), which is what find_tool searches.
-//    No tool is removed from that catalog.
+//    The default listing is the full catalog. find_tool and use_tool are
+//    listed only with SAGAX_CATALOG_BRIDGE=1 on a compact prompt (#1374).
+//    These goldens pin the full catalog, which is what find_tool searches.
 //
 // 2. WIRE SIZE. The catalog is sent to the model on every turn. The often
 //    quoted "~37 KB" was a count of indented source, not of this JSON. The
@@ -34,15 +34,6 @@ import { build } from "esbuild";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { waitForExit } from "../testing/cleanup.ts";
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
-import { COMPACT_CORE_AGENT_TOOL_NAMES } from "./agents-catalog.ts";
-/** #1276: the bridge lists the heart of a chat turn by name, sorted, then find_tool and use_tool. */
-function expectBridgeList(names: string[]): void {
-  expect(names.slice(-2)).toEqual(["find_tool", "use_tool"]);
-  const listed = names.slice(0, -2);
-  expect(listed).toEqual([...listed].sort());
-  expect(listed.every((name) => COMPACT_CORE_AGENT_TOOL_NAMES.has(name) || name === "shared_computer")).toBe(true);
-}
-
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROXY_SOURCE = join(HERE, "agents-proxy.ts");
@@ -280,9 +271,15 @@ beforeAll(async () => {
 }, 120_000);
 
 describe("agents proxy tools/list golden", () => {
-  it("lists find_tool and use_tool unless SAGAX_CATALOG_BRIDGE=0", async () => {
-    const wire = await toolsListWire(PROXY_SOURCE, {});
-    expectBridgeList(toolsOf(wire).map((tool) => tool.name));
+  it("lists find_tool and use_tool only with SAGAX_CATALOG_BRIDGE=1 on a compact prompt (#1374)", async () => {
+    const wire = await toolsListWire(PROXY_SOURCE, { SAGAX_CATALOG_BRIDGE: "1", SAGAX_COMPACT_TOOLS: "{}" });
+    // #1367: the heart of a chat turn stays listed by name, before the bridge
+    const names = toolsOf(wire).map((tool) => tool.name);
+    expect(names.slice(-2)).toEqual(["find_tool", "use_tool"]);
+    const listed = names.slice(0, -2);
+    expect(listed).toEqual([...listed].sort());
+    const plain = await toolsListWire(PROXY_SOURCE, { SAGAX_CATALOG_BRIDGE: "1" });
+    expect(toolsOf(plain).map((tool) => tool.name)).not.toContain("use_tool");
   }, 30_000);
 
   it("round-trips through JSON.parse unchanged, so a parsed golden can stand for the bytes", () => {

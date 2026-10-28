@@ -6,17 +6,21 @@ import { applyCatalogBridge, catalogJsonBytes, findCatalogTools, resolveCatalogU
 describe("Sagax catalog bridge", () => {
   const full = availableTools(catalogProfileFromEnv({ SAGAX_BOT_ID: "b1" }));
 
-  it("lists find_tool and use_tool unless SAGAX_CATALOG_BRIDGE=0", () => {
-    expect(applyCatalogBridge(full, {}).map((tool) => tool.name)).toEqual(["find_tool", "use_tool"]);
-    expect(applyCatalogBridge(full, { SAGAX_CATALOG_BRIDGE: "1" }).map((tool) => tool.name)).toEqual(["find_tool", "use_tool"]);
-    expect(applyCatalogBridge(full, { SAGAX_CATALOG_BRIDGE: "0" })).toBe(full);
+  // #1374, #1314: the full list unless SAGAX_CATALOG_BRIDGE=1 on a compact prompt (Claude Code)
+  const ON = { SAGAX_CATALOG_BRIDGE: "1", SAGAX_COMPACT_TOOLS: "{}" };
+  it("lists the full catalog unless SAGAX_CATALOG_BRIDGE=1 on a compact prompt", () => {
+    expect(applyCatalogBridge(full, {})).toBe(full);
+    expect(applyCatalogBridge(full, { SAGAX_CATALOG_BRIDGE: "1" })).toBe(full);
+    expect(applyCatalogBridge(full, { SAGAX_CATALOG_BRIDGE: "0", SAGAX_COMPACT_TOOLS: "{}" })).toBe(full);
+    expect(applyCatalogBridge(full, ON).map((tool) => tool.name)).toEqual(["find_tool", "use_tool"]);
   });
 
-  it("finds every catalog tool and refuses an unknown name", () => {
-    const listed = applyCatalogBridge(full, {});
+  it("finds every catalog tool with its arguments and refuses an unknown name", () => {
+    const listed = applyCatalogBridge(full, ON);
     expect(listed.map((tool) => tool.name)).toEqual(["find_tool", "use_tool"]);
     const found = findCatalogTools(full, "memory update");
-    expect(found.matches.some((match) => match.name === "memory_update")).toBe(true);
+    const memory = found.matches.find((match) => match.name === "memory_update");
+    expect(memory?.inputSchema).toEqual(full.find((tool) => tool.name === "memory_update")?.inputSchema);
     for (const tool of full) {
       expect(resolveCatalogUse(full, { name: tool.name, arguments: { text: "note" } })).toEqual({ name: tool.name, arguments: { text: "note" } });
     }

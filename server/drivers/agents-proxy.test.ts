@@ -530,7 +530,7 @@ beforeAll(async () => {
       // A Chief's turn, so the Chief-only team tools are mounted too.
       SAGAX_CHIEF_OF_STAFF: "1",
       SAGAX_PERSPICAX_TOOLS: "1",
-      // Full catalog. The proxy default is find_tool and use_tool.
+      // Full catalog (the default; #1374).
       SAGAX_CATALOG_BRIDGE: "0",
     },
     stdio: ["pipe", "pipe", "inherit"],
@@ -2698,9 +2698,10 @@ describe("permissions in enforce mode", () => {
     });
 
   beforeAll(async () => {
-    // The bridge stays on. A direct name and use_tool share this guard.
+    // The bridge is on (#1374: asked for, on a compact prompt). A direct
+    // name and use_tool share this guard.
     guarded = spawn(process.execPath, [PROXY], {
-      env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker", SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0", SAGAX_MCP_PERMISSIONS: "enforce", SAGAX_MCP_ROLE: "viewer", SAGAX_MCP_PRINCIPAL: "pr_viewer" },
+      env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker", SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0", SAGAX_MCP_PERMISSIONS: "enforce", SAGAX_MCP_ROLE: "viewer", SAGAX_MCP_PRINCIPAL: "pr_viewer", SAGAX_CATALOG_BRIDGE: "1", SAGAX_COMPACT_TOOLS: JSON.stringify({ core: "default", pinned: [] }) },
       stdio: ["pipe", "pipe", "inherit"],
     });
     let buf = "";

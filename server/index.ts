@@ -26,6 +26,7 @@ import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
 import { guardDecision, toolGuardMode } from "./tool-guard.ts";
 import { auditSampleFromEnv, deniedResourcesFromEnv, mcpAuditRow, mcpIdentityEnv, mcpPolicyEnv, permissionModeFromEnv, principalFromEnv, scopeOwnersFromEnv } from "./mcp-permissions.ts";
 import { misusePathRefusal, misuseRefusal, misuseToolFrameText, setMisuseAlert, setMisuseOwnPaths } from "./misuse-guardrails.ts";
+import { unwrapAgentsBridge } from "../shared/searched-tool-call.ts";
 import {
   openSafetyHold,
   safetyArm,
@@ -14161,7 +14162,10 @@ function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: 
   const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
   const threadId = capability.threadId;
   if (lifecycleEvent(name)) {
-    void runLifecycleEvent(capability.botId, threadId, name, payload, typeof payload.tool_name === "string" ? payload.tool_name : undefined).catch(() => {});
+    // #1374: a plugin's tool hook sees the tool a use_tool runs, and its arguments
+    const bridged = typeof payload.tool_name === "string" ? unwrapAgentsBridge(payload.tool_name, payload.tool_input) : null;
+    const hookPayload = bridged?.unwrapped ? { ...payload, tool_name: bridged.name, tool_input: bridged.input } : payload;
+    void runLifecycleEvent(capability.botId, threadId, name, hookPayload, typeof hookPayload.tool_name === "string" ? hookPayload.tool_name : undefined).catch(() => {});
   }
   // The engine compacting its own session (Claude Code's auto-compact in a
   // single very long turn, past the point where Sagax folds between turns)
