@@ -1,4 +1,4 @@
-// The category modal shell shared by Achievements, the persona editor and
+// The category modal shell shared by the persona editor and
 // Browse Bots: a left column of categories (Browse Bots has none), a content
 // pane, the close button top right, the Settings size. One set of classes
 // and one keyboard so the modals look and behave the same.
@@ -6,18 +6,13 @@ import { useEffect, useRef, type RefObject } from "react";
 
 import { cn } from "@/lib/cn";
 
-const CORNER_BUTTON = "absolute right-2.5 top-2.5 z-10 flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary";
-
 export const CATEGORY_MODAL = {
   backdrop: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6",
   frame: "flex h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))] overflow-hidden rounded-[14px] border border-border bg-app outline-none",
   nav: "hidden min-h-0 w-[198px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-hairline-weak bg-panel px-3 py-4 sm:flex",
   navTitle: "shrink-0 px-2 py-2 text-[13px] font-semibold text-ink",
   content: "relative flex min-h-0 min-w-0 flex-1 flex-col",
-  close: CORNER_BUTTON,
-  /** A page's own action in the same top-right corner (the Achievements
-   * page's settings gear): the close button's place and look. */
-  corner: CORNER_BUTTON,
+  close: "absolute right-2.5 top-2.5 z-10 flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary",
   mobileBar: "shrink-0 px-4 pb-1 pr-12 pt-3 sm:hidden",
   mobileSelect: "w-full min-w-0 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none",
   pane: "flex flex-1 flex-col overflow-y-auto",

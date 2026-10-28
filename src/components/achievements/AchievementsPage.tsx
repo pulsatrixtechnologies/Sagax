@@ -4,8 +4,8 @@
 // category (unlocked, locked with its progress, secret until found), each
 // with its points, its rarity (or the share of this server's people who have
 // it, when there are enough people to say so) and what it unlocks. The
-// page's left column picks the category; unlocked or locked, reward and
-// search narrow the list together. The settings that hide the points or the
+// toolbar's category filter (each category with its unlocked count), unlocked
+// or locked, reward and search narrow the list together. The settings that hide the points or the
 // toasts open from the gear in the page's top-right corner
 // (AchievementSettingsPage).
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
@@ -20,7 +20,8 @@ import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { achievementIcon } from "./icons";
-import { achievementMatches, achievementRewardFilterLabel, achievementRewardFilters, type AchievementRewardFilter, type AchievementStatusFilter } from "./achievement-filters";
+import { ACHIEVEMENTS_SCREEN_CATEGORIES, achievementCategoryCounts, achievementMatches, achievementRewardFilterLabel, achievementRewardFilters, type AchievementRewardFilter, type AchievementStatusFilter, type AchievementsNavCategory } from "./achievement-filters";
+import { CATEGORY_MODAL, categoryChipClass } from "../category-modal";
 import "./achievements.css";
 
 const RewardPreview = lazy(() => import("./RewardPreview"));
@@ -79,7 +80,10 @@ function MasteryUnlockPreview({ item, unlocked, unlocks }: { item: AchievementDe
             data-locked={unlocked ? undefined : ""}
             title={line}
           >
-            {showArt ? <Suspense fallback={null}><RewardPreview reward={reward} size={24} animated={false} /></Suspense> : null}
+            {/* a character not found yet stays a surprise: a lock in its slot */}
+            {showArt ? <Suspense fallback={null}><RewardPreview reward={reward} size={24} animated={false} /></Suspense> : (
+              <span className="grid size-6 place-items-center rounded-full bg-ink/[0.07] text-ink-tertiary" aria-hidden="true"><Lock size={11} /></span>
+            )}
           </span>
         );
       })}
@@ -98,44 +102,47 @@ function AchievementCard({ item, state, unlocks }: { item: AchievementDefinition
   const progress = state && !unlocked && (mastery ? !secret && state.target > 0 : state.target > 1 && state.current > 0) ? state.current / state.target : null;
   const reward = item.rewards[0];
   const line = reward && !secret && !mastery ? displayReward(reward, unlocks) : null;
-  // 2026-10-16 : a tile, as the skin tiles of Settings > Appearance
-  // (#582): the badge on a small framed ground, the name and the rest under it.
+  const name = secret ? t("achievements.secretName") : localized(item.name);
+  const description = secret ? (item.hint ? localized(item.hint) : t("achievements.secretDescription")) : localized(item.description);
+  // 2026-10-28 : a compact card, as Connect apps' rows: the badge on the
+  // left, everything else inside the card (name and points, description,
+  // progress, rarity, share of people and reward). Unlocked, the badge and
+  // the frame take the rarity's colour; locked, they are grey and the text
+  // stays readable; a secret keeps its lock and its hint only.
   return (
     <li
-      className="achievement-card flex min-w-0 flex-col gap-1.5 rounded-[10px] p-1.5"
+      className="achievement-card flex min-w-0 gap-3 rounded-xl p-3"
       data-tier={tier}
       data-unlocked={unlocked ? "" : undefined}
       data-achievement={item.id}
       data-secret={secret ? "" : undefined}
       data-mastery={mastery ? "" : undefined}
     >
-      <div className={cn("achievement-tile-art relative grid h-[78px] place-items-center rounded-lg bg-elevated", !unlocked && "ring-1 ring-hairline/60")}>
-        <span className="achievement-card-badge" aria-hidden="true">
-          <Icon size={17} strokeWidth={2.2} />
-        </span>
-        <span className="absolute right-2 top-1.5 text-[11.5px] font-semibold tabular-nums text-ink-secondary">
-          {item.points}
-        </span>
-      </div>
-      <div className="min-w-0 px-0.5">
-        <span className={cn("block text-[13px] leading-[18px]", unlocked ? "text-ink" : "text-ink-secondary")}>
-          {secret ? t("achievements.secretName") : localized(item.name)}
-        </span>
-        <p className="mt-0.5 line-clamp-3 text-[12px] leading-4 text-ink-secondary">
-          {secret ? (item.hint ? localized(item.hint) : t("achievements.secretDescription")) : localized(item.description)}
+      <span className="achievement-card-badge" aria-hidden="true">
+        <Icon size={18} strokeWidth={2} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-2">
+          <span className="achievement-card-name min-w-0 flex-1 text-[13px] font-medium leading-[18px]">{name}</span>
+          <span className="achievement-card-points shrink-0" data-achievement-card-points="" title={t("achievements.panel.points", { points: item.points })}>
+            {item.points}
+          </span>
+        </div>
+        <p className={cn("mt-0.5 line-clamp-3 text-[12px] leading-4 text-ink-secondary", secret && "italic")} title={description}>
+          {description}
         </p>
         {progress !== null && state && (
           <div className="mt-1.5 flex items-center gap-2">
-            <div className="achievement-progress flex-1" role="progressbar" aria-valuemin={0} aria-valuemax={state.target} aria-valuenow={state.current} aria-label={localized(item.name)}>
+            <div className="achievement-progress flex-1" role="progressbar" aria-valuemin={0} aria-valuemax={state.target} aria-valuenow={state.current} aria-label={name}>
               <span style={{ width: `${Math.round(progress * 100)}%` }} />
             </div>
             <span className="text-[11px] tabular-nums text-ink-secondary">{state.current}/{state.target}</span>
           </div>
         )}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-[14px]">
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-[14px]">
           <span className="achievement-card-tier font-semibold uppercase tracking-[0.06em]">{t(TIER_LABEL[tier])}</span>
           {state?.percent !== undefined && <span className="text-ink-secondary">{t("achievements.percent", { percent: state.percent })}</span>}
-          {line && <span className="min-w-0 truncate text-ink-secondary" title={line}>{line}</span>}
+          {line && <span className="min-w-0 max-w-full truncate text-ink-secondary" title={line}>{line}</span>}
         </div>
         {mastery && !secret && <MasteryUnlockPreview item={item} unlocked={unlocked} unlocks={unlocks} />}
       </div>
@@ -154,8 +161,16 @@ export function achievementCategoryLabel(id: AchievementCategory | "all" | "sett
   return id === "all" ? t("achievements.category.all") : id === "settings" ? t("achievements.settings.title") : t(CATEGORY_LABEL[id]);
 }
 
-export function AchievementsPage({ category = "all" }: { category?: AchievementCategory | "all" }) {
+export function AchievementsPage({ category = "all", onCategory }: {
+  category?: AchievementsNavCategory;
+  /** The category filter's choice goes up to the page (its links pick one);
+   * absent, the filter keeps its own. */
+  onCategory?: (next: AchievementsNavCategory) => void;
+}) {
   const { status, snapshot } = useAchievements();
+  const [ownCategory, setOwnCategory] = useState<AchievementsNavCategory>(category);
+  const current = onCategory ? category : ownCategory;
+  const pickCategory = onCategory ?? setOwnCategory;
   const [filter, setFilter] = useState<AchievementStatusFilter>("all");
   const [reward, setReward] = useState<AchievementRewardFilter>("all");
   const [search, setSearch] = useState("");
@@ -166,8 +181,9 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
   }, []);
 
   const states = useMemo(() => new Map((snapshot?.items ?? []).map((item) => [item.id, item])), [snapshot]);
+  const counts = useMemo(() => achievementCategoryCounts(new Set((snapshot?.items ?? []).filter((item) => item.unlockedAt).map((item) => item.id))), [snapshot]);
   const unlocks = unlocksFromSnapshot(snapshot ?? { rewards: [] });
-  const shown = ACHIEVEMENTS.filter((item) => achievementMatches(item, states.get(item.id)?.unlockedAt, { category, status: filter, reward, search }, unlocks));
+  const shown = ACHIEVEMENTS.filter((item) => achievementMatches(item, states.get(item.id)?.unlockedAt, { category: current, status: filter, reward, search }, unlocks));
 
   if (status === "unavailable") {
     return <p className="px-1 text-[13px] text-ink-secondary" data-achievements-unavailable="">{t("achievements.unavailable")}</p>;
@@ -178,39 +194,42 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
   const toNext = level.to - level.from;
   const recent = snapshot.recent.map((id) => ACHIEVEMENTS.find((item) => item.id === id)).filter((item): item is AchievementDefinition => Boolean(item));
 
-  // 2026-10-16 : drawn like Settings: the progress card, then grey
-  // headings over the recent unlocks and the tiles. The settings open from
-  // the page's gear (AchievementSettingsPage).
+  // 2026-10-28 : one column. A compact progress card (points, unlocked
+  // count, level and its bar, streak), the recent unlocks on All, then the
+  // toolbar (search, reward and status, the category filter with each
+  // category's count) and the grid of cards.
   return (
     <div className="flex flex-col gap-5" data-achievements-page="">
-      <section className="flex flex-wrap items-center gap-4 rounded-xl border-[0.5px] border-border bg-elevated p-4">
-        <span className="grid size-14 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#fff,#e0a82e_72%)] text-[#1b1406] shadow-[0_0_18px_-4px_#e0a82e]" aria-hidden="true">
-          <Trophy size={26} strokeWidth={2.2} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[24px] font-semibold leading-7 tabular-nums text-ink" data-achievement-points="">
-            {formatPoints(snapshot.points)} <span className="text-[13px] font-normal text-ink-secondary">{t("achievements.pointsUnit")}</span>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-ink-secondary">
-            <span className="font-medium text-ink">{t("achievements.level", { level: level.level })}</span>
-            <div className="achievement-progress w-32" style={{ ["--tier" as string]: "#e0a82e" }} role="progressbar" aria-valuemin={0} aria-valuemax={toNext} aria-valuenow={snapshot.points - level.from} aria-label={t("achievements.nextLevel")}>
-              <span style={{ width: `${Math.round(((snapshot.points - level.from) / toNext) * 100)}%` }} />
+      <section className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border-[0.5px] border-border bg-elevated px-4 py-3" data-achievement-progress="">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#fff,#e0a82e_72%)] text-[#1b1406] shadow-[0_0_14px_-4px_#e0a82e]" aria-hidden="true">
+            <Trophy size={19} strokeWidth={2.2} />
+          </span>
+          <div className="min-w-0">
+            <div className="text-[20px] font-semibold leading-6 tabular-nums text-ink" data-achievement-points="">
+              {formatPoints(snapshot.points)} <span className="text-[12px] font-normal text-ink-secondary">{t("achievements.pointsUnit")}</span>
             </div>
-            <span className="tabular-nums">{t("achievements.toNext", { points: formatPoints(level.to - snapshot.points) })}</span>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-ink-secondary">
-            <span>{t("achievements.unlockedCount", { count: snapshot.unlockedCount, total: snapshot.count })}</span>
-            {snapshot.streak > 0 && (
-              <span className="inline-flex items-center gap-1" data-achievement-streak="">
-                <Flame size={12} className="text-[#f97316]" aria-hidden="true" />
-                {t("achievements.streak", { days: snapshot.streak })}
-              </span>
-            )}
+            <div className="text-[12px] leading-4 text-ink-secondary">{t("achievements.unlockedCount", { count: snapshot.unlockedCount, total: snapshot.count })}</div>
           </div>
         </div>
+        <div className="min-w-[200px] flex-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-[12px] leading-4">
+            <span className="font-medium text-ink">{t("achievements.level", { level: level.level })}</span>
+            <span className="tabular-nums text-ink-secondary">{t("achievements.toNext", { points: formatPoints(level.to - snapshot.points) })}</span>
+          </div>
+          <div className="achievement-progress mt-1.5 w-full" style={{ ["--tier" as string]: "#e0a82e" }} role="progressbar" aria-valuemin={0} aria-valuemax={toNext} aria-valuenow={snapshot.points - level.from} aria-label={t("achievements.nextLevel")}>
+            <span style={{ width: `${Math.round(((snapshot.points - level.from) / toNext) * 100)}%` }} />
+          </div>
+        </div>
+        {snapshot.streak > 0 && (
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#f97316]/10 px-2.5 py-1 text-[12px] leading-4 text-ink" data-achievement-streak="">
+            <Flame size={13} className="text-[#f97316]" aria-hidden="true" />
+            {t("achievements.streak", { days: snapshot.streak })}
+          </span>
+        )}
       </section>
 
-      {category === "all" && recent.length > 0 && (
+      {current === "all" && recent.length > 0 && (
         <SettingsGroup title={t("achievements.recent")} groupId="achievements.recent" plain>
           <ul className="flex gap-2 overflow-x-auto pb-1">
             {recent.map((item) => {
@@ -218,17 +237,17 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
               const showArt = Boolean(reward && (reward.kind === "skin" || reward.kind === "character") && characterUnlocked(unlocks, reward.character));
               const Icon = achievementIcon(item.icon);
               return (
-                <li key={item.id} className="flex min-w-[180px] items-center gap-2 rounded-xl border-[0.5px] border-border bg-elevated px-2.5 py-2" data-recent-achievement={item.id}>
-                  <span className="grid size-9 shrink-0 place-items-center">
+                <li key={item.id} className="achievement-recent flex min-w-[170px] shrink-0 items-center gap-2.5 rounded-xl border-[0.5px] border-border bg-elevated py-1.5 pl-1.5 pr-3" data-tier={rarityForPoints(item.points)} data-recent-achievement={item.id}>
+                  <span className="achievement-recent-badge grid size-8 shrink-0 place-items-center rounded-full">
                     {showArt && reward ? (
-                      <Suspense fallback={null}><RewardPreview reward={reward} size={30} animated={false} /></Suspense>
+                      <Suspense fallback={null}><RewardPreview reward={reward} size={28} animated={false} /></Suspense>
                     ) : (
-                      <Icon size={18} aria-hidden="true" />
+                      <Icon size={16} aria-hidden="true" />
                     )}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-[13px] text-ink">{localized(item.name)}</span>
-                    <span className="block text-[11.5px] tabular-nums text-ink-secondary">+{item.points}</span>
+                    <span className="block truncate text-[13px] leading-[18px] text-ink">{localized(item.name)}</span>
+                    <span className="block text-[11.5px] leading-4 tabular-nums text-ink-secondary">+{item.points}</span>
                   </span>
                 </li>
               );
@@ -237,10 +256,10 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
         </SettingsGroup>
       )}
 
-      <section className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-1">
-          <div className="mr-auto flex min-w-0 items-center gap-2 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1 focus-within:border-border-strong">
-            <Search size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-2" data-achievement-toolbar="">
+          <label className={cn(CATEGORY_MODAL.search, "basis-full py-2 sm:mr-1 sm:basis-auto")}>
+            <Search size={15} aria-hidden="true" className="shrink-0 text-ink-secondary" />
             <input
               type="search"
               value={search}
@@ -248,9 +267,9 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
               placeholder={t("achievements.search")}
               aria-label={t("achievements.searchLabel")}
               data-achievement-search=""
-              className="w-40 min-w-0 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
+              className={CATEGORY_MODAL.searchInput}
             />
-          </div>
+          </label>
           <PillSelect
             value={reward}
             ariaLabel={t("achievements.rewardFilter")}
@@ -261,16 +280,48 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
             value={filter}
             ariaLabel={t("achievements.filter")}
             options={[
-              { value: "all", label: t("achievements.filter.all") },
+              { value: "all", label: t("achievements.filter.anyStatus") },
               { value: "unlocked", label: t("achievements.filter.unlocked") },
               { value: "locked", label: t("achievements.filter.locked") },
             ]}
             onChange={setFilter}
           />
         </div>
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2" data-achievement-grid="">
+        {/* The categories: a filter, as Connect apps' pills, each with its count.
+            One row that scrolls sideways on a phone, wrapped on a wide window. */}
+        <div
+          role="toolbar"
+          aria-label={t("achievements.categories")}
+          data-achievement-category-filter=""
+          className="-mx-4 flex gap-1.5 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0"
+        >
+          {ACHIEVEMENTS_SCREEN_CATEGORIES.map((id) => {
+            const selected = current === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={selected}
+                data-achievement-category={id}
+                onClick={() => pickCategory(id)}
+                className={cn(categoryChipClass(selected), "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap")}
+              >
+                <span>{achievementCategoryLabel(id)}</span>
+                <span className={cn("text-[11.5px] tabular-nums", selected ? "opacity-75" : "text-ink-tertiary")} data-achievement-category-count="">
+                  {counts[id].unlocked}/{counts[id].total}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(250px,1fr))]" data-achievement-grid="">
           {shown.map((item) => <AchievementCard key={item.id} item={item} state={states.get(item.id)} unlocks={unlocks} />)}
         </ul>
+        {shown.length === 0 && (
+          <p className="rounded-xl bg-inset px-4 py-3 text-[12.5px] text-ink-secondary" data-achievements-empty="">
+            {t("achievements.empty")}
+          </p>
+        )}
       </section>
     </div>
   );
