@@ -4122,6 +4122,8 @@
   "rich.chart.pending": "Le graphique est en cours de rédaction.",
   "rich.chart.table": "Vue tableau",
   "rich.chart.title": "Graphique",
+  "rich.chart.cited": "{pieces}, en date du {asOf}",
+  "rich.chart.citedDate": "En date du {asOf}",
   "rich.chart.truncated": "{count} séries supplémentaires non affichées.",
   "rich.cw.invalid": "Widget de service desk invalide : {reason}",
   "rich.cw.invalid.empty": "aucun enregistrement n'a les champs requis",

@@ -153,6 +153,15 @@ function DonutChart({ spec, colors, active, setActive }: {
   );
 }
 
+function ChartSourceLine({ spec }: { spec: ChartSpec }) {
+  const pieces = (spec.sources ?? []).map((source) => source.asOf ? `${source.piece} (${source.asOf})` : source.piece);
+  if (!pieces.length && !spec.asOf) return null;
+  const text = pieces.length && spec.asOf
+    ? t("rich.chart.cited", { pieces: pieces.join(", "), asOf: spec.asOf })
+    : spec.asOf ? t("rich.chart.citedDate", { asOf: spec.asOf }) : pieces.join(", ");
+  return <p className="px-2 pb-1.5 text-[11.5px] text-ink-tertiary" data-chart-sources="">{text}</p>;
+}
+
 function ChartBlockComponent({ code, pending = false }: { code: string; pending?: boolean }) {
   const frameRef = useRef<HTMLDivElement>(null);
   const scheme = useSkinScheme(frameRef);
@@ -193,7 +202,7 @@ function ChartBlockComponent({ code, pending = false }: { code: string; pending?
       ) : !spec ? (
         <p role="alert" className="px-3 pt-2 text-[12px] text-danger">{t("rich.chart.invalid", { reason: parsed && "error" in parsed ? parsed.error : "" })}</p>
       ) : view === "table" ? (
-        <div className="p-2"><RichTable model={chartTableModel(spec)} caption={title} /></div>
+        <div className="p-2"><RichTable model={chartTableModel(spec)} caption={title} /><ChartSourceLine spec={spec} /></div>
       ) : view === "chart" ? (
         <div className="relative px-2 pt-2 pb-1 text-ink" onMouseLeave={() => setActive(null)}>
           <svg
@@ -244,6 +253,7 @@ function ChartBlockComponent({ code, pending = false }: { code: string; pending?
             </ul>
           )}
           {spec.truncatedSeries > 0 && <p className="px-2 pb-1.5 text-[11px] text-ink-secondary">{t("rich.chart.truncated", { count: spec.truncatedSeries })}</p>}
+          <ChartSourceLine spec={spec} />
         </div>
       ) : null}
       {(view === "source" || (!spec && !pending)) && (

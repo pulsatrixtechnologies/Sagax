@@ -5311,6 +5311,8 @@
   "rich.chart.pending": "The chart is still being written.",
   "rich.chart.table": "Table view",
   "rich.chart.title": "Chart",
+  "rich.chart.cited": "{pieces}, as of {asOf}",
+  "rich.chart.citedDate": "As of {asOf}",
   "rich.chart.truncated": "{count} more series not shown.",
   "rich.cw.invalid": "Invalid service desk widget: {reason}",
   "rich.cw.invalid.empty": "no record has the required fields",

@@ -199,6 +199,10 @@ describe("charts", () => {
   it("reads labels plus series JSON", () => {
     const spec = ok(parseChartSpec('{"type":"line","title":"Load","labels":["a","b"],"series":[{"name":"cpu","data":[1,"2"]}]}'));
     expect(spec).toMatchObject({ type: "line", title: "Load", labels: ["a", "b"], series: [{ name: "cpu", values: [1, 2] }] });
+    expect(ok(parseChartSpec('{"type":"line","labels":["a"],"series":[{"name":"cpu","data":[1]}],"sources":[{"piece":"Monday inbox","asOf":"2026-10-26"}],"asOf":"2026-10-26"}'))).toMatchObject({
+      sources: [{ piece: "Monday inbox", asOf: "2026-10-26" }],
+      asOf: "2026-10-26",
+    });
   });
 
   it("reads row-object JSON and Chart.js datasets", () => {
@@ -208,6 +212,12 @@ describe("charts", () => {
 
   it("reads CSV with an optional type line", () => {
     const spec = ok(parseChartSpec("type: area\nmonth,in,out\nJan,1,2\nFeb,3,4"));
+    expect(spec.sources).toBeUndefined();
+    expect(spec.asOf).toBeUndefined();
+    const cited = ok(parseChartSpec("sources: Monday inbox | 2026-10-26; Tuesday note\nasOf: 2026-10-27\nmonth,n\nJan,1"));
+    expect(cited.sources).toEqual([{ piece: "Monday inbox", asOf: "2026-10-26" }, { piece: "Tuesday note" }]);
+    expect(cited.asOf).toBe("2026-10-27");
+    expect(ok(parseChartSpec("asOf: not-a-day\nmonth,n\nJan,1")).asOf).toBeUndefined();
     expect(spec.type).toBe("area");
     expect(spec.xLabel).toBe("month");
     expect(spec.series.map((series) => series.name)).toEqual(["in", "out"]);
