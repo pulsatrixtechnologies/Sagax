@@ -228,7 +228,7 @@ test("the bridge forwards /v1/messages to an allowed loopback base and nothing e
   assert.equal(seen.length, 2);
 });
 
-test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a no for a minute, and failures are not cached", async () => {
+test("the Anthropic probe posts an empty object, a yes cached for 10 minutes, a no for a minute, and failures are not cached", async () => {
   resetAnthropicProbeCache();
   const base = "http://127.0.0.1:8002/v1";
   let clock = 1000;
@@ -236,7 +236,7 @@ test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a 
   const calls = [];
   const answer = status => async (url, init) => { calls.push({ url, method: init.method, body: init.body }); return new Response("{}", { status }); };
   assert.equal(await probeAnthropicMessages(base, answer(400), now), true);
-  assert.deepEqual(calls[0], { url: `${base}/messages`, method: "POST", body: '{"model":"probe","max_tokens":1,"messages":[]}' });
+  assert.deepEqual(calls[0], { url: `${base}/messages`, method: "POST", body: "{}" });
   // A yes is reused for 10 minutes, whatever the server says now.
   clock += 9 * 60_000;
   assert.equal(await probeAnthropicMessages(base, answer(404), now), true);
@@ -268,36 +268,40 @@ test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a 
   assert.equal(calls.length, before);
 });
 
-test("the probe names a served model, and a 404 refusing a model is a yes (oMLX), a route 404 a no", async () => {
+test("the Anthropic probe never sends a catalog model to a generation, and a 404 is a no", async () => {
   resetAnthropicProbeCache();
-  const base = "http://127.0.0.1:8000/v1";
+  const base = "http://127.0.0.1:8002/v1";
   const now = () => 1000;
-  const bodies = [];
-  const modelNotFound = async (_url, init) => {
-    bodies.push(init.body);
-    return new Response(JSON.stringify({ detail: "Model 'probe' not found" }), { status: 404, headers: { "content-type": "application/json" } });
-  };
-  assert.equal(await probeAnthropicMessages(base, modelNotFound, now, undefined, "local-35b"), true);
-  assert.equal(bodies[0], '{"model":"local-35b","max_tokens":1,"messages":[]}');
-  resetAnthropicProbeCache();
-  const anthropicShape = async () => new Response(JSON.stringify({ type: "error", error: { type: "not_found_error", message: "model: probe" } }), { status: 404 });
-  assert.equal(await probeAnthropicMessages(base, anthropicShape, now), true);
-  resetAnthropicProbeCache();
-  const routeMissing = async () => new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
-  assert.equal(await probeAnthropicMessages(base, routeMissing, now), false);
-  resetAnthropicProbeCache();
-  assert.equal(await probeAnthropicMessages(base, async () => new Response("Not Found", { status: 404 }), now), false);
-  resetAnthropicProbeCache();
-  // The catalog probe passes the first model it read.
   const seen = [];
   const catalog = async (url, init) => {
-    seen.push({ url, body: init.body });
-    if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [{ id: "local-35b" }, { id: "local-122b" }] }), { status: 200, headers: { "content-type": "application/json" } });
-    return new Response(JSON.stringify({ detail: "Model 'local-35b' is loading" }), { status: 400 });
+    seen.push({ url: String(url), method: init.method, body: init.body });
+    if (String(url).endsWith("/models")) {
+      return new Response(JSON.stringify({ data: [{ id: "local-35b" }, { id: "local-122b" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "messages is required" } }), { status: 400 });
   };
   const probed = await probeLoopbackCatalog(base, catalog);
+  assert.equal(probed.status, "answered");
+  assert.deepEqual(probed.models, ["local-35b", "local-122b"]);
+  assert.equal(seen[0].method, "GET");
+  assert.equal(seen[0].body, undefined);
+  assert.equal(seen[1].url.endsWith("/messages"), true);
+  assert.equal(seen[1].method, "POST");
+  assert.equal(seen[1].body, "{}");
+  assert.equal(seen[1].body.includes("local-35b"), false);
+  assert.equal(seen[1].body.includes("max_tokens"), false);
+  assert.equal(seen[1].body.includes("messages"), false);
   assert.equal(probed.anthropic, true);
-  assert.equal(seen[1].body, '{"model":"local-35b","max_tokens":1,"messages":[]}');
+  // A 404 is the route missing, even when the text names a model. The probe
+  // does not read that body, and it does not post the listed id to find out.
+  resetAnthropicProbeCache();
+  const refused = async (_url, init) => {
+    assert.equal(init.body, "{}");
+    return new Response(JSON.stringify({ detail: "Model 'local-35b' not found" }), { status: 404 });
+  };
+  assert.equal(await probeAnthropicMessages(base, refused, now), false);
+  resetAnthropicProbeCache();
+  assert.equal(await probeAnthropicMessages(base, async () => new Response("Not Found", { status: 404 }), now), false);
   resetAnthropicProbeCache();
 });
 
