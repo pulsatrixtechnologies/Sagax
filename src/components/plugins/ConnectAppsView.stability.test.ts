@@ -3,10 +3,9 @@
 //   - the install scope stays under the title on every tab (it vanished on
 //     My accounts and the tabs jumped up); on My accounts it shows turned
 //     off, with the reason;
-//   - "N connected" always does something: from the tab it leads to, it
-//     shows the other part of the count, or brings the list back to the
-//     top; it has a hover fill and a focus ring, and the close button no
-//     longer covers its chevron;
+//   - no "N connected" button any more (the owner: it repeated Installed):
+//     Discover is the first tab, the count sits on Installed and My
+//     accounts, the close button keeps clear of the title row;
 //   - a plugin's page opens inside its tab (title, scope and tabs kept, a
 //     back row as a Settings sub-page), with the app's real mark, its name
 //     once, the technical id as metadata, where it is installed and its main
@@ -21,7 +20,7 @@ import { setLocale } from "@/lib/i18n";
 import { buildPluginItems } from "@/lib/plugins-model";
 import { detailIdentity, installedEntries } from "@/lib/installed-model";
 import { CATEGORY_MODAL } from "../category-modal";
-import { ConnectAppsView, connectedTarget, type ConnectAppsTab } from "./ConnectAppsView";
+import { CONNECT_APPS_TABS, ConnectAppsView, type ConnectAppsTab } from "./ConnectAppsView";
 import { PluginDetailView } from "./PluginDetailView";
 import { ScopeToggle } from "./ScopeToggle";
 
@@ -48,7 +47,7 @@ afterEach(() => {
 });
 
 const view = (tab: ConnectAppsTab, extra: Record<string, unknown> = {}) => renderToStaticMarkup(createElement(ConnectAppsView, {
-  tab, onTab: noop, items, onOpenConnected: noop, refreshing: false, onRefresh: noop,
+  tab, onTab: noop, refreshing: false, onRefresh: noop,
   scope: createElement("div", { "data-test-scope": "" }, "SCOPE"),
   installed: "I", discover: "D", accounts: "A", sources: "S", ...extra,
 }));
@@ -74,30 +73,21 @@ describe("the scope bar on every tab", () => {
   });
 });
 
-describe("N connected", () => {
-  it("never stays put on the tab it leads to when the count has another part", () => {
-    // own connections and engine connectors: from Installed it shows My accounts, and back
-    expect(connectedTarget({ current: "installed", subpage: false, botScope: false, engineConnected: 3, ownConnected: 2 })).toEqual({ tab: "accounts", same: false });
-    expect(connectedTarget({ current: "accounts", subpage: false, botScope: false, engineConnected: 3, ownConnected: 2 })).toEqual({ tab: "installed", same: false });
-    expect(connectedTarget({ current: "discover", subpage: false, botScope: false, engineConnected: 3, ownConnected: 2 })).toEqual({ tab: "installed", same: false });
-    // only engine connectors: My accounts (#1194)
-    expect(connectedTarget({ current: "discover", subpage: false, botScope: false, engineConnected: 3, ownConnected: 0 })).toEqual({ tab: "accounts", same: false });
-    // on the only tab that lists them: same tab, the panel scrolls it to the top and focuses it
-    expect(connectedTarget({ current: "installed", subpage: false, botScope: true, engineConnected: 3, ownConnected: 1 })).toEqual({ tab: "installed", same: true });
-    // from a plugin's page: back to the tab's list
-    expect(connectedTarget({ current: "installed", subpage: true, botScope: false, engineConnected: 0, ownConnected: 1 })).toEqual({ tab: "installed", same: false });
+describe("the header and the tab row", () => {
+  it("Discover first, then Installed, My accounts and Sources; no N connected button", () => {
+    expect(CONNECT_APPS_TABS).toEqual(["discover", "installed", "accounts", "sources"]);
+    const html = view("discover", { counts: { installed: 6 } });
+    expect(html).not.toContain("data-plugins-connected");
+    expect(html).toMatch(/<header[^>]*><h2 id="plugins-title"[^>]*>Connect Apps<\/h2><div class="mt-3" data-plugins-scope-slot/);
   });
 
-  it("is one button with a hover fill and a keyboard focus ring, and calls back on a click", () => {
-    const onOpen = vi.fn();
-    flushSync(() => root.render(createElement(ConnectAppsView, {
-      tab: "installed", onTab: noop, items, onOpenConnected: onOpen, refreshing: false, onRefresh: noop,
-    })));
-    const button = host.querySelector<HTMLButtonElement>("button[data-plugins-connected]")!;
-    expect(button.className).toContain("hover:bg-hover");
-    expect(button.className).toContain("focus-visible:ring-2");
-    flushSync(() => button.click());
-    expect(onOpen).toHaveBeenCalledTimes(1);
+  it("a click on a tab with a counter opens that tab", () => {
+    const onTab = vi.fn();
+    flushSync(() => root.render(createElement(ConnectAppsView, { tab: "discover", onTab, counts: { installed: 6 }, refreshing: false, onRefresh: noop })));
+    const installed = host.querySelector<HTMLButtonElement>('[data-plugins-tab="installed"]')!;
+    expect(installed.querySelector("[data-plugins-tab-count]")?.textContent).toBe("6");
+    flushSync(() => installed.click());
+    expect(onTab).toHaveBeenCalledWith("installed");
   });
 
   it("the title row keeps clear of the close button at every width", () => {

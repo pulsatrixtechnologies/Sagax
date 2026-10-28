@@ -113,6 +113,8 @@ interface MarketplaceListing {
   plugins: Array<{
     name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[];
     installedVersion?: string; updateAvailable?: boolean;
+    /** the plugin's site and declared icon (marketplace.json) */
+    homepage?: string; icon?: string;
   }>;
 }
 
@@ -202,6 +204,24 @@ export function providerMark(name: string, url?: string | null): { site: string 
   const labels = host.split(".");
   const at = labels.lastIndexOf("mcp");
   return { site: at >= 0 && labels.length - at - 1 >= 2 ? labels.slice(at + 1).join(".") : host, logo: null };
+}
+
+/** Sites that host code for every project: a plugin whose homepage is its
+ * repository there would wear that host's logo, which is not its own. */
+const CODE_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "codeberg.org"]);
+
+/** A marketplace plugin's real mark (2026-10-28: most showed the generic
+ * puzzle): the icon its entry declares, else its homepage's site (its
+ * favicon), else the app it is named for (github is GitHub's mark), else
+ * none. A homepage on a code host only counts for that host's own app. */
+export function pluginMark(plugin: { name: string; homepage?: string; icon?: string }): { logo: string | null; site: string | null } {
+  const known = providerMark(plugin.name);
+  const icon = plugin.icon && /^https:\/\//i.test(plugin.icon) ? plugin.icon : null;
+  const host = hostOf(plugin.homepage)?.replace(/^www\./, "") ?? null;
+  const site = host && !(CODE_HOSTS.has(host) && known.site !== host) ? host : null;
+  if (icon) return { logo: icon, site: site ?? known.site };
+  if (site) return { logo: known.site === site ? known.logo : null, site };
+  return known;
 }
 
 /** Every row, deduplicated: a featured plugin already added shows once, as
@@ -313,6 +333,7 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
   }
   for (const market of sources.marketplaces ?? []) {
     for (const plugin of market.plugins) {
+      const mark = pluginMark(plugin);
       items.push({
         key: marketplacePluginKey(market.name, plugin.name),
         kind: "plugin",
@@ -324,6 +345,8 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
         status: plugin.installed ? "connected" : "available",
         action: plugin.installed ? null : "add",
         source: market.name,
+        ...(mark.logo ? { logo: mark.logo } : {}),
+        ...(mark.site ? { domain: mark.site } : {}),
         ...(plugin.version ? { version: plugin.version } : {}),
         ...(plugin.installed && plugin.updateAvailable ? { updateAvailable: true } : {}),
         ...(plugin.installed && plugin.installedVersion ? { installedVersion: plugin.installedVersion } : {}),

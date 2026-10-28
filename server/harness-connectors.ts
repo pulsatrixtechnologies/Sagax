@@ -168,7 +168,11 @@ export function parseClaudeMcpList(stdout: string): ClaudeAiConnector[] {
   for (const raw of stdout.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line.startsWith(CLAUDE_AI_SERVER_PREFIX)) continue;
-    const colon = line.indexOf(": ");
+    // "claude.ai <Name>: <url> - <status>": a name may hold ": " itself
+    // ("Keyword Tool: Free SEO Keyword Research"), the address never does,
+    // so the name ends at the last ": " before the status
+    const dash = line.lastIndexOf(" - ");
+    const colon = (dash > 0 ? line.slice(0, dash) : line).lastIndexOf(": ");
     if (colon <= CLAUDE_AI_SERVER_PREFIX.length) continue;
     const name = line.slice(CLAUDE_AI_SERVER_PREFIX.length, colon).trim();
     if (!name || name.length > 80 || /[\p{Cc}]/u.test(name) || seen.has(name)) continue;

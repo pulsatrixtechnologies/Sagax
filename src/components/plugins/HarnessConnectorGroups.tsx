@@ -5,10 +5,14 @@
 // claude.ai account: a name and a status); Grok's are the xAI account's
 // cloud connectors, managed on grok.com; a ChatGPT (Codex) group shows the
 // day the server lists that account's connectors. They read the same way.
-// A group with no connector is hidden. Each card names the service it
+// Claude and Grok always have their section (2026-10-28, the owner: "why do
+// I only see Grok"): a section the server cannot fill says why (reading,
+// not signed in, an API key, no Claude engine, the CLI did not answer, no
+// connector yet) and offers the way to connect, never vanishes. A ChatGPT
+// section shows only when the server lists its connectors. Each card names the service it
 // reaches (CapabilityTags) and sits under its engine: the summary panel
 // "What your engines reach" is gone (owner, 2026-10-27).
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
 
 import { openExternalLink } from "@/lib/app-links";
 import { cn } from "@/lib/cn";
@@ -27,6 +31,18 @@ export type HarnessConnectorStatus = "connected" | "needs_auth" | "failed" | "un
 
 export type HarnessEngine = "claude" | "grok" | "codex";
 
+/** Why the server lists no claude.ai connector for this person
+ * (server/harness-connectors.ts ClaudeAiUnavailable). */
+export type ClaudeUnavailable = "managed_policy" | "no_engine" | "not_signed_in" | "not_operator" | "key" | "unknown";
+
+/** A section without its connectors: what the person reads instead, and
+ * whether it offers to set the engine up or to read again. */
+export type HarnessGroupNotice =
+  | { kind: "loading" }
+  | { kind: "empty" }
+  | { kind: "unavailable"; reason: ClaudeUnavailable }
+  | { kind: "no_account" };
+
 export interface HarnessConnectorGroup {
   id: HarnessEngine;
   name: string;
@@ -35,6 +51,42 @@ export interface HarnessConnectorGroup {
   account?: string;
   /** `id`: a Grok connector's id (its capabilities) */
   connectors: Array<{ name: string; id?: string; status?: HarnessConnectorStatus }>;
+  /** no connector to list: why, in the section's place */
+  notice?: HarnessGroupNotice;
+}
+
+const NOTICE_KEY = {
+  loading: "connectApps.accounts.notice.loading",
+  empty: "connectApps.accounts.notice.empty",
+  no_account: "connectApps.accounts.notice.noAccount",
+  managed_policy: "connectApps.accounts.notice.managedPolicy",
+  no_engine: "connectApps.accounts.notice.noEngine",
+  not_signed_in: "connectApps.accounts.notice.notSignedIn",
+  not_operator: "connectApps.accounts.notice.notOperator",
+  key: "connectApps.accounts.notice.key",
+  unknown: "connectApps.accounts.notice.unknown",
+} as const satisfies Record<string, LocaleKey>;
+
+/** What a notice offers: set the engine up (Settings > Models and voice),
+ * read again, add a connector on the engine's site, or nothing. */
+export function noticeAction(notice: HarnessGroupNotice): "setup" | "retry" | "manage" | null {
+  if (notice.kind === "loading") return null;
+  if (notice.kind === "empty") return "manage";
+  if (notice.kind === "no_account") return "setup";
+  switch (notice.reason) {
+    case "no_engine":
+    case "not_signed_in":
+    case "key": return "setup";
+    case "unknown": return "retry";
+    default: return null;
+  }
+}
+
+export function noticeText(group: Pick<HarnessConnectorGroup, "name" | "notice">): string {
+  const notice = group.notice;
+  if (!notice) return "";
+  const key = notice.kind === "unavailable" ? NOTICE_KEY[notice.reason] ?? NOTICE_KEY.unknown : NOTICE_KEY[notice.kind];
+  return t(key, { provider: group.name });
 }
 
 const STATUS_KEY: Record<HarnessConnectorStatus, LocaleKey> = {
@@ -44,21 +96,31 @@ const STATUS_KEY: Record<HarnessConnectorStatus, LocaleKey> = {
   unknown: "harnessConnectors.status.unknown",
 };
 
-/** The groups to show: an engine with at least one connector. */
+/** The sections to show: Claude and Grok always (their connectors, or why
+ * there are none and how to connect), ChatGPT when the server lists its
+ * connectors. */
 export function connectorGroups(input: {
-  claude?: { available: boolean; connectors: Array<{ name: string; status: HarnessConnectorStatus }>; manageUrl?: string; account?: string } | null;
+  claude?: { available: boolean; reason?: ClaudeUnavailable; connectors: Array<{ name: string; status: HarnessConnectorStatus }>; manageUrl?: string; account?: string } | null;
+  /** the person's Claude connectors are still being read */
+  claudeLoading?: boolean;
   grok?: { connectors: readonly { id: string; name: string }[]; account?: string } | null;
   /** ChatGPT apps of a Codex sign-in (the server says `available: false` today) */
   codex?: { available: boolean; connectors?: Array<{ name: string; status: HarnessConnectorStatus }>; manageUrl?: string } | null;
 }): HarnessConnectorGroup[] {
   const groups: HarnessConnectorGroup[] = [];
   const claude = input.claude;
-  if (claude?.available) {
-    const connectors = claude.connectors.filter((connector) => connector.name.trim() !== "");
-    if (connectors.length) groups.push({ id: "claude", name: "Claude", manageUrl: claude.manageUrl ?? "https://claude.ai/customize/connectors", ...(claude.account ? { account: claude.account } : {}), connectors });
-  }
+  const claudeUrl = claude?.manageUrl ?? "https://claude.ai/customize/connectors";
+  const claudeConnectors = claude?.available ? claude.connectors.filter((connector) => connector.name.trim() !== "") : [];
+  let claudeNotice: HarnessGroupNotice | undefined;
+  if (claudeConnectors.length) claudeNotice = undefined;
+  else if (!claude) claudeNotice = input.claudeLoading === false ? { kind: "unavailable", reason: "unknown" } : { kind: "loading" };
+  else if (claude.available) claudeNotice = { kind: "empty" };
+  else claudeNotice = { kind: "unavailable", reason: claude.reason ?? "unknown" };
+  groups.push({ id: "claude", name: "Claude", manageUrl: claudeUrl, ...(claude?.account ? { account: claude.account } : {}), connectors: claudeConnectors, ...(claudeNotice ? { notice: claudeNotice } : {}) });
   if (input.grok && input.grok.connectors.length) {
     groups.push({ id: "grok", name: "Grok", manageUrl: GROK_CONNECTORS_URL, ...(input.grok.account ? { account: input.grok.account } : {}), connectors: input.grok.connectors.map((connector) => ({ id: connector.id, name: connector.name })) });
+  } else {
+    groups.push({ id: "grok", name: "Grok", manageUrl: GROK_CONNECTORS_URL, connectors: [], notice: { kind: "no_account" } });
   }
   const codex = input.codex;
   if (codex?.available) {
@@ -68,7 +130,13 @@ export function connectorGroups(input: {
   return groups;
 }
 
-export function HarnessConnectorGroups({ groups, refreshing, onRefresh }: { groups: HarnessConnectorGroup[]; refreshing?: boolean; onRefresh?: () => void }) {
+export function HarnessConnectorGroups({ groups, refreshing, onRefresh, onSetUp }: {
+  groups: HarnessConnectorGroup[];
+  refreshing?: boolean;
+  onRefresh?: () => void;
+  /** set an engine up (Settings > Models and voice); absent: not offered */
+  onSetUp?: (engine: HarnessEngine) => void;
+}) {
   if (groups.length === 0) return null;
   return (
     <>
@@ -93,8 +161,9 @@ export function HarnessConnectorGroups({ groups, refreshing, onRefresh }: { grou
               <ExternalLink size={12} /> {t("connectApps.providers.manage", { provider: group.name })}
             </button>
           </div>
-          {group.id === "grok" && <p className="mb-2 text-[11.5px] leading-relaxed text-ink-tertiary" data-harness-grok-note>{t("connectApps.capabilities.grokOrg")}</p>}
-          <div className={CATEGORY_MODAL.grid}>
+          {group.id === "grok" && !group.notice && <p className="mb-2 text-[11.5px] leading-relaxed text-ink-tertiary" data-harness-grok-note>{t("connectApps.capabilities.grokOrg")}</p>}
+          {group.notice && <GroupNotice group={group} refreshing={refreshing} onRefresh={onRefresh} onSetUp={onSetUp} />}
+          {group.connectors.length > 0 && <div className={CATEGORY_MODAL.grid}>
             {group.connectors.map((connector) => {
               const mark = providerMark(connector.name);
               const missing = connector.status === "needs_auth" || connector.status === "failed";
@@ -117,10 +186,39 @@ export function HarnessConnectorGroups({ groups, refreshing, onRefresh }: { grou
                 </div>
               );
             })}
-          </div>
+          </div>}
         </section>
       ))}
     </>
+  );
+}
+
+/** The section's line when it has no connector to list, with its way out. */
+function GroupNotice({ group, refreshing, onRefresh, onSetUp }: { group: HarnessConnectorGroup; refreshing?: boolean; onRefresh?: () => void; onSetUp?: (engine: HarnessEngine) => void }) {
+  const notice = group.notice!;
+  const action = noticeAction(notice);
+  const button = "inline-flex shrink-0 items-center gap-1 rounded-full bg-control px-3 py-1 text-[12px] font-medium text-ink hover:bg-raised-hover disabled:opacity-50";
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-inset px-4 py-3 text-[12.5px] leading-[18px] text-ink-secondary"
+      data-harness-notice={notice.kind === "unavailable" ? notice.reason : notice.kind}
+      role={notice.kind === "loading" ? "status" : undefined}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        {notice.kind === "loading" && <Loader2 size={14} className="shrink-0 animate-spin" aria-hidden="true" />}
+        <span>{noticeText(group)}</span>
+      </span>
+      {action === "setup" && onSetUp && (
+        <button type="button" className={button} data-harness-setup={group.id} onClick={() => onSetUp(group.id)}>
+          {t("connectApps.accounts.connect", { provider: group.name })}
+        </button>
+      )}
+      {action === "retry" && onRefresh && (
+        <button type="button" className={button} data-harness-retry={group.id} disabled={refreshing} onClick={onRefresh}>
+          <RefreshCw size={12} className={cn(refreshing && "animate-spin")} /> {t("harnessConnectors.refresh")}
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -65,7 +65,9 @@ export function PluginIcon({ item, className = "size-10" }: { item: Pick<PluginI
       </div>
     );
   }
-  if (item.kind === "plugin") {
+  // a plugin with a real mark (its declared icon, its site, the app it is
+  // named for: pluginMark) shows it as an app does; the puzzle is the last resort
+  if (item.kind === "plugin" && !item.logo && !item.domain) {
     return (
       <div className={cn("flex shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent-text", className)}>
         <Puzzle size={18} aria-hidden="true" />

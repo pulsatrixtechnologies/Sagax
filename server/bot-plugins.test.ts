@@ -291,6 +291,23 @@ describe("BotPlugins", () => {
       { name: "b", source: { kind: "git", git: expect.objectContaining({ id: "https://gitlab.com/x/b.git" }) } },
     ]);
   });
+
+  it("reads a plugin's site and declared icon for its mark, http(s) only, icons https only, no credentials", () => {
+    const repo = temp();
+    write(repo, ".claude-plugin/marketplace.json", JSON.stringify({ name: "m", plugins: [
+      { name: "a", source: "./a", homepage: "https://docs.example.com/a", icon: "https://cdn.example.com/a.png" },
+      { name: "b", source: "./b", author: { name: "Example", url: "http://example.org" }, logo: "http://cdn.example.com/b.png" },
+      { name: "c", source: "./c", homepage: "javascript:alert(1)", icon: "data:image/png;base64,AAAA" },
+      { name: "d", source: "./d", homepage: "https://user:pass@example.com/", icon: `https://example.com/${"x".repeat(600)}.png` },
+    ] }));
+    const marks = readMarketplaceManifest(repo).plugins.map(({ name, homepage, icon }) => ({ name, homepage, icon }));
+    expect(marks).toEqual([
+      { name: "a", homepage: "https://docs.example.com/a", icon: "https://cdn.example.com/a.png" },
+      { name: "b", homepage: "http://example.org/", icon: undefined },
+      { name: "c", homepage: undefined, icon: undefined },
+      { name: "d", homepage: undefined, icon: undefined },
+    ]);
+  });
 });
 
 describe("migrateBotMarketplaces", () => {

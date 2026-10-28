@@ -7,9 +7,10 @@
  * accounts with one service picked, the "..." menu of an entry and its "For
  * which bots"; for an admin, Settings > Organization too. 2026-10-28: the
  * tabs in the bot's scope (the scope bar on every tab, turned off on My
- * accounts: the tab row must not move, checked here), "N connected" hovered
- * and focused, a plugin's page in its tab (everyone, then the bot's scope),
- * and a Settings sub-page in the same window size to compare.
+ * accounts: the tab row must not move, checked here), Discover first and
+ * open with no "N connected" button (checked here), a plugin's page in its
+ * tab (everyone, then the bot's scope), and a Settings sub-page in the same
+ * window size to compare.
  * Usage: node scripts/capture-connect-apps-manage.mjs [--out DIR] [--port N]
  *   [--lang fr] [--skin pulsatrix] [--scheme dark|light] [--role member|admin]
  */
@@ -59,7 +60,12 @@ try {
   page.on("pageerror", (error) => console.error("page error:", error.stack));
   const query = `skin=${skin}&lang=${lang}&role=${role}`;
   await page.goto(`${base}?view=manage&${query}`, { waitUntil: "networkidle" });
-  await page.waitForSelector("[data-plugins-connected]", { timeout: 30_000 });
+  await page.waitForSelector("[data-plugins-manage]", { timeout: 30_000 });
+  // 2026-10-28: Discover is the first tab and where the page opens; no "N connected" button
+  const order = await page.locator("[data-plugins-tab]").evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("data-plugins-tab")));
+  if (order.join(",") !== ["discover", "installed", "accounts", "sources"].slice(0, order.length).join(",")) throw new Error(`tab order: ${order.join(",")}`);
+  if (await page.locator('[data-plugins-tab="discover"][aria-selected="true"]').count() !== 1) throw new Error("Connect Apps did not open on Discover");
+  if (await page.locator("[data-plugins-connected]").count()) throw new Error("the N connected button is back");
   await page.waitForTimeout(600);
   const shot = async (name) => {
     await page.waitForTimeout(700);
@@ -68,7 +74,7 @@ try {
     console.log("shot", file);
   };
   await shot("0-connect-apps");
-  for (const [index, tab] of ["installed", "discover", "accounts", "sources"].entries()) {
+  for (const [index, tab] of ["discover", "installed", "accounts", "sources"].entries()) {
     await page.click(`[data-plugins-tab="${tab}"]`);
     await page.waitForSelector(`[data-plugins-manage="${tab}"]`);
     if (tab === "accounts") await page.waitForSelector("[data-harness-group]", { timeout: 15_000 }).catch(() => undefined);
@@ -89,24 +95,13 @@ try {
   // the tab row stays where it is on every tab (the scope bar never leaves)
   const tabRowTop = async () => (await page.locator("[data-plugins-manage-tabs]").boundingBox())?.y;
   const tops = {};
-  for (const tab of ["installed", "discover", "accounts", "sources"]) {
+  for (const tab of ["discover", "installed", "accounts", "sources"]) {
     await page.click(`[data-plugins-tab="${tab}"]`);
     await page.waitForSelector(`[data-plugins-manage="${tab}"]`);
     tops[tab] = await tabRowTop();
   }
   console.log("tab row top (everyone):", JSON.stringify(tops));
   if (new Set(Object.values(tops)).size !== 1) throw new Error(`the tab row moves between tabs: ${JSON.stringify(tops)}`);
-  await page.click('[data-plugins-tab="installed"]');
-  await page.hover("[data-plugins-connected]");
-  await shot("5a-connected-hover");
-  await page.mouse.move(0, 0);
-  await page.focus("[data-plugins-connected]");
-  await page.keyboard.press("Shift+Tab");
-  await page.keyboard.press("Tab");
-  await shot("5b-connected-focus");
-  await page.click("[data-plugins-connected]");
-  await page.waitForSelector('[data-plugins-manage="installed"], [data-plugins-manage="accounts"]');
-  await shot("5-connected-opens");
   await page.click('[data-plugins-tab="installed"]');
   await page.locator('[data-installed-entry="plugin:code-review@claude-plugins-official"] [data-entry-menu]').click();
   await shot("6-installed-menu-update");
@@ -130,7 +125,7 @@ try {
     await page.click('[data-plugins-scope-option="bot"]');
     await page.waitForTimeout(500);
     const botTops = {};
-    for (const tab of ["installed", "discover", "accounts", "sources"]) {
+    for (const tab of ["discover", "installed", "accounts", "sources"]) {
       if (!await page.locator(`[data-plugins-tab="${tab}"]`).count()) continue;
       await page.click(`[data-plugins-tab="${tab}"]`);
       await page.waitForSelector(`[data-plugins-manage="${tab}"]`);
