@@ -220,6 +220,13 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("approvals:primary", "own", "sagax_approvals"),
 ];
 
+/** 2026-10-27 (#1098): a tool a person's external MCP server serves that
+ * Sagax does not list (the Perspicax relay: list_pending_approvals, a newer
+ * remote support tool). That server authorizes it for the person itself;
+ * Sagax's catalog only names its own tools (decide `external`). Not a
+ * capability of the registry, so not in MCP_PERMISSIONS. */
+export const EXTERNAL_MCP_PERMISSION: McpPermission = { key: "mcp:external", tier: "own", tool: null, source: "perspicax" };
+
 const BY_TOOL = new Map<string, McpPermission>(MCP_PERMISSIONS.filter((x) => x.tool && !x.profileKind).flatMap((x) => [x.tool as string, ...(x.aliases ?? [])].map((name) => [name, x] as const)));
 const BY_KEY = new Map<string, McpPermission>(MCP_PERMISSIONS.map((x) => [x.key, x]));
 const BY_PROFILE_KIND = new Map<ProfileToolKind, McpPermission>(MCP_PERMISSIONS.filter((x) => x.profileKind).map((x) => [x.profileKind as ProfileToolKind, x]));
@@ -249,14 +256,24 @@ export const permissionByKey = (key: string): McpPermission | undefined => BY_KE
 
 type TierScopes = Partial<Record<PermissionTier, McpScope>>;
 
+const rank = (scope: McpScope) => MCP_SCOPES.indexOf(scope);
+
 /** The widest scope each role holds per tier. A missing tier is denied. */
+// 2026-10-27 (#1098): a read changes nothing, and the tool's own source
+// (the Sagax route, Perspicax's memory tiers) shows only what the person may
+// already read, so a read reaches the org scope for every role.
 export const ROLE_TIER_SCOPES: Record<McpRole, TierScopes> = {
-  viewer: { read: "team" },
-  member: { read: "team", own: "self", dispatch: "self", claim: "self" },
-  operator: { read: "team", own: "team", dispatch: "team", claim: "team" },
+  viewer: { read: "org" },
+  member: { read: "org", own: "self", dispatch: "self", claim: "self" },
+  operator: { read: "org", own: "team", dispatch: "team", claim: "team" },
   admin: { read: "org", own: "org", dispatch: "org", claim: "org", admin: "org" },
-  service: { read: "team", own: "self", dispatch: "self", claim: "self" },
+  service: { read: "org", own: "self", dispatch: "self", claim: "self" },
 };
+
+/** 2026-10-27 (#1098): a role that holds at least what another holds. An
+ * operator (a Perspicax manager) is a member first: whatever a member may do
+ * in their own environment, an operator may too (decide takes the wider). */
+export const ROLE_INHERITS: Partial<Record<McpRole, McpRole>> = { operator: "member" };
 
 /** Per-role exceptions, applied before the tier rule. A key set to null is
  * denied; a scope replaces the tier's. */
@@ -266,9 +283,13 @@ export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | n
   // temporary agents they create and archive for themselves, are their own
   // work too. Someone else's bot reaches the team scope (scopeForCall) and
   // stays refused.
+  // 2026-10-27 (#1098): their own Local VM (vm_exec names no other
+  // machine), act (the route checks the person's own rights) and a team
+  // memory proposal (a card a team member confirms) are their own work too.
   member: {
     "bots:create": "self", "bots:delete.propose": "self", "bots:archive": "self", "rooms:create": "self", "rooms:manage": "self",
     "agents:create": "self", "agents:delete": "self",
+    "vm:exec": "self", "actions:invoke": "self", "teammemory:propose": "self",
   },
   // Automation never creates bots, widens access or runs host commands.
   // 2026-10-19: no person speaks in a service turn (a routine, a webhook):
@@ -280,8 +301,6 @@ export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | n
     "teamsetup:propose": null, "rules:update": null, "docs:update": null,
   },
 };
-
-const rank = (scope: McpScope) => MCP_SCOPES.indexOf(scope);
 
 export interface McpPrincipal {
   id: string;
@@ -299,15 +318,30 @@ export interface McpDecision {
   reason: "ok" | "unknown_tool" | "unknown_role" | "not_granted" | "scope_too_narrow" | "resource_denied";
 }
 
-export function decide(principal: McpPrincipal, tool: string, target: McpScope = "self"): McpDecision {
-  const perm = permissionForTool(tool);
+/** The scope a role holds for a permission: its own override or tier rule,
+ * widened by the role it inherits (ROLE_INHERITS). A null override of the
+ * role itself stays a denial. */
+function grantedScope(role: McpRole, perm: McpPermission): McpScope | null {
+  const overrides = ROLE_OVERRIDES[role];
+  if (overrides && perm.key in overrides && overrides[perm.key] === null) return null;
+  const own = (overrides && perm.key in overrides ? overrides[perm.key] : ROLE_TIER_SCOPES[role][perm.tier]) ?? null;
+  const parent = ROLE_INHERITS[role];
+  const inherited = parent ? grantedScope(parent, perm) : null;
+  if (!own) return inherited;
+  if (!inherited) return own;
+  return rank(inherited) > rank(own) ? inherited : own;
+}
+
+/** `external`: the call goes to a person's external MCP server (the
+ * Perspicax relay), so a tool Sagax does not list is judged as mcp:external,
+ * not refused as unknown. */
+export function decide(principal: McpPrincipal, tool: string, target: McpScope = "self", options?: { external?: boolean }): McpDecision {
+  const perm = permissionForTool(tool) ?? (options?.external ? EXTERNAL_MCP_PERMISSION : undefined);
   if (!perm) return { allowed: false, permission: tool, requiredScope: target, grantedScope: null, reason: "unknown_tool" };
   if (!(MCP_ROLES as readonly string[]).includes(principal.role)) {
     return { allowed: false, permission: perm.key, requiredScope: target, grantedScope: null, reason: "unknown_role" };
   }
-  const role = principal.role as McpRole;
-  const overrides = ROLE_OVERRIDES[role];
-  const granted = overrides && perm.key in overrides ? overrides[perm.key] : ROLE_TIER_SCOPES[role][perm.tier];
+  const granted = grantedScope(principal.role as McpRole, perm);
   if (!granted) return { allowed: false, permission: perm.key, requiredScope: target, grantedScope: null, reason: "not_granted" };
   if (rank(target) > rank(granted)) return { allowed: false, permission: perm.key, requiredScope: target, grantedScope: granted, reason: "scope_too_narrow" };
   return { allowed: true, permission: perm.key, requiredScope: target, grantedScope: granted, reason: "ok" };
@@ -322,6 +356,9 @@ export interface ScopeOwners {
   principalId: string;
   botOwner?(botId: string): string | undefined;
   roomOwner?(roomId: string): string | undefined;
+  /** 2026-10-27 (#1098): a bot this person created after the list was
+   * handed over (a warm proxy keeps its spawn environment): theirs. */
+  learnBot?(botId: string): void;
 }
 
 /** The scope a call reaches, read from its arguments. Anything naming a bot
@@ -359,7 +396,15 @@ export function scopeOwnersFromEnv(env: NodeJS.ProcessEnv, principalId: string):
     principalId,
     botOwner: (botId) => (bots.has(botId) ? principalId : undefined),
     roomOwner: (roomId) => (rooms.has(roomId) ? principalId : undefined),
+    learnBot: (botId) => { if (botId.trim()) bots.add(botId.trim()); },
   };
+}
+
+/** The id create_bot reports (`Created @name in Section [id: <id>].`),
+ * learned as one of the acting person's bots (ScopeOwners.learnBot). */
+export function learnCreatedBot(owners: ScopeOwners | undefined, resultText: string): void {
+  const id = /\[id: ([\w.:-]{1,128})\]/.exec(resultText)?.[1];
+  if (id) owners?.learnBot?.(id);
 }
 
 const SEGMENT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -460,6 +505,9 @@ export interface GuardOptions {
   catalog?: ApiCatalog;
   /** Who owns the bots and rooms a call names (scopeForCall). */
   owners?: ScopeOwners;
+  /** The calls go to an external MCP server that authorizes its own tools
+   * (the Perspicax relay): a tool Sagax does not list is mcp:external. */
+  external?: boolean;
   /** Shadow mode only: the share of allowed calls audited, 0 (default) to 1.
    * Enforce audits every call; shadow audits every denial. */
   allowedSample?: number;
@@ -498,7 +546,7 @@ export function auditSampleFromEnv(env: NodeJS.ProcessEnv): number {
 export async function guardToolCall<R extends GuardedResult>(options: GuardOptions, tool: string, args: Record<string, unknown> | undefined, run: () => Promise<R>): Promise<R | GuardedResult> {
   if (options.mode === "off") return run();
   const scope = scopeForCall(args, options.ownBotId, options.owners);
-  let decision = decide(options.principal, tool, scope);
+  let decision = decide(options.principal, tool, scope, { external: options.external === true });
   const resource = resourceKeyForCall(tool, args, options.catalog) ?? undefined;
   if (decision.allowed && resource && resourceDenied(resource, options.deniedResources ?? [])) {
     decision = { ...decision, allowed: false, permission: resource, reason: "resource_denied" };

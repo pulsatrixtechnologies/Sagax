@@ -15,6 +15,7 @@ import {
   resetMisuseGuardrailsForTests,
   setMisuseAlert,
   setMisuseDataDirForTests,
+  setMisuseOwnPaths,
 } from "./misuse-guardrails.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 import { callUserSandboxTool, type ToolExec } from "./user-sandbox-tools.ts";
@@ -201,5 +202,21 @@ describe("sandbox hard limits", () => {
     expect(spec.HostConfig.ReadonlyPaths).toEqual(expect.arrayContaining(["/proc/sys", "/proc/sysrq-trigger"]));
     const ulimits = spec.HostConfig.Ulimits as Array<{ Name: string; Soft: number }>;
     expect(ulimits.find((limit) => limit.Name === "fsize")?.Soft).toBe(config.limits.maxFileBytes);
+  });
+});
+
+// 2026-10-27 (#1098, point 33): what the harness registers as the person's own
+describe("own paths from the harness (#1098)", () => {
+  it("passes the person's own bot folder and an app attachment tag, and keeps another bot's refused", () => {
+    process.env.SAGAX_MISUSE_GUARDRAILS = "enforce";
+    setMisuseDataDirForTests(tempDir());
+    setMisuseOwnPaths(({ botId, principalId }) => (botId === "b1" && principalId === "pr_alice"
+      ? { roots: ["/data/.openmausbot/workspaces/b1"], attachmentsDir: "/data/.openmausbot/attachments" } : undefined));
+    const who = { triage: false, principalId: "pr_alice", botId: "b1", threadId: "t1" };
+    expect(misuseRefusal("ls /data/.openmausbot/workspaces/b1/memory", { ...who, surface: "shell" })).toBeNull();
+    expect(misusePathRefusal("/data/.openmausbot/workspaces/b1/memory/notes.md", who)).toBeNull();
+    expect(misuseRefusal('<attached-image path="/data/.openmausbot/attachments/0b6e7c1e-1f2a-4b3c-8d4e-5f6a7b8c9d0e.png" name="image.png" />', { ...who, surface: "message" })).toBeNull();
+    expect(misuseRefusal("ls /data/.openmausbot/workspaces/b2/memory", { ...who, surface: "shell" })?.code).toBe("misuse_blocked");
+    expect(misusePathRefusal("/data/.openmausbot/workspaces/b2/notes.md", who)?.code).toBe("misuse_blocked");
   });
 });

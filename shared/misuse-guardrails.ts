@@ -189,6 +189,48 @@ function decodeBase64(value: string): string {
   }
 }
 
+/** 2026-10-27 (#1098): what the server knows is the person's own, never
+ * read from the text. `roots`: absolute folders of their own environment on
+ * the server (their own bot's workspace and task folders, their own
+ * principal folder). `attachmentsDir`: the app's attachment store, so the
+ * `<attached-image path="..." />` tag Sagax writes into a message is the
+ * app's, not words of the person. */
+export interface MisuseOwnPaths {
+  roots?: readonly string[];
+  attachmentsDir?: string;
+}
+
+const OWN_FOLDER = "own-folder";
+const APP_TAG = /<attached-(?:image|file)[\t ]+path="([^"\r\n]*)"(?:[\t ]+name="([^"\r\n]*)")?[\t ]*\/>/g;
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const trimSlash = (value: string) => value.replace(/\/+$/, "");
+const climbs = (rest: string) => /(?:^|\/)\.\.(?:\/|$)/.test(rest);
+
+/** The text with the person's own folders and the app's own attachment tags
+ * set aside: a root becomes `own-folder` when what follows it never climbs
+ * out (`..`); a tag whose path is one file of the attachment store becomes
+ * its name. Everything else is left as it is, so another bot's folder,
+ * another person's folder and a platform file still match. */
+export function maskOwnPaths(input: string, own?: MisuseOwnPaths): string {
+  if (!own) return input;
+  let text = input;
+  const store = own.attachmentsDir ? trimSlash(own.attachmentsDir) : "";
+  if (store && text.includes("<attached-")) {
+    text = text.replace(APP_TAG, (tag, path: string, name?: string) => {
+      const file = path.startsWith(`${store}/`) ? path.slice(store.length + 1) : "";
+      return file && !file.includes("/") && file !== ".." && file !== "." ? (name ?? "") : tag;
+    });
+  }
+  for (const raw of own.roots ?? []) {
+    const root = trimSlash(raw.trim());
+    if (!root.startsWith("/") || root.split("/").length < 3) continue;
+    const pattern = new RegExp(`${escapeRegExp(root)}(?=$|[/\\s"'\`)\\]])([^\\s"'\`)\\]]*)`, "g");
+    text = text.replace(pattern, (match, rest: string) => (climbs(rest) ? match : `${OWN_FOLDER}${rest}`));
+  }
+  return text;
+}
+
 function categoriesIn(text: string, scope: MisuseScope): MisuseCategory[] {
   const found = new Set<MisuseCategory>();
   for (const rule of BLOCK_RULES) {
@@ -214,7 +256,8 @@ function actionFor(categories: readonly MisuseCategory[]): MisuseAction {
  * server's `security.triage` permission: it allows defensive security work
  * and does not lift a block (escape, malware, destruction, and the rest).
  * `scope` says where the text runs (see `MisuseScope`). */
-export function classifyMisuse(input: string, triage = false, scope: MisuseScope = "default"): MisuseVerdict {
+export function classifyMisuse(input: string, triage = false, scope: MisuseScope = "default", own?: MisuseOwnPaths): MisuseVerdict {
+  input = maskOwnPaths(input, own);
   const raw = normalize(input);
   const unfolded = unfoldMisuseText(input);
   const direct = categoriesIn(raw, scope);
@@ -264,8 +307,8 @@ function normalizeAbsolute(path: string): string {
 /** A file path in the server environment. An allowed path is still classified
  * as text (`bots.json` in a name). A path outside the allowlist is a block
  * the triage permission does not lift. */
-export function classifySandboxPath(input: string, triage = false, scope: MisuseScope = "default"): MisuseVerdict {
-  if (!sandboxPathBlocked(input)) return classifyMisuse(input, triage, scope);
+export function classifySandboxPath(input: string, triage = false, scope: MisuseScope = "default", own?: MisuseOwnPaths): MisuseVerdict {
+  if (!sandboxPathBlocked(input, own)) return classifyMisuse(input, triage, scope, own);
   const path = input.trim();
   const category: MisuseCategory = /\/proc(?:\/|$)|\/sys(?:\/|$)/.test(path) ? "sandbox_escape" : "platform_exfiltration";
   return { action: "block", categories: [category], category, obfuscated: false };
@@ -274,7 +317,7 @@ export function classifySandboxPath(input: string, triage = false, scope: Misuse
 /** File tools in a person's server environment. Relative paths stay in the
  * working folder. Absolute paths must sit on the allowlist, and a platform
  * path is refused even when a prefix would otherwise allow it. */
-export function sandboxPathBlocked(input: string): boolean {
+export function sandboxPathBlocked(input: string, own?: MisuseOwnPaths): boolean {
   const raw = input.trim();
   if (!raw || raw.includes("\u0000") || raw.length > 4096) return true;
   if (!raw.startsWith("/")) {
@@ -290,6 +333,11 @@ export function sandboxPathBlocked(input: string): boolean {
   const base = path.slice(path.lastIndexOf("/") + 1);
   if (PLATFORM_BASENAMES.has(base)) return true;
   if (SANDBOX_ALLOW_EXACT.has(path)) return false;
+  // the person's own folders on the server (MisuseOwnPaths), after `..` is resolved
+  if ((own?.roots ?? []).some((raw) => {
+    const root = trimSlash(raw.trim());
+    return root.startsWith("/") && root.split("/").length >= 3 && (path === root || path.startsWith(`${root}/`));
+  })) return false;
   if (SANDBOX_DENY_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) return true;
   return !SANDBOX_ALLOW_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }

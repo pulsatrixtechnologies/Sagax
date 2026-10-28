@@ -46,11 +46,19 @@ One permission per action, named `resource:verb` (`memory:save`,
 
 | Role | read | own | dispatch | claim | admin |
 |---|---|---|---|---|---|
-| viewer | team | no | no | no | no |
-| member | team | self | self | self | no (a few self-scope exceptions: create a bot or room of their own) |
-| operator | team | team | team | team | no |
+| viewer | org | no | no | no | no |
+| member | org | self | self | self | no (self-scope exceptions: create, archive or propose deleting a bot of their own, create or manage a room of their own, their own Local VM `vm:exec`, `act` as themselves, a team memory proposal) |
+| operator | org | team | team | team | no, plus every member exception (an operator holds at least what a member holds) |
 | admin | org | org | org | org | org |
-| service | team | self | self | self | no (and never `vm:exec`, `actions:invoke` or `settings:manage`) |
+| service | org | self | self | self | no (and never `vm:exec`, `actions:invoke` or `settings:manage`) |
+
+2026-10-27 (#1098): a read reaches the org scope for every role. It changes
+nothing, and its source (the Sagax route, Perspicax's memory tiers) shows
+only what the person may already read. A call relayed to a person's
+Perspicax MCP server that names a tool Sagax does not list is
+`mcp:external` (tier own): Perspicax authorizes its own tools, so it is not
+refused as `unknown_tool`. A bot the person creates during a turn counts as
+theirs for the rest of that proxy's life (`learnBot`).
 
 The `service` role holds claims at `self`: automation can hold work it
 started, not take over someone else's.

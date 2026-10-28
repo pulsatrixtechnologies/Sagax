@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyMisuse,
   classifySandboxPath,
+  maskOwnPaths,
   MISUSE_CATEGORIES,
   MISUSE_POLICY_PROMPT,
   MISUSE_REFUSAL_APPROVAL,
@@ -292,5 +293,59 @@ describe("what a person reads", () => {
     expect(MISUSE_POLICY_PROMPT).toContain("<<<UNTRUSTED>>>");
     expect(MISUSE_POLICY_PROMPT).toContain("draft the person sends");
     expect(MISUSE_POLICY_PROMPT).not.toMatch(/[\u2013\u2014]/);
+  });
+});
+
+// 2026-10-27 (#1098, point 33): the person's own folders and the app's own
+// attachment tag are not platform files
+describe("the person's own paths (#1098)", () => {
+  const own = {
+    roots: ["/data/.openmausbot/workspaces/b1", "/data/.openmausbot/task-workspaces/b1", "/data/.openmausbot/principals/pr_alice"],
+    attachmentsDir: "/data/.openmausbot/attachments",
+  };
+
+  it("allows their own bot's, task's and principal folders on every surface", () => {
+    for (const text of [
+      "cat /data/.openmausbot/workspaces/b1/memory/notes.md",
+      "ls /data/.openmausbot/task-workspaces/b1/t1/",
+      "ls /data/.openmausbot/principals/pr_alice/",
+      "ls /data/.openmausbot/workspaces/b1",
+    ]) {
+      expect(classifyMisuse(text, false, "default", own).action, text).toBe("allow");
+      expect(classifyMisuse(text, false, "message", own).action, text).toBe("allow");
+      expect(classifyMisuse(text, false, "own_environment", own).action, text).toBe("allow");
+    }
+    expect(classifySandboxPath("/data/.openmausbot/workspaces/b1/memory/notes.md", false, "own_environment", own).action).toBe("allow");
+    expect(sandboxPathBlocked("/data/.openmausbot/task-workspaces/b1/t1/out.csv", own)).toBe(false);
+  });
+
+  it("keeps another bot's or person's folder, a climb out and a platform file blocked", () => {
+    for (const text of [
+      "cat /data/.openmausbot/workspaces/b2/memory/notes.md",
+      "cat /data/.openmausbot/workspaces/b12/memory/notes.md",
+      "ls /data/.openmausbot/principals/pr_bob/",
+      "cat /data/.openmausbot/workspaces/b1/../b2/memory/notes.md",
+      "cat /data/.openmausbot/bots.json",
+      "cat /data/.openmausbot/workspaces/b1/bots.json",
+    ]) {
+      expect(classifyMisuse(text, false, "default", own).category, text).toBe("platform_exfiltration");
+    }
+    expect(sandboxPathBlocked("/data/.openmausbot/workspaces/b1/../b2/notes.md", own)).toBe(true);
+    expect(sandboxPathBlocked("/data/.openmausbot/workspaces/b1/bots.json", own)).toBe(true);
+    // nothing known: unchanged
+    expect(classifyMisuse("ls /data/.openmausbot/workspaces/b1").category).toBe("platform_exfiltration");
+  });
+
+  it("reads the attachment tag the app writes into a message as the app's", () => {
+    const message = 'Voici la capture\n<attached-image path="/data/.openmausbot/attachments/0b6e7c1e-1f2a-4b3c-8d4e-5f6a7b8c9d0e.png" name="image.png" />';
+    expect(classifyMisuse(message, false, "message", own).action).toBe("allow");
+    expect(maskOwnPaths(message, own)).toBe("Voici la capture\nimage.png");
+    // a tag that points anywhere else stays text
+    expect(classifyMisuse('<attached-image path="/data/.openmausbot/bots.json" name="x.png" />', false, "message", own).action).toBe("block");
+    expect(classifyMisuse('<attached-file path="/data/.openmausbot/attachments/../idp_key" name="k" />', false, "message", own).action).toBe("block");
+  });
+
+  it("does not classify destruction words in a person's direct message (fixed by #1138)", () => {
+    expect(classifyMisuse("peux-tu me demander autorisation pour supprimer le dossier et redémarrer avec reboot", false, "message").action).toBe("allow");
   });
 });

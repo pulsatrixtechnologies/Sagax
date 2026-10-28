@@ -7,10 +7,13 @@
 // A call that runs in the speaker's own sandbox or own computer is theirs:
 // it runs without the safer path or a card, unless it sends to a third
 // party or was triggered by untrusted content.
+// 2026-10-27 (#1098): any other call that is not one of those risks (a
+// write, a tool the review does not know as a read) is not held here: the
+// person's approval mode (Ask, Auto, Full, their Allow rules) answers it.
 
 import { createHash } from "node:crypto";
 import { isOutboundTool } from "./outbound.ts";
-import { classifyMisuse, misuseRefusalText, unfoldMisuseText } from "./misuse-guardrails.ts";
+import { classifyMisuse, misuseRefusalText, unfoldMisuseText, type MisuseOwnPaths } from "./misuse-guardrails.ts";
 
 export const SAFETY_REFUSAL_FINAL =
   "Cette demande a déjà été refusée. La reformuler, la découper ou la coder autrement ne la fait pas passer.";
@@ -100,6 +103,9 @@ export interface SafetyInput {
    * the capability, never from the text. A host shell, a lent computer and
    * an MCP connector are not. */
   ownEnvironment?: boolean;
+  /** The person's own folders and the attachment store (MisuseOwnPaths),
+   * from the server, never from the text. */
+  ownPaths?: MisuseOwnPaths;
 }
 
 export interface SafetyVerdict {
@@ -238,16 +244,6 @@ function isReadOnly(input: SafetyInput, text: string): boolean {
   return false;
 }
 
-function isRecognizedWrite(input: SafetyInput, text: string): boolean {
-  const bare = bareTool(input.tool);
-  if (["write_file", "edit_file", "apply_patch", "propose_routine", "propose_routine_action"].includes(bare)) return true;
-  if (bare === "computer_use" && !computerReadOnly(text)) return true;
-  if (input.surface === "routine") return true;
-  if (input.surface === "file" && bare !== "read_file" && bare !== "list_files") return true;
-  if (hasRedirect(text) || WRITE_SHELL.test(text)) return true;
-  return false;
-}
-
 function credentialBlock(text: string, surface: SafetySurface): boolean {
   if (safetyClassKey(text) === "credentials:mint") return true;
   if (surface === "message") return false;
@@ -278,7 +274,7 @@ export function reviewSafety(input: SafetyInput, memory: SafetyMemory = emptySaf
   const sealed = memory.final.has(fingerprint) || (classKey !== undefined && memory.final.has(classKey));
   if (sealed) return verdict("block", "final", SAFETY_REFUSAL_FINAL, fingerprint, classKey);
 
-  const misuse = classifyMisuse(input.text, false, input.ownEnvironment ? "own_environment" : input.surface === "message" ? "message" : "default");
+  const misuse = classifyMisuse(input.text, false, input.ownEnvironment ? "own_environment" : input.surface === "message" ? "message" : "default", input.ownPaths);
   if (misuse.action === "block") {
     return verdict("block", "misuse", misuseRefusalText(misuse.category, "block"), fingerprint, classKey);
   }
@@ -322,10 +318,15 @@ export function reviewSafety(input: SafetyInput, memory: SafetyMemory = emptySaf
   if (looksUntrusted(input, text) && CONSEQUENTIAL.test(text)) {
     return verdict(next, next, next === "safer" ? SAFER_UNTRUSTED : CONFIRM_GUIDANCE, fingerprint, classKey);
   }
-  if (input.known === false || !isRecognizedWrite(input, text)) {
+  if (input.known === false) {
     return verdict(next, next, next === "safer" ? SAFER_UNKNOWN : CONFIRM_GUIDANCE, fingerprint, classKey);
   }
-  return verdict(next, next, next === "safer" ? SAFER_WRITE : CONFIRM_GUIDANCE, fingerprint, classKey);
+  // 2026-10-27 (#1098): a write or a known tool that is none of the risks
+  // above (a send, a destructive git operation, a step driven by untrusted
+  // content, an unknown kind) goes to the person's approval mode. A safer
+  // path and a card that Full, Auto and an Allow rule cannot answer are not
+  // added on top of it.
+  return verdict("allow", "allow", "", fingerprint, classKey);
 }
 
 const REVIEW_RANK: Record<SafetyAction, number> = { allow: 0, safer: 1, confirm: 2, block: 3 };

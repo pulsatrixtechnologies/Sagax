@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -13,9 +13,10 @@ import {
   setSafetyDataDirForTests,
   settleSafetyHold,
 } from "./safety-review.ts";
+import { resetMisuseGuardrailsForTests, setMisuseOwnPaths } from "./misuse-guardrails.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 import { callUserSandboxTool, type ToolExec } from "./user-sandbox-tools.ts";
-import { SAFER_WRITE, SAFETY_REFUSAL_FINAL } from "../shared/safety-review.ts";
+import { SAFER_GIT, SAFETY_REFUSAL_FINAL } from "../shared/safety-review.ts";
 
 const dirs: string[] = [];
 let dataDir = "";
@@ -55,38 +56,37 @@ describe("safety review server", () => {
     expect(safetyPermissionEffect({ text: "mkdir out", surface: "shell", tool: "run_command", known: true, threadId: "t1" })).toBeNull();
   });
 
-  it("returns the safer path once, then waits for an explicit answer", async () => {
+  it("returns the safer path once for a held risk, then waits for an explicit answer", async () => {
     enforce();
-    const first = await safetyToolHold({ text: "mkdir out", surface: "shell", tool: "run_command", known: true, principalId: "ada", threadId: "t1" });
-    expect(first).toBe(SAFER_WRITE);
+    const git = { surface: "shell" as const, tool: "run_command", known: true, principalId: "ada", threadId: "t1" };
+    const first = await safetyToolHold({ text: "git push --force origin", ...git });
+    expect(first).toBe(SAFER_GIT);
     let asked = 0;
     setSafetyConfirm(async () => {
       asked += 1;
       return "deny";
     });
-    const second = await safetyToolHold({ text: "mkdir out", surface: "shell", tool: "run_command", known: true, principalId: "ada", threadId: "t1" });
+    const second = await safetyToolHold({ text: "git push --force origin", ...git });
     expect(asked).toBe(1);
     expect(second).toBe(SAFETY_REFUSAL_FINAL);
     const encoded = Buffer.from("git push --force").toString("base64");
-    await safetyToolHold({ text: "git push --force origin", surface: "shell", tool: "run_command", known: true, principalId: "ada", threadId: "t1" });
-    setSafetyConfirm(async () => "deny");
-    await safetyToolHold({ text: "git push --force origin", surface: "shell", tool: "run_command", known: true, principalId: "ada", threadId: "t1" });
-    const third = await safetyToolHold({ text: `echo ${encoded}`, surface: "shell", tool: "run_command", known: true, principalId: "ada", threadId: "other" });
+    const third = await safetyToolHold({ text: `echo ${encoded}`, ...git, threadId: "other" });
     expect(third).toBe(SAFETY_REFUSAL_FINAL);
   });
 
   it("treats expiry as final and lets an explicit allow run once", async () => {
     enforce();
-    await safetyToolHold({ text: "npm test", surface: "shell", tool: "run_command", known: true, principalId: "ada", threadId: "t1" });
+    const reset = { text: "git reset --hard HEAD~1", surface: "shell" as const, tool: "run_command", known: true };
+    await safetyToolHold({ ...reset, principalId: "ada", threadId: "t1" });
     setSafetyConfirm(async () => "timeout");
-    expect(await safetyToolHold({ text: "npm test", surface: "shell", tool: "run_command", known: true, principalId: "ada", threadId: "t1" })).toBe(SAFETY_REFUSAL_FINAL);
-    expect(await safetyToolHold({ text: "npm test", surface: "shell", tool: "run_command", known: true, principalId: "ada", threadId: "t1" })).toBe(SAFETY_REFUSAL_FINAL);
+    expect(await safetyToolHold({ ...reset, principalId: "ada", threadId: "t1" })).toBe(SAFETY_REFUSAL_FINAL);
+    expect(await safetyToolHold({ ...reset, principalId: "ada", threadId: "t1" })).toBe(SAFETY_REFUSAL_FINAL);
 
     resetSafetyReviewForTests();
     enforce();
-    await safetyToolHold({ text: "npm test", surface: "shell", tool: "run_command", known: true, principalId: "bea", threadId: "t2" });
+    await safetyToolHold({ ...reset, principalId: "bea", threadId: "t2" });
     setSafetyConfirm(async () => "allow");
-    expect(await safetyToolHold({ text: "npm test", surface: "shell", tool: "run_command", known: true, principalId: "bea", threadId: "t2" })).toBeNull();
+    expect(await safetyToolHold({ ...reset, principalId: "bea", threadId: "t2" })).toBeNull();
   });
 
   it("auto-approves a read in enforce and refuses a hidden instruction on a message", async () => {
@@ -107,8 +107,10 @@ describe("safety review server", () => {
       return '{"action":"block"}';
     };
     expect(await safetyToolHold({ text: "pwd", surface: "shell", tool: "run_command", known: true, threadId: "t1", review })).toBeNull();
+    // a call left to the approval mode does not wait for the reviewer either
+    expect(await safetyToolHold({ text: "mkdir out", surface: "shell", tool: "run_command", known: true, threadId: "t1", review })).toBeNull();
     expect(reviewed).toBe(0);
-    const blocked = await safetyToolHold({ text: "mkdir out", surface: "shell", tool: "run_command", known: true, threadId: "t1", review });
+    const blocked = await safetyToolHold({ text: "git reset --hard HEAD~1", surface: "shell", tool: "run_command", known: true, threadId: "t1", review });
     expect(reviewed).toBe(1);
     expect(blocked).toContain("revue de sécurité");
   });
@@ -164,5 +166,53 @@ describe("untrusted tool results", () => {
       beforeCall: async () => "wait for approval",
     });
     expect((write.content[0] as { text: string }).text).toBe("wait for approval");
+  });
+});
+
+// 2026-10-27 (#1098, point 33): the safety.shadow rows a person's own work
+// wrote, read back from the activity log
+async function safetyRows(): Promise<Array<{ action: string; after: { tool?: string; code?: string } }>> {
+  await flushAdminActivity(dataDir);
+  const dir = join(dataDir, "admin-activity");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).flatMap((name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)))
+    .filter((row: { action: string }) => row.action.startsWith("safety."));
+}
+
+describe("false holds in shadow (#1098)", () => {
+  afterEach(() => resetMisuseGuardrailsForTests());
+
+  it("writes no row for a read or a write the approval mode answers", async () => {
+    process.env.SAGAX_MISUSE_GUARDRAILS = "shadow";
+    const calls = [
+      { text: "agents__sagax_help\n{\"question\":\"routines\"}", surface: "mcp" as const, tool: "agents__sagax_help" },
+      { text: "github__get_file_contents\n{\"path\":\"README.md\"}", surface: "mcp" as const, tool: "github__get_file_contents" },
+      { text: "cw_psa__query\n{\"resource\":\"tickets\"}", surface: "mcp" as const, tool: "perspicax" },
+      { text: "agents__memory_update\n{\"text\":\"note\"}", surface: "mcp" as const, tool: "agents__memory_update" },
+      { text: "propose_routine\n{\"name\":\"daily\"}", surface: "routine" as const, tool: "agents__propose_routine" },
+      { text: "npm install && npm test", surface: "shell" as const, tool: "run_command", ownEnvironment: true },
+    ];
+    for (const input of calls) {
+      expect(await safetyToolHold({ ...input, known: true, principalId: "ada", threadId: "t1" }), input.tool).toBeNull();
+      expect(safetyPermissionEffect({ ...input, known: true, principalId: "ada", threadId: "t1" }), input.tool).toBeNull();
+    }
+    expect(await safetyRows()).toEqual([]);
+  });
+
+  it("leaves a call in the person's own environment to their approval mode, not an automatic yes", () => {
+    enforce();
+    // no card from the review, and no approval either: Ask still asks
+    expect(safetyPermissionEffect({ text: "git push --force origin", surface: "shell", tool: "run_command", known: true, ownEnvironment: true, threadId: "t1" })).toBeNull();
+    // a send keeps its review there
+    expect(safetyPermissionEffect({ text: "to bob", surface: "mcp", tool: "GMAIL_SEND_EMAIL", known: true, ownEnvironment: true, threadId: "t1" })?.kind).toBe("stop");
+  });
+
+  it("reads the person's own bot folders as theirs, and another bot's as the platform's", async () => {
+    process.env.SAGAX_MISUSE_GUARDRAILS = "shadow";
+    setMisuseOwnPaths(({ botId }) => (botId === "b1" ? { roots: ["/data/.openmausbot/workspaces/b1"] } : undefined));
+    await safetyToolHold({ text: "cat /data/.openmausbot/workspaces/b1/memory/notes.md", surface: "shell", tool: "run_command", known: true, botId: "b1", threadId: "t1" });
+    expect(await safetyRows()).toEqual([]);
+    await safetyToolHold({ text: "cat /data/.openmausbot/workspaces/b2/memory/notes.md", surface: "shell", tool: "run_command", known: true, botId: "b1", threadId: "t1" });
+    expect((await safetyRows()).map((row) => row.after.code)).toEqual(["misuse"]);
   });
 });

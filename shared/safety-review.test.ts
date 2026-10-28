@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  CONFIRM_GUIDANCE,
   SAFER_GIT,
   SAFER_OUTBOUND,
   SAFER_UNTRUSTED,
   SAFER_UNKNOWN,
-  SAFER_WRITE,
   SAFETY_REFUSAL_CREDENTIALS,
   SAFETY_REFUSAL_FINAL,
   SAFETY_REFUSAL_MODEL,
@@ -27,17 +25,11 @@ function call(partial: Partial<SafetyInput> & Pick<SafetyInput, "text">): Safety
 }
 
 describe("safety review", () => {
-  it("auto-approves a read and asks before a write", () => {
+  it("auto-approves a read and leaves a plain write to the approval mode", () => {
     expect(reviewSafety(call({ text: "ls -la", tool: "run_command" })).code).toBe("read_only");
     expect(reviewSafety(call({ text: "cat .env", tool: "run_command" })).action).toBe("allow");
-    const memory = emptySafetyMemory();
-    const first = reviewSafety(call({ text: "write notes", tool: "write_file" }), memory);
-    expect(first.action).toBe("safer");
-    expect(first.message).toBe(SAFER_WRITE);
-    rememberSafety(memory, first);
-    const second = reviewSafety(call({ text: "write notes", tool: "write_file" }), memory);
-    expect(second.action).toBe("confirm");
-    expect(second.message).toBe(CONFIRM_GUIDANCE);
+    // 2026-10-27 (#1098): no safer path and no card Full cannot answer
+    expect(reviewSafety(call({ text: "write notes", tool: "write_file" }))).toMatchObject({ action: "allow", code: "allow" });
   });
 
   it("offers a safer git path, then a card, and a denial covers a reworded or encoded retry", () => {
@@ -156,8 +148,7 @@ describe("safety review", () => {
     }
   });
 
-  it("keeps the same write reviewed outside the person's own environment", () => {
-    expect(reviewSafety(call({ text: "write notes", tool: "write_file", surface: "file" })).action).toBe("safer");
+  it("keeps a destructive git operation reviewed outside the person's own environment", () => {
     expect(reviewSafety(call({ text: "git reset --hard HEAD~1", tool: "run_command" })).message).toBe(SAFER_GIT);
     expect(reviewSafety(call({ text: "rm -rf ~", tool: "run_command" })).code).toBe("misuse");
     expect(reviewSafety(call({ text: "git push --force", tool: "run_command", surface: "terminal" })).action).toBe("safer");

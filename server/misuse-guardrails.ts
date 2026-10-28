@@ -11,6 +11,7 @@ import {
   classifySandboxPath,
   misuseRefusalText,
   type MisuseCategory,
+  type MisuseOwnPaths,
   type MisuseScope,
   type MisuseVerdict,
 } from "../shared/misuse-guardrails.ts";
@@ -46,6 +47,7 @@ const buckets = new Map<string, Bucket>();
 
 let alertListener: ((alert: { principalId?: string; botId?: string; threadId?: string; category?: MisuseCategory; message: string }) => void) | null = null;
 let dataDirForTests: string | null = null;
+let ownPathsResolver: ((who: { principalId?: string; botId?: string; threadId?: string }) => MisuseOwnPaths | undefined) | null = null;
 
 export function misuseGuardrailMode(env: NodeJS.ProcessEnv = process.env): MisuseMode {
   const raw = (env.SAGAX_MISUSE_GUARDRAILS ?? "shadow").trim().toLowerCase();
@@ -59,6 +61,23 @@ export function setMisuseAlert(listener: typeof alertListener): void {
   alertListener = listener;
 }
 
+/** 2026-10-27 (#1098): the harness registers once how to read the
+ * person's own folders on the server (their own bot's workspace and task
+ * folders, their principal folder) and the attachment store, so the
+ * classifier does not take them for platform files. */
+export function setMisuseOwnPaths(resolver: typeof ownPathsResolver): void {
+  ownPathsResolver = resolver;
+}
+
+/** The own folders of a call's person and bot; nothing when unknown. */
+export function misuseOwnPaths(who: { principalId?: string; botId?: string; threadId?: string }): MisuseOwnPaths | undefined {
+  try {
+    return ownPathsResolver?.(who) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Tests write the activity log under a throwaway directory. */
 export function setMisuseDataDirForTests(dir: string | null): void {
   dataDirForTests = dir;
@@ -68,6 +87,7 @@ export function resetMisuseGuardrailsForTests(): void {
   buckets.clear();
   alertListener = null;
   dataDirForTests = null;
+  ownPathsResolver = null;
 }
 
 function bucketKey(context: MisuseContext): string {
@@ -138,7 +158,7 @@ export function misuseScopeFor(surface: MisuseContext["surface"]): MisuseScope {
 /** Classify `text`. Off: nothing. Shadow: a log row, no refusal. Enforce:
  * a refusal, and a lock after repeated attempts. `verdict` lets a path
  * check pass a block the text alone would not name. */
-export function misuseRefusal(text: string, context: MisuseContext, now = Date.now(), verdict = classifyMisuse(text, context.triage, misuseScopeFor(context.surface))): MisuseRefusal | null {
+export function misuseRefusal(text: string, context: MisuseContext, now = Date.now(), verdict = classifyMisuse(text, context.triage, misuseScopeFor(context.surface), misuseOwnPaths(context))): MisuseRefusal | null {
   const mode = misuseGuardrailMode();
   if (mode === "off") return null;
   const key = bucketKey(context);
@@ -173,7 +193,7 @@ export function misuseRefusal(text: string, context: MisuseContext, now = Date.n
  * host paths; the path text is read in the own-environment scope (a file
  * named `reboot-notes.md` is theirs). */
 export function misusePathRefusal(path: string, context: Omit<MisuseContext, "surface">, now = Date.now()): MisuseRefusal | null {
-  return misuseRefusal(path, { ...context, surface: "file" }, now, classifySandboxPath(path, context.triage, "own_environment"));
+  return misuseRefusal(path, { ...context, surface: "file" }, now, classifySandboxPath(path, context.triage, "own_environment", misuseOwnPaths(context)));
 }
 
 /** Text of a JSON-RPC tools/call, or null when the frame is not a call. */
