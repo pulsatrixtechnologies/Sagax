@@ -170,13 +170,13 @@ app.whenReady().then(async () => {
   const noBar = await win.webContents.executeJavaScript(`!document.querySelector("[data-voice-bar]")`);
   check("no voice bar opens without a key", noBar);
   await win.webContents.executeJavaScript(`document.querySelector('[data-voice-action="open-connections"]').click(); true`);
-  const settingsOpen = await until("Settings > Connections", async () => win.webContents.executeJavaScript(`/Models and voice|Modèles et voix/.test(document.body.innerText) && Boolean(document.querySelector('[role=dialog]'))`), 5_000).catch(() => false);
+  const settingsOpen = await until("Settings > Connections", async () => win.webContents.executeJavaScript(`/Models|Modèles/.test(document.body.innerText) && Boolean(document.querySelector('[role=dialog]'))`), 5_000).catch(() => false);
   check("Open Settings > Connections opens the settings", settingsOpen);
   win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
   win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
   await wait(500);
 
-  // 2. The admin adds the xAI key (Settings > Models and voice). Grok voice uses it (2026-10-14).
+  // 2. The admin adds the xAI key (Settings > Models). Grok voice uses it (2026-10-14).
   const put = await win.webContents.executeJavaScript(`fetch("/api/config", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ xai: { key: ${jsLiteral(fakeKey)} } }) }).then(r => r.status)`);
   check("the admin saves the xAI key", put < 300, `HTTP ${put}`);
   const status = await win.webContents.executeJavaScript(`fetch(${jsLiteral(`/api/bots/${bot.id}/voice/status`)}).then(r => r.text())`);

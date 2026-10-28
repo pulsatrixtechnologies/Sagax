@@ -3,13 +3,17 @@
 
 /** A page of the app Settings dialog. */
 export type AppSettingsSection =
-  /** Who is signed in, with Security keys and the vault under it (2026-10-26). */
+  /** Who is signed in: the account row, About me, language and time zone,
+   * and what General held (2026-10-28: Security and the vault are pages of
+   * their own again). */
   | "account"
   | "general"
   | "memory"
   | "privacy"
   | "notifications"
-  /** Security keys and passkeys for sensitive approvals (2026-10-16). */
+  /** Security (2026-10-28): security keys and passkeys, the person's own
+   * approval rules (Always allow, Always deny, Ask first) and their tool
+   * access. */
   | "security"
   | "organization"
   | "appearance"
@@ -19,11 +23,18 @@ export type AppSettingsSection =
   | "connections"
   | "connectedApps"
   | "decisionModel"
+  /** Models (2026-10-28; "Models and voice" until then): engines, keys,
+   * web search, image generation. */
   | "engines"
+  /** Voice (2026-10-28, out of Models and voice): the voice engine, Live
+   * calls, the microphone and the person's own voice keys. */
+  | "voice"
   | "companion"
   | "computer"
   | "usage"
-  /** The person's credential vault (2026-10-16): logins bots fill by reference. */
+  /** Vault (2026-10-28, page of its own again): the person's credential
+   * vault (logins, API keys and notes bots use without seeing them) and the
+   * one-time card. The id stays "credentials" so old links keep working. */
   | "credentials"
   | "people"
   | "mail"

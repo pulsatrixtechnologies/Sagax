@@ -21,6 +21,7 @@ import { READ_ONLY_AGENT_TOOL_NAMES } from "../../server/agent-tool-policy.ts";
 import { TOOL_POLICY_ROWS } from "../../server/tool-policy.generated.ts";
 import type { KnowledgeBase, KnowledgeSection, PerspicaxSnapshot } from "../../server/self-knowledge-types.ts";
 import { clip, CUSTOMER_TAG_LEFT, docSections, plainText, scrub, slug } from "./markdown.ts";
+import { CARD_HOME } from "../../src/lib/settings-sections.ts";
 import { GUIDES, SETTING_NOTES } from "./guides.ts";
 
 export const KNOWLEDGE_FILE = join("server", "self-knowledge", "knowledge.generated.json");
@@ -171,10 +172,11 @@ export function settingsSectionRows(root: string): SettingsSectionRow[] {
 
 const NAV_GROUP_KEYS: Record<string, string> = { you: "settings.nav.you", ai: "settings.nav.ai", workspace: "settings.nav.workspace", app: "settings.nav.app" };
 
-/** Card id prefix to the page that holds it (src/lib/settings-sections.ts). */
+/** Card id prefix to the page that holds it (src/lib/settings-sections.ts).
+ * A card that moved by itself (CARD_HOME, 2026-10-28) wins over its prefix. */
 const CARD_PAGE: Record<string, string> = {
-  connections: "engines", voice: "engines", connectedApps: "engines", orgImport: "organization", myConnections: "general",
-  notifications: "notifications",
+  connections: "engines", voice: "voice", connectedApps: "engines", orgImport: "organization", myConnections: "general",
+  notifications: "notifications", security: "security", credentials: "credentials",
 };
 const HIDDEN_PAGES = new Set(["companion", "activity", "mail", "people", "workspaces"]);
 
@@ -213,7 +215,7 @@ function settingsSections(root: string): KnowledgeSection[] {
       const titleText = /(?:title|label)="([^"]+)"/.exec(window)?.[1];
       if (!titleKey && !titleText) continue;
       const prefix = id.split(".")[0];
-      const page = id.startsWith("bot.") ? null : HIDDEN_PAGES.has(prefix) ? null : CARD_PAGE[prefix] ?? (pageName.has(prefix) ? prefix : null);
+      const page = id.startsWith("bot.") ? null : HIDDEN_PAGES.has(prefix) ? null : (Object.hasOwn(CARD_HOME, id) ? CARD_HOME[id] : undefined) ?? CARD_PAGE[prefix] ?? (pageName.has(prefix) ? prefix : null);
       if (!page && !id.startsWith("bot.")) continue;
       const title = titleKey ? label(titleKey, en, fr) : { english: titleText!, french: "" };
       const subtitleKey = /subtitle=\{t\("([\w.]+)"/.exec(window)?.[1] ?? /summary=\{t\("([\w.]+)"/.exec(window)?.[1];
@@ -302,12 +304,12 @@ function engineSections(root: string): KnowledgeSection[] {
     id: `engine:${engine.id}`,
     kind: "engine" as const,
     title: `Engine ${engine.name}`,
-    where: "Settings > Models and voice; a bot's model picker",
-    text: `${engine.name} (${engine.id}) ${engine.version} is preinstalled in the Sagax server image${engine.redistributable === false ? " built for your own servers (its licence is not open source)" : ""}. On the desktop the person signs in or installs it from Settings > Models and voice.`,
+    where: "Settings > Models; a bot's model picker",
+    text: `${engine.name} (${engine.id}) ${engine.version} is preinstalled in the Sagax server image${engine.redistributable === false ? " built for your own servers (its licence is not open source)" : ""}. On the desktop the person signs in or installs it from Settings > Models.`,
     source: "engines.lock.json",
   }));
   for (const engine of lock.notPreinstalled ?? []) {
-    out.push({ id: `engine:${engine.id}`, kind: "engine", title: `Engine ${engine.name}`, where: "Settings > Models and voice", text: `${engine.name} is not preinstalled on the server image: ${engine.reason}`, source: "engines.lock.json" });
+    out.push({ id: `engine:${engine.id}`, kind: "engine", title: `Engine ${engine.name}`, where: "Settings > Models", text: `${engine.name} is not preinstalled on the server image: ${engine.reason}`, source: "engines.lock.json" });
   }
   return out;
 }

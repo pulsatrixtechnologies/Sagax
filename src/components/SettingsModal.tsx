@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Archive, Bell, Coins, Download, FileText, FlaskConical, Import, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, AudioLines, Bell, Coins, Download, FileText, FlaskConical, Import, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection } from "@/state/store";
 import { decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -21,7 +21,7 @@ import { DecisionModelSettings } from "./DecisionModelSettings";
 import { GeneralAdvancedSettings, generalAdvancedShown, isSoloDesktop } from "./settings/AdvancedSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { openUpdatePrompt, requestUpdateCheck } from "@/lib/update-prompt";
-import { EnginesSettings } from "./EnginesSettings";
+import { EnginesSettings, VoiceSettingsPage } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
 import { peopleListServed, readMembership } from "../lib/membership";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
@@ -96,15 +96,23 @@ export const SECTIONS: Array<{
   // Settings groups its rail: you, AI, the workspace, this app last.
   // 0.5.6: General is laid out as the reference design's (Account, Appearance,
   // System); Updates is a page of its own, as there.
-  // 2026-10-26: Account comes first. Security keys and the credential vault
-  // (they were pages of their own) sit under the account row.
-  { id: "account", group: "you", labelKey: "settings.section.account", icon: User, keywords: ["account", "compte", "profile", "profil", "name", "email", "copy email", "sign out", "label", "about me", "about", "security", "sécurité", "security key", "security keys", "clé de sécurité", "clés de sécurité", "passkey", "clé d'accès", "yubikey", "webauthn", "touch id", "face id", "step-up", "sensitive", "sensibles", "approvals", "approbations", "always allow", "always deny", "credentials", "identifiants", "vault", "coffre", "password", "mot de passe", "login", "connexion", "totp", "2fa", "one-time code", "code à usage unique", "1password", "api key", "clé api", "autofill", "remplissage", "profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "language", "langue", "time zone", "timezone", "fuseau horaire", "fuseau", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
+  // 2026-10-26: Account comes first. 2026-10-28: Account keeps the account
+  // (who is signed in, name, avatar, About me, language and time zone) and
+  // what General held; Security and Vault are pages of their own again.
+  { id: "account", group: "you", labelKey: "settings.section.account", icon: User, keywords: ["account", "compte", "profile", "profil", "name", "nom", "email", "courriel", "copy email", "sign out", "se déconnecter", "déconnexion", "label", "avatar", "photo", "about me", "about", "à propos de moi", "open at login", "ouvrir à la connexion", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "people's tool access", "language", "langue", "time zone", "timezone", "fuseau horaire", "fuseau", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
+  // 2026-10-28: Security, the person's own: security keys and passkeys, the
+  // approval rules they saved (Always allow, Always deny, Ask first, paged)
+  // and their tool access. Vault: the credential vault and the one-time card.
+  { id: "security", group: "you", labelKey: "settings.section.security", icon: ShieldCheck, keywords: ["security", "sécurité", "security key", "security keys", "clé de sécurité", "clés de sécurité", "passkey", "clé d'accès", "yubikey", "webauthn", "touch id", "face id", "step-up", "sensitive", "sensibles", "approvals", "approbations", "approval level", "niveau d'approbation", "approval rules", "règles d'approbation", "rules", "règles", "always allow", "toujours permettre", "always deny", "toujours refuser", "ask first", "demander d'abord", "deny", "refuser", "tool access", "accès aux outils", "my tool access", "mon accès aux outils", "grants", "autorisations"] },
+  { id: "credentials", group: "you", labelKey: "settings.section.vault", icon: KeyRound, keywords: ["vault", "coffre", "your vault", "votre coffre", "credentials", "identifiants", "password", "mot de passe", "login", "logins", "connexions", "totp", "2fa", "one-time code", "code à usage unique", "1password", "api key", "clé api", "api keys", "clés api", "notes", "note", "autofill", "remplissage", "import", "importer", "export", "exporter", "add an item", "ajouter un élément", "one-time card", "carte à usage unique", "single-use", "shop pay", "link", "card", "carte", "purchase", "achat", "achats"] },
   { id: "appearance", group: "you", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "thème", "variant", "variante", "light", "clair", "dark", "sombre", "auto", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "accessibility", "accessibilité", "reduce motion", "motion", "animations", "contrast", "contraste", "text size", "taille du texte", "zoom", "hardware acceleration", "accélération matérielle", "gpu", "spell check", "spellcheck", "orthographe", "correcteur", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
   { id: "notifications", group: "you", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "notification sound", "son de notification", "tick", "tic", "carillon", "chime a", "chime b", "blip", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "app icon", "icône", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
-  // Models and voice (2026-10-14): Integrations and Models and accounts in
-  // one page; Connected apps and Decision model are cards of it.
-  { id: "engines", group: "ai", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "moteurs", "needs setup", "à configurer", "voice engine", "moteur de voix", "fish audio", "live calls", "appels en direct", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents", "web search", "recherche web", "brave", "exa", "firecrawl", "searxng", "microphone", "micro", "audio", "input device", "entrée audio"] },
+  // Models (2026-10-14 as Models and voice: Integrations and Models and
+  // accounts in one page; Connected apps and Decision model are cards of
+  // it). 2026-10-28: Voice is a page of its own; every key stays in Models.
+  { id: "engines", group: "ai", labelKey: "settings.section.models", icon: Terminal, keywords: ["models", "modèles", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "elevenlabs", "fish audio", "image", "avatar", "box", "vps", "cursor", "cloud agents", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "moteurs", "needs setup", "à configurer", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents", "web search", "recherche web", "brave", "exa", "firecrawl", "searxng"] },
+  { id: "voice", group: "ai", labelKey: "settings.section.voice", icon: AudioLines, keywords: ["voice", "voix", "tts", "speech", "parole", "elevenlabs", "fish", "fish audio", "chatterbox", "grok voice", "voice engine", "moteur de voix", "live call", "live calls", "appels en direct", "read replies", "hang up", "gpt-live", "voice keys", "clés de voix", "microphone", "micro", "audio", "input device", "entrée audio"] },
   // 2026-10-14: Memory is a card of this page (it was its own section).
   { id: "organization", group: "workspace", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", "full access", "accès complet", "approvals", "approbations", "waiting for an admin", "en attente", "people from before", "rattacher", "invite", "inviter", "invitation", "people", "personnes", "this computer", "cet ordinateur", "serveurs", "oublier", "forget", ...ORGANIZATION_ADVANCED_KEYWORDS] },
   { id: "computer", group: "workspace", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur", "your computer", "votre ordinateur", "other computers", "autres ordinateurs", "rename", "renommer", "remove computer", "retirer", "network", "réseau", "traffic", "trafic", "server environment", "environnement serveur", "reset", "réinitialiser", "repair", "réparer", "update", "mise à jour", "maintenance", "entretien", "disk", "disque", "disk saver", "économiseur de disque", "cache", "clean", "nettoyer"] },
@@ -133,6 +141,7 @@ const HOSTED_CARDS: Partial<Record<AppSettingsSection, AppSettingsSection[]>> = 
  * is looking for what the card holds, so it should not stay folded. */
 const CARD_KEYWORDS: Record<string, string[]> = {
   "general.aboutMe": ["about me"],
+  "myApprovalRules": ["always allow", "always deny", "ask first", "approval rules", "règles d'approbation"],
   "general.threadCleanup": ["cleanup", "retention", "event log", "event-log", "log size"],
   "organization.mcpCalls": ["mcp", "timeout", "tool call"],
   "connections.integrations": ["box", "vps"],
@@ -780,10 +789,11 @@ export function SettingsModal() {
             )}
             {section === "account" && (
               <>
-                {/* The account first; then the person's language and time zone,
-                    Security keys and the credential vault (2026-10-26). What
-                    General held (server, default bot, guided tours, Advanced)
-                    is at the bottom, the microphone is in Models and voice. */}
+                {/* The account first; then the person's language and time zone
+                    (2026-10-26). What General held (server, default bot,
+                    guided tours, Advanced) is at the bottom. Security keys,
+                    the approval rules, tool access and the vault are pages
+                    of their own since 2026-10-28; the microphone is in Voice. */}
                 <SettingsGroup title={t("settings.group.account")} groupId="account">
                   {/* 2026-10-15: one account row (who, label, Sign out) */}
                   <AccountCard lockedServer={lockedServer} />
@@ -804,12 +814,6 @@ export function SettingsModal() {
                   {/* the person's own time zone (parity 2E) */}
                   <TimeZoneRows />
                 </SettingsGroup>
-                <SecurityKeySettings />
-                {/* every Always allow and Always deny the person saved, revocable (2026-10-19) */}
-                <MyApprovalRules />
-                {/* the person's own tool access, theirs without an admin (2026-10-26) */}
-                <MyToolGrants />
-                <CredentialsSettings />
                 <SettingsGroup title={t("settings.group.system")} groupId="system">
                   {!remoteActive && <ServerRow />}
                   {advanced && editConfig && <DefaultBotSettings />}
@@ -836,6 +840,28 @@ export function SettingsModal() {
               </>
             )}
 
+            {/* Security (2026-10-28, out of Account): security keys and the
+                classes they confirm, every rule the person saved (paged),
+                their own tool access. */}
+            {section === "security" && (
+              <div className="flex min-w-0 flex-col gap-3" data-security-page="">
+                <SecurityKeySettings />
+                {/* every Always allow, Always deny and Ask first the person saved, revocable (2026-10-19) */}
+                <MyApprovalRules />
+                {/* the person's own tool access, theirs without an admin (2026-10-26) */}
+                <MyToolGrants />
+              </div>
+            )}
+
+            {/* Vault (2026-10-28, out of Account): logins, API keys and notes
+                bots use without seeing them, Import, Export, Add an item,
+                the one-time card, purchases and 1Password. */}
+            {section === "credentials" && (
+              <div className="flex min-w-0 flex-col gap-3" data-vault-page="">
+                <CredentialsSettings />
+              </div>
+            )}
+
             {section === "updates" && (
               <div data-settings-card="updates">
                 {/* 2026-10-16: a titled card, as every other page's */}
@@ -854,11 +880,14 @@ export function SettingsModal() {
             {section === "engines" && (
               <div className="flex min-w-0 flex-col gap-6">
                 <EnginesSettings />
-                {/* Decision model (2026-10-14): a group of Models and voice,
-                    shown while its experiment is on. */}
+                {/* Decision model (2026-10-14): a group of Models, shown
+                    while its experiment is on. */}
                 {allowed("decisionModel") && <DecisionModelSettings />}
               </div>
             )}
+
+            {/* Voice (2026-10-28, out of Models and voice) */}
+            {section === "voice" && <VoiceSettingsPage />}
 
             {section === "backups" && <WorkspaceBackupSettings />}
             {section === "import" && <ImportSettings />}

@@ -3,7 +3,8 @@
 // destinations, their cloud computer and their Local VM). Rules are the
 // person's own: GET /api/approval-rules lists them, DELETE removes one. A
 // rule saved on a bot someone shared with them shows that bot's name; the
-// bot's owner never sees it.
+// bot's owner never sees it. Settings > Security (2026-10-28): the list is
+// paged as the usage traces are (SettingsPager, ten a page by default).
 import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 
@@ -13,6 +14,7 @@ import { t } from "@/lib/i18n";
 import { api, useStoreOptional } from "@/state/store";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { HelpTip, SettingsGroup } from "../SettingsPrimitives";
+import { clampPageOffset, SETTINGS_DEFAULT_PAGE_SIZE, SettingsPager } from "../SettingsPager";
 import type { OwnerRuleRow } from "../bot-settings/OwnerPermissionsCard";
 
 /** The rules in the order the list shows them: by bot name, then by what
@@ -24,9 +26,20 @@ export function myRulesInOrder(rules: readonly OwnerRuleRow[], botName: (id: str
     || a.description.localeCompare(b.description));
 }
 
-export function MyApprovalRules() {
+/** The rules of one page of the list. */
+export function rulesPage<T>(rules: readonly T[], offset: number, pageSize: number): T[] {
+  return rules.slice(offset, offset + pageSize);
+}
+
+export function MyApprovalRules({ initialPageSize = SETTINGS_DEFAULT_PAGE_SIZE, initialOffset = 0 }: {
+  /** Tests and the gallery start on another page or size. */
+  initialPageSize?: number;
+  initialOffset?: number;
+}) {
   const bots = useStoreOptional()?.state.bots ?? [];
   const [rules, setRules] = useState<OwnerRuleRow[] | null>(null);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [offset, setOffset] = useState(initialOffset);
   const [removing, setRemoving] = useState<OwnerRuleRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const botName = useCallback((id: string) => botLabel(bots.find((bot) => bot.id === id)?.name ?? rules?.find((rule) => rule.botId === id)?.botName), [bots, rules]);
@@ -46,12 +59,15 @@ export function MyApprovalRules() {
   };
 
   if (rules === null) return null;
-  const shown = myRulesInOrder(rules, botName);
+  const ordered = myRulesInOrder(rules, botName);
+  // a removed rule never leaves an empty page: the last page shows instead
+  const at = clampPageOffset(offset, ordered.length, pageSize);
+  const shown = rulesPage(ordered, at, pageSize);
   return (
     <>
       <SettingsGroup title={t("myRules.title")} groupId="myApprovalRules"
         accessory={<HelpTip label={t("settings.moreAbout", { title: t("myRules.title") })}>{t("myRules.help")}</HelpTip>}>
-        <div data-my-rules={String(shown.length)}>
+        <div data-my-rules={String(ordered.length)}>
           {shown.length === 0 ? (
             <p className="px-3.5 py-2.5 text-[12.5px] leading-[18px] text-ink-secondary">{t("botPanel.rules.empty")}</p>
           ) : (
@@ -80,6 +96,16 @@ export function MyApprovalRules() {
                 </div>
               ))}
             </div>
+          )}
+          {ordered.length > 0 && (
+            <SettingsPager
+              offset={at}
+              count={shown.length}
+              total={ordered.length}
+              pageSize={pageSize}
+              onPage={setOffset}
+              onPageSize={(size) => { setPageSize(size); setOffset(0); }}
+            />
           )}
           {error && <div role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{error}</div>}
         </div>

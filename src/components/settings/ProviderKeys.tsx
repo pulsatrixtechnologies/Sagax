@@ -127,8 +127,8 @@ export function revealKeyRow(row: KeyRowId, config: ConfigStatus | null | undefi
 /** The key line of a section that uses a key of the list (Voice, Image
  * generation): whether the chosen provider's key is saved, in a few words,
  * and when it is missing a link to its row in Keys, never a key field.
- * `link` is false where the Keys list is not on the page (a remote window):
- * the line then only says what is missing. */
+ * `link` is false where the Keys list is not shown (a remote window): the
+ * line then only says what is missing. From Voice the link opens Models. */
 export function KeyInKeys({ row, saved, included = false, optional = false, missing, link = true }: {
   row: KeyRowId;
   saved: boolean;
@@ -140,7 +140,7 @@ export function KeyInKeys({ row, saved, included = false, optional = false, miss
   missing?: string;
   link?: boolean;
 }) {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const name = keyRowName(row);
   const ready = saved || included;
   return (
@@ -155,7 +155,14 @@ export function KeyInKeys({ row, saved, included = false, optional = false, miss
         <button
           type="button"
           data-add-in-keys={row}
-          onClick={() => revealKeyRow(row, state.config)}
+          onClick={() => {
+            // Voice is a page of its own since 2026-10-28: the Keys list is on
+            // Models, so the link opens Models first, then shows the row.
+            if (typeof document !== "undefined" && !document.querySelector("[data-keys-section]")) {
+              dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+            }
+            revealKeyRow(row, state.config);
+          }}
           className="inline-flex shrink-0 items-center gap-1 rounded-md text-[12.5px] font-medium text-accent-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
         >
           {t("modelsVoice.key.addInKeys")}

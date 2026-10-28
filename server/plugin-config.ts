@@ -104,7 +104,7 @@ export function checkPluginConfig(fields: readonly PluginConfigField[], input: u
     const field = fields.find((candidate) => candidate.key === key);
     if (!field) return { ok: false, error: `This plugin declares no field "${key}".`, code: "unknown_field" };
     if (field.sensitive) {
-      return { ok: false, error: `${field.title} is a secret: keep it in Settings > Credentials, never in the plugin's files.`, code: "sensitive_field" };
+      return { ok: false, error: `${field.title} is a secret: keep it in Settings > Vault, never in the plugin's files.`, code: "sensitive_field" };
     }
     if (value === "" || value === null) continue;
     const checked = checkValue(field, value);

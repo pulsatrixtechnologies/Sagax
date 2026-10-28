@@ -256,7 +256,7 @@ describe("Settings → Engines → setup cards", () => {
     // A remote client cannot reach this server's key settings.
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
     const remote = enginesList(renderToStaticMarkup(createElement(EnginesSettings)));
-    expect(remote).toContain("open Settings &gt; Models and voice on the computer running Sagax");
+    expect(remote).toContain("open Settings &gt; Models on the computer running Sagax");
     expect(remote).not.toContain("Change key");
 
     // A Company-managed key is not the person's to change.

@@ -245,7 +245,8 @@ describe("voice set-up pop-up", () => {
     expect(needsEngine).not.toContain("ElevenLabs key");
     expect(needsEngine).not.toContain('aria-label="Voice engine"');
     expect(needsEngine).toContain("Set up the voice engine");
-    expect(needsEngine).toContain(">Models and voice<");
+    // 2026-10-28: the voice engine is on the Voice page
+    expect(needsEngine).toContain(">Voice<");
     expect(pickerTag(needsEngine)).toBeUndefined();
 
     fixture.config = { tts: { configured: true, provider: "elevenlabs" } };

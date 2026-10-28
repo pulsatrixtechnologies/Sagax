@@ -242,19 +242,19 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Change a custom rule ({when?, behavior?, enabled?, riskScope?}) | Bot editor > Permissions > Custom rules | `sagax_settings` set `rules.customUpdate` | élargit les droits |
 | Delete a custom rule (true) | Bot editor > Permissions > Custom rules | `sagax_settings` set `rules.customDelete` | suppression + élargit les droits |
 | Change an owner rule ({behavior, botId?}) | Bot editor > Permissions > Owner permissions | `sagax_settings` get, set `rules.owner` | élargit les droits |
-| Delete an owner rule (true) | Settings > Approvals > My rules | `sagax_settings` set `rules.ownerDelete` | suppression + élargit les droits |
+| Delete an owner rule (true) | Settings > Security > Your approval rules | `sagax_settings` set `rules.ownerDelete` | suppression + élargit les droits |
 | Allow an exact command ({command, cwd, providerInstanceId}) | Bot editor > Access > Saved commands | `sagax_settings` set `rules.commandAllow` | élargit les droits |
 
 ### Compte
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| How people see your name | Settings > General > Account | `sagax_settings` set `account.label` | simple |
-| Your photo (a data URL, null removes) | Settings > General > Account | `sagax_settings` set `account.avatar` | simple |
-| About me | Settings > General > About me | `sagax_settings` get, set `account.aboutMe` | simple; organisation : organisation |
+| How people see your name | Settings > Account | `sagax_settings` set `account.label` | simple |
+| Your photo (a data URL, null removes) | Settings > Account | `sagax_settings` set `account.avatar` | simple |
+| About me | Settings > Account > About me | `sagax_settings` get, set `account.aboutMe` | simple; organisation : organisation |
 | Your own model and notifications for a shared bot | Shared bot > Model / Notifications | `sagax_settings` set `account.botOverride` | simple |
-| Your time zone (an IANA zone such as America/Toronto; turns automatic detection off) | Settings > General > Appearance > Time zone | `sagax_settings` get, set `account.timeZone` | simple |
-| Detect your time zone automatically (the app then follows this computer's zone) | Settings > General > Appearance > Time zone | `sagax_settings` get, set `account.timeZoneAuto` | simple |
+| Your time zone (an IANA zone such as America/Toronto; turns automatic detection off) | Settings > Account > Time zone | `sagax_settings` get, set `account.timeZone` | simple |
+| Detect your time zone automatically (the app then follows this computer's zone) | Settings > Account > Time zone | `sagax_settings` get, set `account.timeZoneAuto` | simple |
 
 ### Apparence
 
@@ -311,13 +311,13 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| Voice mode (voice, speed, language) | Settings > Models and voice > Voice mode | `sagax_settings` set `models.voiceMode` | simple |
-| Voice engine | Settings > Models and voice > Voice | `sagax_settings` get, set `models.voiceProvider` | simple; organisation : organisation |
-| Fish Audio model | Settings > Models and voice > Voice | `sagax_settings` get, set `models.fishModel` | simple; organisation : organisation |
-| Image generation | Settings > Models and voice > Images | `sagax_settings` get, set `models.imageGen` | simple; organisation : organisation |
-| Decision model | Settings > Models and voice > Decision model | `sagax_settings` get, set `models.decider` | simple; organisation : organisation |
-| Anthropic key for every Claude bot | Settings > Models and voice > Keys | `sagax_settings` get, set `models.everyClaudeBot` | simple; organisation : organisation |
-| Live call settings | Settings > Models and voice > Live calls | `sagax_settings` get, set `models.liveCalls` | simple; organisation : organisation |
+| Voice mode (voice, speed, language) | Settings > Voice > Voice mode | `sagax_settings` set `models.voiceMode` | simple |
+| Voice engine | Settings > Voice | `sagax_settings` get, set `models.voiceProvider` | simple; organisation : organisation |
+| Fish Audio model | Settings > Voice | `sagax_settings` get, set `models.fishModel` | simple; organisation : organisation |
+| Image generation | Settings > Models > Images | `sagax_settings` get, set `models.imageGen` | simple; organisation : organisation |
+| Decision model | Settings > Models > Decision model | `sagax_settings` get, set `models.decider` | simple; organisation : organisation |
+| Anthropic key for every Claude bot | Settings > Models > Keys | `sagax_settings` get, set `models.everyClaudeBot` | simple; organisation : organisation |
+| Live call settings | Settings > Voice > Live calls | `sagax_settings` get, set `models.liveCalls` | simple; organisation : organisation |
 
 ### Connexions
 
@@ -327,17 +327,17 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Your MCP server on or off ({name, enabled}) | Connect apps > My accounts | `sagax_settings` set `connections.mcpServerEnabled` | simple |
 | Remove your MCP server (its name) | Connect apps > My accounts | `sagax_settings` set `connections.mcpServerRemove` | suppression |
 | Disconnect GitHub (true) | Connect apps > Sources > GitHub | `sagax_settings` set `connections.githubDisconnect` | suppression + secret |
-| Your web search provider ({provider: brave/exa/parallel/firecrawl/searxng, baseUrl}; null forgets it). The key is pasted in Settings only: the answer says whether one is saved, never the key | Settings > Models and voice > Web search | `sagax_settings` get, set `connections.webSearch` | simple |
+| Your web search provider ({provider: brave/exa/parallel/firecrawl/searxng, baseUrl}; null forgets it). The key is pasted in Settings only: the answer says whether one is saved, never the key | Settings > Models > Web search | `sagax_settings` get, set `connections.webSearch` | simple |
 
 ### Coffre et clés
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| A provider key ({<provider>: {key}}) | Settings > Models and voice > Keys | `sagax_settings` set `models.providerKey` | secret; organisation : secret + organisation |
-| Cloud coding agent key ({provider: cursor/claude/codex, token}, token null removes) | Settings > Models and voice > Cloud coding agents | `sagax_settings` set `connections.cloudAgentKey` | secret |
-| A vault item ({name, username, password, apiKey, notes, domains}); no target creates one | Settings > Credentials | `sagax_settings` set `credentials.item` | secret |
-| Let a bot use an item ({botId, allow: true/false}) | Settings > Credentials > item | `sagax_settings` set `credentials.botAccess` | secret |
-| Delete a vault item (true) | Settings > Credentials | `sagax_settings` set `credentials.delete` | suppression + secret |
+| A provider key ({<provider>: {key}}) | Settings > Models > Keys | `sagax_settings` set `models.providerKey` | secret; organisation : secret + organisation |
+| Cloud coding agent key ({provider: cursor/claude/codex, token}, token null removes) | Settings > Models > Cloud coding agents | `sagax_settings` set `connections.cloudAgentKey` | secret |
+| A vault item ({name, username, password, apiKey, notes, domains}); no target creates one | Settings > Vault | `sagax_settings` set `credentials.item` | secret |
+| Let a bot use an item ({botId, allow: true/false}) | Settings > Vault > item | `sagax_settings` set `credentials.botAccess` | secret |
+| Delete a vault item (true) | Settings > Vault | `sagax_settings` set `credentials.delete` | suppression + secret |
 
 ### Serveur
 

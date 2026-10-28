@@ -171,3 +171,23 @@ describe("palette recents", () => {
     expect(rememberPaletteRecent("a", throwing)).toEqual(["a"]);
   });
 });
+
+// 2026-10-28: Security, Vault, Models and Voice are pages of their own; the
+// palette opens each one, and finds it by the words of what moved there.
+describe("Settings pages in the palette", () => {
+  it("opens Security, Vault, Models and Voice", () => {
+    const items = buildPaletteSections(context()).flatMap((section) => section.items);
+    const settingsTargets = items.filter((item) => item.action.kind === "settings" && "section" in item.action).map((item) => (item.action as { section: string }).section);
+    for (const section of ["account", "security", "credentials", "engines", "voice"]) expect(settingsTargets, section).toContain(section);
+    const label = (section: string) => items.find((item) => item.action.kind === "settings" && (item.action as { section?: string }).section === section)?.label;
+    expect(label("security")).toBe("Security");
+    expect(label("credentials")).toBe("Vault");
+    expect(label("engines")).toBe("Models");
+    expect(label("voice")).toBe("Voice");
+  });
+
+  it.each([["coffre", "credentials"], ["vault", "credentials"], ["sécurité", "security"], ["micro", "voice"]])("finds %s on its page", (query, section) => {
+    const items = buildPaletteSections(context({ query })).flatMap((entry) => entry.items);
+    expect(items.some((item) => item.action.kind === "settings" && (item.action as { section?: string }).section === section)).toBe(true);
+  });
+});

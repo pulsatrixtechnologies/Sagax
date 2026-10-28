@@ -19,16 +19,15 @@ import { formatTokens } from "@/lib/usage";
 import {
   fetchTraces,
   formatDuration,
-  pageRange,
   TRACE_DEFAULT_PAGE_SIZE,
-  TRACE_PAGE_SIZES,
   type TracePaging,
   freshInput,
   triggerLabelOf,
   type UsageJobTrace,
   type UsageTraceList,
 } from "@/lib/usage-trace";
-import { PillSelect, SettingsGroup } from "../SettingsPrimitives";
+import { SettingsGroup } from "../SettingsPrimitives";
+import { SettingsPager } from "../SettingsPager";
 
 function CopyId({ botId, threadId }: Pick<UsageJobTrace, "botId" | "threadId">) {
   const [done, setDone] = useState(false);
@@ -133,36 +132,6 @@ function PeriodTotal({ total }: { total: UsageTraceList["total"] }) {
   );
 }
 
-function Pager({ offset, count, total, pageSize, onPage, onPageSize }: {
-  offset: number; count: number; total: number; pageSize: number;
-  onPage: (offset: number) => void; onPageSize: (size: number) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t-[0.5px] border-border px-3 py-2 text-[12px] text-ink-secondary">
-      <label className="flex items-center gap-1">
-        <span>{t("usage.trace.perPage")}</span>
-        <PillSelect<string>
-          value={String(pageSize)}
-          options={TRACE_PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
-          onChange={(next) => onPageSize(Number(next))}
-          ariaLabel={t("usage.trace.perPage")}
-        />
-      </label>
-      <span className="tabular-nums" aria-live="polite">
-        {t("usage.trace.range", { range: pageRange(offset, count), total: String(total) })}
-      </span>
-      <span className="flex items-center gap-1">
-        <button type="button" className="ui-button min-h-[44px] disabled:opacity-50 md:min-h-0" disabled={offset <= 0} onClick={() => onPage(Math.max(0, offset - pageSize))}>
-          {t("usage.trace.prev")}
-        </button>
-        <button type="button" className="ui-button min-h-[44px] disabled:opacity-50 md:min-h-0" disabled={offset + count >= total} onClick={() => onPage(offset + pageSize)}>
-          {t("usage.trace.next")}
-        </button>
-      </span>
-    </div>
-  );
-}
-
 /** The per-job usage traces for the current month, ten jobs a page (10, 25
  * or 50), newest first, with the whole period's time and cost on top. The
  * server pages the list (limit/offset), so the full ledger never loads. In
@@ -210,7 +179,7 @@ export function UsageTraces({ load = fetchTraces }: { load?: (range: { from: str
             {list.truncated && (
               <p className="px-3 py-2 text-[11px] text-ink-secondary">{t("usage.trace.truncated", { count: String(totalJobs) })}</p>
             )}
-            <Pager offset={offset} count={jobs.length} total={totalJobs} pageSize={pageSize} onPage={setOffset} onPageSize={setPageSize} />
+            <SettingsPager offset={offset} count={jobs.length} total={totalJobs} pageSize={pageSize} onPage={setOffset} onPageSize={setPageSize} />
           </>
         )}
       </div>

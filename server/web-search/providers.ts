@@ -102,7 +102,7 @@ interface PlannedRequest {
 export function planWebSearch(config: WebSearchConfig, query: string, count: number): PlannedRequest {
   const info = WEB_SEARCH_PROVIDER_INFO[config.provider];
   const key = config.key?.trim() ?? "";
-  if (info.keyRequired && !key) throw new WebSearchError("no_key", `No ${info.label} key is saved. Add it in Settings > Models and voice > Web search.`);
+  if (info.keyRequired && !key) throw new WebSearchError("no_key", `No ${info.label} key is saved. Add it in Settings > Models > Web search.`);
   const json = { accept: "application/json" };
   switch (config.provider) {
     case "brave": {
@@ -155,7 +155,7 @@ export function planWebSearch(config: WebSearchConfig, query: string, count: num
       };
     case "searxng": {
       const base = config.baseUrl ? normalizeBaseUrl(config.baseUrl) : "";
-      if (!base) throw new WebSearchError("no_base_url", "No SearXNG address is saved. Add it in Settings > Models and voice > Web search.");
+      if (!base) throw new WebSearchError("no_base_url", "No SearXNG address is saved. Add it in Settings > Models > Web search.");
       const url = new URL(`${base}/search`);
       url.searchParams.set("q", query);
       url.searchParams.set("format", "json");
@@ -188,7 +188,7 @@ export async function runWebSearch(
     throw new WebSearchError("upstream", `${label} could not be reached.`);
   }
   if (response.status === 401 || response.status === 403) {
-    throw new WebSearchError("refused_key", `${label} refused the key (HTTP ${response.status}). Check it in Settings > Models and voice > Web search.`, response.status);
+    throw new WebSearchError("refused_key", `${label} refused the key (HTTP ${response.status}). Check it in Settings > Models > Web search.`, response.status);
   }
   if (response.status === 429) throw new WebSearchError("rate_limited", `${label} is limiting searches on this key (HTTP 429). Try again later.`, 429);
   if (!response.ok) throw new WebSearchError("upstream", `${label} answered HTTP ${response.status}.`, response.status);

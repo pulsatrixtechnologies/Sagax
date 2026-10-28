@@ -207,10 +207,14 @@ export function paletteCommands(context: PaletteContext): PaletteItem[] {
     action: { kind: "settings" },
   });
   const sections: Array<[AppSettingsSection, LocaleKey, string[]]> = [
-    ["account", "settings.section.account", ["profile", "profil", "account", "compte", "security", "sécurité", "vault", "coffre"]],
+    // 2026-10-28: Security, Vault, Models and Voice are pages of their own.
+    ["account", "settings.section.account", ["profile", "profil", "account", "compte"]],
+    ["security", "settings.section.security", ["security", "sécurité", "security key", "clé de sécurité", "approval rules", "règles d'approbation", "tool access", "accès aux outils"]],
+    ["credentials", "settings.section.vault", ["vault", "coffre", "password", "mot de passe", "credentials", "identifiants", "one-time card", "carte à usage unique"]],
     ["appearance", "settings.section.appearance", ["theme", "thème", "dark", "sombre", "mode"]],
     ["notifications", "settings.section.notifications", ["sound", "son", "badge", "alert", "alerte"]],
-    ["engines", "settings.section.modelsVoice", ["models", "modèles", "voice", "voix", "claude", "codex", "grok", "keys", "clés"]],
+    ["engines", "settings.section.models", ["models", "modèles", "claude", "codex", "grok", "keys", "clés"]],
+    ["voice", "settings.section.voice", ["voice", "voix", "microphone", "micro", "live calls", "appels en direct"]],
   ];
   if (context.desktop) sections.push(["updates", "settings.updates.title", ["update", "version", "mise à jour", "beta"]]);
   for (const [section, labelKey, words] of sections) {
