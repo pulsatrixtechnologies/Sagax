@@ -185,11 +185,19 @@ describe("organization server: each admitted ACP engine withholds its own tools"
     expect(acpHostToolRequest({ kind: "fetch", title: "mcp_notes_read" })).toBe(true);
     expect(acpHostToolRequest({ kind: "fetch", title: "mcp__agents__list_bots" })).toBe(false);
     expect(acpHostToolRequest({ kind: "read", title: "mcp__browser__navigate" })).toBe(false);
+    // 2026-10-28: Sagax's Data and Messages servers, and the ACP spelling
+    expect(acpHostToolRequest({ kind: "read", title: "mcp__data__data_sql" })).toBe(false);
+    expect(acpHostToolRequest({ kind: "fetch", title: "messages__read_messages" })).toBe(false);
+    expect(acpHostToolRequest({ kind: "read", title: "agents__list_bots" })).toBe(false);
+    expect(acpHostToolRequest({ kind: "read", title: "agentsx__list_bots" })).toBe(true);
+    expect(acpHostToolRequest({ kind: "read", title: "notes__read" })).toBe(true);
   });
 
   it("names exactly the MCP servers Sagax passes a turn", () => {
     expect(sagaxMcpServerNames(undefined)).toEqual([]);
     expect(sagaxMcpServerNames({ agents: {}, browser: {}, custom: { notes: {}, agents: {} } })).toEqual(["agents", "browser", "notes"]);
+    // 2026-10-28: Data and Messages are mounted too, so they are allowed by name
+    expect(sagaxMcpServerNames({ agents: {}, data: {}, messages: {}, localComputer: {} })).toEqual(["agents", "data", "messages", "computer"]);
   });
 });
 

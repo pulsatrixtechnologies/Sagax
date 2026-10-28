@@ -245,8 +245,11 @@ export function piHostToolArgs(withhold: boolean): string[] {
 }
 
 /** Sagax MCP tools a withheld turn may still call. A title that merely
- * starts with "mcp" is not one of them. */
-const SAGAX_MCP_TITLE = /^mcp__(?:agents|browser|computer)(?:__|$)/i;
+ * starts with "mcp" is not one of them. 2026-10-28: Data and Messages are
+ * Sagax's own servers too (acp/core.ts mounts them), and an ACP title may
+ * spell a tool without the mcp__ lead (`agents__list_bots`,
+ * member-tool-scope.ts builtinAgentToolName). */
+const SAGAX_MCP_TITLE = /^(?:mcp__)?(?:agents|browser|computer|data|messages)(?:__|$)/i;
 
 /** An ACP `session/request_permission` that would act on this machine.
  * A command, a file change, a move or a delete is declined whatever its
@@ -288,11 +291,14 @@ export function withheldWorkspace(): string {
 /** The MCP server names Sagax passes an ACP engine for a turn (the same
  * names as acp/core.ts mcpServersFor, before a tool scope filter). */
 export function sagaxMcpServerNames(integrations: {
-  agents?: unknown; browser?: unknown; localComputer?: unknown; custom?: Record<string, unknown>;
+  agents?: unknown; browser?: unknown; data?: unknown; messages?: unknown; localComputer?: unknown; custom?: Record<string, unknown>;
 } | undefined): string[] {
+  // 2026-10-28: data and messages are mounted too (acp/core.ts); a name left
+  // out here is a server Gemini and Qwen refuse to start on a withheld turn
   const names = [
     ...(integrations?.agents ? ["agents"] : []),
-    ...(integrations?.browser ? ["browser"] : []), ...(integrations?.localComputer ? ["computer"] : []),
+    ...(integrations?.browser ? ["browser"] : []), ...(integrations?.data ? ["data"] : []),
+    ...(integrations?.messages ? ["messages"] : []), ...(integrations?.localComputer ? ["computer"] : []),
     ...Object.keys(integrations?.custom ?? {}),
   ];
   return [...new Set(names)];
