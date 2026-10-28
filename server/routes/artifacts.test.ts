@@ -49,11 +49,12 @@ function client(store: ArtifactStore, over: Partial<ArtifactRouteDeps> = {}) {
   return async (method: string, path: string, body?: unknown) => {
     const sent: Sent[] = [];
     const headers: Record<string, string> = {};
+    const url = new URL(`http://x${path}`);
     const out = await route({
       req: { headers: { "content-type": "application/json" } } as unknown as IncomingMessage,
       res: { setHeader: (key: string, value: string) => { headers[key] = value; } } as unknown as ServerResponse,
-      url: new URL(`http://x${path}`),
-      path,
+      url,
+      path: url.pathname,
       method,
       auth: { kind: "loopback", scopes: ["admin", "client"] } as unknown as RequestAuth,
       json: ((_res: ServerResponse, status: number, payload: unknown) => { sent.push({ status, body: payload }); }) as RouteContext["json"],
@@ -148,5 +149,19 @@ describe("the person's artifact routes", () => {
     expect((await call("POST", "/api/artifacts/watch", { ids: [artifact.id, "art_unknown123"] })).sent?.body).toEqual({ ok: true, watching: 1 });
     expect(watched).toEqual([[artifact.id]]);
     expect((await call("GET", "/api/other")).out).toBe(PASS);
+  });
+
+  it("lists earlier documents and puts one back", async () => {
+    const store = freshStore();
+    const artifact = seed(store);
+    store.update("bot-1", artifact.id, { html: "<p>next</p>" });
+    const call = client(store);
+    const listed = await call("GET", `/api/bots/bot-1/artifacts/${artifact.id}?versions=1`);
+    expect(listed.sent?.body.versions).toMatchObject([{ rev: 1, html: "<p>doc</p>" }]);
+    expect((await call("GET", `/api/bots/bot-1/artifacts/${artifact.id}`)).sent?.body).not.toHaveProperty("versions");
+    const restored = await call("POST", `/api/bots/bot-1/artifacts/${artifact.id}`, { restoreRev: 1 });
+    expect(restored.sent?.body.artifact.html).toBe("<p>doc</p>");
+    expect((await call("POST", `/api/bots/bot-1/artifacts/${artifact.id}`, { restoreRev: 99 })).sent?.status).toBe(404);
+    expect((await call("POST", `/api/bots/bot-1/artifacts/${artifact.id}`, {})).sent?.status).toBe(400);
   });
 });
