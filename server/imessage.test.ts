@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -93,5 +93,78 @@ describe("Messages send", () => {
     const group = await handleMessagesMcp({ method: "tools/call", params: { name: "send_message", arguments: { chatId: "any;-;a,b", text: "x" } } }, base);
     expect(textOf(group)).toContain("group");
     expect(sent).toHaveLength(1);
+  });
+
+  it("sends a file from the bot folder by iMessage and refuses one outside it", async () => {
+    resetImessageSends();
+    const root = mkdtempSync(join(tmpdir(), "sagax-bot-"));
+    const file = join(root, "hello.png");
+    writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const sent: ImessageSend[] = [];
+    const sender: ImessageSender = { send: async (input) => { sent.push(input); return { service: "iMessage", via: "participant" }; } };
+    const base = {
+      host: { platform: "darwin", identityKind: "solo" as const },
+      useMessages: true,
+      dbDir: null,
+      filesRoots: [root],
+      allowedRecipients: ["phone:+15145551234"],
+      sender,
+      botId: "bot",
+      threadId: "thread",
+      openCard: () => {},
+    };
+    const ok = await handleMessagesMcp({ method: "tools/call", params: { name: "send_message", arguments: { to: "(514) 555-1234", file } } }, base);
+    expect(textOf(ok)).toContain("hello.png");
+    expect(textOf(ok)).not.toContain(root);
+    expect(sent[0]?.service).toBe("iMessage");
+    expect(sent[0]?.file?.endsWith("/hello.png")).toBe(true);
+    const outside = await handleMessagesMcp({ method: "tools/call", params: { name: "send_message", arguments: { to: "+15145551234", text: "x", file: join(tmpdir(), "nope.png") } } }, base);
+    expect(textOf(outside)).toContain("not in this bot's folder");
+    expect(sent).toHaveLength(1);
+    const sms = await handleMessagesMcp({ method: "tools/call", params: { name: "send_message", arguments: { to: "+15145551234", file, service: "SMS" } } }, base);
+    expect(textOf(sms)).toContain("not SMS");
+    expect(imessageSendScript({ to: "+15145551234", text: "", service: "iMessage", file })).toContain("POSIX file");
+    expect(imessageSendScript({ to: "+15145551234", text: "", service: "iMessage", file })).not.toContain('send ""');
+  });
+});
+
+describe("Messages attachments", () => {
+  it("names images from the Messages folder and does not read a file outside it", async () => {
+    const dir = fixtureDb();
+    mkdirSync(join(dir, "Attachments"));
+    const png = join(dir, "Attachments", "note.png");
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    writeFileSync(png, bytes);
+    const outside = join(tmpdir(), `sagax-outside-${process.pid}.png`);
+    writeFileSync(outside, Buffer.from("no"));
+    const db = new DatabaseSync(join(dir, "chat.db"));
+    db.exec(`
+      CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, guid TEXT, filename TEXT, mime_type TEXT, uti TEXT, transfer_name TEXT, total_bytes INTEGER);
+      CREATE TABLE message_attachment_join (message_id INTEGER, attachment_id INTEGER);
+    `);
+    const insert = db.prepare(`INSERT INTO attachment (ROWID, guid, filename, mime_type, uti, transfer_name, total_bytes) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    insert.run(7, "a7", png, "image/png", "public.png", "note.png", bytes.length);
+    insert.run(8, "a8", outside, "image/png", "public.png", "secret.png", 2);
+    db.prepare(`INSERT INTO message_attachment_join (message_id, attachment_id) VALUES (?, ?)`).run(1, 7);
+    db.prepare(`INSERT INTO message_attachment_join (message_id, attachment_id) VALUES (?, ?)`).run(1, 8);
+    db.close();
+
+    const opened = openMessagesReader(dir);
+    try {
+      const row = opened.reader.items("iMessage;-;+15145551234")[0]!;
+      expect(row.attachments.map((item) => item.name).sort()).toEqual(["note.png", "secret.png"]);
+      expect(row.attachments.find((item) => item.name === "note.png")?.readable).toBe(true);
+      expect(row.attachments.find((item) => item.name === "secret.png")?.readable).toBe(false);
+      expect(JSON.stringify(row)).not.toContain(png);
+      expect(JSON.stringify(row)).not.toContain(outside);
+      const image = opened.reader.readAttachment("m1", 7);
+      expect(image?.bytes?.equals(bytes)).toBe(true);
+      expect(image?.reason).toBeUndefined();
+      const refused = opened.reader.readAttachment("m1", 8);
+      expect(refused?.bytes).toBeNull();
+      expect(refused?.reason).toBe("outside");
+    } finally {
+      opened.close();
+    }
   });
 });

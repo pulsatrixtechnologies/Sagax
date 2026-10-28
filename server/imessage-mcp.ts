@@ -1,6 +1,9 @@
 // Messages tools for one turn. Reads and sends happen here, on the solo
 // Mac process. A send to someone who is not on the bot's allowed list
 // becomes a card and does not call the sender.
+import { statSync } from "node:fs";
+import { basename } from "node:path";
+
 import { sendRecipientsAllowed } from "../shared/allowed-recipients.ts";
 import {
   MESSAGES_SEND_MCP_NAME,
@@ -13,8 +16,10 @@ import {
   type MessageService,
 } from "../shared/imessage.ts";
 import { stageImessageSend, type PendingImessage } from "./imessage-cards.ts";
-import { messagesDbPresent, openMessagesReader, type MessageRow } from "./imessage-db.ts";
+import { fileInsideRoots, messagesDbPresent, openMessagesReader, type MessageRow } from "./imessage-db.ts";
 import type { ImessageSender } from "./imessage-send.ts";
+
+const SEND_FILE_MAX_BYTES = 8_000_000;
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
@@ -43,7 +48,7 @@ const TOOLS = [
   },
   {
     name: "read_messages",
-    description: "Read recent messages in one chat. chatGuid comes from find_chats.",
+    description: "Read recent messages in one chat. chatGuid comes from find_chats. An image attachment is named here; its bytes come from read_attachment.",
     inputSchema: {
       type: "object",
       properties: {
@@ -66,17 +71,29 @@ const TOOLS = [
     },
   },
   {
+    name: "read_attachment",
+    description: "Read one image attached to a message. messageGuid and attachmentId come from read_messages. Only an image inside the Messages folder, up to 1.5 MB. The path is not returned.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        messageGuid: { type: "string" },
+        attachmentId: { type: "integer" },
+      },
+      required: ["messageGuid", "attachmentId"],
+    },
+  },
+  {
     name: MESSAGES_SEND_TOOL,
-    description: "Send one iMessage or SMS to one person on this Mac. Someone who is not on this bot's allowed recipients is not contacted: a card is posted instead. Group chats are refused.",
+    description: "Send one iMessage or SMS to one person on this Mac. Someone who is not on this bot's allowed recipients is not contacted: a card is posted instead. Group chats are refused. A file is sent only from this bot's folder, by iMessage, and only after the same card when the recipient is not listed.",
     inputSchema: {
       type: "object",
       properties: {
         to: { type: "string", description: "Phone number or email of one person." },
         chatId: { type: "string", description: "A 1:1 chat guid from find_chats. Groups are refused." },
         text: { type: "string" },
+        file: { type: "string", description: "A file in this bot's folder. iMessage only." },
         service: { type: "string", enum: ["iMessage", "SMS", "auto"] },
       },
-      required: ["text"],
     },
   },
 ] as const;
@@ -87,6 +104,8 @@ export type MessagesMcpDeps = {
   useMessages: boolean;
   /** Directory that already holds chat.db (a snapshot, or a fixture). */
   dbDir: string | null;
+  /** Folders a sent file may come from. Anything else is refused. */
+  filesRoots?: readonly string[];
   allowedRecipients?: readonly string[];
   /** Standing grants off (organization policy): the list does not skip the card. */
   grantsAllowed?: boolean;
@@ -108,7 +127,28 @@ function view(row: MessageRow) {
     service: row.service,
     text: row.text,
     ...(row.fallback ? { fallback: true } : {}),
+    ...(row.attachments.length ? { attachments: row.attachments } : {}),
   };
+}
+
+function sendFile(deps: MessagesMcpDeps, raw: unknown): { path: string; name: string } | { error: string } | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const roots = deps.filesRoots ?? [];
+  if (!roots.length) return { error: "A file is sent only from this bot's folder. Nothing was sent." };
+  const inside = fileInsideRoots(roots, raw);
+  if (!inside) return { error: "That file is not in this bot's folder. Nothing was sent." };
+  let size = 0;
+  try {
+    const info = statSync(inside);
+    if (!info.isFile()) return { error: "That is not a file. Nothing was sent." };
+    size = info.size;
+  } catch {
+    return { error: "That file could not be read. Nothing was sent." };
+  }
+  if (size > SEND_FILE_MAX_BYTES) return { error: "That file is over 8 MB. Nothing was sent." };
+  const name = basename(inside).slice(0, 200);
+  if (!name || name === "." || name === "..") return { error: "That file has no name. Nothing was sent." };
+  return { path: inside, name };
 }
 
 function withReader<T>(deps: MessagesMcpDeps, run: (reader: ReturnType<typeof openMessagesReader>["reader"]) => T): T | ToolResult {
@@ -140,7 +180,12 @@ async function send(deps: MessagesMcpDeps, args: Record<string, unknown>): Promi
   if (!gate.ok) return text("Messages runs only on the Mac where this Sagax app runs.", true);
   if (!deps.useMessages) return text("Messages is off. Nothing was sent.", true);
   const body = typeof args.text === "string" ? args.text : "";
-  if (!body.trim() || body.length > 4_000 || body.includes("\u0000")) return text("The message must be 1 to 4000 characters.", true);
+  const file = sendFile(deps, args.file);
+  if (file && "error" in file) return text(file.error, true);
+  if (file && messageService(args.service) === "SMS") return text("A file goes by iMessage, not SMS. Nothing was sent.", true);
+  if ((!body.trim() && !file) || body.length > 4_000 || body.includes("\u0000")) {
+    return text("The message must be 1 to 4000 characters, or a file from this bot's folder.", true);
+  }
   const plan = planImessageSend({
     to: typeof args.to === "string" ? args.to : undefined,
     chatId: typeof args.chatId === "string" ? args.chatId : undefined,
@@ -152,21 +197,23 @@ async function send(deps: MessagesMcpDeps, args: Record<string, unknown>): Promi
       ? "That chat is a group. Name one phone number or email. Nothing was sent."
       : "Name one phone number or email. Nothing was sent.", true);
   }
+  if (file && plan.service === "SMS") return text("A file goes by iMessage, not SMS. Nothing was sent.", true);
   if (plan.action === "card") {
     const pending = stageImessageSend({
       threadId: deps.threadId,
       botId: deps.botId,
       to: plan.to,
       text: body,
-      service: plan.service,
+      service: file ? "iMessage" : plan.service,
+      ...(file ? { file: file.path, fileName: file.name } : {}),
     });
     deps.openCard(pending);
     return text(`Not sent. An approval card is in the conversation for ${plan.to}. Wait for the person. Do not send it again.`);
   }
-  const service: MessageService = plan.service;
+  const service: MessageService = file ? "iMessage" : plan.service;
   try {
-    const sent = await deps.sender.send({ to: plan.to, text: body, service });
-    return text({ sent: true, to: plan.to, service: sent.service, via: sent.via });
+    const sent = await deps.sender.send({ to: plan.to, text: body, service, ...(file ? { file: file.path } : {}) });
+    return text({ sent: true, to: plan.to, service: sent.service, via: sent.via, ...(file ? { file: file.name } : {}) });
   } catch (error) {
     return text(error instanceof Error ? error.message : "Messages did not send.", true);
   }
@@ -211,6 +258,19 @@ export async function handleMessagesMcp(body: unknown, deps: MessagesMcpDeps): P
       return { messages: reader.items(chatGuid, typeof args.limit === "number" ? args.limit : undefined).map(view) };
     });
     return { result: found && typeof found === "object" && "content" in found ? found : text(found) };
+  }
+  if (name === "read_attachment") {
+    const messageGuid = typeof args.messageGuid === "string" ? args.messageGuid : "";
+    const attachmentId = typeof args.attachmentId === "number" ? args.attachmentId : Number.NaN;
+    const found = withReader(deps, (reader) => reader.readAttachment(messageGuid, attachmentId));
+    if (found && typeof found === "object" && "content" in found) return { result: found };
+    if (!found) return { result: text("No such attachment.", true) };
+    const payload = {
+      attachment: found.attachment,
+      ...(found.reason ? { reason: found.reason } : {}),
+      ...(found.bytes ? { data: found.bytes.toString("base64") } : {}),
+    };
+    return { result: text(payload, Boolean(found.reason)) };
   }
   if (name === MESSAGES_SEND_TOOL) return { result: await send(deps, args) };
   return { result: text(`Unknown tool: ${name}`, true) };

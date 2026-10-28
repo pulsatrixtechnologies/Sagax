@@ -13,6 +13,10 @@ export type PendingImessage = {
   to: string;
   text: string;
   service: MessageService;
+  /** Basename only, for the card. The path stays in `file`. */
+  fileName?: string;
+  /** Absolute path inside the bot's folder. Never written on the card. */
+  file?: string;
 };
 
 const pending = new Map<string, PendingImessage>();
