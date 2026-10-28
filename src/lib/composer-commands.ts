@@ -9,12 +9,13 @@ import {
 } from "../../shared/harness-commands";
 import type { GroupGoalRunStatus } from "../../shared/group-goal-run";
 import { offersSkillCommand } from "../../shared/skill-command";
+import { LOOP_SUBCOMMANDS, type LoopSubcommand } from "./composer-loop";
 
 /** What /goal does besides starting one: typed after it (`/goal stop`). */
 export const GOAL_SUBCOMMANDS = ["status", "pause", "resume", "stop"] as const;
 export type GoalSubcommand = (typeof GOAL_SUBCOMMANDS)[number];
 
-export type ComposerSlashCommandId = "goal" | `goal-${GoalSubcommand}` | "learn" | "setup";
+export type ComposerSlashCommandId = "goal" | `goal-${GoalSubcommand}` | "loop" | `loop-${LoopSubcommand}` | "learn" | "setup";
 
 /** Sagax's own commands sit under two headings: the room's goal (/goal and
  * its subcommands, Objective) and the rest (Sagax). */
@@ -66,8 +67,15 @@ export function composerSlashTrigger(text: string, caretInput: number): Composer
   // them; any other word is the goal itself and closes it.
   const sub = /^\/goal[ \t]+(\w*)$/i.exec(prefix);
   const word = sub?.[1]?.toLowerCase();
-  if (word === undefined || !GOAL_SUBCOMMANDS.some((name) => name.startsWith(word))) return null;
-  return { query: `goal ${word}`, start: 0, end: caret };
+  if (word !== undefined && GOAL_SUBCOMMANDS.some((name) => name.startsWith(word))) {
+    return { query: `goal ${word}`, start: 0, end: caret };
+  }
+  const loop = /^\/loop[ \t]+(\w*)$/i.exec(prefix);
+  const loopWord = loop?.[1]?.toLowerCase();
+  if (loopWord !== undefined && LOOP_SUBCOMMANDS.some((name) => name.startsWith(loopWord))) {
+    return { query: `loop ${loopWord}`, start: 0, end: caret };
+  }
+  return null;
 }
 
 /** Why a goal subcommand cannot run now, given the room's latest goal run;

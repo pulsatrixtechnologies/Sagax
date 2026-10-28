@@ -15101,7 +15101,18 @@
       "prefImport.apply": "8eed675de68cb4459a9dfa19e226210eaccfe03a292be97247c3662fa4a6d47b",
       "prefImport.done": "5c7ddde099d85f4fd218596599f72d86cdd22b7937a26991059f46525dd4b480",
       "prefImport.error": "7ba63eb89d593b4b06b98756a0117240a082ab18d08dcc07bc81cc9ba5c8be12",
-      "prefImport.noPrimary": "b4abfaf3e4d02c49e49edd4dd4e3dcddb9e01bef8fc683f736e2246a39c485f0"
+      "prefImport.noPrimary": "b4abfaf3e4d02c49e49edd4dd4e3dcddb9e01bef8fc683f736e2246a39c485f0",
+      "composer.command.loopDesc": "7c1b5d99a07b726309cf44e433edc9b2529feebc853e0729d0dc9e613a1646e7",
+      "composer.command.loopHint": "aef540af6e7fac4e3b0a4dab2d0272794cd870b8d9817e813e70d014db45beca",
+      "composer.plus.loop": "f2f6a01889951edcdb1dc93a152a36d1b40e778f2bc6ff90cd5a83ebaed79201",
+      "composer.loop.sub.status": "da15e57157c62da9ce4abfd21722a3732c7ba80c2ca9a500979dc1d853236132",
+      "composer.loop.sub.stop": "81889d72dbec55117e919197df8bf7fac994a987ffa2cf4f79f6521cbceb682a",
+      "composer.loop.needCadence": "0b721bc32095590dec05618f405d81627617758f3323a124155288216212b7be",
+      "composer.loop.needBot": "8aadd3b0b7e8f3c252b89e8aa5bb91a186b3195ae405141928b31707d77705f1",
+      "composer.loop.none": "84cf3b3e218d493740c99a85d1431b87cd60a315b520398cedb883d30f05e794",
+      "composer.loop.stopped": "057d92fc1dbe0d790289cbcb76823cfe3086fe95b0e7cc54125b9bf97d5f1bfa",
+      "composer.loop.raised": "c638c8aaa370ca3858469c6f86ec6fa3b9de911c1a62805692e91acdbcc782f4",
+      "composer.loop.capped": "32fa9ec6bc7415fc322015253f94923f426edced4c37d91f4eb797e397e145dd"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

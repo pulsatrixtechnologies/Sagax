@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Target, Users, X } from "lucide-react";
+import { ArrowUp, Clock, Repeat, Target, Users, X } from "lucide-react";
 import { ComposerSendBlock } from "@/components/ComposerSendBlock";
 import { useSendBlock } from "@/lib/send-state";
 import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
@@ -119,6 +119,7 @@ import {
 } from "@/lib/composer-commands";
 import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
 import { useSlashSkills } from "@/lib/use-slash-skills";
+import { LOOP_SUBCOMMANDS, loopRoutineName, parseLoopCommand, type LoopCommand } from "@/lib/composer-loop";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
 import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, VoiceNoteChip, type PlusMenuItem } from "./ComposerControls";
@@ -189,6 +190,7 @@ export function Composer({
   const dispatch = useStoreDispatch();
   const getState = useStoreGetter();
   const storeBots = useStoreSelector((current) => current.bots);
+  const routines = useStoreSelector((current) => current.routines);
   const config = useStoreSelector((current) => current.config);
   const instances = useStoreSelector((current) => current.instances);
   const ownerOrAdmin = useOwnerOrAdmin();
@@ -491,6 +493,21 @@ export function Composer({
       label: "/setup",
       description: t("composer.command.setupDesc"),
     });
+    if (bot || (group && !group.dm)) {
+      available.push({
+        id: "loop",
+        label: "/loop",
+        description: t("composer.command.loopDesc"),
+        argumentHint: t("composer.command.loopHint"),
+      });
+      for (const sub of LOOP_SUBCOMMANDS) {
+        available.push({
+          id: `loop-${sub}`,
+          label: `/loop ${sub}`,
+          description: t(`composer.loop.sub.${sub}`),
+        });
+      }
+    }
     return group
       ? composerGroupCommandMenu(groupSlashBotId ? [] : available, groupTargets.map((target): GroupEngineCommands => ({
         bot: { id: target.bot.id, name: target.bot.name },
@@ -604,6 +621,55 @@ export function Composer({
     return false;
   };
 
+  /** /loop writes a routine for this chat. It never becomes a message the bot
+   * has to interpret. Status opens the routine list. Stop turns one off. */
+  const runLoopCommand = (command: LoopCommand) => {
+    const loopBot = bot ?? (group && !group.dm ? (members ?? []).find((member) => !member.hidden) : undefined);
+    if (command.kind === "incomplete") {
+      dispatch({ type: "error", message: t("composer.loop.needCadence") });
+      return;
+    }
+    if (!loopBot) {
+      dispatch({ type: "error", message: t("composer.loop.needBot") });
+      return;
+    }
+    if (command.kind === "status") {
+      dispatch({ type: "showRoutines", section: "schedule", view: "list", botId: loopBot.id });
+      editText("");
+      return;
+    }
+    if (command.kind === "stop") {
+      const mine = routines.filter((routine) => routine.botId === loopBot.id && routine.schedule.type === "interval" && routine.enabled !== false);
+      const named = command.name.toLowerCase();
+      const hits = named
+        ? mine.filter((routine) => routine.name.toLowerCase().includes(named) || routine.prompt.toLowerCase().includes(named))
+        : mine.filter((routine) => routine.name.startsWith("Loop "));
+      if (hits.length === 0) {
+        dispatch({ type: "error", message: t("composer.loop.none") });
+        return;
+      }
+      for (const routine of hits) dispatch({ type: "updateRoutine", routineId: routine.id, patch: { enabled: false } });
+      dispatch({ type: "error", message: t("composer.loop.stopped") });
+      editText("");
+      return;
+    }
+    dispatch({
+      type: "createRoutine",
+      input: {
+        name: loopRoutineName(command.everyMinutes, command.prompt),
+        prompt: command.prompt,
+        botId: loopBot.id,
+        ...(group ? { groupId: group.id } : {}),
+        schedule: { type: "interval", everyMinutes: command.everyMinutes, anchorAt: Date.now() },
+        postResults: true,
+        continuity: true,
+      },
+    });
+    if (command.raised) dispatch({ type: "error", message: t("composer.loop.raised") });
+    else if (command.capped) dispatch({ type: "error", message: t("composer.loop.capped") });
+    editText("");
+  };
+
   const pickCommand = (item: ComposerMenuItem | undefined) => {
     if (!slash || !item) return;
     // What the chat cannot run stays listed, with its reason, but inserts nothing.
@@ -614,11 +680,16 @@ export function Composer({
       runGoalSubcommand(item.command.id.slice("goal-".length) as GoalSubcommand);
       return;
     }
+    if (item.kind === "sagax" && item.command.id.startsWith("loop-")) {
+      setDismissedSlashAt(slash.start);
+      runLoopCommand(item.command.id === "loop-stop" ? { kind: "stop", name: "" } : { kind: "status" });
+      return;
+    }
     const command = item.kind === "sagax" ? item.command : null;
     const replacement = item.kind === "engine"
       ? engineCommandInsertion(item)
       : item.kind === "skill" ? skillCommandInsertion(item)
-      : command?.id === "learn" ? "/learn " : command?.id === "setup" ? "/setup " : "";
+      : command?.id === "learn" ? "/learn " : command?.id === "setup" ? "/setup " : command?.id === "loop" ? "/loop " : "";
     const next = replaceComposerSlashTrigger(text, slash, replacement);
     editText(next.text);
     setCaret(next.caret);
@@ -855,6 +926,11 @@ export function Composer({
     // the bot cannot answer now: the draft stays, the line above says why
     if (sendBlock) { sendState.recheck(); return; }
     // `/goal stop` typed whole runs the subcommand, never a goal named "stop"
+    const typedLoop = parseLoopCommand(text);
+    if (typedLoop && attachments.length === 0) {
+      runLoopCommand(typedLoop);
+      return;
+    }
     const typedGoalSub = group && !group.dm ? goalSubcommandFromComposer(text) : null;
     if (typedGoalSub) {
       const block = goalSubcommandBlock(typedGoalSub, goalStatus);
@@ -1142,6 +1218,23 @@ export function Composer({
       // browser, a choice between that and showing it there
       onSelect: () => browserTeach ? learnAvailable ? setTeachChooser(true) : showInBrowser() : startDraftWith("/learn "),
     }] : []),
+    {
+      id: "loop",
+      group: "modes" as const,
+      label: t("composer.plus.loop"),
+      icon: <Repeat size={15} aria-hidden="true" />,
+      hint: "/loop",
+      onSelect: () => {
+        const rest = text.replace(/^\/loop\s*/i, "");
+        const next = `/loop ${rest}`;
+        editText(next);
+        setCaret(next.length);
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+          inputRef.current?.setSelectionRange(next.length, next.length);
+        });
+      },
+    },
     ...(group && !group.dm ? [{
       id: "goal",
       group: "modes" as const,
