@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { ConfigStatus } from "@/state/store";
 import { withViewerAvatar } from "./person-avatars";
 
 const ME = "pr_00000001-0000-4000-8000-000000000000";
 const config = (avatarUrl?: string) => ({
   viewer: { operator: false, principalId: ME, email: "a@example.test", name: "Ada", role: "member", ...(avatarUrl ? { avatarUrl } : {}) },
-}) as unknown as ConfigStatus;
+});
 
 describe("the viewer's own photo from a person.avatar frame", () => {
   it("replaces the viewer's avatar with the new versioned URL", () => {
