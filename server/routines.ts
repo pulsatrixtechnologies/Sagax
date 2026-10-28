@@ -40,6 +40,15 @@ import {
 import { isRoutineProblemRun, isTriggerSchedule, type RoutineRetryCause } from "../shared/routines.ts";
 import { cleanRoutineAutoPauseAfter, routineAutoPauseDue, type RoutineAutoPause } from "../shared/routine-auto-pause.ts";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
+import {
+  canonicalRoutineFolder,
+  cleanRoutineFolder,
+  orderedRoutineFolders,
+  routineFolderKey,
+  routinePrefixPlan,
+  ROUTINE_FOLDERS_PER_BOT,
+  type RoutineFolderUndo,
+} from "../shared/routine-folders.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
 import {
   dispatchRefusal, engineFacts, loadOwnerNotices, recoverRun, retryNote, weekRuns,
@@ -187,6 +196,9 @@ export interface Routine {
   /** Deterministic test run before a scheduled run starts any model turn
    * (server/routine-precheck.ts). Absent: every due run starts a turn. */
   precheck?: RoutinePrecheck;
+  /** 2026-10-28 (shared/routine-folders.ts): the folder of its bot it sits
+   * in, as the person named it. Absent: no folder. Never part of what runs. */
+  folder?: string;
   nextRunAt: number | null;
   /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
   nominalRunAt?: number;
@@ -408,6 +420,9 @@ export interface RoutineInput {
   autoPauseAfter?: number | null;
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;
+  /** 2026-10-28: the bot's folder to put it in; null takes it out of its
+   * folder, omission preserves it. */
+  folder?: string | null;
 }
 
 interface RoutineFile {
@@ -426,6 +441,9 @@ interface RoutineFile {
   /** 2026-10-22: existing routines were pinned postResults=true once, so an
    * upgrade never silences a person's already-visible routine results. */
   postResultsMigrated?: true;
+  /** 2026-10-28: each bot's routine folders in the person's order (bot id
+   * -> names). Absent on an older file: folders come from the routines. */
+  folders?: Record<string, string[]>;
 }
 
 const webhookRunReceiptSchema = z.object({
@@ -1230,6 +1248,7 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
   const autoPauseAfter = cleanRoutineAutoPauseAfter(input.autoPauseAfter);
   const mailAlias = parseMailAlias(input.mailAlias);
   if (!mailAlias.ok) throw new RoutineInputError(mailAlias.error);
+  const folder = cleanRoutineFolder(input.folder);
   return {
     name,
     prompt,
@@ -1249,6 +1268,7 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     ...(mailAlias.alias ? { mailAlias: mailAlias.alias } : {}),
     ...(precheck ? { precheck } : {}),
     ...(autoPauseAfter === undefined ? {} : { autoPauseAfter }),
+    ...(folder ? { folder } : {}),
   };
 }
 
@@ -1263,6 +1283,30 @@ function loadAutoPauseAfter(value: unknown): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Each bot's saved folder order; anything unreadable is dropped (folders
+ * then come back from the routines that name them). */
+function loadFolderOrder(value: unknown): Map<string, string[]> {
+  const order = new Map<string, string[]>();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return order;
+  for (const [botId, names] of Object.entries(value as Record<string, unknown>)) {
+    if (!botId || !Array.isArray(names)) continue;
+    const clean = orderedRoutineFolders(names.flatMap((name) => {
+      const folder = cleanRoutineFolder(name);
+      return folder ? [folder] : [];
+    }), []).slice(0, ROUTINE_FOLDERS_PER_BOT);
+    if (clean.length) order.set(botId, clean);
+  }
+  return order;
+}
+
+/** The answer of a folder action: the bot's folders in order, the routines
+ * it changed, and (for Sort by prefix) what Undo puts back. */
+export interface RoutineFolderResult {
+  folders: string[];
+  routines: Routine[];
+  undo?: RoutineFolderUndo;
 }
 
 function loadAutoPaused(value: unknown): RoutineAutoPause | undefined {
@@ -1319,6 +1363,8 @@ export class RoutineManager {
   /** A file from before postResults existed: its routines have not been
    * pinned to the old visible behaviour yet, and no save says they have. */
   private postResultsPending = false;
+  /** 2026-10-28: bot id -> its routine folders in the person's order. */
+  private folderOrder = new Map<string, string[]>();
 
   constructor(options: RoutineManagerOptions) {
     this.options = options;
@@ -1366,7 +1412,9 @@ export class RoutineManager {
               autoPauseAfter: loadAutoPauseAfter(routine.autoPauseAfter),
               autoPaused: routine.enabled ? undefined : loadAutoPaused(routine.autoPaused),
               failuresClearedAt: Number.isSafeInteger(routine.failuresClearedAt) && routine.failuresClearedAt! >= 0 && routine.failuresClearedAt! <= MAX_DATE_MS ? routine.failuresClearedAt : undefined,
+              folder: cleanRoutineFolder(routine.folder),
             };
+            if (loaded.folder === undefined) delete loaded.folder;
             if (loaded.precheck === undefined) delete loaded.precheck;
             if (loaded.autoPauseAfter === undefined) delete loaded.autoPauseAfter;
             if (loaded.autoPaused === undefined) delete loaded.autoPaused;
@@ -1449,6 +1497,7 @@ export class RoutineManager {
           })
         : [];
       this.ownerNotices = loadOwnerNotices(disk.ownerNotices);
+      this.folderOrder = loadFolderOrder(disk.folders);
       this.frozenPending = disk.frozenResultsCleared !== true;
       // Upgrade old run logs before history pruning can discard their IDs.
       const known = new Set(this.webhookRunReceipts.map((r) => JSON.stringify([r.webhookId, r.deliveryId])));
@@ -1476,6 +1525,7 @@ export class RoutineManager {
     } catch (error) {
       this.routines = [];
       this.unloadedRoutines = [];
+      this.folderOrder = new Map();
       this.runs = [];
       this.routineRequestReceipts = [];
       this.webhookRunReceipts = [];
@@ -1772,6 +1822,7 @@ export class RoutineManager {
     const at = this.now();
     const clean = validInput(input, at);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
+    if (clean.folder) clean.folder = this.admitFolder(clean.botId, clean.folder);
     const id = randomUUID();
     const placed = clean.enabled ? this.placeInitial(id, clean.schedule, at, clean) : { start: null as number | null };
     if (clean.schedule.type === "interval" && clean.enabled && placed.start === null) {
@@ -1790,11 +1841,14 @@ export class RoutineManager {
       updatedAt: at,
     };
     const discardResults = this.applyResultsInput(routine, input.resultsThreadId);
+    let foldersChanged = false;
     this.commitMutation(() => {
       this.routines.unshift(routine);
+      foldersChanged = this.settleFolders(routine.botId);
       if (request) this.rememberRoutineRequest(request, routine.id, at);
     }, discardResults);
     this.emitRoutine(routine);
+    if (foldersChanged) this.emitFolders(routine.botId);
     this.noteRoutineChanged("created", routine, request, meta);
     return this.routineWithHealth(routine);
   }
@@ -1836,8 +1890,12 @@ export class RoutineManager {
       mailAlias: Object.hasOwn(patch, "mailAlias") ? (patch.mailAlias ?? undefined) : routine.mailAlias,
       precheck: Object.hasOwn(patch, "precheck") ? patch.precheck : routine.precheck,
       autoPauseAfter: Object.hasOwn(patch, "autoPauseAfter") ? patch.autoPauseAfter : routine.autoPauseAfter,
+      // null takes it out of its folder; omission keeps it where it is.
+      folder: Object.hasOwn(patch, "folder") ? patch.folder : routine.folder,
     }, now);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
+    if (clean.folder) clean.folder = this.admitFolder(clean.botId, clean.folder);
+    const previousBotId = routine.botId;
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
     const enabledChanged = clean.enabled !== routine.enabled;
     const previousSchedule = cloneSchedule(routine.schedule);
@@ -1872,6 +1930,7 @@ export class RoutineManager {
     const actor = meta?.runAs || (workChanged ? meta?.actorPrincipalId : undefined);
     const discardResults = this.applyResultsInput(destination, patch.resultsThreadId);
     const cancelledRuns: RoutineRun[] = [];
+    let foldersChanged = false;
     this.commitMutation(() => {
       Object.assign(routine, clean, {
         resultsThreadId: destination.resultsThreadId,
@@ -1896,6 +1955,9 @@ export class RoutineManager {
       if (clean.mailAlias === undefined) delete routine.mailAlias;
       if (!clean.precheck) delete routine.precheck;
       if (clean.autoPauseAfter === undefined) delete routine.autoPauseAfter;
+      if (clean.folder === undefined) delete routine.folder;
+      foldersChanged = this.settleFolders(routine.botId);
+      if (previousBotId !== routine.botId) this.settleFolders(previousBotId);
       // Turned back on (Resume on the notice, the switch, the editor): the
       // auto-pause is over and the failure count starts again from zero.
       // Its failed runs stay in the history.
@@ -1928,6 +1990,7 @@ export class RoutineManager {
     }, discardResults);
     for (const run of cancelledRuns) this.emitRun(run);
     this.emitRoutine(routine);
+    if (foldersChanged) this.emitFolders(routine.botId);
     const conversation = request ? { threadId: request.threadId, messageId: request.messageId } : meta?.conversation;
     if (enabledChanged && conversation?.threadId && this.options.onEnabledChanged) {
       try {
@@ -3432,6 +3495,208 @@ export class RoutineManager {
     routine.resultsThreadId = value.trim();
   }
 
+  // ── routine folders (2026-10-28, shared/routine-folders.ts) ─────────────
+
+  /** A bot's folders in order: its saved order, then any folder a routine
+   * names that the order does not. */
+  foldersOf(botId: string): string[] {
+    return orderedRoutineFolders(this.folderOrder.get(botId) ?? [], this.routines.filter((routine) => routine.botId === botId));
+  }
+
+  /** Every bot's folders in order, for the listing. */
+  listFolders(): Record<string, string[]> {
+    const botIds = new Set([...this.folderOrder.keys(), ...this.routines.flatMap((routine) => routine.folder ? [routine.botId] : [])]);
+    const out: Record<string, string[]> = {};
+    for (const botId of botIds) {
+      const folders = this.foldersOf(botId);
+      if (folders.length) out[botId] = folders;
+    }
+    return out;
+  }
+
+  /** The spelling to store for a folder the caller named: the bot's own one
+   * whatever the case, or a new one while the bot has room for it. */
+  private admitFolder(botId: string, name: string): string {
+    const folders = this.foldersOf(botId);
+    const canonical = canonicalRoutineFolder(folders, name);
+    if (canonical === name && !folders.some((existing) => routineFolderKey(existing) === routineFolderKey(name)) && folders.length >= ROUTINE_FOLDERS_PER_BOT) {
+      throw new RoutineInputError(`A bot keeps at most ${ROUTINE_FOLDERS_PER_BOT} routine folders`);
+    }
+    return canonical;
+  }
+
+  /** Write down a bot's folder order as it now is (a new folder goes last).
+   * True when it changed. */
+  private settleFolders(botId: string): boolean {
+    const before = this.folderOrder.get(botId) ?? [];
+    const after = this.foldersOf(botId);
+    if (JSON.stringify(before) === JSON.stringify(after)) return false;
+    if (after.length) this.folderOrder.set(botId, after);
+    else this.folderOrder.delete(botId);
+    return true;
+  }
+
+  private emitFolders(botId: string) {
+    this.options.emit?.({ kind: "routine.folders", botId, folders: this.foldersOf(botId) });
+  }
+
+  private folderNamed(botId: string, name: string): string | null {
+    const key = routineFolderKey(cleanRoutineFolder(name) ?? "");
+    return this.foldersOf(botId).find((folder) => routineFolderKey(folder) === key) ?? null;
+  }
+
+  /** One folder change: apply it in one write, then tell every client. */
+  private folderChange(botId: string, mutate: () => Routine[], undo?: RoutineFolderUndo): RoutineFolderResult {
+    this.assertWritable();
+    let changed: Routine[] = [];
+    let foldersChanged = false;
+    this.commitMutation(() => {
+      changed = mutate();
+      foldersChanged = this.settleFolders(botId);
+    });
+    for (const routine of changed) this.emitRoutine(routine);
+    if (foldersChanged) this.emitFolders(botId);
+    return { folders: this.foldersOf(botId), routines: changed.map((routine) => this.routineWithHealth(routine)), ...(undo ? { undo } : {}) };
+  }
+
+  private botRoutines(botId: string): Routine[] {
+    return this.routines.filter((routine) => routine.botId === botId);
+  }
+
+  /** An empty folder at the end of the bot's order (or the one it has). */
+  createFolder(botId: string, name: string): RoutineFolderResult {
+    const clean = cleanRoutineFolder(name);
+    if (!clean) throw new RoutineInputError("Give the folder a name");
+    const folder = this.admitFolder(botId, clean);
+    return this.folderChange(botId, () => {
+      const order = this.foldersOf(botId);
+      if (!order.includes(folder)) this.folderOrder.set(botId, [...order, folder]);
+      return [];
+    });
+  }
+
+  /** Rename a folder in place. Renamed onto another folder of the bot, the
+   * two become one, in the other's place. Null when there is no such folder. */
+  renameFolder(botId: string, from: string, to: string): RoutineFolderResult | null {
+    const current = this.folderNamed(botId, from);
+    if (!current) return null;
+    const clean = cleanRoutineFolder(to);
+    if (!clean) throw new RoutineInputError("Give the folder a name");
+    const other = this.foldersOf(botId).find((folder) => folder !== current && routineFolderKey(folder) === routineFolderKey(clean));
+    const target = other ?? clean;
+    return this.folderChange(botId, () => {
+      const order = this.foldersOf(botId);
+      this.folderOrder.set(botId, other ? order.filter((folder) => folder !== current) : order.map((folder) => folder === current ? target : folder));
+      const moved = this.botRoutines(botId).filter((routine) => routine.folder !== undefined && routineFolderKey(routine.folder) === routineFolderKey(current));
+      for (const routine of moved) routine.folder = target;
+      return moved;
+    });
+  }
+
+  /** Remove a folder: its routines go back to no folder; none is deleted. */
+  deleteFolder(botId: string, name: string): RoutineFolderResult | null {
+    const current = this.folderNamed(botId, name);
+    if (!current) return null;
+    return this.folderChange(botId, () => {
+      const moved = this.botRoutines(botId).filter((routine) => routine.folder !== undefined && routineFolderKey(routine.folder) === routineFolderKey(current));
+      for (const routine of moved) delete routine.folder;
+      this.folderOrder.set(botId, this.foldersOf(botId).filter((folder) => folder !== current));
+      return moved;
+    });
+  }
+
+  /** The person's order. Names the bot does not have are ignored; folders
+   * left out keep their place after the named ones. */
+  reorderFolders(botId: string, order: readonly string[]): RoutineFolderResult {
+    return this.folderChange(botId, () => {
+      const folders = this.foldersOf(botId);
+      const named = order.flatMap((name) => {
+        const key = routineFolderKey(cleanRoutineFolder(name) ?? "");
+        const found = folders.find((folder) => routineFolderKey(folder) === key);
+        return found ? [found] : [];
+      });
+      this.folderOrder.set(botId, orderedRoutineFolders([...named, ...folders], []));
+      return [];
+    });
+  }
+
+  /** Put routines of this bot in a folder (made at the end when new), or in
+   * none (null). Ids of another bot's routines are refused. */
+  moveToFolder(botId: string, routineIds: readonly string[], folder: string | null): RoutineFolderResult {
+    const routines = routineIds.map((id) => this.routines.find((routine) => routine.id === id && routine.botId === botId));
+    if (routines.some((routine) => !routine)) throw Object.assign(new RoutineInputError("no such routine"), { status: 404 });
+    const clean = folder === null ? undefined : cleanRoutineFolder(folder);
+    if (folder !== null && !clean) throw new RoutineInputError("Give the folder a name");
+    const target = clean ? this.admitFolder(botId, clean) : undefined;
+    return this.folderChange(botId, () => {
+      const moved = (routines as Routine[]).filter((routine) => routine.folder !== target);
+      for (const routine of moved) {
+        if (target) routine.folder = target;
+        else delete routine.folder;
+      }
+      return moved;
+    });
+  }
+
+  /** Sort by prefix: each routine in no folder whose name starts with
+   * "[X]" goes in folder X and loses the prefix. Only when the person asks;
+   * the answer carries what Undo (restoreFolders) puts back. */
+  sortByPrefix(botId: string): RoutineFolderResult {
+    // Oldest first: "[Daily]" and a later "[daily]" become the folder as the
+    // person first spelled it.
+    const plan = routinePrefixPlan([...this.botRoutines(botId)].reverse().sort((a, b) => a.createdAt - b.createdAt));
+    if (!plan.length) return { folders: this.foldersOf(botId), routines: [] };
+    const undo: RoutineFolderUndo = {
+      botId,
+      folders: this.foldersOf(botId),
+      routines: plan.map(({ id }) => {
+        const routine = this.routines.find((candidate) => candidate.id === id)!;
+        return { id, name: routine.name, ...(routine.folder ? { folder: routine.folder } : {}) };
+      }),
+    };
+    for (const step of plan) this.admitFolder(botId, step.folder);
+    const at = this.now();
+    return this.folderChange(botId, () => plan.map((step) => {
+      const routine = this.routines.find((candidate) => candidate.id === step.id)!;
+      routine.folder = canonicalRoutineFolder(this.foldersOf(botId), step.folder);
+      routine.name = step.name.slice(0, 80);
+      routine.updatedAt = Math.max(at, routine.updatedAt + 1);
+      return routine;
+    }), undo);
+  }
+
+  /** Undo of a folder action: names, folders and the order as they were.
+   * Routines deleted or moved to another bot since are left alone. */
+  restoreFolders(botId: string, undo: RoutineFolderUndo): RoutineFolderResult {
+    const at = this.now();
+    return this.folderChange(botId, () => {
+      const changed: Routine[] = [];
+      for (const entry of undo.routines) {
+        const routine = this.routines.find((candidate) => candidate.id === entry.id && candidate.botId === botId);
+        if (!routine) continue;
+        const name = String(entry.name ?? "").trim().slice(0, 80);
+        const folder = cleanRoutineFolder(entry.folder);
+        if (name && name !== routine.name) {
+          routine.name = name;
+          routine.updatedAt = Math.max(at, routine.updatedAt + 1);
+        }
+        if (folder) routine.folder = folder;
+        else delete routine.folder;
+        changed.push(routine);
+      }
+      const saved = undo.folders.flatMap((name) => {
+        const folder = cleanRoutineFolder(name);
+        return folder ? [folder] : [];
+      });
+      // The order as it was, minus a folder Sort by prefix made that nothing
+      // is in any more.
+      const used = new Set(this.botRoutines(botId).flatMap((routine) => routine.folder ? [routineFolderKey(routine.folder)] : []));
+      const kept = orderedRoutineFolders(saved, this.botRoutines(botId)).filter((folder, index) => index < saved.length || used.has(routineFolderKey(folder)));
+      this.folderOrder.set(botId, kept.slice(0, ROUTINE_FOLDERS_PER_BOT));
+      return changed;
+    });
+  }
+
   private emitRoutine(routine: Routine) {
     this.options.emit?.({ kind: "routine", routine: this.routineWithHealth(routine) });
   }
@@ -3511,6 +3776,7 @@ export class RoutineManager {
       routines: this.routines.map(cloneRoutine),
       runs: this.runs.map(cloneRun),
       receipts: this.routineRequestReceipts.map((receipt) => ({ ...receipt })),
+      folders: new Map([...this.folderOrder].map(([botId, names]) => [botId, [...names]])),
     };
     try {
       mutate();
@@ -3521,6 +3787,7 @@ export class RoutineManager {
       this.routines = before.routines;
       this.runs = before.runs;
       this.routineRequestReceipts = before.receipts;
+      this.folderOrder = before.folders;
       try {
         rollback?.();
       } catch (cleanupError) {
@@ -3558,6 +3825,7 @@ export class RoutineManager {
       routineRequestReceipts: this.routineRequestReceipts,
       webhookRunReceipts: this.webhookRunReceipts,
       ...(this.ownerNotices.length ? { ownerNotices: this.ownerNotices } : {}),
+      ...(this.folderOrder.size ? { folders: Object.fromEntries(this.folderOrder) } : {}),
     } satisfies RoutineFile, null, 2), { mode: 0o600 });
   }
 }

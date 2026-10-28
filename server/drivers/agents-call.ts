@@ -393,6 +393,8 @@ function routineFields(args: Json): { fields: Json; error?: string } {
   if (typeof args.enabled === "boolean") fields.enabled = args.enabled;
   // 2026-10-26: run only when something changes; checked by the service.
   if (args.watch !== undefined) fields.watch = args.watch;
+  // 2026-10-28: the bot's folder to file it in (null: out of its folder).
+  if (args.folder !== undefined) fields.folder = args.folder;
   return { fields };
 }
 

@@ -1157,6 +1157,7 @@ import { createModerationStore } from "./moderation.ts";
 import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createRoutineAwayRoutes } from "./routes/routine-away.ts";
+import { createRoutineFolderRoutes } from "./routes/routine-folders.ts";
 import { createMeetingRoutes } from "./routes/meetings.ts";
 import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
@@ -23914,6 +23915,7 @@ const agentRoutine = (
   return {
     id: routine.id,
     name: safeName,
+    ...(routine.folder ? { folder: redactSecretsInText(routine.folder) } : {}),
     instructions: safeInstructions.slice(0, 2_000),
     instructionsTruncated: safeInstructions.length > 2_000,
     continuity: routine.continuity === true,
@@ -34860,6 +34862,15 @@ function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): bo
     const held = payload.kind === "routine" ? payload.routine : payload.run;
     return Boolean(held) && typeof held === "object" && routineSeenBy(held as Record<string, unknown>, viewerId);
   }
+  // A bot's routine folders (2026-10-28): its owner, or whoever is shown one
+  // of its routines.
+  if (payload.kind === "routine.folders") {
+    const botId = typeof payload.botId === "string" ? payload.botId : "";
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    if (effectiveBotOwner(bot)?.toLowerCase() === viewerId.toLowerCase()) return true;
+    return Boolean(routines?.listRoutines().some((routine) => routine.botId === botId && routineSeenBy(routine as unknown as Record<string, unknown>, viewerId)));
+  }
   const groupField = payload.group && typeof payload.group === "object" ? (payload.group as { id?: unknown }).id : undefined;
   const groupId = typeof payload.groupId === "string" ? payload.groupId : typeof groupField === "string" ? groupField : undefined;
   if (typeof groupId === "string") {
@@ -36107,6 +36118,17 @@ ROUTES.push(createRoutineAwayRoutes<Routine>({
     return viewer && effectiveRunAs(routine)?.toLowerCase() === viewer ? routine : undefined;
   },
   clear: (id) => routines?.clearAwaySkips(id) ?? null,
+  onWire: (routine) => routineOnWire(routine),
+}));
+// Routine folders (server/routes/routine-folders.ts): whoever may change a
+// bot's routines arranges their folders, no admin right.
+ROUTES.push(createRoutineFolderRoutes<Routine>({
+  access: (auth, botId) => {
+    const visible = visibleTo(viewerFor(auth, "/api/routines/folders"));
+    if (!store.bot(botId) || hiddenRoutineTarget({ botId }, visible)) return "hidden";
+    return routineNeedsRun(auth, botId) ? "needs_run" : "ok";
+  },
+  manager: () => routines ?? null,
   onWire: (routine) => routineOnWire(routine),
 }));
 // The person's web search provider and key (server/routes/web-search.ts):
@@ -43927,13 +43949,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const caller = routineScopeCaller(auth, viewerId);
       const refusal = routineScopeRefusal(caller, query.scope);
       if (refusal) return json(res, 403, refusal);
-      return json(res, 200, scopedRoutineListing(
+      const listing = scopedRoutineListing(
         query,
         caller,
         routines!.listRoutines(),
         routines!.listRuns(from != null && Number.isFinite(from) ? from : undefined, to != null && Number.isFinite(to) ? to : undefined),
         routineScopeDeps(auth, visible, viewerId),
-      ));
+      );
+      // 2026-10-28: each bot's routine folders in order (shared/routine-folders.ts),
+      // for the bots whose routines this caller may change or is shown.
+      const listedBots = new Set(listing.routines.map((routine) => routine.botId));
+      const folders = Object.fromEntries(Object.entries(routines!.listFolders()).filter(([botId]) =>
+        (visible.everything || visible.bot(botId)) && (listedBots.has(botId) || !routineNeedsRun(auth, botId))));
+      return json(res, 200, { ...listing, folders });
     }
     // On a Cloud home a routine reports only where its writer may write: a
     // guest's into a conversation the guest started, never the owner's.

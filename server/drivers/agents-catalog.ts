@@ -291,6 +291,11 @@ const ROUTINE_FIELDS_SCHEMA = {
     type: ["object", "null"],
     description: "Run only when something changes: on each due time Sagax checks, with no model turn, and starts the run only on a change (or when condition holds). The run gets a note of what is new, changed or gone. {kind:\"watch\", source:{type:\"files\",path,recursive?} | {type:\"command\",command} (run where you work) | {type:\"tool\",tool:\"server__tool\",args} (read tools only), condition?:{test:\"json_path\",path,op:eq|ne|gt|gte|lt|lte|contains|exists,value} | {test:\"contains\",text,negate?} | {test:\"exit_code\",op:eq|ne,value}, wakeOn?:change|match, track?:{items,key,fields}, firstRun?:baseline|wake, whenAsleep?:skip|wake}. Needs a repeating schedule (checks at most every 5 min). null in an update removes it.",
   },
+  folder: {
+    type: ["string", "null"],
+    maxLength: 60,
+    description: "Folder of this bot's Routines list to file it in, such as Reports or Home. A new name makes the folder; reuse a name from list_routines to group with others. null in an update takes it out of its folder. Do not put the folder in the name as a [Prefix].",
+  },
 } as const;
 
 // propose_profile's one sentence about for_bot_id, which a bot that is not a

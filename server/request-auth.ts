@@ -777,6 +777,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // model, nothing kept; the handler applies the same rights as saving a
   // routine of that bot, so a member checks their own watch without an admin
   { methods: ["POST"], path: /^\/api\/routines\/watch-check$/ },
+  // Routine folders (routes/routine-folders.ts): the handler applies the
+  // same rights as changing a routine of that bot, so a member arranges
+  // their own bot's folders without an admin (2026-10-28)
+  { methods: ["POST"], path: /^\/api\/routines\/folders$/ },
   // "Only when I'm here" (routes/routine-away.ts): the page's beat, the
   // person's own state, and dismissing their report (the route checks whose)
   // "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):
