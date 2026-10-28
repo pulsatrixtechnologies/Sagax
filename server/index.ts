@@ -1265,7 +1265,7 @@ import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachm
 import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
 import { runPermissionModeMigration } from "./approval-level-migration.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
-import { newConversationFullAllowed, ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant } from "./org-full-access.ts";
+import { newConversationFullAllowed, ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant, trustedChannelFullRefusal } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
@@ -9069,7 +9069,13 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
     ) {
       // Durable but still inert. Electron must observe this exact ACK before
       // sending the one-way commit release that clears the journal.
-      store.patchBot(botId, { approvalGrant: { ...bot.approvalGrant, requestId, mode, phase: "committed" } });
+      // #1098: Full on a member's bot of an organization runs as Full only
+      // with its owner's consent (orgDeniesFull); the owner confirmed it in
+      // this app (trustedChannelFullRefusal let only them through).
+      const ownerConsent = mode === "full" && memberOwnedInOrg(bot)
+        && effectiveBotOwner(bot).trim().toLowerCase() === localPrincipalId().trim().toLowerCase()
+        ? { fullAccessConsent: { principalId: localPrincipalId().trim().toLowerCase(), at: Date.now() } } : {};
+      store.patchBot(botId, { approvalGrant: { ...bot.approvalGrant, requestId, mode, phase: "committed" }, ...ownerConsent });
       finalize(true);
       return true;
     }
@@ -9110,9 +9116,24 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
     respond({ ok: false, error: "No such bot" });
     return true;
   }
-  if ((mode === "full" || mode === "custom") && memberOwnedInOrg(existing)) {
+  // #1098 (2026-10-28): Full on a member's bot follows the HTTP route's
+  // rule (its owner turns it on), never a blanket refusal; Custom stays the
+  // HTTP route's answer.
+  if (mode === "custom" && memberOwnedInOrg(existing)) {
     respond({ ok: false, error: MEMBER_BOT_FULL_ACCESS.error });
     return true;
+  }
+  if (mode === "full" && memberOwnedInOrg(existing)) {
+    const refusal = trustedChannelFullRefusal({
+      policyAllowed: orgFullAccessPolicy(),
+      localPrincipalId: localPrincipalId(),
+      ownerPrincipalId: effectiveBotOwner(existing),
+      mayFullAccess: principalIsOrgAdmin(localPrincipalId()) || principalCan(localPrincipalId(), "bots.fullAccess"),
+    });
+    if (refusal) {
+      respond({ ok: false, error: refusal.error });
+      return true;
+    }
   }
   const currentMode = approvalModeFor(existing);
   const threadId = message.threadId;

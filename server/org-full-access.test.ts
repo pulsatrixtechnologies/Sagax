@@ -10,6 +10,7 @@ import {
   orgNewBotApprovalMode,
   parseOrgFullAccessBody,
   threadFollowsFullGrant,
+  trustedChannelFullRefusal,
 } from "./org-full-access.ts";
 
 const consent = { principalId: "alice", at: 1 };
@@ -79,6 +80,14 @@ describe("organization Full access grants", () => {
     expect(orgFullAccessHolds({ policyAllowed: true, ownerPrincipalId: "bob", consent })).toBe(false);
     expect(orgFullAccessHolds({ policyAllowed: true, ownerPrincipalId: "alice", consent: { principalId: "", at: 1 } })).toBe(false);
     expect(fullAccessConsentedBy("junk", "alice")).toBe(false);
+  });
+
+  it("lets a member's bot go Full through the desktop's trusted channel for its owner only (#1098)", () => {
+    expect(trustedChannelFullRefusal({ policyAllowed: true, localPrincipalId: "Bob", ownerPrincipalId: "bob", mayFullAccess: true })).toBeNull();
+    // someone else's bot, no person, or without bots.fullAccess
+    expect(trustedChannelFullRefusal({ policyAllowed: true, localPrincipalId: "uma", ownerPrincipalId: "bob", mayFullAccess: true })?.code).toBe("full_access_owner_only");
+    expect(trustedChannelFullRefusal({ policyAllowed: true, localPrincipalId: null, ownerPrincipalId: "bob", mayFullAccess: true })?.code).toBe("full_access_owner_only");
+    expect(trustedChannelFullRefusal({ policyAllowed: true, localPrincipalId: "bob", ownerPrincipalId: "bob", mayFullAccess: false })?.code).toBe("full_access_owner_only");
   });
 
   it("accepts the open conversation beside the Full grant and nothing else", () => {
