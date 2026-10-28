@@ -58,7 +58,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
 import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from "../published-pages.ts";
-import { commentAnswerDocument, pageDocument, parseReaderAssets, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
+import { commentAnswerDocument, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
 import type { ReaderBoot } from "../../shared/page-reader.ts";
 import { requestSource, type RequestAuth } from "../request-auth.ts";
 import { redactSecretsInText } from "../../shared/redact.ts";
@@ -298,6 +298,7 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
       + (input.preview && input.look?.theme ? `&c=${input.look.theme}` : ""),
     lang,
     preview: input.preview,
+    ...(!input.preview && input.version.kind === "presentation" ? { slides: splitSlides(options.pages?.content(input.page.id, input.version.n) ?? "").length } : {}),
     ...(input.preview ? {} : { reader: { boot: readerBoot({ page: input.page, version: input.version, viewer, lang, personName: names.personName, ...(meName ? { meName } : {}) }), assets } }),
     annotate: input.annotate === true,
     ...(input.preview && input.look?.bare ? { bare: true } : {}),
@@ -464,11 +465,15 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
   const keepScroll = /^\d{1,8}$/.test(keepRaw) && Number(keepRaw) <= PAGE_SCROLL_MAX ? Number(keepRaw) : undefined;
   const themeRaw = preview ? query(req, "c") : "";
   const theme: PageTheme | undefined = themeRaw === "light" || themeRaw === "dark" ? themeRaw : undefined;
-  const nonce = annotating || keepScroll !== undefined ? randomBytes(16).toString("base64url") : undefined;
+  // a reading link's frame reports its size to the wrapper (Download PDF)
+  const reportSize = !preview;
+  const nonce = annotating || keepScroll !== undefined || reportSize ? randomBytes(16).toString("base64url") : undefined;
   res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors, ...(nonce ? { annotateNonce: nonce } : {}) }) });
   res.end(method === "HEAD" ? undefined : pageDocument({ kind: target.version.kind, title: target.page.title ?? target.version.title, content, lang: language(req) }, {
     ...(annotating ? { annotateNonce: nonce } : {}),
-    ...(keepScroll !== undefined ? { keepScroll, nonce: nonce! } : {}),
+    ...(keepScroll !== undefined || reportSize ? { nonce: nonce! } : {}),
+    ...(keepScroll !== undefined ? { keepScroll } : {}),
+    ...(reportSize ? { reportSize: true } : {}),
     ...(theme ? { theme } : {}),
   }));
   return true;

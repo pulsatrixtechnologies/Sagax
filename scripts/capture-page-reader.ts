@@ -45,7 +45,12 @@ h1{font-size:2rem;margin:0 0 .25rem}.lead{color:#57606a;margin-top:0}
 <h2>Prochaines étapes</h2><p>Renouveler les postes les plus anciens et documenter la procédure d'accueil des nouveaux employés.</p>
 ${"<p>Notes de suivi détaillées pour l'équipe.</p>".repeat(12)}</body></html>`;
 
-const made = pages.propose({ ownerId: OWNER, botId: "bot_capture", threadId: "t_capture", title: "Rapport mensuel", kind: "html", content: HTML });
+// CAPTURE_KIND=markdown|presentation: the same report in our own Markdown
+const KIND = process.env.CAPTURE_KIND === "markdown" || process.env.CAPTURE_KIND === "presentation" ? process.env.CAPTURE_KIND : "html";
+const MARKDOWN = KIND === "presentation"
+  ? "# Bilan du trimestre\n\nTrois chiffres à retenir.\n\n---\n\n## Demandes\n\n- 128 traitées\n- 96 % à temps\n\n---\n\n## Prochaines étapes\n\n1. Renouveler les postes\n2. Documenter l'accueil"
+  : "# Rapport mensuel\n\nRésumé des activités du mois d'octobre.\n\n## Faits saillants\n\n| Catégorie | Demandes |\n|---|---|\n| Postes | 54 |\n| Réseau | 31 |\n\n" + "Notes de suivi détaillées pour l'équipe.\n\n".repeat(30);
+const made = pages.propose({ ownerId: OWNER, botId: "bot_capture", threadId: "t_capture", title: "Rapport mensuel", kind: KIND, content: KIND === "html" ? HTML : MARKDOWN });
 if (!made.ok) throw new Error(made.error);
 pages.publish(made.page.id, { version: 1, access: "link", expiresAt: null, by: OWNER });
 pages.setInvites(made.page.id, { people: [READER], teams: [] }, OWNER);
@@ -139,6 +144,11 @@ try {
       await page.goto(`${base}${viewPath}`);
       await page.waitForLoadState("networkidle");
       await shot(page, `${person}-${scheme}`);
+      if (person === "anon" && await page.locator("[data-reader-pdf]").count()) {
+        // what Download PDF writes: the browser's print of the wrapper
+        await page.pdf({ path: join(outDir, `${prefix}-${person}-${scheme}.pdf`), format: "A4", preferCSSPageSize: true });
+        console.log(join(outDir, `${prefix}-${person}-${scheme}.pdf`));
+      }
       if (person === "owner") {
         const share = page.locator("[data-reader-share]");
         if (await share.count()) {

@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
-import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, wrapperBanner } from "./published-pages-render.ts";
+import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, REPORT_SIZE_SOURCE, SLIDE_PRINT_MM, wrapperBanner } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import {
   createPublishedPageRoutes,
@@ -915,5 +915,58 @@ describe("the reader's bar (2026-10-28)", () => {
       + '<link rel="modulepreload" crossorigin href="/assets/react-1.js"><link rel="stylesheet" crossorigin href="/assets/page-reader-1.css"><link rel="stylesheet" href="//x.example/a.css">';
     expect(parseReaderAssets(html)).toEqual({ scripts: ["/assets/page-reader-1.js"], styles: ["/assets/page-reader-1.css"], preloads: ["/assets/react-1.js"] });
     expect(parseReaderAssets("<html></html>")).toBeNull();
+  });
+});
+
+describe("Download PDF (2026-10-28)", () => {
+  it("a reading frame tells its wrapper how tall it is, and nothing else", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", "pr_owner");
+    const { wrapper, frame } = await read(pages, path, null);
+    expect(frame!.body).toContain(REPORT_SIZE_SOURCE);
+    expect(REPORT_SIZE_SOURCE).toContain('"sagax-page-size"');
+    for (const network of ["fetch", "XMLHttpRequest", "sendBeacon", "WebSocket", "location"]) expect(REPORT_SIZE_SOURCE).not.toContain(network);
+    expect(String(frame!.headers["content-security-policy"])).toContain("connect-src 'none'");
+    // the wrapper prints only the frame, at the height it reported
+    expect(wrapper.body).toContain("@media print{");
+    expect(wrapper.body).toContain(".sagax-bar,.sagax-comments,.sagax-reader-overlay{display:none!important}");
+    expect(wrapper.body).toContain("height:var(--sagax-print-height,100vh)!important");
+  });
+
+  it("a Markdown reading frame runs only that script, by its nonce", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_owner");
+    pages.edit(page.id, { kind: "markdown", content: "# Bilan\n\nTexte", by: "pr_owner" });
+    pages.publish(page.id, { version: 2, access: "link", expiresAt: null });
+    const path = pages.path(pages.get(page.id)!.linkId!);
+    const { wrapper, frame } = await read(pages, path, null);
+    expect(wrapper.body).toContain('sandbox="allow-scripts"');
+    const csp = String(frame!.headers["content-security-policy"]);
+    const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
+    expect(nonce).toBeTruthy();
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+    expect(frame!.body).toContain(`<script nonce="${nonce}">${REPORT_SIZE_SOURCE}</script>`);
+    expect(frame!.body.match(/<script/g)).toHaveLength(1);
+    // our own dark rules are for the screen only: the PDF is on white
+    expect(frame!.body).toContain("@media screen and (prefers-color-scheme:dark)");
+  });
+
+  it("the app's preview never reports its size", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_owner");
+    const wrapper = await hit(options(pages, { principalId: "pr_owner", computerOwner: false }), `/pages/preview/${page.id}/1`);
+    const frame = await hit(options(pages, { principalId: "pr_owner", computerOwner: false }), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" });
+    expect(frame.body).not.toContain("sagax-page-size");
+    expect(wrapper.body).not.toContain("@media print");
+  });
+
+  it("a presentation prints one slide per sheet", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_owner");
+    pages.edit(page.id, { kind: "presentation", content: "# Un\n\n---\n\n# Deux\n\n---\n\n# Trois", by: "pr_owner" });
+    pages.publish(page.id, { version: 2, access: "link", expiresAt: null });
+    const { wrapper, frame } = await read(pages, pages.path(pages.get(page.id)!.linkId!), null);
+    expect(wrapper.body).toContain(`@page{size:297mm ${SLIDE_PRINT_MM}mm;margin:0}iframe{height:${3 * SLIDE_PRINT_MM}mm!important}`);
+    expect(frame!.body).toContain(`.slide{height:${SLIDE_PRINT_MM}mm;border:0;break-after:page}`);
   });
 });

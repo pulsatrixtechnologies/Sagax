@@ -6,8 +6,9 @@
 // The bar and its tools live in the wrapper, outside the page's frame: the
 // page stays in its sandbox (opaque origin, no network), and the wrapper's
 // script only reaches this server's own routes with the reader's own rights.
-// A reader who is not signed in gets the title, the notice and Download PDF;
-// the page's own person also gets Share.
+// A reader who is not signed in gets the title, the notice and Download PDF
+// (the browser prints the page's whole height; Save as PDF writes it); the
+// page's own person also gets Share.
 import type { PageKind } from "./published-pages.ts";
 
 export type ReaderLang = "fr" | "en";
@@ -73,6 +74,8 @@ export function readerNotice(input: { bot: string; person: string; lang: ReaderL
 const STRINGS = {
   en: {
     share: "Share",
+    pdf: "Download PDF",
+    pdfHint: "Opens the print dialog: choose Save as PDF.",
     shareTitle: "Share “{title}”",
     add: "Add people or groups",
     people: "Who has access",
@@ -105,6 +108,8 @@ const STRINGS = {
   },
   fr: {
     share: "Partager",
+    pdf: "Télécharger le PDF",
+    pdfHint: "Ouvre la fenêtre d'impression : choisissez Enregistrer au format PDF.",
     shareTitle: "Partager « {title} »",
     add: "Ajouter des personnes ou des groupes",
     people: "Qui a accès",

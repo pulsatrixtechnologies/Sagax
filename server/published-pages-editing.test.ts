@@ -424,7 +424,8 @@ describe("reader comments on a published page (Owner 2026-10-21)", () => {
     expect((await call(handler, bob, "PATCH", `/api/pages/${id}`, { readerComments: true })).status).toBe(404);
     const wrapper = await hit(options(pages, null), `/pages/view/${token}`);
     expect(wrapper.body).toContain(`<form method="post" action="/pages/comment/${token}"`);
-    expect(wrapper.body).not.toContain("<script");
+    // no script runs without a built bar (only its JSON block, never run)
+    expect(wrapper.body).not.toMatch(/<script(?![^>]*type="application\/json")/);
     const csp = String(wrapper.headers["content-security-policy"]);
     expect(csp).toContain("script-src 'none'");
     expect(csp).toContain(`form-action sagax.example.com/pages/comment/${token}`);

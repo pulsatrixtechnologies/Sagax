@@ -113,6 +113,24 @@ export const PAGE_ANNOTATION_MESSAGE = "sagax-page-annotation";
 export const PAGE_SCROLL_MESSAGE = "sagax-page-scroll";
 /** The farthest scroll position the app asks a preview to restore. */
 export const PAGE_SCROLL_MAX = 10_000_000;
+/** The message a reading frame posts to its wrapper (2026-10-28): how tall
+ * the page is and how tall its window, so Download PDF prints all of it.
+ * Only two numbers. */
+export const PAGE_SIZE_MESSAGE = "sagax-page-size";
+/** The wrapper asks its frame for the size again (its script may start after the page loaded). */
+export const PAGE_SIZE_ASK = "sagax-page-size-ask";
+/** The tallest page Download PDF prints, in CSS pixels. */
+export const PAGE_HEIGHT_MAX = 2_000_000;
+
+/** A size a reading frame posted, or null. Pure. The page's own scripts
+ * can post the same message: it only ever sets how tall the frame prints. */
+export function parseSizeMessage(data: unknown): { h: number; vh: number } | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const record = data as Record<string, unknown>;
+  if (record.type !== PAGE_SIZE_MESSAGE || record.v !== 1) return null;
+  const whole = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= PAGE_HEIGHT_MAX;
+  return whole(record.h) && whole(record.vh) ? { h: record.h as number, vh: record.vh as number } : null;
+}
 
 /** A scroll position the preview frame posted, or null. Pure. Like an
  * annotation, the page's own scripts can post the same message: it is only
