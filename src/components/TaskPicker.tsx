@@ -20,6 +20,7 @@ import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useMenuMotion } from "./MenuMotion";
+import { AnchoredPopover } from "./AnchoredPopover";
 import { t } from "@/lib/i18n";
 import { formatTaskTokens, headlineTokens, usageDetail } from "@/lib/usage";
 import { nextRename } from "@/lib/rename";
@@ -195,6 +196,10 @@ function ConversationTaskPicker({
   const rowMenuAnchor = useRef<HTMLElement | null>(null);
   const [folderMenu, setFolderMenu] = useState<{ projectId: string; left: number; top: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // The list is drawn on <body> (AnchoredPopover), so a narrow column or a
+  // short window no longer cuts it; a press in it is not outside.
+  const popoverRef = useRef<HTMLElement | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishingRename = useRef(false);
   const now = useRelativeNow();
@@ -254,7 +259,7 @@ function ConversationTaskPicker({
     const onDown = (e: MouseEvent) => {
       if (e.target instanceof Element && e.target.closest("[data-thread-overlay]")) return;
       // SAFETY: a mousedown target inside a document is always a DOM Node
-      if (!ref.current?.contains(e.target as Node)) {
+      if (!ref.current?.contains(e.target as Node) && !popoverRef.current?.contains(e.target as Node)) {
         if (dismissTimer.current) {
           clearTimeout(dismissTimer.current);
           dismissTimer.current = null;
@@ -314,6 +319,7 @@ function ConversationTaskPicker({
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => {
           if (open) closeMenu();
@@ -328,7 +334,7 @@ function ConversationTaskPicker({
       </button>
 
       {motion.shown && (
-        <div className={cn("absolute right-0 top-full z-40 mt-1 w-[300px] overflow-hidden rounded-xl border border-popover-hairline popover-surface bg-popover py-1 shadow-2xl shadow-black/50", motion.className)} {...motion.exitProps}>
+        <AnchoredPopover anchorRef={buttonRef} popoverRef={popoverRef} align="end" data-task-picker-menu="" className={cn("w-[300px] overflow-hidden rounded-xl border border-popover-hairline popover-surface bg-popover py-1 shadow-2xl shadow-black/50", motion.className)} {...motion.exitProps}>
           <div className="px-2 pb-1 pt-1.5">
             <div className="flex items-center gap-2 rounded-lg border border-popover-border bg-popover-field px-2.5 py-1.5 focus-within:border-focus">
               <Search size={13} className="shrink-0 text-popover-ink-secondary" />
@@ -488,7 +494,7 @@ function ConversationTaskPicker({
           >
             <Plus size={13} className="text-popover-ink-secondary" /> {t("task.newShort")}
           </button>}
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   );

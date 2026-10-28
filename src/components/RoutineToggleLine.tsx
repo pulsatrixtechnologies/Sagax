@@ -12,6 +12,7 @@ import { useStore, type Message } from "@/state/store";
 import { t } from "@/lib/i18n";
 import type { RoutineToggleEvent } from "../../shared/wire";
 import { useMenuMotion } from "./MenuMotion";
+import { AnchoredPopover } from "./AnchoredPopover";
 
 /** "Disabled" or "Enabled", in the person's language. */
 export function routineToggleActionLabel(action: RoutineToggleEvent["action"]): string {
@@ -85,13 +86,17 @@ export function RoutineToggleLine({ event, canOpen, onOpen }: {
   const [open, setOpen] = useState(false);
   const motion = useMenuMotion(open);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  // The menu is drawn on <body> (AnchoredPopover), so the transcript that
+  // scrolls around this line never cuts it; a press in it is not outside.
+  const menuRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (keyEvent: KeyboardEvent) => {
       if (keyEvent.key === "Escape") setOpen(false);
     };
     const onPointerDown = (pointerEvent: PointerEvent) => {
-      if (pointerEvent.target instanceof Node && !ref.current?.contains(pointerEvent.target)) setOpen(false);
+      if (pointerEvent.target instanceof Node && !ref.current?.contains(pointerEvent.target) && !menuRef.current?.contains(pointerEvent.target)) setOpen(false);
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("pointerdown", onPointerDown);
@@ -107,6 +112,7 @@ export function RoutineToggleLine({ event, canOpen, onOpen }: {
     <div className="flex justify-center py-0.5" data-routine-toggle={event.action}>
       <div ref={ref} className="relative">
         <button
+          ref={buttonRef}
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
@@ -123,12 +129,15 @@ export function RoutineToggleLine({ event, canOpen, onOpen }: {
           <span>{count}</span>
         </button>
         {motion.shown && (
-          <div
+          <AnchoredPopover
+            anchorRef={buttonRef}
+            popoverRef={menuRef}
             role="menu"
             aria-label={t("chat.routineToggle.menuAria")}
             data-routine-toggle-menu
+            align="center"
             className={cn(
-              "absolute left-1/2 top-full z-40 mt-1 flex w-[300px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5",
+              "flex w-[300px] max-w-[calc(100vw-32px)] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5",
               motion.className,
             )}
             {...motion.exitProps}
@@ -155,7 +164,7 @@ export function RoutineToggleLine({ event, canOpen, onOpen }: {
                 </button>
               );
             })}
-          </div>
+          </AnchoredPopover>
         )}
       </div>
     </div>

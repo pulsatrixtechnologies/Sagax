@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 
 import { BotAvatar } from "@/components/Avatar";
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { pathForFile } from "@/components/ComposerAttachments";
 import { CalendarSidebar } from "@/components/routines/CalendarSidebar";
@@ -1377,6 +1378,9 @@ function CalendarGrid({
   const [botDrag, setBotDrag] = useState<{ name: string } | null>(null);
   // The "+N" marker of a crowded half hour: which one is open.
   const [moreOpen, setMoreOpen] = useState<string | null>(null);
+  // Its list is drawn on <body> (AnchoredPopover), against the open marker,
+  // so the scrolling grid never cuts it; it carries [data-slot-more] too.
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (!moreOpen) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMoreOpen(null); };
@@ -1506,15 +1510,15 @@ function CalendarGrid({
                 const top = ((new Date(group.at).getHours() * 60 + new Date(group.at).getMinutes()) / 60) * HOUR_HEIGHT;
                 return (
                   <div key={group.id} data-slot-more className={cn("absolute", moreOpen === group.id ? "z-40" : "z-20")} style={{ left: `calc(${((layout.column + 1) / layout.columns) * 100}% - 34px)`, width: 30, top, height: Math.max(16, HOUR_HEIGHT / 2) }}>
-                    <button type="button" aria-expanded={moreOpen === group.id} aria-label={t("routineCalendar.moreAt", { count: group.items.length, time: niceTime(group.at) })} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setMoreOpen((current) => current === group.id ? null : group.id); }} className="h-full w-full rounded-md border border-hairline/60 bg-raised px-0.5 text-center text-[11px] font-semibold text-ink-secondary hover:text-ink focus:outline-none focus:ring-2 focus:ring-accent">+{group.items.length}</button>
+                    <button ref={moreOpen === group.id ? moreButtonRef : undefined} type="button" aria-expanded={moreOpen === group.id} aria-label={t("routineCalendar.moreAt", { count: group.items.length, time: niceTime(group.at) })} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setMoreOpen((current) => current === group.id ? null : group.id); }} className="h-full w-full rounded-md border border-hairline/60 bg-raised px-0.5 text-center text-[11px] font-semibold text-ink-secondary hover:text-ink focus:outline-none focus:ring-2 focus:ring-accent">+{group.items.length}</button>
                     {moreOpen === group.id && (
-                      <div role="menu" onPointerDown={(event) => event.stopPropagation()} className="absolute left-0 top-full z-40 mt-1 max-h-64 w-56 overflow-y-auto rounded-lg border border-border bg-elevated p-1 shadow-lg">
+                      <AnchoredPopover anchorRef={moreButtonRef} role="menu" data-slot-more="" maxHeight={256} onPointerDown={(event) => event.stopPropagation()} className="w-56 overflow-y-auto rounded-lg border border-border bg-elevated p-1 shadow-lg">
                         {group.items.map((entry) => (
                           <button key={entry.id} type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setMoreOpen(null); onOpen(entry); }} className="block w-full truncate rounded-md px-2 py-1.5 text-left text-[12px] text-ink hover:bg-raised">
                             <span className="text-ink-secondary">{niceTime(entry.at)}</span> {entry.kind === "call" ? entry.call.name : entry.routine?.name ?? t("botPanel.coding.kind.routine")}
                           </button>
                         ))}
-                      </div>
+                      </AnchoredPopover>
                     )}
                   </div>
                 );
