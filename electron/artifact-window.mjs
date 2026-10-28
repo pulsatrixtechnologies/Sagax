@@ -180,6 +180,8 @@ function pageOrigin(event) {
  * @param {() => import("electron").BrowserWindow | null} deps.getMainWindow
  * @param {(event: import("electron").IpcMainInvokeEvent) => boolean} deps.isTrustedMain
  * @param {(url: string) => void} [deps.openExternal] a link out of the window (validated by the caller)
+ * @param {(details: unknown) => boolean} [deps.blockFrame] a subframe navigation to refuse (the published page frame guard)
+ * @param {(url: string) => void} [deps.expectFrame] a subframe is about to load this address (a published page's frame: the server answers it only as an iframe)
  * @param {() => unknown} [deps.icon]
  * @param {(line: string) => void} [deps.log]
  * @param {Pick<import("electron").Screen, "getPrimaryDisplay" | "getAllDisplays" | "getDisplayMatching">} [deps.screen]
@@ -394,6 +396,18 @@ export function createArtifactWindows(deps) {
     };
     win.webContents.on("will-navigate", guard);
     win.webContents.on("will-redirect", guard);
+    // A published page is framed here too (PageSurface). Like the main
+    // window, note the frame load so the bundled UI handler sends
+    // Sec-Fetch-Dest: iframe, or the server refuses it and the page stays
+    // blank; and keep the page's frame on its own address.
+    win.webContents.on("will-frame-navigate", (details) => {
+      if (details.isMainFrame) return;
+      if (deps.blockFrame?.(details)) {
+        details.preventDefault();
+        return;
+      }
+      deps.expectFrame?.(details.url);
+    });
 
     void Promise.resolve(win.loadURL(artifactWindowUrl(origin, request.botId, request.artifactId))).catch((error) => {
       log(`artifact window: the page did not load (${error?.message ?? error})`);
