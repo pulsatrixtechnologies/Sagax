@@ -13,6 +13,7 @@ import { recallMessages, recallTerms, type MemoryHit, type RecallHit } from "./m
 import { parseTopicHeader, readTopicHead, topicBody, topicWords } from "./memory-topics.ts";
 import { listMemoryTopics, memoryDate, readMemoryTopic, searchMemoryFiles, workspaceDir } from "./workspace.ts";
 import { withoutExpired } from "./memory-entries.ts";
+import { memoryMayShow, memoryReadersOf, withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { join } from "node:path";
 
 /** Below this many characters a message is a nod, not a question. */
@@ -126,6 +127,9 @@ export interface RecallInput {
   author: (hit: RecallHit) => string;
   /** Less than the default (a call turn: CALL_RECALL_BUDGET). */
   budget?: RecallBudget;
+  /** Where this recall would be shown. A wider place does not receive a
+   * captured fact stamped for somewhere narrower. Absent: the person. */
+  audience?: MemoryDestination;
 }
 
 const TOPIC_PASSAGE_CHARS = 600;
@@ -142,7 +146,7 @@ function sameWord(term: string, word: string): boolean {
 /** Topics whose name, title, description or aliases share a word with the
  * message: the alias mechanism, matched directly rather than through the
  * full-text index, so a topic answers to what it is called. */
-export function topicPassages(botId: string, query: string): RecallPassage[] {
+export function topicPassages(botId: string, query: string, audience?: MemoryDestination): RecallPassage[] {
   const terms = recallTerms(query);
   if (!terms.length) return [];
   const dir = join(workspaceDir(botId), "memory");
@@ -152,7 +156,8 @@ export function topicPassages(botId: string, query: string): RecallPassage[] {
       if (topic.name === "archive.md") continue;
       const words = topicWords(topic.name, parseTopicHeader(readTopicHead(join(dir, topic.name))));
       if (!terms.some((term) => words.some((word) => sameWord(term, word)))) continue;
-      const body = topicBody(withoutExpired(readMemoryTopic(botId, topic.name) ?? "", memoryDate()).text);
+      const visible = withoutExpired(readMemoryTopic(botId, topic.name) ?? "", memoryDate()).text;
+      const body = topicBody(audience ? withoutWiderAudience(visible, audience).text : visible);
       if (!body) continue;
       out.push({ source: "memory", label: `memory/${topic.name}`, snippet: body.length > TOPIC_PASSAGE_CHARS ? `${body.slice(0, TOPIC_PASSAGE_CHARS)}…` : body });
       if (out.length >= MEMORY_HITS) break;
@@ -163,7 +168,18 @@ export function topicPassages(botId: string, query: string): RecallPassage[] {
   return out;
 }
 
-export function memoryPassages(botId: string, query: string): RecallPassage[] {
+function passageMayShow(botId: string, hit: MemoryHit, audience?: MemoryDestination): boolean {
+  if (!audience || audience.kind === "person") return true;
+  if (!memoryMayShow(memoryReadersOf(hit.snippet), audience)) return false;
+  const needle = plain(hit.snippet).replace(/\s+/g, " ").trim().slice(0, 80);
+  if (needle.length < 12) return true;
+  const file = hit.file.startsWith("memory/") ? readMemoryTopic(botId, hit.file.slice("memory/".length)) : null;
+  if (!file) return true;
+  const line = file.split("\n").find((row) => row.includes(needle.slice(0, 40)));
+  return memoryMayShow(line ? memoryReadersOf(line) : null, audience);
+}
+
+export function memoryPassages(botId: string, query: string, audience?: MemoryDestination): RecallPassage[] {
   let hits: MemoryHit[] = [];
   try {
     hits = searchMemoryFiles(botId, query, MEMORY_HITS * 3, "any");
@@ -171,7 +187,7 @@ export function memoryPassages(botId: string, query: string): RecallPassage[] {
     return [];
   }
   return hits
-    .filter((hit) => recalled(hit.file) && enoughMatches(query, hit.snippet))
+    .filter((hit) => recalled(hit.file) && enoughMatches(query, hit.snippet) && passageMayShow(botId, hit, audience))
     .slice(0, MEMORY_HITS)
     .map((hit) => ({ source: "memory" as const, label: hit.file, at: hit.at, snippet: plain(hit.snippet) }));
 }
@@ -199,8 +215,8 @@ export function conversationPassages(input: RecallInput, query: string): RecallP
 export function buildRecall(input: RecallInput): RecallResult | null {
   const query = recallQuery(input.message);
   if (!query) return null;
-  const topics = topicPassages(input.botId, query);
+  const topics = topicPassages(input.botId, query, input.audience);
   const named = new Set(topics.map((passage) => passage.label));
-  const notes = [...topics, ...memoryPassages(input.botId, query).filter((passage) => !named.has(passage.label))].slice(0, input.budget?.notes ?? MEMORY_HITS);
+  const notes = [...topics, ...memoryPassages(input.botId, query, input.audience).filter((passage) => !named.has(passage.label))].slice(0, input.budget?.notes ?? MEMORY_HITS);
   return renderRecall([...notes, ...conversationPassages(input, query)], input.budget?.chars);
 }

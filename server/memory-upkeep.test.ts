@@ -266,7 +266,7 @@ describe("the upkeep loop", () => {
     ]));
     const report = await upkeep().capture({ botId: BOT.id, threadId: "t1", turns: [{ person: "I'm vegetarian and I have exams this weekend", bot: "Good luck!" }] });
     expect(report).toMatchObject({ added: 2, topics: 0, aboutMe: 1, known: 0 });
-    expect(memory()).toContain('- 2026-09-25 · from chat "Plans" (noticed) · The person is vegetarian\n');
+    expect(memory()).toContain('- 2026-09-25 · from chat "Plans" (noticed) · readers person · The person is vegetarian\n');
     expect(memory()).toContain("The person has exams this weekend · until 2026-09-27");
     await flushMemoryJournal(BOT.id);
     expect(readMemoryJournal(BOT.id, 5)[0]).toMatchObject({ actor: "upkeep", via: "capture", threadId: "t1", path: "MEMORY.md" });
@@ -354,7 +354,7 @@ describe("the upkeep loop", () => {
     expect(memory()).not.toContain("pasta");
     const food = readMemoryTopic(BOT.id, "food.md")!;
     expect(parseTopicHeader(food)).toEqual({ title: "food", aliases: ["restaurants", "dinner"] });
-    expect(food).toContain('from chat "Plans" (noticed) · The person loves pasta');
+    expect(food).toContain('from chat "Plans" (noticed) · readers person · The person loves pasta');
     expect(readMemoryTopic(BOT.id, "family.md")).toContain("Sister Asha lives in Delhi");
     // the same fact again adds nothing; a hand-made "Food.md" is reused by name
     answers.push(JSON.stringify([{ text: "The person loves pasta", kind: "preference", topic: "food" }]));

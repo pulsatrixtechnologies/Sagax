@@ -1,12 +1,12 @@
 // The entry grammar of MEMORY.md, read back: one dated line per fact,
-// `- YYYY-MM-DD · from <source> · text[ · until YYYY-MM-DD]`, with a
+// `- YYYY-MM-DD · from <source> · [readers <who> · ]text[ · until YYYY-MM-DD]`, with a
 // struck-through body for a superseded fact. Pure helpers shared by the
 // prompt loader (which hides expired lines), background capture (which
 // must not add a fact the notebook already holds), the nightly tidy-up and
 // the rule that keeps MEMORY.md within what loads (server/workspace.ts).
 
 export const UNTIL_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const DATED = /^(- (\d{4}-\d{2}-\d{2}) · (?:from [^·\n]* · )?)(.*)$/;
+const DATED = /^(- (\d{4}-\d{2}-\d{2}) · (?:from [^·\n]* · )?(?:readers (?:person|group:[A-Za-z0-9_-]{1,64}|room:[A-Za-z0-9_-]{1,64}) · )?)(.*)$/;
 const UNTIL_MARK = / · until (\d{4}-\d{2}-\d{2})(?= · |$)/;
 const TRAILING_MARKS = /(?: · (?:updated|confirmed|until|expired|superseded|moved) \d{4}-\d{2}-\d{2})+$/;
 const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+/;

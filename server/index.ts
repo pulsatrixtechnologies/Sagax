@@ -213,6 +213,7 @@ import {
 } from "./cloud-backend.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts";
+import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { companyTextForBots } from "./memory-company.ts";
 import { procedureSignal, recordProcedure } from "./memory-procedures.ts";
@@ -3211,7 +3212,7 @@ function recentWorkSources(bot: BotRecord) {
  * turn the person started — because a message from another bot, a webhook
  * or a room must not be able to pull a private chat into its reply. The
  * conversations are the ones session_search would search, minus this one. */
-function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opts: { conversations: boolean; userName: string; budget?: RecallBudget }): string {
+function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opts: { conversations: boolean; userName: string; budget?: RecallBudget; audience?: MemoryDestination }): string {
   if (bot.memoryEnabled === false || !autoRecallEnabled(cfg)) return "";
   const roomByThread = new Map<string, GroupRecord>();
   if (opts.conversations) {
@@ -3243,6 +3244,7 @@ function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opt
       },
       author: (hit) => (hit.role === "user" ? hit.peer ?? opts.userName : hit.from ?? bot.name),
       ...(opts.budget ? { budget: opts.budget } : {}),
+      ...(opts.audience ? { audience: opts.audience } : {}),
     });
     if (recalled) console.log(`auto-recall: ${bot.name} (${bot.id}) got ${recalled.notes} note and ${recalled.conversations} conversation passage(s) in ${threadId}`);
     // its memory recalled in this conversation (Total Recall, for whoever wrote that memory)
@@ -6738,11 +6740,11 @@ function collectTeamSkills(
  * travel (they are closer to chat history than to notes). */
 function starterNotes(botId: string): Array<{ path: string; text: string }> {
   const notes: Array<{ path: string; text: string }> = [];
-  const index = readMemoryFile(botId).text;
+  const index = withoutWiderAudience(readMemoryFile(botId).text, { kind: "public" }).text;
   if (index.trim()) notes.push({ path: "MEMORY.md", text: index });
   for (const topic of listMemoryTopics(botId).sort((a, b) => a.name.localeCompare(b.name))) {
-    const text = readMemoryTopic(botId, topic.name);
-    if (text?.trim()) notes.push({ path: `memory/${topic.name}`, text });
+    const text = withoutWiderAudience(readMemoryTopic(botId, topic.name) ?? "", { kind: "public" }).text;
+    if (text.trim()) notes.push({ path: `memory/${topic.name}`, text });
   }
   return notes;
 }
@@ -7054,7 +7056,7 @@ try {
 // Chief of Staff per section runs (idempotent, so at every boot).
 store.botOwnerKey = (bot) => effectiveBotOwner(bot);
 
-function memoryPromptFor(bot: BotRecord, opts: { managedWrites?: boolean; fileTools?: boolean } = {}): string {
+function memoryPromptFor(bot: BotRecord, opts: { managedWrites?: boolean; fileTools?: boolean; audience?: MemoryDestination } = {}): string {
   return memorySystemPrompt(bot.id, {
     ...opts,
     enabled: bot.memoryEnabled !== false,
@@ -25103,7 +25105,7 @@ async function runGroupMemberTurn(
     const drift = checkSoulDrift(bot.id, bot.soul ?? "", bot.soulHash ?? "");
     if (drift.drift !== Boolean(bot.soulDrift)) store.patchBot(bot.id, { soulDrift: drift.drift });
   }
-  const roomMemory = memoryPromptFor(bot, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace });
+  const roomMemory = memoryPromptFor(bot, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, audience: { kind: "room", id: readyGroup.id } });
   // The same brief a 1:1 turn gets: what this member said lately in its
   // other conversations, so a standup is answered from what happened. A
   // brief can carry a private chat into the room; as with session_search
@@ -25306,7 +25308,7 @@ async function runGroupMemberTurn(
     idleEngines.noteBusy(threadId);
     // notes only in a room: a private chat reaches a room through the
     // explicit, disclosed session_search, never automatically
-    const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
+    const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName, audience: { kind: "room", id: readyGroup.id } });
     const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" };
     // The person's engine command for this member (shared/harness-commands.ts
     // groupCommandTarget): it reaches the engine verbatim, like in a 1:1.
