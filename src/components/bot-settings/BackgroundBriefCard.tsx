@@ -1,8 +1,10 @@
 // The background brief queue. No connected app: the queue stays empty and
-// the screen says so. A pass only reads.
+// the screen says so. A pass only reads. A server without the route yet (an
+// older one) says it comes with the server update, never an error.
 import { useCallback, useEffect, useState } from "react";
 
 import { t } from "@/lib/i18n";
+import { routeMissingOnServer } from "@/lib/server-route";
 import { useBotEditor } from "./BotEditorContext";
 import { PaneSection } from "./PaneSection";
 
@@ -23,13 +25,16 @@ export function BackgroundBriefCard({ botId }: { botId: string }) {
   const { request: api } = useBotEditor();
   const [view, setView] = useState<BriefView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsUpdate, setNeedsUpdate] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const next = await api(`/api/bots/${botId}/background-brief`) as BriefView;
       setView(next);
       setError(null);
+      setNeedsUpdate(false);
     } catch (err) {
+      if (routeMissingOnServer(err)) { setNeedsUpdate(true); return; }
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [api, botId]);
@@ -48,6 +53,13 @@ export function BackgroundBriefCard({ botId }: { botId: string }) {
 
   const note = briefQueueText(view);
   const pending = (view?.suggestions ?? []).filter((item) => item.status === "pending");
+  if (needsUpdate) {
+    return (
+      <PaneSection title={t("brief.title")}>
+        <p data-brief-needs-update="" className="text-[12.5px] text-ink-secondary">{t("serverRoute.needsUpdate")}</p>
+      </PaneSection>
+    );
+  }
   return (
     <PaneSection title={t("brief.title")}>
       {note && <p role="status" data-brief-empty="">{note}</p>}

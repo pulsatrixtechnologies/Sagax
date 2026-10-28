@@ -242,6 +242,22 @@ describe("scopes", () => {
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
   });
 
+  // 2026-10-28: a member opens their own bot's task list and background brief.
+  // The handlers check the bot and the person; neither is an admin route.
+  it("lets a member reach the task list and the background brief of their own bot", () => {
+    for (const [method, path] of [
+      ["GET", "/api/bots/x/task-list"], ["POST", "/api/bots/x/task-list"],
+      ["POST", "/api/bots/x/task-list/task_a1/reopen"],
+      ["GET", "/api/bots/x/background-brief"], ["PUT", "/api/bots/x/background-brief"],
+      ["POST", "/api/bots/x/background-brief/pass"],
+      ["POST", "/api/bots/x/background-brief/brief_1/reject"], ["POST", "/api/bots/x/background-brief/brief_1/keep"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
+    for (const [method, path] of [
+      ["DELETE", "/api/bots/x/background-brief"], ["GET", "/api/bots/x/background-brief/pass"],
+      ["POST", "/api/bots/x/background-brief/brief_1/other"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+  });
+
   it("knows this computer's own person: the owner, an admin, or a session bound to the operator on a personal server", () => {
     const personal = { organization: false, cloudHome: false, localPrincipalId: "pr_owner", operatorEmail: "Owner@Example.test" };
     const session = (fields: Partial<SessionRecord>, scopes: Array<"admin" | "client"> = ["client"]) =>

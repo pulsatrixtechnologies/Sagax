@@ -1,9 +1,12 @@
 // The bot's task list in its panel. The rows are the server's. An empty
 // list stays empty. This is not the code work journal below it.
+// A server without the route yet (an older one) says it comes with the
+// server update, never an error.
 import { useEffect, useState } from "react";
 
 import { t } from "@/lib/i18n";
-import { api } from "@/state/store";
+import { routeMissingOnServer } from "@/lib/server-route";
+import { api, ApiError } from "@/state/store";
 import { canReopenBotTask, type BotTask, type BotTaskState } from "../../../shared/bot-task-list";
 
 const LABEL: Record<BotTaskState, "botTasks.doing" | "botTasks.waiting" | "botTasks.done"> = {
@@ -12,31 +15,47 @@ const LABEL: Record<BotTaskState, "botTasks.doing" | "botTasks.waiting" | "botTa
   done: "botTasks.done",
 };
 
+type LoadState = "ok" | "failed" | "needsUpdate";
+
+/** How a failed read shows: the route missing on an older server is not an
+ * error, and a bot this person cannot reach has no tasks for them. */
+export function taskListFailure(error: unknown): { tasks?: BotTask[]; state: LoadState } {
+  if (routeMissingOnServer(error)) return { state: "needsUpdate" };
+  if (error instanceof ApiError && error.status === 404) return { tasks: [], state: "ok" };
+  return { state: "failed" };
+}
+
 export function BotTaskSection({ botId }: { botId: string }) {
   const [tasks, setTasks] = useState<BotTask[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [state, setState] = useState<LoadState>("ok");
+  const fail = (error: unknown) => {
+    const next = taskListFailure(error);
+    if (next.tasks) setTasks(next.tasks);
+    setState(next.state);
+  };
   useEffect(() => {
     let live = true;
     setTasks(null);
-    setFailed(false);
+    setState("ok");
     api<{ tasks: BotTask[] }>(`/api/bots/${encodeURIComponent(botId)}/task-list`)
-      .then((body) => { if (live) setTasks(body.tasks); })
-      .catch(() => { if (live) setFailed(true); });
+      .then((body) => { if (live) setTasks(Array.isArray(body?.tasks) ? body.tasks : []); })
+      .catch((error: unknown) => { if (live) fail(error); });
     return () => { live = false; };
   }, [botId]);
   const reopen = (id: string) => {
     void api(`/api/bots/${encodeURIComponent(botId)}/task-list/${encodeURIComponent(id)}/reopen`, { method: "POST", body: "{}" })
       .then(() => api<{ tasks: BotTask[] }>(`/api/bots/${encodeURIComponent(botId)}/task-list`))
-      .then((body) => setTasks(body.tasks))
-      .catch(() => setFailed(true));
+      .then((body) => { setTasks(Array.isArray(body?.tasks) ? body.tasks : []); setState("ok"); })
+      .catch(fail);
   };
   return (
     <section data-bot-settings-section="task-list" className="flex flex-col gap-2">
       <h3 className="text-[13px] font-medium text-ink">{t("botTasks.title")}</h3>
       <p className="text-[12px] text-ink-secondary">{t("botTasks.hint")}</p>
-      {failed ? <p className="text-[12px] text-danger">{t("botTasks.error")}</p> : null}
-      {tasks && tasks.length === 0 ? <p className="text-[12px] text-ink-tertiary">{t("botTasks.empty")}</p> : null}
-      {tasks && tasks.length > 0 ? (
+      {state === "needsUpdate" ? <p data-bot-tasks-needs-update="" className="text-[12px] text-ink-tertiary">{t("serverRoute.needsUpdate")}</p> : null}
+      {state === "failed" ? <p className="text-[12px] text-danger">{t("botTasks.error")}</p> : null}
+      {state !== "needsUpdate" && tasks && tasks.length === 0 ? <p className="text-[12px] text-ink-tertiary">{t("botTasks.empty")}</p> : null}
+      {state !== "needsUpdate" && tasks && tasks.length > 0 ? (
         <ul className="flex flex-col gap-1">
           {tasks.map((task) => (
             <li key={task.id} data-bot-task={task.state} className="flex items-center gap-2 text-[12.5px]">

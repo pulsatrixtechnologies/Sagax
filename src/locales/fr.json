@@ -1029,6 +1029,7 @@
   "botTasks.reopen": "Rouvrir",
   "botTasks.hint": "Distincte du journal de travaux de code. Le bot peut ajouter, avancer et terminer. Vous pouvez rouvrir.",
   "botTasks.error": "La liste de tâches n'a pas pu être chargée.",
+  "serverRoute.needsUpdate": "Disponible après la mise à jour du serveur.",
   "botPanel.tab.files": "Fichiers",
   "botPanel.tab.library": "Bibliothèque",
   "botPanel.library.pinned": "Épinglés",
