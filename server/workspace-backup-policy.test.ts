@@ -77,7 +77,7 @@ describe("workspace backup data boundary", () => {
   });
 
   it("never exports a person's web search key", () => {
-    for (const path of ["web-search.enc", "principals/pr_ada/web-search.enc", "web-search.enc.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp"]) {
+    for (const path of ["web-search.enc", "principals/pr_ada/web-search.enc", "web-search.enc.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp", "web-bot-auth-key.json", "principals/pr_ada/web-bot-auth-key.json"]) {
       expect(excludedWorkspaceAuthPath(path)).toBe(true);
     }
     for (const path of ["notes/web-search.enc", "web-search.enc.md"]) expect(excludedWorkspaceAuthPath(path)).toBe(false);

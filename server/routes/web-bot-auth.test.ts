@@ -18,7 +18,7 @@ function harness(organization: boolean) {
   const dir = mkdtempSync(join(tmpdir(), "sagax-web-bot-auth-route-"));
   dirs.push(dir);
   const route = createWebBotAuthRoutes({
-    store: new WebBotAuthStore(dir),
+    store: new WebBotAuthStore(dir, () => ({ kind: "key", key: Buffer.alloc(32, 3) })),
     scope: (auth) => webBotAuthScope(organization, auth.kind === "session" ? (auth.session as { principalId?: string }).principalId : null),
   });
   const call = async (method: string, body: unknown, auth: RequestAuth) => {

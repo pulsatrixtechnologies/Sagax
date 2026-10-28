@@ -785,27 +785,20 @@ describe("server-owned browser MCP runtime", () => {
 });
 
 describe("visit signature", () => {
-  it("refuses a tool call that would set headers or credentials, without starting the engine", async () => {
+  it("refuses a tool that would replace the signature, and still accepts another header", async () => {
     const value = runtime({ signNavigation: async () => { throw new Error("should not sign"); } });
-    const spec = { command: "/missing/browser", args: [], env: {} };
-    const headers = await value.agentRpc("s", spec, "tools/call", { name: "agent_browser_set_headers", arguments: { headers: { Authorization: "Bearer x" } } });
-    const credentials = await value.agentRpc("s", spec, "tools/call", { name: "agent_browser_set_credentials", arguments: {} });
-    expect(headers).toMatchObject({ isError: true });
-    expect(credentials).toMatchObject({ isError: true });
-    expect(JSON.stringify(headers)).toMatch(/not a login/);
-  });
-
-  it("asks for a signature before an http open and does not open when that fails", async () => {
-    const signed: string[] = [];
-    const value = new BrowserRuntime({
-      idleMs: 500,
-      signNavigation: async ({ url }) => { signed.push(url); throw new Error("The browser did not accept the visit signature."); },
-    });
+    const missing = { command: "/missing/browser", args: [], env: {} };
+    const signature = await value.agentRpc("s", missing, "tools/call", { name: "agent_browser_set_headers", arguments: { headers: { "Signature-Agent": "x" } } });
+    expect(signature).toMatchObject({ isError: true });
+    expect(JSON.stringify(signature)).toMatch(/not a header a tool sets/);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const refused = await value.agentRpc("sign", spec(), "tools/call", { name: "agent_browser_open", arguments: { url: "https://example.test/path" } }) as { isError?: boolean };
-      expect(signed).toEqual(["https://example.test/path"]);
-      expect(refused.isError).toBe(true);
-    } finally { await value.closeAll(); }
+      const opened = await value.agentRpc("sign", spec(), "tools/call", { name: "agent_browser_open", arguments: { url: "https://example.test/path" } }) as { isError?: boolean };
+      const again = await value.agentRpc("sign", spec(), "tools/call", { name: "agent_browser_open", arguments: { url: "https://example.test/other" } }) as { isError?: boolean };
+      expect(opened.isError).not.toBe(true);
+      expect(again.isError).not.toBe(true);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally { warn.mockRestore(); }
   });
 });
 
