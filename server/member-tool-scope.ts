@@ -17,6 +17,7 @@
 // classified here. member-tool-scope.test.ts fails on an unclassified tool.
 
 import { READ_ONLY_AGENT_TOOL_NAMES } from "./agent-tool-policy.ts";
+import { isOpenApiTool } from "./openapi-tools.ts";
 
 /** Why an agents tool stays inside the member's own scope. */
 export type MemberToolFamily =
@@ -27,7 +28,14 @@ export type MemberToolFamily =
   /** the bot's own memory and its room's shared memory */
   | "memory"
   /** the bot's own setup: proposals its person confirms, its skills, its rooms */
-  | "own-setup";
+  | "own-setup"
+  /** the bot's own work for its person, nothing outward (its task list) */
+  | "own-work"
+  /** 2026-10-28: acts with the person's own key, account, device or
+   * computer. Their own card at their own approval level, never an admin's;
+   * Sagax never answers it by itself (sagax-internal-tools.ts), and the
+   * person's Deny and Ask first rules apply as to any tool. */
+  | "own-account";
 
 const READ = Object.fromEntries([...READ_ONLY_AGENT_TOOL_NAMES, "list_room_targets"].map((name) => [name, "read" as const]));
 
@@ -138,6 +146,31 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   remote_session_exec: "conversation",
   // join_meeting only stages a consent card; the person approves each join
   join_meeting: "conversation",
+  // 2026-10-28: the tools below reached the catalog without a class, so a
+  // member's call waited for an admin. Each acts only for the person the
+  // turn speaks for, through a route that checks it.
+  // the bot's own task list (agents-call-tasks.ts)
+  task_list: "own-work",
+  // points at the engine's own video tools; runs nothing (agents-video.ts)
+  make_video: "own-work",
+  // a search with the person's own provider and key (server/web-search/)
+  sagax_web_search: "read",
+  // an API key of the person, sent where they allowed (credential-http.ts)
+  vault_http_request: "own-account",
+  // the person's own iPhone, which asks for its own consent (phone-tools.ts)
+  phone_tool: "own-account",
+  // the speaker's own GitHub account (device flow)
+  connect_github: "own-account",
+  // the agent-to-agent API: its own guard and owner checks (agent-api.ts)
+  send_prompt: "own-account",
+  create_agent: "own-account",
+  delete_agent: "own-account",
+  // cloud coding agents on the speaker's own provider credentials, listed
+  // and changed for that person only (routes/cloud-agents-internal.ts)
+  launch_cloud_agent: "own-account",
+  cloud_agent_follow_up: "own-account",
+  cancel_cloud_agent: "own-account",
+  archive_cloud_agent: "own-account",
 });
 
 /** The agents tools that keep the admin gate, and why:
@@ -145,14 +178,11 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
  *                   Perspicax admin tools
  *   add_mcp_server  starts a local program on the server
  *   attach_file     reads any path on the server into the chat
- *   vm_exec         a shell command
- *   shared_computer files, a terminal or the screen of a shared desktop
- *   launch_cloud_agent, cloud_agent_follow_up, cancel_cloud_agent,
- *   archive_cloud_agent
- *                   a cloud coding agent run on a provider account */
+ *   vm_exec         a shell command (the owner's own Local VM is theirs
+ *                   through engine-access.ts ownDestination)
+ *   shared_computer files, a terminal or the screen of a shared desktop */
 export const HOST_LEVEL_AGENT_TOOLS: ReadonlySet<string> = new Set([
   "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
-  "launch_cloud_agent", "cloud_agent_follow_up", "cancel_cloud_agent", "archive_cloud_agent",
 ]);
 
 /** The agents tool a provider's tool name names, or null. Accepts the
@@ -170,6 +200,10 @@ export function builtinAgentToolName(name: string | undefined): string | null {
 export function memberOwnScopeTool(name: string | undefined): MemberToolFamily | null {
   const tool = builtinAgentToolName(name);
   if (!tool || HOST_LEVEL_AGENT_TOOLS.has(tool)) return null;
+  // The person's own OpenAPI operations (docs/openapi-connector.md): named by
+  // that person's document, served to their 1:1 turns only; a write follows
+  // their approval level. The one name pattern here, the catalog's own test.
+  if (isOpenApiTool(tool)) return "own-account";
   return Object.hasOwn(MEMBER_OWN_SCOPE_AGENT_TOOLS, tool) ? MEMBER_OWN_SCOPE_AGENT_TOOLS[tool]! : null;
 }
 

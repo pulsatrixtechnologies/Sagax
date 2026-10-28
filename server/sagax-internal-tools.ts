@@ -17,8 +17,8 @@
 //   (member-tool-scope.ts MEMBER_OWN_SCOPE_AGENT_TOOLS): each one is served
 //   by a Sagax route that checks who the bot is and who it speaks for. The
 //   host-level ones (add_mcp_server, attach_file, vm_exec, ...) are not
-//   on that list and keep their card. act is on it only for a read with no
-//   effect of the member's own bot (#1269). A write, or a call on someone
+//   on that list and keep their card, and so do the "own-account" ones (a
+//   key, a device or an account of the person). act is on it only for a read with no effect of the member's own bot (#1269). A write, or a call on someone
 //   else's bot, stays an admin card (engine-access.ts) and never self-answers.
 //
 // Engines that ask anyway (Grok Build in default mode asks about every MCP
@@ -75,7 +75,9 @@ export function foreignToolSpelling(name: string | undefined, foreignServers: It
 export function sagaxInternalTool(name: string | undefined, foreignServers?: Iterable<string>): "data" | "agents" | null {
   if (foreignServers && foreignToolSpelling(name, foreignServers)) return null;
   if (dataToolName(name)) return "data";
-  return memberOwnScopeTool(name?.trim()) ? "agents" : null;
+  const family = memberOwnScopeTool(name?.trim());
+  // own-account: the person's own card at their own level, never answered here
+  return family && family !== "own-account" ? "agents" : null;
 }
 
 // ── what a Data call may do without a card (2026-10-16 security review) ──
