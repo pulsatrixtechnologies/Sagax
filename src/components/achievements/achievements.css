@@ -258,54 +258,40 @@
 }
 .member-card-open:hover { text-decoration: underline; }
 
-/* the page (2026-10-28): compact cards, the badge on the left and
-   everything inside the card. Unlocked: the rarity's colour on the badge and
-   a hint of it on the frame. Locked: grey badge, plain frame, readable text.
-   A locked secret: a dashed frame and its lock. */
-.achievement-card,
-.achievement-recent {
+/* the page's rows (2026-10-28, a sister of Automations: content-page.tsx
+   gives the row, this file only the rarity). Unlocked: the badge takes the
+   rarity's colour and the points their tint. Locked: a grey badge and
+   readable text. A locked secret: its lock and its hint only. */
+.achievement-row {
   --tier: #9aa3ad;
-  position: relative;
 }
-.achievement-card[data-tier="rare"],
-.achievement-recent[data-tier="rare"] { --tier: #60a5fa; }
-.achievement-card[data-tier="epic"],
-.achievement-recent[data-tier="epic"] { --tier: #c084fc; }
-.achievement-card[data-tier="legendary"],
-.achievement-recent[data-tier="legendary"] { --tier: #fbbf24; }
-.achievement-card {
-  border: 0.5px solid var(--color-border);
-  background: transparent;
-}
-.achievement-card[data-unlocked] {
-  background: var(--color-elevated);
-  border-color: color-mix(in srgb, var(--tier) 45%, var(--color-border));
-}
-.achievement-card[data-secret] { border-style: dashed; border-width: 1px; }
-.achievement-card-badge {
+.achievement-row[data-tier="rare"] { --tier: #60a5fa; }
+.achievement-row[data-tier="epic"] { --tier: #c084fc; }
+.achievement-row[data-tier="legendary"] { --tier: #fbbf24; }
+.achievement-row-badge {
   display: grid;
   flex-shrink: 0;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: 999px;
 }
-.achievement-card[data-unlocked] .achievement-card-badge,
-.achievement-recent .achievement-recent-badge {
+.achievement-row[data-unlocked] .achievement-row-badge {
   color: #10121a;
   background: radial-gradient(circle at 35% 30%, #ffffff, var(--tier) 72%);
-  box-shadow: 0 0 10px -3px var(--tier);
+  box-shadow: 0 0 8px -3px var(--tier);
 }
-.achievement-card:not([data-unlocked]) .achievement-card-badge {
+.achievement-row:not([data-unlocked]) .achievement-row-badge {
   color: var(--color-ink-secondary);
   background: var(--color-inset);
   box-shadow: inset 0 0 0 0.5px var(--color-border);
 }
-.achievement-card-name { color: var(--color-ink); }
-.achievement-card:not([data-unlocked]) .achievement-card-name { color: color-mix(in srgb, var(--color-ink) 78%, transparent); }
-.achievement-card-points {
+.achievement-row[data-secret] .achievement-row-badge { box-shadow: none; border: 1px dashed var(--color-border); }
+.achievement-row-name { color: var(--color-ink); }
+.achievement-row:not([data-unlocked]) .achievement-row-name { color: color-mix(in srgb, var(--color-ink) 78%, transparent); }
+.achievement-row-points {
   border-radius: 999px;
-  padding: 1px 7px;
+  padding: 0 6px;
   font-size: 11px;
   font-weight: 600;
   line-height: 16px;
@@ -313,12 +299,12 @@
   color: var(--color-ink-secondary);
   background: color-mix(in srgb, var(--color-ink) 6%, transparent);
 }
-.achievement-card[data-unlocked] .achievement-card-points {
+.achievement-row[data-unlocked] .achievement-row-points {
   color: var(--color-ink);
   background: color-mix(in srgb, var(--tier) 18%, transparent);
 }
-.achievement-card-tier { color: var(--tier); }
-.achievement-card:not([data-unlocked]) .achievement-card-tier { color: color-mix(in srgb, var(--tier) 75%, var(--color-ink-secondary)); }
+.achievement-row-tier { color: var(--tier); }
+.achievement-row:not([data-unlocked]) .achievement-row-tier { color: color-mix(in srgb, var(--tier) 75%, var(--color-ink-secondary)); }
 .achievement-progress {
   height: 4px;
   overflow: hidden;

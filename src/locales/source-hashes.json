@@ -15253,7 +15253,11 @@
       "botPanel.permissions.proactive.read-auto.fullHint": "c7df223ecf206c53a4a72005b806ee3cac34c23df63b8022ffe80a45081d4e49",
       "botPanel.permissions.proactive.propose.fullHint": "77873fedcaabfaad6ed52ea0aeda33688b00ace28980fb2c27fd008fa81e44ba",
       "settings.turnTiming.title": "54ec8a796aa01a678c9a789a8a975b3a3722e9a8658de7600500ed2d693d362c",
-      "settings.turnTiming.show": "afcc2b96e07968923d325392933f3184c4a52cc698697649a6d23664adf6ad68"
+      "settings.turnTiming.show": "afcc2b96e07968923d325392933f3184c4a52cc698697649a6d23664adf6ad68",
+      "achievements.pageMenu": "e00a9effdfed62c992940a2496e42aebef7a601a2deee0e4ae92d50f8c59fc19",
+      "achievements.settings.subtitle": "0058ad1dc77b9e0f3670409ee68173eb7f6e56eba7bddd4998033cc909bef0c9",
+      "achievements.settings.card": "8c37d9247abf8188081769bca5292a2edec9485b0c29d28a6f40660ca2ef7afd",
+      "achievements.settings.notifications": "f4b7f55709a7401da3c8b2662626a1a1d77701401da39c9e8fc7f85be7453d2b"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -60,7 +60,7 @@ function Gallery() {
   if (!open) {
     return <button type="button" data-gallery-open="" onClick={() => setOpen(true)} className="m-6 rounded-lg border border-border px-3 py-2 text-[13px]">Open</button>;
   }
-  return view === "settings" ? <><OpenSettings /><SettingsModal /></> : <AchievementsScreen initialCategory={category} />;
+  return view === "settings" ? <><OpenSettings /><SettingsModal /></> : <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col"><AchievementsScreen initialCategory={category} /></div>;
 }
 
 createRoot(document.getElementById("root")!).render(

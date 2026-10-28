@@ -12,10 +12,8 @@ import {
   type CSSProperties,
 } from "react";
 import {
-  Menu,
   CalendarClock,
   CalendarDays,
-  Check,
   CheckCheck,
   CheckCircle2,
   ChevronLeft,
@@ -36,7 +34,6 @@ import {
   Plus,
   Repeat2,
   Search,
-  SlidersHorizontal,
   Target,
   Trash2,
   UserRound,
@@ -52,6 +49,7 @@ import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { pathForFile } from "@/components/ComposerAttachments";
 import { CalendarSidebar } from "@/components/routines/CalendarSidebar";
 import { RoutineList } from "@/components/routines/RoutineList";
+import { PAGE_COLUMN, PAGE_FIELD_LABEL, PAGE_FILTER_RESET, PAGE_HEADER_BUTTON, PAGE_INDICATOR, PAGE_MENU_COUNT, PAGE_POPOVER, PAGE_SCROLL, PAGE_SELECT, PageFilters, PageHeader, PageHeading, PageMenu, PageMenuItem, PageMenuSeparator, PageSegment, PageTopStrip, useDismissMenus } from "@/components/content-page";
 import { RoutineLogs } from "@/components/routines/RoutineLogs";
 import { RoutineOwnerBadge, RoutineScopeBar } from "@/components/routines/RoutineScopeBar";
 import { useRoutineScope } from "@/lib/use-routine-scope";
@@ -1882,15 +1880,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   useEffect(() => {
     if (!routinesOnly) void loadCalls();
   }, [loadCalls, routinesOnly]);
-  useEffect(() => {
-    const closeMenus = (event: PointerEvent) => {
-      for (const menu of [newMenuRef.current, navMenuRef.current, filtersMenuRef.current]) {
-        if (menu?.open && !menu.contains(event.target as Node)) menu.removeAttribute("open");
-      }
-    };
-    document.addEventListener("pointerdown", closeMenus);
-    return () => document.removeEventListener("pointerdown", closeMenus);
-  }, []);
+  useDismissMenus([newMenuRef, navMenuRef, filtersMenuRef]);
 
   const items = useMemo<CalendarEventItem[]>(() => {
     const routineItems = scheduledRoutineItems(scopedRoutines, scopedRuns, rangeStart, rangeEnd).map((item) => ({ ...item, kind: "routine" as const }));
@@ -1943,10 +1933,6 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     if (["failed", "missed"].includes(run.status) && !run.seenAt && !run.redacted) dispatch({ type: "markRoutineRunSeen", runId: run.id });
   };
   const macInset = capabilities.windowChrome === "mac-inset";
-  // Pulsatrix Light's navy top band mirrors the sidebar's own macOS-inset
-  // strip in `fill` mode (the only mode it takes over the content frame);
-  // every other skin ignores it.
-  const browser = capabilities.host.label === "Browser";
   const windowDragStyle = macInset
     ? ({ WebkitAppRegion: "drag" } as CSSProperties)
     : undefined;
@@ -2028,8 +2014,8 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   // the view switch and Filters fold to their icons (a tooltip keeps the
   // name); under 44rem the view and dates take a second line. The right
   // group clears the Windows caption buttons (useCaptionChrome, #1204).
-  // The title and the drag handle follow the Achievements page (#1246):
-  // plain icon, 15px medium title, the header drags the window.
+  // Its pieces (PageHeader, PageSegment, PageFilters, PageMenu) live in
+  // content-page.tsx, shared with the Achievements page (2026-10-28).
   const scopeShown = section !== "webhooks" && scoped.available;
   const calendarGrid = section === "calendar" && scheduleView === "calendar";
   const hideStatus = calendarGrid;
@@ -2046,25 +2032,11 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     setRoutineFilter(undefined);
   };
   const closeNavMenu = () => navMenuRef.current?.removeAttribute("open");
-  const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover";
-  const HEADER_BUTTON = "flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 [&::-webkit-details-marker]:hidden";
-  const FIELD_LABEL = "mb-1 block text-[11px] font-medium uppercase tracking-[0.04em] text-ink-secondary";
-  const SELECT = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong";
-  const filtersLabel = activeFilters > 0 ? t("routineCalendar.filtersActive", { count: activeFilters }) : t("routineCalendar.filters");
+  const FIELD_LABEL = PAGE_FIELD_LABEL;
+  const SELECT = PAGE_SELECT;
 
   const filtersMenu = section !== "webhooks" && (
-    <details ref={filtersMenuRef} data-automations-filters className="relative">
-      <summary
-        role="button"
-        aria-label={filtersLabel}
-        title={filtersLabel}
-        className={cn(HEADER_BUTTON, "px-2.5 text-[12px] font-medium", activeFilters > 0 && "border-accent/40 text-accent")}
-      >
-        <SlidersHorizontal size={15} aria-hidden="true" />
-        <span className="@max-[60rem]/automations-header:sr-only">{t("routineCalendar.filters")}</span>
-        {activeFilters > 0 && <span data-automations-filter-count className="min-w-[18px] rounded-full bg-accent px-1.5 text-center text-[10.5px] font-semibold leading-[18px] text-white">{activeFilters}</span>}
-      </summary>
-      <div role="group" aria-label={t("routineCalendar.filters")} className="absolute right-0 top-full z-40 mt-1.5 flex w-[280px] flex-col gap-3 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-3 text-[13px] leading-[18px]">
+    <PageFilters name="automations" menuRef={filtersMenuRef} activeCount={activeFilters}>
         {scopeShown && <div>
           <span className={FIELD_LABEL}>{t("routines.scope.label")}</span>
           <RoutineScopeBar stacked prefs={scoped.prefs} allowed={scoped.allowed} teams={scoped.facets.teams} owners={scoped.facets.owners} advanced={advanced} hideStatus={hideStatus} onChange={(next) => { scoped.setPrefs(next); setRoutineFilter(undefined); }} />
@@ -2077,32 +2049,25 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           <span className={FIELD_LABEL}>{t("routineCalendar.scheduleRange")}</span>
           <select aria-label={t("routineCalendar.scheduleRange")} value={viewDays} onChange={(event) => setView(Number(event.target.value) as 1 | 3 | 7)} className={SELECT}><option value={1}>{t("routines.view.day")}</option><option value={3}>{t("routineCalendar.threeDays")}</option><option value={7}>{t("routines.view.week")}</option></select>
         </label>}
-        {activeFilters > 0 && <button type="button" data-routine-filter-reset onClick={clearFilters} className="self-start rounded-md text-[12px] text-accent hover:underline">{t("routines.scope.reset")}</button>}
-      </div>
-    </details>
+        {activeFilters > 0 && <button type="button" data-routine-filter-reset onClick={clearFilters} className={PAGE_FILTER_RESET}>{t("routines.scope.reset")}</button>}
+    </PageFilters>
   );
 
   const automationActions = (
     <>
-          <details ref={navMenuRef} className="group relative">
-            <summary aria-label={t("routineCalendar.automationMenu")} title={paused.length > 0 ? `${t("routineCalendar.automationMenu")} (${t("routineCalendar.pausedMenu")} ${paused.length})` : t("routineCalendar.automationMenu")} className={cn(HEADER_BUTTON, "relative w-9 justify-center")}>
-              <Menu size={16} />
-              {paused.length > 0 && <span aria-hidden="true" className="absolute -right-1 -top-1 min-w-[16px] rounded-full border border-app bg-raised px-1 text-center text-[9.5px] leading-[14px] text-ink-secondary">{paused.length}</span>}
-            </summary>
-            <div role="menu" className="absolute right-0 top-full z-40 mt-1.5 flex w-[240px] min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]">
-              <button type="button" role="menuitem" aria-current={section === "calendar" ? "page" : undefined} onClick={() => { closeNavMenu(); setSection("calendar"); }} className={MENU_ITEM}><CalendarDays size={16} className="text-ink" />{routinesOnly ? t("routineCalendar.scheduledRoutines") : t("routines.drawer.schedule")}{section === "calendar" && <Check size={14} className="ml-auto text-ink-secondary" aria-hidden="true" />}</button>
-              <button type="button" role="menuitem" aria-current={section === "logs" ? "page" : undefined} onClick={() => { closeNavMenu(); setSection("logs"); setRoutineFilter(undefined); }} className={MENU_ITEM}><FileText size={16} className="text-ink" />{t("routines.logs")}{unseenFailures > 0 ? <span className="ml-auto rounded-full bg-danger/10 px-1.5 text-[10px] text-danger">{unseenFailures}</span> : section === "logs" && <Check size={14} className="ml-auto text-ink-secondary" aria-hidden="true" />}</button>
-              {!routinesOnly && <button type="button" role="menuitem" aria-current={section === "webhooks" ? "page" : undefined} onClick={() => { closeNavMenu(); setSection("webhooks"); }} className={MENU_ITEM}><Webhook size={16} className="text-ink" />{t("routines.webhooks")}{state.webhooks.length > 0 ? <span className="ml-auto rounded-full bg-raised px-1.5 text-[10px] text-ink-secondary">{state.webhooks.length}</span> : section === "webhooks" && <Check size={14} className="ml-auto text-ink-secondary" aria-hidden="true" />}</button>}
-              <div role="separator" className="mx-1 my-1 h-px bg-hairline/50" />
-              {paused.length > 0 && <button type="button" role="menuitem" aria-label={t("routineCalendar.viewPaused")} onClick={() => { closeNavMenu(); setPausedOpen(true); }} className={MENU_ITEM}><Pause size={16} className="text-ink" />{t("routineCalendar.pausedMenu")}<span className="ml-auto rounded-full bg-raised px-1.5 text-[10px] text-ink-secondary">{paused.length}</span></button>}
-              <button type="button" role="menuitem" onClick={() => { closeNavMenu(); dispatch({ type: "markAllRoutineRunsSeen" }); }} className={MENU_ITEM}><CheckCheck size={16} className="text-ink" />{t("routines.markAllSeen")}</button>
-            </div>
-          </details>
+          <PageMenu name="automations" menuRef={navMenuRef} label={t("routineCalendar.automationMenu")} title={paused.length > 0 ? `${t("routineCalendar.automationMenu")} (${t("routineCalendar.pausedMenu")} ${paused.length})` : t("routineCalendar.automationMenu")} badge={paused.length}>
+              <PageMenuItem icon={CalendarDays} current={section === "calendar"} onClick={() => { closeNavMenu(); setSection("calendar"); }}>{routinesOnly ? t("routineCalendar.scheduledRoutines") : t("routines.drawer.schedule")}</PageMenuItem>
+              <PageMenuItem icon={FileText} current={section === "logs"} trailing={unseenFailures > 0 ? <span className="ml-auto rounded-full bg-danger/10 px-1.5 text-[10px] text-danger">{unseenFailures}</span> : undefined} onClick={() => { closeNavMenu(); setSection("logs"); setRoutineFilter(undefined); }}>{t("routines.logs")}</PageMenuItem>
+              {!routinesOnly && <PageMenuItem icon={Webhook} current={section === "webhooks"} trailing={state.webhooks.length > 0 ? <span className={PAGE_MENU_COUNT}>{state.webhooks.length}</span> : undefined} onClick={() => { closeNavMenu(); setSection("webhooks"); }}>{t("routines.webhooks")}</PageMenuItem>}
+              <PageMenuSeparator />
+              {paused.length > 0 && <PageMenuItem icon={Pause} aria-label={t("routineCalendar.viewPaused")} trailing={<span className={PAGE_MENU_COUNT}>{paused.length}</span>} onClick={() => { closeNavMenu(); setPausedOpen(true); }}>{t("routineCalendar.pausedMenu")}</PageMenuItem>}
+              <PageMenuItem icon={CheckCheck} onClick={() => { closeNavMenu(); dispatch({ type: "markAllRoutineRunsSeen" }); }}>{t("routines.markAllSeen")}</PageMenuItem>
+          </PageMenu>
           <details ref={newMenuRef} className="group relative">
-            <summary role="button" aria-label={t("routineCalendar.createAutomation")} title={t("routineCalendar.createAutomation")} className={cn(HEADER_BUTTON, "border-transparent bg-accent px-3 text-[12px] font-medium text-white hover:bg-accent/90")}>
-              <Plus size={15} aria-hidden="true" /><span className="@max-[30rem]/automations-header:sr-only">{t("sidebar.new")}</span>
+            <summary role="button" aria-label={t("routineCalendar.createAutomation")} title={t("routineCalendar.createAutomation")} className={cn(PAGE_HEADER_BUTTON, "border-transparent bg-accent px-3 text-[12px] font-medium text-white hover:bg-accent/90")}>
+              <Plus size={15} aria-hidden="true" /><span className="@max-[30rem]/page-header:sr-only">{t("sidebar.new")}</span>
             </summary>
-            <div role="group" aria-label={t("routineCalendar.newAutomation")} className="absolute right-0 top-full z-40 mt-1.5 w-[280px] flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]">
+            <div role="group" aria-label={t("routineCalendar.newAutomation")} className={cn(PAGE_POPOVER, "w-[280px] min-w-[200px] gap-0.5 p-1.5")}>
               <button type="button" aria-label={t("routineCalendar.createTaskAria")} onClick={() => { newMenuRef.current?.removeAttribute("open"); setSection("calendar"); openCreate({ kind: "routine" }); }} className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover">
                 <Clock3 size={16} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
                 <span><span className="block text-[12.5px] font-medium text-ink">{t("routineCalendar.scheduledTask")}</span><span className="mt-0.5 block text-[10.5px] leading-relaxed text-ink-secondary">{t("routineCalendar.scheduledTaskHelp")}</span></span>
@@ -2123,24 +2088,24 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
 
   return (
     <main className={cn("flex h-full min-w-0 flex-col bg-app", fill ? "flex-1" : embedded ? "w-[min(820px,48vw)] min-w-[420px] shrink-0 border-l border-hairline/40" : "flex-1 animate-workspace-in")}>
-      {fill && (macInset || browser) && <div className="content-topbar-strip" />}
-      <header
-        data-automations-header
+      {fill && <PageTopStrip />}
+      <PageHeader
+        name="automations"
+        icon={CalendarDays}
+        title={t("sidebar.nav.automations")}
+        section={sectionName}
+        titleProps={{ "data-tour": "automations-page" }}
         {...(fill ? dragProps : {})}
-        className={cn(fill && "content-topbar", "@container/automations-header shrink-0 border-b border-hairline/50 bg-app py-3 pr-4", !embedded && !fill && macInset ? "pl-[86px]" : "pl-5")}
+        topbar={fill}
+        inset={!embedded && !fill && macInset}
         style={embedded ? undefined : fill ? dragProps.style : windowDragStyle}
-      >
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <div data-tour="automations-page" className="flex min-w-0 shrink-0 items-center gap-2">
-            <CalendarDays size={18} className="shrink-0 text-ink-secondary" aria-hidden="true" />
-            <h1 className="text-[15px] font-medium leading-6 text-ink">{t("sidebar.nav.automations")}</h1>
-            {sectionName && <span data-automations-section className="flex min-w-0 items-center gap-1 text-[15px] text-ink-secondary"><ChevronRight size={14} aria-hidden="true" /><span className="truncate">{sectionName}</span></span>}
-          </div>
-          {section === "calendar" && <div data-automations-primary className="flex min-w-0 items-center gap-2 @max-[44rem]/automations-header:order-last @max-[44rem]/automations-header:basis-full" style={noDragStyle ?? windowNoDragStyle}>
-            <div role="group" className="flex shrink-0 items-center rounded-lg border border-hairline/50 bg-panel p-0.5" aria-label={t("routines.view.label")}>
-              <button type="button" aria-pressed={scheduleView === "list"} title={t("routines.view.list")} onClick={() => setScheduleView("list")} className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px]", scheduleView === "list" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><List size={14} aria-hidden="true" /><span className="@max-[60rem]/automations-header:sr-only">{t("routines.view.list")}</span></button>
-              <button type="button" aria-pressed={scheduleView === "calendar"} title={t("connectApps.capabilities.calendar")} onClick={() => setScheduleView("calendar")} className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px]", scheduleView === "calendar" ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}><CalendarDays size={14} aria-hidden="true" /><span className="@max-[60rem]/automations-header:sr-only">{t("connectApps.capabilities.calendar")}</span></button>
-            </div>
+        primaryStyle={noDragStyle ?? windowNoDragStyle}
+        actionsStyle={{ ...(noDragStyle ?? windowNoDragStyle), ...controlsShiftStyle }}
+        primary={section === "calendar" && <>
+            <PageSegment label={t("routines.view.label")} value={scheduleView} onChange={setScheduleView} options={[
+              { value: "list", label: t("routines.view.list"), icon: List },
+              { value: "calendar", label: t("connectApps.capabilities.calendar"), icon: CalendarDays },
+            ]} />
             {scheduleView === "calendar" && <>
               <div className="flex shrink-0 items-center">
                 <button type="button" onClick={() => setAnchor((current) => addDays(current, -viewDays))} className="rounded-md p-1.5 text-ink-secondary hover:bg-raised hover:text-ink" aria-label={t("routines.previous")} title={t("routines.previous")}><ChevronLeft size={16} /></button>
@@ -2149,14 +2114,14 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
               </div>
               <div data-automations-range className="min-w-0 truncate text-[14px] font-medium text-ink">{calendarRangeLabel(rangeStart, viewDays)}</div>
             </>}
-          </div>}
-          <div data-automations-actions className="ml-auto flex shrink-0 items-center gap-1.5" style={{ ...(noDragStyle ?? windowNoDragStyle), ...controlsShiftStyle }}>
-            {section !== "webhooks" && running > 0 && <span role="status" data-automations-running title={t("routineCalendar.activeCount", { count: running })} aria-label={t("routineCalendar.activeCount", { count: running })} className="flex h-9 items-center gap-1 px-1.5 text-[11.5px] text-accent"><Loader2 size={13} className="animate-spin" aria-hidden="true" />{running}</span>}
+          </>}
+        actions={<>
+            {section !== "webhooks" && running > 0 && <span role="status" data-automations-running title={t("routineCalendar.activeCount", { count: running })} aria-label={t("routineCalendar.activeCount", { count: running })} className={cn(PAGE_INDICATOR, "text-accent")}><Loader2 size={13} className="animate-spin" aria-hidden="true" />{running}</span>}
             {unseenFailures > 0 && <button type="button" data-automations-problems onClick={() => dispatch({ type: "showRoutines", section: "logs", runStatus: "problems" })} className="flex h-9 items-center gap-1 rounded-lg px-2 text-[11.5px] font-medium text-danger hover:bg-danger/10" title={t("routineCalendar.openProblemLogs")} aria-label={t("routineCalendar.openProblemLogs")}><CircleAlert size={14} aria-hidden="true" />{unseenFailures}</button>}
             {filtersMenu}
             {automationActions}
-          </div>
-        </div>
+          </>}
+        below={<>
         {scopeShown && scoped.error && <p role="alert" className="mt-1 text-[11.5px] text-danger">{t("routines.scope.loadError")}</p>}
         {section !== "webhooks" && (error || (calendarGrid && state.routinesLoadState !== "ready")) && <div className="mt-2 flex flex-wrap items-center gap-2" style={windowNoDragStyle}>
           {error && <button onClick={() => setError("")} className="flex items-center gap-1.5 rounded-lg bg-danger/10 px-2.5 py-1.5 text-[10.5px] text-danger"><CircleAlert size={11} />{error}<X size={11} /></button>}
@@ -2164,7 +2129,8 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           {calendarGrid && state.routinesLoadState === "loading" && state.routines.length === 0 && <p role="status" className="w-full text-[11.5px] text-ink-secondary">{t("routines.loading")}</p>}
         </div>}
         {section === "webhooks" && error && <div className="mt-2"><button onClick={() => setError("")} className="flex items-center gap-1.5 rounded-lg bg-danger/10 px-2.5 py-1.5 text-[10.5px] text-danger"><CircleAlert size={11} />{error}<X size={11} /></button></div>}
-      </header>
+        </>}
+      />
       <RoutineAwayBanner routines={state.routines} dispatch={dispatch} />
       {/* `display: contents` outside `fill` mode: the wrapper takes no part
           in layout, so embedded/standalone keep their exact original flex
@@ -2176,8 +2142,8 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       {section === "webhooks" ? <WebhooksPanel bots={visibleBots} createRequest={webhookCreateRequest} onCreateHandled={handleWebhookCreateHandled} /> : section === "logs" ? (
         <div className="min-h-0 flex-1 overflow-y-auto"><RoutineLogs runs={filteredRuns} bots={state.bots} ownerOf={routineOwnerOf} viewerPrincipalId={state.config?.viewer?.principalId ?? null} loading={(scoped.live ? state.routinesLoadState === "loading" : scoped.loading) && filteredRuns.length === 0} error={scoped.live ? state.routinesLoadState === "error" : scoped.error} routineId={routineFilter} status={statusFilter} onStatusChange={setStatusFilter} onClearRoutine={() => setRoutineFilter(undefined)} onClearLogs={clearLogs} onOpen={openRun} /></div>
       ) : scheduleView === "list" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto"><div className="mx-auto w-full max-w-4xl space-y-5 p-4 sm:p-6">
-          <div><h2 className="text-[17px] font-semibold text-ink">{t("routines.title")}</h2><p className="mt-1 text-[12px] text-ink-secondary">{t("routineCalendar.allSchedules")}</p></div>
+        <div className={PAGE_SCROLL}><div className={PAGE_COLUMN}>
+          <PageHeading title={t("routines.title")} subtitle={t("routineCalendar.allSchedules")} />
           <RoutineList routines={filteredRoutines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={scopedRuns} bots={state.bots} loading={(scoped.live ? state.routinesLoadState === "loading" : scoped.loading) && filteredRoutines.length === 0} error={scoped.live ? state.routinesLoadState === "error" : scoped.error} onOpen={openRoutine} onLogs={openLogs} />
           {!routinesOnly && calls.some((call) => botFilter === "all" || call.botIds.includes(botFilter)) && <section className="space-y-2" aria-label={t("routineCalendar.scheduledCalls")}><h2 className="text-[15px] font-semibold text-ink">{t("routineCalendar.scheduledCalls")}</h2>{calls.filter((call) => botFilter === "all" || call.botIds.includes(botFilter)).map((call) => <button key={call.id} type="button" onClick={() => setSelected({ kind: "call", id: call.id, at: call.schedule.type === "once" ? call.schedule.at : atLocalTime(Date.now(), call.schedule.time), durationMinutes: call.durationMinutes, call })} className="flex w-full items-center gap-3 rounded-xl border border-hairline/40 bg-card p-4 text-left hover:bg-raised"><Video size={17} className="text-accent" /><span><span className="block text-[13px] font-medium text-ink">{call.name}</span><span className="mt-1 block text-[11.5px] text-ink-secondary">{scheduleLabel(call.schedule)}</span></span></button>)}</section>}
         </div></div>
