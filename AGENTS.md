@@ -75,6 +75,17 @@ back (`place_phone_call` mode `conversation`). Spec: section 10 of
   file keeps metadata, never a word said. A callee who asks to stop goes on
   the person's own stop list for good.
 - Tests: `server/outbound-conversation.test.ts`.
+- Every call goes through `place_phone_call` (decision of 2026-10-28): a
+  bot's own Perspicax `voice_call`, by its name, a server-prefixed name,
+  `call_tool` or `use_tool`, is turned into the `place_phone_call` with its
+  arguments on the Perspicax relay (`server/perspicax-mcp.ts`,
+  `voiceToolCall` in `server/telephony-guard.ts`, `placeArgsFromVoiceCall`
+  in `shared/outbound-call.ts`): the same card, AI disclosure, pilot and
+  do-not-call list. A dry run and the harness's own call go as they are. A
+  one-way `place_phone_call` with no `from` leaves from the person's own
+  Perspicax Voice line. `voice_sms` is a text like a Twilio Messages create
+  (`shared/outbound.ts`): the same card and allowed recipients. Tests:
+  `server/voice-call-redirect-parity.test.ts`.
 
 ## Web search with the person's own key (2026-10-26)
 

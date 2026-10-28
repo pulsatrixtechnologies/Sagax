@@ -383,7 +383,8 @@ export function callCard(row: OutboundCallRecord, botName: string, callback?: st
     botName,
     destination: formatPhone(row.request.to),
     ...(row.request.from ? { from: formatPhone(row.request.from) } : {}),
-    ...(callback && row.request.mode !== "conversation" ? { callback: formatPhone(callback) } : {}),
+    // the callback number is said by the one-way call Sagax builds (with a `from`)
+    ...(callback && row.request.mode !== "conversation" && row.request.from ? { callback: formatPhone(callback) } : {}),
     purpose: row.request.purpose,
     script: row.request.message,
     language: row.request.language,
@@ -483,7 +484,8 @@ export async function placePhoneCall(deps: PlaceCallDeps, context: { principalId
   // the pilot gate (ÉFVP 2026-10-22), checked again when the call leaves
   const settings = deps.calls.settings();
   if (!settings.enabled) return { text: "Phone calls are off for this organization: an admin turns the pilot on in Settings > Organization > Phone calls. Nothing was placed.", isError: true };
-  if (request.mode === "conversation") return placeConversation(deps, context, request, settings);
+  // a conversation, or a one-way message from the person's own line (no `from`)
+  if (request.mode === "conversation" || !request.from) return placeConversation(deps, context, request, settings);
   if (!settings.callbackNumber) return { text: "No callback number is set: an admin adds it in Settings > Organization > Phone calls. Every call says it, so none is placed without it.", isError: true };
   if (settings.doNotCall.includes(request.to)) return { text: `${maskPhone(request.to)} is on the organization's do-not-call list. Nothing was placed; do not call it another way.`, isError: true };
   const names: CallNames = { botName: shortName(deps.names.botName), personName: shortName(deps.names.personName), callback: settings.callbackNumber };
@@ -542,7 +544,8 @@ async function placeConversation(
 ): Promise<{ text: string; isError?: boolean }> {
   if (settings.doNotCall.includes(request.to)) return { text: `${maskPhone(request.to)} is on the organization's do-not-call list. Nothing was placed; do not call it another way.`, isError: true };
   if (deps.calls.stoppedFor(context.principalId, request.to)) return { text: `The person at ${maskPhone(request.to)} asked not to be called again. Nothing was placed; do not call them another way. Tell the person.`, isError: true };
-  if (!deps.voice) return { text: "Perspicax is not linked on this server: a conversation call needs the person's Perspicax Voice line. Nothing was placed.", isError: true };
+  const conversation = request.mode === "conversation";
+  if (!deps.voice) return { text: "Perspicax is not linked on this server: a call from the person's own line needs their Perspicax Voice line. Nothing was placed.", isError: true };
   const names = { botName: shortName(deps.names.botName), personName: shortName(deps.names.personName) };
   if (!names.personName) return { text: "Sagax cannot say on whose behalf this call is made. Nothing was placed.", isError: true };
   const approved = deps.calls.approvedFor({ ...context, request, names });
@@ -554,8 +557,9 @@ async function placeConversation(
     const sid = placed ? sidOf(answer.value) : undefined;
     const settled = deps.calls.settle(approved.id, placed ? (sid ? { callSid: sid } : {}) : { error: answer.ok ? shortError(answer.value, "Perspicax refused the call") : answer.error })!;
     deps.card(settled, settled.messageId);
-    deps.log?.(`outbound conversation call ${settled.status} to ${maskPhone(request.to)}`);
+    deps.log?.(`outbound ${conversation ? "conversation" : "line"} call ${settled.status} to ${maskPhone(request.to)}`);
     if (!placed) return { text: `The call to ${maskPhone(request.to)} was not placed: ${settled.error ?? "no answer from Perspicax"}. Tell the person; do not retry without a new approval.`, isError: true };
+    if (!conversation) return { text: `Call placed to ${maskPhone(request.to)} from the person's own line: it says who calls, your purpose and your message twice, then hangs up. Tell the person it was placed.` };
     return {
       text: `Conversation call placed to ${maskPhone(request.to)} from the person's line: it opens with the AI disclosure, then you talk with them for at most ${request.maxMinutes ?? 5} minutes. End your turn now. When the call ends, Sagax shows its result card and you get the result (status, duration, summary, commitments, transcript) in a new turn: then give the person the summary they asked for.`,
     };
@@ -571,7 +575,9 @@ async function placeConversation(
   const messageId = deps.card(opened.record, opened.record.messageId);
   if (messageId && !opened.record.messageId) deps.calls.attachMessage(opened.record.id, messageId);
   return {
-    text: `${opened.already ? "The card is still waiting" : "Sagax showed the person a card"}: a conversation call to ${formatPhone(request.to)}, objective "${request.purpose}", ${request.maxMinutes ?? 5} minutes at most. Nothing was placed. End your turn now; when they choose Call you are told, then call place_phone_call again with the same arguments.`,
+    text: !conversation
+      ? `${opened.already ? "The card is still waiting" : "Sagax showed the person a card"}: call ${formatPhone(request.to)} from their own line, "${request.purpose}". Nothing was placed. End your turn now; when they choose Call you are told, then call place_phone_call again with the same arguments.`
+      : `${opened.already ? "The card is still waiting" : "Sagax showed the person a card"}: a conversation call to ${formatPhone(request.to)}, objective "${request.purpose}", ${request.maxMinutes ?? 5} minutes at most. Nothing was placed. End your turn now; when they choose Call you are told, then call place_phone_call again with the same arguments.`,
   };
 }
 

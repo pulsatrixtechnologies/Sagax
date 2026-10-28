@@ -24,7 +24,7 @@ const READ_TOOL = /_(?:query|read|list|get|fetch|search|describe|read_action)$|^
 /** A text that carries an address Twilio would fetch or call back. */
 const URL_FIELD = /(?:url|callback)$/i;
 /** A Flow action that names Twilio or one of its write operations. */
-const FLOW_TWILIO = /twilio|createcall|createmessage|incomingphonenumber/i;
+const FLOW_TWILIO = /twilio|createcall|createmessage|incomingphonenumber|voicecall|voicesms/i;
 
 export const TELEPHONY_NUMBER_REFUSAL = "Refused by Sagax: a bot never buys, changes or releases a phone number, nor its webhooks. Ask the person to do it in Twilio. Nothing was sent.";
 export const TELEPHONY_CALL_REFUSAL = "Refused by Sagax: a bot places a call only with place_phone_call, which shows the person an approval card and says the AI disclosure. Nothing was sent.";
@@ -89,4 +89,39 @@ export function telephonyRefusal(toolName: string, args: unknown, context: Telep
   if (/incomingphonenumber/.test(operation)) return TELEPHONY_NUMBER_REFUSAL;
   if (/(?:^|\s|create|update|list|fetch)calls?(?:\s|$)|createcall|updatecall/.test(operation)) return TELEPHONY_CALL_REFUSAL;
   return TELEPHONY_WRITE_REFUSAL;
+}
+
+/** 2026-10-28: the Perspicax Voice tools Sagax watches on a bot's own frame:
+ * `voice_call` (every call goes through place_phone_call) and `voice_sms`
+ * (a text, with the same card and allowed recipients as any text). */
+export type VoiceTool = "voice_call" | "voice_sms";
+
+/** The meta tools that run another tool by name: an MCP directory's
+ * `call_tool` ({ name, arguments }) and a gateway's `use_tool`
+ * ({ tool_name, tool_input } or { name, arguments }). */
+const META_CALL = /(?:^|_)(?:call_tool|use_tool)$/;
+
+function voiceName(raw: string): VoiceTool | null {
+  const name = fold(raw);
+  if (/(?:^|_)voice_call$/.test(name)) return "voice_call";
+  if (/(?:^|_)voice_sms$/.test(name)) return "voice_sms";
+  return null;
+}
+
+/** The Perspicax Voice tool one frame runs, whatever the path (its own name,
+ * with a server prefix or other separators, or through call_tool or
+ * use_tool), and the arguments it runs with; null for any other tool. */
+export function voiceToolCall(toolName: string, args: unknown): { tool: VoiceTool; args: Record<string, unknown> } | null {
+  const input = isObject(args) ? args : {};
+  const direct = voiceName(toolName);
+  if (direct) return { tool: direct, args: input };
+  if (!META_CALL.test(fold(toolName))) return null;
+  const target = typeof input.name === "string" ? input.name : typeof input.tool_name === "string" ? input.tool_name : "";
+  const tool = target ? voiceName(target) : null;
+  if (!tool) return null;
+  let inner: unknown = input.arguments ?? input.tool_input ?? input.args ?? {};
+  if (typeof inner === "string") {
+    try { inner = JSON.parse(inner); } catch { inner = {}; }
+  }
+  return { tool, args: isObject(inner) ? inner : {} };
 }

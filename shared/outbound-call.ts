@@ -103,8 +103,10 @@ export function parseOutboundCall(args: unknown, fallbackLanguage: CallLanguage 
   if (!canadianNumber(to)) return "Only Canadian numbers can be called for now. Nothing was placed.";
   if (row.mode !== undefined && row.mode !== "message" && row.mode !== "conversation") return "mode is message (say a message and hang up) or conversation (talk with the person you call).";
   if (row.mode === "conversation") return parseConversation(row, to, fallbackLanguage);
-  const from = typeof row.from === "string" ? normalizePhone(row.from) : null;
-  if (!from) return "from must be the person's Twilio number the call comes from (read it with twilio_api__query IncomingPhoneNumbers).";
+  // 2026-10-28: no `from` is the person's own Perspicax Voice line
+  const line = row.from === undefined || row.from === null || row.from === "";
+  const from = line ? "" : typeof row.from === "string" ? normalizePhone(row.from) : null;
+  if (from === null) return "from must be the person's Twilio number the call comes from (read it with twilio_api__query IncomingPhoneNumbers), or left out to call from their own Perspicax Voice line.";
   if (from === to) return "from and to are the same number.";
   const purpose = clean(row.purpose, CALL_LIMITS.purpose);
   if (!purpose) return `purpose: one short sentence, at most ${CALL_LIMITS.purpose} characters, saying why you call.`;
@@ -113,6 +115,7 @@ export function parseOutboundCall(args: unknown, fallbackLanguage: CallLanguage 
   const language = row.language === "en" || row.language === "fr" ? row.language : fallbackLanguage;
   const account = typeof row.account === "string" && /^AC[0-9a-f]{32}$/.test(row.account.trim()) ? row.account.trim() : undefined;
   if (row.account !== undefined && !account) return "account must be the Twilio account sid (AC...), or left out.";
+  if (line && account) return "account goes with from: a call from the person's own Perspicax Voice line names neither.";
   return { to, from, purpose, message, language, ...(account ? { account } : {}) };
 }
 
@@ -224,6 +227,11 @@ export function conversationDisclosure(input: { botName: string; personName: str
  * own Perspicax Voice line and Twilio key; the card already had their yes,
  * so `confirm` answers the line's own third party card). */
 export function voiceCallArgs(request: OutboundCallRequest, input: { botName: string; ref: string; dryRun: boolean }): Record<string, unknown> {
+  // a one-way message from the line: the arguments every Perspicax Voice
+  // release takes (the line says who calls, the purpose, the message twice)
+  if (request.mode !== "conversation") {
+    return { to: request.to, purpose: request.purpose, message: request.message, confirm: true, ...(input.dryRun ? { dry_run: true } : {}) };
+  }
   return {
     to: request.to,
     purpose: request.purpose,
@@ -243,7 +251,7 @@ export function voiceCallArgs(request: OutboundCallRequest, input: { botName: st
 export const PLACE_PHONE_CALL_TOOL_SPEC = {
   name: PLACE_PHONE_CALL_TOOL,
   description:
-    "Place a phone call for the person to a Canadian number. Two modes. message (default): through their Twilio profile on Perspicax, a fixed opening (an automated call from you, an AI assistant, for the person), then your purpose and your message, said twice, then it hangs up; needs from, purpose and message. conversation: from the person's own Perspicax Voice line, the line first says \"Hello, this is <you>, an AI assistant calling on behalf of <the person>\", then you talk with the person you call in real time, pursue the objective, follow the instructions, and hang up politely when the objective is reached, when asked, or at max_minutes (5 by default, 20 at most); a voicemail gets your short voicemail message; a callee who asks not to be called again is never called again for this person; needs objective. Either way the first call shows the person an approval card (number, objective or words, maximum duration; a dry run checks it; nothing is placed). After they choose Call, call place_phone_call again with the very same arguments to place it. One approval places one call; any change asks again. A conversation's result (status, duration, summary points, commitments, transcript) comes back to you in a new turn when the call ends, as a card in the conversation: end your turn after placing it, then give the person the summary they asked for. Never call twilio_api__write Calls or voice_call yourself.",
+    "Place a phone call for the person to a Canadian number. Two modes. message (default): through their Twilio profile on Perspicax, a fixed opening (an automated call from you, an AI assistant, for the person), then your purpose and your message, said twice, then it hangs up; needs purpose and message, and from (a Twilio number of their profile) or nothing (their own Perspicax Voice line). conversation: from the person's own Perspicax Voice line, the line first says \"Hello, this is <you>, an AI assistant calling on behalf of <the person>\", then you talk with the person you call in real time, pursue the objective, follow the instructions, and hang up politely when the objective is reached, when asked, or at max_minutes (5 by default, 20 at most); a voicemail gets your short voicemail message; a callee who asks not to be called again is never called again for this person; needs objective. Either way the first call shows the person an approval card (number, objective or words, maximum duration; a dry run checks it; nothing is placed). After they choose Call, call place_phone_call again with the very same arguments to place it. One approval places one call; any change asks again. A conversation's result (status, duration, summary points, commitments, transcript) comes back to you in a new turn when the call ends, as a card in the conversation: end your turn after placing it, then give the person the summary they asked for. Never call twilio_api__write Calls or voice_call yourself: Sagax turns a voice_call into this tool, with its card.",
   inputSchema: {
     type: "object",
     additionalProperties: false,
@@ -254,7 +262,7 @@ export const PLACE_PHONE_CALL_TOOL_SPEC = {
       instructions: { type: "string", description: "conversation: your guidance during the call (what you may say or accept, what to avoid), at most 1000 characters." },
       max_minutes: { type: "integer", minimum: 1, maximum: 20, description: "conversation: the most the call may last, in minutes (5 when left out)." },
       voicemail: { type: "string", description: "conversation: the short message left if a voicemail answers, at most 300 characters. Nothing confidential." },
-      from: { type: "string", description: "message: the person's Twilio number the call comes from (twilio_api__query IncomingPhoneNumbers). Not used by a conversation, which leaves from the person's own line." },
+      from: { type: "string", description: "message: the person's Twilio number the call comes from (twilio_api__query IncomingPhoneNumbers); left out, the call leaves from the person's own Perspicax Voice line. Not used by a conversation, which always leaves from that line." },
       purpose: { type: "string", description: "message: one short sentence, why you call, said after the opening and shown on the card." },
       message: { type: "string", description: "message: the exact words to say, at most 600 characters. Nothing confidential." },
       language: { type: "string", enum: ["fr", "en"], description: "The call's language. Defaults to the person's." },
@@ -263,3 +271,29 @@ export const PLACE_PHONE_CALL_TOOL_SPEC = {
     required: ["to"],
   },
 } as const;
+
+/** The Perspicax Voice tools a bot never calls itself (2026-10-28): every
+ * call goes through place_phone_call (its card, the AI disclosure, the
+ * organization's pilot and do-not-call list). */
+export const VOICE_CALL_TOOL = "voice_call";
+
+/** A bot's own voice_call arguments, as the place_phone_call that makes the
+ * same call: a conversation, or a one-way message from the person's own
+ * line. Nothing is dropped: an argument place_phone_call does not know is
+ * refused by its parser, never silently lost. */
+export function placeArgsFromVoiceCall(args: unknown): Record<string, unknown> {
+  const row = args && typeof args === "object" && !Array.isArray(args) ? args as Record<string, unknown> : {};
+  const conversation = row.mode === "conversation";
+  const out: Record<string, unknown> = { to: row.to };
+  if (conversation) {
+    out.mode = "conversation";
+    out.objective = row.purpose;
+    for (const key of ["instructions", "max_minutes", "voicemail"] as const) if (row[key] !== undefined) out[key] = row[key];
+  } else {
+    if (row.mode !== undefined && row.mode !== "message") out.mode = row.mode;
+    out.purpose = row.purpose;
+    out.message = row.message;
+  }
+  if (row.language !== undefined) out.language = row.language;
+  return out;
+}

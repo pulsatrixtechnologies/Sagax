@@ -37627,6 +37627,12 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     writeOnceScope: ({ threadId }) => activeRoutineRunForThread(threadId) || internalTurnThreads.has(threadId) ? "unattended" : null,
     // a live call keeps its Perspicax tools mounted from turn to turn
     keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
+    // 2026-10-28: a bot's own voice_call is a place_phone_call (its card,
+    // the AI disclosure, the pilot and the do-not-call list)
+    placeCall: (turn, args) => outbound.placeCall({
+      principalId: vaultPrincipalForThread(turn.threadId), botId: turn.botId, threadId: turn.threadId, generation: turn.generation,
+      room: Boolean(store.groupByThread(turn.threadId)),
+    }, args),
     // 2026-10-26: a Perspicax server guard's GO (Flow: dry run, GO, read
     // back) is an approval card on the thread; Full access and Approve for
     // me never answer it, only the person (confirmHeldCard).

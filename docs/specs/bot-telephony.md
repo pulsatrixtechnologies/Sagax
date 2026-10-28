@@ -956,3 +956,15 @@ peux l'entendre, dialoguer avec lui et me revenir avec un résumé. »
   `server/outbound-wiring.ts`, `server/bot-inbound-telephony.ts`. Tests :
   `server/outbound-conversation.test.ts` (cycle complet, faux Twilio et fausse
   voix temps réel).
+
+### 10.1 Tout appel passe par `place_phone_call` (2026-10-28)
+
+Décision du propriétaire : un bot n'appelle jamais l'outil Perspicax
+`voice_call` lui-même. Sur le relais Perspicax, un `voice_call` du bot (par son
+nom, un nom préfixé du serveur, `call_tool` ou `use_tool`) devient le
+`place_phone_call` de mêmes arguments : même carte, même annonce IA, même pilote
+d'organisation et même liste « Ne pas appeler ». Un essai à blanc et l'appel du
+harnais lui-même passent tels quels. Un `place_phone_call` en mode message sans
+`from` part de la ligne Perspicax Voice de la personne. `voice_sms` est traité
+comme un texto Twilio : même carte et mêmes destinataires permis. Tests :
+`server/voice-call-redirect-parity.test.ts`.
