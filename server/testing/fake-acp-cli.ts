@@ -49,7 +49,10 @@
 //                   | slow-tool (start a tool call and send nothing while it
 //                     "runs" for FAKE_ACP_TOOL_MS, default 600, or until the
 //                     file FAKE_ACP_TOOL_GATE exists when set — a quiet
-//                     `sleep` or build — then finish it and answer)
+//                     `sleep` or build — then finish it and answer.
+//                     FAKE_ACP_HONOR_CANCEL=1: echo-gated and gated
+//                     slow-tool end their prompt as cancelled on
+//                     session/cancel, as a real agent does)
 //                   | finished-tools (tool_call frames that arrive already
 //                     completed or failed, one of them updated again)
 //                   | stall-after-tool (finish a tool call, then go fully
@@ -539,6 +542,11 @@ let onAskQuestionAnswered: (() => void) | null = null;
 // session/cancel resolves it cancelled (the ACP spec's cancel contract)
 // and drops the keep-alive
 let hangingPromptId: unknown = null;
+/** FAKE_ACP_HONOR_CANCEL=1: the gated prompt in flight (echo-gated,
+ * slow-tool) ends as cancelled on session/cancel, the way a real agent
+ * answers the spec's cancel. Unset, those modes ignore it as before. */
+let cancelGated: (() => void) | null = null;
+const honorCancel = () => process.env.FAKE_ACP_HONOR_CANCEL === "1";
 // stall-first-prompt mode: how many prompts this process has received
 let stallPrompts = 0;
 let reasoningErrors = 0;
@@ -1188,8 +1196,17 @@ function handle(msg: any) {
           const held = setInterval(() => {
             if (!existsSync(gate)) return;
             clearInterval(held);
+            cancelGated = null;
             answer();
           }, 20);
+          if (honorCancel()) {
+            cancelGated = () => {
+              clearInterval(held);
+              tool({ sessionUpdate: "tool_call_update", status: "failed", rawOutput: { output: "cancelled" } });
+              recordMethod("session/prompt.result");
+              result(msg.id, { stopReason: "cancelled", _meta: {} });
+            };
+          }
           return;
         }
         setTimeout(answer, Number(process.env.FAKE_ACP_TOOL_MS ?? 600));
@@ -1470,8 +1487,16 @@ function handle(msg: any) {
           const poll = setInterval(() => {
             if (!existsSync(gate)) return;
             clearInterval(poll);
+            cancelGated = null;
             finish();
           }, 50);
+          if (honorCancel()) {
+            cancelGated = () => {
+              clearInterval(poll);
+              recordMethod("session/prompt.result");
+              result(msg.id, { stopReason: "cancelled", _meta: {} });
+            };
+          }
           return;
         }
         finish();
@@ -1640,6 +1665,11 @@ function handle(msg: any) {
       break;
     }
     case "session/cancel":
+      if (cancelGated) {
+        const cancel = cancelGated;
+        cancelGated = null;
+        cancel();
+      }
       // the interrupted prompt resolves as cancelled. FAKE_ACP_CANCEL_REPLY
       // = "error" rejects it instead, any other value is the stopReason the
       // agent answers with (agents differ on how a cancel settles).

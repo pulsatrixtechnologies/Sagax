@@ -938,9 +938,11 @@ export function Composer({
       else runGoalSubcommand(typedGoalSub);
       return;
     }
-    // "stop", "arrête", "cancel" alone while the turn runs: stop it now,
-    // like Escape (the server reads the same intent for other clients)
-    if (busy && attachments.length === 0 && isStopIntent(text)) {
+    // "stop", "arrête", "attends" alone while the turn runs: in a room, stop
+    // it now like Escape. A bot's own conversation sends it: the server
+    // stops the turn at once, keeps the words and answers with one
+    // "Stopped" line (shared/stop-intent.ts), the same for every client.
+    if (busy && group && attachments.length === 0 && isStopIntent(text)) {
       interruptTurn();
       setText("");
       return;

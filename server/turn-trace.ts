@@ -88,7 +88,11 @@ export function turnTrace(threadId: string, step: string, first = false): void {
   const now = Date.now();
   const previous = clocks.get(threadId);
   if (first) {
-    const queuedAt = previous?.queuedAt;
+    // A queued time carries over only while its turn is still to be sent.
+    // Once a turn was sent, the next one is measured from its own message
+    // (2026-10-28: the second turn kept the first one's time, so the wait
+    // before send grew with the conversation's age).
+    const queuedAt = previous?.sentAt === undefined ? previous?.queuedAt : undefined;
     clocks.set(threadId, { startedAt: now, ...(queuedAt !== undefined && queuedAt <= now ? { queuedAt } : {}) });
   } else {
     const row = take(threadId);

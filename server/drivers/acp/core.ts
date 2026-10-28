@@ -586,6 +586,10 @@ const NEW_SESSION_TIMEOUT = 300_000;
 const LOAD_SESSION_TIMEOUT = 120_000; // history replay on a long thread is slow
 /** How long a quiet agent shows no sign of life before it is called stuck. */
 const ACP_STUCK_AFTER_MS = 180_000;
+/** How long an agent gets to answer session/cancel before its process is
+ * closed. A person's stop must free the conversation in under 2 s
+ * (2026-10-28); an agent that ignores the cancel is reloaded next turn. */
+export const ACP_CANCEL_GRACE_MS = 1_500;
 /** ACP agents may compact their own history without telling the client;
  * re-send the full prompt after this many bare turns as a backstop to
  * compaction detection. */
@@ -2414,7 +2418,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               // an agent that ignores session/cancel must not stay pooled
               closeSession(threadId, "cancel-timeout");
               settle(threadId, session, true, "cancelled");
-            }, 5_000);
+            }, ACP_CANCEL_GRACE_MS);
             current.interruptTimer.unref?.();
           } else {
             // no native session to cancel — the close handler settles

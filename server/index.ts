@@ -13423,6 +13423,46 @@ onSteeredQueueChange(() => broadcast({ kind: "bot.queued", queues: publicBotQueu
 // item/request ids are only unique within a thread, so two bots acting at
 // once can collide on a bare id and patch each other's messages.
 const toolMessageByItem = new Map<string, string>(); // threadId:itemId -> messageId
+
+/** Text a call's row keeps when a stop cut it short. */
+const CUT_TOOL_OUTPUT = "Stopped before it finished.";
+
+/** A stop ended the turn while these calls ran: their rows say they were cut
+ * short instead of spinning, so nothing is left half done without saying so.
+ * A late completion from the engine finds no row to patch. */
+function closeCutToolRows(threadId: string): number {
+  const prefix = `${threadId}:`;
+  let closed = 0;
+  for (const [key, messageId] of toolMessageByItem) {
+    if (!key.startsWith(prefix)) continue;
+    toolMessageByItem.delete(key);
+    const row = store.messagesFor(threadId).find((m) => m.id === messageId);
+    if (!row?.tool || row.tool.ok !== undefined) continue;
+    store.patchMessage(threadId, messageId, {
+      tool: { ...row.tool, ok: false, output: CUT_TOOL_OUTPUT, durationMs: Math.max(0, Date.now() - row.at) },
+    });
+    closed += 1;
+  }
+  return closed;
+}
+
+/** One "Stopped" line after the person's stop, unless the turn already
+ * wrote its own since their last message. */
+function confirmStop(threadId: string, turnId: string | undefined): void {
+  if (stoppedRowSinceLastPerson(threadId, turnId)) return;
+  store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: STOPPED_TURN_NAME, ok: true }, ...(turnId ? { turnId } : {}) });
+}
+
+/** A stopped row for `turnId` written after the person's latest message. */
+function stoppedRowSinceLastPerson(threadId: string, turnId: string | undefined): boolean {
+  const rows = store.messagesFor(threadId);
+  for (let i = rows.length - 1; i >= 0 && i >= rows.length - 40; i -= 1) {
+    const row = rows[i]!;
+    if (row.kind === "activity" && row.tool?.name === STOPPED_TURN_NAME && row.turnId === turnId) return true;
+    if (row.role === "user") return false;
+  }
+  return false;
+}
 /** 2026-10-28: what answered a call's ask with no card, kept until the
  * call's own row exists (server/tool-auto-approval.ts). */
 const autoApprovals = createAutoApprovalNotes();
@@ -15993,8 +16033,8 @@ bus.subscribe((event: RuntimeEvent) => {
   const pushStoppedTurn = (turnId: string | undefined) => {
     lastReply.delete(event.threadId);
     stoppedTurns.set(event.threadId, turnId ?? liveTurnByThread.get(event.threadId));
-    const last = store.messagesFor(event.threadId).at(-1);
-    if (last?.kind === "activity" && last.tool?.name === STOPPED_TURN_NAME && last.turnId === turnId) return;
+    // one line per stop: a typed stop may have confirmed it already
+    if (stoppedRowSinceLastPerson(event.threadId, turnId)) return;
     pushMessage({ role: "bot", kind: "activity", tool: { name: STOPPED_TURN_NAME, ok: true }, turnId });
   };
   const pushAssistantText = (text: string, turnId: string | undefined) => {
@@ -48966,15 +49006,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (messageMisuse) return json(res, messageMisuse.status, { error: messageMisuse.message, code: messageMisuse.code });
       const postedSafety = safetyHttpRefusal({ text, surface: "message", triage: postedActor.triage, ...(postedActor.principalId ? { principalId: postedActor.principalId } : {}), botId: bot.id, threadId });
       if (postedSafety) return json(res, postedSafety.status, { error: postedSafety.message, code: postedSafety.code });
-      // "stop", "arrête", "cancel" alone while this thread works: the same
-      // stop as POST /interrupt for this thread (shared/stop-intent.ts),
-      // never words steered into the turn it asks to end. The turn's own
-      // stopped row records it.
+      // "stop", "arrête", "attends", "wait" alone while this thread works:
+      // the same stop as POST /interrupt for this thread
+      // (shared/stop-intent.ts), never words steered into the turn it asks
+      // to end. 2026-10-28: the person's words stay in the conversation and
+      // the bot answers them with one "Stopped" line; calls the stop cut
+      // short say so on their own rows.
       if (!pressed && !voiceCall && threadBusy(bot.id, threadId) && isStopIntent(text)) {
+        const sendKey = parseSendId(body.sendId);
+        const earlier = sendKey ? store.messagesFor(threadId).find((m) => m.role === "user" && m.sendId === sendKey) : undefined;
+        if (earlier) return json(res, 200, { ok: true, threadId, stopped: true, message: earlier });
+        const stoppedTurnId = liveTurnByThread.get(threadId);
+        const message = store.appendMessage(threadId, { role: "user", kind: "text", text, ...(sendKey ? { sendId: sendKey } : {}), sender: messageSender(auth) });
         const run = routines!.activeBotRunForBot(bot.id);
         if (run?.threadId === threadId) await routines!.cancelRun(run.id);
         else await stopDirectThreadByPerson(bot.id, threadId);
-        return json(res, 200, { ok: true, threadId, stopped: true });
+        closeCutToolRows(threadId);
+        confirmStop(threadId, stoppedTurnId);
+        return json(res, 200, { ok: true, threadId, stopped: true, message });
       }
       if (pressKey) widgetPressesInFlight.set(pressKey, sendId);
       // #1372: the goal starts only now, after every refusal above; a send
