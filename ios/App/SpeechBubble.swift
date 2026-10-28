@@ -4,6 +4,7 @@
 // from the reference vector (`docs/ios/bubble-tail-reference.svg`), scaled
 // so the reference's cap radius becomes this bubble's corner radius. That is why it curls in, drops, and ends soft rather than in a
 // point — the shape is the drawing, not a guess at it.
+import CompanionCore
 import SwiftUI
 
 struct SpeechBubble: Shape {
@@ -102,10 +103,13 @@ enum BubbleColor {
 
 /// The open 1:1 bot's bubble paint, when the person asked for it.
 enum BotBubblePaint {
+    // Read while SwiftUI draws, on the main actor.
     static var current: (fill: Color, ink: Color)? {
-        guard SidebarPrefsModel.shared.botBubble,
-              let painted = BotBubble.paint(enabled: true, botColor: ThemeStore.shared.openBotColor, panel: Theme.palette.inset)
-        else { return nil }
-        return (painted.fill.color, painted.ink.color)
+        MainActor.assumeIsolated {
+            guard SidebarPrefsModel.shared.botBubble,
+                  let painted = BotBubble.paint(enabled: true, botColor: ThemeStore.shared.openBotColor, panel: Theme.palette.inset)
+            else { return nil }
+            return (painted.fill.color, painted.ink.color)
+        }
     }
 }
