@@ -8,6 +8,7 @@ import {
   hasNativeAutoReview,
   isEmergencyApprovalDowngrade,
   liveApprovalChange,
+  liveApprovalTightens,
   isApprovalMode,
 } from "../shared/approval-mode.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
@@ -103,6 +104,15 @@ describe("approval modes", () => {
     expect(liveApprovalChange("ask", "full")).toBe(false);
     expect(liveApprovalChange("full", "ask")).toBe(false);
     expect(liveApprovalChange("custom", "auto")).toBe(false);
+  });
+
+  it("names the live changes that must reach the running engine (#1373)", () => {
+    expect(liveApprovalTightens("auto", "ask")).toBe(true);
+    expect(liveApprovalTightens("auto", "edits")).toBe(true);
+    expect(liveApprovalTightens("edits", "ask")).toBe(true);
+    expect(liveApprovalTightens("ask", "auto")).toBe(false);
+    expect(liveApprovalTightens("edits", "edits")).toBe(false);
+    expect(liveApprovalTightens("full", "ask")).toBe(false);
   });
 
   it("permits only fail-closed recovery from an elevated mode", () => {

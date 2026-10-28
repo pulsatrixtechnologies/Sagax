@@ -65,6 +65,10 @@ export function PermissionsSection({
   const [fullAccessTarget, setFullAccessTarget] = useState<string | null>(null);
   const [commandAllowlistTarget, setCommandAllowlistTarget] = useState<{ botId: string; botName: string } | null>(null);
   const [primaryError, setPrimaryError] = useState<string | null>(null);
+  // #1373: Full and Custom still wait for the turn to end. The selector
+  // stays open for Ask, Edits and Auto, so a refused choice says why
+  // instead of doing nothing.
+  const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
   // Taking the role and leaving it go through the owner's own route (one
   // per person). A draft still patches, because the bot does not exist yet;
   // an organization member never sees the switch while drafting (create
@@ -99,7 +103,11 @@ export function PermissionsSection({
   const levelNow = approvalModeFor(bot);
   const setApprovalMode = (mode: ApprovalMode) => {
     if (mode === approvalMode) return;
-    if (bot.busy && !liveApprovalChange(levelNow, mode)) return;
+    if (bot.busy && !liveApprovalChange(levelNow, mode)) {
+      setApprovalNotice(t("approvalMode.busy"));
+      return;
+    }
+    setApprovalNotice(null);
     if (mode === "full" && orgFullAccess !== undefined) {
       if (orgFullAccess !== "allowed") return;
       if (fullAccessNeedsConfirmation(bot, viewerId, true)) setFullAccessTarget(bot.id);
@@ -185,6 +193,9 @@ export function PermissionsSection({
           </span>}
           {advanced && approvalSelector}
         </DescribedRow>
+      )}
+      {showApproval && approvalNotice && bot.busy && (
+        <div role="alert" data-approval-notice="" className="mt-2 text-[12px] text-danger">{approvalNotice}</div>
       )}
       {showApproval && advanced && !only && (
         <DescribedRow

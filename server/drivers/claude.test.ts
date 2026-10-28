@@ -1435,6 +1435,29 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(String(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).split(",")).not.toContain("Bash");
   });
 
+  it("hands a stricter level to the running CLI so its next tool call asks (#1373)", async () => {
+    const log = join(scratch, "permission-modes.log");
+    await create("hang", { FAKE_CLAUDE_PERMISSION_LOG: log });
+    // nothing running: the next turn launches at its own level
+    expect(await instance.adapter.applyApprovalMode!("t-live-ask", "ask")).toBe(true);
+    await instance.adapter.sendTurn({ threadId: "t-live-ask", text: "go", approvalMode: "auto" });
+    await recorder.until((e) => e.type === "session.started" || e.type === "turn.started");
+    expect(await instance.adapter.applyApprovalMode!("t-live-ask", "ask")).toBe(true);
+    expect(await instance.adapter.applyApprovalMode!("t-live-ask", "edits")).toBe(true);
+    expect(readFileSync(log, "utf8").trim().split("\n")).toEqual(["default", "acceptEdits"]);
+    // Full and Custom never change during a turn
+    expect(await instance.adapter.applyApprovalMode!("t-live-ask", "full")).toBe(false);
+    await instance.adapter.interruptTurn("t-live-ask");
+  });
+
+  it("reports a level the CLI refused, so the harness stops the turn (#1373)", async () => {
+    await create("hang", { FAKE_CLAUDE_REFUSE_PERMISSION_MODE: "1" });
+    await instance.adapter.sendTurn({ threadId: "t-live-refused", text: "go", approvalMode: "edits" });
+    await recorder.until((e) => e.type === "session.started" || e.type === "turn.started");
+    expect(await instance.adapter.applyApprovalMode!("t-live-refused", "ask")).toBe(false);
+    await instance.adapter.interruptTurn("t-live-refused");
+  });
+
   it("keeps questions answerable in per-bot Full access", async () => {
     await create("hang");
     await instance.adapter.sendTurn({ threadId: "t-full-question", text: "go", approvalMode: "full" });

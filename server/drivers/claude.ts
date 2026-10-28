@@ -31,6 +31,7 @@ import { augmentedPath } from "../env-path.ts";
 import { brokerSocketPath, cliVersionReader, describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
 import { classifyResumeFailure, mayReplay, rebuiltSessionNotice, recoveryPromptFor } from "../resume-recovery.ts";
 import { hostTimeZone } from "../bot-settings.ts";
+import type { ApprovalMode } from "../../shared/approval-mode.ts";
 import { ClaudeLoginController } from "./claude-login-auth.ts";
 
 import type {
@@ -207,6 +208,9 @@ export function oneShotIsolationArgs(version: ClaudeCliVersion | null): string[]
 export const CLAUDE_AUTO_ALLOWED_TOOLS: readonly string[] = [
   "WebSearch", "TodoWrite", "ToolSearch", "Task", "Bash(pwd)",
 ];
+
+/** How long a control request on the CLI's stdin waits for its answer. */
+const CONTROL_REQUEST_TIMEOUT_MS = 5_000;
 
 export function claudeAutoAllowedTools(): string[] {
   return [...CLAUDE_AUTO_ALLOWED_TOOLS];
@@ -1663,6 +1667,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
        * Sonnet 4.5, an org that disabled it), so the flag we passed is not
        * the truth — this is. null until init, or on a CLI that omits it. */
       nativePermissionMode: string | null;
+      /** #1373: control requests sent on stdin (set_permission_mode), by
+       * request_id, until the CLI's control_response settles them. */
+      controlWaiters?: Map<string, (ok: boolean) => void>;
       /** launched with --replay-user-messages (see CLAUDE_REPLAY_FLOOR) */
       replaysUserMessages: boolean;
       /** tool_use id → name, so an Artifact result can become a page card */
@@ -1779,6 +1786,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const s = sessions.get(threadId);
       if (!s || s.closing) return;
       s.closing = true;
+      for (const waiter of s.controlWaiters?.values() ?? []) waiter(false);
+      s.controlWaiters?.clear();
       if (s.sessionId && s.sawInit && !s.lastTurnFailed && s.volatile !== UNDELIVERED_VOLATILE && (!s.turn || s.turn.settled)) {
         heldVolatile.set(threadId, { sessionId: s.sessionId, volatile: s.volatile, ...(s.volatileSections ? { sections: s.volatileSections } : {}) });
       } else heldVolatile.delete(threadId);
@@ -1846,6 +1855,71 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
     };
 
+    /** #1373: the level a person chose while a turn was running, by thread,
+     * for that logical turn's relaunches (see sendTurn). */
+    const liveApprovalModes = new Map<string, { turnId: string; mode: ApprovalMode }>();
+    /** Send one control request on the CLI's stdin and wait for its answer.
+     * False when the write fails, the CLI refuses, or it says nothing in time. */
+    const controlRequest = (s: Session, threadId: string, request: Record<string, unknown>): Promise<boolean> => {
+      if (s.closing || !s.child.stdin.writable || s.child.stdin.destroyed) return Promise.resolve(false);
+      const requestId = `sagax-${newId()}`;
+      const waiters = (s.controlWaiters ??= new Map<string, (ok: boolean) => void>());
+      return new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => {
+          if (waiters.delete(requestId)) resolve(false);
+        }, CONTROL_REQUEST_TIMEOUT_MS);
+        timer.unref?.();
+        waiters.set(requestId, (ok) => {
+          clearTimeout(timer);
+          resolve(ok);
+        });
+        const frame = { type: "control_request", request_id: requestId, request };
+        try {
+          s.child.stdin.write(JSON.stringify(frame) + "\n", (error) => {
+            if (!error) {
+              appendNative(threadId, { dir: "out", source: "claude.control", msg: frame });
+              return;
+            }
+            clearTimeout(timer);
+            if (waiters.delete(requestId)) resolve(false);
+          });
+        } catch {
+          clearTimeout(timer);
+          if (waiters.delete(requestId)) resolve(false);
+        }
+      });
+    };
+    /** #1373: Ask, Edits or Auto chosen while this thread works. The CLI was
+     * launched with --permission-mode and does not re-read it, so the new
+     * level goes to the running process as set_permission_mode: its next
+     * tool call is decided at that level (Ask: every call reaches Sagax's
+     * broker, mcp__ogb__approve). Approve for me's fixed list of tools that
+     * never need a person (claudeAutoAllowedTools) stays allowed: none of
+     * them changes anything. Resolves false when the CLI did not confirm, and
+     * the harness then stops the turn. */
+    const applyApprovalMode = async (threadId: string, mode: ApprovalMode): Promise<boolean> => {
+      if (mode !== "ask" && mode !== "edits" && mode !== "auto") return false;
+      const running = active.get(threadId);
+      // Nothing running: the next turn launches at the level it is sent with.
+      if (!running) return true;
+      liveApprovalModes.set(threadId, { turnId: running.turnId, mode });
+      const s = sessions.get(threadId);
+      // Between two processes of the same turn: the relaunch reads the level
+      // recorded above before it spawns.
+      if (!s || s.closing || !s.turn || s.turn.turnId !== running.turnId) return true;
+      s.turn.input = { ...s.turn.input, approvalMode: mode };
+      // A guest's confined turn already runs in Ask and stays there.
+      if (s.turn.input.guestConfined) return true;
+      const nativeMode = mode === "ask" ? "default" : "acceptEdits";
+      const ok = await controlRequest(s, threadId, { subtype: "set_permission_mode", mode: nativeMode });
+      if (!ok) return false;
+      s.nativePermissionMode = nativeMode;
+      // The process no longer runs at the mode its argv names: never reuse
+      // it for a later turn, which launches at its own level.
+      s.argsKey = `${s.argsKey}#live-approval`;
+      return true;
+    };
+
     // A signed-out refusal is held until the first model activity, so a turn
     // that could not start rejects once its process has stopped (the harness
     // then recovers it on a backup engine), instead of reading as an answer.
@@ -1871,6 +1945,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
 
     const sendTurn = async (turn: SendTurnInput, logicalTurnId?: string) => {
       if (startupModelRefresh) await startupModelRefresh;
+      // #1373: a relaunch of the same logical turn (transient failure,
+      // rejected resume, rebuild) runs at the level the person chose during
+      // the turn, never the one it started with. A new turn carries its own.
+      const liveLevel = liveApprovalModes.get(turn.threadId);
+      if (logicalTurnId !== undefined && liveLevel?.turnId === logicalTurnId) turn = { ...turn, approvalMode: liveLevel.mode };
+      else if (logicalTurnId === undefined && turn.warmOnly !== true) liveApprovalModes.delete(turn.threadId);
       turn = { ...turn, toolScope: assertToolScopeSupported(DRIVER_KIND, turn.toolScope) };
       if (config.managedModels && (!turn.model || !config.managedModels.includes(turn.model))) throw new Error("This model is not assigned to this workspace.");
       if (config.requireApiKey && !input.environment.ANTHROPIC_API_KEY) throw new Error(NO_ANTHROPIC_KEY);
@@ -2734,6 +2814,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // A stdin message echoed back (--replay-user-messages) carries its
         // images again: keep their bytes out of the log, as when it was sent.
         appendNative(threadId, { dir: "in", source: "claude.sdk.message", msg: o?.type === "user" && o.isReplay === true && o.message ? diagnosticClaudeUserMessage(o) : o });
+        // #1373: the answer to a control request this driver sent on stdin.
+        if (o?.type === "control_response") {
+          const response = o.response && typeof o.response === "object" ? o.response as { request_id?: unknown; subtype?: unknown } : null;
+          const id = typeof response?.request_id === "string" ? response.request_id : undefined;
+          const waiter = id ? session.controlWaiters?.get(id) : undefined;
+          if (id && waiter) {
+            session.controlWaiters!.delete(id);
+            waiter(response?.subtype === "success");
+          }
+          return;
+        }
         // A warm process has no user turn. Record init (the resume cursor is
         // published only when a real turn attaches) and drop everything else,
         // so a call warm never writes a transcript row.
@@ -3593,6 +3684,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         sendTurn: (turn) => authRecovery.send(turn, sendTurn),
         steer,
         interruptTurn: async (threadId) => active.get(threadId)?.stop(),
+        applyApprovalMode,
         respondToRequest: async (threadId, requestId, decision) => {
           // fail-closed by construction: no broker, or an ask that already
           // timed out / settled, is `unavailable` — the caller denies

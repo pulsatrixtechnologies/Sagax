@@ -491,6 +491,14 @@ export interface ProviderAdapter {
   };
   sendTurn(input: SendTurnInput): Promise<TurnStartResult>;
   interruptTurn(threadId: ThreadId, turnId?: TurnId): Promise<void>;
+  /** #1373: the person changed Ask, Edits or Auto while this thread works.
+   * Resolves true when the running turn's next tool call is at `mode`: the
+   * engine took the new level (Claude's set_permission_mode), or it keeps no
+   * copy of the level and asks Sagax, which answers at the live level. False,
+   * or no method at all, means the engine still holds the old level for this
+   * turn: the harness then stops the turn when the change is stricter, so no
+   * tool call runs at a level the person just left. */
+  applyApprovalMode?(threadId: ThreadId, mode: ApprovalMode): Promise<boolean>;
   /** Answer a pending ask. Resolves with what actually happened — never
    * throws for an ask that is no longer there: `unavailable` means nobody
    * could take the answer (the turn ended, the broker died, the driver

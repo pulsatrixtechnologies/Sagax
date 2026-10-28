@@ -856,6 +856,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       asks: Map<string, (behavior: "allow" | "deny" | "answer", message?: string, source?: "user" | "timeout" | "system") => void>;
     }
     const active = new Map<string, Turn>();
+    /** #1373: who answers the running turn's escalations, by thread. Ask,
+     * Edits and Auto launch the same sandbox and policy; only Approve for me
+     * with Codex's own reviewer (auto_review) answers without Sagax. */
+    const turnReviewers = new Map<string, { mode: ApprovalMode; sagaxAnswers: boolean }>();
 
     const emit = (event: RuntimeEvent) => {
       for (const l of Array.from(listeners)) l(event);
@@ -2059,6 +2063,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         // mode may synthesize approvals; Custom must preserve the sandbox
         // boundary from config.toml (for example never + read-only).
         autoAcceptPermissions = approvalMode === "full";
+        turnReviewers.set(threadId, {
+          mode: approvalMode,
+          sagaxAnswers: approvalMode !== "custom" && approvalParams.turn.approvalsReviewer === "user",
+        });
         // Each turn launches a new app-server. Reassert current bot instructions
         // on start AND resume so Codex owns their lifetime through compaction.
         // Removed bot rules are cleared without dropping native configured rules.
@@ -2356,6 +2364,16 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       sendTurn,
       interruptTurn: async (threadId) => {
         await active.get(threadId)?.stop();
+      },
+      // #1373: a change among Ask, Edits and Auto applies to the running
+      // turn's next request when Sagax answers its requests (it reads the
+      // live level). Codex's own reviewer keeps answering for Approve for me
+      // until the turn ends, so then the harness stops the turn.
+      applyApprovalMode: async (threadId, mode) => {
+        if (mode !== "ask" && mode !== "edits" && mode !== "auto") return false;
+        if (!active.has(threadId)) return true;
+        const running = turnReviewers.get(threadId);
+        return Boolean(running && running.mode !== "full" && running.sagaxAnswers);
       },
       steer: async (threadId, text) => {
         const turn = active.get(threadId);

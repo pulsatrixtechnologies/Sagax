@@ -107,11 +107,18 @@ export function approvalModeFor(bot: {
 }
 
 /** Ask, Edits and Auto can change while the bot is working. The next
- * approval in that turn reads the new level. Full and Custom still wait. */
+ * approval in that turn reads the new level. A stricter one also reaches the
+ * running engine, or stops the turn when the engine cannot take it (#1373,
+ * applyStricterApprovalLive). Full and Custom still wait. */
 const LIVE_APPROVAL_LEVELS = new Set<ApprovalMode>(["ask", "edits", "auto"]);
 
 export function liveApprovalChange(current: ApprovalMode, next: ApprovalMode): boolean {
   return LIVE_APPROVAL_LEVELS.has(current) && LIVE_APPROVAL_LEVELS.has(next);
+}
+
+/** #1373: Auto to Edits or Ask, or Edits to Ask, while a turn runs. */
+export function liveApprovalTightens(current: ApprovalMode, next: ApprovalMode): boolean {
+  return liveApprovalChange(current, next) && APPROVAL_RANK[next] < APPROVAL_RANK[current];
 }
 
 /** A private late-grant recovery may revoke an elevated mode even after a

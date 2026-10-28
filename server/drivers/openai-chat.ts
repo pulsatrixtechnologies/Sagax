@@ -1170,6 +1170,10 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         // the next spoken turn reuses the HTTP pool (no billed completion).
         ...(options.warmSession ? { warmSession: true } : {}) },
       sendTurn,
+      // #1373: this engine keeps no copy of Ask, Edits or Auto (only Full
+      // is read at launch). Every other call asks Sagax, which answers at
+      // the live level, so a change applies to the next tool call as is.
+      applyApprovalMode: async () => true,
       interruptTurn: async (threadId, turnId) => {
         const turn = active.get(threadId);
         if (!turn || (turnId && turn.turnId !== turnId)) return;
