@@ -48,6 +48,7 @@ struct DemoFixture {
                 "tasks": [["threadId": "demo-thread-\(id)", "title": task, "createdAt": ago(60 * 24)]],
                 "messages": messages,
                 "activeLeafId": messages.last?["id"] ?? NSNull(),
+                "ownerUserId": "demo-alex",
             ]
             if let look { value["mascotLook"] = look }
             if let skin { value["mascotSkin"] = skin }
@@ -67,18 +68,18 @@ struct DemoFixture {
                 "Trois choses, dans l'ordre :\n\n- **Livrer la bêta iOS** aux testeurs internes (Scout attend ton approbation).\n- **Terminer les écrans d'accueil** avec Pixel.\n- **Garder le build de version au vert** : Forge lance les vérifications en ce moment.\n\nJe t'envoie un résumé vendredi."
             ), parent: "atlas-1"),
         ])
-        let scout = bot("scout", "Scout", t("Researcher", "Recherchiste"), t("Finds the facts and brings back sources.", "Trouve les faits et rapporte ses sources."), color: "cyan", section: launch, extra: ["unread": true, "activity": "waiting-on-you"], task: t("TestFlight checklist", "Liste de contrôle TestFlight"), messages: [
-            text("scout-1", "user", 30, t("Compare the TestFlight checklist with Apple's requirements, then upload the build.", "Compare la liste de contrôle TestFlight avec les exigences d'Apple, puis téléverse le build.")),
-            text("scout-2", "bot", 28, t("Signing, privacy declarations and review notes all check out. One step needs your approval before I continue.", "La signature, les déclarations de confidentialité et les notes de revue sont en ordre. Une étape demande ton approbation avant que je continue."), parent: "scout-1"),
+        let scout = bot("scout", "Scout", t("Researcher", "Recherchiste"), t("Finds the facts and brings back sources.", "Trouve les faits et rapporte ses sources."), color: "cyan", section: launch, extra: ["unread": true, "activity": "waiting-on-you"], task: t("Release notes", "Notes de version"), messages: [
+            text("scout-1", "user", 30, t("Compare the release notes with the checklist, then publish version 2.4.", "Compare les notes de version avec la liste de contrôle, puis publie la version 2.4.")),
+            text("scout-2", "bot", 28, t("The notes, the privacy declarations and the version number all check out. One step needs your approval before I continue.", "Les notes, les déclarations de confidentialité et le numéro de version sont en ordre. Une étape demande ton approbation avant que je continue."), parent: "scout-1"),
             [
                 "id": "scout-approval", "role": "bot", "kind": "options", "at": ago(27), "parentId": "scout-2",
                 "card": [
                     "title": t("Approval needed", "Approbation requise"),
-                    "subtitle": t("Upload build 12 to TestFlight for internal testing?", "Téléverser le build 12 dans TestFlight pour les tests internes?"),
+                    "subtitle": t("Publish version 2.4 to the team?", "Publier la version 2.4 pour l'équipe?"),
                     "options": ["Allow", "Deny"],
-                    "requestId": "demo-request-testflight",
-                    "tool": "App Store Connect",
-                    "allowKey": "testflight:upload",
+                    "requestId": "demo-request-publish",
+                    "tool": t("Publish", "Publication"),
+                    "allowKey": "release:publish",
                 ] as [String: Any],
             ],
         ])

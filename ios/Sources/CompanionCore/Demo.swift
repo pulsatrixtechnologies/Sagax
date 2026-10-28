@@ -42,6 +42,15 @@ public final class DemoServer: @unchecked Sendable {
     private var blocked: [Moderation.BlockedPerson] = []
     private var reports: [String] = []
     private var termsAccepted: Double?
+    /// `DELETE /api/me` with `{ confirm: true }` already dropped the made-up
+    /// account. Nothing was stored; the phone then leaves the demo.
+    private var accountDeleted = false
+    /// Who Atlas is shared with, in memory only.
+    private var shares: [[String: Any]] = [
+        ["target": "user:demo-sam", "level": "use", "label": "Sam Rivera", "kind": "user"],
+        ["target": "user:demo-jordan", "level": "run", "label": "Jordan Lee", "kind": "user"],
+        ["target": "team:demo-product", "level": "run", "label": "Product", "kind": "team"],
+    ]
     /// Every request the demo answered, for tests.
     private var handled: [String] = []
 
@@ -55,7 +64,12 @@ public final class DemoServer: @unchecked Sendable {
         rooms = fixture.rooms
         routines = fixture.routines
         runs = fixture.runs
-        connection = Connection(id: Self.connectionID, name: language.pick("Sagax demo", "Démo Sagax"), host: Self.host, port: 443, serverScopes: ["client"])
+        // A made-up organization (serverEnvironmentId marks a server pairing)
+        // so Share is offered on the pinned bot, the same gate as a real one.
+        connection = Connection(
+            id: Self.connectionID, name: language.pick("Sagax demo", "Démo Sagax"), host: Self.host, port: 443,
+            serverEnvironmentId: "demo", serverScopes: ["client"]
+        )
     }
 
     /// The fleet the app hydrates from on entering the demo.
@@ -127,6 +141,14 @@ public final class DemoServer: @unchecked Sendable {
             return blocks(method: method, id: parts.count == 4 ? parts[3] : nil, json: json)
         case (_, ["api", "me"]) where parts.count == 3 && parts[2] == "terms":
             return terms(method: method)
+        case ("DELETE", ["api", "me"]) where parts.count == 2:
+            return deleteAccount(json)
+        case ("GET", ["api", "auth"]) where parts.count == 3 && parts[2] == "session":
+            return accountSession()
+        case (_, ["api", "bots"]) where parts.count >= 4 && parts[3] == "grants":
+            return shareGrants(method: method, botId: parts[2], target: parts.count > 4 ? parts[4] : nil, json: json)
+        case ("GET", ["api", "org"]) where parts.count == 3 && parts[2] == "directory":
+            return shareDirectory()
         case ("POST", ["api", "bots"]) where parts.count == 4 && (parts[3] == "read" || parts[3] == "always-allow"),
              ("POST", ["api", "groups"]) where parts.count == 4 && parts[3] == "read":
             return .init(status: 200, body: Data("{}".utf8))
@@ -193,6 +215,103 @@ public final class DemoServer: @unchecked Sendable {
     public var reportCount: Int {
         lock.lock(); defer { lock.unlock() }
         return reports.count
+    }
+
+    /// The made-up person the demo is signed in as. Share uses this principal.
+    private func accountSession() -> Response {
+        let body = (try? JSONSerialization.data(withJSONObject: [
+            "kind": "session", "id": "demo-session", "scopes": ["client"],
+            "name": "Alex Martin", "email": "alex.martin@example.test",
+            "principalId": "demo-alex", "role": "member",
+        ])) ?? Data()
+        return .init(status: 200, body: body)
+    }
+
+    private func shareDirectory() -> Response {
+        let body = (try? JSONSerialization.data(withJSONObject: [
+            "people": [
+                ["principalId": "demo-alex", "name": "Alex Martin", "login": "alex.martin"],
+                ["principalId": "demo-sam", "name": "Sam Rivera", "login": "sam.rivera"],
+                ["principalId": "demo-jordan", "name": "Jordan Lee", "login": "jordan.lee"],
+            ],
+            "teams": [
+                ["id": "demo-product", "name": "Product", "managers": ["demo-alex"], "members": ["demo-sam", "demo-jordan"]],
+            ],
+        ])) ?? Data()
+        return .init(status: 200, body: body)
+    }
+
+    /// Shared with, in memory. The page reads it after Share on a bot.
+    private func shareGrants(method: String, botId: String, target: String?, json: [String: Any]) -> Response {
+        lock.lock()
+        let known = bots.contains { $0.id == botId }
+        lock.unlock()
+        guard known else { return refusal(status: 404) }
+        switch method {
+        case "GET":
+            break
+        case "PUT":
+            let id = (json["target"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let level = (json["level"] as? String) ?? "use"
+            guard !id.isEmpty, ["use", "run", "edit", "manage"].contains(level) else { return refusal(status: 400) }
+            let label = id.hasPrefix("user:demo-sam") ? "Sam Rivera" : (id.hasPrefix("user:demo-jordan") ? "Jordan Lee" : (id.hasPrefix("team:") ? "Product" : id))
+            let kind = id.hasPrefix("team:") ? "team" : "user"
+            lock.lock()
+            shares.removeAll { ($0["target"] as? String) == id }
+            shares.append(["target": id, "level": level, "label": label, "kind": kind])
+            lock.unlock()
+        case "DELETE":
+            let raw = target?.removingPercentEncoding ?? target ?? ""
+            lock.lock()
+            shares.removeAll { ($0["target"] as? String) == raw }
+            lock.unlock()
+        default:
+            return refusal(status: 405)
+        }
+        lock.lock()
+        let rows = shares
+        lock.unlock()
+        let body = (try? JSONSerialization.data(withJSONObject: [
+            "grants": rows,
+            "administer": ["any": true, "teamIds": ["demo-product"], "maxLevel": "manage"],
+        ])) ?? Data()
+        return .init(status: 200, body: body)
+    }
+
+    /// True after a confirmed `DELETE /api/me` (tests).
+    public var didDeleteAccount: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return accountDeleted
+    }
+
+    /// Account deletion, simulated (guideline 5.1.1(v)). The demo has no
+    /// account system, so there is nothing to sign in to again and nothing
+    /// to ask an administrator: a confirmed delete drops the made-up bots,
+    /// rooms and routines in memory and answers `{ deleted: true }`. The
+    /// phone then leaves the demo (`forgetConnection`). Without
+    /// `{ confirm: true }` nothing is dropped.
+    private func deleteAccount(_ json: [String: Any]) -> Response {
+        guard json["confirm"] as? Bool == true else {
+            let error = language.pick(
+                "Confirm the deletion ({ confirm: true }): it cannot be undone.",
+                "Confirme la suppression ({ confirm: true }) : c'est irréversible."
+            )
+            let body = (try? JSONSerialization.data(withJSONObject: ["error": error, "code": "confirm"])) ?? Data()
+            return .init(status: 400, body: body)
+        }
+        lock.lock()
+        let removedBots = bots.count
+        let removedThreads = bots.count + rooms.count
+        bots = []
+        rooms = []
+        routines = []
+        runs = []
+        accountDeleted = true
+        lock.unlock()
+        let body = (try? JSONSerialization.data(withJSONObject: [
+            "deleted": true, "bots": removedBots, "threads": removedThreads,
+        ])) ?? Data()
+        return .init(status: 200, body: body)
     }
 
     private func refusal(status: Int) -> Response {
@@ -284,12 +403,12 @@ public final class DemoServer: @unchecked Sendable {
         emit(.messagePatch(threadId: threadId, message: card))
         let text = behavior == "allow"
             ? language.pick(
-                "Approved, thank you. The internal TestFlight upload is done; the build shows up in App Store Connect in a few minutes.",
-                "Approuvé, merci. Le téléversement TestFlight interne est fait ; le build paraîtra dans App Store Connect d'ici quelques minutes."
+                "Approved, thank you. Version 2.4 is published for the team. They can read it in a few minutes.",
+                "Approuvé, merci. La version 2.4 est publiée pour l'équipe. Elle sera visible dans quelques minutes."
             )
             : language.pick(
-                "Understood, I won't upload it. The build stays on the computer until you say so.",
-                "Compris, je ne le téléverse pas. Le build reste sur l'ordinateur jusqu'à nouvel ordre."
+                "Understood, I won't publish it. Version 2.4 stays on the computer until you say so.",
+                "Compris, je ne la publie pas. La version 2.4 reste sur l'ordinateur jusqu'à nouvel ordre."
             )
         stream(text, from: bot, inRoom: false, thread: threadId, parent: card.id)
         return .init(status: 200, body: Data(#"{"outcome":"\#(behavior == "allow" ? "allowed" : "denied")"}"#.utf8))

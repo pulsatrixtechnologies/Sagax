@@ -69,16 +69,81 @@ final class DemoModeTests: XCTestCase {
         let frames = FrameLog()
         server.onFrame = { frames.append($0) }
         let client = server.makeClient()
-        let outcome = try await client.respond(threadId: "demo-thread-scout", requestId: "demo-request-testflight", behavior: "allow")
+        let outcome = try await client.respond(threadId: "demo-thread-scout", requestId: "demo-request-publish", behavior: "allow")
         XCTAssertEqual(outcome, "allowed")
         guard case let .messagePatch(_, card) = frames.all.first else { return XCTFail("the card is patched first") }
         XCTAssertEqual(card.card?.answered, "allow")
         XCTAssertFalse(card.card?.isPending ?? true)
+        guard case let .message(_, reply) = frames.all.last(where: { if case .message = $0 { return true }; return false }) else { return XCTFail("the reply follows") }
+        XCTAssertTrue(reply.text?.contains("Version 2.4") == true)
+        XCTAssertFalse(reply.text?.localizedCaseInsensitiveContains("TestFlight") == true)
         // twice is refused, like a server
         do {
-            _ = try await client.respond(threadId: "demo-thread-scout", requestId: "demo-request-testflight", behavior: "deny")
+            _ = try await client.respond(threadId: "demo-thread-scout", requestId: "demo-request-publish", behavior: "deny")
             XCTFail("a second answer must be refused")
         } catch APIError.status(code: 409, _) {}
+    }
+
+    func testDeletingTheAccountDropsTheMadeUpData() async throws {
+        let server = DemoServer(now: clock, chunkDelay: 0)
+        defer { server.stop() }
+        let client = server.makeClient()
+        let refused = server.respond(method: "DELETE", path: "/api/me", body: Data("{}".utf8))
+        XCTAssertEqual(refused.status, 400)
+        XCTAssertFalse(server.didDeleteAccount)
+        XCTAssertEqual(server.fleet.bots.count, 4)
+
+        let outcome = try await client.deleteAccount()
+        XCTAssertEqual(outcome, .deleted)
+        XCTAssertTrue(server.didDeleteAccount)
+        XCTAssertTrue(server.fleet.bots.isEmpty)
+        XCTAssertTrue(server.fleet.groups.isEmpty)
+        let routines = try await client.routines()
+        XCTAssertTrue(routines.routines.isEmpty)
+        XCTAssertTrue(server.handledRequests.contains("DELETE /api/me"))
+    }
+
+    func testTheDemoSignsInAsAlexSoThePinnedBotOffersShare() throws {
+        let server = DemoServer(now: clock, chunkDelay: 0)
+        defer { server.stop() }
+        XCTAssertTrue(server.connection.pairedWithServer)
+        let sessionBody = server.respond(method: "GET", path: "/api/auth/session", body: nil)
+        XCTAssertEqual(sessionBody.status, 200)
+        let session = try JSONDecoder().decode(AuthSession.self, from: sessionBody.body)
+        XCTAssertEqual(session.principalId, "demo-alex")
+        XCTAssertEqual(session.name, "Alex Martin")
+        let gate = SurfaceGate(connection: server.connection, account: session)
+        XCTAssertTrue(gate.allows(.botSharing))
+        let atlas = try XCTUnwrap(server.fleet.bots.first { $0.name == "Atlas" })
+        XCTAssertEqual(atlas.ownerUserId, session.principalId)
+        XCTAssertEqual(atlas.pinned, true)
+        XCTAssertEqual(atlas.chiefOfStaff, true)
+        let plan = NavigationMenus.bot(atlas, BotMenuContext(
+            gate: gate, showThreads: false, canMoveToSection: false,
+            viewerId: session.principalId, activeBotCount: server.fleet.bots.count
+        ))
+        XCTAssertEqual(plan.items.first, .unpin)
+        XCTAssertTrue(plan.items.contains(.share))
+        let grants = server.respond(method: "GET", path: "/api/bots/demo-atlas/grants", body: nil)
+        XCTAssertEqual(grants.status, 200)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: grants.body) as? [String: Any])
+        let rows = try XCTUnwrap(json["grants"] as? [[String: Any]])
+        XCTAssertTrue(rows.contains { $0["label"] as? String == "Sam Rivera" })
+        XCTAssertTrue(rows.contains { $0["label"] as? String == "Jordan Lee" })
+    }
+
+    func testScoutThreadNamesNoDistributionService() {
+        for language in [DemoLanguage.english, .french] {
+            let fleet = DemoServer(now: clock, language: language, chunkDelay: 0).fleet
+            let scout = fleet.bots.first { $0.name == "Scout" }
+            let bits = (scout?.messages ?? []).flatMap { message in
+                [message.text, message.card?.title, message.card?.subtitle, message.card?.tool, scout?.tasks?.first?.title]
+            }
+            let joined = bits.compactMap { $0 }.joined(separator: "\n")
+            XCTAssertFalse(joined.localizedCaseInsensitiveContains("TestFlight"), language.rawValue)
+            XCTAssertFalse(joined.localizedCaseInsensitiveContains("App Store Connect"), language.rawValue)
+            XCTAssertTrue(joined.contains("2.4"), language.rawValue)
+        }
     }
 
     func testAnythingElseSaysItIsADemoAndNeverLeavesThePhone() async throws {
