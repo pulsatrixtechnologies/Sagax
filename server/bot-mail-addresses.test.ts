@@ -46,14 +46,15 @@ async function fakePerspicax(handler: Handler, bots: BotMailBot[] = [
   { id: "bot_off", name: "Ember", ownerSub: "u_123" },
   { id: "bot_local", name: "Local", ownerSub: null },
 ]) {
-  const seen: Array<{ path: string; authorization: string; body: any }> = [];
+  const seen: Array<{ path: string; authorization: string; subject?: string; body: any }> = [];
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
       const raw = Buffer.concat(chunks).toString("utf8");
       const body = raw ? JSON.parse(raw) : null;
-      seen.push({ path: req.url ?? "", authorization: String(req.headers.authorization ?? ""), body });
+      const subject = req.headers["x-perspicax-subject-token"];
+      seen.push({ path: req.url ?? "", authorization: String(req.headers.authorization ?? ""), ...(typeof subject === "string" ? { subject } : {}), body });
       handler(req, body, res);
     });
   });
@@ -74,6 +75,8 @@ async function fakePerspicax(handler: Handler, bots: BotMailBot[] = [
     onRoleNarrowed: () => {},
     version: "0.1.101",
     log: () => {},
+    // 2026-10-28: each owner's own token
+    subjectToken: async (sub) => `token-of-${sub}`,
   });
   let clock = 1_000_000;
   const log: string[] = [];
@@ -87,7 +90,7 @@ describe("BotMailAddresses (contract B)", () => {
     const px = await fakePerspicax((_req, body, res) => answer(res, 200, enabledAnswer(body)));
     expect(await px.addresses.forBot("bot_abc")).toEqual({ available: true, address: "cryptic@bots.example.org", enabled: true });
     expect(px.seen).toHaveLength(1);
-    expect(px.seen[0]).toMatchObject({ path: BOT_MAIL_ADDRESSES_PATH, authorization: `Bearer ${TOKEN}` });
+    expect(px.seen[0]).toMatchObject({ path: BOT_MAIL_ADDRESSES_PATH, authorization: `Bearer ${TOKEN}`, subject: "token-of-u_123" });
     // v2 (F8): the list is every bot with a Perspicax owner: complete
     expect(px.seen[0]!.body).toEqual({ complete: true, bots: [
       { id: "bot_abc", name: "Cryptic", owner_sub: "u_123" },
@@ -164,6 +167,63 @@ describe("BotMailAddresses (contract B)", () => {
     expect(px.seen[0]!.body.bots[0].id).toBe("bot_599");
     // a partial list never says complete: Perspicax would drop the others
     expect(px.seen[0]!.body).not.toHaveProperty("complete");
+  });
+});
+
+describe("BotMailAddresses: the owner's own token (2026-10-28)", () => {
+  const twoOwners: BotMailBot[] = [
+    { id: "bot_abc", name: "Cryptic", ownerSub: "u_1" },
+    { id: "bot_off", name: "Ember", ownerSub: "u_2" },
+    { id: "bot_xyz", name: "Orbit", ownerSub: "u_1" },
+  ];
+  /** A Perspicax that takes one owner per call, named by the token. */
+  const ownerByOwner: Handler = (req, body, res) => {
+    const owner = String(req.headers["x-perspicax-subject-token"] ?? "").replace(/^token-of-/, "");
+    if (!owner || body.bots.some((bot: { owner_sub: string }) => bot.owner_sub !== owner)) {
+      return answer(res, 403, { code: "subject", message: "the person's Sagax sign-in token is not valid here", details: {} });
+    }
+    answer(res, 200, enabledAnswer(body));
+  };
+
+  it("an older Perspicax keeps the one call for every owner, complete for the server", async () => {
+    const px = await fakePerspicax((_req, body, res) => answer(res, 200, enabledAnswer(body)), twoOwners);
+    expect((await px.addresses.forBot("bot_off")).available).toBe(true);
+    expect(px.seen).toHaveLength(1);
+    expect(px.seen[0]!.subject).toBeUndefined();
+    expect(px.seen[0]!.body.complete).toBe(true);
+    expect(px.seen[0]!.body.bots.map((bot: { id: string }) => bot.id)).toEqual(["bot_off", "bot_abc", "bot_xyz"]);
+  });
+
+  it("a Perspicax that asks for the owner's token is then asked owner by owner, each list complete", async () => {
+    const px = await fakePerspicax(ownerByOwner, twoOwners);
+    expect(await px.addresses.forBot("bot_abc")).toEqual({ available: true, address: "cryptic@bots.example.org", enabled: true });
+    expect(await px.addresses.forBot("bot_off")).toEqual({ available: true, address: "ember@bots.example.org", enabled: false });
+    const byOwner = px.seen.slice(1).map((call) => [call.subject, call.body]);
+    expect(byOwner).toEqual([
+      ["token-of-u_1", { complete: true, bots: [{ id: "bot_abc", name: "Cryptic", owner_sub: "u_1" }, { id: "bot_xyz", name: "Orbit", owner_sub: "u_1" }] }],
+      ["token-of-u_2", { complete: true, bots: [{ id: "bot_off", name: "Ember", owner_sub: "u_2" }] }],
+    ]);
+    // the mode stays: the next read goes owner by owner at once
+    px.tick(BOT_MAIL_CACHE_MS + 1);
+    await px.addresses.forBot("bot_abc");
+    expect(px.seen).toHaveLength(5);
+    expect(px.seen.slice(3).every((call) => call.body.bots.every((bot: { owner_sub: string }) => `token-of-${bot.owner_sub}` === call.subject))).toBe(true);
+    // the second owner's last bot goes: their list is sent empty and complete
+    px.roster.splice(px.roster.findIndex((bot) => bot.id === "bot_off"), 1);
+    await px.addresses.resync();
+    expect(px.seen.slice(5).map((call) => [call.subject, call.body])).toEqual([
+      ["token-of-u_1", { complete: true, bots: [{ id: "bot_abc", name: "Cryptic", owner_sub: "u_1" }, { id: "bot_xyz", name: "Orbit", owner_sub: "u_1" }] }],
+      ["token-of-u_2", { complete: true, bots: [] }],
+    ]);
+    // and not again once Perspicax took it
+    await px.addresses.resync();
+    expect(px.seen.slice(7).map((call) => call.subject)).toEqual(["token-of-u_1"]);
+  });
+
+  it("the owner's new local part goes with the owner's token", async () => {
+    const px = await fakePerspicax((_req, _body, res) => answer(res, 200, { bot_id: "bot_abc", address: "help@bots.example.org", enabled: true }));
+    expect((await px.addresses.setLocalPart("bot_abc", "u_123", "help")).ok).toBe(true);
+    expect(px.seen[0]).toMatchObject({ subject: "token-of-u_123", body: { owner_sub: "u_123", local_part: "help" } });
   });
 });
 

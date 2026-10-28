@@ -355,6 +355,24 @@ export type LinkPostResult =
   | { ok: true; status: number; body: unknown }
   | { ok: false; error: "link" | "unreachable" | "too_large" | "refused"; status?: number; body?: unknown };
 
+/** The bounds of a link-authenticated POST (linkPostJson). `subject`: the
+ * Perspicax user id of the one person the call acts for; their token then
+ * rides along in SUBJECT_TOKEN_HEADER when one is at hand. */
+export interface LinkPostLimits {
+  timeoutMs: number;
+  maxBytes: number;
+  subject?: string;
+}
+
+/** Whether a refusal is Perspicax's `subject` one: the person's token was
+ * missing or named someone else. Only a Perspicax that asks for the token
+ * answers it. */
+export function isSubjectRefusal(result: LinkPostResult): boolean {
+  if (result.ok || result.status !== 403) return false;
+  const body = result.body;
+  return Boolean(body && typeof body === "object" && (body as { code?: unknown }).code === "subject");
+}
+
 export interface PerspicaxDirectoryOptions {
   /** SAGAX_PERSPICAX_ISSUER: the subjects' `iss`. */
   issuer: string;
@@ -382,6 +400,13 @@ export interface PerspicaxDirectoryOptions {
   onIntegrationRights?: (principalId: string, rights: "manage" | "off") => void;
   /** A new directory body was applied (not called on 304). */
   onDirectory?: (directory: Directory) => void;
+  /** The token that says which person a link call acts for: their live
+   * sign-in access token, else the access token of their routine delegation
+   * on this server; null when there is none. Sent in SUBJECT_TOKEN_HEADER
+   * on the link routes that act for a named person, next to the link token
+   * (which server). Absent, or null: the call goes with the link token
+   * alone, as before (a Perspicax that does not ask for it still answers). */
+  subjectToken?: (sub: string) => Promise<string | null>;
   /** Pulsa Bot's version, sent as X-Pulsabot-Version. */
   version: string;
   /** Slice 7: the link file was loaded, changed to another server id, or
@@ -480,6 +505,19 @@ export class PerspicaxDirectory {
 
   state(): DirectoryState {
     return { ...this.current };
+  }
+
+  /** The person's subject header for a link call, or none. Never throws,
+   * never logs the token. */
+  private async subjectHeader(sub: string | undefined): Promise<Record<string, string>> {
+    if (!sub || !this.options.subjectToken) return {};
+    let token: string | null = null;
+    try {
+      token = await this.options.subjectToken(sub);
+    } catch {
+      token = null;
+    }
+    return token ? { [SUBJECT_TOKEN_HEADER]: token } : {};
   }
 
   /** The server id Perspicax gave this server, once a link file was read. */
@@ -813,7 +851,8 @@ export class PerspicaxDirectory {
   }
 
   /** An owner's model key, read through the link (slice 4, contract 3):
-   * cached in memory for 60 s at most, never logged, never written. */
+   * cached in memory for 60 s at most, never logged, never written. The
+   * owner's own token goes with the call when there is one (2026-10-28). */
   async resolveProviderKey(sub: string, provider: KeyProvider): Promise<ProviderKeyResult> {
     const cacheKey = `${sub}\u0000${provider}`;
     const cached = this.keyCache.get(cacheKey);
@@ -821,11 +860,12 @@ export class PerspicaxDirectory {
     this.keyCache.delete(cacheKey);
     let link = this.link ?? this.readLink();
     if (!link) return { ok: false, error: "link" };
+    const subject = await this.subjectHeader(sub);
     const call = (token: string) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}${PROVIDER_KEY_RESOLVE_PATH}`, {
       method: "POST",
       redirect: "error",
       signal: AbortSignal.timeout(PROVIDER_KEY_TIMEOUT_MS),
-      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${token}` },
+      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${token}`, ...subject },
       body: JSON.stringify({ sub, provider }),
     });
     let response: Response;
@@ -879,16 +919,19 @@ export class PerspicaxDirectory {
   /** 2026-10-11: POST a JSON body to a Perspicax route that takes the link
    * token (the memory signals, server/perspicax-memory.ts). A 401 re-reads
    * the link file once. Bounded by `timeoutMs` and `maxBytes`; never throws,
-   * never logs the token or the body. */
-  async linkPostJson(path: string, body: unknown, limits: { timeoutMs: number; maxBytes: number }): Promise<LinkPostResult> {
+   * never logs the token or the body. With `subject`, the person's token
+   * (options.subjectToken) rides along in SUBJECT_TOKEN_HEADER when there is
+   * one (2026-10-28). */
+  async linkPostJson(path: string, body: unknown, limits: LinkPostLimits): Promise<LinkPostResult> {
     let link = this.link ?? this.readLink();
     if (!link) return { ok: false, error: "link" };
     const payload = JSON.stringify(body);
+    const subject = await this.subjectHeader(limits.subject);
     const call = (token: string) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}${path}`, {
       method: "POST",
       redirect: "error",
       signal: AbortSignal.timeout(limits.timeoutMs),
-      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${token}` },
+      headers: { accept: "application/json", "content-type": "application/json", authorization: `Bearer ${token}`, ...subject },
       body: payload,
     });
     let response: Response;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { avatarContentType, DIRECTORY_ABSENT_CONFIRM_MS, directoryIntervalMs, PerspicaxDirectory, readLinkFile, type Directory } from "./perspicax-link.ts";
+import { avatarContentType, DIRECTORY_ABSENT_CONFIRM_MS, directoryIntervalMs, isSubjectRefusal, PerspicaxDirectory, readLinkFile, type Directory } from "./perspicax-link.ts";
 import { PrincipalRegistry } from "./principals.ts";
 
 const ISSUER = "https://px.example.test";
@@ -87,7 +87,7 @@ describe("SAGAX_PERSPICAX_DIRECTORY_SECONDS", () => {
 
 type Reply = { status: number; body?: unknown; etag?: string } | "hang" | "throw";
 
-function harness(initial: Directory) {
+function harness(initial: Directory, extra: { subjectToken?: (sub: string) => Promise<string | null> } = {}) {
   const clock = { now: 1_000_000 };
   const dir = tempDir();
   const linkFile = join(dir, "pulsabot.json");
@@ -101,7 +101,7 @@ function harness(initial: Directory) {
   let validToken = TOKEN_A;
   const queue: Reply[] = [];
   const keys = new Map<string, { key?: string; status?: number }>();
-  const resolveCalls: Array<{ sub: string; provider: string; authorization: string }> = [];
+  const resolveCalls: Array<{ sub: string; provider: string; authorization: string; subject?: string }> = [];
   const teamNames: Array<Array<{ id: string; name: string }>> = [];
   const delegationCalls: Array<{ present: (sub: string) => boolean | undefined; at: number }> = [];
   const integrationRights: Array<{ id: string; rights: "manage" | "off" }> = [];
@@ -109,7 +109,7 @@ function harness(initial: Directory) {
     const headers = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>));
     if (String(input).endsWith("/api/v1/pulsabot/provider-keys/resolve")) {
       const asked = JSON.parse(String(init?.body)) as { sub: string; provider: string };
-      resolveCalls.push({ ...asked, authorization: headers.authorization ?? "" });
+      resolveCalls.push({ ...asked, authorization: headers.authorization ?? "", ...(headers["x-perspicax-subject-token"] ? { subject: headers["x-perspicax-subject-token"] } : {}) });
       if (headers.authorization !== `Bearer ${validToken}`) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
       const held = keys.get(`${asked.sub}/${asked.provider}`);
       if (held?.status) return new Response(JSON.stringify({ error: held.status === 409 ? "user_inactive" : "x" }), { status: held.status });
@@ -144,6 +144,7 @@ function harness(initial: Directory) {
     fetch: fetcher,
     log: () => {},
     timeoutMs: 200,
+    ...extra,
   });
   return {
     sync, principals, out, narrowed, requests, queue, linkFile, keys, resolveCalls, teamNames, clock, delegationCalls, integrationRights,
@@ -509,6 +510,43 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     h.keys.set("ALICE/openai", { key: "sk-test-openai-key-000000001" });
     expect(await h.sync.resolveProviderKey("ALICE", "openai")).toMatchObject({ ok: true, key: "sk-test-openai-key-000000001" });
     expect(h.resolveCalls.at(-1)!.authorization).toBe(`Bearer ${TOKEN_B}`);
+  });
+
+  it("2026-10-28: a link call for a person carries that person's own token, and only theirs", async () => {
+    const asked: string[] = [];
+    const h = harness(withTeams([person("ALICE"), person("BOB")], []), {
+      subjectToken: async (sub) => {
+        asked.push(sub);
+        return sub === "ALICE" ? "alice-sign-in-token" : null;
+      },
+    });
+    await h.sync.refresh();
+    h.keys.set("ALICE/anthropic", { key: "sk-ant-test-alice-key-0001" });
+    h.keys.set("BOB/anthropic", { key: "sk-ant-test-bob-key-00001" });
+    await h.sync.resolveProviderKey("ALICE", "anthropic");
+    await h.sync.resolveProviderKey("BOB", "anthropic");
+    expect(h.resolveCalls).toEqual([
+      { sub: "ALICE", provider: "anthropic", authorization: `Bearer ${TOKEN_A}`, subject: "alice-sign-in-token" },
+      // no token at hand: the link token alone, as before
+      { sub: "BOB", provider: "anthropic", authorization: `Bearer ${TOKEN_A}` },
+    ]);
+    h.queue.push({ status: 200, body: { ok: true } }, { status: 200, body: { ok: true } });
+    expect(await h.sync.linkPostJson("/api/v1/memory/feedback", { person: "ALICE" }, { timeoutMs: 200, maxBytes: 1024, subject: "ALICE" })).toMatchObject({ ok: true });
+    expect(h.requests.at(-1)!.headers["x-perspicax-subject-token"]).toBe("alice-sign-in-token");
+    // without `subject`, nobody's token is asked for or sent
+    await h.sync.linkPostJson("/api/v1/memory/feedback", {}, { timeoutMs: 200, maxBytes: 1024 });
+    expect(h.requests.at(-1)!.headers["x-perspicax-subject-token"]).toBeUndefined();
+    expect(asked).toEqual(["ALICE", "BOB", "ALICE"]);
+  });
+
+  it("2026-10-28: a resolver that throws sends the call with the link token alone", async () => {
+    const h = harness(withTeams([person("ALICE")], []), { subjectToken: async () => { throw new Error("vault"); } });
+    await h.sync.refresh();
+    h.queue.push({ status: 403, body: { code: "subject", message: "the person's Sagax sign-in token is not valid here" } });
+    const result = await h.sync.linkPostJson("/api/v1/memory/feedback", {}, { timeoutMs: 200, maxBytes: 1024, subject: "ALICE" });
+    expect(h.requests.at(-1)!.headers["x-perspicax-subject-token"]).toBeUndefined();
+    expect(isSubjectRefusal(result)).toBe(true);
+    expect(isSubjectRefusal({ ok: false, error: "link", status: 403, body: { error: "not_owner" } })).toBe(false);
   });
 });
 
