@@ -3,8 +3,13 @@
 // the app hides or disables what the viewer's profile does not include and
 // words a refusal the same way everywhere.
 import { activeLocale, t } from "@/lib/i18n";
-import type { ConfigStatus } from "@/state/store";
 import { isPermissionKey, permissionLabel, type PermissionKey } from "../../shared/permissions";
+
+/** The only config field this notice reads. The full status stays in the
+ * store, so this module does not import it (#1381). */
+type BotsReadOnlyConfig = {
+  viewer?: { botsReadOnlyReason?: "permission" } | null;
+};
 
 /** "Your profile does not include <label>. Ask an admin to add it in Perspicax." */
 export function permissionMissingText(key: PermissionKey): string {
@@ -21,6 +26,6 @@ export function permissionMissingMessage(body: unknown): string | null {
 
 /** The notice of a person who may use shared bots only: the person sheet's
  * words, or the missing permission when their profile lacks bots.create. */
-export function botsReadOnlyText(config: ConfigStatus | null | undefined): string {
+export function botsReadOnlyText(config: BotsReadOnlyConfig | null | undefined): string {
   return config?.viewer?.botsReadOnlyReason === "permission" ? permissionMissingText("bots.create") : t("bots.readOnly.notice");
 }
