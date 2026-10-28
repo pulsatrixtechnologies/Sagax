@@ -25,6 +25,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+import { canonicalJson } from "../shared/canonical-json.ts";
 import {
   ROUTINE_WATCH_LIMITS,
   ROUTINE_WATCH_SKIPPED_DIRS,
@@ -36,6 +37,8 @@ import { pcShell, scrubHookEnv } from "./lifecycle-hooks.ts";
 import type { RoutinePrecheckVerdict } from "./routine-precheck.ts";
 import { watchToolRefusal } from "./routine-watch-tools.ts";
 import { defang } from "./webhooks.ts";
+
+export { canonicalJson };
 
 const L = ROUTINE_WATCH_LIMITS;
 
@@ -252,17 +255,6 @@ export function spawnLocalWatch(command: string, cwd: string, options: { timeout
 
 function sha(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 32);
-}
-
-/** JSON with sorted keys, so the same value always hashes the same. */
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().filter((key) => record[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value ?? null) ?? "null";
 }
 
 /** `$.a.b[0]`, `a.b.0`, `items.length`, `["a key"]`. Undefined when absent. */

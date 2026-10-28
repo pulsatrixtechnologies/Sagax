@@ -30,6 +30,7 @@
 import { createHash } from "node:crypto";
 
 import { approvalAction, describeApproval, parseArgs, parseToolId, type ApprovalWords, ENGLISH_WORDS } from "../shared/approval-describe.ts";
+import { canonicalJson } from "../shared/canonical-json.ts";
 import { sagaxFolder } from "../shared/human-id.ts";
 import { singleProgramOf } from "../shared/read-only-command.ts";
 import { readShell } from "../shared/custom-rules.ts";
@@ -330,12 +331,6 @@ export function pathInFolder(path: string, folder: string): boolean {
  * the cards that never had a rule before (an admin's card, a held card, a
  * turn that is not the person's own): only that very request passes again. */
 export const WHOLE_CALL_KEY = "call";
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value ?? null);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
-}
 
 /** A fingerprint of every argument of a call (the rule keeps it, never the
  * arguments). */

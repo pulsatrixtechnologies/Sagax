@@ -191,7 +191,8 @@ export function openMemoryLocation(botId: string, target: MemoryOpenTarget): Pro
 
 // ── wording ───────────────────────────────────────────────────────────
 
-/** "749 B", "23.4 KB" ("749 o", "23,4 Ko" in French). */
+/** "749 B", "23.4 KB" ("749 o", "23,4 Ko" in French). Not shared/format-bytes:
+ * this stops at kilobytes and reads memoryText. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return t("memoryText.bytes", { count: bytes });
   const kb = Math.round(bytes / 102.4) / 10;
