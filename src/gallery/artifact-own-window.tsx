@@ -1,10 +1,10 @@
-/** Isolated gallery for headless screenshots of a popped-out artifact's window
- * with its "Open in its own window" button (desktop app only), as it sits in
- * the app and as the standalone page shows it. Not shipped in the app.
+/** Isolated gallery for headless screenshots of an artifact's own window body
+ * (Refresh now, Close window), as the standalone page shows it. Not shipped
+ * in the app.
  * ?lang=<code>&skin=<id> */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { ArtifactWindowBody } from "../components/artifacts/ArtifactsHost";
+import { ArtifactWindowBody } from "../components/artifacts/ArtifactStandaloneWindow";
 import { setLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
