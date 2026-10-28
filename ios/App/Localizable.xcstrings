@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "From the xAI Bot Marketplace": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "From the xAI Bot Marketplace" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Depuis la xAI Bot Marketplace" } }
+      }
+    },
+    "Reading the xAI Bot Marketplace…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reading the xAI Bot Marketplace…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lecture de la xAI Bot Marketplace…" } }
+      }
+    },
+    "Refreshing…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Refreshing…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actualisation…" } }
+      }
+    },
+    "These are the bots read earlier.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "These are the bots read earlier." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voici les bots lus plus tôt." } }
+      }
+    },
+    "The xAI Bot Marketplace changed its page, and Sagax cannot read its bots yet. The other templates are not affected.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The xAI Bot Marketplace changed its page, and Sagax cannot read its bots yet. The other templates are not affected." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La xAI Bot Marketplace a changé sa page et Sagax ne peut pas encore lire ses bots. Les autres modèles ne sont pas touchés." } }
+      }
+    },
+    "This bot is no longer on the xAI Bot Marketplace.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This bot is no longer on the xAI Bot Marketplace." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce bot n'est plus sur la xAI Bot Marketplace." } }
+      }
+    },
+    "x.ai refused to show the marketplace to Sagax. Open x.ai/bot/marketplace in your browser to check that it is up, then try Refresh.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "x.ai refused to show the marketplace to Sagax. Open x.ai/bot/marketplace in your browser to check that it is up, then try Refresh." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "x.ai a refusé d'afficher la marketplace à Sagax. Ouvrez x.ai/bot/marketplace dans votre navigateur pour vérifier qu'elle est en ligne, puis touchez Actualiser." } }
+      }
+    },
+    "The xAI Bot Marketplace could not be reached. Try Refresh in a moment.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The xAI Bot Marketplace could not be reached. Try Refresh in a moment." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Impossible de joindre la xAI Bot Marketplace. Touchez Actualiser dans un moment." } }
+      }
+    },
     "Page deleted": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Page deleted" } },

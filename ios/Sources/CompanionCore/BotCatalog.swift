@@ -214,11 +214,12 @@ public extension CompanionClient {
 // MARK: - Templates folded in
 
 /// A template of the Templates section: a preset of New bot (an admin read),
-/// a community team (admin, read only on iOS) or a built-in role.
+/// a community team (admin, read only on iOS) or a built-in role; or a bot of
+/// the xAI Bot Marketplace (its own section).
 public struct BotCatalogTemplate: Hashable, Identifiable, Sendable {
-    public enum Source: String, Hashable, Sendable { case preset, community, role }
+    public enum Source: String, Hashable, Sendable { case preset, community, role, xai }
 
-    /// `preset:<id>`, `community:<slug>` or `role:<id>`.
+    /// `preset:<id>`, `community:<slug>`, `role:<id>` or `xai:<slug>`.
     public var id: String
     public var source: Source
     public var name: String
@@ -233,11 +234,15 @@ public struct BotCatalogTemplate: Hashable, Identifiable, Sendable {
     public var notes: [String]
     public var preset: BotPreset?
     public var role: BotRole?
+    /// The character it is drawn as (a marketplace bot's shape); nil: the owl.
+    public var look: MascotLook?
+    /// A marketplace bot's slug, for its import.
+    public var xaiSlug: String?
 
     public init(
         id: String, source: Source, name: String, title: String, description: String, color: String, creator: String,
         category: String?, soul: String = "", skills: [String] = [], members: Int? = nil, notes: [String] = [],
-        preset: BotPreset? = nil, role: BotRole? = nil
+        preset: BotPreset? = nil, role: BotRole? = nil, look: MascotLook? = nil, xaiSlug: String? = nil
     ) {
         self.id = id
         self.source = source
@@ -253,6 +258,8 @@ public struct BotCatalogTemplate: Hashable, Identifiable, Sendable {
         self.notes = notes
         self.preset = preset
         self.role = role
+        self.look = look
+        self.xaiSlug = xaiSlug
     }
 }
 
@@ -293,7 +300,7 @@ public enum BotCatalogItem: Hashable, Identifiable, Sendable {
 }
 
 public enum BotCatalogSectionID: String, CaseIterable, Hashable, Sendable {
-    case featured, shared, mine, organization, templates
+    case featured, shared, mine, organization, templates, xai
 }
 
 public struct BotCatalogSection: Hashable, Identifiable, Sendable {
@@ -376,7 +383,8 @@ public enum BotCatalogRules {
         }
         out.append(BotCatalogSection(id: .mine, items: bots { $0.source == .mine && (filter.showArchived || !$0.archived) }))
         if data.organization { out.append(BotCatalogSection(id: .organization, items: bots { $0.published })) }
-        out.append(BotCatalogSection(id: .templates, items: templates.map(BotCatalogItem.template).filter(keep)))
+        out.append(BotCatalogSection(id: .templates, items: templates.filter { $0.source != .xai }.map(BotCatalogItem.template).filter(keep)))
+        out.append(BotCatalogSection(id: .xai, items: templates.filter { $0.source == .xai }.map(BotCatalogItem.template).filter(keep)))
         return out
     }
 
@@ -418,8 +426,9 @@ public enum BotCatalogRules {
     }
 
     /// Presets, then the community teams, then the built-in roles (the
-    /// organization packages of the desktop are read on the computer).
-    public static func templates(presets: [BotPreset], community: [TeamLibraryCatalog.Team], roles: [BotRole]) -> [BotCatalogTemplate] {
+    /// organization packages of the desktop are read on the computer), then
+    /// the xAI Bot Marketplace's bots.
+    public static func templates(presets: [BotPreset], community: [TeamLibraryCatalog.Team], roles: [BotRole], xai: [XaiMarketplaceEntry] = []) -> [BotCatalogTemplate] {
         let roleCategory = ["assistant": "personal", "inbox": "operations", "research": "product", "coder": "engineering", "community": "marketing", "ops": "operations"]
         let palette = ["blue", "purple", "teal", "orange", "pink", "green"]
         var out: [BotCatalogTemplate] = presets.map { preset in
@@ -452,6 +461,13 @@ public enum BotCatalogRules {
                 color: palette[index % palette.count], creator: "Sagax", category: roleCategory[role.id], soul: role.soul, role: role
             )
         }
+        out += xai.map { entry in
+            BotCatalogTemplate(
+                id: "xai:\(entry.slug)", source: .xai, name: entry.name, title: "", description: entry.description,
+                color: entry.look.color, creator: entry.creator.isEmpty ? XaiMarketplaceRules.label : entry.creator,
+                category: entry.category, look: entry.look.mascotLook, xaiSlug: entry.slug
+            )
+        }
         return out
     }
 
@@ -459,7 +475,7 @@ public enum BotCatalogRules {
     /// adds its skills and notes, as New bot does).
     public static func draft(for template: BotCatalogTemplate) -> NewBotDraft? {
         switch template.source {
-        case .community: return nil
+        case .community, .xai: return nil
         case .preset:
             guard let preset = template.preset else { return nil }
             let fill = NewBotRules.fill(preset)

@@ -4,12 +4,23 @@
 // with me, My Bots, Organization, Templates), the same search and category
 // chips, the same actions per bot (Add to my sidebar, Open, Import Bot,
 // publish, feature) and a read-only detail page. The model is CompanionCore's
-// `BotCatalogRules`; the routes are `/api/bot-catalog*`.
+// `BotCatalogRules`; the routes are `/api/bot-catalog*`. The xAI Bot
+// Marketplace is a section of its own (`/api/team-library/xai`, Refresh); Use
+// stages the bot through the agent import (AgentImportSheet).
 import CompanionCore
 import SwiftUI
 
+/// A marketplace bot being imported (the agent import sheet).
+struct XaiImportTarget: Identifiable, Hashable { var slug: String; var id: String { slug } }
+
 @MainActor
 final class BrowseBotsModel: ObservableObject {
+    @Published var xai: [XaiMarketplaceEntry] = []
+    @Published var xaiError: String?
+    @Published var xaiLoading = false
+    @Published var xaiImport: XaiImportTarget?
+    private var presets: [BotPreset] = []
+    private var community: [TeamLibraryCatalog.Team] = []
     @Published var data: BotCatalogResponse?
     @Published var templates: [BotCatalogTemplate] = []
     @Published var failed = false
@@ -27,12 +38,32 @@ final class BrowseBotsModel: ObservableObject {
         }
         // presets and the community teams are an administrator's reads; a
         // member keeps the built-in roles, as on the desktop
-        let presets = await session.botPresets()
-        var community: [TeamLibraryCatalog.Team] = []
+        presets = await session.botPresets()
+        community = []
         if session.surfaceGate.allows(.templates) {
             community = (try? await client.teamLibraryCatalog().teams) ?? []
         }
-        templates = BotCatalogRules.templates(presets: presets, community: community, roles: NewBotRules.builtInRoles)
+        rebuildTemplates()
+        if xai.isEmpty, xaiError == nil { await loadXai(session) }
+    }
+
+    private func rebuildTemplates() {
+        templates = BotCatalogRules.templates(presets: presets, community: community, roles: NewBotRules.builtInRoles, xai: xai)
+    }
+
+    /// The xAI Bot Marketplace (kept a few hours on the server; `refresh` reads x.ai again).
+    func loadXai(_ session: Session, refresh: Bool = false) async {
+        guard let client = session.profileClient else { return }
+        xaiLoading = true
+        defer { xaiLoading = false }
+        do {
+            let list = try await client.xaiMarketplace(refresh: refresh)
+            xai = list.bots
+            xaiError = list.stale.map { XaiMarketplaceRules.errorText(code: $0.code) + " " + String(localized: "These are the bots read earlier.") }
+        } catch {
+            xaiError = XaiMarketplaceRules.errorText(code: nil)
+        }
+        rebuildTemplates()
     }
 
     var sections: [BotCatalogSection] {
@@ -100,6 +131,10 @@ final class BrowseBotsModel: ObservableObject {
                 let on = action == .feature
                 _ = try await client.setBotCatalogListing(botId: entry.id, published: true, category: entry.catalog?.category, featured: on)
                 flash(on ? String(localized: "Featured in the catalog.") : String(localized: "No longer featured."))
+            case let (.useTemplate, .template(template)) where template.source == .xai:
+                // previewed and imported in the agent import sheet
+                if let slug = template.xaiSlug { xaiImport = XaiImportTarget(slug: slug) }
+                return nil
             case let (.useTemplate, .template(template)):
                 guard let draft = BotCatalogRules.draft(for: template), let bot = await session.createBot(draft) else { return nil }
                 flash(String(localized: "\(bot.name) was added to your bots."))
@@ -120,6 +155,7 @@ final class BrowseBotsModel: ObservableObject {
         case .mine: String(localized: "My Bots")
         case .organization: String(localized: "Organization")
         case .templates: String(localized: "Templates")
+        case .xai: XaiMarketplaceRules.label
         }
     }
 
@@ -232,6 +268,12 @@ struct BrowseBotsSheet: View {
                     Task { _ = await model.perform(.publish, on: .bot(entry), category: category, session: session) }
                 } cancel: { publishing = nil }
             }
+            .sheet(item: $model.xaiImport) { target in
+                AgentImportSheet(close: { model.xaiImport = nil }, imported: { bot in
+                    model.xaiImport = nil
+                    if let bot { open(bot) } else { Task { await model.load(session) } }
+                }, marketplaceSlug: target.slug)
+            }
             .task { await model.load(session) }
             .refreshable { await model.load(session) }
         }
@@ -265,8 +307,16 @@ struct BrowseBotsSheet: View {
 
     @ViewBuilder private func sectionView(_ section: BotCatalogSection) -> some View {
         Section {
+            if section.id == .xai, let error = model.xaiError {
+                Text(verbatim: error).font(.footnote).foregroundStyle(.red)
+                    .accessibilityIdentifier("browse-bots.xai.error")
+            }
             if section.items.isEmpty {
-                Text("Nothing here yet.").foregroundStyle(Theme.textSecondary)
+                if section.id == .xai, model.xaiLoading {
+                    HStack { Text("Reading the xAI Bot Marketplace…").foregroundStyle(Theme.textSecondary); Spacer(); ProgressView() }
+                } else if !(section.id == .xai && model.xaiError != nil) {
+                    Text("Nothing here yet.").foregroundStyle(Theme.textSecondary)
+                }
             } else {
                 ForEach(section.items.prefix(BotCatalogRules.sectionPreview)) { item in row(item) }
                 if section.items.count > BotCatalogRules.sectionPreview {
@@ -274,7 +324,21 @@ struct BrowseBotsSheet: View {
                 }
             }
         } header: {
-            Text(BrowseBotsModel.sectionTitle(section.id))
+            if section.id == .xai {
+                HStack {
+                    Text(BrowseBotsModel.sectionTitle(section.id))
+                    Spacer()
+                    Button { Task { await model.loadXai(session, refresh: true) } } label: {
+                        Label(model.xaiLoading ? String(localized: "Refreshing…") : String(localized: "Refresh"), systemImage: "arrow.clockwise")
+                            .font(.caption)
+                    }
+                    .disabled(model.xaiLoading)
+                    .textCase(nil)
+                    .accessibilityIdentifier("browse-bots.xai.refresh")
+                }
+            } else {
+                Text(BrowseBotsModel.sectionTitle(section.id))
+            }
         }
     }
 
@@ -393,7 +457,7 @@ struct BrowseBotsFace: View {
                 MascotCharacterView(look: entry.look.resolvedLook, color: entry.look.color, skin: entry.look.resolvedSkin, size: size)
             }
         case let .template(template):
-            MascotCharacterView(look: MascotLook.owl.complete, color: template.color, size: size)
+            MascotCharacterView(look: (template.look ?? MascotLook.owl).complete, color: template.color, size: size)
         }
     }
 }

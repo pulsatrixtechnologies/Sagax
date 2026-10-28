@@ -954,6 +954,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // it only reads x.ai and creates nothing, so anyone signed in may use it
   // to import their own agent (src/components/AgentImport.tsx).
   { methods: ["POST"], path: /^\/api\/team-library\/grok$/ },
+  // The xAI Bot Marketplace (server/routes/xai-marketplace.ts): its public
+  // list and one bot's page, read from x.ai and kept a few hours; creates nothing.
+  { methods: ["GET"], path: /^\/api\/team-library\/xai(?:\/bots\/[a-z0-9][a-z0-9-]{0,79})?$/ },
   // A bot as one zip (server/routes/bot-zip.ts): export needs owner or
   // manage, import the right to create bots; both checked in the handler.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/export\.zip$/ },

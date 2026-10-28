@@ -3,7 +3,9 @@
 // x.ai, paste its reply. The server makes the package and stages it; the
 // preview says what will be created (inert: skills off, routines paused, no
 // key or sign-in) and what was left out, in the person's language. Nothing is
-// created before Import. Anyone who may create bots can do it.
+// created before Import. Anyone who may create bots can do it. With a
+// `marketplaceSlug` (Browse Bots > xAI Bot Marketplace) the server reads that
+// bot's page instead of a pasted reply, and the same preview follows.
 import CompanionCore
 import SwiftUI
 import UIKit
@@ -14,6 +16,8 @@ struct AgentImportSheet: View {
     let imported: (Bot?) -> Void
     /// The parity harness opens it with a reply already pasted (DEBUG).
     var initialReply = ""
+    /// A bot of the xAI Bot Marketplace to stage at once.
+    var marketplaceSlug: String?
 
     @State private var reply = ""
     @State private var prompt: String?
@@ -29,6 +33,14 @@ struct AgentImportSheet: View {
             Form {
                 if let staged {
                     preview(staged)
+                } else if marketplaceSlug != nil {
+                    Section {
+                        if reading {
+                            HStack { Text("Reading the xAI Bot Marketplace…").foregroundStyle(Theme.textSecondary); Spacer(); ProgressView() }
+                        } else {
+                            Button("Try again") { Task { await stage() } }
+                        }
+                    }
                 } else {
                     Section {
                         Text("Bring a bot you use in Grok Bot into Sagax. It arrives inert: skills off, routines paused, and no key, token or sign-in comes over.")
@@ -63,7 +75,7 @@ struct AgentImportSheet: View {
                     Section { Text(verbatim: failure).foregroundStyle(.red) }
                 }
             }
-            .navigationTitle("Import an agent")
+            .navigationTitle(marketplaceSlug == nil ? String(localized: "Import an agent") : XaiMarketplaceRules.label)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { Task { await discard(); close() } } }
@@ -78,6 +90,10 @@ struct AgentImportSheet: View {
             }
             .interactiveDismissDisabled(staged != nil)
             .task {
+                if marketplaceSlug != nil, staged == nil {
+                    await stage()
+                    return
+                }
                 if reply.isEmpty, !initialReply.isEmpty {
                     reply = initialReply
                     await stage()
@@ -90,7 +106,11 @@ struct AgentImportSheet: View {
     @ViewBuilder private func preview(_ staged: AgentImportStaged) -> some View {
         Section {
             Text(verbatim: staged.preview.name).font(.headline)
+            if marketplaceSlug == nil {
             Text("From Grok Bot").font(.footnote).foregroundStyle(Theme.textSecondary)
+            } else {
+                Text("From the xAI Bot Marketplace").font(.footnote).foregroundStyle(Theme.textSecondary)
+            }
             TextField("Name", text: $name)
                 .accessibilityIdentifier("agent-import-name")
         }
@@ -169,7 +189,11 @@ struct AgentImportSheet: View {
         reading = true
         defer { reading = false }
         do {
-            let result = try await client.stageAgentImport(text: reply)
+            let result = if let marketplaceSlug {
+                try await client.stageXaiMarketplaceImport(slug: marketplaceSlug)
+            } else {
+                try await client.stageAgentImport(text: reply)
+            }
             staged = result
             name = result.preview.importName
         } catch { failure = error.localizedDescription }

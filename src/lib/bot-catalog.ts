@@ -3,8 +3,9 @@
 // published to the organisation (GET /api/bot-catalog); the templates are
 // what the old Templates library and New bot offered: the organization
 // library's packages (GET /api/org-library), New bot's presets (an admin
-// read), the community team templates (GET /api/team-library/catalog) and
-// the built-in roles. Pure helpers, for tests.
+// read), the community team templates (GET /api/team-library/catalog), the
+// built-in roles, and the xAI Bot Marketplace's bots (GET
+// /api/team-library/xai, its own section). Pure helpers, for tests.
 import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { BOT_ROLES, type BotRole } from "@/lib/bot-roles";
@@ -18,6 +19,13 @@ import {
   type BotCatalogResponse,
 } from "../../shared/bot-catalog";
 import { MASCOT_COLOR_NAMES, type MascotColorName } from "../../shared/mascot-colors";
+import {
+  XAI_MARKETPLACE_LABEL,
+  xaiMarketplaceCategory,
+  xaiMarketplaceLook,
+  type XaiMarketplaceEntry,
+  type XaiMarketplaceErrorCode,
+} from "../../shared/xai-marketplace";
 
 export type { BotCatalogDetail, BotCatalogEntry, BotCatalogResponse } from "../../shared/bot-catalog";
 
@@ -43,12 +51,12 @@ export interface CommunityCatalog {
 }
 
 /** Where a template comes from. */
-export type CatalogTemplateSource = "organization" | "preset" | "community" | "role";
+export type CatalogTemplateSource = "organization" | "preset" | "community" | "role" | "xai";
 
 /** A template: an organization package, a preset of New bot, a community
  * team or a built-in role. */
 export interface CatalogTemplate {
-  /** `package:<id>`, `preset:<id>`, `community:<slug>` or `role:<id>` */
+  /** `package:<id>`, `preset:<id>`, `community:<slug>`, `role:<id>` or `xai:<slug>` */
   id: string;
   source: CatalogTemplateSource;
   name: string;
@@ -70,13 +78,15 @@ export interface CatalogTemplate {
   preset?: BotPreset;
   community?: CommunityTemplate;
   orgPackage?: OrgLibraryPackage;
+  /** A bot of the xAI Bot Marketplace: its detail reads the bot's page. */
+  xai?: XaiMarketplaceEntry;
 }
 
 export type CatalogItem =
   | { kind: "bot"; key: string; entry: BotCatalogEntry }
   | { kind: "template"; key: string; template: CatalogTemplate };
 
-export type CatalogSectionId = "featured" | "shared" | "mine" | "organization" | "templates";
+export type CatalogSectionId = "featured" | "shared" | "mine" | "organization" | "templates" | "xai";
 
 export interface CatalogSection {
   id: CatalogSectionId;
@@ -112,6 +122,8 @@ function communityCategory(category: string): string | null {
 export interface CatalogTemplateSources {
   community?: readonly CommunityTemplate[];
   orgPackages?: readonly OrgLibraryPackage[];
+  /** The xAI Bot Marketplace's list (GET /api/team-library/xai). */
+  xai?: readonly XaiMarketplaceEntry[];
 }
 
 /** The organization's packages, New bot's presets (organisation and
@@ -185,7 +197,34 @@ export function catalogTemplates(presets: readonly BotPreset[], roles: readonly 
     notes: [],
     role,
   }));
-  return [...fromPackages, ...fromPresets, ...fromCommunity, ...builtIn];
+  const fromXai = (sources.xai ?? []).map((entry): CatalogTemplate => ({
+    id: `xai:${entry.slug}`,
+    source: "xai",
+    name: entry.name,
+    title: "",
+    description: entry.description,
+    look: xaiMarketplaceLook(entry),
+    creator: entry.creator || XAI_MARKETPLACE_LABEL,
+    category: xaiMarketplaceCategory(entry.categories),
+    soul: "",
+    skills: [],
+    apps: [],
+    notes: [t("botCatalog.xai.note")],
+    xai: entry,
+  }));
+  return [...fromPackages, ...fromPresets, ...fromCommunity, ...builtIn, ...fromXai];
+}
+
+/** The line shown when the xAI Bot Marketplace cannot be read (the server's
+ * code; anything else reads as out of reach), never the raw error. */
+export function xaiErrorText(code: unknown): string {
+  const known: Record<XaiMarketplaceErrorCode, LocaleKey> = {
+    xai_unreachable: "botCatalog.xai.error.unreachable",
+    xai_format: "botCatalog.xai.error.format",
+    xai_not_found: "botCatalog.xai.error.notFound",
+    xai_blocked: "botCatalog.xai.error.blocked",
+  };
+  return t(typeof code === "string" && code in known ? known[code as XaiMarketplaceErrorCode] : "botCatalog.xai.error.unreachable");
 }
 
 /** The apps the templates use, for the Templates section's app chips. */
@@ -288,7 +327,14 @@ export function catalogSections(data: Pick<BotCatalogResponse, "organization" | 
   sections.push({
     id: "templates",
     items: templates
-      .filter((template) => !filter.app || templateUsesApp(template, filter.app))
+      .filter((template) => template.source !== "xai" && (!filter.app || templateUsesApp(template, filter.app)))
+      .map((template): CatalogItem => ({ kind: "template", key: template.id, template }))
+      .filter(keep),
+  });
+  sections.push({
+    id: "xai",
+    items: templates
+      .filter((template) => template.source === "xai")
       .map((template): CatalogItem => ({ kind: "template", key: template.id, template }))
       .filter(keep),
   });
@@ -301,6 +347,7 @@ export const SECTION_LABEL: Record<CatalogSectionId, LocaleKey> = {
   mine: "botCatalog.section.mine",
   organization: "botCatalog.section.organization",
   templates: "botCatalog.section.templates",
+  xai: "botCatalog.section.xai",
 };
 
 export type CatalogAction =
