@@ -1,7 +1,7 @@
 // ConnectWise records in the chat: a card for one record, a table for a
 // list. Every change posts to Sagax for an approval card. Nothing here
 // talks to ConnectWise.
-import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
+import { Fragment, createContext, memo, useContext, useMemo, useState, type ReactNode } from "react";
 import {
   Building2,
   CalendarClock,
@@ -55,6 +55,14 @@ const TONE: Record<CwTone, string> = {
   bad: "bg-danger/15 text-danger",
   idle: "bg-inset text-ink-secondary",
 };
+
+/** The product name the server declared for the tool that produced the
+ * widget (a Perspicax API's display name, `tool.product`). Absent: the
+ * neutral `cw.brand` label, never a product name of ours. */
+const BrandContext = createContext<string | undefined>(undefined);
+function useBrand(): string {
+  return useContext(BrandContext)?.trim() || t("cw.brand");
+}
 
 function FamilyIcon({ family }: { family: CwWidget["family"] }) {
   const props = { size: 15, "aria-hidden": true as const };
@@ -224,13 +232,14 @@ function NoteList({ notes }: { notes: CwTicketNote[] }) {
 }
 
 function TicketCard({ ticket, ask, embedded }: { ticket: CwTicket; ask: ReturnType<typeof useAsk>; embedded?: boolean }) {
+  const brand = useBrand();
   const [status, setStatus] = useState("");
   const [note, setNote] = useState("");
   const [internal, setInternal] = useState(true);
   return (
     <Shell
       family="ticket"
-      kicker={`${t("cw.brand")} · ${t("cw.ticket")} #${ticket.id}`}
+      kicker={`${brand} · ${t("cw.ticket")} #${ticket.id}`}
       title={ticket.summary || `#${ticket.id}`}
       href={ticket.link}
       embedded={embedded}
@@ -308,10 +317,11 @@ const BILLABLE: Array<{ value: CwBillable; label: "cw.billable" | "cw.doNotBill"
 ];
 
 function TimeCard({ entry, ask, embedded }: { entry: CwTimeEntry; ask: ReturnType<typeof useAsk>; embedded?: boolean }) {
+  const brand = useBrand();
   return (
     <Shell
       family="time"
-      kicker={`${t("cw.brand")} · ${t("cw.time")} #${entry.id}`}
+      kicker={`${brand} · ${t("cw.time")} #${entry.id}`}
       title={entry.charge || entry.company || `#${entry.id}`}
       href={entry.link}
       embedded={embedded}
@@ -358,10 +368,11 @@ function TimeCard({ entry, ask, embedded }: { entry: CwTimeEntry; ask: ReturnTyp
 }
 
 function ScheduleCard({ entry, ask, embedded }: { entry: CwScheduleEntry; ask: ReturnType<typeof useAsk>; embedded?: boolean }) {
+  const brand = useBrand();
   return (
     <Shell
       family="schedule"
-      kicker={`${t("cw.brand")} · ${t("cw.schedule")} #${entry.id}`}
+      kicker={`${brand} · ${t("cw.schedule")} #${entry.id}`}
       title={entry.name}
       href={entry.link}
       embedded={embedded}
@@ -392,8 +403,9 @@ function ScheduleCard({ entry, ask, embedded }: { entry: CwScheduleEntry; ask: R
 }
 
 function AgreementCard({ agreement, embedded }: { agreement: CwAgreement; embedded?: boolean }) {
+  const brand = useBrand();
   return (
-    <Shell family="agreement" kicker={`${t("cw.brand")} · ${t("cw.agreement")} #${agreement.id}`} title={agreement.name} href={agreement.link} embedded={embedded}>
+    <Shell family="agreement" kicker={`${brand} · ${t("cw.agreement")} #${agreement.id}`} title={agreement.name} href={agreement.link} embedded={embedded}>
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-ink-tertiary">{t("cw.amount")}</div>
@@ -412,12 +424,13 @@ function AgreementCard({ agreement, embedded }: { agreement: CwAgreement; embedd
 }
 
 function CompanyCard({ company, ask, embedded }: { company: CwCompany; ask: ReturnType<typeof useAsk>; embedded?: boolean }) {
+  const brand = useBrand();
   const [note, setNote] = useState("");
   const site = safeWebsite(company.website);
   return (
     <Shell
       family="company"
-      kicker={`${t("cw.brand")} · ${company.identifier || t("cw.company")} #${company.id}`}
+      kicker={`${brand} · ${company.identifier || t("cw.company")} #${company.id}`}
       title={company.name}
       embedded={embedded}
       href={company.link}
@@ -480,6 +493,7 @@ function TableShell({
   extra?: ReactNode;
   children: ReactNode;
 }) {
+  const brand = useBrand();
   return (
     <section data-cw-widget={family} className="my-1 min-w-0 overflow-hidden rounded-2xl border border-hairline/50 bg-panel shadow-sm">
       <div className="flex min-w-0">
@@ -488,7 +502,7 @@ function TableShell({
           <header className="flex flex-wrap items-center gap-2 border-b border-hairline/40 bg-raised/40 px-3.5 py-2.5">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-inset text-ink"><FamilyIcon family={family} /></span>
             <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-tertiary">{t("cw.brand")}</div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-tertiary">{brand}</div>
               <div className="text-[14px] font-semibold text-ink">{t(cwFamilyLabelKey(family))}</div>
             </div>
             <span className="text-[12px] text-ink-tertiary">{t("cw.showing", { shown, total: total ?? shown })}</span>
@@ -728,14 +742,17 @@ function CwWidgetViewComponent({
   threadId,
   botId,
   poster,
+  brand,
 }: {
   widget: CwWidget;
   threadId?: string;
   botId?: string;
   poster?: CwPoster;
+  /** the product name the server declared for the tool (`tool.product`) */
+  brand?: string;
 }) {
   const ask = useAsk(threadId, botId, poster);
-  return <WidgetBody widget={widget} ask={ask} />;
+  return <BrandContext.Provider value={brand}><WidgetBody widget={widget} ask={ask} /></BrandContext.Provider>;
 }
 
 export const CwWidgetView = memo(CwWidgetViewComponent);
@@ -751,11 +768,11 @@ export function CwActivityWidgets({
   threadId?: string;
   botId?: string;
 }) {
-  const widgets = messages.flatMap((message) => (shownCwWidget(message.tool) ? [{ key: message.id, widget: message.tool!.widget! }] : []));
+  const widgets = messages.flatMap((message) => (shownCwWidget(message.tool) ? [{ key: message.id, widget: message.tool!.widget!, brand: message.tool!.product }] : []));
   if (!widgets.length) return null;
   return (
     <div className="flex w-full max-w-[min(94%,780px)] flex-col gap-2">
-      {widgets.map((row) => <CwWidgetView key={row.key} widget={row.widget} threadId={threadId} botId={botId} />)}
+      {widgets.map((row) => <CwWidgetView key={row.key} widget={row.widget} brand={row.brand} threadId={threadId} botId={botId} />)}
     </div>
   );
 }

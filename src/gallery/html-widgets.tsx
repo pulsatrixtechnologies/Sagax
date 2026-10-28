@@ -1,7 +1,7 @@
 /** Isolated gallery for Playwright screenshots of the ```widget fence (HTML
  * in the sandboxed iframe, src/components/WidgetFrame.tsx) drawn with the
  * shadcn/ui kit (src/lib/widget-kit.ts). Not shipped in the app.
- * The native ConnectWise list sits beside the same table written in HTML
+ * The native service desk list sits beside the same table written in HTML
  * with the kit: they should read as one.
  * ?skin=<id>&lang=<code>&only=<section> */
 import { StrictMode, type ReactNode } from "react";
@@ -27,7 +27,7 @@ const TICKET_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const CW_HTML = `<div class="card card-rail">
   <div class="card-header">
     <span class="icon-tile">${TICKET_ICON}</span>
-    <div><div class="eyebrow">ConnectWise</div><div class="card-title">Billets</div></div>
+    <div><div class="eyebrow">Acme Desk</div><div class="card-title">Billets</div></div>
     <span class="count">4 de 4</span>
     <div class="card-action">
       <button class="btn btn-outline" aria-pressed="false" onclick="this.setAttribute('aria-pressed', this.getAttribute('aria-pressed') !== 'true')">Ouverts seulement</button>
@@ -140,7 +140,7 @@ function Gallery() {
         <h1 className="text-lg font-semibold">Widgets HTML (```widget) avec le kit shadcn/ui</h1>
         <Section title="cw-native-vs-html">
           <div className="grid gap-6 lg:grid-cols-2">
-            <div><p className="mb-2 text-[12px] text-ink-secondary">Widget natif (```cw)</p><Bubble><CwWidgetView widget={tickets} threadId="gallery" botId="gallery" /></Bubble></div>
+            <div><p className="mb-2 text-[12px] text-ink-secondary">Widget natif (```cw)</p><Bubble><CwWidgetView widget={tickets} brand="Acme Desk" threadId="gallery" botId="gallery" /></Bubble></div>
             <div><p className="mb-2 text-[12px] text-ink-secondary">Même tableau en HTML avec le kit</p><Bubble><WidgetFrame code={CW_HTML} /></Bubble></div>
           </div>
         </Section>
