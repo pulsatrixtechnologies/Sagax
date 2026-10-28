@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
 
-import { unreadLocaleKeys } from "./unused-keys.mjs";
+import { unreadLocaleKeys } from "./unused-keys";
 
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 
