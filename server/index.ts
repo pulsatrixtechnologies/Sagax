@@ -50497,6 +50497,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "GET") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      // #1098: a client session (a member's served app or phone) reads it
+      // for a bot it owns or may edit, as it sets the policy (bots.tools).
+      if (!ownerOrAdminOf(auth, bot) && !computerOwner(auth)) {
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can read its outbound allowance", code: "bot_outbound_owner_only" });
+      }
       return json(res, 200, { policy: bot.outbound ?? DEFAULT_OUTBOUND_POLICY, today: outboundCounts.today(bot.id) });
     }
 

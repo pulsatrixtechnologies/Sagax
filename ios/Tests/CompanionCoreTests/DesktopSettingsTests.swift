@@ -16,16 +16,17 @@ final class DesktopSettingsTests: XCTestCase {
             .general, .organization, .appearance, .experimental, .engines, .computer, .usage, .backups,
         ]
         XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: .serverAdmin)), expected)
-        // an organization server adds My connections after Models and voice
+        // an organization server adds My engines (#1098) and My connections
+        // after Models and voice
         var organization = expected
-        organization.insert(.myConnections, at: 5)
+        organization.insert(contentsOf: [.myEngines, .myConnections], at: 5)
         XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: .serverAdmin, organization: true)), organization)
     }
 
     func testAClientOnAnOrganizationServerGetsMyConnections() {
         XCTAssertEqual(
             DesktopSettingsSection.available(for: SurfaceGate(scope: .serverClient, organization: true)),
-            [.organization, .myConnections, .appearance]
+            [.organization, .myEngines, .myConnections, .appearance]
         )
         XCTAssertTrue(DesktopSettingsSection.myConnections.matches("mes connexions", label: "My connections"))
     }

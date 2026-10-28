@@ -113,7 +113,8 @@ struct BotPanelFallback: View {
 /// More > Permissions' "Sending on your behalf" (`PermissionsSection.tsx`
 /// OutboundControl): Ask every time, or Allow a daily amount (1 to 1000)
 /// with today's count. Separate from the approval level: Full access does
-/// not bypass it. An admin session's field only (`SurfaceFeature.botOutbound`).
+/// not bypass it. An admin session's field, and the owner's on their own bot
+/// on an organization server (`SurfaceFeature.botOutbound`, #1098).
 struct BotPanelOutbound: View {
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session

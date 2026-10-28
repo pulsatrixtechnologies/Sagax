@@ -140,6 +140,9 @@ struct SettingsTreeRow: View {
         case .reachMe:
             SettingsRow(title: "Reach me", subtitle: "How each bot reaches you outside the app, and when.", accessory: .chevron,
                         identifier: "settings-reach-me", textTop: 13.4) { navigator.push(.reachMe) }
+        case .myEngines:
+            SettingsRow(title: "My engines", subtitle: "Sign in to your own subscription on the engines your organization offers.", accessory: .chevron,
+                        identifier: "settings-my-engines", textTop: 13.4) { navigator.push(.myEngines) }
         case .timeZoneAuto:
             SettingsRow(
                 title: "Set Time Zone Automatically",

@@ -26,7 +26,9 @@ struct PhoneBotAvatarSheet: View {
     @State private var config: ConfigStatus?
 
     private var current: Bot { session.state.bot(bot.id) ?? bot }
-    private var canGenerate: Bool { session.canAdminister && config?.imageGen?.configured == true }
+    /// #1098: an admin, the owner's sidecar, or the bot's owner on an
+    /// organization server (`SurfaceFeature.botAvatarGenerate`).
+    private var canGenerate: Bool { session.surfaceGate.allows(.botAvatarGenerate, bot: bot) && config?.imageGen?.configured == true }
     private var working: Bool { generating }
 
     var body: some View {

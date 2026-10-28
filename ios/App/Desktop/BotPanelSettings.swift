@@ -286,7 +286,7 @@ struct BotPanelPermissions: View {
                 .padding(.top, 12)
                 .accessibilityIdentifier("desktop-panel-approval-grants")
             }
-            if session.surfaceGate.allows(.botOutbound) {
+            if session.surfaceGate.allows(.botOutbound, bot: bot) {
                 AnyView(BotPanelOutbound(bot: bot))
             }
         }

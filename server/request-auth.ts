@@ -599,6 +599,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // generation, and the bot profile's Links, Media and Files tabs. The
   // handlers check the owner and narrow the threads to the viewer's own.
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/avatar\/generate$/ },
+  // #1098: a bot's outbound allowance and today's count (Sending on your
+  // behalf), for the owner who sets it; the handler checks the owner.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/outbound$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/(?:links|files)$/ },
   // artifacts (server/routes/artifacts.ts): the route checks the bot and,
   // on a shared server, that the artifact is this person's

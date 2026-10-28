@@ -21,6 +21,7 @@ struct DesktopOrganizationSettings: View {
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
     @State private var showingOrganization = false
+    @State private var showingMyComputer = false
     @State private var pendingRemoval: Connection?
 
     var body: some View {
@@ -32,9 +33,27 @@ struct DesktopOrganizationSettings: View {
         if session.surfaceGate.allows(.organizationSettings) {
             organizationRow
         }
+        // #1098: the person's own server environment, updated or reset by
+        // them (the desktop's Organization > Your server environment)
+        if session.surfaceGate.allows(.myComputer) {
+            myComputerRow
+        }
         // This iPad's own pairing (#518): Pair devices left the app, the
         // device's own connection stays here
         AnyView(DesktopThisDeviceCard(open: false))
+    }
+
+    private var myComputerRow: some View {
+        Button { showingMyComputer = true } label: {
+            DesktopCollapsedRow(title: Text("Your computer"), summary: Text("Update or reset your bots' computer"))
+        }
+        .buttonStyle(DesktopHoverFill(radius: 14))
+        .desktopHairlineBox()
+        .accessibilityIdentifier("desktop-settings.my-computer")
+        .sheet(isPresented: $showingMyComputer) {
+            NavigationStack { BotComputerSettingsView() }
+                .environmentObject(session)
+        }
     }
 
     private var organizationRow: some View {
