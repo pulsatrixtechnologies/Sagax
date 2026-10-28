@@ -216,6 +216,54 @@ describe("payment vault", () => {
     expect(row.mismatch).toBe(true);
   });
 
+  it("asks Shop Pay or Link for a one-time card and never returns the saved number", async () => {
+    const store = vault();
+    const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
+    const page = "https://shop.example.test/pay";
+    const access = fillResolverFor(store, { principalId: LOCAL_VAULT_PRINCIPAL, botId: "bot-a", threadId: "thread-1" });
+    const unlinked = access.requestPurchase({ pageUrl: page, amount: "12.50", currency: "CAD", wallet: "link", merchant: `Cafe ${PAN}` });
+    expect(unlinked.ok).toBe(false);
+    expect(unlinked.message).toMatch(/not connected/);
+    expect(unlinked.message).not.toContain(PAN);
+    expect(store.pendingPurchases(LOCAL_VAULT_PRINCIPAL)).toEqual([]);
+    store.chooseWallet(LOCAL_VAULT_PRINCIPAL, "link", true);
+    const asked = access.requestPurchase({ pageUrl: page, amount: "12.50", currency: "CAD", wallet: "link", merchant: `Cafe ${PAN}` });
+    expect(asked.ok).toBe(true);
+    expect(asked.message).not.toContain(PAN);
+    expect(asked.message).toContain("allows this purchase");
+    expect(asked.message).not.toContain("fill_credential");
+    const pending = store.pendingPurchases(LOCAL_VAULT_PRINCIPAL)[0]!;
+    expect(pending.wallet).toBe("link");
+    expect(pending.merchant).not.toContain("4242");
+    expect(JSON.stringify(pending)).not.toContain(PAN);
+    const blocked = await store.resolveForFill(LOCAL_VAULT_PRINCIPAL, {
+      handle: vaultHandle(saved.id), field: "cardNumber", botId: "bot-a", threadId: "thread-1", pageUrl: page,
+    });
+    expect(blocked.ok).toBe(false);
+    expect(JSON.stringify(blocked)).not.toContain(PAN);
+    const answered = store.answerPurchase(LOCAL_VAULT_PRINCIPAL, pending.id, "once");
+    expect(answered.note).toContain("Nothing was charged");
+    expect(answered.note).toContain("link-cli spend-request create");
+    expect(answered.note).not.toContain(PAN);
+    expect(answered.note).not.toContain(vaultHandle(saved.id));
+    const filled = await store.resolveForFill(LOCAL_VAULT_PRINCIPAL, {
+      handle: vaultHandle(saved.id), field: "cardNumber", botId: "bot-a", threadId: "thread-1", pageUrl: page,
+    });
+    expect(filled.ok).toBe(false);
+    expect(JSON.stringify(filled)).not.toContain(PAN);
+    if (filled.ok) expect(filled.value).not.toBe(PAN);
+    const recorded = access.recordPurchase({ pageUrl: page, orderRef: "A-1" });
+    expect(recorded.ok).toBe(false);
+    expect(recorded.message).toContain("Nothing was charged");
+    expect(recorded.message).not.toContain(PAN);
+    const stored = (store as unknown as { load(p: string): { purchases: Record<string, unknown>; wallets?: unknown } }).load(LOCAL_VAULT_PRINCIPAL);
+    expect(JSON.stringify(stored.purchases)).not.toContain(PAN);
+    expect(JSON.stringify(stored.wallets)).not.toContain(PAN);
+    expect(parsePurchaseCall({ arguments: { wallet: "shop_pay", credential: "cred_saved", amount: "4", currency: "CAD" } })).toMatchObject({ wallet: "shop_pay" });
+    expect(parsePurchaseCall({ arguments: { wallet: "shop_pay", credential: "cred_saved", amount: "4", currency: "CAD" } })).not.toHaveProperty("credential");
+    expect(parsePurchaseCall({ arguments: { wallet: "other_wallet", amount: "4", currency: "CAD" } })).toMatch(/shop_pay or link/);
+  });
+
   it("filters card-like text with dots, flight places, and bad dates (review)", () => {
     expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", items: [{ name: "4242.4242.4242.4242" }] } })).toMatch(/card number/);
     expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", flights: [{ from: "4242 4242 4242 4242", to: "YVR", date: "2026-11-02" }] } })).toMatch(/flights/);

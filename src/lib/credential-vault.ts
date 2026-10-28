@@ -4,6 +4,7 @@
 // booleans that say one is saved. Values typed here go to the server once.
 import { api } from "@/state/store";
 import { bindingUrl, vaultDomainMatches, vaultSiteOf, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault";
+import type { WalletLinkView } from "../../shared/single-use-card";
 import type { VaultDuplicateMode, VaultExportFormat, VaultImportFormat, VaultTransferItem } from "../../shared/credential-vault-transfer";
 
 export type { VaultItemListing } from "../../shared/credential-vault";
@@ -39,6 +40,7 @@ export interface PurchaseListing {
 export interface CredentialVaultState {
   items: VaultItemListing[];
   purchases?: PurchaseListing[];
+  wallets?: WalletLinkView;
   onePassword: OnePasswordStatus;
   /** The vault could not be opened on this launch (the keychain was busy). */
   unavailable?: string;
@@ -78,6 +80,9 @@ export const revealCredentialNotes = (id: string) => api<{ notes: string }>(`${I
 export const revealCredential = (id: string, field: "password" | "apiKey" | "notes" | "pan" | "cvv") =>
   api<{ value: string }>(`${ITEM(id)}/reveal`, { method: "POST", body: JSON.stringify({ field }) });
 /** Each purchase is its own approval (2026-10-22): no Always allow. */
+/** Shop Pay or Link: the account the person already has. Nothing is charged. */
+export const chooseSingleUseWallet = (wallet: "shop_pay" | "link", chosen: boolean) =>
+  api<{ wallets: WalletLinkView }>("/api/me/credentials/wallets", { method: "POST", body: JSON.stringify({ wallet, chosen }) });
 export const answerPurchase = (id: string, decision: "deny" | "once") =>
   api<{ purchase: PurchaseListing }>(`/api/me/credentials/purchases/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify({ decision }) });
 export const allowBotAlways = (id: string, botId: string) =>

@@ -34,6 +34,7 @@ import { bindingUrl, isVaultGrantMode, normalizeVaultDomain, siteAddable, VAULT_
 import { isVaultDuplicateMode, isVaultExportFormat, isVaultImportFormat, type VaultExportFormat, type VaultTransferItem } from "../../shared/credential-vault-transfer.ts";
 import type { SecretRequestCardData } from "../../shared/wire.ts";
 import { CredentialVaultError, type CredentialVault, type PurchaseListing, type VaultItemInput } from "../credential-vault.ts";
+import { isSingleUseWallet } from "../../shared/single-use-card.ts";
 import type { OnePassword } from "../onepassword.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -65,7 +66,7 @@ export interface CredentialVaultRouteDeps {
     /** Settle the card and wake the bot with this note. */
     resume(botId: string, threadId: string, messageId: string, outcome: "provided" | "dismissed", prompt: string): boolean;
   };
-  audit?(action: "credentials.create" | "credentials.delete" | "credentials.grant" | "credentials.revoke" | "credentials.import" | "credentials.export" | "credentials.signed_in", auth: RequestAuth, detail: Record<string, unknown>): void;
+  audit?(action: "credentials.create" | "credentials.delete" | "credentials.grant" | "credentials.revoke" | "credentials.import" | "credentials.export" | "credentials.signed_in" | "credentials.wallet", auth: RequestAuth, detail: Record<string, unknown>): void;
   /** Whether this caller may take the vault's values out in a file now:
    * null to go on, else the refusal (a security key step-up, a sign-in
    * that is too old, a bot acting for its person). Absent refuses. */
@@ -307,6 +308,7 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         return json(res, 200, {
           items: unavailable ? [] : deps.vault.list(principalId),
           purchases: unavailable ? [] : deps.vault.pendingPurchases(principalId),
+          wallets: deps.vault.walletLinks(principalId),
           onePassword: await deps.onePassword.status(),
           ...(unavailable ? { unavailable } : {}),
           ...(deps.exportBlocked?.(auth) ? { exportBlocked: true } : {}),
@@ -368,6 +370,14 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         const input = await body();
         const value = deps.vault.reveal(principalId, reveal[1]!, input.field);
         return json(res, 200, { value });
+      }
+      if (path === "/api/me/credentials/wallets") {
+        if (method !== "POST") return json(res, 405, { error: "POST only" });
+        const input = await body();
+        if (!isSingleUseWallet(input.wallet) || typeof input.chosen !== "boolean") return json(res, 400, { error: "wallet must be shop_pay or link", code: "unknown_wallet" });
+        const wallets = deps.vault.chooseWallet(principalId, input.wallet, input.chosen);
+        deps.audit?.("credentials.wallet", auth, { wallet: input.wallet, chosen: input.chosen });
+        return json(res, 200, { wallets });
       }
       if (path === "/api/me/credentials/purchases") {
         if (method !== "POST") return json(res, 405, { error: "POST only" });

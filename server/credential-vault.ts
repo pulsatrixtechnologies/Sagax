@@ -62,6 +62,7 @@ import {
   type StoredCard,
   type StoredContact,
 } from "../shared/payment-vault.ts";
+import { isSingleUseWallet, redactCardNumbers, requestSingleUseToken, walletLinkView, walletName, type SingleUseWallet, type WalletLinkView } from "../shared/single-use-card.ts";
 import { mergePatch, planVaultImport, type VaultDuplicateMode, type VaultExportFormat, type VaultTransferItem } from "../shared/credential-vault-transfer.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
@@ -130,7 +131,8 @@ const purchaseSchema = z.object({
   domain: z.string().min(1).max(253),
   amount: z.string().regex(/^\d{1,6}\.\d{2}$/),
   currency: z.string().regex(/^[A-Z]{3}$/),
-  cardId: z.string().regex(/^[a-z0-9]{8,40}$/),
+  cardId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
+  wallet: z.enum(["shop_pay", "link"]).optional(),
   addressId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
   contactId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
   // "always" is only read from files written before the rule of
@@ -160,7 +162,9 @@ const purchaseSchema = z.object({
   cardFilledAt: z.number().optional(),
   formKey: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   filledFields: z.array(z.string().min(1).max(40)).max(20).optional(),
-}).strict();
+}).strict().superRefine((row, ctx) => {
+  if (!row.cardId && !row.wallet) ctx.addIssue({ code: "custom", message: "a purchase needs a card or a wallet" });
+});
 
 const injectionSchema = z.object({
   mode: z.enum(VAULT_INJECTION_MODES),
@@ -199,6 +203,10 @@ const documentSchema = z.object({
   version: z.literal(1),
   items: z.record(z.string(), itemSchema),
   purchases: z.record(z.string(), purchaseSchema).optional(),
+  wallets: z.object({
+    shop_pay: z.object({ chosen: z.literal(true) }).strict().optional(),
+    link: z.object({ chosen: z.literal(true) }).strict().optional(),
+  }).strict().optional(),
 }).strict();
 
 export type StoredVaultItem = z.infer<typeof itemSchema>;
@@ -217,6 +225,8 @@ export interface PurchaseListing {
   cardName: string;
   cardLast4: string;
   cardBrand: string;
+  /** Shop Pay or Link, when this purchase asks for a one-time card. */
+  wallet?: SingleUseWallet;
   addressName?: string;
   contactName?: string;
   status: StoredPurchase["status"];
@@ -447,7 +457,13 @@ export class CredentialVault {
     const items = structuredClone(document.items);
     const purchases = structuredClone(document.purchases ?? {});
     const result = change(items, purchases);
-    this.write(principalId, { version: 1, items, ...(Object.keys(purchases).length ? { purchases } : {}) });
+    const wallets = document.wallets ? structuredClone(document.wallets) : undefined;
+    this.write(principalId, {
+      version: 1,
+      items,
+      ...(Object.keys(purchases).length ? { purchases } : {}),
+      ...(wallets && Object.keys(wallets).length ? { wallets } : {}),
+    });
     return result;
   }
 
@@ -863,11 +879,37 @@ export class CredentialVault {
       .map((row) => this.purchaseListing(document, row));
   }
 
+  /** Shop Pay and Link as the person connected them. No card number, no session. */
+  walletLinks(principalId: string): WalletLinkView {
+    try {
+      return walletLinkView(this.load(principalId).wallets);
+    } catch {
+      return walletLinkView(undefined);
+    }
+  }
+
+  /** The person turns a wallet they already have on or off. Nothing is charged. */
+  chooseWallet(principalId: string, wallet: unknown, chosen: boolean): WalletLinkView {
+    if (!isSingleUseWallet(wallet)) throw new CredentialVaultError("wallet must be shop_pay or link", "unknown_wallet");
+    const document = structuredClone(this.load(principalId));
+    const wallets = { ...(document.wallets ?? {}) };
+    if (chosen) wallets[wallet] = { chosen: true };
+    else delete wallets[wallet];
+    const next: VaultDocument = {
+      version: 1,
+      items: document.items,
+      ...(document.purchases && Object.keys(document.purchases).length ? { purchases: document.purchases } : {}),
+      ...(Object.keys(wallets).length ? { wallets } : {}),
+    };
+    this.write(principalId, next);
+    return walletLinkView(next.wallets);
+  }
+
   /** Ask the person to approve a payment. The page's own address is the
    * merchant site: the bot does not choose where the number is typed. */
   openPurchase(principalId: string, input: {
     botId: string; threadId: string; merchant?: string; pageUrl: string;
-    amount: unknown; currency: unknown; cardId: string; addressId?: string; contactId?: string;
+    amount: unknown; currency: unknown; cardId?: string; wallet?: SingleUseWallet; addressId?: string; contactId?: string;
     items?: PurchaseItem[]; flights?: PurchaseFlightLeg[]; category?: PurchaseCategory;
   }): { already: boolean; listing: PurchaseListing; note: string } {
     if (!BOT_ID.test(input.botId)) throw new CredentialVaultError("invalid bot", "invalid_bot");
@@ -880,10 +922,17 @@ export class CredentialVault {
     const amount = parseAmount(input.amount);
     const currency = parseCurrency(input.currency);
     if (!amount || !currency) throw new CredentialVaultError("amount and currency are required", "invalid_amount");
+    if (input.wallet && !isSingleUseWallet(input.wallet)) throw new CredentialVaultError("wallet must be shop_pay or link", "unknown_wallet");
+    if (!input.wallet && !input.cardId) throw new CredentialVaultError("request_purchase needs a card or Shop Pay or Link.", "invalid_item");
+    if (input.wallet && !this.walletLinks(principalId)[input.wallet].chosen) {
+      throw new CredentialVaultError(requestSingleUseToken({
+        wallet: input.wallet, chosen: false, approval: "once", merchant: input.merchant, amount, currency,
+      }).prompt, "not_connected");
+    }
     const now = this.now();
     return this.mutate(principalId, (items, purchases) => {
-      const card = items[input.cardId];
-      if (!card || card.kind !== "card" || !card.card) throw new CredentialVaultError("No such card", "unknown_item", 404);
+      const card = input.wallet ? undefined : items[input.cardId ?? ""];
+      if (!input.wallet && (!card || card.kind !== "card" || !card.card)) throw new CredentialVaultError("No such card", "unknown_item", 404);
       if (input.addressId) {
         const address = items[input.addressId];
         if (!address || address.kind !== "address") throw new CredentialVaultError("No such address", "unknown_item", 404);
@@ -892,32 +941,39 @@ export class CredentialVault {
         const contact = items[input.contactId];
         if (!contact || contact.kind !== "contact") throw new CredentialVaultError("No such contact", "unknown_item", 404);
       }
+      const sameInstrument = (row: StoredPurchase) => input.wallet
+        ? row.wallet === input.wallet && !row.cardId
+        : row.cardId === input.cardId && !row.wallet;
       // the same approval only for the same amount, currency and cart (review of #956)
       const cart = cartKey(input.items, input.flights);
-      const live = Object.values(purchases).find((row) => purchaseCovers(row, input.botId, input.threadId, domain, now) && row.cardId === card.id
+      const live = Object.values(purchases).find((row) => purchaseCovers(row, input.botId, input.threadId, domain, now) && sameInstrument(row)
         && row.amount === amount && row.currency === currency && cartKey(row.items, row.flights) === cart && row.cardFilledAt === undefined);
       if (live && live.status !== "pending") {
         const listing = this.purchaseListing({ items }, live);
-        return { already: true, listing, note: purchaseBotNote("once", { merchant: live.merchant, amount: live.amount, currency: live.currency, handle: vaultHandle(card.id) }) };
+        if (live.wallet) {
+          return { already: true, listing, note: requestSingleUseToken({ wallet: live.wallet, chosen: true, approval: "once", merchant: live.merchant, amount: live.amount, currency: live.currency }).prompt };
+        }
+        return { already: true, listing, note: purchaseBotNote("once", { merchant: live.merchant, amount: live.amount, currency: live.currency, handle: vaultHandle(card!.id) }) };
       }
       for (const row of Object.values(purchases)) {
-        if (row.status === "pending" && row.botId === input.botId && row.cardId === card.id && row.domain === domain) delete purchases[row.id];
+        if (row.status === "pending" && row.botId === input.botId && row.domain === domain && sameInstrument(row)) delete purchases[row.id];
       }
-      const merchant = visibleText(input.merchant ?? "").slice(0, 80) || domain;
+      let merchant = visibleText(input.merchant ?? "").slice(0, 80) || domain;
+      if (input.wallet) merchant = redactCardNumbers(merchant).replace(/\[card\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || domain;
       const id = newPurchaseId(purchases);
       const row: StoredPurchase = {
         id, botId: input.botId, threadId: input.threadId, merchant, domain, amount, currency,
-        cardId: card.id, ...(input.addressId ? { addressId: input.addressId } : {}), ...(input.contactId ? { contactId: input.contactId } : {}),
+        ...(input.wallet ? { wallet: input.wallet } : { cardId: card!.id }),
+        ...(input.addressId ? { addressId: input.addressId } : {}), ...(input.contactId ? { contactId: input.contactId } : {}),
         ...(input.items?.length ? { items: input.items } : {}), ...(input.flights?.length ? { flights: input.flights } : {}),
         status: "pending", createdAt: now,
       };
       purchases[id] = row;
       const listing = this.purchaseListing({ items }, row);
-      return {
-        already: false,
-        listing,
-        note: `Sagax purchase update: ${listing.title} ${listing.line} Nothing was charged. Wait for the person to allow it, then call fill_credential. You never receive the card number.`,
-      };
+      const note = input.wallet
+        ? requestSingleUseToken({ wallet: input.wallet, chosen: true, approval: "pending", merchant, amount, currency }).prompt
+        : `Sagax purchase update: ${listing.title} ${listing.line} Nothing was charged. Wait for the person to allow it, then call fill_credential. You never receive the card number.`;
+      return { already: false, listing, note };
     });
   }
 
@@ -937,7 +993,10 @@ export class CredentialVault {
       if (decision === "once") row.expiresAt = now + VAULT_ONCE_GRANT_MS;
       if (name) row.via = name;
       const listing = this.purchaseListing({ items }, row);
-      const handle = decision === "deny" ? undefined : vaultHandle(row.cardId);
+      if (row.wallet) {
+        return { listing, note: requestSingleUseToken({ wallet: row.wallet, chosen: true, approval: decision, merchant: row.merchant, amount: row.amount, currency: row.currency }).prompt };
+      }
+      const handle = decision === "deny" || !row.cardId ? undefined : vaultHandle(row.cardId);
       return { listing, note: purchaseBotNote(decision, { merchant: row.merchant, amount: row.amount, currency: row.currency, ...(handle ? { handle } : {}) }) };
     });
   }
@@ -952,11 +1011,20 @@ export class CredentialVault {
     if (!domain) return null;
     const now = this.now();
     return this.mutate(principalId, (items, purchases) => {
-      const row = Object.values(purchases)
+      const rows = Object.values(purchases)
         .filter((candidate) => candidate.receipt === undefined && candidate.status === "once" && candidate.botId === input.botId
           && candidate.threadId === input.threadId && candidate.domain === domain && (candidate.answeredAt ?? 0) + VAULT_ONCE_GRANT_MS * 4 > now)
-        .sort((a, b) => (b.answeredAt ?? 0) - (a.answeredAt ?? 0))[0];
-      if (!row) return null;
+        .sort((a, b) => (b.answeredAt ?? 0) - (a.answeredAt ?? 0));
+      const row = rows.find((candidate) => !candidate.wallet);
+      if (!row) {
+        const walletRow = rows.find((candidate) => candidate.wallet);
+        if (walletRow?.wallet) {
+          throw new CredentialVaultError(requestSingleUseToken({
+            wallet: walletRow.wallet, chosen: true, approval: "once", merchant: walletRow.merchant, amount: walletRow.amount, currency: walletRow.currency,
+          }).prompt, "provider_unconfigured");
+        }
+        return null;
+      }
       const orderRef = input.orderRef ? visibleText(input.orderRef).slice(0, 64) : "";
       row.receipt = {
         at: now,
@@ -985,15 +1053,16 @@ export class CredentialVault {
   }
 
   private purchaseListing(document: { items: Record<string, StoredVaultItem> }, row: StoredPurchase): PurchaseListing {
-    const card = document.items[row.cardId];
+    const card = row.cardId ? document.items[row.cardId] : undefined;
     const address = row.addressId ? document.items[row.addressId] : undefined;
     const contact = row.contactId ? document.items[row.contactId] : undefined;
     const text = purchaseCardText({
       merchant: row.merchant,
       amount: row.amount,
       currency: row.currency,
-      last4: card?.card?.last4 ?? "••••",
+      last4: row.wallet ? "" : (card?.card?.last4 ?? "••••"),
       brand: card?.card?.brand ?? "card",
+      ...(row.wallet ? { wallet: row.wallet } : {}),
       ...(address ? { addressName: address.name } : {}),
       ...(row.items ? { items: row.items } : {}),
       ...(row.flights ? { flights: row.flights } : {}),
@@ -1001,7 +1070,10 @@ export class CredentialVault {
     return {
       id: row.id, botId: row.botId, threadId: row.threadId, merchant: row.merchant, domain: row.domain,
       amount: row.amount, currency: row.currency,
-      cardName: card?.name ?? "Card", cardLast4: card?.card?.last4 ?? "", cardBrand: card?.card?.brand ?? "card",
+      cardName: row.wallet ? walletName(row.wallet) : (card?.name ?? "Card"),
+      cardLast4: row.wallet ? "" : (card?.card?.last4 ?? ""),
+      cardBrand: card?.card?.brand ?? "card",
+      ...(row.wallet ? { wallet: row.wallet } : {}),
       ...(address ? { addressName: address.name } : {}),
       ...(contact ? { contactName: contact.name } : {}),
       status: row.status, ...(row.via ? { via: row.via } : {}), createdAt: row.createdAt,
@@ -1042,6 +1114,20 @@ export class CredentialVault {
       return { ok: false, code: "unavailable", message: error instanceof Error ? error.message : "The credential vault is unavailable." };
     }
     if (!purchase) {
+      if (request.field.startsWith("card")) {
+        try {
+          const walletRow = Object.values(this.load(principalId).purchases ?? {}).find((row) => Boolean(row.wallet) && purchaseCovers(row, request.botId, request.threadId, domain ?? "", now));
+          if (walletRow?.wallet) {
+            return {
+              ok: false,
+              code: "not_granted",
+              message: requestSingleUseToken({ wallet: walletRow.wallet, chosen: true, approval: "once", merchant: walletRow.merchant, amount: walletRow.amount, currency: walletRow.currency }).prompt,
+            };
+          }
+        } catch {
+          // the not_granted line below is the refusal
+        }
+      }
       return { ok: false, code: "not_granted", message: "A payment on this page needs the person's approval first. Call request_purchase. Nothing was filled, and you never receive the card number." };
     }
     const value = paymentField(item, request.field);
@@ -1262,7 +1348,8 @@ export function fillResolverFor(
           pageUrl: input.pageUrl,
           amount: input.amount,
           currency: input.currency,
-          cardId: input.cardId,
+          ...(input.cardId ? { cardId: input.cardId } : {}),
+          ...(input.wallet ? { wallet: input.wallet } : {}),
           ...(input.merchant ? { merchant: input.merchant } : {}),
           ...(input.addressId ? { addressId: input.addressId } : {}),
           ...(input.contactId ? { contactId: input.contactId } : {}),
@@ -1299,7 +1386,7 @@ export function fillResolverFor(
 }
 
 export interface PurchaseRequestInput {
-  pageUrl: string; amount: string; currency: string; cardId: string;
+  pageUrl: string; amount: string; currency: string; cardId?: string; wallet?: SingleUseWallet;
   merchant?: string; addressId?: string; contactId?: string;
   items?: PurchaseItem[]; flights?: PurchaseFlightLeg[]; category?: PurchaseCategory;
 }

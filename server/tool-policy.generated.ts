@@ -196,6 +196,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"exact","route":"/api/me/credentials/onepassword/import","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/credentials/onepassword/items","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/credentials/purchases","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
+  {"method":"ANY","kind":"exact","route":"/api/me/credentials/wallets","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/desktop-bridge","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/me/engines","tier":"read","readOnly":true,"scope":"me:read","defaultEnabled":true},
   {"method":"GET","kind":"prefix","route":"/api/me/engines/","tier":"read","readOnly":true,"scope":"me:read","defaultEnabled":true},

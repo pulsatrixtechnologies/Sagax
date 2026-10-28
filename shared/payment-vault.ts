@@ -5,6 +5,8 @@
 //
 // Pure: no disk, no clock, no node built-ins.
 
+import { isSingleUseWallet, walletName, type SingleUseWallet } from "./single-use-card.ts";
+
 export const CARD_BRANDS = ["visa", "mastercard", "amex", "discover", "card"] as const;
 export type CardBrand = (typeof CARD_BRANDS)[number];
 
@@ -180,6 +182,8 @@ export interface PurchaseAsk {
   addressName?: string;
   items?: PurchaseItem[];
   flights?: PurchaseFlightLeg[];
+  /** Shop Pay or Link: a one-time card, not the saved number. */
+  wallet?: SingleUseWallet;
 }
 
 /** One article of a purchase, as the page lists it. */
@@ -224,6 +228,13 @@ export function purchaseContents(ask: { items?: readonly PurchaseItem[]; flights
 export function purchaseCardText(ask: PurchaseAsk): { title: string; line: string } {
   const ship = ask.addressName ? `, ship to ${ask.addressName}` : "";
   const contents = purchaseContents(ask);
+  if (ask.wallet) {
+    const name = walletName(ask.wallet);
+    return {
+      title: `Pay ${ask.amount} ${ask.currency} to ${ask.merchant} with ${name}?`,
+      line: `${contents ? `${contents}. ` : ""}${name}, one-time card. The site does not receive a saved number. You allow this purchase. The bot never sees a card number.`,
+    };
+  }
   return {
     title: `Pay ${ask.amount} ${ask.currency} to ${ask.merchant}?`,
     line: `${contents ? `${contents}. ` : ""}Card ending ${ask.last4} (${ask.brand})${ship}. The bot never sees the number or the security code.`,
@@ -315,7 +326,8 @@ export function inAppDigitalPurchaseRefusal(ask: {
 }
 
 export interface PurchaseCall {
-  credential: string;
+  credential?: string;
+  wallet?: SingleUseWallet;
   category?: PurchaseCategory;
   amount: string;
   currency: string;
@@ -331,8 +343,11 @@ export function parsePurchaseCall(params: unknown): PurchaseCall | string {
   const args = (params as { arguments?: unknown } | null)?.arguments;
   const row = record(args);
   if (!row) return "request_purchase needs credential, amount and currency.";
-  const credential = typeof row.credential === "string" ? row.credential.trim() : "";
-  if (!credential) return "request_purchase needs the card handle (cred_...).";
+  if (row.wallet !== undefined && !isSingleUseWallet(row.wallet)) return "wallet must be shop_pay or link. Nothing was charged.";
+  const wallet = isSingleUseWallet(row.wallet) ? row.wallet : undefined;
+  // A one-time wallet replaces the saved card, so the real number is not the instrument.
+  const credential = wallet ? "" : typeof row.credential === "string" ? row.credential.trim() : "";
+  if (!wallet && !credential) return "request_purchase needs a card handle (cred_...) or wallet shop_pay or link.";
   const amount = parseAmount(row.amount);
   if (!amount) return "amount must be a positive number, such as 12.50.";
   const currency = parseCurrency(row.currency);
@@ -347,7 +362,7 @@ export function parsePurchaseCall(params: unknown): PurchaseCall | string {
   const flights = parsePurchaseFlights(row.flights);
   if (typeof flights === "string") return flights;
   return {
-    credential, amount, currency, ...(category ? { category } : {}), ...(merchant ? { merchant } : {}), ...(address ? { address } : {}), ...(contact ? { contact } : {}),
+    ...(credential ? { credential } : {}), ...(wallet ? { wallet } : {}), amount, currency, ...(category ? { category } : {}), ...(merchant ? { merchant } : {}), ...(address ? { address } : {}), ...(contact ? { contact } : {}),
     ...(items ? { items } : {}), ...(flights ? { flights } : {}),
   };
 }
@@ -357,11 +372,12 @@ export const REQUEST_PURCHASE_TOOL = "request_purchase";
 export const REQUEST_PURCHASE_TOOL_SPEC = {
   name: REQUEST_PURCHASE_TOOL,
   description:
-    "Ask the person to approve a payment with a card they saved in Sagax. credential is the card handle (cred_...). amount and currency are what the page charges (12.50, CAD): the total, taxes included. List the cart in items (or the flights) so the person sees what they pay for. The page you are on is the merchant. category says what it buys: goods, food, travel, tickets, service, external_subscription (a service used outside Sagax), other, or in_app_digital. Never use request_purchase for digital content used inside Sagax (credits, tokens, a plan or a feature of Sagax, Pulsatrix or Perspicax): it is refused. Optional address and contact are handles of a saved address or contact to fill with the card. You never receive the card number or the security code. Nothing is charged until the person allows it on the approval card (or their Primary Bot, when they ask). Then call fill_credential with field cardNumber, cardExpiry, cardCvc and cardholder, place the order, and call record_purchase on the confirmation page.",
+    "Ask the person to approve a payment. credential is the card handle (cred_...) of a card they saved, or wallet is shop_pay or link for a one-time card from Shop Pay or Link they already connected (do not pass both: wallet is used and the saved number stays unused). amount and currency are what the page charges (12.50, CAD): the total, taxes included. List the cart in items (or the flights) so the person sees what they pay for. The page you are on is the merchant. category says what it buys: goods, food, travel, tickets, service, external_subscription (a service used outside Sagax), other, or in_app_digital. Never use request_purchase for digital content used inside Sagax (credits, tokens, a plan or a feature of Sagax, Pulsatrix or Perspicax): it is refused. Optional address and contact are handles of a saved address or contact. You never receive the card number or the security code. Nothing is charged until the person allows it on the approval card (or their Primary Bot, when they ask). For a saved card, then call fill_credential with field cardNumber, cardExpiry, cardCvc and cardholder. For Shop Pay or Link, do not type a card number: Sagax asks that wallet for a one-time card only after the approval, and if the wallet is not live nothing is charged. Then place the order and call record_purchase on the confirmation page.",
   inputSchema: {
     type: "object",
     properties: {
-      credential: { type: "string", description: "The card handle, cred_..." },
+      credential: { type: "string", description: "The card handle, cred_..., when not using a one-time wallet" },
+      wallet: { type: "string", enum: ["shop_pay", "link"], description: "Shop Pay or Link, a wallet the person already connected. A one-time card, not the saved number." },
       amount: { type: "string", description: "The amount, such as 12.50" },
       currency: { type: "string", description: "Three-letter currency, such as CAD" },
       category: {
@@ -385,7 +401,7 @@ export const REQUEST_PURCHASE_TOOL_SPEC = {
         items: { type: "object", properties: { from: { type: "string" }, to: { type: "string" }, date: { type: "string", description: "YYYY-MM-DD" }, flight: { type: "string" }, passenger: { type: "string" } }, required: ["from", "to", "date"], additionalProperties: false },
       },
     },
-    required: ["credential", "amount", "currency"],
+    required: ["amount", "currency"],
     additionalProperties: false,
   },
 } as const;
