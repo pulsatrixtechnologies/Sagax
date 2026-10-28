@@ -11,6 +11,7 @@
 // with a permanent banner (no script, nothing to dismiss) that embeds the
 // page in a frame sandboxed to scripts only, whose navigation the wrapper's
 // `frame-src` limits to the page's own frame path.
+import { READER_ACTIONS_ID, READER_BOOT_ID, readerNotice, type ReaderBoot } from "../shared/page-reader.ts";
 import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
 
 /** Server side, before every HTML version is served: no element that can
@@ -371,6 +372,59 @@ export interface WrapperInput {
    * the form's action. A plain form, no script; the wrapper's CSP pins
    * form-action to that path. */
   comments?: { action: string; approved: ReaderComment[] };
+  /** A reading link (2026-10-28): the bar instead of the banner, what the
+   * bar's script is told, and that script's built tags (null when this
+   * server has no built UI: the bar then shows the title and the notice). */
+  reader?: { boot: ReaderBoot; assets: ReaderAssets | null };
+}
+
+/** The built tags of the reader's bar (dist/page-reader.html): paths under
+ * /assets/ only. */
+export interface ReaderAssets {
+  scripts: string[];
+  styles: string[];
+  preloads: string[];
+}
+
+const ASSET_PATH = /^\/assets\/[A-Za-z0-9._-]+\.(?:js|css)$/;
+
+/** The script, style and preload paths of a built page-reader.html, or
+ * null when there is none to read. Only /assets/ paths are kept. Pure. */
+export function parseReaderAssets(html: string): ReaderAssets | null {
+  const pick = (pattern: RegExp) => [...html.matchAll(pattern)].map((match) => match[1]!).filter((path) => ASSET_PATH.test(path));
+  const scripts = pick(/<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]+)"/g);
+  if (!scripts.length) return null;
+  return {
+    scripts,
+    styles: pick(/<link\b[^>]*\brel="stylesheet"[^>]*\bhref="([^"]+)"/g),
+    preloads: pick(/<link\b[^>]*\brel="modulepreload"[^>]*\bhref="([^"]+)"/g),
+  };
+}
+
+/** A JSON block that no text inside can close or turn into markup. Pure. */
+export function jsonBlock(id: string, value: unknown): string {
+  const text = JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+  return `<script type="application/json" id="${escapeHtml(id)}">${text}</script>`;
+}
+
+const INFO_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>';
+
+const READER_BAR_STYLE = ".sagax-bar{flex:none;position:relative;z-index:2;display:flex;align-items:center;gap:16px;min-height:52px;box-sizing:border-box;padding:8px 12px 8px 16px;background:#141519;color:#f2f3f5;border-bottom:1px solid #2b2d34;font:13px/1.35 system-ui,-apple-system,Segoe UI,sans-serif}"
+  + ".sagax-bar-main{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}"
+  + ".sagax-bar h1{margin:0;font-size:15px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#f2f3f5}"
+  + ".sagax-bar-note{margin:0;display:flex;align-items:flex-start;gap:6px;font-size:12px;color:#b9bdc6}"
+  + ".sagax-bar-note svg{flex:none;margin-top:1px;color:#e8c15a}.sagax-bar-note .warn{color:#e9d9a6}"
+  + ".sagax-bar-actions{flex:none;display:flex;align-items:center;gap:8px}"
+  + "@media (max-width:640px){.sagax-bar{flex-wrap:wrap;gap:8px}.sagax-bar-actions{width:100%;justify-content:flex-end}}";
+
+/** The reader's bar: the title, the notice (who published it for whom, not
+ * a Sagax screen, never a password), always visible; the actions are drawn
+ * by the bar's script into the empty box on the right. Pure. */
+export function readerBar(input: { title: string; botName: string; personName: string; lang: "fr" | "en" }): string {
+  const notice = readerNotice({ bot: bannerName(input.botName), person: bannerName(input.personName), lang: input.lang });
+  return `<header class="sagax-bar"><div class="sagax-bar-main"><h1 title="${escapeHtml(input.title)}">${escapeHtml(input.title)}</h1>`
+    + `<p class="sagax-bar-note" role="note">${INFO_ICON}<span>${escapeHtml(notice.who)} · <span class="warn">${escapeHtml(notice.warning)}</span></span></p></div>`
+    + `<div class="sagax-bar-actions" id="${READER_ACTIONS_ID}"></div></header>`;
 }
 
 /** The banner's words. Pure. */
@@ -387,8 +441,10 @@ export function wrapperBanner(input: Pick<WrapperInput, "botName" | "personName"
     : `Page published by ${bot} for ${person}: this is not a Sagax screen, never enter a password here.`;
 }
 
-/** The reader's document: banner, then the page in its sandboxed frame. No
- * script of its own. Pure. */
+/** The reader's document: the bar (a reading link) or the banner (the
+ * app's preview), then the page in its sandboxed frame. The bar's own
+ * script, when this server has it built, runs in the wrapper only, never in
+ * the page's frame. Pure. */
 export function wrapperDocument(input: WrapperInput): string {
   // the app's own scripts (annotation, keeping the place) need scripts on a
   // Markdown page too: by their nonce only (pageCsp)
@@ -396,6 +452,8 @@ export function wrapperDocument(input: WrapperInput): string {
   // a page that sets no background of its own shows the theme's, not white
   const background = input.theme === "dark" ? "#0d1117" : "#fff";
   const bare = input.bare === true && input.preview === true;
+  // a reading link only: the app's preview keeps its banner (or none)
+  const reader = input.preview ? undefined : input.reader;
   return `<!doctype html><html lang="${input.lang}"><head><meta charset="utf-8">`
     + (input.theme ? `<meta name="color-scheme" content="${input.theme}">` : "")
     + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>`
@@ -404,10 +462,16 @@ export function wrapperDocument(input: WrapperInput): string {
     + ".sagax-banner{flex:none;padding:8px 14px;background:#fff4ce;color:#3d2e00;border-bottom:2px solid #d4a600;font-weight:600}"
     + `iframe{flex:1;border:0;width:100%;background:${input.theme ? "transparent" : "#fff"}${input.theme ? `;color-scheme:${input.theme}` : ""}}`
     + (input.comments ? COMMENTS_STYLE : "")
-    + "</style></head><body>"
-    + (bare ? "" : `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`)
+    + (reader ? READER_BAR_STYLE : "")
+    + "</style>"
+    + (reader?.assets ? reader.assets.styles.map((path) => `<link rel="stylesheet" href="${escapeHtml(path)}">`).join("")
+      + reader.assets.preloads.map((path) => `<link rel="modulepreload" href="${escapeHtml(path)}">`).join("") : "")
+    + "</head><body>"
+    + (reader ? readerBar(input) : bare ? "" : `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`)
     + `<iframe src="${escapeHtml(input.frameUrl)}" sandbox="${sandbox}" referrerpolicy="no-referrer" allow="" title="${escapeHtml(input.title)}"></iframe>`
     + (input.comments ? commentsSection(input.comments, input.lang, input.personName) : "")
+    + (reader ? jsonBlock(READER_BOOT_ID, reader.boot) : "")
+    + (reader?.assets ? reader.assets.scripts.map((path) => `<script type="module" src="${escapeHtml(path)}"></script>`).join("") : "")
     + "</body></html>";
 }
 

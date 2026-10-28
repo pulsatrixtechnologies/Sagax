@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 import { Check, Copy, ExternalLink, Globe, Lock, Users } from "lucide-react";
 
 import { copyText } from "@/lib/copy-text";
+import { pageReadingUrl } from "@/lib/page-share-plan";
+
+export { expiryFromHours, needsLinkConfirm, pageReadingUrl } from "@/lib/page-share-plan";
 import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api, ApiError } from "@/state/store";
@@ -30,11 +33,6 @@ const ACCESS_HINT: Record<PageAccess, LocaleKey> = {
 };
 const ACCESS_ICON = { private: Lock, org: Users, link: Globe } as const;
 
-/** The expiry a choice of hours stands for (0: never). Pure. */
-export function expiryFromHours(hours: number, now = Date.now()): number | null {
-  return hours > 0 ? now + hours * 60 * 60 * 1000 : null;
-}
-
 function expiryLabel(hours: number): string {
   if (hours === 0) return t("pages.expiry.never");
   if (hours === 24) return t("pages.expiry.day");
@@ -44,20 +42,6 @@ function expiryLabel(hours: number): string {
 
 export function when(at: number): string {
   return new Date(at).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" });
-}
-
-/** A page's reading link (the server's `url`: <origin>/pages/view/<token>),
- * or null for anything else. Open in browser and Copy link take only this:
- * never the app's own address. Pure. */
-export function pageReadingUrl(url: unknown): string | null {
-  if (typeof url !== "string") return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
-    return /^\/pages\/view\/[^/]+$/.test(parsed.pathname) ? parsed.href : null;
-  } catch {
-    return null;
-  }
 }
 
 export function openPage(url: string) {
@@ -76,12 +60,6 @@ export function previewSrc(path: string, options: { annotate?: boolean; bare?: b
   if (options.theme === "light" || options.theme === "dark") query.push(`theme=${options.theme}`);
   if (options.y !== undefined && Number.isSafeInteger(options.y) && options.y >= 0 && options.y <= 10_000_000) query.push(`y=${options.y}`);
   return query.length ? `${path}?${query.join("&")}` : path;
-}
-
-/** Switching a page to "anyone with the link" asks the same second press as
- * a first publish. Pure. */
-export function needsLinkConfirm(current: PageAccess, next: PageAccess): boolean {
-  return next === "link" && current !== "link";
 }
 
 /** The page (or the version asked) is gone: deleted, or never this

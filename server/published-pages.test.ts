@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
-import { bannerName, escapeHtml, FRAME_PRELUDE, markdownToHtml, pageDocument, wrapperBanner } from "./published-pages-render.ts";
+import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, wrapperBanner } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import {
   createPublishedPageRoutes,
@@ -25,6 +25,7 @@ import {
 } from "./routes/published-pages.ts";
 import type { Message } from "./store.ts";
 import { PAGE_LIMITS, pageCsp, pageFrameSandbox, parsePageProposal, validExpiry } from "../shared/published-pages.ts";
+import { parseReaderBoot, READER_BOOT_ID, readerNotice } from "../shared/page-reader.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -258,14 +259,19 @@ describe("ownership: the conversation's person, not the bot's owner", () => {
 });
 
 describe("wrapper and sandboxed frame", () => {
-  it("the reader gets a Sagax wrapper with a permanent banner and the page in a scripts-only frame", async () => {
+  it("the reader gets a Sagax wrapper with its bar (title and the full notice) and the page in a scripts-only frame", async () => {
     const { pages } = store();
     const { path } = published(pages);
     const { wrapper, frame } = await read(pages, path, null);
     expect(wrapper.status).toBe(200);
-    expect(wrapper.body).toContain(escapeHtml(wrapperBanner({ botName: "Scout", personName: "Alice", lang: "fr" })));
+    // the yellow banner's words, all of them, now in the bar
+    const notice = readerNotice({ bot: "Scout", person: "Alice", lang: "fr" });
+    expect(wrapper.body).toContain(escapeHtml(notice.who));
+    expect(wrapper.body).toContain(escapeHtml(notice.warning));
     expect(wrapper.body).toContain("jamais de mot de passe");
-    expect(wrapper.body).not.toContain("<script");
+    expect(wrapper.body).toMatch(/<header class="sagax-bar"><div class="sagax-bar-main"><h1 title="Rapport">Rapport<\/h1>/);
+    // no built UI here: no script runs, only the JSON block the bar would read
+    expect(wrapper.body).not.toMatch(/<script(?![^>]*type="application\/json")/);
     expect(wrapper.body).toMatch(/<iframe src="\/pages\/frame\/[^"]+\?t=[^"]+" sandbox="allow-scripts"/);
     const csp = String(wrapper.headers["content-security-policy"]);
     expect(csp).toContain("script-src 'none'");
@@ -630,12 +636,12 @@ describe("the app's own look of its preview (2026-10-28, the page view)", () => 
     expect(frame.body).not.toContain("sagax-page-annotation");
   });
 
-  it("a reading link never takes the app's look: the banner stays, no script is added", async () => {
+  it("a reading link never takes the app's look: the bar stays, no script is added", async () => {
     const { pages } = store();
     const { path } = published(pages, "link", "pr_alice");
     const wrapper = await hit(options(pages, null), `${path}?bare=1&theme=dark&y=640`);
     expect(wrapper.status).toBe(200);
-    expect(wrapper.body).toContain("sagax-banner");
+    expect(wrapper.body).toContain("sagax-bar-note");
     const src = frameSrc(wrapper.body);
     expect(src).not.toContain("&k=");
     const frame = await hit(options(pages, null), `${src}&k=640&c=dark`, { "sec-fetch-dest": "iframe" });
@@ -833,5 +839,81 @@ describe("frame-src names the known public origin (review of #646, round 3)", ()
     expect(frame!.body).not.toMatch(/<iframe[\s>]/i);
     expect(frame!.body).not.toMatch(/type=speculationrules>/i);
     expect(frame!.body).toContain("<p>ok</p>");
+  });
+});
+
+describe("the reader's bar (2026-10-28)", () => {
+  const owner: PageViewer = { principalId: "pr_owner", computerOwner: false };
+  const reader: PageViewer = { principalId: "pr_reader", computerOwner: false };
+  const ASSETS = { scripts: ["/assets/page-reader-abc.js"], styles: ["/assets/page-reader-abc.css"], preloads: ["/assets/react-abc.js"] };
+  const withAssets = (pages: PublishedPages, viewer: PageViewer, assets: typeof ASSETS | null = ASSETS): PublicPageOptions => ({
+    ...options(pages, viewer), readerAssets: () => assets, personName: (id) => (id === "pr_reader" ? "Reader" : "Someone"), teamsOf: () => [],
+  });
+  const bootOf = (body: string) => parseReaderBoot(JSON.parse(new RegExp(`<script type="application/json" id="${READER_BOOT_ID}">([^<]*)</script>`).exec(body)![1]!));
+
+  it("a reader who is not signed in gets the title and the notice, never the page's id or Share", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", "pr_owner");
+    const wrapper = await hit(withAssets(pages, null), path);
+    const boot = bootOf(wrapper.body)!;
+    expect(boot).toMatchObject({ title: "Rapport", kind: "html", version: 1, lang: "fr", can: { share: false } });
+    expect(boot.pageId).toBeUndefined();
+    expect(boot.me).toBeUndefined();
+    expect(wrapper.body).not.toContain(pages.list(undefined)[0]!.id);
+  });
+
+  it("the page's own person gets Share and the page's id; an invited reader does not", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "private", "pr_owner");
+    pages.setInvites(id, { people: ["pr_reader"], teams: [] }, "pr_owner");
+    const mine = bootOf((await hit(withAssets(pages, owner), path)).body)!;
+    expect(mine).toMatchObject({ pageId: id, can: { share: true }, me: { id: "pr_owner", name: "Alice" }, owner: { name: "Alice" } });
+    const theirs = bootOf((await hit(withAssets(pages, reader), path)).body)!;
+    expect(theirs.can.share).toBe(false);
+    expect(theirs.pageId).toBeUndefined();
+    expect(theirs.me).toEqual({ id: "pr_reader", name: "Reader" });
+  });
+
+  it("with the built UI the wrapper runs this server's own script only, and reaches only its own origin", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", "pr_owner");
+    const wrapper = await hit(withAssets(pages, null), path);
+    expect(wrapper.body).toContain('<script type="module" src="/assets/page-reader-abc.js"></script>');
+    expect(wrapper.body).toContain('<link rel="stylesheet" href="/assets/page-reader-abc.css">');
+    expect(wrapper.body).toContain('<link rel="modulepreload" href="/assets/react-abc.js">');
+    const csp = String(wrapper.headers["content-security-policy"]);
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).not.toContain("unsafe-eval");
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
+    expect(csp).toContain("frame-ancestors 'none'");
+    // the page's frame is unchanged: same sandbox, no network
+    const frame = await hit(withAssets(pages, null), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" });
+    expect(String(frame.headers["content-security-policy"])).toContain("connect-src 'none'");
+    expect(wrapper.body).toMatch(/<iframe src="[^"]+" sandbox="allow-scripts"/);
+  });
+
+  it("the app's preview never gets the bar or its script", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_owner");
+    const wrapper = await hit(withAssets(pages, owner), `/pages/preview/${page.id}/1`);
+    expect(wrapper.body).toContain("sagax-banner");
+    expect(wrapper.body).not.toContain("sagax-bar");
+    expect(wrapper.body).not.toContain("<script");
+    expect(String(wrapper.headers["content-security-policy"])).toContain("script-src 'none'");
+  });
+
+  it("a title cannot close the JSON block or write markup", () => {
+    const block = jsonBlock(READER_BOOT_ID, { title: "</script><script>alert(1)</script> & <b>" });
+    expect(block.match(/<\/script>/g)).toHaveLength(1);
+    expect(block).not.toContain("<b>");
+    expect(JSON.parse(/>([^<]*)<\/script>$/.exec(block)![1]!).title).toBe("</script><script>alert(1)</script> & <b>");
+  });
+
+  it("only /assets/ paths of the built page are kept", () => {
+    const html = '<script type="module" crossorigin src="/assets/page-reader-1.js"></script><script type="module" src="https://x.example/evil.js"></script>'
+      + '<link rel="modulepreload" crossorigin href="/assets/react-1.js"><link rel="stylesheet" crossorigin href="/assets/page-reader-1.css"><link rel="stylesheet" href="//x.example/a.css">';
+    expect(parseReaderAssets(html)).toEqual({ scripts: ["/assets/page-reader-1.js"], styles: ["/assets/page-reader-1.css"], preloads: ["/assets/react-1.js"] });
+    expect(parseReaderAssets("<html></html>")).toBeNull();
   });
 });

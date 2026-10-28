@@ -21,66 +21,15 @@ import { Check, ExternalLink, Globe, Link2, Loader2, Lock, Users, X, XCircle } f
 
 import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
-import { usePerspicaxOrg, type OrgDirectory, type OrgDirectoryPerson } from "@/lib/perspicax-org";
+import { usePerspicaxOrg, type OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { groupPeopleCandidates } from "@/lib/private-threads";
 import { api, useStore } from "@/state/store";
-import type { PageAccess, PageInvites, PublishedPageSummary } from "../../shared/published-pages";
-import { ExpirySelect, expiryFromHours, needsLinkConfirm, openPage, pageErrorText, pageReadingUrl } from "./page-controls";
+import type { PageAccess, PublishedPageSummary } from "../../shared/published-pages";
+import { initialsOf, needsLinkConfirm, pageReadingUrl, sharePlan, teamCandidates, withInvite, type ShareChange } from "@/lib/page-share-plan";
+import { ExpirySelect, openPage, pageErrorText } from "./page-controls";
 import { useOrgDirectory } from "./GroupPeoplePicker";
 
-export interface ShareStep {
-  method: "POST" | "PATCH";
-  /** After /api/pages/<id>. */
-  path: string;
-  body: Record<string, unknown>;
-}
-
-export type ShareChange =
-  | { kind: "access"; access: PageAccess }
-  | { kind: "invites"; invites: PageInvites }
-  | { kind: "link" }
-  | { kind: "expiry"; hours: number }
-  | { kind: "version" }
-  | { kind: "stop" };
-
-/** The requests one gesture in the popover sends, in order. A page not
- * shared yet is published (the version on screen) by the gesture itself;
- * a shared one is changed in place. Pure. */
-export function sharePlan(page: Pick<PublishedPageSummary, "status" | "access" | "expiresAt" | "currentVersion">, version: number, change: ShareChange, now = Date.now()): ShareStep[] {
-  const shared = page.status === "published";
-  const publish = (access: PageAccess): ShareStep => ({ method: "POST", path: "/publish", body: { version, access, expiresAt: page.expiresAt !== null && page.expiresAt > now ? page.expiresAt : null } });
-  switch (change.kind) {
-    case "access":
-      if (!shared) return [publish(change.access)];
-      return change.access === page.access ? [] : [{ method: "PATCH", path: "", body: { access: change.access } }];
-    case "invites":
-      return [{ method: "POST", path: "/invite", body: { people: change.invites.people, teams: change.invites.teams } }, ...(shared ? [] : [publish(page.access)])];
-    case "link":
-      return shared ? [] : [publish(page.access)];
-    case "expiry":
-      return shared ? [{ method: "PATCH", path: "", body: { expiresAt: expiryFromHours(change.hours, now) } }] : [];
-    case "version":
-      return shared && page.currentVersion !== version ? [publish(page.access)] : [];
-    case "stop":
-      return shared ? [{ method: "POST", path: "/revoke", body: {} }] : [];
-  }
-}
-
-/** The invite lists with one more person or team, or one fewer. Pure. */
-export function withInvite(invites: PageInvites | undefined, entry: { kind: "person" | "team"; id: string }, add: boolean): PageInvites {
-  const current = { people: [...(invites?.people ?? [])], teams: [...(invites?.teams ?? [])] };
-  const key = entry.kind === "person" ? "people" : "teams";
-  const rest = current[key].filter((id) => id.toLowerCase() !== entry.id.toLowerCase());
-  current[key] = add ? [...rest, entry.id] : rest;
-  return current;
-}
-
-/** Teams whose name matches, not already invited. Pure. */
-export function teamCandidates(teams: NonNullable<OrgDirectory["teams"]>, invited: readonly string[], query: string, limit = 8) {
-  const taken = new Set(invited.map((id) => id.toLowerCase()));
-  const q = query.trim().toLowerCase();
-  return teams.filter((team) => !taken.has(team.id.toLowerCase()) && (!q || team.name.toLowerCase().includes(q))).slice(0, limit);
-}
+export { sharePlan, teamCandidates, withInvite, type ShareChange, type ShareStep } from "@/lib/page-share-plan";
 
 const ACCESS_ROWS: Array<{ access: PageAccess; icon: typeof Lock; label: "pages.share.invited" | "pages.share.org" | "pages.access.link"; hint: "pages.share.invitedHint" | "pages.access.orgHint" | "pages.access.linkHint" }> = [
   { access: "private", icon: Lock, label: "pages.share.invited", hint: "pages.share.invitedHint" },
@@ -88,15 +37,11 @@ const ACCESS_ROWS: Array<{ access: PageAccess; icon: typeof Lock; label: "pages.
   { access: "link", icon: Globe, label: "pages.access.link", hint: "pages.access.linkHint" },
 ];
 
-function initials(name: string): string {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]!.toUpperCase()).join("") || "?";
-}
-
 function Avatar({ name, url, team }: { name: string; url?: string; team?: boolean }) {
   if (url) return <img src={url} alt="" className="size-7 shrink-0 rounded-full object-cover" />;
   return (
     <span aria-hidden="true" className="flex size-7 shrink-0 items-center justify-center rounded-full bg-raised text-[11px] font-semibold text-ink-secondary">
-      {team ? <Users size={13} /> : initials(name)}
+      {team ? <Users size={13} /> : initialsOf(name)}
     </span>
   );
 }

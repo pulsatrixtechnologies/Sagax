@@ -1204,7 +1204,7 @@ import type { MeetingBrowser } from "./meetings/meeting-session.ts";
 import { createTemplateLinkRoutes, handleTemplateLinkPublic } from "./routes/template-links.ts";
 import { TemplateLinks } from "./template-links.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
-import { createPublishedPageRoutes, handlePagesOriginRequest, handlePublishedPagePublic, isPagesPath, type PageViewer, type PublicPageOptions } from "./routes/published-pages.ts";
+import { createPublishedPageRoutes, handlePagesOriginRequest, handlePublishedPagePublic, isPagesPath, readerAssetsFrom, type PageViewer, type PublicPageOptions } from "./routes/published-pages.ts";
 import { createTeamBotFromThreadRoutes } from "./routes/team-bot-from-thread.ts";
 import { createBotWizardRoutes } from "./routes/bot-wizard.ts";
 import { createBotWizardStore } from "./bot-wizard-store.ts";
@@ -8305,6 +8305,12 @@ function publishedPageOptions(): PublicPageOptions {
     },
     // a page shared with a team reads for that team's people (Share)
     teamsOf: (principalId) => IDENTITY.kind === "perspicax" ? (principals.byId(principalId)?.teams ?? []).map((team) => team.id) : [],
+    // the reader's bar around a reading link: this server's built script
+    readerAssets: () => readerAssetsFrom(STATIC_DIR),
+    personName: (principalId) => {
+      const person = principals.byId(principalId);
+      return person ? personDisplayName(person) : "";
+    },
     pagesHost: PAGES_ORIGIN?.host ?? null,
     appOrigin: (() => {
       try {
