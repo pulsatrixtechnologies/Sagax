@@ -11,6 +11,9 @@
 //    The proxy is spawned the way a driver's mcpServers entry spawns it, from
 //    source and from the esbuild bundle every packaged build ships, so "the
 //    same bytes" is a statement about the real process, not about a helper.
+//    The default listing is find_tool and use_tool. These goldens pin the
+//    full catalog (SAGAX_CATALOG_BRIDGE=0), which is what find_tool searches.
+//    No tool is removed from that catalog.
 //
 // 2. WIRE SIZE. The catalog is sent to the model on every turn. The often
 //    quoted "~37 KB" was a count of indented source, not of this JSON. The
@@ -232,7 +235,7 @@ async function toolsListWire(entry: string, env: Record<string, string>): Promis
 
 async function wireForEveryProfile(entry: string): Promise<Record<string, string>> {
   const names = Object.keys(PROFILES);
-  const wires = await Promise.all(names.map((name) => toolsListWire(entry, PROFILES[name]!.env)));
+  const wires = await Promise.all(names.map((name) => toolsListWire(entry, { ...PROFILES[name]!.env, SAGAX_CATALOG_BRIDGE: "0" })));
   return Object.fromEntries(names.map((name, index) => [name, wires[index]!]));
 }
 
@@ -268,6 +271,11 @@ beforeAll(async () => {
 }, 120_000);
 
 describe("agents proxy tools/list golden", () => {
+  it("lists find_tool and use_tool unless SAGAX_CATALOG_BRIDGE=0", async () => {
+    const wire = await toolsListWire(PROXY_SOURCE, {});
+    expect(toolsOf(wire).map((tool) => tool.name)).toEqual(["find_tool", "use_tool"]);
+  }, 30_000);
+
   it("round-trips through JSON.parse unchanged, so a parsed golden can stand for the bytes", () => {
     for (const wire of Object.values(wires)) expect(JSON.stringify(JSON.parse(wire))).toBe(wire);
   });

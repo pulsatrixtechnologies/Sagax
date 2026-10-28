@@ -12,8 +12,6 @@ type Room = { id: string; name: string; memberIds: string[]; section?: string; b
 type RpcReply = { result: { isError?: boolean; content: Array<{ text: string }> } };
 type Mounted = { command: string; args: string[]; env: Record<string, string> };
 
-const CHIEF_ONLY_TOOLS = ["create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "create_room", "manage_room", "retry_thread"];
-
 it("creates and manages an own-section room through the mounted Chief MCP proxy", async () => {
   const fixture = await launchVerificationServer({ ...process.env, FAKE_CLAUDE_MODE: "hang" });
   const evidence: unknown[] = [{ fixture: fixture.info }];
@@ -80,22 +78,29 @@ it("creates and manages an own-section room through the mounted Chief MCP proxy"
     const toolNames = async (rpc: ReturnType<typeof connect>) =>
       (await rpc<{ tools: Array<{ name: string }> }>("tools/list")).tools.map((entry) => entry.name);
 
-    // An ordinary teammate's turn is not shown the tools only a Chief may use.
+    // A turn is shown find_tool and use_tool. Chief-only tools stay out of
+    // this bot's catalog, so use_tool cannot call them. create_bot is the
+    // one any bot of the person may use (2026-10-17, server/bot-creation.ts).
     const peerMount = await mount(peer, "Say hello.");
     expect(peerMount.env.SAGAX_CHIEF_OF_STAFF).toBe("0");
-    const peerTools = await toolNames(connect(peerMount));
-    expect(peerTools).toContain("list_rooms");
-    // 2026-10-17 (server/bot-creation.ts): any bot of the person may
-    // create one bot (create_bot); the rest stays the Chief's.
+    const peerRpc = connect(peerMount);
+    const peerTools = (await peerRpc<{ tools: Array<{ name: string }> }>("tools/list")).tools.map((entry) => entry.name);
+    expect(peerTools).toEqual(["find_tool", "use_tool"]);
     expect(peerMount.env.SAGAX_CREATE_BOTS).toBe("1");
-    expect(CHIEF_ONLY_TOOLS.filter((name) => peerTools.includes(name))).toEqual(["create_bot"]);
+    const peerUse = (name: string, args: Record<string, unknown> = {}) =>
+      peerRpc<RpcReply["result"]>("tools/call", { name: "use_tool", arguments: { name, arguments: args } });
+    expect(JSON.stringify(await peerUse("create_bot"))).not.toContain("Unknown tool");
+    const refusedRoom = await peerUse("create_room");
+    expect(refusedRoom.isError).toBe(true);
+    expect(refusedRoom.content.map((item) => item.text).join("\n")).toContain("Unknown tool: create_room");
+    expect((await peerUse("list_rooms")).isError).not.toBe(true);
     evidence.push({ peerTools });
     await control(["interrupt", "--bot", peer.id]);
 
     const mounted = await mount(chief, "Set up a small room for the team.");
     expect(mounted.env.SAGAX_CHIEF_OF_STAFF).toBe("1");
     const rpc = connect(mounted);
-    expect(await toolNames(rpc)).toEqual(expect.arrayContaining(CHIEF_ONLY_TOOLS));
+    expect(await toolNames(rpc)).toEqual(["find_tool", "use_tool"]);
     const tool = async (name: string, args: Record<string, unknown>, denied = false) => {
       const result = await rpc("tools/call", { name, arguments: args });
       evidence.push({ tool: name, args, result });
