@@ -39,6 +39,26 @@ describe("CustomAcpDriver config", () => {
     });
   });
 
+  it("keeps a model list and thinking levels so each bot can choose them", async () => {
+    const decoded = CustomAcpDriver.decodeConfig({
+      cli: "fx acp",
+      models: [{ id: "fast", label: "Fast" }, { id: " " }, { id: "deep" }],
+      effortLevels: ["low", "high", "nope"],
+    });
+    expect(decoded.models).toEqual({ default: "fast", options: [{ id: "fast", label: "Fast" }, { id: "deep", label: "deep" }] });
+    expect(decoded.effortLevels).toEqual(["low", "high"]);
+    const instance = await CustomAcpDriver.create({
+      instanceId: "custom-levels",
+      displayName: "Custom",
+      environment: {},
+      enabled: true,
+      config: decoded,
+    });
+    expect(instance.models.options.map((model) => model.id)).toEqual(["fast", "deep"]);
+    expect(instance.adapter.capabilities.effortLevels).toEqual(["low", "high"]);
+    await instance.dispose();
+  });
+
   it("advertises the custom rail, multi-instance, and the passthrough model", () => {
     expect(CustomAcpDriver.metadata).toMatchObject({
       access: "custom",
