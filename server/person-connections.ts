@@ -20,7 +20,7 @@ import { z } from "zod";
 import { writeFileAtomic } from "./atomic.ts";
 import { isPublicDomainAddress } from "./custom-domain.ts";
 import { isReservedMcpEnvEntry, mcpServerNameError } from "./mcp-registry.ts";
-import type { VaultKeySource } from "./mcp-oauth.ts";
+import type { VaultKeySource } from "./vault-key-source.ts";
 
 export const MAX_PERSONAL_MCP_SERVERS = 20;
 const AAD = Buffer.from("sagax person-connections v1");
