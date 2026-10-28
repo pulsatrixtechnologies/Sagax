@@ -2859,12 +2859,17 @@ function bundledUiDevOrigin() {
   if (app.isPackaged || process.env.SAGAX_BUNDLED_UI_DIR) return null;
   return new URL(DEV_URL).origin;
 }
+// The page frames a window is loading as an iframe (will-frame-navigate
+// below): passed through net.fetch, they would otherwise say "empty" and the
+// server refuses a page frame that is not an iframe (blank card, 0.8.12).
+const bundledPageFrames = bundledUiModule.createPageFrameLoads();
 const bundledUiHandler = bundledUiModule.createBundledUiHandler({
   origin: () => bundledOriginsNow,
   staticDir: bundledUiStaticDir,
   devOrigin: bundledUiDevOrigin,
   fetch: (input, init) => net.fetch(input, init),
   readFile: (file) => fs.promises.readFile(file),
+  pageFrames: bundledPageFrames,
   log: (line) => slog(line),
 });
 function syncBundledUi() {
@@ -3688,6 +3693,9 @@ function wireAccountPage(win, contents) {
       slog("blocked a published page's frame navigation");
       return;
     }
+    // a subframe loading a published page's frame: the bundled UI handler
+    // tells the server it is an iframe, as the browser would
+    if (bundledUiModule.isPageFrameUrl(details.url)) bundledPageFrames.expect(details.url);
     let target = null;
     let page = null;
     try {

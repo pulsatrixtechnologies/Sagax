@@ -145,3 +145,66 @@ it("with the UI served (desktop, container), a page's preview and link answer th
     await fixture.close();
   }
 }, 120_000);
+
+it("the desktop on an organization server (bundled UI, net.fetch): a Markdown and an HTML page's frame answer the page, with its style, in the card and the open page (0.8.12: blank white)", async () => {
+  const { createRequire } = await import("node:module");
+  const bundledUi = createRequire(import.meta.url)("../electron/bundled-ui.cjs");
+  const fixture = await launchVerificationServer();
+  try {
+    const url = fixture.info.url;
+    const pages = new PublishedPages(fixture.info.dataDir);
+    const md = pages.propose({ botId: "b1", threadId: "t1", title: "KPI Test (markdown)", kind: "markdown", content: "# KPI Test\n\nTexte **visible** en Markdown." });
+    const html = pages.propose({ botId: "b1", threadId: "t1", title: "KPI Test (html)", kind: "html", content: "<!doctype html><body style=\"background:#123456;color:#fff\"><h1 style=\"color:#fc0\">KPI HTML</h1><p>Texte visible en HTML.</p></body>" });
+    if (!md.ok || !html.ok) throw new Error("propose");
+    // Electron's net.fetch, as the handler's passthrough uses it: a browser-made
+    // fetch, so its fetch metadata says "empty" unless the request names a
+    // frame destination (which net.fetch accepts with mode "navigate" only)
+    const netFetch = async (input: string, init: { headers?: ConstructorParameters<typeof Headers>[0]; method?: string } = {}) => {
+      const headers = new Headers(init.headers);
+      const dest = headers.get("sec-fetch-dest");
+      if (dest === "iframe" && headers.get("sec-fetch-mode") !== "navigate") throw new TypeError("sec-fetch-dest iframe requires sec-fetch-mode navigate");
+      if (!dest) headers.set("sec-fetch-dest", "empty");
+      return fetch(input, { method: init.method ?? "GET", headers });
+    };
+    const frames = bundledUi.createPageFrameLoads();
+    const handle = bundledUi.createBundledUiHandler({
+      origin: () => url,
+      staticDir: () => null,
+      fetch: netFetch,
+      readFile: async () => new Uint8Array(),
+      pageFrames: frames,
+    });
+    // what Chromium hands the protocol handler for a frame's document: no fetch metadata, no referrer
+    const navigation = (address: string) => new Request(address, { headers: { accept: "text/html", "upgrade-insecure-requests": "1" } });
+    for (const [id, text] of [[md.page.id, "Texte <strong>visible</strong> en Markdown."], [html.page.id, "Texte visible en HTML."]] as const) {
+      const previewPath: string = (await (await fetch(`${url}/api/pages/${id}/versions/1`)).json() as any).version.previewPath;
+      // the card (light) and the open page (dark), both bare
+      for (const look of ["?bare=1&theme=light", "?bare=1&theme=dark"]) {
+        const wrapper = await handle(navigation(`${url}${previewPath}${look}`));
+        expect(wrapper.status).toBe(200);
+        const src = /<iframe src="([^"]+)"/.exec(await wrapper.text())![1]!.replace(/&amp;/g, "&");
+        const frameUrl = `${url}${src}`;
+        // main noted the subframe navigation (will-frame-navigate) before the request
+        expect(frames.expect(frameUrl)).toBe(true);
+        const frame = await handle(navigation(frameUrl));
+        expect(frame.status, `${id}${look}`).toBe(200);
+        expect(frame.headers.get("content-type")).toBe("text/html; charset=utf-8");
+        const csp = frame.headers.get("content-security-policy") ?? "";
+        // framed by the app, its own inline style applied, still no network and sandboxed
+        expect(csp).toContain("frame-ancestors 'self'");
+        expect(csp).toContain("style-src 'unsafe-inline'");
+        expect(csp).toContain("connect-src 'none'");
+        expect(csp).toMatch(/; sandbox( allow-scripts)?$/);
+        expect(csp).not.toContain("allow-same-origin");
+        const body = await frame.text();
+        expect(body).toContain(text);
+        if (id === md.page.id) expect(body).toMatch(/<style>[^<]*\S[^<]*<\/style>/);
+        else expect(body).toContain("background:#123456");
+        // the same frame address not loaded as a frame (a top-level load, a fetch): still refused
+        expect((await handle(navigation(frameUrl))).status).toBe(404);
+      }
+    }
+  } finally {
+    await fixture.close();
+  }
+}, 120_000);
