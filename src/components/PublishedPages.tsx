@@ -131,7 +131,7 @@ export function PagePublishCard({ message }: { message: Message }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13.5px] font-medium text-ink">{title}</span>
           <span data-page-card-state={status ?? ""} className="block truncate text-[12px] text-ink-secondary">
-            {t("pages.label")}{status && status !== "draft" ? ` · ${status === "published" && page ? t("pages.card.published", { access: t(ACCESS_LABEL[page.access]) }) : t(`pages.card.${status}`, { n: String(ref.version) })}` : ""}
+            {t("pages.label")}{status && status !== "draft" ? ` · ${status === "published" && page ? t("pages.card.published", { access: page.access === "private" && ((page.invites?.people.length ?? 0) + (page.invites?.teams.length ?? 0)) > 0 ? t("pages.share.invited") : t(ACCESS_LABEL[page.access]) }) : t(`pages.card.${status}`, { n: String(ref.version) })}` : ""}
           </span>
         </span>
       </footer>
@@ -237,7 +237,7 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
       </p>
       {/* sharing: the one Share popover (src/components/PageShare.tsx) */}
       <div className="relative flex flex-wrap items-center gap-2 text-[12px]">
-        {published && <span className="text-ink-secondary">{t("pages.card.published", { access: t(ACCESS_LABEL[page.access]) })}</span>}
+        {published && <span className="text-ink-secondary">{t("pages.card.published", { access: page.access === "private" && ((page.invites?.people.length ?? 0) + (page.invites?.teams.length ?? 0)) > 0 ? t("pages.share.invited") : t(ACCESS_LABEL[page.access]) })}</span>}
         <button type="button" data-page-share aria-expanded={sharing} aria-haspopup="dialog" onClick={() => setSharing((open) => !open)}
           className="inline-flex items-center gap-1 rounded-full border border-hairline/60 px-2.5 py-1 text-ink hover:bg-raised">
           <Share size={12} />{t("pages.shareMenu")}
