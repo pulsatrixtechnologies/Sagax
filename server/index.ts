@@ -4358,6 +4358,10 @@ function agentsIntegration(
       SAGAX_COMMS_TOKEN: token,
       SAGAX_TURN_DEPTH: String(depth),
       SAGAX_ROOM_TURN: roomCoordination ? "1" : "0",
+      // A real room (group conversation). A person's direct chat also sets
+      // SAGAX_ROOM_TURN (bounded coordination), so a tool absent from rooms
+      // only (propose_page) reads this, never SAGAX_ROOM_TURN.
+      SAGAX_GROUP_TURN: store.groupByThread(threadId) ? "1" : "0",
       SAGAX_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
       SAGAX_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
       // The agent-to-agent tools (server/agent-api.ts) in every turn outside

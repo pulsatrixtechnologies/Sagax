@@ -39,6 +39,10 @@ export interface CatalogProfile {
   externalRuntime: boolean;
   /** A room turn or an ordinary direct chat: one bounded teamwork path. */
   coordinating: boolean;
+  /** A room (group conversation) turn, SAGAX_GROUP_TURN. Not the same as
+   * coordinating: a person's ordinary direct chat coordinates too. Absent is
+   * a direct conversation. */
+  room?: boolean;
   /** In a coordinating turn, may the bot open separate jobs on itself. */
   ownThreadCreation: boolean;
   skillAuthoring: boolean;
@@ -107,6 +111,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
   return {
     externalRuntime,
     coordinating: !externalRuntime && env.SAGAX_ROOM_TURN === "1",
+    room: !externalRuntime && env.SAGAX_GROUP_TURN === "1",
     ownThreadCreation: env.SAGAX_OWN_THREAD_CREATION === "1",
     skillAuthoring: env.SAGAX_SKILL_AUTHORING_ENABLED === "1",
     sharedComputers: env.SAGAX_SHARED_COMPUTERS_ENABLED === "1",
@@ -492,11 +497,11 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "close_thread",
     description:
-      "Mark a thread you opened (or one of your own) as finished once you have read its result: it leaves the person's default sidebar list (still under all threads, with a note saying you closed it) and list_threads reports it as closed. Nothing is deleted — deleting stays the person's decision — and a thread that is still running cannot be closed; wait for it or leave it. Use the thread id from list_threads or from the start_thread result. If a close is refused, do not retry it.",
+      "Mark a thread you opened (or one of your own) as finished once you have read its result: it leaves the person's default sidebar list (still under all threads, with a note saying you closed it) and list_threads reports it as closed. Nothing is deleted — deleting stays the person's decision — and a thread that is still running cannot be closed; wait for it or leave it. Use the thread id from list_threads. If a close is refused, do not retry it.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      properties: { thread_id: { type: "string", description: "The thread id from list_threads or start_thread." } },
+      properties: { thread_id: { type: "string", description: "The thread id from list_threads." } },
       required: ["thread_id"],
     },
   },
@@ -1760,8 +1765,11 @@ function creatorCreateBot<T extends { name: string; description: string; inputSc
 // Ordinary direct chats use this same bounded coordinator. Goal-owned turns
 // retain their independent loop and cannot start a second coordinator.
 const ROOM_ONLY_TOOLS = new Set(["list_room_targets", "coordinate_bots", "send_to_bot"]);
-// propose_page is absent from rooms: a page belongs to one person's conversation.
-const ROOM_REPLACED_TOOLS = new Set(["ask_bot", "delegate_bot", "check_delegation", "wait_delegation", "start_thread", "propose_page"]);
+const ROOM_REPLACED_TOOLS = new Set(["ask_bot", "delegate_bot", "check_delegation", "wait_delegation", "start_thread"]);
+// Absent from a real room only (profile.room), never from a person's direct
+// chat, which coordinates too: a page belongs to one person's conversation,
+// and the route refuses it in a room (chat-widgets.ts proposePageCard).
+const ROOM_ABSENT_TOOLS = new Set(["propose_page"]);
 const EXTERNAL_TOOL_NAMES = new Set(["list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation"]);
 const WATCHER_TOOL_NAMES = new Set(["create_options_card"]);
 
@@ -1854,9 +1862,46 @@ export function withDeferredRareTools<T extends { name: string }>(tools: readonl
     : tool);
 }
 
+/** A description names only tools its turn is shown: a sentence that steers
+ * the model to a tool this turn lacks is rewritten to the one it has, or
+ * dropped (a person's direct chat coordinates through coordinate_bots, and
+ * the bot was told to use delegate_bot it did not have). The guard is
+ * agents-catalog-reachability.test.ts. */
+const OFFERED_REFERENCES: ReadonlyArray<{ tool: string; missing: string; from: string; to: string }> = [
+  { tool: "post_to_room", missing: "delegate_bot", from: "(use ask_bot or delegate_bot for those)", to: "(use coordinate_bots for those)" },
+  { tool: "post_to_room", missing: "send_voice_note", from: " Set attach_voice_note true to attach this turn's voice note.", to: "" },
+  { tool: "create_bot", missing: "delegate_bot", from: "Assign work through delegate_bot.", to: "Assign work through coordinate_bots." },
+  { tool: "retry_thread", missing: "delegate_bot", from: "Use delegate_bot with a corrected brief", to: "Use coordinate_bots with a corrected brief" },
+  { tool: "send_to_bot", missing: "start_thread", from: " This is cross-bot only: use start_thread to send independent work to yourself.", to: " This is cross-bot only." },
+  { tool: "send_to_bot", missing: "await_turn", from: " The answer includes {threadId, handle} for await_turn.", to: "" },
+  { tool: "save_artifact", missing: "propose_page", from: "; to share a page with others through a link, use propose_page instead.", to: "." },
+];
+
+function withOfferedReferences<T extends { name: string; description: string; inputSchema?: unknown }>(tools: T[]): T[] {
+  const names = new Set(tools.map((tool) => tool.name));
+  return tools.map((tool) => {
+    let next = tool;
+    for (const ref of OFFERED_REFERENCES) {
+      if (ref.tool !== tool.name || names.has(ref.missing) || !next.description.includes(ref.from)) continue;
+      // the replacement must itself be offered, else the sentence goes
+      const to = /\bcoordinate_bots\b/.test(ref.to) && !names.has("coordinate_bots") ? "" : ref.to;
+      next = { ...next, description: next.description.replace(ref.from, to) };
+    }
+    // attach_voice_note needs this turn's send_voice_note recording
+    if (tool.name === "post_to_room" && !names.has("send_voice_note")) {
+      const schema = next.inputSchema as { properties?: Record<string, unknown> } | undefined;
+      if (schema?.properties && "attach_voice_note" in schema.properties) {
+        const properties = Object.fromEntries(Object.entries(schema.properties).filter(([key]) => key !== "attach_voice_note"));
+        next = { ...next, inputSchema: { ...schema, properties } };
+      }
+    }
+    return next;
+  });
+}
+
 /** The tools one turn is shown, exactly as tools/list serializes them. */
 export function availableTools(profile: CatalogProfile) {
-  const tools = catalogTools(profile);
+  const tools = withOfferedReferences(catalogTools(profile));
   return profile.cloudHome
     ? tools.filter(tool => !LOCAL_VM_TOOL_NAMES.has(tool.name)).map(tool => tool.name === "select_computer"
       ? { ...tool, inputSchema: { ...tool.inputSchema, properties: { surface: CLOUD_HOME_SURFACE } } }
@@ -1924,8 +1969,10 @@ function catalogTools(profile: CatalogProfile) {
     videoToolDefinition(),
     ...(profile.perspicax && !profile.externalRuntime ? PERSPICAX_TOOLS : []),
     // a call through the speaker's Twilio profile on Perspicax, on a card
-    // (server/outbound-calls.ts); never in a room
-    ...(profile.perspicax && !profile.externalRuntime && !profile.coordinating ? [PLACE_PHONE_CALL_TOOL_SPEC] : []),
+    // (server/outbound-calls.ts); never in a room. A person's direct chat
+    // coordinates too, so this reads room, never coordinating (the route
+    // refuses a room only, server/outbound-wiring.ts placeCall).
+    ...(profile.perspicax && !profile.externalRuntime && profile.room !== true ? [PLACE_PHONE_CALL_TOOL_SPEC] : []),
     ...(profile.claims && !profile.externalRuntime ? CLAIM_TOOLS : []),
     ...(profile.phoneTools?.length && !profile.externalRuntime ? [phoneToolDefinition(profile.phoneTools)] : []),
     ...(profile.webSearch === true && !profile.externalRuntime ? [WEB_SEARCH_TOOL_DEFINITION] : []),
@@ -1971,10 +2018,11 @@ function coreCatalogTools(profile: CatalogProfile) {
       const properties = Object.fromEntries(Object.entries(tool.inputSchema.properties).filter(([key]) => key !== "for_bot_id"));
       return { ...tool, description: tool.description.replace(CHIEF_PROFILE_TARGET, ""), inputSchema: { ...tool.inputSchema, properties } };
     });
+  const PLACE_TOOLS = profile.room === true ? ROLE_TOOLS.filter((tool) => !ROOM_ABSENT_TOOLS.has(tool.name)) : ROLE_TOOLS;
   return profile.externalRuntime
     ? BOT_SCOPED_TOOLS.filter(tool => EXTERNAL_TOOL_NAMES.has(tool.name))
     : profile.coordinating
-    ? ROLE_TOOLS.filter(tool => !ROOM_REPLACED_TOOLS.has(tool.name) || (tool.name === "start_thread" && profile.ownThreadCreation))
+    ? PLACE_TOOLS.filter(tool => !ROOM_REPLACED_TOOLS.has(tool.name) || (tool.name === "start_thread" && profile.ownThreadCreation))
       .map(tool => tool.name === "start_thread" ? {
         ...tool,
         description: "Open a separate job on yourself with its own history and run, without switching the person's selected conversation. Use only when the user requests independent jobs (for example one review per pull request). Give a short specific title and complete instructions; you can open at most five per turn. This is not a teammate handoff: use coordinate_bots for teammates and their automatic replies. Self-opened jobs cannot recursively open more jobs. If refused, do not retry; explain what remains.",
@@ -1982,5 +2030,5 @@ function coreCatalogTools(profile: CatalogProfile) {
           bot_id: { type: "string", enum: [profile.botId], description: "Leave out, or use your own bot ID. For teammates use coordinate_bots." },
         } },
       } : tool)
-    : ROLE_TOOLS.filter(tool => !ROOM_ONLY_TOOLS.has(tool.name));
+    : PLACE_TOOLS.filter(tool => !ROOM_ONLY_TOOLS.has(tool.name));
 }

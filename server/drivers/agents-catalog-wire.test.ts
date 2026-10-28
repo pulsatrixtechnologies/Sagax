@@ -67,6 +67,9 @@ function profiles(): Record<string, Profile> {
                 family: room ? "room" : "direct",
                 env: {
                   SAGAX_ROOM_TURN: flag(room),
+                  // the "room" family is a real room; a person's direct chat,
+                  // which coordinates too, is pinned in agents-catalog-reachability.test.ts
+                  SAGAX_GROUP_TURN: flag(room),
                   SAGAX_OWN_THREAD_CREATION: flag(ownThread),
                   SAGAX_SKILL_AUTHORING_ENABLED: flag(skills),
                   SAGAX_SHARED_COMPUTERS_ENABLED: flag(shared),
@@ -148,6 +151,10 @@ const FULL = { direct: "direct+skills+shared+voice", room: "room+own-thread+skil
 // move to the measured bytes.
 // task_list adds 662 B to every non-external profile. Profiles already
 // near the cap move to the measured bytes.
+// 2026-10-28: make_video (every profile, external included) had reached the
+// catalog without a golden update; the reachability fix (propose_page and
+// place_phone_call in a person's direct chat, descriptions that name only
+// tools the turn is shown) moves the profiles out of 2% to the measured bytes.
 const BUDGET_BASELINE: Record<string, number> = {
   "direct": 86070,
   "direct+voice": 86811,
@@ -173,32 +180,32 @@ const BUDGET_BASELINE: Record<string, number> = {
   "room+own-thread+skills+voice": 88461,
   "room+own-thread+skills+shared": 89465,
   "room+own-thread+skills+shared+voice": 90206,
-  "direct+non-chief": 74167,
-  "direct+voice+non-chief": 74908,
+  "direct+non-chief": 75964,
+  "direct+voice+non-chief": 76931,
   "direct+shared+non-chief": 76663,
   "direct+shared+voice+non-chief": 77404,
   "direct+skills+non-chief": 76971,
   "direct+skills+voice+non-chief": 77712,
   "direct+skills+shared+non-chief": 78716,
   "direct+skills+shared+voice+non-chief": 79457,
-  "room+non-chief": 71631,
-  "room+voice+non-chief": 72372,
-  "room+shared+non-chief": 73376,
-  "room+shared+voice+non-chief": 74117,
-  "room+skills+non-chief": 73684,
-  "room+skills+voice+non-chief": 74425,
-  "room+skills+shared+non-chief": 75429,
-  "room+skills+shared+voice+non-chief": 76170,
-  "room+own-thread+non-chief": 73764,
-  "room+own-thread+voice+non-chief": 74505,
-  "room+own-thread+shared+non-chief": 75509,
-  "room+own-thread+shared+voice+non-chief": 76250,
-  "room+own-thread+skills+non-chief": 75817,
-  "room+own-thread+skills+voice+non-chief": 76558,
-  "room+own-thread+skills+shared+non-chief": 77562,
-  "room+own-thread+skills+shared+voice+non-chief": 78303,
-  "external": 3030,
-  "external+everything": 3030,
+  "room+non-chief": 73240,
+  "room+voice+non-chief": 74207,
+  "room+shared+non-chief": 75241,
+  "room+shared+voice+non-chief": 76208,
+  "room+skills+non-chief": 75293,
+  "room+skills+voice+non-chief": 76260,
+  "room+skills+shared+non-chief": 77294,
+  "room+skills+shared+voice+non-chief": 78261,
+  "room+own-thread+non-chief": 75428,
+  "room+own-thread+voice+non-chief": 76395,
+  "room+own-thread+shared+non-chief": 77429,
+  "room+own-thread+shared+voice+non-chief": 78396,
+  "room+own-thread+skills+non-chief": 77481,
+  "room+own-thread+skills+voice+non-chief": 78448,
+  "room+own-thread+skills+shared+non-chief": 79482,
+  "room+own-thread+skills+shared+voice+non-chief": 80449,
+  "external": 3697,
+  "external+everything": 3697,
 };
 
 const RPC_PREFIX = '{"jsonrpc":"2.0","id":1,"result":';
@@ -308,6 +315,11 @@ describe("agents proxy tools/list golden", () => {
         // A non-Primary Bot's propose_profile and propose_model are pinned by
         // the next test.
         if (profile.env.SAGAX_CHIEF_OF_STAFF === "0" && CHIEF_TARGET_TOOLS.includes(tool.name)) continue;
+        // A description names only tools its turn is shown (agents-catalog.ts
+        // OFFERED_REFERENCES, pinned by agents-catalog-reachability.test.ts):
+        // post_to_room without a voice, send_to_bot without own threads.
+        if (profile.env.SAGAX_VOICE_NOTES === "0" && tool.name === "post_to_room") continue;
+        if (profile.env.SAGAX_OWN_THREAD_CREATION === "0" && tool.name === "send_to_bot") continue;
         expect(JSON.stringify(tool), `${name}: ${tool.name}`).toBe(full.get(tool.name));
       }
     }
@@ -390,6 +402,9 @@ describe("agents proxy tools/list from the packaged bundle", () => {
       platform: "node",
       target: "node20",
       format: "esm",
+      // the banner scripts/bundle-server.mjs adds: a CommonJS dependency
+      // (yaml) requires node built-ins at load time
+      banner: { js: 'import { createRequire as __ombCreateRequire } from "node:module"; const require = __ombCreateRequire(import.meta.url);' },
       outbase: join(HERE, ".."),
       outdir: directory,
       logLevel: "silent",

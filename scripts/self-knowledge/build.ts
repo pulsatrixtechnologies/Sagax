@@ -38,8 +38,11 @@ const BASE: CatalogProfile = {
 };
 
 /** The switches of a turn that show a tool, in words. */
+// A person's own chat coordinates (server/index.ts boundedCoordination), so
+// coordinating alone is "a person's chat or a room"; a room also sets room.
 const CONDITIONS: Array<{ when: string; profile: Partial<CatalogProfile> }> = [
-  { when: "in a room (group conversation)", profile: { coordinating: true } },
+  { when: "in a person's chat or a room", profile: { coordinating: true } },
+  { when: "in a room (group conversation)", profile: { coordinating: true, room: true } },
   { when: "for a Primary Bot only", profile: { chief: true } },
   { when: "for a bot allowed to create bots", profile: { createBots: true } },
   { when: "on an organization server linked to Perspicax", profile: { perspicax: true } },
@@ -53,11 +56,15 @@ const CONDITIONS: Array<{ when: string; profile: Partial<CatalogProfile> }> = [
   { when: "for a Primary Bot with the agent-to-agent API", profile: { agentApi: true, chief: true } },
   { when: "in a single-stream conversation (threads off)", profile: { singleStream: true } },
   { when: "when the bot routes messages sent while it is busy", profile: { routeMessages: true } },
-  { when: "in a room whose shared memory is on", profile: { coordinating: true, groupMemory: true } },
-  { when: "in a room where the bot may open its own threads", profile: { coordinating: true, ownThreadCreation: true } },
+  { when: "in a room whose shared memory is on", profile: { coordinating: true, room: true, groupMemory: true } },
+  { when: "in a person's chat when they ask for separate jobs", profile: { coordinating: true, ownThreadCreation: true } },
 ];
 
 type Tool = { name: string; description: string };
+/** Every switch of `wider` is set the same in `profile`, which sets more. */
+const narrower = (profile: Partial<CatalogProfile>, wider: Partial<CatalogProfile>) =>
+  Object.keys(profile).length > Object.keys(wider).length &&
+  Object.entries(wider).every(([key, value]) => profile[key as keyof CatalogProfile] === value);
 const names = (profile: CatalogProfile) => new Set((availableTools(profile) as Tool[]).map((tool) => tool.name));
 
 const TIER_WORDS: Record<string, string> = {
@@ -71,13 +78,16 @@ const TIER_WORDS: Record<string, string> = {
 function toolSections(): KnowledgeSection[] {
   const tools = new Map<string, Tool>();
   const add = (profile: CatalogProfile) => { for (const tool of availableTools(profile) as Tool[]) if (!tools.has(tool.name)) tools.set(tool.name, tool); };
+  // BASE is a routine or a delegated turn; a person's own chat coordinates.
   const base = names(BASE);
-  const room = names({ ...BASE, coordinating: true });
+  const direct = names({ ...BASE, coordinating: true });
+  const directJobs = names({ ...BASE, coordinating: true, ownThreadCreation: true });
+  const room = names({ ...BASE, coordinating: true, room: true });
   add(BASE);
   const shown = CONDITIONS.map((condition) => {
     const profile = { ...BASE, ...condition.profile };
     add(profile);
-    return { when: condition.when, names: names(profile) };
+    return { when: condition.when, profile: condition.profile, names: names(profile) };
   });
   for (const tool of PERSPICAX_TOOLS as Tool[]) if (!tools.has(tool.name)) tools.set(tool.name, tool);
   const permission = new Map<string, (typeof MCP_PERMISSIONS)[number]>();
@@ -89,9 +99,15 @@ function toolSections(): KnowledgeSection[] {
   for (const tool of tools.values()) {
     const when: string[] = [];
     if (base.has(tool.name)) {
-      if (!room.has(tool.name)) when.push("not in rooms");
+      if (!direct.has(tool.name)) {
+        when.push(directJobs.has(tool.name)
+          ? "in routines and delegated turns; in a person's chat when they ask for separate jobs"
+          : "in routines and delegated turns only (a person's chat and rooms use coordinate_bots)");
+      } else if (!room.has(tool.name)) when.push("not in rooms");
     } else {
-      const conditions = shown.filter((entry) => entry.names.has(tool.name) && !base.has(tool.name)).map((entry) => entry.when);
+      const matching = shown.filter((entry) => entry.names.has(tool.name) && !base.has(tool.name));
+      // a narrower condition (a room, after "a person's chat or a room") says nothing more
+      const conditions = matching.filter((entry) => !matching.some((other) => other !== entry && narrower(entry.profile, other.profile))).map((entry) => entry.when);
       when.push(conditions.length ? conditions.slice(0, 2).join(" or ") : "in some turns only");
     }
     const perm = permission.get(tool.name);

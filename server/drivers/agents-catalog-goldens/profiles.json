@@ -1,7 +1,7 @@
 {
   "direct": {
-    "bytes": 86070,
-    "sha256": "951e869058ae8bb78d9013cfd5cec8fad0572920d6cc365a6dc89cd0226ca905",
+    "bytes": 86463,
+    "sha256": "9af47da2719d2183d726981615b9961b3f423189ccf7b067af8ebe5130b5cd6b",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -77,12 +77,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+voice": {
-    "bytes": 86811,
-    "sha256": "6aa514e380e16265a014fb5c8021480772f5225dff9ea0e613ab10c20ab5443d",
+    "bytes": 87430,
+    "sha256": "bcbc052992c8d4d5ff3ad96995aeb3635e2d633fe4bd074488e22e87f2f553f1",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -159,12 +160,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+shared": {
-    "bytes": 87815,
-    "sha256": "9f08acd80195883481611d0579bbaeea58a897bda906828424ae1c55ea89164b",
+    "bytes": 88464,
+    "sha256": "6555755edc34516d478fe57fa5bbe9107fba3fecd7873ff91fd2c3ea225e2f26",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -242,12 +244,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+shared+voice": {
-    "bytes": 88556,
-    "sha256": "05f17d2a71280fac137c0b595fe67a3b9a0f5e3ea6e5db55eb7874037134aa0d",
+    "bytes": 89431,
+    "sha256": "25407893a2e576a03476588a405ae9e3a974a524cf5ba93199694121ed1c9652",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -326,12 +329,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+skills": {
-    "bytes": 88123,
-    "sha256": "8a5eb02a8b49ce2ec41eccf456d0b0ee62c2560c1c97792c4c6ae08c9a748e84",
+    "bytes": 88516,
+    "sha256": "dd0d4c71b955627e9e592d34f8efefe703ea4f22615731d12f37aa4058e0248b",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -409,12 +413,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+skills+voice": {
-    "bytes": 88864,
-    "sha256": "28fcd7ef7da2d464d2686e42df8d69b2064698efcdc87515384e2e715226b948",
+    "bytes": 89483,
+    "sha256": "1f8fcf1201b6b3e614338adce7b2cc5d14583e221c3c6edf81b7dba1491bafe4",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -493,12 +498,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+skills+shared": {
-    "bytes": 89868,
-    "sha256": "d27412c3356d211deadb4a3532cafeb7c3533ad57a04c85bc4950623cc10f201",
+    "bytes": 90517,
+    "sha256": "6c83d5ea827f8b607607169eb11c0835394e105bea633493d9342ce6249c6ada",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -578,12 +584,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+skills+shared+voice": {
-    "bytes": 90609,
-    "sha256": "3fc95e42d94e0ba55bb284de97f7ea3a3b0618c3476b311da68e15cd2af753a6",
+    "bytes": 91484,
+    "sha256": "4b043bbd2b2a217763742787d154174fc166d0c2533c15707993a34fb52a113b",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -664,12 +671,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room": {
-    "bytes": 83534,
-    "sha256": "1bb4b981b5cad0ad4ef9eff95f1fe20e9ced0fb48343e3887090c3e56362aac3",
+    "bytes": 83745,
+    "sha256": "8c1ebd90779dfb5f64db5b2c4d54dc0cb91c3877d16dadf0c738bf670c31c32f",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -742,12 +750,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+voice": {
-    "bytes": 84275,
-    "sha256": "eda4375b953ef297fdb66a4447b7e4bc2b540c8741797e427dcf86145157b059",
+    "bytes": 84712,
+    "sha256": "1825f25cd6859c806ebd68c9dcf5007654f27d494956ea11eced409883943e97",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -821,12 +830,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+shared": {
-    "bytes": 85279,
-    "sha256": "34c51b307ccef9e8c9f511188805090828ec32dda50616c3c1b458bc506430f2",
+    "bytes": 85746,
+    "sha256": "2cd3432d015abf2ba7a1c09022870e3bf69295606b332da69ffb1b5ad3c4ff57",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -901,12 +911,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+shared+voice": {
-    "bytes": 86020,
-    "sha256": "6b9fb51683fb36ab35f2d5b53c718c47751c7536dce4d23bcd4a1f46656a0075",
+    "bytes": 86713,
+    "sha256": "bc0f50106609c8385190f19ff76924c155a8255b3541ef19499ff1d3e695e426",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -982,12 +993,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+skills": {
-    "bytes": 85587,
-    "sha256": "3471e8746a73d5377b2d6d7143c549efc8c98b7cbb605b8aa850a0d6788a2ede",
+    "bytes": 85798,
+    "sha256": "b6d96d9d3f0f390bf6901ea85f3e9cf9179d5242071bfc324963e08aaf909d07",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1062,12 +1074,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+skills+voice": {
-    "bytes": 86328,
-    "sha256": "a017b512e91e4989b02b08415e998299672adb3c9f31921154be678b3b60aafe",
+    "bytes": 86765,
+    "sha256": "0376d9f11511410144f3cb617662a0e21ac1800e85b6c2b74a84ab03ff5b6171",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1143,12 +1156,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+skills+shared": {
-    "bytes": 87332,
-    "sha256": "fd83ae3c0abacbdf3256a28c75926b73ac6621edd925e6f56d8b7b3815a95d1f",
+    "bytes": 87799,
+    "sha256": "81705abc58db9dfee757a878dabda17c2abf96349eeb2a323ffaa2d24c577c53",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1225,12 +1239,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+skills+shared+voice": {
-    "bytes": 88073,
-    "sha256": "2ae162abe22c3e3df3e07b2a5df1429bfec2ab2f2135f171523eb9416fd65557",
+    "bytes": 88766,
+    "sha256": "0fa7153a42cd67552b14a0de022dc1ea991e1cd9f21b478f3f649767d560ae7e",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1308,12 +1323,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread": {
-    "bytes": 85667,
-    "sha256": "1b62aa5f019ae8441fa54a960b1d7495bd0e4892e773ed986e2af2a19cf81f46",
+    "bytes": 85933,
+    "sha256": "bdefbfbe3a450a7b7f4fc641b2bb1d9cc1d04b961d473e678945bb1ec3535380",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1387,12 +1403,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+voice": {
-    "bytes": 86408,
-    "sha256": "123fbc4cef6bdc647b5ed45b8bc47d965e0592342e941a36b538908f47e70249",
+    "bytes": 86900,
+    "sha256": "18ec93c227cc27859cb8f7cb1020eaa74230af6fbf74965db44fdddb1355877e",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1467,12 +1484,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+shared": {
-    "bytes": 87412,
-    "sha256": "1b6dc5e251daea0661ab208789dacfe79682d6bfbe0382e2b330325b47d1f83b",
+    "bytes": 87934,
+    "sha256": "b0706ee86562160ed35f6b227f8ae46c23816fc352d957c281f5a7a4f1185780",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1548,12 +1566,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+shared+voice": {
-    "bytes": 88153,
-    "sha256": "390eb3969962d3b1518f313ba0e9d7284c4f20c90c042a4bdbbf9adbc18cc8c0",
+    "bytes": 88901,
+    "sha256": "352ded7e4e93db30cbcc5ae1b3666b504251d5cbbd54690f92d7cd1cadffb705",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1630,12 +1649,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+skills": {
-    "bytes": 87720,
-    "sha256": "5995a240f3b90ccb8b6ed6292c438321378f4aa9bd8a23a2cf49b9666ca97b06",
+    "bytes": 87986,
+    "sha256": "d6b66356a9934a625ac3baaa6315466f574501a740165664987da53d95f2bca3",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1711,12 +1731,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+skills+voice": {
-    "bytes": 88461,
-    "sha256": "d7d3f93ff361767d1e6c1d5e6ab2bb8d715a4ce60b2632440e22c5edbf507005",
+    "bytes": 88953,
+    "sha256": "d14fb22d5eecfff926bc4a6cab4fbe1722b0960c1933d71ed4132887474ff094",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1793,12 +1814,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+skills+shared": {
-    "bytes": 89465,
-    "sha256": "ec5fa5f2a7a76e3bbe85a0262ae7570ebef6ca5133e5240899d6af1485051c3f",
+    "bytes": 89987,
+    "sha256": "6a46907bf8b824a2706afe6649d21b855e3a791ad6d1cc2dcaeaac9d017089b1",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1876,12 +1898,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+skills+shared+voice": {
-    "bytes": 90206,
-    "sha256": "75edd56914bd307dde47bb6fe66a954d1409be170429bc347f607f3bf88b3dca",
+    "bytes": 90954,
+    "sha256": "f0ca6a5f7dc369541efa7c3c0b70944e67b4a547c2b77b3fbd94e5e6fba57fbf",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1960,12 +1983,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+non-chief": {
-    "bytes": 75571,
-    "sha256": "b17949ac4e8b5f3e2287f3c71f024ec5021d7b1878faf3778b830b90b0b27eb4",
+    "bytes": 75964,
+    "sha256": "56db6eb6dcc53e8d8a801fd801431bdbdd625c09bdc5d92ccced2d8e60f10845",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2033,12 +2057,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+voice+non-chief": {
-    "bytes": 76312,
-    "sha256": "76ef204cb3cb54cce27b078d514b5c5a578228860358b3d3a1f6f5e24ed54906",
+    "bytes": 76931,
+    "sha256": "70f2521a8dc2089e1a57abb733c4226f628c59dbc782f424b9fa0b518771b54a",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2107,12 +2132,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+shared+non-chief": {
-    "bytes": 77316,
-    "sha256": "adecbff4f02db103e55e7a8a7058a8c0a50542cee9cd0ed08ce4fa111ade3d2f",
+    "bytes": 77965,
+    "sha256": "4ebf2df0104a53ef2fa1af26aa3721d5c90cd7dc82e0df2da3584c4f19eaca6f",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2182,12 +2208,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+shared+voice+non-chief": {
-    "bytes": 78057,
-    "sha256": "98ec52c3c7d6fc2db72dd04173381001f2fd2d28d90169d8ce9ab370dd864d0d",
+    "bytes": 78932,
+    "sha256": "dce03d0b71e252f641bcb0f1460598ef28a0f75070ee1b2a6d4b2d589603c76b",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2258,12 +2285,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+skills+non-chief": {
-    "bytes": 77624,
-    "sha256": "00ca00e3ad0f0983b5ca612206b1096c59d10d81f4c2efeb7da0b6c7f0b76e98",
+    "bytes": 78017,
+    "sha256": "7785182bc31043e4f7a442cf4a197ca770e93983b0074298cb90866db06eae51",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2333,12 +2361,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+skills+voice+non-chief": {
-    "bytes": 78365,
-    "sha256": "776b3313c8878bd5363c102172c6579e057f286f0f983cf5676e6f3bcfe574a0",
+    "bytes": 78984,
+    "sha256": "7e767621fdc5124ecb01f3bd8674296aad61095fa96aeee1b2d2b4a52d24cdb9",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2409,12 +2438,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+skills+shared+non-chief": {
-    "bytes": 79369,
-    "sha256": "6d351d624828b4914b0a73ebba2b6230905d23cebdbc9e3592518f3d6d14a343",
+    "bytes": 80018,
+    "sha256": "994c22cacacb1357310ca9ad60cc0e8978a0446ebf26fb0e4f379ffc601e6e58",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2486,12 +2516,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "direct+skills+shared+voice+non-chief": {
-    "bytes": 80110,
-    "sha256": "3f64660ee6e3359b991eda08699fc20ab20e849d03205d89123a92035d03d139",
+    "bytes": 80985,
+    "sha256": "7a6224984ac02626fbd235b0b80d14bfcebc099d21a42292ae98f67b6e0d0f21",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2564,12 +2595,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+non-chief": {
-    "bytes": 73035,
-    "sha256": "0bcd5ca5fdad7669d3c2b78fb675960910328417c3e8fd1f5a71924b6c9bdf5c",
+    "bytes": 73240,
+    "sha256": "db3aa05c6fc27abe2025eaa0d1d46a69588cef54718259060fb945f770269d01",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2634,12 +2666,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+voice+non-chief": {
-    "bytes": 73776,
-    "sha256": "ad33053cae74ac200f972d4320b72b5f5522c4032e8289c68a3e5135aa41627c",
+    "bytes": 74207,
+    "sha256": "19b9343ccf85f3fd5484837b36f9f320a868ac2a690ae0c5414fabe18154bd8f",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2705,12 +2738,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+shared+non-chief": {
-    "bytes": 74780,
-    "sha256": "0eeee50671af7a198060a267966bf5f4fe55351e5543e21c793251cba6bdd0c8",
+    "bytes": 75241,
+    "sha256": "94a5dea2d09b620aa6424bfe4db131f030f06e7f443d85207447a58b14589425",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2777,12 +2811,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+shared+voice+non-chief": {
-    "bytes": 75521,
-    "sha256": "ceee263d4bac966b269b83ab526b44fbd51c8de744887d8da4743c950f0506f7",
+    "bytes": 76208,
+    "sha256": "f6b9a928125659a6689bc2f66c11ab59ef0c6f7c0154f85147a7a648a6f7ca74",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2850,12 +2885,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+skills+non-chief": {
-    "bytes": 75088,
-    "sha256": "f6d2cf3ab89188291a046336adc36ca459e607fb3d97882e4c9f2b7f2c7e6a0a",
+    "bytes": 75293,
+    "sha256": "8c6b0c988a9fc91e24017491d293221743fc8229274c6af2cee9cf1be93b7def",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2922,12 +2958,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+skills+voice+non-chief": {
-    "bytes": 75829,
-    "sha256": "e93b2ba43509c9b8893be7bdb098b63a8f273e5ebc1de5c98fcd6ca53cfb8efd",
+    "bytes": 76260,
+    "sha256": "804a6b493b4ac404bbd60294763257ac1e8eb9c165bb06d3b4729bcfcc802e6c",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2995,12 +3032,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+skills+shared+non-chief": {
-    "bytes": 76833,
-    "sha256": "5072ad16fdd4923d6eb849f2204482b027b49e6b29594311a382941ac5f495d4",
+    "bytes": 77294,
+    "sha256": "ab45f866720f518659105aaa80e53ffa0f36e4fadbe76a2bdc75b0b20f5e80d0",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3069,12 +3107,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+skills+shared+voice+non-chief": {
-    "bytes": 77574,
-    "sha256": "aaa7dc9a83cac58a789d9ff41d44d878fac26fa6ec18b9abc0f4d59ee5d52cad",
+    "bytes": 78261,
+    "sha256": "b064231adb299f262e5af5db6be9106e6c8b73065461b139fe6ebfa6263e1382",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3144,12 +3183,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+non-chief": {
-    "bytes": 75168,
-    "sha256": "beceac8ef8041d22b920a273309c6c94fcc4442f0b5bba0bbbcf1e973a55fae3",
+    "bytes": 75428,
+    "sha256": "7dfe3d9dec58f86f91b18ede362466a137077bc2a0f4c22f6cdeec356daccd4b",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3215,12 +3255,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+voice+non-chief": {
-    "bytes": 75909,
-    "sha256": "0c8750e76c133a7494a141593770595a8915e41e6a4cf63aaabd6f2663ba6b4d",
+    "bytes": 76395,
+    "sha256": "d59b844feddf037c376462abb0bb7ab93d70a2dd0820356d108536f0d6bd2234",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3287,12 +3328,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+shared+non-chief": {
-    "bytes": 76913,
-    "sha256": "212e31224fc192f4276c9049638f5b0acbcdad7118e97c1c71d04c5bac92abe7",
+    "bytes": 77429,
+    "sha256": "dbd0e15c802ce03758ffe38a0de7e9e98c3a6599e79973eef4c2149b4ee55ea6",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3360,12 +3402,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+shared+voice+non-chief": {
-    "bytes": 77654,
-    "sha256": "f134b98f665c6b2481c72e3877a4e18316597307de7a891b7ddb2f576a4a774a",
+    "bytes": 78396,
+    "sha256": "d344fa503c3ff95125bc14a9c7c7f6f3fae3243b5c5d3d5d47a2816a17779a9a",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3434,12 +3477,13 @@
       "manage_pairing",
       "manage_settings",
       "act",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+skills+non-chief": {
-    "bytes": 77221,
-    "sha256": "80c42e2798ae049f55a0b1eae3eb573d77173530dfcad35a92994575896ba2bc",
+    "bytes": 77481,
+    "sha256": "a94fdfae20d517ce389e98720dd4b9d90060e44b6d0e45960633a1547c00bb58",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3507,12 +3551,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+skills+voice+non-chief": {
-    "bytes": 77962,
-    "sha256": "b75e6d9fec445ca1d76d3fb156217c183af1501e56cf2d43ed9b308ed544f28f",
+    "bytes": 78448,
+    "sha256": "d90792564e97c4ebc33975fd2824db651473ca4c61822694a0eb58a6431ee73c",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3581,12 +3626,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+skills+shared+non-chief": {
-    "bytes": 78966,
-    "sha256": "26552007fe9411e307e0a8583357bedda9e8a6716b3317f01f02d86d76e30f23",
+    "bytes": 79482,
+    "sha256": "a09e672ac81563dde3d0863855d376f368c9235d21c47aa48be18a9a33ca68fc",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3656,12 +3702,13 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "room+own-thread+skills+shared+voice+non-chief": {
-    "bytes": 79707,
-    "sha256": "9d61abac4041f3d14dadbc06d035e797719a9c6d1674b3ad41035b9f8e4a6de5",
+    "bytes": 80449,
+    "sha256": "6e48ddca0dc83e86e2aba01cc88bef85f8b81277a7e217aab73cbd07c51a9784",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -3732,29 +3779,32 @@
       "act",
       "skills_list",
       "skill_manage",
-      "add_mcp_server"
+      "add_mcp_server",
+      "make_video"
     ]
   },
   "external": {
-    "bytes": 3030,
-    "sha256": "c1b8c003687923f078f2b724f11b4c5fb9f00ecaa491f5519e9c14d34160ad8c",
+    "bytes": 3697,
+    "sha256": "4752459ee8ebb4ec258ff4f029feaba4e71518003b0904b179ca65d86200de2f",
     "tools": [
       "list_bots",
       "ask_bot",
       "delegate_bot",
       "check_delegation",
-      "wait_delegation"
+      "wait_delegation",
+      "make_video"
     ]
   },
   "external+everything": {
-    "bytes": 3030,
-    "sha256": "c1b8c003687923f078f2b724f11b4c5fb9f00ecaa491f5519e9c14d34160ad8c",
+    "bytes": 3697,
+    "sha256": "4752459ee8ebb4ec258ff4f029feaba4e71518003b0904b179ca65d86200de2f",
     "tools": [
       "list_bots",
       "ask_bot",
       "delegate_bot",
       "check_delegation",
-      "wait_delegation"
+      "wait_delegation",
+      "make_video"
     ]
   }
 }

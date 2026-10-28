@@ -83,7 +83,7 @@
     },
     {
       "name": "shared_computer",
-      "description": "Use a desktop explicitly shared by the user. Discover computer_id and folder_id with list_shared_computers. list_files/read_file/write_file are confined to chosen folders; paths are relative. read_file returns sha256; overwriting requires expected_sha256. Binary files support base64 encoding. run_command requires a SEPARATE unrestricted terminal grant. computer_tools lists the native computer-control tools; computer_call invokes one with arguments and needs a SEPARATE computer-control grant. Never substitute the server's filesystem when this desktop is offline. Actions are not retried automatically; inspect an uncertain outcome before retrying.",
+      "description": "Use a desktop explicitly shared by the user. Discover computer_id and folder_id with list_shared_computers. list_files/read_file/write_file are confined to chosen folders; paths are relative. read_file returns sha256; overwriting requires expected_sha256. Binary files support base64 encoding. run_command requires a SEPARATE unrestricted terminal grant. computer_tools lists the native computer-control tools; computer_call invokes one with arguments and needs a SEPARATE computer-control grant. Never substitute the server's filesystem when this desktop is offline. read_copy reads the person's own stored copy of a lent folder or their Chrome reading list, which remains when the computer sleeps, and never another member's screen. Actions are not retried automatically; inspect an uncertain outcome before retrying.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -99,7 +99,8 @@
               "write_file",
               "run_command",
               "computer_tools",
-              "computer_call"
+              "computer_call",
+              "read_copy"
             ]
           },
           "folder_id": {
@@ -130,6 +131,16 @@
           "arguments": {
             "type": "object",
             "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chrome",
+              "folder"
+            ]
+          },
+          "name": {
+            "type": "string"
           }
         },
         "required": [
@@ -299,14 +310,14 @@
     },
     {
       "name": "close_thread",
-      "description": "Mark a thread you opened (or one of your own) as finished once you have read its result: it leaves the person's default sidebar list (still under all threads, with a note saying you closed it) and list_threads reports it as closed. Nothing is deleted — deleting stays the person's decision — and a thread that is still running cannot be closed; wait for it or leave it. Use the thread id from list_threads or from the start_thread result. If a close is refused, do not retry it.",
+      "description": "Mark a thread you opened (or one of your own) as finished once you have read its result: it leaves the person's default sidebar list (still under all threads, with a note saying you closed it) and list_threads reports it as closed. Nothing is deleted — deleting stays the person's decision — and a thread that is still running cannot be closed; wait for it or leave it. Use the thread id from list_threads. If a close is refused, do not retry it.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "thread_id": {
             "type": "string",
-            "description": "The thread id from list_threads or start_thread."
+            "description": "The thread id from list_threads."
           }
         },
         "required": [
@@ -2923,6 +2934,29 @@
         },
         "required": [
           "name"
+        ]
+      }
+    },
+    {
+      "name": "make_video",
+      "description": "Ask for a video from a short description, or from an image the person already attached in this turn. If image_to_video or reference_to_video is in your tools, call that instead: it is the producer. This tool never runs a shell. If no producer is connected, it says so and does not invent one.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "What the video should show."
+          },
+          "image": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Optional reference already in this turn. Not a new upload and not a shell path to go fetch."
+          }
+        },
+        "required": [
+          "prompt"
         ]
       }
     }
