@@ -176,3 +176,80 @@ describe("Library tab: the bot's pages (2026-10-28)", () => {
     for (const label of ["Open", "Share…", "Unpin", "Pin", "Delete…"]) expect(html).toContain(`>${label}<`);
   });
 });
+
+describe("Library tab: a mini preview on every row (2026-10-28)", () => {
+  const ID = (n: number) => n.toString(16).padStart(24, "0");
+  const picture = (n: number, name: string, mime: string) => file(ID(n), name, 1, { id: ID(n), mime });
+  const rowOf = (html: string, id: string) => {
+    const at = html.indexOf(`data-library-file="${id}"`);
+    return html.slice(at, html.indexOf("</li>", at));
+  };
+
+  it("an image shows its own thumbnail from the thumbnail URL, lazy, never the original", () => {
+    const html = render([picture(1, "chart.png", "image/png"), picture(2, "photo.jpg", "image/jpeg"), picture(3, "anim.gif", "image/gif"), picture(4, "shot.webp", "image/webp"), picture(5, "logo.svg", "image/svg+xml")], list([]));
+    for (const n of [1, 2, 3, 4, 5]) {
+      const row = rowOf(html, ID(n));
+      expect(row).toContain("data-library-thumb");
+      expect(row).toContain(`src="/api/threads/t1/files/${ID(n)}?thumb=1"`);
+      expect(row).toContain('loading="lazy"');
+      expect(row).toContain("object-cover");
+      expect(row).toContain("rounded-md");
+      // the original and the full-size preview are never the row's source
+      expect(row).not.toContain(`files/${ID(n)}"`);
+      expect(row).not.toContain("preview=1");
+    }
+  });
+
+  it("an image that is not available, or that the server cannot draw (HEIC), keeps an icon", () => {
+    const html = render([picture(1, "gone.png", "image/png"), picture(2, "iphone.heic", "image/heic")].map((f, i) => (i === 0 ? { ...f, available: false } : f)), list([]));
+    expect(html).not.toContain("data-library-thumb");
+    expect(rowOf(html, ID(1))).toContain('data-library-glyph="image"');
+    expect(rowOf(html, ID(2))).toContain('data-library-glyph="image"');
+  });
+
+  it("each type has its own mark: page, document, archive, PDF, code, other", () => {
+    const html = render([
+      picture(1, "dashboard.html", "text/html"),
+      picture(2, "plan.md", "text/markdown"),
+      picture(3, "notes.txt", "text/plain"),
+      picture(4, "export.zip", "application/zip"),
+      picture(5, "report.pdf", "application/pdf"),
+      picture(6, "script.py", "text/x-python"),
+      picture(7, "blob.bin", "application/octet-stream"),
+    ], list([]));
+    const kind = (n: number) => /data-library-glyph="([a-z]+)"/.exec(rowOf(html, ID(n)))?.[1];
+    expect([1, 2, 3, 4, 5, 6, 7].map(kind)).toEqual(["page", "document", "document", "archive", "pdf", "code", "other"]);
+    expect(rowOf(html, ID(5))).toContain("data-glyph-pdf");
+    expect(rowOf(html, ID(1))).toContain("data-page-glyph");
+  });
+
+  it("an artifact and a published page wear the colored page mark", () => {
+    const html = render([], list([artifact("art_0000001", "Queue overview", false)]), {
+      pages: [{ id: "pageAAAA1111", title: "Quarterly", status: "draft", access: "private", expiresAt: null, currentVersion: null, botId: "bot1", threadId: "t1", createdAt: now, updatedAt: now - 1000, expired: false, versions: [], pinned: false }],
+    });
+    expect(html.match(/data-library-glyph="page"/g)).toHaveLength(2);
+    expect(html.match(/data-page-glyph/g)).toHaveLength(2);
+  });
+
+  it("groups: Pinned, Today, This week, then Older showing five with Show more", () => {
+    const hours = (h: number) => now - h * 3_600_000;
+    const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+    const items = [
+      file("a", "today.md", 0, { at: Math.max(startOfToday, hours(0.01)) }),
+      file("b", "yesterday.md", 0, { at: startOfToday - 3_600_000 }),
+      file("c", "pinned.md", 40, { pinned: true }),
+      ...Array.from({ length: 7 }, (_, i) => file(String.fromCharCode(100 + i), `old-${i}.md`, 20 + i)),
+    ];
+    const html = render(items, list([]));
+    const order = ["pinned", "today", "thisWeek", "older"].map((id) => html.indexOf(`data-library-group="${id}"`));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(html.slice(order[1]!, order[2]!)).toContain("today.md");
+    expect(html.slice(order[2]!, order[3]!)).toContain("yesterday.md");
+    expect(html).toContain("Today");
+    const older = html.slice(order[3]!);
+    expect(older.match(/data-library-file=/g)).toHaveLength(5);
+    expect(older).toContain("data-library-show-more");
+    expect(older).toContain("Show more");
+  });
+});

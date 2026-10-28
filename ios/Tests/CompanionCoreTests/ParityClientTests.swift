@@ -266,9 +266,14 @@ final class ParityClientTests: XCTestCase {
 
         let download = try client.threadFileRequest(threadId: "thread-1", fileId: "0123456789abcdef01234567", preview: false)
         XCTAssertNil(download.url?.query)
+
+        // a Library row asks for the small square, never the picture
+        let thumb = try client.threadFileRequest(threadId: "thread-1", fileId: "0123456789abcdef01234567", preview: false, thumb: true)
+        XCTAssertEqual(thumb.url?.query, "thumb=1")
     }
 
     func testThreadFileRequestRejectsAnythingButTheOpaqueId() {
+        XCTAssertThrowsError(try client.threadFileRequest(threadId: "thread-1", fileId: "../../etc/passwd", preview: true, thumb: true))
         XCTAssertThrowsError(try client.threadFileRequest(threadId: "thread-1", fileId: "../../etc/passwd", preview: true))
         XCTAssertThrowsError(try client.threadFileRequest(threadId: "thread-1", fileId: "0123456789ABCDEF01234567", preview: true))
         XCTAssertThrowsError(try client.threadFileRequest(threadId: "a/b", fileId: "0123456789abcdef01234567", preview: true))

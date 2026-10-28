@@ -198,6 +198,12 @@ export function filesSignature(messages: ReadonlyArray<{ id: string; kind: strin
   return `${messages.length}:${messages.at(-1)?.id ?? ""}:${settledTools}:${attachments}`;
 }
 
+/** The Library row's thumbnail: a small square PNG drawn by the server under
+ * the same grant as the file, never the picture itself. */
+export function threadFileThumbUrl(threadId: string, fileId: string): string {
+  return `/api/threads/${encodeURIComponent(threadId)}/files/${encodeURIComponent(fileId)}?thumb=1`;
+}
+
 export function threadFileUrl(threadId: string, fileId: string, preview = false): string {
   return `/api/threads/${encodeURIComponent(threadId)}/files/${encodeURIComponent(fileId)}${preview ? "?preview=1" : ""}`;
 }
