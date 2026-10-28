@@ -212,6 +212,12 @@ describe("charts", () => {
 
   it("reads CSV with an optional type line", () => {
     const spec = ok(parseChartSpec("type: area\nmonth,in,out\nJan,1,2\nFeb,3,4"));
+    expect(spec.sources).toBeUndefined();
+    expect(spec.asOf).toBeUndefined();
+    const cited = ok(parseChartSpec("sources: Monday inbox | 2026-10-26; Tuesday note\nasOf: 2026-10-27\nmonth,n\nJan,1"));
+    expect(cited.sources).toEqual([{ piece: "Monday inbox", asOf: "2026-10-26" }, { piece: "Tuesday note" }]);
+    expect(cited.asOf).toBe("2026-10-27");
+    expect(ok(parseChartSpec("asOf: not-a-day\nmonth,n\nJan,1")).asOf).toBeUndefined();
     expect(spec.type).toBe("area");
     expect(spec.xLabel).toBe("month");
     expect(spec.series.map((series) => series.name)).toEqual(["in", "out"]);

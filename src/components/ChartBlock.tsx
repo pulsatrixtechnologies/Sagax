@@ -202,7 +202,7 @@ function ChartBlockComponent({ code, pending = false }: { code: string; pending?
       ) : !spec ? (
         <p role="alert" className="px-3 pt-2 text-[12px] text-danger">{t("rich.chart.invalid", { reason: parsed && "error" in parsed ? parsed.error : "" })}</p>
       ) : view === "table" ? (
-        <div className="p-2"><RichTable model={chartTableModel(spec)} caption={title} /></div>
+        <div className="p-2"><RichTable model={chartTableModel(spec)} caption={title} /><ChartSourceLine spec={spec} /></div>
       ) : view === "chart" ? (
         <div className="relative px-2 pt-2 pb-1 text-ink" onMouseLeave={() => setActive(null)}>
           <svg

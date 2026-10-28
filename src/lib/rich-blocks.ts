@@ -547,10 +547,26 @@ export function parseChartSpec(code: string): ChartSpec | { error: string } {
   const lines = text.split(/\r?\n/);
   let type: ChartType = "bar";
   let title: string | undefined;
-  while (lines.length && /^(type|title)\s*:/i.test(lines[0]!)) {
-    const [key, ...rest] = lines.shift()!.split(":");
-    if (key!.trim().toLowerCase() === "type") type = chartType(rest.join(":"));
-    else title = asText(rest.join(":"));
+  let asOf: string | undefined;
+  const sources: ChartSource[] = [];
+  while (lines.length && /^(type|title|sources|source|asOf)\s*:/i.test(lines[0]!)) {
+    const raw = lines.shift()!;
+    const split = raw.indexOf(":");
+    const key = raw.slice(0, split).trim().toLowerCase();
+    const rest = raw.slice(split + 1).trim();
+    if (key === "type") type = chartType(rest);
+    else if (key === "title") title = asText(rest);
+    else if (key === "asof") asOf = chartDay(rest) ?? asOf;
+    else {
+      for (const part of rest.split(";")) {
+        const bar = part.indexOf("|");
+        const piece = (bar === -1 ? part : part.slice(0, bar)).trim();
+        const day = bar === -1 ? undefined : chartDay(part.slice(bar + 1).trim());
+        if (!piece) continue;
+        sources.push({ piece: piece.slice(0, 200), ...(day ? { asOf: day } : {}) });
+        if (sources.length >= 8) break;
+      }
+    }
   }
   const rows = parseDelimited(lines.join("\n"));
   if (rows.length < 2) return { error: "CSV chart needs a header row and data" };
@@ -558,6 +574,8 @@ export function parseChartSpec(code: string): ChartSpec | { error: string } {
   return finishChart({
     type,
     title,
+    ...(sources.length ? { sources: sources.slice(0, 8) } : {}),
+    ...(asOf ? { asOf } : {}),
     xLabel: header[0] || undefined,
     labels: body.map((row) => row[0] ?? ""),
     series: header.slice(1).map((name, column) => ({ name: name || `Series ${column + 1}`, values: body.map((row) => parseNumeric(row[column + 1] ?? "")) })),
