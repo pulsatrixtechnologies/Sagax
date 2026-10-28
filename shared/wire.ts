@@ -56,39 +56,9 @@ import type { TerminalEmbed } from "./terminal-resources.ts";
 import type { TerminalRequestCardData } from "./terminal-request.ts";
 import type { WireVideoWidget } from "./video-widget.ts";
 import type { ArtifactsFrame } from "./artifacts.ts";
+import { EFFORT_LEVELS, isEffortLevel, type EffortLevel, type ModelSelection } from "./model-selection.ts";
 
-/** Reasoning-effort levels, ascending. A union of everything any engine
- * accepts; each driver declares the subset its CLI will take. Lives here
- * because it is part of ModelSelection, which rides the wire. */
-export const EFFORT_LEVELS = ["none", "low", "medium", "high", "xhigh", "max", "ultracode"] as const;
-export type EffortLevel = (typeof EFFORT_LEVELS)[number];
-
-/** Narrow untrusted API/config input before it becomes a model selection. */
-export function isEffortLevel(value: unknown): value is EffortLevel {
-  return typeof value === "string" && (EFFORT_LEVELS as readonly string[]).includes(value);
-}
-
-/** "Which model" is a data value carried on the request, never a service
- * binding. instanceId is the routing key. */
-export interface ModelSelection {
-  instanceId: string;
-  model: string;
-  /** Optional: no effort means no flag, and the CLI keeps its own default. */
-  effort?: EffortLevel;
-  /** Explicit model-specific variant. Omitted leaves the native session alone. */
-  variant?: string;
-  /** Auto (docs/plans/2026-10-08-auto-model.md): each turn picks its model.
-   * instanceId and model stay the bot's own engine and fallback model, so a
-   * path or client that does not know Auto still runs a valid model. Only
-   * true is stored; picking a model in the chip clears it. */
-  auto?: true;
-  /** Fast model (#1209): with Auto on, a quick turn and the work a bot hands
-   * out in parallel (a quick task, an automation, general work) run on this
-   * model, usually a small local one; reasoning, coding, long reading and
-   * vision stay on the larger or cloud model Auto picks. Ignored without
-   * Auto, or when the engine is not usable for the turn. */
-  fast?: { instanceId: string; model: string };
-}
+export { EFFORT_LEVELS, isEffortLevel, type EffortLevel, type ModelSelection };
 
 /** Which cloud computer backs computer: "cloud"; absent means Boat. */
 export type CloudBackend = "box" | "vps";

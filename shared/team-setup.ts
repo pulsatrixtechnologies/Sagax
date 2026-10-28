@@ -1,4 +1,4 @@
-import type { ModelSelection } from "./wire.ts";
+import type { ModelSelection } from "./model-selection.ts";
 
 export interface TeamSetupFields {
   name?: string;

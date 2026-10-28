@@ -5,7 +5,7 @@
  * target's default moved since — a per-field snapshot, not the team-setup
  * plan's whole-state revision hash.
  */
-import type { ModelSelection } from "./wire.ts";
+import type { ModelSelection } from "./model-selection.ts";
 
 export interface ModelRequestCardData {
   version: 1;
