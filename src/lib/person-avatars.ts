@@ -5,7 +5,6 @@
 // (src/lib/perspicax-org.ts loadOrgPeople), read again here so the sidebar,
 // rooms and pickers draw the new picture. A component that holds people
 // listens to PERSON_AVATAR_EVENT.
-import type { ConfigStatus } from "@/state/store";
 import { personAvatarSrc } from "@/lib/profile-management";
 
 export const PERSON_AVATAR_EVENT = "sagax:person-avatar";
@@ -15,16 +14,26 @@ export interface PersonAvatarChange {
   avatarUrl: string | null;
 }
 
+/** The only config fields this update reads. The full status stays in the
+ * store, so this module does not import it (#1381). */
+type AvatarConfig = {
+  viewer?: {
+    principalId?: string | null;
+    avatarUrl?: string;
+  } | null;
+};
+
 /** The config with the viewer's avatar replaced, when the change is the
  * viewer's own; the same object otherwise (nothing to dispatch). */
-export function withViewerAvatar(config: ConfigStatus, change: PersonAvatarChange): ConfigStatus {
+export function withViewerAvatar<C extends AvatarConfig>(config: C, change: PersonAvatarChange): C {
   const viewer = config.viewer;
   const me = viewer?.principalId?.trim().toLowerCase();
   if (!viewer || !me || me !== change.principalId.trim().toLowerCase()) return config;
   const url = personAvatarSrc(change.avatarUrl);
   if ((viewer.avatarUrl ?? undefined) === url) return config;
   const { avatarUrl: _previous, ...rest } = viewer;
-  return { ...config, viewer: { ...rest, ...(url ? { avatarUrl: url } : {}) } };
+  // Only avatarUrl changes; the rest of the caller's config is the same object.
+  return { ...config, viewer: { ...rest, ...(url ? { avatarUrl: url } : {}) } } as C;
 }
 
 /** Tell the page: the directory is read again by whoever listens. */
