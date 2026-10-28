@@ -18,11 +18,12 @@
 // when the first message that referenced it is theirs (or nothing has
 // referenced it yet, its name being random). Another person's attachment in
 // a private thread is never copied or inlined, whatever a message claims.
-import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { dirname, extname, posix, resolve, win32 } from "node:path";
 
 import { fromMarkdown } from "mdast-util-from-markdown";
 
+import { atRestSizeSync, readAtRestSync } from "./content-at-rest.ts";
 import { maxBytesForAttachment } from "./attachments.ts";
 
 const OWNED_FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.[a-z0-9]{1,8}$/;
@@ -98,9 +99,12 @@ export function attachedFilesInText(text: string, attachmentsDir: string): TurnA
     if (!OWNED_FILE_NAME.test(file) || resolve(serverPath) !== resolve(attachmentsDir, file)) continue;
     try {
       const entry = lstatSync(resolve(attachmentsDir, file));
-      if (!entry.isFile() || entry.isSymbolicLink() || entry.size > maxBytesForAttachment(file)) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) continue;
+      // its plaintext size: a stored file may be sealed at rest (server/content-at-rest.ts)
+      const bytes = atRestSizeSync(resolve(attachmentsDir, file));
+      if (bytes > maxBytesForAttachment(file)) continue;
       if (dirname(realpathSync(resolve(attachmentsDir, file))) !== canonicalRoot) continue;
-      found.push({ start, end, file, serverPath: resolve(attachmentsDir, file), name: displayName(match[2] ? decodeAttribute(match[2]) : file, file), bytes: entry.size });
+      found.push({ start, end, file, serverPath: resolve(attachmentsDir, file), name: displayName(match[2] ? decodeAttribute(match[2]) : file, file), bytes });
     } catch { /* gone */ }
   }
   return found.sort((a, b) => a.start - b.start);
@@ -145,7 +149,7 @@ export function attachmentIsTheirs(person: string, references: readonly { person
 function inlineText(file: TurnAttachedFile): string | null {
   if (!TEXT_EXTENSIONS.has(extname(file.file).toLowerCase()) || file.bytes > INLINE_FILE_MAX_BYTES) return null;
   try {
-    const bytes = readFileSync(file.serverPath);
+    const bytes = readAtRestSync(file.serverPath);
     if (bytes.includes(0)) return null;
     const value = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     return value;
@@ -188,8 +192,9 @@ export function stageTurnAttachments(
 
 /** Read one file for copying, in chunks the transports accept. */
 export function* attachmentChunks(file: TurnAttachedFile, chunkBytes: number): Generator<{ offset: number; data: Buffer; final: boolean }> {
-  const bytes = readFileSync(file.serverPath);
-  if (statSync(file.serverPath).size !== bytes.length) throw new Error("attachment changed while copying");
+  // the plaintext, opened if sealed at rest: the copy in the target is plain
+  const bytes = readAtRestSync(file.serverPath);
+  if (atRestSizeSync(file.serverPath) !== bytes.length) throw new Error("attachment changed while copying");
   if (bytes.length === 0) { yield { offset: 0, data: bytes, final: true }; return; }
   for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
     const data = bytes.subarray(offset, Math.min(bytes.length, offset + chunkBytes));

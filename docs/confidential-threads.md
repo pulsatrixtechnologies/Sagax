@@ -213,8 +213,10 @@ end-to-end encryption, and it does not hide the thread from:
   threads included until those backups expire. A thread's messages there are
   sealed, but such a copy also holds the thread's wrapped key of that time:
   with the key-encryption key, which a deletion does not change, it still
-  opens. Other files of the thread (its folder, attachments, engine
-  transcripts) are not encrypted by Sagax.
+  opens. Its attachments and event logs are sealed at rest too, but an
+  attachment is plain in place while a turn reads it (and for a few
+  minutes after); its folder and the engines' transcripts are not
+  encrypted by Sagax.
 - **The model provider.** Every turn is sent to the engine the bot runs on,
   as any turn is.
 - **Perspicax.** A call the person allows (a card) or a read through a

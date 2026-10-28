@@ -30,6 +30,7 @@
 // routine and webhook off, approval Full or Custom back to Ask, a member's
 // copy without the host settings that stay an admin's (memberImportReset), and a rollback that
 // removes everything the import wrote when any step fails.
+import { readAtRestSync } from "./content-at-rest.ts";
 import { botRuntimeSettingsShape } from "./bot-runtime-settings.ts";
 import { exportedSecretFile, registrySettingsPath, withoutRegistrySecrets } from "./workspace-backup-policy.ts";
 import { randomUUID } from "node:crypto";
@@ -540,7 +541,7 @@ export async function writeBotZip(plan: BotZipPlan, sink: (chunk: Buffer) => Pro
   for (const file of plan.files) {
     let data: Buffer | string;
     try {
-      data = file.data ?? readFileSync(file.path!);
+      data = file.data ?? readAtRestSync(file.path!);
     } catch {
       continue;
     }

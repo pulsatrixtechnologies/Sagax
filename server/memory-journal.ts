@@ -18,8 +18,7 @@
 // line did.
 import { randomUUID } from "node:crypto";
 import { closeSync, fstatSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
-import { appendFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { DATA_DIR } from "./config.ts";
 import {
@@ -35,6 +34,7 @@ import {
   writeMemoryDoc,
 } from "./memory-store.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { appendLog, LogReader, registerSealedLog, sealLogLine } from "./content-at-rest.ts";
 
 /** "upkeep" is the harness itself: background capture and the tidy-up
  * (server/memory-upkeep.ts) for a bot with Memory upkeep switched on. */
@@ -84,6 +84,15 @@ const CONTEXT = 2;
 export function journalFile(botId: string): string {
   return join(JOURNAL_DIR, `${botId}.ndjson`);
 }
+
+// Each row holds the full prior text of a memory file: sealed under the
+// bot's key (docs/content-encryption.md), its id, time and kind in the clear.
+registerSealedLog({
+  dir: JOURNAL_DIR,
+  scope: (_record, file) => ({ bot: basename(file, ".ndjson") }),
+  projection: (record) => ({ id: record.id, at: record.at, kind: record.kind }),
+  perFile: true,
+});
 
 // ── unified diff ──────────────────────────────────────────────────────
 
@@ -214,7 +223,8 @@ function enqueue(botId: string, entry: MemoryJournalEntry): void {
   const queued = previous
     .then(async () => {
       mkdirSync(JOURNAL_DIR, { recursive: true, mode: 0o700 });
-      await appendFile(journalFile(botId), `${JSON.stringify(entry)}\n`, { mode: 0o600 });
+      const file = journalFile(botId);
+      await appendLog(file, `${sealLogLine(file, entry as unknown as Record<string, unknown>)}\n`, { mode: 0o600 });
     })
     .catch((error: unknown) => {
       // fire-and-forget: the change this row records already happened
@@ -272,15 +282,14 @@ export function readMemoryJournal(botId: string, limit = 50): MemoryJournalEntry
   const lines = text.split("\n");
   const maxRows = Math.min(MAX_ROWS, Math.max(1, limit));
   // when the window starts mid-file its first line is a fragment: skip it
+  // rows sealed at rest open here (server/content-at-rest.ts): a locked key
+  // fails the read rather than show a shorter history; a torn final line from
+  // a crash mid-append is skipped, not fatal
+  const reader = new LogReader(journalFile(botId));
   for (let index = lines.length - 1; index >= (offset > 0 ? 1 : 0) && rows.length < maxRows; index--) {
-    const line = lines[index];
-    if (!line) continue;
-    try {
-      const value: unknown = JSON.parse(line);
-      if (isEntry(value)) rows.push(value);
-    } catch {
-      // a torn final line from a crash mid-append is skipped, not fatal
-    }
+    if (!lines[index]) continue;
+    const value: unknown = reader.at(lines, index);
+    if (isEntry(value)) rows.push(value);
   }
   return rows;
 }

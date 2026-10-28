@@ -3,10 +3,8 @@
 // the app never ships image bytes through the prompt itself.
 import { createHash, randomUUID } from "node:crypto";
 import {
-  createReadStream,
   linkSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -16,10 +14,62 @@ import {
 import { link, open, unlink } from "node:fs/promises";
 import { basename, dirname, join, extname, resolve, sep } from "node:path";
 import { DATA_DIR } from "./config.ts";
+import { atRestChunks, atRestInfoSync, isAtRestTemp, noteAtRestWrite, readAtRestSync, registerAtRestRoot, type ContentScope } from "./content-at-rest.ts";
+import { WORKSPACE_OWNER } from "./content-keys.ts";
 import { UploadContentError, assertContentMatches, checkUploadedFile } from "./upload-content-check.ts";
 import { isSharedHost } from "./host-kind.ts";
 
 export const ATTACHMENTS_DIR = join(DATA_DIR, "attachments");
+
+// Every stored file here (uploads, generated files, the copies made from
+// them: scaled pictures, an Office document's pictures, an archive's
+// manifest and unpacked folder) is sealed at rest (docs/content-encryption.md,
+// server/content-at-rest.ts) under its uploader's key when known, else the
+// workspace's. A file is bound to its path: one moved elsewhere does not
+// open. Server reads go through readAtRestSync / atRestStream; an engine
+// that reads a path gets it plain for its turn (holdPlain).
+registerAtRestRoot({
+  id: "attachments",
+  dir: ATTACHMENTS_DIR,
+  context: (relativePath) => `attachments/${relativePath}`,
+  files: () => storedFiles(ATTACHMENTS_DIR),
+  // at an uploader's erasure, a file another conversation still shows is
+  // re-sealed under the workspace's key; any other is erased with the key
+  keepOnErase: (path) => attachmentStillShown(path),
+  stickyKeys: true,
+});
+
+let attachmentStillShown: (path: string) => boolean = () => true;
+/** server/index.ts: whether a conversation that stays still refers to a stored file. */
+export function setAttachmentStillShown(check: (path: string) => boolean): void {
+  attachmentStillShown = check;
+}
+
+const WORKSPACE_SCOPE: ContentScope = { owner: WORKSPACE_OWNER };
+
+function* storedFiles(dir: string, depth = 0): Generator<{ path: string; scope: ContentScope }> {
+  let entries: import("node:fs").Dirent[];
+  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) { if (depth < 32) yield* storedFiles(path, depth + 1); continue; }
+    if (!entry.isFile() || PARTIAL_NAME.test(entry.name) || isAtRestTemp(entry.name) || /\.(?:partial|tmp)$/.test(entry.name)) continue;
+    yield { path, scope: WORKSPACE_SCOPE };
+  }
+}
+
+/** A just-written stored file: sealed once idle, under `owner`'s key when
+ * the uploader is known (an organization server), else the workspace's. */
+export function noteStoredAttachment(path: string, owner?: string | null): void {
+  noteAtRestWrite(path, owner ? { owner } : undefined);
+}
+
+/** The plaintext size of a stored file (its own size when plain). */
+export function storedAttachmentSize(path: string): number {
+  const info = atRestInfoSync(path);
+  if (!info) throw Object.assign(new Error(`ENOENT: no such file, '${path}'`), { code: "ENOENT" });
+  return info.size;
+}
 
 /** The ceiling of a stored picture: one bigger than this is rejected before
  * it is ever buffered. A phone photo (often 12 MB) fits: the copy an engine
@@ -422,9 +472,10 @@ function committedPathForUpload(uploadId: string, extension: string): string | n
   return null;
 }
 
+/** sha256 of the plaintext (a stored file may be sealed at rest). */
 async function digestFile(path: string): Promise<string> {
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  for await (const chunk of atRestChunks(path)) hash.update(chunk);
   return hash.digest("hex");
 }
 
@@ -494,7 +545,7 @@ export async function saveFile(
   chunks: AsyncIterable<Uint8Array>,
   originalName: string,
   mime: string,
-  options: { uploadId?: string; expectedBytes?: number } = {},
+  options: { uploadId?: string; expectedBytes?: number; owner?: string | null } = {},
 ): Promise<SavedFile> {
   const normalized = normalizedMime(mime);
   if (!normalized || !extensionForFileMime(normalized)) {
@@ -531,7 +582,7 @@ export async function saveFile(
         bytes += chunk.byteLength;
       }
       if (bytes === 0) throw statusError(400, "empty file");
-      if (statSync(existing).size !== bytes || await digestFile(existing) !== incomingHash.digest("hex")) {
+      if (storedAttachmentSize(existing) !== bytes || await digestFile(existing) !== incomingHash.digest("hex")) {
         throw statusError(409, "uploadId was already used for different file bytes");
       }
       return { path: existing, name, mime: normalized, bytes };
@@ -581,9 +632,10 @@ export async function saveFile(
         await link(partialPath, path);
         addCommittedBytes(bytes, accountingVersion);
         await unlink(partialPath);
+        noteStoredAttachment(path, options.owner);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        if (statSync(path).size !== bytes || await digestFile(path) !== await digestFile(partialPath)) {
+        if (storedAttachmentSize(path) !== bytes || await digestFile(path) !== await digestFile(partialPath)) {
           throw statusError(409, "uploadId was already used for different file bytes");
         }
         await unlink(partialPath);
@@ -606,7 +658,7 @@ export async function saveFile(
 /** Persist one image and return its path. The UUID filename means the name
  * is never attacker-controlled and never collides; the extension preserves
  * the format the sender claimed. */
-export function saveImage(bytes: Buffer, mime: string, requestedUploadId?: string): SavedAttachment {
+export function saveImage(bytes: Buffer, mime: string, requestedUploadId?: string, owner?: string | null): SavedAttachment {
   const ext = extensionForMime(mime);
   if (!ext) throw Object.assign(new Error("unsupported image type"), { status: 400 });
   if (bytes.byteLength === 0) throw Object.assign(new Error("empty image"), { status: 400 });
@@ -624,7 +676,7 @@ export function saveImage(bytes: Buffer, mime: string, requestedUploadId?: strin
   ensureAttachmentsDir();
   const existing = uploadId ? committedPathForUpload(uploadId, ext) : null;
   if (existing) {
-    const saved = readFileSync(existing);
+    const saved = readAtRestSync(existing);
     if (!saved.equals(bytes)) {
       throw statusError(409, "uploadId was already used for different image bytes");
     }
@@ -644,9 +696,10 @@ export function saveImage(bytes: Buffer, mime: string, requestedUploadId?: strin
     try {
       linkSync(partialPath, path);
       addCommittedBytes(bytes.byteLength);
+      noteStoredAttachment(path, owner);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const saved = readFileSync(path);
+      const saved = readAtRestSync(path);
       if (!saved.equals(bytes)) {
         throw statusError(409, "uploadId was already used for different image bytes");
       }
@@ -693,9 +746,10 @@ export function saveAudio(bytes: Buffer, mime: string): SavedAttachment {
     try {
       linkSync(partialPath, path);
       addCommittedBytes(bytes.byteLength);
+      noteStoredAttachment(path);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      const saved = readFileSync(path);
+      const saved = readAtRestSync(path);
       if (!saved.equals(bytes)) {
         throw Object.assign(new Error("audio destination already exists with different bytes"), { status: 409 });
       }
@@ -724,11 +778,12 @@ export async function saveImageUpload(
   bytes: Buffer,
   mime: string,
   requestedUploadId?: string,
+  owner?: string | null,
 ): Promise<SavedAttachment> {
   const uploadId = validateAttachmentUploadId(requestedUploadId);
   return withUploadLock(uploadId, async () => {
     if (uploadId) cleanupAttachmentPartialsForUpload(uploadId);
-    return saveImage(bytes, mime, uploadId);
+    return saveImage(bytes, mime, uploadId, owner);
   });
 }
 
@@ -751,10 +806,22 @@ export function readAttachment(name: string): { bytes: Buffer; mime: string } | 
   const path = join(ATTACHMENTS_DIR, name);
   if (extname(path) === ".jpeg") return null; // saved as .jpg; .jpeg is not a name we write
   try {
-    return { bytes: readFileSync(path), mime: mimeForExt(extname(path)) };
+    // sealed at rest or plain; an erased one reads as missing
+    return { bytes: readAtRestSync(path), mime: mimeForExt(extname(path)) };
   } catch {
     return null;
   }
+}
+
+/** The stored path of a servable attachment name (the same name gate as
+ * readAttachment), for a streamed answer; null for any other name. */
+export function servableAttachmentPath(name: string): string | null {
+  if (!/^[A-Za-z0-9-]+\.(png|jpg|gif|webp|mp3)$/.test(name)) return null;
+  return join(ATTACHMENTS_DIR, name);
+}
+
+export function attachmentMime(name: string): string {
+  return mimeForExt(extname(name));
 }
 
 function mimeForExt(ext: string): string {
@@ -829,5 +896,6 @@ export function saveImportedAttachment(bytes: Buffer, mime: string): SavedAttach
   const path = join(ATTACHMENTS_DIR, `${randomUUID()}${ext}`);
   writeFileSync(path, bytes, { mode: 0o600, flag: "wx" });
   invalidateAttachmentAccounting();
+  noteStoredAttachment(path);
   return { path, mime: normalized, bytes: bytes.byteLength };
 }

@@ -17,7 +17,7 @@ import { settledChipLabel } from "./waiting-chip.ts";
 import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { ToolGrantStore } from "./tool-grants.ts";
 import { foreignToolSpelling, sagaxInternalSelfAnswers, sagaxInternalTool } from "./sagax-internal-tools.ts";
@@ -41,11 +41,11 @@ import {
   takeSafetyNote,
 } from "./safety-review.ts";
 import { writeFileAtomic } from "./atomic.ts";
-import { rm as removeDirectory } from "node:fs/promises";
+import { open as openFileHandle, rm as removeDirectory } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
-import { basename, join, sep } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntimeGrant } from "./external-runtime.ts";
 
 import { z } from "zod";
@@ -146,7 +146,9 @@ import {
   isArchiveAttachment,
   maxBytesForFileMime,
   parseAudioRange,
-  readAttachment,
+  servableAttachmentPath,
+  setAttachmentStillShown,
+  attachmentMime,
   saveAudio,
   saveFile,
   saveImage,
@@ -431,8 +433,8 @@ import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { orgWithholdHostTools } from "./org-engine-admission.ts";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
 import { getOrCreateChannel, mirrorActivity, mirrorExchange, mirrorReply, type CommsBus } from "./comms-visibility.ts";
-import { openApprovalCardMessages, readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing, configureContentEncryption, unlockContentKeys, eraseContentOwner, vacuumAfterSealing } from "./message-db.ts";
-import { WORKSPACE_OWNER } from "./content-keys.ts";
+import { openApprovalCardMessages, readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing, configureContentEncryption, unlockContentKeys, eraseContentOwner, contentOwnerChanged, vacuumAfterSealing } from "./message-db.ts";
+import { ContentKeyUnavailable, WORKSPACE_OWNER } from "./content-keys.ts";
 import { contentEncryptionFromEnv } from "./content-encryption-env.ts";
 import { briefCrossingLabel, claimRecallCrossings, recallCrossingLabel } from "./recall-disclosure.ts";
 import { parseSince, parseUntil, recentWork, recentWorkPrompt, turnOutcomeLine } from "./recent-work.ts";
@@ -580,7 +582,8 @@ import {
   TASK_WORKSPACES_DIR,
   workspaceDir,
 } from "./workspace.ts";
-import { listMemoryTopics, memoryDate, readMemoryFile, readMemoryTopic, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
+import { holdBotMemoryPlain, listMemoryTopics, memoryDate, readMemoryFile, readMemoryTopic, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
+import { atRestStream, describeHandle, holdPlain, readAtRestSync, releasePlain, setAtRestHolderCheck, setAtRestThreadFiles, waitPlain } from "./content-at-rest.ts";
 import {
   beginMemoryTurn,
   endMemoryTurn,
@@ -5533,6 +5536,92 @@ function decideWorkplace(input: { desktopTargeted: boolean; routine: boolean; pr
   });
 }
 
+/** Stored files (server/attachments.ts) a text names by their path here. */
+function storedNamesIn(text: string | undefined): string[] {
+  if (!text || !text.includes(ATTACHMENTS_DIR)) return [];
+  const out = new Set<string>();
+  const prefix = ATTACHMENTS_DIR + sep;
+  for (let at = text.indexOf(prefix); at >= 0; at = text.indexOf(prefix, at + prefix.length)) {
+    const match = /^[A-Za-z0-9-]+\.[a-z0-9]{1,8}/.exec(text.slice(at + prefix.length, at + prefix.length + 96));
+    if (match) out.add(match[0]);
+  }
+  return [...out];
+}
+
+/** A stored file and what was made from it that an engine reads by path:
+ * its scaled picture, an Office document's pictures, an archive's unpacked
+ * folder (solo). */
+function storedFamily(name: string): string[] {
+  const path = join(ATTACHMENTS_DIR, name);
+  const out = [path];
+  try { out.push(modelImageCopyPath(ATTACHMENTS_DIR, path)); } catch { /* not a picture of the folder */ }
+  const folders = [officeKind(name) ? officeMediaFolder(ATTACHMENTS_DIR, name) : null, isArchiveAttachment(name) ? localExtractedPath(path) : null];
+  for (const folder of folders) {
+    if (!folder) continue;
+    const pending = [folder];
+    while (pending.length && out.length < 5_000) {
+      const dir = pending.pop()!;
+      let entries: import("node:fs").Dirent[];
+      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        if (entry.isDirectory()) pending.push(join(dir, entry.name));
+        else if (entry.isFile()) out.push(join(dir, entry.name));
+      }
+    }
+  }
+  return out;
+}
+
+/** Content encryption at rest (server/content-at-rest.ts): the stored
+ * files this turn's engine may open by path go plain in place, off the
+ * turn's path: pictures always (a driver may hand the engine the path), in
+ * solo the attachment tags of this turn and those of the thread's earlier
+ * messages (the engine may read one again). An engine reads a file only at a
+ * tool call, seconds after it starts, long after these are open; the server's
+ * own readers open sealed files themselves. The turn waits only for what is
+ * read by path before the engine starts: an archive (its listing, solo) and
+ * the pictures of an engine that takes a picture by path (`picturesByPath`).
+ * An organization server's engines get copies (staging). */
+async function holdTurnAttachments(threadId: string, texts: readonly (string | undefined)[], images: readonly TurnImageInput[], options: { picturesByPath?: boolean } = {}): Promise<void> {
+  const solo = IDENTITY.kind !== "perspicax";
+  const open = async (): Promise<void> => {
+    const holder = turnHolder(threadId);
+    const now = new Set<string>();
+    const wait = new Set<string>();
+    for (const image of images) {
+      now.add(image.path);
+      if (options.picturesByPath) wait.add(image.path);
+      try { now.add(modelImageCopyPath(ATTACHMENTS_DIR, image.path)); } catch { /* not in the attachments folder */ }
+    }
+    if (solo) {
+      for (const text of texts) for (const name of storedNamesIn(text)) {
+        for (const path of storedFamily(name)) now.add(path);
+        if (isArchiveAttachment(name)) wait.add(join(ATTACHMENTS_DIR, name));
+      }
+      for (const message of store.messagesFor(threadId)) {
+        for (const name of storedNamesIn(message.text)) for (const path of storedFamily(name)) now.add(path);
+      }
+    }
+    if (!now.size) return;
+    const opening = holdPlain(holder, [...now]).catch(() => undefined);
+    if (wait.size) await waitPlain([...wait]).catch(() => undefined);
+    void opening;
+  };
+  // the turn waits only when something is read by path before the engine starts
+  const mustWait = Boolean(options.picturesByPath && images.length) || (solo && texts.some((text) => storedNamesIn(text).some(isArchiveAttachment)));
+  if (mustWait) return open();
+  setImmediate(() => { void open().catch(() => undefined); });
+}
+
+/** As soon as the person types in (or opens) a conversation: its bot's
+ * memory and the thread's attachments start opening for the turn to come,
+ * so the turn finds them ready (the hold lets go on its own when no turn
+ * follows). */
+function openForComingTurn(botId: string, threadId: string): void {
+  void holdBotMemoryPlain(botId, turnHolder(threadId));
+  void holdTurnAttachments(threadId, [], []);
+}
+
 /** The provider text for this turn with the speaker's own attachments
  * pointed where the tools run (server/attachment-staging.ts). Another
  * person's upload is left as is and never copied. */
@@ -6738,11 +6827,44 @@ const presetStore = createPresetStore();
 // SAGAX_CONTENT_ENCRYPTION=off; keys unwrapped before the store reads a
 // transcript (Key Vault is asynchronous); the migration seals or opens
 // rows in the background.
-configureContentEncryption({ ...contentEncryptionFromEnv(process.env), resolveOwner: contentOwnerOf });
+configureContentEncryption({ ...contentEncryptionFromEnv(process.env), resolveOwner: contentOwnerOf, resolveBotOwner: contentBotOwnerOf });
+// files a turn holds plain (server/content-at-rest.ts) go back once it no longer runs
+setAtRestHolderCheck((holder) => !holder.startsWith("turn:") || runningTurnEngines.has(holder.slice(5)));
+// an erased person's upload another conversation still shows stays readable
+setAttachmentStillShown((path) => threadsReferencing(basename(path)).length > 0);
+// what a thread that changes hands shows is re-sealed with it
+setAtRestThreadFiles((threadId) => {
+  const paths = new Set<string>();
+  for (const message of store.messagesFor(threadId)) {
+    for (const name of storedNamesIn(message.text)) for (const path of storedFamily(name)) paths.add(path);
+    // what the bot attached (attach_file, a generated picture)
+    for (const attachment of message.attachments ?? []) {
+      if (typeof attachment.path === "string" && dirname(attachment.path) === ATTACHMENTS_DIR) for (const path of storedFamily(basename(attachment.path))) paths.add(path);
+    }
+  }
+  return [...paths];
+});
 await unlockContentKeys();
 {
   const vacuumMs = vacuumAfterSealing();
   if (vacuumMs !== null) console.log(`content encryption: message database compacted after sealing (${Math.round(vacuumMs)} ms)`);
+}
+/** Whose content key an upload is sealed with at rest: the signed-in
+ * person on an organization server (their erasure erases it), else the
+ * workspace's (server/attachments.ts). */
+function uploaderOf(auth: { kind: string; session?: { principalId?: string } }): string | null {
+  return IDENTITY.kind === "perspicax" && auth.kind === "session" ? auth.session?.principalId?.trim() || null : null;
+}
+/** The holder of the files sealed at rest that a thread's running turn
+ * reads by path (memory, attachments): released when the turn ends. */
+function turnHolder(threadId: string): string {
+  return `turn:${threadId}`;
+}
+/** Whose key a bot's memory takes at rest: its owner on an organization
+ * server, else the workspace (server/content-at-rest.ts). */
+function contentBotOwnerOf(botId: string): string {
+  const bot = store.bot(botId);
+  return (bot && IDENTITY.kind === "perspicax" ? recordedBotOwner(bot) : undefined) ?? WORKSPACE_OWNER;
 }
 /** Whose content key a thread's rows take: the thread's person, else on an
  * organization server the bot's owner, else the workspace (rooms, solo). */
@@ -13456,6 +13578,8 @@ bus.subscribe((event: RuntimeEvent) => {
     } else idleEngines.forget(event.threadId);
     runningTurnEngines.delete(event.threadId);
     const rows = endMemoryTurn(event.threadId);
+    // the files the engine read by path are sealed again once idle
+    releasePlain(turnHolder(event.threadId));
     if (rows.length && (store.botByThread(event.threadId) || store.groupByThread(event.threadId))) {
       memoryRowsByThread.set(event.threadId, rows);
     } else memoryRowsByThread.delete(event.threadId);
@@ -19884,6 +20008,12 @@ async function startTurn(
   // path-free prompt and bounded inputs instead of needing a Read tool;
   // path-reading drivers retain the attachment tag as their compatibility route.
   const resolvedImages = extractTurnImages(text);
+  // Files sealed at rest go plain in place for the engine (server/content-at-rest.ts):
+  // this message's attachments before anything reads them; the bot's memory
+  // files in parallel with the rest of the setup, awaited before the engine
+  // starts (below).
+  if (!warmOnly && supportsWorkspaceFiles(instance.driverKind)) void holdBotMemoryPlain(bot.id, turnHolder(threadId));
+  if (!warmOnly) await holdTurnAttachments(threadId, [text], resolvedImages.images, { picturesByPath: instance.driverKind === "codex" });
   const usesNativeImageInput = instance.adapter.capabilities.nativeImageInput === true;
   let providerText = promptWithDataContext(usesNativeImageInput ? resolvedImages.text : text, opts?.dataContext);
   const turnImages = usesNativeImageInput ? resolvedImages.images : [];
@@ -20528,6 +20658,8 @@ async function startTurn(
       const worksInWorkspace = supportsWorkspaceFiles(instance.driverKind);
       if (worksInWorkspace) {
         ensureWorkspace(bot.id);
+        // memory sealed at rest opens back to plain in place for the engine's
+        // file tools (started above, off the turn's path), until the turn ends
         // baseline for the journal's turn-boundary diff (see the bus hook)
         // A warm has no turn to journal. endMemoryTurn would close the previous one.
         if (!warmOnly && bot.memoryEnabled !== false) beginMemoryTurn(bot.id, threadId);
@@ -21571,6 +21703,7 @@ async function startTurn(
       if (ownsLatestGeneration) {
         runningTurnEngines.delete(threadId);
         endMemoryTurn(threadId);
+        releasePlain(turnHolder(threadId));
         clearTurnDigestState(threadId);
         releaseLocalVmThread(threadId);
         vpsThreadEnded(bot.id, threadId);
@@ -24158,6 +24291,8 @@ async function runGroupMemberTurn(
   const resolvedLatestImages = latestUser?.text && !cardContinuation && !latestInBurst
     ? extractTurnImages(latestUser.text)
     : { text: latestUser?.text ?? "", images: [] };
+  // stored files sealed at rest go plain for the engine (server/content-at-rest.ts)
+  if (!cardContinuation) await holdTurnAttachments(threadId, [latestUser?.text], [...burstImages, ...resolvedLatestImages.images], { picturesByPath: instance.driverKind === "codex" });
   // Organization server: where this room turn's tools run (the person whose
   // message it answers), and their own attachments pointed there.
   const roomRoutine = !roomSpeakerId && roomRoutineSpeaker(threadId) !== null;
@@ -24627,6 +24762,8 @@ async function runGroupMemberTurn(
   // conversation, not a different bot
   const worksInWorkspace = supportsWorkspaceFiles(instance.driverKind);
   const workspace = worksInWorkspace ? ensureWorkspace(bot.id) : undefined;
+  // memory sealed at rest goes plain for the engine's file tools, as in a 1:1 turn
+  if (workspace) void holdBotMemoryPlain(bot.id, turnHolder(threadId));
   // a room member's memory writes are journaled the same as a 1:1 turn's
   if (workspace && bot.memoryEnabled !== false) beginMemoryTurn(bot.id, threadId);
   // The room's folder pins here — on the first turn that actually
@@ -29708,6 +29845,8 @@ function threadWarmRequest(auth: RequestAuth, botId: string, body: Record<string
   // bot's first command does not wait for the cluster or a node
   // (server/sandbox-typing-prewake.ts). Opening the conversation never does.
   if (body.typing === true) prewakeComputerWhileTyping(bot.id, actorPrincipalId(auth));
+  // files sealed at rest start opening for the coming turn (server/content-at-rest.ts)
+  openForComingTurn(bot.id, threadId);
   return { status: 200, body: { warm: prewarmThread(bot.id, threadId, actorPrincipalId(auth) || "local", { speaker: speakerFor(auth) }) } };
 }
 const typingPrewake = new TypingPrewakeThrottle();
@@ -36604,6 +36743,11 @@ const orgBotsDeps: BotsDeps = {
     if (previous) grants.push({ target: `user:${previous}`, level: "manage", by: previous, at: Date.now() } as (typeof grants)[number]);
     if (bot.chiefOfStaff) store.clearPrimaryBot(botId);
     store.patchBot(botId, { ownerUserId: ownerPrincipalId });
+    // its memory and the threads that follow its owner (no person of their
+    // own) take the new owner's key now, whole (docs/content-encryption.md):
+    // the previous owner's erasure never takes them
+    const following = store.tasks(botId).filter((task) => !task.ownerPrincipalId).map((task) => task.threadId);
+    contentOwnerChanged(following, [botId]);
     botMailResync();
     store.setBotGrants(botId, grants);
     settleMemberAutoLevels([botId]);
@@ -37816,7 +37960,8 @@ function agentApiStageFiles(caller: AgentCaller, target: BotRecord, files: FileI
     } else if (from && caller.sourceThreadId) {
       const found = agentApiSourceFile(from, caller.sourceThreadId, file.path);
       if ("code" in found) return found;
-      sources.push({ name, read: () => readFileSync(found.path) });
+      // a memory file sealed at rest travels as its plaintext (server/content-at-rest.ts)
+      sources.push({ name, read: () => readAtRestSync(found.path) });
     } else {
       return agentRefuse(400, "bad_request", `${file.path}: send the file's bytes (content_base64).`);
     }
@@ -43703,7 +43848,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         await file.handle.close().catch(() => undefined);
         return;
       }
-      const stream = file.handle.createReadStream({ start: 0, end: file.bytes - 1, autoClose: true });
+      const stream = file.stream();
       stream.on("error", () => res.destroy());
       res.on("close", () => stream.destroy());
       stream.pipe(res);
@@ -43772,7 +43917,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         await file.handle.close().catch(() => undefined);
         return;
       }
-      const stream = file.handle.createReadStream({ start: 0, end: file.bytes - 1, autoClose: true });
+      const stream = file.stream();
       stream.on("error", () => res.destroy());
       res.on("close", () => stream.destroy());
       stream.pipe(res);
@@ -43831,7 +43976,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (settled) return;
           settled = true;
           try {
-            resolve(await saveImageUpload(Buffer.concat(chunks), mime, uploadId));
+            resolve(await saveImageUpload(Buffer.concat(chunks), mime, uploadId, uploaderOf(auth)));
           } catch (e) {
             reject(e instanceof Error ? e : new Error(String(e)));
           }
@@ -43882,7 +44027,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // the caller still needs to receive the useful 4xx response when the
         // streamed byte count crosses the limit.
         const chunks = req.iterator({ destroyOnReturn: false }) as AsyncIterable<Buffer>;
-        const saved = await saveFile(chunks, name, rawType ?? "", { uploadId, expectedBytes: declaredLength });
+        const saved = await saveFile(chunks, name, rawType ?? "", { uploadId, expectedBytes: declaredLength, owner: uploaderOf(auth) });
         // An archive is listed here; solo also unpacks it next to the upload
         // (this machine is where the bot works). An organization server never
         // unpacks on its own host (server/attachment-archives.ts).
@@ -43911,39 +44056,57 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // refuses anything that is not a bare generated filename
     m = path.match(/^\/api\/attachments\/([\w.-]+)$/);
     if (m && method === "GET") {
-      const attachment = readAttachment(m[1]!);
-      if (!attachment) return json(res, 404, { error: "no such attachment" });
-      const size = attachment.bytes.byteLength;
+      // streamed, sealed at rest or plain (server/content-at-rest.ts): a
+      // sealed file opens chunk by chunk, a range reads only its chunks
+      const storedPath = servableAttachmentPath(m[1]!);
+      let handle: Awaited<ReturnType<typeof openFileHandle>> | null = null;
+      let stored: Awaited<ReturnType<typeof describeHandle>>;
+      try {
+        if (!storedPath) throw new Error("not servable");
+        handle = await openFileHandle(storedPath, "r");
+        if (!(await handle.stat()).isFile()) throw new Error("not a file");
+        stored = await describeHandle(handle, storedPath);
+      } catch (error) {
+        await handle?.close().catch(() => undefined);
+        if (error instanceof ContentKeyUnavailable) throw error;
+        return json(res, 404, { error: "no such attachment" });
+      }
+      const opened = handle;
+      const size = stored.size;
+      const mime = attachmentMime(m[1]!);
       // Who may see an attachment is decided per request — the dispatcher
       // 404s hidden ones above — so the browser must never reuse one
       // member's copy after a switch to another identity in the same profile.
       const headers = {
-        "content-type": attachment.mime,
+        "content-type": mime,
         "cache-control": "private, no-store",
         "x-content-type-options": "nosniff",
+      };
+      const send = (status: number, extra: Record<string, string>, start: number, end: number) => {
+        res.writeHead(status, { ...headers, ...extra });
+        if (end < start || res.destroyed) { void opened.close().catch(() => undefined); return res.end(); }
+        const stream = atRestStream(opened, stored, start, end);
+        stream.on("error", () => res.destroy());
+        res.on("close", () => stream.destroy());
+        stream.pipe(res);
       };
       // Range serving is audio-only (#1745): a player scrubbing a voice note
       // asks for byte windows, and images/documents keep the full response
       // the app has always relied on. A header we do not understand reads
       // as absent — the full 200 is always a correct answer to a GET.
-      if (attachment.mime.startsWith("audio/")) {
+      if (mime.startsWith("audio/")) {
         const rawRange = Array.isArray(req.headers.range) ? req.headers.range[0] : req.headers.range;
         const range = parseAudioRange(rawRange, size);
         if (range.kind === "unsatisfiable") {
+          await opened.close().catch(() => undefined);
           res.writeHead(416, { ...headers, "content-range": `bytes */${size}` });
           return res.end();
         }
         if (range.kind === "range") {
-          res.writeHead(206, {
-            ...headers,
-            "content-length": String(range.end - range.start + 1),
-            "content-range": `bytes ${range.start}-${range.end}/${size}`,
-          });
-          return res.end(attachment.bytes.subarray(range.start, range.end + 1));
+          return send(206, { "content-length": String(range.end - range.start + 1), "content-range": `bytes ${range.start}-${range.end}/${size}` }, range.start, range.end);
         }
       }
-      res.writeHead(200, { ...headers, "content-length": String(size) });
-      return res.end(attachment.bytes);
+      return send(200, { "content-length": String(size) }, 0, size - 1);
     }
 
     // ── search across every transcript ──────────────────────────────────

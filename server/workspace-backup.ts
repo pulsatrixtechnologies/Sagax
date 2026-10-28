@@ -10,10 +10,11 @@ import { isAbsolute, join, parse, posix, relative, resolve, sep, win32 } from "n
 import { homedir } from "node:os";
 import { backup, DatabaseSync } from "node:sqlite";
 import { pipeline } from "node:stream/promises";
-import { Worker } from "node:worker_threads";
+import { isMainThread, Worker } from "node:worker_threads";
 import * as tar from "tar";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { writeFileAtomic } from "./atomic.ts";
+import { exportPlainCopy, isAtRestTemp, pauseAtRestMigration, useExportedContentKeys } from "./content-at-rest.ts";
 import { contentKeysForExport, unsealDatabaseCopy, type ExportedContentKey } from "./content-export.ts";
 import { mergePrincipalFiles } from "./principals.ts";
 import { removeThreadTrees } from "./runtime/store.ts";
@@ -542,6 +543,8 @@ export async function createWorkspaceBackup(dataDir: string, options: CreateWork
   const jobId = randomUUID();
   let worker: Worker | undefined;
   let completed = false;
+  // no file sealed or opened in place while the folder is copied
+  const resumeAtRest = await pauseAtRestMigration();
   try {
     worker = new Worker(existsSync(source) ? source : new URL("./workspace-backup.worker.js", import.meta.url), {
       workerData: { dataDir, options: { ...options, contentKeys: options.contentKeys ?? contentKeysForExport() }, jobId }, execArgv: [],
@@ -559,9 +562,21 @@ export async function createWorkspaceBackup(dataDir: string, options: CreateWork
     completed = true;
     return result;
   } finally {
+    resumeAtRest();
     await worker?.terminate();
     // Reuse the guarded deletion path: never sweep other jobs or recovery.
     if (!completed && entryExists(join(dataDir, ".backups", jobId))) removeWorkspaceBackupJob(dataDir, jobId);
+  }
+}
+
+/** Every content key id a database copy holds (before it is unsealed). */
+function storedContentKeyIds(path: string): string[] {
+  try {
+    const db = new DatabaseSync(path, { readOnly: true });
+    try { return (db.prepare("SELECT key_id FROM content_keys").all() as Array<{ key_id: string }>).map((row) => row.key_id); }
+    finally { db.close(); }
+  } catch {
+    return [];
   }
 }
 
@@ -619,7 +634,13 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       const snapshotDb = new DatabaseSync(join(snapshot, snapshotName));
       try { snapshotDb.exec("PRAGMA journal_mode = DELETE"); } finally { snapshotDb.close(); }
       // sealed transcripts leave in the clear, inside the password-encrypted archive
-      if (name === "messages.db") unsealDatabaseCopy(join(snapshot, snapshotName), options.contentKeys ?? contentKeysForExport());
+      if (name === "messages.db") {
+        const keys = options.contentKeys ?? contentKeysForExport();
+        // the files and logs sealed at rest too (server/content-at-rest.ts), with
+        // the same keys: a worker opens with them, never with the live keyring
+        if (!isMainThread) useExportedContentKeys(keys, storedContentKeyIds(join(snapshot, snapshotName)));
+        unsealDatabaseCopy(join(snapshot, snapshotName), keys);
+      }
       if (name === "messages.db") confidentialAttachments = stripConfidentialMessages(join(snapshot, snapshotName), new Set(confidential.keys()), forgotten);
       if (name === "runtime.db") stripConfidentialRuntime(join(snapshot, snapshotName), new Set(confidential.keys()), forgotten);
     }
@@ -627,6 +648,9 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       for (const name of readdirSync(directory).sort()) {
         if (!prefix && excluded(name)) { reconnect.path(name); continue; }
         const path = prefix ? `${prefix}/${name}` : name;
+        // an at-rest replacement in progress, or the sealed originals kept while
+        // a turn reads files plain (server/content-at-rest.ts): never content
+        if (isAtRestTemp(name) || (!prefix && name === ".at-rest-originals")) continue;
         if (excludedWorkspaceAuthPath(path)) { reconnect.path(path); continue; }
         if (ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path) || confidentialDataScopePath(path)) continue;
         // no secret in a backup (2026-10-18, « Exclure tout »): an engine's
@@ -770,7 +794,11 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
               writeJson(destination, value);
             }
             copied = { size: lstatSync(destination).size, mode: 0o600, sha256: hashFile(destination) };
-          } else copied = copyRegular(SNAPSHOT_DATABASES[path] ? join(snapshot, SNAPSHOT_DATABASES[path]) : source, destination);
+          } else {
+            // sealed at rest (a memory file, an attachment, a log): its plaintext
+            const plain = SNAPSHOT_DATABASES[path] ? null : exportPlainCopy(source, destination, path, stat.mode & 0o100 ? 0o700 : 0o600);
+            copied = plain ? { size: plain.size, mode: stat.mode & 0o100 ? 0o700 : 0o600, sha256: plain.sha256 } : copyRegular(SNAPSHOT_DATABASES[path] ? join(snapshot, SNAPSHOT_DATABASES[path]) : source, destination);
+          }
           bytes += copied.size;
           if (bytes > MAX_WORKSPACE_BACKUP_BYTES) throw new Error("The workspace exceeds the 10 GB backup limit.");
           entries.push({ path, type: "file", ...copied });

@@ -13,6 +13,7 @@
 // thousands of native lines and the panel wants the recent ones first.
 import { closeSync, fstatSync, openSync, readSync, type Stats } from "node:fs";
 import { join } from "node:path";
+import { isProjectedRecord, LogReader, logTail, rememberTail } from "./content-at-rest.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import type { InspectorEntry, InspectorPage, NativeRecord } from "../shared/inspector.ts";
 
@@ -84,24 +85,31 @@ function countLines(fd: number, file: string, stat: FileStat): number {
 
 type RecordGuard<T> = (value: unknown) => value is T;
 
-function parseRecent<T>(text: string, includeFirst: boolean, limit: number, valid: RecordGuard<T>): T[] {
+function parseRecent<T>(reader: LogReader, text: string, includeFirst: boolean, limit: number, valid: RecordGuard<T>): T[] {
   const lines = text.split("\n");
   if (!includeFirst) lines.shift();
   const out: T[] = [];
-  for (const raw of lines) {
-    if (!raw) continue;
-    try {
-      const value: unknown = JSON.parse(raw);
-      if (valid(value)) out.push(value);
-    } catch {
-      // A torn line during a write, or a hand-edited record. Keep looking
-      // farther back until we still have `limit` valid recent entries.
-    }
+  // a log sealed at rest opens here, a block at a time (server/content-at-rest.ts);
+  // a locked key throws ContentKeyUnavailable rather than show a shorter log
+  // newest first, and no further than `limit` valid entries: an older line
+  // is never parsed (nor opened, when sealed) for nothing
+  for (let index = lines.length - 1; index >= 0 && out.length < limit; index--) {
+    // A torn line during a write, or a hand-edited record (undefined), or an
+    // erased one (null): keep looking farther back for `limit` valid entries.
+    const value = reader.at(lines, index);
+    if (value === undefined || value === null) continue;
+    if (isProjectedRecord(value) || valid(value)) out.push(value as T);
   }
-  return out.slice(-limit);
+  return out.reverse();
 }
 
-export function readRecentLines<T>(file: string, limit: number, valid: RecordGuard<T>): { lines: T[]; total: number } {
+/** A sealed line the caller does not need opened, by its clear fields: it
+ * comes back as its projection (still counted toward `limit`). */
+export type ProjectionOnly = (projection: Record<string, unknown>) => boolean;
+
+export function readRecentLines<T>(file: string, limit: number, valid: RecordGuard<T>, projectionOnly?: ProjectionOnly): { lines: T[]; total: number } {
+  // one reader for the whole read: a block opened once, however the window grows
+  const reader = new LogReader(file, projectionOnly);
   let fd: number;
   try {
     fd = openSync(file, "r");
@@ -111,29 +119,68 @@ export function readRecentLines<T>(file: string, limit: number, valid: RecordGua
   try {
     const stat = fstatSync(fd);
     const total = countLines(fd, file, stat);
+    // A sealed log a view read a moment ago, unchanged but for this
+    // process's own appends: its newest lines are in memory, opened
+    // (server/content-at-rest.ts), and need no disk read nor opening.
+    const tail = logTail(file, stat);
+    if (tail && (tail.fromStart || tail.lines.length >= limit)) {
+      // newest first, as parseRecent does, straight from the kept lines
+      const kept: T[] = [];
+      for (let index = tail.lines.length - 1; index >= 0 && kept.length < limit; index--) {
+        let value: unknown;
+        try { value = JSON.parse(tail.lines[index]!); } catch { continue; }
+        if (valid(value)) kept.push(value);
+      }
+      if (kept.length >= limit || tail.fromStart) return { lines: kept.reverse(), total };
+    }
     let position = stat.size;
-    let bytes = Buffer.alloc(0);
+    // the window as chunks, newest last; joined and decoded only when it
+    // holds enough lines to parse (never once per chunk)
+    const chunks: Buffer[] = [];
+    let held = 0;
+    let newlines = 0;
     let lines: T[] = [];
-    while (position > 0 && bytes.length < MAX_TAIL_BYTES) {
-      const remaining = MAX_TAIL_BYTES - bytes.length;
+    const windowText = () => (chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks, held)).toString("utf8");
+    while (position > 0 && held < MAX_TAIL_BYTES) {
+      const remaining = MAX_TAIL_BYTES - held;
       const start = Math.max(0, position - Math.min(READ_CHUNK, remaining));
       const length = position - start;
       const chunk = Buffer.allocUnsafe(length);
       const read = readSync(fd, chunk, 0, length, start);
       if (read <= 0) break;
-      bytes = Buffer.concat([chunk.subarray(0, read), bytes]);
+      const got = chunk.subarray(0, read);
+      chunks.unshift(got);
+      held += read;
+      for (let at = got.indexOf(0x0a); at >= 0; at = got.indexOf(0x0a, at + 1)) newlines++;
       position = start;
       // The first line is partial until we reach byte zero. Parse only once
       // enough complete candidates exist; corrupt candidates make us keep
       // walking backwards rather than returning fewer valid rows.
-      const text = bytes.toString("utf8");
-      if (position === 0 || text.split("\n").length - 1 >= limit) {
-        lines = parseRecent(text, position === 0, limit, valid);
+      if (position === 0 || newlines >= limit) {
+        lines = parseRecent(reader, windowText(), position === 0, limit, valid);
         if (lines.length >= limit || position === 0) break;
       }
     }
-    if (lines.length === 0 && bytes.length > 0) {
-      lines = parseRecent(bytes.toString("utf8"), position === 0, limit, valid);
+    if (lines.length === 0 && held > 0) {
+      lines = parseRecent(reader, windowText(), position === 0, limit, valid);
+    }
+    // a sealed log: its tail, opened, kept for the next read of this view
+    if (held > 0 && reader.sawSealed) {
+      const window = windowText().split("\n");
+      const fromStart = position === 0;
+      if (!fromStart) window.shift();
+      // a file that ends mid-line (a write in progress) is not kept
+      const complete = window.at(-1) === "";
+      if (complete) window.pop();
+      const originals: string[] = [];
+      for (let index = 0; index < window.length; index++) {
+        let raw: string | null | undefined;
+        try { raw = reader.raw(window, index); } catch { raw = null; }
+        if (typeof raw === "string") originals.push(raw);
+        else if (raw === undefined) originals.length = 0;
+        else { originals.length = 0; break; }
+      }
+      if (complete && originals.length) rememberTail(file, stat, originals, fromStart && originals.length === window.length);
     }
     return { lines, total };
   } finally {

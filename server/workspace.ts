@@ -8,10 +8,11 @@
 // memory/ holds topic files the bot reads on demand with its ordinary
 // file tools. Plain markdown on purpose — the user can open, edit, or
 // delete anything the bot believes.
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, statSync, type Stats } from "node:fs";
 import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { holdPlain, isAtRestRefusal, noteAtRestWrite, plainSizeFor, readAtRestTextSync, registerAtRestRoot } from "./content-at-rest.ts";
 import { alwaysCore, isExpired, isMemoryDate, parseMemoryEntries, untilMark, withoutExpired, type MemoryEntryLine } from "./memory-entries.ts";
 import { parseTopicHeader, readTopicHead, renderTopicIndex } from "./memory-topics.ts";
 import { indexMemoryFile, indexedMemoryFiles, recallMemory, removeMemoryFile, type MemoryHit, type SearchMode } from "./message-db.ts";
@@ -21,6 +22,39 @@ import { DATA_DIR } from "./config.ts";
 
 export const WORKSPACES_DIR = join(DATA_DIR, "workspaces");
 export const TASK_WORKSPACES_DIR = join(DATA_DIR, "task-workspaces");
+
+// A bot's memory files (MEMORY.md, memory/, docs/) are sealed at rest under
+// its owner's key (docs/content-encryption.md, server/content-at-rest.ts):
+// every read here opens them, and an engine gets them plain for its turn
+// (holdBotMemoryPlain). Their context is the bot: a file moved to another
+// bot's folder does not open.
+registerAtRestRoot({
+  id: "memory",
+  dir: WORKSPACES_DIR,
+  context: (relativePath) => `memory/${relativePath.split("/")[0]}`,
+  files: function* () {
+    let bots: string[];
+    try { bots = readdirSync(WORKSPACES_DIR); } catch { return; }
+    // one bot at a time: the migration lists lazily
+    for (const botId of bots) {
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(botId)) continue;
+      for (const relativePath of memoryPathsOnDisk(botId)) yield { path: join(WORKSPACES_DIR, botId, relativePath), scope: { bot: botId } };
+    }
+  },
+});
+
+/** The bot's memory files, opened back to plain in place for an engine's
+ * turn (in parallel, off the event loop) and kept plain until
+ * releasePlain(holder) at its end. Files already plain cost a stat. */
+export async function holdBotMemoryPlain(botId: string, holder: string): Promise<void> {
+  // nothing on the caller's path: the listing and the opening run on a later turn of the loop
+  await new Promise((resolve) => setImmediate(resolve));
+  try {
+    await holdPlain(holder, memoryPathsOnDisk(botId).map((relativePath) => join(workspaceDir(botId), relativePath)));
+  } catch {
+    // a failure to open one never stops the turn: the file stays as it is
+  }
+}
 
 /** MCP support does not imply native filesystem tools or a local working directory. */
 export function supportsWorkspaceFiles(driverKind: string): boolean {
@@ -88,14 +122,14 @@ export function readMemoryOnlyFromRegularFiles(): void {
 /** A memory file's text. Throws like readFileSync when it cannot be read,
  * and, on a Cloud home, when it is not a regular file. */
 export function readMemoryText(path: string): string {
-  if (!regularMemoryFilesOnly) return readFileSync(path, "utf8");
+  if (!regularMemoryFilesOnly) return readAtRestTextSync(path);
   // O_NOFOLLOW refuses a link at open where there is one; Windows has none
   // (and opens what a link points at), so the entry is looked at first too.
   if (!lstatSync(path).isFile()) throw Object.assign(new Error(`not a regular file: ${path}`), { code: "EINVAL" });
   const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     if (!fstatSync(fd).isFile()) throw Object.assign(new Error(`not a regular file: ${path}`), { code: "EINVAL" });
-    return readFileSync(fd, "utf8");
+    return readAtRestTextSync(path, fd);
   } finally {
     closeSync(fd);
   }
@@ -197,7 +231,9 @@ export function loadMemory(botId: string, opts: { now?: Date } = {}): { text: st
   let raw: string;
   try {
     raw = readMemoryText(join(workspaceDir(botId), "MEMORY.md"));
-  } catch {
+  } catch (error) {
+      // a sealed file whose key is locked (or that does not open) is never read as empty
+      if (isAtRestRefusal(error)) throw error;
     return null;
   }
   if (!raw.trim() || raw === MEMORY_SEED) return null;
@@ -236,7 +272,9 @@ export function readMemoryFile(botId: string) {
   let raw: string;
   try {
     raw = readMemoryText(join(workspaceDir(botId), "MEMORY.md"));
-  } catch {
+  } catch (error) {
+      // a sealed file whose key is locked (or that does not open) is never read as empty
+      if (isAtRestRefusal(error)) throw error;
     return { text: "", truncated: false };
   }
   if (!raw.trim() || raw === MEMORY_SEED) return { text: "", truncated: false };
@@ -259,6 +297,11 @@ export function writeMemoryFile(botId: string, text: string): void {
   indexWrittenMemoryFile(botId, "MEMORY.md");
 }
 
+/** A memory file's plaintext size: its own size when plain. */
+function plainBytes(path: string, stat: Pick<Stats, "ino" | "size" | "mtimeMs">): number {
+  return plainSizeFor(path, stat);
+}
+
 /** Put a just-written file into the search index, with the stat the
  * write left, so a later sync sees it as current. Indexing must never
  * break a write that already succeeded — the file is the truth. */
@@ -266,27 +309,33 @@ function indexWrittenMemoryFile(botId: string, relativePath: string): void {
   try {
     const path = join(workspaceDir(botId), relativePath);
     const stat = statSync(path);
-    indexMemoryFile(botId, relativePath, searchableMemoryText(relativePath, readMemoryText(path)), { mtimeMs: stat.mtimeMs, bytes: stat.size });
+    noteAtRestWrite(path);
+    indexMemoryFile(botId, relativePath, searchableMemoryText(relativePath, readMemoryText(path)), { mtimeMs: stat.mtimeMs, bytes: plainBytes(path, stat) });
   } catch {
     // the next search's sync pass picks it up
   }
 }
 
-/** Every memory file the bot has, workspace-relative, with its current
- * stat: the seed of a search's sync pass and of a backup. */
-function memoryFilesOnDisk(botId: string): Array<{ path: string; mtimeMs: number; bytes: number }> {
-  const dir = workspaceDir(botId);
-  const names = [
+/** Every memory file the bot has, workspace-relative: MEMORY.md, its topic
+ * files and logs, and its reference documents. */
+function memoryPathsOnDisk(botId: string): string[] {
+  return [
     "MEMORY.md",
-    ...listMemoryTopics(botId).map((topic) => `memory/${topic.name}`),
+    ...listMemoryTopicNames(botId).map((name) => `memory/${name}`),
     ...listMemoryLogs(botId).map((log) => `memory/${MEMORY_LOG_DIR}/${log}`),
     // reference documents share the index; recallMemory keeps them apart
-    ...listDocFiles(botId).map((doc) => `${DOCS_DIR}/${doc.name}`),
+    ...listDocNames(botId).map((name) => `${DOCS_DIR}/${name}`),
   ];
-  return names.flatMap((relativePath) => {
+}
+
+/** Every memory file the bot has, workspace-relative, with its current
+ * stat (its plaintext size): the seed of a search's sync pass and of a backup. */
+function memoryFilesOnDisk(botId: string): Array<{ path: string; mtimeMs: number; bytes: number }> {
+  const dir = workspaceDir(botId);
+  return memoryPathsOnDisk(botId).flatMap((relativePath) => {
     try {
       const stat = memoryEntryStat(join(dir, relativePath));
-      return stat.isFile() ? [{ path: relativePath, mtimeMs: stat.mtimeMs, bytes: stat.size }] : [];
+      return stat.isFile() ? [{ path: relativePath, mtimeMs: stat.mtimeMs, bytes: plainBytes(join(dir, relativePath), stat) }] : [];
     } catch {
       return [];
     }
@@ -316,7 +365,9 @@ export function syncMemoryIndex(botId: string): void {
     try {
       const text = readMemoryText(join(workspaceDir(botId), file.path));
       indexMemoryFile(botId, file.path, searchableMemoryText(file.path, text), file);
-    } catch {
+    } catch (error) {
+      // a sealed file whose key is locked (or that does not open) is never read as empty
+      if (isAtRestRefusal(error)) throw error;
       // vanished between the listing and the read: dropped below next time
     }
   }
@@ -608,7 +659,9 @@ export function appendMemoryLog(botId: string, text: string, opts: MemoryUpdateO
   let current = "";
   try {
     current = readMemoryText(path);
-  } catch {
+  } catch (error) {
+      // a sealed file whose key is locked (or that does not open) is never read as empty
+      if (isAtRestRefusal(error)) throw error;
     // first line of the day
   }
   writeFileAtomic(path, `${current}${current && !current.endsWith("\n") ? "\n" : ""}${line}\n`, { mode: 0o600 });
@@ -642,7 +695,9 @@ export function readMemoryLog(botId: string, name: string): string | null {
   if (!LOG_FILE_NAME.test(name)) return null;
   try {
     return readMemoryText(join(workspaceDir(botId), "memory", MEMORY_LOG_DIR, name));
-  } catch {
+  } catch (error) {
+      // a sealed file whose key is locked (or that does not open) is never read as empty
+      if (isAtRestRefusal(error)) throw error;
     return null;
   }
 }
@@ -678,12 +733,31 @@ export function listDocFiles(botId: string): Array<{ name: string; bytes: number
       try {
         // lstat: a link in docs/ is not a document (it could point anywhere)
         const stat = lstatSync(join(dir, name));
-        return stat.isFile() ? [{ name, bytes: stat.size, modifiedAt: Math.round(stat.mtimeMs), createdAt: Math.round(stat.birthtimeMs || stat.ctimeMs) }] : [];
+        return stat.isFile() ? [{ name, bytes: plainBytes(join(dir, name), stat), modifiedAt: Math.round(stat.mtimeMs), createdAt: Math.round(stat.birthtimeMs || stat.ctimeMs) }] : [];
       } catch {
         return [];
       }
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The names of the bot's docs/ files (regular files only), no sizes. */
+function listDocNames(botId: string): string[] {
+  const dir = join(workspaceDir(botId), DOCS_DIR);
+  let entries: string[];
+  try { entries = memoryFolderEntries(dir); } catch { return []; }
+  return entries.filter((name) => isMemoryTopicName(name) && regularFile(join(dir, name)));
+}
+
+/** The names of the bot's memory/ topic files, no sizes. */
+function listMemoryTopicNames(botId: string): string[] {
+  const dir = join(workspaceDir(botId), "memory");
+  let entries: string[];
+  try { entries = memoryFolderEntries(dir); } catch { return []; }
+  return entries.filter((name) => {
+    if (!isMemoryTopicName(name)) return false;
+    try { return memoryEntryStat(join(dir, name)).isFile(); } catch { return false; }
+  });
 }
 
 /** The bot's memory/ topic files, name + size only — contents are fetched
@@ -700,7 +774,7 @@ export function listMemoryTopics(botId: string): Array<{ name: string; bytes: nu
     .flatMap((name) => {
       try {
         const stat = memoryEntryStat(join(workspaceDir(botId), "memory", name));
-        return stat.isFile() ? [{ name, bytes: stat.size }] : [];
+        return stat.isFile() ? [{ name, bytes: plainBytes(join(workspaceDir(botId), "memory", name), stat) }] : [];
       } catch {
         return [];
       }
@@ -724,7 +798,9 @@ export function readMemoryTopic(botId: string, name: string): string | null {
   if (!isMemoryTopicName(name)) return null;
   try {
     return readMemoryText(join(workspaceDir(botId), "memory", name));
-  } catch {
+  } catch (error) {
+      // a sealed file whose key is locked (or that does not open) is never read as empty
+      if (isAtRestRefusal(error)) throw error;
     return null;
   }
 }

@@ -174,6 +174,23 @@ function ensureMemoryIndex(db: DatabaseSync): void {
       INSERT INTO memory_fts(rowid, text) VALUES (new.rowid, new.text);
     END;
   `);
+  // Sealed memory rows (docs/content-encryption.md): `text` empty, the text
+  // in `sealed` under the bot's key, its keyed words and prefixes in a
+  // contentless FTS5 table, like the transcripts' blind index.
+  const columns = new Set((db.prepare("PRAGMA table_info(memory_files)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!columns.has("sealed")) db.exec("ALTER TABLE memory_files ADD COLUMN sealed BLOB");
+  if (!columns.has("key_id")) db.exec("ALTER TABLE memory_files ADD COLUMN key_id TEXT");
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_sealed_fts USING fts5(
+      words, prefixes, content='', contentless_delete=1, detail=column
+    );
+    CREATE TRIGGER IF NOT EXISTS memory_sealed_ad AFTER DELETE ON memory_files WHEN old.key_id IS NOT NULL BEGIN
+      DELETE FROM memory_sealed_fts WHERE rowid = old.rowid;
+    END;
+    CREATE TRIGGER IF NOT EXISTS memory_sealed_au AFTER UPDATE OF sealed, key_id ON memory_files WHEN old.key_id IS NOT NULL BEGIN
+      DELETE FROM memory_sealed_fts WHERE rowid = old.rowid;
+    END;
+  `);
 }
 
 // Ranked recall over transcript text, for the bot's own session_search tool.
@@ -314,6 +331,9 @@ export interface ContentEncryptionOptions {
   /** providers that only unwrap keys an earlier configuration wrapped */
   others?: KekProvider[];
   resolveOwner?: ContentOwnerResolver;
+  /** Whose key a bot's memory takes (server/content-at-rest.ts): its owner
+   * on an organization server, else the workspace. */
+  resolveBotOwner?: (botId: string) => string | null;
   /** background migration on timers (tests drive it by hand) */
   autoMigrate?: boolean;
 }
@@ -326,6 +346,16 @@ export function contentEncryptionModeFromEnv(env: NodeJS.ProcessEnv = process.en
 let configured: ContentEncryptionOptions | null = null;
 let ring: ContentKeyring | null = null;
 let ownerOf: ContentOwnerResolver = () => ({ owner: WORKSPACE_OWNER, confidential: false });
+let botOwnerOf: (botId: string) => string | null = () => WORKSPACE_OWNER;
+/** Files and logs sealed outside this database (server/content-at-rest.ts):
+ * told when the settings or a key change, and before an owner's keys go. */
+interface AtRestListener {
+  changed(): void;
+  beforeErase?(owner: string, keyIds: readonly string[]): void;
+  /** threads (and bots) whose content takes another key now */
+  moved?(threadIds: readonly string[], botIds: readonly string[]): void;
+}
+const atRestListeners = new Set<AtRestListener>();
 /** thread id -> the key its new rows are sealed with */
 const bindings = new Map<string, LiveKey>();
 interface PendingIndex {
@@ -351,7 +381,7 @@ function keyring(): ContentKeyring {
   const local = localKekProvider(() => resolveVaultKey(DATA_DIR));
   const active = configured?.provider ?? local;
   const others = [...(configured?.others ?? []), ...(active.id === "local" ? [] : [local])];
-  ring = new ContentKeyring(db, active, others, () => scheduleMigration());
+  ring = new ContentKeyring(db, active, others, () => { scheduleMigration(); notifyAtRest(); });
   return ring;
 }
 
@@ -361,8 +391,65 @@ export function configureContentEncryption(options: ContentEncryptionOptions): v
   ring = null;
   bindings.clear();
   if (options.resolveOwner) ownerOf = options.resolveOwner;
+  if (options.resolveBotOwner) botOwnerOf = options.resolveBotOwner;
   migration.dirty = true;
   scheduleMigration();
+  notifyAtRest();
+}
+
+function notifyAtRest(): void {
+  for (const listener of atRestListeners) {
+    try { listener.changed(); } catch { /* a listener never breaks a key change */ }
+  }
+}
+
+/** server/content-at-rest.ts registers itself here. */
+export function onContentAtRest(listener: AtRestListener): () => void {
+  atRestListeners.add(listener);
+  return () => atRestListeners.delete(listener);
+}
+
+/** Whether new content is sealed (SAGAX_CONTENT_ENCRYPTION, the server
+ * default on). Sealed content reads either way. */
+export function contentEncryptionOn(): boolean {
+  return encryptionMode() === "on";
+}
+
+/** Whether the background migrations run on their own timers. */
+export function contentAutoMigrate(): boolean {
+  return Boolean(configured) && configured?.autoMigrate !== false;
+}
+
+/** The key a thread's content takes (its rows, its event logs); null:
+ * write plain (encryption off, owner not known yet, key not available). */
+export function contentKeyForThread(threadId: string): LiveKey | null {
+  try { return sealingKey(threadId); } catch { return null; }
+}
+
+/** The key of an owner (a person or the workspace); null as above. */
+export function contentKeyForOwner(owner: string): LiveKey | null {
+  if (encryptionMode() !== "on") return null;
+  try { return keyring().ownerKey(owner); } catch { return null; }
+}
+
+/** The key a bot's memory takes: its owner's (organization server), else
+ * the workspace's. */
+export function contentKeyForBot(botId: string): LiveKey | null {
+  let owner: string | null;
+  try { owner = botOwnerOf(botId); } catch { owner = null; }
+  return contentKeyForOwner(owner || WORKSPACE_OWNER);
+}
+
+/** Whose a thread's content is now (its person, its bot's owner, the
+ * workspace). */
+export function contentOwnerOfThread(threadId: string): string {
+  try { return ownerOf(threadId)?.owner ?? WORKSPACE_OWNER; } catch { return WORKSPACE_OWNER; }
+}
+
+/** A key by id: "destroyed" when it no longer exists (its content is
+ * erased), null when it exists but is locked on this launch. */
+export function contentKeyById(keyId: string): LiveKey | "destroyed" | null {
+  try { return keyring().key(keyId); } catch { return null; }
 }
 
 export function setContentOwnerResolver(resolve: ContentOwnerResolver): void {
@@ -382,6 +469,7 @@ function forgetSealingState(): void {
   ring?.reset();
   bindings.clear();
   pendingIndex.clear();
+  pendingMemoryIndex.clear();
   statements.clear();
   migration.cursor = 0;
   migration.phase = "messages";
@@ -589,6 +677,65 @@ export function contentKeyChanged(threadId: string): void {
   cached("DELETE FROM thread_keys WHERE thread_id = ?").run(threadId);
   migration.dirty = true;
   scheduleMigration();
+  notifyAtRest();
+}
+
+/** A thread changed hands (its owner, its bot's owner) or turned
+ * confidential: everything of it is re-sealed under its new key NOW, in
+ * this call, before anything can be erased: its rows, its queued
+ * follow-ups, and (server/content-at-rest.ts) its event logs, decision rows,
+ * attachments and its bots' memory (`botIds`: bots that changed owner). A
+ * confidential thread's old key, under its old owner, is destroyed once
+ * nothing is sealed under it any more. A key not available right now (Key
+ * Vault creating the new owner's) leaves the content in the clear, never
+ * under the old owner's key; the migration seals it later. */
+export function contentOwnerChanged(threadIds: readonly string[], botIds: readonly string[] = []): void {
+  if (!handle && !existsSync(DB_FILE())) {
+    for (const threadId of threadIds) bindings.delete(threadId);
+    return;
+  }
+  const ringNow = keyring();
+  flushContentIndex();
+  const retired: string[] = [];
+  for (const threadId of threadIds) {
+    // read everything under the old key first
+    const rows = db().prepare("SELECT rowid, json, sealed, key_id, id FROM messages WHERE thread_id = ?").all(threadId) as unknown as Array<StoredRow & { rowid: number }>;
+    const messages: Array<{ rowid: number; message: Message }> = [];
+    for (const row of rows) {
+      let message: Message | null;
+      try { message = decodeRow(row, threadId); } catch { message = null; }
+      if (message) messages.push({ rowid: row.rowid, message });
+    }
+    const followups: Array<{ rowid: number; id: string; plain: string }> = [];
+    for (const row of db().prepare("SELECT rowid AS rowid, id, payload FROM chat_followups WHERE thread_id = ?").all(threadId) as Array<{ rowid: number; id: string; payload: string }>) {
+      let plain: string | null;
+      try { plain = openTextField("followup", row.id, row.payload); } catch { plain = null; }
+      if (plain !== null) followups.push({ rowid: row.rowid, id: row.id, plain });
+    }
+    // a confidential thread's own key stays readable (in memory) until the end,
+    // but no longer answers for the thread: it gets a new one under its new owner
+    const own = ringNow.threadKeyId(threadId);
+    if (own) {
+      db().prepare("UPDATE content_keys SET thread_id = ? WHERE key_id = ?").run(`retired:${own}`, own);
+      retired.push(own);
+    }
+    bindings.delete(threadId);
+    db().prepare("DELETE FROM thread_keys WHERE thread_id = ?").run(threadId);
+    transaction(() => {
+      for (const { rowid, message } of messages) rewriteRow(rowid, threadId, message);
+    });
+    writeFollowups((connection) => {
+      for (const followup of followups) connection.prepare("UPDATE chat_followups SET payload = ? WHERE rowid = ?").run(sealText(threadId, "followup", followup.id, followup.plain), followup.rowid);
+    });
+  }
+  flushContentIndex();
+  for (const listener of atRestListeners) {
+    try { listener.moved?.(threadIds, botIds); } catch { /* the migration finishes what this could not */ }
+  }
+  if (retired.length) ringNow.destroyKeys(retired);
+  migration.dirty = true;
+  scheduleMigration();
+  notifyAtRest();
 }
 
 /** Cryptographic erasure of a person (Loi 25): their content keys and the
@@ -600,21 +747,32 @@ export function eraseContentOwner(owner: string): { keys: number; rows: number }
   const keyIds = ringNow.ownerKeyIds(owner);
   if (!keyIds.length) return { keys: 0, rows: 0 };
   flushContentIndex();
+  // files and logs first: what still belongs to someone else is re-sealed
+  // under that key, the rest goes with the key
+  for (const listener of atRestListeners) {
+    try { listener.beforeErase?.(owner, keyIds); } catch { /* erasure goes on: the key still goes */ }
+  }
   const placeholders = keyIds.map(() => "?").join(", ");
-  const threads = (db().prepare(`SELECT DISTINCT thread_id FROM messages WHERE key_id IN (${placeholders})`).all(...keyIds) as Array<{ thread_id: string }>).map((row) => row.thread_id);
-  for (const threadId of threads) {
+  // every thread with something under these keys: rows, a key binding, a queued follow-up
+  const threads = new Set((db().prepare(`SELECT DISTINCT thread_id FROM messages WHERE key_id IN (${placeholders}) UNION SELECT thread_id FROM thread_keys WHERE key_id IN (${placeholders})`).all(...keyIds, ...keyIds) as Array<{ thread_id: string }>).map((row) => row.thread_id));
+  for (const row of db().prepare("SELECT thread_id, payload FROM chat_followups").all() as Array<{ thread_id: string; payload: string }>) {
+    const keyId = sealedFieldKeyId(row.payload);
+    if (keyId && keyIds.includes(keyId)) threads.add(row.thread_id);
+  }
+  // what now belongs to someone else (a thread or a bot that changed hands)
+  // is re-sealed under that key first, whole; the rest goes with the key
+  const moved = [...threads].filter((threadId) => {
     let current: ReturnType<ContentOwnerResolver>;
     try { current = ownerOf(threadId); } catch { current = null; }
-    if (!current || current.owner === owner) continue;
-    bindings.delete(threadId);
-    db().prepare("DELETE FROM thread_keys WHERE thread_id = ?").run(threadId);
-    resealThread(threadId);
-  }
+    return Boolean(current && current.owner !== owner);
+  });
+  if (moved.length) contentOwnerChanged(moved);
   let rows = 0;
   writeFollowups((connection) => {
     connection.exec("PRAGMA secure_delete = ON");
     try {
       rows = Number(connection.prepare(`DELETE FROM messages WHERE key_id IN (${placeholders})`).run(...keyIds).changes);
+      connection.prepare(`DELETE FROM memory_files WHERE key_id IN (${placeholders})`).run(...keyIds);
       connection.prepare(`DELETE FROM thread_keys WHERE key_id IN (${placeholders})`).run(...keyIds);
       ringNow.destroyKeys(keyIds);
     } finally { connection.exec("PRAGMA secure_delete = OFF"); }
@@ -622,17 +780,6 @@ export function eraseContentOwner(owner: string): { keys: number; rows: number }
   for (const [threadId, key] of bindings) if (keyIds.includes(key.keyId)) bindings.delete(threadId);
   checkpointSoon();
   return { keys: keyIds.length, rows };
-}
-
-/** Re-seal one thread's rows under its current key, now (an erasure). */
-function resealThread(threadId: string): void {
-  const rows = db().prepare("SELECT rowid, json, sealed, key_id, id FROM messages WHERE thread_id = ?").all(threadId) as unknown as Array<StoredRow & { rowid: number }>;
-  transaction(() => {
-    for (const row of rows) {
-      const message = decodeRow(row, threadId);
-      if (message) rewriteRow(row.rowid, threadId, message);
-    }
-  });
 }
 
 function rewriteRow(rowid: number, threadId: string, message: Message): void {
@@ -658,7 +805,7 @@ function checkpointSoon(): void {
 // Each batch is one transaction and verifies what it wrote opens again
 // before it commits. A pass ends at the last row; a change starts another.
 const migration = {
-  phase: "messages" as "messages" | "followups" | "receipts" | "done",
+  phase: "messages" as "messages" | "memory" | "followups" | "receipts" | "done",
   cursor: 0,
   dirty: true,
   /** a plain row may remain (encryption on): the search reads plain rows too */
@@ -702,8 +849,10 @@ export function vacuumAfterSealing(maxBytes = 1024 ** 3): number | null {
   if (size > maxBytes) return null;
   const started = performance.now();
   flushContentIndex();
+  flushMemoryIndex();
   database.exec("DELETE FROM content_meta WHERE key = 'vacuum'");
   database.exec("INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')");
+  database.exec("INSERT INTO memory_fts(memory_fts) VALUES ('rebuild')");
   database.exec("VACUUM");
   try { database.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch { /* the next checkpoint */ }
   statements.clear();
@@ -754,7 +903,7 @@ export function runContentMigration(budgetMs = 8): { done: boolean } {
         "SELECT m.rowid AS rowid, m.thread_id, m.id, m.json, m.sealed, m.key_id, i.rowid AS indexed, k.key_id AS bound FROM messages m " +
         "LEFT JOIN thread_keys k ON k.thread_id = m.thread_id LEFT JOIN message_index i ON i.rowid = m.rowid WHERE m.rowid > ? ORDER BY m.rowid LIMIT 16",
       ).all(migration.cursor) as unknown as Array<StoredRow & { rowid: number; thread_id: string; id: string; indexed: number | null; bound: string | null }>;
-      if (!rows.length) { migration.phase = "followups"; migration.cursor = 0; continue; }
+      if (!rows.length) { migration.phase = "memory"; migration.cursor = 0; continue; }
       database.exec("PRAGMA secure_delete = ON");
       try {
         transaction(() => {
@@ -795,6 +944,39 @@ export function runContentMigration(budgetMs = 8): { done: boolean } {
       } finally { database.exec("PRAGMA secure_delete = OFF"); }
       // the tokens of what this step sealed, in what is left of its budget
       if (pendingIndex.size) flushContentIndex(Math.max(1, budgetMs - (performance.now() - started)));
+      continue;
+    }
+    if (migration.phase === "memory") {
+      if (pendingMemoryIndex.size) flushMemoryIndex();
+      // the memory index (memory_files): sealed under each bot's key, verified
+      // before it replaces the plain row, or opened back to plain (off)
+      const rows = database.prepare("SELECT rowid AS rowid, bot_id, path, text, sealed, key_id FROM memory_files WHERE rowid > ? ORDER BY rowid LIMIT 16").all(migration.cursor) as Array<{ rowid: number; bot_id: string; path: string; text: string; sealed: Uint8Array | null; key_id: string | null }>;
+      if (!rows.length) { migration.phase = "followups"; migration.cursor = 0; continue; }
+      database.exec("PRAGMA secure_delete = ON");
+      try {
+        transaction(() => {
+          for (const row of rows) {
+            migration.cursor = row.rowid;
+            let text: string | null;
+            try { text = openMemoryRow(row); } catch { migration.passPlain = migration.passPlain || !row.key_id; continue; }
+            // erased (its key destroyed): the next sync indexes the file again
+            if (text === null) { cached("DELETE FROM memory_files WHERE rowid = ?").run(row.rowid); continue; }
+            if (on) {
+              const key = contentKeyForBot(row.bot_id);
+              if (!key) { if (!row.key_id) migration.passPlain = true; continue; }
+              if (row.key_id === key.keyId) continue;
+              const sealed = seal(key.dek, text, memoryRowAad(key, row.bot_id, row.path));
+              if (openText(key.dek, sealed, memoryRowAad(key, row.bot_id, row.path)) !== text) { migration.failed++; continue; }
+              cached("UPDATE memory_files SET text = '', sealed = ?, key_id = ? WHERE rowid = ?").run(sealed, key.keyId, row.rowid);
+              indexMemoryRow(row.rowid, key, text);
+              if (!row.key_id) { migration.sealed++; migration.sealedThisPass++; }
+            } else if (row.key_id) {
+              cached("UPDATE memory_files SET text = ?, sealed = NULL, key_id = NULL WHERE rowid = ?").run(text, row.rowid);
+              migration.opened++;
+            }
+          }
+        });
+      } finally { database.exec("PRAGMA secure_delete = OFF"); }
       continue;
     }
     if (migration.phase === "followups") {
@@ -1644,14 +1826,67 @@ export interface MemoryFileStat {
 }
 
 /** Index one memory file (upsert keeps the rowid, so the update trigger
- * keeps the FTS rows in step — the same reasoning as UPSERT_MESSAGE). */
+ * keeps the FTS rows in step — the same reasoning as UPSERT_MESSAGE). With
+ * encryption on, the text is sealed under the bot's key and only its keyed
+ * words reach the (blind) index. */
 export function indexMemoryFile(botId: string, path: string, text: string, stat: { mtimeMs: number; bytes: number }): void {
-  db()
+  const key = contentKeyForBot(botId);
+  const sealed = key ? seal(key.dek, text, memoryRowAad(key, botId, path)) : null;
+  const row = db()
     .prepare(
-      "INSERT INTO memory_files (bot_id, path, text, mtime_ms, bytes) VALUES (?, ?, ?, ?, ?) " +
-        "ON CONFLICT(bot_id, path) DO UPDATE SET text = excluded.text, mtime_ms = excluded.mtime_ms, bytes = excluded.bytes",
+      "INSERT INTO memory_files (bot_id, path, text, mtime_ms, bytes, sealed, key_id) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT(bot_id, path) DO UPDATE SET text = excluded.text, mtime_ms = excluded.mtime_ms, bytes = excluded.bytes, " +
+        "sealed = excluded.sealed, key_id = excluded.key_id RETURNING rowid",
     )
-    .run(botId, path, text, Math.trunc(stat.mtimeMs), stat.bytes);
+    .get(botId, path, key ? "" : text, Math.trunc(stat.mtimeMs), stat.bytes, sealed, key?.keyId ?? null) as { rowid: number } | undefined;
+  // its keyed words just after, off the write (flushed before any recall)
+  if (key && row) queueMemoryIndex(row.rowid, key, text);
+  // written plain (the bot's key not available yet): the migration seals it
+  else if (encryptionMode() === "on") { migration.dirty = true; scheduleMigration(); }
+}
+
+function memoryRowAad(key: LiveKey, botId: string, path: string): Buffer {
+  return fieldAad(key.keyId, key.owner, "memory-file", `${botId}\u0000${path}`);
+}
+
+const pendingMemoryIndex = new Map<number, { keyId: string; text: string }>();
+let memoryIndexTimer: ReturnType<typeof setImmediate> | null = null;
+function queueMemoryIndex(rowid: number, key: LiveKey, text: string): void {
+  pendingMemoryIndex.set(rowid, { keyId: key.keyId, text });
+  memoryIndexTimer ??= setImmediate(() => { memoryIndexTimer = null; try { flushMemoryIndex(); } catch { /* the migration reindexes */ } });
+}
+
+/** Write the queued keyed words of memory rows (before a recall reads them). */
+function flushMemoryIndex(): void {
+  if (memoryIndexTimer) { clearImmediate(memoryIndexTimer); memoryIndexTimer = null; }
+  if (!pendingMemoryIndex.size || !handle) { pendingMemoryIndex.clear(); return; }
+  const entries = [...pendingMemoryIndex];
+  pendingMemoryIndex.clear();
+  transaction(() => {
+    const check = cached("SELECT key_id, rowid IN (SELECT rowid FROM memory_sealed_fts WHERE rowid = ?) AS indexed FROM memory_files WHERE rowid = ?");
+    for (const [rowid, entry] of entries) {
+      const row = check.get(rowid, rowid) as { key_id: string | null; indexed: number } | undefined;
+      if (!row || row.key_id !== entry.keyId || row.indexed) continue;
+      const key = keyring().key(entry.keyId);
+      if (!key || key === "destroyed") continue;
+      indexMemoryRow(rowid, key, entry.text);
+    }
+  });
+}
+
+function indexMemoryRow(rowid: number, key: LiveKey, text: string): void {
+  const columns = indexColumns(key.tokenizer(), { recall: text, search: null, tool: null });
+  if (columns?.words) cached("INSERT INTO memory_sealed_fts (rowid, words, prefixes) VALUES (?, ?, ?)").run(rowid, columns.words, columns.prefixes);
+}
+
+/** The text of a sealed memory row. Null: its key was destroyed or the blob
+ * does not open; throws ContentKeyUnavailable when its key is locked. */
+function openMemoryRow(row: { bot_id: string; path: string; sealed: Uint8Array | null; key_id: string | null; text: string }): string | null {
+  if (!row.sealed || !row.key_id) return row.text;
+  const key = keyring().key(row.key_id);
+  if (key === "destroyed") return null;
+  if (!key) throw new ContentKeyUnavailable();
+  try { return openText(key.dek, row.sealed, memoryRowAad(key, row.bot_id, row.path)); } catch { return null; }
 }
 
 export function removeMemoryFile(botId: string, path: string): void {
@@ -1689,24 +1924,57 @@ export interface MemoryHit {
 export function recallMemory(query: string, botId: string, limit = 12, mode: SearchMode = "all", scope: "memory" | "docs" = "memory"): MemoryHit[] {
   const match = ftsQuery(query, mode);
   if (!match) return [];
+  // docs/ (server/workspace-files.ts) shares this index but is never
+  // memory: session_search and automatic recall keep to memory files,
+  // workspace_search keeps to docs.
+  const scopeSql = (scope === "docs" ? "AND f.path LIKE 'docs/%' " : "AND f.path NOT LIKE 'docs/%' ") +
+    // Automatic recall must filter before LIMIT; historical logs can
+    // otherwise crowd all current topic files out of the result set.
+    (mode === "any" ? "AND f.path NOT IN ('MEMORY.md', 'memory/archive.md') AND f.path NOT LIKE 'memory/log/%' " : "");
   const rows = db()
     .prepare(
-      "SELECT f.path, f.mtime_ms, " +
+      "SELECT f.path, f.mtime_ms, bm25(memory_fts) AS score, " +
         `snippet(memory_fts, 0, '[', ']', '…', ${SNIPPET_TOKENS}) AS snippet ` +
         "FROM memory_fts JOIN memory_files f ON f.rowid = memory_fts.rowid " +
-        "WHERE memory_fts MATCH ? AND f.bot_id = ? " +
-        // docs/ (server/workspace-files.ts) shares this index but is never
-        // memory: session_search and automatic recall keep to memory files,
-        // workspace_search keeps to docs.
-        (scope === "docs" ? "AND f.path LIKE 'docs/%' " : "AND f.path NOT LIKE 'docs/%' ") +
-        // Automatic recall must filter before LIMIT; historical logs can
-        // otherwise crowd all current topic files out of the result set.
-        (mode === "any" ? "AND f.path NOT IN ('MEMORY.md', 'memory/archive.md') AND f.path NOT LIKE 'memory/log/%' " : "") +
+        "WHERE memory_fts MATCH ? AND f.bot_id = ? " + scopeSql +
         "ORDER BY bm25(memory_fts), f.mtime_ms DESC LIMIT ?",
     )
-    // SAFETY: the SELECT names exactly these three columns; snippet() is never null
-    .all(match, botId, limit) as Array<{ path: string; mtime_ms: number; snippet: string }>;
-  return rows.map((row) => ({ file: row.path, at: row.mtime_ms, snippet: row.snippet.replace(/\s+/g, " ").trim() }));
+    // SAFETY: the SELECT names exactly these four columns; snippet() is never null
+    .all(match, botId, limit) as Array<{ path: string; mtime_ms: number; score: number; snippet: string }>;
+  const hits = rows.map((row) => ({ file: row.path, at: row.mtime_ms, snippet: row.snippet.replace(/\s+/g, " ").trim(), score: row.score }));
+  flushMemoryIndex();
+  if (cached("SELECT 1 FROM memory_files WHERE bot_id = ? AND key_id IS NOT NULL LIMIT 1").get(botId)) {
+    hits.push(...sealedMemoryRecall(query, botId, limit, mode, scopeSql));
+    hits.sort((a, b) => a.score - b.score || b.at - a.at);
+  }
+  return hits.slice(0, limit).map(({ score: _score, ...hit }) => hit);
+}
+
+/** Recall over sealed memory rows: bm25 over keyed words, the match checked
+ * and the snippet cut from the opened text (as sealedRecall does). */
+function sealedMemoryRecall(query: string, botId: string, limit: number, mode: SearchMode, scopeSql: string): Array<MemoryHit & { score: number }> {
+  const terms = blindRecallTerms(query, mode);
+  const keyIds = (cached("SELECT DISTINCT key_id FROM memory_files WHERE bot_id = ? AND key_id IS NOT NULL").all(botId) as Array<{ key_id: string }>).map((row) => row.key_id);
+  const keys = keyIds.map((id) => keyring().key(id)).filter((key): key is LiveKey => Boolean(key) && key !== "destroyed");
+  const match = recallMatch(keys.map((key) => key.tokenizer()), terms, mode);
+  if (!match) return [];
+  const rows = db()
+    .prepare(
+      "SELECT f.bot_id, f.path, f.mtime_ms, f.text, f.sealed, f.key_id, bm25(memory_sealed_fts, 1.0, 0.5) AS score " +
+        "FROM memory_sealed_fts JOIN memory_files f ON f.rowid = memory_sealed_fts.rowid " +
+        "WHERE memory_sealed_fts MATCH ? AND f.bot_id = ? " + scopeSql +
+        "ORDER BY score, f.mtime_ms DESC LIMIT ?",
+    )
+    // a superset (four-letter prefixes): read more, keep what the text holds
+    .all(match, botId, limit * 4) as Array<{ bot_id: string; path: string; mtime_ms: number; text: string; sealed: Uint8Array | null; key_id: string | null; score: number }>;
+  const out: Array<MemoryHit & { score: number }> = [];
+  for (const row of rows) {
+    const text = openMemoryRow(row);
+    if (text === null || !recallHolds(text, terms, mode)) continue;
+    if (out.length >= limit) break;
+    out.push({ file: row.path, at: row.mtime_ms, snippet: blindSnippet(text, terms, SNIPPET_TOKENS).replace(/\s+/g, " ").trim(), score: row.score });
+  }
+  return out;
 }
 
 /** Await before maintenance replaces the database or shutdown releases its lease. */
@@ -1720,7 +1988,7 @@ export async function closeMessageSearch(): Promise<void> {
 /** Test/shutdown hook — closes the handle so a wiped DATA_DIR starts clean. */
 export function closeMessageDb(): void {
   void closeMessageSearch();
-  try { if (handle && handlePath === DB_FILE() && existsSync(DB_FILE())) flushContentIndex(); } catch { /* a closing database: the migration reindexes what has no index row */ }
+  try { if (handle && handlePath === DB_FILE() && existsSync(DB_FILE())) { flushContentIndex(); flushMemoryIndex(); } } catch { /* a closing database: the migration reindexes what has no index row */ }
   if (migration.timer) { clearTimeout(migration.timer); migration.timer = null; }
   if (indexTimer) { clearTimeout(indexTimer); indexTimer = null; }
   forgetSealingState();

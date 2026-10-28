@@ -29,10 +29,13 @@
 // separate change if it earns its keep.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readdirSync, readFileSync } from "node:fs";
-import { appendFile, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import type { AutoVerdictSource } from "./auto-approve.ts";
+import { DATA_DIR } from "./config.ts";
+import { appendLog, LogReader, registerSealedLog, sealLogLine, sealLogLines, withLogFileLock } from "./content-at-rest.ts";
+import { WORKSPACE_OWNER } from "./content-keys.ts";
 import { redactSecrets } from "./redact.ts";
 import { csvCell, monthKey } from "./usage-ledger.ts";
 
@@ -161,6 +164,15 @@ export function decisionCall(call: { mcpTool?: string; input?: string; command?:
 }
 
 const DIR = "decisions";
+
+// A row says what was asked (summary, arguments, shell line): sealed at rest
+// under its thread's key (docs/content-encryption.md), the fields the
+// readers filter on in the clear.
+registerSealedLog({
+  dir: join(DATA_DIR, DIR),
+  scope: (record) => (typeof record.threadId === "string" && record.threadId ? { thread: record.threadId } : { owner: WORKSPACE_OWNER }),
+  projection: (record) => ({ at: record.at, threadId: record.threadId, botId: record.botId, decision: record.decision, source: record.source }),
+});
 const LEGACY_FILE = "decisions.ndjson";
 const MONTH_FILE = /^(\d{4})-(\d{2})\.ndjson$/;
 const DAY_MS = 24 * 60 * 60_000;
@@ -195,26 +207,35 @@ export function scrubThreadDecisions(dataDir: string, threadId: string): Promise
   let changed = 0;
   const queued = previous.then(async () => {
     for (const file of sources(dataDir)) {
-      let text: string;
-      try {
-        text = readFileSync(file, "utf8");
-      } catch {
-        continue;
-      }
-      let touched = false;
-      const lines = text.split("\n").map((line) => {
-        if (!line) return line;
+      // one rewrite at a time with the at-rest migration (server/content-at-rest.ts)
+      await withLogFileLock(file, async () => {
+        let text: string;
         try {
-          const value = JSON.parse(line) as Partial<DecisionRow>;
-          if (value?.threadId !== threadId || (value.summary === undefined && value.rule === undefined && value.origin === undefined && value.call === undefined)) return line;
+          text = readFileSync(file, "utf8");
+        } catch {
+          return;
+        }
+        let touched = false;
+        const raw = text.split("\n");
+        const reader = new LogReader(file);
+        // one record per line, as read; a scrubbed one is written plain here and
+        // the migration seals it again with its neighbours
+        const lines = raw.map((line, index) => {
+          if (!line) return line;
+          let value: Partial<DecisionRow> | null | undefined;
+          try { value = reader.at(raw, index) as Partial<DecisionRow> | null | undefined; } catch { return null; }
+          if (!value || value.threadId !== threadId || (value.summary === undefined && value.rule === undefined && value.origin === undefined && value.call === undefined)) return null;
           touched = true;
           changed += 1;
           return JSON.stringify(metadataOnly(value));
-        } catch {
-          return line;
+        });
+        if (touched) {
+          // the untouched lines stay as they are, except a block's own lines,
+          // which are rewritten with it (every line of a touched block opened)
+          const out = rewriteScrubbed(file, raw, lines, reader);
+          await writeFile(file, out.join("\n"), { mode: 0o600 });
         }
       });
-      if (touched) await writeFile(file, lines.join("\n"), { mode: 0o600 });
     }
   }).catch(() => {
     /* never takes the delete down */
@@ -224,6 +245,36 @@ export function scrubThreadDecisions(dataDir: string, threadId: string): Promise
     if (writeQueues.get(dataDir) === queued) writeQueues.delete(dataDir);
   });
   return queued.then(() => changed);
+}
+
+/** A month file with some rows scrubbed (`changed[i]`, the plain row, or
+ * null to keep line i): a sealed block that holds a scrubbed row is sealed
+ * again whole, every other line stays byte for byte. */
+function rewriteScrubbed(file: string, raw: readonly string[], changed: ReadonlyArray<string | null>, reader: LogReader): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < raw.length;) {
+    const line = raw[i]!;
+    if (!line.startsWith('{"sb":"')) { out.push(changed[i] ?? line); i++; continue; }
+    // the block: up to its last line
+    let end = i;
+    while (end < raw.length - 1 && raw[end]!.startsWith('{"sb":"') && !raw[end]!.includes('","n":')) end++;
+    const span = raw.slice(i, end + 1);
+    if (!changed.slice(i, end + 1).some((value) => value !== null)) { out.push(...span); i = end + 1; continue; }
+    const originals: string[] = [];
+    const records: Record<string, unknown>[] = [];
+    for (let k = i; k <= end; k++) {
+      let original = changed[k];
+      if (original === null || original === undefined) {
+        try { original = reader.raw(raw, k) ?? null; } catch { original = null; }
+      }
+      if (original === null) continue;
+      originals.push(original);
+      try { records.push(JSON.parse(original) as Record<string, unknown>); } catch { records.push({}); }
+    }
+    out.push(...sealLogLines(file, records, originals));
+    i = end + 1;
+  }
+  return out;
 }
 
 /** The server binds its configured window once; see decisionRetentionDays. */
@@ -263,7 +314,8 @@ export function decisionFileFor(dataDir: string, at: Date): string {
 async function writeDecision(dataDir: string, record: DecisionRow): Promise<void> {
   const at = new Date(record.at);
   await mkdir(join(dataDir, DIR), { recursive: true, mode: 0o700 });
-  await appendFile(decisionFileFor(dataDir, at), JSON.stringify(record) + "\n", { mode: 0o600 });
+  const file = decisionFileFor(dataDir, at);
+  await appendLog(file, sealLogLine(file, record as unknown as Record<string, unknown>) + "\n", { mode: 0o600 });
   if (at.getTime() - (lastPrune.get(dataDir) ?? 0) >= PRUNE_EVERY_MS) {
     lastPrune.set(dataDir, at.getTime());
     await pruneDecisions(dataDir, retentionDays(), at);
@@ -354,7 +406,7 @@ const isDecisionRow = (value: unknown): value is DecisionRow =>
   typeof (value as DecisionRow).decision === "string" &&
   typeof (value as DecisionRow).source === "string";
 
-function readRows(path: string): DecisionRow[] {
+function readRows(path: string, projectionOnly?: (projection: Record<string, unknown>) => boolean): DecisionRow[] {
   let text: string;
   try {
     text = readFileSync(path, "utf8");
@@ -362,14 +414,14 @@ function readRows(path: string): DecisionRow[] {
     return [];
   }
   const rows: DecisionRow[] = [];
-  for (const line of text.split("\n")) {
-    if (!line) continue;
-    try {
-      const value: unknown = JSON.parse(line);
-      if (isDecisionRow(value)) rows.push(value);
-    } catch {
-      /* a line torn mid-write — skip the fragment, keep the rest */
-    }
+  const lines = text.split("\n");
+  // rows sealed at rest open here, a block at a time (server/content-at-rest.ts);
+  // a locked key throws rather than show a shorter history, a torn line is skipped
+  const reader = new LogReader(path, projectionOnly);
+  for (let index = 0; index < lines.length; index++) {
+    if (!lines[index]) continue;
+    const value = reader.at(lines, index);
+    if (isDecisionRow(value)) rows.push(value);
   }
   return rows;
 }
@@ -389,12 +441,14 @@ function sources(dataDir: string): string[] {
 /** The newest `limit` rows, oldest first — the same order the inspector
  * uses for thread events. Reads month files newest first and stops once it
  * has enough, so a long history costs no more than the page asked for. */
-export function readDecisions(dataDir: string, limit: number): DecisionRow[] {
+/** `projectionOnly`: rows sealed at rest that the caller will drop by their
+ * clear fields (another bot's) are not opened (server/content-at-rest.ts). */
+export function readDecisions(dataDir: string, limit: number, projectionOnly?: (projection: Record<string, unknown>) => boolean): DecisionRow[] {
   const files = sources(dataDir);
   const chunks: DecisionRow[][] = [];
   let count = 0;
   for (let index = files.length - 1; index >= 0 && count < limit; index -= 1) {
-    const rows = readRows(files[index]!);
+    const rows = readRows(files[index]!, projectionOnly);
     chunks.unshift(rows);
     count += rows.length;
   }

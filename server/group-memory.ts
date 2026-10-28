@@ -11,10 +11,12 @@
 // Who may read or edit it is the route's business (server/routes/
 // group-memory.ts): the group's people read, its owner edits. A person-to-
 // person conversation (`peopleDm`) and a bot-to-bot channel (`dm`) have none.
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { readAtRestTextSync, registerAtRestRoot } from "./content-at-rest.ts";
+import { WORKSPACE_OWNER } from "./content-keys.ts";
 import { DATA_DIR } from "./config.ts";
 import { withoutExpired } from "./memory-entries.ts";
 import { hashMemoryText, memoryCapacity, type MemoryCapacity } from "./memory-store.ts";
@@ -64,6 +66,19 @@ export type GroupMemoryUpdateResult =
 export const GROUP_MEMORY_DIR = join(DATA_DIR, "group-memory");
 const GROUP_ID = /^[\w-]{1,128}$/;
 
+// Sealed at rest under the workspace's key, like a room's messages
+// (docs/content-encryption.md); only the server reads it, no engine.
+registerAtRestRoot({
+  id: "group-memory",
+  dir: GROUP_MEMORY_DIR,
+  context: (relativePath) => `group-memory/${relativePath.split("/")[0]}`,
+  files: () => {
+    let groups: string[];
+    try { groups = readdirSync(GROUP_MEMORY_DIR); } catch { return []; }
+    return groups.filter((id) => GROUP_ID.test(id)).map((id) => ({ path: join(GROUP_MEMORY_DIR, id, "MEMORY.md"), scope: { owner: WORKSPACE_OWNER } }));
+  },
+});
+
 /** The part of a group record these rules read. */
 export interface GroupMemoryGroup {
   id: string;
@@ -96,7 +111,7 @@ export function groupMemoryFile(groupId: string): string {
 export function readGroupMemory(groupId: string): string {
   const file = groupMemoryFile(groupId);
   if (!existsSync(file)) return "";
-  return readFileSync(file, "utf8");
+  return readAtRestTextSync(file);
 }
 
 export interface GroupMemoryDoc {

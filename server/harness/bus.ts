@@ -11,10 +11,10 @@
 // bus holds a thread's text for at most DELTA_MERGE_MS and publishes it as
 // one delta, sooner when anything else happens on that thread, so the order
 // of events never changes.
-import { appendFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { EVENTS_DIR } from "../config.ts";
+import { appendLog, logAppended, registerSealedLog, sealLogLines } from "../content-at-rest.ts";
 import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { redactSecrets } from "../redact.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
@@ -43,7 +43,17 @@ export type EventLogAppend = (
   options?: { mode?: number },
 ) => void | Promise<void>;
 
-const defaultAppend: EventLogAppend = (path, data, options) => appendFile(path, data, options);
+// The canonical log holds what the engine said and did: each line is sealed
+// under its thread's key (docs/content-encryption.md), its type and time in
+// the clear for the readers' filters.
+registerSealedLog({
+  dir: EVENTS_DIR,
+  scope: (_record, file) => ({ thread: basename(file, ".ndjson") }),
+  projection: (record) => ({ type: record.type, createdAt: record.createdAt, ...(typeof record.itemType === "string" ? { itemType: record.itemType } : {}) }),
+  perFile: true,
+});
+
+const defaultAppend: EventLogAppend = (path, data, options) => appendLog(path, data, options);
 
 /** `line` is the event as the log writes it, redacted and serialized once
  * when it is queued, not again at write time (port de OpenMausBot #3130). */
@@ -316,11 +326,18 @@ export class EventBus {
     if (threadLogsForgotten(threadId)) { this.pendingLogWarnings.delete(threadId); return; }
     const warning = this.pendingLogWarnings.get(threadId);
     const events = items.map((item) => item.event);
-    const lines = items.map((item) => item.line);
-    if (warning) lines.unshift(JSON.stringify(warning));
     const file = join(EVENTS_DIR, `${threadId}.ndjson`);
+    const plain = items.map((item) => item.line);
+    const records = items.map((item) => item.event as unknown as Record<string, unknown>);
+    if (warning) { plain.unshift(JSON.stringify(warning)); records.unshift(warning as unknown as Record<string, unknown>); }
+    // sealed at rest under the thread's key (server/content-at-rest.ts): the
+    // batch is one block, on disk when the append returns, as before
+    const lines = sealLogLines(file, records, plain);
     try {
-      await this.appendLog(file, lines.join("\n") + "\n", { mode: 0o600 });
+      const data = lines.join("\n") + "\n";
+      await this.appendLog(file, data, { mode: 0o600 });
+      // a view of this log reads what was just written from memory (server/content-at-rest.ts)
+      logAppended(file, plain, data);
       if (warning) this.pendingLogWarnings.delete(threadId);
       // Best-effort size cap (#1280): an open thread's canonical log
       // otherwise grows without bound for as long as the thread stays open.

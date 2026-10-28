@@ -22,6 +22,7 @@ import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, loadBrowserProfileIdAliases } from ".
 import * as mdb from "./message-db.ts";
 import { ThreadCache, type ThreadState } from "./thread-cache.ts";
 import { forgetBotMemoryJournal, journalFile } from "./memory-journal.ts";
+import { forgetLogMemory } from "./content-at-rest.ts";
 import { forgetWorkspaceUsage } from "./workspace-usage.ts";
 import { runCommand, type Command } from "./commands.ts";
 import { workspaceDir } from "./workspace.ts";
@@ -1596,6 +1597,8 @@ export class Store {
       join(EVENTS_DIR, `${threadId}.ndjson`),
       join(NATIVE_DIR, `${threadId}.ndjson`),
     ]) {
+      // what a view kept of it in memory goes too (server/content-at-rest.ts)
+      forgetLogMemory(file);
       try {
         unlinkSync(file);
       } catch {}
@@ -2127,8 +2130,8 @@ export class Store {
     if (!bot || !task) return null;
     if (task.confidential === true) return task;
     task.confidential = true;
-    // its own key from now on, the rows so far re-sealed under it
-    mdb.contentKeyChanged(threadId);
+    // its own key from now on, everything so far re-sealed under it now
+    mdb.contentOwnerChanged([threadId]);
     // Nothing of a confidential thread feeds the single stream: its digest
     // goes, and it stops being a stream segment (server/single-stream.ts).
     delete task.streamSegment;
@@ -3564,8 +3567,9 @@ export class Store {
       if (!task || !owner || task.ownerPrincipalId === owner) continue;
       task.ownerPrincipalId = owner;
       touched.add(entry.botId);
-      // its content key follows its owner (docs/content-encryption.md)
-      mdb.contentKeyChanged(entry.threadId);
+      // its content key follows its owner, everything re-sealed now
+      // (docs/content-encryption.md): the old owner's erasure never takes it
+      mdb.contentOwnerChanged([entry.threadId]);
     }
     if (!touched.size) return 0;
     this.saveBots();

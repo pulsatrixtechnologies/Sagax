@@ -17,10 +17,11 @@
 // No knowledge of turns or HTTP here; the journal and the routes sit on top.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, unlinkSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { plainSizeFor, readAtRestTextSync } from "./content-at-rest.ts";
 import { redactSecretsInText } from "./redact.ts";
 import {
   DOCS_DIR,
@@ -231,7 +232,7 @@ function listMarkdown(dir: string, prefix: string): MemoryFileInfo[] {
       // resolveMemoryPath) and must not be listed as one
       const info = lstatSync(join(dir, name));
       if (!info.isFile()) continue;
-      files.push({ path: `${prefix}/${name}`, name, bytes: info.size, modifiedAt: Math.round(info.mtimeMs) });
+      files.push({ path: `${prefix}/${name}`, name, bytes: plainSizeFor(join(dir, name), info), modifiedAt: Math.round(info.mtimeMs) });
     } catch {
       // deleted between readdir and lstat: simply not listed
     }
@@ -247,7 +248,7 @@ export function memoryOverview(botId: string): MemoryOverview {
   const root = workspaceDir(botId);
   let raw = "";
   try {
-    raw = readFileSync(resolveMemoryPath(botId, MEMORY_INDEX), "utf8");
+    raw = readAtRestTextSync(resolveMemoryPath(botId, MEMORY_INDEX));
   } catch (error) {
     if (error instanceof MemoryStoreError) throw error;
     raw = "";
@@ -293,7 +294,8 @@ export interface MemoryDoc {
 export function readMemoryDoc(botId: string, path: string): MemoryDoc {
   const absolute = resolveMemoryPath(botId, path);
   try {
-    const text = readFileSync(absolute, "utf8");
+    // sealed at rest or plain (server/content-at-rest.ts)
+    const text = readAtRestTextSync(absolute);
     return { path, text, hash: hashMemoryText(text), exists: true };
   } catch (error) {
     // Only a missing file reads as empty; EACCES and the like must not look like "absent".

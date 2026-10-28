@@ -3,7 +3,10 @@
 // YAML frontmatter (`title`, `description`, `aliases`); aliases are the other
 // words someone might search with, which matters because every lookup here
 // is word matching, not meaning. Only the head of each file is read.
-import { closeSync, openSync, readSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync } from "node:fs";
+
+import { readAtRestSync } from "./content-at-rest.ts";
+import { looksSealed } from "./content-file-crypto.ts";
 
 /** How much of a topic file is read to find its frontmatter. */
 const HEAD_BYTES = 2_048;
@@ -77,13 +80,26 @@ export function topicBody(text: string): string {
   return rest.trim();
 }
 
+/** The heads of the topic files the prompt's index was last built from,
+ * while each file is unchanged: every turn builds that index again. */
+const heads = new Map<string, { ino: number; size: number; mtimeMs: number; head: string }>();
+
 export function readTopicHead(path: string): string {
   let fd: number | undefined;
   try {
     fd = openSync(path, "r");
+    const stat = fstatSync(fd);
+    const known = heads.get(path);
+    if (known && known.ino === stat.ino && known.size === stat.size && known.mtimeMs === stat.mtimeMs) return known.head;
     const buffer = Buffer.alloc(HEAD_BYTES);
     const read = readSync(fd, buffer, 0, HEAD_BYTES, 0);
-    return buffer.subarray(0, read).toString("utf8");
+    // sealed at rest (server/content-at-rest.ts): a topic file is small, open it whole
+    const head = looksSealed(buffer.subarray(0, read))
+      ? readAtRestSync(path, fd).subarray(0, HEAD_BYTES).toString("utf8")
+      : buffer.subarray(0, read).toString("utf8");
+    if (heads.size > 5_000) heads.clear();
+    heads.set(path, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, head });
+    return head;
   } catch {
     return "";
   } finally {

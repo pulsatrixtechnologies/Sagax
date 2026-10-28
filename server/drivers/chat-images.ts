@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from "node:fs";
+import { atRestSizeSync, readAtRestSync } from "../content-at-rest.ts";
 import type { SendTurnInput } from "../contracts.ts";
 
 export interface ChatImagePart { type: "image_url"; image_url: { url: string } }
@@ -47,8 +47,8 @@ export function chatUserContent(turn: SendTurnInput): string | ChatContentPart[]
   if (!turn.images?.length) return turn.text;
   const budget = chatImageBudget();
   return [{ type: "text", text: turn.text }, ...turn.images.map(image => {
-    if (statSync(image.path).size > IMAGE_BYTES) throw new Error("Image exceeds 20 MB");
-    const part = chatImage({ mimeType: image.mime, data: readFileSync(image.path).toString("base64") });
+    if (atRestSizeSync(image.path) > IMAGE_BYTES) throw new Error("Image exceeds 20 MB");
+    const part = chatImage({ mimeType: image.mime, data: readAtRestSync(image.path).toString("base64") });
     budget([part]);
     return part;
   })];

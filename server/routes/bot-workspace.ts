@@ -13,10 +13,10 @@
 // handler; `mayEdit` decides. RULES.md and docs/<name>.md are read and saved
 // here (`/workspace/file`); MEMORY.md and memory/ stay on the admin memory
 // routes.
-import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
 
+import { readAtRestSync } from "../content-at-rest.ts";
 import { MEMORY_MAX_BYTES, MEMORY_MAX_LINES, workspaceDir } from "../workspace.ts";
 import {
   FORGOTTEN_AFTER_MS,
@@ -132,7 +132,7 @@ export function createBotWorkspaceRoutes(deps: BotWorkspaceRouteDeps): RouteHand
       try {
         const file = resolveWorkspaceFile(bot.id, url.searchParams.get("path") ?? "");
         if (file.stat.size > DOWNLOAD_MAX_BYTES) return json(res, 413, { error: `${file.path} is over ${DOWNLOAD_MAX_BYTES / (1024 * 1024)} MB; open the workspace folder on the server instead.` });
-        const body = readFileSync(file.absolute);
+        const body = readAtRestSync(file.absolute);
         const name = basename(file.path).replace(/["\r\n]/g, "_");
         res.writeHead(200, {
           "content-type": /\.md$/i.test(name) ? "text/markdown; charset=utf-8" : "application/octet-stream",
