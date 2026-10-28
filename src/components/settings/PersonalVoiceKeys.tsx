@@ -5,12 +5,18 @@
 // (server/routes/person-voice-keys.ts). The organization's shared keys stay
 // with engines.manage. A key is sent once and never comes back: only that
 // one is saved and its last four characters.
+//
+// An older organization server has no such route (shared/server-features.ts):
+// the group stays, disabled, with "Available after the server update." in
+// place of a red error.
 import { useEffect, useState } from "react";
 import { Mic } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { readableErrorMessage } from "@/lib/readable-error";
+import { useServerFeature } from "@/lib/server-features";
+import { featureMissingOnServer } from "@/lib/server-route";
 import { api } from "@/state/store";
 import {
   PERSONAL_VOICE_KEY_LABELS,
@@ -36,17 +42,40 @@ export function PersonalVoiceKeys() {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const [routeMissing, setRouteMissing] = useState(false);
+  const missing = useServerFeature("personalVoiceKeys") === "no";
 
   useEffect(() => {
+    if (missing) return;
     let live = true;
-    api<PersonalVoiceKeysView>(PERSONAL_VOICE_KEYS_PATH).then((next) => { if (live) setView(next); }).catch(() => {
+    api<PersonalVoiceKeysView>(PERSONAL_VOICE_KEYS_PATH).then((next) => { if (live) setView(next); }).catch((failure) => {
+      if (!live) return;
+      // An older server without the route: the update brings it.
+      if (featureMissingOnServer("personalVoiceKeys", failure)) { setRouteMissing(true); return; }
       // A solo server (404) or no person behind this session: nothing to show.
-      if (live) setHidden(true);
+      setHidden(true);
     });
     return () => { live = false; };
-  }, []);
+  }, [missing]);
 
   if (hidden) return null;
+  if (missing || routeMissing) {
+    return (
+      <div data-settings-card="connections.voiceKeys" data-personal-voice-keys="" data-needs-server-update="">
+        <SettingsGroup title={t("voiceKeys.title")} groupId="voiceKeys">
+          <DescribedRow label={t("voiceKeys.provider")} description={t("serverRoute.needsUpdate")} help={t("voiceKeys.help")} icon={<Mic size={14} />} rowId="voiceKeys.provider">
+            <PillSelect<PersonalVoiceKeyProvider>
+              value={provider}
+              ariaLabel={t("voiceKeys.provider")}
+              disabled
+              options={PERSONAL_VOICE_KEY_PROVIDERS.map((id) => ({ value: id, label: PERSONAL_VOICE_KEY_LABELS[id] }))}
+              onChange={() => {}}
+            />
+          </DescribedRow>
+        </SettingsGroup>
+      </div>
+    );
+  }
 
   const row = view?.[provider];
   const run = async (work: () => Promise<PersonalVoiceKeysView>, done: string) => {
@@ -57,6 +86,7 @@ export function PersonalVoiceKeys() {
       setKey("");
       setNote({ text: done, error: false });
     } catch (failure) {
+      if (featureMissingOnServer("personalVoiceKeys", failure)) { setRouteMissing(true); return; }
       setNote({ text: readableErrorMessage(failure, t("voiceKeys.error")), error: true });
     } finally {
       setBusy(false);

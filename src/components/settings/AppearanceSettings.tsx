@@ -36,6 +36,8 @@ import { setHdMascotsEnabled, useHdMascots } from "@/lib/hd-mascots-preference";
 import { HD_CHARACTERS } from "../hd-mascots/manifest";
 import { AppIconPicker, appIconAvailable } from "./AppIconPicker";
 import { BackgroundEffectsPicker } from "./BackgroundEffectsPicker";
+import { useServerFeature } from "@/lib/server-features";
+import { featureMissingOnServer } from "@/lib/server-route";
 
 /** The reference design's "1 ⌄" pill (Computer > Other computers, #576): what a row
  * folds, opened in place. `children` is the pill's text (a count, a word). */
@@ -211,9 +213,13 @@ export function HdMascotsGroup({ characters = HD_CHARACTERS }: { characters?: re
 export function ToolCallsRow() {
   const { state, dispatch } = useStore();
   const enabled = showToolCallsEnabled(state.config);
+  // An older server refuses a member's own choice (shared/server-features.ts):
+  // the switch shows the server's state, locked, with the neutral line.
+  const personalServed = useServerFeature("memberPersonSettings") !== "no";
   const personal = state.config?.personalSettings === true;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const missing = personal && !personalServed;
   const toggle = async () => {
     if (saving) return;
     setSaving(true);
@@ -230,6 +236,7 @@ export function ToolCallsRow() {
       });
       dispatch({ type: "configStatus", config });
     } catch (cause) {
+      if (featureMissingOnServer("memberPersonSettings", cause)) return;
       setError(cause instanceof Error ? cause.message : t("settings.toolCalls.error"));
     } finally {
       setSaving(false);
@@ -239,12 +246,13 @@ export function ToolCallsRow() {
     <DescribedRow
       label={t("settings.toolCalls.title")}
       rowId="toolCalls"
-      below={error ? <p role="alert" className="mt-1 text-[12px] text-danger">{error}</p> : null}
+      below={error ? <p role="alert" className="mt-1 text-[12px] text-danger">{error}</p>
+        : missing ? <p role="note" data-needs-server-update="" className="mt-1 text-[12px] text-ink-secondary">{t("serverRoute.needsUpdate")}</p> : null}
     >
       <Switch
         checked={enabled}
         aria-label={t("settings.toolCalls.aria")}
-        disabled={saving}
+        disabled={saving || missing}
         onClick={() => void toggle()}
         className="disabled:cursor-wait disabled:opacity-50"
       />

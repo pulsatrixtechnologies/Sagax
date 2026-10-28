@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { SERVER_FEATURE_NAMES } from "../shared/server-features.ts";
 import { environmentDescriptor, environmentLabel, loadEnvironmentId, serverVersion } from "./environment.ts";
 import { hostname } from "node:os";
 import { identityDescriptor } from "./oidc-login.ts";
@@ -125,7 +126,8 @@ describe("environment identity", () => {
       label: "cab mini",
       platform: process.platform,
       version: "0.1.99",
-      capabilities: { remoteSessions: true, selfUpdate: "desktop-managed", emailSignIn: false, signInPreview: true },
+      release: expect.any(String),
+      capabilities: { remoteSessions: true, selfUpdate: "desktop-managed", emailSignIn: false, signInPreview: true, features: SERVER_FEATURE_NAMES },
     });
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: false }).capabilities.selfUpdate).toBe("operator");
     // A client previews a sign-in credential only where preview redeems nothing.
@@ -135,10 +137,10 @@ describe("environment identity", () => {
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: true, sharedComputers: false }).capabilities)
       .not.toHaveProperty("sharedComputers");
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: true, sharedComputers: true }).capabilities)
-      .toEqual({ remoteSessions: true, sharedComputers: true, selfUpdate: "desktop-managed", emailSignIn: false, signInPreview: true });
+      .toEqual({ remoteSessions: true, sharedComputers: true, selfUpdate: "desktop-managed", emailSignIn: false, signInPreview: true, features: SERVER_FEATURE_NAMES });
     // An OMB Cloud home says so, so its pairing page points to the app's Connect to my Cloud.
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: false, cloudHome: true }).capabilities)
-      .toEqual({ remoteSessions: true, cloudHome: true, selfUpdate: "operator", emailSignIn: false, signInPreview: true });
+      .toEqual({ remoteSessions: true, cloudHome: true, selfUpdate: "operator", emailSignIn: false, signInPreview: true, features: SERVER_FEATURE_NAMES });
     expect(environmentDescriptor({ environmentId: "abc", desktopManaged: false, cloudHome: false }).capabilities).not.toHaveProperty("cloudHome");
   });
 

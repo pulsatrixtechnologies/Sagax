@@ -177,14 +177,32 @@ struct RoutineFolderHeader: View {
 }
 
 /// A row's "Move to folder" submenu: the bot's folders, New folder…, and
-/// Remove from folder when it sits in one.
+/// Remove from folder when it sits in one. An older server without folders
+/// keeps the submenu, its New folder… disabled under "Available after the
+/// server update." (2026-10-28).
 struct RoutineFolderMoveMenu: View {
     let routine: Routine
     let folders: [String]
     @ObservedObject var controller: RoutineFolderController
+    var supported = true
     let move: (_ folder: String?) -> Void
 
     var body: some View {
+        if supported { available } else { unavailable }
+    }
+
+    private var unavailable: some View {
+        Menu {
+            Text("Available after the server update.")
+            Button(String(localized: "New folder…"), systemImage: "folder.badge.plus") {}
+                .disabled(true)
+        } label: {
+            Label(String(localized: "Move to folder"), systemImage: "folder")
+        }
+        .accessibilityIdentifier("routine-move-folder.\(routine.name)")
+    }
+
+    private var available: some View {
         Menu {
             ForEach(folders, id: \.self) { folder in
                 let here = routine.folder.map { RoutineFolders.key($0) == RoutineFolders.key(folder) } ?? false

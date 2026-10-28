@@ -5,6 +5,8 @@
  * for the alignment: titles with [prefixes] and the Sort by prefix offer,
  * the list in folders, a folder collapsed, and the row menu's Move to
  * folder, in the dark and the light skin. Mocked API; no server.
+ * The states old-sort and old-menu draw a 0.8.7 server (no folders): the
+ * Sort by prefix click and the row menu (2026-10-28).
  * Usage: node scripts/capture-routine-folders.mjs [--out DIR] [--port N] [--lang en] [--states a,b]
  */
 import { spawn } from "node:child_process";
@@ -57,10 +59,21 @@ try {
       const page = await browser.newPage({ viewport: { width: 760, height: 1400 }, deviceScaleFactor: 2, colorScheme: skin === "daylight" ? "light" : "dark" });
       page.on("pageerror", (error) => { errors.push(String(error)); console.error(String(error)); });
       page.on("console", (message) => { if (message.type() === "error") console.error(message.text()); });
-      await page.goto(`${base}?skin=${skin}&lang=${lang}&state=${state === "menu" ? "filed" : state}`, { waitUntil: "networkidle" });
+      const old = state.startsWith("old-");
+      await page.goto(`${base}?skin=${skin}&lang=${lang}&state=${old ? "prefixed" : state === "menu" ? "filed" : state}${old ? "&server=0.8.7" : ""}`, { waitUntil: "networkidle" });
       const target = page.locator("[data-gallery-card]");
       await target.waitFor();
       await page.waitForTimeout(300);
+      if (state === "old-sort") {
+        // The offer, where an app still shows it, meets the older server.
+        const sort = page.locator("[data-routine-prefix-sort]");
+        if (await sort.count()) { await sort.click(); await page.waitForTimeout(400); }
+      }
+      if (state === "old-menu") {
+        await page.locator("[data-routine-row]").first().click({ button: "right", position: { x: 120, y: 20 } });
+        await page.locator("[data-routine-folder-menu]").waitFor();
+        await page.waitForTimeout(200);
+      }
       if (state === "menu") {
         // A routine in a folder: the menu also offers Remove from folder.
         const row = page.locator('[data-routine-folder-section="Reports"] [data-routine-row]').first();

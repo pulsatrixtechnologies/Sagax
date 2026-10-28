@@ -35,6 +35,26 @@ final class RoutineFoldersTests: XCTestCase {
         XCTAssertEqual(groups[0].routines.map(\.id), ["r1"])
     }
 
+    /// A 0.8.7 server (2026-10-28): its listing has no `folders`, and
+    /// `POST /api/routines/folders` answers as that tag does. The folder
+    /// actions are disabled there, and its answer never reaches the screen.
+    func testA087ServerHasNoFoldersAndItsNoRouteIsNeverShown() throws {
+        let old = try decode(#"{"routines":[\#(routine("r1", "[Reports] Morning"))],"runs":[],"scope":"mine"}"#)
+        XCTAssertFalse(ScopedRoutines(response: old, asked: .mine).foldersSupported)
+        let current = try decode(#"{"routines":[],"runs":[],"folders":{}}"#)
+        XCTAssertTrue(ScopedRoutines(response: current, asked: .mine).foldersSupported)
+
+        let admin = APIError.status(code: 404, message: "no route: POST /api/routines/folders")
+        XCTAssertTrue(admin.isRouteMissing)
+        XCTAssertEqual(admin.errorDescription, "Available after the server update.")
+        let member = APIError.status(code: 403, message: "forbidden: this session lacks the admin scope")
+        XCTAssertTrue(member.isRouteMissing)
+        // Any other refusal keeps its own words.
+        let gone = APIError.status(code: 404, message: "no such routine")
+        XCTAssertFalse(gone.isRouteMissing)
+        XCTAssertEqual(gone.errorDescription, "no such routine")
+    }
+
     func testGroupsLooseFirstThenFoldersInOrderWithEmptyOnesAndCaseInsensitiveNames() throws {
         let response = try decode(#"""
         {"routines":[\#(routine("r1", "Morning summary", folder: "reports")),

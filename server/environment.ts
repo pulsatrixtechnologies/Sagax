@@ -16,6 +16,7 @@ import {
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 
+import { SERVER_FEATURE_NAMES, type ServerFeature } from "../shared/server-features.ts";
 import type { IdentityDescriptor } from "./oidc-login.ts";
 import { SERVER_ROOT } from "./proxy-paths.ts";
 
@@ -23,7 +24,12 @@ export interface EnvironmentDescriptor {
   environmentId: string;
   label: string;
   platform: NodeJS.Platform;
+  /** The base version (package.json `version`): the same on every Sagax
+   * release, so never a way to tell what this server serves. */
   version: string;
+  /** The Sagax release people know (releaseVersion()). Absent on a server
+   * from before 2026-10-28. */
+  release?: string;
   capabilities: {
     /** Pairing and sessions are available (this build). */
     remoteSessions: true;
@@ -42,6 +48,10 @@ export interface EnvironmentDescriptor {
      * this flag (0.4.x, 0.5.0) redeems the credential on that request, so a
      * client must never send it there. */
     signInPreview?: true;
+    /** The routes this server serves, by feature (shared/server-features.ts,
+     * 2026-10-28). A newer app hides or disables a feature this list does
+     * not name. A server without the list predates it. */
+    features?: ServerFeature[];
   };
   /** Present on an organization server: people sign in with Perspicax
    * (OpenID Connect) at `loginPath`, and email codes are off. */
@@ -169,6 +179,7 @@ export function environmentDescriptor(input: { environmentId: string; desktopMan
     label: environmentLabel(),
     platform: process.platform,
     version: serverVersion(),
+    release: releaseVersion(),
     capabilities: {
       remoteSessions: true,
       // Never advertise a protocol this server would refuse: the routes are
@@ -180,6 +191,7 @@ export function environmentDescriptor(input: { environmentId: string; desktopMan
       selfUpdate: input.desktopManaged ? "desktop-managed" : "operator",
       emailSignIn: input.emailSignIn === true,
       signInPreview: true,
+      features: [...SERVER_FEATURE_NAMES],
     },
     ...(input.identity ? { identity: input.identity } : {}),
   };

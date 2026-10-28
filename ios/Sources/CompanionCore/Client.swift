@@ -439,6 +439,11 @@ public enum APIError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case let .status(code, message):
+            // An older server's "no route: METHOD /path" is never shown
+            // (2026-10-28): the neutral line takes its place.
+            if let message, Self.isNoRoute(code: code, message: message) {
+                return String(localized: "Available after the server update.")
+            }
             if let message { return message }
             switch code {
             case 401: return "This phone is not paired with that computer."
@@ -452,6 +457,19 @@ public enum APIError: Error, LocalizedError, Sendable {
         case .badURL:
             return "That address doesn't look right."
         }
+    }
+
+    /// A newer app against an older server: a route it does not know
+    /// (404 "no route: METHOD /path"), or a member route it had not yet
+    /// opened to members (403 "lacks the admin scope"). The feature comes
+    /// with the server update; never an error to show.
+    public var isRouteMissing: Bool {
+        guard case let .status(code, message) = self, let message else { return false }
+        return Self.isNoRoute(code: code, message: message) || (code == 403 && message.contains("lacks the admin scope"))
+    }
+
+    static func isNoRoute(code: Int, message: String) -> Bool {
+        code == 404 && message.hasPrefix("no route: ")
     }
 
     /// The one error that means "stop retrying and send them back to
@@ -1227,7 +1245,8 @@ public struct CompanionClient: Sendable {
     /// The listing with each bot's folder order (2026-10-28).
     public func routineListing() async throws -> RoutineListing {
         let response = try await send(try makeRequest("GET", "/api/routines"), as: RoutinesResponse.self)
-        return RoutineListing(routines: response.routines, runs: response.runs, folders: response.folders ?? [:])
+        return RoutineListing(routines: response.routines, runs: response.runs, folders: response.folders ?? [:],
+                              foldersSupported: response.folders != nil)
     }
 
     /// One action on a bot's routine folders (`POST /api/routines/folders`).

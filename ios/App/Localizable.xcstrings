@@ -30148,6 +30148,22 @@
         }
       }
     },
+    "Available after the server update.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available after the server update."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disponible après la mise à jour du serveur."
+          }
+        }
+      }
+    },
     "Move to folder": {
       "localizations": {
         "en": {

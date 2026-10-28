@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { SERVER_FEATURE_NAMES } from "../shared/server-features.ts";
 import { LOCKOUT } from "./sessions.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { openSse } from "./testing/sse.ts";
@@ -203,6 +204,9 @@ describe("before pairing", () => {
       selfUpdate: "operator",
       emailSignIn: false,
       signInPreview: true,
+      // The features this server serves (shared/server-features.ts): route
+      // names a newer app checks, nothing about this machine.
+      features: SERVER_FEATURE_NAMES,
     });
     const refused = await call("/api/bots", { headers: remote("10.0.0.1") });
     expect(refused.status).toBe(403);

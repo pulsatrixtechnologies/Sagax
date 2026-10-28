@@ -185,11 +185,15 @@ public struct RoutineListing: Sendable {
     public var runs: [RoutineRun]
     /// `{ botId: [name] }`; empty from a server without folders.
     public var folders: [String: [String]]
+    /// Whether the server has routine folders: a server with them always
+    /// sends `folders`, one from before them never does (2026-10-28).
+    public var foldersSupported: Bool
 
-    public init(routines: [Routine], runs: [RoutineRun], folders: [String: [String]] = [:]) {
+    public init(routines: [Routine], runs: [RoutineRun], folders: [String: [String]] = [:], foldersSupported: Bool = true) {
         self.routines = routines
         self.runs = runs
         self.folders = folders
+        self.foldersSupported = foldersSupported
     }
 }
 

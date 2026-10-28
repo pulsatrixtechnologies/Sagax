@@ -100,6 +100,10 @@ final class Session: ObservableObject {
     @Published private(set) var status: Status = .unpaired
     /// Transient, user-facing failures from an action they just took.
     @Published var actionError: String?
+    /// The server answered a routine folder action as an older server does
+    /// (no such route): the folder actions say "Available after the server
+    /// update." until the next connection (2026-10-28).
+    @Published var routineFoldersMissing = false
     /// One exact message the next opened chat should reveal.
     @Published private(set) var focusedMessageId: String?
     /// Fresh topic drafts (Session+FreshTopic.swift): per bot, the thread a
@@ -3126,7 +3130,11 @@ final class Session: ObservableObject {
     /// An older server sends no folders: every routine is in no folder.
     func loadRoutineListing() async -> RoutineListing {
         guard let client else { return RoutineListing(routines: [], runs: []) }
-        do { return try await client.routineListing() }
+        do {
+            let listing = try await client.routineListing()
+            if listing.foldersSupported { routineFoldersMissing = false }
+            return listing
+        }
         catch { actionError = error.localizedDescription; return RoutineListing(routines: [], runs: []) }
     }
 
@@ -3137,6 +3145,7 @@ final class Session: ObservableObject {
     func routineFolderAction(_ action: RoutineFolderAction) async -> RoutineFolderResult? {
         guard let client else { return nil }
         do { return try await client.routineFolders(action) }
+        catch let error as APIError where error.isRouteMissing { routineFoldersMissing = true; return nil }
         catch { actionError = error.localizedDescription; return nil }
     }
 
@@ -3151,7 +3160,11 @@ final class Session: ObservableObject {
     /// (a permission taken back since) falls back to Mine.
     func loadScopedRoutines(_ query: RoutineScopeQuery) async -> ScopedRoutines {
         guard let client else { return ScopedRoutines(routines: [], runs: []) }
-        do { return try await client.routines(in: query) }
+        do {
+            let scoped = try await client.routines(in: query)
+            if scoped.foldersSupported { routineFoldersMissing = false }
+            return scoped
+        }
         catch {
             if query.scope != .mine, let mine = try? await client.routines(in: query.choosing(.mine)) { return mine }
             actionError = error.localizedDescription

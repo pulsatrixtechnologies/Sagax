@@ -18,6 +18,8 @@ import { DescribedRow, HelpTip, SettingsGroup, Switch } from "../SettingsPrimiti
 import { DisclosurePill } from "./AppearanceSettings";
 import { setDevPodsEnabled, useDevPodPrefs } from "../dev-pods/prefs";
 import { canEditConfig, canManageExperimental } from "@/lib/viewer";
+import { useServerFeature } from "@/lib/server-features";
+import { featureMissingOnServer } from "@/lib/server-route";
 import { isPersonalFeature } from "../../../shared/person-settings";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { OrgPhoneCalls } from "./OrgPhoneCalls";
@@ -115,7 +117,11 @@ export function ExperimentalSettings() {
   // own Chrome wherever the server offers it.
   const editConfig = canEditConfig(state.config);
   const manage = canManageExperimental(state.config);
-  const personal = state.config?.personalSettings === true;
+  // An older server refuses a member's own switches (shared/server-features.ts):
+  // they show the server's state, locked, with the neutral line.
+  const personalServed = useServerFeature("memberPersonSettings") !== "no";
+  const personal = state.config?.personalSettings === true && personalServed;
+  const personalMissing = state.config?.personalSettings === true && !personalServed && !manage;
   const profiles = (state.config?.browserProfiles ?? []).filter((profile) => (editConfig ? !profile.personal : profile.personal));
   // 2026-10-26 (owner): generated conversation titles were on only after a
   // hand edit of config.json; they get their switch here.
@@ -155,6 +161,7 @@ export function ExperimentalSettings() {
       });
       dispatch({ type: "configStatus", config });
     } catch (cause) {
+      if (featureMissingOnServer("memberPersonSettings", cause)) return;
       setError(cause instanceof Error ? cause.message : t("settings.experimental.error"));
     } finally {
       setSaving(null);
@@ -247,6 +254,7 @@ export function ExperimentalSettings() {
         </div>
         {orgAdmin && <OrgPhoneCalls />}
       </SettingsGroup>
+      {personalMissing && <p role="note" data-needs-server-update="" className="px-1 text-[12px] text-ink-secondary">{t("serverRoute.needsUpdate")}</p>}
       {error ? <p role="alert" className="px-1 text-[12px] text-danger">{error}</p> : null}
     </div>
   );

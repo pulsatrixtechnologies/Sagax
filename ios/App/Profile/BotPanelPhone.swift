@@ -84,6 +84,8 @@ private struct PhoneBotPanelContent: View {
     @State private var deletingRoutine: Routine?
     /// 2026-10-28: this bot's folder order (RoutineFolders) and its prompts.
     @State private var routineFolders: [String] = []
+    /// An older server has no routine folders (2026-10-28).
+    @State private var routineFoldersListed = true
     @StateObject private var folderController = RoutineFolderController()
 
     init(bot: Bot, startTab: DesktopPanelTab, startSection: DesktopPanelSection? = nil) {
@@ -673,7 +675,8 @@ private struct PhoneBotPanelContent: View {
                 Button(String(localized: "Copy cron expression"), systemImage: "doc.on.doc") { PlatformBridge.copyToPasteboard(expression) }
             }
             if routine.mayEdit {
-                RoutineFolderMoveMenu(routine: routine, folders: folderOrder, controller: folderController) { folder in
+                RoutineFolderMoveMenu(routine: routine, folders: folderOrder, controller: folderController,
+                                      supported: routineFoldersListed && !session.routineFoldersMissing) { folder in
                     Task { await folderController.perform(.move(botId: bot.id, routineIds: [routine.id], folder: folder), session: session) { await loadRoutines() } }
                 }
             }
@@ -783,6 +786,7 @@ private struct PhoneBotPanelContent: View {
         let listing = await session.loadRoutineListing()
         routines = listing.routines
         routineFolders = listing.folders[bot.id] ?? []
+        routineFoldersListed = listing.foldersSupported
         routinesLoaded = true
     }
 
