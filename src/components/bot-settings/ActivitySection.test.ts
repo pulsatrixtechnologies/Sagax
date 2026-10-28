@@ -15,7 +15,6 @@ import type { BotLaunchedAgentItem } from "../../../shared/bot-launched-agents.t
 import { ActivityDetailBody, ActivityDetailModal, activityViews } from "./ActivityDetailModal";
 import { SETTINGS_WINDOW } from "../SettingsPrimitives";
 import { ActivityListModal } from "./ActivityListModal";
-import { TeammatesWorkingChip } from "../TeammatesWorkingChip";
 import { activityLive, codingLive, codingWhere, codingWork, FINISHED_FADE_MS, FINISHED_LINGER_MS, formatActivityDuration, historyItems, isParallelWork, LiveActivity } from "@/lib/bot-activity";
 import type { Bot } from "@/state/store";
 
@@ -615,32 +614,27 @@ describe("no separate Ongoing activities rail beside the bot", () => {
 });
 
 describe("one place for ongoing work while the bot panel is open", () => {
-  it("draws a running activity once: in Details, not in the header chip nor a rail", async () => {
+  it("draws a running activity once: in Details, not in a header chip nor a rail", async () => {
     const work = job("thread:w1", { kind: "hop", title: "@Comet · work", status: "running", endedAt: undefined, startedBy: { kind: "bot", name: "Comet" }, canStop: true, threadId: "w1" });
     const details = renderToStaticMarkup(createElement(PanelSections, { list: { items: [work], subagents: [] }, live: liveOf([work]), actions: { onOpen: () => {}, onStop: () => {}, now: NOW }, onOpenHistory: () => {} }));
-    const header = renderToStaticMarkup(createElement(TeammatesWorkingChip, { busy: false, waitingForTeammates: true, panelOpen: true, onOpen: () => {} }));
     const { readFileSync } = await import("node:fs");
     const { dirname, join } = await import("node:path");
     const { fileURLToPath } = await import("node:url");
     const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../App.tsx"), "utf8");
-    const screen = details + header;
+    const screen = details;
     expect(screen).not.toContain('data-activity-card="thread:w1"');
     expect(screen).not.toContain("Ongoing activities");
-    expect(header).toBe("");
     expect(app).not.toMatch(/data-background-work-panel|BackgroundWorkPanel/);
     expect(details).not.toContain("data-activity-stop");
   });
 
-  it("keeps the header chip as an entry point while the panel is closed", () => {
-    const onOpen = vi.fn();
-    const html = renderToStaticMarkup(createElement(TeammatesWorkingChip, { busy: false, waitingForTeammates: true, panelOpen: false, onOpen }));
-    expect(html).toContain("data-teammates-working");
-    expect(html).toContain("Teammates working");
-    expect(html).toContain('title="Show ongoing activities"');
-    const chip = TeammatesWorkingChip({ busy: false, waitingForTeammates: true, panelOpen: false, onOpen }) as unknown as { props: { onClick: () => void } };
-    chip.props.onClick();
-    expect(onOpen).toHaveBeenCalledOnce();
-    expect(renderToStaticMarkup(createElement(TeammatesWorkingChip, { busy: true, waitingForTeammates: true, panelOpen: false, onOpen }))).toBe("");
-    expect(renderToStaticMarkup(createElement(TeammatesWorkingChip, { busy: false, waitingForTeammates: false, panelOpen: false, onOpen }))).toBe("");
+  it("has no header chip: the conversation header carries no teammates shortcut", async () => {
+    const { readFileSync, existsSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const chat = readFileSync(join(here, "../ChatView.tsx"), "utf8");
+    expect(chat).not.toMatch(/TeammatesWorkingChip|data-teammates-working/);
+    expect(existsSync(join(here, "../TeammatesWorkingChip.tsx"))).toBe(false);
   });
 });

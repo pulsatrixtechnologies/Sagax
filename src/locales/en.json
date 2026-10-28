@@ -1900,8 +1900,6 @@
   "chat.openConversationWith": "Open the conversation with {name}",
   "chat.openProfile": "Open agent profile",
   "chat.openProfileAria": "Open {name}'s profile",
-  "chat.teammatesWorking": "Teammates working",
-  "chat.teammatesWorking.open": "Show ongoing activities",
   "chat.openThread": "Open #{title}",
   "chat.openThreadOn": "Open #{title} on {name}",
   "chat.parallel.open": "Open",
