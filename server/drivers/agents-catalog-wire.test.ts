@@ -67,6 +67,9 @@ function profiles(): Record<string, Profile> {
                 family: room ? "room" : "direct",
                 env: {
                   SAGAX_ROOM_TURN: flag(room),
+                  // the "room" family is a real room; a person's direct chat,
+                  // which coordinates too, is pinned in agents-catalog-reachability.test.ts
+                  SAGAX_GROUP_TURN: flag(room),
                   SAGAX_OWN_THREAD_CREATION: flag(ownThread),
                   SAGAX_SKILL_AUTHORING_ENABLED: flag(skills),
                   SAGAX_SHARED_COMPUTERS_ENABLED: flag(shared),
@@ -148,6 +151,11 @@ const FULL = { direct: "direct+skills+shared+voice", room: "room+own-thread+skil
 // move to the measured bytes.
 // task_list adds 662 B to every non-external profile. Profiles already
 // near the cap move to the measured bytes.
+// 2026-10-28: make_video (every profile, external included) had reached the
+// catalog without a golden update; the reachability fix (propose_page and
+// place_phone_call in a person's direct chat, descriptions that name only
+// tools the turn is shown, widgets and live HTML apps out of rooms, which
+// refuse them) moves the profiles out of 2% to the measured bytes.
 const BUDGET_BASELINE: Record<string, number> = {
   "direct": 86070,
   "direct+voice": 86811,
@@ -157,48 +165,48 @@ const BUDGET_BASELINE: Record<string, number> = {
   "direct+skills+voice": 88864,
   "direct+skills+shared": 89868,
   "direct+skills+shared+voice": 90609,
-  "room": 82881,
-  "room+voice": 84275,
-  "room+shared": 85279,
-  "room+shared+voice": 86020,
-  "room+skills": 85587,
-  "room+skills+voice": 86328,
-  "room+skills+shared": 87332,
-  "room+skills+shared+voice": 88073,
-  "room+own-thread": 85667,
-  "room+own-thread+voice": 86408,
-  "room+own-thread+shared": 87412,
-  "room+own-thread+shared+voice": 88153,
-  "room+own-thread+skills": 87720,
-  "room+own-thread+skills+voice": 88461,
-  "room+own-thread+skills+shared": 89465,
-  "room+own-thread+skills+shared+voice": 90206,
-  "direct+non-chief": 74167,
-  "direct+voice+non-chief": 74908,
+  "room": 79152,
+  "room+voice": 80119,
+  "room+shared": 81153,
+  "room+shared+voice": 82120,
+  "room+skills": 81205,
+  "room+skills+voice": 82172,
+  "room+skills+shared": 83206,
+  "room+skills+shared+voice": 84173,
+  "room+own-thread": 81340,
+  "room+own-thread+voice": 82307,
+  "room+own-thread+shared": 83341,
+  "room+own-thread+shared+voice": 84308,
+  "room+own-thread+skills": 83393,
+  "room+own-thread+skills+voice": 84360,
+  "room+own-thread+skills+shared": 85394,
+  "room+own-thread+skills+shared+voice": 86361,
+  "direct+non-chief": 75964,
+  "direct+voice+non-chief": 76931,
   "direct+shared+non-chief": 76663,
   "direct+shared+voice+non-chief": 77404,
   "direct+skills+non-chief": 76971,
   "direct+skills+voice+non-chief": 77712,
   "direct+skills+shared+non-chief": 78716,
   "direct+skills+shared+voice+non-chief": 79457,
-  "room+non-chief": 71631,
-  "room+voice+non-chief": 72372,
-  "room+shared+non-chief": 73376,
-  "room+shared+voice+non-chief": 74117,
-  "room+skills+non-chief": 73684,
-  "room+skills+voice+non-chief": 74425,
-  "room+skills+shared+non-chief": 75429,
-  "room+skills+shared+voice+non-chief": 76170,
-  "room+own-thread+non-chief": 73764,
-  "room+own-thread+voice+non-chief": 74505,
-  "room+own-thread+shared+non-chief": 75509,
-  "room+own-thread+shared+voice+non-chief": 76250,
-  "room+own-thread+skills+non-chief": 75817,
-  "room+own-thread+skills+voice+non-chief": 76558,
-  "room+own-thread+skills+shared+non-chief": 77562,
-  "room+own-thread+skills+shared+voice+non-chief": 78303,
-  "external": 3030,
-  "external+everything": 3030,
+  "room+non-chief": 68647,
+  "room+voice+non-chief": 69614,
+  "room+shared+non-chief": 70648,
+  "room+shared+voice+non-chief": 71615,
+  "room+skills+non-chief": 70700,
+  "room+skills+voice+non-chief": 71667,
+  "room+skills+shared+non-chief": 72701,
+  "room+skills+shared+voice+non-chief": 73668,
+  "room+own-thread+non-chief": 70835,
+  "room+own-thread+voice+non-chief": 71802,
+  "room+own-thread+shared+non-chief": 72836,
+  "room+own-thread+shared+voice+non-chief": 73803,
+  "room+own-thread+skills+non-chief": 72888,
+  "room+own-thread+skills+voice+non-chief": 73855,
+  "room+own-thread+skills+shared+non-chief": 74889,
+  "room+own-thread+skills+shared+voice+non-chief": 75856,
+  "external": 3697,
+  "external+everything": 3697,
 };
 
 const RPC_PREFIX = '{"jsonrpc":"2.0","id":1,"result":';
@@ -308,6 +316,11 @@ describe("agents proxy tools/list golden", () => {
         // A non-Primary Bot's propose_profile and propose_model are pinned by
         // the next test.
         if (profile.env.SAGAX_CHIEF_OF_STAFF === "0" && CHIEF_TARGET_TOOLS.includes(tool.name)) continue;
+        // A description names only tools its turn is shown (agents-catalog.ts
+        // OFFERED_REFERENCES, pinned by agents-catalog-reachability.test.ts):
+        // post_to_room without a voice, send_to_bot without own threads.
+        if (profile.env.SAGAX_VOICE_NOTES === "0" && tool.name === "post_to_room") continue;
+        if (profile.env.SAGAX_OWN_THREAD_CREATION === "0" && tool.name === "send_to_bot") continue;
         expect(JSON.stringify(tool), `${name}: ${tool.name}`).toBe(full.get(tool.name));
       }
     }
@@ -390,6 +403,9 @@ describe("agents proxy tools/list from the packaged bundle", () => {
       platform: "node",
       target: "node20",
       format: "esm",
+      // the banner scripts/bundle-server.mjs adds: a CommonJS dependency
+      // (yaml) requires node built-ins at load time
+      banner: { js: 'import { createRequire as __ombCreateRequire } from "node:module"; const require = __ombCreateRequire(import.meta.url);' },
       outbase: join(HERE, ".."),
       outdir: directory,
       logLevel: "silent",

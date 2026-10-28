@@ -127,7 +127,7 @@ describe("what a turn is told about mail, Teams, calendar and SharePoint (parit√
     expect(text).toContain("Microsoft Teams");
     expect(text).toMatch(/approval card/);
   });
-  it("an engine with none: says which engine has them and offers ask_bot, never claims a send", () => {
+  it("an engine with none: says which engine has them and offers a teammate, never claims a send", () => {
     for (const input of [
       { driver: "codex", claudeAi: false, grokCloud: false },
       { driver: "claudeAgent", claudeAi: false, grokCloud: false },
@@ -135,7 +135,9 @@ describe("what a turn is told about mail, Teams, calendar and SharePoint (parit√
       { driver: "grokAgent", claudeAi: false, grokCloud: false },
     ]) {
       const text = engineConnectorsPrompt(input);
-      expect(text).toContain("ask_bot");
+      // a person's chat coordinates (no ask_bot there): no tool is named
+      expect(text).toContain("ask a teammate bot on that engine with your teammate tools");
+      expect(text).not.toContain("ask_bot");
       expect(text).not.toContain("use_tool");
       expect(text).not.toContain("mcp__claude_ai_");
     }

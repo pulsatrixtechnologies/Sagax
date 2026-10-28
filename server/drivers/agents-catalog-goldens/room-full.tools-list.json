@@ -83,7 +83,7 @@
     },
     {
       "name": "shared_computer",
-      "description": "Use a desktop explicitly shared by the user. Discover computer_id and folder_id with list_shared_computers. list_files/read_file/write_file are confined to chosen folders; paths are relative. read_file returns sha256; overwriting requires expected_sha256. Binary files support base64 encoding. run_command requires a SEPARATE unrestricted terminal grant. computer_tools lists the native computer-control tools; computer_call invokes one with arguments and needs a SEPARATE computer-control grant. Never substitute the server's filesystem when this desktop is offline. Actions are not retried automatically; inspect an uncertain outcome before retrying.",
+      "description": "Use a desktop explicitly shared by the user. Discover computer_id and folder_id with list_shared_computers. list_files/read_file/write_file are confined to chosen folders; paths are relative. read_file returns sha256; overwriting requires expected_sha256. Binary files support base64 encoding. run_command requires a SEPARATE unrestricted terminal grant. computer_tools lists the native computer-control tools; computer_call invokes one with arguments and needs a SEPARATE computer-control grant. Never substitute the server's filesystem when this desktop is offline. read_copy reads the person's own stored copy of a lent folder or their Chrome reading list, which remains when the computer sleeps, and never another member's screen. Actions are not retried automatically; inspect an uncertain outcome before retrying.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -99,7 +99,8 @@
               "write_file",
               "run_command",
               "computer_tools",
-              "computer_call"
+              "computer_call",
+              "read_copy"
             ]
           },
           "folder_id": {
@@ -130,6 +131,16 @@
           "arguments": {
             "type": "object",
             "additionalProperties": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chrome",
+              "folder"
+            ]
+          },
+          "name": {
+            "type": "string"
           }
         },
         "required": [
@@ -199,7 +210,7 @@
     },
     {
       "name": "send_to_bot",
-      "description": "Send work one way to another bot in a fresh thread. This is cross-bot only: use start_thread to send independent work to yourself. The recipient owns the new thread; its results, failures and questions stay there and never resume you. Use coordinate_bots when you need the result returned here. Optional priority now wakes an idle recipient immediately or moves the message to the front of its queue, and never interrupts a running turn. The answer includes {threadId, handle} for await_turn.",
+      "description": "Send work one way to another bot in a fresh thread. This is cross-bot only: use start_thread to send independent work to yourself. The recipient owns the new thread; its results, failures and questions stay there and never resume you. Use coordinate_bots when you need the result returned here. Optional priority now wakes an idle recipient immediately or moves the message to the front of its queue, and never interrupts a running turn.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -299,14 +310,14 @@
     },
     {
       "name": "close_thread",
-      "description": "Mark a thread you opened (or one of your own) as finished once you have read its result: it leaves the person's default sidebar list (still under all threads, with a note saying you closed it) and list_threads reports it as closed. Nothing is deleted — deleting stays the person's decision — and a thread that is still running cannot be closed; wait for it or leave it. Use the thread id from list_threads or from the start_thread result. If a close is refused, do not retry it.",
+      "description": "Mark a thread you opened (or one of your own) as finished once you have read its result: it leaves the person's default sidebar list (still under all threads, with a note saying you closed it) and list_threads reports it as closed. Nothing is deleted — deleting stays the person's decision — and a thread that is still running cannot be closed; wait for it or leave it. Use the thread id from list_threads. If a close is refused, do not retry it.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "thread_id": {
             "type": "string",
-            "description": "The thread id from list_threads or start_thread."
+            "description": "The thread id from list_threads."
           }
         },
         "required": [
@@ -431,98 +442,8 @@
       }
     },
     {
-      "name": "show_widget",
-      "description": "Show an interactive widget in this chat. Reach for it yourself, without being asked, whenever you need details from the person or are offering a choice: never ask them to type a date, a time, a length or one of a few options. \"Help me book a call\" gets a Card with a DatePicker, a TimePicker, a Select for the length and a Textarea for an optional note; \"remind me every weekday\" gets a TimePicker and a DayPicker. Also good for a confirmation, a live status or a short pick-one list. Data, comparisons and results go in a markdown table in your message instead, which the chat can copy and export. `widget` is one JSON tree. The root is {type:\"Card\"|\"ListView\", title?, caption?, children:[...], confirm?:{label,action}, cancel?:{label,action}}. Nodes: Row, Col, Box, Spacer, Divider, Text, Title, Caption, Markdown, Badge{label,color}, Icon{name}, Image{src}, Progress{value 0-1, or value and max}, Chart{data,series:[{type,dataKey}],xAxis}, Button{label,onClickAction}, Form{onSubmitAction,children}. Fields, each with a name and a short label: Select|RadioGroup{options:[{label,value}]}, DatePicker{min?,max?} (YYYY-MM-DD), TimePicker{min?,max?,step?} (HH:MM, 24-hour), DayPicker (days of the week, sent as \"mon,wed,fri\"), Checkbox, Input, Textarea. A ListView holds ListViewItem{children}; to have the person choose one row, give the ListView a name and each row a value, and confirm sends the pick. An action is {type,payload?}; {type:\"open_url\",payload:{url}} opens a link. Labels are plain words, no emoji. When the person presses confirm, cancel or a button, their answers arrive as their next message, so end your turn after a widget that asks something. Keep it small: one confirm, one cancel, at most 8 rows. Never ask for passwords here. Not available in rooms.",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "widget": {
-            "type": "object",
-            "additionalProperties": true,
-            "description": "The widget tree."
-          },
-          "fallback_text": {
-            "type": "string",
-            "description": "Optional plain-text version for clients that cannot draw widgets. Written for you when omitted."
-          }
-        },
-        "required": [
-          "widget"
-        ]
-      }
-    },
-    {
-      "name": "update_widget",
-      "description": "Replace a widget you showed earlier in this chat, in place: a progress bar moving, a status changing. `widget_id` is the id show_widget returned. A widget the person already answered cannot be updated; show a new one.",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "widget_id": {
-            "type": "string"
-          },
-          "widget": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        },
-        "required": [
-          "widget_id",
-          "widget"
-        ]
-      }
-    },
-    {
-      "name": "show_html",
-      "description": "Show a live interactive app in this chat: a small HTML page that runs on its own and that you can update live. Reach for it when the person asks for a dashboard, a live status, a data view, a calculator or a small interactive tool, and a declarative widget (show_widget) is not enough because you need your own layout, styling or scripted behaviour. The page runs in a locked sandbox: your scripts run, but it has an opaque origin, no network of any kind, and cannot read this app, its storage or any secret. So put every value inline in the page, never fetch anything, and never put a password, token or key in it. `html` is a complete fragment: your markup, with optional <style> and <script>; the chat wraps it in the current light or dark theme and keeps it to the chat column's width, so keep it focused. Replace it later in place with update_html to show new data. Not available in rooms.",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "html": {
-            "type": "string",
-            "description": "The app's complete HTML fragment, with optional <style> and <script>. Self-contained: no network requests, no secrets."
-          },
-          "title": {
-            "type": "string",
-            "description": "Optional short human title for the app's header (plain words, no id)."
-          }
-        },
-        "required": [
-          "html"
-        ]
-      }
-    },
-    {
-      "name": "update_html",
-      "description": "Replace a live app you showed earlier in this chat, in place, so it shows new data: a number moving, new rows, a finished state. `app_id` is the id show_html returned. Send the whole page again; it replaces what was there without adding a new row.",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "app_id": {
-            "type": "string",
-            "description": "The id show_html returned."
-          },
-          "html": {
-            "type": "string",
-            "description": "The app's new complete HTML fragment. Self-contained: no network requests, no secrets."
-          },
-          "title": {
-            "type": "string",
-            "description": "Optional short human title for the app's header."
-          }
-        },
-        "required": [
-          "app_id",
-          "html"
-        ]
-      }
-    },
-    {
       "name": "save_artifact",
-      "description": "Save a widget the person wants to keep, pin or watch as an artifact: it shows in your Files tab under Artifacts. With source and interval_seconds it refreshes itself. They cannot edit its settings; they ask you. It stays inside Sagax, for this person; to share a page with others through a link, use propose_page instead. Returns its id.",
+      "description": "Save a widget the person wants to keep, pin or watch as an artifact: it shows in your Files tab under Artifacts. With source and interval_seconds it refreshes itself. They cannot edit its settings; they ask you. It stays inside Sagax, for this person. Returns its id.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -856,7 +777,7 @@
     },
     {
       "name": "post_to_room",
-      "description": "Put one message into a shared room you belong to, for example when the user asks you to tell the team something. Get group_id from list_rooms. This posts and returns: no room member's turn starts, nobody replies, and nothing comes back except confirmation — so never use it to ask a question or hand out work (use ask_bot or delegate_bot for those). Post once, say it in full, and tell the user what you posted. Set attach_voice_note true to attach this turn's voice note. If a post is refused, do not retry it: say what you wanted to post in your reply instead.",
+      "description": "Put one message into a shared room you belong to, for example when the user asks you to tell the team something. Get group_id from list_rooms. This posts and returns: no room member's turn starts, nobody replies, and nothing comes back except confirmation — so never use it to ask a question or hand out work (use coordinate_bots for those). Post once, say it in full, and tell the user what you posted. Set attach_voice_note true to attach this turn's voice note. If a post is refused, do not retry it: say what you wanted to post in your reply instead.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -930,7 +851,7 @@
     },
     {
       "name": "create_bot",
-      "description": "Create a specialist bot in your section. Primary Bot only. Below Full Access the user approves a card first, except on Approve for me when the user asked for it in their own message. instructions become its soul. Omit modelSelection to use the workspace default, or choose exact IDs from list_team_setup. Connected apps and automatic approvals start disabled. Assign work through delegate_bot. Maximum four new bots per turn.",
+      "description": "Create a specialist bot in your section. Primary Bot only. Below Full Access the user approves a card first, except on Approve for me when the user asked for it in their own message. instructions become its soul. Omit modelSelection to use the workspace default, or choose exact IDs from list_team_setup. Connected apps and automatic approvals start disabled. Assign work through coordinate_bots. Maximum four new bots per turn.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1594,7 +1515,7 @@
     },
     {
       "name": "retry_thread",
-      "description": "Primary Bot only. Resume a teammate's thread whose last run failed, stalled or could not start — the one an incident report named — exactly where it stopped, keeping its conversation and files. The teammate gets a line saying you asked for the retry and why. Use it when the cause looks transient (a crash, a timeout, a busy service). Use delegate_bot with a corrected brief instead when the request itself needs to change, and tell the person instead when only they can fix the cause (a sign-in, a missing credential, an unanswered question). Never retry the same thread more than twice.",
+      "description": "Primary Bot only. Resume a teammate's thread whose last run failed, stalled or could not start — the one an incident report named — exactly where it stopped, keeping its conversation and files. The teammate gets a line saying you asked for the retry and why. Use it when the cause looks transient (a crash, a timeout, a busy service). Use coordinate_bots with a corrected brief instead when the request itself needs to change, and tell the person instead when only they can fix the cause (a sign-in, a missing credential, an unanswered question). Never retry the same thread more than twice.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -2891,6 +2812,29 @@
         },
         "required": [
           "name"
+        ]
+      }
+    },
+    {
+      "name": "make_video",
+      "description": "Ask for a video from a short description, or from an image the person already attached in this turn. If image_to_video or reference_to_video is in your tools, call that instead: it is the producer. This tool never runs a shell. If no producer is connected, it says so and does not invent one.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "What the video should show."
+          },
+          "image": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Optional reference already in this turn. Not a new upload and not a shell path to go fetch."
+          }
+        },
+        "required": [
+          "prompt"
         ]
       }
     }

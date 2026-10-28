@@ -4358,6 +4358,10 @@ function agentsIntegration(
       SAGAX_COMMS_TOKEN: token,
       SAGAX_TURN_DEPTH: String(depth),
       SAGAX_ROOM_TURN: roomCoordination ? "1" : "0",
+      // A real room (group conversation). A person's direct chat also sets
+      // SAGAX_ROOM_TURN (bounded coordination), so a tool absent from rooms
+      // only (propose_page) reads this, never SAGAX_ROOM_TURN.
+      SAGAX_GROUP_TURN: store.groupByThread(threadId) ? "1" : "0",
       SAGAX_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
       SAGAX_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
       // The agent-to-agent tools (server/agent-api.ts) in every turn outside
@@ -26792,7 +26796,7 @@ function roomPostEligibility(
     return {
       ok: false,
       status: 400,
-      error: "that is a one-to-one bot channel, not a room — use ask_bot or delegate_bot to reach a single bot",
+      error: "that is a one-to-one bot channel, not a room — use coordinate_bots (or ask_bot or delegate_bot where you have them) to reach a single bot",
     };
   }
   if (!group.memberIds.includes(bot.id)) {
@@ -43088,7 +43092,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const wakeAsked = parseWakePriority(body.priority);
         if (wakeAsked === "invalid") return json(res, 400, { error: "priority is now or normal." });
         if (oneWay && target.id === from.id) {
-          return json(res, 409, { error: "send_to_bot is cross-bot only; use start_thread to send independent work to yourself" });
+          return json(res, 409, { error: "send_to_bot is cross-bot only; to work on yourself, do it in this turn (start_thread opens a separate job where you have it)" });
         }
         if (internalCapability.roomCoordination) {
           if (target.id !== from.id && !oneWay) {
