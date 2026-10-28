@@ -2998,15 +2998,26 @@ function mayActOnPerson(auth: RequestAuth, owner: string): boolean {
  * manages webhooks of bots whose owner they may act on (never an admin's
  * bot: a webhook runs it as its owner), and never a typed Microsoft Graph
  * trigger (it names a mailbox sign-in that may be an admin's). Null: allowed. */
-function webhookDelegateRefusal(auth: RequestAuth, webhookIds: string[], body: unknown): { error: string; code: string } | null {
+function webhookDelegateRefusal(auth: RequestAuth, webhookIds: string[], body: unknown): { status: number; error: string; code: string } | null {
   if (IDENTITY.kind !== "perspicax" || auth.kind !== "session" || auth.scopes.includes("admin")) return null;
-  const refusal = { error: "Only an organization admin can manage a webhook on an admin's bot or a Microsoft trigger.", code: "target_is_admin" };
+  const refusal = { status: 403, error: "Only an organization admin can manage a webhook on an admin's bot or a Microsoft trigger.", code: "target_is_admin" };
   const record = body && typeof body === "object" && !Array.isArray(body) ? body as { botId?: unknown; source?: unknown } : null;
+  const hooks = webhookIds.map((id) => webhooks.list().find((hook) => hook.id === id));
+  // 2026-10-28: a member without server.settings
+  // manages webhooks of their own bots, or of a bot shared with them at run
+  // (the right that runs a bot's routines), and nobody else's. A webhook of
+  // a bot they may not aim at is "not found", the same as a missing one; a
+  // body may not point a webhook at such a bot either.
+  if (!callerCan(auth, "server.settings")) {
+    const notFound = { status: 404, error: "no such webhook", code: "no_such_webhook" };
+    for (const hook of hooks) if (hook && !webhookBotAimable(auth, hook.botId)) return notFound;
+    if (record && typeof record.botId === "string" && !webhookBotAimable(auth, record.botId)) return { status: 404, error: "no such bot", code: "no_such_bot" };
+  }
   const botIds = [
-    ...webhookIds.map((id) => webhooks.list().find((hook) => hook.id === id)?.botId),
+    ...hooks.map((hook) => hook?.botId),
     ...(record && typeof record.botId === "string" ? [record.botId] : []),
   ];
-  if (webhookIds.some((id) => webhooks.list().find((hook) => hook.id === id)?.source?.graph)) return refusal;
+  if (hooks.some((hook) => hook?.source?.graph)) return refusal;
   const source = record?.source && typeof record.source === "object" ? record.source as { graph?: unknown } : null;
   if (source?.graph) return refusal;
   for (const botId of botIds) {
@@ -3015,6 +3026,29 @@ function webhookDelegateRefusal(auth: RequestAuth, webhookIds: string[], body: u
     if (!bot || !mayActOnPerson(auth, effectiveBotOwner(bot))) return refusal;
   }
   return null;
+}
+/** A member may aim a webhook at this bot: theirs, or shared with them at
+ * run or above. Loopback and admin sessions are not asked. */
+function webhookBotAimable(auth: RequestAuth, botId: unknown): boolean {
+  if (typeof botId !== "string") return false;
+  const bot = store.bot(botId);
+  if (!bot) return false;
+  const level = viewerBotLevel(auth, bot);
+  return level === "owner" || atLeast(level, "run");
+}
+/** Organization server: whether a person sees a webhook (its name, prompt
+ * and deliveries) in a list or on their live stream: an organization
+ * admin, its bot's owner, or someone with run on that bot. */
+function webhookSeenBy(botId: unknown, viewerId: string): boolean {
+  if (typeof botId !== "string") return false;
+  const bot = store.bot(botId);
+  if (!bot) return false;
+  const viewer = authzViewerFromId(viewerId);
+  if (!viewer) return false;
+  if (viewer.orgAdmin) return true;
+  if (!listedBotVisible(bot, viewerId)) return false;
+  const level = botLevel({ viewer, ...botFacts(bot) });
+  return level === "owner" || atLeast(level, "run");
 }
 /** Security review 2026-10-19, pass 3: the first address field (`url` or a
  * key ending in `Url`) anywhere in a config patch, as a dotted path. */
@@ -30494,6 +30528,11 @@ ROUTES.push(createViewerBotOverrideRoutes({
   store: viewerBotOverrideStore,
   organization: () => IDENTITY.kind === "perspicax",
   bot: (id) => store.bot(id) ?? null,
+  // 2026-10-27: a bot the person cannot see answers like a missing one
+  sees: (principalId, id) => {
+    const bot = store.bot(id);
+    return Boolean(bot) && listedBotVisible(bot!, principalId);
+  },
 }));
 /** The Claude CLI this solo install runs. `claude` on PATH when unset. */
 function soloClaudeCli(): string {
@@ -35461,6 +35500,17 @@ function attachmentSeenBy(name: string, viewerId: string): boolean {
 }
 
 function memberSeesFrame(payload: Record<string, unknown>, viewerId: string): boolean {
+  // A webhook frame names its bot inside the record
+  // (and an attempt only its webhook): the same people as GET /api/webhooks.
+  if (IDENTITY.kind === "perspicax" && payload.kind === "webhook") {
+    const hook = payload.webhook && typeof payload.webhook === "object" ? payload.webhook as { botId?: unknown } : null;
+    return webhookSeenBy(hook?.botId, viewerId);
+  }
+  if (IDENTITY.kind === "perspicax" && payload.kind === "webhook.attempt") {
+    const attempt = payload.attempt && typeof payload.attempt === "object" ? payload.attempt as { webhookId?: unknown } : null;
+    const hook = webhooks.list().find((candidate) => candidate.id === attempt?.webhookId);
+    return Boolean(hook) && webhookSeenBy(hook!.botId, viewerId);
+  }
   // A routine or run frame names its bot and room inside the record.
   if (payload.kind === "routine" || payload.kind === "routine.run") {
     const held = payload.kind === "routine" ? payload.routine : payload.run;
@@ -44936,20 +44986,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // second, webhook-only loopback listener so Funnel or a future hosted
     // relay never has to expose the rest of Sagax's control surface.
     if (path === "/api/webhooks" && method === "GET") {
-      const shownHooks = webhooks.list().filter((webhook) => visible.bot(webhook.botId));
+      // On an organization server a signed-in person
+      // lists the webhooks of the bots they may aim one at (webhookSeenBy).
+      const hookViewer = IDENTITY.kind === "perspicax" && auth.kind === "session" ? channelViewerId(auth) : undefined;
+      const shownHooks = webhooks.list().filter((webhook) => visible.bot(webhook.botId) && (!hookViewer || webhookSeenBy(webhook.botId, hookViewer)));
       const shownIds = new Set(shownHooks.map((webhook) => webhook.id));
       return json(res, 200, {
         webhooks: shownHooks,
-        attempts: webhooks.listAttempts().filter((attempt) => visible.everything || shownIds.has(attempt.webhookId)),
+        attempts: webhooks.listAttempts().filter((attempt) => (visible.everything && !hookViewer) || shownIds.has(attempt.webhookId)),
         ingress: webhookIngressStatus(),
         // Names and covered sources of the server's Microsoft sign-ins; never a token.
-        ...(visible.everything ? { graphConnectors: graphConnectorOptions(graphTokens) } : {}),
+        ...(visible.everything && (!hookViewer || orgAdminCaller(auth)) ? { graphConnectors: graphConnectorOptions(graphTokens) } : {}),
       });
     }
     if (path === "/api/webhooks" && method === "POST") {
       const body = await readBody(req);
       const webhookRefused = webhookDelegateRefusal(auth, [], body);
-      if (webhookRefused) return json(res, 403, webhookRefused);
+      if (webhookRefused) return json(res, webhookRefused.status, { error: webhookRefused.error, code: webhookRefused.code });
       // 2026-10-22 a webhook runs on the bot's own computer (This
       // computer or its cloud computer) by default; only a run target on the
       // shared organization server is an admin's (server/exec-target.ts).
@@ -44984,7 +45037,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     let webhookMatch = path.match(/^\/api\/webhooks\/([\w-]+)\/(rotate|test|reveal)$/);
     if (webhookMatch && method === "POST") {
       const webhookRefused = webhookDelegateRefusal(auth, [webhookMatch[1]!], null);
-      if (webhookRefused) return json(res, 403, webhookRefused);
+      if (webhookRefused) return json(res, webhookRefused.status, { error: webhookRefused.error, code: webhookRefused.code });
       if (webhookMatch[2] === "reveal") {
         // The one-time copy of a token generated at start for a webhook that
         // predates the bearer rule. A second call finds nothing to reveal.
@@ -45017,7 +45070,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (webhookMatch && method === "PATCH") {
       const body = await readBody(req);
       const webhookRefused = webhookDelegateRefusal(auth, [webhookMatch[1]!], body);
-      if (webhookRefused) return json(res, 403, webhookRefused);
+      if (webhookRefused) return json(res, webhookRefused.status, { error: webhookRefused.error, code: webhookRefused.code });
       const patchRunOn = body && typeof body === "object" && !Array.isArray(body) ? (body as { runOn?: unknown }).runOn : undefined;
       if (typeof patchRunOn === "string" && webhookExecTargetAdminOnly(patchRunOn) && !adminOrDelegate(auth, "server.settings")) {
         return json(res, 403, WEBHOOK_SERVER_TARGET_ADMIN_ONLY);
@@ -45030,7 +45083,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (webhookMatch && method === "DELETE") {
       const webhookRefused = webhookDelegateRefusal(auth, [webhookMatch[1]!], null);
-      if (webhookRefused) return json(res, 403, webhookRefused);
+      if (webhookRefused) return json(res, webhookRefused.status, { error: webhookRefused.error, code: webhookRefused.code });
       return webhooks.remove(webhookMatch[1])
         ? json(res, 200, { ok: true })
         : json(res, 404, { error: "no such webhook" });

@@ -19,7 +19,8 @@ const EXACT: Record<string, number> = {
   // 186 and 93: connector routes left index.ts with the connected-apps client.
   // 184: the organization library routes moved to server/routes/org-library.ts (#1388).
   // The file already had 188 of these guards (two over the previous pin of 186) before that move.
-  'path === "/': 184,
+  // 185: +1 POST /api/internal/run-with-engine (#1477), kept in index.ts.
+  'path === "/': 185,
   // 90: the package preview path moved with the organization library routes.
   // 91: the thread file pin and the bot history routes moved to server/routes (#1099), after the
   // library pin (#1112) and the history owner rule (#1107) had taken it over 93.

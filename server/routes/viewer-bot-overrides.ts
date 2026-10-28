@@ -14,6 +14,9 @@ export interface ViewerBotOverrideRouteDeps {
   organization: () => boolean;
   /** The bot as stored, so a write can be refused when this person owns it. */
   bot: (id: string) => { ownerUserId?: string | null } | null;
+  /** Whether this person sees the bot at all. Absent: every bot is seen.
+   * One they cannot see answers "no such bot", the same as a missing id. */
+  sees?: (principalId: string, botId: string) => boolean;
 }
 
 export function createViewerBotOverrideRoutes(deps: ViewerBotOverrideRouteDeps): RouteHandler {
@@ -36,7 +39,7 @@ export function createViewerBotOverrideRoutes(deps: ViewerBotOverrideRouteDeps):
     if (method !== "PUT") return json(res, 405, { error: "PUT" });
     const botId = one![1]!;
     const record = deps.bot(botId);
-    if (!record) return json(res, 404, { error: "no such bot" });
+    if (!record || (deps.sees && !deps.sees(principalId, botId))) return json(res, 404, { error: "no such bot" });
     if (!sharedBotForViewer(record.ownerUserId, principalId)) {
       return json(res, 403, { error: "The owner changes this bot's own model and notifications.", code: "owner_bot_settings" });
     }
