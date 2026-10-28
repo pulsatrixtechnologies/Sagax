@@ -2,7 +2,7 @@
 /**
  * Headless screenshots of the bot panel's Tasks section (Playwright, no
  * window, no focus taken), above the Routines section: the empty list,
- * the tasks grouped with Done folded, Done open, a task opened and a row
+ * the one list (Needs you first, then In progress), a task just done (green check), a task opened and a row
  * menu, in the dark and the light skin. Mocked API; no server.
  * Usage: node scripts/capture-bot-task-list.mjs [--out DIR] [--port N] [--lang en] [--states a,b] [--prefix p-]
  */
@@ -19,7 +19,7 @@ const arg = (name, fallback) => {
 const outDir = resolve(arg("--out", join(root, "docs", "screenshots", "bot-task-list")));
 const port = Number(arg("--port", "5297"));
 const lang = arg("--lang", "en");
-const states = arg("--states", "empty,tasks,open,detail,menu").split(",");
+const states = arg("--states", "empty,tasks,done,detail,menu").split(",");
 const prefix = arg("--prefix", "");
 
 async function waitForServer(url, ms = 120_000) {
@@ -62,10 +62,13 @@ try {
       // the bot comes from the store once it hydrates: Answer shows then
       if (state !== "empty") await page.locator("[data-bot-task-answer]").waitFor();
       await page.waitForTimeout(300);
-      if (state === "open") {
-        // Done is folded by default: open it.
-        const toggle = page.locator("[data-bot-tasks-done-toggle]");
-        if (await toggle.count()) { await toggle.click(); await page.waitForTimeout(200); }
+      if (state === "done") {
+        // the doing task is marked done from its menu: its row shows the green check for a moment
+        await page.locator('[data-bot-task="doing"]').first().hover();
+        await page.locator('[data-bot-task="doing"] [data-bot-task-menu]').first().click();
+        await page.locator('[data-bot-task-action="complete"]').click();
+        await page.locator('[data-bot-task="done"]').waitFor();
+        await page.waitForTimeout(250);
       }
       if (state === "detail") {
         await page.locator('[data-bot-task="waiting"] [data-bot-task-open]').first().click();

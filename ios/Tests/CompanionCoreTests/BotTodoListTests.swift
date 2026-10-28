@@ -59,6 +59,31 @@ final class BotTodoListTests: XCTestCase {
         XCTAssertTrue(BotTodoList.grouped([]).isEmpty)
     }
 
+    func testListedIsNeedsYouThenInProgressWithNoDoneTask() {
+        func task(_ id: String, _ state: BotTodoState, _ at: Double) -> BotTodo {
+            BotTodo(id: id, botId: "b", title: id, state: state, createdAt: 0, updatedAt: at)
+        }
+        let all = [
+            task("d1", .done, 10), task("w1", .waiting, 1), task("p1", .doing, 5),
+            task("w2", .waiting, 9), task("d2", .done, 30), task("p2", .doing, 7),
+        ]
+        XCTAssertEqual(BotTodoList.listed(all).map(\.id), ["w2", "w1", "p2", "p1"])
+        // the one that just finished stays until its row folds
+        XCTAssertEqual(BotTodoList.listed(all, finishing: ["d2"]).map(\.id), ["w2", "w1", "d2", "p2", "p1"])
+        XCTAssertTrue(BotTodoList.listed([task("d1", .done, 1)]).isEmpty)
+    }
+
+    func testJustFinishedSeesOnlyTheMoveToDone() {
+        func task(_ id: String, _ state: BotTodoState) -> BotTodo {
+            BotTodo(id: id, botId: "b", title: id, state: state, createdAt: 0, updatedAt: 0)
+        }
+        let before = [task("a", .doing), task("b", .waiting), task("c", .done)]
+        let after = [task("a", .done), task("b", .waiting), task("c", .done), task("d", .done)]
+        XCTAssertEqual(BotTodoList.justFinished(from: before, to: after), ["a"])
+        // first read, and a task that was never seen open: nothing
+        XCTAssertTrue(BotTodoList.justFinished(from: nil, to: after).isEmpty)
+    }
+
     func testAnswerOpensTheTaskThreadElseTheBotThread() {
         var task = BotTodo(id: "task_aaaaaa", botId: "b", threadId: "t1", title: "x", state: .waiting, createdAt: 0, updatedAt: 0)
         XCTAssertEqual(BotTodoList.answerThread(task, botThreadId: "main"), "t1")

@@ -2,10 +2,11 @@
 // person (shared/bot-task-list.ts). The rows come from the server. Not the
 // code work journal.
 //
-// Laid out like the Routines rows below it: grouped cards, a title and a
-// line under it. What needs the person comes first, in the accent, with
-// Answer; then what is in progress; then Done, folded with its count, each
-// row checked and dimmed. A row opens the task in place (full title, the
+// Laid out like the Routines rows below it: one grouped card, a title and a
+// line under it, no group titles. What needs the person comes first, in the
+// accent, with Answer; then what is in progress. A done task is not listed:
+// the one that just moved to Done shows a green check in place of its icon
+// for a moment, then its row fades and folds away. A row opens the task in place (full title, the
 // note of the bot, every change of state) and its menu (the ... button,
 // a right click, Shift+F10 or the menu key) marks it done, puts it back in
 // progress, reopens or removes it. Answer opens the conversation with the
@@ -16,7 +17,7 @@
 // reads again; it also reads again when the window comes back into view.
 // A server without the route yet (an older one) says it comes with the
 // server update, never an error.
-import { Check, ChevronRight, CircleDashed, ListTodo, MessageCircleQuestion, MoreHorizontal, Trash2 } from "lucide-react";
+import { Check, CircleDashed, ListTodo, MessageCircleQuestion, MoreHorizontal, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -29,7 +30,7 @@ import { relativeTime } from "@/lib/memory";
 import { routeMissingOnServer } from "@/lib/server-route";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { api, ApiError, openBotThread, useStoreOptional } from "@/state/store";
-import { groupBotTasks, personBotTaskActions, type BotTask, type BotTaskAction, type BotTaskState } from "../../../shared/bot-task-list";
+import { BOT_TASK_DONE_FOLD_MS, BOT_TASK_DONE_LINGER_MS, listBotTasks, personBotTaskActions, type BotTask, type BotTaskAction, type BotTaskState } from "../../../shared/bot-task-list";
 import { navigateThreadMenu } from "../BotProjects";
 import { RoutineDetailHeader } from "./RoutinesSection";
 
@@ -81,13 +82,23 @@ export function BotTaskSection({ botId }: { botId: string }) {
   const bot = store?.state.bots.find((candidate) => candidate.id === botId);
   const [tasks, setTasks] = useState<BotTask[] | null>(null);
   const [state, setState] = useState<LoadState>("ok");
-  const [doneOpen, setDoneOpen] = useState(false);
+  // Tasks that just moved to Done: "check" shows the green check, "fold" the
+  // row going away. Done tasks that are not in here are not listed.
+  const [finishing, setFinishing] = useState<Record<string, "check" | "fold">>({});
+  const seenStates = useRef<Map<string, BotTaskState> | null>(null);
+  const timers = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const [openId, setOpenId] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   // Only the newest read lands: a slow answer never overwrites a newer one.
   const readSeq = useRef(0);
   // The row a closed detail hands the focus back to.
   const returnFocus = useRef<string | null>(null);
+
+  const clearTimers = () => { for (const timer of timers.current) clearTimeout(timer); timers.current.clear(); };
+  const later = (run: () => void, ms: number) => {
+    const timer = setTimeout(() => { timers.current.delete(timer); run(); }, ms);
+    timers.current.add(timer);
+  };
 
   const load = useCallback(() => {
     const seq = ++readSeq.current;
@@ -108,7 +119,9 @@ export function BotTaskSection({ botId }: { botId: string }) {
   useEffect(() => {
     setTasks(null);
     setState("ok");
-    setDoneOpen(false);
+    setFinishing({});
+    seenStates.current = null;
+    clearTimers();
     setOpenId(null);
     setMenu(null);
     load();
@@ -123,11 +136,42 @@ export function BotTaskSection({ botId }: { botId: string }) {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       readSeq.current += 1;
+      clearTimers();
       window.removeEventListener(BOT_TASKS_EVENT, onFrame);
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [botId, load]);
+
+  // A task that goes from open to Done (the bot finished it, or the person
+  // did) keeps its row a moment with the check, then the row folds away.
+  // A task already done when it first shows is never listed.
+  useEffect(() => {
+    if (!tasks) return;
+    const before = seenStates.current;
+    seenStates.current = new Map(tasks.map((task) => [task.id, task.state]));
+    if (!before) return;
+    for (const task of tasks) {
+      const was = before.get(task.id);
+      if (task.state !== "done" || !was || was === "done") continue;
+      const id = task.id;
+      setFinishing((current) => ({ ...current, [id]: "check" }));
+      later(() => setFinishing((current) => id in current ? { ...current, [id]: "fold" } : current), BOT_TASK_DONE_LINGER_MS);
+      later(() => setFinishing((current) => { const { [id]: _gone, ...rest } = current; return rest; }), BOT_TASK_DONE_LINGER_MS + BOT_TASK_DONE_FOLD_MS);
+    }
+  }, [tasks]);
+
+  // A reopened task is listed again at once, never folding.
+  useEffect(() => {
+    if (!tasks) return;
+    setFinishing((current) => {
+      const stale = Object.keys(current).filter((id) => tasks.find((task) => task.id === id)?.state !== "done");
+      if (stale.length === 0) return current;
+      const next = { ...current };
+      for (const id of stale) delete next[id];
+      return next;
+    });
+  }, [tasks]);
 
   // A closed detail gives the focus back to its row.
   useEffect(() => {
@@ -170,18 +214,23 @@ export function BotTaskSection({ botId }: { botId: string }) {
     if (focusTrigger) trigger?.focus();
   };
 
-  const groups = tasks ? groupBotTasks(tasks) : null;
-  const total = tasks?.length ?? 0;
+  const listed = tasks ? listBotTasks(tasks, new Set(Object.keys(finishing))) : null;
+  const total = listed?.length ?? 0;
   const open = openId ? tasks?.find((task) => task.id === openId) ?? null : null;
 
   const row = (task: BotTask) => {
     const subtitle = botTaskSubtitle(task);
     const waiting = task.state === "waiting";
     const done = task.state === "done";
+    const folding = finishing[task.id] === "fold";
+    // the row folds by its height (grid 1fr to 0fr) and fades; its hairline goes with it
     return (
-      <li key={task.id} data-bot-task={task.state}
+      <li key={task.id} data-bot-task={task.state} data-bot-task-finishing={done ? finishing[task.id] ?? "check" : undefined}
         onContextMenu={(event) => { event.preventDefault(); openMenu(task, event.currentTarget, { x: event.clientX, y: event.clientY }); }}
-        className={cn("group/task flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW, "py-2")}>
+        style={{ transitionDuration: `${BOT_TASK_DONE_FOLD_MS}ms` }}
+        className={cn("group/task grid transition-[grid-template-rows,opacity] ease-out", folding ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100",
+          waiting ? "bg-accent/[0.07] hover:bg-accent/[0.11]" : "hover:bg-hover", "border-b border-hairline-weak last:border-b-0")}>
+      <div className="flex min-h-0 items-center gap-2.5 overflow-hidden px-3 py-2">
         <StateIcon state={task.state} />
         <button type="button" data-bot-task-open={task.id} onClick={() => openTask(task)}
           onKeyDown={(event) => {
@@ -208,53 +257,24 @@ export function BotTaskSection({ botId }: { botId: string }) {
             menu?.task.id === task.id ? "flex" : "hidden")}>
           <MoreHorizontal size={15} />
         </button>
+      </div>
       </li>
     );
   };
 
   return (
     <section data-bot-settings-section="task-list" aria-labelledby={`bot-tasks-${botId}`} className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2">
-          <ListTodo size={16} aria-hidden="true" className="text-ink-secondary" />
-          <h2 id={`bot-tasks-${botId}`} className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("botTasks.title")}</h2>
-        </div>
-        <p className="text-[12px] leading-4 text-ink-tertiary">{t("botTasks.hint")}</p>
+      <div className="flex items-center gap-2">
+        <ListTodo size={16} aria-hidden="true" className="text-ink-secondary" />
+        <h2 id={`bot-tasks-${botId}`} className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("botTasks.title")}</h2>
       </div>
       {state === "needsUpdate" ? <p data-bot-tasks-needs-update="true" className="text-[12px] text-ink-tertiary">{t("serverRoute.needsUpdate")}</p> : null}
       {state === "failed" ? <p className="text-[12px] text-danger">{t("botTasks.error")}</p> : null}
       {state !== "needsUpdate" && tasks && total === 0 ? (
-        <div data-bot-tasks-empty="true" className="flex items-start gap-2.5 rounded-xl border border-dashed border-hairline-weak px-3 py-2.5">
-          <ListTodo size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-tertiary" />
-          <p className="text-[12px] leading-4 text-ink-secondary">{t("botTasks.empty")}</p>
-        </div>
+        <p data-bot-tasks-empty="true" className="text-[12px] leading-4 text-ink-tertiary">{t("botTasks.empty")}</p>
       ) : null}
-      {state !== "needsUpdate" && groups && total > 0 ? (
-        <div className="flex flex-col gap-3">
-          {groups.waiting.length > 0 ? (
-            <div data-bot-task-group="waiting" className="flex flex-col gap-1.5">
-              <GroupTitle state="waiting" count={groups.waiting.length} />
-              <ul className={cn(GROUPED_CARD, "border-accent/40")}>{groups.waiting.map(row)}</ul>
-            </div>
-          ) : null}
-          {groups.doing.length > 0 ? (
-            <div data-bot-task-group="doing" className="flex flex-col gap-1.5">
-              <GroupTitle state="doing" count={groups.doing.length} />
-              <ul className={GROUPED_CARD}>{groups.doing.map(row)}</ul>
-            </div>
-          ) : null}
-          {groups.done.length > 0 ? (
-            <div data-bot-task-group="done" className="flex flex-col gap-1.5">
-              <button type="button" data-bot-tasks-done-toggle="true" aria-expanded={doneOpen} onClick={() => setDoneOpen((value) => !value)}
-                className="flex items-center gap-1 self-start rounded px-0.5 text-[12px] leading-[17px] text-ink-tertiary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
-                <ChevronRight size={13} aria-hidden="true" className={cn("transition-transform", doneOpen && "rotate-90")} />
-                {t("botTasks.done")}
-                <span className="tabular-nums">{groups.done.length}</span>
-              </button>
-              {doneOpen ? <ul className={GROUPED_CARD}>{groups.done.map(row)}</ul> : null}
-            </div>
-          ) : null}
-        </div>
+      {state !== "needsUpdate" && listed && total > 0 ? (
+        <ul data-bot-task-list="true" className={cn(GROUPED_CARD, listed.some((task) => task.state === "waiting") && "border-accent/40")}>{listed.map(row)}</ul>
       ) : null}
 
       {menu && createPortal(
@@ -288,17 +308,8 @@ export function BotTaskSection({ botId }: { botId: string }) {
 
 function StateIcon({ state }: { state: BotTaskState }) {
   if (state === "waiting") return <MessageCircleQuestion size={16} aria-hidden="true" className="shrink-0 text-accent" />;
-  if (state === "done") return <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center rounded-full bg-ink-tertiary/25 text-ink-tertiary"><Check size={11} strokeWidth={2.5} /></span>;
+  if (state === "done") return <span aria-hidden="true" data-bot-task-check="true" className="flex size-4 shrink-0 items-center justify-center rounded-full bg-success/20 text-success"><Check size={11} strokeWidth={2.5} /></span>;
   return <CircleDashed size={16} aria-hidden="true" className="shrink-0 text-ink-tertiary" />;
-}
-
-function GroupTitle({ state, count }: { state: BotTaskState; count: number }) {
-  return (
-    <h3 className={cn("flex items-center gap-1.5 px-0.5 text-[12px] leading-[17px]", state === "waiting" ? "font-medium text-accent" : "text-ink-tertiary")}>
-      {t(STATE_LABEL[state])}
-      <span className="tabular-nums">{count}</span>
-    </h3>
-  );
 }
 
 /** The moves on a task, the same in its menu and its detail. */
