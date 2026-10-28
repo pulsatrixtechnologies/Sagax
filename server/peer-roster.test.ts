@@ -13,6 +13,7 @@ import {
   peerRosterSystemPrompt,
   peerStatus,
   reachablePeers,
+  roomRecruitIds,
   renderRoster,
   resolveTeammate,
   uniquePeerName,
@@ -212,6 +213,25 @@ describe("coordinatorSupervises", () => {
     expect(coordinatorSupervises(coordinator, null)).toBe(false);
     expect(coordinatorSupervises(null, buildBot)).toBe(false);
     expect(coordinatorSupervises(undefined, buildBot)).toBe(false);
+  });
+});
+
+describe("room recruitment and the peer list (#1366)", () => {
+  const primary: RosterMember = { id: "primary", name: "Clive", section: "Personal", chiefOfStaff: true, peers: ["writer"] };
+  const bots = [...fleet, primary];
+
+  it("still lets a Primary Bot message a same-person bot its peer list leaves out", () => {
+    expect(canReachPeer(primary, fleet[4]!)).toBe(true);
+  });
+
+  it("recruits only listed reachable bots, and always the sender", () => {
+    expect(roomRecruitIds(bots, primary)).toEqual(["primary", "writer"]);
+    expect(roomRecruitIds(bots, { ...primary, peers: ["elsewhere", "hidden"] })).toEqual(["primary", "elsewhere"]);
+    expect(roomRecruitIds(bots, { ...primary, peers: [] })).toEqual(["primary"]);
+  });
+
+  it("recruits every reachable bot when the peer list is unset", () => {
+    expect(roomRecruitIds(bots, { ...primary, peers: undefined })).toEqual(["primary", "self", "writer", "coder", "elsewhere"]);
   });
 });
 
