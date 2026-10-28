@@ -1,7 +1,8 @@
 /** Isolated gallery for headless screenshots of a published page's full-page
  * surface (src/components/PageViewer.tsx PageSurface) and its card. Not shipped in the app.
  * ?lang=<code>&skin=<id>&page=<pageId>&kind=html|markdown|presentation
- * &status=published|draft&policy=off&view=dialog|card
+ * &status=published|draft&policy=off&view=dialog|card&deleted=1 (the page was
+ * deleted: every /api/pages/<id> call answers the server's 404)
  * The page id must be one a pages server behind /pages/ knows (the capture
  * script runs one); without it the frame shows that server's 404. Every
  * message the viewer sends to a bot lands in window.__sent and every write in
@@ -25,6 +26,7 @@ const pageId = params.get("page") ?? "galleryPage0001";
 const kind = (params.get("kind") ?? "html") as PageKind;
 const published = params.get("status") !== "draft";
 const linkSharing = params.get("policy") !== "off";
+const deleted = params.get("deleted") === "1";
 
 declare global {
   interface Window { __sent: unknown[]; __writes: unknown[] }
@@ -66,6 +68,7 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/api/auth/session") return reply({});
   if (url.pathname === "/api/pages/policy") return reply({ linkSharing });
   if (!url.pathname.startsWith(base)) return realFetch(input, init);
+  if (deleted) return reply({ error: "This page does not exist.", code: "not_found" }, 404);
   if (method !== "GET") window.__writes.push({ method, path: url.pathname, body });
   const rest = url.pathname.slice(base.length);
   const source = /^\/versions\/(\d+)\/source$/.exec(rest);

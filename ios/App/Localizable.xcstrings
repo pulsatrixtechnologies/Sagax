@@ -1,6 +1,18 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Page deleted": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Page deleted" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Page supprimée" } }
+      }
+    },
+    "Preview unavailable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Preview unavailable" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aperçu indisponible" } }
+      }
+    },
     "Sort by prefix": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Sort by prefix" } },

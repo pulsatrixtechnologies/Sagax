@@ -46,8 +46,23 @@ export function when(at: number): string {
   return new Date(at).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** A page's reading link (the server's `url`: <origin>/pages/view/<token>),
+ * or null for anything else. Open in browser and Copy link take only this:
+ * never the app's own address. Pure. */
+export function pageReadingUrl(url: unknown): string | null {
+  if (typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    return /^\/pages\/view\/[^/]+$/.test(parsed.pathname) ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export function openPage(url: string) {
-  window.open(url, "_blank", "noopener,noreferrer");
+  const link = pageReadingUrl(url);
+  if (link) window.open(link, "_blank", "noopener,noreferrer");
 }
 
 /** Only this server's own preview wrapper path is ever framed, with the
@@ -67,6 +82,14 @@ export function previewSrc(path: string, options: { annotate?: boolean; bare?: b
  * a first publish. Pure. */
 export function needsLinkConfirm(current: PageAccess, next: PageAccess): boolean {
   return next === "link" && current !== "link";
+}
+
+/** The page (or the version asked) is gone: deleted, or never this
+ * person's. The server answers 404 with code not_found / no_version. Pure. */
+export function pageGone(cause: unknown): boolean {
+  if (!(cause instanceof ApiError) || cause.status !== 404) return false;
+  const code = cause.body?.code;
+  return code === undefined || code === "not_found" || code === "no_version";
 }
 
 /** A refusal in words: a closed public-link switch proposes My organization. */

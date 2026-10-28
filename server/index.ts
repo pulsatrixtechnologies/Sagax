@@ -1202,7 +1202,7 @@ import type { MeetingBrowser } from "./meetings/meeting-session.ts";
 import { createTemplateLinkRoutes, handleTemplateLinkPublic } from "./routes/template-links.ts";
 import { TemplateLinks } from "./template-links.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
-import { createPublishedPageRoutes, handlePagesOriginRequest, handlePublishedPagePublic, type PageViewer, type PublicPageOptions } from "./routes/published-pages.ts";
+import { createPublishedPageRoutes, handlePagesOriginRequest, handlePublishedPagePublic, isPagesPath, type PageViewer, type PublicPageOptions } from "./routes/published-pages.ts";
 import { createTeamBotFromThreadRoutes } from "./routes/team-bot-from-thread.ts";
 import { createBotWizardRoutes } from "./routes/bot-wizard.ts";
 import { createBotWizardStore } from "./bot-wizard-store.ts";
@@ -40433,7 +40433,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && path === "/healthz") {
       return json(res, 200, healthzBody());
     }
-    if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
+    // Published pages (/pages/...) are never the UI: the SPA fallback would
+    // answer a page's address with the app itself, framed in the page's card
+    // or opened from its link. handlePublishedPagePublic answers them below,
+    // a page or an explicit 404 (isPagesPath).
+    if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && !isPagesPath(path) && serveStatic(res, path)) return;
     // The new path and the old one (kept for one release, legacy-names.mjs).
     if (method === "GET" && ENVIRONMENT_PATHS.includes(path)) {
       return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && !CLOUD_HOME && IDENTITY.kind === "solo" && emailSignIn.enabled(), sharedComputers: lendingEnabled(), cloudHome: Boolean(CLOUD_HOME), identity: identityDescriptor(IDENTITY) }));

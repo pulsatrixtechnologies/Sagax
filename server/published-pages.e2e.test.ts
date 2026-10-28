@@ -96,3 +96,52 @@ it("lot R8 through the real server: rename, the person's edit (secrets out), com
     await fixture.close();
   }
 }, 120_000);
+
+it("with the UI served (desktop, container), a page's preview and link answer the page, and an unknown page address is a 404, never the app (0.8.11)", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const ui = mkdtempSync(join(tmpdir(), "sagax-pages-ui-"));
+  writeFileSync(join(ui, "index.html"), "<!doctype html><title>SAGAX APP SHELL</title>");
+  const fixture = await launchVerificationServer(process.env, undefined, undefined, undefined, undefined, undefined, [], undefined, ui);
+  try {
+    const url = fixture.info.url;
+    // the UI is served: an app route is the app shell
+    expect(await (await fetch(`${url}/settings`)).text()).toContain("SAGAX APP SHELL");
+    const pages = new PublishedPages(fixture.info.dataDir);
+    const made = pages.propose({ botId: "b1", threadId: "t1", title: "Demo", kind: "html", content: "<!doctype html><p>Contenu de la page</p>" });
+    if (!made.ok) throw new Error(made.error);
+    const id = made.page.id;
+    const readFrame = async (wrapperUrl: string) => {
+      const wrapper = await fetch(wrapperUrl);
+      expect(wrapper.status).toBe(200);
+      const body = await wrapper.text();
+      expect(body).not.toContain("SAGAX APP SHELL");
+      const src = /<iframe src="([^"]+)"/.exec(body)![1]!.replace(/&amp;/g, "&");
+      const frame = await fetch(`${url}${src}`, { headers: { "sec-fetch-dest": "iframe" } });
+      expect(frame.status).toBe(200);
+      const html = await frame.text();
+      expect(html).not.toContain("SAGAX APP SHELL");
+      return html;
+    };
+    // proposed (not published yet): the card's preview address serves the page
+    const previewPath: string = (await (await fetch(`${url}/api/pages/${id}/versions/1`)).json() as any).version.previewPath;
+    expect(await readFrame(`${url}${previewPath}?bare=1&theme=dark`)).toContain("Contenu de la page");
+    // published: the preview and the reading link both serve the page
+    const published = await fetch(`${url}/api/pages/${id}/publish`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ version: 1, access: "link", expiresAt: null }) });
+    const page = (await published.json() as any).page;
+    expect(await readFrame(`${url}${previewPath}`)).toContain("Contenu de la page");
+    // Open in browser and Copy link: the page's reading link, on this server, which answers the page
+    expect(page.url).toMatch(/^https?:\/\/[^/]+\/pages\/view\/[^/]+$/);
+    expect(page.url.endsWith(page.path)).toBe(true);
+    expect(await readFrame(`${url}${page.path}`)).toContain("Contenu de la page");
+    // an unknown or deleted page, or any other address under /pages: 404, never the app
+    for (const path of ["/pages/preview/ZZZZZZZZZZ/1", "/pages/view/nope", "/pages/frame/nope", "/pages/whatever", "/pages", `/pages/preview/${id}/9`]) {
+      const answer = await fetch(`${url}${path}`, { headers: { "sec-fetch-dest": "iframe" } });
+      expect(answer.status, path).toBe(404);
+      expect(await answer.text(), path).not.toContain("SAGAX APP SHELL");
+    }
+  } finally {
+    await fixture.close();
+  }
+}, 120_000);

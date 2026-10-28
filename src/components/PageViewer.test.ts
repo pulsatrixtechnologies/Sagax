@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { annotationPrompt, parseAnnotationMessage, PAGE_ANNOTATION_MESSAGE } from "../../shared/published-pages";
-import { previewSrc } from "./page-controls";
+import { pageGone, pageReadingUrl, previewSrc } from "./page-controls";
 import { ApiError } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { acceptAnnotation, acceptScroll, needsLinkConfirm, newerVersion, pageErrorText, pageVersionToShow, renameTitle, republishBody, MAX_ANNOTATIONS } from "./PageViewer";
@@ -114,5 +114,22 @@ describe("the open page's pure rules (2026-10-28)", () => {
     expect(newerVersion(2, 3)).toBe(3);
     expect(newerVersion(3, 3)).toBeNull();
     expect(newerVersion(3, undefined)).toBeNull();
+  });
+});
+
+describe("the page's links and a deleted page (0.8.11)", () => {
+  it("Open in browser and Copy link take the page's reading link only, never the app's address", () => {
+    expect(pageReadingUrl("https://sagax.example.com/pages/view/abc.def")).toBe("https://sagax.example.com/pages/view/abc.def");
+    for (const bad of ["https://sagax.example.com/", "https://sagax.example.com/pages/preview/abcdefgh/1", "https://sagax.example.com/settings", "javascript:alert(1)", "/pages/view/abc", "", undefined, null]) {
+      expect(pageReadingUrl(bad), String(bad)).toBeNull();
+    }
+  });
+
+  it("a 404 with not_found or no_version is a deleted page; anything else is an error", () => {
+    expect(pageGone(new ApiError("This page does not exist.", 404, { code: "not_found" }))).toBe(true);
+    expect(pageGone(new ApiError("This version does not exist.", 404, { code: "no_version" }))).toBe(true);
+    expect(pageGone(new ApiError("Server", 500, {}))).toBe(false);
+    expect(pageGone(new ApiError("Update the server", 404, { error: "no route: GET /api/pages/x", code: "no_route" }))).toBe(false);
+    expect(pageGone(new Error("offline"))).toBe(false);
   });
 });

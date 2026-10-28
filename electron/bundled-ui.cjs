@@ -20,8 +20,26 @@
 // reader, so node:test covers every rule.
 const path = require("node:path");
 
-/** Paths the server answers itself; everything else is the UI. */
-const SERVER_PREFIXES = ["/api/", "/.well-known/", "/auth/"];
+/** Paths the server answers itself; everything else is the UI. /pages/ is
+ * the published pages (server/routes/published-pages.ts): a page's wrapper,
+ * its sandboxed frame, its reader comments. Answered from the bundle, a
+ * page's address was the app's index.html, so a page's card and the open
+ * page drew Sagax itself instead of the page (0.8.11). */
+const SERVER_PREFIXES = ["/api/", "/.well-known/", "/auth/", "/pages/"];
+
+/** A published page's documents (GET/HEAD under /pages/): framed by the app
+ * (a card, the open page) with no referrer, so fromBundledPage cannot see
+ * them. They carry the session like any same-site frame would: the server
+ * serves a preview to its own person only, frames it under its CSP
+ * (frame-ancestors 'self', sandbox, no network) and answers 404 otherwise. */
+function pageDocument(request) {
+  if (request.method !== "GET" && request.method !== "HEAD") return false;
+  try {
+    return new URL(request.url).pathname.startsWith("/pages/");
+  } catch {
+    return false;
+  }
+}
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -173,7 +191,7 @@ function createBundledUiHandler(deps) {
         ...bypass,
         method: request.method,
         headers: passThroughHeaders(request, bundled),
-        credentials: fromBundledPage(request, bundled) ? "include" : "omit",
+        credentials: fromBundledPage(request, bundled) || pageDocument(request) ? "include" : "omit",
         redirect: "follow",
       };
       if (request.method !== "GET" && request.method !== "HEAD" && request.body) {
@@ -230,6 +248,7 @@ module.exports = {
   createBundledUiHandler,
   createDetachedUiHandler,
   fromBundledPage,
+  pageDocument,
   passThroughHeaders,
   routeRequest,
   servedByServer,
