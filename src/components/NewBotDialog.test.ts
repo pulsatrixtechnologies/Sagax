@@ -28,7 +28,7 @@ vi.mock("@/state/store", async importOriginal => {
 import { setLocale } from "@/lib/i18n";
 import { BotEditorContext } from "./bot-settings/BotEditorContext";
 import { BotCreationDraft, EMPTY_BOT_DEFAULTS } from "@/lib/bot-creation-draft";
-import { LocalNewBotDialog as NewBotDialog, DraftPage, BotsReadOnlyDialog, CompanionNewBotDialog, DefaultBotSettings, NewBotDialog as RoutedNewBotDialog, newBotStartMode, startOptions } from "./NewBotDialog";
+import { LocalNewBotDialog as NewBotDialog, DraftPage, BotsReadOnlyDialog, CompanionNewBotDialog, DefaultBotSettings, NewBotDialog as RoutedNewBotDialog, newBotStartMode, newBotUsesServerModel, startOptions } from "./NewBotDialog";
 
 type Node = ReactElement<{ children?: ReactNode; role?: string; "aria-label"?: string; onClick?: () => void; onMouseDown?: (event: unknown) => void; onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void; disabled?: boolean }>;
 function nodes(value: ReactNode): Node[] {
@@ -312,5 +312,22 @@ describe("newBotStartMode (2026-10-11)", () => {
     // an older server that sends no level
     expect(newBotStartMode({}, undefined)).toBe("auto");
     expect(newBotStartMode({ computer: "local" }, "auto")).toBeUndefined();
+  });
+});
+
+describe("newBotUsesServerModel (#1445)", () => {
+  const pinned = { instanceId: "claude", model: "claude-top" };
+  it("an organization member starts on the model chosen for them, not the admin's template", () => {
+    expect(newBotUsesServerModel(pinned, { defaultsMode: false, memberDefault: true })).toBe(true);
+  });
+  it("the server's operator keeps a template that pins a model", () => {
+    expect(newBotUsesServerModel(pinned, { defaultsMode: false, memberDefault: false })).toBe(false);
+  });
+  it("editing the template keeps the template's own model", () => {
+    expect(newBotUsesServerModel(pinned, { defaultsMode: true, memberDefault: true })).toBe(false);
+  });
+  it("a template with no model starts on the server's", () => {
+    expect(newBotUsesServerModel(undefined, { defaultsMode: false, memberDefault: false })).toBe(true);
+    expect(newBotUsesServerModel({ instanceId: "", model: "" }, { defaultsMode: true, memberDefault: false })).toBe(true);
   });
 });

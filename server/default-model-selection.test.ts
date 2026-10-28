@@ -3,7 +3,7 @@ import { transpileTs } from "./testing/transpile.ts";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EngineAccess, ModelCatalog, ModelSelection, ProviderSnapshot } from "./contracts.ts";
-import { autoNewBotSelection, memberNewBotSelection, readyToRun, selectDefaultModelSelection, starredModelSelections, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, instancesForPerson, memberNewBotSelection, readyToRun, selectDefaultModelSelection, starredModelSelections, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { ManagedDesktopPolicy } from "./managed-policy.ts";
 
 const codex = {
@@ -368,5 +368,37 @@ describe("a member's own model first (#1074)", () => {
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     const helper = source.slice(source.indexOf("async function memberDefaultSelection("));
     expect(helper.slice(0, helper.indexOf("\n}\n"))).toContain('preferences["sagax.modelFavorites.v1"]');
+  });
+});
+
+describe("#1445 a member's new bot starts on an engine that member can run", () => {
+  const grok = {
+    instanceId: "grok",
+    driverKind: "grokAgent",
+    snapshot: { state: "available", authenticated: false } satisfies ProviderSnapshot,
+    models: { default: "grok-default", options: [{ id: "grok-default", label: "Grok" }] },
+  };
+  const grokOnly = (instance: SelectableInstance) => instance.instanceId === "grok";
+
+  it("skips the organization's default on an engine the member cannot pay for", () => {
+    const instances = instancesForPerson([claude, grok], grokOnly);
+    const picked = memberNewBotSelection(instances, { organization: { instanceId: "claude", model: "claude-default" } });
+    expect(picked).toEqual({ instanceId: "grok", model: "grok-default", auto: true });
+  });
+
+  it("never falls back on the server's own signed-in engine", () => {
+    // without the member's view, Claude (the server's sign-in) wins first
+    expect(memberNewBotSelection([claude, grok], {})).toMatchObject({ instanceId: "claude" });
+    expect(memberNewBotSelection(instancesForPerson([claude, grok], grokOnly), {})).toMatchObject({ instanceId: "grok" });
+  });
+
+  it("keeps a starred model the member can run, even when the server's own sign-in is out", () => {
+    const instances = instancesForPerson([claude, grok], grokOnly);
+    expect(memberNewBotSelection(instances, { person: [{ instanceId: "claude", model: "claude-default" }, { instanceId: "grok", model: "grok-default" }] }))
+      .toEqual({ instanceId: "grok", model: "grok-default" });
+  });
+
+  it("leaves the bot unset when nothing runs for the member", () => {
+    expect(memberNewBotSelection(instancesForPerson([claude, grok], () => false), {})).toEqual({ instanceId: "", model: "" });
   });
 });

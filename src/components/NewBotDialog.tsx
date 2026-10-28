@@ -167,6 +167,16 @@ export function newBotStartMode(profile: Pick<NewBotDefaults["profile"], "approv
   return server === "ask" ? "ask" : "auto";
 }
 
+/** Whether New bot starts on the server's model (GET /api/bot-defaults
+ * `modelSelection`) rather than the template's: always when the template
+ * names none, and for an organization member (`memberDefault`, #1445),
+ * whose bot is never built from the admin's template. Editing the template
+ * keeps its own. */
+export function newBotUsesServerModel(selection: ModelSelection | undefined, options: { defaultsMode: boolean; memberDefault: boolean }): boolean {
+  if (!selection || (selection.instanceId === "" && selection.model === "")) return true;
+  return options.memberDefault && !options.defaultsMode;
+}
+
 /** Someone signed in to another person's server (an organization member)
  * gets the same single-request creation: the host's defaults and settings
  * are not theirs to read or change. A read-only person gets the notice,
@@ -216,12 +226,14 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
   };
   useEffect(() => {
     let cancelled = false;
-    void api<{ defaults: NewBotDefaults; modelSelection: ModelSelection; suggestedName: string; approvalMode?: "ask" | "auto" }>("/api/bot-defaults")
+    void api<{ defaults: NewBotDefaults; modelSelection: ModelSelection; suggestedName: string; approvalMode?: "ask" | "auto"; memberDefault?: boolean }>("/api/bot-defaults")
       .then(result => {
         if (cancelled) return;
         const defaults = structuredClone(result.defaults);
         const selection = defaults.profile.modelSelection;
-        if (!selection || (selection.instanceId === "" && selection.model === "")) {
+        // #1445: a member's new bot starts on the model chosen for them
+        // (their starred one, else one they can run), never the template's.
+        if (newBotUsesServerModel(selection, { defaultsMode, memberDefault: result.memberDefault === true })) {
           defaults.profile.modelSelection = result.modelSelection;
         }
         configuredModel.current = defaults.profile.modelSelection ?? null;

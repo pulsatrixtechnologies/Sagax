@@ -10864,6 +10864,8 @@
   "botWizard.other.quick": "Quick create",
   "botWizard.other.quickHint": "Creates the bot at once with this server's defaults. You can change everything afterwards.",
   "botWizard.identity.descriptionHelp": "Its role in one sentence, shown in rosters, on the phone and to other bots. Longer instructions go in the Soul step.",
+  "botWizard.identity.model": "Model",
+  "botWizard.identity.modelHelp": "Only the models you can run are listed. You can change it later in the bot's settings.",
   "botWizard.rules.effect.off": "Off",
   "botWizard.rules.effect.offHint": "Not used: no rule for this bot",
   "botWizard.rules.effect.allow": "Allow",

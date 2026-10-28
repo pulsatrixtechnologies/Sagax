@@ -35,6 +35,7 @@ import { PaneSection } from "../bot-settings/PaneSection";
 import { useBotSettingsDerived } from "../bot-settings/useBotSettingsDerived";
 import { WorksOnSetting } from "../computer/WorksOnSetting";
 import { HelpTip, PILL, PillSelect, SwitchRow } from "../SettingsPrimitives";
+import { ModelPicker } from "../ModelPicker";
 
 export interface StepProps {
   bot: Bot;
@@ -89,6 +90,9 @@ export function IdentityStep({ bot, draft, patch }: StepProps) {
       .catch((error: unknown) => setPrimaryError(error instanceof Error ? error.message : String(error)));
   };
   const showPrimary = canEditBotField(state.config, bot, "chiefOfStaff");
+  // #1451: the model is chosen here, among the models this person can run
+  // (the model picker lists only those), so the bot is ready when created.
+  const showModel = bot.host?.kind !== "machine" && canEditBotField(state.config, bot, "modelSelection");
   const nameId = useId();
   const descriptionId = useId();
   const roleLabelId = useId();
@@ -132,6 +136,20 @@ export function IdentityStep({ bot, draft, patch }: StepProps) {
           value={bot.description} onChange={(event) => derived.patch({ description: event.target.value })} data-wizard-description="" />
         <p className="px-1 text-[12px] leading-relaxed text-ink-secondary" data-wizard-description-help="">{t("botWizard.identity.descriptionHelp")}</p>
       </div>
+      {showModel && (
+        <div className="rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3" data-wizard-model="">
+          <ModelPicker
+            bot={bot}
+            contained
+            label={
+              <div>
+                <div className="text-[13px] leading-[18px] text-ink">{t("botWizard.identity.model")}</div>
+                <div className="mt-0.5 text-[12px] leading-4 text-ink-secondary">{t("botWizard.identity.modelHelp")}</div>
+              </div>
+            }
+          />
+        </div>
+      )}
       {showPrimary && (
         <div className="rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-3">
           <SwitchRow
