@@ -325,6 +325,9 @@ import { bundledKnowledgeIndex } from "./self-knowledge.ts";
 import { createSelfKnowledgeInternalRoutes } from "./routes/self-knowledge-internal.ts";
 import { createWebSearchInternalRoutes } from "./routes/web-search-internal.ts";
 import { createWebSearchRoutes } from "./routes/web-search.ts";
+import { createWebBotAuthRoutes } from "./routes/web-bot-auth.ts";
+import { applySignedBrowserHeaders } from "./web-bot-auth-apply.ts";
+import { browserOwner, noteBrowserOwner, signBrowserVisit, WebBotAuthStore, webBotAuthScope } from "./web-bot-auth.ts";
 import { createWebSearchStore, webSearchScope } from "./web-search/store.ts";
 import { engineHasNativeWebSearch } from "./web-search/native.ts";
 import { isIP } from "node:net";
@@ -5065,8 +5068,21 @@ browserEgress.configure({
   host: DESKTOP_MANAGED ? "desktop" : CLOUD_HOME ? "cloud" : "server", config: () => cfg.browserEngine?.egress,
   ...(sharedEgressHost ? { sameOwner: (session: string, engineBot: string | undefined) => sameOwnerBrowserBots(browserSessionBots.get(session), engineBot, (id) => store.bot(id)) } : {}),
 });
+const webBotAuthStore = new WebBotAuthStore(DATA_DIR);
 const browserRuntime = new BrowserRuntime({
   egressNotice: (session) => browserEgress.takeNotice(session),
+  // Sign the bot's own browser visits unless this person turned it off.
+  // The person's attached browser (CDP) is not the bot's. A failed signature
+  // does not open the page. The header is not a login.
+  signNavigation: async ({ session, spec, url }) => {
+    if (spec.env.AGENT_BROWSER_CDP) return;
+    if (url !== "" && !/^https?:\/\//i.test(url)) return;
+    const organization = IDENTITY.kind === "perspicax";
+    const scope = webBotAuthScope(organization, organization ? browserOwner(session) : null);
+    if (!scope || !webBotAuthStore.enabled(scope)) return;
+    const signed = signBrowserVisit(webBotAuthStore.material(scope), Date.now());
+    await applySignedBrowserHeaders(spec.command, browserRuntimeEnv({ ...spec.env, AGENT_BROWSER_SESSION: session }), signed.headers);
+  },
   // The bot's restart_browser tool. An open Browser panel watched the old
   // browser; drop its stream the way the panel's own Restart button does.
   closeBrowser: async (session, spec) => {
@@ -5229,6 +5245,8 @@ async function browserIntegration(botId: string, requestedProfile: string | unde
   const profileTarget = !confidential && profile && profile !== "guest" && !ownChrome ? browserProfilePartitionTarget(cfg, profile) ?? personalProfileTarget(botId, profile) : null;
   const partitionId = confidential || profile === "guest" ? "guest" : ownChrome ? MY_CHROME_PROFILE : (profileTarget?.partitionId ?? "");
   const session = currentBrowserSession(botId, profile, threadForSession);
+  const browserBot = store.bot(botId);
+  noteBrowserOwner(session, IDENTITY.kind === "perspicax" && browserBot ? effectiveBotOwner(browserBot).toLowerCase() : null);
   const persistent = !confidential && profile !== "guest" && !ownChrome;
   let attachCdpUrl = browserEngineAttachCdpUrl(cfg) ?? undefined;
   if (ownChrome) {
@@ -35830,6 +35848,10 @@ ROUTES.push(createWebSearchRoutes({
   store: webSearchStore,
   scope: (auth) => webSearchScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
   refuseAddress: webSearchAddressRefusal,
+}));
+ROUTES.push(createWebBotAuthRoutes({
+  store: webBotAuthStore,
+  scope: (auth) => webBotAuthScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
 }));
 // A person's own Experimental switches and browser profiles (#1098,
 // server/routes/person-settings.ts): theirs, on an organization server.
