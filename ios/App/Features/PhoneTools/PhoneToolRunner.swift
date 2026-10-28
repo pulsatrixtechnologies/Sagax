@@ -165,7 +165,7 @@ enum PhoneToolRunner {
             for house in homes where wanted == nil || house.name.localizedCaseInsensitiveCompare(wanted!) == .orderedSame {
                 if let scene = house.actionSets.first(where: { $0.name.localizedCaseInsensitiveCompare(sceneName) == .orderedSame }) {
                     try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
-                        scene.execute { error in
+                        house.executeActionSet(scene) { error in
                             if let error { done.resume(throwing: error) } else { done.resume() }
                         }
                     }
@@ -216,7 +216,7 @@ enum PhoneToolRunner {
             _ = try await manager.schedule(id: UUID(), configuration: configuration)
             return PhoneToolShaping.createdAlarm(PhoneAlarm(label: label, hour: hour, minute: minute, enabled: true))
         }
-        let found = manager.alarms.compactMap(listedAlarm)
+        let found = try manager.alarms.compactMap(listedAlarm)
         return PhoneToolShaping.alarms(found, limit: request.int("limit"))
     }
 
