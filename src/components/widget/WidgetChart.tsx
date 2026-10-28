@@ -11,6 +11,23 @@ import type { WidgetNode } from "../../../shared/widget";
 import { WIDGET_CHART_WIDTH, widgetChartHeight, widgetChartSpec } from "../../../shared/widget-chart";
 import { boxStyle } from "./widget-style";
 
+function chartCite(node: WidgetNode): { pieces: string; asOf?: string } | null {
+  const sources = Array.isArray(node.sources) ? node.sources as Array<{ piece?: unknown; asOf?: unknown }> : [];
+  const pieces = sources.map((source) => typeof source.piece === "string" ? source.piece.trim() : "").filter(Boolean);
+  const asOf = typeof node.asOf === "string" ? node.asOf : sources.find((source) => typeof source.asOf === "string")?.asOf;
+  if (!pieces.length && typeof asOf !== "string") return null;
+  return { pieces: pieces.join(", "), ...(typeof asOf === "string" ? { asOf } : {}) };
+}
+
+function ChartCite({ node }: { node: WidgetNode }) {
+  const cite = chartCite(node);
+  if (!cite) return null;
+  const text = cite.pieces && cite.asOf
+    ? t("rich.chart.cited", { pieces: cite.pieces, asOf: cite.asOf })
+    : cite.asOf ? t("rich.chart.citedDate", { asOf: cite.asOf }) : cite.pieces;
+  return <p className="mt-1 text-[11.5px] text-ink-tertiary" data-chart-sources="">{text}</p>;
+}
+
 export function WidgetChart({ node }: { node: WidgetNode }) {
   const theme = useColorScheme();
   const host = useRef<HTMLDivElement>(null);
@@ -74,6 +91,7 @@ export function WidgetChart({ node }: { node: WidgetNode }) {
         style={{ height }}
       />
       {failed && <p role="alert" className="mt-1 text-[12px] text-danger">{t("data.chart.failed", { reason: failed })}</p>}
+      <ChartCite node={node} />
     </div>
   );
 }

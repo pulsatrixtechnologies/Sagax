@@ -96,6 +96,9 @@ describe("parseWidgetInput", () => {
     expect(row.children![2]).toMatchObject({ minWidth: 2000 });
     expect("width" in row.children![2] || "height" in row.children![2]).toBe(false);
     expect((chart.data as Array<{ v: number }>).map((point) => point.v)).toEqual([-1e12, 1e12, 12.5]);
+    const cited = parsed({ type: "Card", children: [{ type: "Chart", xAxis: "d", series: [{ dataKey: "v" }], data: [{ d: "Mon", v: 1 }], sources: [{ piece: "Monday inbox", asOf: "2026-10-26" }], asOf: "2026-10-26" }] });
+    expect(cited.children![0]).toMatchObject({ sources: [{ piece: "Monday inbox", asOf: "2026-10-26" }], asOf: "2026-10-26" });
+    expect(widgetToText(cited)).toContain("Monday inbox, as of 2026-10-26");
     expect(far).toMatchObject({ defaultValue: "2026-10-14" });
     expect("min" in far).toBe(false);
     expect(crossed).toMatchObject({ min: "2026-12-01" });

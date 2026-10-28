@@ -354,6 +354,25 @@ const inputType: Reader = (raw, path) => {
 const imageSrc: Reader = (raw, path) => (isWebUrl(raw, ["https:"]) ? raw : fail(path, "must be an https url"));
 
 const CHART_MAX = 1e12;
+const CHART_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+const chartAsOf: Reader = (raw, path) => {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  return typeof raw === "string" && CHART_DAY.test(raw) ? raw : fail(path, "is a date, YYYY-MM-DD");
+};
+
+/** Where a chart's numbers came from. Absent: the chart draws as before. */
+const chartSources: Reader = (raw, path) => {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw) || raw.length > 8) return fail(path, "is a list of up to 8 sources");
+  return raw.map((item, index) => {
+    const at = `${path}[${index}]`;
+    if (typeof item === "string" && item.trim()) return { piece: item.trim().slice(0, 200) };
+    if (!isRecord(item) || typeof item.piece !== "string" || !item.piece.trim()) return fail(at, "names the piece the numbers came from");
+    const asOf = chartAsOf(item.asOf, `${at}.asOf`);
+    return { piece: item.piece.trim().slice(0, 200), ...(typeof asOf === "string" ? { asOf } : {}) };
+  });
+};
 
 const chartData: Reader = (raw, path) => {
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > WIDGET_LIMITS.chartRows) return fail(path, `needs 1 to ${WIDGET_LIMITS.chartRows} rows`);
@@ -448,7 +467,7 @@ const SPECS: Record<string, NodeSpec> = {
     },
   },
   Icon: { props: { name: icon("dot"), color: inkColor, size: oneOf("xs", "sm", "md", "lg", "xl", "2xl", "3xl") } },
-  Chart: { props: { data: chartData, series: chartSeries, xAxis: chartAxis, showYAxis: on, showLegend: off, showGrid: off, height: length(400), aspectRatio, flex: flexShare, width: length() } },
+  Chart: { props: { data: chartData, series: chartSeries, xAxis: chartAxis, showYAxis: on, showLegend: off, showGrid: off, height: length(400), aspectRatio, flex: flexShare, width: length(), sources: chartSources, asOf: chartAsOf } },
   Badge: { props: { label: line(WIDGET_LIMITS.label, "nonEmpty"), color: oneOf("secondary", "success", "danger", "warning", "info", "discovery"), variant: oneOf("soft", "solid", "outline", "dot"), size: oneOf("sm", "md", "lg"), pill: off } },
   Progress: { props: { value: progressValue, label: line(WIDGET_LIMITS.caption) } },
   Button: { props: { label: line(WIDGET_LIMITS.label), iconStart: icon(), iconEnd: icon(), block: on, disabled: on, submit: on, onClickAction: action } },
@@ -894,8 +913,14 @@ function inlineText(node: WidgetNode): string {
       return node.alt ? `[image: ${String(node.alt)}]` : "[image]";
     case "Progress":
       return [widgetString(node, "label"), `${Math.round((widgetNumber(node, "value") ?? 0) * 100)}%`].filter(Boolean).join(" ");
-    case "Chart":
-      return `[chart: ${(Array.isArray(node.series) ? node.series as Array<{ label?: string; dataKey: string }> : []).map((series) => series.label ?? series.dataKey).join(", ")}]`;
+    case "Chart": {
+      const series = (Array.isArray(node.series) ? node.series as Array<{ label?: string; dataKey: string }> : []).map((item) => item.label ?? item.dataKey).join(", ");
+      const sources = Array.isArray(node.sources) ? node.sources as Array<{ piece?: string; asOf?: string }> : [];
+      const pieces = sources.map((source) => source.piece?.trim()).filter((piece): piece is string => Boolean(piece));
+      const asOf = typeof node.asOf === "string" ? node.asOf : sources.find((source) => source.asOf)?.asOf;
+      const cite = [pieces.join(", "), asOf ? `as of ${asOf}` : ""].filter(Boolean).join(", ");
+      return `[chart: ${series}${cite ? ` (${cite})` : ""}]`;
+    }
     case "Checkbox":
       return `[ ] ${widgetString(node, "label") ?? String(node.name)}`;
     case "Select": case "RadioGroup":

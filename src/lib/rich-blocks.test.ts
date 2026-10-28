@@ -199,6 +199,10 @@ describe("charts", () => {
   it("reads labels plus series JSON", () => {
     const spec = ok(parseChartSpec('{"type":"line","title":"Load","labels":["a","b"],"series":[{"name":"cpu","data":[1,"2"]}]}'));
     expect(spec).toMatchObject({ type: "line", title: "Load", labels: ["a", "b"], series: [{ name: "cpu", values: [1, 2] }] });
+    expect(ok(parseChartSpec('{"type":"line","labels":["a"],"series":[{"name":"cpu","data":[1]}],"sources":[{"piece":"Monday inbox","asOf":"2026-10-26"}],"asOf":"2026-10-26"}'))).toMatchObject({
+      sources: [{ piece: "Monday inbox", asOf: "2026-10-26" }],
+      asOf: "2026-10-26",
+    });
   });
 
   it("reads row-object JSON and Chart.js datasets", () => {

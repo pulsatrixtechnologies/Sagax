@@ -399,6 +399,13 @@ export interface ChartSeries {
   values: Array<number | null>;
 }
 
+export interface ChartSource {
+  /** The piece the numbers came from. */
+  piece: string;
+  /** That piece's date, YYYY-MM-DD. */
+  asOf?: string;
+}
+
 export interface ChartSpec {
   type: ChartType;
   title?: string;
@@ -408,6 +415,10 @@ export interface ChartSpec {
   series: ChartSeries[];
   /** Series dropped past the palette's eight slots. */
   truncatedSeries: number;
+  /** Named pieces under the chart. Absent: no line. */
+  sources?: ChartSource[];
+  /** One date for the whole chart, when the pieces do not each carry one. */
+  asOf?: string;
 }
 
 export const CHART_MAX_SERIES = 8;
@@ -428,6 +439,20 @@ function chartType(value: unknown): ChartType {
 }
 
 const asText = (value: unknown): string | undefined => (typeof value === "string" && value.trim() ? value.trim().slice(0, 200) : undefined);
+const chartDay = (value: unknown): string | undefined => (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined);
+
+function chartSourcesOf(value: unknown): ChartSource[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const sources = value.flatMap((item): ChartSource[] => {
+    if (typeof item === "string" && item.trim()) return [{ piece: item.trim().slice(0, 200) }];
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const row = item as { piece?: unknown; asOf?: unknown };
+    if (typeof row.piece !== "string" || !row.piece.trim()) return [];
+    const asOf = chartDay(row.asOf);
+    return [{ piece: row.piece.trim().slice(0, 200), ...(asOf ? { asOf } : {}) }];
+  }).slice(0, 8);
+  return sources.length ? sources : undefined;
+}
 
 function chartNumber(value: unknown): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -485,6 +510,8 @@ export function parseChartSpec(code: string): ChartSpec | { error: string } {
       title: asText(value.title),
       xLabel: asText(value.xLabel ?? value.x_label ?? value.xAxis),
       yLabel: asText(value.yLabel ?? value.y_label ?? value.yAxis),
+      sources: chartSourcesOf(value.sources),
+      asOf: chartDay(value.asOf),
     };
     if (Array.isArray(value.data) && value.data.every((row) => row && typeof row === "object" && !Array.isArray(row))) {
       const rows = value.data as Array<Record<string, unknown>>;
