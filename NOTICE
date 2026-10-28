@@ -76,6 +76,14 @@ License 2.0), Pomicons and Weather Icons (SIL OFL 1.1), Devicons, Octicons,
 Seti-UI, Powerline and IEC Power Symbols (MIT) and Font Logos (Unlicense).
 Details, source and checksums: third_party/nerd-fonts-symbols.
 
+The interface font is Geist and the code font is Geist Mono, Copyright 2024
+The Geist Project Authors (https://github.com/vercel/geist-font), used under
+the SIL Open Font License 1.1 (third_party/geist/OFL.txt and OFL-Mono.txt).
+The desktop bundles the unmodified variable WOFF2 files of @fontsource-variable/geist
+and @fontsource-variable/geist-mono 5.3.0; the iOS app bundles the same
+variable fonts as TrueType (ios/App/Desktop/Fonts). Nothing is fetched at run
+time.
+
 The iOS companion app bundles the unmodified mermaid library (mermaid.min.js,
 the version pinned by pnpm-lock.yaml), Copyright (c) 2014 - 2022 Knut
 Sveidqvist, under the MIT License (third_party/mermaid/LICENSE), to draw

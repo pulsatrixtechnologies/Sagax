@@ -83,7 +83,7 @@ struct ApprovalDetailSheet: View {
                         .padding(.bottom, 8)
                     ScrollView(.vertical) {
                         Text(verbatim: detail)
-                            .font(.system(size: 13, design: .monospaced))
+                            .font(Theme.mono(13))
                             .foregroundStyle(Theme.textSecondary)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -106,7 +106,7 @@ struct ApprovalDetailSheet: View {
                         .padding(.bottom, 8)
                     ScrollView(.vertical) {
                         Text(verbatim: arguments)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(Theme.mono(12))
                             .foregroundStyle(Theme.textSecondary)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)

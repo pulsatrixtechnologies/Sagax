@@ -71,7 +71,7 @@ public struct AgentThoughtChamberView: View {
                 Spacer()
                 
                 Text("\(total) \(total == 1 ? "step" : "steps")")
-                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                    .font(Theme.mono(9.5, .medium))
                     .foregroundColor(Theme.textSecondary)
                 
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
@@ -125,7 +125,7 @@ public struct AgentThoughtChamberView: View {
     private func stepRow(number: Int, step: String, isDark: Bool) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Text(String(number) + ".")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(Theme.mono(10, .bold))
                 .foregroundColor(mascotColor)
             
             Text(step)

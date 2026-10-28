@@ -44,13 +44,13 @@ struct CommandAllowlistSection: View {
                     HStack(alignment: .top, spacing: 10) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(verbatim: rule.command)
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(Theme.mono(12))
                                 .foregroundStyle(Theme.textPrimary)
                                 .textSelection(.enabled)
                             Text(verbatim: providerName(rule.providerInstanceId))
                                 .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
                             Text(verbatim: rule.cwd)
-                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Theme.textSecondary)
+                                .font(Theme.mono(11)).foregroundStyle(Theme.textSecondary)
                         }
                         Spacer(minLength: 6)
                         Button {
@@ -82,13 +82,13 @@ struct CommandAllowlistSection: View {
                 Section {
                     LabeledContent(String(localized: "Provider"), value: providerName(context.providerInstanceId))
                     TextField(String(localized: "Command"), text: $command, axis: .vertical)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(Theme.mono(12))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .lineLimit(2...4)
                         .disabled(saving != nil)
                     TextField(String(localized: "Working folder"), text: $cwd)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(Theme.mono(12))
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .disabled(saving != nil)

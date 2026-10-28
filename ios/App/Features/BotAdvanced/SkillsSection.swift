@@ -222,7 +222,7 @@ struct BotSkillsSection: View {
                 Button { Task { await model.view(skill) } } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: skill.name)
-                            .font(.system(size: 13, design: .monospaced))
+                            .font(Theme.mono(13))
                             .foregroundStyle(Theme.textPrimary)
                         if !skill.description.isEmpty {
                             Text(verbatim: skill.description)
@@ -282,7 +282,7 @@ struct SkillReviewSheet: View {
                             .font(.footnote).foregroundStyle(Theme.warning)
                     }
                     Text(verbatim: sheet.text)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(Theme.mono(12))
                         .foregroundStyle(Theme.textPrimary)
                         .textSelection(.enabled)
                         .accessibilityLabel(Text(String(localized: "Full SKILL.md for \(sheet.skill.name)")))
@@ -317,7 +317,7 @@ struct SkillTextSheet: View {
         NavigationStack {
             ThemedList {
                 Text(verbatim: sheet.text)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
                     .accessibilityLabel(Text(String(localized: "Full SKILL.md for \(sheet.skill.name)")))
@@ -352,7 +352,7 @@ struct OrgSkillsSection: View {
                     ForEach(offer.skills) { skill in
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: skill.name).font(.system(size: 13, design: .monospaced)).foregroundStyle(Theme.textPrimary)
+                                Text(verbatim: skill.name).font(Theme.mono(13)).foregroundStyle(Theme.textPrimary)
                                 Text(verbatim: skill.description).font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(2)
                                 Text(String(localized: "\(skill.packageName) \(skill.release) · \(skill.publisher)"))
                                     .font(.system(size: 11)).foregroundStyle(Theme.textSecondary).lineLimit(1)

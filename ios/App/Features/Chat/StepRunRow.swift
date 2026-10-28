@@ -235,7 +235,7 @@ struct StepDetail: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(verbatim: words.t("step.detail.tool")).font(.caption2.weight(.semibold)).foregroundStyle(Theme.textTertiary)
                 Text(verbatim: toolName)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.textSecondary)
                     .textSelection(.enabled)
             }
@@ -246,13 +246,13 @@ struct StepDetail: View {
                         Text(verbatim: pair.key).foregroundStyle(Theme.textTertiary)
                         Text(verbatim: pair.value).foregroundStyle(Theme.textSecondary).textSelection(.enabled)
                     }
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(Theme.mono(12))
                 }
             }
             if let result {
                 Text(verbatim: words.t("step.detail.result")).font(.caption2.weight(.semibold)).foregroundStyle(Theme.textTertiary)
                 Text(verbatim: result.text)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.textSecondary)
                     .textSelection(.enabled)
             }

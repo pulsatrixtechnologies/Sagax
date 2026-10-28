@@ -77,7 +77,7 @@ struct CodeBlockView: View {
                     ? Text(DesktopCodeHighlight.attributed(code, language: language, ink: theme.ink, dark: theme.dark))
                     : Text(verbatim: code)
                 let text = (body + caret)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(Theme.mono(12))
                     .tracking(DesktopChatMetrics.monoTracking(12))
                     .lineSpacing(18 - UIFont.monospacedSystemFont(ofSize: 12, weight: .regular).lineHeight)
                     // the 18 pt line box's half-leading above and below
@@ -112,7 +112,7 @@ struct CodeBlockView: View {
         VStack(alignment: .leading, spacing: 4) {
             if let language, !language.isEmpty {
                 Text(verbatim: CodeBlocks.languageDisplayName(language))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(Theme.mono(11, .medium))
                     .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
             codeText

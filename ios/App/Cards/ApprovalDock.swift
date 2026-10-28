@@ -100,7 +100,7 @@ struct ApprovalDock: View {
                 } else if let detail = ApprovalHeading.detail(pending.card) {
                     ScrollView(.vertical) {
                         Text(detail)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(Theme.mono(12))
                             .foregroundStyle(Theme.attentionText)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)

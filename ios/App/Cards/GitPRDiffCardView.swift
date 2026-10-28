@@ -53,10 +53,10 @@ public struct GitPRDiffCardView: View {
                 // Diff Delta (+ / -)
                 HStack(spacing: 4) {
                     Text("+\(additions)")
-                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                        .font(Theme.mono(10.5, .bold))
                         .foregroundColor(Theme.success)
                     Text("-\(deletions)")
-                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                        .font(Theme.mono(10.5, .bold))
                         .foregroundColor(Theme.danger)
                 }
                 .padding(.horizontal, 6)
@@ -148,7 +148,7 @@ public struct GitPRDiffCardView: View {
         let isHeader = line.hasPrefix("@@") || line.hasPrefix("diff")
         
         Text(line)
-            .font(.system(size: 10, design: .monospaced))
+            .font(Theme.mono(10))
             .foregroundColor(
                 isAddition ? Theme.success :
                 isDeletion ? Theme.danger :

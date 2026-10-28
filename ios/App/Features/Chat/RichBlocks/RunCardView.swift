@@ -148,7 +148,7 @@ struct RunCardView: View {
                     .fixedSize()
             }
             Text(verbatim: step.command)
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(Theme.mono(11.5))
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)

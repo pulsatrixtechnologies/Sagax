@@ -587,7 +587,7 @@ export interface MermaidDiagramProps {
   code: string;
 }
 
-const MERMAID_FONT = '"Inter", -apple-system, BlinkMacSystemFont, "SF UI Text", "Segoe UI", system-ui, sans-serif';
+const MERMAID_FONT = '"Geist Variable", -apple-system, BlinkMacSystemFont, "SF UI Text", "Segoe UI", system-ui, sans-serif';
 const MERMAID_DEFAULT_FONT_PX = 14;
 
 /** The app's text size where the diagram sits, so a diagram's labels follow

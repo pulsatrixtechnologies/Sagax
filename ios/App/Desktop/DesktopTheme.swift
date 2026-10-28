@@ -10,9 +10,9 @@
 // same roles from their phone palette, so every skin the Appearance picker
 // offers dresses the desktop shell.
 //
-// Fonts: Pulsatrix and Pulsatrix Light set Geist Variable (OFL-1.1, bundled:
-// Desktop/Fonts). Inter is not bundled: those skins read as the system face,
-// as on the phone. Hibou 98 uses Verdana for Tahoma.
+// Fonts: every skin but Hibou 98 sets Geist Variable (OFL-1.1, bundled:
+// Desktop/Fonts, listed in UIAppFonts), as on the desktop app.
+// Hibou 98 uses Verdana for Tahoma.
 import SwiftUI
 import UIKit
 import CoreText
@@ -166,21 +166,21 @@ struct DesktopTheme: Equatable {
         .pulsatrixLight: Extra(sidebar: "#24324d", sidebarInk: "#eef2fb", sidebarInkSecondary: "#c3cce0", sidebarHover: "#eef2fb12",
                                sidebarSelected: "#6b9bff38", sidebarHairline: "#41526f", glow: (0.08, 0.05), radii: (8, 12), face: .geist),
         .midnight: Extra(sidebar: "#0e0e0e", sidebarInk: "#f5f5f5", sidebarInkSecondary: "#f5f5f5a8", sidebarHover: "#f5f5f50f",
-                         sidebarSelected: "#f5f5f51a", sidebarHairline: "#333333", radii: (8, 12), face: .system),
+                         sidebarSelected: "#f5f5f51a", sidebarHairline: "#333333", radii: (8, 12), face: .geist),
         .atelier: Extra(sidebar: "#fbf8f2", sidebarInk: "#1a1a18", sidebarInkSecondary: "#6b6559", sidebarHover: "#7777772c",
-                        sidebarSelected: "#77777752", sidebarHairline: "#c8bda8", radii: (6, 10), face: .system),
+                        sidebarSelected: "#77777752", sidebarHairline: "#c8bda8", radii: (6, 10), face: .geist),
         .foundry: Extra(sidebar: "#171410", sidebarInk: "#f4efe4", sidebarInkSecondary: "#b0a696", sidebarHover: "#7777772c",
-                        sidebarSelected: "#77777752", sidebarHairline: "#3d3529", radii: (4, 8), face: .system),
+                        sidebarSelected: "#77777752", sidebarHairline: "#3d3529", radii: (4, 8), face: .geist),
         .lagoon: Extra(sidebar: "#ecf4f3", sidebarInk: "#14201f", sidebarInkSecondary: "#4d5c5b", sidebarHover: "#7777772c",
-                       sidebarSelected: "#77777752", sidebarHairline: "#aebfbd", radii: (8, 14), face: .system),
+                       sidebarSelected: "#77777752", sidebarHairline: "#aebfbd", radii: (8, 14), face: .geist),
         .graphite: Extra(sidebar: "#181a1d", sidebarInk: "#f2f4f7", sidebarInkSecondary: "#b3b8c2", sidebarHover: "#7777772c",
-                         sidebarSelected: "#77777752", sidebarHairline: "#3b4048", radii: (6, 10), face: .system),
+                         sidebarSelected: "#77777752", sidebarHairline: "#3b4048", radii: (6, 10), face: .geist),
         .linen: Extra(sidebar: "#f5f6f8", sidebarInk: "#1d2229", sidebarInkSecondary: "#59616c", sidebarHover: "#7777772c",
-                      sidebarSelected: "#77777752", sidebarHairline: "#b4bbc5", radii: (8, 12), face: .system),
+                      sidebarSelected: "#77777752", sidebarHairline: "#b4bbc5", radii: (8, 12), face: .geist),
         .dusk: Extra(sidebar: "#19161c", sidebarInk: "#f4eff6", sidebarInkSecondary: "#b9afbd", sidebarHover: "#7777772c",
-                     sidebarSelected: "#77777752", sidebarHairline: "#403847", radii: (8, 12), face: .system),
+                     sidebarSelected: "#77777752", sidebarHairline: "#403847", radii: (8, 12), face: .geist),
         .daylight: Extra(sidebar: "#f7f7f7", sidebarInk: "#0d0d0d", sidebarInkSecondary: "#575757", sidebarHover: "#7777772c",
-                         sidebarSelected: "#77777752", sidebarHairline: "#c8c8c8", composerRing: "#e4e4e4", radii: (8, 14), face: .system),
+                         sidebarSelected: "#77777752", sidebarHairline: "#c8c8c8", composerRing: "#e4e4e4", radii: (8, 14), face: .geist),
         .retro98: Extra(sidebar: "#c0c0c0", sidebarInk: "#000000", sidebarInkSecondary: "#3c3c3c", sidebarHover: "#00008014",
                         sidebarSelected: "#00008033", sidebarHairline: "#808080", composerRing: "#808080", radii: (0, 0), face: .retro),
     ]
@@ -224,7 +224,7 @@ struct DesktopTheme: Equatable {
             bubbleUser: p.bubbleUser.color, bubbleUserInk: p.bubbleUserText.color,
             success: p.success.color, danger: p.danger.color, warning: p.warning.color,
             elevated: p.textPrimary.opacity(0.03).over(p.inset).color,
-            glow: (0, 0), radiusLg: 8, radiusXl: 12, face: .system
+            glow: (0, 0), radiusLg: 8, radiusXl: 12, face: .geist
         )
     }
 
@@ -271,17 +271,27 @@ extension EnvironmentValues {
 
 // MARK: - Geist
 
-/// Geist Variable, bundled (Desktop/Fonts/Geist-Variable.ttf, the Latin
-/// subset of `@fontsource-variable/geist` 5.3.0 as TrueType; OFL-1.1 beside
-/// it). Registered for the process on first use; each weight is the `wght`
-/// axis set on a descriptor, so 500 is the font's real medium.
+/// Geist Variable and Geist Mono Variable, bundled (Desktop/Fonts/*.ttf, the
+/// Latin subsets of `@fontsource-variable/geist` and `geist-mono` 5.3.0 as
+/// TrueType; OFL-1.1 beside them) and listed in `UIAppFonts` (project.yml), so
+/// UIKit registers them at launch. The runtime registration below stays as a
+/// safety net (previews, tests). Each weight is the `wght` axis set on a
+/// descriptor, so 500 is the font's real medium.
 enum DesktopFonts {
     private static let registered: Bool = {
         guard let url = Bundle.main.url(forResource: "Geist-Variable", withExtension: "ttf") else { return false }
         var error: Unmanaged<CFError>?
         let ok = CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
-        // already registered (a second scene) is fine
+        // already registered (UIAppFonts, a second scene) is fine
         return ok || UIFont(name: "Geist-Regular", size: 12) != nil
+    }()
+
+    private static let monoRegistered: Bool = {
+        if UIFont(name: "GeistMono-Regular", size: 12) != nil { return true }
+        guard let url = Bundle.main.url(forResource: "GeistMono-Variable", withExtension: "ttf") else { return false }
+        var error: Unmanaged<CFError>?
+        return CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error)
+            || UIFont(name: "GeistMono-Regular", size: 12) != nil
     }()
 
     /// True when the bundled face is available.
@@ -295,6 +305,23 @@ enum DesktopFonts {
         let key = "\(size)-\(value)"
         if let font = cache[key] { return font }
         let font = Font(uiGeist(size, weight) as CTFont)
+        cache[key] = font
+        return font
+    }
+
+    /// Geist Mono at a size: code, monospaced blocks and numeric chips. System
+    /// monospaced behind it when the file is missing.
+    static func geistMono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        guard monoRegistered else { return .system(size: size, weight: weight, design: .monospaced) }
+        let value = wght(weight)
+        let key = "mono-\(size)-\(value)"
+        if let font = cache[key] { return font }
+        let variation = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
+        let descriptor = UIFontDescriptor(fontAttributes: [
+            .name: "GeistMono-Regular",
+            variation: [0x7767_6874 as NSNumber: value as NSNumber],
+        ])
+        let font = Font(UIFont(descriptor: descriptor, size: size) as CTFont)
         cache[key] = font
         return font
     }

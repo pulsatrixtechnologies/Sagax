@@ -492,7 +492,7 @@ struct DesktopModelPicker: View {
                 if terminalOpen {
                     HStack(spacing: 6) {
                         Text(verbatim: update.command)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(Theme.mono(11))
                             .foregroundStyle(theme.inkSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)

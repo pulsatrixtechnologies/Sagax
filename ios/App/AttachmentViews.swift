@@ -577,7 +577,7 @@ struct FilePreviewView: View {
                 case .text:
                     ScrollView([.horizontal, .vertical]) {
                         Text(item.text)
-                            .font(.system(size: 14, design: .monospaced))
+                            .font(Theme.mono(14))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .topLeading)
                             .padding(20)

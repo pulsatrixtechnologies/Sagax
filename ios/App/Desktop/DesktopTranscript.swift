@@ -667,7 +667,7 @@ struct DesktopTechnicalDetails: View {
                 .padding(.top, 6)
                 ScrollView(.vertical) {
                     Text(verbatim: args)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(Theme.mono(12))
                         .foregroundStyle(theme.ink)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -687,7 +687,7 @@ struct DesktopTechnicalDetails: View {
         GridRow {
             label.foregroundStyle(theme.inkSecondary)
             Text(verbatim: value)
-                .font(.system(size: 12, design: .monospaced))
+                .font(Theme.mono(12))
                 .foregroundStyle(theme.ink)
                 .textSelection(.enabled)
         }

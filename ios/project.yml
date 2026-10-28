@@ -158,6 +158,11 @@ targets:
         # read when Xcode generates the Info.plist itself, and this target
         # supplies one, so they are silently ignored.
         UILaunchScreen: {}
+        # Geist and Geist Mono (OFL-1.1), the interface and code faces. Listed
+        # so UIKit registers them at launch; the files sit flat in the bundle.
+        UIAppFonts:
+          - Geist-Variable.ttf
+          - GeistMono-Variable.ttf
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

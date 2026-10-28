@@ -362,7 +362,7 @@ struct DesktopMcpServersPage: View {
                         .background(enabled ? theme.success.opacity(0.1) : theme.control, in: Capsule())
                 }
                 Text(verbatim: MCPServerRules.detailLine(server))
-                    .font(.system(size: 11.5, design: .monospaced))
+                    .font(Theme.mono(11.5))
                     .foregroundStyle(theme.inkSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)

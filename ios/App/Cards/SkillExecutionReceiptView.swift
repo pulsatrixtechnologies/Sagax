@@ -47,7 +47,7 @@ public struct SkillExecutionReceiptView: View {
                         .foregroundStyle(Theme.textPrimary)
                     if durationMs > 0 {
                         Text("• \(durationMs)ms")
-                            .font(.system(size: 9.5, design: .monospaced))
+                            .font(Theme.mono(9.5))
                             .foregroundStyle(Theme.textSecondary)
                     }
 
@@ -71,10 +71,10 @@ public struct SkillExecutionReceiptView: View {
                     if !parameters.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("INPUT")
-                                .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                                .font(Theme.mono(8.5, .heavy))
                                 .foregroundColor(Theme.accentText)
                             Text(parameters)
-                                .font(.system(size: 10, design: .monospaced))
+                                .font(Theme.mono(10))
                                 .foregroundStyle(Theme.textPrimary)
                         }
                     }
@@ -82,7 +82,7 @@ public struct SkillExecutionReceiptView: View {
                     if !output.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(outputIsProse ? "REPORT" : "OUTPUT")
-                                .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                                .font(Theme.mono(8.5, .heavy))
                                 .foregroundColor(Theme.success)
                             if outputIsProse {
                                 Text(verbatim: output)
@@ -92,7 +92,7 @@ public struct SkillExecutionReceiptView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             } else {
                                 Text(output)
-                                    .font(.system(size: 10, design: .monospaced))
+                                    .font(Theme.mono(10))
                                     .foregroundStyle(Theme.textPrimary)
                                     .lineLimit(6)
                             }

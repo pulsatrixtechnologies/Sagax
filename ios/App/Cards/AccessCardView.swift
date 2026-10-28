@@ -48,7 +48,7 @@ struct AccessCardView: View {
                 }
                 if let detail = lines.detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.system(size: 11.5, design: .monospaced))
+                        .font(Theme.mono(11.5))
                         .foregroundStyle(Theme.textSecondary)
                         .textSelection(.enabled)
                 }

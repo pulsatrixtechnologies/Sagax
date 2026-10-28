@@ -191,7 +191,7 @@ struct DesktopShortcutsModal: View {
             HStack(spacing: 4) {
                 ForEach(Array(item.keys.enumerated()), id: \.offset) { _, key in
                     Text(verbatim: key)
-                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                        .font(Theme.mono(11.5, .semibold))
                         .foregroundStyle(theme.ink)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 22, minHeight: 23)

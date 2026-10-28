@@ -197,7 +197,7 @@ enum Theme {
         static var preview: SwiftUI.Font { Theme.font(12.5) }
         static var tab: SwiftUI.Font { Theme.font(13) }
         static var profileName: SwiftUI.Font { Theme.font(18, .semibold) }
-        static let code = SwiftUI.Font.system(size: 12, design: .monospaced)
+        static var code: SwiftUI.Font { Theme.mono(12) }
         static var timestamp: SwiftUI.Font { Theme.font(11) }
         static var appName: SwiftUI.Font { Theme.font(17) }
     }
@@ -208,13 +208,21 @@ enum Theme {
     static func font(_ size: CGFloat, _ weight: SwiftUI.Font.Weight = .regular) -> SwiftUI.Font {
         switch ThemeRuntime.typeface {
         case .system:
-            if ThemeRuntime.desktopFace { return DesktopFonts.geist(size, weight) }
+            // Geist on every skin that does not impose a face, iPhone and iPad.
+            if DesktopFonts.available { return DesktopFonts.geist(size, weight) }
             return .system(size: size, weight: weight)
         case .serif: return .system(size: size, weight: weight, design: .serif)
         case .retro:
             let bold = weight == .semibold || weight == .bold || weight == .heavy || weight == .black
             return .custom(bold ? "Verdana-Bold" : "Verdana", size: size * 0.9)
         }
+    }
+
+    /// Code and monospaced text: Geist Mono, system monospaced behind it.
+    /// Hibou 98 keeps the era's monospace.
+    static func mono(_ size: CGFloat, _ weight: SwiftUI.Font.Weight = .regular) -> SwiftUI.Font {
+        if ThemeRuntime.typeface == .retro { return .system(size: size, weight: weight, design: .monospaced) }
+        return DesktopFonts.geistMono(size, weight)
     }
 
     /// Body text renders at a 16.7 pt natural line; the reference pitch is 18.1.

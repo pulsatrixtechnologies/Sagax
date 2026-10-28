@@ -442,7 +442,7 @@ struct MarkdownText: View {
             }
             // Code spans: SF Mono 12 on the bubble itself, no chip.
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-                attributed[run.range].font = desktop != nil ? .system(size: 12, design: .monospaced) : Theme.Font.code
+                attributed[run.range].font = desktop != nil ? Theme.mono(12) : Theme.Font.code
                 if desktop != nil { attributed[run.range].tracking = DesktopChatMetrics.monoTracking(12) }
                 if let desktop { attributed[run.range].backgroundColor = desktop.inset }
             }

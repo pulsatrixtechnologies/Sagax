@@ -46,7 +46,7 @@ struct BotVisibilitySection: View {
         if mode == .people {
             Section {
                 TextEditor(text: $people)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(Theme.mono(13))
                     .frame(minHeight: 100)
                     .scrollContentBackground(.hidden)
                     .textInputAutocapitalization(.never)
@@ -56,7 +56,7 @@ struct BotVisibilitySection: View {
                     .overlay(alignment: .topLeading) {
                         if people.isEmpty {
                             Text(String(localized: "One email or @company.com per line"))
-                                .font(.system(size: 13, design: .monospaced))
+                                .font(Theme.mono(13))
                                 .foregroundStyle(Theme.placeholder)
                                 .padding(.top, 8).padding(.leading, 5)
                                 .allowsHitTesting(false)

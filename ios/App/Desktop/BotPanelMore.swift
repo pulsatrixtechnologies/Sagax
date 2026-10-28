@@ -430,7 +430,7 @@ private struct PromptSectionRow: View {
             if open {
                 ScrollView {
                     Text(verbatim: section.text)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(Theme.mono(12))
                         .foregroundStyle(theme.ink)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
@@ -748,7 +748,7 @@ private struct BotPanelMemory: View {
                 if let overview = memory.overview {
                     HStack(spacing: 8) {
                         Text(verbatim: overview.workspacePath)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(Theme.mono(12))
                             .foregroundStyle(theme.inkSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -869,7 +869,7 @@ private struct BotPanelMemory: View {
         PanelCard {
             HStack(spacing: 8) {
                 Text(verbatim: editing.path)
-                    .font(.system(size: 12.5, design: .monospaced))
+                    .font(Theme.mono(12.5))
                     .foregroundStyle(theme.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -928,7 +928,7 @@ private struct BotPanelMemory: View {
             if let draft = memory.savedDraft {
                 Text("Your unsaved draft, kept so nothing is lost:").font(theme.font(12)).foregroundStyle(theme.inkSecondary).padding(.top, 12)
                 Text(verbatim: draft)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(Theme.mono(12))
                     .foregroundStyle(theme.ink)
                     .textSelection(.enabled)
                     .padding(12)
@@ -978,7 +978,7 @@ private struct BotPanelMemory: View {
                             Button { Task { await memory.open(file.path) } } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(theme.inkSecondary)
-                                    Text(verbatim: file.name).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(theme.ink).lineLimit(1)
+                                    Text(verbatim: file.name).font(Theme.mono(12.5)).foregroundStyle(theme.ink).lineLimit(1)
                                     Spacer(minLength: 4)
                                     Text(verbatim: "\(MemoryCapacity.formatBytes(file.bytes)) · \(BotAdvancedWording.ago(file.modifiedAt))")
                                         .font(theme.font(11.5)).foregroundStyle(theme.inkSecondary).lineLimit(1)
