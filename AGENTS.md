@@ -1353,8 +1353,12 @@ for themself, for every bot they can see: no admin, no owner check.
     mocks only in tests. `sagax_settings` key `notifications.reachMeWhatsApp`.
 - UI: "Me joindre" on the bot's Overview, under its email address
   (`src/components/bot-settings/BotReachMe.tsx`); no id on screen (the
-  Telegram bot by its @username). iOS: not on the phone's bot panel yet;
-  the Primary Bot changes it from any chat (`sagax_settings`).
+  Telegram bot by its @username). iOS: Settings > Bots > Reach me
+  (`ios/App/Features/Settings/ReachMeSettingsPage.swift`, contract and draft
+  in `ios/Sources/CompanionCore/ReachMe.swift`), a bot picker then the same
+  channels, Telegram link, hours and zone; WhatsApp is offered when the
+  server's channel answer wires it (#1247), its number connected on the
+  computer; the companion allows the four routes. The Primary Bot also changes it from any chat (`sagax_settings`).
 - Tests: `shared/reach-me.test.ts`, `server/reach-me/*.test.ts`,
   `server/routes/reach-me.test.ts`, `server/push/fcm.test.ts`,
   `server/routes/push-devices.test.ts`, `server/auto-approve.test.ts`,

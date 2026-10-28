@@ -349,6 +349,13 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // a key or an address (server: PUT /api/tts/provider). PUT /api/config
   // stays refused.
   { method: "PUT", path: /^\/api\/tts\/provider$/ },
+  // "Reach me" (#1187), Settings > Bots > Reach me: the person's own
+  // channels and hours for each bot (no admin), and their own Telegram bot
+  // (the token is write only, never in an answer).
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/reach-me$/ },
+  { method: "PUT", path: /^\/api\/bots\/[\w-]+\/reach-me$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/reach-me\/telegram$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/reach-me\/telegram$/ },
 
   // The advanced bot panel for the computer's owner (decision D1): the
   // same reads and edits the desktop's own renderer makes, nothing else.

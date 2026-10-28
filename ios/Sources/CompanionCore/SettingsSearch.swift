@@ -45,7 +45,8 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
         case .securityKeys: return ["security", "sécurité", "passkey", "face id", "security key", "clé"]
         case .notifications: return ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "banner", "badge", "unread", "nudge", "wizz", "buzz", "persistent"]
         case .privacy: return ["privacy", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "confidentialité", "read receipts", "accusés de lecture"]
-        case .bots: return ["bots", "bot", "auto-review", "approvals", "approbation", "time zone", "fuseau", "computer", "ordinateur", "quick replies", "call voice", "experimental"]
+        case .bots: return ["bots", "bot", "auto-review", "approvals", "approbation", "time zone", "fuseau", "computer", "ordinateur", "quick replies", "call voice", "experimental",
+                             "reach me", "me joindre", "sms", "texto", "text message", "teams", "telegram", "whatsapp", "hours", "heures"]
         case .privacySecurity: return ["privacy", "security", "confidentialité", "sécurité", "security keys", "passkey", "vault", "coffre", "presence", "read receipts"]
         }
     }
