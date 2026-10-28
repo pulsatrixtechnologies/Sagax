@@ -1,6 +1,20 @@
 import { approvalModeFor, approvalModeWidens } from "../shared/approval-mode.ts";
 import { botsSaveFailure } from "../shared/bots-save-failure.ts";
-import type { BotRecord, TaskPatch, TaskRecord } from "./store.ts";
+
+/** Fields a failed save puts back. Not the store records: store.ts calls
+ * this module, and importing those types closed the cycle. */
+interface SavedBot {
+  tasks?: object[];
+}
+
+interface PermissionState {
+  approvalMode?: unknown;
+  autoApprove?: unknown;
+  alwaysAllow?: readonly string[];
+  approvalGrant?: unknown;
+  threadId?: string;
+  approvalOwn?: unknown;
+}
 
 export class BotsSaveError extends Error {
   constructor(action: string, cause: unknown) {
@@ -13,7 +27,7 @@ export function saveBotsFor(action: string, save: () => void): void {
 }
 
 /** Memory changes only once bots.json holds them; a failed save restores the bot in place. */
-export function commitBotChange(bot: BotRecord, action: string, save: () => void, change: () => void, onRollback?: () => void): void {
+export function commitBotChange(bot: SavedBot, action: string, save: () => void, change: () => void, onRollback?: () => void): void {
   const rollback = snapshotBot(bot);
   change();
   try { save(); } catch (error) {
@@ -23,7 +37,7 @@ export function commitBotChange(bot: BotRecord, action: string, save: () => void
   }
 }
 
-function snapshotBot(bot: BotRecord): () => void {
+function snapshotBot(bot: SavedBot): () => void {
   const { tasks, ...fields } = bot;
   const saved = structuredClone(fields);
   const list = tasks ? [...tasks] : undefined;
@@ -45,7 +59,7 @@ function restore(target: object, saved: object): void {
 const PERMISSION_FIELDS = ["approvalMode", "autoApprove", "alwaysAllow"] as const;
 
 /** A revocation stays live when its save fails; a widening never does. */
-export function keptRevocation(task: TaskRecord, patch: TaskPatch): TaskPatch | undefined {
+export function keptRevocation(task: PermissionState, patch: PermissionState): PermissionState | undefined {
   const fields = PERMISSION_FIELDS.filter((key) => Object.hasOwn(patch, key));
   if (!fields.length) return undefined;
   // Following the bot again may widen the level: never kept unsaved.
