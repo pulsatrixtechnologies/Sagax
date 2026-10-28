@@ -16,6 +16,8 @@ public enum PersonPrefKey {
     public static let skinDepth = DesktopAppearanceKeys.skinDepth
     /// "1": the open bot's colour is the accent (src/lib/bot-accent.ts).
     public static let botAccent = BotAccent.key
+    /// "1": 1:1 assistant bubbles wear the bot's colour (BotBubble.swift).
+    public static let botBubble = BotBubble.key
     /// "on" | "off"; absent is on (src/lib/hd-mascots-preference.ts).
     public static let hdMascots = HdMascots.preferenceKey
     /// "1" | "0"; absent is shown (src/lib/panel-visibility.ts).
@@ -27,7 +29,7 @@ public enum PersonPrefKey {
     /// The Automations page's scope and filters, per person (src/lib/routine-scope-prefs.ts).
     public static let routineScope = RoutineScopePrefs.key
 
-    public static let all = [language, skinTint, skinDepth, botAccent, hdMascots, showSuggestions, readReceipts, notificationSound, routineScope]
+    public static let all = [language, skinTint, skinDepth, botAccent, botBubble, hdMascots, showSuggestions, readReceipts, notificationSound, routineScope]
 }
 
 public extension SidebarPrefKey {
@@ -54,6 +56,13 @@ public extension SidebarPrefs {
     /// `setBotAccentEnabled`: "1", or the key removed.
     mutating func setBotAccent(_ on: Bool) {
         values[PersonPrefKey.botAccent] = on ? "1" : nil
+    }
+
+    /// On only when "1". Absent leaves bubbles in the skin's colour.
+    var botBubble: Bool { values[PersonPrefKey.botBubble] == "1" }
+
+    mutating func setBotBubble(_ on: Bool) {
+        values[PersonPrefKey.botBubble] = on ? "1" : nil
     }
 
     var hdMascots: Bool { HdMascots.enabled(values[PersonPrefKey.hdMascots]) }

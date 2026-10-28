@@ -345,6 +345,9 @@ final class SidebarPrefsModel: ObservableObject {
     var botAccent: Bool { prefs.botAccent }
     func setBotAccent(_ session: Session, _ on: Bool) { update(session) { $0.setBotAccent(on) } }
 
+    var botBubble: Bool { prefs.botBubble }
+    func setBotBubble(_ session: Session, _ on: Bool) { update(session) { $0.setBotBubble(on) } }
+
     var hdMascots: Bool { prefs.hdMascots }
     func setHdMascots(_ session: Session, _ on: Bool) {
         update(session) { $0.setHdMascots(on) }

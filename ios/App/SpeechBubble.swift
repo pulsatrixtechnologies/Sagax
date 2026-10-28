@@ -93,9 +93,19 @@ enum BubbleColor {
     static var mine: Color { Theme.bubbleUser }
     static var mineText: Color { Theme.bubbleUserText }
 
-    /// What a bot said: the skin's assistant card (#202020 on Black). Read
-    /// from the skin, never from the phone's light or dark: a light phone
-    /// wearing a dark skin keeps the dark bubble with its light text.
-    static var theirs: Color { Theme.bubbleAssistant }
-    static var theirsText: Color { Theme.bubbleAssistantText }
+    /// What a bot said: the skin's assistant card (#202020 on Black), or
+    /// the open bot's colour when "Color 1:1 messages with the bot color"
+    /// is on. Read from the skin, never from the phone's light or dark.
+    static var theirs: Color { BotBubblePaint.current?.fill ?? Theme.bubbleAssistant }
+    static var theirsText: Color { BotBubblePaint.current?.ink ?? Theme.bubbleAssistantText }
+}
+
+/// The open 1:1 bot's bubble paint, when the person asked for it.
+enum BotBubblePaint {
+    static var current: (fill: Color, ink: Color)? {
+        guard SidebarPrefsModel.shared.botBubble,
+              let painted = BotBubble.paint(enabled: true, botColor: ThemeStore.shared.openBotColor, panel: Theme.palette.inset)
+        else { return nil }
+        return (painted.fill.color, painted.ink.color)
+    }
 }

@@ -23,6 +23,8 @@ export const USER_PREFERENCE_KEYS = [
   "omb-skin-variants",
   // the open bot's colour as the accent (src/lib/bot-accent.ts)
   "sagax.botAccent.v1",
+  // 1:1 assistant bubbles wear the open bot's colour (ios BotBubble.swift). "1" is on; absent is off.
+  "sagax.botBubble.v1",
   "omb-font",
   "omb-show-threads",
   // the bot panel's Suggestions card and All history row (src/lib/panel-visibility.ts)
