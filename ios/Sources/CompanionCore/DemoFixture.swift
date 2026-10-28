@@ -48,6 +48,7 @@ struct DemoFixture {
                 "tasks": [["threadId": "demo-thread-\(id)", "title": task, "createdAt": ago(60 * 24)]],
                 "messages": messages,
                 "activeLeafId": messages.last?["id"] ?? NSNull(),
+                "ownerUserId": "demo-alex",
             ]
             if let look { value["mascotLook"] = look }
             if let skin { value["mascotSkin"] = skin }

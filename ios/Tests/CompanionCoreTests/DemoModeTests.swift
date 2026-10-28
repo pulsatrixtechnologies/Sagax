@@ -103,6 +103,35 @@ final class DemoModeTests: XCTestCase {
         XCTAssertTrue(server.handledRequests.contains("DELETE /api/me"))
     }
 
+    func testTheDemoSignsInAsAlexSoThePinnedBotOffersShare() throws {
+        let server = DemoServer(now: clock, chunkDelay: 0)
+        defer { server.stop() }
+        XCTAssertTrue(server.connection.pairedWithServer)
+        let sessionBody = server.respond(method: "GET", path: "/api/auth/session", body: nil)
+        XCTAssertEqual(sessionBody.status, 200)
+        let session = try JSONDecoder().decode(AuthSession.self, from: sessionBody.body)
+        XCTAssertEqual(session.principalId, "demo-alex")
+        XCTAssertEqual(session.name, "Alex Martin")
+        let gate = SurfaceGate(connection: server.connection, account: session)
+        XCTAssertTrue(gate.allows(.botSharing))
+        let atlas = try XCTUnwrap(server.fleet.bots.first { $0.name == "Atlas" })
+        XCTAssertEqual(atlas.ownerUserId, session.principalId)
+        XCTAssertEqual(atlas.pinned, true)
+        XCTAssertEqual(atlas.chiefOfStaff, true)
+        let plan = NavigationMenus.bot(atlas, BotMenuContext(
+            gate: gate, showThreads: false, canMoveToSection: false,
+            viewerId: session.principalId, activeBotCount: server.fleet.bots.count
+        ))
+        XCTAssertEqual(plan.items.first, .unpin)
+        XCTAssertTrue(plan.items.contains(.share))
+        let grants = server.respond(method: "GET", path: "/api/bots/demo-atlas/grants", body: nil)
+        XCTAssertEqual(grants.status, 200)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: grants.body) as? [String: Any])
+        let rows = try XCTUnwrap(json["grants"] as? [[String: Any]])
+        XCTAssertTrue(rows.contains { $0["label"] as? String == "Sam Rivera" })
+        XCTAssertTrue(rows.contains { $0["label"] as? String == "Jordan Lee" })
+    }
+
     func testScoutThreadNamesNoDistributionService() {
         for language in [DemoLanguage.english, .french] {
             let fleet = DemoServer(now: clock, language: language, chunkDelay: 0).fleet
