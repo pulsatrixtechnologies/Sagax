@@ -619,7 +619,7 @@ private struct PhoneBotPanelContent: View {
             ForEach(groups.first?.routines ?? []) { routine in routineCardRow(routine) }
             ForEach(groups.dropFirst()) { group in
                 if let folder = group.folder {
-                    RoutineFolderHeader(group: group, botId: bot.id, folder: folder, controller: folderController) { enabled in
+                    RoutineFolderHeader(group: group, botId: bot.id, folder: folder, canSortByPrefix: canSortByPrefix, controller: folderController) { enabled in
                         Task { await folderController.setEnabled(group.routines, enabled: enabled, session: session) { await loadRoutines() } }
                     }
                     .padding(.leading, Theme.Profile.textInset)
@@ -641,6 +641,19 @@ private struct PhoneBotPanelContent: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("profile-add-routine")
             ProfileDivider()
+            // Permanent: it stays while a title starts with [X]
+            if canSortByPrefix {
+                Button {
+                    Haptics.selection()
+                    folderController.sortRequest = bot.id
+                } label: {
+                    ProfileRow(icon: ProfileRowIcon(systemImage: "folder.badge.gearshape", size: 16), title: Text("Sort by prefix"),
+                               height: Theme.Profile.row)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("profile-sort-routines-by-prefix")
+                ProfileDivider()
+            }
             Button {
                 Haptics.selection()
                 runLogs = true
@@ -651,6 +664,11 @@ private struct PhoneBotPanelContent: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("panel-run-logs")
         }
+    }
+
+    private var canSortByPrefix: Bool {
+        routineFoldersListed && !session.routineFoldersMissing
+            && !RoutineFolders.prefixCandidates(botRoutines.filter(\.mayEdit)).isEmpty
     }
 
     private var folderOrder: [String] { RoutineFolders.ordered(routineFolders, routines: botRoutines) }

@@ -1,8 +1,9 @@
 // Shared by bot settings and the bot's side panel. The list keeps one action
 // (New schedule); a row opens the routine's page, which holds Run now, Pause
 // or Resume, Edit, the run logs and Delete.
-import { CalendarClock, ChevronLeft, FileText, PanelRight, Plus, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CalendarClock, ChevronLeft, FileText, MoreHorizontal, PanelRight, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useServerFeature } from "@/lib/server-features";
 import { useStore, type Bot } from "@/state/store";
 import type { Routine, RoutineRun, RoutineRunOn } from "@/lib/routines";
 import { t } from "@/lib/i18n";
@@ -10,7 +11,7 @@ import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useCaptionChrome, useMacInsetChrome } from "../DesktopCapabilities";
 import { RoutineEditor } from "../RoutinesPage";
-import { RoutineFolderList } from "../routines/RoutineFolders";
+import { canSortRoutinesByPrefix, RoutineFolderList, type RoutineFolderControl } from "../routines/RoutineFolders";
 import { RunNowButton } from "../routines/RunNowButton";
 
 // The routine page covers the whole panel, so it draws its own top bar the way
@@ -37,6 +38,9 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
   // 2026-10-28: a folder's + makes the new routine in that folder.
   const [newFolder, setNewFolder] = useState<string | undefined>(undefined);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const folderControl = useRef<RoutineFolderControl | null>(null);
+  const sectionMenuLabel = t("routineFolders.sectionMenu");
+  const foldersServed = useServerFeature("routineFolders") !== "no";
   const detail = routines.find((routine) => routine.id === detailId) ?? null;
   const toggle = (routine: Routine) => dispatch({ type: "updateRoutine", routineId: routine.id, patch: { enabled: !routine.enabled } });
   // A routine line in the conversation asked for this routine's page.
@@ -88,9 +92,12 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
     <div className="flex items-center gap-2">
       <CalendarClock size={16} className="text-ink-secondary" />
       <h2 className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("computer.tab.routines")}</h2>
+      {canSortRoutinesByPrefix(routines, foldersServed) && <button type="button" data-routines-section-more="" aria-haspopup="menu" aria-label={sectionMenuLabel} title={sectionMenuLabel}
+        onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); folderControl.current?.openSectionMenu({ x: rect.left, y: rect.bottom + 4 }, event.currentTarget); }}
+        className="ui-icon-button"><MoreHorizontal size={15} /></button>}
       <button type="button" onClick={() => { setNewFolder(undefined); setEditing("new"); }} aria-label={t("computer.routines.create")} title={t("computer.routines.create")} className="ui-icon-button"><Plus size={15} /></button>
     </div>
-    <RoutineFolderList bot={bot} routines={routines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={runs} loading={state.routinesLoadState === "loading" && routines.length === 0} error={state.routinesLoadState === "error"} onOpen={(routine) => setDetailId(routine.id)} grouped={grouped}
+    <RoutineFolderList controlRef={folderControl} bot={bot} routines={routines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={runs} loading={state.routinesLoadState === "loading" && routines.length === 0} error={state.routinesLoadState === "error"} onOpen={(routine) => setDetailId(routine.id)} grouped={grouped}
       onCreateIn={(folder) => { setNewFolder(folder); setEditing("new"); }} />
     {editing === "new" && <RoutineEditor key={`${bot.id}-new-${newFolder ?? ""}`} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} folder={newFolder} onClose={() => { setEditing(null); setNewFolder(undefined); }} />}
   </div>;

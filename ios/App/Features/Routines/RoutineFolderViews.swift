@@ -35,6 +35,17 @@ final class RoutineFolderController: ObservableObject {
     /// A row's swipe "Folder": the folder choice as a dialog.
     @Published var moving: Routine?
     @Published var busy = false
+    /// A menu asked to Sort by prefix for this bot (nothing moves before that
+    /// tap); the prompts modifier runs it.
+    @Published var sortRequest: String?
+    /// What Undo puts back after a Sort by prefix that worked.
+    @Published var sortUndo: SortUndo?
+
+    struct SortUndo: Identifiable {
+        let botId: String
+        let undo: WidgetJSON
+        var id: String { botId }
+    }
     @Published private var foldTick = 0
     private let collapse = RoutineFolderCollapse()
 
@@ -67,6 +78,17 @@ final class RoutineFolderController: ObservableObject {
                 collapse.rename(botId: botId, from: from, to: clean)
                 foldTick += 1
             }
+        }
+        await reload()
+    }
+
+    /// Sort by prefix. A failure, or a server without the route, changes
+    /// nothing and offers nothing to undo; the action stays in its menus.
+    func sortByPrefix(botId: String, session: Session, reload: @escaping () async -> Void) async {
+        busy = true
+        defer { busy = false }
+        if let result = await session.routineFolderAction(.sortByPrefix(botId: botId)), let undo = result.undo {
+            sortUndo = SortUndo(botId: botId, undo: undo)
         }
         await reload()
     }
@@ -104,6 +126,8 @@ struct RoutineFolderHeader: View {
     let folder: String
     /// Shown after the name in a list of several bots.
     var botName: String?
+    /// A title of this bot still starts with [X]: Sort by prefix stays here.
+    var canSortByPrefix = false
     @ObservedObject var controller: RoutineFolderController
     let onSetEnabled: (_ enabled: Bool) -> Void
 
@@ -155,6 +179,12 @@ struct RoutineFolderHeader: View {
                     }
                     if !resumable.isEmpty {
                         Button(String(localized: "Resume all in folder"), systemImage: "play") { onSetEnabled(true) }
+                    }
+                    if canSortByPrefix {
+                        Button(String(localized: "Sort by prefix"), systemImage: "folder.badge.gearshape") {
+                            controller.sortRequest = botId
+                        }
+                        .accessibilityIdentifier("routine-folder-sort-by-prefix.\(botId).\(folder)")
                     }
                     Divider()
                     Button(String(localized: "Delete folder"), systemImage: "folder.badge.minus", role: .destructive) {
@@ -261,6 +291,25 @@ struct RoutineFolderPrompts: ViewModifier {
                 if case .create(_, let ids) = controller.prompt, !ids.isEmpty {
                     Text("The routine moves into the new folder.")
                 }
+            }
+            .onValueChange(of: controller.sortRequest) { botId in
+                guard let botId else { return }
+                controller.sortRequest = nil
+                Task { await controller.sortByPrefix(botId: botId, session: session, reload: reload) }
+            }
+            .alert(String(localized: "Sorted into folders"), isPresented: Binding(
+                get: { controller.sortUndo != nil },
+                set: { if !$0 { controller.sortUndo = nil } }
+            )) {
+                Button(String(localized: "Undo")) {
+                    if let sorted = controller.sortUndo {
+                        controller.sortUndo = nil
+                        Task { await controller.perform(.restore(botId: sorted.botId, undo: sorted.undo), session: session, reload: reload) }
+                    }
+                }
+                Button(String(localized: "OK"), role: .cancel) { controller.sortUndo = nil }
+            } message: {
+                Text("The prefixes left the titles.")
             }
             .confirmationDialog(
                 controller.deleting.map { String(localized: "Delete the folder \($0.folder)?") } ?? "",

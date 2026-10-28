@@ -66,6 +66,17 @@ struct TasksRoutinesView: View {
     private var showsCalendar: Bool { automations && section == .routines && scheduleView == .calendar }
 
     private var seenAllowed: Bool { session.surfaceGate.allows(.routineRunsSeen) }
+    /// Bots of the list (the filter's bot, or all) with a [X] title still in
+    /// no folder, and the routines the person may change.
+    private var prefixBots: [Bot] {
+        let editable = routines.filter(\.mayEdit).filter { botFilter.botId == nil || $0.botId == botFilter.botId }
+        let ids = Set(RoutineFolders.prefixCandidates(editable).map(\.botId))
+        return visibleBots.filter { ids.contains($0.id) }
+    }
+    private func canSortByPrefix(_ botId: String) -> Bool {
+        foldersSupported && RoutineFolders.prefixCandidates(routines.filter { $0.botId == botId && $0.mayEdit }).count > 0
+    }
+
     private var visibleBots: [Bot] { session.state.bots.filter { $0.hidden != true } }
     private var unseenFailures: Int { RoutineRunLog.unseenProblems(runs) }
     private var filteredRuns: [RoutineRun] {
@@ -211,6 +222,15 @@ struct TasksRoutinesView: View {
                         .disabled(!foldersSupported)
                         .accessibilityIdentifier("routines-new-folder")
                         if !foldersSupported { Text("Available after the server update.") }
+                    }
+                    // Permanent: it stays while a title starts with [X]
+                    if section == .routines && foldersSupported {
+                        ForEach(prefixBots) { entry in
+                            Button(prefixBots.count == 1 ? String(localized: "Sort by prefix") : String(localized: "Sort by prefix: \(entry.name)"), systemImage: "folder.badge.gearshape") {
+                                folderController.sortRequest = entry.id
+                            }
+                            .accessibilityIdentifier("routines-sort-by-prefix")
+                        }
                     }
                     if seenAllowed {
                         Button("Mark all as read", systemImage: "checkmark.circle") {
@@ -383,6 +403,7 @@ struct TasksRoutinesView: View {
                     RoutineFolderHeader(
                         group: group, botId: botId, folder: folder,
                         botName: botFilter.botId == nil ? botName(botId, in: group) : nil,
+                        canSortByPrefix: canSortByPrefix(botId),
                         controller: folderController
                     ) { enabled in
                         Task { await folderController.setEnabled(group.routines, enabled: enabled, session: session) { await reload() } }
