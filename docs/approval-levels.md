@@ -322,17 +322,16 @@ reviewed list of exact names):
   cannot reach further. On an organization server the engine is confined to
   the scope's own folders with no network (`server/data/engine.ts`), and a
   call answers itself while it stays in the bot's own workspace (its
-  workspace and task workspaces). In solo DuckDB is not confined and a text
-  check of SQL cannot stop a file read (`read_csv(chr(47)||...)`,
-  `$$/etc/hosts$$`, `../../`), so only a `data_load` of a local file inside
-  the bot's workspace answers itself there; every `data_sql`,
-  `data_describe`, `data_show`, `data_export` and remote load is a card
-  (re-review of 2026-10-17). On an organization server, a load of a file
-  elsewhere, a database connection (`postgres://`, `mysql://`), plain
+  workspace and task workspaces). In solo DuckDB runs on the person's own
+  computer, unconfined: since #1098 (2026-10-27) the same rule answers there
+  (no forced card on `data_sql`, `data_describe`, `data_show`, `data_export`
+  or a public `https://` load; a relative load path still asks). Everywhere,
+  a load of a file elsewhere, a database connection (`postgres://`, `mysql://`), plain
   `http://`, another remote scheme, an `https://` address on a private,
   loopback, link-local or metadata network (or a local name), and SQL that
-  names a file or a URL or uses `ATTACH`, `COPY`, `INSTALL`, `LOAD` keep
-  their card, which the person may allow;
+  names a file or a URL (`'/...'`, `'../...'`, `'~/...'`, a scheme, built
+  out of sight with `chr()` or `$$`) or uses `ATTACH`, `COPY`, `INSTALL`,
+  `LOAD` keep their card, which the person may allow;
 - the **agents** tools a bot runs in its own scope
   (`server/member-tool-scope.ts`: its teammates, threads, rooms, memory,
   skills and own setup). The host-level ones (`act`, `add_mcp_server`,

@@ -92,6 +92,15 @@ describe("whose listener a port is", () => {
     expect(await ownership.botOwned(4444)).toBe(false);
   });
 
+  it("on a shared server, is a bot's only when the caller accepts the bot its engine session was started for (#1098)", async () => {
+    const owned = { ...sessions, bots: new Map([[BOT_ENGINE, "bot-mine"]]) };
+    const ownership = new ListenerOwnership({ sessions: () => owned, proc: fakeProc(files(), fds), platform: "linux" });
+    expect(await ownership.botOwned(3000, (bot) => bot === "bot-mine")).toBe(true);
+    expect(await ownership.botOwned(3000, (bot) => bot === "bot-theirs")).toBe(false);
+    // A session of no known bot (the ended one) is refused once a caller asks.
+    expect(await ownership.botOwned(3001, (bot) => bot !== undefined)).toBe(false);
+  });
+
   it("keeps an ended engine's session only while its pid is not reused", async () => {
     const free = new ListenerOwnership({ sessions: () => sessions, proc: fakeProc(files(), fds), platform: "linux" });
     expect(await free.botOwned(3001)).toBe(true);

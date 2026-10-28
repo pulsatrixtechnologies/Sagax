@@ -163,7 +163,9 @@ describe("My Chrome tool calls", () => {
     expect(sensitiveElement({ role: "button", name: "Place order" })).toBe("payment");
     expect(sensitiveElement({ role: "button", name: "Envoyer" })).toBe("send");
     expect(sensitiveElement({ role: "button", name: "Publish" })).toBe("send");
-    expect(sensitiveElement({ role: "button", name: "Enregistrer" })).toBe("send");
+    expect(sensitiveElement({ role: "button", name: "Enregistrer" })).toBe("step");
+    expect(sensitiveElement({ role: "button", name: "Next" })).toBe("step");
+    expect(sensitiveElement({ role: "button", name: "Upload" })).toBe("send");
     expect(sensitiveElement({ role: "button", name: "" })).toBe("unclear");
     expect(sensitiveElement(undefined)).toBe("unclear");
     expect(sensitiveElement({ role: "link", name: "Next page" })).toBeNull();
@@ -226,6 +228,25 @@ describe("My Chrome tool calls", () => {
     expect(plain.content.map((part) => part.text)).toEqual(["ok", "Sagax blocked https://evil.example"]);
     expect((await runMyChromeTool(deps(call("agent_browser_eval", { script: "1" }))) as { isError?: boolean }).isError).toBe(true);
     expect(ran).toHaveLength(2);
+  });
+
+  it("runs a save or next step with no card at Auto and Full, keeps the card at Ask and for a payment, send or delete (#1098)", async () => {
+    const memory = new MyChromeMemory();
+    memory.remember("s", call("agent_browser_snapshot"), { content: [{ type: "text", text: "- button \"Save\" [ref=e1]\n- button \"Delete\" [ref=e2]\n- button \"Send\" [ref=e3]\n- button \"Pay now\" [ref=e4]" }] });
+    const cards: string[] = [];
+    const deps = (selector: string, stepsUnasked: boolean) => ({
+      session: "s", params: call("agent_browser_click", { selector }), memory, stepsUnasked,
+      run: async () => ({ content: [{ type: "text", text: "ok" }] }),
+      pageUrl: async () => "https://x.example/",
+      confirm: async (summary: string) => { cards.push(summary); return "deny" as const; },
+      notes: () => [],
+    });
+    expect((await runMyChromeTool(deps("@e1", true)) as { isError?: boolean }).isError).toBeUndefined();
+    expect(cards).toEqual([]);
+    for (const ref of ["@e2", "@e3", "@e4"]) expect((await runMyChromeTool(deps(ref, true)) as { isError?: boolean }).isError).toBe(true);
+    expect(cards).toHaveLength(3);
+    expect((await runMyChromeTool(deps("@e1", false)) as { isError?: boolean }).isError).toBe(true);
+    expect(cards.at(-1)).toContain("a save or next step");
   });
 
   it("offers Always allow for one kind of action on one site, never for a doubt", () => {

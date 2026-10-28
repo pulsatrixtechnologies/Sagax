@@ -123,6 +123,8 @@ describe("an organization member", () => {
     const { memberHidesSection } = await import("./SettingsModal");
     const hidden = { editConfig: false, manageComputers: false, manageBackups: false, organization: true };
     expect(memberHidesSection("experimental", hidden)).toBe(true);
+    // #1098: a person who sets their own switches sees Experimental
+    expect(memberHidesSection("experimental", { ...hidden, personalSettings: true })).toBe(false);
     expect(memberHidesSection("decisionModel", hidden)).toBe(true);
     // 2026-10-15: Usage is the person's own (GET /api/me/usage): every member sees it
     expect(memberHidesSection("usage", hidden)).toBe(false);

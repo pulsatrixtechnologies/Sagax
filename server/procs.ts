@@ -18,6 +18,7 @@ import {
   type ExecFileOptions,
   type SpawnOptions,
 } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync } from "node:fs";
 import { sagaxFolder } from "../shared/human-id.ts";
 import type { Readable, Writable } from "node:stream";
@@ -113,13 +114,24 @@ const CHILD_OOM_SCORE_ADJ = memoryGuardSettings().childOomScoreAdj;
 const stopping = new WeakMap<ChildProcess, Promise<boolean>>();
 
 const MAX_ENDED_SESSIONS = 4_096;
-const engineSessions = { live: new Set<number>(), ended: new Set<number>() };
+const engineSessions = { live: new Set<number>(), ended: new Set<number>(), bots: new Map<number, string>() };
+/** The bot whose turn is being sent, so the engine it spawns is known as that
+ * bot's (#1098: on a shared server a bot's browser opens the servers its
+ * owner's own bots started, and only those). */
+const engineBot = new AsyncLocalStorage<string>();
+
+/** Runs `send` (a turn's dispatch) as `botId`'s: every bot engine spawnCli
+ * starts inside it is remembered as that bot's. */
+export function runAsBotEngine<T>(botId: string, send: () => T): T {
+  return engineBot.run(botId, send);
+}
 
 /** POSIX session ids of the engines that run bots' turns (each leads its own
  * session). A server opened by any process in one counts as the bot's, even
  * after the shell that started it exits: a bot's browser may open it on a
- * server host (server/browser/egress, port of OpenMausBot #2930). */
-export function botEngineSessions(): { live: ReadonlySet<number>; ended: ReadonlySet<number> } {
+ * server host (server/browser/egress, port of OpenMausBot #2930). `bots`
+ * names the bot each session was started for, when it is known. */
+export function botEngineSessions(): { live: ReadonlySet<number>; ended: ReadonlySet<number>; bots: ReadonlyMap<number, string> } {
   return engineSessions;
 }
 
@@ -127,10 +139,17 @@ function rememberEngineSession(child: ChildProcess): void {
   const pid = child.pid;
   if (!pid) return;
   engineSessions.live.add(pid);
+  const botId = engineBot.getStore();
+  if (botId) engineSessions.bots.set(pid, botId);
+  else engineSessions.bots.delete(pid);
   child.once("exit", () => {
     engineSessions.live.delete(pid);
     engineSessions.ended.add(pid);
-    if (engineSessions.ended.size > MAX_ENDED_SESSIONS) engineSessions.ended.delete(engineSessions.ended.values().next().value!);
+    if (engineSessions.ended.size > MAX_ENDED_SESSIONS) {
+      const oldest = engineSessions.ended.values().next().value!;
+      engineSessions.ended.delete(oldest);
+      engineSessions.bots.delete(oldest);
+    }
   });
 }
 

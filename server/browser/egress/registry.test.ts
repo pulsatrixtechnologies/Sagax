@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { agentBrowserDevToolsPorts, agentBrowserStreamPorts } from "../../browser-engine.ts";
 import { refusalFor } from "./policy.ts";
-import { BrowserEgress, OwnListeners, staticOwnPorts } from "./registry.ts";
+import { BrowserEgress, OwnListeners, sameOwnerBots, staticOwnPorts } from "./registry.ts";
 import type { ListenerOwnership } from "./ownership.ts";
 
 const noScans = { streamPorts: () => [], devToolsPorts: () => [] };
@@ -103,6 +103,27 @@ describe("one gate per browser session", () => {
     const target = { host: "127.0.0.1", port: 43_210 };
     expect(await refusalFor(target, [{ address: "127.0.0.1" }], shared({}).rules())).toBe("this-computer");
     expect(await refusalFor(target, [{ address: "127.0.0.1" }], shared({ allow: ["127.0.0.1:43210"] }).rules())).toBeNull();
+  });
+
+  it("on a shared server, opens the servers its own person's bots started, never another person's (#1098)", async () => {
+    const bots: Record<string, { ownerUserId?: string }> = { "bot-a": { ownerUserId: "alex" }, "bot-a2": { ownerUserId: "alex" }, "bot-b": { ownerUserId: "sam" } };
+    const browserBots: Record<string, string> = { "session-a": "bot-a", "session-b": "bot-b" };
+    // The port's listener belongs to an engine started for bot-a2 (the same person as bot-a).
+    const value = new BrowserEgress();
+    value.configure({
+      host: "server",
+      config: () => ({}),
+      listeners: new OwnListeners("server", { env: {}, ...noScans }),
+      ownership: { botOwned: async (_port: number, accept?: (bot: string | undefined) => boolean) => accept ? accept("bot-a2") : true },
+      sameOwner: (session, engineBot) => sameOwnerBots(browserBots[session], engineBot, (id) => bots[id]),
+    });
+    const target = { host: "127.0.0.1", port: 43_210 };
+    expect(await refusalFor(target, [{ address: "127.0.0.1" }], value.rules("session-a"))).toBeNull();
+    expect(await refusalFor(target, [{ address: "127.0.0.1" }], value.rules("session-b"))).toBe("this-computer");
+    expect(await refusalFor(target, [{ address: "127.0.0.1" }], value.rules())).toBe("this-computer");
+    expect(sameOwnerBots("bot-a", "bot-a", () => undefined)).toBe(true);
+    expect(sameOwnerBots("bot-a", undefined, (id) => bots[id])).toBe(false);
+    expect(sameOwnerBots("bot-x", "bot-y", () => ({}))).toBe(false);
   });
 
   it("applies the admin allow-list only on a self-hosted server", () => {

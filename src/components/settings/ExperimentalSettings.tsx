@@ -17,7 +17,8 @@ import { BrowserUnavailableNote } from "../SettingsLink";
 import { DescribedRow, HelpTip, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { DisclosurePill } from "./AppearanceSettings";
 import { setDevPodsEnabled, useDevPodPrefs } from "../dev-pods/prefs";
-import { canEditConfig } from "@/lib/viewer";
+import { canEditConfig, canManageExperimental } from "@/lib/viewer";
+import { isPersonalFeature } from "../../../shared/person-settings";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { OrgPhoneCalls } from "./OrgPhoneCalls";
 
@@ -34,6 +35,7 @@ function FeatureRow({
   reason,
   note,
   busy,
+  locked,
   onToggle,
   below,
 }: {
@@ -46,6 +48,8 @@ function FeatureRow({
   /** A short grey line for an available feature that still needs a step. */
   note?: React.ReactNode;
   busy: boolean;
+  /** The installation's switch, for someone who may not change it (#1098). */
+  locked?: boolean;
   onToggle: () => void;
   below?: React.ReactNode;
 }) {
@@ -53,7 +57,7 @@ function FeatureRow({
     <div data-experimental-feature={feature} data-unavailable={unavailable ? "" : undefined} className={cn(unavailable && "[&_[id]]:text-ink-secondary")}>
       <DescribedRow
         label={label}
-        description={unavailable ? t("settings.experimental.unavailable") : note}
+        description={unavailable ? t("settings.experimental.unavailable") : locked ? t("settings.experimental.serverSetting") : note}
         rowId={feature}
         below={below}
       >
@@ -62,7 +66,7 @@ function FeatureRow({
           checked={checked}
           aria-label={t(ariaKey)}
           // a feature already on can always be turned off
-          disabled={busy || (unavailable && !checked)}
+          disabled={busy || locked || (unavailable && !checked)}
           onClick={onToggle}
           className="disabled:cursor-not-allowed disabled:opacity-40"
         />
@@ -71,8 +75,9 @@ function FeatureRow({
   );
 }
 
-/** The shared browser profiles, under the browser row: a count that opens
- * the manager in place. */
+/** The browser profiles, under the browser row: a count that opens the
+ * manager in place (the server's shared ones, or the viewer's own on an
+ * organization server, #1098). */
 function BrowserProfilesBelow({ count }: { count: number }) {
   const [open, setOpen] = useState(false);
   return (
@@ -102,12 +107,16 @@ export function ExperimentalSettings() {
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = typeof window !== "undefined" && window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
-  const profiles = state.config?.browserProfiles ?? [];
-  // The browser profiles and the "my Chrome" link write the installation
-  // (browserProfiles and more): only a viewer who may edit the config sees
-  // them. A server.experimental-only delegate keeps the feature switches,
-  // which are all this right opens (shared/permissions.ts).
+  // #1098 (2026-10-27): on an organization server a person sets their own
+  // switches (skill authoring, the Data window, generated titles) and keeps
+  // their own browser profiles, with no right to edit the installation
+  // (/api/me/experimental). The built-in browser and the meeting notetaker
+  // stay the installation's (server.experimental). My Chrome is the person's
+  // own Chrome wherever the server offers it.
   const editConfig = canEditConfig(state.config);
+  const manage = canManageExperimental(state.config);
+  const personal = state.config?.personalSettings === true;
+  const profiles = (state.config?.browserProfiles ?? []).filter((profile) => (editConfig ? !profile.personal : profile.personal));
   // 2026-10-26 (JC): generated conversation titles were on only after a
   // hand edit of config.json; they get their switch here.
   const llmThreadTitles = llmThreadTitlesEnabled(state.config);
@@ -127,11 +136,19 @@ export function ExperimentalSettings() {
     return () => { live = false; };
   }, [dispatch]);
 
+  // Who may flip a row: the installation's switches need server.experimental;
+  // a personal one is also the person's own on an organization server.
+  const mayToggle = (feature: ExperimentalFeature) => manage || (personal && isPersonalFeature(feature));
   const toggle = async (feature: ExperimentalFeature, next: boolean) => {
-    if (saving) return;
+    if (saving || !mayToggle(feature)) return;
     setSaving(feature);
     setError("");
     try {
+      if (!manage) {
+        await api("/api/me/experimental", { method: "PATCH", body: JSON.stringify({ features: { [feature]: next } }) });
+        dispatch({ type: "configStatus", config: await api<ConfigStatus>("/api/config") });
+        return;
+      }
       const config: ConfigStatus = await api("/api/config", {
         method: "PATCH",
         body: JSON.stringify({ features: { [feature]: next } }),
@@ -162,6 +179,7 @@ export function ExperimentalSettings() {
           ariaKey="settings.experimental.skillAuthoringAria"
           checked={skillAuthoring}
           busy={busy}
+          locked={!mayToggle("skillAuthoring")}
           onToggle={() => void toggle("skillAuthoring", !skillAuthoring)}
         />
         <FeatureRow
@@ -174,16 +192,18 @@ export function ExperimentalSettings() {
           // the engine can be installed: the switch works, one step remains
           note={!desktopBrowser && browserInstallable ? t("settings.experimental.browserInstall") : undefined}
           busy={busy}
+          locked={!mayToggle("browser")}
           onToggle={() => void toggle("browser", !browser)}
-          below={editConfig && (browser || profiles.length > 0) && <BrowserProfilesBelow count={profiles.length} />}
+          below={(editConfig || personal) && (browser || profiles.length > 0) && <BrowserProfilesBelow count={profiles.length} />}
         />
-        {browser && editConfig && <MyChromeSettings />}
+        {browser && <MyChromeSettings />}
         <FeatureRow
           feature="decisionModel"
           label={t("settings.experimental.decisionModel")}
           ariaKey="settings.experimental.decisionModel"
           checked={decisionModel}
           busy={busy}
+          locked={!mayToggle("decisionModel")}
           onToggle={() => void toggle("decisionModel", !decisionModel)}
         />
         <FeatureRow
@@ -194,6 +214,7 @@ export function ExperimentalSettings() {
           unavailable={!dataWindowServed}
           reason={t("settings.experimental.dataWindowServerOld")}
           busy={busy}
+          locked={!mayToggle("dataWindow")}
           onToggle={() => void toggle("dataWindow", !dataWindow)}
         />
         <FeatureRow
@@ -205,6 +226,7 @@ export function ExperimentalSettings() {
           reason={t("settings.experimental.meetingNotetakerServerOld")}
           note={t("settings.experimental.meetingNotetakerHint")}
           busy={busy}
+          locked={!mayToggle("meetingNotetaker")}
           onToggle={() => void toggle("meetingNotetaker", !meetingNotetaker)}
         />
         <FeatureRow
@@ -215,6 +237,7 @@ export function ExperimentalSettings() {
           unavailable={!llmThreadTitlesServed}
           reason={t("settings.experimental.serverOld")}
           busy={busy}
+          locked={!mayToggle("llmThreadTitles")}
           onToggle={() => void toggle("llmThreadTitles", !llmThreadTitles)}
         />
         <div data-experimental-feature="devPods">
