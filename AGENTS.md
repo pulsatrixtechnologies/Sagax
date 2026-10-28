@@ -23,6 +23,12 @@ server/web-bot-auth.ts). On unless that person turns it off
 person's attached browser is not signed. One key per person on an
 organization server.
 
+## API document for one person (2026-10-27)
+
+`PUT /api/me/openapi` stores an OpenAPI 3 document for that person
+(docs/openapi-connector.md). Their bots receive the operations in a 1:1
+turn. Other members do not. Header values stay out of the tool list.
+
 ## Web search with the person's own key (2026-10-26)
 
 Decision: an engine with no web search of its own (OpenAI-compatible

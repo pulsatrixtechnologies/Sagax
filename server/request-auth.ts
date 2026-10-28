@@ -535,6 +535,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The person's visit signature (server/routes/web-bot-auth.ts): on unless
   // they turn it off. No admin right. The private key is never answered.
   { methods: ["GET", "PUT"], path: /^\/api\/me\/web-bot-auth$/ },
+  // The person's own OpenAPI document (server/routes/openapi-connector.ts).
+  // Their bots only. No admin right. Header values are never answered.
+  { methods: ["GET", "PUT", "DELETE"], path: /^\/api\/me\/openapi$/ },
   // The Code section (server/routes/code.ts): the person's own Perspicax
   // runs, called with their own sign-in token; Perspicax decides the rest.
   { methods: ["GET", "POST"], path: /^\/api\/code\/(?:status|environments|runs(?:\/[A-Za-z0-9_-]{1,80}(?:\/(?:events|stream|read|followup|approve|stop|archive|diff|commits|files))?)?)$/ },
