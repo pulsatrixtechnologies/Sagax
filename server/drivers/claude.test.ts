@@ -1261,6 +1261,57 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(next.depth).toBe("0");
   });
 
+  it.each([
+    ["plain agents server", undefined],
+    ["agents server behind the tool gate", { allow: ["native:*", "mcp:agents:*"] }],
+  ])("keeps one process when person and teammate turns alternate (%s)", async (_label, toolScope) => {
+    // 2026-10-28: since #1443 a teammate's turn one hop away mounts the agents
+    // server too, with SAGAX_PEER_HOP=1. Each switch between a person's turn
+    // and a teammate's reply relaunched the CLI ("spawn contract changed"):
+    // the hop flag, and behind the tool gate every per-turn value carried in
+    // SAGAX_GATE_UPSTREAM, were part of the contract.
+    await create();
+    const dump = join(scratch, `dump-alternate-${toolScope ? "gated" : "plain"}.json`);
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const threadId = `t-alternate-${toolScope ? "gated" : "plain"}`;
+    const send = async (n: number) => {
+      const teammate = n % 2 === 1;
+      const before = recorder.events.filter((e) => e.type === "turn.completed").length;
+      await instance.adapter.sendTurn({
+        threadId, text: "hello", ...(toolScope ? { toolScope } : {}),
+        integrations: { agents: { command: process.execPath, args: ["/fake/agents-proxy.js"], env: {
+          SAGAX_BOT_ID: "b1", SAGAX_COMMS_TOKEN: `token-${n}`, SAGAX_TURN_DEPTH: teammate ? "1" : "0",
+          SAGAX_PEER_HOP: teammate ? "1" : "0", SAGAX_ROUTE_MESSAGES: teammate ? "0" : "1", SAGAX_OWN_THREAD_CREATION: teammate ? "0" : "1",
+        } } },
+      });
+      await recorder.until(() => recorder.events.filter((e) => e.type === "turn.completed").length > before);
+      return (JSON.parse(readFileSync(dump, "utf8")) as { pid: number }).pid;
+    };
+    const pids: number[] = [];
+    for (let n = 0; n < 6; n += 1) pids.push(await send(n));
+    const launches = new Set(pids).size;
+    console.log(`[measure] ${_label}: ${launches} launch(es) for 6 alternating turns`);
+    expect(launches).toBe(1);
+  });
+
+  it("relaunches a teammate-only process for a person's turn that needs the peer tools", async () => {
+    await create();
+    const dump = join(scratch, "dump-peer-hop.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const send = async (hop: string, token: string) => {
+      const before = recorder.events.filter((e) => e.type === "turn.completed").length;
+      await instance.adapter.sendTurn({
+        threadId: "t-peer-hop", text: "hello",
+        integrations: { agents: { command: process.execPath, args: ["/fake/agents-proxy.js"], env: { SAGAX_BOT_ID: "b1", SAGAX_COMMS_TOKEN: token, SAGAX_TURN_DEPTH: hop, SAGAX_PEER_HOP: hop } } },
+      });
+      await recorder.until(() => recorder.events.filter((e) => e.type === "turn.completed").length > before);
+      return (JSON.parse(readFileSync(dump, "utf8")) as { pid: number }).pid;
+    };
+    const teammate = await send("1", "t1");
+    const person = await send("0", "t2");
+    expect(person).not.toBe(teammate);
+  });
+
   it("relaunches when a turn needs agents tools the live process was launched without", async () => {
     await create();
     const dump = join(scratch, "dump-switches.json");

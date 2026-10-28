@@ -44,10 +44,31 @@ export const TURN_TOKEN_ENV = ["SAGAX_COMMS_TOKEN", "SAGAX_TURN_DEPTH"] as const
  * switch the live process lacks still gets a fresh one. */
 export const TURN_SWITCH_ENV = ["SAGAX_ROUTE_MESSAGES", "SAGAX_OWN_THREAD_CREATION", "SAGAX_SINGLE_STREAM"] as const;
 
+/** A switch the agents server turns OFF for a teammate's turn one hop away
+ * (SAGAX_PEER_HOP=1, #1443): the peer tools are left out of its list. A
+ * process launched for a person's turn lists them and may serve a teammate's
+ * reply, since the routes refuse a second hop whatever the list shows; a
+ * process launched without them never serves a person's turn. */
+export const PEER_TOOLS_SWITCH = "SAGAX_PEER_TOOLS";
+
+/** The agents server's own env: inside the tool gate's upstream when the
+ * gate wraps it (SAGAX_GATE_UPSTREAM, or a private SAGAX_GATE_CONFIG_*). */
+export function agentsEnvOf(servers: Record<string, unknown>): Record<string, unknown> {
+  const env = (servers.agents as { env?: Record<string, unknown> } | null | undefined)?.env ?? {};
+  const gate = gateEnvOf(env);
+  if (!gate) return env;
+  const upstream = parseJson(gate.SAGAX_GATE_UPSTREAM);
+  const inner = upstream && typeof upstream === "object" ? (upstream as { env?: unknown }).env : undefined;
+  return inner && typeof inner === "object" ? inner as Record<string, unknown> : {};
+}
+
 /** The switches one turn needs, from its agents server's env. */
 export function turnSwitches(servers: Record<string, unknown>): Record<string, boolean> {
-  const env = (servers.agents as { env?: Record<string, unknown> } | undefined)?.env ?? {};
-  return Object.fromEntries(TURN_SWITCH_ENV.map((key) => [key, env[key] === "1"]));
+  const env = agentsEnvOf(servers);
+  return {
+    ...Object.fromEntries(TURN_SWITCH_ENV.map((key) => [key, env[key] === "1"])),
+    ...("SAGAX_PEER_HOP" in env ? { [PEER_TOOLS_SWITCH]: env.SAGAX_PEER_HOP !== "1" } : {}),
+  };
 }
 
 /** A live process launched with `live` switches can run a turn needing `want`. */
@@ -75,19 +96,61 @@ export function withoutTurnTokens(servers: Record<string, unknown>): Record<stri
   // Only the agents server reads its turn values from files, and only when
   // they were written (SAGAX_COMMS_TOKEN_FILE): otherwise a reused process
   // would keep a stale token, so the contract keeps it and relaunches.
-  const env = (servers.agents as { env?: Record<string, unknown> } | null | undefined)?.env;
-  if (!env || !env.SAGAX_COMMS_TOKEN_FILE) return out;
+  // 2026-10-28: behind the tool gate the agents env rides inside
+  // SAGAX_GATE_UPSTREAM; it is masked there the same way, or every turn's
+  // token relaunched the process.
+  const agents = servers.agents as { env?: Record<string, unknown> } | null | undefined;
+  const env = agents?.env;
+  if (!env) return out;
+  const gate = gateEnvOf(env);
+  if (!gate) {
+    const masked = maskAgentsEnv(env);
+    if (masked) out.agents = { ...(agents as object), env: masked };
+    return out;
+  }
+  const upstream = parseJson(gate.SAGAX_GATE_UPSTREAM) as { env?: Record<string, unknown> } | undefined;
+  const masked = upstream?.env && typeof upstream.env === "object" ? maskAgentsEnv(upstream.env) : null;
+  if (!masked) return out;
+  const maskedGate = { ...gate, SAGAX_GATE_UPSTREAM: JSON.stringify({ ...upstream, env: masked }) };
+  const configKey = Object.keys(env).find((key) => key.startsWith("SAGAX_GATE_CONFIG_"));
+  out.agents = { ...(agents as object), env: configKey ? { ...env, [configKey]: JSON.stringify(maskedGate) } : { ...env, ...maskedGate } };
+  return out;
+}
+
+/** The agents env with its per-turn values masked, or null when they are not
+ * read from files (the values then stay, and a changed one relaunches). */
+function maskAgentsEnv(env: Record<string, unknown>): Record<string, unknown> | null {
+  if (!env.SAGAX_COMMS_TOKEN_FILE) return null;
   const masked = { ...env };
   masked.SAGAX_COMMS_TOKEN = "(turn token)";
   if (env.SAGAX_TURN_DEPTH_FILE && "SAGAX_TURN_DEPTH" in masked) masked.SAGAX_TURN_DEPTH = "(turn token)";
   for (const key of TURN_SWITCH_ENV) if (key in masked) masked[key] = "(turn switch)";
-  out.agents = { ...(servers.agents as object), env: masked };
-  return out;
+  // the hop flag is a switch too (PEER_TOOLS_SWITCH, switchesCover)
+  if ("SAGAX_PEER_HOP" in masked) masked.SAGAX_PEER_HOP = "(turn switch)";
+  return masked;
+}
+
+/** The tool gate's own env when it wraps a server, else null. */
+function gateEnvOf(env: Record<string, unknown>): Record<string, unknown> | null {
+  if (typeof env.SAGAX_GATE_UPSTREAM === "string") return env;
+  const configKey = Object.keys(env).find((key) => key.startsWith("SAGAX_GATE_CONFIG_"));
+  const config = configKey ? parseJson(env[configKey]) : undefined;
+  return config && typeof config === "object" && typeof (config as Record<string, unknown>).SAGAX_GATE_UPSTREAM === "string"
+    ? config as Record<string, unknown> : null;
+}
+
+function parseJson(value: unknown): unknown {
+  if (typeof value !== "string") return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
 /** The turn files a process's agents server reads, to remove with it. */
 export function turnFiles(servers: Record<string, unknown>): string[] {
-  const env = (servers.agents as { env?: Record<string, unknown> } | null | undefined)?.env ?? {};
+  const env = agentsEnvOf(servers);
   const perspicax = Object.values(servers).map((server) => (server as { env?: Record<string, unknown> } | null | undefined)?.env?.SAGAX_PERSPICAX_TOKEN_FILE);
   return [env.SAGAX_COMMS_TOKEN_FILE, env.SAGAX_TURN_DEPTH_FILE, ...perspicax].filter((file): file is string => typeof file === "string");
 }
