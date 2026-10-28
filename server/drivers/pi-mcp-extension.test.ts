@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { removeTempDir } from "../testing/cleanup.ts";
-import { STABLE_CWD_NOTE, stableCwdTurn } from "./pi-mcp-extension.ts";
+import { STABLE_ACK, STABLE_CWD_NOTE, STABLE_END_MARKER, splitStableMessages, stableCwdTurn } from "./pi-mcp-extension.ts";
 import { startFakeHttpMcp } from "../testing/fake-http-mcp-server.ts";
 import { whopLikeCatalog } from "../testing/whop-like-catalog.ts";
 import { buildMcpServers } from "./pi.ts";
@@ -692,5 +692,84 @@ describe("stableCwdTurn (#1276)", () => {
   it("leaves an already fixed or missing cwd alone", () => {
     expect(stableCwdTurn({ cwd: STABLE_CWD_NOTE })).toBeUndefined();
     expect(stableCwdTurn({})).toBeUndefined();
+  });
+});
+
+describe("splitStableMessages (#1276)", () => {
+  it("cuts the marked message around a fixed reply and keeps the messages that end at the shared part", () => {
+    const system = { role: "system", content: "sys" };
+    const first = { role: "user", content: `shared${STABLE_END_MARKER}recent work\n\nquestion` };
+    const later = [{ role: "assistant", content: "answer" }, { role: "user", content: "next" }];
+    const split = splitStableMessages([system, first, ...later]);
+    expect(split?.messages).toEqual([
+      system,
+      { role: "user", content: "shared" },
+      { role: "assistant", content: STABLE_ACK },
+      { role: "user", content: "recent work\n\nquestion" },
+      ...later,
+    ]);
+    expect(split?.stable).toEqual([system, { role: "user", content: "shared" }]);
+  });
+
+  it("reads text parts and leaves an unmarked transcript alone", () => {
+    const parts = { role: "user", content: [{ type: "text", text: "shared" }, { type: "text", text: `${STABLE_END_MARKER}rest` }] };
+    expect(splitStableMessages([parts])?.messages).toEqual([
+      { role: "user", content: "shared" },
+      { role: "assistant", content: STABLE_ACK },
+      { role: "user", content: "rest" },
+    ]);
+    expect(splitStableMessages([{ role: "user", content: "plain" }])).toBeUndefined();
+  });
+});
+
+describe("stable split and warm request (#1276)", () => {
+  it("rewrites every provider request and writes the warm request once, without credentials", async () => {
+    const dir = tempDir();
+    const warmPath = join(dir, "warm.json");
+    process.env.SAGAX_MCP_CONFIG = join(dir, "mcp.json");
+    writeFileSync(process.env.SAGAX_MCP_CONFIG, JSON.stringify({ splitStable: true, warmPath }));
+    const handlers = new Map<string, (event?: any, context?: any) => any>();
+    await extension({ registerTool() {}, on(event, handler) { handlers.set(event, handler); } });
+    const payload = { model: "local", stream: true, stream_options: { include_usage: true }, max_completion_tokens: 900, tools: [{ type: "function" }], messages: [
+      { role: "system", content: "sys" },
+      { role: "user", content: `shared${STABLE_END_MARKER}question` },
+    ] };
+    const sent = await handlers.get("before_provider_request")!({ payload });
+    expect(sent.messages.map((message: { content: string }) => message.content)).toEqual(["sys", "shared", STABLE_ACK, "question"]);
+    expect(JSON.parse(readFileSync(warmPath, "utf8"))).toEqual({
+      model: "local", tools: [{ type: "function" }], max_tokens: 1, stream: false,
+      messages: [{ role: "system", content: "sys" }, { role: "user", content: "shared" }],
+    });
+    await handlers.get("before_provider_request")!({ payload: { ...payload, messages: [{ role: "user", content: `other${STABLE_END_MARKER}x` }] } });
+    expect(JSON.parse(readFileSync(warmPath, "utf8")).messages).toEqual([{ role: "system", content: "sys" }, { role: "user", content: "shared" }]);
+  });
+
+  it("sends the warm request once when a standby resumes its session, through the session's provider", async () => {
+    const dir = tempDir();
+    const warm = { model: "local", messages: [{ role: "user", content: "shared" }], max_tokens: 1, stream: false };
+    const config = { warm, warmPath: join(dir, "warm.json") };
+    const fetched: Array<{ url: string; init: RequestInit }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => { fetched.push({ url: String(url), init: init! }); return new Response("{}"); });
+    const context = {
+      model: { api: "openai-completions", baseUrl: "http://127.0.0.1:8000/v1/" },
+      modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }) },
+    };
+    const start = async () => {
+      process.env.SAGAX_MCP_CONFIG = join(dir, `mcp-${Math.random()}.json`);
+      writeFileSync(process.env.SAGAX_MCP_CONFIG, JSON.stringify(config));
+      const handlers = new Map<string, (event?: any, context?: any) => any>();
+      await extension({ registerTool() {}, on(event, handler) { handlers.set(event, handler); } });
+      return handlers.get("session_start")!;
+    };
+    const first = await start();
+    await first({ reason: "startup" }, context);
+    expect(fetched).toEqual([]);
+    await first({ reason: "resume" }, context);
+    // pi loads the extension again for the resumed session: still one warm
+    await (await start())({ reason: "resume" }, context);
+    await vi.waitFor(() => expect(fetched).toHaveLength(1));
+    expect(fetched[0].url).toBe("http://127.0.0.1:8000/v1/chat/completions");
+    expect(fetched[0].init.headers).toMatchObject({ authorization: "Bearer test-key" });
+    expect(JSON.parse(String(fetched[0].init.body))).toEqual(warm);
   });
 });

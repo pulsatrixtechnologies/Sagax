@@ -19,6 +19,7 @@ import { encodeInjectId, localHost } from "./local-inject.ts";
 import { sagaxInternalSelfAnswers } from "../sagax-internal-tools.ts";
 import {
   applyPiLocalCatalog,
+  markSharedPrompt,
   buildMcpServers,
   piGatedMcpInput,
   piGatedMcpTool,
@@ -38,6 +39,7 @@ import {
   splitPiModel,
   updatePiModelCatalog,
 } from "./pi.ts";
+import { STABLE_END_MARKER } from "./pi-mcp-extension.ts";
 
 const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "testing", "fake-pi-cli.ts");
 const MODELS_LINE =
@@ -1602,5 +1604,20 @@ describe("PiDriver snapshot", () => {
     expect(snap.state).toBe("unavailable");
     expect(snap.reason).toMatch(/not found/);
     await instance.dispose();
+  });
+});
+
+describe("markSharedPrompt (#1276)", () => {
+  const halves = { stable: "STABLE", volatile: "REACH|RECENT|CWD" };
+  const sections = [{ id: "reach", text: "REACH|" }, { id: "recent", text: "RECENT|" }, { id: "files-cwd", text: "CWD" }];
+  it("marks the end of what new conversations share, before the per-conversation sections", () => {
+    expect(markSharedPrompt("STABLEREACH|RECENT|CWD\n\nquestion", halves, sections)).toBe(`STABLEREACH|${STABLE_END_MARKER}RECENT|CWD\n\nquestion`);
+  });
+  it("marks after the whole volatile half when no section is per conversation", () => {
+    expect(markSharedPrompt("STABLEREACH|\n\nq", { stable: "STABLE", volatile: "REACH|" }, [{ id: "reach", text: "REACH|" }])).toBe(`STABLEREACH|${STABLE_END_MARKER}\n\nq`);
+  });
+  it("leaves a turn without the prompt, or without a split, unchanged", () => {
+    expect(markSharedPrompt("just the question", halves, sections)).toBe("just the question");
+    expect(markSharedPrompt("x", { stable: null, volatile: "" }, undefined)).toBe("x");
   });
 });
