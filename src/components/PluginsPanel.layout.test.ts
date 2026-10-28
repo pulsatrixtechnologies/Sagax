@@ -29,22 +29,22 @@ describe("Plugins panel views", () => {
     renderAction: (item: PluginItem) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
   };
   const page = (overrides: Partial<ConnectAppsViewProps> = {}) => renderToStaticMarkup(createElement(ConnectAppsView, {
-    tab: "discover", onTab: noop, items, extraConnected: 1, onOpenConnected: noop, refreshing: false, onRefresh: noop,
+    tab: "discover", onTab: noop, counts: { installed: 2 }, refreshing: false, onRefresh: noop,
     discover: createElement(DiscoverView, discoverProps), installed: "INSTALLED", accounts: "ACCOUNTS", sources: "SOURCES", ...overrides,
   }));
 
-  it("one page: Connect Apps with N connected in its title row, then the four tabs, Discover open", () => {
+  it("one page: Connect Apps, then the four tabs with Discover first and open, the count on Installed", () => {
     const html = page();
-    expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>[\s\S]*?data-plugins-connected/);
+    expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>/);
+    expect(html).not.toContain("data-plugins-connected");
     // no breadcrumb and no "Manage plugins and skills" page
     expect(html).not.toContain("data-breadcrumb");
     expect(html).not.toContain("Manage plugins and skills");
-    // the glitcho server and one Claude connector
-    expect(html).toContain("2 connected");
-    const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*>([^<]+)</g)].map((match) => [match[1], match[2]]);
-    expect(tabs).toEqual([["installed", "Installed"], ["discover", "Discover"], ["accounts", "My accounts"], ["sources", "Sources"]]);
+    expect(html).toMatch(/aria-label="Installed, 2 connected"[^>]*data-plugins-tab="installed"/);
+    const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*><span data-plugins-tab-label="[^"]*">([^<]+)</g)].map((match) => [match[1], match[2]]);
+    expect(tabs).toEqual([["discover", "Discover"], ["installed", "Installed"], ["accounts", "My accounts"], ["sources", "Sources"]]);
     expect(html).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
-    expect(html).toMatch(/data-plugins-connected[\s\S]*?role="tablist"[\s\S]*?placeholder="Search across apps and skills"/);
+    expect(html).toMatch(/id="plugins-title"[\s\S]*?role="tablist"[\s\S]*?placeholder="Search across apps and skills"/);
     expect(html).not.toContain("INSTALLED");
     expect(page({ tab: "sources" })).toContain("SOURCES");
     // a tab left out is not drawn; a tab not offered falls back to Discover

@@ -1012,7 +1012,6 @@
   "connectApps.botPlugin.title": "Para {name}",
   "connectApps.botPlugin.uninstall": "Remover de {name}",
   "connectApps.botPlugin.uninstallConfirm": "Remover {name} de {bot}?",
-  "connectApps.connectedCount": "{count} conectados",
   "connectApps.count.connectorMany": "{count} conectores",
   "connectApps.count.connectorOne": "1 conector",
   "connectApps.count.skillMany": "{count} habilidades",

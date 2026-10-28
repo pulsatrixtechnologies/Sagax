@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
-import { appKey, buildPluginItems, isGrokConnector, categoryFromTags, connectedSummary, installedPlugins, mainSections, matchesFilter, matchesType } from "./plugins-model";
+import { appKey, buildPluginItems, isGrokConnector, categoryFromTags, connectedSummary, installedPlugins, mainSections, matchesFilter, matchesType, pluginMark } from "./plugins-model";
 
 const sources = {
   servers: [
@@ -189,5 +189,29 @@ describe("the connected count", () => {
     // docs, Whop, the kit plugin (its server folds under it), and 3 Claude connectors
     expect(summary.count).toBe(6);
     expect(connectedSummary(items).count).toBe(3);
+  });
+});
+
+describe("a marketplace plugin's mark (2026-10-28)", () => {
+  it("its declared icon, else its site, else the app it is named for, else none", () => {
+    expect(pluginMark({ name: "ops", icon: "https://cdn.example.com/ops.png", homepage: "https://ops.example.com" })).toEqual({ logo: "https://cdn.example.com/ops.png", site: "ops.example.com" });
+    expect(pluginMark({ name: "notes", homepage: "https://www.notes.example.com/docs" })).toEqual({ logo: null, site: "notes.example.com" });
+    expect(pluginMark({ name: "github" })).toEqual({ logo: null, site: "github.com" });
+    expect(pluginMark({ name: "gmail" }).logo).toContain("gmail_2020q4_48dp.png");
+    expect(pluginMark({ name: "code-review" })).toEqual({ logo: null, site: null });
+    // a repository on a code host is not the plugin's own mark, except for that host's app
+    expect(pluginMark({ name: "code-review", homepage: "https://github.com/example/code-review" })).toEqual({ logo: null, site: null });
+    expect(pluginMark({ name: "github", homepage: "https://github.com/github/github-mcp-server" })).toEqual({ logo: null, site: "github.com" });
+    // an icon that is not https is not loaded
+    expect(pluginMark({ name: "x", icon: "http://cdn.example.com/x.png" })).toEqual({ logo: null, site: null });
+  });
+
+  it("plugin rows carry it, so Discover and Installed draw it", () => {
+    const items = buildPluginItems({ marketplaces: [{ name: "kit", plugins: [
+      { name: "notes", installed: true, servers: [], skills: [], homepage: "https://notes.example.com" },
+      { name: "plain", installed: false, servers: [], skills: [] },
+    ] }] });
+    expect(items.find((item) => item.id === "notes@kit")).toMatchObject({ kind: "plugin", domain: "notes.example.com" });
+    expect(items.find((item) => item.id === "plain@kit")?.domain).toBeUndefined();
   });
 });

@@ -181,6 +181,15 @@ describe("parsing the CLI", () => {
     ]);
     expect(JSON.stringify(listed)).not.toContain("https://");
   });
+  it("keeps a connector whose own name holds a colon whole", () => {
+    expect(parseClaudeMcpList([
+      "claude.ai Keyword Tool: Free SEO Research: https://kw.example/mcp - ✔ Connected",
+      "claude.ai Notes: https://notes.example/mcp - ! Needs authentication",
+    ].join("\n"))).toEqual([
+      { name: "Keyword Tool: Free SEO Research", status: "connected" },
+      { name: "Notes", status: "needs_auth" },
+    ]);
+  });
   it("reads the login method only", () => {
     expect(parseClaudeAuthStatus(JSON.stringify({ loggedIn: true, authMethod: "claude.ai", email: "x@y.z" }))).toBe("subscription");
     expect(parseClaudeAuthStatus(JSON.stringify({ loggedIn: true, authMethod: "api_key" }))).toBe("key");

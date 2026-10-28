@@ -167,6 +167,9 @@ export interface MarketplaceView {
     description?: string;
     version?: string;
     category?: string;
+    /** the plugin's site and declared icon (bot-plugins.ts pluginMarks) */
+    homepage?: string;
+    icon?: string;
     installed: boolean;
     /** the version installed, when it differs from `version` */
     installedVersion?: string;
@@ -563,6 +566,8 @@ export class PluginMarketplaces {
             ...(entry.description ? { description: entry.description } : {}),
             ...(entry.version ? { version: entry.version } : {}),
             ...(entry.category ? { category: entry.category } : {}),
+            ...(entry.homepage ? { homepage: entry.homepage } : {}),
+            ...(entry.icon ? { icon: entry.icon } : {}),
             installed: Boolean(installed),
             ...(installed?.version && installed.version !== entry.version ? { installedVersion: installed.version } : {}),
             ...(update ? { updateAvailable: true } : {}),

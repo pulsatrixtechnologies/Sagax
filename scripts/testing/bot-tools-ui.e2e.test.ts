@@ -122,8 +122,8 @@ describe("bot setup and tools in the real renderer", () => {
     await openPersona("Access");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("No MCP servers added yet.");
     await click("Manage in Connect apps");
-    await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-connected]'))"), { timeout: 10_000 }).toBe(true);
-    await evaluate("document.querySelector('[data-plugins-connected]')?.click(); true");
+    await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-tab=\"installed\"]'))"), { timeout: 10_000 }).toBe(true);
+    await evaluate("document.querySelector('[data-plugins-tab=\"installed\"]')?.click(); true");
     await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-advanced]'))"), { timeout: 10_000 }).toBe(true);
     await evaluate("(() => { const details = document.querySelector('[data-plugins-advanced]'); if (details instanceof HTMLDetailsElement) details.open = true; return true; })()");
     await expect.poll(() => evaluate("[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Paste config')?.disabled"), { timeout: 10_000 }).toBe(false);
@@ -144,8 +144,8 @@ describe("bot setup and tools in the real renderer", () => {
     if (!(await snapshot()).includes("Turn fixture on")) {
       await openPersona("Access");
       await click("Manage in Connect apps");
-      await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-connected]'))"), { timeout: 10_000 }).toBe(true);
-      await evaluate("document.querySelector('[data-plugins-connected]')?.click(); true");
+      await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-tab=\"installed\"]'))"), { timeout: 10_000 }).toBe(true);
+      await evaluate("document.querySelector('[data-plugins-tab=\"installed\"]')?.click(); true");
       await expect.poll(snapshot, { timeout: 10_000 }).toContain("fixture");
       await evaluate(`(() => {
         const row = [...document.querySelectorAll("button, [role=button]")].find((el) => (el.textContent || "").includes("fixture"));

@@ -39,7 +39,7 @@ import { canEditBotField } from "@/lib/bot-capabilities";
 import { canEditConfig } from "@/lib/viewer";
 import { detailIdentity, discoverItems, installedEntries, privateSkills, type InstalledEntry } from "@/lib/installed-model";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
-import { WHOP_KEY, buildPluginItems, connectedSummary, isGrokConnector, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
+import { WHOP_KEY, buildPluginItems, isGrokConnector, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
 import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "../../shared/grok-cloud-connectors";
 import { grokProviderConfigured } from "@/lib/providers-model";
 import { openExternalLink } from "@/lib/app-links";
@@ -74,7 +74,7 @@ import {
 } from "./McpServersPanel";
 import { IntegrationsManagedNotice, MyGithubConnection, MyMcpServers } from "./settings/MyConnectionsSettings";
 import { useServerMode } from "./ServerModeSettings";
-import { ConnectAppsView, connectAppsTabLabel, connectedTarget, type ConnectAppsTab } from "./plugins/ConnectAppsView";
+import { ConnectAppsView, connectAppsTabLabel, connectedCounts, type ConnectAppsTab } from "./plugins/ConnectAppsView";
 import type { Crumb } from "./Breadcrumb";
 import { CATEGORY_MODAL, cardActionClass } from "./category-modal";
 import { BotCatalogPane } from "./lazy-screens";
@@ -84,13 +84,12 @@ import { DiscoverView } from "./plugins/DiscoverView";
 import { AccountsView } from "./plugins/AccountsView";
 import { SourcesView } from "./plugins/SourcesView";
 import { OrgSourcesAccess } from "./plugins/OrgSourcesAccess";
-import { connectorGroups, type HarnessConnectorStatus } from "./plugins/HarnessConnectorGroups";
+import { connectorGroups, type ClaudeUnavailable, type HarnessConnectorStatus } from "./plugins/HarnessConnectorGroups";
 import { BotsForView, botServersAfter, botUsesServers } from "./plugins/BotsForView";
 import { PublishedPagesSettings } from "./PublishedPages";
 import { MarketplacesSection } from "./plugins/MarketplacesSection";
 import { PluginStatusLabel } from "./plugins/PluginParts";
 import { pluginShareLink } from "@/lib/plugin-link";
-import { connectedAppItems } from "@/lib/connected-apps";
 import { DataCenterDialog, type DataCenter } from "./plugins/DataCenterDialog";
 import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type DetailInstallState, type PluginDetailProps } from "./plugins/PluginDetailView";
 import { SkillPage } from "./plugins/SkillPage";
@@ -137,7 +136,7 @@ type Page =
 
 interface HarnessAnswer {
   manageUrl?: string;
-  claude?: { available: boolean; connectors?: Array<{ name: string; status: HarnessConnectorStatus }> };
+  claude?: { available: boolean; reason?: ClaudeUnavailable; connectors?: Array<{ name: string; status: HarnessConnectorStatus }> };
   codex?: { available: boolean; connectors?: Array<{ name: string; status: HarnessConnectorStatus }>; manageUrl?: string };
 }
 
@@ -152,7 +151,9 @@ function useHarnessConnectors() {
     try {
       setAnswer(await api<HarnessAnswer>(`/api/me/harness-connectors${refresh ? "?refresh=1" : ""}`, { timeoutMs: 90_000 }));
     } catch {
-      /* no answer: no Claude group */
+      // no answer (an older server, a timeout): the Claude section says so
+      // and offers to read again, it never vanishes (2026-10-28)
+      setAnswer((current) => current ?? { claude: { available: false, reason: "unknown", connectors: [] } });
     } finally {
       setLoading(false);
     }
@@ -898,23 +899,6 @@ export function PluginsPanel() {
     );
   }
 
-  /** "N connected": the tab that lists the connections (connectedTarget),
-   * out of any page opened from a tab; on the tab already, its list goes
-   * back to the top and takes the focus, so the click always shows them. */
-  const openConnected = () => {
-    const target = connectedTarget({
-      current: tab, subpage: page.page !== "main", botScope: scope === "bot",
-      engineConnected: claudeConnectors, ownConnected: connectedSummary(scopedItems).count,
-    });
-    setStack([{ page: "main" }]);
-    setTab(target.tab);
-    requestAnimationFrame(() => {
-      const list = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-list]");
-      if (!list) return;
-      list.scrollTo?.({ top: 0, behavior: target.same ? "smooth" : "auto" });
-      list.focus({ preventScroll: true });
-    });
-  };
   /** A tab: that tab's list (a page opened from a tab closes). */
   const chooseTab = (next: ConnectAppsTab) => {
     setStack([{ page: "main" }]);
@@ -930,10 +914,11 @@ export function PluginsPanel() {
     // credential list everywhere) in both scopes
     const githubHere = organization || marketRoute !== null;
     const orgHere = isOrgAdmin && scope === "workspace" && perspicaxOrg !== null;
-    const tabs: ConnectAppsTab[] = ["installed", "discover", "accounts",
+    const tabs: ConnectAppsTab[] = ["discover", "installed", "accounts",
       ...(marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || githubHere || orgHere ? ["sources" as const] : [])];
     const groups = connectorGroups({
-      claude: harness.answer?.claude ? { available: harness.answer.claude.available, connectors: harness.answer.claude.connectors ?? [], manageUrl: harness.answer.manageUrl } : null,
+      claude: harness.answer?.claude ? { available: harness.answer.claude.available, reason: harness.answer.claude.reason, connectors: harness.answer.claude.connectors ?? [], manageUrl: harness.answer.manageUrl } : null,
+      claudeLoading: harness.loading && !harness.answer,
       grok: grokConfigured ? { connectors: GROK_CLOUD_CONNECTORS } : null,
       codex: harness.answer?.codex ?? null,
     });
@@ -943,19 +928,10 @@ export function PluginsPanel() {
         onTab={chooseTab}
         page={subpage ?? undefined}
         tabs={tabs}
-        items={scopedItems}
-        extraConnected={scope === "bot" ? 0 : claudeConnectors}
-        // the sidebar foot's real logos: the person's account connectors and
-        // the connected servers (a bot's scope counts plugins: no logos)
-        logos={scope === "bot" ? [] : connectedAppItems({
-          servers: mcp.servers ?? [],
-          featured: featured ?? [],
-          account: harness.answer?.claude?.available ? harness.answer.claude.connectors ?? [] : [],
-        })}
-        // #1132/#1194: the number counts the engine accounts' connectors
-        // too, and those are listed under My accounts: with no app of its
-        // own installed, the button opens there instead of an empty Installed.
-        onOpenConnected={openConnected}
+        // what "N connected" counted, on the tabs that list them (2026-10-28):
+        // the person's connected entries on Installed, the engine accounts'
+        // connectors on My accounts (a bot's scope counts its plugins only)
+        counts={connectedCounts({ entries, engineConnected: scope === "bot" ? 0 : claudeConnectors })}
         scope={scopeControl}
         notices={notices}
         refreshing={refreshing}
@@ -1012,6 +988,12 @@ export function PluginsPanel() {
             servers={organization ? <MyMcpServers /> : undefined}
             claudeCode={!organization && canEditConfig(state.config) ? <ClaudeMcpSwitch /> : undefined}
             pages={<PublishedPagesSettings personal />}
+            // a section with no account offers to connect it (2026-10-28):
+            // Settings > Models and voice, where each engine signs in
+            onSetUp={() => {
+              close();
+              openSettings(dispatch, "engines");
+            }}
           />
         )}
         sources={(

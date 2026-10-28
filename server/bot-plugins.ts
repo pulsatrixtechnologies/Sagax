@@ -213,6 +213,11 @@ export interface MarketplacePluginEntry {
   description?: string;
   version?: string;
   category?: string;
+  /** its site (`homepage`, else `author.url`): the plugin's icon is that
+   * site's (2026-10-28) */
+  homepage?: string;
+  /** an https image the entry declares as its icon (`icon` or `logo`) */
+  icon?: string;
   /** Where its files are: inside the marketplace, or another repository. */
   source: { kind: "path"; path: string } | { kind: "git"; git: GitSource; path?: string };
 }
@@ -232,7 +237,7 @@ export interface MarketplaceListing {
   addedAt: number;
   updatedAt: number;
   plugins: Array<{
-    name: string; description?: string; version?: string; category?: string; installed: boolean; external: boolean;
+    name: string; description?: string; version?: string; category?: string; homepage?: string; icon?: string; installed: boolean; external: boolean;
     /** the version this bot has, when it differs from `version` */
     installedVersion?: string;
     /** the marketplace offers another version or other files (Install updates in place) */
@@ -269,6 +274,22 @@ export function readPluginContents(root: string): PluginContents {
 
 function text(value: unknown, max: number): string | undefined {
   return typeof value === "string" && value.trim() ? value.replace(/\s+/g, " ").trim().slice(0, max) : undefined;
+}
+
+/** An http(s) address from a manifest, or nothing (no other scheme, no
+ * credentials in it, bounded). `secure`: https only (an image the app loads). */
+export function manifestUrl(value: unknown, secure = false): string | undefined {
+  if (typeof value !== "string" || value.length > 500) return undefined;
+  const raw = value.trim();
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" && (secure || url.protocol !== "http:")) return undefined;
+    if (url.username || url.password) return undefined;
+    return url.href;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Read a marketplace's manifest (`.claude-plugin/marketplace.json`). */
@@ -316,10 +337,19 @@ export function readMarketplaceManifest(root: string): { name: string; descripti
       ...(text(entry.description, 300) ? { description: text(entry.description, 300) } : {}),
       ...(text(entry.version, 40) ? { version: text(entry.version, 40) } : {}),
       ...(text(entry.category, 40) ? { category: text(entry.category, 40) } : {}),
+      ...pluginMarks(entry),
       source,
     });
   }
   return { name, ...(description ? { description } : {}), plugins };
+}
+
+/** A manifest entry's site and icon, when it declares them. */
+function pluginMarks(entry: Record<string, unknown>): Pick<MarketplacePluginEntry, "homepage" | "icon"> {
+  const author = entry.author && typeof entry.author === "object" ? entry.author as Record<string, unknown> : {};
+  const homepage = manifestUrl(entry.homepage) ?? manifestUrl(author.url);
+  const icon = manifestUrl(entry.icon, true) ?? manifestUrl(entry.logo, true);
+  return { ...(homepage ? { homepage } : {}), ...(icon ? { icon } : {}) };
 }
 
 /** A path inside `root`, or a refusal (no `..`, no absolute path). */
@@ -626,6 +656,8 @@ export class BotPlugins {
             ...(entry.description ? { description: entry.description } : {}),
             ...(entry.version ? { version: entry.version } : {}),
             ...(entry.category ? { category: entry.category } : {}),
+            ...(entry.homepage ? { homepage: entry.homepage } : {}),
+            ...(entry.icon ? { icon: entry.icon } : {}),
             installed: Boolean(installed),
             ...(installed?.version && installed.version !== entry.version ? { installedVersion: installed.version } : {}),
             ...(update ? { updateAvailable: true } : {}),

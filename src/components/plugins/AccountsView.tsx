@@ -35,9 +35,11 @@ export interface AccountsViewProps {
   claudeCode?: ReactNode;
   /** the person's published pages (hidden by itself when there are none) */
   pages?: ReactNode;
+  /** set an engine up, from a section with no account (Settings > Models and voice) */
+  onSetUp?: (engine: HarnessEngine) => void;
 }
 
-export function AccountsView({ groups, refreshing, onRefresh, servers, claudeCode, pages }: AccountsViewProps) {
+export function AccountsView({ groups, refreshing, onRefresh, servers, claudeCode, pages, onSetUp }: AccountsViewProps) {
   const [chosen, setChosen] = useState<AccountService>("all");
   const services = accountServices(groups, Boolean(servers));
   const service = services.includes(chosen) ? chosen : "all";
@@ -58,7 +60,7 @@ export function AccountsView({ groups, refreshing, onRefresh, servers, claudeCod
       {empty && (
         <div className="rounded-xl bg-inset px-4 py-3 text-[12.5px] text-ink-secondary" data-plugins-empty>{t("connectApps.manage.accountsEmpty")}</div>
       )}
-      <HarnessConnectorGroups groups={shownGroups} refreshing={refreshing} onRefresh={onRefresh} />
+      <HarnessConnectorGroups groups={shownGroups} refreshing={refreshing} onRefresh={onRefresh} onSetUp={onSetUp} />
       {servers && shows("servers") && (
         <section className="mt-6 first:mt-0" data-plugins-personal>
           {servers}
