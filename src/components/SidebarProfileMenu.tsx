@@ -589,7 +589,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   // (org.approvals frames); the count opens Settings > Organization.
   const perspicaxOrg = usePerspicaxOrg();
   const orgAdmin = perspicaxOrg?.viewerRole === "admin";
-  const adminApprovals = useOrgApprovalsCount(orgAdmin);
+  const adminApprovals = useOrgApprovalsCount(orgAdmin, () => api<{ approvals?: unknown[] }>("/api/org/approvals"));
   const openAdminApprovals = () => dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
 
   const profile = state.config?.profile;
