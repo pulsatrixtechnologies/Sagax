@@ -709,6 +709,41 @@
       }
     },
     {
+      "name": "task_list",
+      "description": "The person's task list for you. States: doing, waiting (needs their decision), done. action list reads them. add creates one (title, optional state doing or waiting). advance moves doing to waiting. complete marks doing or waiting done. You cannot reopen a done task; the person does. Not the code work journal, and not a rule that holds a turn open.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "add",
+              "advance",
+              "complete"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "doing",
+              "waiting"
+            ]
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
       "name": "sagax_help",
       "description": "What Sagax and Perspicax can do, where it is in the app and how, who may do it: features, settings, your tools, permissions, engines, release notes. Call it before you answer a question about the app or say something is impossible. Returns a few short sections.",
       "inputSchema": {

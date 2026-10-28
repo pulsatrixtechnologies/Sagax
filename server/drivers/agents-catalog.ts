@@ -19,6 +19,7 @@ import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
 import { APP_TOOL_DEFINITIONS } from "./agents-app-tools.ts";
 import { PLACE_PHONE_CALL_TOOL_SPEC } from "../../shared/outbound-call.ts";
 import { ARTIFACT_TOOL_DEFINITIONS } from "./agents-artifact-tools.ts";
+import { TASK_LIST_TOOL_DEFINITIONS } from "./agents-task-tools.ts";
 import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_DEFINITIONS } from "./agents-settings-tools.ts";
 import { APPROVALS_TOOL_DEFINITIONS } from "./agents-approvals-tools.ts";
@@ -545,6 +546,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   ...WIDGET_TOOL_DEFINITIONS,
   ...APP_TOOL_DEFINITIONS,
   ...ARTIFACT_TOOL_DEFINITIONS,
+  ...TASK_LIST_TOOL_DEFINITIONS,
   ...PAGE_TOOL_DEFINITIONS,
   ...HELP_TOOL_DEFINITIONS,
   ...SETTINGS_TOOL_DEFINITIONS,

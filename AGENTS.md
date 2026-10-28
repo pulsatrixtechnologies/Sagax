@@ -7221,6 +7221,17 @@ route: another bot, or a bot that is not their primary, is 404
 `not_primary`. The card is `PreferenceImportCard` under Settings > Import.
 Covered by `shared/preference-import.test.ts`.
 
+## Bot task list
+
+A list on the bot, separate from the code work journal (`ActivitySection`)
+and from engine lifecycle hooks. States: doing, waiting (a decision), done.
+The bot adds, advances (doing to waiting) and marks done (`task_list`,
+`POST /api/internal/task-list`). The person can do those too, and only the
+person reopens a done task (`POST /api/bots/:id/task-list/:tid/reopen`).
+Not an organization setting: another person's list is 404, and there is no
+admin route. The panel section is `BotTaskSection`, above the code journal.
+Covered by `shared/bot-task-list.test.ts` and `server/bot-task-list.test.ts`.
+
 ## Artifacts: saved widgets that refresh without a turn (2026-10-16)
 
 A bot saves a widget as an artifact (`save_artifact`, `update_artifact`,

@@ -1160,6 +1160,8 @@ import { createArtifactStore } from "./artifacts.ts";
 import { createPreferenceStore } from "./preference-import.ts";
 import { createPreferenceImportRoutes } from "./routes/preference-import.ts";
 import { createArtifactInternalRoutes, createArtifactRoutes } from "./routes/artifacts.ts";
+import { createBotTaskInternalRoutes, createBotTaskRoutes } from "./routes/bot-task-list.ts";
+import { createBotTaskStore } from "./bot-task-list.ts";
 import { createArtifactRefresher } from "./artifact-refresh.ts";
 import { createArtifactSourceRunner, toolResultValue, type ToolAnswer } from "./artifact-sources.ts";
 import { createRoutineWatchEvaluator, RoutineWatchStates, type RoutineWatchDeps, type WatchPlace, type WatchRoutine } from "./routine-watch.ts";
@@ -1944,6 +1946,7 @@ const securityKeyCeremonies = securityKeyCeremonyRoutes({ keys: securityKeys });
 // only and fetch the change with their own rights.
 const artifactStore = createArtifactStore({ file: join(DATA_DIR, "artifacts.json"), onChange: (frame) => broadcast({ ...frame }) });
 const preferenceStore = createPreferenceStore({ file: join(DATA_DIR, "bot-preferences.json") });
+const botTaskStore = createBotTaskStore({ file: join(DATA_DIR, "bot-tasks.json") });
 // The files pinned in a conversation's Library tab (server/thread-file-pins.ts).
 const threadFilePins = createThreadFilePins({ file: join(DATA_DIR, "thread-file-pins.json") });
 // 2026-10-16: people's custom auto-review rules, in their own words
@@ -10997,6 +11000,8 @@ store.onChange((change) => {
       ownerApprovals.forgetBot(change.botId);
       try { artifactStore.removeBot(change.botId); }
       catch { console.error("[artifacts] Could not remove deleted bot's artifacts."); }
+      try { botTaskStore.removeBot(change.botId); }
+      catch { console.error("[tasks] Could not remove deleted bot's task list."); }
       broadcast({ kind: "bot.deleted", botId: change.botId });
       break;
     case "group": {
@@ -29386,6 +29391,23 @@ ROUTES.push(createPreferenceImportRoutes({
     return effectiveBotOwner(bot) === viewerId;
   },
 }));
+ROUTES.push(createBotTaskRoutes({
+  tasks: () => botTaskStore,
+  mayUseBot: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return false;
+    const viewerId = channelFilterViewerId(auth);
+    if (!viewerId) return true;
+    const viewer = authzViewerFromId(viewerId);
+    return Boolean(viewer && canOnBot(viewer, "bot.use", botFacts(bot)));
+  },
+  owner: (auth) => channelFilterViewerId(auth) ?? undefined,
+  mayView: (auth, task) => {
+    const viewerId = channelFilterViewerId(auth);
+    if (!viewerId) return true;
+    return !task.ownerId || task.ownerId === viewerId;
+  },
+}));
 ROUTES.push(createArtifactRoutes({
   artifacts: () => artifactStore,
   refreshNow: (artifact) => artifactRefresher.refreshNow(artifact.id),
@@ -29554,6 +29576,11 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   // save_artifact, update_artifact, list_artifacts, delete_artifact (server/routes/artifacts.ts)
   createArtifactInternalRoutes({
     artifacts: () => artifactStore,
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    speaker: (threadId) => safetyPrincipal(threadId).principalId,
+  }),
+  createBotTaskInternalRoutes({
+    tasks: () => botTaskStore,
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
     speaker: (threadId) => safetyPrincipal(threadId).principalId,
   }),

@@ -587,6 +587,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/artifacts\/watch$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/artifacts$/ },
   { methods: ["GET", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/artifacts\/art_[\w-]+$/ },
+  // The person's task list for a bot they use (server/routes/bot-task-list.ts).
+  // Not an organization setting. The handler keeps another person's list out.
+  { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/task-list$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/task-list\/task_[\w-]+\/(?:advance|complete|reopen)$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/artifacts\/art_[\w-]+\/refresh$/ },
   // Share as Template: a single-bot package without secrets (owner or admin).
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/export$/ },
