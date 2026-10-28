@@ -19,6 +19,7 @@ import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDelivery
 import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
 import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
 import { callPhoneTool, PHONE_TOOL_NAME } from "./agents-phone-tools.ts";
+import { callVideoTool, VIDEO_TOOL_NAME } from "./agents-video.ts";
 import { callVaultHttpTool, VAULT_HTTP_TOOL_NAME } from "./agents-vault-http-tools.ts";
 import { callConnectorSetupTool, CONNECTOR_SETUP_TOOL_NAME } from "./agents-connector-setup.ts";
 import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
@@ -565,6 +566,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   // create_options_card, show_widget, update_widget (agents-call-cards.ts).
   if (CARD_TOOL_NAMES.has(name)) return callCardTool(name, args, context);
   if (name === PHONE_TOOL_NAME) return callPhoneTool(args, context);
+  if (name === VIDEO_TOOL_NAME) return callVideoTool(args);
   if (name === VAULT_HTTP_TOOL_NAME) return callVaultHttpTool(args, context);
   if (name === CONNECTOR_SETUP_TOOL_NAME) return callConnectorSetupTool(args, context);
   if (ARTIFACT_TOOL_NAMES.has(name)) return callArtifactTool(name, args, context);

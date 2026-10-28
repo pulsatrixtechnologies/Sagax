@@ -23,6 +23,7 @@ import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_DEFINITIONS } from "./agents-settings-tools.ts";
 import { APPROVALS_TOOL_DEFINITIONS } from "./agents-approvals-tools.ts";
 import { phoneToolDefinition, phoneToolsFromEnv } from "./agents-phone-tools.ts";
+import { videoToolDefinition } from "./agents-video.ts";
 import { WEB_SEARCH_TOOL_DEFINITION } from "./agents-web-search-tools.ts";
 import { VAULT_HTTP_TOOL } from "./agents-vault-http-tools.ts";
 import type { PhoneToolId } from "../../shared/phone-tools.ts";
@@ -1911,6 +1912,8 @@ function catalogTools(profile: CatalogProfile) {
   const core = coreCatalogTools(profile);
   const base = [
     ...core,
+    // video on every engine, including a turn whose host shell is withheld
+    videoToolDefinition(),
     ...(profile.perspicax && !profile.externalRuntime ? PERSPICAX_TOOLS : []),
     // a call through the speaker's Twilio profile on Perspicax, on a card
     // (server/outbound-calls.ts); never in a room

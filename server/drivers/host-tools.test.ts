@@ -3,7 +3,7 @@
 // requests declined.
 import { describe, expect, it } from "vitest";
 
-import { CLAUDE_HOST_TOOLS, CLAUDE_ORG_TOOLS, CLAUDE_UNUSED_COMMANDS, CLAUDE_UNUSED_TOOLS, CODEX_WITHHELD_APPROVAL, GROK_MCP_TOOLS, OPENCODE_HOST_PERMISSIONS, PI_HOST_TOOLS, claudeDisallowedTools, claudeOrgTools, codexHostToolArgs, codexHostToolRequest, grokHostToolArgs, grokOrgAgentProfile, opencodeOrgPermission, piHostToolArgs } from "./host-tools.ts";
+import { CLAUDE_HOST_TOOLS, CLAUDE_ORG_TOOLS, CLAUDE_UNUSED_COMMANDS, CLAUDE_UNUSED_TOOLS, CODEX_WITHHELD_APPROVAL, GROK_MCP_TOOLS, GROK_VIDEO_TOOLS, OPENCODE_HOST_PERMISSIONS, PI_HOST_TOOLS, claudeDisallowedTools, claudeOrgTools, codexHostToolArgs, codexHostToolRequest, grokHostToolArgs, grokOrgAgentProfile, opencodeOrgPermission, piHostToolArgs } from "./host-tools.ts";
 
 describe("Claude Code host tools", () => {
   it("denies shell, file and fetch built-ins, keeping configured denials", () => {
@@ -80,13 +80,17 @@ describe("Codex host tools", () => {
 });
 
 describe("Grok host tools", () => {
-  it("keeps only the MCP tools in the ACP profile, even when a scope allows a host tool", () => {
+  it("keeps the MCP tools and video in the ACP profile, and not the shell", () => {
     const profile = grokOrgAgentProfile(undefined, true);
     expect(profile.injectDefaultTools).toBe(false);
-    expect(profile.tools).toEqual([...GROK_MCP_TOOLS]);
-    for (const name of ["run_terminal_command", "read_file", "write", "grep", "web_search", "web_fetch", "spawn_subagent", "bash"]) {
+    expect(profile.tools).toEqual([...GROK_MCP_TOOLS, ...GROK_VIDEO_TOOLS]);
+    for (const name of ["run_terminal_command", "read_file", "write", "grep", "web_search", "web_fetch", "spawn_subagent", "bash", "image_gen", "image_edit"]) {
       expect(profile.disallowedTools).toContain(name);
       expect(profile.tools).not.toContain(name);
+    }
+    for (const name of GROK_VIDEO_TOOLS) {
+      expect(profile.tools).toContain(name);
+      expect(profile.disallowedTools).not.toContain(name);
     }
     const narrowed = grokOrgAgentProfile({ allow: ["native:read_file", "native:search_tool", "native:use_tool"] }, false);
     expect(narrowed.tools).toEqual(["search_tool", "use_tool"]);
