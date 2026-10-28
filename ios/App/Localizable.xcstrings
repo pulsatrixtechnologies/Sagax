@@ -81956,6 +81956,150 @@
           }
         }
       }
+    },
+    "Answer": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Answer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Répondre" } }
+      }
+    },
+    "Mark done": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mark done" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Marquer terminée" } }
+      }
+    },
+    "Reopen": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reopen" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rouvrir" } }
+      }
+    },
+    "Available after the server update.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Available after the server update." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Disponible après la mise à jour du serveur." } }
+      }
+    },
+    "The task list could not be loaded.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The task list could not be loaded." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La liste de tâches n'a pas pu être chargée." } }
+      }
+    },
+    "No tasks yet. Ask your bot to note a task, for example \"Add a task: renew the domain\".": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No tasks yet. Ask your bot to note a task, for example \"Add a task: renew the domain\"." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune tâche pour l'instant. Demandez à votre bot de noter une tâche, par exemple « Ajoutez une tâche : renouveler le domaine »." } }
+      }
+    },
+    "What this bot is doing for you. Anything that needs you comes first.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What this bot is doing for you. Anything that needs you comes first." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce que ce bot fait pour vous. Ce qui vous attend passe en premier." } }
+      }
+    },
+    "botTasks.group.waiting": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs you" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous attend" } }
+      }
+    },
+    "botTasks.group.doing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In progress" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En cours" } }
+      }
+    },
+    "botTasks.group.done": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Done" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Terminées" } }
+      }
+    },
+    "botTasks.state.waiting": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs you" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous attend" } }
+      }
+    },
+    "botTasks.state.doing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In progress" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En cours" } }
+      }
+    },
+    "botTasks.state.done": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Done" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Terminée" } }
+      }
+    },
+    "Put back in progress": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Put back in progress" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Remettre en cours" } }
+      }
+    },
+    "Open the conversation": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open the conversation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la conversation" } }
+      }
+    },
+    "Note from the bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Note from the bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Note du bot" } }
+      }
+    },
+    "by the bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "by the bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "par le bot" } }
+      }
+    },
+    "by you": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "by you" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "par vous" } }
+      }
+    },
+    "Needs your answer · %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs your answer · %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Attend votre réponse · %@" } }
+      }
+    },
+    "Updated %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Updated %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mise à jour %@" } }
+      }
+    },
+    "Done %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Done %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Terminée %@" } }
+      }
+    },
+    "About the task “%@”: ": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "About the task “%@”: " } },
+        "fr": { "stringUnit": { "state": "translated", "value": "À propos de la tâche « %@ » : " } }
+      }
+    },
+    "Remove this task?": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Remove this task?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Retirer cette tâche ?" } }
+      }
+    },
+    "More actions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "More actions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Plus d'actions" } }
+      }
     }
   },
   "version": "1.0"

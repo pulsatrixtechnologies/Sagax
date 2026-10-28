@@ -1,21 +1,53 @@
-// The bot's task list in its panel. The rows are the server's. An empty
-// list stays empty. This is not the code work journal below it.
+// The task list of a bot in its panel: the to-do list the bot keeps for the
+// person (shared/bot-task-list.ts). The rows come from the server. Not the
+// code work journal.
+//
+// Laid out like the Routines rows below it: grouped cards, a title and a
+// line under it. What needs the person comes first, in the accent, with
+// Answer; then what is in progress; then Done, folded with its count, each
+// row checked and dimmed. A row opens the task in place (full title, the
+// note of the bot, every change of state) and its menu (the ... button,
+// a right click, Shift+F10 or the menu key) marks it done, puts it back in
+// progress, reopens or removes it. Answer opens the conversation with the
+// task named in the composer, so the reply goes back to the bot.
+//
+// The list stays current while the panel is open: the server sends
+// `bot.tasks` (ids only) when the bot adds or moves a task, and the section
+// reads again; it also reads again when the window comes back into view.
 // A server without the route yet (an older one) says it comes with the
 // server update, never an error.
-import { useEffect, useState } from "react";
+import { Check, ChevronRight, CircleDashed, ListTodo, MessageCircleQuestion, MoreHorizontal, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
+import { BOT_TASKS_EVENT, type BotTasksEventDetail } from "@/lib/bot-task-events";
+import { cn } from "@/lib/cn";
+import { appendComposerDraft } from "@/lib/drafts";
+import { GROUPED_CARD, GROUPED_ROW } from "@/lib/grouped-card";
 import { t } from "@/lib/i18n";
+import { relativeTime } from "@/lib/memory";
 import { routeMissingOnServer } from "@/lib/server-route";
-import { api, ApiError } from "@/state/store";
-import { canReopenBotTask, type BotTask, type BotTaskState } from "../../../shared/bot-task-list";
-
-const LABEL: Record<BotTaskState, "botTasks.doing" | "botTasks.waiting" | "botTasks.done"> = {
-  doing: "botTasks.doing",
-  waiting: "botTasks.waiting",
-  done: "botTasks.done",
-};
+import { useShowThreads } from "@/lib/thread-preferences";
+import { api, ApiError, openBotThread, useStoreOptional } from "@/state/store";
+import { groupBotTasks, personBotTaskActions, type BotTask, type BotTaskAction, type BotTaskState } from "../../../shared/bot-task-list";
+import { navigateThreadMenu } from "../BotProjects";
+import { RoutineDetailHeader } from "./RoutinesSection";
 
 type LoadState = "ok" | "failed" | "needsUpdate";
+type PersonMove = Exclude<BotTaskAction, "advance">;
+
+const STATE_LABEL: Record<BotTaskState, "botTasks.waiting" | "botTasks.doing" | "botTasks.done"> = {
+  waiting: "botTasks.waiting",
+  doing: "botTasks.doing",
+  done: "botTasks.done",
+};
+const MOVE_LABEL: Record<PersonMove, "botTasks.complete" | "botTasks.resume" | "botTasks.reopen"> = {
+  complete: "botTasks.complete",
+  resume: "botTasks.resume",
+  reopen: "botTasks.reopen",
+};
+const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover focus-visible:bg-hover focus-visible:outline-none disabled:opacity-50";
+const DETAIL_BUTTON = "flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-hairline/50 bg-panel px-3 py-2.5 text-[13px] font-medium text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 /** How a failed read shows: the route missing on an older server is not an
  * error, and a bot this person cannot reach has no tasks for them. */
@@ -25,49 +57,323 @@ export function taskListFailure(error: unknown): { tasks?: BotTask[]; state: Loa
   return { state: "failed" };
 }
 
+/** The line under a title: what the task waits on, and since when. */
+export function botTaskSubtitle(task: BotTask, now = Date.now()): string {
+  const when = relativeTime(task.updatedAt, now);
+  if (task.state === "waiting") return t("botTasks.line.waiting", { when });
+  if (task.state === "done") return t("botTasks.line.done", { when });
+  return t("botTasks.line.doing", { when });
+}
+
+/** What Answer puts in the composer: the task named, so the bot knows
+ * which one the reply is about. Never sent by itself. */
+export function botTaskAnswerDraft(task: Pick<BotTask, "title">): string {
+  return t("botTasks.answerDraft", { title: task.title });
+}
+
+const listPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/task-list`;
+
+type MenuState = { task: BotTask; x: number; y: number; trigger: HTMLElement };
+
 export function BotTaskSection({ botId }: { botId: string }) {
+  const store = useStoreOptional();
+  const threadsShown = useShowThreads();
+  const bot = store?.state.bots.find((candidate) => candidate.id === botId);
   const [tasks, setTasks] = useState<BotTask[] | null>(null);
   const [state, setState] = useState<LoadState>("ok");
-  const fail = (error: unknown) => {
-    const next = taskListFailure(error);
-    if (next.tasks) setTasks(next.tasks);
-    setState(next.state);
-  };
+  const [doneOpen, setDoneOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  // Only the newest read lands: a slow answer never overwrites a newer one.
+  const readSeq = useRef(0);
+  // The row a closed detail hands the focus back to.
+  const returnFocus = useRef<string | null>(null);
+
+  const load = useCallback(() => {
+    const seq = ++readSeq.current;
+    api<{ tasks: BotTask[] }>(listPath(botId))
+      .then((body) => {
+        if (seq !== readSeq.current) return;
+        setTasks(Array.isArray(body?.tasks) ? body.tasks : []);
+        setState("ok");
+      })
+      .catch((error: unknown) => {
+        if (seq !== readSeq.current) return;
+        const next = taskListFailure(error);
+        if (next.tasks) setTasks(next.tasks);
+        setState(next.state);
+      });
+  }, [botId]);
+
   useEffect(() => {
-    let live = true;
     setTasks(null);
     setState("ok");
-    api<{ tasks: BotTask[] }>(`/api/bots/${encodeURIComponent(botId)}/task-list`)
-      .then((body) => { if (live) setTasks(Array.isArray(body?.tasks) ? body.tasks : []); })
-      .catch((error: unknown) => { if (live) fail(error); });
-    return () => { live = false; };
-  }, [botId]);
-  const reopen = (id: string) => {
-    void api(`/api/bots/${encodeURIComponent(botId)}/task-list/${encodeURIComponent(id)}/reopen`, { method: "POST", body: "{}" })
-      .then(() => api<{ tasks: BotTask[] }>(`/api/bots/${encodeURIComponent(botId)}/task-list`))
-      .then((body) => { setTasks(Array.isArray(body?.tasks) ? body.tasks : []); setState("ok"); })
-      .catch(fail);
+    setDoneOpen(false);
+    setOpenId(null);
+    setMenu(null);
+    load();
+    // the bot added or moved a task (frame `bot.tasks`, src/state/store.tsx)
+    const onFrame = (event: Event) => {
+      if ((event as CustomEvent<BotTasksEventDetail>).detail?.botId === botId) load();
+    };
+    // back on the window: read again, in case a frame was missed
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    window.addEventListener(BOT_TASKS_EVENT, onFrame);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      readSeq.current += 1;
+      window.removeEventListener(BOT_TASKS_EVENT, onFrame);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [botId, load]);
+
+  // A closed detail gives the focus back to its row.
+  useEffect(() => {
+    if (openId || !returnFocus.current) return;
+    const id = returnFocus.current;
+    returnFocus.current = null;
+    document.querySelector<HTMLElement>(`[data-bot-task-open="${CSS.escape(id)}"]`)?.focus();
+  }, [openId]);
+
+  const fail = (error: unknown) => {
+    const next = taskListFailure(error);
+    setState(next.state === "ok" ? "failed" : next.state);
   };
+  const move = (task: BotTask, action: PersonMove) => {
+    // shown at once; the server answer (and its frame) confirms it
+    const next = action === "complete" ? "done" : "doing";
+    setTasks((current) => current?.map((item) => item.id === task.id ? { ...item, state: next, updatedAt: Date.now() } : item) ?? current);
+    void api(`${listPath(botId)}/${encodeURIComponent(task.id)}/${action}`, { method: "POST", body: "{}" }).then(load).catch((error: unknown) => { fail(error); load(); });
+  };
+  const remove = (task: BotTask) => {
+    setTasks((current) => current?.filter((item) => item.id !== task.id) ?? current);
+    if (openId === task.id) setOpenId(null);
+    void api(`${listPath(botId)}/${encodeURIComponent(task.id)}`, { method: "DELETE" }).then(load).catch((error: unknown) => { fail(error); load(); });
+  };
+  const answer = (task: BotTask) => {
+    if (!store || !bot) return;
+    const threadId = task.threadId ?? bot.threadId;
+    openBotThread(store.dispatch, bot, threadId, threadsShown);
+    appendComposerDraft(`bot:${bot.id}:${threadId}`, botTaskAnswerDraft(task));
+  };
+  const openTask = (task: BotTask) => { setMenu(null); setOpenId(task.id); };
+  const closeTask = () => { returnFocus.current = openId; setOpenId(null); };
+  const openMenu = (task: BotTask, trigger: HTMLElement, at?: { x: number; y: number }) => {
+    const rect = trigger.getBoundingClientRect();
+    setMenu({ task, trigger, x: at?.x ?? rect.right - 220, y: at?.y ?? rect.bottom + 4 });
+  };
+  const closeMenu = (focusTrigger = true) => {
+    const trigger = menu?.trigger;
+    setMenu(null);
+    if (focusTrigger) trigger?.focus();
+  };
+
+  const groups = tasks ? groupBotTasks(tasks) : null;
+  const total = tasks?.length ?? 0;
+  const open = openId ? tasks?.find((task) => task.id === openId) ?? null : null;
+
+  const row = (task: BotTask) => {
+    const subtitle = botTaskSubtitle(task);
+    const waiting = task.state === "waiting";
+    const done = task.state === "done";
+    return (
+      <li key={task.id} data-bot-task={task.state}
+        onContextMenu={(event) => { event.preventDefault(); openMenu(task, event.currentTarget, { x: event.clientX, y: event.clientY }); }}
+        className={cn("group/task flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW, "py-2")}>
+        <StateIcon state={task.state} />
+        <button type="button" data-bot-task-open={task.id} onClick={() => openTask(task)}
+          onKeyDown={(event) => {
+            if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); openMenu(task, event.currentTarget); }
+          }}
+          aria-keyshortcuts="Shift+F10"
+          aria-label={`${task.title}, ${t(STATE_LABEL[task.state])}`}
+          className="min-w-0 flex-1 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+          <span title={task.title} className={cn("line-clamp-2 break-words text-[13px] leading-[18px]", done ? "text-ink-tertiary" : "text-ink", waiting && "font-medium")}>{task.title}</span>
+          {waiting && task.note ? <span data-bot-task-note-preview="true" title={task.note} className="mt-0.5 line-clamp-1 text-[12px] leading-4 text-ink">{task.note}</span> : null}
+          <span className={cn("block truncate text-[12px] leading-4", done ? "text-ink-tertiary" : "text-ink-secondary")}>{subtitle}</span>
+        </button>
+        {waiting && bot ? (
+          <button type="button" data-bot-task-answer="true" onClick={() => answer(task)}
+            className="shrink-0 rounded-full bg-accent px-2.5 py-1 text-[12px] font-medium leading-4 text-accent-ink hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+            {t("botTasks.answer")}
+          </button>
+        ) : null}
+        <button type="button" data-bot-task-menu={task.id}
+          aria-label={t("botTasks.menu", { title: task.title })} title={t("botTasks.menu", { title: task.title })}
+          aria-haspopup="menu" aria-expanded={menu?.task.id === task.id}
+          onClick={(event) => openMenu(task, event.currentTarget)}
+          className={cn("size-7 shrink-0 items-center justify-center rounded-md text-ink-tertiary hover:bg-raised hover:text-ink focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover/task:flex touch:flex",
+            menu?.task.id === task.id ? "flex" : "hidden")}>
+          <MoreHorizontal size={15} />
+        </button>
+      </li>
+    );
+  };
+
   return (
-    <section data-bot-settings-section="task-list" className="flex flex-col gap-2">
-      <h3 className="text-[13px] font-medium text-ink">{t("botTasks.title")}</h3>
-      <p className="text-[12px] text-ink-secondary">{t("botTasks.hint")}</p>
-      {state === "needsUpdate" ? <p data-bot-tasks-needs-update="" className="text-[12px] text-ink-tertiary">{t("serverRoute.needsUpdate")}</p> : null}
+    <section data-bot-settings-section="task-list" aria-labelledby={`bot-tasks-${botId}`} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <ListTodo size={16} aria-hidden="true" className="text-ink-secondary" />
+          <h2 id={`bot-tasks-${botId}`} className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("botTasks.title")}</h2>
+        </div>
+        <p className="text-[12px] leading-4 text-ink-tertiary">{t("botTasks.hint")}</p>
+      </div>
+      {state === "needsUpdate" ? <p data-bot-tasks-needs-update="true" className="text-[12px] text-ink-tertiary">{t("serverRoute.needsUpdate")}</p> : null}
       {state === "failed" ? <p className="text-[12px] text-danger">{t("botTasks.error")}</p> : null}
-      {state !== "needsUpdate" && tasks && tasks.length === 0 ? <p className="text-[12px] text-ink-tertiary">{t("botTasks.empty")}</p> : null}
-      {state !== "needsUpdate" && tasks && tasks.length > 0 ? (
-        <ul className="flex flex-col gap-1">
-          {tasks.map((task) => (
-            <li key={task.id} data-bot-task={task.state} className="flex items-center gap-2 text-[12.5px]">
-              <span className="min-w-0 flex-1 truncate text-ink">{task.title}</span>
-              <span className="text-ink-secondary">{t(LABEL[task.state])}</span>
-              {canReopenBotTask(task.state) ? (
-                <button type="button" onClick={() => reopen(task.id)} className="text-accent hover:underline">{t("botTasks.reopen")}</button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+      {state !== "needsUpdate" && tasks && total === 0 ? (
+        <div data-bot-tasks-empty="true" className="flex items-start gap-2.5 rounded-xl border border-dashed border-hairline-weak px-3 py-2.5">
+          <ListTodo size={15} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-tertiary" />
+          <p className="text-[12px] leading-4 text-ink-secondary">{t("botTasks.empty")}</p>
+        </div>
+      ) : null}
+      {state !== "needsUpdate" && groups && total > 0 ? (
+        <div className="flex flex-col gap-3">
+          {groups.waiting.length > 0 ? (
+            <div data-bot-task-group="waiting" className="flex flex-col gap-1.5">
+              <GroupTitle state="waiting" count={groups.waiting.length} />
+              <ul className={cn(GROUPED_CARD, "border-accent/40")}>{groups.waiting.map(row)}</ul>
+            </div>
+          ) : null}
+          {groups.doing.length > 0 ? (
+            <div data-bot-task-group="doing" className="flex flex-col gap-1.5">
+              <GroupTitle state="doing" count={groups.doing.length} />
+              <ul className={GROUPED_CARD}>{groups.doing.map(row)}</ul>
+            </div>
+          ) : null}
+          {groups.done.length > 0 ? (
+            <div data-bot-task-group="done" className="flex flex-col gap-1.5">
+              <button type="button" data-bot-tasks-done-toggle="true" aria-expanded={doneOpen} onClick={() => setDoneOpen((value) => !value)}
+                className="flex items-center gap-1 self-start rounded px-0.5 text-[12px] leading-[17px] text-ink-tertiary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+                <ChevronRight size={13} aria-hidden="true" className={cn("transition-transform", doneOpen && "rotate-90")} />
+                {t("botTasks.done")}
+                <span className="tabular-nums">{groups.done.length}</span>
+              </button>
+              {doneOpen ? <ul className={GROUPED_CARD}>{groups.done.map(row)}</ul> : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {menu && createPortal(
+        <div className="fixed inset-0 z-40" onMouseDown={() => closeMenu(false)} onContextMenu={(event) => { event.preventDefault(); closeMenu(false); }}>
+          <div role="menu" data-bot-task-menu-open={menu.task.id} aria-label={menu.task.title}
+            style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 228)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 220)) }}
+            className="absolute flex w-[220px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-ink shadow-lg"
+            onMouseDown={(event) => event.stopPropagation()}
+            onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+              if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); closeMenu(); return; }
+              navigateThreadMenu(event);
+            }}>
+            <TaskActions task={menu.task} canAnswer={Boolean(bot)} kind="menu"
+              onOpen={() => openTask(menu.task)}
+              onAnswer={() => { closeMenu(false); answer(menu.task); }}
+              onMove={(action) => { closeMenu(); move(menu.task, action); }}
+              onRemove={() => { closeMenu(false); remove(menu.task); }} />
+          </div>
+        </div>, document.body)}
+
+      {open ? (
+        <TaskDetail task={open} canAnswer={Boolean(bot)} onBack={closeTask}
+          onClose={store ? () => { store.dispatch({ type: "toggleSettings", open: false }); store.dispatch({ type: "toggleComputer", open: false }); } : closeTask}
+          onAnswer={() => answer(open)}
+          onMove={(action) => move(open, action)}
+          onRemove={() => { returnFocus.current = null; remove(open); }} />
       ) : null}
     </section>
+  );
+}
+
+function StateIcon({ state }: { state: BotTaskState }) {
+  if (state === "waiting") return <MessageCircleQuestion size={16} aria-hidden="true" className="shrink-0 text-accent" />;
+  if (state === "done") return <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center rounded-full bg-ink-tertiary/25 text-ink-tertiary"><Check size={11} strokeWidth={2.5} /></span>;
+  return <CircleDashed size={16} aria-hidden="true" className="shrink-0 text-ink-tertiary" />;
+}
+
+function GroupTitle({ state, count }: { state: BotTaskState; count: number }) {
+  return (
+    <h3 className={cn("flex items-center gap-1.5 px-0.5 text-[12px] leading-[17px]", state === "waiting" ? "font-medium text-accent" : "text-ink-tertiary")}>
+      {t(STATE_LABEL[state])}
+      <span className="tabular-nums">{count}</span>
+    </h3>
+  );
+}
+
+/** The moves on a task, the same in its menu and its detail. */
+function TaskActions({ task, canAnswer, kind, onOpen, onAnswer, onMove, onRemove }: {
+  task: BotTask;
+  canAnswer: boolean;
+  kind: "menu" | "detail";
+  onOpen?: () => void;
+  onAnswer: () => void;
+  onMove: (action: PersonMove) => void;
+  onRemove: () => void;
+}) {
+  const moves = personBotTaskActions(task.state).filter((action): action is PersonMove => action !== "advance");
+  const item = (key: string, label: ReactNode, onClick: () => void, options: { autoFocus?: boolean; danger?: boolean; primary?: boolean } = {}) => kind === "menu"
+    ? <button key={key} type="button" role="menuitem" data-bot-task-action={key} autoFocus={options.autoFocus} onClick={onClick} className={cn(MENU_ITEM, options.danger && "text-danger")}>{label}</button>
+    : <button key={key} type="button" data-bot-task-action={key} onClick={onClick}
+      className={cn(DETAIL_BUTTON, options.primary && "basis-full border-transparent bg-accent text-accent-ink hover:bg-accent hover:brightness-110", options.danger && "flex-none px-3 text-ink-secondary hover:text-danger")}>{label}</button>;
+  return <>
+    {kind === "menu" && onOpen ? item("open", t("botTasks.open"), onOpen, { autoFocus: true }) : null}
+    {task.state === "waiting" && canAnswer ? item("answer", t("botTasks.answer"), onAnswer, { primary: true }) : null}
+    {moves.map((action) => item(action, t(MOVE_LABEL[action]), () => onMove(action)))}
+    {kind === "menu" ? <div role="separator" className="my-1 h-px bg-hairline-weak" /> : null}
+    {item("remove", kind === "menu" ? <><Trash2 size={14} aria-hidden="true" />{t("botTasks.remove")}</> : <><Trash2 size={15} aria-hidden="true" /><span className="sr-only">{t("botTasks.remove")}</span></>, onRemove, { danger: true })}
+  </>;
+}
+
+/** The task opened in place over the panel, like the page of a routine. */
+function TaskDetail({ task, canAnswer, onBack, onClose, onAnswer, onMove, onRemove }: {
+  task: BotTask;
+  canAnswer: boolean;
+  onBack: () => void;
+  onClose: () => void;
+  onAnswer: () => void;
+  onMove: (action: PersonMove) => void;
+  onRemove: () => void;
+}) {
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => { body.current?.focus(); }, [task.id]);
+  const history = [...(task.history ?? [])].reverse();
+  return (
+    <div data-bot-task-detail={task.id} role="dialog" aria-modal="false" aria-label={task.title}
+      onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); onBack(); } }}
+      className="absolute inset-0 z-20 flex flex-col bg-panel">
+      <RoutineDetailHeader name={t("botTasks.title")} onBack={onBack} onClose={onClose} />
+      <div ref={body} tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 outline-none">
+        <div className="flex items-center gap-2">
+          <StateIcon state={task.state} />
+          <span data-bot-task-detail-state={task.state} className={cn("rounded-md px-1.5 text-[11.5px] leading-[18px]", task.state === "waiting" ? "bg-accent/15 text-accent" : "bg-inset text-ink-secondary")}>{t(STATE_LABEL[task.state])}</span>
+          <span className="text-[12px] text-ink-tertiary">{botTaskSubtitle(task)}</span>
+        </div>
+        <p className="mt-2 whitespace-pre-wrap break-words text-[15px] font-semibold leading-snug text-ink">{task.title}</p>
+        {task.note ? (
+          <div className="mt-4">
+            <div className="text-[12px] leading-[17px] text-ink-tertiary">{t("botTasks.detail.note")}</div>
+            <p data-bot-task-note="true" className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{task.note}</p>
+          </div>
+        ) : null}
+        <div className="mt-4">
+          <div className="text-[12px] leading-[17px] text-ink-tertiary">{t("botTasks.detail.history")}</div>
+          {history.length > 0 ? (
+            <ol data-bot-task-history="true" className={cn(GROUPED_CARD, "mt-1.5")}>
+              {history.map((event, index) => (
+                <li key={`${event.at}-${index}`} className={cn(GROUPED_ROW, "flex items-center gap-2 py-2 text-[12.5px]")}>
+                  <StateIcon state={event.state} />
+                  <span className="min-w-0 flex-1 text-ink">{t(STATE_LABEL[event.state])}<span className="text-ink-secondary"> · {t(event.by === "bot" ? "botTasks.by.bot" : "botTasks.by.person")}</span></span>
+                  <span className="shrink-0 text-ink-tertiary" title={new Date(event.at).toLocaleString()}>{relativeTime(event.at)}</span>
+                </li>
+              ))}
+            </ol>
+          ) : <p className="mt-1 text-[12.5px] text-ink-secondary">{t("botTasks.detail.since", { when: relativeTime(task.createdAt) })}</p>}
+        </div>
+      </div>
+      <div data-bot-task-detail-actions="true" className="flex flex-wrap items-center gap-2 border-t border-hairline/40 px-3 py-3">
+        <TaskActions task={task} canAnswer={canAnswer} kind="detail" onAnswer={onAnswer} onMove={onMove} onRemove={onRemove} />
+      </div>
+    </div>
   );
 }

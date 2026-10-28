@@ -4,14 +4,15 @@ export const TASK_LIST_TOOL_DEFINITIONS = [
   {
     name: "task_list",
     description:
-      "The person's task list for you. States: doing, waiting (needs their decision), done. action list reads them. add creates one (title, optional state doing or waiting). advance moves doing to waiting. complete marks doing or waiting done. You cannot reopen a done task; the person does. Not the code work journal, and not a rule that holds a turn open.",
+      "The person's to-do list you keep for them (shown in your panel). States: doing, waiting (needs them), done. list reads it. add: title, state, optional note. advance: doing to waiting. complete: to done. note: your note on a task. Name a task by task_id or exact title. Only the person reopens or removes. Not the code work journal.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
-        action: { type: "string", enum: ["list", "add", "advance", "complete"] },
+        action: { type: "string", enum: ["list", "add", "advance", "complete", "note"] },
         title: { type: "string" },
-        state: { type: "string", enum: ["doing", "waiting"] },
+        state: { type: "string", enum: ["doing", "waiting", "done"] },
+        note: { type: "string" },
         task_id: { type: "string" },
       },
       required: ["action"],

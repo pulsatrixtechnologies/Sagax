@@ -612,7 +612,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The person's task list for a bot they use (server/routes/bot-task-list.ts).
   // Not an organization setting. The handler keeps another person's list out.
   { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/task-list$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/task-list\/task_[\w-]+\/(?:advance|complete|reopen)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/task-list\/task_[\w-]+\/(?:advance|complete|resume|reopen)$/ },
+  { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/task-list\/task_[\w-]+$/ },
   // The person's background brief for a bot they own (server/routes/background-brief.ts).
   // The handler refuses anyone but the bot's person. Not an admin route.
   { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/background-brief$/ },

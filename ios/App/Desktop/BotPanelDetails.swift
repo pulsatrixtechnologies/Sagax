@@ -163,6 +163,8 @@ struct BotPanelDetails: View {
                 case let .openSection(name): shell.showPersona(DesktopPanelSection(rawValue: name))
                 }
             }
+            // Details > Tasks (BotTaskSection.tsx): the to-do list the bot keeps
+            BotTaskListCard(bot: bot) { threadId in session.openChat(threadId: threadId) }
             if showsActivity {
                 if activity.showsCodingSection {
                     AnyView(codingSection)

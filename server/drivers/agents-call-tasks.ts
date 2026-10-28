@@ -13,6 +13,8 @@ export async function callTaskListTool(name: string, args: Json, context: ToolCa
   });
   if (!ok) return { text: String(body.error ?? "The task list could not be changed."), isError: true };
   if (record.action === "list") return { text: JSON.stringify(body.tasks ?? []) };
-  const task = body.task as { id?: unknown; state?: unknown; title?: unknown } | undefined;
-  return { text: `Task ${String(task?.id ?? "")} is ${String(task?.state ?? "")}: ${String(task?.title ?? "")}` };
+  // the state the server holds now, so the bot never reports one it did not set
+  const task = body.task as { id?: unknown; state?: unknown; title?: unknown; note?: unknown } | undefined;
+  const note = typeof task?.note === "string" && task.note ? ` Note: ${task.note}` : "";
+  return { text: `Task ${String(task?.id ?? "")} is now ${String(task?.state ?? "")} on the server: ${String(task?.title ?? "")}.${note}` };
 }

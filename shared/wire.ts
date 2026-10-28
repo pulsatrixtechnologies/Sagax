@@ -57,6 +57,7 @@ import type { TerminalEmbed } from "./terminal-resources.ts";
 import type { TerminalRequestCardData } from "./terminal-request.ts";
 import type { WireVideoWidget } from "./video-widget.ts";
 import type { ArtifactsFrame } from "./artifacts.ts";
+import type { BotTasksFrame } from "./bot-task-list.ts";
 import { EFFORT_LEVELS, isEffortLevel, type EffortLevel, type ModelSelection } from "./model-selection.ts";
 
 export { EFFORT_LEVELS, isEffortLevel, type EffortLevel, type ModelSelection };
@@ -1423,6 +1424,8 @@ export type ServerFrame =
   | { kind: "cloud.agent"; botId: string; item: CloudAgentWireItem }
   /** A bot's artifacts changed (server/artifacts.ts): ids only, fetch again. */
   | ArtifactsFrame
+  /** A bot's task list changed (server/bot-task-list.ts): ids only, fetch again. */
+  | BotTasksFrame
   | { kind: "webhook"; webhook: WebhookTrigger }
   | { kind: "webhook.attempt"; attempt: WebhookAttempt }
   | { kind: "webhook.deleted"; webhookId: string }

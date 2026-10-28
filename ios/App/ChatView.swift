@@ -368,6 +368,10 @@ struct ChatView: View {
         .onValueChange(of: showingRoomInfo) { shown in
             if shown { dictation.stop() }
         }
+        // a draft another screen prepared for this thread, unsent (Tasks "Answer")
+        .onReceive(ComposerPrefill.shared.$pending) { pending in
+            if pending[threadId] != nil { takePrefill() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .approvalEditRule)) { note in
             // Edit rule: the bot's panel, where Access holds its Allow rules
             guard case let .bot(bot) = current, (note.object as? String).map({ $0 == bot.id }) ?? true else { return }
@@ -547,6 +551,8 @@ struct ChatView: View {
             attachments = restored.attachments
             attachmentError = restored.error
             replyTo = restored.replyTo
+            // a draft prepared for the thread now shown (Tasks "Answer")
+            takePrefill()
             selectedPhotos = []
             power.commandMenuForced = false
             showingPlus = false
@@ -928,6 +934,14 @@ struct ChatView: View {
     /// True when this message opens a fresh stretch of conversation — the
     /// first one, or one that follows a gap of half an hour or more.
     /// The desktop marks a new calendar day only.
+    /// Takes the draft prepared for this thread (ComposerPrefill), unsent:
+    /// it goes before what the composer holds, and the composer takes focus.
+    func takePrefill() {
+        guard let text = ComposerPrefill.shared.take(threadId: threadId) else { return }
+        draft = BotTodoList.merge(draft: text, into: draft)
+        composerFocused = true
+    }
+
     func desktopStartsANewDay(at index: Int, in rows: [TranscriptRow]) -> Bool {
         guard index > 0 else { return true }
         return !Calendar.current.isDate(rows[index].head.date, inSameDayAs: rows[index - 1].head.date)
