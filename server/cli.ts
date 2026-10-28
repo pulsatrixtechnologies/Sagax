@@ -69,13 +69,14 @@ import {
   type TunnelRecovery,
 } from "./tunnel.ts";
 import { createDataArchive, restoreDataArchive, verifyDataArchive } from "./data-dir-archive.ts";
+import { applyTeam, giveTask, parseTeamFile, waitTask } from "./headless-cli.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 export interface CliOptions {
   /** No --data-dir and no SAGAX_DATA_DIR (or OMB_DATA_DIR): ~/.sagax (or an old ~/.openmausbot). */
   dataDirIsDefault?: boolean;
-  command: "setup" | "start" | "serve" | "pair" | "sessions" | "status" | "login" | "logout" | "access" | "service" | "browser" | "fleet" | "backup" | "restore" | "help";
+  command: "setup" | "start" | "serve" | "pair" | "sessions" | "status" | "login" | "logout" | "access" | "service" | "browser" | "fleet" | "backup" | "restore" | "team" | "task" | "help";
   port: number;
   dataDir: string;
   label?: string;
@@ -128,9 +129,18 @@ export interface CliOptions {
   verify?: boolean;
   /** restore --apply: the only flag that writes the archive over the data folder. */
   apply?: boolean;
+  /** `team apply FILE` */
+  teamAction?: "apply";
+  teamFile?: string;
+  /** `task give` or `task wait` */
+  taskAction?: "give" | "wait";
+  taskBot?: string;
+  taskText?: string;
+  taskId?: string;
+  timeoutSec?: number;
 }
 
-const COMMANDS = ["setup", "start", "serve", "pair", "sessions", "status", "login", "logout", "access", "service", "browser", "fleet", "backup", "restore", "help", "--help", "-h"];
+const COMMANDS = ["setup", "start", "serve", "pair", "sessions", "status", "login", "logout", "access", "service", "browser", "fleet", "backup", "restore", "team", "task", "help", "--help", "-h"];
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): CliOptions | { error: string } {
   const implicitStart = !argv.length || (argv[0]!.startsWith("--") && argv[0] !== "--help");
@@ -219,6 +229,13 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
       else if (options.command === "restore" && arg === "--verify") options.verify = true;
       else if (options.command === "restore" && arg === "--apply") options.apply = true;
       else if ((options.command === "backup" || options.command === "restore") && !arg.startsWith("--") && !options.archive) options.archive = resolve(arg);
+      else if (options.command === "team" && !options.teamAction && arg === "apply") options.teamAction = "apply";
+      else if (options.command === "team" && options.teamAction === "apply" && !options.teamFile && !arg.startsWith("--")) options.teamFile = resolve(arg);
+      else if (options.command === "task" && !options.taskAction && (arg === "give" || arg === "wait")) options.taskAction = arg;
+      else if (options.command === "task" && options.taskAction === "give" && arg === "--bot") options.taskBot = value();
+      else if (options.command === "task" && options.taskAction === "give" && arg === "--text") options.taskText = value();
+      else if (options.command === "task" && options.taskAction === "wait" && arg === "--timeout") options.timeoutSec = Number(value());
+      else if (options.command === "task" && options.taskAction === "wait" && !options.taskId && !arg.startsWith("--")) options.taskId = arg;
       else return { error: `unknown argument "${arg}"` };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
@@ -241,6 +258,11 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   if (options.command === "backup" && !options.archive) return { error: "backup needs --output FILE" };
   if (options.command === "restore" && !options.archive) return { error: "restore needs the archive path" };
   if (options.command === "restore" && !options.verify && !options.apply) return { error: "restore needs --verify (check only) or --apply (write the data folder)" };
+  if (options.command === "team" && (options.teamAction !== "apply" || !options.teamFile)) return { error: "team apply needs a JSON file" };
+  if (options.command === "task" && options.taskAction === "give" && (!options.taskBot || !options.taskText)) return { error: "task give needs --bot NAME and --text TEXT" };
+  if (options.command === "task" && options.taskAction === "wait" && !options.taskId) return { error: "task wait needs the task id" };
+  if (options.command === "task" && !options.taskAction) return { error: "task needs give or wait" };
+  if (options.timeoutSec !== undefined && (!Number.isInteger(options.timeoutSec) || options.timeoutSec < 0)) return { error: "--timeout must be a whole number of seconds" };
   return options;
 }
 
@@ -262,6 +284,9 @@ export const USAGE = `sagax — your team of AI bots, ready in a few steps
   sagax browser install [--with-deps] | status
   sagax backup --output FILE [--data-dir DIR]
   sagax restore --verify ARCHIVE | --apply ARCHIVE [--data-dir DIR]
+  sagax team apply FILE [--data-dir DIR]
+  sagax task give --bot NAME --text TEXT [--data-dir DIR]
+  sagax task wait ID [--timeout SEC] [--data-dir DIR]
   sagax fleet init --domain HOST [--operator USER] | create NAME --admin EMAIL [--member EMAIL] [--brand FILE]
               [--anthropic-key-file FILE] [--cap USD] [--license-key KEY] [--memory 1G]
             | list | users NAME add|remove EMAIL [--chat-only] | suspend NAME | resume NAME
@@ -1244,6 +1269,44 @@ function runRestore(options: CliOptions): number {
   return 0;
 }
 
+function printHeadless(body: unknown, code: number): number {
+  console.log(JSON.stringify(body));
+  return code;
+}
+
+function runTeamApply(options: CliOptions): number {
+  const file = options.teamFile;
+  if (!file) return 2;
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return printHeadless({ ok: false, error: "The team file could not be read." }, 1);
+  }
+  const parsed = parseTeamFile(text);
+  if (!parsed.ok) return printHeadless(parsed, 1);
+  return printHeadless(applyTeam(options.dataDir, parsed.bots), 0);
+}
+
+function runTaskGive(options: CliOptions): number {
+  if (!options.taskBot || !options.taskText) return 2;
+  try {
+    return printHeadless(giveTask(options.dataDir, options.taskBot, options.taskText), 0);
+  } catch (error) {
+    return printHeadless({ ok: false, error: error instanceof Error ? error.message : "The task was not queued." }, 1);
+  }
+}
+
+async function runTaskWait(options: CliOptions): Promise<number> {
+  const id = options.taskId;
+  if (!id) return 2;
+  const timeoutMs = (options.timeoutSec ?? 30) * 1000;
+  const result = await waitTask(options.dataDir, id, timeoutMs);
+  if (result.state === "done") return printHeadless(result, 0);
+  if (result.state === "failed") return printHeadless(result, 1);
+  return printHeadless(result, 2);
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const options = parseArgs(argv);
   if ("error" in options) {
@@ -1279,6 +1342,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         script: process.argv[1] ?? "",
         node: process.execPath,
       }, { log: (line) => console.log(line), error: (line) => console.error(line) });
+    case "team":
+      return runTeamApply(options);
+    case "task":
+      return options.taskAction === "wait" ? runTaskWait(options) : runTaskGive(options);
     case "fleet":
       if (options.fleetAction === "agent") {
         const layout = fleetLayout();
