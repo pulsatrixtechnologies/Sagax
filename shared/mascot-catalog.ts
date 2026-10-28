@@ -56,7 +56,7 @@ export interface MascotCatalogEntry {
   defaultSkin: string;
   /** The color it shows where no bot gives one (the gallery), when it has its own. */
   defaultColor: string | null;
-  /** The shape character only: the eight shapes, in the picker's order. */
+  /** The shape character only: every shape, in the picker's order. */
   shapes?: readonly string[];
 }
 

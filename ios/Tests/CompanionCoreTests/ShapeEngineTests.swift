@@ -16,8 +16,12 @@ final class ShapeEngineTests: XCTestCase {
         struct Badge: Decodable { let x, y, r, notch: Double }
         struct Ring: Decodable { let back, front: String; let hue, hueSpan, width, opacity, x1, x2: Double }
         struct Ribbon: Decodable { let d: String; let hue, hueSpan, width, opacity, dash, offset, x1, x2: Double }
+        struct EyeBox: Decodable { let x, y, w, h, tilt: Double }
+        struct Stem: Decodable { let d: String; let opacity: Double }
         struct Frame: Decodable {
             let body, eyes, transform, color: String
+            let eyeShapes: [EyeBox]
+            let stem: Stem?
             let morphed, depth: Double
             let dots, specks: [Dot]
             let badge: Badge?
@@ -116,6 +120,19 @@ final class ShapeEngineTests: XCTestCase {
             let name = entry.name
             assertPath(frame.bodyD, want.body, "\(name) body")
             assertPath(frame.eyesD, want.eyes, "\(name) eyes")
+            XCTAssertEqual(frame.eyeShapes.count, want.eyeShapes.count, "\(name) eye boxes")
+            for (a, b) in zip(frame.eyeShapes, want.eyeShapes) {
+                XCTAssertEqual(a.x, b.x, accuracy: 0.002, name)
+                XCTAssertEqual(a.y, b.y, accuracy: 0.002, name)
+                XCTAssertEqual(a.w, b.w, accuracy: 0.002, name)
+                XCTAssertEqual(a.h, b.h, accuracy: 0.002, name)
+                XCTAssertEqual(a.tilt, b.tilt, accuracy: 1e-9, name)
+            }
+            XCTAssertEqual(frame.stem == nil, want.stem == nil, "\(name) stem")
+            if let stem = frame.stemD, let wanted = want.stem {
+                assertPath(stem, wanted.d, "\(name) stem")
+                XCTAssertEqual(frame.stem!.opacity, wanted.opacity, accuracy: 1e-6, name)
+            }
             assertPath(frame.transform, want.transform, tolerance: 0.003, "\(name) transform")
             XCTAssertEqual(frame.color, want.color, name)
             XCTAssertEqual(frame.morphed, want.morphed, accuracy: 1e-6, name)
@@ -173,6 +190,43 @@ final class ShapeEngineTests: XCTestCase {
         XCTAssertFalse(engine.playing(1 + ShapeMoves.length(.orbit) + 0.01))
     }
 
+    /// JC 2026-10-28: on the teardrop the eyes came out flattened, tilted, of
+    /// two sizes and at two heights. Every shape, at rest, turned and after
+    /// every move: two equal, level, upright capsules, taller than wide,
+    /// inside the body the drawing shows.
+    func testEveryShapeKeepsTwoEqualLevelUprightEyesInsideItsBody() {
+        let turned = ShapePose(yaw: 28, pitch: 18, roll: 12, scale: ShapeVolumeData.rest.scale, lift: ShapeVolumeData.rest.lift)
+        func check(_ eyes: [ShapeEyeBox], _ name: String) {
+            XCTAssertEqual(eyes.count, 2, name)
+            guard eyes.count == 2 else { return }
+            XCTAssertEqual(eyes[0].w, eyes[1].w, accuracy: 1e-9, "\(name) same width")
+            XCTAssertEqual(eyes[0].h, eyes[1].h, accuracy: 1e-9, "\(name) same height")
+            XCTAssertEqual(eyes[0].y, eyes[1].y, accuracy: 1e-9, "\(name) level")
+            XCTAssertEqual(eyes[0].tilt, 0, "\(name) upright")
+            XCTAssertGreaterThan(eyes[0].h, eyes[0].w * 1.4, "\(name) taller than wide")
+            XCTAssertGreaterThan(eyes[1].x - eyes[0].x, eyes[0].w, "\(name) apart")
+        }
+        for shape in MascotShape.allCases {
+            let still = ShapeFrames.still(shape, .neutral)
+            check(ShapeVolume.posedEyes(still, ShapeVolume.grounded(ShapeVolumeData.rest, shape)), "\(shape) rest")
+            check(ShapeVolume.posedEyes(still, ShapeVolume.grounded(turned, shape), motion: (3, -2, 18, 1.08, 0.9)), "\(shape) turned")
+            for move in ShapeMove.allCases {
+                let run = ShapeEngine(ShapeEngineState(shape: shape, expression: .neutral, color: "#3b93f0"), now: 0, seed: 7)
+                let calm = ShapeEngine(ShapeEngineState(shape: shape, expression: .neutral, color: "#3b93f0"), now: 0, seed: 7)
+                run.play(move, now: 0.5)
+                let end = 0.5 + ShapeMoves.length(move) + 0.3
+                var at = 0.0
+                while at < end {
+                    _ = run.frame(at)
+                    _ = calm.frame(at)
+                    at += 0.1
+                }
+                let after = run.frame(end), quiet = calm.frame(end)
+                XCTAssertEqual(after.eyeShapes, quiet.eyeShapes, "\(shape) \(move) back to rest")
+            }
+        }
+    }
+
     func testThePointerTurnsTheGazeAndLetsGo() {
         let engine = ShapeEngine(ShapeEngineState(shape: .circle, expression: .neutral, color: "#3b93f0"), now: 0, seed: 3)
         let rest = engine.frame(0)
@@ -182,6 +236,8 @@ final class ShapeEngineTests: XCTestCase {
         // the eyes slide toward the pointer's side
         let mid = { (frame: ShapeFrame) in frame.eyes.flatMap { $0 }.map(\.x).reduce(0, +) / Double(max(1, frame.eyes.flatMap { $0 }.count)) }
         XCTAssertGreaterThan(mid(turned), mid(rest) + 1)
+        // the turn moves the face, never one eye above the other
+        XCTAssertEqual(turned.eyeShapes[0].y, turned.eyeShapes[1].y, accuracy: 1e-9)
         XCTAssertEqual(ShapeIdle.hoverGaze(2, -2).yaw, ShapeEngineData.hover.yaw)
         XCTAssertEqual(ShapeIdle.hoverGaze(2, -2).pitch, ShapeEngineData.hover.pitch)
     }

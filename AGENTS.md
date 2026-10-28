@@ -123,6 +123,25 @@ new page; the self-knowledge builder reads it too. Tests:
 `src/components/SettingsModal.splitPages.dom.test.ts`. Captures:
 `scripts/capture-settings-pages.mjs`.
 
+## Shapes set and eyes (2026-10-28)
+
+Decision (JC): the Shapes bodies are the bloub network's tables
+(`src/components/shape-tables.ts`, MIT, NOTICE and `third_party/bloub`) plus
+our pumpkin, 32 in all (`MASCOT_SHAPES`). The first eight keep their stored
+ids; `LEGACY_SHAPES` maps the older ids. Picking the pumpkin sets the bot's
+color to orange where the skin paints the bot's color (`PUMPKIN_COLOR`).
+
+- The eyes are upright capsules placed on the posed body
+  (`shape-volume.ts` `posedEyes`): never drawn through the body's matrices,
+  bend or a clip; one level pair of one size, inside the outline.
+- `writePose` alone writes the outline, the eyes and the stem of a body in
+  volume; after a React draw call `forgetPose` first.
+- The slices' depth follows the body's own thinness (`bodyDepth`,
+  `DEPTH_FULL`), never its resting shape.
+- Tests: `src/components/shape-set.regression.test.ts`,
+  `shape-volume.depth.test.ts`; iOS `ShapeEngineTests`, `ShapeVolumeTests`.
+  Gallery: `src/gallery/shape-set.html`.
+
 ## Routine folders (2026-10-28)
 
 A routine may sit in one folder of its bot (`folder`), and each bot keeps an

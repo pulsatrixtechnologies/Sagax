@@ -52,9 +52,9 @@ describe("geometry", () => {
     }
   });
 
-  it("has eight different shapes: a circle of radius 1, a heart, a wide capsule, a triangle and a teardrop pointing up", () => {
-    expect(MASCOT_SHAPES).toHaveLength(8);
-    expect(new Set(MASCOT_SHAPES.map((shape) => SHAPE_RADII[shape].join())).size).toBe(8);
+  it("has 32 different shapes: a circle of radius 1, a wide capsule, a triangle, a teardrop pointing up and a pumpkin wider than tall", () => {
+    expect(MASCOT_SHAPES).toHaveLength(32);
+    expect(new Set(MASCOT_SHAPES.map((shape) => SHAPE_RADII[shape].join())).size).toBe(32);
     expect(SHAPE_RADII.circle.every((r) => r === 1)).toBe(true);
     const at = (shape: keyof typeof SHAPE_RADII, x: number, y: number) => radiusToward(SHAPE_RADII[shape], x, y);
     expect(at("pill", 1, 0)).toBeGreaterThan(at("pill", 0, -1) * 1.5);
@@ -62,10 +62,8 @@ describe("geometry", () => {
     expect(at("drop", 0, -1)).toBeGreaterThan(1);
     expect(at("drop", 0, -1)).toBeGreaterThan(at("drop", 0, 1));
     expect(at("hexagon", 1, 0)).toBeGreaterThan(at("hexagon", 0, -1));
-    // bean is a heart: a cleft on top, lobes to the sides, a point at the bottom
-    expect(at("bean", 0, 1)).toBeGreaterThan(at("bean", 0, -1));
-    expect(at("bean", 0, -1)).toBeLessThan(at("bean", 0.7, -0.7));
-    expect(at("bean", 0, -1)).toBeLessThan(at("bean", -0.7, -0.7));
+    // the pumpkin: wider than tall
+    expect(at("pumpkin", 1, 0)).toBeGreaterThan(at("pumpkin", 0, -1) * 1.15);
   });
 });
 

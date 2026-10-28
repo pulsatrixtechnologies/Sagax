@@ -90,7 +90,7 @@ GET /api/org/admin/capabilities
   "mascotFamilies": ["classics", "shapes", "animals"],
   "mascots": [
     { "id": "owl", "family": "classics", "colors": true, "skins": ["none", "snowy", "..."], "defaultSkin": "none", "defaultColor": null },
-    { "id": "shape", "family": "shapes", "colors": true, "skins": ["plain", "pastel", "..."], "defaultSkin": "plain", "defaultColor": null, "shapes": ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"] }
+    { "id": "shape", "family": "shapes", "colors": true, "skins": ["plain", "pastel", "..."], "defaultSkin": "plain", "defaultColor": null, "shapes": ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop", "pumpkin", "..."] }
   ]
 }
 ```
@@ -424,9 +424,10 @@ console draws the character itself from it.
   (shape: `plain` ... `galaxy`; trombi: `classic` ... `molten`; bunbu,
   shiba, grump, ogre, frog and crab: `plain`, their own coats, then the
   premium set). An older stored name reads as its current id.
-- `shape`: the shape character's shape (`circle`, `bean` the heart,
-  `squircle`, `pill` the capsule, `pick` the triangle, `hexagon`, `cloud`,
-  `drop` the teardrop), else null.
+- `shape`: the shape character's shape, one of `MASCOT_SHAPES`
+  (shared/mascot-look.ts: `circle`, `bean` the pebble, `squircle`, `pill`
+  the capsule, `pick` the triangle, `hexagon`, `cloud`, `drop` the teardrop,
+  `pumpkin` and the others of the set), else null.
 - `expression`: the owl's resting face when the owner picked one, else null.
 - `image`: null unless `kind` is `image`. `crop` is `circle`, `rounded`
   (22 % radius) or `square`; `zoom` 1 to 3 over a cover fit; `focusX` and

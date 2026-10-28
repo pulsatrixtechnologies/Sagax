@@ -17,7 +17,7 @@
 // All lengths are in R (the circle's radius) until frame() turns them into
 // the 0..100 box (shape-art.ts BODY).
 import type { MascotShape } from "../../shared/mascot-look";
-import { blendRadii, BODY, clamp01, easeInOut, easeOutQuint, lerp, RAD, radiusToward, SHAPE_RADII, smoothClosed, toBox, type Radii } from "./shape-art";
+import { blendRadii, BODY, clamp01, easeInOut, easeOutQuint, lerp, RAD, radiusToward, SHAPE_RADII, smoothClosed, stemPath, toBox, type Radii } from "./shape-art";
 import { moveAt, moveLength, moveWeight, ringAt, type MovePose, type RibbonDraw, type RingDraw, type ShapeMove } from "./shape-moves";
 
 export { clamp01, easeOutQuint } from "./shape-art";
@@ -263,10 +263,15 @@ function toView([x, y, z]: Vec3, roll: number): Vec3 {
   return [x1 * Math.cos(r) - y2 * Math.sin(r), x1 * Math.sin(r) + y2 * Math.cos(r), z2];
 }
 
-/** One eye as the viewer sees it: its outline points (R units), its middle, and how visible it is. */
+/** One eye as the viewer sees it: its outline points (R units), its middle, its size and tilt, and how visible it is. */
 export interface PlacedEye {
   points: Point[];
   center: Point;
+  /** The capsule's width and height (R), after the blink and the fade. */
+  w: number;
+  h: number;
+  /** The face's own tilt for this eye, degrees (0 at rest: an upright capsule). */
+  tilt: number;
   /** 0 (turned away, hidden) .. 1. */
   alpha: number;
   depth: number;
@@ -276,9 +281,11 @@ export interface PlacedEye {
 export const EYE_FADE = { hidden: 0.02, over: 0.12 } as const;
 /** The eyes keep at least this much body around them, R. */
 export const EYE_MARGIN = 0.07;
+/** The two eyes keep at least this share of an eye's width between them. */
+export const EYE_GAP = 0.6;
 
 /** A rounded bar's outline (w x h, rounded ends), in its own frame, around its middle. */
-function stadium(w: number, h: number, count = 28): Point[] {
+export function stadium(w: number, h: number, count = 28): Point[] {
   const r = Math.min(w, h) / 2;
   const long = Math.max(w, h) / 2 - r;
   const tall = h >= w;
@@ -293,30 +300,26 @@ function stadium(w: number, h: number, count = 28): Point[] {
   return pts;
 }
 
-function placeEye(yaw: number, pitch: number, roll: number, shape: EyeShape, open: number, axes: { yaw: number; pitch: number }): PlacedEye {
+/**
+ * An eye's outline: an upright capsule w x h around (cx, cy), turned only by
+ * the face's own tilt (2026-10-28). Never sheared, never foreshortened: the
+ * head's turn moves where the eyes sit, not their shape, so the two eyes of a
+ * face are always the same capsule.
+ */
+export function eyeOutline(cx: number, cy: number, w: number, h: number, tilt: number): Point[] {
+  const t = tilt * RAD;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  return stadium(w, h).map(([u, v]) => [cx + u * c - v * s, cy + u * s + v * c] as Point);
+}
+
+function placeEye(yaw: number, pitch: number, roll: number, shape: EyeShape, open: number): PlacedEye {
   const c = toView(direction(yaw, pitch), roll);
-  // both eyes share the face's own axes (across and up at the face's middle),
-  // each narrowed by how far it has turned from the viewer compared with the face
-  const step = 0.5;
-  const mid = toView(direction(axes.yaw, axes.pitch), roll);
-  const across = toView(direction(axes.yaw + step, axes.pitch), roll);
-  const up = toView(direction(axes.yaw, axes.pitch + step), roll);
-  const k = 1 / (step * RAD);
-  // a step in yaw covers cos(pitch) of a step on a great circle: undo it so the eye keeps its width
-  const kx = k / Math.max(0.2, Math.cos(axes.pitch * RAD));
-  const turn = clamp01(c[2] / Math.max(0.05, mid[2]));
-  const ex: Point = [(across[0] - mid[0]) * kx * turn, (across[1] - mid[1]) * kx * turn];
-  const ey: Point = [(up[0] - mid[0]) * k, (up[1] - mid[1]) * k];
   const alpha = clamp01((c[2] - EYE_FADE.hidden) / EYE_FADE.over);
-  const h = Math.max(shape.h * EYE_SCALE.h * EYE_LENGTH * Math.max(open, BLINK.floor), 0.012);
-  const tilt = shape.tilt * RAD;
-  const points = stadium(shape.w * EYE_SCALE.w, h).map(([u, v]) => {
-    // tilt in the eye's own plane, then lay it on the head (v grows downward, "up" is -v)
-    const tu = u * Math.cos(tilt) - v * Math.sin(tilt);
-    const tv = u * Math.sin(tilt) + v * Math.cos(tilt);
-    return [c[0] + (tu * ex[0] - tv * ey[0]) * alpha, c[1] + (tu * ex[1] - tv * ey[1]) * alpha] as Point;
-  });
-  return { points, center: [c[0], c[1]], alpha, depth: c[2] };
+  // the size: the face's own capsule, the blink closing its height; a turned-away eye shrinks as it fades
+  const w = shape.w * EYE_SCALE.w * alpha;
+  const h = Math.max(shape.h * EYE_SCALE.h * EYE_LENGTH * Math.max(open, BLINK.floor), 0.012) * alpha;
+  return { points: eyeOutline(c[0], c[1], w, h, shape.tilt), center: [c[0], c[1]], w, h, tilt: shape.tilt, alpha, depth: c[2] };
 }
 
 /** The face's middle at rest (no look, no face of its own), R: where a turn is measured from. */
@@ -328,7 +331,7 @@ function solveRest(roll: number): Point {
   const yaw = HEAD.yaw;
   const pitch = HEAD.pitch + FACE_DROP;
   const shape = EXPRESSIONS.neutral.left;
-  const a = placeEye(yaw, pitch, roll, shape, 1, { yaw, pitch });
+  const a = placeEye(yaw, pitch, roll, shape, 1);
   if (restMids.size > 500) restMids.clear();
   restMids.set(key, a.center);
   return a.center;
@@ -336,19 +339,19 @@ function solveRest(roll: number): Point {
 
 /**
  * The gaze solver: both eyes for a face looking `yaw`/`pitch` degrees off
- * rest, on a body. Each eye sits on the head, then the face is pushed out to
- * the outline at its angle (a wide body spreads the eyes, a narrow one
- * gathers them), and finally pulled in until every eye point keeps
- * EYE_MARGIN inside the outline.
+ * rest, on a body. Each eye's middle sits on the head, then the face is
+ * pushed out to the outline at its angle (a wide body spreads the eyes, a
+ * narrow one gathers them), and finally pulled in until every eye point keeps
+ * EYE_MARGIN inside the outline. The two eyes always stand on one level line
+ * (2026-10-28): the head's turn moves the face, never one eye above the other.
  */
 export function solveEyes(radii: Radii, face: Expression, gaze: { yaw: number; pitch: number; roll: number }, open: { left: number; right: number }): [PlacedEye, PlacedEye] {
   const yaw = HEAD.yaw + face.yaw + gaze.yaw;
   const pitch = HEAD.pitch + FACE_DROP + face.pitch + gaze.pitch;
   const roll = face.roll * EYE_ROLL + gaze.roll;
-  const axes = { yaw, pitch };
   const split = face.split * EYE_SPREAD;
-  const left = placeEye(yaw - split, pitch, roll, face.left, face.left.open * open.left, axes);
-  const right = placeEye(yaw + split, pitch, roll, face.right, face.right.open * open.right, axes);
+  const left = placeEye(yaw - split, pitch, roll, face.left, face.left.open * open.left);
+  const right = placeEye(yaw + split, pitch, roll, face.right, face.right.open * open.right);
   // the face, seen from the front (2026-10-18): its middle rests at EYE_SHIFT (R, from the
   // body's middle) and moves from there as much as the head's turn moves it (a look, a
   // face, the pointer); the eyes keep their own distance from it, the width spread by
@@ -358,13 +361,16 @@ export function solveEyes(radii: Radii, face: Expression, gaze: { yaw: number; p
   const spread = radiusToward(radii, 1, 0) * 0.5 + radiusToward(radii, -1, 0) * 0.5;
   const sx = Math.max(0.35, Math.min(1.25, spread));
   const target: Point = [EYE_SHIFT.x + (mid[0] - rest[0]) * EYE_GAZE, EYE_SHIFT.y + (mid[1] - rest[1]) * EYE_GAZE];
-  const place = (eyeAt: PlacedEye, s: number): PlacedEye => {
-    const [cx, cy] = eyeAt.center;
-    const nx = target[0] * s + (cx - mid[0]) * sx;
-    const ny = target[1] * s + (cy - mid[1]);
-    return { ...eyeAt, center: [nx, ny], points: eyeAt.points.map(([x, y]) => [x - cx + nx, y - cy + ny] as Point) };
+  const place = (eyeAt: PlacedEye, s: number, k = 1): PlacedEye => {
+    const nx = target[0] * s + (eyeAt.center[0] - mid[0]) * sx;
+    const ny = target[1] * s;
+    const w = eyeAt.w * k;
+    const h = eyeAt.h * k;
+    return { ...eyeAt, center: [nx, ny], w, h, points: eyeOutline(nx, ny, w, h, eyeAt.tilt) };
   };
-  const fits = (eyes: PlacedEye[]) => eyes.every((e) => e.alpha <= 0 || e.points.every(([x, y]) => Math.hypot(x, y) <= radiusToward(radii, x, y || -1e-6) - EYE_MARGIN));
+  // inside the outline with EYE_MARGIN to spare, and never touching each other
+  const apart = (eyes: PlacedEye[]) => eyes.length < 2 || Math.abs(eyes[1].center[0] - eyes[0].center[0]) >= (eyes[0].w + eyes[1].w) / 2 + EYE_GAP * Math.max(eyes[0].w, eyes[1].w);
+  const fits = (eyes: PlacedEye[]) => apart(eyes) && eyes.every((e) => e.alpha <= 0 || e.points.every(([x, y]) => Math.hypot(x, y) <= radiusToward(radii, x, y || -1e-6) - EYE_MARGIN));
   let lo = 0;
   let hi = 1;
   if (!fits([place(left, 1), place(right, 1)])) {
@@ -376,13 +382,11 @@ export function solveEyes(radii: Radii, face: Expression, gaze: { yaw: number; p
     hi = lo;
   }
   let placed: [PlacedEye, PlacedEye] = [place(left, hi), place(right, hi)];
-  // a body too small for these eyes even with the face in the middle: shrink the eyes
-  if (!fits(placed)) {
-    let shrink = 1;
-    while (shrink > 0.1 && !fits(placed)) {
-      shrink *= 0.9;
-      placed = placed.map((e) => ({ ...e, points: e.points.map(([x, y]) => [e.center[0] + (x - e.center[0]) * shrink, e.center[1] + (y - e.center[1]) * shrink] as Point) })) as [PlacedEye, PlacedEye];
-    }
+  // a body too small for these eyes even with the face in the middle: shrink both eyes alike
+  let shrink = 1;
+  while (shrink > 0.1 && !fits(placed)) {
+    shrink *= 0.9;
+    placed = [place(left, hi, shrink), place(right, hi, shrink)];
   }
   return placed;
 }
@@ -395,6 +399,17 @@ export interface ShapeFrame {
   body: string;
   /** The eyes, closed subpaths to cut out of the body (fill-rule evenodd). */
   eyes: string;
+  /**
+   * The same eyes as capsules (box units): middle, width, height, the face's
+   * tilt. The volume drawing places each one upright on the turned body from
+   * these (shape-volume.ts posedEyes), so no turn, roll or squash of the body
+   * ever bends an eye.
+   */
+  eyeShapes: EyeBox[];
+  /** The body's motion in numbers (frame.transform): a shift (box units), a turn (degrees) and a scale on each axis. */
+  motion: { x: number; y: number; rot: number; sx: number; sy: number };
+  /** The pumpkin's stem (box units, before the transform) and how much of it shows, or null for every other body. */
+  stem: { d: string; opacity: number } | null;
   /** The body's transform (drift, breath, a move's turn and size), around the body's middle. */
   transform: string;
   /** The body color now (blended while a color change slides). */
@@ -402,8 +417,8 @@ export interface ShapeFrame {
   /** How far the body is from its resting outline (0..1): a skin's edge and aura step aside while it moves. */
   morphed: number;
   /**
-   * The body's thickness, as a share of its resting one (0..1): its thinnest
-   * half-width now over the resting shape's. A move that shrinks the body to a
+   * The body's thickness (0..1, bodyDepth): its thinnest half-width now over
+   * DEPTH_FULL. A move that shrinks the body to a
    * dot, a bar or a speck thins its depth with it (shape-volume.ts
    * poseMatrices), so the slices never smear a dot into a pill beside its own
    * thought dots.
@@ -416,6 +431,15 @@ export interface ShapeFrame {
   badge: { x: number; y: number; r: number; notch: number } | null;
   rings: RingDraw[];
   ribbons: RibbonDraw[];
+}
+
+/** One eye as a capsule in the 0..100 box. */
+export interface EyeBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  tilt: number;
 }
 
 export interface ShapeState {
@@ -431,7 +455,8 @@ function eyesPath(eyes: PlacedEye[]): string {
     .join("");
 }
 
-const fmt = (v: number) => (Math.round(v * 1000) / 1000).toString();
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+const fmt = (v: number) => round3(v).toString();
 
 /** The resting frame of a shape: no wander, no blink, no move (thumbnails, reduced motion, the first paint). */
 export function stillFrame(state: ShapeState): ShapeFrame {
@@ -458,6 +483,7 @@ export function gazeFrame(
     eyes: 1,
     pose: null,
     t: 0,
+    stem: state.shape === "pumpkin" ? 1 : 0,
   });
 }
 
@@ -472,13 +498,31 @@ interface FrameInputs {
   eyes: number;
   pose: { pose: MovePose; weight: number } | null;
   t: number;
+  /** How much of the pumpkin's stem shows (0 for every other body). */
+  stem: number;
 }
 
-/** The body's thickness now as a share of its resting one (ShapeFrame.depth). */
-export function bodyDepth(radii: Radii, rest: Radii): number {
-  const thinnest = (r: Radii) => r.reduce((least, v) => Math.min(least, v), Infinity);
-  const base = thinnest(rest);
-  return base > 0 ? clamp01(thinnest(radii) / base) : 1;
+/** Whether a body wears the pumpkin's stem (1) or not (0). */
+const stemOf = (shape: MascotShape) => (shape === "pumpkin" ? 1 : 0);
+
+/**
+ * How thick a body must be (its thinnest half-width, R) to carry the volume's
+ * full depth. A thinner one carries that share of it (2026-10-28).
+ */
+export const DEPTH_FULL = 0.62;
+
+/**
+ * The body's thickness now (ShapeFrame.depth, 0..1): its thinnest half-width
+ * over DEPTH_FULL. The slices' depth is a fixed length, so a body thinner than
+ * that (a tube, a teardrop's tip, a dot a move shrinks it to) must thin its
+ * depth with it or its slices spread wider than the body and it comes apart.
+ * Measured on the body's own radii, never against its resting shape: #1106
+ * compared a move's body with the rest, which left every naturally thin body
+ * at full depth.
+ */
+export function bodyDepth(radii: Radii): number {
+  const thinnest = radii.reduce((least, v) => Math.min(least, v), Infinity);
+  return Number.isFinite(thinnest) ? clamp01(thinnest / DEPTH_FULL) : 1;
 }
 
 function composeFrame(input: FrameInputs): ShapeFrame {
@@ -486,13 +530,19 @@ function composeFrame(input: FrameInputs): ShapeFrame {
   const shown = placed.map((e) => {
     // eyes fading out with a move shrink to nothing about their middle
     const s = clamp01(input.eyes);
-    return s >= 1 ? e : { ...e, alpha: e.alpha * s, points: e.points.map(([x, y]) => [e.center[0] + (x - e.center[0]) * s, e.center[1] + (y - e.center[1]) * s] as Point) };
+    return s >= 1 ? e : { ...e, alpha: e.alpha * s, w: e.w * s, h: e.h * s, points: eyeOutline(e.center[0], e.center[1], e.w * s, e.h * s, e.tilt) };
   });
+  const eyeShapes = shown
+    .filter((e) => e.alpha > 0.001)
+    .map((e) => {
+      const [bx, by] = toBox(e.center);
+      return { x: round3(bx), y: round3(by), w: round3(e.w * BODY.unit), h: round3(e.h * BODY.unit), tilt: e.tilt };
+    });
   const [cx, cy] = BODY.center;
   const { x, y, rot, sx, sy } = input.body;
   const transform = `translate(${fmt(x * BODY.unit)} ${fmt(y * BODY.unit)}) rotate(${fmt(rot)} ${cx} ${cy}) translate(${cx} ${cy}) scale(${fmt(sx)} ${fmt(sy)}) translate(${-cx} ${-cy})`;
   const morphed = clamp01(input.radii.reduce((most, r, i) => Math.max(most, Math.abs(r - input.rest[i])), 0) / 0.08);
-  const depth = bodyDepth(input.radii, input.rest);
+  const depth = bodyDepth(input.radii);
   const pose = input.pose;
   const w = pose?.weight ?? 0;
   const dots = (pose?.pose.dots ?? []).map((dot) => {
@@ -516,6 +566,9 @@ function composeFrame(input: FrameInputs): ShapeFrame {
   return {
     body: smoothClosed(input.radii.map((r, i) => toBox([r * Math.sin((i / input.radii.length) * Math.PI * 2), -r * Math.cos((i / input.radii.length) * Math.PI * 2)]))),
     eyes: eyesPath(shown),
+    eyeShapes,
+    motion: { x: x * BODY.unit, y: y * BODY.unit, rot, sx, sy },
+    stem: input.stem > 0.01 ? { d: stemPath(input.radii), opacity: round3(input.stem) } : null,
     transform,
     color: input.color,
     morphed,
@@ -546,6 +599,7 @@ export class ShapeEngine {
   private faceAt = -Infinity;
   private fromColor: string;
   private colorAt = -Infinity;
+  private fromStem: number;
   private move: { id: ShapeMove; at: number } | null = null;
   private readonly yaw = new Follower(0);
   private readonly pitch = new Follower(0);
@@ -560,12 +614,14 @@ export class ShapeEngine {
     this.fromRadii = SHAPE_RADII[state.shape];
     this.fromFace = EXPRESSIONS[state.expression];
     this.fromColor = state.color;
+    this.fromStem = stemOf(state.shape);
   }
 
   /** The current shape, expression and color; a change slides over MORPH_S from what shows now. */
   set(next: ShapeState, now: number): void {
     if (next.shape !== this.state.shape) {
       this.fromRadii = this.radiiNow(now);
+      this.fromStem = this.stemNow(now);
       this.shapeAt = now;
     }
     if (next.expression !== this.state.expression) {
@@ -607,6 +663,12 @@ export class ShapeEngine {
     return k >= 1 ? SHAPE_RADII[this.state.shape] : blendRadii(this.fromRadii, SHAPE_RADII[this.state.shape], k);
   }
 
+  /** How much of the pumpkin's stem shows: it grows in and out with a change of shape. */
+  private stemNow(now: number): number {
+    const k = easeOutQuint((now - this.shapeAt) / MORPH_S);
+    return lerp(this.fromStem, stemOf(this.state.shape), k);
+  }
+
   private faceNow(now: number): Expression {
     const k = easeOutQuint((now - this.faceAt) / MORPH_S);
     return k >= 1 ? EXPRESSIONS[this.state.expression] : blendExpression(this.fromFace, EXPRESSIONS[this.state.expression], k);
@@ -641,11 +703,16 @@ export class ShapeEngine {
     let scale = 1;
     let eyes = 1;
     let pose: FrameInputs["pose"] = null;
+    let stem = this.stemNow(now);
     if (this.move && this.playing(now)) {
       const u = now - this.move.at;
       const weight = moveWeight(this.move.id, u);
       const p = moveAt(this.move.id, u);
-      if (p.radii) radii = blendRadii(rest, p.radii, weight);
+      if (p.radii) {
+        radii = blendRadii(rest, p.radii, weight);
+        // a body turned into a dot or a bar loses its stem until it comes back
+        stem *= 1 - weight;
+      }
       if (p.face) face = blendExpression(face, { ...face, ...p.face }, weight);
       x += (p.x ?? 0) * weight;
       y += (p.y ?? 0) * weight;
@@ -665,6 +732,7 @@ export class ShapeEngine {
       eyes,
       pose,
       t,
+      stem,
     });
   }
 }

@@ -4,7 +4,7 @@
 // differ. It follows the desktop's `MascotLookEditor.tsx`:
 //
 //   1. Character: Owl, Shape, Trombi, in the bot's colour.
-//   2. Shape (Shape only): the 8 shapes as 2x4.
+//   2. Shape (Shape only): every shape, four to a row.
 //   3. Skin: owl 7, shape 6, Trombi 4.
 //   4. Colour: the 12 Sagax colours as 6+6 (hidden for Trombi); where the
 //      desktop offers the Clay palette (Shapes, Shiba, Grump, Ogre, Frog, or
@@ -139,11 +139,14 @@ struct CharacterEditor: View {
             }
 
             if draft.character == .shape {
-                ForEach(0..<2, id: \.self) { line in
-                    row(count: 4, pitch: metrics.pitch, height: metrics.pitch) { index in
-                        let shape = MascotShape.allCases[line * 4 + index]
+                // every shape, four to a row
+                let shapeLines = Self.lines(MascotShape.allCases, perRow: 4)
+                ForEach(shapeLines.indices, id: \.self) { line in
+                    row(count: shapeLines[line].count, pitch: metrics.pitch, height: metrics.pitch) { index in
+                        let shape = shapeLines[line][index]
                         thumbnail(look: edited { $0.shape = shape }, skin: .none, size: metrics.cell, selected: draft.complete.shape == shape, label: Text(verbatim: shape.rawValue)) {
                             var next = draft.complete
+                            if let color = MascotShape.pickedColor(shape, from: next.shape, skin: next.shapeSkin) { draft.color = color }
                             next.shape = shape
                             draft.look = next.stored
                         }

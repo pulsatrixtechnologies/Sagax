@@ -185,20 +185,22 @@ public enum MascotStyle: String, CaseIterable, Codable, Sendable {
     case threeD = "3d"
 }
 
-/// The eight shapes, in the picker's order (the desktop's clean-room set of
-/// 2026-10-08, #187): Circle, Pebble, Squircle, Capsule, Triangle,
-/// Hexagon, Cloud, Droplet. The stored ids are the desktop's own
-/// (`MASCOT_SHAPES`: bean is the pebble, pick the triangle), so a look made
-/// on either side reads the same on the other.
+/// The shapes, in the picker's order (`MASCOT_SHAPES`, 2026-10-28): the
+/// bloub network's bodies and our pumpkin. The first eight keep the ids the
+/// desktop and older builds store (bean is the pebble, pick the triangle), so
+/// a look made on either side reads the same on the other.
 public enum MascotShape: String, CaseIterable, Codable, Sendable {
     case circle
     case blob = "bean"
     case squircle, pill
     case triangle = "pick"
     case hexagon, cloud, drop
+    case pumpkin, egg, gem, wedge, diamond, star, clover, flower, blossom
+    case cat, ghost, jellyfish, axolotl, puff, pin, marker, sprite
+    case flask, tube, potion, chomp, nibble, shield, bubble
 
     /// `LEGACY_SHAPES`: ids from earlier sets (and the phone's own old ids)
-    /// land on the nearest of the eight.
+    /// land on the nearest shape.
     public static func stored(_ raw: String) -> MascotShape? {
         if let shape = MascotShape(rawValue: raw) { return shape }
         switch raw {
@@ -207,10 +209,16 @@ public enum MascotShape: String, CaseIterable, Codable, Sendable {
         case "capsule": return .pill
         case "droplet": return .drop
         case "sparkle": return .squircle
-        case "clover", "flower": return .cloud
-        case "house", "star": return .hexagon
+        case "house": return .hexagon
         default: return nil
         }
+    }
+
+    /// The color a pumpkin takes when it is picked (`PUMPKIN_COLOR`), where its
+    /// skin paints the bot's color (`SHAPE_SKINS_IN_BOT_COLOR`); nil otherwise.
+    public static func pickedColor(_ shape: MascotShape, from current: MascotShape, skin: ShapeSkin) -> String? {
+        guard shape == .pumpkin, current != .pumpkin, [.plain, .pastel, .glossy, .outline, .crystal].contains(skin) else { return nil }
+        return "orange"
     }
 
     public init(from decoder: Decoder) throws {

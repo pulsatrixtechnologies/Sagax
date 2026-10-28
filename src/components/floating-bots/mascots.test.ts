@@ -33,7 +33,7 @@ const eyeCuts = (html: string) => {
   return (/class="shape-fill" d="([^"]+)" fill-rule="evenodd"/.exec(html)?.[1] ?? "").split("M").filter(Boolean).slice(1);
 };
 
-describe("the eight shapes (stored ids bean, pill, pick and drop)", () => {
+describe("the shapes (stored ids bean, pill, pick and drop kept)", () => {
   const coords = (d: string) => [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
   it("stands the triangle on its base and points the droplet up", () => {
     const tri = coords(SHAPE_ART.pick.d);
@@ -53,12 +53,15 @@ describe("the eight shapes (stored ids bean, pill, pick and drop)", () => {
 });
 
 describe("a bot's character and its look", () => {
-  it("is one of the owl, the eight shapes or Trombi, the owl when absent or malformed", () => {
-    expect(MASCOT_SHAPES).toEqual(["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"]);
-    // a look stored with a shape of an earlier set keeps working, on the nearest of the eight
+  it("is one of the owl, the shapes or Trombi, the owl when absent or malformed", () => {
+    // the first eight keep the ids every stored look and older build knows
+    expect(MASCOT_SHAPES.slice(0, 8)).toEqual(["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"]);
+    expect(MASCOT_SHAPES).toHaveLength(32);
+    expect(MASCOT_SHAPES).toContain("pumpkin");
+    // a look stored with a shape of an earlier set keeps working, on the nearest shape
     expect(botMascotLook({ character: "shape", shape: "blob" })).toEqual({ character: "shape", shape: "bean" });
     expect(botMascotLook({ character: "shape", shape: "triangle" })).toEqual({ character: "shape", shape: "pick" });
-    for (const [old, now] of [["sparkle", "squircle"], ["clover", "cloud"], ["flower", "cloud"], ["house", "hexagon"], ["star", "hexagon"], ["droplet", "drop"], ["capsule", "pill"], ["pebble", "bean"]]) {
+    for (const [old, now] of [["sparkle", "squircle"], ["clover", "clover"], ["flower", "flower"], ["house", "hexagon"], ["star", "star"], ["droplet", "drop"], ["capsule", "pill"], ["pebble", "bean"]]) {
       expect(botMascotLook({ character: "shape", shape: old })).toEqual({ character: "shape", shape: now });
     }
     expect(botMascotLook({ character: "shape", shape: "constructor" })).toEqual({ character: "owl" });
@@ -243,9 +246,10 @@ describe("the Appearance gallery", () => {
     expect(moves).toEqual([...SHAPE_MOVES]);
     expect(moves).toHaveLength(14);
     for (const move of SHAPE_MOVES) expect(html).toContain(`aria-label="Play the ${(en as Record<string, string>)[`mascot.shapeMove.${move}`]} move"`);
-    // eight shapes, each named
+    // every shape, each named
     expect([...html.matchAll(/data-character-shape="([a-z]+)"/g)].map((m) => m[1])).toEqual([...MASCOT_SHAPES]);
-    expect(html).toContain('aria-label="Heart"');
+    expect(html).toContain('aria-label="Pebble"');
+    expect(html).toContain('aria-label="Pumpkin"');
     expect(html).toContain('aria-label="Teardrop"');
     // Clay is the first skin and the Clay palette is offered
     expect(html).toContain('data-shape-skin-option="plain"');

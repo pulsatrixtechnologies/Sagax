@@ -68,11 +68,11 @@ import {
 import { LEGACY_OWL_SKINS, MASCOT_SKIN_IDS, botMascotSkin } from "../../shared/mascot-skins";
 import { MASCOT_COLOR_GROUPS, MASCOT_COLOR_HEX, MASCOT_COLOR_PALETTES } from "../../shared/mascot-colors";
 import { expressionForMood, IDLE_FRAME_S, uprightPose, type ShapeMood } from "./ShapeMascot";
-import { BLINK, blinkSchedule, gazeFrame, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, EYE_FADE, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression, type ShapeFrame } from "./shape-engine";
+import { BLINK, blinkSchedule, gazeFrame, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, DEPTH_FULL, EYE_FADE, EYE_GAP, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression, type ShapeFrame } from "./shape-engine";
 import { MOVE_TIMING, ORBIT_RINGS, SHAPE_MOVES, SWIRL_RINGS, type RingSpec } from "./shape-moves";
-import { BODY_3D, EYE_DOME, EYE_INK, EYE_INK_ON_DARK, eyeStyleFor, groundLift, inkPaint, OUT_OF_PLANE, poseMatrices, REST_POSE, SHAPE_FIT, styledEyes, TURN_SQUASH, VOLUME_SIZES, warpPath, type EyeStyle, type Pose, type VolumeDetail } from "./shape-volume";
+import { BODY_3D, EYE_DOME, EYE_INK, EYE_INK_ON_DARK, eyesOnPose, eyeStyleFor, groundLift, inkPaint, OUT_OF_PLANE, poseMatrices, REST_POSE, SHAPE_FIT, styledEyes, TURN_SQUASH, VOLUME_SIZES, warpPath, type EyeStyle, type Pose, type VolumeDetail } from "./shape-volume";
 import { BASE_DROP, GLANCE, MOTION_BLEND, MOTION_MOODS, MOTIONS, motionForMood, POKE, ROLL_LIMIT, ShapeMotion, TURN_TOWARD, type MotionSpec } from "./shape-motion";
-import { BODY, MOVE_RADII, RADII_COUNT, SHAPE_RADII } from "./shape-art";
+import { BODY, MOVE_RADII, RADII_COUNT, SHAPE_RADII, STEM, STEM_INK } from "./shape-art";
 import { legOps, SHIBA_ART, SHIBA_BUST, SHIBA_BUST_MAX, SHIBA_EXPRESSIONS, SHIBA_HIPS, SHIBA_LEGS, SHIBA_PIVOTS, SHIBA_ROLES, shibaOutline, shibaParts, STANCE_HEAD, MOUTHS, mouthOps, type ShibaOp, type ShibaStance } from "./shiba-art";
 import { blendPose, restPose, SHIBA_MOVE_TIMING, shibaMoveAt } from "./shiba-moves";
 import { shibaSkinPaint } from "./skin-fx/shiba-skins";
@@ -405,7 +405,7 @@ function swiftArt(): string {
   const sample = stillFrame({ shape: "circle", expression: "neutral", color: "#000000" });
   lines.push(`    public static let light: (x: Double, y: Double, r: Double) = (x: ${sample.light.x}, y: ${sample.light.y}, r: ${sample.light.r})`);
   lines.push("", "    /// The body outline of each shape at rest.", "    public static let body: [MascotShape: String] = [");
-  const swiftShape: Record<string, string> = { circle: "circle", bean: "blob", squircle: "squircle", pill: "pill", pick: "triangle", hexagon: "hexagon", cloud: "cloud", drop: "drop" };
+  const swiftShape = SWIFT_SHAPE;
   for (const shape of MASCOT_SHAPES) {
     const frame = stillFrame({ shape, expression: "neutral", color: "#000000" });
     lines.push(`        .${swiftShape[shape]}: "${frame.body}",`);
@@ -426,7 +426,8 @@ function swiftArt(): string {
 
 /* ------------------------------------------------------- Shapes engine */
 
-const SWIFT_SHAPE: Record<string, string> = { circle: "circle", bean: "blob", squircle: "squircle", pill: "pill", pick: "triangle", hexagon: "hexagon", cloud: "cloud", drop: "drop" };
+/** The Swift case of each shape id: the same name, but for the two the phone has always called otherwise. */
+const SWIFT_SHAPE: Record<string, string> = Object.fromEntries(MASCOT_SHAPES.map((shape) => [shape, ({ bean: "blob", pick: "triangle" } as Record<string, string>)[shape] ?? shape]));
 const lit = (value: number) => String(value);
 const numbers = (values: readonly number[]) => values.map(lit).join(", ");
 
@@ -478,6 +479,14 @@ function shapeEngineSwift(): string {
     `    /// When an eye turned away hides (\`EYE_FADE\`) and the body it keeps around it, R (\`EYE_MARGIN\`).`,
     `    public static let eyeFade: (hidden: Double, over: Double) = (hidden: ${lit(EYE_FADE.hidden)}, over: ${lit(EYE_FADE.over)})`,
     `    public static let eyeMargin: Double = ${lit(EYE_MARGIN)}`,
+    `    /// The share of an eye's width the two eyes keep between them (\`EYE_GAP\`).`,
+    `    public static let eyeGap: Double = ${lit(EYE_GAP)}`,
+    `    /// How thick a body must be to carry the volume's full depth, R (\`DEPTH_FULL\`).`,
+    `    public static let depthFull: Double = ${lit(DEPTH_FULL)}`,
+    `    /// The pumpkin's stem (\`STEM\`): its foot, its tip from the foot, its bow and its half widths, R.`,
+    `    public static let stem: (footX: Double, sink: Double, tipX: Double, tipY: Double, bow: Double, footWidth: Double, tipWidth: Double) = (footX: ${lit(STEM.foot.x)}, sink: ${lit(STEM.foot.sink)}, tipX: ${lit(STEM.tip.x)}, tipY: ${lit(STEM.tip.y)}, bow: ${lit(STEM.bow)}, footWidth: ${lit(STEM.width.foot)}, tipWidth: ${lit(STEM.width.tip)})`,
+    `    /// The stem's ink (\`STEM_INK\`).`,
+    `    public static let stemInk = "${STEM_INK}"`,
     `    /// The eyes' size, how much of a face's roll they keep, how far apart, how long, where the face rests (R) and how far a turn moves it (\`EYE_SCALE\`, \`EYE_ROLL\`, \`EYE_SPREAD\`, \`EYE_LENGTH\`, \`EYE_SHIFT\`, \`EYE_GAZE\`).`,
     `    public static let eyeScale: (w: Double, h: Double) = (w: ${lit(EYE_SCALE.w)}, h: ${lit(EYE_SCALE.h)})`,
     `    public static let eyeRoll: Double = ${lit(EYE_ROLL)}`,
@@ -486,7 +495,7 @@ function shapeEngineSwift(): string {
     `    public static let eyeShift: (x: Double, y: Double) = (x: ${lit(EYE_SHIFT.x)}, y: ${lit(EYE_SHIFT.y)})`,
     `    public static let eyeGaze: Double = ${lit(EYE_GAZE)}`,
     "",
-    "    /// The eight bodies, one radius (R) per angle, 0 up, clockwise (`SHAPE_RADII`).",
+    "    /// Every body, one radius (R) per angle, 0 up, clockwise (`SHAPE_RADII`).",
     "    public static let radii: [MascotShape: [Double]] = [",
   ];
   for (const [shape, radii] of Object.entries(SHAPE_RADII)) lines.push(`        .${SWIFT_SHAPE[shape]}: [${numbers(radii)}],`);
@@ -627,7 +636,24 @@ function shapeVolume() {
       const open = k === 2 ? 0.4 : 1;
       const frame = gazeFrame({ shape, expression, color: "#000000" }, 0, 0, {}, { left: open, right: open });
       const style = styles[(i + k) % styles.length];
-      return { shape, expression, open, pose, style, sourceBody: frame.body, sourceEyes: frame.eyes, body: warpPath(frame.body, p), eyes: styledEyes(warpPath(frame.eyes, p), style), flatEyes: styledEyes(frame.eyes, style) };
+      // the eyes on the posed body (posedEyes): upright capsules, also on a body a move squashes and turns
+      const motion = k === 1 ? { x: 2.5, y: -1.5, rot: 14, sx: 1.06, sy: 0.92 } : frame.motion;
+      const posed = { ...frame, motion };
+      return {
+        shape,
+        expression,
+        open,
+        pose,
+        style,
+        motion,
+        sourceBody: frame.body,
+        sourceEyes: frame.eyes,
+        eyeShapes: frame.eyeShapes,
+        body: warpPath(frame.body, p),
+        eyes: eyesOnPose(posed, p, style, true),
+        flatEyes: styledEyes(frame.eyes, style),
+        stem: frame.stem ? warpPath(frame.stem.d, p) : null,
+      };
     }),
   );
   const ground = Object.fromEntries(shapes.map((shape) => [shape, groundLift(shape)]));

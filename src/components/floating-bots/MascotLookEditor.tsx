@@ -15,7 +15,7 @@
 //   gallery (the real avatar, which plays the moves and the equip
 //   animation), its name and family, then that character's own options:
 //     Owl: color, skin
-//     Shapes: shape (8), color (with the Clay palette), shape skin (Clay first)
+//     Shapes: shape (32), color (with the Clay palette), shape skin (Clay first)
 //     Trombi: Trombi skin
 //     Bunbu: color, Bunbu skin
 //     Shiba: color, Shiba skin (the breed's coats, then premium editions)
@@ -45,7 +45,7 @@ import { MAUS_COLORS, swatchStyle, type MausColor, type MausMotion } from "@/lib
 import { BotAvatar, MausAvatar } from "@/components/Avatar";
 import { MASCOT_SKIN_IDS, OWL_SKIN_TIER, botMascotSkin, type MascotSkinId } from "../../../shared/mascot-skins";
 import type { MascotColorGroup } from "../../../shared/mascot-colors";
-import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, CRAB_SKIN_TIER, CRAB_SKINS, FROG_SKIN_TIER, FROG_SKINS, GRUMP_SKIN_TIER, GRUMP_SKINS, OGRE_SKIN_TIER, OGRE_SKINS, SHIBA_SKIN_TIER, SHIBA_SKINS, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
+import { BUNBU_SKIN_TIER, BUNBU_SKINS, completeMascotLook, CRAB_SKIN_TIER, CRAB_SKINS, FROG_SKIN_TIER, FROG_SKINS, GRUMP_SKIN_TIER, GRUMP_SKINS, OGRE_SKIN_TIER, OGRE_SKINS, SHIBA_SKIN_TIER, SHIBA_SKINS, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS, PUMPKIN_COLOR, SHAPE_SKINS_IN_BOT_COLOR, type MascotCharacter, type MascotLook, type MascotShape, type ShapeSkin, type SkinTier } from "../../../shared/mascot-look";
 import { ShapeMascot } from "@/components/ShapeMascot";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
 import { BunbuMascot } from "@/components/BunbuMascot";
@@ -89,13 +89,37 @@ export const CHARACTER_LABEL = {
 
 export const SHAPE_LABEL = {
   circle: "mascot.shape.circle",
-  bean: "mascot.shape.bean",
+  bean: "mascot.shape.pebble",
   squircle: "mascot.shape.squircle",
   pill: "mascot.shape.capsule",
   pick: "mascot.shape.triangle",
   hexagon: "mascot.shape.hexagon",
   cloud: "mascot.shape.cloud",
   drop: "mascot.shape.droplet",
+  pumpkin: "mascot.shape.pumpkin",
+  egg: "mascot.shape.egg",
+  gem: "mascot.shape.gem",
+  wedge: "mascot.shape.wedge",
+  diamond: "mascot.shape.diamond",
+  star: "mascot.shape.star",
+  clover: "mascot.shape.clover",
+  flower: "mascot.shape.flower",
+  blossom: "mascot.shape.blossom",
+  cat: "mascot.shape.cat",
+  ghost: "mascot.shape.ghost",
+  jellyfish: "mascot.shape.jellyfish",
+  axolotl: "mascot.shape.axolotl",
+  puff: "mascot.shape.puff",
+  pin: "mascot.shape.pin",
+  marker: "mascot.shape.marker",
+  sprite: "mascot.shape.sprite",
+  flask: "mascot.shape.flask",
+  tube: "mascot.shape.tube",
+  potion: "mascot.shape.potion",
+  chomp: "mascot.shape.chomp",
+  nibble: "mascot.shape.nibble",
+  shield: "mascot.shape.shield",
+  bubble: "mascot.shape.bubble",
 } satisfies Record<MascotShape, LocaleKey>;
 
 export { SHAPE_MOVE_LABEL } from "./moves";
@@ -567,6 +591,12 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
     reportAchievement("bot.customized", { key: patch.mascotLook?.character ?? look.character });
   };
   const setLook = (next: Partial<MascotLook>) => onPatch({ mascotLook: { ...look, ...next, skins: { ...look.skins, ...next.skins } } });
+  // a pumpkin is orange by default: picking it takes the orange where the skin paints the bot's color
+  const pickShape = (shape: MascotShape) =>
+    onPatch({
+      mascotLook: { ...look, shape },
+      ...(shape === "pumpkin" && shape !== look.shape && SHAPE_SKINS_IN_BOT_COLOR.has(look.skins.shape) ? { color: PUMPKIN_COLOR } : {}),
+    });
 
   // The character in the detail: the one the bot wears, or one picked to look at. It follows the bot's (Reset, another window).
   const [shown, setShown] = useState<MascotCharacter>(look.character);
@@ -769,7 +799,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
           {shown === "shape" && (
             <div>
               <Head title={t("floatingBots.mascot.shape")} />
-              {/* 8 shapes in one row; each previews the current color and skin, still and cheap */}
+              {/* every shape, eight to a row; each previews the current color and skin, still and cheap */}
               <div className="grid grid-cols-8 gap-1" role="radiogroup" aria-label={t("floatingBots.mascot.shape")}>
                 {SHAPE_CHOICES.map((shape) => (
                   <button
@@ -781,7 +811,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
                     data-character-shape={shape}
                     aria-label={t(SHAPE_LABEL[shape])}
                     title={t(SHAPE_LABEL[shape])}
-                    onClick={() => setLook({ shape })}
+                    onClick={() => pickShape(shape)}
                     className={cn(card, "h-[30px] p-0.5", focusRing, look.shape === shape && on)}
                   >
                     <ShapeThumbnail shape={shape} skin={look.skins.shape} color={bot.color} size={22} />

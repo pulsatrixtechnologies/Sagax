@@ -203,13 +203,18 @@ public struct ShapeFrame: Sendable {
     public var body: [CGPoint]
     /// Each shown eye's outline points (cut out with the even-odd rule).
     public var eyes: [[CGPoint]]
+    /// The same eyes as upright capsules in the box (`eyeShapes`): the volume
+    /// places each one on the posed body from these (`ShapeVolume.posedEyes`).
+    public var eyeShapes: [ShapeEyeBox] = []
+    /// The pumpkin's stem: its outline points in the box (before the move) and how much of it shows (`stem`).
+    public var stem: (points: [CGPoint], opacity: Double)?
     /// The body's move: offset (R), turn (degrees) and scale, around the body's middle.
     public var x, y, rot, sx, sy: Double
     public var color: String
     /// How far the body is from its resting outline (0...1).
     public var morphed: Double
-    /// The body's thickness as a share of its resting one (0...1, `bodyDepth`):
-    /// a move that shrinks the body to a dot or a bar thins its slices with it.
+    /// The body's thickness (0...1, `bodyDepth`): its thinnest half-width over
+    /// `depthFull`, so a thin body and a body a move shrinks thin their slices.
     public var depth: Double = 1
     public var light: (x: Double, y: Double, r: Double)
     public var dots: [ShapeDot]
@@ -219,6 +224,11 @@ public struct ShapeFrame: Sendable {
     public var ribbons: [ShapeRibbonDraw]
 
     public var bodyD: String { ShapeMath.smoothClosed(body) }
+    public var stemD: String? { stem.map { ShapeMath.smoothClosed($0.points) } }
+    /// The body's motion in box units (`motion`): shift, turn and scale about the middle.
+    public var motion: (x: Double, y: Double, rot: Double, sx: Double, sy: Double) {
+        (x * ShapeEngineData.bodyUnit, y * ShapeEngineData.bodyUnit, rot, sx, sy)
+    }
     public var eyesD: String { eyes.map { ShapeMath.smoothClosed($0) }.joined() }
 
     /// The SVG transform the desktop writes for the body.
@@ -503,10 +513,27 @@ final class ShapeFollower {
 
 // MARK: - The face (solveEyes)
 
+/// One eye as an upright capsule in the 0...100 box (`EyeBox`).
+public struct ShapeEyeBox: Equatable, Sendable {
+    public var x, y, w, h, tilt: Double
+
+    public init(x: Double, y: Double, w: Double, h: Double, tilt: Double) {
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+        self.tilt = tilt
+    }
+}
+
 /// One eye as the viewer sees it, R units.
 public struct ShapePlacedEye: Sendable {
     public var points: [CGPoint]
     public var center: CGPoint
+    /// The capsule's width and height (R), after the blink and the fade, and the face's tilt (degrees).
+    public var w: Double
+    public var h: Double
+    public var tilt: Double
     /// 0 (turned away, hidden) ... 1.
     public var alpha: Double
     public var depth: Double
@@ -532,7 +559,7 @@ public enum ShapeGaze {
     }
 
     /// A rounded bar's outline (`stadium`), around its middle.
-    private static func stadium(_ w: Double, _ h: Double, count: Int = 28) -> [CGPoint] {
+    static func stadium(_ w: Double, _ h: Double, count: Int = 28) -> [CGPoint] {
         let r = min(w, h) / 2
         let long = max(w, h) / 2 - r
         let tall = h >= w
@@ -543,26 +570,20 @@ public enum ShapeGaze {
         }
     }
 
-    private static func placeEye(_ yaw: Double, _ pitch: Double, _ roll: Double, _ shape: ShapeEye, _ open: Double, axes: (yaw: Double, pitch: Double)) -> ShapePlacedEye {
+    /// An eye's outline (`eyeOutline`): an upright capsule w x h around (cx, cy),
+    /// turned only by the face's own tilt; never sheared nor foreshortened.
+    public static func eyeOutline(_ cx: Double, _ cy: Double, _ w: Double, _ h: Double, _ tilt: Double) -> [CGPoint] {
+        let t = tilt * ShapeMath.rad
+        let c = cos(t), s = sin(t)
+        return stadium(w, h).map { p in CGPoint(x: cx + p.x * c - p.y * s, y: cy + p.x * s + p.y * c) }
+    }
+
+    private static func placeEye(_ yaw: Double, _ pitch: Double, _ roll: Double, _ shape: ShapeEye, _ open: Double) -> ShapePlacedEye {
         let c = toView(direction(yaw, pitch), roll)
-        let step = 0.5
-        let mid = toView(direction(axes.yaw, axes.pitch), roll)
-        let across = toView(direction(axes.yaw + step, axes.pitch), roll)
-        let up = toView(direction(axes.yaw, axes.pitch + step), roll)
-        let k = 1 / (step * ShapeMath.rad)
-        let kx = k / max(0.2, cos(axes.pitch * ShapeMath.rad))
-        let turn = ShapeMath.clamp01(c.z / max(0.05, mid.z))
-        let ex = (x: (across.x - mid.x) * kx * turn, y: (across.y - mid.y) * kx * turn)
-        let ey = (x: (up.x - mid.x) * k, y: (up.y - mid.y) * k)
         let alpha = ShapeMath.clamp01((c.z - ShapeEngineData.eyeFade.hidden) / ShapeEngineData.eyeFade.over)
-        let h = max(shape.h * ShapeEngineData.eyeScale.h * ShapeEngineData.eyeLength * max(open, ShapeEngineData.blink.floor), 0.012)
-        let tilt = shape.tilt * ShapeMath.rad
-        let points = stadium(shape.w * ShapeEngineData.eyeScale.w, h).map { p -> CGPoint in
-            let tu = p.x * cos(tilt) - p.y * sin(tilt)
-            let tv = p.x * sin(tilt) + p.y * cos(tilt)
-            return CGPoint(x: c.x + (tu * ex.x - tv * ey.x) * alpha, y: c.y + (tu * ex.y - tv * ey.y) * alpha)
-        }
-        return ShapePlacedEye(points: points, center: CGPoint(x: c.x, y: c.y), alpha: alpha, depth: c.z)
+        let w = shape.w * ShapeEngineData.eyeScale.w * alpha
+        let h = max(shape.h * ShapeEngineData.eyeScale.h * ShapeEngineData.eyeLength * max(open, ShapeEngineData.blink.floor), 0.012) * alpha
+        return ShapePlacedEye(points: eyeOutline(c.x, c.y, w, h, shape.tilt), center: CGPoint(x: c.x, y: c.y), w: w, h: h, tilt: shape.tilt, alpha: alpha, depth: c.z)
     }
 
     private static func nonZero(_ v: Double) -> Double { v == 0 || v.isNaN ? -1e-6 : v }
@@ -572,18 +593,17 @@ public enum ShapeGaze {
         let yaw = ShapeEngineData.head.yaw
         let pitch = ShapeEngineData.head.pitch + ShapeEngineData.faceDrop
         let eye = ShapeEngineData.expressions[.neutral]!.left
-        return placeEye(yaw, pitch, roll, eye, 1, axes: (yaw: yaw, pitch: pitch)).center
+        return placeEye(yaw, pitch, roll, eye, 1).center
     }
 
-    /// Both eyes for a face on a body (`solveEyes`).
+    /// Both eyes for a face on a body (`solveEyes`): one level pair, inside the outline, never touching.
     public static func solveEyes(_ radii: [Double], _ face: ShapeFace, gaze: (yaw: Double, pitch: Double, roll: Double), open: (left: Double, right: Double)) -> [ShapePlacedEye] {
         let yaw = ShapeEngineData.head.yaw + face.yaw + gaze.yaw
         let pitch = ShapeEngineData.head.pitch + ShapeEngineData.faceDrop + face.pitch + gaze.pitch
         let roll = face.roll * ShapeEngineData.eyeRoll + gaze.roll
-        let axes = (yaw: yaw, pitch: pitch)
         let split = face.split * ShapeEngineData.eyeSpread
-        let left = placeEye(yaw - split, pitch, roll, face.left, face.left.open * open.left, axes: axes)
-        let right = placeEye(yaw + split, pitch, roll, face.right, face.right.open * open.right, axes: axes)
+        let left = placeEye(yaw - split, pitch, roll, face.left, face.left.open * open.left)
+        let right = placeEye(yaw + split, pitch, roll, face.right, face.right.open * open.right)
         // the face seen from the front: its middle rests at eyeShift and moves as much as the head's turn moves it
         let mid = CGPoint(x: (left.center.x + right.center.x) / 2, y: (left.center.y + right.center.y) / 2)
         let rest = restMid(roll)
@@ -591,16 +611,22 @@ public enum ShapeGaze {
         let sx = max(0.35, min(1.25, spread))
         let target = CGPoint(x: ShapeEngineData.eyeShift.x + (mid.x - rest.x) * ShapeEngineData.eyeGaze,
                              y: ShapeEngineData.eyeShift.y + (mid.y - rest.y) * ShapeEngineData.eyeGaze)
-        func place(_ eye: ShapePlacedEye, _ s: Double) -> ShapePlacedEye {
+        func place(_ eye: ShapePlacedEye, _ s: Double, _ k: Double = 1) -> ShapePlacedEye {
             let nx = target.x * s + (eye.center.x - mid.x) * sx
-            let ny = target.y * s + (eye.center.y - mid.y)
+            let ny = target.y * s
             var out = eye
             out.center = CGPoint(x: nx, y: ny)
-            out.points = eye.points.map { CGPoint(x: $0.x - eye.center.x + nx, y: $0.y - eye.center.y + ny) }
+            out.w = eye.w * k
+            out.h = eye.h * k
+            out.points = eyeOutline(nx, ny, out.w, out.h, eye.tilt)
             return out
         }
+        func apart(_ eyes: [ShapePlacedEye]) -> Bool {
+            guard eyes.count == 2 else { return true }
+            return abs(eyes[1].center.x - eyes[0].center.x) >= (eyes[0].w + eyes[1].w) / 2 + ShapeEngineData.eyeGap * max(eyes[0].w, eyes[1].w)
+        }
         func fits(_ eyes: [ShapePlacedEye]) -> Bool {
-            eyes.allSatisfy { e in
+            apart(eyes) && eyes.allSatisfy { e in
                 e.alpha <= 0 || e.points.allSatisfy { p in hypot(p.x, p.y) <= ShapeMath.radiusToward(radii, p.x, nonZero(p.y)) - ShapeEngineData.eyeMargin }
             }
         }
@@ -613,18 +639,44 @@ public enum ShapeGaze {
             hi = lo
         }
         var placed = [place(left, hi), place(right, hi)]
-        if !fits(placed) {
-            var shrink = 1.0
-            while shrink > 0.1, !fits(placed) {
-                shrink *= 0.9
-                placed = placed.map { e in
-                    var out = e
-                    out.points = e.points.map { CGPoint(x: e.center.x + ($0.x - e.center.x) * shrink, y: e.center.y + ($0.y - e.center.y) * shrink) }
-                    return out
-                }
-            }
+        var shrink = 1.0
+        while shrink > 0.1, !fits(placed) {
+            shrink *= 0.9
+            placed = [place(left, hi, shrink), place(right, hi, shrink)]
         }
         return placed
+    }
+}
+
+/// The pumpkin's stem (`stemPath`): a short dark stalk standing in the dip on
+/// top, leaning a little to the left, riding on the body's top radius.
+public enum ShapeStem {
+    public static func points(_ radii: [Double]) -> [CGPoint] {
+        let k = ShapeEngineData.stem
+        let top = ShapeMath.radiusAt(radii, 0)
+        let foot = CGPoint(x: k.footX, y: -top + k.sink)
+        let tip = CGPoint(x: foot.x + k.tipX, y: foot.y + k.tipY)
+        let control = CGPoint(x: (foot.x + tip.x) / 2 + k.bow, y: (foot.y + tip.y) / 2)
+        func at(_ t: Double) -> CGPoint {
+            let a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t
+            return CGPoint(x: a * foot.x + b * control.x + c * tip.x, y: a * foot.y + b * control.y + c * tip.y)
+        }
+        let steps = [0, 0.35, 0.7, 1.0]
+        func side(_ sign: Double) -> [CGPoint] {
+            steps.map { t in
+                let p = at(t), p2 = at(min(1, t + 0.01)), p1 = at(max(0, t - 0.01))
+                let dx = p2.x - p1.x, dy = p2.y - p1.y
+                let len = hypot(dx, dy) == 0 ? 1 : hypot(dx, dy)
+                let half = k.footWidth + (k.tipWidth - k.footWidth) * t
+                return CGPoint(x: p.x + (-dy / len) * half * sign, y: p.y + (dx / len) * half * sign)
+            }
+        }
+        let left = side(1)
+        let right = Array(side(-1).reversed())
+        let t1 = at(1), t0 = at(0.97)
+        let len = hypot(t1.x - t0.x, t1.y - t0.y) == 0 ? 1 : hypot(t1.x - t0.x, t1.y - t0.y)
+        let cap = CGPoint(x: t1.x + (t1.x - t0.x) / len * k.tipWidth * 0.8, y: t1.y + (t1.y - t0.y) / len * k.tipWidth * 0.8)
+        return (left + [cap] + right).map(ShapeMath.toBox)
     }
 }
 
@@ -642,12 +694,16 @@ public enum ShapeFrames {
         var eyes: Double
         var pose: (pose: ShapeMovePose, weight: Double)?
         var t: Double
+        /// How much of the pumpkin's stem shows (0 for every other body).
+        var stem: Double = 0
     }
 
-    /// The body's thickness now as a share of its resting one (`bodyDepth`).
-    public static func bodyDepth(_ radii: [Double], _ rest: [Double]) -> Double {
-        let base = rest.min() ?? 0
-        return base > 0 ? ShapeMath.clamp01((radii.min() ?? 0) / base) : 1
+    /// The body's thickness now (`bodyDepth`): its thinnest half-width over
+    /// `depthFull`, measured on its own radii (a naturally thin body thins its
+    /// slices too, or they spread wider than it and it comes apart).
+    public static func bodyDepth(_ radii: [Double]) -> Double {
+        guard let thinnest = radii.min() else { return 1 }
+        return ShapeMath.clamp01(thinnest / ShapeEngineData.depthFull)
     }
 
     public static func blend(_ a: ShapeFace, _ b: ShapeFace, _ t: Double) -> ShapeFace {
@@ -665,12 +721,19 @@ public enum ShapeFrames {
             guard s < 1 else { return e }
             var out = e
             out.alpha = e.alpha * s
-            out.points = e.points.map { CGPoint(x: e.center.x + ($0.x - e.center.x) * s, y: e.center.y + ($0.y - e.center.y) * s) }
+            out.w = e.w * s
+            out.h = e.h * s
+            out.points = ShapeGaze.eyeOutline(e.center.x, e.center.y, out.w, out.h, e.tilt)
             return out
+        }
+        let round3 = { (v: Double) in ShapeMath.jsRound(v * 1000) / 1000 }
+        let eyeShapes = shown.filter { $0.alpha > 0.001 }.map { e -> ShapeEyeBox in
+            let b = ShapeMath.toBox(e.center)
+            return ShapeEyeBox(x: round3(b.x), y: round3(b.y), w: round3(e.w * ShapeEngineData.bodyUnit), h: round3(e.h * ShapeEngineData.bodyUnit), tilt: e.tilt)
         }
         let unit = ShapeEngineData.bodyUnit, c = ShapeEngineData.bodyCenter
         let morphed = ShapeMath.clamp01(zip(input.radii, input.rest).reduce(0) { max($0, abs($1.0 - $1.1)) } / 0.08)
-        let depth = ShapeFrames.bodyDepth(input.radii, input.rest)
+        let depth = ShapeFrames.bodyDepth(input.radii)
         let w = input.pose?.weight ?? 0
         let pose = input.pose?.pose
         let dots = (pose?.dots ?? []).map { dot -> ShapeDot in
@@ -701,6 +764,8 @@ public enum ShapeFrames {
         return ShapeFrame(
             body: body,
             eyes: shown.filter { $0.alpha > 0.001 }.map { $0.points.map(ShapeMath.toBox) },
+            eyeShapes: eyeShapes,
+            stem: input.stem > 0.01 ? (ShapeStem.points(input.radii), round3(input.stem)) : nil,
             x: input.body.x, y: input.body.y, rot: input.body.rot, sx: input.body.sx, sy: input.body.sy,
             color: input.color, morphed: morphed, depth: depth,
             light: (c.x + ShapeEngineData.clayLight.x * unit, c.y + ShapeEngineData.clayLight.y * unit, ShapeEngineData.clayLight.r * unit),
@@ -723,7 +788,7 @@ public enum ShapeFrames {
         if open >= 1 { return still(shape, expression, color: color) }
         let radii = ShapeEngineData.radii[shape] ?? ShapeEngineData.radii[.circle]!
         return compose(Inputs(radii: radii, rest: radii, face: ShapeEngineData.expressions[expression]!, gaze: (0, 0, 0), open: (open, open),
-                              color: color, body: (0, 0, 0, 1, 1), eyes: 1, pose: nil, t: 0))
+                              color: color, body: (0, 0, 0, 1, 1), eyes: 1, pose: nil, t: 0, stem: ShapeEngine.stemOf(shape)))
     }
 
     /// The resting frame of a shape: no wander, no blink, no move (`stillFrame`).
@@ -739,7 +804,7 @@ public enum ShapeFrames {
         } else {
             let radii = ShapeEngineData.radii[shape] ?? ShapeEngineData.radii[.circle]!
             frame = compose(Inputs(radii: radii, rest: radii, face: ShapeEngineData.expressions[expression]!, gaze: (0, 0, 0), open: (1, 1),
-                                   color: color, body: (0, 0, 0, 1, 1), eyes: 1, pose: nil, t: 0))
+                                   color: color, body: (0, 0, 0, 1, 1), eyes: 1, pose: nil, t: 0, stem: ShapeEngine.stemOf(shape)))
             stills.lock.lock()
             stills.frames[key] = frame
             stills.lock.unlock()
@@ -779,6 +844,7 @@ public final class ShapeEngine {
     private var faceAt = -Double.infinity
     private var fromColor: String
     private var colorAt = -Double.infinity
+    private var fromStem: Double
     private var move: (id: ShapeMove, at: Double)?
     private let yaw = ShapeFollower(0)
     private let pitch = ShapeFollower(0)
@@ -793,7 +859,11 @@ public final class ShapeEngine {
         fromRadii = Self.radii(state.shape)
         fromFace = ShapeEngineData.expressions[state.expression]!
         fromColor = state.color
+        fromStem = Self.stemOf(state.shape)
     }
+
+    /// Whether a body wears the pumpkin's stem (1) or not (0).
+    static func stemOf(_ shape: MascotShape) -> Double { shape == .pumpkin ? 1 : 0 }
 
     private static func radii(_ shape: MascotShape) -> [Double] { ShapeEngineData.radii[shape] ?? ShapeEngineData.radii[.circle]! }
 
@@ -801,6 +871,7 @@ public final class ShapeEngine {
     public func set(_ next: ShapeEngineState, now: Double) {
         if next.shape != state.shape {
             fromRadii = radiiNow(now)
+            fromStem = stemNow(now)
             shapeAt = now
         }
         if next.expression != state.expression {
@@ -843,6 +914,12 @@ public final class ShapeEngine {
         return k >= 1 ? Self.radii(state.shape) : ShapeMath.blendRadii(fromRadii, Self.radii(state.shape), k)
     }
 
+    /// How much of the pumpkin's stem shows: it grows in and out with a change of shape.
+    private func stemNow(_ now: Double) -> Double {
+        let k = ShapeMath.easeOutQuint((now - shapeAt) / ShapeEngineData.morphSeconds)
+        return ShapeMath.lerp(fromStem, Self.stemOf(state.shape), k)
+    }
+
     private func faceNow(_ now: Double) -> ShapeFace {
         let k = ShapeMath.easeOutQuint((now - faceAt) / ShapeEngineData.morphSeconds)
         let target = ShapeEngineData.expressions[state.expression]!
@@ -874,11 +951,16 @@ public final class ShapeEngine {
         let blink = ShapeIdle.blinkOpen(t, blinks)
         var x = body.x, y = body.y, rot = 0.0, scale = 1.0, eyes = 1.0
         var pose: (pose: ShapeMovePose, weight: Double)?
+        var stem = stemNow(now)
         if let move, playing(now) {
             let u = now - move.at
             let weight = ShapeMoves.weight(move.id, u)
             let p = ShapeMoves.at(move.id, u)
-            if let r = p.radii { radii = ShapeMath.blendRadii(rest, r, weight) }
+            if let r = p.radii {
+                radii = ShapeMath.blendRadii(rest, r, weight)
+                // a body turned into a dot or a bar loses its stem until it comes back
+                stem *= 1 - weight
+            }
             if let patch = p.face { face = ShapeFrames.blend(face, patch.applied(to: face), weight) }
             x += (p.x ?? 0) * weight
             y += (p.y ?? 0) * weight
@@ -892,7 +974,7 @@ public final class ShapeEngine {
             gaze: (w.yaw * wanderWeight + yawNow, w.pitch * wanderWeight + pitchNow, w.roll * wanderWeight),
             open: (blink, blink), color: colorNow(now),
             body: (x, y, rot, scale * (2 - body.breath), scale * body.breath),
-            eyes: eyes, pose: pose, t: t
+            eyes: eyes, pose: pose, t: t, stem: stem
         ))
     }
 }
