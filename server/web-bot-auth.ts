@@ -8,11 +8,14 @@
 // server, one key for a solo installation. The private key stays in a 0600
 // file. The public key travels in the Signature-Agent header, so a site can
 // verify without calling back.
-import { generateKeyPairSync, sign, verify, createPrivateKey, createPublicKey, type KeyObject } from "node:crypto";
+import { createCipheriv, createDecipheriv, generateKeyPairSync, randomBytes, sign, verify, createPrivateKey, createPublicKey, type KeyObject } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
+
+const AAD = Buffer.from("sagax web-bot-auth v1");
 
 const COMPONENT = "signature-agent";
 const LABEL = "sig1";
@@ -35,9 +38,38 @@ export interface WebBotAuthJwk {
   x: string;
 }
 
+export interface VisitTarget {
+  /** Host, with the port only when it is not the default for the scheme. */
+  authority: string;
+  /** Path only. A signature for one path is not a signature for another. */
+  path: string;
+}
+
 export interface SignedBrowserVisit {
   headers: Record<string, string>;
   directory: { keys: WebBotAuthJwk[] };
+  authority: string;
+  path: string;
+  expiresAtMs: number;
+}
+
+/** The host and path a navigation signature has to cover. Null when the
+ * address is not an http(s) page, so nothing unbound is signed. */
+export function visitTarget(url: string): VisitTarget | null {
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return null; }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (parsed.username || parsed.password) return null;
+  const authority = parsed.host;
+  const path = parsed.pathname || "/";
+  if (!authority || /[\r\n]/.test(authority) || /[\r\n]/.test(path)) return null;
+  return { authority, path };
+}
+
+/** Headers already on this session still name this host and this path, and
+ * have not expired. A different path is a different signature. */
+export function signatureStillCovers(cached: { authority: string; path: string; expiresAtMs: number } | undefined, target: VisitTarget, nowMs: number): boolean {
+  return Boolean(cached && cached.authority === target.authority && cached.path === target.path && cached.expiresAtMs > nowMs + 5_000);
 }
 
 const owners = new Map<string, string>();
@@ -73,27 +105,69 @@ function refuseSymlink(path: string): void {
 
 interface KeyMaterial { privateKey: KeyObject; jwk: WebBotAuthJwk }
 
-function readKey(path: string): KeyMaterial | null {
+function materialFromPkcs8(pkcs8: string): KeyMaterial | null {
+  try {
+    const privateKey = createPrivateKey({ key: Buffer.from(pkcs8, "base64"), format: "der", type: "pkcs8" });
+    const jwk = createPublicKey(privateKey).export({ format: "jwk" }) as { x?: string };
+    if (typeof jwk.x !== "string" || !jwk.x) return null;
+    return { privateKey, jwk: { kty: "OKP", crv: "Ed25519", kid: jwk.x, x: jwk.x } };
+  } catch {
+    return null;
+  }
+}
+
+function sealPkcs8(pkcs8: string, key: Buffer): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(AAD);
+  const data = Buffer.concat([cipher.update(JSON.stringify({ version: 1, pkcs8 }), "utf8"), cipher.final()]);
+  return JSON.stringify({ v: 2, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") });
+}
+
+function openPkcs8(raw: string, key: Buffer): string | null {
+  const envelope = JSON.parse(raw) as { v?: unknown; iv?: unknown; tag?: unknown; data?: unknown };
+  if (envelope.v !== 2 || typeof envelope.iv !== "string" || typeof envelope.tag !== "string" || typeof envelope.data !== "string") return null;
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(envelope.iv, "base64"));
+  decipher.setAAD(AAD);
+  decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
+  const plain = JSON.parse(Buffer.concat([decipher.update(Buffer.from(envelope.data, "base64")), decipher.final()]).toString("utf8")) as { version?: unknown; pkcs8?: unknown };
+  return plain.version === 1 && typeof plain.pkcs8 === "string" ? plain.pkcs8 : null;
+}
+
+function readKey(path: string, key: Buffer | null): { material: KeyMaterial; legacy: boolean } | null {
   refuseSymlink(path);
   let raw: string;
   try { raw = readFileSync(path, "utf8"); } catch { return null; }
   const parsed = JSON.parse(raw) as { v?: unknown; pkcs8?: unknown };
+  if (parsed.v === 2) {
+    if (!key) return null;
+    const pkcs8 = openPkcs8(raw, key);
+    const material = pkcs8 ? materialFromPkcs8(pkcs8) : null;
+    return material ? { material, legacy: false } : null;
+  }
   if (parsed.v !== 1 || typeof parsed.pkcs8 !== "string") return null;
-  const privateKey = createPrivateKey({ key: Buffer.from(parsed.pkcs8, "base64"), format: "der", type: "pkcs8" });
-  const jwk = createPublicKey(privateKey).export({ format: "jwk" }) as { x?: string };
-  if (typeof jwk.x !== "string" || !jwk.x) return null;
-  return { privateKey, jwk: { kty: "OKP", crv: "Ed25519", kid: jwk.x, x: jwk.x } };
+  const material = materialFromPkcs8(parsed.pkcs8);
+  return material ? { material, legacy: true } : null;
 }
 
-function writeKey(path: string, material: KeyMaterial): void {
-  const pkcs8 = material.privateKey.export({ format: "der", type: "pkcs8" });
+function writeKey(path: string, material: KeyMaterial, key: Buffer): void {
+  const pkcs8 = Buffer.from(material.privateKey.export({ format: "der", type: "pkcs8" })).toString("base64");
   mkdirSync(join(path, ".."), { recursive: true, mode: 0o700 });
-  writeFileAtomic(path, `${JSON.stringify({ v: 1, pkcs8: Buffer.from(pkcs8).toString("base64") })}\n`, { mode: 0o600 });
+  writeFileAtomic(path, `${sealPkcs8(pkcs8, key)}\n`, { mode: 0o600 });
 }
 
 export class WebBotAuthStore {
   private readonly dataDir: string;
-  constructor(dataDir: string) { this.dataDir = dataDir; }
+  private readonly keys: () => VaultKeySource;
+  constructor(dataDir: string, keys?: () => VaultKeySource) {
+    this.dataDir = dataDir;
+    this.keys = keys ?? (() => resolveVaultKey(dataDir));
+  }
+
+  private vaultKey(): Buffer | null {
+    const got = this.keys();
+    return got.kind === "key" ? got.key : null;
+  }
 
   private switchPath(scope: WebBotAuthScope): string {
     return join(scopeDir(this.dataDir, scope), "web-bot-auth.json");
@@ -123,14 +197,19 @@ export class WebBotAuthStore {
   }
 
   material(scope: WebBotAuthScope): KeyMaterial {
+    const key = this.vaultKey();
+    if (!key) throw new Error("The visit signature could not be prepared.");
     const path = this.keyPath(scope);
-    const existing = readKey(path);
-    if (existing) return existing;
+    const existing = readKey(path, key);
+    if (existing) {
+      if (existing.legacy) writeKey(path, existing.material, key);
+      return existing.material;
+    }
     const pair = generateKeyPairSync("ed25519");
     const jwk = pair.publicKey.export({ format: "jwk" }) as { x?: string };
     if (typeof jwk.x !== "string") throw new Error("ed25519 public key");
     const material = { privateKey: pair.privateKey, jwk: { kty: "OKP" as const, crv: "Ed25519" as const, kid: jwk.x, x: jwk.x } };
-    writeKey(path, material);
+    writeKey(path, material, key);
     return material;
   }
 
@@ -145,15 +224,14 @@ export class WebBotAuthStore {
   }
 }
 
-/** Headers for one visit. They identify the bot. They do not authorize an
- * account, and they are not scoped to a path: the browser keeps them for
- * the session until the next page open refreshes them. */
-export function signBrowserVisit(material: KeyMaterial, nowMs: number, ttlSeconds = TTL_SECONDS): SignedBrowserVisit {
+/** Headers for one visit of one host and one path. Another host, or another
+ * path, does not verify. They do not authorize an account. */
+export function signBrowserVisit(material: KeyMaterial, nowMs: number, target: VisitTarget, ttlSeconds = TTL_SECONDS): SignedBrowserVisit {
   const created = Math.floor(nowMs / 1000);
   const expires = created + ttlSeconds;
   const agent = `data:application/json,${JSON.stringify(material.jwk)}`;
-  const params = `("${COMPONENT}");created=${created};expires=${expires};keyid="${material.jwk.kid}";alg="ed25519"`;
-  const base = `"${COMPONENT}": ${agent}\n"@signature-params": ${params}\n`;
+  const params = `("@authority" "@path" "${COMPONENT}");created=${created};expires=${expires};keyid="${material.jwk.kid}";alg="ed25519"`;
+  const base = `"@authority": ${target.authority}\n"@path": ${target.path}\n"${COMPONENT}": ${agent}\n"@signature-params": ${params}\n`;
   const signature = sign(null, Buffer.from(base), material.privateKey).toString("base64");
   return {
     headers: {
@@ -162,17 +240,21 @@ export function signBrowserVisit(material: KeyMaterial, nowMs: number, ttlSecond
       Signature: `${LABEL}=:${signature}:`,
     },
     directory: { keys: [material.jwk] },
+    authority: target.authority,
+    path: target.path,
+    expiresAtMs: expires * 1000,
   };
 }
 
 /** True when these headers were produced by the public key they carry.
  * A site can do the same check. Failure is not a login failure. */
-export function verifyBrowserVisit(headers: Record<string, string>, nowMs: number): boolean {
+export function verifyBrowserVisit(headers: Record<string, string>, nowMs: number, target: VisitTarget): boolean {
   const agent = headers["Signature-Agent"];
   const input = headers["Signature-Input"];
   const signature = headers.Signature;
   if (!agent || !input || !signature) return false;
-  const match = /^sig1=\("signature-agent"\);created=(\d+);expires=(\d+);keyid="([^"]+)";alg="ed25519"$/.exec(input);
+  if (/[\r\n]/.test(target.authority) || /[\r\n]/.test(target.path)) return false;
+  const match = /^sig1=\("@authority" "@path" "signature-agent"\);created=(\d+);expires=(\d+);keyid="([^"]+)";alg="ed25519"$/.exec(input);
   if (!match || !signature.startsWith("sig1=:") || !signature.endsWith(":")) return false;
   const created = Number(match[1]);
   const expires = Number(match[2]);
@@ -188,7 +270,7 @@ export function verifyBrowserVisit(headers: Record<string, string>, nowMs: numbe
   }
   if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519" || jwk.x !== keyId || jwk.kid !== keyId) return false;
   const params = input.slice("sig1=".length);
-  const base = `"${COMPONENT}": ${agent}\n"@signature-params": ${params}\n`;
+  const base = `"@authority": ${target.authority}\n"@path": ${target.path}\n"${COMPONENT}": ${agent}\n"@signature-params": ${params}\n`;
   const bytes = Buffer.from(signature.slice("sig1=:".length, -1), "base64");
   try {
     const publicKey = createPublicKey({ key: jwk, format: "jwk" });

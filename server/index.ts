@@ -331,7 +331,7 @@ import { createWebSearchInternalRoutes } from "./routes/web-search-internal.ts";
 import { createWebSearchRoutes } from "./routes/web-search.ts";
 import { createWebBotAuthRoutes } from "./routes/web-bot-auth.ts";
 import { applySignedBrowserHeaders } from "./web-bot-auth-apply.ts";
-import { browserOwner, noteBrowserOwner, signBrowserVisit, WebBotAuthStore, webBotAuthScope } from "./web-bot-auth.ts";
+import { browserOwner, noteBrowserOwner, signBrowserVisit, signatureStillCovers, visitTarget, WebBotAuthStore, webBotAuthScope } from "./web-bot-auth.ts";
 import { createOpenApiRoutes } from "./routes/openapi-connector.ts";
 import { createOpenApiInternalRoutes } from "./routes/openapi-internal.ts";
 import { OpenApiStore, openApiScope } from "./openapi-connector.ts";
@@ -5100,25 +5100,38 @@ browserEgress.configure({
   ...(sharedEgressHost ? { sameOwner: (session: string, engineBot: string | undefined) => sameOwnerBrowserBots(browserSessionBots.get(session), engineBot, (id) => store.bot(id)) } : {}),
 });
 const webBotAuthStore = new WebBotAuthStore(DATA_DIR);
+/** Host already signed for this browser session, until the signature expires. */
+const signedVisits = new Map<string, { authority: string; path: string; expiresAtMs: number }>();
 const browserRuntime = new BrowserRuntime({
   egressNotice: (session) => browserEgress.takeNotice(session),
   // Sign the bot's own browser visits unless this person turned it off.
   // The person's attached browser (CDP) is not the bot's. A failed signature
-  // does not open the page. The header is not a login.
+  // does not block the page. The header is not a login. The signature covers
+  // this host and this path, and it is refreshed when the host changes or
+  // when it is about to expire, not on every navigation of the same host.
   signNavigation: async ({ session, spec, url }) => {
     if (spec.env.AGENT_BROWSER_CDP) return;
     if (url !== "" && !/^https?:\/\//i.test(url)) return;
     const organization = IDENTITY.kind === "perspicax";
     const scope = webBotAuthScope(organization, organization ? browserOwner(session) : null);
     if (!scope || !webBotAuthStore.enabled(scope)) return;
-    const signed = signBrowserVisit(webBotAuthStore.material(scope), Date.now());
+    const now = Date.now();
+    const target = url ? visitTarget(url) : null;
+    const cached = signedVisits.get(session);
+    if (target && signatureStillCovers(cached, target, now)) return;
+    if (!target) {
+      if (cached && cached.expiresAtMs > now + 5_000) return;
+      return;
+    }
+    const signed = signBrowserVisit(webBotAuthStore.material(scope), now, target);
     await applySignedBrowserHeaders(spec.command, browserRuntimeEnv({ ...spec.env, AGENT_BROWSER_SESSION: session }), signed.headers);
+    signedVisits.set(session, { authority: signed.authority, path: signed.path, expiresAtMs: signed.expiresAtMs });
   },
   // The bot's restart_browser tool. An open Browser panel watched the old
   // browser; drop its stream the way the panel's own Restart button does.
   closeBrowser: async (session, spec) => {
     const closed = await closeBrowserSession(spec.command, browserRuntimeEnv({ ...spec.env, AGENT_BROWSER_SESSION: session }));
-    if (closed) { browserLive.closeForSession(session); browserNetworkDebug.clearSession(session); }
+    if (closed) { signedVisits.delete(session); browserLive.closeForSession(session); browserNetworkDebug.clearSession(session); }
     return closed;
   },
   applyViewport: (spec) => setBrowserViewport(spec.command, spec.env),
