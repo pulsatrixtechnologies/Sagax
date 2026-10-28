@@ -397,7 +397,7 @@ export function Composer({
     const responders = roomRespondersForComposer(message, members ?? [], group);
     return roomTakesImages(group, responders, botSupportsImages);
   };
-  const typedGoalText = group && !group.dm ? goalTextFromComposer(text) : null;
+  const typedGoalText = (group && !group.dm) || !group ? goalTextFromComposer(text) : null;
   const effectiveText = typedGoalText ?? text;
   const effectiveChannelMode = typedGoalText !== null ? "goal" : channelMode;
   const engineSupportsImages = imageTargetsSupport(effectiveText, effectiveChannelMode);
@@ -461,15 +461,15 @@ export function Composer({
   const commandCandidates = useMemo((): ComposerMenuItem[] => {
     if (!slash || slash.start === dismissedSlashAt) return [];
     const available: ComposerSlashCommand[] = [];
-    if (group && !group.dm) {
+    if ((group && !group.dm) || !group) {
       available.push({
         id: "goal",
         label: "/goal",
-        description: t("composer.command.goalDesc"),
+        description: t(group ? "composer.command.goalDesc" : "composer.command.soloGoalDesc"),
         argumentHint: t("composer.command.goalHint"),
       });
-      // its subcommands, under the same Objective heading (2026-10-16)
-      for (const sub of GOAL_SUBCOMMANDS) {
+      // A team's subcommands. In a 1:1, /goal status and /goal stop are sent as text.
+      if (group) for (const sub of GOAL_SUBCOMMANDS) {
         const block = goalSubcommandBlock(sub, goalStatus);
         available.push({
           id: `goal-${sub}`,
@@ -996,6 +996,7 @@ export function Composer({
         sendId: sentDraft.sendId,
         replyToId: replyTo?.id,
         threadId,
+        ...(effectiveChannelMode === "goal" ? { mode: "goal" as const } : {}),
         ...(busyMode ? { busyMode } : {}),
         dataContext,
         onError: () => restoreDraft(sentDraft),
@@ -1235,7 +1236,7 @@ export function Composer({
         });
       },
     },
-    ...(group && !group.dm ? [{
+    ...((group && !group.dm) || !group ? [{
       id: "goal",
       group: "modes" as const,
       label: t("composer.plus.goalMode"),
@@ -1455,7 +1456,7 @@ export function Composer({
               {/* /goal or the + menu's Goal mode starts it; the chip appears
                   only while it is on, says so, and turns it off
                   (2026-10-14: the chip only when it shows the current goal). */}
-              {group && !group.dm && goalModeOn && (
+              {((group && !group.dm) || !group) && goalModeOn && (
                 <button
                   type="button"
                   data-composer-goal

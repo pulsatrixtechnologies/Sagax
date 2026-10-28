@@ -649,6 +649,7 @@ import { pickBotName } from "./names.ts";
 import { botSkillTemplateSchema, newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
 import { greetingLanguage } from "./new-bot-greeting.ts";
 import { introAdvance } from "./intro-tour.ts";
+import { SoloGoals, soloGoalCommand, soloGoalPrompt, soloGoalStatusText } from "./solo-goal.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -15480,6 +15481,8 @@ async function localVmInventoryPayload() {
   return { instances, maxInstances: localVmMaxInstances(cfg), available: true, problem: null };
 }
 
+const soloGoals = new SoloGoals();
+
 bus.subscribe((event: RuntimeEvent) => {
   if (shouldIgnoreProviderEvent(event)) return;
   const localVmTarget = localVmThreadTargets.get(event.threadId);
@@ -15637,6 +15640,7 @@ bus.subscribe((event: RuntimeEvent) => {
     const roomRan = !bot && speaker ? roomTurnRuns.get(event.threadId) : undefined;
     const ran = bot ? turnRunByThread.get(event.threadId) : roomRan && roomRan.botId === speaker?.botId ? roomRan.run : undefined;
     pushMessage({ role: "bot", kind: "text", text: spoken.text, turnId, ...(ran ? { turnRun: ran } : {}) });
+    soloGoals.noteReply(event.threadId, spoken.text);
     lastReply.set(event.threadId, spoken.text);
   };
 
@@ -47903,6 +47907,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // marked or not (typed words, a retry, an old page): server state,
       // not only the page's mark (server/voice-call-session.ts).
       const voiceCall = guarded ? sentVoiceCall : voiceCalls.markFor(threadId, sentVoiceCall);
+      // A goal for this one bot. A team channel keeps its own /goal.
+      const solo = !guarded && !voiceCall && !pressed
+        ? soloGoalCommand(typed, body.mode === "goal" ? "goal" : undefined)
+        : { kind: "none" as const };
+      if (solo.kind === "status" || solo.kind === "stop") {
+        if (solo.kind === "stop") {
+          soloGoals.stop(threadId);
+          if (threadBusy(bot.id, threadId)) await stopDirectThreadByPerson(bot.id, threadId);
+        }
+        const note = soloGoalStatusText(soloGoals.get(threadId));
+        const message = store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: note, ok: true } });
+        return json(res, 200, { ok: true, threadId, message });
+      }
+      const postedText = solo.kind === "start" ? (soloGoals.start(threadId, solo.goal), soloGoalPrompt(solo.goal)) : typed;
       // An engine command the chat cannot run is refused before it is
       // recorded (server/harness-commands.ts).
       if (typed.startsWith("/")) {
@@ -47950,7 +47968,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         else store.appendMessage(threadId, { role: "bot", kind: "text", text: intro.text });
         return json(res, 202, { ok: true, threadId, message });
       }
-      const text = press ? press.text : typed;
+      const text = press ? press.text : postedText;
       const target = resolveReplyTarget(threadId, press ? press.messageId : body.replyToId);
       // Only here is a reply known to be a press: a copy of the widget row
       // says so to whatever composes the prompt (server/replies.ts). A typed
