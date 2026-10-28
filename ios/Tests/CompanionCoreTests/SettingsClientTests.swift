@@ -288,4 +288,63 @@ final class SettingsClientTests: XCTestCase {
         XCTAssertTrue(PluginFilter.installed.admits(installed: true))
         XCTAssertFalse(PluginFilter.notInstalled.admits(installed: true))
     }
+
+    // MARK: My engines (#1098)
+
+    func testMyEnginesReadsThePersonsOwnAccessAsTheServerSendsIt() async throws {
+        respond(#"{"engines":[{"instanceId":"claude","driver":"claudeAgent","displayName":"Claude Code","installed":true,"subscription":{"supported":true,"signedIn":false},"myKey":false,"orgKey":true,"myTurns":"org-key"},{"instanceId":"grok","driver":"grokAgent","displayName":"Grok","installed":false,"notAvailable":"not in this image","subscription":{"supported":true,"signedIn":false},"myKey":false,"orgKey":false,"orgNotAllowed":true,"myTurns":"none"}],"keysUrl":"https://id.example.test/console/credentials?kind=model"}"#)
+        let list = try await client().myEngines()
+        XCTAssertEqual(SettingsStub.captured?.httpMethod, "GET")
+        XCTAssertEqual(SettingsStub.captured?.url?.path, "/api/me/engines")
+        XCTAssertEqual(list.engines.map(\.id), ["claude", "grok"])
+        XCTAssertEqual(list.engines[0].connectName, "Claude")
+        XCTAssertTrue(list.engines[0].offersSignIn)
+        XCTAssertTrue(list.engines[1].unavailable)
+        XCTAssertFalse(list.engines[1].offersSignIn, "an engine the image does not carry offers no sign-in")
+        XCTAssertEqual(list.engines[1].orgNotAllowed, true)
+        XCTAssertNotNil(list.keysUrl.flatMap(MyEnginesRules.signInPage))
+    }
+
+    func testTheSignInRoutesAreThePersonsOwn() async throws {
+        respond(#"{"auth":{"flowId":"f1","authorizationUrl":"https://claude.ai/oauth/authorize?x=1","phase":"waiting"}}"#)
+        let started = try await client().startEngineLogin(instanceId: "claude")
+        XCTAssertEqual(SettingsStub.captured?.httpMethod, "POST")
+        XCTAssertEqual(SettingsStub.captured?.url?.path, "/api/me/engines/claude/login/start")
+        XCTAssertEqual(SettingsStub.captured?.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(started?.flowId, "f1")
+        XCTAssertEqual(started?.signInPage?.host, "claude.ai")
+
+        respond(#"{"auth":{"flowId":"f1","authorizationUrl":null,"phase":"succeeded"}}"#)
+        let status = try await client().engineLoginStatus(instanceId: "claude", flowId: "f1")
+        XCTAssertEqual(SettingsStub.captured?.url?.path, "/api/me/engines/claude/login/status")
+        XCTAssertEqual(SettingsStub.captured?.url?.query, "flowId=f1")
+        XCTAssertEqual(status.phase, "succeeded")
+
+        respond(#"{"ok":true}"#)
+        try await client().completeEngineLogin(instanceId: "claude", flowId: "f1", code: "  abc#def ")
+        XCTAssertEqual(SettingsStub.captured?.url?.path, "/api/me/engines/claude/login/complete")
+        XCTAssertEqual(try body()["flowId"] as? String, "f1")
+        XCTAssertEqual(try body()["code"] as? String, "abc#def")
+        try await client().cancelEngineLogin(instanceId: "claude", flowId: "f1")
+        XCTAssertEqual(SettingsStub.captured?.url?.path, "/api/me/engines/claude/login/cancel")
+        try await client().signOutEngine(instanceId: "codex.work")
+        XCTAssertEqual(SettingsStub.captured?.url?.path, "/api/me/engines/codex.work/login/sign-out")
+    }
+
+    func testASignInPageIsHttpsWithoutCredentialsAndIdsStayInTheirPath() async {
+        XCTAssertNotNil(MyEnginesRules.signInPage("https://auth.openai.com/codex/device"))
+        XCTAssertNil(MyEnginesRules.signInPage("http://auth.openai.com/codex/device"))
+        XCTAssertNil(MyEnginesRules.signInPage("https://user:pass@auth.openai.com/"))
+        XCTAssertNil(MyEnginesRules.signInPage("javascript:alert(1)"))
+        XCTAssertNil(MyEnginesRules.signInPage(nil))
+        for bad in ["", "..", ".", "a/b", "a b", "a%2F"] {
+            XCTAssertFalse(MyEnginesRules.validInstanceId(bad), bad)
+        }
+        SettingsStub.captured = nil
+        do {
+            try await client().signOutEngine(instanceId: "..")
+            XCTFail("a path out of the engine's own routes")
+        } catch {}
+        XCTAssertNil(SettingsStub.captured, "nothing was sent")
+    }
 }

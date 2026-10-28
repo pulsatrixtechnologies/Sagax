@@ -24,6 +24,9 @@ public enum SettingsItem: String, CaseIterable, Hashable, Sendable {
     case autoReview, autoReviewRules, approvalRules, actionJournal, timeZoneAuto, timeZone, botComputer
     /// "Reach me" (#1187): how each bot reaches the person outside the app.
     case reachMe
+    /// "My engines" (#1098): the person's own subscription sign-in on each
+    /// engine the organization offers them.
+    case myEngines
     case quickReplies, callVoice, experimental
     // Privacy and security
     case securityKeys, vault, presence, readReceipts
@@ -55,9 +58,12 @@ public struct SettingsContext: Equatable, Sendable {
     /// Presence and read receipts: an organization server's people.
     public var privacy: Bool
     public var ownPhoto: Bool
+    /// My engines (#1098): an organization server's person, signed in.
+    public var myEngines: Bool
 
     public init(connected: Bool, usage: Bool = false, organization: Bool = false, plugins: Bool = false,
-                computer: Bool = false, experimental: Bool = false, privacy: Bool = false, ownPhoto: Bool = false) {
+                computer: Bool = false, experimental: Bool = false, privacy: Bool = false, ownPhoto: Bool = false,
+                myEngines: Bool = false) {
         self.connected = connected
         self.usage = usage
         self.organization = organization
@@ -66,6 +72,7 @@ public struct SettingsContext: Equatable, Sendable {
         self.experimental = experimental
         self.privacy = privacy
         self.ownPhoto = ownPhoto
+        self.myEngines = myEngines
     }
 
     /// The context `NavigationMenus.settings` describes for a pairing.
@@ -79,14 +86,15 @@ public struct SettingsContext: Equatable, Sendable {
             computer: sections.contains(.computer),
             experimental: sections.contains(.experimental),
             privacy: NavigationMenus.showsPrivacy(gate: gate, connected: connected),
-            ownPhoto: ownPhoto
+            ownPhoto: ownPhoto,
+            myEngines: connected && gate.allows(.myEngines)
         )
     }
 
     /// Everything on: the tree at its fullest.
     public static let everything = SettingsContext(
         connected: true, usage: true, organization: true, plugins: true, computer: true,
-        experimental: true, privacy: true, ownPhoto: true
+        experimental: true, privacy: true, ownPhoto: true, myEngines: true
     )
 }
 
@@ -108,6 +116,7 @@ public enum SettingsTree {
             all = [
                 [(.autoReview, c.connected), (.autoReviewRules, c.connected), (.approvalRules, c.connected), (.actionJournal, c.connected)],
                 [(.reachMe, c.connected)],
+                [(.myEngines, c.connected && c.myEngines)],
                 [(.timeZoneAuto, c.connected), (.timeZone, c.connected)],
                 [(.botComputer, c.connected && c.computer)],
                 [(.quickReplies, true), (.callVoice, true)],

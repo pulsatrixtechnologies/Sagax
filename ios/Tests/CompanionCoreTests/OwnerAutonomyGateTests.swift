@@ -230,6 +230,93 @@ final class OwnerAutonomyGateTests: XCTestCase {
     }
 }
 
+/// #1098: what remained an admin's on the phone although it stays in the
+/// member's own environment.
+final class MemberEnvironmentGateTests: XCTestCase {
+    private let alice = "pr_00000000-0000-4000-8000-00000000a11c"
+    private let bob = "pr_00000000-0000-4000-8000-000000000b0b"
+
+    private func member(_ permissions: [String]? = nil, readOnly: Bool = false) -> SurfaceGate {
+        SurfaceGate(scope: .serverClient, organization: true,
+                    viewer: ConfigViewer(principalId: alice, role: "member", botsReadOnly: readOnly, permissions: permissions))
+    }
+
+    private func bot(_ id: String, owner: String?) throws -> Bot {
+        var json: [String: Any] = [
+            "id": id, "threadId": "t-\(id)", "name": id.capitalized, "title": "", "description": "", "notifications": true,
+            "color": "green", "unread": false, "modelSelection": ["instanceId": "claude", "model": "m"], "createdAt": 1,
+        ]
+        if let owner { json["ownerUserId"] = owner }
+        return try JSONDecoder().decode(Bot.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    // B8: More > Permissions' Sending on your behalf
+    func testAMemberSetsSendingOnTheirOwnBotOnly() throws {
+        let mine = try bot("mine", owner: alice), theirs = try bot("theirs", owner: bob)
+        XCTAssertTrue(member().allows(.botOutbound, bot: mine), "the owner's bots.tools field")
+        XCTAssertFalse(member().allows(.botOutbound, bot: theirs), "never on another person's bot")
+        XCTAssertFalse(member().allows(.botOutbound, bot: try bot("operator", owner: nil)))
+        XCTAssertFalse(member(readOnly: true).allows(.botOutbound, bot: mine), "bots shared for use only")
+        XCTAssertTrue(SurfaceGate(scope: .serverAdmin, organization: true).allows(.botOutbound, bot: theirs))
+        XCTAssertFalse(SurfaceGate(scope: .serverClient).allows(.botOutbound, bot: mine), "a personal server's client session")
+    }
+
+    // B9: the avatar editor's Generate tab
+    func testAMemberGeneratesTheAvatarOfTheirOwnBotOnly() throws {
+        let mine = try bot("mine", owner: alice), theirs = try bot("theirs", owner: bob)
+        XCTAssertTrue(member().allows(.botAvatarGenerate, bot: mine))
+        XCTAssertFalse(member().allows(.botAvatarGenerate, bot: theirs))
+        XCTAssertFalse(member(readOnly: true).allows(.botAvatarGenerate, bot: mine))
+        XCTAssertTrue(SurfaceGate(scope: .serverAdmin, organization: true).allows(.botAvatarGenerate, bot: theirs))
+        XCTAssertTrue(SurfaceGate(scope: .sidecar).allows(.botAvatarGenerate, bot: theirs), "the owner's own desktop")
+        XCTAssertFalse(SurfaceGate(scope: .serverClient).allows(.botAvatarGenerate, bot: mine))
+    }
+
+    // B10: Settings > My engines, on the phone and the iPad
+    func testAMemberReachesTheirOwnEngines() {
+        XCTAssertTrue(member().allows(.myEngines))
+        XCTAssertTrue(DesktopSettingsSection.available(for: member()).contains(.myEngines))
+        XCTAssertEqual(DesktopSettingsNavGroup.of(.myEngines), .bots)
+        let phone = Set(SettingsTree.reachable(SettingsContext(gate: member(), connected: true)).map(\.item))
+        XCTAssertTrue(phone.contains(.myEngines))
+        XCTAssertEqual(SettingsTree.path(to: .myEngines), [.bots])
+        XCTAssertTrue(SettingsSearch.results("abonnement", available: SettingsDestination.allCases, label: { $0.rawValue }).contains(.myEngines))
+        // the sidecar has no such route, a personal server no organization list
+        for gate in [SurfaceGate(scope: .sidecar), SurfaceGate(scope: .serverClient), SurfaceGate(scope: .serverAdmin)] {
+            XCTAssertFalse(gate.allows(.myEngines))
+            XCTAssertFalse(DesktopSettingsSection.available(for: gate).contains(.myEngines))
+            XCTAssertFalse(Set(SettingsTree.reachable(SettingsContext(gate: gate, connected: true)).map(\.item)).contains(.myEngines))
+        }
+        XCTAssertFalse(Set(SettingsTree.reachable(SettingsContext(gate: member(), connected: false)).map(\.item)).contains(.myEngines))
+    }
+
+    // B11: the person's own server environment on the iPad's Organization page
+    func testAMemberUpdatesAndResetsTheirOwnComputer() {
+        XCTAssertTrue(member().allows(.myComputer))
+        XCTAssertTrue(member([]).allows(.myComputer), "no permission needed: it is their own environment")
+        XCTAssertTrue(SurfaceGate(scope: .serverAdmin, organization: true).allows(.myComputer))
+        XCTAssertFalse(SurfaceGate(scope: .sidecar).allows(.myComputer))
+        XCTAssertFalse(SurfaceGate(scope: .serverClient).allows(.myComputer))
+    }
+
+    /// The routes these pages call stay in CLIENT_ALLOW (server/request-auth.ts).
+    func testTheServerLetsAClientSessionReachThem() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("server/request-auth.ts"), encoding: .utf8)
+        for route in [
+            #"{ methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/outbound$/ }"#,
+            #"{ methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/avatar\/generate$/ }"#,
+            #"{ methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" }"#,
+            #"{ methods: ["POST"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" }"#,
+            #"{ methods: ["GET"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/status$/, feature: "orgDirectory" }"#,
+            #"{ methods: ["POST"], path: /^\/api\/computer\/(?:update|reset)$/ }"#,
+        ] {
+            XCTAssertTrue(text.contains(route), route)
+        }
+    }
+}
+
 /// The phone's copy of the field and permission lists must match the
 /// TypeScript the server enforces.
 final class BotFieldRulesParityTests: XCTestCase {

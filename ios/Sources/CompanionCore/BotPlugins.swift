@@ -344,7 +344,8 @@ public extension CompanionClient {
 // MARK: - Sending on your behalf (bot-settings/PermissionsSection.tsx OutboundControl)
 
 public extension CompanionClient {
-    /// `PATCH /api/bots/:id {outbound}`: an admin session's field.
+    /// `PATCH /api/bots/:id {outbound}`: an admin session's field, and the
+    /// owner's (bots.tools) on an organization server.
     func setBotOutbound(botId: String, outbound: OutboundPolicy) async throws -> Bot {
         guard Self.validRouteID(botId) else { throw APIError.badURL }
         struct Body: Encodable { var outbound: OutboundPolicy }

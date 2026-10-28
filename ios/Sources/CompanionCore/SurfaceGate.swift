@@ -158,9 +158,27 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// PATCH /api/bots/:id {fallback} is an admin field (neither the
     /// sidecar's companion fields nor a client session's).
     case botFallback
-    /// More > Permissions' Sending on your behalf (`OutboundControl`): the
-    /// same admin field rule as the backup models.
+    /// More > Permissions' Sending on your behalf (`OutboundControl`): an
+    /// admin session, and the bot's owner on an organization server
+    /// (`allows(_:bot:)`: `outbound` is a bots.tools field of
+    /// BOT_FIELD_PERMISSIONS, `GET /api/bots/:id/outbound` answers the owner,
+    /// #1098).
     case botOutbound
+    /// The avatar editor's Generate tab (`POST /api/bots/:id/avatar/generate`):
+    /// an admin session and the owner's sidecar, and the bot's owner on an
+    /// organization server (`allows(_:bot:)`; the handler's `ownerOrAdminOf`,
+    /// #1098). The image provider being set up is the page's own check.
+    case botAvatarGenerate
+    /// Settings > My engines (`settings/MyEngines.tsx`): the person's own
+    /// subscription sign-in on each engine the organization offers them
+    /// (`/api/me/engines` and its login routes, `orgDirectory`), on an
+    /// organization server, never through the sidecar (#1098).
+    case myEngines
+    /// Settings > Organization > Your computer (`OrgComputerSettings.tsx`):
+    /// the person's own server environment, updated or reset through
+    /// `/api/computer/update|reset` (CLIENT_ALLOW; the handler keeps it to
+    /// the caller's own environment), on an organization server (#1098).
+    case myComputer
     /// Saved command rules (BA9): read and remove pass both gates (the
     /// handler holds a client session to the bot's owner).
     case commandAllowlist
@@ -426,10 +444,12 @@ public struct SurfaceGate: Hashable, Sendable {
             return organization
         case .botPlugins:
             return scope == .serverAdmin || (scope == .serverClient && organization)
-        case .myConnections:
+        case .myConnections, .myEngines, .myComputer:
             return scope != .sidecar && organization
         case .botFallback, .botOutbound:
             return scope == .serverAdmin
+        case .botAvatarGenerate:
+            return scope != .serverClient
         case .botSlack:
             return scope != .sidecar
         case .commandAllowlist:

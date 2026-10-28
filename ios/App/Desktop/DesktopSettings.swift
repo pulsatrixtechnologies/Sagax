@@ -156,6 +156,7 @@ extension DesktopSettingsSection {
         case .myConnections: "My connections"
         case .decisionModel: "Decision model"
         case .engines: "Models and voice"
+        case .myEngines: "My engines"
         case .companion: "Pair devices"
         case .computer: "Local VM"
         case .usage: "Usage"
@@ -177,6 +178,7 @@ extension DesktopSettingsSection {
         case .myConnections: AppStrings.localized("My connections")
         case .decisionModel: AppStrings.localized("Decision model")
         case .engines: AppStrings.localized("Models and voice")
+        case .myEngines: AppStrings.localized("My engines")
         case .companion: AppStrings.localized("Pair devices")
         case .computer: AppStrings.localized("Local VM")
         case .usage: AppStrings.localized("Usage")
@@ -197,6 +199,7 @@ extension DesktopSettingsSection {
         case .myConnections: .plug
         case .decisionModel: .zap
         case .engines: .terminal
+        case .myEngines: .keyRound
         case .companion: .tabletSmartphone
         case .computer: .monitor
         case .usage: .coins
@@ -402,6 +405,8 @@ struct DesktopSettingsPage: View {
         // Models and voice (#518): the providers, then API keys and the
         // Decision model as cards of the page
         case .engines: AnyView(DesktopModelsVoiceSettings())
+        // #1098: the person's own subscription sign-in on each engine
+        case .myEngines: AnyView(MyEnginesSection(style: .desktop))
         case .companion: AnyView(DesktopPairDevicesSettings())
         case .computer: AnyView(DesktopComputerSettings())
         case .usage: AnyView(DesktopUsageSettings())

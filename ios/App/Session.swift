@@ -2853,7 +2853,8 @@ final class Session: ObservableObject {
         }
     }
 
-    /// More > Permissions' Sending on your behalf (an admin session's field).
+    /// More > Permissions' Sending on your behalf (an admin session's field,
+    /// and the owner's on their own bot on an organization server).
     func updateOutbound(_ outbound: OutboundPolicy, for bot: Bot) async -> Bot? {
         guard let client else { return nil }
         do {

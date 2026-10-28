@@ -65,7 +65,9 @@ struct BotAvatarEditor: View {
         return colourRow ?? MausColors.pickerRow(for: draft.color, character: draft.character)
     }
 
-    private var canGenerate: Bool { session.canAdminister && config?.imageGen?.configured == true }
+    /// #1098: an admin, the owner's sidecar, or the bot's owner on an
+    /// organization server (`SurfaceFeature.botAvatarGenerate`).
+    private var canGenerate: Bool { session.surfaceGate.allows(.botAvatarGenerate, bot: bot) && config?.imageGen?.configured == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

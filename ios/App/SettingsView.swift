@@ -19,6 +19,8 @@ enum SettingsRoute: String, Hashable {
     case bots, privacySecurity, about
     // Settings > Bots > Reach me (#1187)
     case reachMe
+    // Settings > Bots > My engines (#1098)
+    case myEngines
 }
 
 struct SettingsView: View {
@@ -236,6 +238,7 @@ private struct SettingsRootPage: View {
         case .credentials: navigator.routes = privacy + [.vault]
         case .securityKeys: navigator.routes = privacy + [.securityKeys]
         case .bots: navigator.routes = bots
+        case .myEngines: navigator.routes = bots + [.myEngines]
         }
     }
 }
@@ -270,6 +273,7 @@ struct SettingsRouteView: View {
         case .securityKeys: SecurityKeysSettingsView()
         case .bots: BotsSettingsView()
         case .reachMe: ReachMeSettingsPage()
+        case .myEngines: SettingsPage(title: "My engines") { MyEnginesSection(style: .phone) }
         case .privacySecurity: PrivacySecuritySettingsView()
         case .about: AboutSettingsView()
         }

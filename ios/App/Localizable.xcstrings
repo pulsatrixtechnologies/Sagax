@@ -1,6 +1,108 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "My engines": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "My engines" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mes moteurs" } }
+      }
+    },
+    "Sign in to your own subscription on the engines your organization offers.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sign in to your own subscription on the engines your organization offers." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connectez votre propre abonnement aux moteurs que votre organisation offre." } }
+      }
+    },
+    "Sign in to your own subscription on the engines your organization offers. Your turns use it on your bots and on the bots shared with you. Your organization chooses which engines are offered.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sign in to your own subscription on the engines your organization offers. Your turns use it on your bots and on the bots shared with you. Your organization chooses which engines are offered." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connectez votre propre abonnement aux moteurs que votre organisation offre. Vos tours l'utilisent sur vos bots et sur les bots partagés avec vous. Votre organisation choisit les moteurs offerts." } }
+      }
+    },
+    "Your organization offers no engine yet.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your organization offers no engine yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Votre organisation n'offre encore aucun moteur." } }
+      }
+    },
+    "Manage my keys in Perspicax": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Manage my keys in Perspicax" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Gérer mes clés dans Perspicax" } }
+      }
+    },
+    "Code: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Code: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Code : %@" } }
+      }
+    },
+    "Open the sign-in page": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open the sign-in page" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la page de connexion" } }
+      }
+    },
+    "Paste the code": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paste the code" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Collez le code" } }
+      }
+    },
+    "Connect your %@ account to use it.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect your %@ account to use it." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connectez votre compte %@ pour l'utiliser." } }
+      }
+    },
+    "The sign-in did not work. Try again.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The sign-in did not work. Try again." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La connexion n'a pas fonctionné. Réessayez." } }
+      }
+    },
+    "Not available on this server": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not available on this server" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non disponible sur ce serveur" } }
+      }
+    },
+    "Your turns use your subscription.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your turns use your subscription." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vos tours utilisent votre abonnement." } }
+      }
+    },
+    "Your turns use your own key.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your turns use your own key." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vos tours utilisent votre propre clé." } }
+      }
+    },
+    "Your turns use your organization's key.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your turns use your organization's key." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vos tours utilisent la clé de votre organisation." } }
+      }
+    },
+    "Outside your organization's list: only your own subscription or key runs it.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Outside your organization's list: only your own subscription or key runs it." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Hors de la liste de votre organisation : seul votre propre abonnement ou votre clé le fait rouler." } }
+      }
+    },
+    "Not given to you: connect your own account or add your key.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not given to you: connect your own account or add your key." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non attribué à vous : connectez votre propre compte ou ajoutez votre clé." } }
+      }
+    },
+    "Update or reset your bots' computer": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Update or reset your bots' computer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mettre à jour ou réinitialiser l'ordinateur de vos bots" } }
+      }
+    },
     "You declined this version. It will never be published.": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "You declined this version. It will never be published." } },

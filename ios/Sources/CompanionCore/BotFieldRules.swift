@@ -74,6 +74,8 @@ public enum BotFieldRules {
         "bots.create", "bots.approvalLevel", "bots.fullAccess", "bots.behaviour", "bots.tools",
         "sharing.grants", "sharing.visibility", "apps.ownIntegrations",
         "clients.botsRead", "clients.botsMessage", "clients.routinesRun", "clients.routinesRead", "clients.agentsCreate",
+        // a member default since #1098 (shared/permissions.ts)
+        "security.triage",
     ]
 
     /// The keys about a person's own things that every member holds,
@@ -220,6 +222,14 @@ public extension SurfaceGate {
         // `fallback`: BOT_FIELD_PERMISSIONS, bots.behaviour.
         case .botFallback:
             return can("bots.behaviour")
+        // #1098: `outbound`: BOT_FIELD_PERMISSIONS, bots.tools; its count
+        // (GET /api/bots/:id/outbound) answers the owner.
+        case .botOutbound:
+            return can("bots.tools")
+        // #1098: POST /api/bots/:id/avatar/generate, `ownerOrAdminOf`
+        // (`memberOwnsBot`, which needs bot creation).
+        case .botAvatarGenerate:
+            return can("bots.create")
         default:
             return false
         }

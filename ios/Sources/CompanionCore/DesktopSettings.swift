@@ -9,8 +9,8 @@ import Foundation
 /// A Settings section, in the desktop's nav order (`SECTIONS`,
 /// src/components/SettingsModal.tsx), as the references draw it.
 public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
-    case general, organization, appearance, experimental, connections, myConnections, decisionModel, engines, companion,
-         computer, usage, people, mail, activity, backups
+    case general, organization, appearance, experimental, connections, myConnections, decisionModel, engines, myEngines,
+         companion, computer, usage, people, mail, activity, backups
 
     /// Search words beside the label (the desktop's `keywords`).
     public var keywords: [String] {
@@ -37,6 +37,10 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
             ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "sign in", "subscription",
              "keys", "api", "api key", "api keys", "connections", "xai", "mistral", "router",
              "openrouter", "openai", "anthropic", "decision", "jev", "typesafe", "routing", "who answers", "voice", "voix"]
+        // #1098: the person's own subscription sign-in on each engine
+        case .myEngines:
+            ["my engines", "mes moteurs", "engines", "models", "subscription", "abonnement", "sign in", "connect",
+             "claude", "codex", "chatgpt", "grok", "kimi", "gemini", "keys"]
         case .companion: ["companion", "device", "phone", "ipad", "pair", "pairing", "mobile", "remote"]
         case .computer: ["computer", "local vm", "vm", "virtual", "desktop", "cloud computers", "vps"]
         case .usage: ["tokens", "cost", "billing", "spend", "limit", "history"]
@@ -70,11 +74,14 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
         // My connections: a person's own, on an organization server only
         // (`organizationHidesSection`), through the server (not the sidecar).
         let mine: [DesktopSettingsSection] = gate.allows(.myConnections) ? [.myConnections] : []
+        // My engines (#1098): the person's own subscription sign-in, on an
+        // organization server (`SurfaceFeature.myEngines`).
+        let engines: [DesktopSettingsSection] = gate.allows(.myEngines) ? [.myEngines] : []
         switch gate.scope {
         case .sidecar, .serverClient:
-            return [.organization] + mine + [.appearance]
+            return [.organization] + engines + mine + [.appearance]
         case .serverAdmin:
-            return [.general, .organization, .appearance, .experimental, .engines] + mine + [.computer, .usage, .backups]
+            return [.general, .organization, .appearance, .experimental, .engines] + engines + mine + [.computer, .usage, .backups]
         }
     }
 
@@ -108,7 +115,7 @@ public enum DesktopSettingsNavGroup: String, CaseIterable, Hashable, Sendable {
     public static func of(_ section: DesktopSettingsSection) -> DesktopSettingsNavGroup {
         switch section {
         case .general, .organization, .usage, .companion, .people, .mail, .activity: .account
-        case .engines, .connections, .decisionModel, .computer, .experimental: .bots
+        case .engines, .myEngines, .connections, .decisionModel, .computer, .experimental: .bots
         case .myConnections: .apps
         case .appearance: .appearance
         case .backups: .privacySecurity
@@ -119,7 +126,7 @@ public enum DesktopSettingsNavGroup: String, CaseIterable, Hashable, Sendable {
     /// groups are left out.
     public static func grouped(_ sections: [DesktopSettingsSection]) -> [(group: DesktopSettingsNavGroup, sections: [DesktopSettingsSection])] {
         let order: [DesktopSettingsSection] = [
-            .general, .organization, .usage, .engines, .computer, .experimental, .myConnections, .appearance, .backups,
+            .general, .organization, .usage, .engines, .myEngines, .computer, .experimental, .myConnections, .appearance, .backups,
         ]
         let ranked = sections.sorted { (order.firstIndex(of: $0) ?? 99) < (order.firstIndex(of: $1) ?? 99) }
         return allCases.compactMap { group in

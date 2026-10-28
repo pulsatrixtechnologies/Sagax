@@ -13,6 +13,8 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
     case rules, approvalGrants, timeZone, language, haptics, quickReplies, walkieVoice, about, credentials, securityKeys
     // The Grok Bot layout's own pages (SettingsTree)
     case bots, privacySecurity
+    // Settings > Bots > My engines (#1098)
+    case myEngines
 
     /// The desktop's section keywords for the same page (SettingsModal.tsx
     /// `SECTIONS`), and words for the phone's own pages.
@@ -47,6 +49,8 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
         case .privacy: return ["privacy", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "confidentialité", "read receipts", "accusés de lecture"]
         case .bots: return ["bots", "bot", "auto-review", "approvals", "approbation", "time zone", "fuseau", "computer", "ordinateur", "quick replies", "call voice", "experimental",
                              "reach me", "me joindre", "sms", "texto", "text message", "teams", "telegram", "whatsapp", "hours", "heures"]
+        case .myEngines: return ["my engines", "mes moteurs", "engines", "moteurs", "models", "subscription", "abonnement", "sign in", "connect",
+                                 "claude", "codex", "chatgpt", "grok", "kimi", "gemini"]
         case .privacySecurity: return ["privacy", "security", "confidentialité", "sécurité", "security keys", "passkey", "vault", "coffre", "presence", "read receipts"]
         }
     }
