@@ -212,7 +212,7 @@ import {
   vpsAliasResourceChangeError,
 } from "./cloud-backend.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
-import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts";
+import { buildRecall, CALL_RECALL_BUDGET, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { companyTextForBots } from "./memory-company.ts";
@@ -41518,7 +41518,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (scope !== "all" && scope !== "conversations" && scope !== "memory") {
           return json(res, 400, { error: "scope must be all, conversations, or memory" });
         }
-        const memoryHits = scope === "conversations" || !q || from.memoryEnabled === false ? [] : searchMemoryFiles(from.id, q, limit);
+        const searchPlace = store.groupByThread(fromThreadId);
+        // A room or a group is wider than the person's own file. A line
+        // stamped for the person does not come out. A line with no stamp stays.
+        const searchAudience: MemoryDestination | undefined = searchPlace ? { kind: "room", id: searchPlace.id } : undefined;
+        const foundMemory = scope === "conversations" || !q || from.memoryEnabled === false ? [] : searchMemoryFiles(from.id, q, limit);
+        const memoryHits = searchAudience
+          ? foundMemory.flatMap((hit) => {
+            const shown = sessionMemoryHitFor(from.id, hit, searchAudience);
+            return shown ? [shown] : [];
+          })
+          : foundMemory;
         if (scope === "memory") return json(res, 200, { hits: [], memoryHits });
         // Own threads: the bot's main chat and tasks, and the rooms it is a
         // member of with their tasks — conversations it already saw in full.

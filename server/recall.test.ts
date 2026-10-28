@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DATA_DIR } from "./config.ts";
 import { closeMessageDb, recallMatchTerm, recallTerms } from "./message-db.ts";
-import { buildRecall, CALL_RECALL_BUDGET, enoughMatches, memoryPassages, RECALL_CLOSE, RECALL_OPEN, recallQuery, renderRecall, topicPassages } from "./recall.ts";
+import { buildRecall, CALL_RECALL_BUDGET, enoughMatches, memoryPassages, RECALL_CLOSE, RECALL_OPEN, recallQuery, renderRecall, sessionMemoryHitFor, sessionMemoryHitMayShow, topicPassages } from "./recall.ts";
 import { appendMemoryLog, searchMemoryFiles, writeMemoryFile, writeMemoryTopic, WORKSPACES_DIR } from "./workspace.ts";
 
 const BOT = "bot-recall-test";
@@ -63,6 +63,37 @@ describe("recall from memory files", () => {
     closeMessageDb();
     rmSync(DATA_DIR, { recursive: true, force: true });
     rmSync(WORKSPACES_DIR, { recursive: true, force: true });
+  });
+
+  it("drops a person line from a room or a group search and keeps a line with no stamp", () => {
+    writeMemoryFile(BOT, [
+      "- 2026-09-25 · from chat \"Plans\" · readers person · The person is vegetarian",
+      "- 2026-09-25 · from room \"Garden\" · readers room:garden · Water on Mondays",
+      "- 2026-09-25 · from chat \"Plans\" · Likes short replies about trains",
+      "",
+    ].join("\n"));
+    const room = { kind: "room" as const, id: "garden" };
+    const group = { kind: "group" as const, id: "g1" };
+    const other = { kind: "room" as const, id: "other" };
+    const person = { kind: "person" as const };
+    const veg = searchMemoryFiles(BOT, "vegetarian");
+    const trains = searchMemoryFiles(BOT, "trains");
+    const water = searchMemoryFiles(BOT, "Mondays");
+    expect(veg.length).toBeGreaterThan(0);
+    expect(trains.length).toBeGreaterThan(0);
+    expect(water.length).toBeGreaterThan(0);
+    expect(veg.every((hit) => sessionMemoryHitMayShow(BOT, hit, room))).toBe(false);
+    expect(veg.every((hit) => sessionMemoryHitMayShow(BOT, hit, group))).toBe(false);
+    expect(veg.every((hit) => sessionMemoryHitMayShow(BOT, hit, person))).toBe(true);
+    expect(trains.every((hit) => sessionMemoryHitMayShow(BOT, hit, room))).toBe(true);
+    expect(trains.every((hit) => sessionMemoryHitMayShow(BOT, hit, group))).toBe(true);
+    expect(water.every((hit) => sessionMemoryHitMayShow(BOT, hit, room))).toBe(true);
+    expect(water.every((hit) => sessionMemoryHitMayShow(BOT, hit, other))).toBe(false);
+    expect(water.every((hit) => sessionMemoryHitMayShow(BOT, hit, group))).toBe(false);
+    for (const hit of [...trains, ...water]) {
+      const shown = sessionMemoryHitFor(BOT, hit, room);
+      expect(shown?.snippet ?? "").not.toContain("vegetarian");
+    }
   });
 
   it("finds a topic by one word or an alias, never MEMORY.md or the archive", () => {

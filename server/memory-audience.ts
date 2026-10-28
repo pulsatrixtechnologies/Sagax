@@ -64,6 +64,22 @@ export function memoryMayShow(readers: MemoryReaders | null, destination: Memory
   return true;
 }
 
+/** Whether a search hit may be shown. The snippet is a cut of the line, so
+ * the file decides: a `readers person` line does not come out in a room or
+ * a group, and a line with no stamp stays. */
+export function memoryHitMayShow(snippet: string, fileText: string | null, audience: MemoryDestination): boolean {
+  if (audience.kind === "person") return true;
+  const fromSnippet = memoryReadersOf(snippet);
+  if (fromSnippet && !memoryMayShow(fromSnippet, audience)) return false;
+  if (fileText == null) return true;
+  const visible = withoutWiderAudience(fileText, audience).text.replace(/\s+/g, " ");
+  const head = snippet.replace(/…[\s\S]*$/, "").replace(/\[([^[\]]+)\]/g, "$1").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (head.length >= 8) return visible.includes(head);
+  const plain = snippet.replace(/\[([^[\]]+)\]/g, "$1").replace(/…/g, "").trim();
+  if (!plain) return true;
+  return fileText.split("\n").some((row) => row.includes(plain) && memoryMayShow(memoryReadersOf(row), audience));
+}
+
 /** The text a turn or a wider copy may see. The file is not changed.
  * Held entries, and the lines under them, are left out. */
 export function withoutWiderAudience(text: string, destination: MemoryDestination): { text: string; held: number } {

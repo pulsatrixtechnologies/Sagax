@@ -11,9 +11,9 @@
 // are neutralised so a note cannot close the block; the block is capped.
 import { recallMessages, recallTerms, type MemoryHit, type RecallHit } from "./message-db.ts";
 import { parseTopicHeader, readTopicHead, topicBody, topicWords } from "./memory-topics.ts";
-import { listMemoryTopics, memoryDate, readMemoryTopic, searchMemoryFiles, workspaceDir } from "./workspace.ts";
+import { listMemoryTopics, memoryDate, readMemoryFile, readMemoryLog, readMemoryTopic, searchMemoryFiles, workspaceDir } from "./workspace.ts";
 import { withoutExpired } from "./memory-entries.ts";
-import { memoryMayShow, memoryReadersOf, withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
+import { memoryHitMayShow, memoryMayShow, memoryReadersOf, withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { join } from "node:path";
 
 /** Below this many characters a message is a nod, not a question. */
@@ -166,6 +166,40 @@ export function topicPassages(botId: string, query: string, audience?: MemoryDes
     return out;
   }
   return out;
+}
+
+function memoryHitFile(botId: string, file: string): string | null {
+  if (file === "MEMORY.md") {
+    const loaded = readMemoryFile(botId).text;
+    return loaded ? loaded : null;
+  }
+  if (file.startsWith("memory/log/")) return readMemoryLog(botId, file.slice("memory/log/".length));
+  if (file.startsWith("memory/")) return readMemoryTopic(botId, file.slice("memory/".length));
+  return null;
+}
+
+/** A session_search memory hit the place may see, or null. A snippet that
+ * also carried a private line is cut back to the visible line. The person's
+ * own turn passes no audience and sees the hit unchanged. */
+export function sessionMemoryHitFor(botId: string, hit: MemoryHit, audience?: MemoryDestination): MemoryHit | null {
+  if (!audience || audience.kind === "person") return hit;
+  const file = memoryHitFile(botId, hit.file);
+  if (file == null) return memoryHitMayShow(hit.snippet, null, audience) ? hit : null;
+  const visible = withoutWiderAudience(file, audience).text;
+  const terms = [...hit.snippet.matchAll(/\[([^[\]]+)\]/g)].map((match) => match[1]!.toLowerCase()).filter((term) => term.length >= 3);
+  const line = terms.length
+    ? visible.split("\n").find((row) => terms.every((term) => row.toLowerCase().includes(term)))
+    : undefined;
+  if (terms.length && !line) return null;
+  const plain = hit.snippet.replace(/\[([^[\]]+)\]/g, "$1").replace(/…/g, " ").replace(/\s+/g, " ").trim();
+  const shown = visible.replace(/\s+/g, " ");
+  if (plain && shown.includes(plain.slice(0, 80))) return hit;
+  if (!line) return memoryReadersOf(hit.snippet) && !memoryMayShow(memoryReadersOf(hit.snippet), audience) ? null : hit;
+  return { ...hit, snippet: line.replace(/\s+/g, " ").trim().slice(0, 400) };
+}
+
+export function sessionMemoryHitMayShow(botId: string, hit: MemoryHit, audience: MemoryDestination): boolean {
+  return sessionMemoryHitFor(botId, hit, audience) !== null;
 }
 
 function passageMayShow(botId: string, hit: MemoryHit, audience?: MemoryDestination): boolean {
