@@ -9440,6 +9440,7 @@
   "artifacts.popOut": "Détacher",
   "artifacts.dock": "Rattacher",
   "artifacts.ownWindow": "Ouvrir dans sa propre fenêtre",
+  "floating.releaseToDetach": "Relâcher pour ouvrir dans sa propre fenêtre",
   "stream.newTopic": "Nouveau sujet",
   "stream.newTopicAria": "Commencer un nouveau sujet avec {name}",
   "stream.divider": "Nouveau sujet : {title}",

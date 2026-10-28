@@ -5,7 +5,7 @@
 // opens) is the bot's, so the empty state tells them to ask the bot.
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AppWindow, LoaderCircle, PictureInPicture2, RefreshCw, Trash2, X } from "lucide-react";
+import { AppWindow, ExternalLink, LoaderCircle, PictureInPicture2, RefreshCw, Trash2, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -13,7 +13,7 @@ import { relativeTime } from "@/lib/memory";
 import { deleteArtifact, refreshArtifact, setArtifactFlags, useArtifact, useArtifactWatch, type ArtifactList } from "@/lib/artifacts";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ArtifactFrame } from "./ArtifactFrame";
-import { dockArtifactWindow, popOutArtifact } from "./artifact-windows";
+import { canOpenArtifactInOwnWindow, dockArtifactWindow, openArtifactInOwnWindow, popOutArtifact } from "./artifact-windows";
 import type { ArtifactSummary } from "../../../shared/artifacts";
 
 /** "30 s", "5 min", "2 h", "1 d". */
@@ -61,6 +61,8 @@ export interface ArtifactActions {
   refresh(artifact: ArtifactSummary): void;
   /** Into its own floating window, or back from it. */
   togglePopped(artifact: ArtifactSummary): void;
+  /** Into a real window of its own, outside the app (desktop app only). */
+  openInOwnWindow(artifact: ArtifactSummary): void;
   /** Artifact ids whose refresh is running from this window. */
   refreshing: ReadonlySet<string>;
 }
@@ -97,6 +99,16 @@ export function useArtifactActions(list: ArtifactList, onError: (text: string) =
       void (popped ? popOutArtifact(artifact) : dockArtifactWindow(artifact)).catch((reason: unknown) => {
         list.patch(artifact.id, { popped: !popped });
         onError(reason instanceof Error ? reason.message : t("artifacts.error"));
+      });
+    },
+    openInOwnWindow: (artifact) => {
+      setOpened((current) => current?.id === artifact.id ? null : current);
+      const wasPopped = artifact.popped;
+      list.patch(artifact.id, { popped: true });
+      void openArtifactInOwnWindow(artifact).then((opened) => {
+        if (opened) return;
+        list.patch(artifact.id, { popped: wasPopped });
+        onError(t("artifacts.error"));
       });
     },
     refresh: (artifact) => {
@@ -142,7 +154,7 @@ export function useArtifactActions(list: ArtifactList, onError: (text: string) =
 }
 
 /** One artifact, opened over the app. */
-export function ArtifactDialog({ artifact, onClose, onPopOut }: { artifact: Pick<ArtifactSummary, "id" | "botId" | "title">; onClose: () => void; onPopOut?: () => void }) {
+export function ArtifactDialog({ artifact, onClose, onPopOut, onOwnWindow }: { artifact: Pick<ArtifactSummary, "id" | "botId" | "title">; onClose: () => void; onPopOut?: () => void; onOwnWindow?: () => void }) {
   const { artifact: full, error, gone } = useArtifact(artifact.botId, artifact.id);
   // open: its source refreshes while this dialog is up
   useArtifactWatch(artifact.id);
@@ -190,6 +202,11 @@ export function ArtifactDialog({ artifact, onClose, onPopOut }: { artifact: Pick
               <RefreshCw size={15} aria-hidden="true" className={cn(refreshing && "animate-spin motion-reduce:animate-none")} />
             </button>
           )}
+          {onOwnWindow && (
+            <button type="button" onClick={onOwnWindow} data-artifact-own-window aria-label={t("artifacts.ownWindow")} title={t("artifacts.ownWindow")} className="flex size-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+              <ExternalLink size={15} aria-hidden="true" />
+            </button>
+          )}
           {onPopOut && (
             <button type="button" onClick={onPopOut} aria-label={t("artifacts.popOut")} title={t("artifacts.popOut")} className="flex size-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
               <PictureInPicture2 size={15} aria-hidden="true" />
@@ -220,7 +237,14 @@ export function ArtifactDialog({ artifact, onClose, onPopOut }: { artifact: Pick
 export function ArtifactDialogs({ state }: { state: ReturnType<typeof useArtifactActions> }) {
   return (
     <>
-      {state.opened && <ArtifactDialog artifact={state.opened} onClose={state.close} onPopOut={() => state.opened && state.togglePopped(state.opened)} />}
+      {state.opened && (
+        <ArtifactDialog
+          artifact={state.opened}
+          onClose={state.close}
+          onPopOut={() => state.opened && state.togglePopped(state.opened)}
+          {...(canOpenArtifactInOwnWindow() ? { onOwnWindow: () => state.opened && state.openInOwnWindow(state.opened) } : {})}
+        />
+      )}
       <ConfirmDialog
         open={state.confirming !== null}
         title={t("artifacts.deleteTitle")}

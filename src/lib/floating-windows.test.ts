@@ -101,4 +101,33 @@ describe("floating windows", () => {
     broken.data.set(FLOATING_STORAGE_KEY, "{not json");
     expect(readSaved(broken)).toEqual({ open: [], geometry: {} });
   });
+
+  it("keeps a contained window whole inside the app's window, never cut at an edge", () => {
+    expect(clampRect({ x: 1300, y: 800, width: 500, height: 300 }, { width: 1440, height: 900 }, undefined, true)).toEqual({ x: 940, y: 600, width: 500, height: 300 });
+    expect(clampRect({ x: -200, y: -40, width: 2000, height: 300 }, { width: 1440, height: 900 }, undefined, true)).toEqual({ x: 0, y: 0, width: 1440, height: 300 });
+    const windows = createFloatingWindows({ storage: memoryStorage(), viewport });
+    windows.open({ id: "artifact:a", kind: "artifact", title: "A", contain: true, persist: true });
+    windows.setRect("artifact:a", { x: 1400, y: 880, width: 640, height: 400 }, { commit: true });
+    expect(windows.snapshot().windows[0].rect).toEqual({ x: 800, y: 500, width: 640, height: 400 });
+  });
+
+  it("puts a restored window back inside a smaller app window", () => {
+    const storage = memoryStorage({ open: [{ id: "artifact:a", kind: "artifact", title: "A", rect: { x: 1500, y: 900, width: 600, height: 400 }, minWidth: 240, minHeight: 160, contain: true }] });
+    const windows = createFloatingWindows({ storage, viewport: () => ({ width: 1000, height: 700 }) });
+    expect(windows.snapshot().windows[0]).toMatchObject({ contain: true, rect: { x: 400, y: 300, width: 600, height: 400 } });
+  });
+
+  it("hands a window with onDetach the screen point it was let go outside the app", () => {
+    const windows = createFloatingWindows({ storage: memoryStorage(), viewport });
+    const points: Array<{ x: number; y: number }> = [];
+    windows.open({ id: "artifact:a", kind: "artifact", title: "A", onDetach: (point) => points.push(point) });
+    windows.open({ id: "terminal:a", kind: "terminal", title: "T" });
+    expect(windows.detachable("artifact:a")).toBe(true);
+    expect(windows.detachable("terminal:a")).toBe(false);
+    expect(windows.detach("artifact:a", { x: 2000, y: 300 })).toBe(true);
+    expect(windows.detach("terminal:a", { x: 2000, y: 300 })).toBe(false);
+    expect(points).toEqual([{ x: 2000, y: 300 }]);
+    windows.close("artifact:a");
+    expect(windows.detachable("artifact:a")).toBe(false);
+  });
 });

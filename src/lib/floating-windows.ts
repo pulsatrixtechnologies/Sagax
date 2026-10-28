@@ -9,6 +9,11 @@
 //   puts it back where it was.
 // - A window opened with `persist: true` (and a kind renderer, since a render
 //   function cannot be saved) reopens at its place when Sagax restarts.
+// - A window opened with `contain: true` stays whole inside the app's window:
+//   never cut at an edge, never larger than it.
+// - A window with `onDetach` can leave the app: its title bar let go outside
+//   the app's window hands the screen point to it (the desktop app opens a
+//   window of its own there).
 //
 // Saved per device in localStorage (omb.floatingWindows.v1): the open
 // persistent windows and the last geometry of up to MAX_GEOMETRY ids.
@@ -31,6 +36,8 @@ export interface FloatingWindowEntry {
   minWidth: number;
   minHeight: number;
   persist: boolean;
+  /** Kept whole inside the viewport (see clampRect). */
+  contain: boolean;
 }
 
 export interface OpenFloatingOptions {
@@ -45,6 +52,11 @@ export interface OpenFloatingOptions {
   onClose?: () => void;
   /** Reopen it at its place after a restart (needs a kind renderer). */
   persist?: boolean;
+  /** Keep the whole window inside the app's window: never cut at an edge. */
+  contain?: boolean;
+  /** Its title bar let go outside the app's window, at this screen point
+   * (this session only). Without it the window stays in the app. */
+  onDetach?: (point: { x: number; y: number }) => void;
   /** First size when the id has no remembered geometry. */
   size?: { width: number; height: number };
   minWidth?: number;
@@ -76,10 +88,19 @@ function readRect(value: unknown): FloatingRect | undefined {
 }
 
 /** Keeps a window reachable in the viewport: no larger than it, the title bar
- * inside it, and at least KEEP_VISIBLE pixels of the window on screen. */
-export function clampRect(rect: FloatingRect, viewport: Viewport, min = { width: 240, height: 160 }): FloatingRect {
+ * inside it, and at least KEEP_VISIBLE pixels of the window on screen. A
+ * contained window stays whole inside the viewport. */
+export function clampRect(rect: FloatingRect, viewport: Viewport, min = { width: 240, height: 160 }, contain = false): FloatingRect {
   const width = Math.round(Math.max(Math.min(min.width, viewport.width), Math.min(rect.width, viewport.width)));
   const height = Math.round(Math.max(Math.min(min.height, viewport.height), Math.min(rect.height, viewport.height)));
+  if (contain) {
+    return {
+      x: Math.round(Math.min(Math.max(rect.x, 0), Math.max(0, viewport.width - width))),
+      y: Math.round(Math.min(Math.max(rect.y, 0), Math.max(0, viewport.height - height))),
+      width,
+      height,
+    };
+  }
   const keep = Math.min(KEEP_VISIBLE, width);
   const x = Math.round(Math.min(Math.max(rect.x, keep - width), viewport.width - keep));
   const y = Math.round(Math.min(Math.max(rect.y, 0), viewport.height - TITLE_BAR));
@@ -88,15 +109,15 @@ export function clampRect(rect: FloatingRect, viewport: Viewport, min = { width:
 
 /** Where a new window goes: centered a little up, each further one offset
  * down and right so a stack of windows stays readable. */
-export function cascadeRect(openCount: number, size: { width: number; height: number }, viewport: Viewport): FloatingRect {
+export function cascadeRect(openCount: number, size: { width: number; height: number }, viewport: Viewport, contain = false): FloatingRect {
   const step = (openCount % CASCADE_WRAP) * CASCADE_STEP;
   const x = Math.round((viewport.width - size.width) / 2) + step;
   const y = Math.max(48, Math.round((viewport.height - size.height) / 3)) + step;
-  return clampRect({ x, y, ...size }, viewport);
+  return clampRect({ x, y, ...size }, viewport, undefined, contain);
 }
 
 interface Saved {
-  open: Array<Pick<FloatingWindowEntry, "id" | "kind" | "title" | "data" | "rect" | "minWidth" | "minHeight">>;
+  open: Array<Pick<FloatingWindowEntry, "id" | "kind" | "title" | "data" | "rect" | "minWidth" | "minHeight" | "contain">>;
   geometry: Record<string, FloatingRect>;
 }
 
@@ -132,6 +153,7 @@ export function readSaved(storage: FloatingStorage | undefined): Saved {
       rect,
       minWidth: finite(entry.minWidth) ? entry.minWidth : 240,
       minHeight: finite(entry.minHeight) ? entry.minHeight : 160,
+      contain: entry.contain === true,
     });
     if (open.length >= MAX_FLOATING_WINDOWS) break;
   }
@@ -162,17 +184,25 @@ export function createFloatingWindows({ storage = defaultStorage(), viewport = d
   const geometry = new Map(Object.entries(saved.geometry));
   const renders = new Map<string, FloatingRenderer>();
   const closers = new Map<string, () => void>();
+  const detachers = new Map<string, (point: { x: number; y: number }) => void>();
   const kinds = new Map<string, FloatingRenderer>();
   const listeners = new Set<() => void>();
+  // A restored window is put back inside today's viewport (the app's window
+  // may be smaller than when it was saved).
+  const startView = viewport();
   let snapshot: FloatingWindowsSnapshot = {
-    windows: saved.open.map((entry) => ({ ...entry, persist: true })),
+    windows: saved.open.map((entry) => ({
+      ...entry,
+      rect: clampRect(entry.rect, startView, { width: entry.minWidth, height: entry.minHeight }, entry.contain),
+      persist: true,
+    })),
     kinds: 0,
   };
 
   const save = () => {
     const open = snapshot.windows
       .filter((entry) => entry.persist)
-      .map(({ id, kind, title, data, rect, minWidth, minHeight }) => ({ id, kind, title, ...(data !== undefined ? { data } : {}), rect, minWidth, minHeight }));
+      .map(({ id, kind, title, data, rect, minWidth, minHeight, contain }) => ({ id, kind, title, ...(data !== undefined ? { data } : {}), rect, minWidth, minHeight, ...(contain ? { contain } : {}) }));
     const ids = [...geometry.keys()].slice(-MAX_GEOMETRY);
     try {
       storage?.setItem(FLOATING_STORAGE_KEY, JSON.stringify({ open, geometry: Object.fromEntries(ids.map((id) => [id, geometry.get(id)])) }));
@@ -194,19 +224,29 @@ export function createFloatingWindows({ storage = defaultStorage(), viewport = d
     if (!ID.test(options.id)) throw new Error(`invalid floating window id: ${options.id}`);
     if (options.render) renders.set(options.id, options.render);
     if (options.onClose) closers.set(options.id, options.onClose);
+    if (options.onDetach) detachers.set(options.id, options.onDetach);
+    else detachers.delete(options.id);
     const existing = snapshot.windows.find((entry) => entry.id === options.id);
     if (existing) {
-      const updated = { ...existing, title: options.title, ...(options.data !== undefined ? { data: options.data } : {}) };
+      const contain = options.contain ?? existing.contain;
+      const updated = {
+        ...existing,
+        title: options.title,
+        ...(options.data !== undefined ? { data: options.data } : {}),
+        contain,
+        rect: clampRect(existing.rect, viewport(), { width: existing.minWidth, height: existing.minHeight }, contain),
+      };
       emit({ ...snapshot, windows: [...snapshot.windows.filter((entry) => entry.id !== options.id), updated] });
       return;
     }
     const minWidth = options.minWidth ?? 240;
     const minHeight = options.minHeight ?? 160;
+    const contain = options.contain === true;
     const view = viewport();
     const remembered = geometry.get(options.id);
     const rect = remembered
-      ? clampRect(remembered, view, { width: minWidth, height: minHeight })
-      : cascadeRect(snapshot.windows.length, options.size ?? DEFAULT_SIZE, view);
+      ? clampRect(remembered, view, { width: minWidth, height: minHeight }, contain)
+      : cascadeRect(snapshot.windows.length, options.size ?? DEFAULT_SIZE, view, contain);
     const entry: FloatingWindowEntry = {
       id: options.id,
       kind: options.kind,
@@ -216,6 +256,7 @@ export function createFloatingWindows({ storage = defaultStorage(), viewport = d
       minWidth,
       minHeight,
       persist: options.persist === true,
+      contain,
     };
     let windows = [...snapshot.windows, entry];
     // over the cap, the bottom window closes
@@ -223,6 +264,7 @@ export function createFloatingWindows({ storage = defaultStorage(), viewport = d
       const [dropped] = windows;
       windows = windows.slice(1);
       renders.delete(dropped.id);
+      detachers.delete(dropped.id);
       const onClose = closers.get(dropped.id);
       closers.delete(dropped.id);
       onClose?.();
@@ -235,6 +277,7 @@ export function createFloatingWindows({ storage = defaultStorage(), viewport = d
     const onClose = closers.get(id);
     renders.delete(id);
     closers.delete(id);
+    detachers.delete(id);
     emit({ ...snapshot, windows: snapshot.windows.filter((entry) => entry.id !== id) });
     onClose?.();
   }
@@ -250,7 +293,7 @@ export function createFloatingWindows({ storage = defaultStorage(), viewport = d
   function setRect(id: string, rect: FloatingRect, { commit = false }: { commit?: boolean } = {}): void {
     const entry = snapshot.windows.find((candidate) => candidate.id === id);
     if (!entry) return;
-    const next = clampRect(rect, viewport(), { width: entry.minWidth, height: entry.minHeight });
+    const next = clampRect(rect, viewport(), { width: entry.minWidth, height: entry.minHeight }, entry.contain);
     if (commit) remember(id, next);
     emit({ ...snapshot, windows: snapshot.windows.map((candidate) => (candidate.id === id ? { ...candidate, rect: next } : candidate)) }, commit);
   }
@@ -280,6 +323,15 @@ export function createFloatingWindows({ storage = defaultStorage(), viewport = d
     registerKind,
     renderBody,
     isOpen: (id: string) => snapshot.windows.some((entry) => entry.id === id),
+    /** Whether this window can leave the app (it has an onDetach). */
+    detachable: (id: string) => detachers.has(id),
+    /** Its title bar was let go outside the app at this screen point. */
+    detach(id: string, point: { x: number; y: number }): boolean {
+      const onDetach = detachers.get(id);
+      if (!onDetach) return false;
+      onDetach(point);
+      return true;
+    },
     hasRenderer: (entry: FloatingWindowEntry) => renders.has(entry.id) || kinds.has(entry.kind),
     rememberedRect: (id: string) => geometry.get(id),
     snapshot: () => snapshot,

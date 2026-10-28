@@ -18,9 +18,36 @@ import { DISPLAY_NAME } from "./app-name.mjs";
  * @param {() => void} input.onOpenSettings
  * @param {string | null} [input.serverModeId]  server mode: the one server this app shows
  * @param {() => void} [input.onLeaveServerMode]
+ * @param {{ artifactId: string, title: string }[]} [input.artifactWindows]  artifacts open in a window of their own
+ * @param {(artifactId: string) => void} [input.onShowArtifactWindow]
+ * @param {string} [input.platform]
  */
-export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFromClipboard, onConnect, onForget, onOpenSettings, serverModeId = null, onLeaveServerMode }) {
-  const isMac = process.platform === "darwin";
+export function buildApplicationMenu(input) {
+  return Menu.buildFromTemplate(applicationMenuTemplate(input));
+}
+
+/** The Window menu: the standard items, then each artifact open in a window
+ * of its own (picking one brings it forward). macOS lists every window there
+ * by itself, so it keeps the system's menu and its own list. */
+export function windowMenuTemplate({ artifactWindows = [], onShowArtifactWindow, platform = process.platform } = {}) {
+  if (platform === "darwin") return { role: "windowMenu" };
+  return {
+    label: "Window",
+    submenu: [
+      { role: "minimize" },
+      { role: "close" },
+      ...(artifactWindows.length > 0
+        ? [
+          { type: "separator" },
+          ...artifactWindows.map((entry) => ({ label: entry.title, click: () => onShowArtifactWindow?.(entry.artifactId) })),
+        ]
+        : []),
+    ],
+  };
+}
+
+export function applicationMenuTemplate({ environments, activeId, onSwitch, onAddFromClipboard, onConnect, onForget, onOpenSettings, serverModeId = null, onLeaveServerMode, artifactWindows = [], onShowArtifactWindow, platform = process.platform }) {
+  const isMac = platform === "darwin";
   const active = environments.find((e) => e.id === activeId) ?? null;
   const locked = serverModeId ? environments.find((e) => e.id === serverModeId) ?? null : null;
   // Server mode: the organization's server and this computer's own space
@@ -61,7 +88,7 @@ export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFr
     { role: "editMenu" },
     server,
     { role: "viewMenu" },
-    { role: "windowMenu" },
+    windowMenuTemplate({ artifactWindows, onShowArtifactWindow, platform }),
   ];
-  return Menu.buildFromTemplate(template);
+  return template;
 }

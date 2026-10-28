@@ -8,6 +8,13 @@
 // starts, before the server answers. Then reconcile() makes the windows
 // match the server: a docked or deleted artifact's window closes, a popped
 // one opens. Closing a window is docking it.
+//
+// In the desktop app a popped-out artifact can instead live in a real window
+// of its own (electron/artifact-window.mjs): "Open in its own window", or its
+// floating panel's title bar dragged out of the app. Which artifacts live
+// there is remembered on this device too, so after a restart they come back
+// in their own windows (each at its place, kept by the desktop app). The
+// floating panel stays whole inside the app's window (`contain`).
 import { floatingWindows, type FloatingWindows } from "@/lib/floating-windows";
 import { setArtifactFlags } from "@/lib/artifacts";
 import { ARTIFACT_LIMITS, type ArtifactBounds, type ArtifactSummary } from "../../../shared/artifacts";
@@ -47,7 +54,47 @@ function setOf(map: WeakMap<FloatingWindows, Set<string>>, manager: FloatingWind
  * only the place that draws them changes, so reconcile leaves their floating
  * window closed. Closing the desktop window docks the artifact, like closing a
  * floating one. */
-const ownWindows = new Set<string>();
+export const OWN_WINDOWS_STORAGE_KEY = "omb.artifactOwnWindows.v1";
+const MAX_OWN_WINDOWS = 100;
+
+function readOwnWindows(): Set<string> {
+  try {
+    const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(OWN_WINDOWS_STORAGE_KEY) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string" && /^[a-zA-Z0-9:_-]{1,128}$/.test(id)).slice(-MAX_OWN_WINDOWS) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveOwnWindows(): void {
+  try {
+    globalThis.localStorage?.setItem(OWN_WINDOWS_STORAGE_KEY, JSON.stringify([...ownWindows].slice(-MAX_OWN_WINDOWS)));
+  } catch {
+    /* private mode or quota: they still work for this session */
+  }
+}
+
+const ownWindows = readOwnWindows();
+/** Own windows asked for in this session (a restored one is asked once). */
+const ownShown = new Set<string>();
+/** Asked for and not answered yet: a list from before the ask must not close it. */
+const ownPending = new Set<string>();
+
+function forgetOwnWindow(artifactId: string): boolean {
+  ownShown.delete(artifactId);
+  ownPending.delete(artifactId);
+  const had = ownWindows.delete(artifactId);
+  if (had) saveOwnWindows();
+  return had;
+}
+
+/** Tests: forget every own window of this session and device. */
+export function resetOwnArtifactWindows(): void {
+  ownWindows.clear();
+  ownShown.clear();
+  ownPending.clear();
+  saveOwnWindows();
+}
 
 export function artifactHasOwnWindow(artifactId: string): boolean {
   return ownWindows.has(artifactId);
@@ -58,22 +105,53 @@ export function canOpenArtifactInOwnWindow(): boolean {
   return typeof window !== "undefined" && typeof window.ogb?.artifactWindow?.open === "function";
 }
 
-/** Move a popped-out artifact from its floating window to a window of its
- * own. Resolves false (and leaves the floating window) when the desktop app
- * refuses or is not there. */
-export async function openArtifactInOwnWindow(artifact: { id: string; botId: string; title: string }): Promise<boolean> {
+/** Open an artifact in a window of its own (or bring that window forward):
+ * from the Library, its dialog, its floating panel, or the panel dragged out
+ * of the app (`at`, the screen point it was let go). The artifact is popped
+ * out on the server, so it comes back after a restart; its floating panel
+ * closes. Resolves false (and changes nothing) when the desktop app refuses
+ * or is not there. */
+export async function openArtifactInOwnWindow(
+  artifact: { id: string; botId: string; title: string; popped?: boolean },
+  options: { at?: { x: number; y: number } } = {},
+): Promise<boolean> {
   const bridge = typeof window !== "undefined" ? window.ogb?.artifactWindow : undefined;
   if (!bridge) return false;
-  const result = await bridge.open({ botId: artifact.botId, artifactId: artifact.id, title: artifact.title }).catch(() => "refused" as const);
-  if (result === "refused") return false;
+  const already = ownWindows.has(artifact.id);
   ownWindows.add(artifact.id);
+  ownPending.add(artifact.id);
+  const undo = () => {
+    ownPending.delete(artifact.id);
+    if (!already) ownWindows.delete(artifact.id);
+    return false;
+  };
+  // Popped out first, so the list the server sends next already says so.
+  if (artifact.popped !== true) {
+    const flagged = await setArtifactFlags(artifact.botId, artifact.id, { popped: true }).then(() => true, () => false);
+    if (!flagged) return undo();
+  }
+  const result = await bridge.open({
+    botId: artifact.botId,
+    artifactId: artifact.id,
+    title: artifact.title,
+    ...(options.at ? { x: options.at.x, y: options.at.y } : {}),
+  }).catch(() => "refused" as const);
+  if (result === "refused") {
+    undo();
+    // It was asked for out of the Library: back as it was, docked.
+    if (artifact.popped !== true) void setArtifactFlags(artifact.botId, artifact.id, { popped: false }).catch(() => {});
+    return false;
+  }
+  ownPending.delete(artifact.id);
+  ownShown.add(artifact.id);
+  saveOwnWindows();
   closeArtifactWindow(artifact.id);
   return true;
 }
 
 /** The person closed an artifact's own window: the artifact is docked. */
 export function ownArtifactWindowClosed(data: ArtifactWindowData): void {
-  if (!ownWindows.delete(data.artifactId)) return;
+  if (!forgetOwnWindow(data.artifactId)) return;
   dockArtifact(data);
 }
 
@@ -94,6 +172,12 @@ export function openArtifactWindow(artifact: Artifactish, onDock: (artifact: Art
     title: artifact.title,
     data,
     persist: true,
+    // whole inside the app's window, never cut at an edge
+    contain: true,
+    // its title bar let go outside the app: a window of its own, there
+    ...(canOpenArtifactInOwnWindow()
+      ? { onDetach: (at: { x: number; y: number }) => void openArtifactInOwnWindow({ id: artifact.id, botId: artifact.botId, title: artifact.title, popped: true }, { at }) }
+      : {}),
     size: artifact.bounds ? { width: artifact.bounds.width, height: artifact.bounds.height } : DEFAULT_SIZE,
     minWidth: ARTIFACT_LIMITS.minWidth,
     minHeight: ARTIFACT_LIMITS.minHeight,
@@ -122,9 +206,22 @@ export function reconcileArtifactWindows(list: readonly ArtifactSummary[], onDoc
   // An artifact docked (or deleted) while it has a window of its own: that window goes.
   const stillPopped = new Set(list.filter((artifact) => artifact.popped).map((artifact) => artifact.id));
   for (const artifactId of ownWindows) {
-    if (stillPopped.has(artifactId)) continue;
-    ownWindows.delete(artifactId);
-    void window.ogb?.artifactWindow?.close(artifactId).catch(() => {});
+    if (stillPopped.has(artifactId) || ownPending.has(artifactId)) continue;
+    const shown = ownShown.has(artifactId);
+    forgetOwnWindow(artifactId);
+    if (shown) void window.ogb?.artifactWindow?.close(artifactId).catch(() => {});
+  }
+  // One that lived in a window of its own last time (or before the page
+  // reloaded) goes back there, without taking the focus; where the desktop
+  // app is not there, it is a floating panel again.
+  const canOwn = canOpenArtifactInOwnWindow();
+  for (const artifact of list) {
+    if (!artifact.popped || !ownWindows.has(artifact.id) || ownShown.has(artifact.id) || ownPending.has(artifact.id)) continue;
+    if (!canOwn) {
+      forgetOwnWindow(artifact.id);
+      continue;
+    }
+    restoreOwnWindow(artifact, onDock, manager);
   }
   const popped = new Map(list.filter((artifact) => artifact.popped && !ownWindows.has(artifact.id)).map((artifact) => [artifactWindowId(artifact.id), artifact]));
   for (const entry of manager.snapshot().windows) {
@@ -144,6 +241,26 @@ export function reconcileArtifactWindows(list: readonly ArtifactSummary[], onDoc
   }
 }
 
+function restoreOwnWindow(artifact: ArtifactSummary, onDock: (artifact: ArtifactWindowData) => void, manager: FloatingWindows): void {
+  const bridge = window.ogb?.artifactWindow;
+  if (!bridge) return;
+  ownPending.add(artifact.id);
+  void bridge.open({ botId: artifact.botId, artifactId: artifact.id, title: artifact.title, focus: false })
+    .catch(() => "refused" as const)
+    .then((result) => {
+      ownPending.delete(artifact.id);
+      if (!ownWindows.has(artifact.id)) return;
+      if (result === "refused") {
+        // the desktop app said no: a floating panel again
+        forgetOwnWindow(artifact.id);
+        openArtifactWindow(artifact, onDock, manager);
+        return;
+      }
+      ownShown.add(artifact.id);
+      closeArtifactWindow(artifact.id, manager);
+    });
+}
+
 function rank(order: readonly string[], id: string): number {
   const index = order.indexOf(id);
   return index < 0 ? Number.MAX_SAFE_INTEGER : index;
@@ -158,7 +275,7 @@ export function dockArtifact(data: ArtifactWindowData): void {
  * when Sagax starts again, until it is docked. */
 export function popOutArtifact(artifact: { id: string; botId: string; title: string; bounds?: { x: number; y: number; width: number; height: number } }): Promise<void> {
   // One with a window of its own already: asking again brings that one forward.
-  if (ownWindows.has(artifact.id)) {
+  if (ownShown.has(artifact.id)) {
     void window.ogb?.artifactWindow?.open({ botId: artifact.botId, artifactId: artifact.id, title: artifact.title }).catch(() => {});
     return Promise.resolve();
   }
@@ -172,6 +289,7 @@ export function popOutArtifact(artifact: { id: string; botId: string; title: str
 /** Dock a popped-out artifact from anywhere (the Files tab's menu). */
 export function dockArtifactWindow(artifact: { id: string; botId: string }): Promise<void> {
   closeArtifactWindow(artifact.id);
-  if (ownWindows.delete(artifact.id)) void window.ogb?.artifactWindow?.close(artifact.id).catch(() => {});
+  const shown = ownShown.has(artifact.id);
+  if (forgetOwnWindow(artifact.id) && shown) void window.ogb?.artifactWindow?.close(artifact.id).catch(() => {});
   return setArtifactFlags(artifact.botId, artifact.id, { popped: false }).then(() => undefined);
 }
