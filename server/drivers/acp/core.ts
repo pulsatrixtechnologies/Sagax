@@ -180,6 +180,10 @@ export interface AcpConfig {
   fullAuto: boolean;
   /** Optional home for this instance's sessions. */
   workspace?: string;
+  /** Models a custom agent lists, so each bot can pick one. */
+  models?: { default: string; options: Array<{ id: string; label: string }> };
+  /** Thinking levels a custom agent accepts, so each bot can pick one. */
+  effortLevels?: readonly EffortLevel[];
 }
 
 /** A pending request.opened answer: the callback stored in the running
