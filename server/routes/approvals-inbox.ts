@@ -28,6 +28,7 @@ import {
 } from "../../shared/approvals-inbox.ts";
 import type { OptionCardData } from "../../shared/wire.ts";
 import { journalDays, type JournalPayload, type RuleTestDraft, type RuleTestResult } from "../../shared/action-journal.ts";
+import type { JournalChain } from "../action-journal.ts";
 import { isCustomRuleBehavior, isRiskClass, MAX_RULE_TEXT } from "../../shared/custom-rules.ts";
 import { liveDecisionRefusal } from "../../shared/live-approval.ts";
 import { approvalTypeOf } from "../approval-type.ts";
@@ -53,6 +54,8 @@ export interface ApprovalsInboxDeps {
   answer(auth: RequestAuth, item: { threadId: string; requestId: string }, decision: "allow" | "deny", rule?: "allow"): Promise<InboxAnswer>;
   /** The Journal: this person's own bots' actions over `days`. */
   journal?(auth: RequestAuth, viewer: InboxViewer, days: number): JournalPayload;
+  /** The chain sealed when each line was written. Export does not rehash. */
+  sealedJournal?(): JournalChain;
   /** A rule (saved or a draft) replayed on the Journal's last 7 days with
    * the real matcher; a string is a refusal (400). */
   testRule?(auth: RequestAuth, viewer: InboxViewer, draft: RuleTestDraft): RuleTestResult | { error: string; status: number };
@@ -120,7 +123,9 @@ export function createApprovalsInboxRoutes(deps: ApprovalsInboxDeps): RouteHandl
       const viewer = deps.viewer(auth);
       if (!viewer || !deps.journal) return json(res, 403, { error: "Sign in to see your bots' journal.", code: "no_person" });
       res.setHeader("cache-control", "no-store");
-      return json(res, 200, deps.journal(auth, viewer, journalDays(url.searchParams.get("days"))));
+      const payload = deps.journal(auth, viewer, journalDays(url.searchParams.get("days")));
+      if (url.searchParams.get("export") === "1") return json(res, 200, deps.sealedJournal?.() ?? { version: 1 as const, genesis: "0".repeat(64), entries: [] });
+      return json(res, 200, payload);
     }
     if (method === "POST" && path === "/api/approvals/journal/test") {
       const viewer = deps.viewer(auth);

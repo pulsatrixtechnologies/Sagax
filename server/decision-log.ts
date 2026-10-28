@@ -29,13 +29,14 @@
 // separate change if it earns its keep.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readdirSync, readFileSync } from "node:fs";
-import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import type { AutoVerdictSource } from "./auto-approve.ts";
 import { DATA_DIR } from "./config.ts";
 import { appendLog, LogReader, registerSealedLog, sealLogLine, sealLogLines, withLogFileLock } from "./content-at-rest.ts";
 import { WORKSPACE_OWNER } from "./content-keys.ts";
+import { JOURNAL_GENESIS, sealLink, type JournalSealFields, type JournalSealLink } from "./journal-seal.ts";
 import { redactSecrets } from "./redact.ts";
 import { csvCell, monthKey } from "./usage-ledger.ts";
 
@@ -311,11 +312,69 @@ export function decisionFileFor(dataDir: string, at: Date): string {
   return join(dataDir, DIR, `${monthKey(at)}.ndjson`);
 }
 
+const CHAIN_FILE = "chain.ndjson";
+
+export function decisionSealFields(row: Pick<DecisionRow, "at" | "botId" | "tool" | "decision" | "source">): JournalSealFields {
+  return {
+    at: row.at,
+    botId: row.botId ?? "",
+    tool: row.tool ?? "",
+    outcome: row.decision,
+    decider: row.source,
+    source: row.source,
+    ran: "",
+  };
+}
+
+function chainFile(dataDir: string): string {
+  return join(dataDir, DIR, CHAIN_FILE);
+}
+
+function lastChainHash(dataDir: string): string {
+  try {
+    const text = readFileSync(chainFile(dataDir), "utf8");
+    const line = text.trim().split("\n").at(-1);
+    if (!line) return JOURNAL_GENESIS;
+    const hash = (JSON.parse(line) as { hash?: unknown }).hash;
+    return typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash) ? hash : JOURNAL_GENESIS;
+  } catch {
+    return JOURNAL_GENESIS;
+  }
+}
+
+/** The chain sealed as each line was written. Missing file: an empty chain. */
+export function readSealedChain(dataDir: string): { version: 1; genesis: string; entries: JournalSealLink[] } {
+  let text = "";
+  try {
+    text = readFileSync(chainFile(dataDir), "utf8");
+  } catch {
+    return { version: 1, genesis: JOURNAL_GENESIS, entries: [] };
+  }
+  const entries: JournalSealLink[] = [];
+  for (const line of text.split("\n")) {
+    if (!line) continue;
+    try {
+      const value = JSON.parse(line) as JournalSealLink;
+      if (typeof value.hash === "string" && typeof value.prev === "string" && typeof value.at === "string") entries.push(value);
+    } catch {
+      /* a torn line is not a link */
+    }
+  }
+  return { version: 1, genesis: JOURNAL_GENESIS, entries };
+}
+
+/** Fields of the decision files as they are now, oldest first. */
+export function sealedDecisionSources(dataDir: string): JournalSealFields[] {
+  return sources(dataDir).flatMap((path) => readRows(path).map(decisionSealFields));
+}
+
 async function writeDecision(dataDir: string, record: DecisionRow): Promise<void> {
   const at = new Date(record.at);
   await mkdir(join(dataDir, DIR), { recursive: true, mode: 0o700 });
   const file = decisionFileFor(dataDir, at);
+  const link = sealLink(lastChainHash(dataDir), decisionSealFields(record));
   await appendLog(file, sealLogLine(file, record as unknown as Record<string, unknown>) + "\n", { mode: 0o600 });
+  await appendFile(chainFile(dataDir), JSON.stringify(link) + "\n", { mode: 0o600 });
   if (at.getTime() - (lastPrune.get(dataDir) ?? 0) >= PRUNE_EVERY_MS) {
     lastPrune.set(dataDir, at.getTime());
     await pruneDecisions(dataDir, retentionDays(), at);
