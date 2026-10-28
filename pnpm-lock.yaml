@@ -5,6 +5,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  undici@>=7.0.0 <7.30.1: 7.30.1
+  zod@>=4.0.0 <4.6.6: 4.6.6
   dompurify: 3.4.17
   fast-uri: 3.1.9
   '@vitest/mocker@<4.1.12': 4.1.12
@@ -2849,7 +2851,7 @@ packages:
   better-call@1.4.0:
     resolution: {integrity: sha512-bBKOT4vv1kZLDgxVePdilk/Jwkn+dtRRsmi3DzHcDP+WnswyVl6dR59l2HEeP/0cB+bDoopASAesWDPIdd/zZA==}
     peerDependencies:
-      zod: ^4.0.0
+      zod: 4.6.6
     peerDependenciesMeta:
       zod:
         optional: true
@@ -3592,7 +3594,7 @@ packages:
       react-dom: ^19.2.0
       react-router: 7.x.x || 8.x.x
       waku: '*'
-      zod: 4.x.x
+      zod: 4.6.6
     peerDependenciesMeta:
       '@mdx-js/mdx':
         optional: true
@@ -5145,10 +5147,6 @@ packages:
     resolution: {integrity: sha512-EvRlUt/QqAEvXdQeRMYUfwOQsfzpDztykrG2owGEE/rBOBoYv9uF39ZzsNDh4lTFHhTr2XOZjKkYgueD12ZmGA==}
     engines: {node: '>=18.17'}
 
-  undici@7.29.1:
-    resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
-    engines: {node: '>=20.18.1'}
-
   undici@7.30.1:
     resolution: {integrity: sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg==}
     engines: {node: '>=20.18.1'}
@@ -5645,9 +5643,6 @@ packages:
     resolution: {integrity: sha512-lmnEEnb93QQcNv7qARDr7jBVPxYdZbZ9XdZ0dbZ0qaOvGne4jJMW4fjwPfVaUKQXv3FNWvGbDwRDgyaSb1pc8w==}
     engines: {node: '>= 20.0.0'}
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
-
   zod@4.6.6:
     resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
@@ -5889,7 +5884,7 @@ snapshots:
       miniflare: 5.20261001.0-alpha(@types/node@26.6.5)
       vitest: 4.1.11(@types/node@26.6.5)(happy-dom@21.0.4)(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.16.9)(yaml@2.9.1))
       wrangler: 4.147.0(@cloudflare/workers-types@5.20261003.1)(@types/node@26.6.5)
-      zod: 4.4.3
+      zod: 4.6.6
     transitivePeerDependencies:
       - '@cloudflare/workers-types'
       - '@types/node'
@@ -9697,7 +9692,7 @@ snapshots:
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       sharp: 0.35.5(@types/node@26.6.5)
-      undici: 7.29.1
+      undici: 7.30.1
       workerd: 1.20261001.1
       ws: 8.21.0
       youch: 4.1.0-beta.10
@@ -10588,10 +10583,7 @@ snapshots:
 
   undici@6.29.1: {}
 
-  undici@7.29.1: {}
-
-  undici@7.30.1:
-    optional: true
+  undici@7.30.1: {}
 
   unenv@2.0.0-rc.24:
     dependencies:
@@ -11191,8 +11183,6 @@ snapshots:
       '@yuku-toolchain/types': 0.10.2
 
   zbsearch@4.0.1: {}
-
-  zod@4.4.3: {}
 
   zod@4.6.6: {}
 

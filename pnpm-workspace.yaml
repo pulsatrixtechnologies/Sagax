@@ -28,6 +28,11 @@ onlyBuiltDependencies:
 # has a code-injection and a Windows traversal fix in 4.1.12; the bound keeps
 # vitest 5.x's own @vitest/mocker 5.x untouched.
 overrides:
+  # miniflare (via @cloudflare/vitest-plugin) pins undici 7.29.1. 7.30.1
+  # closes the open undici advisories. undici 6 stays on its own line.
+  "undici@>=7.0.0 <7.30.1": 7.30.1
+  # @cloudflare/vitest-plugin pins zod 4.4.3. The direct dependency is 4.6.6.
+  "zod@>=4.0.0 <4.6.6": 4.6.6
   dompurify: 3.4.17
   # ajv 8.20 still allows fast-uri 3.1.8. 3.1.9 fixes the published advisories.
   fast-uri: 3.1.9
