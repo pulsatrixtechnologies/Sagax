@@ -46,8 +46,15 @@ final class ApprovalGrantsTests: XCTestCase {
         XCTAssertTrue(read.recognized)
         XCTAssertFalse(read.shellFamily)
         XCTAssertFalse(CustomRuleEditor.compile("blabla sans rien").recognized)
-        XCTAssertEqual(CustomRuleEditor.compile("la lecture avec `cw_psa__query`").tools, ["cw_psa__query"])
-        XCTAssertTrue(CustomRuleEditor.compile("utiliser github").recognized)
+        XCTAssertEqual(CustomRuleEditor.compile("la lecture avec `acme_desk__query`").tools, ["acme_desk__query"])
+        // a product is named only as the bot's servers declare it
+        let declared = [CustomRuleProduct(id: "acme_desk", name: "Acme Desk"), CustomRuleProduct(id: "example_chat"), CustomRuleProduct(id: "evil_acme")]
+        XCTAssertFalse(CustomRuleEditor.compile("utiliser acme").recognized)
+        XCTAssertTrue(CustomRuleEditor.compile("utiliser acme", products: declared).recognized)
+        XCTAssertTrue(CustomRuleEditor.compile("utiliser example chat", products: declared).recognized)
+        XCTAssertFalse(CustomRuleEditor.compile("utiliser example", products: [CustomRuleProduct(id: "example_chat")]).recognized)
+        XCTAssertFalse(CustomRuleEditor.compile("utiliser acme", products: [CustomRuleProduct(id: "evil_acme")]).recognized)
+        XCTAssertEqual(CustomRuleEditor.productWords(CustomRuleProduct(id: "files_hub", name: "Files Hub")), [])
         let home = "/Users/example"
         XCTAssertEqual(CustomRuleEditor.normalizePath("/Users/example/Documents/../Documents/a", home: home), "~/Documents/a")
         XCTAssertEqual(CustomRuleEditor.normalizePath("$HOME/Documents", home: home), "~/Documents")
@@ -107,13 +114,14 @@ final class ApprovalGrantsTests: XCTestCase {
 
     func testRulesPayloadDecodesAndBotKeepsRecipients() throws {
         let list = try JSONDecoder().decode(CustomRuleList.self, from: Data(#"""
-        {"rules":[{"id":"crule_1","ownerId":"me","botId":null,"when":"read files","behavior":"ask","riskScope":["external-send"],"enabled":true,"org":true,"createdAt":3,"updatedAt":4,"compiled":{"recognized":false,"shellFamily":false,"commands":[]}}],"orgPolicy":{"alwaysAllow":false}}
+        {"rules":[{"id":"crule_1","ownerId":"me","botId":null,"when":"read files","behavior":"ask","riskScope":["external-send"],"enabled":true,"org":true,"createdAt":3,"updatedAt":4,"compiled":{"recognized":false,"shellFamily":false,"commands":[]}}],"orgPolicy":{"alwaysAllow":false},"products":[{"id":"acme_desk","name":"Acme Desk"},{"id":"example_chat"}]}
         """#.utf8))
         XCTAssertEqual(list.rules.first?.behavior, .ask)
         XCTAssertEqual(list.rules.first?.riskScope, [.externalSend])
         XCTAssertEqual(list.rules.first?.org, true)
         XCTAssertEqual(list.rules.first?.recognized, false)
         XCTAssertFalse(list.alwaysAllow)
+        XCTAssertEqual(list.products, [CustomRuleProduct(id: "acme_desk", name: "Acme Desk"), CustomRuleProduct(id: "example_chat")])
         let bot = try JSONDecoder().decode(Bot.self, from: Data(#"""
         {"id":"b1","threadId":"t1","name":"Ada","title":"","description":"","notifications":true,"color":"purple","unread":false,"modelSelection":{"instanceId":"e","model":"m"},"createdAt":1,"allowedRecipients":["email:a@b.co"]}
         """#.utf8))

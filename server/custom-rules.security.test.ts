@@ -12,6 +12,8 @@ import { customRuleCandidate, factsForCall, realPath } from "./custom-rules-revi
 import { callFacts, candidateWhen, compileRule, evaluateCustomRules, normalizePath, ruleCoversCall, shellProgram, type CustomRule } from "../shared/custom-rules.ts";
 
 const home = "/Users/example";
+/** A product as the platform declares it (api_list: its id and name). */
+const ACME = [{ id: "acme_desk", name: "Acme Desk" }];
 const rule = (when: string, behavior: CustomRule["behavior"] = "allow", riskScope: CustomRule["riskScope"] = []): CustomRule =>
   ({ id: `r-${when}`, ownerId: "o", botId: null, when, behavior, riskScope, enabled: true, createdAt: 1, updatedAt: 1 });
 /** An exact command rule as "Toujours permettre ceci" saves it: bound to its card. */
@@ -145,10 +147,11 @@ describe("round 2: deny sees real paths, servers do not decide their own risk", 
     for (const tool of ["mcp__evil__delete_file", "mcp__evil__upload_file", "mcp__evil_cw__wipe"]) {
       const facts = factsForCall({ tool, input: JSON.stringify({ path: "/Users/example/Documents/a.txt" }), hints: { readOnly: true } }, home);
       expect(evaluateCustomRules([rule("lire les fichiers dans ~/Documents")], facts, { home, botId: "bot-1" }).kind, tool).toBe("none");
-      expect(evaluateCustomRules([rule("lire avec ConnectWise")], facts, { home, botId: "bot-1" }).kind, tool).toBe("none");
+      expect(evaluateCustomRules([rule("lire avec Acme Desk")], facts, { home, botId: "bot-1", products: ACME }).kind, tool).toBe("none");
     }
-    expect(callFacts({ tool: "mcp__evil_cw__query", input: "{}" }).products).toEqual([]);
-    expect(callFacts({ tool: "mcp__cw_psa__query", input: "{}" }).products).toEqual(["connectwise"]);
+    // a product is its id: a server called after one is another product
+    expect(callFacts({ tool: "mcp__evil_acme__query", input: "{}" }).products).toEqual(["evil_acme"]);
+    expect(callFacts({ tool: "mcp__acme_desk__query", input: "{}" }).products).toEqual(["acme_desk"]);
   });
 
   it("an exact command rule never matches a line split by a line break", () => {
@@ -453,14 +456,20 @@ describe("paths, tools and products", () => {
   });
 
   it("a tool is named with its server, and a product by whole tokens", () => {
-    const query = callFacts({ tool: "mcp__perspicax_quasar__cw_psa__query", input: "{}" });
-    expect(ruleCoversCall(compileRule("la lecture avec `perspicax_quasar__cw_psa__query`"), query)).toBe(true);
-    expect(ruleCoversCall(compileRule("la lecture avec `cw_psa__query`"), query)).toBe(false);
+    const query = callFacts({ tool: "mcp__perspicax_quasar__acme_desk__query", input: "{}" });
+    expect(ruleCoversCall(compileRule("la lecture avec `perspicax_quasar__acme_desk__query`"), query)).toBe(true);
+    expect(ruleCoversCall(compileRule("la lecture avec `acme_desk__query`"), query)).toBe(false);
     expect(ruleCoversCall(compileRule("la lecture avec `query`"), query)).toBe(false);
-    const lookalike = callFacts({ tool: "mcp__evilcw__newcw_dump", input: "{}" });
-    expect(lookalike.products).not.toContain("connectwise");
-    expect(callFacts({ tool: "mcp__perspicax_quasar__cw_psa__query", input: "{}" }).products).toContain("connectwise");
-    expect(callFacts({ tool: "mcp__evil_perspicax__cw_dump", input: "{}" }).products).toEqual([]);
+    const lookalike = callFacts({ tool: "mcp__evilacme__newacme_dump", input: "{}" });
+    expect(lookalike.products).not.toContain("acme_desk");
+    expect(callFacts({ tool: "mcp__perspicax_quasar__acme_desk__query", input: "{}" }).products).toEqual(["perspicax", "acme_desk"]);
+    // not the platform's gateway: its tool's first segment is no API of it
+    expect(callFacts({ tool: "mcp__evil_perspicax__acme_desk__dump", input: "{}" }).products).toEqual(["evil_perspicax"]);
+    // a server named after a declared product's word is not that product
+    const evil = callFacts({ tool: "mcp__evil_acme__list_items", input: "{}" });
+    expect(evaluateCustomRules([rule("la lecture avec Acme")], evil, { home, products: ACME }).kind).toBe("none");
+    const declared = callFacts({ tool: "mcp__perspicax_quasar__acme_desk__list_items", input: "{}" });
+    expect(evaluateCustomRules([rule("la lecture avec Acme")], declared, { home, products: ACME }).kind).toBe("allow");
   });
 });
 

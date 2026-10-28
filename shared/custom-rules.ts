@@ -77,6 +77,11 @@ export interface CustomRule {
   /** 2026-10-21: an organization admin's rule (ask or deny only), for every
    * person and bot of the server; read-only for everyone else. */
   org?: true;
+  /** 2026-10-27 (#1220): the product ids the words named when the rule was
+   * saved, from the products then declared (RuleProduct). A product that is
+   * no longer declared, or whose names are not read yet, still binds the
+   * rule: an allow never widens to every product, a deny keeps its product. */
+  products?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -136,8 +141,11 @@ export interface CompiledRule {
   realPaths: string[];
   /** Tool names written in backticks or after "outil"/"tool". */
   tools: string[];
-  /** Product keys (connectwise, github...). */
+  /** Product ids the words name (RuleProduct.id: an API or MCP server id,
+   * a kind such as `calendar`, or the platform). */
   products: string[];
+  /** The rule's words that named them (shown by the editor). */
+  productWords: string[];
   /** Exact command lines ("la commande exacte `...`"), whitespace folded. */
   commands: string[];
   /** The words name running commands in general: an allow rule cannot be
@@ -206,32 +214,132 @@ const OBJECT_WORDS: Record<ObjectKind, readonly string[]> = {
   command: ["commande", "commandes", "command", "commands", "terminal", "shell"],
 };
 
-/** Products a rule may name (its words), the MCP server ids that are that
- * product (`evil_cw` is not ConnectWise), and the first word of a tool
- * name behind a known gateway (Perspicax's `cw_psa__query`). */
-const PRODUCTS: Record<string, { words: readonly string[]; servers: readonly string[]; prefixes: readonly string[] }> = {
-  connectwise: { words: ["connectwise", "cw", "psa"], servers: ["cw", "cw_psa", "cw-psa", "connectwise", "connectwise_psa"], prefixes: ["cw"] },
-  github: { words: ["github"], servers: ["github"], prefixes: ["github"] },
-  slack: { words: ["slack"], servers: ["slack"], prefixes: ["slack"] },
-  outlook: { words: ["outlook", "microsoft", "m365", "office", "office365"], servers: ["outlook", "microsoft", "m365", "ms365", "office365", "microsoft_365", "microsoft-365"], prefixes: ["outlook"] },
-  gmail: { words: ["gmail"], servers: ["gmail"], prefixes: ["gmail"] },
-  teams: { words: ["teams"], servers: ["teams", "microsoft_teams"], prefixes: ["teams", "microsoftteams"] },
-  calendar: { words: ["calendrier", "agenda", "calendar"], servers: ["calendar", "google_calendar", "googlecalendar"], prefixes: ["googlecalendar", "calendar"] },
-  twilio: { words: ["twilio"], servers: ["twilio"], prefixes: ["twilio"] },
-  bookstack: { words: ["bookstack"], servers: ["bookstack"], prefixes: ["bookstack"] },
-  tailscale: { words: ["tailscale"], servers: ["tailscale"], prefixes: ["tailscale"] },
-  perspicax: { words: ["perspicax"], servers: [], prefixes: [] },
+/** A product a rule may name, as a server declared it (2026-10-27, #1220):
+ * a Perspicax API (api_list: its id, and the name the console shows) or
+ * one of the bot's own MCP servers (its id). No product is written here:
+ * the public repository names none, and a product a bot does not have
+ * cannot be named. */
+export interface RuleProduct {
+  id: string;
+  name?: string;
+}
+
+/** The platform's own gateway: its name is the only one kept here. */
+const PLATFORM_PRODUCT = "perspicax";
+
+/** Kinds of product a rule may name by a common word, whatever the brand
+ * (`acme_calendar`, `example_agenda`): a server or API id holding one of
+ * these words is that kind too. */
+const PRODUCT_KINDS: Record<string, readonly string[]> = {
+  calendar: ["calendrier", "calendriers", "agenda", "agendas", "calendar", "calendars"],
 };
 
-/** Which products a tool belongs to, by its whole server id. */
+/** Words of a declared name that never name a product on their own: an
+ * action or an object the rule reads anyway, and the common words of a
+ * product name ("Acme Cloud API"). Without this, a deny rule ("ne jamais
+ * supprimer de fichiers") would narrow to a product named "Files Hub". */
+const NOT_PRODUCT_WORDS: ReadonlySet<string> = new Set([
+  ...Object.values(ACTION_WORDS).flat(),
+  ...Object.values(OBJECT_WORDS).flat(),
+  "api", "apis", "app", "apps", "application", "applications", "cloud", "online", "en", "ligne", "service", "services",
+  "server", "servers", "serveur", "serveurs", "tool", "tools", "outil", "outils", "mcp", "connector", "connecteur",
+  "gateway", "passerelle", "platform", "plateforme", "suite", "pro", "plus", "hub", "manager", "portal", "portail",
+  "admin", "the", "for", "and", "of", "with", "in", "on", "to", "my", "de", "du", "des", "la", "le", "les", "pour",
+  "et", "avec", "dans", "sur", "mon", "ma", "mes", "un", "une",
+]);
+
+/** The words that name one product the platform declared with a name (a
+ * Perspicax API): its id's parts and its name's words, folded, without
+ * common words, numbers or single letters. */
+export function productWordsOf(product: RuleProduct): string[] {
+  const text = `${product.id} ${product.name ?? ""}`.replace(/[_-]+/g, " ");
+  return [...new Set(words(text).filter((word) => word.length >= 2 && !/^\d+$/.test(word) && !NOT_PRODUCT_WORDS.has(word)))];
+}
+
+/** A bare server id (an MCP server anyone may install and name) is named
+ * only by its whole id, its parts in order (`example_drive` by "example
+ * drive"): a server called `evil_acme` is not named by "acme". */
+function serverPhrase(id: string): string[] | null {
+  const phrase = words(id.replace(/[_-]+/g, " "));
+  if (!phrase.length) return null;
+  if (phrase.length === 1 && (phrase[0]!.length < 2 || /^\d+$/.test(phrase[0]!) || NOT_PRODUCT_WORDS.has(phrase[0]!))) return null;
+  return phrase;
+}
+
+function holdsPhrase(list: readonly string[], phrase: readonly string[]): boolean {
+  if (!phrase.length) return false;
+  for (let start = 0; start + phrase.length <= list.length; start++) {
+    if (phrase.every((word, offset) => list[start + offset] === word)) return true;
+  }
+  return false;
+}
+
+/** The products a rule's words name, by id, and the words that named them.
+ * A product the platform declared with a name (by its console) is named by
+ * its whole name or id ("Acme Desk", "acme desk"), and otherwise by any of
+ * its own words the rule holds ("le desk", "Acme"); a word that already
+ * named a product whole does not name another one too ("Acme Desk" is not
+ * "Acme Guard"). A bare server id is named whole only (serverPhrase). Then
+ * the kinds named by their common word, and the platform. */
+function namedProducts(list: readonly string[], products: readonly RuleProduct[]): { ids: string[]; words: string[] } {
+  const ids = new Set<string>();
+  const named = new Set<string>();
+  const declared = products.filter((product) => product.id.trim() && product.name?.trim());
+  const whole = new Set<string>();
+  for (const product of declared) {
+    const phrases = [words(product.name!), words(product.id.replace(/[_-]+/g, " "))].filter((phrase) => phrase.length && productWordsOf(product).some((word) => phrase.includes(word)));
+    const hit = phrases.find((phrase) => holdsPhrase(list, phrase));
+    if (!hit) continue;
+    ids.add(product.id.trim().toLowerCase());
+    named.add(hit.join(" "));
+    for (const word of hit) whole.add(word);
+  }
+  for (const product of declared) {
+    const hits = productWordsOf(product).filter((word) => list.includes(word) && !whole.has(word));
+    if (!hits.length) continue;
+    ids.add(product.id.trim().toLowerCase());
+    for (const word of hits) named.add(word);
+  }
+  for (const product of products) {
+    if (product.name?.trim()) continue;
+    const phrase = serverPhrase(product.id);
+    if (!phrase || !holdsPhrase(list, phrase)) continue;
+    ids.add(product.id.trim().toLowerCase());
+    named.add(phrase.join(" "));
+  }
+  for (const [kind, vocabulary] of Object.entries(PRODUCT_KINDS)) {
+    const hits = vocabulary.filter((word) => list.includes(word));
+    if (!hits.length) continue;
+    ids.add(kind);
+    for (const word of hits) named.add(word);
+  }
+  if (list.includes(PLATFORM_PRODUCT)) {
+    ids.add(PLATFORM_PRODUCT);
+    named.add(PLATFORM_PRODUCT);
+  }
+  return { ids: [...ids], words: [...named] };
+}
+
+/** Which products a tool belongs to, by id: its whole server id, or behind
+ * the platform's gateway (`perspicax_<slug>__<api>__<verb>`) the platform
+ * and the API id; and the kinds their words name. The ids are the ones a
+ * server declares (RuleProduct.id), so a rule's named product compares to
+ * them whatever the names say. */
 function productsOf(server: string | undefined, name: string): string[] {
   const id = (server ?? "").toLowerCase();
-  const first = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)[0] ?? "";
-  const gateway = id === "perspicax" || /^perspicax_[a-z0-9_]+$/.test(id);
-  return Object.entries(PRODUCTS).filter(([key, product]) =>
-    product.servers.includes(id)
-    || (gateway && product.prefixes.includes(first))
-    || (key === "perspicax" && (id === "perspicax" || id.startsWith("perspicax_")))).map(([key]) => key);
+  const gateway = id === PLATFORM_PRODUCT || /^perspicax_[a-z0-9_]+$/.test(id);
+  const ids = new Set<string>();
+  if (gateway) {
+    ids.add(PLATFORM_PRODUCT);
+    for (const segment of name.toLowerCase().split("__").slice(0, -1)) if (segment) ids.add(segment);
+  } else if (id) {
+    ids.add(id);
+  }
+  const idWords = words([...ids].join(" ").replace(/[_-]+/g, " "));
+  for (const [kind, vocabulary] of Object.entries(PRODUCT_KINDS)) {
+    if (vocabulary.some((word) => idWords.includes(word))) ids.add(kind);
+  }
+  return [...ids];
 }
 
 const PATH_IN_TEXT = /(?:^|[\s«"'(])((?:~|\.{1,2})?\/[^\s,;«»"'()]*)/g;
@@ -315,7 +423,7 @@ export function parseRuleSentence(text: string, fallback: CustomRuleBehavior = "
 }
 
 /** What a rule's words name. Pure and cheap: the editor shows it live. */
-export function compileRule(when: string, home?: string, resolve?: (absolute: string) => string): CompiledRule {
+export function compileRule(when: string, home?: string, resolve?: (absolute: string) => string, products: readonly RuleProduct[] = []): CompiledRule {
   // "la commande exacte `git status`": one command line, nothing else; its
   // words are not read as actions, folders or tools
   const commands: string[] = [];
@@ -352,10 +460,10 @@ export function compileRule(when: string, home?: string, resolve?: (absolute: st
     const name = match[1]!.replace(/^mcp__/, "");
     if (!tools.includes(name)) tools.push(name);
   }
-  const products = Object.entries(PRODUCTS).filter(([, product]) => has(product.words)).map(([key]) => key);
-  const recognized = actions.length > 0 || tools.length > 0 || products.length > 0 || commands.length > 0;
+  const named = namedProducts(list, products);
+  const recognized = actions.length > 0 || tools.length > 0 || named.ids.length > 0 || commands.length > 0;
   const shellFamily = actions.includes("command") && commands.length === 0;
-  return { actions, objects, paths, realPaths, tools, products, commands, shellFamily, recognized };
+  return { actions, objects, paths, realPaths, tools, products: named.ids, productWords: named.words, commands, shellFamily, recognized };
 }
 
 /** The risk classes a rule's own words imply, so the editor can set an allow
@@ -926,11 +1034,37 @@ const BEHAVIOR_WEIGHT: Record<CustomRuleBehavior, number> = { deny: 3, ask: 2, a
  * own rule before one for all bots. An allow whose risk scope does not
  * cover the call's risk classes decides nothing (the card stays) and says
  * which classes were missing. */
-export function evaluateCustomRules(rules: readonly CustomRule[], facts: CallFacts, options: { botId?: string; home?: string; resolve?: (absolute: string) => string } = {}): CustomRuleDecision {
+export interface CustomRuleContext {
+  botId?: string;
+  home?: string;
+  resolve?: (absolute: string) => string;
+  /** The products this bot's servers declare (RuleProduct). The call's own
+   * server and API ids are always added. */
+  products?: readonly RuleProduct[];
+  /** The platform gateway's product names are not read yet for this bot
+   * (api_list not answered): an allow rule that pins no product does not
+   * cover a gateway call, since a product it names may not be known yet. */
+  gatewayNamesUnknown?: boolean;
+}
+
+/** One rule read against the declared products, with the products it
+ * pinned when saved. */
+export function compileSavedRule(rule: Pick<CustomRule, "when" | "products">, home?: string, resolve?: (absolute: string) => string, products: readonly RuleProduct[] = []): CompiledRule {
+  const compiled = compileRule(rule.when, home, resolve, products);
+  const pinned = (rule.products ?? []).map((id) => id.trim().toLowerCase()).filter(Boolean);
+  if (!pinned.length) return compiled;
+  return { ...compiled, products: [...new Set([...compiled.products, ...pinned])], recognized: true };
+}
+
+export function evaluateCustomRules(rules: readonly CustomRule[], facts: CallFacts, options: CustomRuleContext = {}): CustomRuleDecision {
+  // the call's own server and API ids are products it can be named by
+  const products = [...(options.products ?? []), ...facts.products.map((id) => ({ id }))];
+  const gatewayCall = facts.products.includes(PLATFORM_PRODUCT);
   const matching = rules
     .filter((rule) => rule.enabled && (rule.botId === null || options.botId === undefined || rule.botId === options.botId))
     .filter((rule) => {
-      const compiled = compileRule(rule.when, options.home, options.resolve);
+      if (rule.behavior === "allow" && gatewayCall && options.gatewayNamesUnknown && !rule.products?.length) return false;
+      const compiled = compileSavedRule(rule, options.home, options.resolve, products);
       if (!ruleCoversCall(compiled, facts, rule.behavior)) return false;
       // an exact command allows only where it was approved
       if (rule.behavior === "allow" && compiled.commands.length) {

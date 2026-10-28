@@ -25,6 +25,7 @@ import {
   type CustomRuleCandidate,
   type CustomRuleDecision,
   type CustomRuleNotice,
+  type RuleProduct,
 } from "../shared/custom-rules.ts";
 
 export type { CustomRuleCandidate, CustomRuleNotice };
@@ -88,9 +89,17 @@ export function factsForCall(call: CustomRuleCall, home: string | undefined = se
   });
 }
 
-export function reviewCustomRules(rules: readonly CustomRule[], call: CustomRuleCall, botId: string, home: string | undefined = serverHome()): { decision: CustomRuleDecision; facts: CallFacts } {
+/** 2026-10-27 (#1220): the products a rule may name for this bot, as its
+ * servers declare them (server/index.ts ruleProductsOf). */
+export interface RuleProductContext {
+  products?: readonly RuleProduct[];
+  /** The gateway's product names are not read yet for this bot. */
+  gatewayNamesUnknown?: boolean;
+}
+
+export function reviewCustomRules(rules: readonly CustomRule[], call: CustomRuleCall, botId: string, home: string | undefined = serverHome(), context: RuleProductContext = {}): { decision: CustomRuleDecision; facts: CallFacts } {
   const facts = factsForCall(call, home);
-  return { decision: evaluateCustomRules(rules, facts, { botId, ...(home ? { home } : {}), resolve: realPath }), facts };
+  return { decision: evaluateCustomRules(rules, facts, { botId, ...(home ? { home } : {}), resolve: realPath, ...context }), facts };
 }
 
 export function customRuleNotice(decision: CustomRuleDecision): CustomRuleNotice | undefined {
@@ -114,9 +123,10 @@ export function customRuleNotice(decision: CustomRuleDecision): CustomRuleNotice
 
 /** The rule "Toujours permettre ceci" would save for this call, or
  * undefined when no rule text can cover it (it then is not offered). */
-export function customRuleCandidate(facts: CallFacts, language: string | undefined, home: string | undefined = serverHome()): CustomRuleCandidate | undefined {
+export function customRuleCandidate(facts: CallFacts, language: string | undefined, home: string | undefined = serverHome(), context: RuleProductContext = {}): CustomRuleCandidate | undefined {
   const when = candidateWhen(facts, language ?? "fr");
-  if (!ruleCoversCall(compileRule(when, home, realPath), facts, "allow")) return undefined;
+  const products = [...(context.products ?? []), ...facts.products.map((id) => ({ id }))];
+  if (!ruleCoversCall(compileRule(when, home, realPath, products), facts, "allow")) return undefined;
   const binding: CustomRuleBinding | undefined = facts.command
     ? { tool: facts.tool, command: facts.command, ...(facts.cwd ? { cwd: facts.cwd } : {}), ...(facts.providerInstanceId ? { providerInstanceId: facts.providerInstanceId } : {}) }
     : undefined;
@@ -126,7 +136,7 @@ export function customRuleCandidate(facts: CallFacts, language: string | undefin
 /** Whether a saved rule covers the call of an open card: the check behind
  * "Toujours permettre ceci", so a rule is never saved from a card it would
  * not answer. */
-export function ruleCoversCard(rule: CustomRule, call: CustomRuleCall, botId: string, home: string | undefined = serverHome()): boolean {
-  const decision = evaluateCustomRules([rule], factsForCall(call, home), { botId, ...(home ? { home } : {}), resolve: realPath });
+export function ruleCoversCard(rule: CustomRule, call: CustomRuleCall, botId: string, home: string | undefined = serverHome(), context: RuleProductContext = {}): boolean {
+  const decision = evaluateCustomRules([rule], factsForCall(call, home), { botId, ...(home ? { home } : {}), resolve: realPath, ...context });
   return rule.behavior === "allow" ? decision.kind === "allow" : decision.kind === rule.behavior;
 }

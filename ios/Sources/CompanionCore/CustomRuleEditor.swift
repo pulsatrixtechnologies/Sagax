@@ -75,14 +75,28 @@ extension CustomRuleRow: Decodable {
     }
 }
 
+/// A product a rule may name, as the bot's servers declare it (the list
+/// route's `products`, shared/custom-rules.ts `RuleProduct`). No product
+/// is written in the app (2026-10-27, #1220).
+public struct CustomRuleProduct: Decodable, Equatable, Sendable {
+    public var id: String
+    public var name: String?
+
+    public init(id: String, name: String? = nil) {
+        self.id = id
+        self.name = name
+    }
+}
+
 public struct CustomRuleList: Equatable, Sendable {
     public var rules: [CustomRuleRow]
     public var alwaysAllow: Bool
+    public var products: [CustomRuleProduct] = []
 }
 
 extension CustomRuleList: Decodable {
     private struct Policy: Decodable { var alwaysAllow: Bool? }
-    private enum CodingKeys: String, CodingKey { case rules, orgPolicy }
+    private enum CodingKeys: String, CodingKey { case rules, orgPolicy, products }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -90,6 +104,8 @@ extension CustomRuleList: Decodable {
         let policy = try c.decodeIfPresent(Policy.self, forKey: .orgPolicy)
         // Missing policy means the grants are on, as the desktop reads it.
         alwaysAllow = policy?.alwaysAllow != false
+        // An older server lists none: a rule then names no product here.
+        products = (try? c.decodeIfPresent([CustomRuleProduct].self, forKey: .products)) ?? []
     }
 }
 
@@ -147,9 +163,15 @@ public enum CustomRuleEditor {
     public static let maximumText = 500
 
     /// `compileRule` for the form. `home` is optional, as the desktop form
-    /// calls it with none.
-    public static func compile(_ when: String, home: String? = nil) -> CustomRulePreview {
-        RuleCompiler.compile(when, home: home)
+    /// calls it with none. `products` are the ones the bot's servers declare.
+    public static func compile(_ when: String, home: String? = nil, products: [CustomRuleProduct] = []) -> CustomRulePreview {
+        RuleCompiler.compile(when, home: home, products: products)
+    }
+
+    /// shared/custom-rules.ts `productWordsOf`: the words that name one
+    /// declared product.
+    public static func productWords(_ product: CustomRuleProduct) -> [String] {
+        RuleCompiler.productWords(product)
     }
 
     public static func normalizePath(_ raw: String, home: String? = nil) -> String? {
@@ -269,7 +291,7 @@ private enum RuleObject: String, CaseIterable {
 }
 
 private enum RuleCompiler {
-    static func compile(_ when: String, home: String?) -> CustomRulePreview {
+    static func compile(_ when: String, home: String?, products declared: [CustomRuleProduct] = []) -> CustomRulePreview {
         let clipped = String(when.prefix(CustomRuleEditor.maximumText))
         var commands: [String] = []
         let text = replacingExactCommands(clipped, into: &commands)
@@ -310,7 +332,9 @@ private enum RuleCompiler {
                 if !tools.contains(name) { tools.append(name) }
             }
         }
-        let products = productWords.contains { has(list, words: $0) }
+        let products = declared.contains { names(list, $0) }
+            || productKindWords.contains { has(list, words: $0) }
+            || list.contains(platformProduct)
         let recognized = !actions.isEmpty || !tools.isEmpty || products || !commands.isEmpty
         let shellFamily = actions.contains(.command) && commands.isEmpty
         return CustomRulePreview(recognized: recognized, shellFamily: shellFamily, commands: commands, actions: actions.map(\.rawValue), tools: tools, paths: paths)
@@ -418,17 +442,45 @@ private enum RuleCompiler {
         .command: ["commande", "commandes", "command", "commands", "terminal", "shell"],
     ]
 
-    private static let productWords: [[String]] = [
-        ["connectwise", "cw", "psa"],
-        ["github"],
-        ["slack"],
-        ["outlook", "microsoft", "m365", "office", "office365"],
-        ["gmail"],
-        ["teams"],
-        ["calendrier", "agenda", "calendar"],
-        ["twilio"],
-        ["bookstack"],
-        ["tailscale"],
-        ["perspicax"],
+    /// shared/custom-rules.ts `productWordsOf`.
+    static func productWords(_ product: CustomRuleProduct) -> [String] {
+        let text = "\(product.id) \(product.name ?? "")".replacingOccurrences(of: "[_-]+", with: " ", options: .regularExpression)
+        var seen: [String] = []
+        for word in words(text) where word.count >= 2 && !word.allSatisfy(\.isNumber) && !notProductWords.contains(word) && !seen.contains(word) {
+            seen.append(word)
+        }
+        return seen
+    }
+
+    /// shared/custom-rules.ts `namedProducts`, for the preview: a product
+    /// declared with a name is named by one of its words; a bare server id
+    /// only whole, its parts in order (`evil_acme` is not "acme").
+    private static func names(_ list: [String], _ product: CustomRuleProduct) -> Bool {
+        if let name = product.name, !name.trimmingCharacters(in: .whitespaces).isEmpty {
+            return has(list, words: productWords(product))
+        }
+        let phrase = words(product.id.replacingOccurrences(of: "[_-]+", with: " ", options: .regularExpression))
+        guard !phrase.isEmpty else { return false }
+        if phrase.count == 1, let only = phrase.first, only.count < 2 || only.allSatisfy(\.isNumber) || notProductWords.contains(only) { return false }
+        guard list.count >= phrase.count else { return false }
+        return (0...(list.count - phrase.count)).contains { start in Array(list[start..<(start + phrase.count)]) == phrase }
+    }
+
+    /// The platform's own gateway, the only product name kept here.
+    private static let platformProduct = "perspicax"
+
+    /// shared/custom-rules.ts `PRODUCT_KINDS`: a kind of product named by
+    /// a common word, whatever the brand.
+    private static let productKindWords: [[String]] = [
+        ["calendrier", "calendriers", "agenda", "agendas", "calendar", "calendars"],
     ]
+
+    /// shared/custom-rules.ts `NOT_PRODUCT_WORDS`.
+    private static let notProductWords: Set<String> = Set(actionWords.values.flatMap { $0 } + objectWords.values.flatMap { $0 } + [
+        "api", "apis", "app", "apps", "application", "applications", "cloud", "online", "en", "ligne", "service", "services",
+        "server", "servers", "serveur", "serveurs", "tool", "tools", "outil", "outils", "mcp", "connector", "connecteur",
+        "gateway", "passerelle", "platform", "plateforme", "suite", "pro", "plus", "hub", "manager", "portal", "portail",
+        "admin", "the", "for", "and", "of", "with", "in", "on", "to", "my", "de", "du", "des", "la", "le", "les", "pour",
+        "et", "avec", "dans", "sur", "mon", "ma", "mes", "un", "une",
+    ])
 }

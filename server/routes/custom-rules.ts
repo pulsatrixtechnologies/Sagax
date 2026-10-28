@@ -1,9 +1,11 @@
 // A person's custom auto-review rules (shared/custom-rules.ts): natural
 // language rules the approval reviewer applies before a card.
 //
-//   GET    /api/custom-rules?botId=   -> { rules: [rule + compiled] }: the caller's
-//                                        rules that can apply to that bot (its own
-//                                        and those for all bots), or all of them
+//   GET    /api/custom-rules?botId=   -> { rules: [rule + compiled], products }: the
+//                                        caller's rules that can apply to that bot
+//                                        (its own and those for all bots), or all of
+//                                        them, and the products its servers declare
+//                                        (the words a rule may name a product by)
 //   POST   /api/custom-rules          { when | text, behavior?, botId, riskScope?, fromCard? }
 //                                     -> { rule }   (201)
 //   PATCH  /api/custom-rules/:id      { when?, behavior?, botId?, riskScope?, enabled? }
@@ -27,6 +29,7 @@ import type { RequestAuth } from "../request-auth.ts";
 import type { CustomRuleStore } from "../custom-rules-store.ts";
 import {
   compileRule,
+  compileSavedRule,
   isCustomRuleBehavior,
   isRiskClass,
   parseRuleSentence,
@@ -34,6 +37,7 @@ import {
   type CustomRule,
   type CustomRuleBinding,
   type RiskClass,
+  type RuleProduct,
 } from "../../shared/custom-rules.ts";
 import { ORG_ALWAYS_ALLOW_OFF, ORG_RULE_LOCKED } from "../custom-rules-org.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -57,6 +61,10 @@ export interface CustomRuleRouteDeps {
   bindingFor?: (personId: string, card: { threadId: string; requestId: string }) => CustomRuleBinding | null | undefined;
   audit: (row: { action: string; personId: string; botId?: string | null; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
   home?: string;
+  /** 2026-10-27 (#1220): the products a rule may name, as this person's
+   * servers declare them: one bot's, or every bot of theirs for null. No
+   * product is written in the code; without it a rule names none. */
+  products?: (personId: string, botId: string | null) => readonly RuleProduct[];
   /** 2026-10-16 (security keys): an allow rule saved or changed needs the
    * person's key when they chose "rule-change" (shared/step-up.ts). Null
    * lets it through; else the refusal to answer. */
@@ -86,7 +94,14 @@ function riskScopeOf(value: unknown): RiskClass[] | null {
 }
 
 export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler {
-  const view = (rule: CustomRule): CustomRuleView => ({ ...rule, compiled: compileRule(rule.when, deps.home) });
+  const productsFor = (me: string, botId: string | null): readonly RuleProduct[] => deps.products?.(me, botId) ?? [];
+  const view = (rule: CustomRule, me: string): CustomRuleView => ({ ...rule, compiled: compileSavedRule(rule, deps.home, undefined, productsFor(me, rule.botId)) });
+  /** The product ids a rule's words name now, pinned on the saved rule;
+   * undefined while nothing is declared (the pins it has are kept). */
+  const pinsOf = (me: string, when: string, botId: string | null): string[] | undefined => {
+    const products = productsFor(me, botId);
+    return products.length ? compileRule(when, deps.home, undefined, products).products : undefined;
+  };
   const ownsBot = (me: string, botId: unknown) => typeof botId === "string" && deps.ownedBots(me).some((bot) => bot.id === botId);
 
   return async ({ req, res, url, path, method, auth, json, readBody }) => {
@@ -110,7 +125,8 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
         .sort((a, b) => Number(a.botId === null) - Number(b.botId === null) || a.createdAt - b.createdAt);
       // the organization's rules first: they win over the person's own
       const org = deps.store.orgRules().filter((rule) => rule.enabled).sort((a, b) => a.createdAt - b.createdAt);
-      return json(res, 200, { rules: [...org, ...own].map(view), orgPolicy: deps.store.orgPolicy() });
+      const products = productsFor(me, botId ?? null).map((product) => ({ id: product.id, ...(product.name ? { name: product.name } : {}) }));
+      return json(res, 200, { rules: [...org, ...own].map((rule) => view(rule, me)), orgPolicy: deps.store.orgPolicy(), products });
     }
     if (path === "/api/custom-rules" && method === "POST") {
       const me = deps.manager(auth);
@@ -169,14 +185,15 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       }
       let rule: CustomRule;
       try {
-        rule = deps.store.add({ ownerId: me, botId, when, behavior, riskScope, ...(binding ? { binding } : {}) });
+        const products = pinsOf(me, when, botId);
+        rule = deps.store.add({ ownerId: me, botId, when, behavior, riskScope, ...(binding ? { binding } : {}), ...(products?.length ? { products } : {}) });
       } catch (error) {
         const status = (error as { status?: number }).status ?? 500;
         return json(res, status, { error: error instanceof Error ? error.message : String(error) });
       }
       if (card) deps.markCard?.({ threadId: card.threadId as string, requestId: card.requestId as string }, rule);
       deps.audit({ action: "custom_rule.add", personId: me, botId: rule.botId, after: { rule: rule.id, when: rule.when, botId: rule.botId, behavior: rule.behavior, riskScope: rule.riskScope, ...(card ? { fromCard: true } : {}) } }, auth);
-      return json(res, 201, { rule: view(rule) });
+      return json(res, 201, { rule: view(rule, me) });
     }
 
     const item = /^\/api\/custom-rules\/([\w-]+)$/.exec(path);
@@ -259,6 +276,12 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
           ...(body.botId !== undefined ? { botId: body.botId as string | null } : {}),
           ...(riskScope !== undefined ? { riskScope } : {}),
           ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
+          // new words pin the products they name now
+          ...(() => {
+            if (typeof body.when !== "string" || body.when.trim() === before.when) return {};
+            const products = pinsOf(me, body.when, body.botId !== undefined ? body.botId as string | null : before.botId);
+            return products ? { products } : {};
+          })(),
         });
       } catch (error) {
         const status = (error as { status?: number }).status ?? 500;
@@ -270,7 +293,7 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
         before: { when: before.when, botId: before.botId, behavior: before.behavior, riskScope: before.riskScope, enabled: before.enabled },
         after: { rule: updated.id, when: updated.when, botId: updated.botId, behavior: updated.behavior, riskScope: updated.riskScope, enabled: updated.enabled },
       }, auth);
-      return json(res, 200, { rule: view(updated) });
+      return json(res, 200, { rule: view(updated, me) });
     }
     return PASS;
   };
