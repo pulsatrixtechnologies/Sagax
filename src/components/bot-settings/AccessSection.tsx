@@ -29,6 +29,7 @@ import { ToolSelectionCard } from "./ToolSelectionCard";
 import { inputCls } from "./field";
 import { PaneEmpty, PaneSection } from "./PaneSection";
 import { BotWebhooks } from "./BotWebhooks";
+import { BackgroundBriefCard } from "./BackgroundBriefCard";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 
 /** Where a bot's shell tools run. Set per bot; each task pins its own copy
@@ -280,6 +281,7 @@ export function AccessSection({
       )}
 
       {(part === "all" || part === "mcp") && <McpServersCard bot={bot} patch={patch} />}
+      {part === "all" && <BackgroundBriefCard botId={bot.id} />}
 
       {(part === "all" || part === "browser") && browserFeature && <PaneSection title={<>{t("botPanel.access.browser")}<ProposalStatus bot={bot} /></>}>
         <div className="flex items-center justify-between gap-4">

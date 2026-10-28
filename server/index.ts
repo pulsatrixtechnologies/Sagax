@@ -214,6 +214,9 @@ import {
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
+import { BriefStore } from "./background-brief.ts";
+import { listBriefApps, readBriefTool } from "./background-brief-apps.ts";
+import { createBackgroundBriefRoutes } from "./routes/background-brief.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { companyTextForBots } from "./memory-company.ts";
 import { procedureSignal, recordProcedure } from "./memory-procedures.ts";
@@ -30206,6 +30209,34 @@ function prewakeComputerWhileTyping(botId: string, principalId: string | null | 
   void userSandbox.prewake(principal, botId);
 }
 // 2026-10-16: a person's custom auto-review rules (server/routes/custom-rules.ts).
+const backgroundBriefs = new BriefStore(join(DATA_DIR, "background-brief.json"));
+ROUTES.push(createBackgroundBriefRoutes({
+  store: backgroundBriefs,
+  owns: (auth, botId) => {
+    const me = ruleManager(auth);
+    return Boolean(me && botsOwnedBy(me).some((bot) => bot.id === botId));
+  },
+  fastModel: (botId) => store.bot(botId)?.modelSelection.fast?.model ?? null,
+  keep: (botId, line) => { updateMemory(botId, { action: "append", text: line }, { source: "background brief", readers: { kind: "person" } }); },
+  connected: (botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return [];
+    return Object.keys(customMcpServers(cfg, bot.mcpServers));
+  },
+  reads: async (botId) => {
+    const bot = store.bot(botId);
+    const servers = bot ? customMcpServers(cfg, bot.mcpServers) : {};
+    const signal = AbortSignal.timeout(12_000);
+    const apps = await listBriefApps(servers, mcpDisabledTools(cfg), signal);
+    return {
+      apps: () => apps,
+      read: (app, tool) => {
+        const server = servers[app];
+        return server ? readBriefTool(server, tool, signal) : Promise.resolve(null);
+      },
+    };
+  },
+}));
 ROUTES.push(createCustomRuleRoutes({
   store: customRules,
   manager: ruleManager,
