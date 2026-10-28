@@ -11413,5 +11413,7 @@
   "openAtLogin.accept": "Ouvrir à la session",
   "openAtLogin.notNow": "Pas maintenant",
   "openAtLogin.setting": "Ouvrir quand j'ouvre ma session",
-  "openAtLogin.settingHelp": "Votre choix sur ce Mac. Sagax ne démarre pas à l'ouverture de session tant que vous ne l'activez pas."
+  "openAtLogin.settingHelp": "Votre choix sur ce Mac. Sagax ne démarre pas à l'ouverture de session tant que vous ne l'activez pas.",
+  "chat.voiceSummary": "Lire un court résumé",
+  "chat.voiceSummaryTitle": "La réponse complète reste dans le clavardage. Ceci lit seulement un court résumé."
 }

@@ -5,6 +5,8 @@ import { t } from "@/lib/i18n";
 import type { ConfigStatus } from "@/state/store";
 import { ACTION_ICON, type MessageMenuItem } from "@/components/MessageActions";
 import { useSpeakAction } from "@/components/SpeakButton";
+import { speaker } from "@/lib/tts";
+import { voiceSummary } from "@/lib/voice-summary";
 
 export type PinAction = { pinned: boolean; onToggle: () => void; hint?: string };
 
@@ -62,6 +64,18 @@ export function useBotMessageMenu({
       onSelect: speak.toggle,
       section: "view",
     });
+    const summary = voiceSummary(text);
+    if (summary) {
+      items.push({
+        key: "voice-summary",
+        icon: <Volume2 {...ACTION_ICON} />,
+        label: t("chat.voiceSummary"),
+        title: t("chat.voiceSummaryTitle"),
+        disabled: !speak.ready,
+        onSelect: () => { void speaker.speak(summary, { botId, messageId: `${messageId}:summary`, voiceId }); },
+        section: "view",
+      });
+    }
   }
   if (text) {
     items.push({
