@@ -43,6 +43,13 @@ interface McpConfig {
   /** #1276: a compact prompt keeps pi's system prompt the same in every
    * conversation; the conversation's folder rides the turn instead. */
   stableCwd?: boolean;
+  /** #1276: where this pi writes the tool lists it mounted, per server, so
+   * the thread's next pi (started between turns) can declare them. */
+  toolCachePath?: string;
+  /** #1276: the lists the previous pi of this thread mounted. A server
+   * whose listing fails now (its turn credentials expired with that turn)
+   * declares these and connects at its first call, during a live turn. */
+  toolCache?: Record<string, McpTool[]>;
 }
 
 /** What pi's cwd section says in a compact prompt (#1276). */
@@ -664,7 +671,7 @@ export default async function (pi: PiExtensionApi): Promise<void> {
   // consume the startup timeout once per server. Registration remains in
   // config order below for deterministic tool names and collision suffixes.
   const mounts = await Promise.all(
-    serverEntries.map(async ([serverName, def]) => {
+    serverEntries.map(async ([serverName, def]): Promise<{ serverName: string; def?: McpServerDef; client?: StdioMcp; tools?: McpTool[] }> => {
       if (!def || typeof def.command !== "string" || !def.command.trim()) return { serverName };
       let client: StdioMcp | undefined;
       try {
@@ -673,16 +680,36 @@ export default async function (pi: PiExtensionApi): Promise<void> {
         return { serverName, def, client, tools: await client.listTools() };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[openmausbot-pi-mcp] ${serverName}: ${message}\n`);
         client?.dispose();
+        const cached = config.toolCache?.[serverName];
+        if (Array.isArray(cached) && cached.length) return { serverName, def, tools: cached };
+        process.stderr.write(`[openmausbot-pi-mcp] ${serverName}: ${message}\n`);
         return { serverName };
       }
     }),
   );
+  if (config.toolCachePath) {
+    const listed = Object.fromEntries(mounts.flatMap((mount) => mount.tools ? [[mount.serverName, mount.tools]] : []));
+    try { writeFileSync(config.toolCachePath, JSON.stringify(listed), { mode: 0o600 }); } catch { /* the next pi lists its own */ }
+  }
 
   for (const mount of mounts) {
-    if (!mount.client || !mount.def || !mount.tools) continue;
-    const { serverName, def, client, tools } = mount;
+    if (!mount.def || !mount.tools) continue;
+    const { serverName, def, tools } = mount;
+    // A server declared from the previous pi's list connects at its first call.
+    let client = mount.client;
+    let connecting: Promise<StdioMcp> | undefined;
+    const connected = (): Promise<StdioMcp> => {
+      if (client) return Promise.resolve(client);
+      connecting ??= (async () => {
+        const fresh = new StdioMcp(def);
+        try { await fresh.init(); } catch (err) { fresh.dispose(); connecting = undefined; throw err; }
+        client = fresh;
+        clients.push(fresh);
+        return fresh;
+      })();
+      return connecting;
+    };
     // "approval": Sagax's own Browser and Data (pi.ts buildMcpServers), which
     // ask like a custom server so Sagax's approval path decides. The
     // person's own computer asks too, except under Full access, which she
@@ -730,7 +757,7 @@ export default async function (pi: PiExtensionApi): Promise<void> {
                 return { content: [{ type: "text", text: "Blocked by the user." }], details: {} };
               }
             }
-            const res = await client.callTool(toolName, params, signal);
+            const res = await (await connected()).callTool(toolName, params, signal);
             if (res.isError) {
               const message = res.content
                 .filter((item): item is { type: "text"; text: string } => item.type === "text")
@@ -755,8 +782,10 @@ export default async function (pi: PiExtensionApi): Promise<void> {
       }
     }
 
-    if (registered > 0) clients.push(client);
-    else client.dispose();
+    if (mount.client) {
+      if (registered > 0) clients.push(mount.client);
+      else mount.client.dispose();
+    }
   }
 
   pi.on("session_shutdown", () => {
