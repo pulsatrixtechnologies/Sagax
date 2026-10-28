@@ -9,6 +9,15 @@ import { createInterface } from "node:readline";
 import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 import { waitForExit } from "./testing/cleanup.ts";
+import { COMPACT_CORE_AGENT_TOOL_NAMES } from "./drivers/agents-catalog.ts";
+/** #1276: the bridge lists the heart of a chat turn by name, sorted, then find_tool and use_tool. */
+function expectBridgeList(names: string[]): void {
+  expect(names.slice(-2)).toEqual(["find_tool", "use_tool"]);
+  const listed = names.slice(0, -2);
+  expect(listed).toEqual([...listed].sort());
+  expect(listed.every((name) => COMPACT_CORE_AGENT_TOOL_NAMES.has(name) || name === "shared_computer")).toBe(true);
+}
+
 
 it("answers sagax_help from the generated base in a real turn", async () => {
   const fixture = await launchVerificationServer({ FAKE_CLAUDE_MODE: "hang" });
@@ -41,7 +50,7 @@ it("answers sagax_help from the generated base in a real turn", async () => {
     });
     await rpc("initialize", { protocolVersion: "2024-11-05" });
     const listed = (await rpc("tools/list")).result.tools as Array<{ name: string }>;
-    expect(listed.map((tool) => tool.name)).toEqual(["find_tool", "use_tool"]);
+    expectBridgeList(listed.map((tool) => tool.name));
     const answer = (await rpc("tools/call", { name: "use_tool", arguments: { name: "sagax_help", arguments: { question: "Où sont mes routines ?" } } })).result;
     expect(answer.isError).toBeFalsy();
     const text = answer.content[0].text as string;

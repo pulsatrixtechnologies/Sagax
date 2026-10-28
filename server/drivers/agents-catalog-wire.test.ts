@@ -34,6 +34,15 @@ import { build } from "esbuild";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { waitForExit } from "../testing/cleanup.ts";
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
+import { COMPACT_CORE_AGENT_TOOL_NAMES } from "./agents-catalog.ts";
+/** #1276: the bridge lists the heart of a chat turn by name, sorted, then find_tool and use_tool. */
+function expectBridgeList(names: string[]): void {
+  expect(names.slice(-2)).toEqual(["find_tool", "use_tool"]);
+  const listed = names.slice(0, -2);
+  expect(listed).toEqual([...listed].sort());
+  expect(listed.every((name) => COMPACT_CORE_AGENT_TOOL_NAMES.has(name) || name === "shared_computer")).toBe(true);
+}
+
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROXY_SOURCE = join(HERE, "agents-proxy.ts");
@@ -273,7 +282,7 @@ beforeAll(async () => {
 describe("agents proxy tools/list golden", () => {
   it("lists find_tool and use_tool unless SAGAX_CATALOG_BRIDGE=0", async () => {
     const wire = await toolsListWire(PROXY_SOURCE, {});
-    expect(toolsOf(wire).map((tool) => tool.name)).toEqual(["find_tool", "use_tool"]);
+    expectBridgeList(toolsOf(wire).map((tool) => tool.name));
   }, 30_000);
 
   it("round-trips through JSON.parse unchanged, so a parsed golden can stand for the bytes", () => {

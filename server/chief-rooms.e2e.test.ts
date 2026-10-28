@@ -6,6 +6,15 @@ import { z } from "zod";
 
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 import { waitForExit } from "./testing/cleanup.ts";
+import { COMPACT_CORE_AGENT_TOOL_NAMES } from "./drivers/agents-catalog.ts";
+/** #1276: the bridge lists the heart of a chat turn by name, sorted, then find_tool and use_tool. */
+function expectBridgeList(names: string[]): void {
+  expect(names.slice(-2)).toEqual(["find_tool", "use_tool"]);
+  const listed = names.slice(0, -2);
+  expect(listed).toEqual([...listed].sort());
+  expect(listed.every((name) => COMPACT_CORE_AGENT_TOOL_NAMES.has(name) || name === "shared_computer")).toBe(true);
+}
+
 
 type Bot = { id: string; threadId: string; name: string };
 type Room = { id: string; name: string; memberIds: string[]; section?: string; bulletin: string; working?: boolean };
@@ -85,7 +94,7 @@ it("creates and manages an own-section room through the mounted Chief MCP proxy"
     expect(peerMount.env.SAGAX_CHIEF_OF_STAFF).toBe("0");
     const peerRpc = connect(peerMount);
     const peerTools = (await peerRpc<{ tools: Array<{ name: string }> }>("tools/list")).tools.map((entry) => entry.name);
-    expect(peerTools).toEqual(["find_tool", "use_tool"]);
+    expectBridgeList(peerTools);
     expect(peerMount.env.SAGAX_CREATE_BOTS).toBe("1");
     const peerUse = (name: string, args: Record<string, unknown> = {}) =>
       peerRpc<RpcReply["result"]>("tools/call", { name: "use_tool", arguments: { name, arguments: args } });
@@ -100,7 +109,7 @@ it("creates and manages an own-section room through the mounted Chief MCP proxy"
     const mounted = await mount(chief, "Set up a small room for the team.");
     expect(mounted.env.SAGAX_CHIEF_OF_STAFF).toBe("1");
     const rpc = connect(mounted);
-    expect(await toolNames(rpc)).toEqual(["find_tool", "use_tool"]);
+    expectBridgeList(await toolNames(rpc));
     const tool = async (name: string, args: Record<string, unknown>, denied = false) => {
       const result = await rpc("tools/call", { name, arguments: args });
       evidence.push({ tool: name, args, result });
