@@ -15152,7 +15152,15 @@
       "devPods.context.prompt": "a903e4851fb5a976f272d888000b1dc1908eba9a86cec699174519bdf49b07a8",
       "devPods.changes.autoFix": "d2cf3dbc2fc91fcfa51751d44e328c92a837752a14fc6d88c79b59a17940ee88",
       "devPods.changes.mergeReady": "70c873f66e8275a4ff924feb9717bf992d82e3cc3d4e5e3d17bdeb3a80f1f039",
-      "devPods.changes.autoArchive": "988713697a88f330198adff2982acd0244eae849219dc2da0e262b88792d50e3"
+      "devPods.changes.autoArchive": "988713697a88f330198adff2982acd0244eae849219dc2da0e262b88792d50e3",
+      "botTasks.title": "b3a60e61a5233d0506ac737405a2a45280349683cac68722f18d0b73eb495ef4",
+      "botTasks.empty": "2d01772abbb04b621fce45c6b1c98e692e73bc5cf92beed269dedd3d10209150",
+      "botTasks.doing": "c1f88e9d6c4145cf0530ae020155384d5688d70ed82a07a35d783bbc4b32238c",
+      "botTasks.waiting": "7dfb0b7218e56835ab70132611cbf963ec79d682f2a4e05959922191572cf757",
+      "botTasks.done": "11a6767d5674c7e45f7e00dc525762275b3a48491ad6045427d2609cc496c516",
+      "botTasks.reopen": "a886d1dc4f128e2791731e8b288c8d7c74f8a8608e23ca8e167b3038ab48054f",
+      "botTasks.hint": "8672fcc054c1f25a7201c86e13092ed72d015b9f31698ca20fb7c0cf9c8e3925",
+      "botTasks.error": "069ad8a334088629b0edcdf5871b746ecee71879e7f20490e5670bdf6cf2b36f"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

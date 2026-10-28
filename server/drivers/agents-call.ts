@@ -23,6 +23,7 @@ import { callVideoTool, VIDEO_TOOL_NAME } from "./agents-video.ts";
 import { callVaultHttpTool, VAULT_HTTP_TOOL_NAME } from "./agents-vault-http-tools.ts";
 import { callConnectorSetupTool, CONNECTOR_SETUP_TOOL_NAME } from "./agents-connector-setup.ts";
 import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
+import { callTaskListTool, TASK_LIST_TOOL_NAMES } from "./agents-call-tasks.ts";
 import { HELP_TOOL_NAMES } from "./agents-help-tools.ts";
 import { WEB_SEARCH_TOOL_NAMES } from "./agents-web-search-tools.ts";
 import { SETTINGS_TOOL_NAMES } from "./agents-settings-tools.ts";
@@ -570,6 +571,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   if (name === VAULT_HTTP_TOOL_NAME) return callVaultHttpTool(args, context);
   if (name === CONNECTOR_SETUP_TOOL_NAME) return callConnectorSetupTool(args, context);
   if (ARTIFACT_TOOL_NAMES.has(name)) return callArtifactTool(name, args, context);
+  if (TASK_LIST_TOOL_NAMES.has(name)) return callTaskListTool(name, args, context);
   // sagax_help (server/self-knowledge.ts): a few sections of the generated
   // knowledge base, chosen and worded for this server and speaker.
   if (HELP_TOOL_NAMES.has(name)) {
