@@ -1,4 +1,5 @@
-import { Loader2, Repeat2 } from "lucide-react";
+import { Loader2, MoreHorizontal, Repeat2 } from "lucide-react";
+import type { DragEvent } from "react";
 import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
@@ -31,7 +32,10 @@ const UPCOMING_TONES = {
   neutral: "bg-inset text-ink-secondary",
 } as const;
 
-export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, error, onOpen, onToggle, grouped = false, toggle = true, variant = "list", emptyText }: {
+/** The drag type of a routine row moved between folders (2026-10-28). */
+export const ROUTINE_DRAG_TYPE = "application/x-sagax-routine";
+
+export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, error, onOpen, onToggle, grouped = false, toggle = true, variant = "list", emptyText, onRowMenu, draggableRows = false, label }: {
   routines: Routine[];
   /** Slice 6: the signed-in person on an organization server. */
   viewerPrincipalId?: string | null;
@@ -52,12 +56,28 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
    * switch. The rows are otherwise the list's own. */
   variant?: "list" | "upcoming";
   emptyText?: string;
+  /** 2026-10-28: the row's menu (right click, the "…" button, Shift+F10 or
+   * the context menu key): Move to folder. */
+  onRowMenu?: (routine: Routine, at: { x: number; y: number }, trigger: HTMLElement) => void;
+  /** Rows may be dragged onto a folder of the list. */
+  draggableRows?: boolean;
+  /** The list's accessible name (a folder's name). */
+  label?: string;
 }) {
   const upcoming = variant === "upcoming";
   const sorted = upcoming
     ? [...routines].sort((a, b) => (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity) || a.name.localeCompare(b.name))
     : [...routines].sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity) || a.name.localeCompare(b.name));
-  return <div aria-label={upcoming ? t("routines.upcoming.list") : t("routines.list")}>
+  const openMenu = (routine: Routine, trigger: HTMLElement, at?: { x: number; y: number }) => {
+    const rect = trigger.getBoundingClientRect();
+    onRowMenu?.(routine, at ?? { x: rect.left, y: rect.bottom + 4 }, trigger);
+  };
+  const onDragStart = (routine: Routine) => (event: DragEvent<HTMLDivElement>) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(ROUTINE_DRAG_TYPE, routine.id);
+    event.dataTransfer.setData("text/plain", routine.name);
+  };
+  return <div aria-label={label ?? (upcoming ? t("routines.upcoming.list") : t("routines.list"))}>
     {error && <div role="alert" className="rounded-lg bg-danger/10 p-3 text-[12px] text-danger">{t("routines.loadError")}</div>}
     {loading && <p role="status" className="flex items-center gap-2 p-3 text-[12px] text-ink-secondary"><Loader2 size={14} className="animate-spin" />{t("routines.loading")}</p>}
     {!loading && !error && sorted.length === 0 && <div className="rounded-xl border border-dashed border-hairline/50 p-5 text-center text-[13px] text-ink-secondary"><Repeat2 size={20} className="mx-auto mb-2 opacity-60" />{emptyText ?? t("routines.empty")}</div>}
@@ -85,8 +105,17 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           const whenLine = upcoming ? when : routine.schedule.type !== "once" || routine.enabled || routine.nextRunAt != null ? scheduleLabelCompact(routine.schedule) : when;
           const whenTitle = [pausedWithSwitch ? routineWhenLabel(routine) : when, rawCron].filter(Boolean).join("\n");
           return (
-            <div key={routine.id} data-routine-row className={grouped ? cn("flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW, "py-1.5") : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>
-              <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left">
+            <div key={routine.id} data-routine-row
+              draggable={draggableRows && !readOnly ? true : undefined}
+              onDragStart={draggableRows && !readOnly ? onDragStart(routine) : undefined}
+              onContextMenu={onRowMenu && !readOnly ? (event) => { event.preventDefault(); openMenu(routine, event.currentTarget, { x: event.clientX, y: event.clientY }); } : undefined}
+              className={cn("group/routine", grouped ? cn("flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW, "py-1.5") : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover")}>
+              <button type="button" onClick={() => onOpen(routine)}
+                onKeyDown={onRowMenu && !readOnly ? (event) => {
+                  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); openMenu(routine, event.currentTarget); }
+                } : undefined}
+                aria-keyshortcuts={onRowMenu && !readOnly ? "Shift+F10" : undefined}
+                className="min-w-0 flex-1 text-left">
                 {state ? (
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="min-w-0 flex-1 truncate text-[13px] leading-[18px] text-ink">{routine.name}</span>
@@ -112,6 +141,9 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                 {/* 2026-10-26: runs only when something changes (shared/routine-watch.ts). */}
                 {routine.precheck?.kind === "watch" && <span className="mt-0.5 flex"><span data-routine-watch className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routineWatch.badge")}</span></span>}
               </button>
+              {onRowMenu && !readOnly && <button type="button" data-routine-row-menu aria-label={t("routineFolders.rowMenu", { name: routine.name })} title={t("routineFolders.rowMenu", { name: routine.name })}
+                onClick={(event) => openMenu(routine, event.currentTarget)}
+                className="hidden size-7 shrink-0 items-center justify-center rounded-md text-ink-tertiary hover:bg-raised hover:text-ink focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover/routine:flex touch:flex"><MoreHorizontal size={15} /></button>}
               {toggle && !upcoming && <Switch
                 checked={routine.enabled}
                 disabled={readOnly}

@@ -74,6 +74,14 @@ export const GUIDES: Guide[] = [
     refs: ["menu:sidebar.nav.automations", "tool:list_routines", "tool:run_routine", "px:console:/sagax/routines"],
   },
   {
+    id: "routine-folders",
+    title: "Sort routines into folders",
+    where: "bot panel > Details > Routines; bot tools propose_routine and propose_routine_action (folder)",
+    keywords: "routine routines dossier dossiers folder folders ranger trier sort prefix prefixe groupe group organiser organize",
+    text: "Yes: a bot's routines can sit in folders. In the bot's panel > Details > Routines, a row's menu (right click or its ...) has Move to folder, New folder... and Remove from folder; a folder's header folds, and its menu renames, reorders, pauses or resumes the whole folder, or deletes the folder (its routines stay, in no folder). When titles start with [Name], a line offers Sort by prefix once, with an Undo. A bot files its own routine with folder on propose_routine or propose_routine_action (null takes it out) and sees it in list_routines; never write the folder as a [Prefix] in the name. The person does it on their own bots, no admin.",
+    refs: ["tool:propose_routine", "tool:propose_routine_action", "tool:list_routines", "file:docs/routine-folders.md"],
+  },
+  {
     id: "routine-create",
     title: "Create a routine (every morning, every weekday)",
     where: "bot tool propose_routine; also Automations in the account menu",

@@ -1289,6 +1289,8 @@ export interface AppState {
   routines: Routine[];
   routineRuns: RoutineRun[];
   routinesLoadState: "loading" | "ready" | "error";
+  /** 2026-10-28: each bot's routine folders in order (shared/routine-folders.ts). */
+  routineFolders: Record<string, string[]>;
   routinesFocus: { section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter; nonce: number };
   /** The Code section (src/components/code/CodePage.tsx): the run it opens,
    * or the list when none. */
@@ -1556,7 +1558,8 @@ export type Action =
   /** The Achievements page, on `category` when a link names one. */
   | { type: "showAchievements"; category?: AchievementsCategory }
   | { type: "showChat" }
-  | { type: "routinesHydrated"; routines: Routine[]; runs: RoutineRun[] }
+  | { type: "routinesHydrated"; routines: Routine[]; runs: RoutineRun[]; folders?: Record<string, string[]> }
+  | { type: "routineFoldersPatched"; botId: string; folders: string[] }
   | { type: "routinesLoadFailed" }
   | { type: "routinePatched"; routine: Routine }
   | { type: "routineDeleted"; routineId: string }
@@ -2435,7 +2438,9 @@ export function reducer(state: AppState, action: Action): AppState {
         triggersOpen: false,
       };
     case "routinesHydrated":
-      return { ...state, routines: action.routines, routineRuns: trimRoutineRuns(action.runs), routinesLoadState: "ready" };
+      return { ...state, routines: action.routines, routineRuns: trimRoutineRuns(action.runs), routinesLoadState: "ready", ...(action.folders ? { routineFolders: action.folders } : {}) };
+    case "routineFoldersPatched":
+      return { ...state, routineFolders: { ...state.routineFolders, [action.botId]: action.folders } };
     case "routinesLoadFailed":
       return { ...state, routinesLoadState: "error" };
     case "routinePatched": {
@@ -3590,6 +3595,7 @@ export const initialState: AppState = {
   routines: [],
   routineRuns: [],
   routinesLoadState: "loading",
+  routineFolders: {},
   routinesFocus: { nonce: 0 },
   codeFocus: { nonce: 0 },
   achievementsFocus: { category: "all", nonce: 0 },
@@ -5309,8 +5315,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       {
         key: "routines",
         request: async () => {
-          const { routines, runs } = await api("/api/routines");
-          return () => rawDispatch({ type: "routinesHydrated", routines, runs });
+          const { routines, runs, folders } = await api("/api/routines");
+          return () => rawDispatch({ type: "routinesHydrated", routines, runs, ...(folders && typeof folders === "object" ? { folders } : {}) });
         },
       },
       ...(window.ogb?.remoteClient?.active ? [] : [{
@@ -5452,7 +5458,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // transcript on a reconnect it already covered is pure waste.
     handleFrame = (frame) => {
       if (frame.kind === "config") bumpPeripheralVersion("config", "instances");
-      else if (frame.kind === "routine" || frame.kind === "routine.deleted" || frame.kind === "routine.run") {
+      else if (frame.kind === "routine" || frame.kind === "routine.deleted" || frame.kind === "routine.run" || frame.kind === "routine.folders") {
         bumpPeripheralVersion("routines");
       } else if (
         frame.kind === "webhook" ||
@@ -5600,6 +5606,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "routine.deleted":
           rawDispatch({ type: "routineDeleted", routineId: frame.routineId });
+          break;
+        case "routine.folders":
+          rawDispatch({ type: "routineFoldersPatched", botId: frame.botId, folders: frame.folders });
           break;
         // a person's own unlocks (server/achievements.ts sends them to their streams only)
         case "achievements":

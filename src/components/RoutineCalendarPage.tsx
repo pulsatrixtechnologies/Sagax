@@ -159,6 +159,8 @@ type EventSeed = {
   anchor?: { x: number; y: number };
   routine?: Routine;
   call?: CalendarCall;
+  /** 2026-10-28: a new routine made from a folder's + goes in that folder. */
+  folder?: string;
 };
 
 function activeRoomMembers(group: Group | undefined, bots: Bot[]): Bot[] {
@@ -612,6 +614,7 @@ function EventEditor({
           ...(routineTarget === "bot" ? { resultsThreadId } : {}),
           // Sent only when the person was changed in the dropdown.
           ...(runAs && runAs !== runAsOptions?.current?.principalId ? { runAs } : {}),
+          ...(!existingRoutine && seed.folder ? { folder: seed.folder } : {}),
         };
         const response = await editorRequest(existingRoutine ? `/api/routines/${existingRoutine.id}` : "/api/routines", {
           method: existingRoutine ? "PATCH" : "POST",
@@ -1797,12 +1800,15 @@ export function RoutineEditor({
   bots,
   lockedBotId,
   defaultRunOn,
+  folder,
   onClose,
 }: {
   routine?: Routine;
   bots: Bot[];
   lockedBotId?: string;
   defaultRunOn?: RoutineRunOn;
+  /** A new routine goes in this folder of its bot (a folder's +). */
+  folder?: string;
   onClose: () => void;
 }) {
   const at = routine?.schedule.type === "once"
@@ -1814,7 +1820,7 @@ export function RoutineEditor({
       : routine?.schedule.type === "cron"
         ? routine.nextRunAt ?? nextHour()
       : nextHour();
-  return <EventEditor seed={{ kind: "routine", at, durationMinutes: routine?.durationMinutes ?? 30, botIds: lockedBotId ? [lockedBotId] : routine ? [routine.botId] : [], routine }} bots={bots} lockedBotId={lockedBotId} defaultRunOn={defaultRunOn} onClose={onClose} onSavedCall={() => {}} />;
+  return <EventEditor seed={{ kind: "routine", at, durationMinutes: routine?.durationMinutes ?? 30, botIds: lockedBotId ? [lockedBotId] : routine ? [routine.botId] : [], routine, ...(folder && !routine ? { folder } : {}) }} bots={bots} lockedBotId={lockedBotId} defaultRunOn={defaultRunOn} onClose={onClose} onSavedCall={() => {}} />;
 }
 
 export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fill = false }: { onBack: () => void; onOpenRoom: (id: string) => void; embedded?: boolean; fill?: boolean }) {
