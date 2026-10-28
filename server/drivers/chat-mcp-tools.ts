@@ -12,6 +12,7 @@ import { mcpStdioServer } from "../mcp-gate-config.ts";
 import { REMOTE_MCP_STARTUP_MS, remoteMcpSpec } from "../mcp-http.ts";
 import { compileToolSchema } from "../mcp-schema-validator.ts";
 import { allowsTool, canUseMcpServer, parseToolScope, type ToolScope } from "../../shared/tool-scope.ts";
+import { openApiWriteToolNames } from "../openapi-tools.ts";
 
 export interface ChatToolDefinition {
   type: "function";
@@ -346,6 +347,8 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   let searchName: string | undefined;
   let callName: string | undefined;
   const registered = new Map<string, RegisteredTool>();
+  const agentsEnv = (integrations?.agents as { env?: Record<string, string> } | undefined)?.env;
+  const openApiWrites = new Set(openApiWriteToolNames(agentsEnv?.SAGAX_OPENAPI_TOOLS));
   try {
     if (signal.aborted) throw aborted();
     // Start independent servers concurrently; consume results in config order
@@ -488,7 +491,23 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
     // server (2026-10-16 security review): the person's rules, the safety
     // review and the security keys apply there, and a call that stays in the
     // bot's workspace is answered without a card (sagax-internal-tools.ts).
-    if (runs === undefined || tool?.agents) return { title: name, input: args, ask: false };
+    if (runs === undefined) return { title: name, input: args, ask: false };
+    // The agents server is otherwise pre-allowed. A write to the person's API
+    // is not: Ask shows a card, the same as a tool that was not pre-allowed.
+    if (tool?.agents) {
+      if (openApiWrites.has(runs)) {
+        const grant = JSON.stringify([tool.server, tool.launch, runs]);
+        const direct = runs === tool.name;
+        return {
+          title: direct ? name : chatToolName(tool.server, runs),
+          input: direct ? args : (object(args.arguments) ? args.arguments : {}),
+          ask: true,
+          grant,
+          mcpTool: `${tool.server}__${runs}`,
+        };
+      }
+      return { title: name, input: args, ask: false };
+    }
     // Messages posts its own send card, including under Full access, and
     // reads only after the person turned Use Messages on. A broker card
     // would ask a second time.

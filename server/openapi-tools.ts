@@ -113,6 +113,13 @@ export function openApiToolName(operation: string): string {
   return `openapi_${operation}`;
 }
 
+const WRITE_METHODS = new Set(["post", "put", "patch", "delete"]);
+
+/** Tool names of operations that change the person's API. A GET stays a read. */
+export function openApiWriteToolNames(raw: string | undefined): string[] {
+  return openApiToolsFromEnv(raw).filter((operation) => WRITE_METHODS.has(operation.method)).map((operation) => openApiToolName(operation.name));
+}
+
 export function isOpenApiTool(name: string): boolean {
   return name.startsWith("openapi_") && NAME.test(name.slice("openapi_".length));
 }

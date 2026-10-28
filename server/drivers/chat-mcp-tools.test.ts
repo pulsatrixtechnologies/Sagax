@@ -29,7 +29,7 @@ const sessions: ChatToolSession[] = [];
 const controllers: AbortController[] = [];
 const schema = { type: "object", properties: { value: { type: "string" } }, required: ["value"], additionalProperties: false };
 
-function fixture(body = "", toolSchema: Record<string, unknown> = schema) {
+function fixture(body = "", toolSchema: Record<string, unknown> = schema, toolName = "write") {
   const dir = mkdtempSync(join(tmpdir(), "omb-chat-mcp-"));
   dirs.push(dir);
   const script = join(dir, "fake-mcp.mjs");
@@ -54,7 +54,7 @@ function fixture(body = "", toolSchema: Record<string, unknown> = schema) {
         writeFileSync(receipt, JSON.stringify({pid:process.pid,path:process.env.PATH,omb:Object.fromEntries(Object.entries(process.env).filter(([name]) => name.startsWith("SAGAX_"))),calls}));
         ${body}
         if (message.method === "initialize") reply(message, {protocolVersion:"2024-11-05",capabilities:{tools:{}}});
-        else if (message.method === "tools/list") reply(message, {tools:[{name:"write",description:"Fixture write",inputSchema:schema}]});
+        else if (message.method === "tools/list") reply(message, {tools:[{name:${JSON.stringify(toolName)},description:"Fixture write",inputSchema:schema}]});
         else if (message.method === "tools/call") reply(message, {content:[{type:"text",text:"recorded:" + message.params.arguments.value}]});
       }
     });
@@ -486,6 +486,11 @@ describe("Chat MCP approvals by server", () => {
     sessions.push(session);
     expect(session.definitions.map((tool) => tool.function.name).sort()).toEqual(["agents_write", "audit_write", "computer_write"]);
     expect(session.view("agents_write", { value: "x" })).toEqual({ title: "agents_write", input: { value: "x" }, ask: false });
+    const writing = fixture("", schema, "openapi_createnote");
+    writing.server.env.SAGAX_OPENAPI_TOOLS = JSON.stringify([{ name: "createnote", method: "post", path: "/notes", summary: "Create", params: [], body: true }]);
+    const asked = await mountChatTools({ agents: writing.server }, writing.controller.signal);
+    sessions.push(asked);
+    expect(asked.view("agents_openapi_createnote", { value: "x" })).toMatchObject({ ask: true, mcpTool: "agents__openapi_createnote" });
     expect(session.view("audit_write", { value: "x" })).toEqual({ title: "audit_write", input: { value: "x" }, ask: true, grant: grantFor("audit", "write"), mcpTool: "audit__write" });
     // her computer, her thread: "Always allow this session" is hers to give
     const hers = session.view("computer_write", { value: "x" });

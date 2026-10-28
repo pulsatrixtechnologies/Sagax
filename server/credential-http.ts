@@ -353,6 +353,78 @@ export async function sendWithInjectedKey(secret: InjectedSecret, request: BotHt
   }
 }
 
+export interface PinnedHttpRequest {
+  method: string;
+  url: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+export interface PinnedHttpOptions extends CredentialHttpOptions {
+  /** A solo installation may use a loopback or private address from this
+   * lookup. Metadata, link-local and reserved addresses are refused either way. */
+  allowNonPublic?: boolean;
+}
+
+export type PinnedHttpResult =
+  | { ok: true; status: number; body: string; bytes: number; truncated: boolean }
+  | { ok: false; code: "invalid_request" | "blocked_address" | "redirect" | "timeout" | "network"; message: string };
+
+const ALWAYS_BLOCKED = new Set<AddressClass>(["metadata", "link-local", "reserved"]);
+
+/** One HTTP call to the address that was checked. The name is resolved once.
+ * Every address is classified. The socket uses that address, so a later
+ * answer from DNS cannot move the call onto a private or metadata address.
+ * A redirect is not followed. The body stops at maxResponseBytes. Nothing
+ * here writes the request headers. */
+export async function sendPinnedHttp(request: PinnedHttpRequest, options: PinnedHttpOptions = {}): Promise<PinnedHttpResult> {
+  const method = request.method.trim().toUpperCase();
+  if (!(HTTP_METHODS as readonly string[]).includes(method)) return { ok: false, code: "invalid_request", message: `method is one of ${HTTP_METHODS.join(", ")}.` };
+  if (!request.url.trim() || request.url.length > 4096) return { ok: false, code: "invalid_request", message: "url is not a valid URL." };
+  let url: URL;
+  try { url = new URL(request.url.trim()); } catch { return { ok: false, code: "invalid_request", message: "url is not a valid URL." }; }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return { ok: false, code: "invalid_request", message: "The address must be http or https." };
+  if (url.username || url.password) return { ok: false, code: "invalid_request", message: "The address cannot contain a password." };
+  url.hash = "";
+  const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+  const localName = host === "localhost" || host.endsWith(".localhost") || host === "metadata.google.internal";
+  const resolve = options.resolve ?? systemResolve;
+  const classify = options.classify ?? ((address: string) => addressClass(address));
+  let addresses: Array<{ address: string; family: number }>;
+  try {
+    addresses = isIP(host) ? [{ address: host, family: isIP(host) }] : await resolve(host);
+  } catch {
+    return { ok: false, code: "network", message: `${url.host} could not be resolved.` };
+  }
+  if (!addresses.length) return { ok: false, code: "network", message: `${url.host} could not be resolved.` };
+  for (const { address } of addresses) {
+    const kind = classify(address);
+    if (ALWAYS_BLOCKED.has(kind)) return { ok: false, code: "blocked_address", message: "This address is not one Sagax will call." };
+    if (!options.allowNonPublic && kind !== "public") return { ok: false, code: "blocked_address", message: "On an organization server this API must be on the public internet." };
+  }
+  if (!options.allowNonPublic && localName) return { ok: false, code: "blocked_address", message: "On an organization server this API must be on the public internet." };
+  const headers: Record<string, string> = { "user-agent": "Sagax", accept: "*/*", ...request.headers };
+  let body: Buffer | undefined;
+  if (request.body !== undefined) {
+    if (method === "GET" || method === "HEAD") return { ok: false, code: "invalid_request", message: `A ${method} request has no body.` };
+    body = Buffer.from(request.body, "utf8");
+    if (body.length > MAX_REQUEST_BODY_BYTES) return { ok: false, code: "invalid_request", message: "The body is larger than 1 MB." };
+    headers["content-length"] = String(body.length);
+  }
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  let answer: Exchange;
+  try {
+    answer = await exchange(url, { method, headers, ...(body ? { body } : {}) }, addresses[0]!, { timeoutMs, maxResponseBytes, plainHttp: url.protocol === "http:" || options.plainHttpForTests === true }, Date.now() + timeoutMs);
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "SAGAX_TIMEOUT") return { ok: false, code: "timeout", message: `No answer within ${Math.round(timeoutMs / 1000)} s. Nothing more was read.` };
+    const code = typeof (error as { code?: unknown }).code === "string" ? String((error as { code: string }).code).replace(/[^A-Z0-9_]/gi, "").slice(0, 40) : "";
+    return { ok: false, code: "network", message: `The request to ${url.host} failed${code ? ` (${code})` : ""}.` };
+  }
+  if (answer.status >= 300 && answer.status < 400) return { ok: false, code: "redirect", message: "The API redirected. The redirect was not followed." };
+  return { ok: true, status: answer.status, body: answer.body.toString("utf8"), bytes: answer.body.length, truncated: answer.truncated };
+}
+
 /** What the bot reads back: status, headers and body, already clean. */
 export function outcomeText(outcome: CredentialHttpOutcome, label: string): { text: string; isError?: boolean } {
   if (!outcome.ok) return { text: outcome.message, isError: true };

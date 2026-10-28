@@ -27,7 +27,10 @@ organization server.
 
 `PUT /api/me/openapi` stores an OpenAPI 3 document for that person
 (docs/openapi-connector.md). Their bots receive the operations in a 1:1
-turn. Other members do not. Header values stay out of the tool list.
+turn. Other members do not. Header values are sealed and stay out of the
+tool list. A write (POST, PUT, PATCH, DELETE) follows the person's
+approval level. On an organization server the call is pinned to the
+address that was checked.
 
 ## YAML workflows (2026-10-27)
 

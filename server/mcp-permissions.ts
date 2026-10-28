@@ -129,6 +129,13 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("credentials:login", "own", "request_login"),
   // an API call with a vault key Sagax adds itself (server/credential-http.ts)
   p("credentials:http", "own", "vault_http_request"),
+  // the person's own OpenAPI operations (openapi_<operation>, server/openapi-tools.ts)
+  p("openapi:call", "own", "openapi_*"),
+  // make_video does not run a shell: it points at the engine's own video
+  // tools, or says none is connected (server/drivers/agents-video.ts)
+  p("video:make", "read", "make_video"),
+  // the person's task list for this bot (server/drivers/agents-task-tools.ts)
+  p("tasks:update", "own", "task_list"),
   p("computers:select", "own", "select_computer"),
   p("pairing:manage", "own", "manage_pairing"),
   // Dispatch
@@ -246,9 +253,12 @@ export function profileToolCall(tool: string): { profile: string; kind: ProfileT
 }
 
 /** The permission of a tool: by name (or alias), else by the per-profile pattern. */
+const OPENAPI_TOOL = /^openapi_[a-z][a-z0-9_]{0,48}$/;
+
 export const permissionForTool = (tool: string): McpPermission | undefined => {
   const named = BY_TOOL.get(tool);
   if (named) return named;
+  if (OPENAPI_TOOL.test(tool)) return BY_KEY.get("openapi:call");
   const profile = profileToolCall(tool);
   return profile ? BY_PROFILE_KIND.get(profile.kind) : undefined;
 };

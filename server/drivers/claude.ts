@@ -2241,7 +2241,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       allowed.push("mcp__ogb", ...gateQueryTools(mcpServers));
       // A guest's turn pre-allows only the harness's own tools: anything
       // else (the browser can open a file: address) asks the owner first.
-      if (turn.guestConfined) allowed.splice(0, allowed.length, ...allowed.filter((name) => name === "mcp__ogb" || name === "mcp__agents"));
+      if (turn.guestConfined) allowed.splice(0, allowed.length, ...allowed.filter((name) => name === "mcp__ogb" || name === "mcp__agents" || name.startsWith("mcp__agents__")));
       // #1374: what the turn pre-allows by name, so a call_tool or use_tool
       // runs unasked exactly when its target would have, and asks otherwise.
       const preallowed = allowed.filter((name) => /^mcp__[\w-]+(?:__[\w.:-]+)?$/.test(name) && name !== "mcp__ogb");
@@ -3650,6 +3650,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
  * approval mode decides and the person sees each action. */
 export function agentsAllowedTools(env: Record<string, string> | undefined): string[] {
   const profile = catalogProfileFromEnv(env ?? {});
-  if (!profile.sharedComputers) return ["mcp__agents"];
-  return availableTools(profile).map((tool) => tool.name).filter((name) => name !== "shared_computer").map((name) => `mcp__agents__${name}`);
+  // A write to the person's own API is not pre-allowed. Ask (and the other
+  // levels that prompt) shows a card. A GET stays with the rest of the agents
+  // server. The blanket mcp__agents grant would skip that card.
+  const writes = new Set((profile.openapiTools ?? []).filter((operation) => operation.method !== "get").map((operation) => `openapi_${operation.name}`));
+  if (!profile.sharedComputers && writes.size === 0) return ["mcp__agents"];
+  return availableTools(profile).map((tool) => tool.name).filter((name) => name !== "shared_computer" && !writes.has(name)).map((name) => `mcp__agents__${name}`);
 }
