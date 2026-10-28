@@ -52,6 +52,21 @@ describe("sidebar unread rows", () => {
     expect(html.indexOf("data-sidebar-unread-dot")).toBeGreaterThan(html.indexOf('data-sidebar-bot-row="loud"'));
   });
 
+  it("counts unread messages on the conversation when the lines are loaded", () => {
+    fixture.state = { bots: [bot("loud", {
+      unread: true,
+      messages: [
+        { id: "u1", role: "user", kind: "text", text: "hi", at: 1 },
+        { id: "b2", role: "bot", kind: "text", text: "one", at: 2 },
+        { id: "b3", role: "bot", kind: "text", text: "two", at: 3 },
+      ] as Bot["messages"],
+    })], groups: [], sections: [] };
+    const html = render();
+    expect(html).toContain('data-unread-count="2"');
+    expect(html).toContain(">2<");
+    expect(html).not.toContain("data-sidebar-unread-dot");
+  });
+
   it("bolds an unread room and draws no dot", () => {
     fixture.state = { bots: [], groups: [room("read-room"), room("new-room", { unread: true })], sections: [] };
     const html = render();

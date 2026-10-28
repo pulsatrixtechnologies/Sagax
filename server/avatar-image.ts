@@ -10,6 +10,17 @@ export const AVATAR_DIRECTION_MAX_CHARS = 400;
 export const AVATAR_IMAGE_TIMEOUT_MS = 120_000;
 const MAX_UPSTREAM_RESPONSE_BYTES = 15 * 1024 * 1024;
 
+/** A direction that asks for a real person's likeness. The person chooses
+ * the avatar, or describes a drawn character. Generation does not make a
+ * photograph of someone. */
+const REAL_PERSON_AVATAR = /\b(?:photorealistic|photograph|photo of|photo de|headshot|selfie|real person|personne r[eé]elle|likeness of)\b/i;
+
+export function avatarDirectionRefusal(direction: string): string | null {
+  const text = direction.trim();
+  if (!text || !REAL_PERSON_AVATAR.test(text)) return null;
+  return "Choose a picture, or describe a drawn character. An avatar is not a generated image of a real person.";
+}
+
 export const avatarGenerationRequestSchema = z.object({
   prompt: z.string().trim().max(AVATAR_DIRECTION_MAX_CHARS).default(""),
 });
@@ -135,6 +146,8 @@ export async function generateAvatarImage(
   fetchImpl: typeof fetch = fetch,
   timeoutMs = AVATAR_IMAGE_TIMEOUT_MS,
 ): Promise<GeneratedAvatarImage> {
+  const refused = avatarDirectionRefusal(direction);
+  if (refused) throw Object.assign(new Error(refused), { status: 400 });
   const settings = avatarImageStatus(cfg);
   const { provider, model } = settings;
   if (!settings.configured) {

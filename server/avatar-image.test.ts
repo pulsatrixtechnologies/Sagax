@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  avatarDirectionRefusal,
   avatarGenerationStateMatches,
   avatarGenerationPrompt,
   avatarGenerationRequestSchema,
@@ -42,6 +43,13 @@ describe("avatar image generation", () => {
 
     expect(avatarGenerationStateMatches(initial, mutable)).toBe(false);
     expect(initial).toEqual({ avatarUrl: "/api/attachments/old.webp", avatarCrop: "circle" });
+  });
+
+  it("refuses a generated image of a real person and does not call the provider", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => imageResponse(WEBP));
+    expect(avatarDirectionRefusal("a blue owl")).toBeNull();
+    await expect(generateAvatarImage(OPENAI, BOT, "photo of a coworker", fetchMock)).rejects.toMatchObject({ status: 400 });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("uses one low-quality square GPT Image 2 request and decodes WebP bytes", async () => {
