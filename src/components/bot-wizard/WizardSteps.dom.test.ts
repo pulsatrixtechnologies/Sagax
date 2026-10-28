@@ -23,6 +23,7 @@ vi.mock("../bot-settings/SoulSection", () => ({ SoulSection: () => createElement
 vi.mock("../bot-settings/PermissionsSection", () => ({ PermissionsSection: ({ part }: { part: string }) => createElement("div", { "data-stub": `permissions:${part}` }) }));
 vi.mock("../bot-settings/AccessSection", () => ({ AccessSection: ({ part }: { part: string }) => createElement("div", { "data-stub": `access:${part}` }) }));
 vi.mock("../computer/WorksOnSetting", () => ({ WorksOnSetting: () => createElement("div", { "data-stub": "works-on" }) }));
+vi.mock("../ModelPicker", () => ({ ModelPicker: ({ bot: shown, contained }: { bot: { id: string }; contained?: boolean }) => createElement("div", { "data-stub": `model:${shown.id}:${contained ? "contained" : "chip"}` }) }));
 
 const { StepBody } = await import("./WizardSteps");
 
@@ -61,6 +62,13 @@ describe("wizard steps", () => {
     await act(async () => { options.find((option) => option.textContent?.includes("Coding partner"))!.click(); });
     expect(patch).toHaveBeenCalledWith({ roleId: "coder" });
     expect(fixture.patchBot).toHaveBeenCalledWith(expect.objectContaining({ title: "Coding partner", soul: expect.stringContaining("careful engineer") }));
+  });
+
+  it("Identity (#1451): the model is chosen on the new bot itself, through the model picker", () => {
+    const { value } = props("");
+    act(() => root.render(createElement(StepBody, { ...value, step: "identity" })));
+    expect(container.querySelector("[data-wizard-model]")).not.toBeNull();
+    expect(container.querySelector('[data-stub="model:bot-1:contained"]')).not.toBeNull();
   });
 
   it("Soul: a suggestion fills an answer, and Write it for me writes the soul from the answers", async () => {

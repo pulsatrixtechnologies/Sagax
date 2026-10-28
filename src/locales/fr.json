@@ -10864,6 +10864,8 @@
   "botWizard.other.quick": "Création rapide",
   "botWizard.other.quickHint": "Crée le bot tout de suite avec les valeurs par défaut de ce serveur. Vous pourrez tout changer ensuite.",
   "botWizard.identity.descriptionHelp": "Son rôle en une phrase, affiché dans les listes, sur le téléphone et aux autres bots. Les instructions plus longues vont à l'étape Soul.",
+  "botWizard.identity.model": "Modèle",
+  "botWizard.identity.modelHelp": "Seuls les modèles que vous pouvez utiliser sont proposés. Vous pourrez le changer plus tard dans les réglages du bot.",
   "botWizard.rules.effect.off": "Non",
   "botWizard.rules.effect.offHint": "Pas utilisée : aucune règle pour ce bot",
   "botWizard.rules.effect.allow": "Autoriser",

@@ -536,7 +536,7 @@ import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, t
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
-import { autoNewBotSelection, memberNewBotSelection, readyToRun, starredModelSelections, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, instancesForPerson, memberNewBotSelection, readyToRun, starredModelSelections, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
@@ -6387,8 +6387,33 @@ async function memberDefaultSelection(principalId: string | null | undefined): P
     const own = person.find((candidate) => hostedModels!.allows(candidate));
     return own ?? hostedModels.select(organization ?? cfg.defaultModelSelection ?? undefined);
   }
-  return memberNewBotSelection(selectableInstances<SelectableInstance>(await registry.describe()),
-    { person, organization, server: cfg.defaultModelSelection ?? null }, selectionContextFor(principalId));
+  // #1445: every level is judged on what this person can run (their
+  // subscription, their key, the organization's key when it was given to
+  // them), never on the server's own sign-in.
+  const instances = instancesForPerson(selectableInstances<SelectableInstance>(await registry.describe()),
+    (instance) => personRunsEngine(principalId, instance));
+  return memberNewBotSelection(instances, { person, organization, server: cfg.defaultModelSelection ?? null }, selectionContextFor(principalId));
+}
+/** #1445: whether something pays for this person's own turn on this engine
+ * (engine-credentials.ts, the same order a turn uses). Solo: always. A pi
+ * model on the server's local host needs no key (#1422). */
+function personRunsEngine(principalId: string | null | undefined, instance: SelectableInstance): boolean {
+  if (IDENTITY.kind !== "perspicax") return true;
+  const id = principalId?.trim().toLowerCase() ?? "";
+  if (!id || !isPrincipalId(id)) return false;
+  if (piLocalModel({ instanceId: instance.instanceId, model: instance.models.default })) return true;
+  return resolveEngineAccess({
+    identity: IDENTITY.kind,
+    speaker: { origin: "person", principalId: id },
+    owner: { principalId: id, ...orgPersonFacts(principals.byId(id)) },
+    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId) },
+    subscriptionSignedIn: (pid, driver) => engineLogins?.signedIn(pid, driver) ?? false,
+    hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
+    keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
+    hasLocalKey: (pid, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId: pid }, driver),
+    serverEngineAllowed: serverEngineAllowedFor,
+    orgEngineAllowed: consoleEngineAllowed(instance.instanceId),
+  }).ok;
 }
 /** Engines that are not the person's own: a Company one. A working engine
  * of their own wins over it; the organization's engine policy applies. */
@@ -46336,6 +46361,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { section: name, sections: store.sections, bots: result.bots.map(wireBot) });
     }
     if (method === "GET" && path === "/api/bot-defaults") {
+      // #1445: a member's new bot is not built from the admin's template
+      // (POST /api/bots): the model it starts on is the one chosen for them,
+      // among what they can run.
+      const member = auth.kind === "session" && !auth.scopes.includes("admin");
       return json(res, 200, {
         defaults: structuredClone(cfg.newBotDefaults ?? newBotDefaultsSchema.parse({})),
         // 2026-10-11: what a new bot starts on when the template names no
@@ -46344,7 +46373,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // A new bot opens on Auto (docs/plans/2026-10-08-auto-model.md): the
         // engine is auto-resolved, the model is Auto. A template that pins a
         // model wins over this on the client, so an advanced default is kept.
-        modelSelection: autoNewBotSelection(await defaultSelection()),
+        modelSelection: member ? await memberDefaultSelection(sessionPrincipal(auth)) : autoNewBotSelection(await defaultSelection()),
+        ...(member ? { memberDefault: true } : {}),
         suggestedName: pickBotName(store.bots.map(bot => bot.name)),
       });
     }
