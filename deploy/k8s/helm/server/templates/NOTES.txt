@@ -1,0 +1,3 @@
+Sagax server chart rendered as {{ .Release.Name }}.
+This chart is not applied by the repository. Apply it yourself only after you set image.tag and domain.
+The server keeps listening on 127.0.0.1 inside the pod. The edge proxy in the same pod publishes ports 80 and 443.

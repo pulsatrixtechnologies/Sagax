@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sagax-server.name" . }}
+  labels:
+    {{- include "sagax-server.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sagax-server.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sagax-server.selector" . | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: sagax
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: HOME
+              value: /data
+            - name: OMB_DATA_DIR
+              value: /data/.openmausbot
+            - name: OMB_PORT
+              value: "8799"
+            - name: OMB_WEBHOOK_PORT
+              value: "8800"
+            - name: OMB_PUBLIC_URL
+              value: "https://{{ .Values.domain }}"
+            - name: OMB_WEBHOOK_PUBLIC_URL
+              value: "https://{{ .Values.domain }}"
+          ports:
+            - name: app
+              containerPort: 8799
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: app
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        - name: edge
+          image: {{ .Values.edge.image }}
+          args: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+          volumeMounts:
+            - name: edge
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+            - name: caddy-data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "sagax-server.name" . }}-data
+        - name: edge
+          configMap:
+            name: {{ include "sagax-server.name" . }}-edge
+        - name: caddy-data
+          emptyDir: {}

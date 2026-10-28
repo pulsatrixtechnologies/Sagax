@@ -60,6 +60,15 @@ helm lint deploy/k8s/helm/sandboxes
 helm template sandboxes deploy/k8s/helm/sandboxes
 ```
 
+The server itself has a separate chart at `deploy/k8s/helm/server`. It installs the Sagax server image, not these sandboxes. Rendering it does not apply it. See that chart's README.
+
+## Server chart
+
+```sh
+helm lint deploy/k8s/helm/server
+helm template sagax deploy/k8s/helm/server
+```
+
 Overlays are deep-merged, not replacements:
 
 - `values.yaml` is the portable default (Longhorn, encryption required).

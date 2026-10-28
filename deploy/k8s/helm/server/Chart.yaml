@@ -1,0 +1,7 @@
+apiVersion: v2
+name: sagax-server
+description: The Sagax server for a self-hosted install. Rendered only. Nothing in this repo applies it to a cluster.
+type: application
+version: 0.1.0
+appVersion: "0.8.5"
+kubeVersion: ">= 1.29.0-0"
