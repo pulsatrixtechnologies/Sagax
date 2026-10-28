@@ -29,6 +29,8 @@ onlyBuiltDependencies:
 # vitest 5.x's own @vitest/mocker 5.x untouched.
 overrides:
   dompurify: 3.4.17
+  # ajv 8.20 still allows fast-uri 3.1.8. 3.1.9 fixes the published advisories.
+  fast-uri: 3.1.9
   "@vitest/mocker@<4.1.12": 4.1.12
   sharp@<0.35.5: 0.35.5
   katex@<0.18.2: 0.18.2
