@@ -1,0 +1,102 @@
+{
+  "_comment": "_x.ai/mcp/list as grok 1.0.46 and 1.0.70 answer it on a signed-in xAI account whose grok.com connectors include Microsoft Teams and Outlook, with GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=true (measured 2026-10-28; tools trimmed, the real account had 488). Without the variable the two managed_gateway servers are absent.",
+  "sessionMcpResolved": true,
+  "servers": [
+    {
+      "name": "managed_gateway:cursor",
+      "displayName": "Cursor (user-Teams)",
+      "source": "managed",
+      "type": "managedGateway",
+      "session": {
+        "enabled": true,
+        "status": "ready",
+        "tools": [
+          {
+            "name": "cursor__user-Teams-get_5fme___10",
+            "displayName": "Get Me",
+            "description": "Get the signed-in user's profile (name, email, job title). Useful to confirm which account is connected.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Teams-list_5fchats___10",
+            "displayName": "List Chats",
+            "description": "List the chats of the signed-in user.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Teams-send_5fchat_5fmessage___10",
+            "displayName": "Send Chat Message",
+            "description": "Send a message in a chat.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Teams-list_5fchannel_5fmessage_5freplies___10",
+            "displayName": "List Channel Message Replies",
+            "description": "List the replies to a channel message.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Outlook-list_5fmail_5fmessages___12",
+            "displayName": "List Mail Messages",
+            "description": "List mail messages.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Outlook-send_5fmail___12",
+            "displayName": "Send Mail",
+            "description": "Send a mail message.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Outlook-delete_5fmail_5fmessage___12",
+            "displayName": "Delete Mail Message",
+            "description": "Delete a mail message.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Outlook-calendar-respond_5fto_5fcalendar_5fevent___21",
+            "displayName": "Respond To Calendar Event",
+            "description": "Accept, decline or tentatively accept an event.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Outlook-calendar-list_5fcalendar_5fevents___21",
+            "displayName": "List Calendar Events",
+            "description": "List calendar events.",
+            "enabled": true
+          },
+          {
+            "name": "cursor__user-Docs_20Hub-search___7",
+            "displayName": "Search",
+            "description": "Search the documents.",
+            "enabled": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "managed_gateway:tasks",
+      "displayName": "Automations",
+      "source": "managed",
+      "type": "managedGateway",
+      "session": {
+        "enabled": true,
+        "status": "ready",
+        "tools": [
+          {
+            "name": "tasks__create",
+            "displayName": "Create",
+            "description": "Create a new automation.",
+            "enabled": true
+          },
+          {
+            "name": "tasks__list",
+            "displayName": "List",
+            "description": "List automations.",
+            "enabled": true
+          }
+        ]
+      }
+    }
+  ]
+}

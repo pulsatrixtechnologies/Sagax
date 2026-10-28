@@ -13,6 +13,7 @@
 //   - a question about connectors or tools is answered with no call;
 //   - a known tool is called with use_tool directly, no search first.
 // Measured on the local bench (perf/instant-tool-turns): see the PR.
+import { GROK_CLOUD_CONNECTORS, grokGatewayToolConnector, isGrokGatewayServer } from "../../../shared/grok-cloud-connectors.ts";
 import { GROK_KNOWN_TOOLS_SECTION } from "./grok-tool-usage.ts";
 
 export interface GrokCatalogServer {
@@ -20,10 +21,20 @@ export interface GrokCatalogServer {
   /** ready, or why not (unavailable, failed, needs sign-in) */
   status: string;
   tools: string[];
+  /** grok's managed MCP gateway (`managed_gateway:cursor`): the grok.com
+   * connectors of the xAI account, each tool name already qualified for
+   * use_tool (shared/grok-cloud-connectors.ts). */
+  gateway?: true;
+  /** what Grok calls it ("Automations") */
+  displayName?: string;
 }
 
 const NAME = /^[\w .()@:-]{1,80}$/;
 const TOOL = /^[A-Za-z0-9][\w.-]{0,63}$/;
+/** Grok's catalog keys run to 256 characters (its docs: the 64 cap is only
+ * for search_tool/use_tool as function names); gateway names are long
+ * (`cursor__user-Outlook-calendar-respond_5fto_5fcalendar_5fevent___21`). */
+const GATEWAY_TOOL = /^[A-Za-z0-9][\w.-]{0,255}$/;
 
 /** The servers of an `_x.ai/mcp/list` answer (the request's `result`),
  * enabled ones only; undefined when the answer is unreadable. */
@@ -39,12 +50,18 @@ export function readGrokCatalog(result: unknown): GrokCatalogServer[] | undefine
     const status = session.authRequired === true && session.status !== "ready"
       ? "needs sign-in"
       : typeof session.status === "string" ? session.status.toLowerCase() : "unknown";
+    const gateway = isGrokGatewayServer(name, raw?.type);
+    const shape = gateway ? GATEWAY_TOOL : TOOL;
     const tools = Array.isArray(session.tools)
       ? session.tools
-        .filter((tool: { name?: unknown; enabled?: unknown } | null) => tool && typeof tool.name === "string" && tool.enabled !== false && TOOL.test(tool.name))
+        .filter((tool: { name?: unknown; enabled?: unknown } | null) => tool && typeof tool.name === "string" && tool.enabled !== false && shape.test(tool.name))
         .map((tool: { name: string }) => tool.name)
       : [];
-    servers.push({ name, status, tools: [...new Set<string>(tools)].sort((a, b) => a.localeCompare(b)) });
+    const displayName = typeof raw?.displayName === "string" && NAME.test(raw.displayName.trim()) ? raw.displayName.trim() : undefined;
+    servers.push({
+      name, status, tools: [...new Set<string>(tools)].sort((a, b) => a.localeCompare(b)),
+      ...(gateway ? { gateway: true as const } : {}), ...(gateway && displayName ? { displayName } : {}),
+    });
   }
   return servers.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -92,7 +109,65 @@ export function reconcileConnectable(
   connectable: readonly { id: string; label: string }[],
   catalog: readonly GrokCatalogServer[],
 ): { id: string; label: string }[] {
-  return connectable.filter((connector) => !catalog.some((server) => sameConnector(connector.id, server.name)));
+  const carried = grokGatewayConnectors(catalog);
+  return connectable.filter((connector) =>
+    !carried.some((group) => group.id === connector.id) && !catalog.some((server) => !server.gateway && sameConnector(connector.id, server.name)));
+}
+
+export interface GrokGatewayConnector {
+  /** GROK_CLOUD_CONNECTORS id, when it is one */
+  id?: string;
+  /** "Microsoft Teams" for a known one, else grok.com's own name */
+  label: string;
+  /** use_tool names, sorted */
+  tools: string[];
+}
+
+/** The grok.com connectors a ready gateway server carries, by connector
+ * (Teams, Outlook...), then the gateway's other tools under its own name
+ * (Automations). Empty when the catalog has no gateway. */
+export function grokGatewayConnectors(catalog: readonly GrokCatalogServer[]): GrokGatewayConnector[] {
+  const groups = new Map<string, GrokGatewayConnector>();
+  for (const server of catalog) {
+    if (!server.gateway || server.status !== "ready") continue;
+    for (const tool of server.tools) {
+      const connector = grokGatewayToolConnector(tool);
+      const known = connector?.id ? GROK_CLOUD_CONNECTORS.find((entry) => entry.id === connector.id) : undefined;
+      const label = known?.name ?? connector?.name ?? server.displayName ?? server.name;
+      const key = known?.id ?? label.toLowerCase();
+      const group = groups.get(key) ?? { ...(known ? { id: known.id } : {}), label, tools: [] };
+      group.tools.push(tool);
+      groups.set(key, group);
+    }
+  }
+  return [...groups.values()].sort((a, b) => Number(!a.id) - Number(!b.id) || a.label.localeCompare(b.label));
+}
+
+/** What the xAI account of a Grok sign-in brought on its last turn, by its
+ * engine home (the person's subscription folder), so Sagax knows a Grok
+ * engine's reach (index.ts engineReachFor, the connector switch and the
+ * setup card) instead of guessing. In memory, bounded. */
+export interface GrokAccountReach {
+  /** any managed gateway server at all in the catalog */
+  gateway: boolean;
+  /** GROK_CLOUD_CONNECTORS ids the gateway carries */
+  connectors: string[];
+  at: number;
+}
+const REACH_MAX = 512;
+const reachByHome = new Map<string, GrokAccountReach>();
+
+export function noteGrokAccountReach(home: string | undefined, result: unknown, at = Date.now()): void {
+  const catalog = readGrokCatalog(result);
+  if (!home || !catalog) return;
+  const connectors = grokGatewayConnectors(catalog).flatMap((group) => (group.id ? [group.id] : []));
+  reachByHome.delete(home);
+  reachByHome.set(home, { gateway: catalog.some((server) => server.gateway), connectors, at });
+  while (reachByHome.size > REACH_MAX) reachByHome.delete(reachByHome.keys().next().value!);
+}
+
+export function grokAccountReach(home: string | undefined): GrokAccountReach | undefined {
+  return home ? reachByHome.get(home) : undefined;
 }
 
 /** The section naming the catalog (and the bot's known and pinned tools),
@@ -117,13 +192,14 @@ export function grokCatalogSection(input: {
 }): { id: string; text: string } | null {
   const catalog = input.catalog ?? [];
   const favored = new Set([...(input.known ?? []), ...(input.pinned ?? [])]);
-  const ready = catalog.filter((server) => server.status === "ready" && server.tools.length > 0);
+  const ready = catalog.filter((server) => !server.gateway && server.status === "ready" && server.tools.length > 0);
+  const gatewayGroups = grokGatewayConnectors(catalog);
   const notReady = catalog.filter((server) => server.status !== "ready");
   const pinnedLines = input.lines?.filter(Boolean) ?? [];
   // A connectable connector already in the catalog (ready or needs sign-in)
   // is handled above: keep only the ones the live list does not know at all.
   const connectable = reconcileConnectable(input.connectable ?? [], catalog);
-  if (!ready.length && !notReady.length && !favored.size && !pinnedLines.length && !connectable.length) return null;
+  if (!ready.length && !notReady.length && !favored.size && !pinnedLines.length && !connectable.length && !gatewayGroups.length) return null;
   const rows: string[] = [];
   let truncated = false;
   for (const server of ready) {
@@ -144,10 +220,21 @@ export function grokCatalogSection(input: {
   // Connectors on the Connect-apps card that bring no tool until the person
   // connects them: say so plainly and point at the one-step connect card, so
   // the model neither claims it can read/send nor dead-ends with "no tool".
+  // A catalog that holds no gateway server at all: Grok brought no grok.com
+  // connector for this sign-in, whatever grok.com shows in the browser (a
+  // connector added under another xAI account or team is not this one's).
+  const noGateway = input.catalog !== undefined && !catalog.some((server) => server.gateway);
   const connectableLine = connectable.length
-    ? `\nConnectable but not connected yet on this xAI account (you have NO tool for these until the person connects them): ${connectable.map((connector) => connector.label).join(", ")}. To use one, call use_tool with tool_name agents__open_connector_setup once (it posts the Connect card for the person's own browser); never say you simply cannot, and never claim it works until a call to it has succeeded.`
+    ? `\nConnectable but not connected yet on this xAI account (you have NO tool for these until the person connects them): ${connectable.map((connector) => connector.label).join(", ")}.${noGateway ? " Grok returned no grok.com connector at all for this sign-in: a connector added on grok.com under another xAI account or team workspace is not visible to it." : ""} To use one, call use_tool with tool_name agents__open_connector_setup once (it posts the Connect card for the person's own browser); never say you simply cannot, and never claim it works until a call to it has succeeded.`
+    : "";
+  // 2026-10-28: grok.com's connectors come through ONE gateway server whose
+  // tool names already carry the connector; said by connector, with one
+  // exact name to call, never as `<server>__<tool>`.
+  const gatewayLine = gatewayGroups.length
+    ? `\nConnected on this xAI account through grok.com (these ARE your tools for them; call use_tool with the full tool name, exactly as written, never prefixed with a server name; search_tool with the connector's name lists the others): ${gatewayGroups.map((group) => `${group.label} (${group.tools.length} tool${group.tools.length === 1 ? "" : "s"}, e.g. ${exampleTool(group.tools)})`).join("; ")}.`
     : "";
   const tail =
+    gatewayLine +
     (notReady.length ? `\nNot connected now: ${notReady.map((server) => `${server.name} (${server.status})`).join(", ")}.` : "") +
     connectableLine +
     (pinnedLines.length ? `\n${pinnedLines.join("\n")}` : "") +
@@ -156,7 +243,7 @@ export function grokCatalogSection(input: {
   // A server shown with a count is not listed in full, and a connectable
   // connector means more can still be added: never call the live list
   // complete in either case.
-  const header = !ready.length ? ""
+  const header = !ready.length ? (gatewayGroups.length ? "Your MCP tools on this turn. Answer what connectors, tools or access you have from this, without calling a tool." : "")
     : truncated || connectable.length
       ? "Your MCP tools on this turn, by server (use_tool takes <server>__<tool>); a server shown with a count has more, found with search_tool. Answer what connectors, tools or access you have from this, without calling a tool."
       : "Your MCP tools on this turn, by server (use_tool takes <server>__<tool>). This list is complete: answer what connectors, tools or access you have from it, without calling a tool.";
@@ -183,7 +270,13 @@ export function grokCatalogSection(input: {
   return { id: GROK_KNOWN_TOOLS_SECTION, text };
 }
 
+/** A read-only tool to name as the example: the model's first call is a safe one. */
+function exampleTool(tools: readonly string[]): string {
+  return tools.find((tool) => /(?:^|[-_])(?:list|get|search)(?:_5f|_|$)/i.test(tool.replace(/^[^_]+__/, ""))) ?? tools[0]!;
+}
+
 /** Test seam. */
 export function resetGrokCatalogs(): void {
   catalogs.clear();
+  reachByHome.clear();
 }

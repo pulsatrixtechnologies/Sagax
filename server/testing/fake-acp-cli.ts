@@ -95,6 +95,8 @@
 //   FAKE_ACP_MCP_TRANSPORTS  comma list of remote MCP transports the agent
 //                       advertises in initialize (mcpCapabilities), e.g. "http,sse"
 //   FAKE_ACP_PERMISSION_OPTIONS JSON options override in permission mode
+//   FAKE_ACP_MCP_LIST_FILE  JSON answer to _x.ai/mcp/list (its managedGateway
+//                   servers only when GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=true).
 //   FAKE_ACP_DUMP   path to write {argv, env} as JSON, so a test can assert
 //                   argv shape (agent/stdio flags) and env hygiene
 //   FAKE_ACP_LAUNCH_COUNT_FILE  read-increment-write a process counter at
@@ -838,9 +840,16 @@ function handle(msg: any) {
       }
       result(msg.id, {});
       break;
-    case "_x.ai/mcp/list":
-      result(msg.id, { result: { servers: [], sessionMcpResolved: true } });
+    case "_x.ai/mcp/list": {
+      // FAKE_ACP_MCP_LIST_FILE: the managed servers of a real answer
+      // (grok-gateway-mcp-list.json), shown only when the turn turned the
+      // gateway on, as grok does (GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED)
+      const listFile = process.env.FAKE_ACP_MCP_LIST_FILE;
+      const recorded = listFile ? JSON.parse(readFileSync(listFile, "utf8")) as { servers?: Array<{ type?: string }> } : null;
+      const servers = (recorded?.servers ?? []).filter((server) => server.type !== "managedGateway" || process.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED === "true");
+      result(msg.id, { result: { servers, sessionMcpResolved: true } });
       break;
+    }
     case "session/new": {
       if (failRpc(msg)) break;
       if (mode === "auth-required") {

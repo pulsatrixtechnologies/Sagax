@@ -12,7 +12,7 @@
 //   - which connector calls act outside the app (a mail sent, a Teams post,
 //     an invitation, a SharePoint write), so the outbound guard
 //     (shared/outbound.ts) keeps their approval card at every level but Full.
-import { GROK_CLOUD_CONNECTORS } from "./grok-cloud-connectors.ts";
+import { decodeGrokGatewayName, GROK_CLOUD_CONNECTORS, grokGatewayToolConnector } from "./grok-cloud-connectors.ts";
 
 export type ConnectorCapability = "mail" | "calendar" | "teams" | "sharepoint" | "files";
 export const CONNECTOR_CAPABILITIES: readonly ConnectorCapability[] = ["mail", "calendar", "teams", "sharepoint", "files"];
@@ -111,7 +111,9 @@ export type ConnectorWriteKind =
  * mcp__claude_ai_Microsoft_365__outlook_send_mail is CLAUDE AI MICROSOFT
  * 365 OUTLOOK SEND MAIL; Grok's own outlook__send_email works the same. */
 function words(name: string): string[] {
-  return name
+  // grok's gateway escapes, in its names only: send_5fchat_5fmessage is
+  // SEND CHAT MESSAGE (an ordinary outlook_delete_event keeps its "_de")
+  return (/(?:^|__)(?:user|team|org|workspace)-[^-_]/.test(name) ? decodeGrokGatewayName(name) : name)
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .toUpperCase()
     .split(/[^A-Z0-9]+/)
@@ -191,6 +193,9 @@ export function connectorWriteKind(name: string): ConnectorWriteKind | null {
     if (any(action, SEND)) return "mail-send";
   }
   if (parsed && isEngineConnectorServer(parsed.server)) return "other-write";
+  // a grok.com connector reached through grok's managed gateway
+  // (`cursor__user-Outlook-delete_5fmail_5fmessage___12`): fail closed too
+  if (grokGatewayToolConnector(name)?.id) return "other-write";
   return null;
 }
 

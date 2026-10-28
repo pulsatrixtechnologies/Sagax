@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   capabilityRoutes,
+  connectorCallReads,
   connectorNeed,
   isEngineConnectorServer,
   claudeAiConnectorCapabilities,
@@ -96,6 +97,20 @@ describe("connector calls that act outside the app", () => {
     "read_resource",
   ])("Microsoft 365 %s only reads or drafts", (tool) => {
     expect(connectorWriteKind(`${M365}${tool}`)).toBeNull();
+  });
+
+  it("reads grok's managed gateway names, escapes decoded (2026-10-28)", () => {
+    expect(connectorWriteKind("cursor__user-Teams-send_5fchat_5fmessage___10")).toBe("teams-post");
+    expect(connectorWriteKind("cursor__user-Teams-create_5fchat___10")).toBe("teams-chat");
+    expect(connectorWriteKind("cursor__user-Outlook-send_5fmail___12")).toBe("mail-send");
+    expect(connectorWriteKind("cursor__user-Outlook-calendar-create_5fcalendar_5fevent___21")).toBe("calendar-invite");
+    expect(connectorWriteKind("cursor__user-Outlook-calendar-respond_5fto_5fcalendar_5fevent___21")).toBe("calendar-respond");
+    // fail closed: an act with no known kind still keeps its card
+    expect(connectorWriteKind("cursor__user-Outlook-delete_5fmail_5ffolder___12")).toBe("other-write");
+    expect(connectorWriteKind("cursor__user-Teams-list_5fchats___10")).toBeNull();
+    expect(connectorWriteKind("cursor__user-Outlook-create_5fdraft___12")).toBeNull();
+    expect(connectorCallReads("cursor__user-Outlook-list_5fmail_5fmessages___12")).toBe(true);
+    expect(connectorCallReads("cursor__user-Outlook-send_5fmail___12")).toBe(false);
   });
 
   it("reads a Grok cloud connector's own names and Google Calendar the same way", () => {

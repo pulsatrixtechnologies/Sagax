@@ -20,6 +20,7 @@ let claudeInventory: Array<{ name: string; status: string }> | null = null;
 let claudeReads = 0;
 let clock = 1_000;
 let proofs: ConnectorSetupProofs;
+let grokReach: Record<string, { connectors: string[]; at: number }> = {};
 
 beforeEach(async () => {
   rows = [];
@@ -30,6 +31,7 @@ beforeEach(async () => {
   claudeReads = 0;
   clock = 1_000;
   proofs = createConnectorSetupProofs();
+  grokReach = {};
   let seq = 0;
   const shared = {
     cards: (threadId: string) => threadId === "t1"
@@ -42,6 +44,7 @@ beforeEach(async () => {
       if (row) row.connectorSetup = view;
     },
     now: () => clock,
+    grokReach: (principalId: string) => grokReach[principalId],
   };
   const internal = createConnectorSetupInternalRoutes({
     ...shared,
@@ -159,6 +162,32 @@ describe("the card's check (person route)", () => {
     clock = 4_000;
     expect((await check(id)).body.view?.status).toBe("connected");
     expect(rows[0]!.connectorSetup?.status).toBe("connected");
+  });
+
+  it("Grok: connected once a later turn of the person's own catalog carries it through grok's gateway (2026-10-28)", async () => {
+    await open({ connector: "Teams" });
+    const id = rows[0]!.connectorSetup!.id;
+    // read before the card: no evidence; another person's reach: none either
+    grokReach = { pr_a: { connectors: ["microsoft-teams"], at: 500 }, pr_b: { connectors: ["microsoft-teams"], at: 5_000 } };
+    clock = 2_000;
+    expect((await check(id)).body.view?.status).toBe("pending");
+    grokReach.pr_a = { connectors: ["outlook"], at: 3_000 };
+    expect((await check(id)).body.view?.status).toBe("pending");
+    // a gateway call is proof as well
+    proofs.record({ threadId: "t1", botId: "b1", principalId: "pr_a", name: "use_tool", input: JSON.stringify({ tool_name: "cursor__user-Outlook-list_5fmail_5fmessages___12" }), ok: true, at: 3_100 });
+    expect((await check(id)).body.view?.status).toBe("pending");
+    grokReach.pr_a = { connectors: ["outlook", "microsoft-teams"], at: 3_500 };
+    expect((await check(id)).body.view?.status).toBe("connected");
+  });
+
+  it("Grok: no card when the person's Grok catalog already carries the connector", async () => {
+    grokReach = { pr_a: { connectors: ["microsoft-teams"], at: 500 } };
+    const out = await open({ connector: "Microsoft Teams" });
+    expect(out.body).toMatchObject({ ok: true, route: "grok", status: "connected", card: "none" });
+    expect(String(out.body.note)).toMatch(/already connected/);
+    expect(rows).toHaveLength(0);
+    // Outlook is not there: its card is posted
+    expect((await open({ connector: "Outlook" })).body).toMatchObject({ card: "posted" });
   });
 
   it("Claude: reads the inventory again and says connected only when it shows it", async () => {

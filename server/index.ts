@@ -868,6 +868,7 @@ import { createRemoteSessionsAdminRoutes } from "./routes/remote-sessions-admin.
 import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
 import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
 import { installResourceUsage } from "./resource-usage/install.ts";
+import { grokAccountReach } from "./drivers/acp/grok-tool-catalog.ts";
 import { createConnectorSetupInternalRoutes, createConnectorSetupProofs, createConnectorSetupRoutes, type ConnectorSetupContext } from "./routes/connector-setup.ts";
 import type { ConnectorSetupView } from "../shared/connector-setup.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
@@ -37531,6 +37532,8 @@ function connectorSetupStore() {
     proofs: () => connectorSetupProofs,
     botOf: (threadId: string) => store.botByThread(threadId)?.id,
     patch: (threadId: string, messageId: string, view: ConnectorSetupView) => { store.patchMessage(threadId, messageId, { connectorSetup: view }); },
+    // the person's own Grok sign-in folder, as their turns run it (engine-credentials.ts)
+    grokReach: (principalId: string) => grokAccountReach(principalLoginDir(principalId, "grokAgent")),
   };
 }
 /** The person a sign-in card is for: the one speaking, never a routine or a peer. */

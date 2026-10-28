@@ -59,6 +59,39 @@ tool selection, and `false` everywhere else (`grokCloudConnectorEnv`). A
 gateway call is a `use_tool` call to a server Sagax did not mount, so it
 keeps its card below Full access (connector-ask.ts).
 
+## Grok's gateway connectors are read by tool name (2026-10-28)
+
+Measured on grok 1.0.46 and 1.0.70: with the gateway on, `_x.ai/mcp/list`
+carries the grok.com connectors as ONE server, `managed_gateway:cursor`
+(type `managedGateway`), beside `managed_gateway:tasks` (Automations). The
+connector is in each tool name, already qualified for `use_tool`, with
+`_XX` hex escapes: `cursor__user-Teams-list_5fchats___10`,
+`cursor__user-Outlook-send_5fmail___12`,
+`cursor__user-Outlook-calendar-create_5fcalendar_5fevent___21`. There is
+no `microsoft_teams` or `outlook` server, so Sagax (looking for one) told
+a turn that HAD Teams and Outlook "Connectable but not connected yet ...
+you have NO tool", and a card never turned Connected.
+- `shared/grok-cloud-connectors.ts` `grokGatewayToolConnector` reads the
+  connector from a tool name (`decodeGrokGatewayName` for the escapes).
+- `grok-tool-catalog.ts`: gateway tools are kept up to 256 characters
+  (Grok's catalog keys; the 64 cap is only for function names), grouped by
+  connector ("Connected on this xAI account through grok.com: Microsoft
+  Teams (n tools, e.g. <exact name>)"), never offered as connectable, never
+  shown as `<server>__<tool>`. A catalog with no gateway server at all says
+  Grok returned no grok.com connector for this sign-in (one added under
+  another xAI account or team workspace is not visible to it).
+- What a person's own Grok sign-in brought is kept by its folder
+  (`noteGrokAccountReach`, own-account organization turns only). The card
+  says Connected on a gateway call to that connector or on a later catalog
+  of that person that carries it; `open_connector_setup` posts no card for
+  a connector the catalog already carries.
+- `connectorWriteKind` decodes the escapes in gateway names and fails
+  closed (`other-write`) on an unknown act of a known connector.
+- Tests: `server/testing/grok-gateway-mcp-list.json` (the real answer's
+  shape, trimmed), the fake CLI's `FAKE_ACP_MCP_LIST_FILE`, `acp.test.ts`,
+  `grok-tool-catalog.test.ts`, `connector-setup.test.ts` (shared and route),
+  `engine-connectors.test.ts`.
+
 ## Page view (2026-10-28)
 
 A page a bot proposes shows in the conversation as a card with a live,
