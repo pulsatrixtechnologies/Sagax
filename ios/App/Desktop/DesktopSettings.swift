@@ -399,7 +399,7 @@ struct DesktopSettingsPage: View {
         case .experimental: AnyView(DesktopExperimentalSettings())
         case .connections: AnyView(DesktopAPIKeysSettings())
         // 2026-10-27: GitHub and the person's MCP servers live in Connect
-        // apps (Sources, My accounts); this page links there
+        // apps (Sources, Providers); this page links there
         case .myConnections: AnyView(DesktopMyConnectionsLinks())
         case .decisionModel: AnyView(DesktopDecisionModelSettings())
         // Models and voice (#518): the providers, then API keys and the

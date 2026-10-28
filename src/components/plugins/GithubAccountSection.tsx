@@ -1,4 +1,4 @@
-// Connect apps > My accounts > GitHub (2026-10-28, owner: "one GitHub
+// Connect apps > Providers > GitHub (2026-10-28, owner: "one GitHub
 // connection, the one in Connect apps"). The person's GitHub account is the
 // one GitHub source of every use: private marketplaces, gh and git in their
 // bots, and the GitHub plugin's MCP server (its token placeholder is that

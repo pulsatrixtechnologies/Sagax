@@ -4661,8 +4661,8 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   (`githubSandboxArgv`, through `SAGAX_GH_TOKEN`, never the argv), into their
   personal servers with auth `github`, and into Sagax's own fetches for them
   (private skills, private marketplaces), and since 2026-10-28 into the
-  GitHub plugin's MCP server (its `${GITHUB_PERSONAL_ACCESS_TOKEN}`, see "My
-  accounts > GitHub" below). One connection per person.
+  GitHub plugin's MCP server (its `${GITHUB_PERSONAL_ACCESS_TOKEN}`, see "Providers
+  > GitHub" below). One connection per person.
 - Organization access tokens: since 2026-10-28 the organization's labeled
   credentials of the one list (`server/github-credentials.ts`, owner `org`),
   changed by an organization admin through `POST /api/me/github/credentials`
@@ -4687,7 +4687,7 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   marketplace known only by its marketplace.json address cannot install on
   a bot (422 `manifest_only`). Added or fetched again through a bot, a
   private marketplace reads with the credential that bot picks for it (the
-  one list, My accounts > GitHub), else the person's GitHub connection, then
+  one list, Providers > GitHub), else the person's GitHub connection, then
   their other credentials and the organization's; the bot listing says
   `hasToken` (a pick), never the token, and `updateAvailable` when
   the marketplace offers another version or other files (Install again
@@ -4768,7 +4768,8 @@ image rebuilt.
 Owner's redesign (after #1153 and #1194): "Manage plugins and skills" moved up
 into Connect apps, which is now one page (`src/components/plugins/ConnectAppsView.tsx`,
 wired in `PluginsPanel.tsx`; iOS `ConnectAppsPage.swift`): the title with
-"N connected", the install scope, then four tabs. No sub-page repeats a tab
+"N connected", the install scope, then five tabs (since 2026-10-28:
+Discover, Installed, Providers, Pages, Sources). No sub-page repeats a tab
 (the old home, Manage and a section opened alone with View all are gone).
 Tests: `src/components/plugins/ConnectAppsView.test.ts`,
 `src/components/PluginsPanel.layout.test.ts`, `src/lib/installed-model.test.ts`,
@@ -4788,33 +4789,41 @@ gallery `connect-apps.html?view=manage|org-settings`).
   brings ("app + 2 connectors", "plugin (marketplace) · 3 skills"), its
   state and a "..." menu: Update, For which bots, Remove. Private skills
   follow, only when there are some. The MCP surface opens here.
-- My accounts (`AccountsView`): a pill per service (All, then each engine
+- Providers (`AccountsView`): a pill per service (All, then each engine
   with connectors: Claude, Grok, ChatGPT once the server lists Codex's, and
   My MCP servers; fewer than two services, no pills). The engines'
   connectors grouped by engine (`HarnessConnectorGroups`), each card naming
   its service; the person's own MCP servers (`MyMcpServers`, organization
-  server); Claude Code on this computer (solo); the published pages (All
-  only). The "What your engines reach" panel is gone. Since 2026-10-28 a
+  server); Claude Code on this computer (solo). The "What your engines
+  reach" panel is gone. Providers was called My accounts until 2026-10-28
+  (tab id `providers`; the old id `accounts`, in a `togglePlugins` page or
+  `normalizeConnectAppsTab`, still leads there). Since 2026-10-28 a
   GitHub pill comes first: the person's GitHub account and the other
-  credentials (`GithubAccountSection`, see "My accounts > GitHub" below).
+  credentials (`GithubAccountSection`, see "Providers > GitHub" below).
+- Pages (`PublishedPagesSettings personal`, 2026-10-28, owner: pages get
+  their own tab, nothing about pages stays in Providers): "Your pages" with
+  Audience, Share, versions and Delete, and the empty line when there are
+  none. A link to `togglePlugins` page `pages` (Settings search, old
+  Settings > Pages links) opens it. iOS keeps the pages in Settings >
+  Published pages.
 - Sources (`SourcesView`): the marketplaces only (add, list, fetch again,
   remove, who sees each), then for an organization admin the allowed
   marketplaces (`OrgSourcesAccess`). The GitHub OAuth App's client id is in
   Settings > Organization (`OrgGithubApp`). Settings > Organization shows one
   link to Sources (`togglePlugins` page `sources`, also an old link to
   `organization.plugins`).
-- "N connected" (`connectedTab`) opens Installed, or My accounts when only
+- "N connected" (`connectedTab`) opens Installed, or Providers when only
   engine connectors are connected (#1194).
 - Every empty section is hidden. iOS has the same tabs (segmented) and
   pills (All, Claude, Slack, My MCP servers); its GitHub card is under Your
   connections.
 
-## My accounts > GitHub: one GitHub connection (2026-10-28)
+## Providers > GitHub: one GitHub connection (2026-10-28)
 
 Owner: Sources showed a GitHub section beside the GitHub plugin already
 Connected in Installed ("that should be only marketplaces"). One GitHub
 connection, the person's own (`server/person-connections.ts`,
-`/api/me/github/*`), in Connect apps > My accounts > GitHub
+`/api/me/github/*`), in Connect apps > Providers > GitHub
 (`GithubAccountSection`, first pill), serves every use: private marketplace
 clones, gh and git in their environment, private skills, and the GitHub
 plugin's MCP server. Sources lists marketplaces only.
@@ -4828,7 +4837,7 @@ plugin's MCP server. Sources lists marketplaces only.
   person's connection on an organization server, the operator's own
   credential solo, never the organization's), never in config.json. `GET
   /api/mcp/servers` says `github: "connected" | "missing"` for that viewer;
-  the Installed row and the server's page follow it, with "Open My accounts >
+  the Installed row and the server's page follow it, with "Open Providers >
   GitHub".
 - Connection (organization server): `MyGithubConnection`, one Connect
   GitHub (device flow when the OAuth App is set, else a token); without the
@@ -4854,7 +4863,7 @@ plugin's MCP server. Sources lists marketplaces only.
   `PUT /api/marketplaces/:name/credential`, the workspace's managers;
   `credential` on add). The listing carries `credential: { chosen?, used? }`
   (what read it last). The former token routes (`.../token`, `token` on add)
-  are gone: a credential is added in My accounts > GitHub and picked.
+  are gone: a credential is added in Providers > GitHub and picked.
 - Migration at first use (`migrateGithubCredentials`): `org-github-tokens.enc`
   (ids and labels kept) and `marketplace-tokens.enc` (each token becomes an
   `onlyWhereChosen` credential of the person who added it, else the bot's
@@ -4940,7 +4949,7 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
   capabilities `mail`, `calendar`, `teams`, `sharepoint` (and `files`), by
   claude.ai connector name (Microsoft 365, Gmail, Google Calendar, ...) and
   by Grok cloud connector id (`shared/grok-cloud-connectors.ts`). Codex and
-  Gemini bring none. Connect apps > My accounts and the engine cards
+  Gemini bring none. Connect apps > Providers and the engine cards
   (Settings > Engines) show it; the names stay read-only ("Manage on ...").
 - A turn is told what its own engine reaches (`engineConnectorsPrompt` in
   `server/harness-connectors.ts`, the "claude-ai" prompt section).

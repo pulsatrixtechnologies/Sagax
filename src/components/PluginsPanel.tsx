@@ -2,15 +2,16 @@
 // desktop assistants.
 //
 //   - Connect apps (2026-10-27, the owner: one place per subject): one page with
-//     "N connected" in its title row and four tabs. Discover (where a person
+//     "N connected" in its title row and five tabs. Discover (where a person
 //     lands: the catalog, its search, the category pills and Browse Bots),
 //     Installed (one line per thing, deduplicated, with a "..." menu:
-//     Update, For which bots, Remove; the private skills), My accounts (their
+//     Update, For which bots, Remove; the private skills), Providers (their
 //     GitHub account, the one GitHub connection of every use, with the other
 //     credentials beside it; the connectors of their engine accounts and
-//     their own MCP servers, with a pill per service) and Sources (the
+//     their own MCP servers, with a pill per service), Pages (their
+//     published pages) and Sources (the
 //     marketplaces only, and for an organization admin the allowed
-//     marketplaces). "N connected" opens Installed, or My accounts when only
+//     marketplaces). "N connected" opens Installed, or Providers when only
 //     engine connectors are connected (#1194).
 //   - Detail: one plugin's accounts, tools (a switch per MCP tool, applied to
 //     every bot) and details, with Uninstall.
@@ -76,7 +77,7 @@ import {
 } from "./McpServersPanel";
 import { IntegrationsManagedNotice, MyGithubConnection, MyMcpServers } from "./settings/MyConnectionsSettings";
 import { useServerMode } from "./ServerModeSettings";
-import { ConnectAppsView, connectAppsTabLabel, connectedCounts, type ConnectAppsTab } from "./plugins/ConnectAppsView";
+import { ConnectAppsView, connectAppsTabLabel, connectedCounts, normalizeConnectAppsTab, type ConnectAppsTab } from "./plugins/ConnectAppsView";
 import type { Crumb } from "./Breadcrumb";
 import { CATEGORY_MODAL, cardActionClass } from "./category-modal";
 import { BotCatalogPane } from "./lazy-screens";
@@ -143,7 +144,7 @@ interface HarnessAnswer {
 }
 
 /** The connectors of the person's own Claude account
- * (GET /api/me/harness-connectors): My accounts lists them by engine, and
+ * (GET /api/me/harness-connectors): Providers lists them by engine, and
  * "N connected" counts the connected ones. */
 function useHarnessConnectors() {
   const [answer, setAnswer] = useState<HarnessAnswer | null>(null);
@@ -250,7 +251,7 @@ export function PluginsPanel() {
   // Discover is where a person lands; the MCP surface (a bot's connectors,
   // the retro assistant) opens Installed, where the servers are.
   const [tab, setTab] = useState<ConnectAppsTab>(state.pluginsSurface === "mcp" ? "installed" : "discover");
-  /** the pill My accounts shows (a link to GitHub opens that one) */
+  /** the pill Providers shows (a link to GitHub opens that one) */
   const [accountService, setAccountService] = useState<AccountService>("all");
   const harness = useHarnessConnectors();
   const claudeConnectors = harness.connected;
@@ -320,27 +321,17 @@ export function PluginsPanel() {
   }, [loadBotView]);
 
   const close = useCallback(() => dispatch({ type: "togglePlugins", open: false }), [dispatch]);
-  // A link to Published pages (moved here from Settings, 2026-10-26): My
-  // accounts, scrolled to that section. A link to the organization's
-  // sources and access (Settings > Organization, 2026-10-27): Sources.
-  const pagesRequested = state.pluginsPage === "pages";
-  const sourcesRequested = state.pluginsPage === "sources";
+  // A link to one tab of Connect apps: Pages (the published pages, moved
+  // here from Settings 2026-10-26, a tab of their own since 2026-10-28),
+  // Providers (once My accounts) or Sources (the organization's sources and
+  // access, Settings > Organization, 2026-10-27).
+  const requestedTab = normalizeConnectAppsTab(state.pluginsPage);
   useEffect(() => {
-    if (!pagesRequested && !sourcesRequested) return;
+    if (requestedTab !== "pages" && requestedTab !== "providers" && requestedTab !== "sources") return;
     setScopeChoice("workspace");
     setStack([{ page: "main" }]);
-    setTab(pagesRequested ? "accounts" : "sources");
-  }, [pagesRequested, sourcesRequested]);
-  useEffect(() => {
-    if (!pagesRequested || page.page !== "main") return;
-    let frames = 0;
-    const reveal = () => {
-      const section = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-pages]");
-      if (section) section.scrollIntoView?.({ block: "start" });
-      else if (++frames < 30) requestAnimationFrame(reveal);
-    };
-    requestAnimationFrame(reveal);
-  }, [pagesRequested, page.page]);
+    setTab(requestedTab);
+  }, [requestedTab]);
   const skillsLibraryOn = skillsLibraryEnabled(state.config);
   const back = useCallback(() => setStack((current) => current.length > 1 ? current.slice(0, -1) : current), []);
   const lastPage = useRef(page.page);
@@ -530,16 +521,16 @@ export function PluginsPanel() {
       if (filter === `source:${name}`) setFilter("all");
     });
   };
-  // My accounts > GitHub: the person's GitHub account (organization server)
+  // Providers > GitHub: the person's GitHub account (organization server)
   // and the one credential list, in both scopes
   const githubHere = organization || marketRoute !== null;
-  /** My accounts, on its GitHub pill: where the GitHub connection is. */
+  /** Providers, on its GitHub pill: where the GitHub connection is. */
   const openGithub = () => {
     setStack([{ page: "main" }]);
-    setTab("accounts");
+    setTab("providers");
     setAccountService("github");
   };
-  /** Each marketplace picks a credential of the one list in My accounts >
+  /** Each marketplace picks a credential of the one list in Providers >
    * GitHub, or Automatic (2026-10-28): that bot's pick, or the
    * installation's for the workspace's managers; then it is fetched again. */
   const marketCredentials = marketRoute === "bot" && scopeBotId
@@ -740,12 +731,13 @@ export function PluginsPanel() {
   );
 
   // The scope sits under the title on every tab (2026-10-28: it vanished on
-  // My accounts and the tabs jumped up). My accounts lists the person's own
+  // Providers and the tabs jumped up). Providers lists the person's own
   // engine accounts and servers, which serve all of their bots: the scope
   // does not apply there, so it shows turned off with the reason in the
   // note's place. Every line keeps its room on every tab (a bot-only notice
-  // is kept invisible on My accounts), so the tabs never move.
-  const accountsTab = tab === "accounts" && page.page === "main";
+  // is kept invisible on Providers), so the tabs never move.
+  // Pages are the person's own too: the same turned-off scope
+  const accountsTab = (tab === "providers" || tab === "pages") && page.page === "main";
   const scopeControl = scopeBot ? (
     <div data-plugins-scope-bar data-plugins-scope-tab={accountsTab ? "accounts" : "plugins"}>
       <ScopeToggle scope={scope} botName={scopeBot.name} onScope={setScopeChoice} disabled={accountsTab} describedBy={accountsTab ? "plugins-scope-note" : undefined} />
@@ -925,7 +917,7 @@ export function PluginsPanel() {
     const isOrgAdmin = perspicaxOrg?.viewerRole === "admin";
     const orgHere = isOrgAdmin && scope === "workspace" && perspicaxOrg !== null;
     // Sources: the marketplaces only (2026-10-28)
-    const tabs: ConnectAppsTab[] = ["discover", "installed", "accounts",
+    const tabs: ConnectAppsTab[] = ["discover", "installed", "providers", "pages",
       ...(marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || orgHere ? ["sources" as const] : [])];
     const groups = connectorGroups({
       claude: harness.answer?.claude ? { available: harness.answer.claude.available, reason: harness.answer.claude.reason, connectors: harness.answer.claude.connectors ?? [], manageUrl: harness.answer.manageUrl } : null,
@@ -941,7 +933,7 @@ export function PluginsPanel() {
         tabs={tabs}
         // what "N connected" counted, on the tabs that list them (2026-10-28):
         // the person's connected entries on Installed, the engine accounts'
-        // connectors on My accounts (a bot's scope counts its plugins only)
+        // connectors on Providers (a bot's scope counts its plugins only)
         counts={connectedCounts({ entries, engineConnected: scope === "bot" ? 0 : claudeConnectors })}
         scope={scopeControl}
         notices={notices}
@@ -991,7 +983,7 @@ export function PluginsPanel() {
             renderBelow={renderBelow}
           />
         )}
-        accounts={(
+        providers={(
           <AccountsView
             groups={groups}
             service={accountService}
@@ -1005,7 +997,6 @@ export function PluginsPanel() {
             onRefresh={() => void harness.load(true)}
             servers={organization ? <MyMcpServers /> : undefined}
             claudeCode={!organization && canEditConfig(state.config) ? <ClaudeMcpSwitch /> : undefined}
-            pages={<PublishedPagesSettings personal />}
             // a section with no account offers to connect it (2026-10-28):
             // Settings > Models and voice, where each engine signs in
             onSetUp={() => {
@@ -1014,6 +1005,7 @@ export function PluginsPanel() {
             }}
           />
         )}
+        pages={<PublishedPagesSettings personal />}
         sources={(
           <SourcesView
             marketplaces={marketRoute !== null || (marketSummaries?.length ?? 0) > 0 ? (
@@ -1090,7 +1082,7 @@ export function PluginsPanel() {
 
 interface DetailContext {
   mcp: ReturnType<typeof useMcpServers>;
-  /** My accounts > GitHub, for a server that reads the GitHub account */
+  /** Providers > GitHub, for a server that reads the GitHub account */
   openGithub: () => void;
   /** "+ Add another account" on an MCP server: the name being typed */
   mcpAccountDraft: { server: string; label: string } | null;
@@ -1148,7 +1140,7 @@ function mcpDetail(item: PluginItem, { mcp, mcpAccountDraft, setMcpAccountDraft,
   let accountAction: ReactNode = null;
   if (server.github) {
     // the GitHub plugin's server reads the person's GitHub account: its
-    // account is that one, connected in My accounts > GitHub
+    // account is that one, connected in Providers > GitHub
     account = {
       id: "github", label: t("connectApps.detail.githubAccount"),
       detail: server.github === "connected" ? t("connectApps.detail.githubConnected") : t("connectApps.detail.githubMissing"),

@@ -371,9 +371,9 @@ export function OrganizationPages() {
 
 /** Settings > Pages publiées. */
 export function PublishedPagesSettings({ personal = false }: {
-  /** Connect apps > My accounts (2026-10-26): the person's own pages only, and
-   * nothing at all while they have none (the organization's pages are in
-   * Settings > Organization) */
+  /** Connect apps > Pages (2026-10-26, under Providers until 2026-10-28): the person's own pages only, with the
+   * empty line while they have none (it is a tab of its own; the
+   * organization's pages are in Settings > Organization) */
   personal?: boolean;
 } = {}) {
   const { state } = useStore();
@@ -387,7 +387,6 @@ export function PublishedPagesSettings({ personal = false }: {
       .then((answer) => setPages(answer.pages))
       .catch((cause) => { setPages([]); setError(pageErrorText(cause)); });
   }, []);
-  if (personal && (pages === null || (pages.length === 0 && !error))) return null;
   return (
     <section data-settings-card="pages" className="flex min-w-0 flex-col gap-3">
       <SettingsIntro>{t("pages.settingsIntro")}</SettingsIntro>

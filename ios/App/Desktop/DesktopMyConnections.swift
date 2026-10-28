@@ -53,7 +53,7 @@ final class MyConnectionsModel: ObservableObject {
 struct DesktopMyConnectionsSettings: View {
     enum Part { case github, servers }
 
-    /// which card this draws (Connect apps > Sources, or > My accounts)
+    /// which card this draws (Connect apps > Sources, or > Providers)
     var part: Part
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
@@ -115,7 +115,7 @@ struct DesktopMyConnectionsLinks: View {
             DesktopText(Text("Your own accounts and MCP servers. Only your conversations and your routines use them; nobody else's turn ever gets them."),
                         line: 21, color: \.inkSecondary)
             link(Text("GitHub"), Text("Connect GitHub or a token: Connect apps > Sources."), tab: .sources, identifier: "desktop-my-connections.github")
-            link(Text("My MCP servers"), Text("Add, sign in, turn on or off: Connect apps > My accounts."), tab: .accounts, identifier: "desktop-my-connections.servers")
+            link(Text("My MCP servers"), Text("Add, sign in, turn on or off: Connect apps > Providers."), tab: .accounts, identifier: "desktop-my-connections.servers")
         }
         .sheet(item: $opening) { tab in
             ConnectAppsPage(initialTab: tab)

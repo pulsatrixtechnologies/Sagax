@@ -4,7 +4,7 @@
 // no "N connected" button and the count sits on Installed; the scope stays
 // put on every tab; a click on the GitHub row (not its "...") opens its page
 // inside Installed, with the title, the scope and the tabs kept and a back
-// row; marketplace plugins wear their real mark; My accounts shows a Claude
+// row; marketplace plugins wear their real mark; Providers shows a Claude
 // section beside Grok even when Claude's connectors cannot be read, with the
 // way to connect. The /api answers are a stand-in shaped like an
 // organization member's (names neutral).
@@ -46,12 +46,13 @@ const API: Record<string, unknown> = {
     ] }],
     plugins: [], policy: { mode: "any" }, engine: { loadsPlugins: true }, canChange: true,
   },
-  "/api/pages": { pages: [] },
+  "/api/pages": { pages: [{ id: "pg1", title: "Weekly KPIs", status: "published", access: "private", expiresAt: null, currentVersion: 1, botId: "bot-a", threadId: "t1", createdAt: 1, updatedAt: 2, expired: false, versions: [{ n: 1, kind: "html", title: "Weekly KPIs", createdAt: 1, state: "published", bytes: 10, botId: "bot-a" }] }] },
 };
 
 const dispatch = vi.fn();
 const state = {
   pluginsSurface: "apps", pluginsPage: null, pluginsBotId: null, pluginsFocusApps: null, selectedId: "bot-a",
+  groups: [],
   bots: [{ id: "bot-a", name: "Rocket", instanceId: "claude-main", ownerUserId: "p-1" }],
   instances: [{ instanceId: "grok-main", driverKind: "grokAgent", displayName: "Grok", access: "subscription", snapshot: { state: "available", authenticated: true } }],
   config: { viewer: { role: "member", principalId: "p-1" }, features: {} },
@@ -108,21 +109,53 @@ const open = async () => {
 };
 
 describe("Connect Apps, driven like the owner did", () => {
+  it("Pages is a tab of its own: Your pages there, and nothing about pages left in Providers", async () => {
+    await open();
+    expect($('[data-plugins-tab="providers"] [data-plugins-tab-label]')?.textContent).toBe("Providers");
+    expect($('[data-plugins-tab="pages"] [data-plugins-tab-label]')?.textContent).toBe("Pages");
+    expect($('[data-plugins-tab="accounts"]')).toBeNull();
+    await click($('[data-plugins-tab="providers"]'));
+    expect($("[data-plugins-pages]")).toBeNull();
+    expect($('[data-plugins-manage="providers"]')?.textContent).not.toContain("Your pages");
+    expect($('[data-plugins-manage="providers"] [data-settings-card="pages"]')).toBeNull();
+    await click($('[data-plugins-tab="pages"]'));
+    expect($('[data-plugins-manage="pages"] [data-settings-card="pages"]')).not.toBeNull();
+    expect($('[data-plugins-manage="pages"]')?.textContent).toContain("Your pages");
+    expect($('[data-plugins-manage="pages"]')?.textContent).toContain("Weekly KPIs");
+    // personal like Providers: the install scope is shown turned off there too
+    expect($("[data-plugins-scope-slot]")).not.toBeNull();
+  });
+
   it("opens on Discover, the first tab; the header has no N connected button; the counts sit on the tabs", async () => {
     await open();
-    expect(tabs()).toEqual(["discover*", "installed", "accounts", "sources"]);
+    expect(tabs()).toEqual(["discover*", "installed", "providers", "pages", "sources"]);
     expect($("[data-plugins-connected]")).toBeNull();
     expect(host.querySelector("header")?.textContent).not.toMatch(/connected/i);
     // GitHub, Code Review, Frontend Design, Ops Flow, Twilio Docs: five connected entries
     expect($('[data-plugins-tab="installed"] [data-plugins-tab-count]')?.textContent).toBe("5");
-    // the Claude account's one connected connector, on My accounts
-    expect($('[data-plugins-tab="accounts"] [data-plugins-tab-count]')?.textContent).toBe("1");
+    // the Claude account's one connected connector, on Providers
+    expect($('[data-plugins-tab="providers"] [data-plugins-tab-count]')?.textContent).toBe("1");
     expect($('[data-plugins-tab="discover"] [data-plugins-tab-count]')).toBeNull();
+  });
+
+  it("an old link to My accounts opens Providers; a link to the pages opens Pages", async () => {
+    try {
+      (state as { pluginsPage: string | null }).pluginsPage = "accounts";
+      await open();
+      expect(tabs()).toEqual(["discover", "installed", "providers*", "pages", "sources"]);
+      await act(async () => root.render(createElement("div")));
+      (state as { pluginsPage: string | null }).pluginsPage = "pages";
+      await open();
+      expect(tabs()).toEqual(["discover", "installed", "providers", "pages*", "sources"]);
+      expect($('[data-plugins-manage="pages"]')?.textContent).toContain("Your pages");
+    } finally {
+      (state as { pluginsPage: string | null }).pluginsPage = null;
+    }
   });
 
   it("keeps the scope under the title on every tab", async () => {
     await open();
-    for (const tab of ["installed", "discover", "accounts", "sources"]) {
+    for (const tab of ["installed", "discover", "providers", "pages", "sources"]) {
       if (!$(`[data-plugins-tab="${tab}"]`)) continue;
       await click($(`[data-plugins-tab="${tab}"]`));
       expect($("[data-plugins-scope-bar]"), tab).not.toBeNull();
@@ -156,7 +189,7 @@ describe("Connect Apps, driven like the owner did", () => {
     expect($("[data-plugins-subpage]")).not.toBeNull();
     expect($("#plugins-title")?.textContent).toBe("Connect Apps");
     expect($("[data-plugins-scope-bar]")).not.toBeNull();
-    expect(tabs()).toEqual(["discover", "installed*", "accounts", "sources"]);
+    expect(tabs()).toEqual(["discover", "installed*", "providers", "pages", "sources"]);
     expect($('[data-plugins-tab="installed"]')?.getAttribute("aria-current")).toBe("page");
     expect($("[data-plugins-page-bar]")?.textContent).toContain("Installed");
     expect($("[data-plugins-detail-name]")?.textContent).toBe("GitHub");
@@ -173,10 +206,10 @@ describe("Connect Apps, driven like the owner did", () => {
     expect($('[data-plugins-manage="installed"]')).not.toBeNull();
   });
 
-  it("My accounts: Claude beside Grok when its connectors cannot be read, with why and Connect Claude", async () => {
+  it("Providers: Claude beside Grok when its connectors cannot be read, with why and Connect Claude", async () => {
     harness = { manageUrl: "https://claude.ai/customize/connectors", claude: { available: false, reason: "not_signed_in", connectors: [] }, codex: { available: false } };
     await open();
-    await click($('[data-plugins-tab="accounts"]'));
+    await click($('[data-plugins-tab="providers"]'));
     const pills = [...host.querySelectorAll("[data-accounts-service-pill]")].map((pill) => pill.textContent);
     expect(pills.slice(0, 4)).toEqual(["All", "GitHub", "Claude", "Grok"]);
     expect([...host.querySelectorAll("[data-harness-group]")].map((group) => group.getAttribute("data-harness-group"))).toEqual(["claude", "grok"]);
@@ -187,15 +220,15 @@ describe("Connect Apps, driven like the owner did", () => {
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "toggleAppSettings", open: true, section: "engines" }));
   });
 
-  it("My accounts: the Claude account's connectors listed like Grok's when they are read", async () => {
+  it("Providers: the Claude account's connectors listed like Grok's when they are read", async () => {
     await open();
-    await click($('[data-plugins-tab="accounts"]'));
+    await click($('[data-plugins-tab="providers"]'));
     expect($('[data-harness-connector="claude:Gmail"]')).not.toBeNull();
     expect($('[data-harness-connector="claude:Canva"] [data-harness-status="needs_auth"]')).not.toBeNull();
     expect($('[data-harness-group="claude"] [data-harness-notice]')).toBeNull();
   });
 
-  it("GitHub lives in My accounts: Sources lists marketplaces only, and the GitHub plugin's page leads to the account it reads", async () => {
+  it("GitHub lives in Providers: Sources lists marketplaces only, and the GitHub plugin's page leads to the account it reads", async () => {
     const servers = (API["/api/mcp/servers"] as { servers: Array<Record<string, unknown>> }).servers;
     const plugin = servers.find((server) => server.name === "github-github")!;
     plugin.github = "missing";
@@ -211,7 +244,7 @@ describe("Connect Apps, driven like the owner did", () => {
       await click(row);
       expect($('[data-plugin-github-account="missing"]')?.textContent).toContain("It uses your GitHub account, which is not connected yet.");
       await click($('[data-plugin-github-account] button'));
-      expect(tabs()).toEqual(["discover", "installed", "accounts*", "sources"]);
+      expect(tabs()).toEqual(["discover", "installed", "providers*", "pages", "sources"]);
       expect($('[data-accounts-service-pill="github"]')?.getAttribute("aria-pressed")).toBe("true");
       expect($("[data-accounts-github]")).not.toBeNull();
       expect($("[data-harness-group]")).toBeNull();

@@ -1,6 +1,6 @@
 // Connect apps: install for everyone (the workspace) or for one bot. Shown
 // when a bot is in reach (src/lib/plugin-scope.ts); the bot scope lists the
-// marketplace plugins and installs each whole on that bot. On My accounts
+// marketplace plugins and installs each whole on that bot. On Providers
 // (the person's own accounts, which serve all of their bots) it stays in its
 // place turned off, so the title and the tabs never move between tabs.
 import type { ReactNode } from "react";
@@ -14,7 +14,7 @@ export function ScopeToggle({ scope, botName, onScope, disabled = false, describ
   scope: PluginScope;
   botName: string;
   onScope: (scope: PluginScope) => void;
-  /** shown but not in use on this tab (My accounts) */
+  /** shown but not in use on this tab (Providers) */
   disabled?: boolean;
   /** the id of the line that says why it is off */
   describedBy?: string;

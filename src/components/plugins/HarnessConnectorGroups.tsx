@@ -1,4 +1,4 @@
-// Connect apps > My accounts: the connectors of the person's engine accounts,
+// Connect apps > Providers: the connectors of the person's engine accounts,
 // grouped by engine, one row each with the app's real logo (providerMark,
 // the sidebar foot's resolution since #1143), its name and its state.
 // Claude's come from GET /api/me/harness-connectors (the caller's own

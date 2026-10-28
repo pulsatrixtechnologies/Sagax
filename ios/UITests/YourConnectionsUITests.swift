@@ -87,11 +87,11 @@ final class YourConnectionsUITests: XCTestCase {
         app.launch()
         let manage = element("connect-apps-manage", in: app)
         XCTAssertTrue(manage.waitForExistence(timeout: 20))
-        app.buttons["My accounts"].firstMatch.tap()
+        app.buttons["Providers"].firstMatch.tap()
 
         let row = element("your-connections-server.\(server)", in: app)
         for _ in 0..<8 where !(row.exists && row.isHittable) { app.swipeUp() }
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "My accounts lists the person's server")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "Providers lists the person's server")
         XCTAssertFalse(element("your-connections-github", in: app).exists, "GitHub is in Sources, not here")
 
         let toggle = element("your-connections-toggle.\(server)", in: app)

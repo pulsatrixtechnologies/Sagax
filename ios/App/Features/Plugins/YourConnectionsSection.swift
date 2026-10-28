@@ -1,7 +1,7 @@
 // The person's own connections on the phone (#218; matrix DC39, P2-4), on an
 // organization server. Since 2026-10-27 each has one place, as on the
 // desktop (`MyConnectionsSettings.tsx`): `part: .github` in Connect apps >
-// Sources, `part: .servers` in My accounts. The person's own GitHub account
+// Sources, `part: .servers` in Providers. The person's own GitHub account
 // and their own MCP servers, read
 // from `GET /api/me/connections` (the server never sends a token back):
 // GitHub connected as @login with Disconnect, a code to type at GitHub while

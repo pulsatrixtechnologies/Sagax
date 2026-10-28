@@ -7,7 +7,7 @@
 // Sagax never expanded that placeholder, so the server went out with the
 // literal text and the Installed row said Connected for an account nobody
 // had connected. Now the placeholder is the person's GitHub connection
-// (Connect apps > My accounts > GitHub): at each turn it is replaced with the
+// (Connect apps > Providers > GitHub): at each turn it is replaced with the
 // token of the person the turn runs for, never written to config.json and
 // never listed; the listing says whether that person has one.
 import type { McpServerSpec } from "./contracts.ts";

@@ -4,7 +4,7 @@
 // beside it, the category pills, then the sections in two columns. View all
 // filters this view in place. The apps a conversation needs (its Connect
 // apps pill) come first. What is installed lives in Installed; the engines'
-// connectors in My accounts.
+// connectors in Providers.
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronRight, LayoutGrid, Loader2, Search } from "lucide-react";
 

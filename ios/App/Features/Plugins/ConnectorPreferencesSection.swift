@@ -8,7 +8,7 @@ struct SlackConnectionsSection: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: Session
     @State private var links: [(bot: Bot, url: URL)] = []
-    /// told whether any bot has a Slack link (My accounts shows its pill then)
+    /// told whether any bot has a Slack link (Providers shows its pill then)
     var onAvailable: ((Bool) -> Void)? = nil
 
     var body: some View {
