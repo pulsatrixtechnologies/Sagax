@@ -5067,6 +5067,8 @@
       "chat.pinnedJump": "36ecd4453fce3ca632313067f4634407fc5ee902c611544036c953966e720126",
       "chat.previousVersion": "21d886b74bc1abe15deaec9a336f2bf5ca155decfd461ee97d0bde343d3583ac",
       "chat.privateConversation": "a6678d0a75d8f495357574d77897ecc8cfae94cfea203561fd02f7de3823c0a6",
+      "chat.turnTiming.first": "e497c9cc78ed2599e60ec32fca60431ac534857b48670764e829b0e46e96bd03",
+      "chat.turnTiming.wait": "eb31f3efce70cb811910b9800b857d6dbdcdf2dc667896bd94cc92d199a22572",
       "chat.provisioning": "b5046eb4b528d99e25316e4410c75024476de045f643d287563d51be20dc70b8",
       "chat.regenerate": "dd7c31a51def643d19f9f47dcad9fda3d50503e906c59d68266d0aec0119a51d",
       "chat.reply": "c253f451bdd56431ff15f638498d0003c36aabd5b07e5d21aaa7f1391410747c",

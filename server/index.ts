@@ -876,7 +876,7 @@ import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultra
 import { routeTurnModel, type TurnModelSwitch } from "./turn-model-routing.ts";
 import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
-import { turnTrace } from "./turn-trace.ts";
+import { noteFirstResponse, noteTurnQueued, setTurnTimingWriter, turnTrace } from "./turn-trace.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput } from "./harness-connectors.ts";
@@ -6907,6 +6907,7 @@ const store = new Store(
   newBotApprovalMode,
   newBotGreetingLanguage,
 );
+setTurnTimingWriter((threadId, timing) => store.noteConversationTiming(threadId, timing));
 // One-time notice (migration): Composio was removed this release. Connected
 // apps now come only from the engines' own connectors (Claude, Grok) and
 // Pulsatrix MCP. Tell admins once, in the server log the console's Logs tab
@@ -15448,7 +15449,12 @@ bus.subscribe((event: RuntimeEvent) => {
     ...(staleOwner?.voiceCall ? { ownerStopped: staleOwner.stopped, ownerTurnId: staleOwner.turnId } : {}),
   });
   if (event.type === "content.delta" && event.streamKind === "assistant_text") {
-    if (!staleAssistant) voiceLatency.mark(event.threadId, "firstToken");
+    if (!staleAssistant) {
+      voiceLatency.mark(event.threadId, "firstToken");
+      noteFirstResponse(event.threadId);
+    }
+  } else if (event.type === "item.completed" && event.itemType === "assistant_text") {
+    if (!staleAssistant) noteFirstResponse(event.threadId);
   } else if (event.type === "turn.completed") voiceLatency.settled(event.threadId);
   const privateImageEvent = event.type === "item.completed" && event.itemType === "assistant_image";
   // The durable message patch below is the public frame. Sending raw base64
@@ -21855,6 +21861,7 @@ async function startTurn(
         turnTrace(threadId, "engine-slot");
         if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped while waiting for an engine slot");
       }
+      if (!warmOnly && typeof userMessage.at === "number") noteTurnQueued(threadId, userMessage.at);
       if (!warmOnly) turnTrace(threadId, "send");
       // Each picture within the model's limits: a scaled copy for a large one.
       const modelImages = await fitTurnImagesForModel(turnImages, { language: languageOfPerson(turnPlace.principal) });

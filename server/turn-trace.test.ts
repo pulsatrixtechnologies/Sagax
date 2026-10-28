@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { turnTrace } from "./turn-trace.ts";
+import { clearTurnCounters, noteFirstResponse, noteTurnQueued, setTurnTimingWriter, turnCounters, turnTrace } from "./turn-trace.ts";
 
 describe("turn trace (SAGAX_TURN_TRACE)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete process.env.SAGAX_TURN_TRACE;
+    clearTurnCounters();
   });
 
   it("writes nothing unless switched on", () => {
@@ -21,5 +22,40 @@ describe("turn trace (SAGAX_TURN_TRACE)", () => {
     turnTrace("0123456789abcdef", "send");
     expect(spy).toHaveBeenCalledTimes(2);
     expect(String(spy.mock.calls[1]![0])).toMatch(/^\[turn-trace\] 01234567 send \d{13} \+\d+$/);
+    expect(String(spy.mock.calls[1]![0])).not.toContain("hello");
+  });
+
+  it("counts queue wait and time to first answer with the trace off, and stores no words", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let now = 5_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const thread = "abcdef0123456789";
+    noteTurnQueued(thread, 5_000);
+    now = 5_040;
+    turnTrace(thread, "start", true);
+    now = 5_090;
+    turnTrace(thread, "send");
+    now = 5_250;
+    noteFirstResponse(thread);
+    noteFirstResponse(thread);
+    expect(turnCounters(thread)).toEqual({ queueMs: 90, firstResponseMs: 160 });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("writes the numbers for the conversation and keeps no words", () => {
+    const seen: Array<{ threadId: string; timing: { queueMs?: number; firstResponseMs?: number } }> = [];
+    setTurnTimingWriter((threadId, timing) => seen.push({ threadId, timing }));
+    let now = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    noteTurnQueued("thread-1", 1_000);
+    now = 1_040;
+    turnTrace("thread-1", "send");
+    now = 1_200;
+    noteFirstResponse("thread-1");
+    expect(seen).toEqual([
+      { threadId: "thread-1", timing: { queueMs: 40 } },
+      { threadId: "thread-1", timing: { queueMs: 40, firstResponseMs: 160 } },
+    ]);
+    expect(JSON.stringify(seen)).not.toContain("hello");
   });
 });

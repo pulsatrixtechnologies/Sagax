@@ -142,6 +142,7 @@ import { BotConversationLine, EarlierConversationList, conversationAnchors, spli
 import { TaskPicker, ThreadReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
+import { TurnTimingLine } from "./TurnTimingLine";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 
 import { SpeakMenuItem } from "./SpeakButton";
@@ -2286,6 +2287,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       </div>}
 
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
+      <TurnTimingLine timing={profile.tasks?.find((task) => task.threadId === bot.threadId)?.turnTiming} />
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">

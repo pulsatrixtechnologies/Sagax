@@ -402,6 +402,8 @@ export interface Group {
   /** when the busy member's turn started — the group-side twin of a task's
    * turnStartedAt; stamped by the server when the speaker claims the turn */
   turnStartedAt?: number | null;
+  /** A direct conversation keeps its turn numbers here. A channel keeps them on the task. */
+  turnTiming?: { queueMs?: number; firstResponseMs?: number };
   /** True for the whole orchestrated run, including hand-offs between members. */
   working?: boolean;
   /** Every bot in the room as each person in it sees it, whoever owns it
@@ -466,6 +468,7 @@ export interface GroupTask {
   working?: boolean;
   /** The member bot currently speaking or generating in this thread, if any. */
   busyBotId?: string | null;
+  turnTiming?: { queueMs?: number; firstResponseMs?: number };
 }
 
 export interface ModelSelection {
@@ -503,6 +506,8 @@ export interface Task {
   link?: string;
   /** Newest message time, or createdAt. Server-derived; local bumps use max. */
   updatedAt?: number;
+  /** Wait before send, and wait until the first answer text. Not message text. */
+  turnTiming?: { queueMs?: number; firstResponseMs?: number };
   /** what this task has spent, banked once per settled turn */
   usage?: TaskUsage;
   /** folder this task's turns run in, pinned on its first turn; null =

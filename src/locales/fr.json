@@ -1228,6 +1228,8 @@
   "chat.pinnedJump": "Aller au message épinglé",
   "chat.previousVersion": "Version précédente",
   "chat.privateConversation": "Conversation privée. Pour discuter à plusieurs, créez un groupe.",
+  "chat.turnTiming.first": "Premier texte : {ms} ms",
+  "chat.turnTiming.wait": "Attente avant l'envoi : {ms} ms",
   "chat.provisioning": "Préparation de l'ordinateur de ce bot…",
   "chat.regenerate": "Regénérer la réponse",
   "chat.reply": "Répondre",

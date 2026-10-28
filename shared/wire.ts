@@ -248,6 +248,9 @@ export interface WireTask {
    * its elapsed readout here, so the count survives thread switches. Stamped
    * by setTaskActivity on an idle→busy transition; runtime-only like busy. */
   turnStartedAt?: number;
+  /** Last turn: wait before the engine was sent, and wait until the first
+   * answer text. Numbers only. Stored on the conversation, never in a message. */
+  turnTiming?: { queueMs?: number; firstResponseMs?: number };
   /** Where this conversation works when pinned; absent = follow the bot. */
   surface?: Surface;
   /** The pin above is the machine's own record (where an Auto turn landed,
@@ -1246,6 +1249,8 @@ export interface GroupTask {
   working?: boolean;
   /** The member bot currently speaking or generating in this thread, if any. */
   busyBotId?: string | null;
+  /** Same numbers as WireTask.turnTiming, for this channel thread. */
+  turnTiming?: { queueMs?: number; firstResponseMs?: number };
 }
 
 /** A room as a client may see it: the record plus the computed working
@@ -1312,6 +1317,8 @@ export interface WireGroup {
    * readout — the group-side twin of a task's turnStartedAt, stamped on
    * every transition into a busy speaker (never persisted) */
   turnStartedAt?: number;
+  /** A direct conversation has no task row. Its turn numbers live here. */
+  turnTiming?: { queueMs?: number; firstResponseMs?: number };
   /** the room's shared desk; absent = each member's own default. */
   cwd?: string;
   /** Compatibility mirror of the active task's pinned folder. */
