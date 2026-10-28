@@ -62,4 +62,15 @@ describe("frames to pushes", () => {
     expect(pushesForFrame(frame, deps())[0]).toMatchObject({ kind: "achievement", personId: "pr_bob", body: "First chat", titleLocKey: "Achievement unlocked" });
     expect(pushesForFrame(frame, deps({ achievementNotifications: () => false }))).toEqual([]);
   });
+
+  it("a bot's push carries its look; a person's message never asks for one", () => {
+    const asked: string[] = [];
+    const botLook = (id: string) => { asked.push(id); return { color: "teal", mascotLook: { character: "owl" as const } }; };
+    const bot = pushesForFrame({ kind: "notify", notification: { kind: "done", botId: "b1", botName: "Max", threadId: "t2", title: "Max", body: "Done" } }, deps({ botLook }));
+    expect(bot[0]?.senderLook).toEqual({ color: "teal", mascotLook: { character: "owl" } });
+    const person = pushesForFrame({ kind: "notify", notification: { kind: "message", botId: "", botName: "Alice", threadId: "t1", groupId: "g1", title: "Alice", body: "Hi", audience: ["pr_bob"] } }, deps({ botLook }));
+    expect(person[0]?.senderLook).toBeUndefined();
+    expect(asked).toEqual(["b1"]);
+  });
 });
+

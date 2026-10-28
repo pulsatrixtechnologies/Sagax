@@ -300,6 +300,9 @@ final class Session: ObservableObject {
         NotificationCoordinator.shared.responseHandler = { [weak self] target in
             Task { @MainActor in await self?.openNotification(target) }
         }
+        NotificationCoordinator.shared.botLookup = { [weak self] id in
+            self?.state.bots.first { $0.id == id }
+        }
         NotificationCoordinator.shared.approvalHandler = { decision in
             await NotificationApprovalRunner.run(decision)
         }

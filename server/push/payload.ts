@@ -4,10 +4,14 @@
 // same keys its local notifications carry, so a tap opens the same screen.
 // A bot or person sender also carries `senderName`, `senderId` and
 // `avatarUrl` plus `aps.mutable-content`, so the Notification Service
-// Extension can show a communication notification (docs/ios-push.md).
+// Extension can show a communication notification (docs/ios-push.md). A
+// bot sender also carries its look (`senderLook`, `senderLookVersion`): the
+// extension draws the bot's mascot as the banner's face.
 import { createHash } from "node:crypto";
 
-import { botAvatarUrlSchema } from "../../shared/bot-avatar.ts";
+import { botAvatarCropSchema, botAvatarUrlSchema, type BotAvatarCrop } from "../../shared/bot-avatar.ts";
+import { botMascotLook, type MascotLook } from "../../shared/mascot-look.ts";
+import { botMascotSkin, type MascotSkinId } from "../../shared/mascot-skins.ts";
 
 export type PushKind = "message" | "nudge" | "approval" | "achievement" | "routine";
 
@@ -61,7 +65,51 @@ export interface PushMessage {
   /** Relative avatar path on this server (`/api/attachments/...` or
    * `/api/people/<id>/avatar?v=...`). Absolute URLs are dropped. */
   avatarUrl?: string;
+  /** A bot sender's look (colour, character, skin, crop): the phone's
+   * extension draws its mascot as the banner's face. Never a person. */
+  senderLook?: PushSenderLook;
 }
+
+/** What the phone needs to draw a bot's mascot: the same fields the app
+ * reads on a bot (ios Bot.color, mascotLook, mascotSkin, avatarCrop).
+ * Nothing of the bot's settings, instructions or conversations. */
+export interface PushSenderLook {
+  color: string;
+  mascotLook?: MascotLook;
+  mascotSkin?: MascotSkinId;
+  avatarCrop?: BotAvatarCrop;
+}
+
+/** A bot colour name or `#RRGGBB`, as the phone's `MausColors.hex(for:)` reads it. */
+const LOOK_COLOR = /^(?:[a-z][a-z0-9-]{0,31}|#[0-9A-Fa-f]{6})$/;
+
+/** The look of a bot record, cleaned: an unknown character or skin falls back
+ * the way the app does, a colour the phone cannot read is dropped. */
+export function pushSenderLook(raw: unknown): PushSenderLook | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  const color = typeof value.color === "string" ? value.color.trim() : "";
+  if (!LOOK_COLOR.test(color)) return undefined;
+  const look: PushSenderLook = { color };
+  if (value.mascotLook !== undefined && value.mascotLook !== null) look.mascotLook = botMascotLook(value.mascotLook);
+  if (value.mascotSkin !== undefined && value.mascotSkin !== null) {
+    const skin = botMascotSkin(value.mascotSkin);
+    if (skin !== "none") look.mascotSkin = skin;
+  }
+  const crop = botAvatarCropSchema.safeParse(value.avatarCrop);
+  if (crop.success) look.avatarCrop = crop.data;
+  return look;
+}
+
+/** Changes whenever what the banner draws changes (look, crop or picture),
+ * so the phone keeps one rendered face per bot and per look. */
+export function senderLookVersion(look: PushSenderLook, avatarUrl?: string): string {
+  const canonical = JSON.stringify([look.color, look.avatarCrop ?? "", look.mascotSkin ?? "", look.mascotLook ?? null, avatarUrl ?? ""]);
+  return createHash("sha256").update(canonical).digest("hex").slice(0, 16);
+}
+
+/** APNs refuses an alert payload over 4 KB. */
+export const APNS_PAYLOAD_MAX = 4096;
 
 /** What this device's Settings > Notifications allow (sent by the phone
  * when it registers). All on unless the phone said otherwise. */
@@ -252,6 +300,19 @@ export function buildApnsRequest(input: {
   if (senderName) payload.senderName = senderName;
   if (senderId) payload.senderId = senderId;
   if (avatarUrl) payload.avatarUrl = avatarUrl;
+  // The bot's look, for the extension to draw its mascot. A person has none.
+  const look = senderName && message.senderLook ? pushSenderLook(message.senderLook) : undefined;
+  if (look) {
+    payload.senderLook = look;
+    payload.senderLookVersion = senderLookVersion(look, avatarUrl);
+  }
+  let body = JSON.stringify(payload);
+  // Never lose the push for its face: over the limit, the look goes.
+  if (look && Buffer.byteLength(body) > APNS_PAYLOAD_MAX) {
+    delete payload.senderLook;
+    delete payload.senderLookVersion;
+    body = JSON.stringify(payload);
+  }
   const headers: Record<string, string> = {
     "apns-push-type": "alert",
     "apns-topic": input.bundleId,
@@ -260,5 +321,5 @@ export function buildApnsRequest(input: {
     // a nudge is stale after a few minutes; the rest may wait a day
     "apns-expiration": String(Math.floor(input.nowMs / 1000) + (message.kind === "nudge" ? 5 * 60 : 24 * 60 * 60)),
   };
-  return { headers, body: JSON.stringify(payload) };
+  return { headers, body };
 }

@@ -14,6 +14,11 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     var responseHandler: ((NotificationTarget) -> Void)?
     /// Allow or Deny from the banner. The session wires the sender.
     var approvalHandler: ((NotificationApproval.Decision) async -> NotificationApprovalRunner.Outcome)?
+    /// The bot a local banner comes from, for its mascot. Set by `Session`.
+    var botLookup: (@MainActor (String) -> Bot?)?
+    /// Local banners post in the order their frames came, even while a
+    /// face is being drawn.
+    @MainActor private var lastPost: Task<Void, Never>?
 
     private override init() {
         super.init()
@@ -71,7 +76,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         (try? await center.requestAuthorization(options: [.alert, .badge, .sound])) == true
     }
 
-    func deliver(_ notification: NotificationFrame, sequence: Int?, confidential: Bool = false) {
+    @MainActor func deliver(_ notification: NotificationFrame, sequence: Int?, confidential: Bool = false) {
         // the conversation on a live call is heard, not buzzed
         if CallQuiet.shared.silences(threadId: notification.threadId) { return }
         let content = UNMutableNotificationContent()
@@ -106,33 +111,59 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         content.userInfo = info
         if notification.isBlocking { content.interruptionLevel = .timeSensitive }
 
-        let posted = communicationContent(content, name: notification.botName, id: notification.botId, conversationId: notification.threadId)
         // One conversation, one banner: a replayed frame, the next line of
         // the same conversation and the APNs push for it (whose
         // apns-collapse-id is this same identifier) replace it.
         let identifier = PushCollapse.identifier(threadId: notification.threadId, kind: notification.kind)
-        center.add(UNNotificationRequest(identifier: identifier, content: posted, trigger: nil))
+        // the bot's mascot as the banner's face, like a push (MascotAvatarRenderer)
+        let botId = notification.botId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let bot = botId.isEmpty ? nil : botLookup?(botId)
+        let previous = lastPost
+        lastPost = Task { @MainActor [center] in
+            await previous?.value
+            let sender = Self.sender(name: notification.botName, id: notification.botId, conversationId: notification.threadId, bot: bot)
+            var imageData: Data?
+            if let sender, sender.look != nil {
+                imageData = await NotificationAvatarResolver.imageData(
+                    for: sender,
+                    cache: NotificationAvatarCache.appGroup(SagaxSharedConfiguration.appGroupIdentifier),
+                    // a local banner draws the mascot; a picture is the push's
+                    download: { _ in nil },
+                    render: { look in await MascotAvatarRenderer.png(look) }
+                )
+            }
+            let posted = Self.communicationContent(content, sender: sender, imageData: imageData)
+            try? await center.add(UNNotificationRequest(identifier: identifier, content: posted, trigger: nil))
+        }
     }
 
-    /// Name the bot (or person) as the sender when we have a display name.
-    private func communicationContent(
-        _ content: UNMutableNotificationContent,
-        name: String,
-        id: String,
-        conversationId: String
-    ) -> UNNotificationContent {
+    /// The bot (or person) a local banner names as its sender, with the
+    /// bot's look when the app knows the bot.
+    static func sender(name: String, id: String, conversationId: String, bot: Bot?) -> PushSenderIdentity? {
         let display = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !display.isEmpty else { return content }
-        content.title = display
+        guard !display.isEmpty else { return nil }
         let handle = id.trimmingCharacters(in: .whitespacesAndNewlines)
         let conversation = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sender = PushSenderIdentity(
+        let look = bot.map(PushSenderLook.init(bot:))
+        return PushSenderIdentity(
             id: handle.isEmpty ? display : handle,
             displayName: display,
             conversationId: conversation.isEmpty ? display : conversation,
-            avatarUrl: nil
+            avatarUrl: nil,
+            look: look,
+            lookVersion: look?.fingerprint()
         )
-        return CommunicationNotification.applyingIntent(content, sender: sender, imageData: nil)
+    }
+
+    /// Name the bot (or person) as the sender when we have a display name.
+    private static func communicationContent(
+        _ content: UNMutableNotificationContent,
+        sender: PushSenderIdentity?,
+        imageData: Data?
+    ) -> UNNotificationContent {
+        guard let sender else { return content }
+        content.title = sender.displayName
+        return CommunicationNotification.applyingIntent(content, sender: sender, imageData: imageData)
     }
 
     /// Settings > Notifications > Unread count on the app icon (#222).

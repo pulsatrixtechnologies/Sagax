@@ -79,6 +79,24 @@ downloads the picture with the pairing bearer, donates
 cannot load, the sender name is still the title. Achievements stay ordinary
 alerts.
 
+A bot's banner wears **its mascot**, as everywhere in the app (2026-10-28).
+The push also carries `senderLook` (the bot's `color`, `mascotLook`,
+`mascotSkin` and `avatarCrop`, nothing else of the bot) and
+`senderLookVersion` (a hash of that look and its picture), next to the
+`thread-id` that groups the conversation. The extension draws the mascot
+itself with the app's own still characters (`MascotAvatarRenderer`, 360 px,
+on a soft disc of the bot's colour) and keeps the PNG in the App Group
+(`Library/Caches/NotificationAvatars`, one file per bot and look version,
+`NotificationAvatarCache`). A bot whose crop shows its picture (circle,
+rounded, square) gets that picture, and its mascot when the picture does not
+load (`NotificationAvatarPlan`). Drawing on the phone needs no network and no
+signed URL, so it works when the server is unreachable. Anything that fails
+leaves the banner as before: the bot's name, the app icon. The app's own
+local banners (live stream) draw the same face from the bot it already has.
+Over 4 KB the look is dropped from the push, never the push. The watch shows
+the face of a communication notification the iPhone forwards to it; it has
+no Sagax app and needs nothing more.
+
 This needs the **Communication Notifications** capability on both App IDs
 (`ca.pulsatrix.sagax` and `ca.pulsatrix.sagax.notification`) in the Apple
 Developer portal. Xcode automatic signing then puts
