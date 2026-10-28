@@ -27,7 +27,8 @@ describe("analytics", () => {
     analytics.track("page_view", {});
     const posts = fetchSpy.mock.calls.filter((call) => String(call[0]).endsWith("/events"));
     expect(posts).toHaveLength(1);
-    expect(JSON.parse(String((posts[0]?.[1] as RequestInit).body))).toEqual({
+    const posted = posts[0]!;
+    expect(JSON.parse(String((posted[1] as RequestInit).body))).toEqual({
       name: "app_opened",
       props: { surface: "desktop" },
     });
