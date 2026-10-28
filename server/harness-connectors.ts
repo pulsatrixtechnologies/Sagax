@@ -138,7 +138,8 @@ const GROK_DRIVERS = new Set(["grokAgent", "grok"]);
  * engine does. A person's request that needs one is already moved, for that
  * request, to another engine of theirs whose connector is known to be
  * there (server/connector-switch.ts); a turn told it has none is one where
- * no such engine was found, so the bot says so and may offer ask_bot. */
+ * no such engine was found, so the bot says so and may offer a teammate
+ * (coordinate_bots in a person's chat, ask_bot in a routine). */
 export function engineConnectorsPrompt(input: { driver: string; claudeAi: boolean; grokCloud: boolean; foreign?: boolean }): string {
   if (input.claudeAi && input.driver === "claudeAgent") return `${claudeAiConnectorsPrompt(true)}${OUTWARD_RULE}`;
   if (input.foreign && ACCOUNT_CONNECTOR_DRIVERS.has(input.driver)) {
@@ -147,7 +148,7 @@ export function engineConnectorsPrompt(input: { driver: string; claudeAi: boolea
   if (input.grokCloud && GROK_DRIVERS.has(input.driver)) {
     return `\nThis turn runs on the xAI account of this Grok engine, so its cloud connectors (${GROK_CLOUD_CONNECTORS.map((connector) => connector.name).join(", ")}) may be reachable through use_tool when the account connected them. They act with that account's access. If one is missing or needs sign-in, or the person asks to connect one, call use_tool with tool_name agents__open_connector_setup right away (no search_tool first): it posts the card that opens ${GROK_CONNECTORS_URL} for them; then answer in one short sentence.${OUTWARD_RULE}`;
   }
-  return "\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector, and no other engine of this person was found with the one needed (Sagax moves such a request on its own when it finds one). If asked for one of those, say so plainly and do not claim anything was sent: the person can connect it on Claude (claude.ai connectors, such as Microsoft 365 or Gmail) or on Grok (the xAI account's cloud connectors, such as Outlook, Microsoft Teams or SharePoint, on an organization server), and you can offer to ask a teammate bot on that engine with ask_bot. When the person asks to connect one, call the Sagax tool open_connector_setup (agents__open_connector_setup) once: it posts the right card, or says why there is none.";
+  return "\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector, and no other engine of this person was found with the one needed (Sagax moves such a request on its own when it finds one). If asked for one of those, say so plainly and do not claim anything was sent: the person can connect it on Claude (claude.ai connectors, such as Microsoft 365 or Gmail) or on Grok (the xAI account's cloud connectors, such as Outlook, Microsoft Teams or SharePoint, on an organization server), and you can offer to ask a teammate bot on that engine with your teammate tools. When the person asks to connect one, call the Sagax tool open_connector_setup (agents__open_connector_setup) once: it posts the right card, or says why there is none.";
 }
 
 // ── what the person has ──────────────────────────────────────────────────

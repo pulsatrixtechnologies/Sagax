@@ -26796,7 +26796,7 @@ function roomPostEligibility(
     return {
       ok: false,
       status: 400,
-      error: "that is a one-to-one bot channel, not a room — use ask_bot or delegate_bot to reach a single bot",
+      error: "that is a one-to-one bot channel, not a room — use coordinate_bots (or ask_bot or delegate_bot where you have them) to reach a single bot",
     };
   }
   if (!group.memberIds.includes(bot.id)) {
@@ -43092,7 +43092,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const wakeAsked = parseWakePriority(body.priority);
         if (wakeAsked === "invalid") return json(res, 400, { error: "priority is now or normal." });
         if (oneWay && target.id === from.id) {
-          return json(res, 409, { error: "send_to_bot is cross-bot only; use start_thread to send independent work to yourself" });
+          return json(res, 409, { error: "send_to_bot is cross-bot only; to work on yourself, do it in this turn (start_thread opens a separate job where you have it)" });
         }
         if (internalCapability.roomCoordination) {
           if (target.id !== from.id && !oneWay) {

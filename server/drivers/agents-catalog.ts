@@ -1769,7 +1769,9 @@ const ROOM_REPLACED_TOOLS = new Set(["ask_bot", "delegate_bot", "check_delegatio
 // Absent from a real room only (profile.room), never from a person's direct
 // chat, which coordinates too: a page belongs to one person's conversation,
 // and the route refuses it in a room (chat-widgets.ts proposePageCard).
-const ROOM_ABSENT_TOOLS = new Set(["propose_page"]);
+// Widgets and live HTML apps are one-to-one too (chat-widgets.ts and
+// chat-apps.ts refuse a room): offered where they work, not where they fail.
+const ROOM_ABSENT_TOOLS = new Set(["propose_page", "show_widget", "update_widget", "show_html", "update_html"]);
 const EXTERNAL_TOOL_NAMES = new Set(["list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation"]);
 const WATCHER_TOOL_NAMES = new Set(["create_options_card"]);
 
@@ -1875,6 +1877,7 @@ const OFFERED_REFERENCES: ReadonlyArray<{ tool: string; missing: string; from: s
   { tool: "send_to_bot", missing: "start_thread", from: " This is cross-bot only: use start_thread to send independent work to yourself.", to: " This is cross-bot only." },
   { tool: "send_to_bot", missing: "await_turn", from: " The answer includes {threadId, handle} for await_turn.", to: "" },
   { tool: "save_artifact", missing: "propose_page", from: "; to share a page with others through a link, use propose_page instead.", to: "." },
+  { tool: "await_turn", missing: "send_to_bot", from: "with the handle send_prompt or send_to_bot gave", to: "with the handle send_prompt gave" },
 ];
 
 function withOfferedReferences<T extends { name: string; description: string; inputSchema?: unknown }>(tools: T[]): T[] {

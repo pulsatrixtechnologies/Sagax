@@ -56,6 +56,10 @@ const CONDITIONS: Array<{ when: string; profile: Partial<CatalogProfile> }> = [
   { when: "for a Primary Bot with the agent-to-agent API", profile: { agentApi: true, chief: true } },
   { when: "in a single-stream conversation (threads off)", profile: { singleStream: true } },
   { when: "when the bot routes messages sent while it is busy", profile: { routeMessages: true } },
+  { when: "in a person's 1:1 chat on a server with a GitHub app", profile: { githubConnect: true } },
+  { when: "when the engine has no web search of its own and the person saved a search provider", profile: { webSearch: true } },
+  { when: "when the bot may send an API key of the person", profile: { vaultHttp: true } },
+  { when: "when the person's phone offers tools now", profile: { phoneTools: ["location"] } },
   { when: "in a room whose shared memory is on", profile: { coordinating: true, room: true, groupMemory: true } },
   { when: "in a person's chat when they ask for separate jobs", profile: { coordinating: true, ownThreadCreation: true } },
 ];
@@ -107,8 +111,13 @@ function toolSections(): KnowledgeSection[] {
     } else {
       const matching = shown.filter((entry) => entry.names.has(tool.name) && !base.has(tool.name));
       // a narrower condition (a room, after "a person's chat or a room") says nothing more
-      const conditions = matching.filter((entry) => !matching.some((other) => other !== entry && narrower(entry.profile, other.profile))).map((entry) => entry.when);
+      const kept = matching.filter((entry) => !matching.some((other) => other !== entry && narrower(entry.profile, other.profile)));
+      const conditions = kept.map((entry) => entry.when);
       when.push(conditions.length ? conditions.slice(0, 2).join(" or ") : "in some turns only");
+      // shown under its condition in a person's chat but not in a room
+      const first = kept[0];
+      if (first && !first.profile.room && names({ ...BASE, ...first.profile, coordinating: true }).has(tool.name) &&
+        !names({ ...BASE, ...first.profile, coordinating: true, room: true }).has(tool.name)) when.push("not in rooms");
     }
     const perm = permission.get(tool.name);
     const member = MEMBER_OWN_SCOPE_AGENT_TOOLS[tool.name];

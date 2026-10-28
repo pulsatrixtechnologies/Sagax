@@ -11,13 +11,23 @@
 // 1. a tool description or schema names another catalog tool the same turn
 //    is not shown (steering to a tool the bot cannot call);
 // 2. the self-knowledge base (sagax_help) says a tool is available in a turn
-//    where it is not.
+//    where it is not;
+// 3. a prompt paragraph a person's direct chat is sent names a tool that chat
+//    is not shown.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { availableTools, catalogProfileFromEnv, PERSPICAX_TOOLS } from "./agents-catalog.ts";
+import { chiefOfStaffSystemPrompt } from "../chief-of-staff.ts";
+import { engineConnectorsPrompt } from "../harness-connectors.ts";
+import { incidentText } from "../incidents.ts";
+import { peerRosterSystemPrompt } from "../peer-roster.ts";
+import {
+  CREDENTIAL_PROMPT, LEARN_PROMPT, PROFILE_CREATOR_PROMPT, PROFILE_PROMPT, REACTION_PROMPT, richOutputPrompt,
+  ROUTINE_PROMPT, TEAM_MEMORY_PROMPT, WIDGET_APPROVAL_PROMPT, WIDGET_PROMPT,
+} from "../system-prompt.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 type Tool = { name: string; description: string; inputSchema?: unknown };
@@ -44,6 +54,7 @@ const EVERY_SWITCH: Env = {
   SAGAX_SKILL_AUTHORING_ENABLED: "1", SAGAX_SHARED_COMPUTERS_ENABLED: "1", SAGAX_VOICE_NOTES: "1", SAGAX_MEETINGS: "1",
   SAGAX_SINGLE_STREAM: "1", SAGAX_ROUTE_MESSAGES: "1", SAGAX_VOICE_CALL: "1", SAGAX_GITHUB_CONNECT: "1", SAGAX_GROUP_MEMORY: "1",
   SAGAX_CREATE_BOTS: "1", SAGAX_PERSPICAX_TOOLS: "1", SAGAX_CLAIMS: "1", SAGAX_WEB_SEARCH: "1", SAGAX_VAULT_HTTP: "1",
+  SAGAX_PHONE_TOOLS: "location",
 };
 const CATALOG_NAMES = new Set<string>(PERSPICAX_TOOLS.map((tool) => tool.name));
 for (const turn of Object.values(TURNS)) for (const role of Object.values(ROLES)) {
@@ -55,9 +66,6 @@ for (const turn of Object.values(TURNS)) for (const role of Object.values(ROLES)
 const INFORMATIONAL: ReadonlyArray<[tool: string, mentions: string]> = [
   // "A temporary agent (create_agent) archived is gone for good."
   ["archive_bot", "create_agent"],
-  // "with the handle send_prompt or send_to_bot gave": either one
-  ["await_turn", "send_to_bot"],
-  ["await_turn", "send_prompt"],
 ];
 
 function mentionedTools(text: string): string[] {
@@ -115,6 +123,10 @@ function promisedTurns(where: string): { turns: string[]; env: Env; roles: strin
   if (label.startsWith("when skill authoring is on")) return flag({ SAGAX_SKILL_AUTHORING_ENABLED: "1" });
   if (label.startsWith("in a single-stream conversation")) return flag({ SAGAX_SINGLE_STREAM: "1" });
   if (label.startsWith("when the bot routes messages sent while it is busy")) return flag({ SAGAX_ROUTE_MESSAGES: "1" });
+  if (label.startsWith("in a person's 1:1 chat on a server with a GitHub app")) return flag({ SAGAX_GITHUB_CONNECT: "1" });
+  if (label.startsWith("when the engine has no web search of its own")) return flag({ SAGAX_WEB_SEARCH: "1" });
+  if (label.startsWith("when the bot may send an API key of the person")) return flag({ SAGAX_VAULT_HTTP: "1" });
+  if (label.startsWith("when the person's phone offers tools now")) return flag({ SAGAX_PHONE_TOOLS: "location" });
   return null;
 }
 
@@ -143,5 +155,35 @@ describe("reachability guard: the self-knowledge base (sagax_help)", () => {
   it("describes only catalog tools a turn can be shown", () => {
     const missing = toolSections.map((section) => section.id.replace(/^tool:/, "")).filter((name) => !CATALOG_NAMES.has(name) && name !== "make_video");
     expect(missing).toEqual([]);
+  });
+});
+
+describe("reachability guard: what a person's direct chat is told", () => {
+  // server/index.ts startTurn: a person's own message, boundedCoordination on
+  const team = [{ id: "chief", name: "Atlas" }, { id: "b2", name: "Nova" }];
+  const PROMPTS: Record<string, string> = {
+    chief: chiefOfStaffSystemPrompt("chief", team, true, true),
+    roster: peerRosterSystemPrompt(team.slice(1), true, false),
+    rosterCreator: peerRosterSystemPrompt(team.slice(1), true, true),
+    connectorsNone: engineConnectorsPrompt({ driver: "codex", claudeAi: false, grokCloud: false }),
+    // the Team incidents report: a turn of the Primary Bot with no automation source
+    incident: incidentText({ kind: "failed", bot: { id: "b2", name: "Nova" }, threadId: "t1", detail: "crash" }, { count: 1, mayRetry: true, muted: false }),
+    credential: CREDENTIAL_PROMPT,
+    widget: WIDGET_PROMPT + WIDGET_APPROVAL_PROMPT,
+    reaction: REACTION_PROMPT,
+    richOutput: richOutputPrompt(true),
+    routine: ROUTINE_PROMPT,
+    learn: LEARN_PROMPT,
+    teamMemory: TEAM_MEMORY_PROMPT,
+    profile: PROFILE_PROMPT,
+    profileCreator: PROFILE_CREATOR_PROMPT,
+  };
+
+  it("names only tools the direct chat is shown", () => {
+    // not on a live call: the reaction prompt is left out of a call turn, as its tools are
+    const shown = names({ ...TURNS.direct, ...ROLES.chief, ...EVERY_SWITCH, SAGAX_VOICE_CALL: "0" });
+    const problems = Object.entries(PROMPTS).flatMap(([prompt, text]) =>
+      mentionedTools(text).filter((name) => !shown.has(name)).map((name) => `${prompt} names ${name}`));
+    expect(problems).toEqual([]);
   });
 });

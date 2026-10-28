@@ -714,7 +714,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       return { text: "send_to_bot needs bot_id, title and message.", isError: true };
     }
     if (botId === context.botId) {
-      return { text: "send_to_bot is cross-bot only. Use start_thread to send independent work to yourself.", isError: true };
+      return { text: "send_to_bot is cross-bot only. To work on yourself, do it in this turn (start_thread opens a separate job where you have it).", isError: true };
     }
     const asked = parseWakePriority(args.priority);
     if (asked === "invalid") return { text: "priority is now or normal.", isError: true };
