@@ -17,7 +17,7 @@ struct PagePreviewSheet: View {
         NavigationStack {
             Group {
                 if let request {
-                    PagePreviewWebView(request: request, apiBase: session.settingsClient?.baseURL)
+                    PagePreviewWebView(request: request, apiBase: session.settingsClient?.connection.baseURL)
                 } else if let error {
                     Text(verbatim: error)
                         .font(.footnote)
