@@ -36,7 +36,9 @@ describe("mcp permission registry", () => {
   });
 
   it("covers every tool the catalog can show, so nothing is denied by omission", () => {
-    const shown = new Set([...availableTools(FULL), ...availableTools({ ...FULL, externalRuntime: true, coordinating: false })].map((t) => t.name));
+    // every switch that adds a tool (2026-10-28: phone_tool and connect_github were missed)
+    const widest = { ...FULL, phoneTools: ["location" as const], githubConnect: true, webSearch: true, vaultHttp: true, agentApi: true, perspicax: true, claims: true, meetings: true, singleStream: true, routeMessages: true, createBots: true };
+    const shown = new Set([...availableTools(FULL), ...availableTools(widest), ...availableTools({ ...widest, coordinating: true }), ...availableTools({ ...FULL, externalRuntime: true, coordinating: false })].map((t) => t.name));
     for (const name of shown) expect(permissionForTool(name), name).toBeDefined();
   });
 
@@ -88,6 +90,14 @@ describe("decide", () => {
     expect(decide(who("member"), "openapi_createnote")).toMatchObject({ allowed: true, permission: "openapi:call", reason: "ok" });
     expect(decide(who("viewer"), "openapi_createnote").reason).toBe("not_granted");
     expect(decide(who("root"), "list_bots").reason).toBe("unknown_role");
+  });
+
+  // 2026-10-28: the person's own phone, GitHub, key request and lent computers
+  it("lets a member use their own phone, GitHub, key request and computers", () => {
+    for (const tool of ["phone_tool", "connect_github", "request_credential", "shared_computer"]) {
+      expect(decide(who("member"), tool), tool).toMatchObject({ allowed: true, reason: "ok" });
+    }
+    expect(decide(who("member"), "add_mcp_server").allowed).toBe(false);
   });
 
   it("gives a viewer reads and nothing else", () => {
@@ -146,6 +156,9 @@ describe("scopeForCall", () => {
     }
     expect(scopeForCall({ room_id: "r1" }, "b", owners)).toBe("self");
     expect(scopeForCall({ room_id: "r1", to_bot_id: "b2" }, "b", owners)).toBe("self");
+    // post_to_room names its room group_id
+    expect(scopeForCall({ group_id: "r1" }, "b", owners)).toBe("self");
+    expect(scopeForCall({ group_id: "rb" }, "b", owners)).toBe("team");
   });
   it("stays team for someone else's bot or room, an unknown one, a group or a team", () => {
     expect(scopeForCall({ bot_id: "bob1" }, "b", owners)).toBe("team");

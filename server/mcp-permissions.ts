@@ -136,6 +136,12 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("video:make", "read", "make_video"),
   // the person's task list for this bot (server/drivers/agents-task-tools.ts)
   p("tasks:update", "own", "task_list"),
+  // 2026-10-28: both reached the catalog without a permission, so enforce
+  // refused them to everyone as unknown tools. The person's own iPhone (the
+  // phone asks for its own consent, server/phone-tools.ts) and the speaker's
+  // own GitHub account (device flow).
+  p("phone:tool", "own", "phone_tool"),
+  p("github:connect", "own", "connect_github"),
   p("computers:select", "own", "select_computer"),
   p("pairing:manage", "own", "manage_pairing"),
   // Dispatch
@@ -300,6 +306,9 @@ export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | n
     "bots:create": "self", "bots:delete.propose": "self", "bots:archive": "self", "rooms:create": "self", "rooms:manage": "self",
     "agents:create": "self", "agents:delete": "self",
     "vm:exec": "self", "actions:invoke": "self", "teammemory:propose": "self",
+    // 2026-10-28: a secure entry card for the person's own key, and the
+    // person's own lent computers (the route lists the speaker's only)
+    "credentials:request": "self", "computers:use": "self",
   },
   // Automation never creates bots, widens access or runs host commands.
   // 2026-10-19: no person speaks in a service turn (a routine, a webhook):
@@ -389,7 +398,9 @@ export function scopeForCall(args: Record<string, unknown> | undefined, ownBotId
   for (const key of ["room_id", "group_id", "team_id", "section"]) {
     const value = args[key];
     if (typeof value !== "string" || !value) continue;
-    if (key === "room_id" && mine(owners?.roomOwner?.(value))) continue;
+    // 2026-10-28: group_id is a room id too (post_to_room, coordinate_bots,
+    // nudge_person take it from list_rooms): the person's own room is theirs
+    if ((key === "room_id" || key === "group_id") && mine(owners?.roomOwner?.(value))) continue;
     return "team";
   }
   return "self";
