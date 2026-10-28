@@ -61,7 +61,7 @@ async function serve(options: Options) {
 describe("custom rules routes", () => {
   it("names a product only as the bot's servers declare it, and pins it on the saved rule (#1220)", async () => {
     let declared: RuleProduct[] = [{ id: "acme_desk", name: "Acme Desk" }, { id: "example_chat" }];
-    const { call, store } = await serve({ person: "jc", products: (_person, botId) => (botId === "bot-a" ? declared : []) });
+    const { call, store } = await serve({ person: "owner", products: (_person, botId) => (botId === "bot-a" ? declared : []) });
     const listed = await call("?botId=bot-a");
     expect(listed.body.products).toEqual([{ id: "acme_desk", name: "Acme Desk" }, { id: "example_chat" }]);
     const saved = await call("", "POST", { text: "ne jamais écrire dans Acme Desk", botId: "bot-a" });
@@ -72,10 +72,10 @@ describe("custom rules routes", () => {
     expect((await call("?botId=bot-a")).body.rules[0].compiled.products).toEqual(["acme_desk"]);
     // new words with nothing declared keep the pins; with a declaration, they name their own
     await call(`/${saved.body.rule.id}`, "PATCH", { when: "écrire dans Acme Desk ou ailleurs" });
-    expect(store.get("jc", saved.body.rule.id)?.products).toEqual(["acme_desk"]);
+    expect(store.get("owner", saved.body.rule.id)?.products).toEqual(["acme_desk"]);
     declared = [{ id: "example_chat" }];
     await call(`/${saved.body.rule.id}`, "PATCH", { when: "écrire avec example chat" });
-    expect(store.get("jc", saved.body.rule.id)?.products).toEqual(["example_chat"]);
+    expect(store.get("owner", saved.body.rule.id)?.products).toEqual(["example_chat"]);
     // a rule for every bot reads every bot's products; none declared, no pin
     const all = await call("", "POST", { text: "ne jamais écrire dans Acme Desk", botId: null });
     expect(all.body.rule.products).toBeUndefined();
