@@ -2,7 +2,7 @@
 // Nothing here calls a model. Routines (server/routines.ts) are a different
 // path and stay as they are. An approval step does not continue until the
 // person answers.
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, rmSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -14,7 +14,12 @@ const NAME = /^[a-z][a-z0-9-]{0,40}$/;
 const MAX_STEPS = 30;
 const MAX_TEXT = 4_000;
 
-export type WorkflowScope = { organization: false } | { organization: true; principalId: string };
+export type WorkflowScope = { organization: false; person?: string } | { organization: true; principalId: string };
+
+/** Finished runs stay readable for an hour, then the clock deletes them.
+ * Waiting approvals are kept until the person answers. */
+const FINISHED_KEEP_MS = 60 * 60 * 1000;
+const PRUNE_EVERY_MS = 60 * 1000;
 
 export type WorkflowStep =
   | { kind: "send"; bot: string; thread: string; text: string }
@@ -45,18 +50,29 @@ export interface WorkflowEffects {
   deliver(bot: string, thread: string, text: string): void;
 }
 
-export function workflowScope(organization: boolean, principalId: string | null | undefined): WorkflowScope | null {
-  if (!organization) return { organization: false };
+/** A stable directory name for one person on a shared server that is not
+ * an organization. Hashing keeps the key inside the path rules whatever
+ * shape the session key has. */
+export function workflowPersonKey(person: string): string {
+  return `p${createHash("sha256").update(person).digest("hex").slice(0, 32)}`;
+}
+
+export function workflowScope(organization: boolean, principalId: string | null | undefined, person?: string | null): WorkflowScope | null {
+  if (!organization) {
+    if (person === undefined || person === null || person === "") return { organization: false };
+    return { organization: false, person: workflowPersonKey(person) };
+  }
   const id = principalId?.trim().toLowerCase() ?? "";
   return PRINCIPAL.test(id) && !id.includes("..") ? { organization: true, principalId: id } : null;
 }
 
-function scopeKey(scope: WorkflowScope): string {
-  return scope.organization ? scope.principalId : "local";
+export function workflowScopeKey(scope: WorkflowScope): string {
+  if (scope.organization) return scope.principalId;
+  return scope.person ?? "local";
 }
 
 function scopeDir(dataDir: string, scope: WorkflowScope): string {
-  return join(dataDir, "workflows", scopeKey(scope));
+  return join(dataDir, "workflows", workflowScopeKey(scope));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -118,6 +134,10 @@ export function parseWorkflowYaml(text: string): WorkflowFile | string {
 
 export class WorkflowStore {
   private readonly dataDir: string;
+  /** Clock waits only. Rebuilt once from disk, then updated by writeRun. */
+  private waiting = new Map<string, number>();
+  private indexed = false;
+  private nextPrune = 0;
   constructor(dataDir: string) { this.dataDir = dataDir; }
 
   private dir(scope: WorkflowScope): string {
@@ -167,7 +187,7 @@ export class WorkflowStore {
     const run: WorkflowRun = {
       id: `wf_${randomBytes(8).toString("hex")}`,
       name: file.name,
-      scopeKey: scopeKey(scope),
+      scopeKey: workflowScopeKey(scope),
       steps: file.steps,
       index: 0,
       status: "running",
@@ -192,18 +212,55 @@ export class WorkflowStore {
     const path = join(this.dataDir, "workflows", "runs", `${run.id}.json`);
     mkdirSync(join(path, ".."), { recursive: true, mode: 0o700 });
     writeFileAtomic(path, `${JSON.stringify(run)}\n`, { mode: 0o600 });
+    if (run.status === "waiting" && run.waitUntil !== undefined && !run.approval) this.waiting.set(run.id, run.waitUntil);
+    else this.waiting.delete(run.id);
+  }
+
+  /** Drop finished runs older than an hour. Approvals stay. */
+  pruneFinished(now: number): number {
+    this.nextPrune = now + PRUNE_EVERY_MS;
+    const dir = join(this.dataDir, "workflows", "runs");
+    let names: string[] = [];
+    try { names = readdirSync(dir); } catch { return 0; }
+    let removed = 0;
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const id = name.slice(0, -5);
+      const run = this.getRun(id);
+      if (!run) continue;
+      const finished = run.status === "done" || run.status === "stopped";
+      if (!finished || now - run.updatedAt < FINISHED_KEEP_MS) continue;
+      rmSync(join(dir, name), { force: true });
+      this.waiting.delete(id);
+      removed += 1;
+    }
+    return removed;
+  }
+
+  private rebuildIndex(now: number): void {
+    this.waiting.clear();
+    const dir = join(this.dataDir, "workflows", "runs");
+    let names: string[] = [];
+    try { names = readdirSync(dir); } catch { names = []; }
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const run = this.getRun(name.slice(0, -5));
+      if (run?.status === "waiting" && run.waitUntil !== undefined && !run.approval) this.waiting.set(run.id, run.waitUntil);
+    }
+    this.indexed = true;
+    this.pruneFinished(now);
   }
 
   /** Runs that are waiting only on a clock, due now. */
   due(now: number): WorkflowRun[] {
-    const dir = join(this.dataDir, "workflows", "runs");
-    let names: string[] = [];
-    try { names = readdirSync(dir); } catch { return []; }
+    if (!this.indexed) this.rebuildIndex(now);
+    else if (now >= this.nextPrune) this.pruneFinished(now);
     const due: WorkflowRun[] = [];
-    for (const name of names) {
-      if (!name.endsWith(".json")) continue;
-      const run = this.getRun(name.slice(0, -5));
+    for (const [id, at] of this.waiting) {
+      if (at > now) continue;
+      const run = this.getRun(id);
       if (run?.status === "waiting" && run.waitUntil !== undefined && run.waitUntil <= now && !run.approval) due.push(run);
+      else this.waiting.delete(id);
     }
     return due;
   }

@@ -1,7 +1,8 @@
 // YAML workflows for the signed-in person. No admin right. Steps do not
-// start a model turn. An approval stays waiting until this person answers.
+// start a model turn. A send step posts a bot message in the conversation.
+// An approval stays waiting until this person answers.
 import type { RequestAuth } from "../request-auth.ts";
-import { advanceWorkflow, type WorkflowEffects, type WorkflowScope, type WorkflowStore } from "../workflows.ts";
+import { advanceWorkflow, parseWorkflowYaml, workflowScopeKey, type WorkflowEffects, type WorkflowScope, type WorkflowStore } from "../workflows.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export const WORKFLOWS_PATH = "/api/me/workflows";
@@ -31,25 +32,26 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): RouteHandler {
       const body = await readBody(req).catch(() => null);
       const yaml = body && typeof body === "object" ? (body as { yaml?: unknown }).yaml : undefined;
       if (typeof yaml !== "string") return json(res, 400, { error: "Send { yaml }." });
-      const saved = deps.store.save(scope, yaml);
-      if (typeof saved === "string") return json(res, 400, { error: saved });
-      for (const step of saved.steps) {
+      const parsed = parseWorkflowYaml(yaml);
+      if (typeof parsed === "string") return json(res, 400, { error: parsed });
+      for (const step of parsed.steps) {
         if ((step.kind === "send" || step.kind === "approve") && step.bot && step.thread && !deps.owns(auth, step.bot, step.thread)) {
-          deps.store.forget(scope, saved.name);
           return json(res, 403, { error: "A step names a conversation that is not yours." });
         }
       }
+      const saved = deps.store.save(scope, yaml);
+      if (typeof saved === "string") return json(res, 400, { error: saved });
       return json(res, 200, { name: saved.name, steps: saved.steps.length });
     }
     const runMatch = /^\/runs\/(wf_[a-f0-9]{16})(?:\/answer)?$/.exec(rest);
     if (runMatch && method === "GET" && !rest.endsWith("/answer")) {
       const run = deps.store.getRun(runMatch[1]!);
-      if (!run || run.scopeKey !== (scope.organization ? scope.principalId : "local")) return json(res, 404, { error: "No workflow run with that id." });
+      if (!run || run.scopeKey !== workflowScopeKey(scope)) return json(res, 404, { error: "No workflow run with that id." });
       return json(res, 200, publicRun(run));
     }
     if (runMatch && method === "POST" && rest.endsWith("/answer")) {
       const run = deps.store.getRun(runMatch[1]!);
-      if (!run || run.scopeKey !== (scope.organization ? scope.principalId : "local")) return json(res, 404, { error: "No workflow run with that id." });
+      if (!run || run.scopeKey !== workflowScopeKey(scope)) return json(res, 404, { error: "No workflow run with that id." });
       const body = await readBody(req).catch(() => null);
       const decision = body && typeof body === "object" ? (body as { decision?: unknown }).decision : undefined;
       if (decision !== "yes" && decision !== "no") return json(res, 400, { error: "Send { decision: \"yes\" } or { decision: \"no\" }." });

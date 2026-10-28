@@ -7441,6 +7441,8 @@ function openApiToolsEnv(botId: string, threadId: string): string {
   return operations.length ? JSON.stringify(operations) : "";
 }
 const workflowStore = new WorkflowStore(DATA_DIR);
+/** Posts text into the conversation as a bot message. It does not start a
+ * model turn. */
 function workflowDeliver(scopeKey: string, botId: string, threadId: string, text: string): void {
   const bot = store.bot(botId);
   if (!bot) return;
@@ -7454,9 +7456,26 @@ function workflowOwned(auth: RequestAuth, botId: string, threadId: string): bool
   if (!bot) return false;
   const onBot = bot.threadId === threadId || Boolean(bot.tasks?.some((task) => task.threadId === threadId));
   if (!onBot) return false;
-  if (IDENTITY.kind !== "perspicax") return true;
+  if (IDENTITY.kind === "perspicax") {
+    if (auth.kind !== "session") return false;
+    return sessionPrincipal(auth)?.toLowerCase() === effectiveBotOwner(bot).toLowerCase();
+  }
+  // One person on a desktop shares the local folder. On a shared server
+  // each session only names conversations it started. The owner's own
+  // devices on a personal Cloud still reach every conversation on their bots.
+  const shared = Boolean(CLOUD_HOME) || HOSTED_WORKSPACE || sharedMembership();
+  if (!shared) return true;
   if (auth.kind !== "session") return false;
-  return sessionPrincipal(auth)?.toLowerCase() === effectiveBotOwner(bot).toLowerCase();
+  if (CLOUD_HOME && cloudOwnerSession(auth)) return true;
+  const person = CLOUD_HOME ? actorKey(auth) : personKey(auth.session);
+  return threadStarters.get(threadId) === person;
+}
+function workflowCallerScope(auth: RequestAuth) {
+  if (IDENTITY.kind === "perspicax") return workflowScope(true, sessionPrincipal(auth));
+  const shared = Boolean(CLOUD_HOME) || HOSTED_WORKSPACE || sharedMembership();
+  if (!shared || auth.kind !== "session") return workflowScope(false, null);
+  const person = CLOUD_HOME ? actorKey(auth) : personKey(auth.session);
+  return workflowScope(false, null, person);
 }
 const usageMeter = new UsageMeter(DATA_DIR);
 // A person's own Experimental switches and browser profiles on an
@@ -36045,7 +36064,7 @@ ROUTES.push(createOpenApiRoutes({
 }));
 ROUTES.push(createWorkflowRoutes({
   store: workflowStore,
-  scope: (auth) => workflowScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
+  scope: workflowCallerScope,
   owns: workflowOwned,
   deliver: (bot, thread, text) => {
     const record = store.bot(bot);
