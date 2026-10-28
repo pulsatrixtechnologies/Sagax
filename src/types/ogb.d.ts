@@ -466,6 +466,9 @@ const __BASE_VERSION__: string;
       };
       /** Native folder picker; resolves null when the user cancels. */
       pickFolder?(current?: string): Promise<string | null>;
+      /** Opens a terminal of this computer standing in `folder`. False when
+       * the folder is not one this computer can open, or no terminal could. */
+      openTerminalAt?(folder: string): Promise<boolean>;
       /** Writes the redacted diagnostics report to a user-chosen file;
        * resolves the path, or null when cancelled. */
       exportDiagnostics?(): Promise<string | null>;

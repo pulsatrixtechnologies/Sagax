@@ -71885,6 +71885,54 @@
         }
       }
     },
+    "devPods.environment.folderMenu": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Folder actions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actions du dossier" } }
+      }
+    },
+    "devPods.environment.showInFinder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show in Finder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher dans le Finder" } }
+      }
+    },
+    "devPods.environment.copyPath": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy path" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier le chemin" } }
+      }
+    },
+    "devPods.environment.changeFolder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Change folder…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Changer de dossier…" } }
+      }
+    },
+    "devPods.environment.addFolder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add folder…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter un dossier…" } }
+      }
+    },
+    "devPods.environment.openTerminal": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open in terminal" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir dans un terminal" } }
+      }
+    },
+    "devPods.environment.copyBranch": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy branch name" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier le nom de la branche" } }
+      }
+    },
+    "devPods.environment.repository": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Repository" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dépôt" } }
+      }
+    },
     "devPods.environment.settings": {
       "localizations": {
         "en": {

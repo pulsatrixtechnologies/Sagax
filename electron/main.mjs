@@ -4130,6 +4130,13 @@ ipcMain.handle("desktop:pick-folder", localOnly("desktop:pick-folder", async (ev
   return result.canceled ? null : (result.filePaths[0] ?? null);
 }));
 
+// A terminal standing in a folder the person already chose (the Environment
+// pod's "Open in terminal"). The folder is checked before anything runs.
+ipcMain.handle("desktop:open-terminal", localOnly("desktop:open-terminal", async (_event, folder) => {
+  const { openTerminalAt } = await import("./terminal-launch.mjs");
+  return openTerminalAt(folder);
+}));
+
 // One-click bug-report bundle. Secrets are never read; the report is
 // redacted again on the way out (diagnostics.mjs). null means the user
 // cancelled the save dialog.
