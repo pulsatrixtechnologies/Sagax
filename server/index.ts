@@ -3268,6 +3268,8 @@ function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opt
       author: (hit) => (hit.role === "user" ? hit.peer ?? opts.userName : hit.from ?? bot.name),
       ...(opts.budget ? { budget: opts.budget } : {}),
       ...(opts.audience ? { audience: opts.audience } : {}),
+      // Off unless this process was started with it. FTS5 still runs first.
+      ...(process.env.SAGAX_SEMANTIC_RECALL === "1" ? { semantic: true } : {}),
     });
     if (recalled) console.log(`auto-recall: ${bot.name} (${bot.id}) got ${recalled.notes} note and ${recalled.conversations} conversation passage(s) in ${threadId}`);
     // its memory recalled in this conversation (Total Recall, for whoever wrote that memory)
