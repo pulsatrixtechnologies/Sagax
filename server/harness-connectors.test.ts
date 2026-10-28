@@ -314,3 +314,12 @@ describe("a stored claudeAi: false", () => {
     } as ClaudeAiTurnInput)).toBe(true);
   });
 });
+
+describe("2026-10-28: Grok's own connectors in the person's Grok turn", () => {
+  it("tells the Grok turn they are the person's own and how to find Teams or Outlook", () => {
+    const text = engineConnectorsPrompt({ driver: "grokAgent", claudeAi: false, grokCloud: true });
+    expect(text).toContain("person's own xAI account");
+    expect(text).toMatch(/search_tool \(for example "teams" or "outlook"\)/);
+    expect(text).toContain("Microsoft Teams");
+  });
+});

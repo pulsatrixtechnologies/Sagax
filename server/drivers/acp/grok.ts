@@ -115,13 +115,23 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
 /** Env for the xAI account's cloud connectors (hosted and managed MCP).
  * Only an organization turn loads them: host tools are withheld, so Grok
  * reaches every MCP tool through use_tool, and a server Sagax did not mount
- * keeps its card. A solo turn in `--permission-mode default` can call those
- * servers with no prompt, so they stay off. A tool selection stays off too:
- * that turn refuses any MCP server it did not list. Gateway tools stay off
- * on every turn. */
+ * keeps its card (connector-ask.ts). A solo turn in `--permission-mode
+ * default` can call those servers with no prompt, so they stay off. A tool
+ * selection stays off too: that turn refuses any MCP server it did not list.
+ *
+ * 2026-10-28: the grok.com connectors a person connects (Outlook, Microsoft
+ * Teams, Gmail, Google Drive, SharePoint...) are served through xAI's
+ * managed MCP gateway (`managed_gateway:` connectors, Grok's
+ * `managed_mcps.gateway_tools_enabled`). Forcing the gateway tools off on
+ * every turn left a person's own Grok turn without the very connectors
+ * Connect apps lists ("no Teams connector on the Grok account"). They now
+ * follow the managed configs: on for the person's own sign-in on an
+ * organization turn without a tool selection, off everywhere else. A
+ * gateway call is a use_tool call to a server Sagax did not mount, so it
+ * keeps its card below Full access, like any engine connector. */
 export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: boolean, ownAccount?: boolean): {
   GROK_MANAGED_MCPS_ENABLED?: "false";
-  GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false";
+  GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" | "false";
 } {
   // Review of #943 (point 5): only on the person's own xAI sign-in
   // (harness-connectors.ts grokCloudConnectorsForTurn), never on an account
@@ -129,7 +139,8 @@ export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: bo
   if (toolScope !== undefined || withholdHostTools !== true || ownAccount !== true) {
     return { GROK_MANAGED_MCPS_ENABLED: "false", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
   }
-  return { GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
+  // set, never left to an environment variable the server inherited
+  return { GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" };
 }
 
 /** The xAI cloud connectors this turn could reach through use_tool, named
@@ -991,9 +1002,10 @@ const support: AcpSupport = {
     delete env.XAI_API_KEY;
   },
   applyTurnEnv: (env, { toolScope, withholdHostTools, accountConnectors }) => {
-    // Cloud connectors of the signed-in xAI account reach this bot. A tool
-    // selection still turns them off (grokCloudConnectorEnv). Gateway tools
-    // stay off on every turn.
+    // Cloud connectors of the signed-in xAI account reach this bot, the
+    // managed configs and the gateway connectors (Outlook, Teams, Gmail...)
+    // alike. A tool selection or someone else's account still turns them off
+    // (grokCloudConnectorEnv).
     const cloud = grokCloudConnectorEnv(toolScope, withholdHostTools === true, accountConnectors === true);
     if (cloud.GROK_MANAGED_MCPS_ENABLED) env.GROK_MANAGED_MCPS_ENABLED = cloud.GROK_MANAGED_MCPS_ENABLED;
     else delete env.GROK_MANAGED_MCPS_ENABLED;
