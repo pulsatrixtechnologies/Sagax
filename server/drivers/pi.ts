@@ -1602,9 +1602,14 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         standbySession = sessionFile;
         emit({ ...base(threadId, turnId), type: "session.started", sessionId: sessionFile, model: turn.model ?? null });
       } else try {
+        // #1276: a compact turn's pi keeps its session (no --no-session), so a
+        // fresh one already started a new session: a new_session would
+        // replace it, and pi reloads every extension (and its MCP servers)
+        // for the new one, about half a second per new conversation.
+        const fresh = !sessionPath && turn.compactPrompt;
         const command = sessionPath ? "switch_session" : "new_session";
-        const hsPromise = awaitResponse(command);
-        send(sessionPath ? { type: "switch_session", sessionPath } : { type: "new_session" });
+        const hsPromise = fresh ? Promise.resolve(undefined) : awaitResponse(command);
+        if (!fresh) send(sessionPath ? { type: "switch_session", sessionPath } : { type: "new_session" });
         const hs = (await hsPromise) as { sessionFile?: string; sessionId?: string } | undefined;
         if (hs?.sessionFile) sessionFile = hs.sessionFile;
         // #1276: pi answers new_session without the file; a compact turn
