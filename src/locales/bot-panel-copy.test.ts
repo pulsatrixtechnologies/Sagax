@@ -17,7 +17,6 @@ const translated = [
   "botPanel.routines.instruction",
   "botPanel.routines.hint",
   "botPanel.routines.hintAsk",
-  "botPanel.routines.hintNew",
   "botPanel.avatar.generateAvatar",
   "settings.profile.uploadPhoto",
   "routines.empty",

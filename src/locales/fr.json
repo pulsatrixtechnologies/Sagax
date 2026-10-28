@@ -965,7 +965,6 @@
   "botPanel.routines.edit": "Modifier",
   "botPanel.routines.hint": "Les routines sont des tâches récurrentes que ce bot exécute selon un horaire. {ask} pour en créer une.",
   "botPanel.routines.hintAsk": "Demandez-le dans le chat",
-  "botPanel.routines.hintNew": "Nouvelle routine",
   "botPanel.routines.instruction": "Consigne",
   "botPanel.routines.pause": "Mettre en pause",
   "botPanel.routines.resume": "Reprendre",

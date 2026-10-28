@@ -75,17 +75,15 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
   }
 
   // No routine and nothing pending: no section, one quiet line. Asking the bot
-  // in chat stays the way in, and "New routine" opens the same editor as the +.
+  // in chat is the way in (plain text, no underline, no "New routine").
   if (routines.length === 0 && state.routinesLoadState === "ready") {
     const [before, after] = t("botPanel.routines.hint", { ask: "\u0000" }).split("\u0000");
     return <div data-routines-hint className="px-2 text-center text-[12px] leading-[17px] text-ink-tertiary">
       <p>
         {before}
-        <button type="button" data-routines-ask onClick={() => { dispatch({ type: "toggleSettings", open: false }); dispatch({ type: "toggleComputer", open: false }); }} className="rounded underline decoration-ink-tertiary/50 underline-offset-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">{t("botPanel.routines.hintAsk")}</button>
+        <button type="button" data-routines-ask onClick={() => { dispatch({ type: "toggleSettings", open: false }); dispatch({ type: "toggleComputer", open: false }); }} className="rounded hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">{t("botPanel.routines.hintAsk")}</button>
         {after}
       </p>
-      <button type="button" data-routines-new onClick={() => setEditing("new")} className="mt-1 rounded px-1 text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">{t("botPanel.routines.hintNew")}</button>
-      {editing === "new" && <RoutineEditor key={`${bot.id}-new`} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} onClose={() => setEditing(null)} />}
     </div>;
   }
 
