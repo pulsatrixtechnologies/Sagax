@@ -41,6 +41,71 @@ function pageDocument(request) {
   }
 }
 
+/** A published page's frame itself (the page, under its sandbox CSP). */
+const PAGE_FRAME_PREFIXES = ["/pages/frame/", "/pages/preview-frame/"];
+
+/** Whether a URL is a published page's frame (/pages/frame/...,
+ * /pages/preview-frame/...). Pure. */
+function isPageFrameUrl(url) {
+  try {
+    const pathname = new URL(url).pathname;
+    return PAGE_FRAME_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The page frames a window of this app is loading as an iframe right now.
+ *
+ * The server answers a page frame only to a browser that says it loads it as
+ * an iframe (Sec-Fetch-Dest: iframe), never as a top-level document. Passed
+ * through net.fetch, every request says "empty" instead (Chromium's own
+ * fetch metadata for a browser-made fetch), and a custom protocol handler is
+ * not told what the request is for. So the frame was refused with a 404
+ * whose CSP (frame-ancestors 'none') blocked it: a page's card and the open
+ * page drew a blank white frame (0.8.12). main.mjs notes each subframe
+ * navigation to a page frame (will-frame-navigate, which knows it is a
+ * subframe and runs before the request); the handler then says "iframe" for
+ * that one request, exactly as the browser would have. A top-level load, a
+ * fetch or anything not noted still says "empty" and is still refused.
+ * Each note is used once and lapses after `ttlMs`.
+ */
+function createPageFrameLoads({ now = () => Date.now(), ttlMs = 30_000, max = 64 } = {}) {
+  const pending = new Map();
+  const key = (url) => {
+    try {
+      return new URL(url).href;
+    } catch {
+      return null;
+    }
+  };
+  const prune = () => {
+    const at = now();
+    for (const [url, until] of pending) if (until <= at) pending.delete(url);
+    while (pending.size > max) pending.delete(pending.keys().next().value);
+  };
+  return {
+    /** A subframe is about to load this page frame. */
+    expect(url) {
+      const href = isPageFrameUrl(url) ? key(url) : null;
+      if (!href) return false;
+      pending.delete(href);
+      pending.set(href, now() + ttlMs);
+      prune();
+      return true;
+    },
+    /** True once for a noted, unexpired frame load; the note is used up. */
+    take(url) {
+      const href = key(url);
+      if (!href || !pending.has(href)) return false;
+      const until = pending.get(href);
+      pending.delete(href);
+      return until > now();
+    },
+  };
+}
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -137,10 +202,19 @@ function fromBundledPage(request, bundled) {
  * Origin on cookie writes (server/request-auth.ts isSameOrigin), so a write
  * sent by the bundled page carries that origin again. Any other request gets
  * none, and no cookie either (see createBundledUiHandler). */
-function passThroughHeaders(request, bundled) {
+function passThroughHeaders(request, bundled, options = {}) {
   const headers = new Headers(request.headers);
   headers.delete("origin");
-  if (request.method === "GET" || request.method === "HEAD") return headers;
+  if (request.method === "GET" || request.method === "HEAD") {
+    // a page frame a window is loading as an iframe (createPageFrameLoads):
+    // the fetch metadata the browser would have sent (net.fetch accepts
+    // "iframe" with mode "navigate" only)
+    if (options.pageFrame) {
+      headers.set("sec-fetch-dest", "iframe");
+      headers.set("sec-fetch-mode", "navigate");
+    }
+    return headers;
+  }
   if (fromBundledPage(request, bundled)) headers.set("origin", bundled);
   return headers;
 }
@@ -171,6 +245,7 @@ function bundledOriginFor(bundled, url) {
  *   devOrigin?: () => string | null,          the Vite dev server when unpackaged
  *   fetch: (input: any, init?: any) => Promise<Response>,  net.fetch
  *   readFile: (file: string) => Promise<Uint8Array>,
+ *   pageFrames?: { take: (url: string) => boolean },  the page frames a window loads as an iframe (createPageFrameLoads)
  *   log?: (line: string) => void,
  * }} deps
  */
@@ -190,7 +265,9 @@ function createBundledUiHandler(deps) {
       const init = {
         ...bypass,
         method: request.method,
-        headers: passThroughHeaders(request, bundled),
+        headers: passThroughHeaders(request, bundled, {
+          pageFrame: pageDocument(request) && isPageFrameUrl(request.url) && deps.pageFrames?.take(request.url) === true,
+        }),
         credentials: fromBundledPage(request, bundled) || pageDocument(request) ? "include" : "omit",
         redirect: "follow",
       };
@@ -247,6 +324,8 @@ module.exports = {
   bundleFile,
   createBundledUiHandler,
   createDetachedUiHandler,
+  createPageFrameLoads,
+  isPageFrameUrl,
   fromBundledPage,
   pageDocument,
   passThroughHeaders,
