@@ -28,6 +28,10 @@ const ALLOWED = new Set([
   "place.fromBot",
   "place.offHint",
   "toolTarget.workingOn",
+  // The bot wizard names the same work location.
+  "botWizard.step.tools.intro",
+  "botWizard.tools.questionHint",
+  "botWizard.recap.tools.workspace",
   // Keys another branch adds with its own wording go here until reviewed.
 ]);
 
