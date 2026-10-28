@@ -28,6 +28,7 @@
     "check:terms": "node scripts/check-source-terms.mjs",
     "check:contrast": "node scripts/check-skin-contrast.mjs",
     "gen:switch": "node scripts/gen-switch-tokens.mjs",
+    "gen:bubble": "node scripts/gen-bubble-tokens.mjs",
     "i18n:check": "node scripts/generate-locale.mjs --check",
     "dev": "vite",
     "docs:dev": "pnpm --filter @sagax/docs dev",

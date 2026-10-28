@@ -73,7 +73,7 @@ export function contrastHex(a: string, b: string): number {
   return x && y ? ratio(x, y) : 1;
 }
 
-function toHsl([r, g, b]: Rgb): [number, number, number] {
+export function toHsl([r, g, b]: Rgb): [number, number, number] {
   const [R, G, B] = [r / 255, g / 255, b / 255];
   const max = Math.max(R, G, B);
   const min = Math.min(R, G, B);
@@ -86,7 +86,7 @@ function toHsl([r, g, b]: Rgb): [number, number, number] {
   return [h, s, l];
 }
 
-function fromHsl(h: number, s: number, l: number): Rgb {
+export function fromHsl(h: number, s: number, l: number): Rgb {
   if (s === 0) return [l * 255, l * 255, l * 255];
   const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
   const p = 2 * l - q;

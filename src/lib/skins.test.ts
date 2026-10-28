@@ -73,8 +73,8 @@ describe("skins", () => {
     expect(DEFAULT_SKIN).toBe("pulsatrix");
   });
 
-  it("gives Meadow's dark bubble its own inverted context", () => {
-    expect(css).toMatch(/@scope \(\[data-skin="meadow"\]\) to \(\[data-skin\]\)\s*\{\s*\.bg-bubble-user\s*\{/);
+  it("gives the person's accent bubble its own ink context, in Meadow as in every skin", () => {
+    expect(css).toMatch(/\n\.bg-bubble-user\s*\{[^}]*--color-ink:\s*var\(--color-bubble-user-ink\)/);
   });
 
   it("describes each skin exactly once", () => {

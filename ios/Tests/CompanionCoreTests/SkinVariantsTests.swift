@@ -11,7 +11,8 @@ final class SkinVariantsTests: XCTestCase {
         let red = SkinLook(skin: .pulsatrix, tint: .red).palette
         XCTAssertEqual(red.accent, SkinColor(0xF87171))
         XCTAssertEqual(red.accentInk, SkinColor(0x1A0707))
-        XCTAssertEqual(red.bubbleUser, SkinColor(0x3D1A22))
+        XCTAssertEqual(red.bubbleUser, BubbleColors.user(accent: SkinColor(0xF87171)).fill, "the person's bubble is the colour's accent")
+        XCTAssertNotEqual(red.bubbleAssistant, red.bubbleUser)
         XCTAssertEqual(red.bg, base.bg, "the ground stays the family's")
         XCTAssertEqual(red.card, base.card)
         XCTAssertEqual(red.textPrimary, base.textPrimary)

@@ -60,7 +60,7 @@ final class SkinsTests: XCTestCase {
         let p = SkinPalette.black
         XCTAssertEqual(p.bg, SkinColor(0x141414))
         XCTAssertEqual(p.card, SkinColor(0x202020))
-        XCTAssertEqual(p.bubbleUser, SkinColor(0x2E2E30))
+        // the bubbles follow the accent now (BubbleColorsTests); the page and the card do not move
         XCTAssertEqual(p.toggleOn, SkinColor(0x68CE67))
         XCTAssertEqual(p.textPrimary, SkinColor(0xFFFFFF))
         XCTAssertTrue(p.isDark)

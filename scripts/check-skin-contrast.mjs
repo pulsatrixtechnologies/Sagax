@@ -23,7 +23,6 @@
 //     points the generic tokens back at the `--color-popover-*` set, which
 //     each skin resolves once at its own root. Measured over the root and
 //     over every band, so a popover reads the same wherever it opens.
-//   - the inverted user bubble of Daylight and Meadow (`@scope` blocks).
 import { readdirSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
@@ -486,36 +485,9 @@ export function checkContrast(css, { verbose = false } = {}) {
     out.push(`  ${id} mascot white alone: ${alone}; shadow ${shadow[0]}`);
   }
 
-  // The inverted bubbles (Daylight's ink-black, Meadow's green-black) have
-  // their own inherited context: the editor, labels, quotes and file chips
-  // explicitly use these tokens, not parent color.
-  for (const skinId of ["daylight", "meadow"]) {
-    const scope = css.match(new RegExp(`@scope \\(\\[data-skin="${skinId}"\\]\\) to \\(\\[data-skin\\]\\)\\s*\\{\\s*\\.bg-bubble-user\\s*\\{([^}]*)\\}`))?.[1];
-    if (!scope) {
-      failed = true;
-      out.push(`✗ ${skinId} bubble: no @scope block for the inverted bubble`);
-      continue;
-    }
-    const rootTokens = resolve({ ...base, ...skins.get(skinId) }, {}, inline);
-    const bubble = resolve(declarations(scope), rootTokens, inline);
-    report(skinId, "bubble", measure(bubble, [
-      ["--color-ink", "--color-bubble-user", 4.5],
-      ["--color-ink-secondary", "--color-bubble-user", 4.5],
-      ["--color-ink", "--color-raised", 4.5],
-      ["--color-ink-secondary", "--color-raised-hover", 4.5],
-      ["--color-ink-secondary", "--color-inset", 4.5],
-      ["--color-ink-tertiary", "--color-bubble-user", 4.5],
-      ["--color-ink-tertiary", "--color-raised-hover", 4.5],
-      ["--color-ink-tertiary", "--color-inset", 4.5],
-      ["--color-accent", "--color-inset", 4.5],
-      ["--color-accent-text", "--color-bubble-user", 4.5],
-      ["--color-ink", "--color-control", 4.5],
-      ["--color-accent-ink", "--color-accent", 4.5],
-      ["--color-danger-ink", "--color-danger", 4.5],
-      ["--color-success-ink", "--color-success", 4.5],
-    ]));
-    if (POPOVER) report(skinId, "bubble popover", measure(resolve(POPOVER, bubble, inline), POPOVER_PAIRS));
-  }
+  // The person's bubble (the accent, in every skin and variant) and the bot's
+  // grey are measured by src/lib/bubble-colors.test.ts, from the generated
+  // src/styles/skin-bubble.css.
 
   return { failed, failingPairs, lines: out, problems: found };
 
