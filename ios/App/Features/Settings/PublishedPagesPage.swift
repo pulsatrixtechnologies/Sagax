@@ -12,6 +12,7 @@ struct PublishedPagesPage: View {
     @State private var busy: String?
     @State private var deleting: PublishedPageSummary?
     @State private var copied: String?
+    @State private var snapshot: PublishedPageSummary?
 
     var body: some View {
         SettingsPage(title: "Published pages") {
@@ -52,6 +53,11 @@ struct PublishedPagesPage: View {
             Button(String(localized: "OK"), role: .cancel) {}
         } message: {
             Text(String(localized: "Link copied."))
+        }
+        .sheet(item: $snapshot) { page in
+            if let version = page.versions.map(\.n).max() {
+                PagePreviewSheet(pageID: page.id, version: version)
+            }
         }
     }
 
@@ -95,6 +101,13 @@ struct PublishedPagesPage: View {
                     .buttonStyle(.borderless)
                     .font(.footnote)
                     .accessibilityIdentifier("published-page-revoke.\(page.id)")
+            }
+            if page.versions.map(\.n).max() != nil {
+                Button(String(localized: "Snapshot")) { snapshot = page }
+                    .disabled(busy != nil)
+                    .buttonStyle(.borderless)
+                    .font(.footnote)
+                    .accessibilityIdentifier("published-page-snapshot.\(page.id)")
             }
             Button(String(localized: "Delete"), role: .destructive) { deleting = page }
                 .disabled(busy != nil)
