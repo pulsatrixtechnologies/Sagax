@@ -105,6 +105,16 @@ describe("member admin audit, section 1: bot tool calls", () => {
   it.each(["list_bots", "ask_bot", "memory_write", "offer_shell_terminal", "list_terminal_resources", "propose_team_setup"])("agents %s (the member's own scope): the owner's card", (tool) => {
     expect(answerer(`mcp__agents__${tool}`)).toBe("owner");
   });
+  it("act: a read of the member's own bot is theirs; a write or someone else's bot stays an admin's (#1269)", () => {
+    const card = (raw: unknown, ownsBot?: (id: string) => boolean) => memberBotAdminApproval({
+      tool: "mcp__agents__act", workspaceRoot: "/nowhere", rawInput: raw, callerBotId: "bot-1", ...(ownsBot ? { ownsBot } : {}),
+    });
+    const owns = (id: string) => id === "bot-1";
+    expect(card({ method: "GET", path: "/api/bots/bot-1" }, owns)).toBe(false);
+    expect(card({ method: "POST", path: "/api/bots/bot-1" }, owns)).toBe(true);
+    expect(card({ method: "GET", path: "/api/bots/bot-2" }, owns)).toBe(true);
+    expect(card({ method: "GET", path: "/api/bots/bot-1" })).toBe(true);
+  });
   it("the terminal offer still goes to an admin when a command is described or another server spells it", () => {
     expect(memberBotAdminApproval({ tool: "mcp__agents__offer_shell_terminal", command: { command: "ls" }, workspaceRoot: "/nowhere" })).toBe(true);
     expect(memberBotAdminApproval({ tool: "mcp__agents__offer_shell_terminal", workspaceRoot: "/nowhere", foreignMcpServers: ["agents"] })).toBe(true);

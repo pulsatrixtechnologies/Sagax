@@ -9,7 +9,7 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { memberOwnScopeTool } from "./member-tool-scope.ts";
+import { memberOwnScopeTool, ownBotReadAct, builtinAgentToolName } from "./member-tool-scope.ts";
 import { READABLE_HIDDEN_SEGMENTS } from "../shared/readable-hidden.ts";
 import { dataToolName, foreignToolSpelling } from "./sagax-internal-tools.ts";
 
@@ -228,14 +228,27 @@ export function memberBotAdminApproval(input: {
   /** 2026-10-19: the owner holds `host.commands` (given in Perspicax): the
    * server commands of their own bots are theirs to approve. */
   ownerRunsServerCommands?: boolean;
+  /** #1269: the raw input of an `act` call. */
+  rawInput?: unknown;
+  /** #1269: bots that belong to the member who owns the calling bot. */
+  ownsBot?: (id: string) => boolean;
+  /** #1269: the calling bot, for an `act` plugin list that omits botId. */
+  callerBotId?: string;
 }): boolean {
   if (input.ownEnvironment || input.ownDestination || input.ownComputerChoice || input.ownerRunsServerCommands) return false;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
+  const toolName = input.tool?.trim();
+  // #1269: act stays an admin card except a read with no effect of the
+  // member's own bot (the card badges that call Read-only). A write, and
+  // a call on someone else's bot, still wait for an admin. Judged before
+  // the own-scope list, which would otherwise let every act through.
+  if (!input.command && builtin && builtinAgentToolName(toolName) === "act"
+    && !ownBotReadAct(toolName, input.rawInput, { ownsBot: input.ownsBot, callerBotId: input.callerBotId })) return true;
   // 2026-10-19 (member admin audit): a built-in tool of the member's own
   // scope is judged by its exact name before the shell pattern, which read
   // `agents__offer_shell_terminal` (a card the person approves) as a shell
   // command and sent the member's terminal offer to an admin.
-  if (!input.command && builtin && memberOwnScopeTool(input.tool?.trim())) return false;
+  if (!input.command && builtin && memberOwnScopeTool(toolName)) return false;
   if (serverCommandApproval(input)) return true;
   // 2026-10-16: the Data tools are the bot's own database, confined to its
   // own folders on an organization server (sagax-internal-tools.ts).

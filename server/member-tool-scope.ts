@@ -109,15 +109,11 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   // every setting as the member (server/settings-actions.ts): the member's
   // own rights decide on the route the screen calls, a card otherwise
   sagax_settings: "own-setup",
-  // #1269: act (and manage_settings, act on /api/config) runs as the signed-in
-  // person with their own session, never as the bot or the server
-  // (server/bot-act.ts): on an organization server a turn no proven person
-  // speaks in is refused, a route that person cannot call is refused with
-  // the route's own answer, and a write waits for that person's Allow unless
-  // the bot is at auto or full. A plugin install is the plugin route's own
-  // check (owner or manager of the bot, and the organization's integrations
-  // policy). Nothing act reaches is beyond what the member can do in their
-  // own app, so an admin card on it only blocked the member's own setup.
+  // #1269: act runs as the signed-in person (server/bot-act.ts). A read
+  // with no effect of the member's own bot is their own card
+  // (ownBotReadAct). A write, or a call on someone else's bot, stays an
+  // admin card (memberBotAdminApproval): own-setup here only lets the read
+  // through, it does not drop the admin gate for the rest.
   act: "own-setup",
   manage_settings: "own-setup",
   // the member's own cards, at their request (server/primary-approvals.ts)
@@ -175,4 +171,63 @@ export function memberOwnScopeTool(name: string | undefined): MemberToolFamily |
   const tool = builtinAgentToolName(name);
   if (!tool || HOST_LEVEL_AGENT_TOOLS.has(tool)) return null;
   return Object.hasOwn(MEMBER_OWN_SCOPE_AGENT_TOOLS, tool) ? MEMBER_OWN_SCOPE_AGENT_TOOLS[tool]! : null;
+}
+
+const ACT_ROUTE_KEYS = new Set(["method", "path", "query", "body"]);
+const BOT_ID = /^[\w-]{1,80}$/;
+
+function actRecord(input: unknown): Record<string, unknown> | null {
+  let raw = input;
+  if (typeof input === "string") {
+    const text = input.trim();
+    if (!text) return null;
+    try { raw = JSON.parse(text); } catch { return null; }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  return raw as Record<string, unknown>;
+}
+
+/** `/api/bots/<id>` of a bot `ownsBot` accepts, nothing else. `..`, an
+ * encoding, a query in the path or another bot fail closed. */
+function ownBotApiPath(path: string, ownsBot: (id: string) => boolean): boolean {
+  let clean = path;
+  if (clean.length > 1 && clean.endsWith("/")) clean = clean.slice(0, -1);
+  if (!clean.startsWith("/api/bots/")) return false;
+  if (clean.includes("//") || clean.includes("\\") || clean.includes("%") || clean.includes("?") || clean.includes("#")) return false;
+  const rest = clean.slice("/api/bots/".length);
+  const segments = rest.split("/");
+  if (!rest || segments.some((segment) => segment === "" || segment === "." || segment === "..")) return false;
+  const id = segments[0]!;
+  return BOT_ID.test(id) && ownsBot(id);
+}
+
+/** #1269: `act` that only reads the member's own bot. GET or HEAD, no body,
+ * on `/api/bots/<that bot>` (the same read the approval card badges
+ * Read-only). A plugin `list` of that bot is the same call. A write, a
+ * body, another bot, or a call we cannot prove, is not: those stay an
+ * admin card. `ownsBot` is absent when the caller did not say which bots
+ * are the member's, and then nothing passes. An omitted plugin `botId` is
+ * the calling bot (`callerBotId`). */
+export function ownBotReadAct(name: string | undefined, input: unknown, scope: { ownsBot?: (id: string) => boolean; callerBotId?: string } | undefined): boolean {
+  if (builtinAgentToolName(name) !== "act" || !scope?.ownsBot) return false;
+  const ownsBot = scope.ownsBot;
+  const record = actRecord(input);
+  if (!record) return false;
+  if (record.plugins !== undefined && record.method === undefined && record.path === undefined && record.ui === undefined) {
+    if (Object.keys(record).some((key) => key !== "plugins")) return false;
+    const plugins = record.plugins;
+    if (!plugins || typeof plugins !== "object" || Array.isArray(plugins)) return false;
+    const plugin = plugins as Record<string, unknown>;
+    if (plugin.action !== "list") return false;
+    if (Object.keys(plugin).some((key) => key !== "action" && key !== "botId")) return false;
+    const id = plugin.botId === undefined ? scope.callerBotId : plugin.botId;
+    return typeof id === "string" && BOT_ID.test(id) && ownsBot(id);
+  }
+  if (Object.keys(record).some((key) => !ACT_ROUTE_KEYS.has(key))) return false;
+  if (typeof record.method !== "string" || typeof record.path !== "string") return false;
+  const method = record.method.trim().toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return false;
+  if (record.body !== undefined && record.body !== null) return false;
+  if (record.query !== undefined && (typeof record.query !== "object" || record.query === null || Array.isArray(record.query))) return false;
+  return ownBotApiPath(record.path, ownsBot);
 }
