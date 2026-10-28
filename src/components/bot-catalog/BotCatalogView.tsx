@@ -26,7 +26,7 @@ import { BotAvatar } from "../Avatar";
 import { PersonAvatar } from "../MessageAuthor";
 import { Breadcrumb, type Crumb } from "../Breadcrumb";
 import { CATEGORY_MODAL, categoryChipClass } from "../category-modal";
-import { TemplateAppChips } from "./BotCatalogDetailView";
+import { TemplateAppChips } from "./TemplateAppChips";
 import { TEMPLATE_TOOLS, TEMPLATE_TOOL_LABEL, type TemplateTool } from "./TemplateTools";
 
 /** Rows a section shows on the home view before View all. */
