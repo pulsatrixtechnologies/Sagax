@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ModelCatalog, ProviderDriver } from "../contracts.ts";
+import { publishedContextWindow } from "../published-context-window.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
 
 // Cerebras serves open models on wafer-scale chips: same OpenAI chat
@@ -77,7 +78,13 @@ export const CerebrasDriver: ProviderDriver<CerebrasConfig> = {
           const parsed = modelCard.safeParse(row);
           if (!parsed.success || !parsed.data.id.trim() || seen.has(parsed.data.id)) continue;
           seen.add(parsed.data.id);
-          options.push(known.get(parsed.data.id) ?? { id: parsed.data.id, label: parsed.data.id });
+          const published = publishedContextWindow(row);
+          const knownRow = known.get(parsed.data.id);
+          options.push({
+            ...(knownRow ?? { id: parsed.data.id, label: parsed.data.id }),
+            // A window the endpoint published replaces the hardcoded table.
+            ...(published ? { contextWindow: published } : {}),
+          });
         }
         if (options.length) catalog = withConfiguredModel(options);
       } catch {

@@ -1,6 +1,7 @@
 // Transcript-replay driver for OpenRouter, Groq, Together, llama.cpp, and
 // other endpoints that speak the OpenAI chat-completions contract.
 import type { ModelCatalog, ProviderDriver } from "../contracts.ts";
+import { publishedContextWindow } from "../published-context-window.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
 import { currentEnvName, readEnvName } from "../../electron/legacy-names.mjs";
 
@@ -170,9 +171,12 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
           const id = typeof row.id === "string" ? row.id : "";
           if (!id || seen.has(id)) continue;
           seen.add(id);
+          const published = publishedContextWindow(row);
           options.push({
             id,
             label: typeof row.name === "string" && row.name.trim() ? row.name : id,
+            // The endpoint's own window wins over the hardcoded table.
+            ...(published ? { contextWindow: published } : {}),
             // A provider's own catalog is its official list, not a custom model.
             ...(config.catalog === "openai" ? {} : { custom: true }),
           });
