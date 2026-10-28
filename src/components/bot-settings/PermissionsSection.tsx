@@ -23,7 +23,7 @@ import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { api, useStore, type Bot } from "@/state/store";
-import type { ApprovalMode } from "../../../shared/approval-mode";
+import { approvalModeFor, liveApprovalChange, type ApprovalMode } from "../../../shared/approval-mode";
 import { PROACTIVE_MODES, type ProactiveMode } from "../../../shared/proactive-mode";
 import { DEFAULT_OUTBOUND_POLICY, type OutboundPolicy } from "../../../shared/outbound";
 import { ApprovalModeSelector } from "../ApprovalModeSelector";
@@ -96,8 +96,10 @@ export function PermissionsSection({
       },
     });
   };
+  const levelNow = approvalModeFor(bot);
   const setApprovalMode = (mode: ApprovalMode) => {
-    if (bot.busy || mode === approvalMode) return;
+    if (mode === approvalMode) return;
+    if (bot.busy && !liveApprovalChange(levelNow, mode)) return;
     if (mode === "full" && orgFullAccess !== undefined) {
       if (orgFullAccess !== "allowed") return;
       if (fullAccessNeedsConfirmation(bot, viewerId, true)) setFullAccessTarget(bot.id);
@@ -158,7 +160,7 @@ export function PermissionsSection({
       menuDirection="down"
       align="right"
       wide
-      disabled={Boolean(bot.busy)}
+      disabled={Boolean(bot.busy) && !liveApprovalChange(levelNow, "ask")}
       trustedModesAvailable={trustedModesAvailable}
       orgFullAccess={orgFullAccess}
       onManageCommandAllowlist={advanced && !draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}

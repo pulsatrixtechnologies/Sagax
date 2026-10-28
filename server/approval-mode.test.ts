@@ -7,6 +7,7 @@ import {
   modelSwitchNeedsAsk,
   hasNativeAutoReview,
   isEmergencyApprovalDowngrade,
+  liveApprovalChange,
   isApprovalMode,
 } from "../shared/approval-mode.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
@@ -93,6 +94,15 @@ describe("approval modes", () => {
       approvalMode: "custom",
       approvalGrant: { requestId: "pending", mode: "custom", phase: "confirmed" },
     })).toBe("ask");
+  });
+
+  it("lets Ask, Edits and Auto change while a turn is still running", () => {
+    expect(liveApprovalChange("ask", "auto")).toBe(true);
+    expect(liveApprovalChange("auto", "edits")).toBe(true);
+    expect(liveApprovalChange("edits", "ask")).toBe(true);
+    expect(liveApprovalChange("ask", "full")).toBe(false);
+    expect(liveApprovalChange("full", "ask")).toBe(false);
+    expect(liveApprovalChange("custom", "auto")).toBe(false);
   });
 
   it("permits only fail-closed recovery from an elevated mode", () => {

@@ -106,9 +106,17 @@ export function approvalModeFor(bot: {
   return bot.autoApprove === true ? "auto" : "ask";
 }
 
+/** Ask, Edits and Auto can change while the bot is working. The next
+ * approval in that turn reads the new level. Full and Custom still wait. */
+const LIVE_APPROVAL_LEVELS = new Set<ApprovalMode>(["ask", "edits", "auto"]);
+
+export function liveApprovalChange(current: ApprovalMode, next: ApprovalMode): boolean {
+  return LIVE_APPROVAL_LEVELS.has(current) && LIVE_APPROVAL_LEVELS.has(next);
+}
+
 /** A private late-grant recovery may revoke an elevated mode even after a
- * turn began. It can only move to the fail-closed Ask mode; ordinary changes
- * remain blocked while the bot is working. */
+ * turn began. It can only move to the fail-closed Ask mode. Ask, Edits and
+ * Auto use liveApprovalChange instead. */
 export function isEmergencyApprovalDowngrade(
   current: ApprovalMode,
   next: ApprovalMode,
