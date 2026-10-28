@@ -226,10 +226,10 @@ Recherche faite sans toucher à la prod :
   de `voicebridge`.
 - pulsatrix-v2, pulsatrix-flow, dépôts gox (goxtechnologies/*, talon, swat,
   ms-team-dispatch-bot), /Users/Workspace : rien.
-- GitHub : aucun dépôt des organisations pulsatrixtechnologies,
-  goxtechnologies ni jencryzthers ne porte un nom voix, pont, téléphone ou
-  Twilio ; la recherche de code ne trouve `voicebridge` que dans des projets
-  publics sans lien.
+- GitHub : aucun dépôt des organisations pulsatrixtechnologies ou
+  goxtechnologies, ni de l'organisation personnelle du propriétaire, ne porte
+  un nom voix, pont, téléphone ou Twilio ; la recherche de code ne trouve
+  `voicebridge` que dans des projets publics sans lien.
 - Mémoire d'organisation Perspicax : aucune entrée.
 
 **Conclusion de la recherche dans les dépôts** : `voicebridge` ne vient

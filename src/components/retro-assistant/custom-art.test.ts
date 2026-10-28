@@ -54,7 +54,7 @@ describe("custom assistant pictures", () => {
 
   it("keeps only the bytes and the type, never a file name", async () => {
     const store = memoryStore();
-    const file = new File([new Uint8Array(4)], "C:\\\\Users\\\\jc\\\\secret-name.png", { type: "image/png" });
+    const file = new File([new Uint8Array(4)], "C:\\\\Users\\\\example\\\\secret-name.png", { type: "image/png" });
     await saveCustomArt("speak", file, store);
     const saved = store.map.get("speak");
     expect(saved).toBeInstanceOf(Blob);

@@ -117,9 +117,9 @@ describe("npm package term scan", () => {
   });
 
   it("allows a minified two-letter variable only in the web bundle", () => {
-    const code = "function JC(e,t){return JC.$type}";
-    const hasInitials = Object.values(EXACT_WORDS).includes("initials") && scanText(code, [], "x.js").length === 2;
-    expect(hasInitials).toBe(true);
+    // Stand-in pair only. The real initials stay in the hashed table, never in this file.
+    const code = "function PQ(e,t){return PQ.$type}";
+    expect(scanText(code, [], "x.js").map((hit) => hit.term)).toEqual(["initials", "initials"]);
     expect(blocked(code, "dist/assets/chunk-1.js")).toEqual([]);
     expect(blocked(code, "dist-server/index.js")).toEqual(["initials", "initials"]);
     expect(blocked("o=Yc(e,Math.max(0,i-PQ(e)))", "dist/assets/dist-1.js")).toEqual([]);
