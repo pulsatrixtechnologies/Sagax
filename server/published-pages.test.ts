@@ -336,6 +336,23 @@ describe("wrapper and sandboxed frame", () => {
     expect(html).toContain("<pre><code>&lt;b&gt;x&lt;/b&gt;</code></pre>");
   });
 
+  it("Markdown tables, task lists, strikethrough and autolinks render as HTML", () => {
+    const md = "| a | b | c |\n|:---|:---:|---:|\n| 1 | **2** | x \\| y |\n| 3 | 4 |\n\n- [x] fait\n- [ ] a faire\n\n~~barre~~ <https://example.com> et https://example.org/x.";
+    const doc = pageDocument({ kind: "markdown", title: "T", content: md });
+    expect(doc).toContain("<table>");
+    expect(doc).toContain("<thead><tr><th style=\"text-align:left\">a</th><th style=\"text-align:center\">b</th><th style=\"text-align:right\">c</th></tr></thead>");
+    expect(doc).toContain("<td style=\"text-align:center\"><strong>2</strong></td>");
+    expect(doc).toContain("x | y");
+    expect(doc).not.toContain("|:---");
+    expect(doc).toContain("<li class=\"task\">\u2611 fait</li>");
+    expect(doc).toContain("<li class=\"task\">\u2610 a faire</li>");
+    expect(doc).toContain("<del>barre</del>");
+    expect(doc).toContain("<span class=\"url\">https://example.com</span>");
+    expect(doc).toContain("<span class=\"url\">https://example.org/x</span>.");
+    expect(doc).not.toContain("<a ");
+    expect(pageCsp("markdown")).toMatch(/; sandbox$/);
+  });
+
   it("an HTML page starts with the prelude; Markdown has no script at all", () => {
     expect(pageDocument({ kind: "html", title: "R", content: HTML }).startsWith(`<!doctype html>${FRAME_PRELUDE}`)).toBe(true);
     expect(pageDocument({ kind: "html", title: "R", content: "<p>x</p>" }).startsWith(FRAME_PRELUDE)).toBe(true);

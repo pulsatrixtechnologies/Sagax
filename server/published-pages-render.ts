@@ -185,8 +185,36 @@ function inline(escaped: string): string {
     const url = safeHref(href.replace(/&amp;/g, "&"));
     return url ? `${label} (<span class="url">${escapeHtml(url)}</span>)` : match;
   });
+  // GFM autolinks: <https://x> and bare http(s) URLs stay visible text (no live link).
+  out = out.replace(/&lt;((?:https?:\/\/|mailto:)[^\s<>"']+?)&gt;/gi, (_m, href: string) => `<span class="url">${href}</span>`);
+  out = out.replace(/(^|[\s(])((?:https?:\/\/)[^\s<>"']+?)(?=[.,;:!?)]*(?:\s|$))/gi, (_m, pre: string, href: string) => `${pre}<span class="url">${href}</span>`);
+  out = out.replace(/~~([^~]+)~~/g, "<del>$1</del>");
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
   return out.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => codes[Number(index)] ?? "");
+}
+
+function tableCells(line: string): string[] {
+  let text = line.trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|") && !text.endsWith("\\|")) text = text.slice(0, -1);
+  return text.split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, "|").trim());
+}
+
+function tableAligns(line: string): ("left" | "center" | "right" | "")[] | null {
+  if (!line.includes("-") || !/^[\s|:-]+$/.test(line)) return null;
+  const cells = tableCells(line);
+  if (!cells.every((cell) => /^:?-+:?$/.test(cell))) return null;
+  return cells.map((cell) => (cell.startsWith(":") && cell.endsWith(":") ? "center" : cell.endsWith(":") ? "right" : cell.startsWith(":") ? "left" : ""));
+}
+
+function tableToHtml(header: string[], aligns: ("left" | "center" | "right" | "")[], rows: string[][]): string {
+  const cell = (tag: "th" | "td", text: string, column: number) => {
+    const align = aligns[column];
+    return `<${tag}${align ? ` style="text-align:${align}"` : ""}>${inline(escapeHtml(text))}</${tag}>`;
+  };
+  const head = `<thead><tr>${aligns.map((_a, column) => cell("th", header[column] ?? "", column)).join("")}</tr></thead>`;
+  const body = rows.map((row) => `<tr>${aligns.map((_a, column) => cell("td", row[column] ?? "", column)).join("")}</tr>`).join("");
+  return `<div class="table-wrap"><table>${head}<tbody>${body}</tbody></table></div>`;
 }
 
 /** Markdown to an HTML body fragment. Pure. */
@@ -200,7 +228,10 @@ export function markdownToHtml(markdown: string): string {
     paragraph = [];
   };
   const flushList = () => {
-    if (list) out.push(`<${list.tag}>${list.items.map((item) => `<li>${inline(escapeHtml(item))}</li>`).join("")}</${list.tag}>`);
+    if (list) out.push(`<${list.tag}>${list.items.map((item) => {
+      const task = /^\[([ xX])\]\s+(.*)$/.exec(item);
+      return task ? `<li class="task">${task[1] === " " ? "\u2610" : "\u2611"} ${inline(escapeHtml(task[2]!))}</li>` : `<li>${inline(escapeHtml(item))}</li>`;
+    }).join("")}</${list.tag}>`);
     list = null;
   };
   for (let index = 0; index < lines.length; index += 1) {
@@ -227,6 +258,20 @@ export function markdownToHtml(markdown: string): string {
       flushList();
       out.push("<hr>");
       continue;
+    }
+    if (line.includes("|") && index + 1 < lines.length) {
+      const aligns = tableAligns(lines[index + 1]!);
+      const header = aligns ? tableCells(line) : [];
+      if (aligns && header.length === aligns.length) {
+        flushParagraph();
+        flushList();
+        const rows: string[][] = [];
+        index += 2;
+        while (index < lines.length && lines[index]!.trim() && lines[index]!.includes("|")) rows.push(tableCells(lines[index++]!));
+        index -= 1;
+        out.push(tableToHtml(header, aligns, rows));
+        continue;
+      }
     }
     const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
     const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
@@ -261,7 +306,8 @@ export function markdownToHtml(markdown: string): string {
 const MARKDOWN_STYLE = "body{font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#1f2328;background:#fff}"
   + "pre{background:#f6f8fa;padding:.75rem;border-radius:6px;overflow:auto}code{font:.9em ui-monospace,Menlo,monospace}"
   + "blockquote{margin:0;padding-left:1rem;border-left:3px solid #d0d7de;color:#57606a}.url{color:#57606a;word-break:break-all}"
-  + "@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}.url{color:#9198a1}}";
+  + ".table-wrap{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;min-width:100%}th,td{border:1px solid #d0d7de;padding:.4rem .75rem;text-align:left}th{background:#f6f8fa;font-weight:600}tbody tr:nth-child(even){background:#f6f8fa80}li.task{list-style:none;margin-left:-1.2rem}del{color:#57606a}"
+  + "@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}.url{color:#9198a1}th,td{border-color:#30363d}th{background:#161b22}tbody tr:nth-child(even){background:#161b2280}del{color:#9198a1}}";
 
 /** Our own Markdown and slide styles in one theme: the dark rules always
  * (dark) or never (light), instead of the reader's system setting. Pure. */
