@@ -47,6 +47,12 @@ describe("a person's own Experimental settings (#1098)", () => {
     expect((await call("PATCH", { features: { skillAuthoring: null } })).body.features).toEqual({ dataWindow: false });
   });
 
+  it("keeps Show tool calls as the person's own display choice (#1098, 2026-10-28)", async () => {
+    const { call } = setup();
+    expect((await call("PATCH", { features: { showToolCalls: true } })).body.features).toEqual({ showToolCalls: true });
+    expect((await setup("sam").call("GET")).body.features).toEqual({});
+  });
+
   it("keeps each person's profile storage apart, and answers 404 without a person", async () => {
     expect(personalProfilePartition("alex", "mine-a")).not.toBe(personalProfilePartition("sam", "mine-a"));
     expect((await setup(null).call("GET")).status).toBe(404);

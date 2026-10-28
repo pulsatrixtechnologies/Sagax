@@ -1018,6 +1018,8 @@ import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 import { PersonSettingsStore, personSettingsPrincipal, personalProfilePartition } from "./person-settings.ts";
+import { PersonVoiceKeysStore, personVoiceKeysPrincipal, withPersonalVoiceKeys } from "./person-voice-keys.ts";
+import { createPersonVoiceKeysRoutes } from "./routes/person-voice-keys.ts";
 import { createPersonSettingsRoutes } from "./routes/person-settings.ts";
 import { isPersonalBrowserProfileId, type PersonalFeature } from "../shared/person-settings.ts";
 import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
@@ -4412,7 +4414,9 @@ function agentsIntegration(
         // 2026-10-16: on the organization's xAI voice only for the person
         // this turn is for (the route re-checks).
         const given = orgXaiMediaGiven("voice", turnMediaPrincipal(threadId), effectiveBotOwner(speaking ?? {}));
-        return tts.voiceReady(cfg, speaking?.voice, { xaiKeyGiven: given }) && speaking?.voiceNotes !== false ? "1" : "0";
+        // #1098: the person's own voice key serves their own turns.
+        const voice = voiceFor(cfg, turnMediaPrincipal(threadId) ?? effectiveBotOwner(speaking ?? {}), given);
+        return tts.voiceReady(voice.cfg, speaking?.voice, voice.access) && speaking?.voiceNotes !== false ? "1" : "0";
       })(),
       // end_call is offered only while this thread is on a live phone call.
       // The route re-checks; a turn that is not a call never sees the tool.
@@ -7559,6 +7563,18 @@ function personalProfileTarget(botId: string, profileId: string): { profileId: s
 function personalProfileOf(principalId: string | null | undefined, profileId: unknown): boolean {
   const owner = personSettingsOwner(principalId);
   return Boolean(owner && isPersonalBrowserProfileId(profileId) && personSettings.get(owner).browserProfiles.some((profile) => profile.id === profileId));
+}
+// A person's own voice keys on an organization server (#1098, 2026-10-28,
+// server/person-voice-keys.ts): their speech and voice notes use them in
+// place of the organization's key for the same engine.
+const personVoiceKeys = new PersonVoiceKeysStore(DATA_DIR);
+/** The voice settings and the xAI access for speech made for this person:
+ * their own key where they saved one (their own xAI key needs no grant of
+ * the organization's), else the installation's. */
+function voiceFor(cfg: AppConfig, principalId: string | null | undefined, organizationXaiGiven: boolean): { cfg: AppConfig; access: tts.VoiceKeyAccess } {
+  const owner = IDENTITY.kind === "perspicax" ? personVoiceKeysPrincipal(principalId) : null;
+  const own = owner ? personVoiceKeys.keys(owner) : {};
+  return { cfg: withPersonalVoiceKeys(cfg, own), access: { xaiKeyGiven: own.xai ? true : organizationXaiGiven } };
 }
 function webSearchScopeForThread(threadId: string) {
   const organization = IDENTITY.kind === "perspicax";
@@ -36460,6 +36476,10 @@ ROUTES.push(createPersonSettingsRoutes({
     }
   },
 }));
+ROUTES.push(createPersonVoiceKeysRoutes({
+  store: personVoiceKeys,
+  principal: (auth) => (IDENTITY.kind === "perspicax" ? personVoiceKeysPrincipal(sessionPrincipal(auth)) : null),
+}));
 // The signed-in person's own photo (server/routes/me-avatar.ts): written to
 // Perspicax with their own sign-in token, then shown everywhere at once.
 ROUTES.push(createMeAvatarRoutes({
@@ -44028,7 +44048,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // this turn is for (a routine: its owner; nobody known: the owner).
         const voiceGiven = orgXaiMediaGiven("voice", turnMediaPrincipal(internalCapability.threadId), effectiveBotOwner(internalSender));
         try {
-          const audio = await tts.speak(cfg, text, voiceBot.voice, undefined, { xaiKeyGiven: voiceGiven });
+          const voice = voiceFor(cfg, turnMediaPrincipal(internalCapability.threadId) ?? effectiveBotOwner(internalSender), voiceGiven);
+          const audio = await tts.speak(voice.cfg, text, voiceBot.voice, undefined, voice.access);
           // Synthesis can outlive its turn: a stop or settle during the await
           // revokes the capability and clears the live turn. Re-check both
           // before saving so the clip cannot park under the :active fallback
@@ -51663,13 +51684,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "POST" && path === "/api/tts/prepare") {
       const body = await readBody(req);
       return json(res, 200, {
-        ready: tts.voiceReady(cfg, typeof body.voiceId === "string" ? body.voiceId : undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) }),
+        ready: (() => {
+          const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
+          return tts.voiceReady(voice.cfg, typeof body.voiceId === "string" ? body.voiceId : undefined, voice.access);
+        })(),
         utterances: toUtterances(String(body.text ?? "")),
       });
     }
     if (method === "GET" && path === "/api/tts/voices") {
       try {
-        return json(res, 200, { voices: await tts.listVoices(cfg, undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) }) });
+        const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
+        return json(res, 200, { voices: await tts.listVoices(voice.cfg, undefined, voice.access) });
       } catch (e) {
         if (e instanceof tts.XaiVoiceNotGiven) return json(res, 200, { voices: [], ...orgXaiRefusal("voice") });
         return json(res, 200, { voices: [], error: e instanceof Error ? e.message : String(e) });
@@ -51684,7 +51709,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // voice account into an unbounded, billable synthesis job.
       if (text.length > 500) return json(res, 413, { error: "voice utterances are limited to 500 characters" });
       try {
-        const audio = await tts.speak(cfg, text, typeof body.voiceId === "string" ? body.voiceId : undefined, undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) });
+        const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
+        const audio = await tts.speak(voice.cfg, text, typeof body.voiceId === "string" ? body.voiceId : undefined, undefined, voice.access);
         res.writeHead(200, {
           "content-type": audio.mime,
           "content-length": String(audio.bytes.byteLength),

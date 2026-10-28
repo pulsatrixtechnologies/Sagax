@@ -46,11 +46,13 @@ describe("the permission catalogue", () => {
 
   it("member defaults open everything about a member's own bots, routines and connections (2026-10-26)", () => {
     const own = ["apps.ownIntegrations", "bots.approvalLevel", "bots.behaviour", "bots.create", "bots.fullAccess", "bots.tools",
-      "clients.agentsCreate", "clients.botsMessage", "clients.botsRead", "clients.routinesRead", "clients.routinesRun", "sharing.grants", "sharing.visibility"];
+      "clients.agentsCreate", "clients.botsMessage", "clients.botsRead", "clients.routinesRead", "clients.routinesRun", "sharing.grants", "sharing.visibility",
+      // 2026-10-28 (#1098): the working folder of their own bots and groups
+      "folders.botWorkingFolder", "folders.roomWorkingFolder"];
     // #1098: defensive security work is a default too (conversation), not
     // one of the person's own things a profile can never leave out
     expect([...MEMBER_DEFAULT_PERMISSIONS].sort()).toEqual([...own, "security.triage"].sort());
-    expect([...MEMBER_ALWAYS_PERMISSIONS].sort()).toEqual(own);
+    expect([...MEMBER_ALWAYS_PERMISSIONS].sort()).toEqual([...own].sort());
   });
 
   it("lets the owner set Always allow on their own bot with bots.approvalLevel, never without it (2026-10-26)", () => {

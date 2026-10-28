@@ -204,10 +204,13 @@ export function HdMascotsGroup({ characters = HD_CHARACTERS }: { characters?: re
   );
 }
 
-/** A server feature (every viewer of the installation sees it). */
-function ToolCallsRow() {
+/** Show tool calls. On an organization server (#1098, 2026-10-28) each
+ * person's own display choice (/api/me/experimental), with no right to edit
+ * the installation; elsewhere the installation's. */
+export function ToolCallsRow() {
   const { state, dispatch } = useStore();
   const enabled = showToolCallsEnabled(state.config);
+  const personal = state.config?.personalSettings === true;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const toggle = async () => {
@@ -215,6 +218,11 @@ function ToolCallsRow() {
     setSaving(true);
     setError("");
     try {
+      if (personal) {
+        await api("/api/me/experimental", { method: "PATCH", body: JSON.stringify({ features: { showToolCalls: !enabled } }) });
+        dispatch({ type: "configStatus", config: await api<ConfigStatus>("/api/config") });
+        return;
+      }
       const config: ConfigStatus = await api("/api/config", {
         method: "PATCH",
         body: JSON.stringify({ features: { showToolCalls: !enabled } }),
@@ -388,6 +396,8 @@ export function AppearanceSettings() {
   const advanced = useAdvancedMode();
   const remoteActive = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
   const editConfig = canEditConfig(state.config);
+  // #1098: on an organization server Show tool calls is each person's own.
+  const personalSettings = state.config?.personalSettings === true;
   const runCard = useShowRunCard();
   const inspector = useShowInspectorButton();
   const unready = useShowUnreadyProviders();
@@ -418,7 +428,7 @@ export function AppearanceSettings() {
         <ThreadsViewRow />
         <FreshTopicRow />
         <SendKeyRow />
-        {advanced && !remoteActive && editConfig && <ToolCallsRow />}
+        {advanced && (personalSettings || (!remoteActive && editConfig)) && <ToolCallsRow />}
         {advanced && <SwitchLine label={t("settings.runCard.title")} ariaLabel={t("settings.runCard.show")} checked={runCard} onChange={setShowRunCard} rowId="runCard" />}
         {advanced && <SwitchLine label={t("settings.inspectorButton.title")} ariaLabel={t("settings.inspectorButton.show")} checked={inspector} onChange={setShowInspectorButton} rowId="inspectorButton" />}
         {advanced && <SwitchLine label={t("settings.unreadyProviders.title")} ariaLabel={t("settings.unreadyProviders.show")} checked={unready} onChange={setShowUnreadyProviders} rowId="unreadyProviders" />}

@@ -13,6 +13,7 @@ import {
   openNotificationTarget,
   openThread,
   type Bot,
+  type ConfigStatus,
   type Group,
   type GroupDefaultResponder,
   type Message,
@@ -1056,7 +1057,14 @@ function RoomMentionAll({ group, disabled = false }: { group: Group; disabled?: 
  * under a room that already worked somewhere). The PATCH is made directly
  * rather than through patchGroup: the server validates the path and a
  * rejected folder must not stick in local state. */
-function RoomWorkingFolder({ group, disabled = false, adminOnlyNote = false }: { group: Group; disabled?: boolean; adminOnlyNote?: boolean }) {
+/** Who may set a group's working folder (#1098, 2026-10-28): a solo
+ * server's group, an admin, or a person holding folders.roomWorkingFolder
+ * (every member does); the panel still asks that they own the group. */
+export function roomFolderEditable(group: Pick<Group, "ownerId">, config: ConfigStatus | null | undefined): boolean {
+  return group.ownerId === undefined || viewerIsOrgAdmin(config) || viewerCan(config, "folders.roomWorkingFolder");
+}
+
+export function RoomWorkingFolder({ group, disabled = false, adminOnlyNote = false }: { group: Group; disabled?: boolean; adminOnlyNote?: boolean }) {
   const { capabilities } = useDesktopCapabilities();
   const home = capabilities.host.homeDir;
   const [draft, setDraft] = useState<string | null>(null);
@@ -1238,9 +1246,10 @@ export function GroupView({ group: stored }: { group: Group }) {
     const latest = [...group.messages].reverse().find((message) => message.kind === "goal.run" && message.goalRun);
     return latest?.goalRun?.status === "working" ? latest : undefined;
   }, [group.messages]);
-  // The working folder touches the host or sandbox filesystem: on an
-  // organization server it stays an admin's, even for the group's owner.
-  const folderEditable = group.ownerId === undefined || viewerIsOrgAdmin(state.config) || viewerCan(state.config, "folders.roomWorkingFolder");
+  // 2026-10-28 (#1098): the group's owner sets its working folder
+  // (folders.roomWorkingFolder, held by every member); the server checks
+  // the path and keeps the folder fixed after the first turn (pinnedCwd).
+  const folderEditable = roomFolderEditable(group, state.config);
   const viewerListed = (group.humanIds ?? []).some((id) => {
     const entry = id.trim().toLowerCase();
     return entry === viewerId || (Boolean(viewerEmail) && entry === viewerEmail);

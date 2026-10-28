@@ -23,7 +23,7 @@ describe("effectivePermissions", () => {
     expect(none.source).toBe("perspicax");
     expect(permissionList(none)).toEqual([...MEMBER_ALWAYS_PERMISSIONS]);
     // what reaches past the person's own environment still comes from the list
-    for (const key of ["bots.computer", "folders.botWorkingFolder", "host.commands", "server.settings", "people.manage"] as const) {
+    for (const key of ["bots.computer", "host.commands", "server.settings", "people.manage"] as const) {
       expect(none.permissions.has(key), key).toBe(false);
     }
   });
@@ -40,7 +40,8 @@ describe("effectivePermissions", () => {
       integrationsOff: true,
     });
     // the clients.* keys about their own conversations and routines stay
-    expect(permissionList(sheet)).toEqual(["usage.view", "clients.botsRead", "clients.botsMessage", "clients.routinesRun", "clients.routinesRead", "clients.agentsCreate"]);
+    // the folder of their own groups too (#1098); their bots' folder goes with sagax_bots
+    expect(permissionList(sheet)).toEqual(["folders.roomWorkingFolder", "usage.view", "clients.botsRead", "clients.botsMessage", "clients.routinesRun", "clients.routinesRead", "clients.agentsCreate"]);
     expect(sheet.narrowedBy).toEqual(["sagax_bots", "sagax_integrations"]);
   });
 });
