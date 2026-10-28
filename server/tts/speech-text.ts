@@ -234,7 +234,13 @@ function splitLong(text: string, maxChars: number): string[] {
     // prefer a clause break, then any space; never cut a word in half
     const at = Math.max(window.lastIndexOf(", "), window.lastIndexOf("; "), window.lastIndexOf(" — "));
     const cut = at > maxChars / 2 ? at + 1 : window.lastIndexOf(" ");
-    if (cut <= 0) break;
+    // No space and no clause: still take a piece the speak route will accept
+    // (500 characters). Dropping the rest would leave a long answer unread.
+    if (cut <= 0) {
+      out.push(rest.slice(0, maxChars));
+      rest = rest.slice(maxChars);
+      continue;
+    }
     out.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();
   }

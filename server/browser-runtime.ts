@@ -2,6 +2,7 @@ import { killCliTree, spawnCli } from "./procs.ts";
 import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, READ_OPEN_PAGE_ONLY, readsAroundBrowser, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
 import { randomBytes } from "node:crypto";
 import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, formStaysOnOrigin, LOGIN_MODE, parseEvalArray, parseEvalObject, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript, type FillRequest, type LoginRequest } from "./credential-fill.ts";
+import { noteFilledSecret } from "./filled-secret-guard.ts";
 import { itemIdFromHandle } from "../shared/credential-vault.ts";
 import { MASK_SENSITIVE_SCRIPT, NO_PAGE_TEXT_TOOLS, parseSensitiveValues, SENSITIVE_VALUES_SCRIPT, UNMASK_SENSITIVE_SCRIPT, withSensitiveValues } from "../shared/sensitive-fields.ts";
 import {
@@ -977,6 +978,9 @@ export class BrowserRuntime {
     // Remembered before the value leaves: anything the engine says from now
     // on, including an error that quotes it, is redacted.
     this.redactor.remember(session, resolved.value, { shortLived: request.field === "totp", pieces: request.field !== "username", caseless: request.field === "username" });
+    // The session redactor covers later browser results. The same value must
+    // also stay out of a prompt or a journal that only scrubs key shapes.
+    noteFilledSecret(resolved.value);
     this.redactor.taint(session, origin);
     // The engine's stream would broadcast the write, value included, to its
     // clients: it is off while the write runs.

@@ -21,6 +21,7 @@ import {
   type RoutinePrecheckVerdict,
 } from "./routine-precheck.ts";
 import { ROUTINE_WATCH_LIMITS, type RoutineWatchPrecheck } from "../shared/routine-watch.ts";
+import { parseMailAlias } from "../shared/routine-mail-alias.ts";
 import { watchNoteBlock } from "./routine-watch.ts";
 import { awayDecision, awayReportDue, loadAwaySkips, recordAwaySkip, type AwayVerdict, type RoutineAwaySkips } from "./routine-away.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
@@ -178,6 +179,9 @@ export interface Routine {
    * installation default (features.routinesInConversation). Approvals,
    * questions and errors surface whichever this is; a quiet run stays silent. */
   postResults?: boolean;
+  /** Tag after + on the bot's mail address. Inbound mail with that tag is
+   * marked for this routine. Sends still leave from the connector. */
+  mailAlias?: string;
   /** Occurrences skipped while the person was away, until dismissed. */
   awaySkips?: RoutineAwaySkips;
   /** Deterministic test run before a scheduled run starts any model turn
@@ -395,6 +399,8 @@ export interface RoutineInput {
   onlyWhenPresent?: boolean;
   /** Post results in the conversation; null clears to the installation default. */
   postResults?: boolean | null;
+  /** Tag after + on the bot's mail address. Null clears it. */
+  mailAlias?: string | null;
   /** Omission preserves it; null removes it. */
   precheck?: RoutinePrecheck | null;
   /** Failed runs in a row that pause the routine (0 never). Omission
@@ -633,7 +639,7 @@ const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments", "pre
 const ROUTINE_DEFINITION_FIELDS = [
   "name", "prompt", "target", "botId", "groupId", "runOn", "schedule",
   "durationMinutes", "timeoutMinutes", "attachments", "continuity", "overlap",
-  "onlyWhenPresent", "precheck", "autoPauseAfter",
+  "onlyWhenPresent", "precheck", "autoPauseAfter", "mailAlias",
 ] as const;
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -1222,6 +1228,8 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
   }
   const precheck = input.precheck == null ? undefined : parseRoutinePrecheck(input.precheck);
   const autoPauseAfter = cleanRoutineAutoPauseAfter(input.autoPauseAfter);
+  const mailAlias = parseMailAlias(input.mailAlias);
+  if (!mailAlias.ok) throw new RoutineInputError(mailAlias.error);
   return {
     name,
     prompt,
@@ -1238,9 +1246,15 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     ...(input.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(input.onlyWhenPresent === true ? { onlyWhenPresent: true } : {}),
     ...(typeof input.postResults === "boolean" ? { postResults: input.postResults } : {}),
+    ...(mailAlias.alias ? { mailAlias: mailAlias.alias } : {}),
     ...(precheck ? { precheck } : {}),
     ...(autoPauseAfter === undefined ? {} : { autoPauseAfter }),
   };
+}
+
+function loadMailAlias(value: unknown): string | undefined {
+  const parsed = parseMailAlias(value);
+  return parsed.ok ? parsed.alias : undefined;
 }
 
 function loadAutoPauseAfter(value: unknown): number | undefined {
@@ -1346,6 +1360,7 @@ export class RoutineManager {
               suspended: loadSuspension(routine.suspended),
               onlyWhenPresent: routine.onlyWhenPresent === true ? true : undefined,
               postResults: typeof routine.postResults === "boolean" ? routine.postResults : undefined,
+              mailAlias: loadMailAlias(routine.mailAlias),
               awaySkips: loadAwaySkips(routine.awaySkips),
               precheck: loadRoutinePrecheck(routine.precheck),
               autoPauseAfter: loadAutoPauseAfter(routine.autoPauseAfter),
@@ -1358,6 +1373,7 @@ export class RoutineManager {
             if (loaded.failuresClearedAt === undefined) delete loaded.failuresClearedAt;
             if (loaded.onlyWhenPresent === undefined) delete loaded.onlyWhenPresent;
             if (loaded.postResults === undefined) delete loaded.postResults;
+            if (loaded.mailAlias === undefined) delete loaded.mailAlias;
             if (loaded.awaySkips === undefined) delete loaded.awaySkips;
             if (loaded.timeoutMinutes === undefined) delete loaded.timeoutMinutes;
             if (loaded.installedPackage === undefined) delete loaded.installedPackage;
@@ -1817,6 +1833,7 @@ export class RoutineManager {
       onlyWhenPresent: patch.onlyWhenPresent ?? routine.onlyWhenPresent,
       // null clears it back to the installation default; omission preserves it.
       postResults: Object.hasOwn(patch, "postResults") ? (patch.postResults ?? undefined) : routine.postResults,
+      mailAlias: Object.hasOwn(patch, "mailAlias") ? (patch.mailAlias ?? undefined) : routine.mailAlias,
       precheck: Object.hasOwn(patch, "precheck") ? patch.precheck : routine.precheck,
       autoPauseAfter: Object.hasOwn(patch, "autoPauseAfter") ? patch.autoPauseAfter : routine.autoPauseAfter,
     }, now);
@@ -1876,6 +1893,7 @@ export class RoutineManager {
       // A cleared postResults (null in the patch) is absent, not false, so it
       // goes back to inheriting the installation default.
       if (clean.postResults === undefined) delete routine.postResults;
+      if (clean.mailAlias === undefined) delete routine.mailAlias;
       if (!clean.precheck) delete routine.precheck;
       if (clean.autoPauseAfter === undefined) delete routine.autoPauseAfter;
       // Turned back on (Resume on the notice, the switch, the editor): the

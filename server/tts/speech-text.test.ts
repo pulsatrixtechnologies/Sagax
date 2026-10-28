@@ -138,6 +138,14 @@ describe("toUtterances", () => {
     expect(toUtterances("```\ncode only\n```")).not.toContain("code only");
     expect(toUtterances("")).toEqual([]);
   });
+
+  it("reads a long answer in pieces the speak route accepts, and keeps the end", () => {
+    const long = "a".repeat(2000);
+    const out = toUtterances(long);
+    expect(out.length).toBeGreaterThan(1);
+    for (const piece of out) expect(piece.length).toBeLessThanOrEqual(500);
+    expect(out.join("")).toBe(long);
+  });
 });
 
 describe("narrateTool", () => {

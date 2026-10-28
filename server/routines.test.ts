@@ -4296,6 +4296,17 @@ describe("postResults migration and per-routine choice (Owner 2026-10-22)", () =
     expect(h.manager.update(routine.id, { postResults: true })?.postResults).toBe(true);
     expect(h.manager.update(routine.id, { name: "R2" })?.postResults).toBe(true);
   });
+
+  it("stores a mail tag, keeps it when omitted, and clears it with null", () => {
+    const h = harness();
+    const routine = h.manager.create({ name: "R", prompt: "Do it", botId: "maus-1", mailAlias: "Reports",
+      schedule: { type: "once", at: new Date(2026, 7, 18).getTime() } });
+    expect(routine.mailAlias).toBe("reports");
+    expect(h.manager.update(routine.id, { name: "R2" })?.mailAlias).toBe("reports");
+    expect(h.manager.update(routine.id, { mailAlias: null })?.mailAlias).toBeUndefined();
+    expect(() => h.manager.create({ name: "Bad", prompt: "Do it", botId: "maus-1", mailAlias: "a b",
+      schedule: { type: "once", at: new Date(2026, 7, 18).getTime() } })).toThrow(/mail tag/i);
+  });
 });
 
 describe("auto-pause after failures in a row (2026-10-26)", () => {
