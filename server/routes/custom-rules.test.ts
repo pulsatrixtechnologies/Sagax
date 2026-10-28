@@ -10,7 +10,7 @@ import { json, readBody } from "../harness/http.ts";
 import { requiredScope, type RequestAuth } from "../request-auth.ts";
 import { createCustomRuleRoutes } from "./custom-rules.ts";
 import { dispatchRoutes } from "./table.ts";
-import type { CustomRule, CustomRuleBinding, RuleProduct } from "../../shared/custom-rules.ts";
+import type { CustomRule, CustomRuleBinding, RuleProduct, TurnStart } from "../../shared/custom-rules.ts";
 
 const servers: Server[] = [];
 const dirs: string[] = [];
@@ -25,6 +25,7 @@ interface Options {
   card?: (personId: string, card: { threadId: string; requestId: string }, rule: CustomRule) => "covered" | "not-covered" | null;
   binding?: (personId: string, card: { threadId: string; requestId: string }) => CustomRuleBinding | null | undefined;
   products?: (personId: string, botId: string | null) => RuleProduct[];
+  turnStart?: (threadId: string) => TurnStart;
 }
 
 async function serve(options: Options) {
@@ -40,6 +41,7 @@ async function serve(options: Options) {
     ...(options.card ? { fromCard: options.card } : {}),
     ...(options.binding ? { bindingFor: options.binding } : {}),
     ...(options.products ? { products: options.products } : {}),
+    ...(options.turnStart ? { turnStart: options.turnStart } : {}),
     audit: (row) => audits.push(row.action),
     home: "/Users/example",
   })];
@@ -197,5 +199,23 @@ describe("custom rules routes", () => {
     expect(kept.status).toBe(201);
     expect(store.rulesOf("owner")).toHaveLength(1);
     expect(decided).toHaveLength(3);
+  });
+
+  it("saves who started the turn, and a send allowed from a routine card names the routine", async () => {
+    const { call } = await serve({ person: "owner" });
+    const saved = await call("", "POST", { when: "l'envoi de courriels", behavior: "ask", botId: null, startedBy: "delegation" });
+    expect(saved.status).toBe(201);
+    expect(saved.body.rule.startedBy).toBe("delegation");
+    expect((await call("", "POST", { when: "la lecture de fichiers", behavior: "allow", botId: null, startedBy: "admin" })).status).toBe(400);
+    const cleared = await call(`/${saved.body.rule.id}`, "PATCH", { startedBy: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.rule.startedBy).toBeUndefined();
+    const stamped = await serve({ person: "owner", turnStart: () => "routine", card: () => "covered" });
+    const send = await stamped.call("", "POST", { when: "l'envoi de courriels", behavior: "allow", botId: "bot-a", riskScope: ["external-send"], fromCard: { threadId: "t1", requestId: "r1" } });
+    expect(send.status).toBe(201);
+    expect(send.body.rule.startedBy).toBe("routine");
+    const read = await stamped.call("", "POST", { when: "la lecture de fichiers", behavior: "allow", botId: "bot-a", fromCard: { threadId: "t1", requestId: "r2" } });
+    expect(read.status).toBe(201);
+    expect(read.body.rule.startedBy).toBeUndefined();
   });
 });

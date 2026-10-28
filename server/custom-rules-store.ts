@@ -23,10 +23,12 @@ import {
   CUSTOM_RULE_BEHAVIORS,
   MAX_RULE_TEXT,
   RISK_CLASSES,
+  TURN_STARTS,
   type CustomRule,
   type CustomRuleBehavior,
   type CustomRuleBinding,
   type RiskClass,
+  type TurnStart,
 } from "../shared/custom-rules.ts";
 
 export const MAX_CUSTOM_RULES_PER_OWNER = 200;
@@ -44,6 +46,7 @@ const ruleSchema = z.object({
   when: z.string().min(1).max(MAX_RULE_TEXT),
   behavior: z.enum(CUSTOM_RULE_BEHAVIORS),
   riskScope: z.array(z.enum(RISK_CLASSES)).max(RISK_CLASSES.length),
+  startedBy: z.enum(TURN_STARTS).optional(),
   enabled: z.boolean(),
   binding: z.object({
     tool: z.string().min(1).max(300),
@@ -73,6 +76,8 @@ export interface NewCustomRule {
   when: string;
   behavior: CustomRuleBehavior;
   riskScope?: RiskClass[];
+  /** Absent or null: every start, with the routine-send default. */
+  startedBy?: TurnStart | null;
   binding?: CustomRuleBinding;
   /** The product ids the words named when saved (compileRule). */
   products?: string[];
@@ -86,6 +91,8 @@ export interface CustomRulePatch {
   enabled?: boolean;
   /** Read again with the words: the product ids they name now. */
   products?: string[];
+  /** Null clears the condition. */
+  startedBy?: TurnStart | null;
 }
 
 export interface OrgRulePatch {
@@ -118,6 +125,12 @@ function cleanText(text: string): string {
 function cleanScope(scope: readonly RiskClass[] | undefined): RiskClass[] {
   return RISK_CLASSES.filter((risk) => scope?.includes(risk));
 }
+
+function cleanStart(value: TurnStart | null | undefined): TurnStart | undefined {
+  return value && (TURN_STARTS as readonly string[]).includes(value) ? value : undefined;
+}
+
+const startKey = (value: TurnStart | null | undefined) => cleanStart(value) ?? "";
 
 const registry: { store: CustomRuleStore | null } = { store: null };
 
@@ -289,7 +302,9 @@ export class CustomRuleStore {
     const when = cleanText(input.when);
     if (!when) throw Object.assign(new Error("A rule needs words."), { status: 400 });
     const riskScope = input.behavior === "allow" ? cleanScope(input.riskScope) : [];
+    const startedBy = cleanStart(input.startedBy);
     const existing = this.data.rules.find((rule) => same(rule.ownerId, input.ownerId) && rule.botId === input.botId && rule.when.toLowerCase() === when.toLowerCase()
+      && startKey(rule.startedBy) === startKey(startedBy)
       && JSON.stringify(rule.binding ?? null) === JSON.stringify(input.binding ?? null));
     const at = this.now();
     if (existing) {
@@ -314,6 +329,7 @@ export class CustomRuleStore {
       behavior: input.behavior,
       riskScope,
       enabled: true,
+      ...(startedBy ? { startedBy } : {}),
       ...(input.binding ? { binding: { ...input.binding } } : {}),
       ...(input.products ? { products: cleanProducts(input.products)! } : {}),
       createdAt: at,
@@ -336,6 +352,10 @@ export class CustomRuleStore {
     if (patch.botId !== undefined) rule.botId = patch.botId;
     if (patch.enabled !== undefined) rule.enabled = patch.enabled;
     if (patch.riskScope !== undefined) rule.riskScope = cleanScope(patch.riskScope);
+    if (patch.startedBy !== undefined) {
+      if (patch.startedBy === null) delete rule.startedBy;
+      else rule.startedBy = patch.startedBy;
+    }
     // only an allow can carry a risk scope
     if (rule.behavior !== "allow") rule.riskScope = [];
     // new words name their own products; the same words keep their pins

@@ -24,7 +24,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { noteOrgAlwaysAllowOff } from "@/lib/org-approval-policy";
 import { api, ApiError, useStore, type Bot } from "@/state/store";
-import { compileRule, impliedRiskScope, RISK_CLASSES, type CompiledRule, type CustomRule, type CustomRuleBehavior, type RiskClass, type RuleProduct } from "../../../shared/custom-rules";
+import { compileRule, impliedRiskScope, RISK_CLASSES, TURN_STARTS, type CompiledRule, type CustomRule, type CustomRuleBehavior, type RiskClass, type RuleProduct, type TurnStart } from "../../../shared/custom-rules";
 import { OrgRuleBadge, RISK_LABEL, RuleTextDiff, riskList } from "../CustomRuleNotice";
 import { PaneEmpty, PaneSection } from "./PaneSection";
 import { RuleTestButton } from "../approvals/RuleTest";
@@ -37,11 +37,25 @@ export const CUSTOM_BEHAVIOR_LABEL: Record<CustomRuleBehavior, LocaleKey> = {
   deny: "customRules.behavior.deny",
 };
 
+const START_LABEL: Record<TurnStart, LocaleKey> = {
+  person: "customRules.startedBy.person",
+  routine: "customRules.startedBy.routine",
+  delegation: "customRules.startedBy.delegation",
+};
+
+const START_OPTION: Record<TurnStart, LocaleKey> = {
+  person: "customRules.form.startedBy.person",
+  routine: "customRules.form.startedBy.routine",
+  delegation: "customRules.form.startedBy.delegation",
+};
+
 export interface CustomRuleDraft {
   when: string;
   behavior: CustomRuleBehavior;
   allBots: boolean;
   riskScope: RiskClass[];
+  /** Null: every start (a routine still does not send on an unnamed allow). */
+  startedBy?: TurnStart | null;
   /** "Les bots que je choisis": one rule per bot listed (never empty). */
   botIds?: string[];
 }
@@ -114,6 +128,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
   const [allBots, setAllBots] = useState(initial.allBots);
   const [chosen, setChosen] = useState<string[] | null>(initial.botIds?.length ? initial.botIds : null);
   const [riskScope, setRiskScope] = useState<RiskClass[]>(initial.riskScope);
+  const [startedBy, setStartedBy] = useState<TurnStart | "">(initial.startedBy ?? "");
   const compiled = when.trim() ? compileRule(when, undefined, undefined, products) : null;
   const recognized = compiled ? compiled.recognized : true;
   const shellFamily = behavior === "allow" && compiled?.shellFamily === true;
@@ -151,7 +166,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
       onSubmit={(event) => {
         event.preventDefault();
         if (!when.trim() || busy || blocked) return;
-        onSave({ when: when.trim(), behavior, allBots: choosing ? false : allBots, riskScope: behavior === "allow" ? riskScope : [], ...(choosing ? { botIds: chosen! } : {}) });
+        onSave({ when: when.trim(), behavior, allBots: choosing ? false : allBots, riskScope: behavior === "allow" ? riskScope : [], startedBy: startedBy || null, ...(choosing ? { botIds: chosen! } : {}) });
       }}
     >
       <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">
@@ -196,6 +211,19 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
           {canChoose && <option value="some">{t("customRules.form.someBots")}</option>}
         </select>
       </label>
+      <label className="flex items-center justify-between gap-3 text-[12.5px] text-ink-secondary">
+        {t("customRules.form.startedBy")}
+        <select
+          value={startedBy}
+          data-custom-rule-started-by={startedBy || "any"}
+          onChange={(event) => setStartedBy(event.target.value as TurnStart | "")}
+          className="rounded-md bg-raised px-2 py-1 text-[13px] text-ink"
+        >
+          <option value="">{t("customRules.form.startedBy.any")}</option>
+          {TURN_STARTS.map((value) => <option key={value} value={value}>{t(START_OPTION[value])}</option>)}
+        </select>
+      </label>
+      <p className="text-[11.5px] text-ink-tertiary">{t("customRules.form.startedBy.hint")}</p>
       {choosing && bots && (
         <fieldset className="flex flex-col gap-1 text-[12.5px] text-ink-secondary" data-custom-rule-bots>
           <legend className="mb-0.5">{t("customRules.form.chooseBots")}</legend>
@@ -294,7 +322,7 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
     const targets: Array<string | null> = draft.botIds?.length ? draft.botIds : [draft.allBots ? null : bot.id];
     void targets.reduce<Promise<unknown>>((chain, botId) => chain.then(() => api(`/api/custom-rules`, {
       method: "POST",
-      body: JSON.stringify({ when: draft.when, behavior: draft.behavior, botId, riskScope: draft.riskScope }),
+      body: JSON.stringify({ when: draft.when, behavior: draft.behavior, botId, riskScope: draft.riskScope, ...(draft.startedBy ? { startedBy: draft.startedBy } : {}) }),
     })), Promise.resolve()).then(() => {
       setEditing(null);
       return load();
@@ -356,13 +384,13 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
                 ) : editing === rule.id ? (
                   <CustomRuleForm
                     botName={bot.name}
-                    initial={{ when: rule.when, behavior: rule.behavior, allBots: rule.botId === null, riskScope: rule.riskScope }}
+                    initial={{ when: rule.when, behavior: rule.behavior, allBots: rule.botId === null, riskScope: rule.riskScope, startedBy: rule.startedBy ?? null }}
                     allowOff={!alwaysAllow}
                     ruleId={rule.id}
                     botId={bot.id}
                     products={products}
                     onCancel={() => setEditing(null)}
-                    onSave={(draft) => update(rule, { when: draft.when, behavior: draft.behavior, botId: draft.allBots ? null : bot.id, riskScope: draft.riskScope })}
+                    onSave={(draft) => update(rule, { when: draft.when, behavior: draft.behavior, botId: draft.allBots ? null : bot.id, riskScope: draft.riskScope, startedBy: draft.startedBy ?? null })}
                   />
                 ) : (
                   <div className={cn("grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-3", (!rule.enabled || (!alwaysAllow && rule.behavior === "allow")) && "opacity-60")}>
@@ -370,6 +398,7 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
                       <span className="break-words text-[13px] text-ink">{rule.when}</span>
                       <div className="mt-0.5 flex flex-wrap gap-1.5 text-[11.5px] text-ink-tertiary">
                         {rule.botId === null && <span>{t("customRules.form.allBots")}</span>}
+                        {rule.startedBy && <span>{t(START_LABEL[rule.startedBy])}</span>}
                         {!alwaysAllow && rule.behavior === "allow" && <span className="text-warning" data-custom-rule-paused="">{t("customRules.paused")}</span>}
                         {rule.riskScope.length > 0 && <span className="text-warning">{t("customRules.mayCover", { kinds: riskList(rule.riskScope) })}</span>}
                         {rule.compiled && !rule.compiled.recognized && <span className="text-ink-secondary" data-custom-rule-model="">{t("customRules.unrecognizedShort")}</span>}

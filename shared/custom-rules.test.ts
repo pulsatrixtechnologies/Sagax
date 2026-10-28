@@ -13,6 +13,7 @@ import {
   modelReviewCardEligible,
   modelReviewRules,
   modelRuleNotice,
+  turnStartOf,
   normalizePath,
   parseRuleSentence,
   ruleCoversCall,
@@ -126,6 +127,34 @@ describe("evaluateCustomRules precedence", () => {
     const exact = rule("la commande exacte `git push --force origin main`", "allow", { riskScope: ["external-send"], botId: "b1", binding: { tool: forcePush.tool, botId: "b1", command: forcePush.command! } });
     const decision = evaluateCustomRules([exact], forcePush, { botId: "b1" });
     expect(decision.kind === "none" && decision.riskBlocked?.missing).toEqual(["irreversible"]);
+  });
+
+  it("names who started the turn, and a routine does not send on an allow that does not name it", () => {
+    expect(turnStartOf(undefined)).toBe("person");
+    expect(turnStartOf({ origin: "operator" })).toBe("person");
+    expect(turnStartOf({ origin: "owner-routine" })).toBe("routine");
+    expect(turnStartOf({ origin: "peer", routine: true })).toBe("routine");
+    expect(turnStartOf({ origin: "peer", routineLineage: true })).toBe("routine");
+    expect(turnStartOf({ origin: "peer" })).toBe("delegation");
+    const open = rule("l'envoi de courriels", "allow", { riskScope: ["external-send"] });
+    expect(evaluateCustomRules([open], sendMail, { startedBy: "person" }).kind).toBe("allow");
+    expect(evaluateCustomRules([open], sendMail, { startedBy: "routine" }).kind).toBe("none");
+    expect(evaluateCustomRules([open], sendMail, { startedBy: "delegation" }).kind).toBe("allow");
+    const named = rule("l'envoi de courriels", "allow", { riskScope: ["external-send"], startedBy: "routine" });
+    expect(evaluateCustomRules([named], sendMail, { startedBy: "routine" }).kind).toBe("allow");
+    expect(evaluateCustomRules([named], sendMail, { startedBy: "person" }).kind).toBe("none");
+    const read = rule("la lecture de fichiers", "allow");
+    expect(evaluateCustomRules([read], readDoc, { startedBy: "routine" }).kind).toBe("allow");
+    const onlyPerson = rule("la lecture de fichiers", "allow", { startedBy: "person" });
+    expect(evaluateCustomRules([onlyPerson], readDoc, { startedBy: "routine" }).kind).toBe("none");
+    expect(evaluateCustomRules([rule("l'envoi de courriels", "deny")], sendMail, { startedBy: "routine" }).kind).toBe("deny");
+    const org = rule("l'envoi de courriels", "deny", { org: true, startedBy: "person" });
+    expect(evaluateCustomRules([org], sendMail, { startedBy: "routine" }).kind).toBe("deny");
+    expect(modelReviewRules([open], "b1", "routine", sendMail)).toEqual([]);
+    expect(modelReviewRules([open], "b1", "person", sendMail).map((item) => item.id)).toEqual([open.id]);
+    const reply = JSON.stringify({ decision: "allow", rule: "R1", reason: "The rule covers this send." });
+    expect(modelCustomDecision({ kind: "none" }, [open], sendMail, reply, "routine").kind).toBe("none");
+    expect(modelCustomDecision({ kind: "none" }, [open], sendMail, reply, "person").kind).toBe("allow");
   });
 
   it("disabled rules and unrecognized rules decide nothing", () => {
