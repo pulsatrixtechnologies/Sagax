@@ -9,7 +9,7 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { memberOwnScopeTool, ownBotReadAct, builtinAgentToolName } from "./member-tool-scope.ts";
+import { memberOwnScopeTool, ownAct, builtinAgentToolName } from "./member-tool-scope.ts";
 import { READABLE_HIDDEN_SEGMENTS } from "../shared/readable-hidden.ts";
 import { dataToolName, foreignToolSpelling } from "./sagax-internal-tools.ts";
 
@@ -216,7 +216,8 @@ function argsOf(input: unknown): Record<string, unknown> | null {
  *   shared_computer  the person's own computers only (the route lists the
  *                    speaker's own on an organization server)
  *   add_mcp_server   the person's own server list only
- *   attach_file      a file of the bot's own folders (no dot folder), or of
+ *   attach_file      a file of the bot's own folders (no sensitive hidden
+ *                    name, sensitiveHiddenSegment), or of
  *                    its own Local VM's workspace
  * api_reload and review_write (Perspicax admin) never are. */
 export function memberOwnHostToolCall(tool: string | undefined, input: unknown, place: MemberHostToolPlace): boolean {
@@ -233,11 +234,45 @@ export function memberOwnHostToolCall(tool: string | undefined, input: unknown, 
       return place.botRoots.some((root) => {
         const rel = relative(realLocation(root), real);
         if (rel === "" || isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
-        return !rel.split(sep).some((segment) => segment.startsWith("."));
+        return !rel.split(sep).some((segment) => sensitiveHiddenSegment(segment));
       });
     }
     default: return false;
   }
+}
+
+/** #1098 (2026-10-28): hidden names in a bot's workspace that stay an
+ * admin's card, read or write. Every bot shares one container, one user and
+ * one HOME, so these can run a command on the shared server (git hooks,
+ * engine settings and hooks, MCP servers, plugin manifests, package manager
+ * and shell start files, direnv) or hold a credential (keys, tokens, engine
+ * logins). Compared without case (a case-insensitive disk opens `.Git` as
+ * `.git`). Every other hidden name (.gitignore, .github, .vscode,
+ * .editorconfig, .env.example...) is the owner's. */
+const SENSITIVE_HIDDEN_NAMES: ReadonlySet<string> = new Set([
+  // engines, their settings, hooks, MCP servers and logins
+  ".claude", ".claude.json", ".claude-plugin", ".mcp.json", ".codex", ".grok", ".cursor", ".agents", ".hermes", ".gemini",
+  ".credentials.json", ".pulsabot-login.json", ".agent-browser",
+  // Sagax's own state in a workspace
+  ".sagax", ".backups", ".openmausbot", ".revisions",
+  // git: hooks, config and credentials
+  ".git", ".gitconfig", ".git-credentials", ".githooks", ".husky",
+  // package managers and shells that run code on install or start
+  ".npmrc", ".yarnrc", ".yarnrc.yml", ".yarn", ".pnpmfile.cjs", ".envrc", ".bashrc", ".bash_profile", ".profile",
+  ".zshrc", ".zshenv", ".zprofile",
+  // keys, tokens and tool configuration of the shared HOME
+  ".ssh", ".gnupg", ".netrc", ".pgpass", ".aws", ".azure", ".kube", ".docker", ".config", ".local", ".cache",
+]);
+const ENV_EXAMPLE = /^\.env\.(?:example|sample|template|dist)$/;
+
+/** Whether a path segment is a hidden name that stays an admin's card. */
+export function sensitiveHiddenSegment(segment: string): boolean {
+  if (!segment.startsWith(".")) return false;
+  const name = segment.toLowerCase();
+  if (name === "." || name === "..") return true;
+  if (SENSITIVE_HIDDEN_NAMES.has(name)) return true;
+  // .env and its variants hold secrets; the documented templates do not
+  return (name === ".env" || name.startsWith(".env.")) && !ENV_EXAMPLE.test(name);
 }
 
 /** Whether a permission card of a member's bot on an organization server
@@ -246,8 +281,8 @@ export function memberOwnHostToolCall(tool: string | undefined, input: unknown, 
  * Claude settings or a read of a secret is as good as a server command.
  * The owner answers only a file tool (Read, Write, Edit, ...) whose every
  * path is absolute and, symlinks resolved, stays inside the bot's own task
- * workspace outside any dot folder (.claude, .git, .mcp.json can hold
- * commands), and a built-in Sagax tool that stays in the member's own scope
+ * workspace outside a sensitive hidden name (sensitiveHiddenSegment:
+ * .claude, .git, .mcp.json... can hold commands), and a built-in Sagax tool that stays in the member's own scope
  * (./member-tool-scope.ts: list_bots, the bot's threads, memory, its own
  * setup, messages to its own bots), and since 2026-10-14 a tool within the
  * owner's own rights (ownerScopedTool: a remote or personal MCP server, a
@@ -300,12 +335,14 @@ export function memberBotAdminApproval(input: {
   if (input.ownEnvironment || input.ownDestination || input.ownComputerChoice || input.ownerRunsServerCommands) return false;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
   const toolName = input.tool?.trim();
-  // #1269: act stays an admin card except a read with no effect of the
-  // member's own bot (the card badges that call Read-only). A write, and
-  // a call on someone else's bot, still wait for an admin. Judged before
-  // the own-scope list, which would otherwise let every act through.
+  // #1269, #1098 (2026-10-28): act on the member's own bots and on routes
+  // of their own environment, a write included, is their own card (it runs
+  // as them, the route checks their rights). A call on someone else's bot,
+  // or on a route that reaches the organization, still waits for an admin.
+  // Judged before the own-scope list, which would otherwise let every act
+  // through.
   if (!input.command && builtin && builtinAgentToolName(toolName) === "act"
-    && !ownBotReadAct(toolName, input.rawInput, { ownsBot: input.ownsBot, callerBotId: input.callerBotId })) return true;
+    && !ownAct(toolName, input.rawInput, { ownsBot: input.ownsBot, callerBotId: input.callerBotId })) return true;
   // 2026-10-19 (member admin audit): a built-in tool of the member's own
   // scope is judged by its exact name before the shell pattern, which read
   // `agents__offer_shell_terminal` (a card the person approves) as a shell
@@ -327,8 +364,11 @@ export function memberBotAdminApproval(input: {
   if (!WORKSPACE_FILE_TOOLS.has(tool) && !fileView) return true;
   if (!input.paths?.length) return true;
   // 2026-10-19 (bot quality, cause A): a read may open the bot's own skill
-  // revisions and plugin manifests (READABLE_HIDDEN_SEGMENTS); every other
-  // dot folder, and any write into a dot folder, still waits for an admin.
+  // revisions and plugin manifests (READABLE_HIDDEN_SEGMENTS). #1098
+  // (2026-10-28): any other hidden name of the bot's own workspace
+  // (.gitignore, .github, .vscode, .env.example...) is the owner's too; only
+  // the names that run commands or hold credentials on the shared server
+  // (sensitiveHiddenSegment) still wait for an admin.
   const reads = fileView || READ_ONLY_FILE_TOOLS.has(tool);
   const roots = [input.workspaceRoot, ...(reads ? input.readRoots ?? [] : [])].map(realLocation);
   return !input.paths.every((path) => {
@@ -338,7 +378,7 @@ export function memberBotAdminApproval(input: {
       const rel = relative(root, real);
       if (rel === "") return true;
       if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
-      return !rel.split(sep).some((segment) => segment.startsWith(".") && !(reads && READABLE_HIDDEN_SEGMENTS.has(segment)));
+      return !rel.split(sep).some((segment) => sensitiveHiddenSegment(segment) && !(reads && READABLE_HIDDEN_SEGMENTS.has(segment)));
     });
   });
 }

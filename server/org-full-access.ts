@@ -123,6 +123,28 @@ export function orgFullAccessGrantRefusal(input: {
   return null;
 }
 
+/** #1098 (2026-10-28): Full access asked through the desktop app's trusted
+ * channel (the app confirms the warning itself) for a member's bot of an
+ * organization follows the HTTP route's rule (orgFullAccessGrantRefusal):
+ * the bot's owner, who is this desktop's person, turns it on; anyone else
+ * is refused. `mayFullAccess`: the person holds bots.fullAccess (or is an
+ * admin). Null: allowed, and the grant records the owner's consent. */
+export function trustedChannelFullRefusal(input: {
+  policyAllowed: boolean;
+  localPrincipalId: string | null;
+  ownerPrincipalId: string;
+  mayFullAccess: boolean;
+}): FullAccessRefusal | null {
+  if (!input.mayFullAccess) return FULL_ACCESS_OWNER_ONLY;
+  return orgFullAccessGrantRefusal({
+    policyAllowed: input.policyAllowed,
+    callerPrincipalId: input.localPrincipalId,
+    ownerPrincipalId: input.ownerPrincipalId,
+    confirmed: true,
+    consent: undefined,
+  });
+}
+
 /** 2026-10-27 (#1098): whether a new conversation may open on Full access
  * for this bot: its owner, who already confirmed Full access for this bot
  * (`fullAccessConsent`), asks, from any of their apps. On an organization

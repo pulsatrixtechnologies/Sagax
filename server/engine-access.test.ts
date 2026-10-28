@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, sensitiveHiddenSegment, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -128,6 +128,29 @@ describe("the admin gate on a member's bot", () => {
       expect(gate("Read", [join(root, "thread-1", hidden, "x")]), hidden).toBe(true);
     }
   });
+  it("lets the owner write the ordinary hidden files of the bot's own workspace; the sensitive ones stay an admin's (#1098)", () => {
+    for (const name of [".gitignore", ".github/workflows/ci.yml", ".vscode/settings.json", ".env.example", ".editorconfig", ".prettierrc", ".devcontainer/devcontainer.json", ".nvmrc"]) {
+      expect(gate("Write", [join(root, "thread-1", name)]), name).toBe(false);
+      expect(gate("Edit", [join(root, "thread-1", "app", name)]), name).toBe(false);
+      expect(gate("Read", [join(root, "thread-1", name)]), name).toBe(false);
+    }
+    for (const name of [
+      ".claude/settings.json", ".git/hooks/pre-commit", ".mcp.json", ".codex/config.toml", ".grok/settings.json", ".cursor/mcp.json",
+      ".husky/pre-commit", ".githooks/pre-push", ".gitconfig", ".git-credentials", ".env", ".env.local", ".envrc", ".npmrc",
+      ".yarnrc.yml", ".pnpmfile.cjs", ".bashrc", ".profile", ".ssh/authorized_keys", ".aws/credentials", ".config/git/config",
+      ".claude-plugin/plugin.json", ".sagax/state.json", "sub/.GIT/hooks/post-checkout", "sub/.Claude/settings.json",
+    ]) {
+      expect(gate("Write", [join(root, "thread-1", name)]), name).toBe(true);
+    }
+    // still outside the workspace, through a symlink or with a traversal: an admin's
+    expect(gate("Write", [join(root, "thread-1", "..", "..", "bot-2", ".gitignore")])).toBe(true);
+    expect(gate("Write", [join(root, "thread-1", "escape", ".gitignore")])).toBe(true);
+    expect(sensitiveHiddenSegment(".gitignore")).toBe(false);
+    expect(sensitiveHiddenSegment(".env.sample")).toBe(false);
+    expect(sensitiveHiddenSegment(".env.production")).toBe(true);
+    expect(sensitiveHiddenSegment("..")).toBe(true);
+    expect(sensitiveHiddenSegment("src")).toBe(false);
+  });
   it("lets the owner answer a built-in Sagax tool that stays in the member's own scope (2026-10-08)", () => {
     // the reported case: a member's bot listing the bots it sees
     expect(gate("agents__list_bots")).toBe(false);
@@ -138,7 +161,7 @@ describe("the admin gate on a member's bot", () => {
     expect(gate("agents__memory_update")).toBe(false);
     expect(gate("agents__propose_routine")).toBe(false);
   });
-  it("lets the owner answer a read-only act on their own bot, and keeps an admin for a write or someone else's bot (#1269)", () => {
+  it("lets the owner answer act on their own bot and own routes, a write too (#1269, #1098), and keeps an admin for someone else's bot or the organization", () => {
     const owns = (id: string) => id === "bot-1" || id === "bot-1b";
     const read = (tool: string, raw: unknown, owner = owns) => memberBotAdminApproval({
       tool, workspaceRoot: root, rawInput: raw, ownsBot: owner, callerBotId: "bot-1",
@@ -150,15 +173,34 @@ describe("the admin gate on a member's bot", () => {
     expect(read("agents__act", { method: "GET", path: "/api/bots/bot-1b/activity" })).toBe(false);
     expect(read("agents__act", { plugins: { action: "list" } })).toBe(false);
     expect(read("agents__act", { plugins: { action: "list", botId: "bot-1b" } })).toBe(false);
-    // a write stays an admin card, and so does a read of someone else's bot
-    expect(read("agents__act", { method: "POST", path: "/api/bots/bot-1" })).toBe(true);
-    expect(read("agents__act", { method: "PATCH", path: "/api/bots/bot-1/soul" })).toBe(true);
-    expect(read("agents__act", { method: "DELETE", path: "/api/bots/bot-1" })).toBe(true);
-    expect(read("agents__act", { method: "GET", path: "/api/bots/bot-1", body: { name: "x" } })).toBe(true);
+    // #1098: a write on the member's own bot or own routes is the owner's card too
+    expect(read("agents__act", { method: "POST", path: "/api/bots/bot-1" })).toBe(false);
+    expect(read("agents__act", { method: "PATCH", path: "/api/bots/bot-1/soul" })).toBe(false);
+    expect(read("agents__act", { method: "DELETE", path: "/api/bots/bot-1" })).toBe(false);
+    expect(read("agents__act", { method: "POST", path: "/api/bots", body: { name: "New" } })).toBe(false);
+    expect(read("agents__act", { method: "POST", path: "/api/routines", body: { botId: "bot-1" } })).toBe(false);
+    expect(read("agents__act", { method: "PATCH", path: "/api/me/preferences", body: { theme: "dark" } })).toBe(false);
+    expect(read("agents__act", { plugins: { action: "install", botId: "bot-1", marketplace: "m", plugin: "p" } })).toBe(false);
+    expect(read("agents__act", { plugins: { action: "uninstall", key: "p@m" } })).toBe(false);
+    expect(read("agents__act", { ui: "updateBot", input: { botId: "bot-1b", patch: { title: "x" } } })).toBe(false);
+    expect(read("agents__act", { ui: "showTeamMap" })).toBe(false);
+    // someone else's bot, an unprovable path, or a route that reaches the organization stays an admin's
+    expect(read("agents__act", { method: "GET", path: "/api/bots/bot-1", body: { name: "x" } })).toBe(false);
     expect(read("agents__act", { method: "GET", path: "/api/bots/other/soul" })).toBe(true);
+    expect(read("agents__act", { method: "PATCH", path: "/api/bots/other" })).toBe(true);
     expect(read("agents__act", { method: "GET", path: "/api/bots/bot-1/../other" })).toBe(true);
+    expect(read("agents__act", { method: "POST", path: "/api/bots/bot-1%2f..%2fother" })).toBe(true);
+    expect(read("agents__act", { method: "POST", path: "/api/bots/bot-1?x=1" })).toBe(true);
     expect(read("agents__act", { method: "GET", path: "/api/config" })).toBe(true);
-    expect(read("agents__act", { plugins: { action: "install", botId: "bot-1", marketplace: "m", plugin: "p" } })).toBe(true);
+    expect(read("agents__act", { method: "PUT", path: "/api/config" })).toBe(true);
+    expect(read("agents__act", { method: "POST", path: "/api/org/members" })).toBe(true);
+    expect(read("agents__act", { method: "POST", path: "/api/tool-grants" })).toBe(true);
+    expect(read("agents__act", { method: "POST", path: "/api/engines/claude" })).toBe(true);
+    expect(read("agents__act", { method: "POST", path: "/api/billing/checkout" })).toBe(true);
+    expect(read("agents__act", { method: "POST", path: "relative" })).toBe(true);
+    expect(read("agents__act", { plugins: { action: "install", botId: "other", marketplace: "m", plugin: "p" } })).toBe(true);
+    expect(read("agents__act", { ui: "updateBot", input: { botId: "other", patch: { title: "x" } } })).toBe(true);
+    expect(read("agents__act", { ui: "updateBot", input: { botId: "bot-1", patch: {} }, method: "GET" })).toBe(true);
     // no proof of whose bot, a command dressed as act, or another server's spelling
     expect(gate("agents__act")).toBe(true);
     expect(memberBotAdminApproval({ tool: "agents__act", workspaceRoot: root, rawInput: get })).toBe(true);
@@ -393,6 +435,8 @@ describe("host-level agents tools in the member's own environment", () => {
   it("attach_file of the bot's own folders or own VM is theirs, anything else an admin's", () => {
     expect(gate("mcp__agents__attach_file", JSON.stringify({ path: join(workspace, "report.pdf") }), place())).toBe(false);
     expect(gate("mcp__agents__attach_file", { path: join(workspace, ".claude", "settings.json") }, place())).toBe(true);
+    expect(gate("mcp__agents__attach_file", { path: join(workspace, ".github", "workflows", "ci.yml") }, place())).toBe(false);
+    expect(gate("mcp__agents__attach_file", { path: join(workspace, ".env") }, place())).toBe(true);
     expect(gate("mcp__agents__attach_file", { path: join(root, "other.txt") }, place())).toBe(true);
     expect(gate("mcp__agents__attach_file", { path: join(workspace, "..", "..", "other.txt") }, place())).toBe(true);
     expect(gate("mcp__agents__attach_file", { path: "/home/cua/workspace/out.png" }, place({ ownLocalVm: true }))).toBe(false);

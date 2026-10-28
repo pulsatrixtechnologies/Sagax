@@ -16,8 +16,10 @@
 // added to the agents catalog is host-level (admin gate) until it is
 // classified here. member-tool-scope.test.ts fails on an unclassified tool.
 
+import { grantStaysInOwnEnvironment } from "../shared/grant-reach.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "./agent-tool-policy.ts";
 import { isOpenApiTool } from "./openapi-tools.ts";
+import { policyFor } from "./tool-policy.ts";
 
 /** Why an agents tool stays inside the member's own scope. */
 export type MemberToolFamily =
@@ -117,11 +119,11 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   // every setting as the member (server/settings-actions.ts): the member's
   // own rights decide on the route the screen calls, a card otherwise
   sagax_settings: "own-setup",
-  // #1269: act runs as the signed-in person (server/bot-act.ts). A read
-  // with no effect of the member's own bot is their own card
-  // (ownBotReadAct). A write, or a call on someone else's bot, stays an
-  // admin card (memberBotAdminApproval): own-setup here only lets the read
-  // through, it does not drop the admin gate for the rest.
+  // #1269: act runs as the signed-in person (server/bot-act.ts). #1098
+  // (2026-10-28): a read or a write that stays in the member's own
+  // environment is their own card (ownAct); a call on someone else's bot or
+  // on a route that reaches past that environment (shared/grant-reach.ts
+  // ORG_REACH_AREAS) stays an admin card (memberBotAdminApproval).
   act: "own-setup",
   manage_settings: "own-setup",
   // the member's own cards, at their request (server/primary-approvals.ts)
@@ -268,4 +270,57 @@ export function ownBotReadAct(name: string | undefined, input: unknown, scope: {
   if (record.body !== undefined && record.body !== null) return false;
   if (record.query !== undefined && (typeof record.query !== "object" || record.query === null || Array.isArray(record.query))) return false;
   return ownBotApiPath(record.path, ownsBot);
+}
+
+/** The area of an act route (shared/grant-reach.ts): the reviewed policy
+ * row's, else the first segment after `/api/`. */
+function actRouteAreas(method: string, path: string): string[] {
+  const policy = policyFor(method, path);
+  const segment = /^\/api\/([^/]+)/.exec(path)?.[1] ?? "";
+  return [policy.scope.split(":")[0] ?? "", segment];
+}
+
+function ownBotIdsOnly(input: unknown, ownsBot: (id: string) => boolean): boolean {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input === undefined;
+  const botId = (input as Record<string, unknown>).botId;
+  return botId === undefined || (typeof botId === "string" && BOT_ID.test(botId) && ownsBot(botId));
+}
+
+/** #1098 (2026-10-28): `act` (read or write) that stays in the member's own
+ * environment, so its engine card is the member's own, never an admin's.
+ * act runs as the signed-in person (server/bot-act.ts): the route refuses
+ * what that person may not do, and a write still waits for their own Allow
+ * (botActRequest) unless their level runs it. What stays an admin card:
+ *   - a route whose area reaches past the person's environment
+ *     (ORG_REACH_AREAS: the organization, its people, the shared server,
+ *     billing, grants), or an unprovable path (`..`, an encoding, a query);
+ *   - `/api/bots/<id>` of a bot that is not theirs;
+ *   - a plugin action or a screen action on a bot that is not theirs.
+ * `ownsBot` absent: nothing passes. */
+export function ownAct(name: string | undefined, input: unknown, scope: { ownsBot?: (id: string) => boolean; callerBotId?: string } | undefined): boolean {
+  if (builtinAgentToolName(name) !== "act" || !scope?.ownsBot) return false;
+  if (ownBotReadAct(name, input, scope)) return true;
+  const ownsBot = scope.ownsBot;
+  const record = actRecord(input);
+  if (!record) return false;
+  if (record.plugins !== undefined) {
+    if (Object.keys(record).some((key) => key !== "plugins")) return false;
+    const plugin = record.plugins;
+    if (!plugin || typeof plugin !== "object" || Array.isArray(plugin)) return false;
+    const id = (plugin as Record<string, unknown>).botId === undefined ? scope.callerBotId : (plugin as Record<string, unknown>).botId;
+    return typeof id === "string" && BOT_ID.test(id) && ownsBot(id);
+  }
+  if (record.ui !== undefined) {
+    if (Object.keys(record).some((key) => key !== "ui" && key !== "input")) return false;
+    return typeof record.ui === "string" && ownBotIdsOnly(record.input, ownsBot);
+  }
+  if (Object.keys(record).some((key) => !ACT_ROUTE_KEYS.has(key))) return false;
+  if (typeof record.method !== "string" || typeof record.path !== "string") return false;
+  const method = record.method.trim().toUpperCase();
+  let path = record.path;
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  if (!path.startsWith("/api/") || /\/\/|\\|%|\?|#/.test(path)) return false;
+  if (path.split("/").some((segment) => segment === "." || segment === "..")) return false;
+  if (path.startsWith("/api/bots/") && !ownBotApiPath(path, ownsBot)) return false;
+  return actRouteAreas(method, path).every((area) => area && grantStaysInOwnEnvironment(`${area}:write`));
 }
