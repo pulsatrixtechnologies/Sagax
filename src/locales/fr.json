@@ -11463,5 +11463,7 @@
   "chat.reportBugTitle": "Préparer une note pour l'équipe. Rien n'est envoyé tant que vous n'êtes pas d'accord.",
   "chat.reportBugConfirm": "Ouvrir un brouillon de courriel avec ce rapport? Rien n'est envoyé tant que vous n'envoyez pas le courriel vous-même.",
   "composer.command.soloGoalDesc": "Donner un but à ce bot et le laisser travailler jusqu'à ce que ce soit fait",
-  "botPanel.model.backupModel": "Modèle de relève"
+  "botPanel.model.backupModel": "Modèle de relève",
+  "settings.usage.title": "Mesure d'usage",
+  "settings.usage.help": "Éteinte tant que vous ne l'activez pas. Les comptes restent sur ce serveur et ne contiennent aucun nom."
 }
