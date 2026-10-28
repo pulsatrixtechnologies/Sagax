@@ -22,6 +22,7 @@
 import readline from "node:readline";
 
 import { availableTools, catalogProfileFromEnv, compactListed, compactToolsFromEnv, withDeferredRareTools } from "./agents-catalog.ts";
+import { catalogBridgeDefinitions, catalogBridgeOn, findCatalogTools, resolveCatalogUse } from "./catalog-bridge.ts";
 import { CALL_TOOL, DESCRIBE_TOOL, SEARCH_TOOL, ToolDirectory, isDirectoryTool, type CatalogTool } from "../mcp-directory.ts";
 import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
 import { harnessClientFromEnv, type Json } from "./agents-client.ts";
@@ -36,10 +37,13 @@ const AVAILABLE_TOOLS = availableTools(PROFILE);
 // call path, checks and approvals as a listed one. The list is the same for
 // every conversation of the bot, so a local model's prefix cache serves it.
 const COMPACT = compactToolsFromEnv(process.env);
-const SEARCHED = COMPACT
+const BRIDGE = catalogBridgeOn(process.env);
+const SEARCHED = COMPACT && !BRIDGE
   ? new ToolDirectory(AVAILABLE_TOOLS.filter((tool) => !compactListed(tool.name, { ...COMPACT, coordinating: PROFILE.coordinating })) as unknown as CatalogTool[])
   : undefined;
-const LISTED_TOOLS = COMPACT
+const LISTED_TOOLS = BRIDGE
+  ? catalogBridgeDefinitions()
+  : COMPACT
   ? [
     ...AVAILABLE_TOOLS.filter((tool) => compactListed(tool.name, { ...COMPACT, coordinating: PROFILE.coordinating })),
     ...(SEARCHED!.tools.length ? SEARCHED!.listed({ server: "agents", title: "Sagax", instructions: "Sagax's own tools: teammates, rooms, routines, settings, artifacts, transcripts, cloud agents, skills and the person's phone." }) : []),
@@ -101,6 +105,18 @@ async function handle(msg: Json) {
     case "tools/call": {
       let name = params.name as string;
       let args = (params.arguments ?? {}) as Json;
+      if (BRIDGE && (name === "find_tool" || name === "use_tool")) {
+        if (name === "find_tool") {
+          const query = args && typeof args === "object" && !Array.isArray(args) && typeof (args as { query?: unknown }).query === "string" ? (args as { query: string }).query : "";
+          const rawLimit = args && typeof args === "object" && !Array.isArray(args) ? (args as { limit?: unknown }).limit : undefined;
+          const limit = typeof rawLimit === "number" ? rawLimit : 8;
+          return textResult(id, JSON.stringify(findCatalogTools(AVAILABLE_TOOLS, query, limit)));
+        }
+        const resolved = resolveCatalogUse(AVAILABLE_TOOLS, args as { name?: unknown; arguments?: unknown });
+        if ("error" in resolved) return textResult(id, resolved.error, true);
+        name = resolved.name;
+        args = resolved.arguments as Json;
+      }
       if (SEARCHED && SEARCHED.tools.length && isDirectoryTool(name)) {
         if (name === SEARCH_TOOL) return ok(id, await SEARCHED.search(args));
         if (name === DESCRIBE_TOOL) return ok(id, SEARCHED.describe(args));
