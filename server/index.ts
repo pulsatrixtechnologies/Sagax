@@ -187,6 +187,7 @@ import {
 } from "./avatar-image.ts";
 import { fitsOnOneLine, parseBotProfilePatch } from "./bot-profile.ts";
 import { groupTurnCwd } from "./room-cwd.ts";
+import { insideFolderRoots, MEMBER_FOLDER_REFUSED, openedMemberFolders, personFolder } from "./member-folders.ts";
 import { RoomTurnDeadline, RoomTurnStallRegistry, effectiveRoomTurnTimeoutMinutes, parseConversationTurnTimeout, roomTurnTimeoutMessage } from "./room-turn-timeout.ts";
 import { roomTurnEnd, type RoomClaimEnd } from "./room-turn-end.ts";
 import { pickComputer } from "./computer-selection.ts";
@@ -1018,6 +1019,8 @@ import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 import { PersonSettingsStore, personSettingsPrincipal, personalProfilePartition } from "./person-settings.ts";
+import { PersonVoiceKeysStore, personVoiceKeysPrincipal, withPersonalVoiceKeys } from "./person-voice-keys.ts";
+import { createPersonVoiceKeysRoutes } from "./routes/person-voice-keys.ts";
 import { createPersonSettingsRoutes } from "./routes/person-settings.ts";
 import { isPersonalBrowserProfileId, type PersonalFeature } from "../shared/person-settings.ts";
 import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
@@ -4412,7 +4415,9 @@ function agentsIntegration(
         // 2026-10-16: on the organization's xAI voice only for the person
         // this turn is for (the route re-checks).
         const given = orgXaiMediaGiven("voice", turnMediaPrincipal(threadId), effectiveBotOwner(speaking ?? {}));
-        return tts.voiceReady(cfg, speaking?.voice, { xaiKeyGiven: given }) && speaking?.voiceNotes !== false ? "1" : "0";
+        // #1098: the person's own voice key serves their own turns.
+        const voice = voiceFor(cfg, turnMediaPrincipal(threadId) ?? effectiveBotOwner(speaking ?? {}), given);
+        return tts.voiceReady(voice.cfg, speaking?.voice, voice.access) && speaking?.voiceNotes !== false ? "1" : "0";
       })(),
       // end_call is offered only while this thread is on a live phone call.
       // The route re-checks; a turn that is not a call never sees the tool.
@@ -7559,6 +7564,18 @@ function personalProfileTarget(botId: string, profileId: string): { profileId: s
 function personalProfileOf(principalId: string | null | undefined, profileId: unknown): boolean {
   const owner = personSettingsOwner(principalId);
   return Boolean(owner && isPersonalBrowserProfileId(profileId) && personSettings.get(owner).browserProfiles.some((profile) => profile.id === profileId));
+}
+// A person's own voice keys on an organization server (#1098, 2026-10-28,
+// server/person-voice-keys.ts): their speech and voice notes use them in
+// place of the organization's key for the same engine.
+const personVoiceKeys = new PersonVoiceKeysStore(DATA_DIR);
+/** The voice settings and the xAI access for speech made for this person:
+ * their own key where they saved one (their own xAI key needs no grant of
+ * the organization's), else the installation's. */
+function voiceFor(cfg: AppConfig, principalId: string | null | undefined, organizationXaiGiven: boolean): { cfg: AppConfig; access: tts.VoiceKeyAccess } {
+  const owner = IDENTITY.kind === "perspicax" ? personVoiceKeysPrincipal(principalId) : null;
+  const own = owner ? personVoiceKeys.keys(owner) : {};
+  return { cfg: withPersonalVoiceKeys(cfg, own), access: { xaiKeyGiven: own.xai ? true : organizationXaiGiven } };
 }
 function webSearchScopeForThread(threadId: string) {
   const organization = IDENTITY.kind === "perspicax";
@@ -24059,6 +24076,8 @@ function teamSetupApplyRefusal(auth: RequestAuth, req: IncomingMessage) {
       sectionOf: (botId) => { const bot = store.bot(botId); return bot ? sectionKey(bot.section) : undefined; },
       mayCreateBots: botCreationAllowed(auth),
       can: (permission) => callerCan(auth, permission),
+      // #1098 (isolation): a folder outside the member's own roots
+      folderAllowed: (folder) => memberFolderRefusal(memberFolderPrincipal(auth), folder) === null,
     });
     return refusal ? { ...refusal } : null;
   };
@@ -34359,6 +34378,31 @@ function orgDeniesFull(bot: { ownerUserId?: unknown; fullAccessConsent?: unknown
 function sessionPrincipal(auth: RequestAuth): string | null {
   return auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
 }
+/** #1098 (isolation): the person whose own folder roots bound a working
+ * folder this request names on the server's disk, or null when none do (a
+ * solo server, the operator, an organization admin). "" is a caller with no
+ * person, refused. */
+function memberFolderPrincipal(auth: RequestAuth): string | null {
+  if (IDENTITY.kind !== "perspicax" || auth.kind === "loopback" || auth.scopes.includes("admin")) return null;
+  return sessionPrincipal(auth) ?? "";
+}
+/** A member's own roots on the server's disk (server/member-folders.ts):
+ * their person folder, the workspaces of their own bots, and the folders an
+ * admin opened to them. */
+function memberFolderRoots(principalId: string): string[] {
+  const person = principalId.trim().toLowerCase();
+  const roots = [personFolder(DATA_DIR, person)];
+  for (const bot of store.bots) {
+    if (effectiveBotOwner(bot).trim().toLowerCase() === person) roots.push(workspaceDir(bot.id), join(TASK_WORKSPACES_DIR, bot.id));
+  }
+  return [...roots, ...openedMemberFolders(cfg.organization?.memberFolders, person)];
+}
+/** Null when `principal` may name `folder` as a working folder. */
+function memberFolderRefusal(principal: string | null, folder: string | null | undefined): typeof MEMBER_FOLDER_REFUSED | null {
+  if (principal === null || !folder) return null;
+  if (!principal) return MEMBER_FOLDER_REFUSED;
+  return insideFolderRoots(folder, memberFolderRoots(principal)) ? null : MEMBER_FOLDER_REFUSED;
+}
 /** Organization server: why this request may not turn Full on for a bot,
  * or null. The caller must be the bot's owner, signed in. */
 function orgFullAccessRefusalFor(auth: RequestAuth, bot: BotRecord, confirmed: boolean) {
@@ -36459,6 +36503,10 @@ ROUTES.push(createPersonSettingsRoutes({
         .catch(() => undefined);
     }
   },
+}));
+ROUTES.push(createPersonVoiceKeysRoutes({
+  store: personVoiceKeys,
+  principal: (auth) => (IDENTITY.kind === "perspicax" ? personVoiceKeysPrincipal(sessionPrincipal(auth)) : null),
 }));
 // The signed-in person's own photo (server/routes/me-avatar.ts): written to
 // Perspicax with their own sign-in token, then shown everywhere at once.
@@ -43651,6 +43699,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (body.cwd !== undefined) {
           const checkedCwd = validateBotCwd(body.cwd);
           if (!checkedCwd.ok) return json(res, 400, { error: checkedCwd.error });
+          // #1098 (isolation): a member's bot names a folder of its owner's own roots
+          const outside = memberOwnedInOrg(chief) ? memberFolderRefusal(effectiveBotOwner(chief), checkedCwd.cwd) : null;
+          if (outside) return json(res, 403, { ...outside, field: "cwd" });
           cwd = checkedCwd.cwd ?? undefined;
         }
         // Discovery can yield; check current authority and capacity again before writing.
@@ -44028,7 +44079,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // this turn is for (a routine: its owner; nobody known: the owner).
         const voiceGiven = orgXaiMediaGiven("voice", turnMediaPrincipal(internalCapability.threadId), effectiveBotOwner(internalSender));
         try {
-          const audio = await tts.speak(cfg, text, voiceBot.voice, undefined, { xaiKeyGiven: voiceGiven });
+          const voice = voiceFor(cfg, turnMediaPrincipal(internalCapability.threadId) ?? effectiveBotOwner(internalSender), voiceGiven);
+          const audio = await tts.speak(voice.cfg, text, voiceBot.voice, undefined, voice.access);
           // Synthesis can outlive its turn: a stop or settle during the await
           // revokes the capability and clears the live turn. Re-check both
           // before saving so the clip cannot park under the :active fallback
@@ -46035,6 +46087,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const notYours = cloudThreadRefusal(auth, renamed.threadId);
         if (notYours) return json(res, 403, { error: notYours });
       }
+      // #1098 (isolation): a member's room folder stays in their own roots
+      const roomFolder = (body as { cwd?: unknown } | null)?.cwd;
+      if (typeof roomFolder === "string" && roomFolder.trim()) {
+        const checkedRoom = validateBotCwd(roomFolder);
+        const outside = checkedRoom.ok ? memberFolderRefusal(memberFolderPrincipal(auth), checkedRoom.cwd) : null;
+        if (outside) return json(res, 403, { ...outside, field: "cwd" });
+      }
       let group = updateChannel(m[1], body);
       if (movesSection) recordRoomMove(group.id, fromSection, sectionKey(group.section));
       // A room marked read by a person reads their @ tag too (server/room-mentions.ts).
@@ -46651,6 +46710,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const checkedCwd = validateBotCwd(settings.cwd ?? null);
       if (!checkedCwd.ok) return json(res, 400, { error: checkedCwd.error });
+      // #1098 (isolation): a member's new bot works in their own roots
+      const outsideCwd = memberCreate ? memberFolderRefusal(memberFolderPrincipal(auth), checkedCwd.cwd) : null;
+      if (outsideCwd) return json(res, 403, { ...outsideCwd, field: "cwd" });
       if (body.requireAvailableModel !== undefined && typeof body.requireAvailableModel !== "boolean") {
         return json(res, 400, { error: "requireAvailableModel must be true or false" });
       }
@@ -47421,6 +47483,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.cwd !== undefined) {
         const checked = await validateBotCwdFor(body.cwd, { principalId: terminalPrincipalId(auth), botId: m[1], sessions: remoteSessions });
         if (!checked.ok) return json(res, 400, { error: checked.error });
+        const outside = checked.remote ? null : memberFolderRefusal(memberFolderPrincipal(auth), checked.cwd);
+        if (outside) return json(res, 403, { ...outside, field: "cwd" });
         patch.cwd = checked.cwd ?? undefined;
       }
       if (body.hidden === true && existingBot?.chiefOfStaff && body.chiefOfStaff !== false) {
@@ -49390,6 +49454,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const checked = await validateBotCwdFor(body.cwd, { principalId: terminalPrincipalId(auth), botId: bot.id, sessions: remoteSessions });
         if (!checked.ok) return json(res, 400, { error: checked.error });
         if (!checked.cwd) return json(res, 400, { error: "Choose an existing working folder, or omit cwd to use the bot's default" });
+        const outside = checked.remote ? null : memberFolderRefusal(memberFolderPrincipal(auth), checked.cwd);
+        if (outside) return json(res, 403, { ...outside, field: "cwd" });
         cwd = checked.cwd;
       }
       if (body.approvalMode !== undefined && body.approvalMode !== "ask" && body.approvalMode !== "full") {
@@ -51663,13 +51729,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "POST" && path === "/api/tts/prepare") {
       const body = await readBody(req);
       return json(res, 200, {
-        ready: tts.voiceReady(cfg, typeof body.voiceId === "string" ? body.voiceId : undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) }),
+        ready: (() => {
+          const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
+          return tts.voiceReady(voice.cfg, typeof body.voiceId === "string" ? body.voiceId : undefined, voice.access);
+        })(),
         utterances: toUtterances(String(body.text ?? "")),
       });
     }
     if (method === "GET" && path === "/api/tts/voices") {
       try {
-        return json(res, 200, { voices: await tts.listVoices(cfg, undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) }) });
+        const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
+        return json(res, 200, { voices: await tts.listVoices(voice.cfg, undefined, voice.access) });
       } catch (e) {
         if (e instanceof tts.XaiVoiceNotGiven) return json(res, 200, { voices: [], ...orgXaiRefusal("voice") });
         return json(res, 200, { voices: [], error: e instanceof Error ? e.message : String(e) });
@@ -51684,7 +51754,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // voice account into an unbounded, billable synthesis job.
       if (text.length > 500) return json(res, 413, { error: "voice utterances are limited to 500 characters" });
       try {
-        const audio = await tts.speak(cfg, text, typeof body.voiceId === "string" ? body.voiceId : undefined, undefined, { xaiKeyGiven: orgXaiMediaGiven("voice", requesterPrincipal(auth)) });
+        const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
+        const audio = await tts.speak(voice.cfg, text, typeof body.voiceId === "string" ? body.voiceId : undefined, undefined, voice.access);
         res.writeHead(200, {
           "content-type": audio.mime,
           "content-length": String(audio.bytes.byteLength),

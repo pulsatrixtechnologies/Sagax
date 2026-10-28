@@ -184,7 +184,10 @@ const definitions = [
     },
   },
   {
-    key: "folders.botWorkingFolder", group: "folders", memberDefault: false, adminOnly: false,
+    // 2026-10-28 (#1098): where their own bot works is theirs. The server
+    // still checks the path (server/bot-cwd.ts), and a person sheet with
+    // `sagax_bots: use` still takes it away (server/org-permissions.ts).
+    key: "folders.botWorkingFolder", group: "folders", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Set the working folder of their bots", fr: "Choisir le dossier de travail de leurs bots" },
     description: {
       en: "Choose the folder a bot they own works in, at creation and afterwards.",
@@ -192,7 +195,9 @@ const definitions = [
     },
   },
   {
-    key: "folders.roomWorkingFolder", group: "folders", memberDefault: false, adminOnly: false,
+    // 2026-10-28 (#1098): the owner of a group sets where it works; only
+    // the group's owner (server/group-ownership.ts), the path still checked.
+    key: "folders.roomWorkingFolder", group: "folders", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Set the working folder of their groups", fr: "Choisir le dossier de travail de leurs groupes" },
     description: {
       en: "Choose the folder a group they own works in.",

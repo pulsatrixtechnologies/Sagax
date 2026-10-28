@@ -52,4 +52,10 @@ describe("a member applies team setup on their own bots (#1058)", () => {
     expect(memberTeamSetupRefusal(request([create("Ana", { cwd: "/srv/work" })]), context())).toMatchObject({ permission: "folders.botWorkingFolder" });
     expect(memberTeamSetupRefusal(request([create("Ana", { cwd: "" })]), context())).toBeNull();
   });
+  it("keeps a new bot's folder in the member's own roots (#1098)", () => {
+    const folders = context({ can: () => true, folderAllowed: (folder) => folder.startsWith("/srv/mine") });
+    expect(memberTeamSetupRefusal(request([create("Ana", { cwd: "/srv/mine/work" })]), folders)).toBeNull();
+    expect(memberTeamSetupRefusal(request([create("Ana", { cwd: "/etc" })]), folders)).toMatchObject({ code: expect.any(String) });
+    expect(memberTeamSetupRefusal(request([create("Ana", { cwd: "/etc" })]), folders)?.permission).toBeUndefined();
+  });
 });

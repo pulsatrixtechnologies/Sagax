@@ -8,8 +8,10 @@
 /** The Experimental switches that are a person's own: what they see and
  * what their own turns do. The built-in browser and the meeting notetaker
  * reach the shared server, and the decision model opens the installation's
- * decider settings: those stay `server.experimental`'s. */
-export const PERSONAL_FEATURE_KEYS = ["skillAuthoring", "dataWindow", "llmThreadTitles"] as const;
+ * decider settings: those stay `server.experimental`'s. Since 2026-10-28
+ * (#1098) also Settings > Appearance > Show tool calls, a display choice of
+ * each person (it was the installation's, behind the right to edit it). */
+export const PERSONAL_FEATURE_KEYS = ["skillAuthoring", "dataWindow", "llmThreadTitles", "showToolCalls"] as const;
 export type PersonalFeature = (typeof PERSONAL_FEATURE_KEYS)[number];
 
 const personalFeatureSet: ReadonlySet<string> = new Set(PERSONAL_FEATURE_KEYS);

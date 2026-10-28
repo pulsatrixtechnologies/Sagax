@@ -9,7 +9,7 @@ import { safeRemoteDir } from "../shared/remote-files.ts";
 import type { RemoteSessionOs } from "../shared/remote-session.ts";
 import type { ListResult } from "./remote-session-files.ts";
 
-export type CwdValidation = { ok: true; cwd: string | null } | { ok: false; error: string };
+export type CwdValidation = { ok: true; cwd: string | null; /** checked on the bot's own computer, not this server */ remote?: true } | { ok: false; error: string };
 
 export function validateBotCwd(input: unknown): CwdValidation {
   if (input === null) return { ok: true, cwd: null };
@@ -63,5 +63,5 @@ export async function validateBotCwdFor(input: unknown, remote: RemoteCwdDeps): 
     if (listed.status === 400) return { ok: false, error: "that path is not a folder on the bot's computer" };
     return { ok: false, error: listed.error };
   }
-  return { ok: true, cwd: listed.listing.path };
+  return { ok: true, cwd: listed.listing.path, remote: true };
 }

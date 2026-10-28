@@ -48,13 +48,14 @@ describe("canEditBotField", () => {
       expect(canEditBotField(member, own, field), field).toBe(true);
     }
     // 2026-10-26 (owner): every setting of their own bot, without an admin
-    for (const field of ["computer", "browser", "approvalMode", "proactiveMode", "mcpServers", "toolScope", "fallback", "memoryEnabled", "chiefOfStaff", "hidden", "section", "visibility", "outbound", "approvePeerComms"]) {
+    // 2026-10-28 (#1098): and its working folder (the server still checks the path)
+    for (const field of ["computer", "browser", "approvalMode", "proactiveMode", "mcpServers", "toolScope", "fallback", "memoryEnabled", "chiefOfStaff", "hidden", "section", "visibility", "outbound", "approvePeerComms", "cwd"]) {
       expect(canEditBotField(member, own, field), field).toBe(true);
       expect(canEditBotField(member, other, field), field).toBe(false);
     }
-    // what reaches past their own environment keeps its permission: a folder on
-    // the server's disk, the server's cloud computer and shared browser profiles
-    for (const field of ["cwd", "cloudBackend", "autoStartVps", "browserProfile", "voice", "speakReplies"]) {
+    // what reaches past their own environment keeps its permission: the
+    // server's cloud computer and shared browser profiles
+    for (const field of ["cloudBackend", "autoStartVps", "browserProfile", "voice", "speakReplies"]) {
       expect(canEditBotField(member, own, field), field).toBe(false);
     }
   });
@@ -69,7 +70,7 @@ describe("canEditBotField", () => {
   it("treats a draft as the member's own bot, and a read-only person as unable to edit", () => {
     expect(canEditBotField(member, { ownerUserId: undefined }, "name", { draft: true })).toBe(true);
     expect(canEditBotField(member, { ownerUserId: undefined }, "approvalMode", { draft: true })).toBe(true);
-    expect(canEditBotField(member, { ownerUserId: undefined }, "cwd", { draft: true })).toBe(false);
+    expect(canEditBotField(member, { ownerUserId: undefined }, "cwd", { draft: true })).toBe(true);
     const readOnly = { viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus;
     expect(canEditBotField(readOnly, own, "name")).toBe(false);
     expect(canEditBotField(readOnly, own, "color")).toBe(false);

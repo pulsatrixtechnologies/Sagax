@@ -100,8 +100,11 @@ posixOnly("an organization member's identity and bots", () => {
     home = mkdtempSync(join(tmpdir(), "omb-member-identity-"));
     const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
+    // #1098: a folder an admin opened to members
+    mkdirSync(join(home, "opened"), { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       profile: { name: OWNER_NAME, email: OWNER_EMAIL, aboutMe: OWNER_ABOUT },
+      organization: { memberFolders: { "*": [join(home, "opened")] } },
     }));
     idp = await startFakeOidcProvider({ user: ZARA_USER });
     idp.directoryPeople = [ZARA_USER, MAX_USER, AVA_USER].map((user) => idp!.personOf(user));
@@ -249,10 +252,10 @@ posixOnly("an organization member's identity and bots", () => {
 
   // 2026-10-26 (no admin gating, #1107/#1138): where a member's bot works in
   // her own environment, its approval level, its team and a preset the server
-  // offers are hers. What stays refused reaches the shared server: a working
-  // folder on the server's own disk (folders.botWorkingFolder), and a
-  // preset the server does not offer.
-  it("lets a member set her own bot's environment, and keeps the server's own folder an admin's", async () => {
+  // offers are hers. 2026-10-28 (#1098): its working folder too
+  // (folders.botWorkingFolder, held by every member; the path is still
+  // checked). What stays refused: a preset the server does not offer.
+  it("lets a member set her own bot's environment, its working folder included", async () => {
     const mine: string[] = [];
     for (const body of [
       { name: "Shell", settings: { computer: "local" } },
@@ -263,10 +266,18 @@ posixOnly("an organization member's identity and bots", () => {
       expect(created.status, `${JSON.stringify(body)}: ${created.text}`).toBe(201);
       mine.push(created.body.bot.id);
     }
-    const folder = await api("POST", "/api/bots", { as: "zara", body: { name: "Folder", settings: { cwd: "/" } } });
-    expect(folder.status, folder.text).toBe(403);
+    // #1098 (isolation): a folder in her own roots, never the server's root
+    const outside = await api("POST", "/api/bots", { as: "zara", body: { name: "Outside", settings: { cwd: "/" } } });
+    expect(outside.status, outside.text).toBe(403);
+    expect(outside.body.code).toBe("folder_outside_own_space");
+    const folder = await api("POST", "/api/bots", { as: "zara", body: { name: "Folder", settings: { cwd: join(home, "opened") } } });
+    expect(folder.status, folder.text).toBe(201);
+    mine.push(folder.body.bot.id);
     expect((await api("POST", "/api/bots", { as: "zara", body: { name: "Preset", preset: "no-such-preset" } })).status).toBe(404);
     expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { cwd: "/" } })).status).toBe(403);
+    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { cwd: join(home, "opened") } })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { cwd: "/no/such/folder/1098" } })).status).toBe(400);
+    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { cwd: null } })).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { approvalMode: "auto" } })).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { approvalMode: "ask" } })).status).toBe(200);
     for (const id of mine) expect((await api("DELETE", `/api/bots/${id}`, { as: "zara" })).status).toBe(200);

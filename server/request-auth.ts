@@ -532,6 +532,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // 2026-10-26): theirs on an organization server, no admin right; the key is
   // never answered back.
   { methods: ["GET", "PUT", "DELETE", "POST"], path: /^\/api\/me\/web-search(?:\/test)?$/ },
+  // The person's own Experimental switches and display preferences
+  // (server/routes/person-settings.ts) and own voice keys
+  // (server/routes/person-voice-keys.ts), #1098: theirs, no admin right;
+  // a key is never answered back.
+  { methods: ["GET", "PATCH"], path: /^\/api\/me\/experimental$/ },
+  { methods: ["GET"], path: /^\/api\/me\/voice-keys$/ },
+  { methods: ["PUT", "DELETE"], path: /^\/api\/me\/voice-keys\/(?:elevenlabs|fish|xai)$/ },
   // The person's visit signature (server/routes/web-bot-auth.ts): on unless
   // they turn it off. No admin right. The private key is never answered.
   { methods: ["GET", "PUT"], path: /^\/api\/me\/web-bot-auth$/ },

@@ -14,8 +14,14 @@
 //         person reads them and may leave; an admin may delete (moderation)
 //   PT-5  single stream (thread mode off) on a shared bot: bob's new topic
 //         carries the digest of his own earlier topic, never alice's
+//   PT-6  (#1098) a member sets the working folder of his own bot and his own
+//         group, his own Show tool calls and his own voice keys, with no
+//         admin; another member gets 403/404 on his bot and group and never
+//         sees his preference or his keys. A member's folder stays in his
+//         own roots: never another member's, a system folder or a symlink
+//         out of a folder opened to him; an admin keeps any folder
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -153,8 +159,11 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
     }), { mode: 0o640 });
+    // PT-6: a folder an admin opened to every member
+    mkdirSync(join(home, "opened"), { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: { claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: join(home, "claude-dump.json") }, config: { cli: FAKE_CLAUDE, fullAuto: true } } },
+      organization: { memberFolders: { "*": [join(home, "opened")] } },
     }));
     await start();
     alice = await signIn(ALICE);
@@ -422,5 +431,90 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
     expect(prompt).not.toContain(aliceThread);
     expect(prompt).not.toContain("ALICE-ONLY");
     expect(prompt).not.toContain("alice secret plan");
+  }, 120_000);
+
+  it("PT-6 (#1098): a member sets his own folders, display preference and voice keys; another member reaches none of it", async () => {
+    const bob = await signIn(BOB);
+    const carol = await signIn(CAROL);
+    const erin = await signIn(ERIN);
+    // a folder an admin opened to members
+    const folder = join(home, "opened", "bob-work");
+    mkdirSync(folder, { recursive: true });
+
+    // his own bot's working folder, no admin, the path still checked
+    const bolt = await api("POST", "/api/bots", bob, { name: "Bolt folders" });
+    expect(bolt.status, bolt.text).toBe(201);
+    const boltId = bolt.body.bot.id as string;
+    const moved = await api("PATCH", `/api/bots/${boltId}`, bob, { cwd: folder });
+    expect(moved.status, moved.text).toBe(200);
+    expect((await api("PATCH", `/api/bots/${boltId}`, bob, { cwd: join(home, "nowhere") })).status).toBe(400);
+    // his own bot's workspace is his too
+    const boltSpace = join(realpathSync(join(home, ".sagax")), "workspaces", boltId);
+    mkdirSync(boltSpace, { recursive: true });
+    expect((await api("PATCH", `/api/bots/${boltId}`, bob, { cwd: boltSpace })).status).toBe(200);
+    // another member never reaches it
+    expect([403, 404]).toContain((await api("PATCH", `/api/bots/${boltId}`, carol, { cwd: folder })).status);
+
+    // isolation on the shared server: carol cannot point her own bot at
+    // bob's bot's workspace, at a system folder, at the server's data, or
+    // through a symlink or `..` out of a folder opened to her
+    const hers = await api("POST", "/api/bots", carol, { name: "Carol folders" });
+    expect(hers.status, hers.text).toBe(201);
+    const hersId = hers.body.bot.id as string;
+    symlinkSync(boltSpace, join(home, "opened", "to-bob"));
+    for (const target of [boltSpace, "/", "/etc", tmpdir(), join(home, ".sagax"), join(home, "opened", "to-bob"), join(home, "opened", "..", ".sagax")]) {
+      const refused = await api("PATCH", `/api/bots/${hersId}`, carol, { cwd: target });
+      expect(refused.status, `${target}: ${refused.text}`).toBe(403);
+      expect(refused.body.code).toBe("folder_outside_own_space");
+    }
+    const create = await api("POST", "/api/bots", carol, { name: "Carol elsewhere", cwd: boltSpace });
+    expect(create.body.bot?.cwd, create.text).not.toBe(boltSpace);
+    if (create.body.bot?.id) await api("DELETE", `/api/bots/${create.body.bot.id}`, carol);
+    const task = await api("POST", `/api/bots/${hersId}/tasks`, carol, { cwd: "/etc" });
+    expect(task.status, task.text).toBe(403);
+    // the admin keeps any existing folder
+    const admin = await signIn(ALICE);
+    const adminBot = await api("POST", "/api/bots", admin, { name: "Alice folders" });
+    expect(adminBot.status, adminBot.text).toBe(201);
+    expect((await api("PATCH", `/api/bots/${adminBot.body.bot.id}`, admin, { cwd: tmpdir() })).status).toBe(200);
+    expect((await api("DELETE", `/api/bots/${adminBot.body.bot.id}`, admin)).status).toBe(200);
+
+    // his own group's working folder; a listed person who does not own it is refused
+    const room = await api("POST", "/api/groups", bob, { name: "Bob folders", memberIds: [boltId], humanIds: [ids.bob, ids.erin] });
+    expect(room.status, room.text).toBe(201);
+    const roomId = room.body.group.id as string;
+    const roomFolder = await api("PATCH", `/api/groups/${roomId}`, bob, { cwd: folder });
+    expect(roomFolder.status, roomFolder.text).toBe(200);
+    expect(roomFolder.body.group.cwd).toBe(folder);
+    // a group folder outside his own roots: refused
+    const outside = await api("PATCH", `/api/groups/${roomId}`, bob, { cwd: "/etc" });
+    expect(outside.status, outside.text).toBe(403);
+    expect(outside.body.code).toBe("folder_outside_own_space");
+    const listed = await api("PATCH", `/api/groups/${roomId}`, erin, { cwd: home });
+    expect(listed.status, listed.text).toBe(403);
+    expect([403, 404]).toContain((await api("PATCH", `/api/groups/${roomId}`, carol, { cwd: home })).status);
+
+    // Show tool calls: his own display choice, not the installation's
+    const before = (await api("GET", "/api/config", carol)).body.features?.showToolCalls === true;
+    const pref = await api("PATCH", "/api/me/experimental", bob, { features: { showToolCalls: !before } });
+    expect(pref.status, pref.text).toBe(200);
+    expect((await api("GET", "/api/config", bob)).body.features.showToolCalls).toBe(!before);
+    expect((await api("GET", "/api/config", carol)).body.features?.showToolCalls === true).toBe(before);
+
+    // his own voice key: saved for him, never answered back, never carol's
+    const saved = await api("PUT", "/api/me/voice-keys/elevenlabs", bob, { key: "sk_bob_voice_key_0001" });
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.body.elevenlabs).toEqual({ configured: true, last4: "0001" });
+    expect(saved.text).not.toContain("sk_bob_voice_key");
+    expect((await api("GET", "/api/me/voice-keys", carol)).body.elevenlabs).toEqual({ configured: false, last4: null });
+    // carol's removal is her own: bob's key stays
+    expect((await api("DELETE", "/api/me/voice-keys/elevenlabs", carol)).status).toBe(200);
+    expect((await api("GET", "/api/me/voice-keys", bob)).body.elevenlabs.configured).toBe(true);
+    expect([403, 404]).toContain((await api("PUT", "/api/me/voice-keys/openai", bob, { key: "sk_bob_voice_key_0001" })).status);
+    expect((await api("DELETE", "/api/me/voice-keys/elevenlabs", bob)).body.elevenlabs.configured).toBe(false);
+
+    expect((await api("DELETE", `/api/groups/${roomId}`, bob)).status).toBe(200);
+    expect((await api("DELETE", `/api/bots/${boltId}`, bob)).status).toBe(200);
+    expect((await api("DELETE", `/api/bots/${hersId}`, carol)).status).toBe(200);
   }, 120_000);
 });

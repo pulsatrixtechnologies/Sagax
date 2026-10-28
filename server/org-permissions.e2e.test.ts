@@ -140,6 +140,8 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     }), { mode: 0o640 });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: { codex: { driver: "codex", config: { cli: FAKE_CODEX_LOGIN } } },
+      // #1098: a folder an admin opened to members (PM-3)
+      organization: { memberFolders: { "*": [join(home, "work")] } },
     }));
     await start();
     alice = await signIn(ALICE);
@@ -193,9 +195,11 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     expect((await api("PATCH", `/api/bots/${id}`, bob, { cloudBackend: "vps" })).body).toMatchObject({ permission: "bots.computer" });
     const folder = join(home, "work");
     mkdirSync(folder, { recursive: true });
-    expect((await api("PATCH", `/api/bots/${id}`, bob, { cwd: folder })).body).toMatchObject({ permission: "folders.botWorkingFolder" });
-    // a new bot cannot carry a folder either
-    expect((await api("POST", "/api/bots", bob, { name: "Twig", cwd: folder })).body).toMatchObject({ permission: "folders.botWorkingFolder" });
+    // 2026-10-28 (#1098): the working folder of their own bot is theirs too
+    const ownFolder = await api("PATCH", `/api/bots/${id}`, bob, { cwd: folder });
+    expect(ownFolder.status, ownFolder.text).toBe(200);
+    // the server still checks the path
+    expect((await api("PATCH", `/api/bots/${id}`, bob, { cwd: join(home, "no-such-folder") })).status).toBe(400);
     bob = await bobWith([...MEMBER_DEFAULT_PERMISSIONS, "bots.approvalLevel", "folders.botWorkingFolder"]);
     // the organization's automatic levels for members' bots are on by default
     const allowed = await api("PATCH", `/api/bots/${id}`, bob, { approvalMode: "auto" });
