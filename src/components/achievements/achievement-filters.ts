@@ -2,9 +2,33 @@
 // list together (AND). A locked secret matches only the words already on
 // its card, never its real name, description or reward.
 import { MASCOT_CHARACTERS } from "../../../shared/mascot-look";
-import { characterUnlocked, NOTHING_LOCKED, type AchievementCategory, type AchievementDefinition, type Unlocks } from "../../../shared/achievements";
+import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
+import { ACHIEVEMENT_CATEGORIES, characterUnlocked, NOTHING_LOCKED, type AchievementCategory, type AchievementDefinition, type Unlocks } from "../../../shared/achievements";
 import { characterName, displayReward, localized } from "@/lib/achievements";
 import { t } from "@/lib/i18n";
+
+/** A choice of the toolbar's category filter: All and the categories. */
+export type AchievementsNavCategory = AchievementCategory | "all";
+
+/** The category filter's choices, All first (2026-10-28: a filter of the
+ * page's toolbar, not a left column). */
+export const ACHIEVEMENTS_SCREEN_CATEGORIES: readonly AchievementsNavCategory[] = ["all", ...ACHIEVEMENT_CATEGORIES];
+
+export type AchievementCategoryCounts = Record<AchievementsNavCategory, { unlocked: number; total: number }>;
+
+/** Unlocked and total per category, All included. Secrets count like the
+ * others: their cards are on the page already, masked. */
+export function achievementCategoryCounts(unlocked: ReadonlySet<string>): AchievementCategoryCounts {
+  const counts = Object.fromEntries(ACHIEVEMENTS_SCREEN_CATEGORIES.map((id) => [id, { unlocked: 0, total: 0 }])) as AchievementCategoryCounts;
+  for (const item of ACHIEVEMENTS) {
+    const got = unlocked.has(item.id) ? 1 : 0;
+    counts.all.total += 1;
+    counts.all.unlocked += got;
+    counts[item.category].total += 1;
+    counts[item.category].unlocked += got;
+  }
+  return counts;
+}
 
 export type AchievementStatusFilter = "all" | "unlocked" | "locked";
 

@@ -36,7 +36,6 @@
   "achievements.category.voice": "Voice",
   "achievements.colleaguePoints": "{points} points",
   "achievements.filter": "Show",
-  "achievements.filter.all": "All",
   "achievements.filter.locked": "Locked",
   "achievements.filter.unlocked": "Unlocked",
   "achievements.gamertag.label": "{points} points, level {level}. Open achievements",
@@ -11504,5 +11503,7 @@
   "routineFolders.resumeAll": "Resume the whole folder",
   "routineFolders.delete": "Delete folder",
   "routineFolders.empty": "No routine in this folder yet.",
-  "routineFolders.dropOut": "Drop here to take it out of its folder"
+  "routineFolders.dropOut": "Drop here to take it out of its folder",
+  "achievements.empty": "No achievement matches these filters.",
+  "achievements.filter.anyStatus": "Any status"
 }

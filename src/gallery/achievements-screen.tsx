@@ -1,6 +1,6 @@
 /** Isolated gallery for headless screenshots of the Achievements page
- * (AchievementsScreen.tsx) next to Settings (SettingsModal.tsx), so the two
- * can be compared: same rail, same selected entry, same pane heading. The
+ * (AchievementsScreen.tsx, one column since 2026-10-28) next to Settings
+ * (SettingsModal.tsx), so the two can be compared. The
  * snapshot is answered here; the capture script
  * (scripts/capture-achievements-screen.mjs) answers the other /api calls.
  * Fictional data only. Not shipped in the app.
