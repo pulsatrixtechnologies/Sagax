@@ -4,13 +4,17 @@
 // only the read it is given is ever called.
 import { describe, expect, it, vi } from "vitest";
 import { createThreadPrefetcher, ThreadPageCache, type ThreadPage } from "./thread-page-cache";
-import type { Message } from "@/state/store";
 
-const page = (id: string, at = 0): ThreadPage => ({ messages: [{ id, role: "user", text: id, at } as Message], at });
+type CachedLine = { id: string; role: "user"; text: string; at: number };
+
+const page = (id: string, at = 0): ThreadPage<CachedLine> => ({
+  messages: [{ id, role: "user", text: id, at }],
+  at,
+});
 
 describe("ThreadPageCache", () => {
   it("drops the least recently used thread past its capacity", () => {
-    const cache = new ThreadPageCache(3);
+    const cache = new ThreadPageCache<CachedLine>(3);
     cache.set("a", page("a"));
     cache.set("b", page("b"));
     cache.set("c", page("c"));
@@ -26,7 +30,7 @@ describe("ThreadPageCache", () => {
   });
 
   it("replaces a thread's page and moves it to the end", () => {
-    const cache = new ThreadPageCache(2);
+    const cache = new ThreadPageCache<CachedLine>(2);
     cache.set("a", page("a", 1));
     cache.set("b", page("b", 1));
     cache.set("a", page("a2", 2));
@@ -40,10 +44,10 @@ describe("ThreadPageCache", () => {
 function harness(options: { freshMs?: number } = {}) {
   vi.useFakeTimers();
   let clock = 1_000;
-  const cache = new ThreadPageCache(10);
-  const resolvers = new Map<string, (value: Omit<ThreadPage, "at">) => void>();
+  const cache = new ThreadPageCache<CachedLine>(10);
+  const resolvers = new Map<string, (value: Omit<ThreadPage<CachedLine>, "at">) => void>();
   const fetchPage = vi.fn((threadId: string, _signal: AbortSignal) =>
-    new Promise<Omit<ThreadPage, "at">>((resolve) => { resolvers.set(threadId, resolve); }));
+    new Promise<Omit<ThreadPage<CachedLine>, "at">>((resolve) => { resolvers.set(threadId, resolve); }));
   const prefetcher = createThreadPrefetcher({ cache, fetchPage, now: () => clock, ...options });
   const answer = async (threadId: string) => {
     resolvers.get(threadId)?.({ messages: page(threadId).messages, hasMore: true });

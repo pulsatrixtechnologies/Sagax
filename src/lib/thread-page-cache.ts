@@ -3,11 +3,11 @@
 // switch asks the server for the real page. Only reads fill it: the page a
 // switch answered, the transcript left on screen by a switch, and a prefetch
 // (GET /api/threads/:id/messages, which changes nothing on the server).
-import type { Message } from "@/state/store";
 
-/** One thread's newest page, as the server last gave it. */
-export interface ThreadPage {
-  messages: Message[];
+/** One thread's newest page, as the server last gave it. The message shape
+ * stays with the caller, so this module does not import the store (#1381). */
+export interface ThreadPage<M> {
+  messages: M[];
   hasMore?: boolean;
   activeLeafId?: string | null;
   /** When it was read (ms since the epoch). */
@@ -17,13 +17,13 @@ export interface ThreadPage {
 export const THREAD_PAGE_CACHE_SIZE = 10;
 
 /** Least recently used first out, `capacity` threads at most. */
-export class ThreadPageCache {
-  private readonly pages = new Map<string, ThreadPage>();
+export class ThreadPageCache<M> {
+  private readonly pages = new Map<string, ThreadPage<M>>();
 
   constructor(readonly capacity = THREAD_PAGE_CACHE_SIZE) {}
 
   /** The page, now the most recently used. */
-  get(threadId: string): ThreadPage | undefined {
+  get(threadId: string): ThreadPage<M> | undefined {
     const page = this.pages.get(threadId);
     if (!page) return undefined;
     this.pages.delete(threadId);
@@ -32,11 +32,11 @@ export class ThreadPageCache {
   }
 
   /** The page, leaving the order as it is. */
-  peek(threadId: string): ThreadPage | undefined {
+  peek(threadId: string): ThreadPage<M> | undefined {
     return this.pages.get(threadId);
   }
 
-  set(threadId: string, page: ThreadPage): void {
+  set(threadId: string, page: ThreadPage<M>): void {
     this.pages.delete(threadId);
     this.pages.set(threadId, page);
     while (this.pages.size > this.capacity) {
@@ -64,10 +64,10 @@ export class ThreadPageCache {
   }
 }
 
-export interface ThreadPrefetcherOptions {
-  cache: ThreadPageCache;
+export interface ThreadPrefetcherOptions<M> {
+  cache: ThreadPageCache<M>;
   /** A read of the thread's newest page. Never a call that moves the selection. */
-  fetchPage: (threadId: string, signal: AbortSignal) => Promise<Omit<ThreadPage, "at">>;
+  fetchPage: (threadId: string, signal: AbortSignal) => Promise<Omit<ThreadPage<M>, "at">>;
   /** Pointer rest before a hover reads (ms). */
   hoverDelayMs?: number;
   /** A page younger than this is not read again (ms). */
@@ -93,7 +93,7 @@ export interface ThreadPrefetcher {
 export const PREFETCH_HOVER_DELAY_MS = 80;
 export const PREFETCH_FRESH_MS = 15_000;
 
-export function createThreadPrefetcher({
+export function createThreadPrefetcher<M>({
   cache,
   fetchPage,
   hoverDelayMs = PREFETCH_HOVER_DELAY_MS,
@@ -101,7 +101,7 @@ export function createThreadPrefetcher({
   now = Date.now,
   setTimer = (run, ms) => setTimeout(run, ms),
   clearTimer = (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
-}: ThreadPrefetcherOptions): ThreadPrefetcher {
+}: ThreadPrefetcherOptions<M>): ThreadPrefetcher {
   const timers = new Map<string, unknown>();
   const inFlight = new Map<string, AbortController>();
   let disposed = false;

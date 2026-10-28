@@ -1690,7 +1690,7 @@ export type Action =
   | { type: "switchTask"; botId: string; threadId: string; whole?: true }
   | { type: "switchTaskFailed"; botId: string; threadId: string }
   /** A cached page of the thread a switch is opening, drawn until its snapshot lands. */
-  | { type: "previewThread"; botId: string; threadId: string; page: Pick<ThreadPage, "messages" | "hasMore" | "activeLeafId"> }
+  | { type: "previewThread"; botId: string; threadId: string; page: Pick<ThreadPage<Message>, "messages" | "hasMore" | "activeLeafId"> }
   | { type: "taskSwitched"; bot: Bot }
   | { type: "renameTask"; botId: string; threadId: string; title: string }
   /** Name the thread again from its conversation; the new title arrives with the bot event. */
@@ -4137,7 +4137,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // The last pages of recently seen threads, and the sidebar's read-only
   // prefetch into them (src/lib/thread-page-cache.ts): a switch draws the
   // cached page at once, then takes the page its own request answers.
-  const threadPages = useMemo(() => new ThreadPageCache(), []);
+  const threadPages = useMemo(() => new ThreadPageCache<Message>(), []);
   const threadPrefetch = useMemo(() => createThreadPrefetcher({
     cache: threadPages,
     // GET, a pure read: the switch (POST) is what moves the selection
