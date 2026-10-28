@@ -12,6 +12,7 @@ import { hostedWorkspaceConfigured } from "../../enterprise.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
 import { opencodeHostToolEnv, withheldWorkspace } from "../host-tools.ts";
 import { createAcpDriver, offeredModels, type AccountErrorCode, type AcpSupport } from "./core.ts";
+import { MODEL_ACCESS_DISABLED_MESSAGE, MODEL_ACCESS_DISABLED_TEXT } from "../../../shared/model-access-disabled.ts";
 import type { ModelCatalog, ProviderErrorCode } from "../../contracts.ts";
 import { titleCaseModelId } from "../../contracts.ts";
 import { engineStartGate } from "../../engine-start-gate.ts";
@@ -819,6 +820,8 @@ export function describeOpenCodeAccountError(
         : `This model needs an active ${name} subscription. Renew it there, or choose another model for this bot.`;
     case "quota_or_region_restriction":
       return `${name} says this account's usage limit has been reached. Wait for it to reset, or choose another model for this bot.`;
+    case "model_access_disabled":
+      return MODEL_ACCESS_DISABLED_MESSAGE;
   }
 }
 
@@ -920,6 +923,10 @@ const support = (loadCatalog: OpenCodeCatalogLoader): AcpSupport => ({
  * real CLI: `{code: -32603, message: "Internal error: Invalid API key.",
  * data: {service: "session", errorName: "APIError"}}`. */
 const ACCOUNT_ERROR_TEXT: ReadonlyArray<readonly [RegExp, AccountErrorCode]> = [
+  // #1450: OpenCode Zen's workspace has this model turned off (seen in
+  // production: "Internal error: Upstream request failed: Model access is
+  // disabled (session/prompt, service: session, APIError)").
+  [MODEL_ACCESS_DISABLED_TEXT, "model_access_disabled"],
   [/insufficient (?:account )?(?:funds|balance|credits?)|out of credits?|no credits? (?:left|remaining)|payment required|\b402\b/iu, "insufficient_funds"],
   // Not plain "rate limit exceeded": that is a transient 429, which OpenCode
   // retries itself and automatic recovery may still route around.

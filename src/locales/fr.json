@@ -1814,6 +1814,7 @@
   "composer.dictation.unavailable": "La dictée n'est pas disponible dans cette version.",
   "composer.error.clipboardImage": "Impossible de lire l'image du presse-papiers. Joignez plutôt le fichier image.",
   "composer.error.engineRemoved": "Le moteur de ce bot n'est plus disponible : choisissez-en un autre dans Modifier le bot > Modèle",
+  "composer.error.modelAccessDisabled": "OpenCode a désactivé ce modèle pour le compte qui le paie. Choisissez un autre modèle dans Modifier le bot > Modèle, ou demandez à la personne qui gère ce compte de l'activer.",
   "composer.error.noEngine": "Ce bot n'a pas de moteur : choisissez-en un dans Modifier le bot > Modèle",
   "composer.error.noImages": "Le répondeur sélectionné ne prend pas en charge les images jointes.",
   "composer.failed.attachment": "pièce jointe",

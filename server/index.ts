@@ -536,6 +536,8 @@ import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, t
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
+import { createModelAccessRefusals, personPayer, withoutRefusedModels, type RefusalPayer } from "./model-access-refusals.ts";
+import { MODEL_ACCESS_DISABLED_MESSAGE } from "../shared/model-access-disabled.ts";
 import { autoNewBotSelection, instancesForPerson, memberNewBotSelection, readyToRun, starredModelSelections, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
@@ -16831,7 +16833,15 @@ bus.subscribe((event: RuntimeEvent) => {
       // Auto: a model the engine refused is skipped for this payer for a
       // while; the engine's own error still shows below.
       const autoRan = autoTurnsByThread.get(event.threadId);
-      if (autoRan && isModelRefusal(event.message)) rememberAutoRefusal(autoRan.payer, autoRan.entry);
+      const accessDisabled = event.message === MODEL_ACCESS_DISABLED_MESSAGE;
+      if (autoRan && (accessDisabled || isModelRefusal(event.message))) rememberAutoRefusal(autoRan.payer, autoRan.entry);
+      // #1450: a model the paying account turned off leaves that payer's
+      // model lists for a while: retrying it cannot help.
+      if (accessDisabled && bot) {
+        const ran = autoRan?.entry ?? turnSelection(bot.id, event.threadId);
+        const instanceId = event.providerInstanceId ?? ran?.instanceId ?? "";
+        if (ran && ran.instanceId === instanceId) modelAccessRefusals.remember(refusalPayerOf(turnAccessByThread.get(event.threadId)), instanceId, ran.model);
+      }
       // Organization server: a key-backed engine whose provider refused the
       // key gets the key_refused card, not the generic error row.
       const refusedInstance = bot ? registry.get(event.providerInstanceId ?? bot.modelSelection.instanceId) : null;
@@ -29056,9 +29066,26 @@ async function describeInstances() {
  * listed at all (2026-10-18, shared/offered-engines.ts): no menu, search,
  * favorite or Settings card of any app can offer it. */
 async function instancesForViewer(person: string | null) {
-  const instances = await describeInstances();
+  // #1450: a model the paying account turned off is not offered again for a while
+  const instances = withoutRefusedModels(await describeInstances(), (instanceId) => refusedModelsFor(person, instanceId));
   if (IDENTITY.kind !== "perspicax") return instances;
   return desktopLocalModels.overlay(orgOfferedEngines(instances, person), person);
+}
+/** #1450: models refused as turned off on the account that pays for them. */
+const modelAccessRefusals = createModelAccessRefusals();
+/** The account a turn ran on, as a refusal binds it: this server's own
+ * (solo), the organization's key, or the payer's own subscription or key. */
+function refusalPayerOf(ranOn: { via: TurnAccess["via"]; payerPrincipalId?: string } | undefined): RefusalPayer {
+  if (IDENTITY.kind !== "perspicax") return "server";
+  if (ranOn && ranOn.via !== "org-key" && ranOn.via !== "server" && ranOn.payerPrincipalId) return personPayer(ranOn.payerPrincipalId);
+  return "org";
+}
+/** What one viewer's lists leave out for this engine: what their own account
+ * refused, and what the organization's refused while its key pays for them. */
+function refusedModelsFor(person: string | null, instanceId: string): ReadonlySet<string> {
+  if (IDENTITY.kind !== "perspicax") return modelAccessRefusals.refused(["server"], instanceId);
+  if (!person) return modelAccessRefusals.refused(["org"], instanceId);
+  return modelAccessRefusals.refused(personPaysEngine(person, instanceId) ? [personPayer(person)] : [personPayer(person), "org"], instanceId);
 }
 /** Organization server: the engines its list allows, in order (solo: all).
  * 2026-10-27 (#1098): with a person, an engine outside the list stays when

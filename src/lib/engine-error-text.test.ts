@@ -7,6 +7,7 @@ import {
   NO_ENGINE_MESSAGE,
   NO_ENGINE_PERSON,
 } from "../../shared/bot-engine-error";
+import { MODEL_ACCESS_DISABLED_MESSAGE } from "../../shared/model-access-disabled";
 import { engineErrorMessage, localizedEngineCause } from "./engine-error-text";
 
 afterEach(() => setLocale("en"));
@@ -38,5 +39,15 @@ describe("a missing engine, in the app's language", () => {
     expect(engineErrorMessage({ error: "The port is taken" })).toBeNull();
     expect(engineErrorMessage(null)).toBeNull();
     expect(localizedEngineCause("rate limited")).toBeNull();
+  });
+});
+
+describe("#1450 a model turned off on the paying account, in the app's language", () => {
+  it("says what to do instead of the vendor's raw words", () => {
+    setLocale("en");
+    expect(localizedEngineCause(MODEL_ACCESS_DISABLED_MESSAGE)).toContain("Pick another model in Edit bot > Model");
+    setLocale("fr");
+    expect(localizedEngineCause(MODEL_ACCESS_DISABLED_MESSAGE)).toContain("Choisissez un autre modèle");
+    expect(localizedEngineCause("Internal error: Upstream request failed: Model access is disabled")).toBeNull();
   });
 });

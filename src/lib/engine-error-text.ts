@@ -10,12 +10,15 @@ import {
   NO_ENGINE_MESSAGE,
   NO_ENGINE_PERSON,
 } from "../../shared/bot-engine-error";
+import { MODEL_ACCESS_DISABLED_MESSAGE } from "../../shared/model-access-disabled";
 
-/** The no-engine or removed-engine sentence in the app's language, or null
+/** The no-engine, removed-engine or model-turned-off sentence in the app's language, or null
  * when `text` is some other cause. */
 export function localizedEngineCause(text: string): string | null {
   if (text === NO_ENGINE_MESSAGE || text === NO_ENGINE_PERSON) return t("composer.error.noEngine");
   if (text === ENGINE_REMOVED_MESSAGE || text === ENGINE_REMOVED_PERSON) return t("composer.error.engineRemoved");
+  // #1450: a model turned off on the account that pays for it
+  if (text === MODEL_ACCESS_DISABLED_MESSAGE) return t("composer.error.modelAccessDisabled");
   return null;
 }
 
