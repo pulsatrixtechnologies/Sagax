@@ -53,6 +53,7 @@ import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from ".
 import { commentAnswerDocument, pageDocument, wrapperDocument } from "../published-pages-render.ts";
 import { requestSource, type RequestAuth } from "../request-auth.ts";
 import { redactSecretsInText } from "../../shared/redact.ts";
+import { pageAudienceOf, pageMayEnter, parsePageAudience } from "../../shared/page-audience.ts";
 import {
   PAGE_ACCESS,
   PAGE_COMMENT_PREFIX,
@@ -512,6 +513,8 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       || (method === "GET" && /^\/api\/pages\/([\w-]+)\/reader-comments$/.exec(path) && { route: "readerComments", match: /^\/api\/pages\/([\w-]+)\/reader-comments$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/reader-comments\/([\w-]+)\/approve$/.exec(path) && { route: "readerApprove", match: /^\/api\/pages\/([\w-]+)\/reader-comments\/([\w-]+)\/approve$/.exec(path)! })
       || (method === "DELETE" && /^\/api\/pages\/([\w-]+)\/reader-comments\/([\w-]+)$/.exec(path) && { route: "readerRemove", match: /^\/api\/pages\/([\w-]+)\/reader-comments\/([\w-]+)$/.exec(path)! })
+      || (method === "POST" && /^\/api\/pages\/([\w-]+)\/share$/.exec(path) && { route: "share", match: /^\/api\/pages\/([\w-]+)\/share$/.exec(path)! })
+      || (method === "POST" && /^\/api\/pages\/([\w-]+)\/place$/.exec(path) && { route: "place", match: /^\/api\/pages\/([\w-]+)\/place$/.exec(path)! })
       || null;
     if (extra) return pageExtras(deps, { req, res, method, auth, json, readBody }, extra);
     const match = /^\/api\/pages\/([\w-]+)(?:\/(publish|decline|revoke)|\/versions\/(\d+))?$/.exec(path);
@@ -540,7 +543,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     const by = deps.owner(auth);
     if (!action && method === "PATCH") {
       const body = await readBody(req) as Record<string, unknown> | null;
-      if (!body || typeof body !== "object") return json(res, 400, { error: "Send { title?, access?, expiresAt?, readerComments? }.", code: "bad_body" });
+      if (!body || typeof body !== "object") return json(res, 400, { error: "Send { title?, access?, expiresAt?, readerComments?, pinned?, keepUpdated? }.", code: "bad_body" });
       // every field is checked before anything changes: a refused request
       // changes nothing, and nothing a person asked is ever dropped quietly
       let title: string | undefined;
@@ -559,6 +562,16 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       }
       const readerComments = body.readerComments;
       if (readerComments !== undefined && typeof readerComments !== "boolean") return json(res, 400, { error: "readerComments: true or false.", code: "bad_reader_comments" });
+      let pinned: boolean | undefined;
+      if ("pinned" in body) {
+        if (typeof body.pinned !== "boolean") return json(res, 400, { error: "pinned: true or false.", code: "bad_pinned" });
+        pinned = body.pinned;
+      }
+      let keepUpdated: boolean | undefined;
+      if ("keepUpdated" in body) {
+        if (typeof body.keepUpdated !== "boolean") return json(res, 400, { error: "keepUpdated: true or false.", code: "bad_keep" });
+        keepUpdated = body.keepUpdated;
+      }
       if ((access !== undefined || expiresAt !== undefined) && page.status !== "published") return json(res, 409, { error: "Publish this page first.", code: "not_published" });
       if (access === "link" && page.access !== "link" && !deps.pages.policy().linkSharing) return json(res, 403, LINK_SHARING_OFF);
       if (readerComments === true && !deps.pages.policy().readerComments) return json(res, 403, READER_COMMENTS_OFF);
@@ -568,6 +581,8 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
         result = deps.pages.update(page.id, { ...(access !== undefined ? { access: access as PageAccess } : {}), ...(expiresAt !== undefined ? { expiresAt } : {}), ...(by ? { by } : {}) });
       }
       if (!failed(result) && readerComments !== undefined) result = deps.pages.setReaderComments(page.id, readerComments, by);
+      if (!failed(result) && pinned !== undefined) result = deps.pages.setPinned(page.id, pinned, by);
+      if (!failed(result) && keepUpdated !== undefined) result = deps.pages.setKeepUpdated(page.id, keepUpdated, by);
       return answer(result);
     }
     if (method !== "POST") return PASS;
@@ -587,7 +602,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
 }
 
 type ExtrasContext = Pick<Parameters<RouteHandler>[0], "req" | "res" | "method" | "auth" | "json" | "readBody">;
-type Extra = { route: "source" | "edit" | "comments" | "comment" | "uncomment" | "readerComments" | "readerApprove" | "readerRemove"; match: RegExpExecArray };
+type Extra = { route: "source" | "edit" | "comments" | "comment" | "uncomment" | "readerComments" | "readerApprove" | "readerRemove" | "share" | "place"; match: RegExpExecArray };
 
 /** Lot R8: the person's editor (source and own edit), their comments, and
  * the moderation of readers' comments. The same rules as the routes above: a
@@ -604,6 +619,32 @@ async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, extr
   const by = owner;
   const clean = (text: string) => (deps.redact ? deps.redact(text) : text);
   const outcome = (result: PageRecord | PageError) => failed(result) ? json(res, result.status, { error: result.error, code: result.code }) : json(res, 200, { ok: true });
+  if (route === "share") {
+    const body = await readBody(req) as Record<string, unknown> | null;
+    const parsed = parsePageAudience(body);
+    if (!parsed.ok) return json(res, 400, { error: parsed.error, code: "bad_audience" });
+    const result = deps.pages.share(page.id, parsed.value, by);
+    if (failed(result)) return json(res, result.status, { error: result.error, code: result.code });
+    const origin = deps.origin(req);
+    return json(res, 200, { page: deps.pages.summary(result, origin, deps.reachable(origin)) });
+  }
+  if (route === "place") {
+    const body = await readBody(req) as Record<string, unknown> | null;
+    const into = body?.into;
+    const id = typeof body?.id === "string" ? body.id.trim() : "";
+    if ((into !== "room" && into !== "group") || !/^[A-Za-z0-9_-]{1,80}$/.test(id)) {
+      return json(res, 400, { error: "Send { into: room or group, id }.", code: "bad_place" });
+    }
+    const audience = pageAudienceOf(page.audience);
+    if (!pageMayEnter(audience, { kind: into, id })) {
+      const code = audience.kind === "person" ? "page_audience_person" : "page_audience_mismatch";
+      const error = audience.kind === "person"
+        ? "This page stays with its person. Choose a room or a group when you share it."
+        : "This page is shared with a different room or group.";
+      return json(res, 403, { error, code });
+    }
+    return json(res, 200, { ok: true, audience });
+  }
   if (route === "source") {
     const version = page.versions.find((entry) => entry.n === Number(match[2]));
     const content = version ? deps.pages.content(page.id, version.n) : null;

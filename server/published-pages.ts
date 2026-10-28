@@ -3,8 +3,11 @@
 //
 // A page is versioned: each propose_page call adds a `proposed` version, and
 // only the person's Publish on its card (or in Pages publiées) makes a
-// version the one readers get. Nothing a bot sends can publish, change who
-// can see a page or extend its life.
+// version the one readers get. Nothing a bot sends can publish a draft,
+// change who can see a page, change its audience or extend its life. When
+// the person has allowed the bot to keep a published page up to date, a
+// new version becomes the one readers get, with the same access, audience
+// and expiry.
 //
 // Whose page it is: the person the conversation belongs to (threadOwner in
 // server/thread-privacy.ts: the thread's recorded owner, else the bot
@@ -30,6 +33,7 @@ import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { threadOwner } from "./thread-privacy.ts";
+import { pageAudienceOf, samePageAudience, type PageAudience } from "../shared/page-audience.ts";
 import {
   DEFAULT_PAGES_POLICY,
   PAGE_FRAME_TICKET_MS,
@@ -71,7 +75,7 @@ export interface PageVersionRecord {
 
 export interface PageHistoryEntry {
   at: number;
-  action: "propose" | "publish" | "decline" | "access" | "expiry" | "revoke" | "rename" | "edit" | "reader-comments" | "reader-comment" | "reader-comment-approve" | "reader-comment-remove";
+  action: "propose" | "publish" | "decline" | "access" | "expiry" | "revoke" | "rename" | "edit" | "reader-comments" | "reader-comment" | "reader-comment-approve" | "reader-comment-remove" | "audience" | "pin" | "live" | "keep";
   version?: number;
   by?: string;
 }
@@ -101,6 +105,13 @@ export interface PageRecord {
   readerComments?: boolean;
   /** Readers' comments: pending until the person approves one. */
   readerNotes?: ReaderComment[];
+  /** Who may see this page inside Sagax. Absent means the person only. */
+  audience?: PageAudience;
+  /** The person's pin in their page list. */
+  pinned?: boolean;
+  /** The person allows the bot (and their own later edit) to replace the
+   * published version. Never set by the bot. Off unless they turn it on. */
+  keepUpdated?: boolean;
 }
 
 export type PageError = { ok: false; status: 400 | 404 | 409; error: string; code: string };
@@ -308,7 +319,7 @@ export class PublishedPages {
   list(ownerId: string | undefined): PageRecord[] {
     return this.snapshot()
       .filter((page) => ownerId === undefined || sameOwner(page.ownerId, ownerId))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || b.updatedAt - a.updatedAt);
   }
 
   /** A bot's proposal: a new page, or a new version of one of this
@@ -352,6 +363,9 @@ export class PublishedPages {
         currentVersion: null,
         versions: [],
         history: [],
+        audience: { kind: "person" },
+        pinned: false,
+        keepUpdated: false,
       };
       pages.push(page);
     }
@@ -367,6 +381,15 @@ export class PublishedPages {
       this.dropContent(page.id, gone!.n);
     }
     page.history.push(input.author ? { at: now, action: "edit", version: n, ...(input.by ? { by: input.by } : {}) } : { at: now, action: "propose", version: n });
+    // The person already published this page and allowed it to stay current.
+    // The new version replaces the published one. Access, audience, expiry
+    // and the link stay as the person left them.
+    if (page.keepUpdated === true && page.status === "published" && page.currentVersion !== null) {
+      for (const entry of page.versions) if (entry.state === "published" && entry.n !== version.n) entry.state = "proposed";
+      version.state = "published";
+      page.currentVersion = version.n;
+      page.history.push({ at: now, action: "keep", version: n });
+    }
     page.updatedAt = now;
     this.save(pages);
     return { ok: true, page, version };
@@ -504,6 +527,40 @@ export class PublishedPages {
     });
   }
 
+  /** The person's choice of audience. A room or a group is only stored when
+   * they name it here. This does not put the page into that place by itself. */
+  share(id: string, audience: PageAudience, by?: string): PageRecord | PageError {
+    return this.mutate(id, (page, now) => {
+      const next = pageAudienceOf(audience);
+      if (!samePageAudience(pageAudienceOf(page.audience), next)) {
+        page.audience = next;
+        page.history.push({ at: now, action: "audience", ...(by ? { by } : {}) });
+      }
+      return page;
+    });
+  }
+
+  setPinned(id: string, pinned: boolean, by?: string): PageRecord | PageError {
+    return this.mutate(id, (page, now) => {
+      if ((page.pinned === true) !== pinned) {
+        page.pinned = pinned;
+        page.history.push({ at: now, action: "pin", ...(by ? { by } : {}) });
+      }
+      return page;
+    });
+  }
+
+  /** The person's switch: the bot may replace the published version. */
+  setKeepUpdated(id: string, on: boolean, by?: string): PageRecord | PageError {
+    return this.mutate(id, (page, now) => {
+      if ((page.keepUpdated === true) !== on) {
+        page.keepUpdated = on;
+        page.history.push({ at: now, action: "live", ...(by ? { by } : {}) });
+      }
+      return page;
+    });
+  }
+
   /** The person's Publish: make `version` the one readers get, with who can
    * see it and until when. Mints a reading link when there is none. */
   publish(id: string, input: { version: number; access: PageAccess; expiresAt: number | null; by?: string }): PageRecord | PageError {
@@ -610,6 +667,9 @@ export class PublishedPages {
       createdAt: page.createdAt,
       updatedAt: page.updatedAt,
       expired: page.expiresAt !== null && page.expiresAt <= this.clock(),
+      audience: pageAudienceOf(page.audience),
+      pinned: page.pinned === true,
+      keepUpdated: page.keepUpdated === true,
       versions,
       ...(page.comments?.length ? { comments: page.comments.length } : {}),
       ...(page.readerComments ? { readerComments: true } : {}),

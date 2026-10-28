@@ -20,6 +20,8 @@
 
 /** html: one complete document; markdown: text; presentation: Markdown
  * slides separated by a line of three dashes, read as a slideshow. */
+import type { PageAudience } from "./page-audience.ts";
+
 export type PageKind = "html" | "markdown" | "presentation";
 export const PAGE_KINDS: readonly PageKind[] = ["html", "markdown", "presentation"];
 export type PageAccess = "private" | "org" | "link";
@@ -253,6 +255,12 @@ export interface PublishedPageSummary {
   /** Readers may comment (the person's setting); and how many wait. */
   readerComments?: boolean;
   pendingReaderComments?: number;
+  /** Who may see this page inside Sagax. Absent on an older list means
+   * the person only. */
+  audience?: PageAudience;
+  pinned?: boolean;
+  /** The person allowed the bot to replace the published version. */
+  keepUpdated?: boolean;
 }
 
 /** The message field a proposal writes on its bot row (`pagePublish`). */
