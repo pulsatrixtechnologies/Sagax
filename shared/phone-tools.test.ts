@@ -35,6 +35,11 @@ describe("phoneToolGrantKey", () => {
     expect(phoneToolGrantKey("clipboard", {})).toBe("clipboard:read");
     expect(phoneToolGrantKey("reminders", { action: "create", title: "x" })).toBe("reminders:write:create");
     expect(phoneToolGrantKey("calendar", { action: "create", title: "x", start: "a", end: "b" })).toBe("calendar:write:create");
+    expect(phoneToolGrantKey("home", { action: "list" })).toBe("home:read");
+    expect(phoneToolGrantKey("home", { action: "run", scene: "Evening" })).toBe("home:write:run");
+    expect(phoneToolGrantKey("alarms", { action: "list" })).toBe("alarms:read");
+    expect(phoneToolGrantKey("alarms", { action: "create", label: "Wake", hour: 7, minute: 0 })).toBe("alarms:write:create");
+    expect(phoneToolGrantKey("home", { action: "run", scene: "Evening" })).not.toBe(phoneToolGrantKey("home", { action: "list" }));
     expect(phoneToolGrantKey("location", { precise: true })).toBe("location:read:precise");
   });
 
@@ -83,6 +88,15 @@ describe("checkPhoneToolResult", () => {
   });
 
   it("refuses an answer that does not fit the tool", () => {
+    const homes = checkPhoneToolResult("home", { action: "list", limit: 1 }, {
+      homes: [
+        { name: "House", scenes: ["Evening"], accessories: [{ name: "Lamp", room: "Kitchen", on: true, id: "drop-me" }] },
+        { name: "Other", scenes: [] },
+      ],
+    });
+    expect(homes).toEqual({ ok: true, result: { homes: [{ name: "House", scenes: ["Evening"], accessories: [{ name: "Lamp", room: "Kitchen", on: true }] }] } });
+    expect(checkPhoneToolResult("alarms", { action: "create", label: "Wake", hour: 7, minute: 30 }, { created: { label: "Wake", hour: 7, minute: 30, enabled: true } }).ok).toBe(true);
+    expect(checkPhoneToolResult("alarms", { action: "create", label: "Wake", hour: 7, minute: 30 }, { created: { label: "Wake", hour: 25, minute: 0 } }).ok).toBe(false);
     expect(checkPhoneToolResult("location", {}, { latitude: 200, longitude: 0 }).ok).toBe(false);
     expect(checkPhoneToolResult("photos", {}, { images: [{ mimeType: "image/png", data: "AAAA" }] }).ok).toBe(false);
   });

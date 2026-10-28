@@ -28,6 +28,8 @@ final class PhoneToolsTests: XCTestCase {
         XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "photos")), [.deny, .once])
         // the clipboard is the person's own phone: one bot may be allowed to read it (#1138)
         XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "clipboard")), [.deny, .always, .once])
+        XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "home")), [.deny, .always, .once])
+        XCTAssertEqual(PhoneToolRules.choices(for: try wire(tool: "alarms")), [.deny, .always, .once])
         XCTAssertEqual(PhoneToolRules.decision(.always), .always)
     }
 
@@ -78,6 +80,13 @@ final class PhoneToolsTests: XCTestCase {
             PhoneEvent(title: "A", start: due, end: due.addingTimeInterval(60)),
         ], limit: nil)
         XCTAssertEqual(events.object?["events"]?.array?.first?.object?["title"], .string("A"))
+        let homes = PhoneToolShaping.homes([
+            PhoneHome(name: "House", scenes: ["Evening"], accessories: [PhoneAccessory(name: "Lamp", room: "Kitchen", on: true)]),
+        ], limit: nil)
+        XCTAssertEqual(homes.object?["homes"]?.array?.first?.object?["scenes"]?.array?.first, .string("Evening"))
+        let alarm = PhoneToolShaping.createdAlarm(PhoneAlarm(label: "Wake", hour: 7, minute: 5))
+        XCTAssertEqual(alarm.object?["created"]?.object?["hour"], .number(7))
+        XCTAssertEqual(alarm.object?["created"]?.object?["minute"], .number(5))
         XCTAssertEqual(PhoneToolShaping.clipboard(nil), .object(["empty": .bool(true)]))
         XCTAssertEqual(PhoneToolShaping.clipboard(String(repeating: "a", count: 5_000)).object?["text"]?.string?.count, 4_000)
         let photos = PhoneToolShaping.photos([Data([1]), Data([2]), Data([3]), Data([4])], max: 9)
