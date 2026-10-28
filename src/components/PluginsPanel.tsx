@@ -84,7 +84,6 @@ import { DiscoverView } from "./plugins/DiscoverView";
 import { AccountsView } from "./plugins/AccountsView";
 import { SourcesView } from "./plugins/SourcesView";
 import { OrgSourcesAccess } from "./plugins/OrgSourcesAccess";
-import { openSettings } from "@/lib/settings-link";
 import { connectorGroups, type ClaudeUnavailable, type HarnessConnectorStatus } from "./plugins/HarnessConnectorGroups";
 import { BotsForView, botServersAfter, botUsesServers } from "./plugins/BotsForView";
 import { PublishedPagesSettings } from "./PublishedPages";
