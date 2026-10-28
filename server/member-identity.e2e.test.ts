@@ -223,8 +223,8 @@ posixOnly("an organization member's identity and bots", () => {
   });
 
   // 2026-10-26: a team file imported for herself lands as her own bots,
-  // with a member's defaults; a server folder, a visibility, a backup and
-  // the guest stay refused.
+  // with a member's defaults; a server folder, a backup and the guest stay
+  // refused (her choice of who sees them is hers, #1098).
   it("lets a member import a team file as her own bots, and keeps the server's parts an admin's", async () => {
     const manifest = { format: "openmaus.team", version: 2, team: { name: "Zara imports", members: [{ key: "helper", name: "Imported helper", appearance: { color: "blue" } }] } };
     const imported = await api("POST", "/api/teams/import", { as: "zara", body: manifest });
@@ -235,9 +235,13 @@ posixOnly("an organization member's identity and bots", () => {
     expect(mine?.ownerUserId).toBe(me);
     expect(mine?.cwd ?? "").toBe("");
     expect((await api("GET", "/api/bots", { as: "max" })).body.bots.map((b: any) => b.id)).not.toContain(id);
-    for (const path of ["/api/teams/import?mode=project&cwd=%2F", "/api/teams/import?visibility=admins"]) {
-      expect((await api("POST", path, { as: "zara", body: manifest })).status, path).toBe(403);
-    }
+    expect((await api("POST", "/api/teams/import?mode=project&cwd=%2F", { as: "zara", body: manifest })).status).toBe(403);
+    // #1098: who sees her imported bots is hers to choose, and she stays in it
+    const narrowed = await api("POST", "/api/teams/import?visibility=admins", { as: "zara", body: manifest });
+    expect(narrowed.status, narrowed.text).toBe(201);
+    const narrowedId = narrowed.body.bots[0].id as string;
+    expect((await api("GET", "/api/bots", { as: "zara" })).body.bots.map((b: any) => b.id)).toContain(narrowedId);
+    expect((await api("DELETE", `/api/bots/${narrowedId}`, { as: "zara" })).status).toBe(200);
     expect((await api("POST", "/api/teams/import", { as: "zara", body: { format: "openmaus.backup" } })).status).toBe(403);
     expect((await api("POST", "/api/teams/import", { as: "guest", body: manifest })).status).toBe(403);
     expect((await api("DELETE", `/api/bots/${id}`, { as: "zara" })).status).toBe(200);

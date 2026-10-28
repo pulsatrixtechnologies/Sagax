@@ -1,6 +1,7 @@
 // Who may see a bot on a workspace several people share.
 //
-// A bot's optional `visibility` is set by an admin:
+// A bot's optional `visibility` is set by an admin, or by the bot's owner
+// (#1098, 2026-10-27; ownerKeepsSight keeps the owner in it):
 //   - absent or "everyone": every signed-in person, today's behaviour;
 //   - "admins": admin sessions only;
 //   - { people: [...] }: the listed addresses (or @domain entries) plus admins.
@@ -75,6 +76,18 @@ export function storedVisibility(value: unknown): BotVisibility {
   if (value === "admins") return "admins";
   const parsed = parseVisibility(value);
   return parsed.ok ? parsed.visibility : "admins";
+}
+
+/** #1098 (2026-10-27): the audience a bot's owner chose, with the owner
+ * kept in it. An owner who is not an admin sets who sees their own bot; a
+ * narrower audience must never hide the bot from them: "admins" becomes
+ * them (plus admins), and a list gets their address. Without an address
+ * the value stays as chosen. */
+export function ownerKeepsSight(visibility: BotVisibility, ownerEmail: string | undefined): BotVisibility {
+  const email = ownerEmail?.trim().toLowerCase();
+  if (!email || !email.includes("@") || visibility === "everyone") return visibility;
+  if (visibility === "admins") return { people: [email] };
+  return visibility.people.some((entry) => entryMatches(entry, email)) ? visibility : { people: [...visibility.people, email] };
 }
 
 export function isRestricted(value: unknown): boolean {

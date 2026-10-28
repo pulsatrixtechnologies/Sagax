@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigStatus } from "@/state/store";
-import { canEditBotField, canStepPrimary, canTeachInBrowser, showBotArchive, showBotDelete, showBotRename, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
+import { canEditBotField, canStepPrimary, canTeachInBrowser, showBotArchive, showBotDelete, showBotRename, showBotVisibility, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = {
@@ -134,5 +134,18 @@ describe("canTeachInBrowser", () => {
     expect(canTeachInBrowser(null, other, true)).toBe(true);
     expect(canTeachInBrowser(member, other, true)).toBe(true);
     expect(canTeachInBrowser(null, own, false)).toBe(false);
+  });
+});
+
+describe("showBotVisibility (#1098)", () => {
+  const served = { served: true, ownerOrAdmin: false, perspicaxOrg: false };
+  it("opens who can see a bot to its owner, not only to an admin", () => {
+    expect(showBotVisibility(member, own, served)).toBe(true);
+    expect(showBotVisibility(member, other, served)).toBe(false);
+    expect(showBotVisibility(member, other, { ...served, ownerOrAdmin: true })).toBe(true);
+  });
+  it("stays off the desktop and an organization server, which shares through grants", () => {
+    expect(showBotVisibility(member, own, { ...served, served: false })).toBe(false);
+    expect(showBotVisibility(member, own, { ...served, ownerOrAdmin: true, perspicaxOrg: true })).toBe(false);
   });
 });

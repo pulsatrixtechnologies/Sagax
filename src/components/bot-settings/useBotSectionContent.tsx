@@ -9,7 +9,7 @@ import { api, useStore, type Bot, type BotSettingsSection, type ConfigStatus } f
 import type { BotOverview } from "@/lib/bot-overview-types";
 import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
-import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
+import { canEditBotField, canStepPrimary, showBotVisibility } from "@/lib/bot-capabilities";
 import { viewerBotsReadOnly } from "@/lib/viewer";
 import { servedPage } from "@/lib/desktop";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -43,17 +43,19 @@ import type { PromptPreviewData } from "./PromptPreview";
 /** Which sections this server offers at all (not a permission). Slack is
  * offered only where the server has an Admin page to link to (a hosted
  * organisation workspace). Who can see a bot matters only where several
- * people sign in: a browser on a served workspace, and there only to an
- * admin. A server signed in with Perspicax shares a bot person by person
- * (Sharing) and offers its MCP profiles; the audience setting does not
- * apply there. */
+ * people sign in: a browser on a served workspace, and there to an admin
+ * or to the bot's own owner (#1098, showBotVisibility). A server signed in
+ * with Perspicax shares a bot person by person (Sharing) and offers its MCP
+ * profiles; the audience setting does not apply there. */
 export function useBotSectionAvailability(botId: string) {
+  const { state } = useStore();
   const slackUrl = useSlackManagementUrl(botId);
   const ownerOrAdmin = useOwnerOrAdmin();
   const perspicaxOrg = usePerspicaxOrg();
+  const bot = state.bots.find((candidate) => candidate.id === botId);
   const available = (id: BotSettingsSection): boolean =>
     id === "slack" ? slackUrl !== null
-      : id === "visibility" ? servedPage() && ownerOrAdmin === true && perspicaxOrg === null
+      : id === "visibility" ? Boolean(bot) && showBotVisibility(state.config, bot!, { served: servedPage(), ownerOrAdmin, perspicaxOrg: perspicaxOrg !== null })
         : id === "sharing" || id === "perspicax" ? perspicaxOrg !== null
           : true;
   return { available, slackUrl, perspicaxOrg };

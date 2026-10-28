@@ -214,7 +214,7 @@ import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts"
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import type { CaptureTurn } from "./memory-capture.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
-import { archivedAgent, canAccessBot, canAccessTeam, primaryCovers, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, setPeerScope, setPrimaryCover, roomPeerRosterSystemPrompt, roomRosterLine, uniquePeerName, PEER_ACCESS_HELP } from "./peer-roster.ts";
+import { archivedAgent, canAccessBot, canAccessTeam, primaryCovers, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, sameOwnerBots, setPeerScope, setPrimaryCover, setSameOwner, roomPeerRosterSystemPrompt, roomRosterLine, uniquePeerName, PEER_ACCESS_HELP } from "./peer-roster.ts";
 import { orgPeerInScope } from "./peer-scope.ts";
 import {
   containerComputerAction,
@@ -683,7 +683,7 @@ import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-r
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserProfileChangeRefusal, browserRuntimeEnv } from "./browser-runtime.ts";
-import { browserEgress, sameOwnerBots } from "./browser/egress/registry.ts";
+import { browserEgress, sameOwnerBots as sameOwnerBrowserBots } from "./browser/egress/registry.ts";
 import { BrowserLive } from "./browser-live.ts";
 import { BrowserNetworkDebug } from "./browser-network-debug.ts";
 import {
@@ -946,6 +946,7 @@ import {
   audienceEquals,
   memberGroup,
   narrowestAudience,
+  ownerKeepsSight,
   parseVisibility,
   pathSubject,
   roomFeeds,
@@ -4995,7 +4996,7 @@ const sharedEgressHost = !DESKTOP_MANAGED && (IDENTITY.kind === "perspicax" || H
 const browserSessionBots = new Map<string, string>();
 browserEgress.configure({
   host: DESKTOP_MANAGED ? "desktop" : CLOUD_HOME ? "cloud" : "server", config: () => cfg.browserEngine?.egress,
-  ...(sharedEgressHost ? { sameOwner: (session: string, engineBot: string | undefined) => sameOwnerBots(browserSessionBots.get(session), engineBot, (id) => store.bot(id)) } : {}),
+  ...(sharedEgressHost ? { sameOwner: (session: string, engineBot: string | undefined) => sameOwnerBrowserBots(browserSessionBots.get(session), engineBot, (id) => store.bot(id)) } : {}),
 });
 const browserRuntime = new BrowserRuntime({
   egressNotice: (session) => browserEgress.takeNotice(session),
@@ -6891,6 +6892,14 @@ if (IDENTITY.kind === "perspicax") {
         return Boolean(viewer && botLevel({ viewer, ...botFacts(bot) }));
       },
     });
+  });
+  // #1098 (2026-10-27): whose bots are one person's (peer-roster.ts
+  // sameOwnerBots): rooms of them keep no section boundary, and they always
+  // reach their Primary Bot.
+  setSameOwner((a, b) => {
+    const left = store.bot(a.id);
+    const right = store.bot(b.id);
+    return Boolean(left && right) && effectiveBotOwner(left!) === effectiveBotOwner(right!);
   });
   // 2026-10-20 a Primary Bot covers every bot its person owns or may
   // manage, whatever the team (peer-roster.ts primaryCovers)
@@ -9467,6 +9476,15 @@ function failWorkerTurns(messageIds: readonly string[], detail = "The turn faile
   }
 }
 
+/** #1098 (2026-10-27): every bot of the room (and `also`, when given) is
+ * the same person's (peer-roster.ts sameOwnerBots; on a solo server, always). */
+function oneOwnerRoom(room: Pick<GroupRecord, "memberIds">, also?: BotRecord): boolean {
+  const members = room.memberIds.map((id) => store.bot(id)).filter((member): member is BotRecord => Boolean(member));
+  if (also) members.push(also);
+  const first = members[0];
+  return !first || members.every((member) => sameOwnerBots(first, member));
+}
+
 function roomHandoffProblem(node: Pick<HandoffView, "groupId" | "threadId" | "botId"> & Partial<Pick<HandoffView, "kind">>, parent?: Pick<HandoffView, "groupId" | "threadId" | "botId">): string | undefined {
   const group = node.groupId ? store.group(node.groupId) : undefined;
   const bot = store.bot(node.botId);
@@ -9483,7 +9501,9 @@ function roomHandoffProblem(node: Pick<HandoffView, "groupId" | "threadId" | "bo
   // Every reader matters, including members not addressed to speak. The
   // recipient must be allowed to read its destination; the sender's grant
   // cannot silently give a specialist access to another team's transcript.
-  const outsideSection = (room: GroupRecord, speaker: BotRecord) => room.memberIds.some(id => {
+  // #1098 (2026-10-27): a room whose bots are all one person's has no
+  // section boundary inside it; the person put their own bots together.
+  const outsideSection = (room: GroupRecord, speaker: BotRecord) => !oneOwnerRoom(room, speaker) && room.memberIds.some(id => {
     const member = store.bot(id);
     return member && !canAccessBot(speaker, member) && !coordinatorSupervises(member, speaker);
   });
@@ -9495,7 +9515,10 @@ function roomHandoffProblem(node: Pick<HandoffView, "groupId" | "threadId" | "bo
     // A specialist may address its supervisor in their shared conversation;
     // supervision alone never grants a direct chat or another room's access.
     const sharedSupervisor = source && group && source.id === group.id && parent.threadId === node.threadId && coordinatorSupervises(bot, from);
-    if ((!canAccessBot(from, bot) && !sharedSupervisor) || (source && outsideSection(source, from))) return "Room work cannot cross the sender's section boundary";
+    // Room work between two bots of one person, in rooms that hold only
+    // that person's bots, crosses no section boundary (#1098).
+    const ownRooms = Boolean(source || group) && sameOwnerBots(from, bot) && (!source || oneOwnerRoom(source, from)) && (!group || oneOwnerRoom(group, bot));
+    if ((!canAccessBot(from, bot) && !sharedSupervisor && !ownRooms) || (source && outsideSection(source, from))) return "Room work cannot cross the sender's section boundary";
     if (source && group && source.id === group.id && parent.threadId !== node.threadId) return "Same-room work must stay in the originating conversation";
     if (!peerAllowed(from, bot)) return "The recipient is not an allowed peer of the sender";
     // A room the sender sits in keeps its own rule: people chose its
@@ -26034,7 +26057,9 @@ function lastHumanRoomMessageAt(group: GroupRecord): number | undefined {
  * this refuses it outright rather than trying to judge when that is
  * harmless. The cost is real — a genuinely cross-section room cannot be
  * posted into from outside — and it is the cheaper mistake: the person can
- * still relay, and the boundary keeps meaning exactly one thing.
+ * still relay, and the boundary keeps meaning exactly one thing. A room
+ * whose bots all belong to one person is that person's own (#1098,
+ * 2026-10-27): no boundary applies inside it.
  *
  * Membership is read from the record here and never from a tool argument;
  * the argument only names which room to look up. */
@@ -26052,7 +26077,9 @@ function roomPostEligibility(
   if (!group.memberIds.includes(bot.id)) {
     return { ok: false, status: 403, error: "you are not a member of that room" };
   }
-  const outsider = group.memberIds
+  // #1098 (2026-10-27): a room of one person's bots has no section
+  // boundary inside it, so its own bots post there.
+  const outsider = oneOwnerRoom(group, bot) ? undefined : group.memberIds
     .map((id) => store.bot(id))
     .find((member) => member && !canAccessBot(bot, member) && !coordinatorSupervises(member, bot));
   if (outsider) {
@@ -34064,6 +34091,13 @@ function botsReadOnlyRefusal(principalId: string | undefined | null): Record<str
 function sharedBrowserProfileValue(value: unknown): boolean {
   return typeof value === "string" && (cfg.browserProfiles ?? []).some((profile) => profile.id === value);
 }
+/** #1098 (2026-10-27): the audience a member chose for their own bot,
+ * with them kept in it (bot-visibility.ts ownerKeepsSight). An admin, the
+ * owner at this computer and a local service set it as sent. */
+function ownerChosenVisibility(auth: RequestAuth, visibility: BotVisibility): BotVisibility {
+  if (auth.kind !== "session" || auth.scopes.includes("admin")) return visibility;
+  return ownerKeepsSight(visibility, auth.session.email);
+}
 function memberBotFieldRefusal(auth: RequestAuth, body: unknown): { field: string; permission?: PermissionKey } | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { field: "body" };
   for (const field of Object.keys(body)) {
@@ -34074,6 +34108,10 @@ function memberBotFieldRefusal(auth: RequestAuth, body: unknown): { field: strin
     if (field === "browserProfile" && !sharedBrowserProfileValue((body as Record<string, unknown>).browserProfile)) continue;
     const permission = BOT_FIELD_PERMISSIONS[field];
     if (!permission) return { field };
+    // #1098 (2026-10-27): who sees their own bot is the owner's, on a served
+    // workspace where they own it as a member of a team too (ownerKeepsSight
+    // keeps them in the audience).
+    if (field === "visibility" && IDENTITY.kind !== "perspicax") continue;
     if (IDENTITY.kind !== "perspicax" || !callerCan(auth, permission)) return { field, permission: IDENTITY.kind === "perspicax" ? permission : undefined };
   }
   return null;
@@ -44254,9 +44292,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // 2026-10-26: a person who may create bots imports a team file for
       // themselves (request-auth.ts lets a member's session in). Like a zip
       // import, every bot is theirs and starts from a member's defaults
-      // (memberImportReset); a folder of the server, who sees the bots
-      // beyond them, a backup restore and the server's MCP list stay an
-      // admin's.
+      // (memberImportReset); who sees them is the member's to choose
+      // (#1098, 2026-10-27); a folder of the server, a backup restore and
+      // the server's MCP list stay an admin's.
       const memberImport = auth.kind === "session" && !auth.scopes.includes("admin");
       const memberOwner = memberImport ? creatingBotOwnerId(auth) : "";
       if (memberImport) {
@@ -44265,7 +44303,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "forbidden: only a member of the organization can import bots", code: "import_bots_members_only" });
         }
         if (url.searchParams.get("cwd") !== null) return json(res, 403, { error: "Choosing a folder of the server for imported bots stays an admin's.", code: "admin_only" });
-        if (url.searchParams.get("visibility") !== null) return json(res, 403, { error: "Choosing who sees imported bots stays an admin's; your imported bots are yours.", code: "admin_only" });
       }
       // `project` adds the team AND opens a caller-owned room on a folder.
       // Legacy team manifests remain people-only. Full bot packages may add
@@ -44281,8 +44318,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           projectCwd = validated.cwd;
         }
       }
-      // Who may see the imported bots, from their first moment: the admin's
-      // choice (?visibility=admins, or a JSON value), never the file's.
+      // Who may see the imported bots, from their first moment: the choice
+      // of the admin or of the member importing their own bots (#1098;
+      // ?visibility=admins, or a JSON value), never the file's.
       const rawVisibility = url.searchParams.get("visibility");
       let importVisibility: BotVisibility | undefined;
       if (rawVisibility !== null) {
@@ -44296,7 +44334,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const parsed = parseVisibility(value);
         if (!parsed.ok) return json(res, 400, { error: parsed.error });
-        importVisibility = parsed.visibility;
+        importVisibility = ownerChosenVisibility(auth, parsed.visibility);
       }
       const body = await readBody(req, MAX_TEAM_BACKUP_BYTES);
       if (body?.format === "openmaus.backup") {
@@ -45267,6 +45305,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Apply the audience before creation can announce the bot to members.
       const created = body.visibility === undefined ? null : parseVisibility(body.visibility);
       if (created && !created.ok) return json(res, 400, { error: created.error });
+      if (created?.ok) created.visibility = ownerChosenVisibility(auth, created.visibility);
       const bot = store.createBot({ ...profile.patch, soul: settings.soul, section, modelSelection: selection,
         ownerUserId: creatingBotOwnerId(auth),
         toolScope: settings.toolScope ?? undefined,
@@ -46128,7 +46167,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (Object.hasOwn(body, "visibility")) {
         const parsed = parseVisibility(body.visibility);
         if (!parsed.ok) return json(res, 400, { error: parsed.error });
-        patch.visibility = parsed.visibility;
+        patch.visibility = ownerChosenVisibility(auth, parsed.visibility);
       }
       if (body.alwaysAllow !== undefined) {
         if (!Array.isArray(body.alwaysAllow) || body.alwaysAllow.some((t: unknown) => typeof t !== "string")) {
@@ -50722,9 +50761,9 @@ restoreChannelMessages();
   if (movedAutoPins) console.log(`Auto: cleared ${movedAutoPins} auto-pinned thread(s); Auto picks where to work on each turn`);
   // Workspace is always Auto (2026-10-18): a fixed Works on and every
   // conversation pin an older build saved go back to Auto. Off stays.
-  const retired = FIXED_WORKSPACE_SEAM ? { bots: 0, pins: 0, asked: 0 } : store.retireFixedWorkspaces();
+  // Levels and Always allow lists stay as the person set them (#1098).
+  const retired = FIXED_WORKSPACE_SEAM ? { bots: 0, pins: 0 } : store.retireFixedWorkspaces();
   if (retired.bots || retired.pins) console.log(`Workspace: ${retired.bots} bot(s) and ${retired.pins} conversation(s) back on Auto; the bot picks where each task runs`);
-  if (retired.asked) console.log(`Workspace: ${retired.asked} approval level(s) of bots kept off this computer back on Ask`);
 }
 // A saved MCP server whose name is now reserved is never mounted: say so at
 // start, not only at its first turn (#695 follow-up).
