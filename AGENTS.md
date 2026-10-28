@@ -152,8 +152,11 @@ Vite page (page-reader.html, src/page-reader/); the server reads the built
 tags from SAGAX_STATIC_DIR (`readerAssetsFrom`) and the wrapper's CSP allows
 only `script-src 'self'` and `connect-src 'self'`. The page's frame is
 unchanged (same sandbox and CSP). Share: the page's own person only, on the
-same routes and plan as the app (src/lib/page-share-plan.ts). Captures:
-`scripts/capture-page-reader.ts`.
+same routes and plan as the app (src/lib/page-share-plan.ts). Download PDF
+(every reader): the reading frame posts its height (`sagax-page-size`, by
+nonce on Markdown) and the wrapper prints only the frame at that height;
+the browser's Save as PDF writes it, a presentation one slide per sheet.
+Captures: `scripts/capture-page-reader.ts`.
 
 ## xAI Bot Marketplace in Browse Bots (2026-10-28)
 

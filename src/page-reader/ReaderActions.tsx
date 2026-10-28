@@ -1,9 +1,11 @@
-// The actions on the right of the reader's bar. Share only for the page's
-// own person (the server tells, shared/page-reader.ts ReaderBoot.can).
+// The actions on the right of the reader's bar: Download PDF for every
+// reader; Share only for the page's own person (the server tells,
+// shared/page-reader.ts ReaderBoot.can).
 import { useState } from "react";
-import { Share2 } from "lucide-react";
+import { FileDown, Share2 } from "lucide-react";
 
 import { readerText, type ReaderBoot } from "../../shared/page-reader";
+import { downloadPdf } from "./print";
 import { ReaderShare } from "./ReaderShare";
 
 export function ReaderActions({ boot }: { boot: ReaderBoot }) {
@@ -11,6 +13,10 @@ export function ReaderActions({ boot }: { boot: ReaderBoot }) {
   const text = (key: Parameters<typeof readerText>[1], values?: Record<string, string>) => readerText(boot.lang, key, values);
   return (
     <>
+      <button type="button" className="sr-bar-button" data-reader-pdf title={text("pdfHint")} onClick={downloadPdf}>
+        <FileDown size={14} aria-hidden="true" />
+        <span className="sr-bar-label">{text("pdf")}</span>
+      </button>
       {boot.can.share && boot.pageId && (
         <div className="sr-anchor">
           <button type="button" className="sr-bar-button sr-bar-button-primary" data-reader-share aria-expanded={sharing} aria-haspopup="dialog" onClick={() => setSharing((open) => !open)}>

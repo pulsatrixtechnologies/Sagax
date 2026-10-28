@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 
 import { parseReaderBoot, READER_ACTIONS_ID, READER_BOOT_ID } from "../../shared/page-reader";
 import { ReaderActions } from "./ReaderActions";
+import { watchPageSize } from "./print";
 import "./reader.css";
 
 function boot() {
@@ -16,6 +17,9 @@ function boot() {
     return null;
   }
 }
+
+// Download PDF and the browser's own Print: the page's whole height
+watchPageSize(document.querySelector("iframe"));
 
 const config = boot();
 const mount = document.getElementById(READER_ACTIONS_ID);

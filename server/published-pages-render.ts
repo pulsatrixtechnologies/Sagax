@@ -12,7 +12,7 @@
 // page in a frame sandboxed to scripts only, whose navigation the wrapper's
 // `frame-src` limits to the page's own frame path.
 import { READER_ACTIONS_ID, READER_BOOT_ID, readerNotice, type ReaderBoot } from "../shared/page-reader.ts";
-import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
+import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_HEIGHT_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, PAGE_SIZE_ASK, PAGE_SIZE_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
 
 /** Server side, before every HTML version is served: no element that can
  * reach the network outside CSP. `<link>` (hints such as prerender, which
@@ -122,6 +122,26 @@ export function keepScrollSource(y: number): string {
     + "})();";
 }
 
+/** A reading frame tells its wrapper how tall the page is (2026-10-28,
+ * Download PDF): the whole height and the window's, posted to the parent
+ * (the wrapper) on load and whenever it changes. The wrapper may ask again (PAGE_SIZE_ASK) when its script
+ * starts after the page loaded. No network, only two numbers. */
+export const REPORT_SIZE_SOURCE = String.raw`(function(){"use strict";var last="",t=0,D=document;`
+  + "function send(){if(window.matchMedia&&window.matchMedia(\"print\").matches)return;var d=D.documentElement,b=D.body,vh=Math.round(window.innerHeight)||1;"
+  + `var h=Math.min(${PAGE_HEIGHT_MAX},Math.max(1,Math.round(Math.max(d.scrollHeight,b?b.scrollHeight:0))));`
+  + `var key=h+":"+vh;if(key===last)return;last=key;`
+  + `try{window.parent.postMessage({type:"${PAGE_SIZE_MESSAGE}",v:1,h:h,vh:Math.min(${PAGE_HEIGHT_MAX},vh)},"*")}catch(e){}}`
+  + "function soon(){clearTimeout(t);t=setTimeout(send,100)}"
+  + "if(D.readyState===\"complete\")send();else window.addEventListener(\"load\",send);"
+  + "window.addEventListener(\"resize\",soon);"
+  + `window.addEventListener("message",function(e){if(e.source===window.parent&&e.data&&e.data.type==="${PAGE_SIZE_ASK}"){last="";send()}});`
+  + "if(window.ResizeObserver){try{var o=new ResizeObserver(soon);o.observe(D.documentElement);if(D.body)o.observe(D.body)}catch(e){}}"
+  + "})();";
+
+/** A presentation prints one slide per sheet: each slide is this tall in
+ * print, and the wrapper's sheet is 297 mm by this, with no margin. */
+export const SLIDE_PRINT_MM = 167;
+
 /** Slides of a presentation: Markdown separated by a line of three dashes
  * or more; empty slides at the end are dropped. Pure. */
 export function splitSlides(markdown: string): string[] {
@@ -152,7 +172,8 @@ const PRESENTATION_STYLE = "html{scroll-snap-type:y mandatory;scroll-behavior:sm
   + "blockquote{margin:0;padding-left:1rem;border-left:3px solid #d0d7de;color:#57606a}.url{color:#57606a;word-break:break-all}"
   + "footer{position:absolute;right:3vw;bottom:2.5vh;display:flex;align-items:center;gap:.6em;font-size:14px;color:#57606a}"
   + ".nav{display:inline-block;min-width:32px;height:32px;border-radius:16px;text-align:center;line-height:30px;font-size:22px;text-decoration:none;color:inherit;border:1px solid #d0d7de}"
-  + "@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}.slide{border-color:#21262d}pre{background:#161b22}.url,footer{color:#9198a1}.nav{border-color:#30363d}}";
+  + `@media print{html{scroll-snap-type:none}.slide{height:${SLIDE_PRINT_MM}mm;border:0;break-after:page}.nav{display:none}}`
+  + "@media screen and (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}.slide{border-color:#21262d}pre{background:#161b22}.url,footer{color:#9198a1}.nav{border-color:#30363d}}";
 
 /** A name for the banner: one line, at most PAGE_BANNER_NAME_MAX characters. Pure. */
 export function bannerName(name: string): string {
@@ -308,21 +329,25 @@ const MARKDOWN_STYLE = "body{font:16px/1.6 system-ui,-apple-system,Segoe UI,sans
   + "pre{background:#f6f8fa;padding:.75rem;border-radius:6px;overflow:auto}code{font:.9em ui-monospace,Menlo,monospace}"
   + "blockquote{margin:0;padding-left:1rem;border-left:3px solid #d0d7de;color:#57606a}.url{color:#57606a;word-break:break-all}"
   + ".table-wrap{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;min-width:100%}th,td{border:1px solid #d0d7de;padding:.4rem .75rem;text-align:left}th{background:#f6f8fa;font-weight:600}tbody tr:nth-child(even){background:#f6f8fa80}li.task{list-style:none;margin-left:-1.2rem}del{color:#57606a}"
-  + "@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}.url{color:#9198a1}th,td{border-color:#30363d}th{background:#161b22}tbody tr:nth-child(even){background:#161b2280}del{color:#9198a1}}";
+  + "@media screen and (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}.url{color:#9198a1}th,td{border-color:#30363d}th{background:#161b22}tbody tr:nth-child(even){background:#161b2280}del{color:#9198a1}}";
+
+/** Our own dark rules apply on screen only: Download PDF prints our
+ * Markdown and slides on white, whatever the reader's theme. */
+const DARK_RULES = "@media screen and (prefers-color-scheme:dark){";
 
 /** Our own Markdown and slide styles in one theme: the dark rules always
  * (dark) or never (light), instead of the reader's system setting. Pure. */
 export function themedStyle(style: string, theme: PageTheme | undefined): string {
   if (!theme) return style;
-  const at = style.indexOf("@media (prefers-color-scheme:dark){");
+  const at = style.indexOf(DARK_RULES);
   if (at < 0) return style;
-  const inner = style.slice(at + "@media (prefers-color-scheme:dark){".length, -1);
+  const inner = style.slice(at + DARK_RULES.length, -1);
   return theme === "dark" ? `${style.slice(0, at)}${inner}:root{color-scheme:dark}` : style.slice(0, at);
 }
 
 /** The full document a version is read as. `meta` adds the CSP as a meta tag
  * (the app's sandboxed preview, which has no response headers). Pure. */
-export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string; keepScroll?: number; nonce?: string; theme?: PageTheme } = {}): string {
+export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string; keepScroll?: number; nonce?: string; theme?: PageTheme; reportSize?: boolean } = {}): string {
   const meta = options.meta ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(pageCsp(input.kind, { meta: true }))}">` : "";
   // The app's own scripts (its preview only: annotation, keeping the place):
   // by their nonce on a page that otherwise runs no script, inline after the
@@ -331,7 +356,8 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
   const own = (source: string) => input.kind === "html" ? `<script>${source}</script>`
     : nonce !== undefined ? `<script nonce="${escapeHtml(nonce)}">${source}</script>` : "";
   const annotate = options.annotateNonce === undefined ? "" : own(ANNOTATE_SOURCE);
-  const keep = options.keepScroll === undefined ? "" : own(keepScrollSource(options.keepScroll));
+  const keep = (options.keepScroll === undefined ? "" : own(keepScrollSource(options.keepScroll)))
+    + (options.reportSize ? own(REPORT_SIZE_SOURCE) : "");
   const scheme = options.theme ? `<meta name="color-scheme" content="${options.theme}">` : "";
   if (input.kind === "markdown" || input.kind === "presentation") {
     const presentation = input.kind === "presentation";
@@ -376,6 +402,8 @@ export interface WrapperInput {
    * bar's script is told, and that script's built tags (null when this
    * server has no built UI: the bar then shows the title and the notice). */
   reader?: { boot: ReaderBoot; assets: ReaderAssets | null };
+  /** A presentation's slide count, for its printed sheets. */
+  slides?: number;
 }
 
 /** The built tags of the reader's bar (dist/page-reader.html): paths under
@@ -417,6 +445,19 @@ const READER_BAR_STYLE = ".sagax-bar{flex:none;position:relative;z-index:2;displ
   + ".sagax-bar-actions{flex:none;display:flex;align-items:center;gap:8px}"
   + "@media (max-width:640px){.sagax-bar{flex-wrap:wrap;gap:8px}.sagax-bar-actions{width:100%;justify-content:flex-end}}";
 
+/** Download PDF prints the wrapper: only the page, at its whole height
+ * (--sagax-print-height, which the bar's script keeps from the frame's size
+ * message), so the browser lays it out over as many sheets as it needs. */
+const READER_PRINT_STYLE = "@media print{@page{margin:12mm}html,body{height:auto!important;display:block!important;overflow:visible!important;background:#fff!important}"
+  + ".sagax-bar,.sagax-comments,.sagax-reader-overlay{display:none!important}iframe{display:block;flex:none;color-scheme:light!important;height:var(--sagax-print-height,100vh)!important}}";
+
+/** A presentation's sheets: one slide each, landscape, no margin; the frame
+ * prints all its slides whatever height it reported. Pure. */
+export function slidesPrintStyle(slides: number): string {
+  const count = Math.max(1, Math.min(500, Math.floor(slides) || 1));
+  return `@media print{@page{size:297mm ${SLIDE_PRINT_MM}mm;margin:0}iframe{height:${count * SLIDE_PRINT_MM}mm!important}}`;
+}
+
 /** The reader's bar: the title, the notice (who published it for whom, not
  * a Sagax screen, never a password), always visible; the actions are drawn
  * by the bar's script into the empty box on the right. Pure. */
@@ -448,7 +489,9 @@ export function wrapperBanner(input: Pick<WrapperInput, "botName" | "personName"
 export function wrapperDocument(input: WrapperInput): string {
   // the app's own scripts (annotation, keeping the place) need scripts on a
   // Markdown page too: by their nonce only (pageCsp)
-  const sandbox = pageFrameSandbox(input.kind, { annotate: input.annotate === true || input.keep === true });
+  // a reading link's frame runs its size script (Download PDF), by nonce on
+  // a Markdown page
+  const sandbox = pageFrameSandbox(input.kind, { annotate: input.annotate === true || input.keep === true || (!input.preview && input.reader !== undefined) });
   // a page that sets no background of its own shows the theme's, not white
   const background = input.theme === "dark" ? "#0d1117" : "#fff";
   const bare = input.bare === true && input.preview === true;
@@ -462,7 +505,7 @@ export function wrapperDocument(input: WrapperInput): string {
     + ".sagax-banner{flex:none;padding:8px 14px;background:#fff4ce;color:#3d2e00;border-bottom:2px solid #d4a600;font-weight:600}"
     + `iframe{flex:1;border:0;width:100%;background:${input.theme ? "transparent" : "#fff"}${input.theme ? `;color-scheme:${input.theme}` : ""}}`
     + (input.comments ? COMMENTS_STYLE : "")
-    + (reader ? READER_BAR_STYLE : "")
+    + (reader ? READER_BAR_STYLE + READER_PRINT_STYLE + (input.kind === "presentation" ? slidesPrintStyle(input.slides ?? 1) : "") : "")
     + "</style>"
     + (reader?.assets ? reader.assets.styles.map((path) => `<link rel="stylesheet" href="${escapeHtml(path)}">`).join("")
       + reader.assets.preloads.map((path) => `<link rel="modulepreload" href="${escapeHtml(path)}">`).join("") : "")
