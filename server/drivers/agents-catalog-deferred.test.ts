@@ -1,8 +1,8 @@
 // Rare agents tools wait for tool search on Claude Code (2026-10-19 perf
 // parity): the proxy marks them `_meta["anthropic/alwaysLoad"] = false` only
-// when the Claude driver asks (SAGAX_DEFER_RARE_TOOLS=1). The default listing
-// is find_tool and use_tool. This file pins the full catalog
-// (SAGAX_CATALOG_BRIDGE=0), which is what those two tools search.
+// when the Claude driver asks (SAGAX_DEFER_RARE_TOOLS=1). Every other engine
+// gets the catalog exactly as before (#1374: find_tool and use_tool only on
+// request, on a compact prompt).
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

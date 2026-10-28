@@ -8,6 +8,7 @@
 // "Used mcp" and lost the server and tool it ran. The driver resolves the
 // call here (server/drivers/pi.ts); the chat does the same for rows stored
 // before that (src/lib/step-label.ts).
+import { unwrapAgentsBridge } from "./searched-tool-call.ts";
 
 /** The gateway's own name for its single tool. */
 export const MCP_GATEWAY_TOOL = "mcp";
@@ -96,5 +97,10 @@ export function readUseToolCall(rawInput: unknown, hint?: { title?: unknown; met
   if (!raw || (raw.variant !== "UseTool" && !namesUseTool(hint))) return undefined;
   const name = text(raw.tool_name);
   if (!name || !/^(?:mcp__)?[A-Za-z0-9][A-Za-z0-9_.-]*__[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) return undefined;
-  return { id: name.startsWith("mcp__") ? name : `mcp__${name}`, args: innerArgs(raw.tool_input) };
+  const id = name.startsWith("mcp__") ? name : `mcp__${name}`;
+  const args = innerArgs(raw.tool_input);
+  // #1374: Grok's use_tool of the agents bridge's own use_tool reads as the
+  // tool that one runs
+  const bridged = unwrapAgentsBridge(id, args);
+  return bridged.unwrapped ? { id: bridged.name, args: bridged.input } : { id, args };
 }

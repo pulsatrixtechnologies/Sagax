@@ -58,10 +58,14 @@ import { claudeAuthFailure, claudeAuthRecovery } from "./claude-auth-recovery.ts
 import { sessionIdlePolicy } from "./session-idle.ts";
 import { contractChanges, PERSPICAX_TOKEN_ENV, switchesCover, turnFiles, turnSwitches, warmCommsEnv, warmPerspicaxEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
-import { searchedToolCall } from "../../shared/searched-tool-call.ts";
+import { searchedToolCall, unwrapAgentsBridge } from "../../shared/searched-tool-call.ts";
 
-/** The directory tools of a searched server (mcp-directory.ts). */
-const COMPACT_DIRECTORY_TOOLS = ["search_tools", "describe_tool", "call_tool"] as const;
+/** The tools of a searched agents catalog that only find a tool and run
+ * nothing (mcp-directory.ts, catalog-bridge.ts). call_tool and use_tool are
+ * never pre-allowed: they reach the permission proxy, which reads them as
+ * the tool they run and lets that one through unasked only when the turn
+ * pre-allows it by its own name (#1374). */
+const COMPACT_DIRECTORY_TOOLS = ["search_tools", "describe_tool", "find_tool"] as const;
 import {
   applyClaudeInject,
   decodeInjectId,
@@ -1045,7 +1049,16 @@ export async function createPermissionBroker(opts: {
           } catch {}
           continue;
         }
-        const ask: Ask = { id: askId, kind, tool: msg.tool ?? "tool", input: msg.input ?? {}, at: Date.now() };
+        // #1374: an agents use_tool is asked about as the tool it runs, here
+        // too, whatever the proxy sent; one that runs nothing is refused.
+        const bridged = kind === "permission" && typeof msg.tool === "string" ? unwrapAgentsBridge(msg.tool, msg.input) : null;
+        if (bridged?.refused) {
+          try {
+            conn.write(JSON.stringify({ t: "answer", id: askId, behavior: "deny", message: bridged.refused }) + "\n");
+          } catch {}
+          continue;
+        }
+        const ask: Ask = { id: askId, kind, tool: bridged?.unwrapped ? bridged.name : msg.tool ?? "tool", input: bridged?.unwrapped ? bridged.input : msg.input ?? {}, at: Date.now() };
         const finish = (behavior: AskBehavior, message: string | undefined, source: AskResolutionSource, always?: boolean) => {
           if (!pending.delete(askId)) return;
           clearTimeout(timer);
@@ -2085,7 +2098,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           mcpServers.agents = { ...turn.integrations.agents, env: warmCommsEnv(threadId, botId, agentsEnv), alwaysLoad: true };
         }
         allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
-        // The directory tools stand in for pre-allowed agents tools.
+        // The finding tools run nothing; call_tool and use_tool ask as the
+        // tool they run (permission-proxy.ts, #1374).
         if (turn.compactPrompt && !allowed.includes("mcp__agents")) allowed.push(...COMPACT_DIRECTORY_TOOLS.map((tool) => `mcp__agents__${tool}`));
       }
       if (turn.integrations?.phone) {
@@ -2212,7 +2226,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (permissionMode !== "bypassPermissions") {
         args.push("--permission-prompt-tool", "mcp__ogb__approve");
       }
-      const permissionEnv = {
+      const permissionEnv: Record<string, string> = {
         ...NODE_ENV_FLAG,
         ...(turn.toolScope !== undefined ? { SAGAX_PERMISSION_TOOL_SCOPE: JSON.stringify(turn.toolScope) } : {}),
         ...(searchedMounts.size ? { SAGAX_PERMISSION_SEARCHED: JSON.stringify([...searchedMounts].sort()) } : {}),
@@ -2227,6 +2241,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // A guest's turn pre-allows only the harness's own tools: anything
       // else (the browser can open a file: address) asks the owner first.
       if (turn.guestConfined) allowed.splice(0, allowed.length, ...allowed.filter((name) => name === "mcp__ogb" || name === "mcp__agents"));
+      // #1374: what the turn pre-allows by name, so a call_tool or use_tool
+      // runs unasked exactly when its target would have, and asks otherwise.
+      const preallowed = allowed.filter((name) => /^mcp__[\w-]+(?:__[\w.:-]+)?$/.test(name) && name !== "mcp__ogb");
+      if (preallowed.length) permissionEnv.SAGAX_PERMISSION_PREALLOWED = JSON.stringify([...new Set(preallowed)].sort());
       // The MCP config carries credentials — the boat token in the computer
       // proxy's env, the comms token in
       // the agents proxy's env. On argv every one of those is world-readable

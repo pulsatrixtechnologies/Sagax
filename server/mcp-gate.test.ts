@@ -287,6 +287,25 @@ describe("mcp-gate", () => {
     expect(existsSync(join(scratch, "spill"))).toBe(false);
   });
 
+  // #1374: on Sagax's own agents server a use_tool is the call it runs
+  it("checks an agents use_tool as the tool it runs and sends upstream only that call", async () => {
+    start({}, { SAGAX_GATE_NAME: "agents", SAGAX_GATE_BUDGET: "0", SAGAX_GATE_TOOL_SCOPE: JSON.stringify({ allow: ["mcp:agents:read"] }) }, SCOPED_UPSTREAM);
+    const use = async (id: number, args: unknown) => {
+      send({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "use_tool", arguments: args } });
+      return JSON.parse(await nextLine());
+    };
+    // the same refusal as a direct call of write
+    expect((await call("write", 1)).error).toMatchObject({ code: -32602 });
+    expect((await use(2, { name: "write", arguments: {} })).error).toMatchObject({ code: -32602 });
+    expect(existsSync(join(scratch, "reply.json.calls"))).toBe(false);
+    // a use_tool naming no tool runs nothing
+    expect((await use(3, { name: "use_tool" })).result).toMatchObject({ isError: true });
+    expect(existsSync(join(scratch, "reply.json.calls"))).toBe(false);
+    // the allowed tool runs, and upstream sees its own name, not use_tool
+    expect((await use(4, { name: "read", arguments: {} })).result.content[0].text).toBe("executed");
+    expect(readFileSync(join(scratch, "reply.json.calls"), "utf8")).toBe("read\n");
+  });
+
   it.each(["{", "null", '{"allow":null}'])("exits on invalid scope %s before starting the upstream", async (scope) => {
     start({}, { SAGAX_GATE_TOOL_SCOPE: scope }, SCOPED_UPSTREAM);
     const closed = once(gate!, "close");

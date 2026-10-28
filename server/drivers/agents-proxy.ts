@@ -22,7 +22,7 @@
 import readline from "node:readline";
 
 import { availableTools, catalogProfileFromEnv, compactListed, compactToolsFromEnv, withDeferredRareTools } from "./agents-catalog.ts";
-import { catalogBridgeDefinitions, catalogBridgeOn, findCatalogTools, resolveCatalogUse } from "./catalog-bridge.ts";
+import { catalogBridgeDefinitions, catalogBridgeOn, routeBridgeCall } from "./catalog-bridge.ts";
 import { CALL_TOOL, DESCRIBE_TOOL, SEARCH_TOOL, ToolDirectory, isDirectoryTool, type CatalogTool } from "../mcp-directory.ts";
 import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
 import { harnessClientFromEnv, type Json } from "./agents-client.ts";
@@ -30,9 +30,11 @@ import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, learnCreated
 
 const PROFILE = catalogProfileFromEnv(process.env);
 const AVAILABLE_TOOLS = availableTools(PROFILE);
-// On unless SAGAX_CATALOG_BRIDGE=0. The model is shown find_tool and
-// use_tool. use_tool calls the named catalog tool through the same path,
-// checks and approvals as a direct call. No catalog tool is removed.
+// #1374: off unless SAGAX_CATALOG_BRIDGE=1 on a compact prompt (Claude
+// Code only, #1314). The model is then shown find_tool and use_tool.
+// use_tool calls the named catalog tool through the same path, checks and
+// approvals as a direct call, and every layer outside this process reads it
+// as that tool (shared/searched-tool-call.ts). No catalog tool is removed.
 // Claude Code only (SAGAX_DEFER_RARE_TOOLS=1): rare tools wait for tool search.
 // #1276, a compact prompt (Claude Code, local or cloud, SAGAX_COMPACT_TOOLS):
 // the core of a chat turn and the bot's own most used tools are listed whole;
@@ -124,17 +126,11 @@ async function handle(msg: Json) {
     case "tools/call": {
       let name = params.name as string;
       let args = (params.arguments ?? {}) as Json;
-      if (BRIDGE && (name === "find_tool" || name === "use_tool")) {
-        if (name === "find_tool") {
-          const query = args && typeof args === "object" && !Array.isArray(args) && typeof (args as { query?: unknown }).query === "string" ? (args as { query: string }).query : "";
-          const rawLimit = args && typeof args === "object" && !Array.isArray(args) ? (args as { limit?: unknown }).limit : undefined;
-          const limit = typeof rawLimit === "number" ? rawLimit : 8;
-          return textResult(id, JSON.stringify(findCatalogTools(AVAILABLE_TOOLS, query, limit)));
-        }
-        const resolved = resolveCatalogUse(AVAILABLE_TOOLS, args as { name?: unknown; arguments?: unknown });
-        if ("error" in resolved) return textResult(id, resolved.error, true);
-        name = resolved.name;
-        args = resolved.arguments as Json;
+      if (BRIDGE) {
+        const routed = routeBridgeCall(AVAILABLE_TOOLS, name, args);
+        if (routed.kind === "answer") return textResult(id, routed.text, routed.isError);
+        name = routed.name;
+        args = routed.arguments as Json;
       }
       if (SEARCHED && SEARCHED.tools.length && isDirectoryTool(name)) {
         if (name === SEARCH_TOOL) return ok(id, await SEARCHED.search(args));

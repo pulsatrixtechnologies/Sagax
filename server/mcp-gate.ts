@@ -37,6 +37,7 @@ import { DEFAULT_RESULT_BUDGET, type HeldResult, trimResultText, trimStructured 
 import { ToolNameAliases } from "./mcp-tool-names.ts";
 import { killCliTree } from "./procs.ts";
 import { misuseGateBlockText } from "../shared/misuse-guardrails.ts";
+import { BRIDGE_FIND_TOOL, BRIDGE_SERVER, readBridgeCall } from "../shared/searched-tool-call.ts";
 import { gateArgsSummary, gateDeclinedText, type GateAnswer, type GateAsk } from "./mcp-gate-approval.ts";
 
 type Json = Record<string, unknown>;
@@ -418,6 +419,9 @@ type Pending = { kind: "call"; tool: string; trim: boolean } | { kind: "list" | 
 /** The upstream tool one call runs: its own name or call_tool's target, or
  * undefined when the directory answers the call itself. */
 function callTarget(name: string, args: unknown): string | undefined {
+  // #1374: the agents bridge's find_tool runs nothing (its use_tool is
+  // rewritten to the call it runs before any check, in routeLine)
+  if (NAME === BRIDGE_SERVER && name === BRIDGE_FIND_TOOL) return undefined;
   return DIRECTORY ? directoryCallTarget(name, args) : name;
 }
 /** JSON-RPC string and numeric IDs are separate, even when their text is equal. */
@@ -575,6 +579,22 @@ function routeLine(line: string): void {
     const upstream = ALIASES.upstream(params.name);
     if (upstream !== params.name) {
       params.name = upstream;
+      line = JSON.stringify(message);
+    }
+  }
+  // #1374: Sagax's own agents server. A use_tool becomes the call it runs,
+  // name and arguments, before the selection, the misuse guardrails and the
+  // approval read it, and that same call is what reaches the server. One
+  // that names no tool, or another meta tool, is refused here.
+  if (NAME === BRIDGE_SERVER && message?.method === "tools/call" && params && typeof params.name === "string") {
+    const bridged = readBridgeCall(params.name, params.arguments);
+    if (bridged?.kind === "refused") {
+      if (id) process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: bridged.reason }], isError: true } })}\n`);
+      return;
+    }
+    if (bridged?.kind === "call") {
+      params.name = bridged.tool;
+      params.arguments = bridged.arguments;
       line = JSON.stringify(message);
     }
   }

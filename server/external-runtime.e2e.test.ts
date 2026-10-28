@@ -11,15 +11,6 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { launchVerificationServer, verificationServerEnvironment, type VerificationServer } from "../scripts/control-omb.ts";
 import { waitForExit } from "./testing/cleanup.ts";
-import { COMPACT_CORE_AGENT_TOOL_NAMES } from "./drivers/agents-catalog.ts";
-/** #1276: the bridge lists the heart of a chat turn by name, sorted, then find_tool and use_tool. */
-function expectBridgeList(names: string[]): void {
-  expect(names.slice(-2)).toEqual(["find_tool", "use_tool"]);
-  const listed = names.slice(0, -2);
-  expect(listed).toEqual([...listed].sort());
-  expect(listed.every((name) => COMPACT_CORE_AGENT_TOOL_NAMES.has(name) || name === "shared_computer")).toBe(true);
-}
-
 
 const TOKEN = "external-runtime-fixture-token-0123456789abcdef";
 
@@ -265,18 +256,18 @@ describe("a bot's external runtime", () => {
     try {
       await client.rpc("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "fixture", version: "1" } });
       const tools = await client.rpc("tools/list");
-      expectBridgeList(tools.tools.map((tool: { name: string }) => tool.name));
-      const found = JSON.parse((await client.rpc("tools/call", { name: "find_tool", arguments: { query: "list bots" } })).content[0].text) as { matches: Array<{ name: string }> };
-      expect(found.matches.some((match) => match.name === "list_bots")).toBe(true);
-      const roster = await client.rpc("tools/call", { name: "use_tool", arguments: { name: "list_bots", arguments: {} } });
+      expect(tools.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
+        "ask_bot", "check_delegation", "delegate_bot", "list_bots", "make_video", "wait_delegation",
+      ]);
+      const roster = await client.rpc("tools/call", { name: "list_bots", arguments: {} });
       expect(roster.content[0].text).toContain("MCP teammate");
-      const delegated = await client.rpc("tools/call", { name: "use_tool", arguments: { name: "delegate_bot", arguments: { bot_id: peer.id, message: "Bridge acceptance task" } } });
+      const delegated = await client.rpc("tools/call", { name: "delegate_bot", arguments: { bot_id: peer.id, message: "Bridge acceptance task" } });
       expect(delegated.isError).not.toBe(true);
       const taskId = /Task id: ([\w-]+)\./.exec(delegated.content[0].text)?.[1];
       expect(taskId).toBeTruthy();
       await expect.poll(async () => (await asRuntime("GET", `/api/internal/delegations/${taskId}`)).body.status,
         { timeout: 15_000 }).toBe("done");
-      const receipt = await client.rpc("tools/call", { name: "use_tool", arguments: { name: "check_delegation", arguments: { task_id: taskId } } });
+      const receipt = await client.rpc("tools/call", { name: "check_delegation", arguments: { task_id: taskId } });
       expect(receipt.isError).not.toBe(true);
       expect(receipt.content[0].text).toContain("finished task");
       // The runtime reads its own result; the bot's engine is not woken on

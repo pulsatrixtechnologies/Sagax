@@ -6,6 +6,7 @@
 // the same rows and refuses nothing.
 import { appendAdminAction } from "./admin-activity.ts";
 import { DATA_DIR } from "./config.ts";
+import { readBridgeCall } from "../shared/searched-tool-call.ts";
 import {
   classifyMisuse,
   classifySandboxPath,
@@ -203,6 +204,9 @@ export function misuseToolFrameText(frame: unknown): string | null {
   if (!message || message.method !== "tools/call") return null;
   const params = message.params && typeof message.params === "object" ? message.params as Record<string, unknown> : {};
   const name = typeof params.name === "string" ? params.name : "";
+  // #1374: a use_tool reads as the call it runs, name and arguments
+  const bridged = readBridgeCall(name, params.arguments);
+  if (bridged?.kind === "call") return `${bridged.tool}\n${JSON.stringify(bridged.arguments)}`;
   const args = params.arguments === undefined ? "" : JSON.stringify(params.arguments);
   return `${name}\n${args}`;
 }

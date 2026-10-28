@@ -352,6 +352,29 @@ describe("permission proxy", () => {
     });
   });
 
+  // #1374: the agents bridge's use_tool is asked about as the tool it runs
+  it("asks a use_tool as the tool it runs, and never hands back the CLI's rule for use_tool", async () => {
+    answerWith = () => ({ behavior: "allow", always: true });
+    rpc({
+      jsonrpc: "2.0", id: 2, method: "tools/call",
+      params: { name: "approve", arguments: {
+        tool_name: "mcp__agents__use_tool",
+        input: { name: "shared_computer", arguments: { action: "status" } },
+        permission_suggestions: [{ type: "addRules", rules: [{ toolName: "mcp__agents__use_tool" }] }],
+      } },
+    });
+    const res = await waitFor(2);
+    expect(asks[0]).toMatchObject({ tool: "mcp__agents__shared_computer", input: { action: "status" } });
+    expect(resultJson(res)).toEqual({ behavior: "allow", updatedInput: { name: "shared_computer", arguments: { action: "status" } } });
+  });
+
+  it("refuses a use_tool that names no tool, without a card", async () => {
+    rpc({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "approve", arguments: { tool_name: "mcp__agents__use_tool", input: { name: "use_tool" } } } });
+    const res = await waitFor(2);
+    expect(asks).toHaveLength(0);
+    expect(resultJson(res)).toMatchObject({ behavior: "deny" });
+  });
+
   it("hands a large non-ASCII tool input back to the CLI byte for byte", async () => {
     // About 1.5 MB of three-byte characters: the line reaches the proxy over
     // many pipe reads, and most read boundaries fall inside a character.

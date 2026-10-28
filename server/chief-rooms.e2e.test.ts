@@ -6,20 +6,13 @@ import { z } from "zod";
 
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 import { waitForExit } from "./testing/cleanup.ts";
-import { COMPACT_CORE_AGENT_TOOL_NAMES } from "./drivers/agents-catalog.ts";
-/** #1276: the bridge lists the heart of a chat turn by name, sorted, then find_tool and use_tool. */
-function expectBridgeList(names: string[]): void {
-  expect(names.slice(-2)).toEqual(["find_tool", "use_tool"]);
-  const listed = names.slice(0, -2);
-  expect(listed).toEqual([...listed].sort());
-  expect(listed.every((name) => COMPACT_CORE_AGENT_TOOL_NAMES.has(name) || name === "shared_computer")).toBe(true);
-}
-
 
 type Bot = { id: string; threadId: string; name: string };
 type Room = { id: string; name: string; memberIds: string[]; section?: string; bulletin: string; working?: boolean };
 type RpcReply = { result: { isError?: boolean; content: Array<{ text: string }> } };
 type Mounted = { command: string; args: string[]; env: Record<string, string> };
+
+const CHIEF_ONLY_TOOLS = ["create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "create_room", "manage_room", "retry_thread"];
 
 it("creates and manages an own-section room through the mounted Chief MCP proxy", async () => {
   const fixture = await launchVerificationServer({ ...process.env, FAKE_CLAUDE_MODE: "hang" });
@@ -64,10 +57,13 @@ it("creates and manages an own-section room through the mounted Chief MCP proxy"
       expect(mounted.env.SAGAX_HARNESS_URL).toBe(fixture.info.url);
       return mounted;
     };
+    // The bot's catalog in full: a compact prompt (#1314) lists only its
+    // core, and every other catalog tool is still called by name.
     const connect = (mounted: Mounted) => {
+      const { SAGAX_COMPACT_TOOLS: _compact, ...env } = mounted.env;
       const proxy = spawn(mounted.command, mounted.args, {
         cwd: process.cwd(),
-        env: { ...mounted.env, HOME: fixture.info.dataDir, USERPROFILE: fixture.info.dataDir, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
+        env: { ...env, HOME: fixture.info.dataDir, USERPROFILE: fixture.info.dataDir, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
         stdio: ["pipe", "pipe", "pipe"],
       });
       proxies.push(proxy);
@@ -87,29 +83,22 @@ it("creates and manages an own-section room through the mounted Chief MCP proxy"
     const toolNames = async (rpc: ReturnType<typeof connect>) =>
       (await rpc<{ tools: Array<{ name: string }> }>("tools/list")).tools.map((entry) => entry.name);
 
-    // A turn is shown find_tool and use_tool. Chief-only tools stay out of
-    // this bot's catalog, so use_tool cannot call them. create_bot is the
-    // one any bot of the person may use (2026-10-17, server/bot-creation.ts).
+    // An ordinary teammate's turn is not shown the tools only a Chief may use.
     const peerMount = await mount(peer, "Say hello.");
     expect(peerMount.env.SAGAX_CHIEF_OF_STAFF).toBe("0");
-    const peerRpc = connect(peerMount);
-    const peerTools = (await peerRpc<{ tools: Array<{ name: string }> }>("tools/list")).tools.map((entry) => entry.name);
-    expectBridgeList(peerTools);
+    const peerTools = await toolNames(connect(peerMount));
+    expect(peerTools).toContain("list_rooms");
+    // 2026-10-17 (server/bot-creation.ts): any bot of the person may
+    // create one bot (create_bot); the rest stays the Chief's.
     expect(peerMount.env.SAGAX_CREATE_BOTS).toBe("1");
-    const peerUse = (name: string, args: Record<string, unknown> = {}) =>
-      peerRpc<RpcReply["result"]>("tools/call", { name: "use_tool", arguments: { name, arguments: args } });
-    expect(JSON.stringify(await peerUse("create_bot"))).not.toContain("Unknown tool");
-    const refusedRoom = await peerUse("create_room");
-    expect(refusedRoom.isError).toBe(true);
-    expect(refusedRoom.content.map((item) => item.text).join("\n")).toContain("Unknown tool: create_room");
-    expect((await peerUse("list_rooms")).isError).not.toBe(true);
+    expect(CHIEF_ONLY_TOOLS.filter((name) => peerTools.includes(name))).toEqual(["create_bot"]);
     evidence.push({ peerTools });
     await control(["interrupt", "--bot", peer.id]);
 
     const mounted = await mount(chief, "Set up a small room for the team.");
     expect(mounted.env.SAGAX_CHIEF_OF_STAFF).toBe("1");
     const rpc = connect(mounted);
-    expectBridgeList(await toolNames(rpc));
+    expect(await toolNames(rpc)).toEqual(expect.arrayContaining(CHIEF_ONLY_TOOLS));
     const tool = async (name: string, args: Record<string, unknown>, denied = false) => {
       const result = await rpc("tools/call", { name, arguments: args });
       evidence.push({ tool: name, args, result });

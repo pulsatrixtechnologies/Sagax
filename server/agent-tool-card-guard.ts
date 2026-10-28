@@ -10,6 +10,7 @@
 import { AGENT_TOOL_POLICY, agentToolGuardPolicy, isAgentToolName, type AgentToolName } from "./agent-api.ts";
 import { guardDecision, type GuardDecision, type ToolGuardMode } from "./tool-guard.ts";
 import type { ToolGrantStore } from "./tool-grants.ts";
+import { unwrapAgentsBridge } from "../shared/searched-tool-call.ts";
 
 export interface CardGuardRow {
   tool: AgentToolName;
@@ -59,13 +60,18 @@ export function createAgentCardGuard(deps: CardGuardDeps) {
     /** null: not an agent tool (or guard off). deny: refuse without a card. */
     opened(input: CardGuardOpen): { deny: boolean; decision: GuardDecision } | null {
       const mode = deps.mode();
+      // #1374: a use_tool is guarded as the tool it runs, with its arguments;
+      // one that runs nothing is refused in enforce mode
+      const bridged = unwrapAgentsBridge(input.mcpTool, input.input);
+      if (mode !== "off" && bridged.refused) return { deny: mode === "enforce", decision: { allow: false, reason: "not_granted", needsApproval: false } };
+      const args = bridged.unwrapped ? bridged.input : input.input;
       // Claude names it mcp__agents__<tool>; ACP and Codex agents__<tool>
-      const name = input.mcpTool.replace(/^mcp__/, "");
+      const name = bridged.name.replace(/^mcp__/, "");
       if (mode === "off" || !name.startsWith(PREFIX)) return null;
       const tool = name.slice(PREFIX.length);
       if (!isAgentToolName(tool)) return null;
       const policy = agentToolGuardPolicy(AGENT_TOOL_POLICY[tool], tool);
-      const agentId = targetAgentId(input.input, input.summary);
+      const agentId = targetAgentId(args, bridged.unwrapped ? undefined : input.summary);
       const ownerPrincipalId = policy.ownerScoped && agentId ? deps.agentOwner?.(agentId) ?? null : null;
       const decision = guardDecision(policy, { kind: "bot", id: input.bot.id },
         input.speakerPrincipalId ? { kind: "user", id: input.speakerPrincipalId } : null, deps.grants as ToolGrantStore,

@@ -530,7 +530,7 @@ beforeAll(async () => {
       // A Chief's turn, so the Chief-only team tools are mounted too.
       SAGAX_CHIEF_OF_STAFF: "1",
       SAGAX_PERSPICAX_TOOLS: "1",
-      // Full catalog. The proxy default is find_tool and use_tool.
+      // Full catalog (the default; #1374).
       SAGAX_CATALOG_BRIDGE: "0",
     },
     stdio: ["pipe", "pipe", "inherit"],
@@ -772,6 +772,7 @@ describe("agents-proxy MCP surface", () => {
       "skills_list",
       "skill_manage",
       "add_mcp_server",
+      "make_video",
       "memory_recall",
       "memory_search",
       "memory_write",
@@ -2347,7 +2348,7 @@ describe("standing external runtime", () => {
   it("advertises only peer communication and receipt tools even when unrelated feature flags are set", async () => {
     const list = await externalRpc("tools/list");
     expect(list.result.tools.map((tool: any) => tool.name)).toEqual([
-      "list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation",
+      "list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation", "make_video",
     ]);
     expect(JSON.stringify(list.result.tools)).not.toMatch(/after your current turn finishes|earlier turn|same turn as delegate_bot/);
     for (const name of ["coordinate_bots", "start_thread", "create_bot", "request_credential", "memory_update", "skill_manage", "shared_computer", "tool_result_read", "act"]) {
@@ -2698,9 +2699,10 @@ describe("permissions in enforce mode", () => {
     });
 
   beforeAll(async () => {
-    // The bridge stays on. A direct name and use_tool share this guard.
+    // The bridge is on (#1374: asked for, on a compact prompt). A direct
+    // name and use_tool share this guard.
     guarded = spawn(process.execPath, [PROXY], {
-      env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker", SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0", SAGAX_MCP_PERMISSIONS: "enforce", SAGAX_MCP_ROLE: "viewer", SAGAX_MCP_PRINCIPAL: "pr_viewer" },
+      env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker", SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0", SAGAX_MCP_PERMISSIONS: "enforce", SAGAX_MCP_ROLE: "viewer", SAGAX_MCP_PRINCIPAL: "pr_viewer", SAGAX_CATALOG_BRIDGE: "1", SAGAX_COMPACT_TOOLS: JSON.stringify({ core: "default", pinned: [] }) },
       stdio: ["pipe", "pipe", "inherit"],
     });
     let buf = "";
