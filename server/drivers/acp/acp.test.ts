@@ -1865,7 +1865,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(seen.env.XAI_API_KEY).toBeUndefined();
     expect(seen.env.GROK_AGENT).toBe("grok-build");
     expect(seen.env.GROK_MANAGED_MCPS_ENABLED).toBeUndefined();
-    expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
+    // the person's own grok.com connectors (Outlook, Teams) ride the managed gateway
+    expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("true");
     const profile = JSON.parse(readFileSync(`${dump}.session.json`, "utf8"))._meta.agentProfile;
     expect(profile).toMatchObject({
       injectDefaultTools: false,
@@ -3655,8 +3656,10 @@ describe("grokCloudConnectorEnv", () => {
     });
   });
 
-  it("lets an organization turn on the person's own xAI sign-in fetch the account connectors", () => {
-    expect(grokCloudConnectorEnv(undefined, true, true)).toEqual({ GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" });
+  it("lets an organization turn on the person's own xAI sign-in fetch the account connectors, gateway connectors included", () => {
+    // 2026-10-28: Outlook and Microsoft Teams of grok.com are gateway connectors;
+    // with the gateway off the person's own Grok turn had no Teams at all
+    expect(grokCloudConnectorEnv(undefined, true, true)).toEqual({ GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" });
   });
 
   it("keeps them off when the account is not the person's own (review of #943: payer is not the speaker)", () => {

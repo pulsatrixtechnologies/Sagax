@@ -15,6 +15,17 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Grok's own connectors reach the person's Grok turn (2026-10-28)
+
+Grok's grok.com connectors (Outlook, Microsoft Teams, Gmail, SharePoint)
+are managed gateway connectors (`managed_gateway:`). Sagax forced
+`GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=false` on every turn, so a person's
+own Grok turn had none of them although Connect apps lists them. It is now
+`true` on the person's own Grok sign-in on an organization turn without a
+tool selection, and `false` everywhere else (`grokCloudConnectorEnv`). A
+gateway call is a `use_tool` call to a server Sagax did not mount, so it
+keeps its card below Full access (connector-ask.ts).
+
 ## Routine folders (2026-10-28)
 
 A routine may sit in one folder of its bot (`folder`), and each bot keeps an
