@@ -221,7 +221,8 @@ import { BriefStore } from "./background-brief.ts";
 import { listBriefApps, readBriefTool } from "./background-brief-apps.ts";
 import { createBackgroundBriefRoutes } from "./routes/background-brief.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
-import { companyTextForBots } from "./memory-company.ts";
+import { CompanyMemoryCache, companyTextForBots } from "./memory-company.ts";
+import { COMPANY_TOPIC } from "./memory-dream.ts";
 import { procedureSignal, recordProcedure } from "./memory-procedures.ts";
 import type { CaptureTurn } from "./memory-capture.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
@@ -594,7 +595,7 @@ import {
   TASK_WORKSPACES_DIR,
   workspaceDir,
 } from "./workspace.ts";
-import { holdBotMemoryPlain, listMemoryTopics, memoryDate, readMemoryFile, readMemoryTopic, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
+import { holdBotMemoryPlain, listMemoryTopics, memoryDate, onMemoryTopicWritten, readMemoryFile, readMemoryTopic, readMemoryTopicAsync, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
 import { atRestStream, describeHandle, holdPlain, readAtRestSync, releasePlain, setAtRestHolderCheck, setAtRestThreadFiles, waitPlain } from "./content-at-rest.ts";
 import {
   beginMemoryTurn,
@@ -7087,6 +7088,12 @@ try {
 // Chief of Staff per section runs (idempotent, so at every boot).
 store.botOwnerKey = (bot) => effectiveBotOwner(bot);
 
+// #1375: company.md of every bot is read in the background, never on a
+// turn's path; a server-side write refreshes it at once (memory-company.ts).
+const companyMemory = new CompanyMemoryCache({ read: (id) => readMemoryTopicAsync(id, COMPANY_TOPIC) });
+onMemoryTopicWritten((botId, name) => companyMemory.written(botId, name));
+void companyMemory.warm(store.bots.filter((bot) => bot.memoryEnabled !== false).map((bot) => bot.id)).catch(() => {});
+
 function memoryPromptFor(bot: BotRecord, opts: { managedWrites?: boolean; fileTools?: boolean; audience?: MemoryDestination } = {}): string {
   return memorySystemPrompt(bot.id, {
     ...opts,
@@ -7094,7 +7101,7 @@ function memoryPromptFor(bot: BotRecord, opts: { managedWrites?: boolean; fileTo
     company: bot.memoryEnabled === false ? undefined : companyTextForBots({
       ownerKey: store.botOwnerKey(bot),
       bots: store.bots.map((item) => ({ id: item.id, ownerKey: store.botOwnerKey(item) })),
-      read: (id) => readMemoryTopic(id, "company.md"),
+      read: (id) => companyMemory.get(id),
     }),
   });
 }

@@ -21,6 +21,8 @@ import {
   supportsWorkspaceFiles,
   readMemoryFile,
   readMemoryTopic,
+  readMemoryTopicAsync,
+  onMemoryTopicWritten,
   searchMemoryFiles,
   syncMemoryIndex,
   workspaceDir,
@@ -633,6 +635,29 @@ describe("workspace", () => {
     expect(readMemoryTopic(BOT, "../MEMORY.md")).toBeNull();
     expect(readMemoryTopic(BOT, "../../secret.md")).toBeNull();
     expect(readMemoryTopic(BOT, "..\\MEMORY.md")).toBeNull();
+  });
+
+  // #1375: the company memory cache reads off the turn's path
+  it("readMemoryTopicAsync reads what readMemoryTopic reads, with the same name gate", async () => {
+    const dir = ensureWorkspace(BOT);
+    writeFileSync(join(dir, "memory", "company.md"), "- The office opens at 8.\n");
+    writeFileSync(join(dir, "MEMORY.md"), "SECRET-MEMORY");
+    expect(await readMemoryTopicAsync(BOT, "company.md")).toBe(readMemoryTopic(BOT, "company.md"));
+    expect(await readMemoryTopicAsync(BOT, "missing.md")).toBeNull();
+    expect(await readMemoryTopicAsync(BOT, "../MEMORY.md")).toBeNull();
+    expect(await readMemoryTopicAsync("never-ran", "company.md")).toBeNull();
+  });
+
+  it("tells listeners after a topic write, and a failing listener never fails the write", () => {
+    const seen: string[] = [];
+    const offBad = onMemoryTopicWritten(() => { throw new Error("listener"); });
+    const off = onMemoryTopicWritten((botId, name) => seen.push(`${botId}/${name}`));
+    writeMemoryTopic(BOT, "company.md", "- A fact.\n");
+    off();
+    offBad();
+    writeMemoryTopic(BOT, "company.md", "- Another.\n");
+    expect(seen).toEqual([`${BOT}/company.md`]);
+    expect(readMemoryTopic(BOT, "company.md")).toContain("Another");
   });
 
   it("memorySystemPrompt teaches the mechanism even with no memory, and embeds it once written", () => {

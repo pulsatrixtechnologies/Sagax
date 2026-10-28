@@ -9,10 +9,11 @@
 // file tools. Plain markdown on purpose — the user can open, edit, or
 // delete anything the bot believes.
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, statSync, type Stats } from "node:fs";
+import { lstat as lstatAsync, open as openAsync } from "node:fs/promises";
 import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
-import { holdPlain, isAtRestRefusal, noteAtRestWrite, plainSizeFor, readAtRestTextSync, registerAtRestRoot } from "./content-at-rest.ts";
+import { describeHandle, holdPlain, isAtRestRefusal, noteAtRestWrite, plainSizeFor, readAllFromHandle, readAtRest, readAtRestTextSync, registerAtRestRoot } from "./content-at-rest.ts";
 import { alwaysCore, isExpired, isMemoryDate, parseMemoryEntries, untilMark, withoutExpired, type MemoryEntryLine } from "./memory-entries.ts";
 import { readersToken, withoutWiderAudience, type MemoryDestination, type MemoryReaders } from "./memory-audience.ts";
 import { parseTopicHeader, readTopicHead, renderTopicIndex } from "./memory-topics.ts";
@@ -797,6 +798,16 @@ export function writeMemoryTopic(botId: string, name: string, text: string): voi
   ensureWorkspace(botId);
   writeFileAtomic(join(workspaceDir(botId), "memory", name), redactSecretsInText(text), { mode: 0o600 });
   indexWrittenMemoryFile(botId, `memory/${name}`);
+  for (const listener of topicWriteListeners) {
+    try { listener(botId, name); } catch { /* a listener never fails a write that succeeded */ }
+  }
+}
+
+const topicWriteListeners = new Set<(botId: string, name: string) => void>();
+/** Told after each server-side topic write (#1375: the company memory cache). */
+export function onMemoryTopicWritten(listener: (botId: string, name: string) => void): () => void {
+  topicWriteListeners.add(listener);
+  return () => topicWriteListeners.delete(listener);
 }
 
 /** Read one topic file. The name gate runs here, so no caller can turn this
@@ -808,6 +819,28 @@ export function readMemoryTopic(botId: string, name: string): string | null {
   } catch (error) {
       // a sealed file whose key is locked (or that does not open) is never read as empty
       if (isAtRestRefusal(error)) throw error;
+    return null;
+  }
+}
+
+/** readMemoryTopic without blocking the event loop on the file (#1375): the
+ * same name gate, the same regular-file rule on a Cloud home, and the same
+ * refusal of a sealed file whose key is locked. */
+export async function readMemoryTopicAsync(botId: string, name: string): Promise<string | null> {
+  if (!isMemoryTopicName(name)) return null;
+  const path = join(workspaceDir(botId), "memory", name);
+  try {
+    if (!regularMemoryFilesOnly) return (await readAtRest(path)).toString("utf8");
+    if (!(await lstatAsync(path)).isFile()) return null;
+    const handle = await openAsync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      if (!(await handle.stat()).isFile()) return null;
+      return (await readAllFromHandle(handle, await describeHandle(handle, path))).toString("utf8");
+    } finally {
+      await handle.close().catch(() => undefined);
+    }
+  } catch (error) {
+    if (isAtRestRefusal(error)) throw error;
     return null;
   }
 }
