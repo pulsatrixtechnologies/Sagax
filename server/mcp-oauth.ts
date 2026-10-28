@@ -24,6 +24,9 @@ import { z } from "zod";
 import { writeFileAtomic } from "./atomic.ts";
 import type { McpServerSpec, RemoteMcpSpec } from "./contracts.ts";
 import { guardedFetch } from "./public-fetch.ts";
+import type { VaultKeySource } from "./vault-key-source.ts";
+
+export type { VaultKeySource };
 
 export type McpAuthState = "none" | "required" | "connected" | "expired" | "error";
 /** How the app gets a client id at this authorization server. */
@@ -128,10 +131,6 @@ function migrateVault(raw: unknown): VaultDocument | null {
   for (const [name, record] of Object.entries(legacy.data.records)) servers[name] = { [DEFAULT_MCP_ACCOUNT]: record };
   return { version: 2, servers };
 }
-
-export type VaultKeySource =
-  | { kind: "key"; key: Buffer }
-  | { kind: "unavailable"; reason: string };
 
 /** Where the vault key comes from. The desktop shell keeps it in the
  * OS-encrypted credential store (credentials.bin) and hands it over as
