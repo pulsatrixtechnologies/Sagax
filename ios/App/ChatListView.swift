@@ -1602,7 +1602,11 @@ extension ChatListView {
         let rows = stride(from: 0, to: rest.count, by: 3).map { Array(rest[$0..<min($0 + 3, rest.count)]) }
         return VStack(spacing: 0) {
             if let lead {
+                // The long-press menu stays on the cell. This button used to
+                // grow to the width of the screen, so its preview filled the
+                // iPhone and later entries (Share) were not offered.
                 pinnedButton(lead, mascot: HomeMetrics.pinnedSoloMascot)
+                    .fixedSize()
                     .frame(maxWidth: .infinity)
             }
             ForEach(rows.indices, id: \.self) { index in

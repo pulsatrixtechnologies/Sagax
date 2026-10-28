@@ -65,7 +65,7 @@ enum DemoScreen {
                 ("Checking privacy manifest ... ok", 0x68CE67),
                 ("Uploading symbols ... 62%", 0xFEBC2E),
                 ("", 0xE6E6E6),
-                (language.pick("Waiting on approval: TestFlight upload (Scout)", "En attente d'approbation : téléversement TestFlight (Scout)"), 0x9C9BA1),
+                (language.pick("Waiting on approval: publish version 2.4 (Scout)", "En attente d'approbation : publier la version 2.4 (Scout)"), 0x9C9BA1),
             ]
             for (index, line) in lines.enumerated() {
                 draw(line.0, at: CGPoint(x: window.minX + 28, y: window.minY + 64 + CGFloat(index) * 34), size: 20, color: UIColor(hex: line.1), weight: .regular, mono: true)

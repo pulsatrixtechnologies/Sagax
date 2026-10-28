@@ -74,6 +74,19 @@ final class NavigationMenusTests: XCTestCase {
         XCTAssertFalse(theirs.items.contains(.makePrimary))
     }
 
+    func testAPinnedPrimaryBotOnAnOrganizationServerOffersShare() throws {
+        let plan = NavigationMenus.bot(
+            try bot("atlas", owner: "pr_me", primary: true, pinned: true),
+            context(member, viewer: "pr_me")
+        )
+        XCTAssertEqual(plan.items.first, .unpin)
+        XCTAssertTrue(plan.items.contains(.share))
+        let share = try XCTUnwrap(plan.items.firstIndex(of: .share))
+        let rename = try XCTUnwrap(plan.items.firstIndex(of: .rename))
+        XCTAssertEqual(share, rename + 1, "Share follows Rename, as on the desktop")
+        XCTAssertFalse(NavigationMenus.bot(try bot("atlas", primary: true, pinned: true), context(client)).items.contains(.share))
+    }
+
     func testThePrimaryBotCanBePinnedAndCannotBeArchived() throws {
         let plan = NavigationMenus.bot(try bot("star", primary: true), context(admin))
         XCTAssertEqual(plan.items.first, .pin)

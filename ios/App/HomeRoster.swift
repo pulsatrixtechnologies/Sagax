@@ -267,6 +267,9 @@ struct HomePrimaryBadge: View {
                 .foregroundStyle(.white)
         }
         .offset(x: offset, y: offset)
+        // Decorative: a hit here used to take the long press away from the
+        // pinned bot's menu (Share included).
+        .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Primary Bot"))
         .accessibilityIdentifier("primary-bot-badge")

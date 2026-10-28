@@ -45,12 +45,12 @@ ${css.map((f) => `<link rel="stylesheet" href="file://${f}">`).join("\n")}
 </head><body class="bg-app text-ink" style="font-family:var(--font-sans)">
 <div style="padding:60px 16px 0;display:flex;flex-direction:column;gap:12px">
   <div class="text-[15px] font-semibold text-ink">${skin}</div>
-  <div class="w-full rounded-2xl border border-hairline/40 bg-bubble-user px-4 py-3 text-bubble-user-ink" style="align-self:flex-end;max-width:78%">Compare the final TestFlight checklist with Apple's requirements.</div>
+  <div class="w-full rounded-2xl border border-hairline/40 bg-bubble-user px-4 py-3 text-bubble-user-ink" style="align-self:flex-end;max-width:78%">Compare the release notes with the checklist, then publish version 2.4.</div>
   <div class="rounded-2xl bg-card px-4 py-3 text-ink" style="max-width:85%">I checked the signing, the privacy declarations and the review notes. <span class="text-ink-secondary">One gap remains.</span></div>
   <div class="w-full rounded-2xl border bg-card p-4 border-accent/40">
     <div class="text-[15px] font-semibold text-ink">Approval needed</div>
-    <div class="mt-1 text-[13px] text-ink-secondary">Upload build 1 to TestFlight for internal testing?</div>
-    <div class="mt-2 rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] text-ink">App Store Connect</div>
+    <div class="mt-1 text-[13px] text-ink-secondary">Publish version 2.4 to the team?</div>
+    <div class="mt-2 rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] text-ink">Publish</div>
     <div class="mt-3 flex gap-2"><span class="rounded-lg bg-accent px-3 py-1.5 text-[13px] text-accent-ink">Allow</span><span class="rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink">Deny</span></div>
   </div>
 </div>
