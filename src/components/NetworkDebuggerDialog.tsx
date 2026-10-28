@@ -3,6 +3,9 @@ import { Download, Pause, Play, X } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
+import { formatDebuggerBytes as formatBytes } from "../../shared/format-bytes";
+
+export { formatBytes };
 
 /** One request as the server sends it: already redacted (no body, no
  * credential), headers only when asked for. See server/browser-network-debug.ts. */
@@ -46,13 +49,6 @@ export function filterNetworkRows(rows: readonly NetworkRow[], query: string, ty
   const needle = query.trim().toLowerCase();
   return rows.filter((row) => (!needle || row.url.toLowerCase().includes(needle) || row.method.toLowerCase() === needle)
     && (!type || row.resourceType === type) && matchesStatus(row.status, status));
-}
-
-export function formatBytes(value: number | null): string {
-  if (value === null || value < 0) return "";
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} kB`;
-  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export function formatMs(value: number | null): string {

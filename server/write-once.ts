@@ -7,16 +7,9 @@
 // starts empty, and the resumed turn is told to check what was done.
 import { createHash } from "node:crypto";
 
-/** Keys sorted at every level, so the same arguments in another order are
- * the same write. */
-export function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== undefined).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
-  }
-  return JSON.stringify(value ?? null);
-}
+import { canonicalJson } from "../shared/canonical-json.ts";
+
+export { canonicalJson };
 
 export function executionKey(parts: readonly unknown[]): string {
   return createHash("sha256").update(canonicalJson(parts)).digest("hex");

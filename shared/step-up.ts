@@ -11,8 +11,11 @@
 // Pure: no clock, no disk, no node built-ins. The server gives the risks it
 // read from the call (shared/custom-rules.ts callFacts).
 
+import { canonicalJson } from "./canonical-json.ts";
 import { readShell, type RiskClass } from "./custom-rules.ts";
 import type { OptionCardData } from "./wire.ts";
+
+export { canonicalJson };
 
 export const STEP_UP_CLASSES = [
   "destructive",
@@ -210,18 +213,6 @@ export interface SecurityKeysState {
   /** No key yet and this sign-in is too old to add the first one: sign in
    * again first (the register route answers `reauth_required`). */
   needsSignIn?: boolean;
-}
-
-/** JSON with keys in a fixed order, so the same content always hashes the
- * same (a card read twice, a change sent twice). */
-export function canonicalJson(value: unknown): string {
-  if (value === undefined) return "null";
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map((item) => (item === undefined ? "null" : canonicalJson(item))).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, item]) => item !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
 }
 
 /** The fields of a card that say what an Allow would do. Status fields

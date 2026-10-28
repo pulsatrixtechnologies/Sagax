@@ -25,6 +25,9 @@ import { BOT_PROFILE_LIMITS, fitsOnOneLine } from "./bot-profile.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { normalizeCronSchedule } from "./routine-schedule.ts";
 import { isSkillName, parseSkillMd, scanSkillText, SKILL_FILE_MAX_BYTES } from "./skill-md.ts";
+import { canonicalJson } from "./canonical-json.ts";
+
+export { canonicalJson };
 
 export const PACKAGE_FORMAT = "openmaus.package";
 /** The newest version this module reads and writes. */
@@ -557,18 +560,6 @@ function v1SchemaSentence(error: z.ZodError): string {
 }
 
 // ── canonical form ─────────────────────────────────────────────────────────
-
-/** Sorted keys (default UTF-16 sort), undefined omitted, no whitespace,
- * leaves by JSON.stringify. The release sha256 is over exactly these bytes. */
-export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => (item === undefined ? "null" : canonicalJson(item))).join(",")}]`;
-  }
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).filter((name) => record[name] !== undefined).sort();
-  return `{${keys.map((name) => `${JSON.stringify(name)}:${canonicalJson(record[name])}`).join(",")}}`;
-}
 
 /** Canonical UTF-8 bytes of a document: what Admin stores and the cap measures. */
 export function packageBytes(document: unknown): number {

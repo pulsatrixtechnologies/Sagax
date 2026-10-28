@@ -2,6 +2,9 @@
 // own isolated Linux environment on the server, shared by all their bots
 // (server/user-sandbox-routes.ts).
 import { api, ApiError } from "@/state/store";
+import { formatPanelBytes as formatBytes } from "../../shared/format-bytes";
+
+export { formatBytes };
 
 export interface ServerEnvironmentStatus {
   configured: boolean;
@@ -70,9 +73,4 @@ export function powerState(state: ServerEnvironmentStatus["state"] | undefined, 
   return "unavailable";
 }
 
-/** "1.2 GiB" style, for the usage panel. */
-export function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return "?";
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
-  return `${Math.round(bytes / 1024 ** 2)} MiB`;
-}
+

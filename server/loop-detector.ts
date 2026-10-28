@@ -13,7 +13,10 @@
 // endless one still does. An error counts only when the input matches too.
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { canonicalJson } from "../shared/canonical-json.ts";
 import type { RuntimeEvent } from "../shared/runtime-events.ts";
+
+export { canonicalJson };
 
 export interface LoopThresholds {
   /** The same tool with the same input, this many times in a row, whatever
@@ -95,17 +98,6 @@ export interface ToolCallObservation {
   /** The result text or value; hashed, never kept. */
   result?: unknown;
   error?: boolean;
-}
-
-/** JSON with object keys sorted at every depth, so key order never makes
- * two inputs differ. */
-export function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value ?? null);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(",")}}`;
 }
 
 function normalize(value: unknown): unknown {
