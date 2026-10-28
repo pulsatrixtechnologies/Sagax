@@ -909,6 +909,20 @@ describe("ACP turns (fake CLI)", () => {
     expect(prompt.find(block => block.type === "text")?.text).toContain(BUILT_IN_DATA_SYSTEM_PROMPT.trim());
   });
 
+  // 2026-10-28: the turn's prompt names messages; the ACP engines mount it as
+  // Claude Code, Codex, pi and the chat engines do
+  it("mounts Messages through the existing stdio transport", async () => {
+    await create();
+    const dump = join(scratch, "messages.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    const messages = { command: process.execPath, args: [join(scratch, "messages-proxy.mjs")], env: { SAGAX_MESSAGES_TOKEN: "synthetic-turn-capability" } };
+    await instance.adapter.sendTurn({ threadId: "t-messages", text: "Text my sister.", integrations: { messages } });
+    expect(await recorder.until((event) => event.type === "turn.completed")).toMatchObject({ ok: true });
+    expect(JSON.parse(readFileSync(`${dump}.mcp.json`, "utf8"))).toEqual([{
+      name: "messages", ...messages, env: [{ name: "SAGAX_MESSAGES_TOKEN", value: "synthetic-turn-capability" }],
+    }]);
+  });
+
   it("droid takes model and autonomy over the wire, never through argv", async () => {
     // `droid exec -m <id> -o acp` ignores the flag (verified against 0.196.0),
     // so a model that only reached argv would silently run the CLI's own pick.

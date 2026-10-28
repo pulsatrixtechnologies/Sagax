@@ -9,6 +9,13 @@
 // it): there they get sagax_web_search too, which runs on this server with
 // the person's key, never on anyone's computer.
 
+import { isLocalModelId } from "../drivers/local-inject.ts";
+
+/** Engines whose search runs on the model provider's side (Anthropic's
+ * WebSearch, OpenAI's web_search): a local model served to them (`host::model`,
+ * server/drivers/local-inject.ts) has none, so the turn gets sagax_web_search. */
+const PROVIDER_SIDE_SEARCH: ReadonlySet<string> = new Set(["claudeAgent", "codex"]);
+
 /** Engines with a built-in web search, as each real CLI offers it. */
 const NATIVE_WEB_SEARCH: Readonly<Record<string, { keptWhenWithheld: boolean }>> = {
   // WebSearch is not in CLAUDE_HOST_TOOLS: it stays on an organization turn.
@@ -34,10 +41,12 @@ const NATIVE_WEB_SEARCH: Readonly<Record<string, { keptWhenWithheld: boolean }>>
   hermesAgent: { keptWhenWithheld: false },
 };
 
-/** Whether this engine searches the web by itself on this turn. */
-export function engineHasNativeWebSearch(driverKind: string, withheldHostTools: boolean): boolean {
+/** Whether this engine searches the web by itself on this turn. `model`: the
+ * turn's model id, when known (a local model has no provider-side search). */
+export function engineHasNativeWebSearch(driverKind: string, withheldHostTools: boolean, model?: string | null): boolean {
   const native = NATIVE_WEB_SEARCH[driverKind];
   if (!native) return false;
+  if (PROVIDER_SIDE_SEARCH.has(driverKind) && isLocalModelId(model)) return false;
   return !withheldHostTools || native.keptWhenWithheld;
 }
 

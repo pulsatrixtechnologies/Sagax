@@ -1156,6 +1156,13 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         if (data) {
           servers.push({ name: "data", command: data.command, args: data.args, env: acpEnv(data.env) });
         }
+        // 2026-10-28: Messages (iMessage on this Mac), as Claude Code, Codex,
+        // pi and the chat engines mount it: the turn's prompt names it. A
+        // send still waits on the person's card (index.ts send_message).
+        const messages = turn.integrations?.messages;
+        if (messages) {
+          servers.push({ name: "messages", command: messages.command, args: messages.args, env: acpEnv(messages.env) });
+        }
         // The bot's computer, mounted exactly like the Claude driver does:
         // host and sandbox Cua connections expose Cua Driver's own MCP server.
         // (A cloud boat is not mounted here at all: a cloud turn runs ON the boat.)

@@ -32,4 +32,17 @@ describe("engineHasNativeWebSearch", () => {
       expect(engineHasNativeWebSearch(engine, true), engine).toBe(false);
     }
   });
+
+  // 2026-10-28: Anthropic's WebSearch and OpenAI's web_search run on the
+  // provider's side; a local model served to Claude Code or Codex has neither
+  it("gives Claude Code and Codex on a local model the person's search", () => {
+    for (const engine of ["claudeAgent", "codex"]) {
+      expect(engineHasNativeWebSearch(engine, false, "ollama::qwen3:32b"), engine).toBe(false);
+      expect(engineHasNativeWebSearch(engine, true, "lmstudio::some-model"), engine).toBe(false);
+      expect(engineHasNativeWebSearch(engine, false, "claude-opus-4-1"), engine).toBe(true);
+      expect(engineHasNativeWebSearch(engine, false, null), engine).toBe(true);
+    }
+    // an engine whose own search is not the provider's keeps it
+    expect(engineHasNativeWebSearch("cursorAgent", false, "ollama::qwen3:32b")).toBe(true);
+  });
 });
