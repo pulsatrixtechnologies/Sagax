@@ -30,11 +30,11 @@ import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, learnCreated
 const PROFILE = catalogProfileFromEnv(process.env);
 const AVAILABLE_TOOLS = availableTools(PROFILE);
 // Claude Code only (SAGAX_DEFER_RARE_TOOLS=1): rare tools wait for tool search.
-// #1276, a compact prompt (a local model, SAGAX_COMPACT_TOOLS): the core of a
-// chat turn and the bot's own most used tools are listed whole; every other
-// tool is found with search_tools and run with call_tool, through the same
-// call path, checks and approvals as a listed one. The list is the same for
-// every conversation of the bot, so a local model's prefix cache serves it.
+// #1276, a compact prompt (Claude Code, local or cloud, SAGAX_COMPACT_TOOLS):
+// the core of a chat turn and the bot's own most used tools are listed whole;
+// every other tool is found with search_tools and run with call_tool, through
+// the same call path, checks and approvals as a listed one. The list is the
+// same for every conversation of the bot, so a prefix cache serves it.
 const COMPACT = compactToolsFromEnv(process.env);
 const SEARCHED = COMPACT
   ? new ToolDirectory(AVAILABLE_TOOLS.filter((tool) => !compactListed(tool.name, { ...COMPACT, coordinating: PROFILE.coordinating })) as unknown as CatalogTool[])
