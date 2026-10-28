@@ -440,6 +440,60 @@ describe("createOpenAIChatRuntime mid-turn steer", () => {
     expect(events.at(-1)).toMatchObject({ type: "turn.completed", ok: true });
   }, 20_000);
 
+  it("tells the person when the turn fails before it reads an accepted aside", async () => {
+    let release!: (response: Response) => void;
+    const gate = new Promise<Response>((resolve) => { release = resolve; });
+    let requests = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      requests += 1;
+      return await gate;
+    }));
+    const instance = await OpenAICompatDriver.create({
+      instanceId: "compat", displayName: "Compat", enabled: true,
+      config: OpenAICompatDriver.decodeConfig({ url: "https://api.example.com/v1", apiKeyEnv: "K", model: "m" }),
+      environment: { K: "secret" },
+    });
+    const events: RuntimeEvent[] = [];
+    instance.adapter.onEvent((event) => events.push(event));
+    await instance.adapter.sendTurn({ threadId: "t", text: "hi", approvalMode: "full" });
+    await vi.waitFor(() => expect(requests).toBe(1), { timeout: 10_000 });
+    await expect(instance.adapter.steer!("t", "one more thing")).resolves.toBe("steered");
+    release(new Response(JSON.stringify({ error: { message: "bad request" } }), { status: 400 }));
+    await vi.waitFor(() => expect(events.some((event) => event.type === "turn.completed")).toBe(true), { timeout: 10_000 });
+    await instance.dispose();
+    expect(events.at(-1)).toMatchObject({ type: "turn.completed", ok: false });
+    expect(events).toContainEqual(expect.objectContaining({ type: "runtime.notice", message: expect.stringMatching(/before .* read/) }));
+  }, 20_000);
+
+  it("tells the person when the provider rejects the request that carries an aside", async () => {
+    let release!: (response: Response) => void;
+    const gate = new Promise<Response>((resolve) => { release = resolve; });
+    const bodies: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      bodies.push(String(init?.body));
+      return bodies.length === 1 ? await gate : new Response(JSON.stringify({ error: { message: "bad request" } }), { status: 400 });
+    }));
+    const instance = await OpenAICompatDriver.create({
+      instanceId: "compat", displayName: "Compat", enabled: true,
+      config: OpenAICompatDriver.decodeConfig({ url: "https://api.example.com/v1", apiKeyEnv: "K", model: "m" }),
+      environment: { K: "secret" },
+    });
+    const events: RuntimeEvent[] = [];
+    instance.adapter.onEvent((event) => events.push(event));
+    await instance.adapter.sendTurn({ threadId: "t", text: "hi", approvalMode: "full" });
+    await vi.waitFor(() => expect(bodies).toHaveLength(1), { timeout: 10_000 });
+    await expect(instance.adapter.steer!("t", "one more thing")).resolves.toBe("steered");
+    release(new Response('data: {"choices":[{"index":0,"delta":{"content":"first answer."}}]}\n\n'
+      + 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n', { status: 200, headers: { "content-type": "text/event-stream" } }));
+    await vi.waitFor(() => expect(events.some((event) => event.type === "turn.completed")).toBe(true), { timeout: 10_000 });
+    await instance.dispose();
+    expect(bodies).toHaveLength(2);
+    expect(events.at(-1)).toMatchObject({ type: "turn.completed", ok: false });
+    expect(events).toContainEqual(expect.objectContaining({ type: "runtime.notice", message: expect.stringMatching(/before .* read/) }));
+  }, 20_000);
+
   const mcpDir: string[] = [];
   afterEach(() => { for (const d of mcpDir.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
@@ -535,6 +589,44 @@ describe("createOpenAIChatRuntime mid-turn steer", () => {
     // Once the turn settled the seam refuses: late words go back to the queue.
     await expect(instance.adapter.steer!("t", "late")).resolves.toBe("refused");
   }, 20_000);
+
+  it("refuses a steer during the last allowed step so it is not lost", async () => {
+    const toolCall = (id: string) => 'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"' + id
+      + '","type":"function","function":{"name":"fx_write","arguments":"{}"}}]}}]}\n\n'
+      + 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n\n';
+    const finalBody = 'data: {"choices":[{"index":0,"delta":{"content":"done."}}]}\n\n'
+      + 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n';
+    const bodies: string[] = [];
+    let release!: (response: Response) => void;
+    const gate = new Promise<Response>((resolve) => { release = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/models")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+      bodies.push(String(init?.body));
+      if (bodies.length < 64) {
+        return new Response(toolCall(`c${bodies.length}`), { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+      return await gate;
+    }));
+    const instance = await OpenAICompatDriver.create({
+      instanceId: "compat", displayName: "Compat", enabled: true,
+      config: OpenAICompatDriver.decodeConfig({ url: "https://api.example.com/v1", apiKeyEnv: "K", model: "m" }),
+      environment: { K: "secret" },
+    });
+    const events: RuntimeEvent[] = [];
+    instance.adapter.onEvent((event) => events.push(event));
+    await instance.adapter.sendTurn({
+      threadId: "t", text: "hi", approvalMode: "full",
+      integrations: { custom: { fx: toolServer() } },
+    });
+    await vi.waitFor(() => expect(bodies).toHaveLength(64), { timeout: 30_000 });
+    await expect(instance.adapter.steer!("t", "one more thing")).resolves.toBe("refused");
+    release(new Response(finalBody, { status: 200, headers: { "content-type": "text/event-stream" } }));
+    await vi.waitFor(() => expect(events.some((event) => event.type === "turn.completed")).toBe(true), { timeout: 20_000 });
+    await instance.dispose();
+    expect(bodies).toHaveLength(64);
+    expect(events.at(-1)).toMatchObject({ type: "turn.completed", ok: true });
+    expect(events.some((event) => event.type === "runtime.notice")).toBe(false);
+  }, 60_000);
 });
 
 describe("createOpenAIChatRuntime stream termination", () => {
