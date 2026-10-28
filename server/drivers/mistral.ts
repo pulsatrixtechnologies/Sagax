@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ModelCatalog, ProviderDriver } from "../contracts.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
+import { imageTransportAllowed } from "./chat-images.ts";
 
 const DEFAULT_URL = "https://api.mistral.ai/v1";
 const DEFAULT_MODELS: ModelCatalog = {
@@ -33,9 +34,15 @@ const modelCard = z.object({
   name: z.string().nullable().optional(),
   aliases: z.array(z.string()).optional(),
   archived: z.boolean().optional(),
-  capabilities: z.object({ completion_chat: z.boolean().optional() }).optional(),
+  capabilities: z.object({ completion_chat: z.boolean().optional(), vision: z.boolean().optional() }).optional(),
   max_context_length: z.number().int().positive().optional(),
 });
+
+/** 2026-10-28: a Mistral model that reads images before the catalog says
+ * so (/models capabilities.vision answers for the rest). */
+export function mistralSeesImages(model: string, vision: ReadonlySet<string> = new Set()): boolean {
+  return vision.has(model) || /pixtral|mistral-(?:small|medium)/i.test(model);
+}
 
 /** Mistral can return plain text or a list of typed content chunks. */
 function contentText(content: unknown): string {
@@ -66,6 +73,8 @@ export const MistralDriver: ProviderDriver<MistralConfig> = {
       return { default: options.some((option) => option.id === preferred) ? preferred : options[0].id, options };
     };
     let catalog = withConfiguredModel(DEFAULT_MODELS.options);
+    // the ids /models says read images (capabilities.vision)
+    let vision = new Set<string>();
     const refreshModels = async () => {
       if (!apiKey) return;
       try {
@@ -79,10 +88,12 @@ export const MistralDriver: ProviderDriver<MistralConfig> = {
         const rows = Array.isArray(json) ? json : z.object({ data: z.array(z.unknown()) }).parse(json).data;
         const options: ModelCatalog["options"] = [];
         const seen = new Set<string>();
+        const sees = new Set<string>();
         for (const row of rows) {
           const parsed = modelCard.safeParse(row);
           if (!parsed.success || parsed.data.archived || parsed.data.capabilities?.completion_chat === false) continue;
           const card = parsed.data;
+          if (card.capabilities?.vision === true) for (const id of [card.id, ...(card.aliases ?? [])]) sees.add(id);
           for (const id of [card.id, ...(card.aliases ?? [])]) {
             if (!id.trim() || seen.has(id)) continue;
             seen.add(id);
@@ -90,7 +101,10 @@ export const MistralDriver: ProviderDriver<MistralConfig> = {
               ...(card.max_context_length ? { contextWindow: card.max_context_length } : {}) });
           }
         }
-        if (options.length) catalog = withConfiguredModel(options);
+        if (options.length) {
+          catalog = withConfiguredModel(options);
+          vision = sees;
+        }
       } catch {
         // A failed refresh keeps the last usable catalog, including custom models.
       }
@@ -99,6 +113,9 @@ export const MistralDriver: ProviderDriver<MistralConfig> = {
     return createOpenAIChatRuntime({
       input, driverKind: "mistral", apiKey, apiUrl: config.url,
       tools: config.tools, models: () => catalog, refreshModels, contentText,
+      // 2026-10-28: the browser and the computer through the same tool bridge
+      // as the other chat engines; a model that reads no image gets text only
+      computerUse: imageTransportAllowed(config.url), imageInput: (model) => mistralSeesImages(model, vision),
       requestBody: (model, messages, stream) => ({ model, messages, stream }),
       httpErrorLabel: "Mistral",
       missingKeyError: "Save a Mistral API key in Settings → API keys, or set MISTRAL_API_KEY.",

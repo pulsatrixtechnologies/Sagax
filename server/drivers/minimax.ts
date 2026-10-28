@@ -9,6 +9,7 @@ import type { ModelCatalog, ProviderDriver, SendTurnInput } from "../contracts.t
 import { DATA_DIR } from "../config.ts";
 import { applyStoredEngineEnv } from "../engine-api-keys.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
+import { imageTransportAllowed } from "./chat-images.ts";
 
 const DRIVER_KIND = "minimax";
 const API_KEY_ENV = "MINIMAX_API_KEY";
@@ -135,6 +136,10 @@ export const MinimaxDriver: ProviderDriver<MinimaxConfig> = {
       apiKey: (turn) => minimaxKeyForTurn(input.environment, turn),
       apiUrl,
       tools: input.config.tools,
+      // 2026-10-28: the browser and the computer through the same tool bridge
+      // as the other chat engines. The MiniMax text models read no image:
+      // page reads and snapshots reach them as text, never a screenshot.
+      computerUse: imageTransportAllowed(apiUrl), imageInput: () => false,
       models: () => models,
       requestBody: (model, messages, stream) => ({
         model,
