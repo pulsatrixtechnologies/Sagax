@@ -888,7 +888,11 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // `--no-extensions` still loads an explicit `-e`, so the Sagax MCP
       // extension stays while the person's own pi extensions do not.
       const childArgs = [
-        ...PI_ARGS,
+        // #1276: a compact prompt (a local model) keeps pi's session, so the
+        // next turn resumes it (switch_session) and extends this very prompt:
+        // the local server's prefix cache serves everything but the new turn.
+        // Without it each turn replays the transcript into a fresh prompt.
+        ...(turn.compactPrompt ? PI_ARGS.filter((arg) => arg !== "--no-session") : PI_ARGS),
         ...piHostToolArgs(turn.withholdHostTools === true),
         ...(mcpTempDir ? ["-e", SPAWNED_PROXIES.piMcpExtension] : []),
       ];
@@ -1339,6 +1343,18 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         send(sessionPath ? { type: "switch_session", sessionPath } : { type: "new_session" });
         const hs = (await hsPromise) as { sessionFile?: string; sessionId?: string } | undefined;
         if (hs?.sessionFile) sessionFile = hs.sessionFile;
+        // #1276: pi answers new_session without the file; a compact turn
+        // asks for it, so the next turn resumes this session (switch_session).
+        if (!sessionFile && turn.compactPrompt) {
+          try {
+            const statePromise = awaitResponse("get_state");
+            send({ type: "get_state" });
+            const state = (await statePromise) as { sessionFile?: unknown } | undefined;
+            if (typeof state?.sessionFile === "string" && state.sessionFile) sessionFile = state.sessionFile;
+          } catch {
+            // no file: the next turn replays, as before
+          }
+        }
         sessionReady = true;
         emit({
           ...base(threadId, turnId),
