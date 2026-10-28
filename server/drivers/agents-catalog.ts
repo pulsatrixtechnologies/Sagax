@@ -1792,6 +1792,43 @@ export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "list_rooms", "post_to_room",
 ]);
 
+/** #1276: the tools at the heart of a chat turn, listed whole in a compact
+ * prompt (a local model) once the bot's own use is known: coordination,
+ * reactions, widgets, memory, files, computer choice, approvals and results
+ * paging. Never deferred (agents-catalog-deferred.test.ts). */
+export const COMPACT_CORE_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "list_bots", "ask_bot", "coordinate_bots", "send_to_bot", "route_message", "list_room_targets",
+  "delegate_bot", "check_delegation", "wait_delegation",
+  "react_to_message", "show_widget", "update_widget", "check_widget", "attach_file", "select_computer", "request_credential",
+  "memory_update", "memory_log", "session_search", "tool_result_read", "answer_approval", "act",
+]);
+
+/** The agents tools a compact turn lists whole (#1276). `core` "default" is
+ * every tool Claude Code would load up front (all but the deferred ones),
+ * which a bot with no recorded use keeps; "used" is the heart of a chat turn
+ * plus `pinned`, the bot's own most used tools. shared_computer is always
+ * listed: it is the one agents tool Claude asks about itself, so it never
+ * runs through call_tool. Every other tool is found with search_tools. */
+export function compactListed(name: string, input: { core: "default" | "used"; pinned: ReadonlySet<string>; coordinating: boolean }): boolean {
+  if (name === "shared_computer" || input.pinned.has(name)) return true;
+  if (input.core === "used") return COMPACT_CORE_AGENT_TOOL_NAMES.has(name);
+  return !DEFERRED_AGENT_TOOL_NAMES.has(name) && !(input.coordinating && DEFERRED_WHEN_COORDINATING.has(name));
+}
+
+/** SAGAX_COMPACT_TOOLS, read by the agents proxy; undefined lists as before. */
+export function compactToolsFromEnv(env: Record<string, string | undefined>): { core: "default" | "used"; pinned: ReadonlySet<string> } | undefined {
+  const raw = env.SAGAX_COMPACT_TOOLS;
+  if (!raw) return undefined;
+  try {
+    const value = JSON.parse(raw) as { core?: unknown; pinned?: unknown };
+    const core = value.core === "used" ? "used" : "default";
+    const pinned = Array.isArray(value.pinned) ? value.pinned.filter((name): name is string => typeof name === "string" && name.length > 0 && name.length <= 100) : [];
+    return { core, pinned: new Set(pinned) };
+  } catch {
+    return { core: "default", pinned: new Set() };
+  }
+}
+
 /** Deferred only in a coordinating turn, where it opens a separate job on
  * the bot itself and only when the person asked for one; elsewhere the
  * threads prompt presents it as the way to hand a teammate a job. */

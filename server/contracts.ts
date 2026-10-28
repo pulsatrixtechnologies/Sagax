@@ -135,8 +135,24 @@ export interface TurnAccessInput {
   engineHome?: string;
 }
 
+/** #1276: a turn on a local model sends a compact, stable prompt
+ * (server/compact-prompt.ts). */
+export interface CompactPromptInput {
+  /** Claude Code's auto memory folder: one per bot and person, the same for
+   * every conversation, so the system prompt does not change between them. */
+  memoryDir?: string;
+  /** The agents catalog: "default" lists what Claude Code loads up front,
+   * "used" the heart of a chat turn; `pinned` adds the bot's most used tools. */
+  agents: { core: "default" | "used"; pinned: string[] };
+  /** Per MCP server the bot owns: its tools listed whole (the bot's most
+   * used); a big catalog is searched for the rest. */
+  pinned: Record<string, string[]>;
+}
+
 export interface SendTurnInput {
   threadId: ThreadId;
+  /** #1276: send a compact, stable prompt (a local model). Absent: as before. */
+  compactPrompt?: CompactPromptInput;
   /** The bot this turn belongs to. threadIds are meant to be unique per bot
    * task, but a driver's process-level resource maps (permission-broker
    * socket, CLI session) key off threadId alone — botId lets a driver namespace

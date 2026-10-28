@@ -29,7 +29,9 @@ import { createInterface } from "node:readline";
 import { allowsTool, parseToolScope, type ToolScope } from "../shared/tool-scope.ts";
 
 import { resolveCliSpawn } from "./env-path.ts";
-import { directoryCallTarget, isDirectoryTool } from "./mcp-directory.ts";
+import { DESCRIBE_TOOL, SEARCH_TOOL, ToolDirectory, directoryCallTarget, isDirectoryTool, type CatalogTool, type DirectoryContext } from "./mcp-directory.ts";
+import { lenientToolValidator, schemaProblems } from "./mcp-schema-validator.ts";
+import { parseGateSearch, searchedCatalog } from "./mcp-gate-search.ts";
 import { QUERY_TOOL, QUERY_TOOL_NAME, ResultStore, answerQuery, describeShape, exampleQuery } from "./mcp-shape.ts";
 import { DEFAULT_RESULT_BUDGET, type HeldResult, trimResultText, trimStructured } from "./mcp-trim.ts";
 import { ToolNameAliases } from "./mcp-tool-names.ts";
@@ -56,7 +58,7 @@ function gateEnvironment(): NodeJS.ProcessEnv {
   }
 }
 /** The gate's own settings never reach the upstream server's environment. */
-const GATE_ENV_KEYS = ["SAGAX_GATE_NAME", "SAGAX_GATE_SPILL_DIR", "SAGAX_GATE_BUDGET", "SAGAX_GATE_UPSTREAM", "SAGAX_GATE_SPILL_HINT", "SAGAX_GATE_TOOL_SCOPE", "SAGAX_GATE_DIRECTORY", "SAGAX_GATE_TOOL_NAMES", "SAGAX_GATE_REPORT_DIR", "SAGAX_GATE_APPROVAL_SOCKET", "SAGAX_GATE_APPROVAL_TOKEN", "SAGAX_GATE_READ_ONLY", "SAGAX_GATE_MISUSE_MODE"];
+const GATE_ENV_KEYS = ["SAGAX_GATE_NAME", "SAGAX_GATE_SPILL_DIR", "SAGAX_GATE_BUDGET", "SAGAX_GATE_UPSTREAM", "SAGAX_GATE_SPILL_HINT", "SAGAX_GATE_TOOL_SCOPE", "SAGAX_GATE_DIRECTORY", "SAGAX_GATE_TOOL_NAMES", "SAGAX_GATE_REPORT_DIR", "SAGAX_GATE_APPROVAL_SOCKET", "SAGAX_GATE_APPROVAL_TOKEN", "SAGAX_GATE_READ_ONLY", "SAGAX_GATE_MISUSE_MODE", "SAGAX_GATE_SEARCH"];
 const gateEnv = gateEnvironment();
 const NAME = gateEnv.SAGAX_GATE_NAME || "mcp";
 const SPILL_DIR = gateEnv.SAGAX_GATE_SPILL_DIR || "";
@@ -77,6 +79,13 @@ const SPILL_HINT = gateEnv.SAGAX_GATE_SPILL_HINT === "1";
  * runs nothing and is answered by the directory. The proxy guarantees those
  * three names mean nothing else. */
 const DIRECTORY = gateEnv.SAGAX_GATE_DIRECTORY === "1";
+/** #1276, a compact prompt for a local model: the gate itself searches this
+ * server's catalog (mcp-directory.ts) when it is big, whatever the upstream
+ * (a stdio server or the remote proxy), and lists whole only the pinned
+ * tools: the ones this bot uses. Every other tool stays reachable through
+ * search_tools, describe_tool and call_tool, and call_tool is checked,
+ * approved and trimmed as the tool it runs. */
+const SEARCH = parseGateSearch(gateEnv.SAGAX_GATE_SEARCH, (message) => fail(message));
 /** `grok`: the engine skips tool names it cannot qualify (mcp-tool-names.ts).
  * The gate registers every tool under an admissible name and maps calls
  * back through an explicit alias map. Never a silent drop: every rename and
@@ -413,9 +422,133 @@ function callTarget(name: string, args: unknown): string | undefined {
 }
 /** JSON-RPC string and numeric IDs are separate, even when their text is equal. */
 const pending = new Map<string, Pending>();
+/** initialize requests in flight, read for the search context (#1276). */
+const initializeIds = new Set<string>();
+
+// ── #1276: the gate's own tool search (SAGAX_GATE_SEARCH, mcp-gate-search.ts) ──
+const searchContext: DirectoryContext = { server: NAME };
+interface SearchCatalog { directory: ToolDirectory; searched: boolean }
+let searchCatalog: SearchCatalog | undefined;
+let searchLoading: Promise<SearchCatalog> | undefined;
+let searchGeneration = 0;
+/** Once searched, always searched in this process: the engine was handed
+ * call_tool, and a tool it found must stay reachable through it. */
+let searchedOnce = false;
+let internalSeq = 0;
+/** The gate's own requests to the upstream (its catalog), by request key. */
+const internal = new Map<string, (message: Json) => void>();
+const SEARCH_CATALOG_MS = 120_000;
+
+function upstreamRequest(method: string, params: Json): Promise<Json> {
+  const id = `sagax-gate-${process.pid}-${++internalSeq}`;
+  const key = requestKey(id)!;
+  return new Promise<Json>((resolve, reject) => {
+    const timer = setTimeout(() => { internal.delete(key); reject(new Error("the server did not list its tools in time")); }, SEARCH_CATALOG_MS);
+    timer.unref?.();
+    internal.set(key, (message) => { clearTimeout(timer); resolve(message); });
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+  });
+}
+
+async function readUpstreamCatalog(): Promise<CatalogTool[]> {
+  const tools: CatalogTool[] = [];
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  for (let page = 0; page < 100; page += 1) {
+    const reply = await upstreamRequest("tools/list", cursor === undefined ? {} : { cursor });
+    if (reply.error !== undefined) throw new Error("the server refused to list its tools");
+    const result = reply.result;
+    if (!isRecord(result) || !Array.isArray(result.tools)) throw new Error("invalid tool catalog");
+    for (const tool of result.tools) if (isRecord(tool) && typeof tool.name === "string" && tool.name.trim()) tools.push(tool as CatalogTool);
+    const next = result.nextCursor;
+    if (next === undefined || next === null || next === "") return tools;
+    if (typeof next !== "string" || cursors.has(next)) throw new Error("invalid catalog cursor");
+    cursors.add(next);
+    cursor = next;
+  }
+  throw new Error("tool catalog has too many pages");
+}
+
+const searchValidators = new WeakMap<CatalogTool, ReturnType<typeof lenientToolValidator>>();
+function argumentProblems(tool: CatalogTool, args: Json): string[] | undefined {
+  let validate = searchValidators.get(tool);
+  if (validate === undefined) {
+    validate = lenientToolValidator(tool.inputSchema);
+    searchValidators.set(tool, validate);
+  }
+  if (!validate) return undefined;
+  try { return validate(args) ? undefined : schemaProblems(validate.errors); } catch { return undefined; }
+}
+
+function loadSearch(): Promise<SearchCatalog> {
+  if (searchCatalog) return Promise.resolve(searchCatalog);
+  if (!searchLoading) {
+    const started = searchGeneration;
+    const read = readUpstreamCatalog().then((upstream) => {
+      const allowed = (name: string) => !scope || allowsTool(scope, { kind: "mcp", server: NAME, name });
+      const directory = new ToolDirectory(upstream.filter((tool) => allowed(tool.name)), {
+        withheld: upstream.filter((tool) => !allowed(tool.name)).map((tool) => tool.name),
+        check: argumentProblems,
+      });
+      searchedOnce ||= searchedCatalog(directory.tools, SEARCH!);
+      const built = { directory, searched: searchedOnce };
+      if (searchGeneration === started) searchCatalog = built;
+      return built;
+    });
+    searchLoading = read;
+    void read.catch(() => {}).finally(() => { if (searchLoading === read) searchLoading = undefined; });
+  }
+  return searchLoading;
+}
+
+function reply(id: unknown, result: unknown): void {
+  process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id, result })}\n`);
+}
+
+/** tools/list and the three directory tools, answered by the gate; a
+ * call_tool that names a tool continues as that tool's own call. */
+async function searchRoute(line: string, message: Json): Promise<void> {
+  const id = requestKey(message.id);
+  const params = isRecord(message.params) ? message.params : undefined;
+  try {
+    if (message.method === "tools/list") {
+      if (!id) return rejectRequest(message.id, -32600, "Tool listing needs a request ID");
+      if (params?.cursor !== undefined) return rejectRequest(message.id, -32602, "Invalid cursor");
+      const { directory, searched } = await loadSearch();
+      const tools: Json[] = searched ? [...directory.pinned(SEARCH!.pinned), ...directory.listed(searchContext)] : [...directory.tools];
+      return reply(message.id, { tools: BUDGET > 0 ? [...tools.filter((tool) => tool.name !== QUERY_TOOL_NAME), QUERY_TOOL] : tools });
+    }
+    const { directory, searched } = await loadSearch();
+    const name = params?.name;
+    if (!searched || typeof name !== "string" || !isDirectoryTool(name)) return routeLine(line);
+    if (!id) return;
+    if (name === SEARCH_TOOL) return reply(message.id, await directory.search(params!.arguments));
+    if (name === DESCRIBE_TOOL) return reply(message.id, directory.describe(params!.arguments));
+    const call = directory.call(params!.arguments);
+    if ("answer" in call) return reply(message.id, call.answer);
+    const upstream = { ...message, params: { ...(isRecord(params!._meta) ? { _meta: params!._meta } : {}), name: call.name, arguments: call.arguments } };
+    return routeLine(JSON.stringify(upstream));
+  } catch (error) {
+    process.stderr.write(`mcp-gate(${NAME}): tool search failed: ${String(error)}\n`);
+    return rejectRequest(message.id, -32603, "This server's tools could not be listed. Try again.");
+  }
+}
 
 // client -> server: verbatim, but remember which ids are tool calls
 createInterface({ input: process.stdin }).on("line", (line) => {
+  if (SEARCH && !ALIASES && line.trim()) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch { /* routeLine refuses or relays it */ }
+    if (isRecord(parsed) && parsed.jsonrpc === "2.0" && (parsed.method === "tools/list" || (parsed.method === "tools/call" && isRecord(parsed.params) && isDirectoryTool(parsed.params.name)))) {
+      const pendingSearch = searchRoute(line, parsed).finally(() => heldCalls.delete(pendingSearch));
+      heldCalls.add(pendingSearch);
+      return;
+    }
+  }
+  routeLine(line);
+});
+
+function routeLine(line: string): void {
   let message: Json | undefined;
   if (line.trim()) {
     try {
@@ -483,7 +616,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     }
   }
   forward(line, message, id, params);
-});
+}
 
 /** Calls waiting for an approval: the upstream's stdin closes only after them. */
 const heldCalls = new Set<Promise<void>>();
@@ -498,6 +631,7 @@ function misuseGateRefusal(params: Json | undefined): string | null {
 }
 
 function forward(line: string, message: Json | undefined, id: string | undefined, params: Json | undefined): void {
+  if (SEARCH && id && message?.method === "initialize") initializeIds.add(id);
   if (id && typeof message?.method === "string") {
     if (scope && pending.has(id)) fail("duplicate request ID on a restricted connection");
     if (message.method === "tools/call") {
@@ -532,10 +666,29 @@ createInterface({ input: child.stdout }).on("line", (line) => {
     return;
   }
   const id = typeof message.method === "string" ? undefined : requestKey(message.id);
+  // The gate's own catalog requests (tool search) are never relayed.
+  if (id !== undefined && internal.has(id)) {
+    const resolve = internal.get(id)!;
+    internal.delete(id);
+    resolve(message);
+    return;
+  }
+  if (SEARCH && message.method === "notifications/tools/list_changed") {
+    searchGeneration += 1;
+    searchCatalog = undefined;
+    searchLoading = undefined;
+  }
   const request = id === undefined ? undefined : pending.get(id);
   if (scope && id !== undefined && !request) fail("unrequested upstream response on a restricted connection");
   if (id !== undefined) pending.delete(id);
   const result = message.result;
+  // Who the server is, for the directory tools' own descriptions.
+  if (id !== undefined && initializeIds.delete(id) && isRecord(result)) {
+    const info = isRecord(result.serverInfo) ? result.serverInfo : {};
+    const title = typeof info.title === "string" ? info.title : typeof info.name === "string" ? info.name : undefined;
+    if (title) searchContext.title = title;
+    if (typeof result.instructions === "string") searchContext.instructions = result.instructions;
+  }
   if (scope && request?.kind === "list" && message.error === undefined) {
     if (!isRecord(result) || !Array.isArray(result.tools)
       || !result.tools.every((tool: unknown) => isRecord(tool) && typeof tool.name === "string" && tool.name.trim().length > 0)

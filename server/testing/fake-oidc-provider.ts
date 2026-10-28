@@ -199,6 +199,9 @@ export interface FakeOidcProvider {
    * (sub, profile, outcome), revocations of exchanged tokens, and /mcp. */
   profiles: Array<{ id: string; slug: string; name: string; description: string }>;
   profilesBySub: Map<string, string[]>;
+  /** The profile's /mcp catalog; absent: one small api_list (a measurement
+   * serves a catalog as big as a real organization's, #1276). */
+  mcpTools?: unknown[];
   exchanges: Array<{ sub: string | null; profile: string | null; ok: boolean; error?: string; token?: string }>;
   exchangeRevoked: string[];
   mcpRequests: FakeMcpRequest[];
@@ -740,7 +743,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         const result = frame.method === "initialize"
           ? { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fake-perspicax", version: "1" } }
           : frame.method === "tools/list"
-            ? { tools: [{ name: "api_list", description: "List the APIs of this profile", inputSchema: { type: "object" } }] }
+            ? { tools: provider.mcpTools ?? [{ name: "api_list", description: "List the APIs of this profile", inputSchema: { type: "object" } }] }
             : frame.method === "tools/call"
               ? { content: [{ type: "text", text: `profile ${entry.profile} for ${entry.sub}` }] }
               : {};

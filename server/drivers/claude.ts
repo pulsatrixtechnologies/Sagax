@@ -57,6 +57,10 @@ import { claudeAuthFailure, claudeAuthRecovery } from "./claude-auth-recovery.ts
 import { sessionIdlePolicy } from "./session-idle.ts";
 import { contractChanges, PERSPICAX_TOKEN_ENV, switchesCover, turnFiles, turnSwitches, warmCommsEnv, warmPerspicaxEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
+import { searchedToolCall } from "../../shared/searched-tool-call.ts";
+
+/** The directory tools of a searched server (mcp-directory.ts). */
+const COMPACT_DIRECTORY_TOOLS = ["search_tools", "describe_tool", "call_tool"] as const;
 import {
   applyClaudeInject,
   decodeInjectId,
@@ -1607,6 +1611,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       switches?: Record<string, boolean>;
       /** the MCP servers it was launched with (names), for the relaunch log */
       mcpNames?: string[];
+      /** #1276: the servers whose catalog is searched (call_tool reads as its target) */
+      searchedMounts: ReadonlySet<string>;
       /** the volatile half of the system prompt this process was launched
        * with (see SendTurnInput.systemVolatile). A later turn whose volatile
        * text differs delivers the difference in-turn rather than relaunching. */
@@ -2063,7 +2069,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // Not when the turn names its built-ins (a guest's turn, an instance
         // tool list) without ToolSearch: a deferred tool would be unreachable.
         const toolSearch = !turn.guestConfined && (config.tools === undefined || config.tools.includes("ToolSearch"));
-        const agentsEnv = toolSearch ? { ...turn.integrations.agents.env, SAGAX_DEFER_RARE_TOOLS: "1" } : turn.integrations.agents.env;
+        // #1276: a compact prompt lists the core and searches the rest
+        // itself (agents-proxy.ts); Claude Code's own tool search is off.
+        const agentsEnv = turn.compactPrompt
+          ? { ...turn.integrations.agents.env, SAGAX_COMPACT_TOOLS: JSON.stringify({ core: turn.compactPrompt.agents.core, pinned: [...new Set(turn.compactPrompt.agents.pinned)].sort() }) }
+          : toolSearch ? { ...turn.integrations.agents.env, SAGAX_DEFER_RARE_TOOLS: "1" } : turn.integrations.agents.env;
         mcpServers.agents = { ...turn.integrations.agents, env: agentsEnv, alwaysLoad: true };
         // The process is kept from turn to turn: the turn's comms token and
         // depth (new every turn) ride a file the proxy reads on each call,
@@ -2074,6 +2084,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           mcpServers.agents = { ...turn.integrations.agents, env: warmCommsEnv(threadId, botId, agentsEnv), alwaysLoad: true };
         }
         allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
+        // The directory tools stand in for pre-allowed agents tools.
+        if (turn.compactPrompt && !allowed.includes("mcp__agents")) allowed.push(...COMPACT_DIRECTORY_TOOLS.map((tool) => `mcp__agents__${tool}`));
       }
       if (turn.integrations?.phone) {
         mcpServers.phone = { ...turn.integrations.phone };
@@ -2175,9 +2187,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // permission broker, computer, browser, agents, dweb) are already
       // bounded and are deliberately left alone.
       // Each server's own result size limit, else the app's (customServerGate).
+      // #1276: in a compact prompt every server the bot owns is gated with the
+      // gate's own tool search (mcp-gate-search.ts): a big catalog lists only
+      // the bot's most used tools whole.
+      const searchedMounts = new Set<string>(turn.compactPrompt && turn.integrations?.agents ? ["agents"] : []);
       for (const name of turn.toolScope === undefined ? botOwned : Object.keys(mcpServers)) {
         if (!canUseMcpServer(turn.toolScope, name)) { delete mcpServers[name]; continue; }
-        const gated = gateServer({ name, server: mcpServers[name], threadId, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope, ...customServerGate(name, botOwned.has(name), turn.integrations?.customResultBudgets, turnEnvironment) });
+        const search = turn.compactPrompt && botOwned.has(name) ? { pinned: turn.compactPrompt.pinned[name] ?? [] } : undefined;
+        if (search) searchedMounts.add(name);
+        const gated = gateServer({ name, server: mcpServers[name], threadId, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope, ...(search ? { search } : {}), ...customServerGate(name, botOwned.has(name), turn.integrations?.customResultBudgets, turnEnvironment) });
         if (gated) mcpServers[name] = { ...gated, ...((mcpServers[name] as { alwaysLoad?: unknown })?.alwaysLoad === true ? { alwaysLoad: true } : {}) };
       }
       // an allowed name is mcp__<server> or mcp__<server>__<tool> (agentsAllowedTools)
@@ -2193,7 +2211,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (permissionMode !== "bypassPermissions") {
         args.push("--permission-prompt-tool", "mcp__ogb__approve");
       }
-      const permissionEnv = { ...NODE_ENV_FLAG, ...(turn.toolScope !== undefined ? { SAGAX_PERMISSION_TOOL_SCOPE: JSON.stringify(turn.toolScope) } : {}) };
+      const permissionEnv = {
+        ...NODE_ENV_FLAG,
+        ...(turn.toolScope !== undefined ? { SAGAX_PERMISSION_TOOL_SCOPE: JSON.stringify(turn.toolScope) } : {}),
+        ...(searchedMounts.size ? { SAGAX_PERMISSION_SEARCHED: JSON.stringify([...searchedMounts].sort()) } : {}),
+      };
+      // Finding a tool runs nothing: search_tools and describe_tool of a
+      // searched server never ask (call_tool asks as the tool it runs).
+      for (const name of searchedMounts) {
+        if (name !== "agents" && mcpServers[name]) allowed.push(`mcp__${name}__search_tools`, `mcp__${name}__describe_tool`);
+      }
       mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, socketPath], env: permissionEnv, alwaysLoad: true };
       allowed.push("mcp__ogb", ...gateQueryTools(mcpServers));
       // A guest's turn pre-allows only the harness's own tools: anything
@@ -2253,6 +2280,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         const deny = remoteSupportDenyRules();
         if (allow.length || deny.length) settings.permissions = { ...(allow.length ? { allow } : {}), ...(deny.length ? { deny } : {}) };
       }
+      // #1276: a compact prompt keeps Claude Code's auto memory in one folder
+      // per bot and person, so its path (in the system prompt) is the same in
+      // every conversation, and turns Claude Code's own tool search off: the
+      // tools listed are exactly the ones Sagax lists, the same every time.
+      if (turn.compactPrompt?.memoryDir) settings.autoMemoryDirectory = turn.compactPrompt.memoryDir;
+      if (turn.compactPrompt) env.ENABLE_TOOL_SEARCH = "false";
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;
       if (authSettingsPath) args.push("--settings", authSettingsPath);
@@ -2292,6 +2325,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         proxy: turn.networkProxy?.url ?? null,
         // hooks on/off changes the settings file the process was launched with
         hooks: Boolean(hooks),
+        // #1276: a compact prompt is another launch (memory folder, tool search)
+        compact: turn.compactPrompt ? { memoryDir: turn.compactPrompt.memoryDir ?? null } : null,
         // Slice 4: another person's credentials never reuse this process.
         access: turn.access?.identity ?? null,
         // A changed command variable starts a fresh process (a digest only).
@@ -2553,6 +2588,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         turnFiles: turnFiles(mcpServers),
         contract,
         mcpNames: Object.keys(mcpServers),
+        searchedMounts,
         // Launched with the stable half only, a warm process holds no
         // volatile half until its first real turn delivers it.
         ...(turn.warmOnly === true && held
@@ -2828,16 +2864,18 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             }
             for (const b of Array.isArray(msg.content) ? msg.content : []) {
               if (b.type === "tool_use") {
-                if (typeof b.id === "string" && typeof b.name === "string") session.toolNames.set(b.id, b.name);
+                // #1276: a call_tool on a searched server reads as the tool it runs
+                const runs = typeof b.name === "string" ? searchedToolCall(b.name, b.input, session.searchedMounts) : { name: b.name, input: b.input };
+                if (typeof b.id === "string" && typeof runs.name === "string") session.toolNames.set(b.id, runs.name);
                 emit({
                   ...base(threadId, currentTurnId()),
                   type: "item.started",
                   itemType: "tool",
                   itemId: b.id,
-                  title: b.name,
-                  summary: commandSummary(b.input),
-                  input: toolDetailPreview(b.input),
-                  ...filesField(writtenFilesFromToolInput(b.name, withAbsolutePaths(b.name, b.input, cwd))),
+                  title: runs.name,
+                  summary: commandSummary(runs.input),
+                  input: toolDetailPreview(runs.input),
+                  ...filesField(writtenFilesFromToolInput(runs.name, withAbsolutePaths(runs.name, runs.input, cwd))),
                   // a sub-agent's call: nested under the Agent call that started it
                   ...(typeof o.parent_tool_use_id === "string" && o.parent_tool_use_id ? { parentItemId: o.parent_tool_use_id } : {}),
                 });

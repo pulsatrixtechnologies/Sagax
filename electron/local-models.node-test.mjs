@@ -228,7 +228,7 @@ test("the bridge forwards /v1/messages to an allowed loopback base and nothing e
   assert.equal(seen.length, 2);
 });
 
-test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a no for 5 s, and failures are not cached", async () => {
+test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a no for a minute, and failures are not cached", async () => {
   resetAnthropicProbeCache();
   const base = "http://127.0.0.1:8002/v1";
   let clock = 1000;
@@ -244,11 +244,11 @@ test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a 
   clock += 61_000;
   assert.equal(await probeAnthropicMessages(base, answer(404), now), false);
   assert.equal(calls.length, 2);
-  // A no is reused for 5 s only.
-  clock += 4000;
+  // A no is reused for a minute: four 15 s ticks ask nothing.
+  clock += 45_000;
   assert.equal(await probeAnthropicMessages(base, answer(400), now), false);
   assert.equal(calls.length, 2);
-  clock += 1500;
+  clock += 16_000;
   assert.equal(await probeAnthropicMessages(base, answer(400), now), true);
   assert.equal(calls.length, 3);
   for (const status of [405, 501, 503]) {
@@ -266,6 +266,39 @@ test("the Anthropic probe is one body-less POST, a yes cached for 10 minutes, a 
   const before = calls.length;
   assert.equal(await probeAnthropicMessages("http://10.0.0.8:8002/v1", answer(200), now), false);
   assert.equal(calls.length, before);
+});
+
+test("the probe names a served model, and a 404 refusing a model is a yes (oMLX), a route 404 a no", async () => {
+  resetAnthropicProbeCache();
+  const base = "http://127.0.0.1:8000/v1";
+  const now = () => 1000;
+  const bodies = [];
+  const modelNotFound = async (_url, init) => {
+    bodies.push(init.body);
+    return new Response(JSON.stringify({ detail: "Model 'probe' not found" }), { status: 404, headers: { "content-type": "application/json" } });
+  };
+  assert.equal(await probeAnthropicMessages(base, modelNotFound, now, undefined, "local-35b"), true);
+  assert.equal(bodies[0], '{"model":"local-35b","max_tokens":1,"messages":[]}');
+  resetAnthropicProbeCache();
+  const anthropicShape = async () => new Response(JSON.stringify({ type: "error", error: { type: "not_found_error", message: "model: probe" } }), { status: 404 });
+  assert.equal(await probeAnthropicMessages(base, anthropicShape, now), true);
+  resetAnthropicProbeCache();
+  const routeMissing = async () => new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 });
+  assert.equal(await probeAnthropicMessages(base, routeMissing, now), false);
+  resetAnthropicProbeCache();
+  assert.equal(await probeAnthropicMessages(base, async () => new Response("Not Found", { status: 404 }), now), false);
+  resetAnthropicProbeCache();
+  // The catalog probe passes the first model it read.
+  const seen = [];
+  const catalog = async (url, init) => {
+    seen.push({ url, body: init.body });
+    if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [{ id: "local-35b" }, { id: "local-122b" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ detail: "Model 'local-35b' is loading" }), { status: 400 });
+  };
+  const probed = await probeLoopbackCatalog(base, catalog);
+  assert.equal(probed.anthropic, true);
+  assert.equal(seen[1].body, '{"model":"local-35b","max_tokens":1,"messages":[]}');
+  resetAnthropicProbeCache();
 });
 
 test("a busy server keeps its last Anthropic answer: a timeout or a 5xx is not a no", async () => {
