@@ -111,6 +111,13 @@ describe("RoutinesSection", () => {
     expect(markup).not.toContain("data-routines-hint");
   });
 
+  // The "..." next to the + carries Sort by prefix for as long as a title starts
+  // with [X], whether or not the banner was closed.
+  it("shows the section's more menu only while a title starts with a [Prefix]", () => {
+    expect(render([{ ...activeRoutine, name: "[Reports] Morning brief" }], [])).toContain("data-routines-section-more");
+    expect(render([activeRoutine], [])).not.toContain("data-routines-section-more");
+  });
+
   // The bot panel lists each routine with its name and when it runs. Pause,
   // Resume, the run logs and Delete live on the routine's own page.
   it("renders each routine's name with an on/off switch on the row", () => {

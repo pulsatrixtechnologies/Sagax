@@ -134,4 +134,18 @@ final class RoutineFoldersTests: XCTestCase {
         store.setCollapsed(false, botId: "bot-1", folder: "Digests")
         XCTAssertFalse(store.isCollapsed(botId: "bot-1", folder: "Digests"))
     }
+
+    /// Sort by prefix stays on offer while a [X] title sits in no folder
+    /// (the desktop's `routinePrefixPlan`).
+    func testPrefixCandidatesAreTheBracketedTitlesInNoFolder() throws {
+        let response = try decode(#"""
+        {"routines":[\#(routine("r1", "[Reports] Morning summary")),\#(routine("r2", "[Reports]")),
+                     \#(routine("r3", "Water plants")),\#(routine("r4", "[Home] Lights", folder: "Home"))],
+         "runs":[]}
+        """#)
+        XCTAssertEqual(RoutineFolders.prefixFolder("[Reports] - Morning summary")?.folder, "Reports")
+        XCTAssertEqual(RoutineFolders.prefixFolder("[Reports] - Morning summary")?.name, "Morning summary")
+        XCTAssertNil(RoutineFolders.prefixFolder("[Reports]"))
+        XCTAssertEqual(RoutineFolders.prefixCandidates(response.routines).map(\.id), ["r1"])
+    }
 }

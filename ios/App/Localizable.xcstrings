@@ -1,6 +1,30 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Sort by prefix": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sort by prefix" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ranger par préfixe" } }
+      }
+    },
+    "Sorted into folders": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sorted into folders" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rangé dans des dossiers" } }
+      }
+    },
+    "The prefixes left the titles.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The prefixes left the titles." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les préfixes ont quitté les titres." } }
+      }
+    },
+    "Sort by prefix: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sort by prefix: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ranger par préfixe : %@" } }
+      }
+    },
     "My engines": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "My engines" } },

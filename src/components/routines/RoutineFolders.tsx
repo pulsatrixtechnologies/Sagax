@@ -7,15 +7,18 @@
 // Delete) and its + (a new routine in that folder). A row's menu (right
 // click, its "…", Shift+F10) moves it: the folders, New folder… and Remove
 // from folder. Rows can also be dragged onto a folder. When titles start
-// with "[X]", one quiet line offers to sort them into folders, once per bot,
-// and the change can be undone. Nothing is filed without that click.
+// with "[X]", one quiet line offers to sort them into folders; it is marked
+// seen only when the sort worked or the person closed it with the x (a failed
+// try or an older server leaves it). "Sort by prefix" also stays in the
+// section's "..." menu and the folder menu while a [X] title remains. The
+// change can be undone. Nothing is filed without that click.
 //
 // An older server has no folders (shared/server-features.ts): the row menu
 // keeps "Move to folder" with its items disabled and the neutral "Available
 // after the server update.", the prefix offer and dragging stay away, and a
 // call that still meets "no route" says the same line, never a red error.
 import { ArrowDown, ArrowUp, Check, ChevronRight, FolderInput, FolderMinus, FolderPlus, MoreHorizontal, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 import { api, useStore, type Bot } from "@/state/store";
@@ -28,7 +31,7 @@ import { featureMissingOnServer } from "@/lib/server-route";
 import {
   answerRoutinePrefixOffer,
   collapsedRoutineFolders,
-  routinePrefixOfferAnswered,
+  settleRoutinePrefixOffer,
   saveCollapsedRoutineFolders,
 } from "@/lib/routine-folder-prefs";
 import {
@@ -46,15 +49,28 @@ interface FolderAnswer { folders: string[]; routines: Routine[]; undo?: RoutineF
 
 type MenuState =
   | { kind: "row"; routine: Routine; x: number; y: number; trigger: HTMLElement; naming?: boolean }
-  | { kind: "folder"; folder: string; x: number; y: number; trigger: HTMLElement };
+  | { kind: "folder"; folder: string; x: number; y: number; trigger: HTMLElement }
+  | { kind: "section"; x: number; y: number; trigger: HTMLElement };
+
+/** What the Routines section's "…" asks of the list. */
+export interface RoutineFolderControl {
+  openSectionMenu: (at: { x: number; y: number }, trigger: HTMLElement) => void;
+}
 
 type Notice = { text: string; undo: RoutineFolderUndo };
 
 const EMPTY: string[] = [];
 
+/** Sort by prefix stays on offer while a title starts with [X] and the person
+ * may change the routines; a server known to lack folders hides it. */
+export function canSortRoutinesByPrefix(routines: Routine[], supported: boolean): boolean {
+  const editable = routines.length === 0 || routines.some((routine) => routine.canEdit !== false);
+  return editable && supported && routinePrefixPlan(routines).length > 0;
+}
+
 const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover focus-visible:bg-hover focus-visible:outline-none disabled:opacity-50";
 
-export function RoutineFolderList({ bot, routines, runs, grouped, loading, error, viewerPrincipalId, onOpen, onCreateIn }: {
+export function RoutineFolderList({ bot, routines, runs, grouped, loading, error, viewerPrincipalId, onOpen, onCreateIn, controlRef }: {
   bot: Bot;
   routines: Routine[];
   runs: RoutineRun[];
@@ -65,6 +81,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
   onOpen: (routine: Routine) => void;
   /** The folder's +: a new routine in that folder. */
   onCreateIn: (folder: string) => void;
+  controlRef?: RefObject<RoutineFolderControl | null>;
 }) {
   const { state, dispatch } = useStore();
   const order = state.routineFolders?.[bot.id] ?? EMPTY;
@@ -79,15 +96,19 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [offerAnswered, setOfferAnswered] = useState(() => routinePrefixOfferAnswered(bot.id));
+  const prefixPlan = useMemo(() => routinePrefixPlan(routines), [routines]);
+  const settle = () => settleRoutinePrefixOffer(bot.id, { loaded: routines.length > 0, hasPrefixTitles: prefixPlan.length > 0, hasFolders: order.length > 0 || routines.some((routine) => !!routine.folder) });
+  const [offerAnswered, setOfferAnswered] = useState(settle);
   const [dragging, setDragging] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pending = useRef(new Set<string>());
-  useEffect(() => { setCollapsed(collapsedRoutineFolders(bot.id)); setOfferAnswered(routinePrefixOfferAnswered(bot.id)); setNotice(null); }, [bot.id]);
-
-  const prefixPlan = useMemo(() => routinePrefixPlan(routines), [routines]);
+  useEffect(() => { setCollapsed(collapsedRoutineFolders(bot.id)); setNotice(null); }, [bot.id]);
+  // The bot changed, or its routines just loaded: the soft migration runs.
+  useEffect(() => { setOfferAnswered(settle()); }, [bot.id, routines.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  useImperativeHandle(controlRef, () => ({ openSectionMenu: (at, trigger) => setMenu({ kind: "section", x: at.x, y: at.y, trigger }) }), []);
   const prefixFolders = new Set(prefixPlan.map((step) => routineFolderKey(step.folder))).size;
+  const showSortAction = editable && supported && prefixPlan.length > 0;
   const showOffer = editable && supported && !offerAnswered && !notice && prefixPlan.length > 0;
 
   const act = async (body: RoutineFolderAction): Promise<FolderAnswer | null> => {
@@ -145,10 +166,13 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
     if (answer) setNotice({ text: t("routineFolders.deleted", { name: folder }), undo });
   };
   const sortByPrefix = async () => {
+    const answer = await act({ action: "sort-by-prefix", botId: bot.id });
+    // Marked seen only when it worked: a failure, or a server without the
+    // route, leaves the offer and the menu action where they were.
+    if (!answer) return;
     answerRoutinePrefixOffer(bot.id);
     setOfferAnswered(true);
-    const answer = await act({ action: "sort-by-prefix", botId: bot.id });
-    if (answer?.undo) setNotice({ text: t("routineFolders.sorted", { count: answer.routines.length, folders: prefixFolders }), undo: answer.undo });
+    if (answer.undo) setNotice({ text: t("routineFolders.sorted", { count: answer.routines.length, folders: prefixFolders }), undo: answer.undo });
   };
   const undo = async () => {
     if (!notice) return;
@@ -272,7 +296,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
 
     {menu && createPortal(<div className="fixed inset-0 z-40" onMouseDown={() => closeMenu(false)} onContextMenu={(event) => { event.preventDefault(); closeMenu(false); }}>
       <div role="menu" data-routine-folder-menu={menu.kind}
-        aria-label={menu.kind === "row" ? menu.routine.name : menu.folder}
+        aria-label={menu.kind === "row" ? menu.routine.name : menu.kind === "folder" ? menu.folder : t("computer.tab.routines")}
         style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 248)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 320)) }}
         className="absolute flex max-h-[min(420px,80vh)] w-[240px] flex-col gap-0.5 overflow-y-auto rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px] text-ink shadow-lg"
         onMouseDown={(event) => event.stopPropagation()}
@@ -280,7 +304,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
           if (event.key === "Escape" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); closeMenu(); return; }
           if (!(event.target instanceof HTMLInputElement)) navigateThreadMenu(event);
         }}>
-        {menu.kind === "row" ? (menu.naming
+        {menu.kind === "section" ? <SortByPrefixItem autoFocus onSelect={() => { closeMenu(); void sortByPrefix(); }} /> : menu.kind === "row" ? (menu.naming
           ? <FolderNameInput label={t("routineFolders.newFolderLabel")} onCancel={() => closeMenu()} onSave={async (name) => { closeMenu(); await move([menu.routine.id], name); }} />
           : <RowMenuItems routine={menu.routine} folders={folders} unavailable={!supported}
             onMove={(folder) => { closeMenu(); void move([menu.routine.id], folder); }}
@@ -293,6 +317,8 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
             onRename={() => { closeMenu(false); setRenaming(menu.folder); }}
             onMove={(direction) => { closeMenu(); reorder(menu.folder, direction); }}
             onSetEnabled={(enabled) => { closeMenu(); setFolderEnabled(menu.folder, enabled); }}
+            canSortByPrefix={showSortAction}
+            onSortByPrefix={() => { closeMenu(); void sortByPrefix(); }}
             onDelete={() => { closeMenu(false); void removeFolder(menu.folder); }} />}
       </div>
     </div>, document.body)}
@@ -376,8 +402,14 @@ function RowMenuItems({ routine, folders, unavailable, onMove, onNewFolder }: { 
   </>;
 }
 
-function FolderMenuItems({ canMoveUp, canMoveDown, anyOn, anyRoutine, onRename, onMove, onSetEnabled, onDelete }: {
-  canMoveUp: boolean; canMoveDown: boolean; anyOn: boolean; anyRoutine: boolean;
+function SortByPrefixItem({ onSelect, autoFocus }: { onSelect: () => void; autoFocus?: boolean }) {
+  return <button type="button" role="menuitem" autoFocus={autoFocus} data-routine-sort-by-prefix="" className={MENU_ITEM} onClick={onSelect}>
+    <span aria-hidden="true"><FolderInput size={14} /></span>{t("routineFolders.offerSort")}
+  </button>;
+}
+
+function FolderMenuItems({ canMoveUp, canMoveDown, anyOn, anyRoutine, canSortByPrefix, onSortByPrefix, onRename, onMove, onSetEnabled, onDelete }: {
+  canMoveUp: boolean; canMoveDown: boolean; anyOn: boolean; anyRoutine: boolean; canSortByPrefix: boolean; onSortByPrefix: () => void;
   onRename: () => void; onMove: (direction: -1 | 1) => void; onSetEnabled: (enabled: boolean) => void; onDelete: () => void;
 }) {
   const items: Array<{ key: string; label: string; icon: ReactNode; onSelect: () => void; group: number; danger?: boolean }> = [
@@ -387,6 +419,7 @@ function FolderMenuItems({ canMoveUp, canMoveDown, anyOn, anyRoutine, onRename, 
     ...(anyRoutine ? [anyOn
       ? { key: "pause", label: t("routineFolders.pauseAll"), icon: <Pause size={14} />, onSelect: () => onSetEnabled(false), group: 1 }
       : { key: "resume", label: t("routineFolders.resumeAll"), icon: <Play size={14} />, onSelect: () => onSetEnabled(true), group: 1 }] : []),
+    ...(canSortByPrefix ? [{ key: "sort-by-prefix", label: t("routineFolders.offerSort"), icon: <FolderInput size={14} />, onSelect: onSortByPrefix, group: 1 }] : []),
     { key: "delete", label: t("routineFolders.delete"), icon: <Trash2 size={14} />, onSelect: onDelete, group: 2, danger: true },
   ];
   return <>{items.map((item, index) => <Fragment key={item.key}>

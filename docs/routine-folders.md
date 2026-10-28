@@ -20,7 +20,11 @@ Bot panel > Details > Routines:
   back to no folder; none is deleted; Undo puts them back).
 - A folder's **+** creates a new routine in that folder.
 - When titles start with a bracketed prefix ("[Reports] Morning summary"), a
-  quiet line offers **Sort by prefix** once per bot. It files each such
+  quiet line offers **Sort by prefix**. The line is marked seen only when
+  the sort worked or the person closed it with the x; a failed try, or a
+  server without the route, leaves it. The action also stays in the Routines
+  section's "..." menu and in a folder's menu (iPhone and iPad: the Routines
+  menu, the bot panel and the folder menu) while a [X] title remains. It files each such
   routine in the folder named by its prefix and removes the prefix from the
   title. **Undo** restores the titles, folders and order. Nothing is filed
   without that click.

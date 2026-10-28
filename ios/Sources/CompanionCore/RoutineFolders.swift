@@ -48,6 +48,25 @@ public enum RoutineFolders {
         return cut.isEmpty ? nil : cut
     }
 
+    /// "[Prefix] Title" read as a folder and the title without it (the
+    /// desktop's `routinePrefixFolder`). Nil: no leading bracketed prefix, or
+    /// nothing left after it.
+    public static func prefixFolder(_ name: String) -> (folder: String, name: String)? {
+        guard let regex = try? NSRegularExpression(pattern: #"^\s*\[([^\]\[\n]{1,80})\]\s*[-:·|]?\s*(.+)$"#),
+              let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+              let head = Range(match.range(at: 1), in: name),
+              let tail = Range(match.range(at: 2), in: name),
+              let folder = clean(String(name[head]))
+        else { return nil }
+        let rest = String(name[tail]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return rest.isEmpty ? nil : (folder, rest)
+    }
+
+    /// The routines Sort by prefix would file: a [X] title, in no folder yet.
+    public static func prefixCandidates(_ routines: [Routine]) -> [Routine] {
+        routines.filter { ($0.folder ?? "").isEmpty && prefixFolder($0.name) != nil }
+    }
+
     /// The spelling the bot already uses for this name, else the name.
     public static func canonical(_ name: String, in order: [String]) -> String {
         order.first { key($0) == key(name) } ?? name

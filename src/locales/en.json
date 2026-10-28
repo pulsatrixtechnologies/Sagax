@@ -11558,6 +11558,7 @@
   "routineFolders.countLabel": "Routines in this folder: {count}",
   "routineFolders.allPaused": "Paused",
   "routineFolders.folderMenu": "More for {name}",
+  "routineFolders.sectionMenu": "More for the routines",
   "routineFolders.newIn": "New routine in {name}",
   "routineFolders.rowMenu": "More for {name}",
   "routineFolders.moveTo": "Move to folder",
