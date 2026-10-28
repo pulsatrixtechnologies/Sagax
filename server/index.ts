@@ -639,6 +639,7 @@ import { fetchSkillFromSource } from "./skill-fetch.ts";
 import { pickBotName } from "./names.ts";
 import { botSkillTemplateSchema, newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
 import { greetingLanguage } from "./new-bot-greeting.ts";
+import { introAdvance } from "./intro-tour.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -47751,6 +47752,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the label, then one line per field. Nothing is written yet.
       const press = pressed ? prepareWidgetPress(store, threadId, body.widgetAction, sendId) : null;
       if (press && !press.ok) return json(res, press.status, { error: press.error });
+      // A pick on the new bot's intro cards stays in that guided conversation.
+      // Any other text falls through and the turn runs as usual.
+      const intro = !guarded && !pressed && !voiceCall ? introAdvance(store.messagesFor(threadId), typed) : null;
+      if (intro) {
+        const message = store.appendMessage(threadId, { role: "user", kind: "text", text: typed, ...(sendId ? { sendId } : {}) });
+        if (intro.kind === "card") store.appendMessage(threadId, { role: "bot", kind: "options", card: intro.card });
+        else store.appendMessage(threadId, { role: "bot", kind: "text", text: intro.text });
+        return json(res, 202, { ok: true, threadId, message });
+      }
       const text = press ? press.text : typed;
       const target = resolveReplyTarget(threadId, press ? press.messageId : body.replyToId);
       // Only here is a reply known to be a press: a copy of the widget row
