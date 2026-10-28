@@ -4,7 +4,7 @@
 // finished, a bot waiting on an answer, an approval, a routine that
 // failed), a `nudge` frame and an `achievements` frame. This reads them and
 // returns the PushMessage of each person concerned; ./hub.ts decides when.
-import { pushAvatarUrl, type PushKind, type PushMessage } from "./payload.ts";
+import { pushAvatarUrl, type PushKind, type PushMessage, type PushSenderLook } from "./payload.ts";
 
 /** The `notify` kinds a phone hears about, as the push kind it carries. */
 export const NOTIFY_PUSH_KINDS: Readonly<Record<string, PushKind>> = Object.freeze({
@@ -40,6 +40,9 @@ export interface FramePushDeps {
   /** The person asked for system notifications of achievements. */
   achievementNotifications(person: string): boolean;
   achievementName(id: string, person: string): string | undefined;
+  /** A bot's look (colour, character, skin, crop), so the phone draws its
+   * mascot on the banner. Absent: the phone shows the picture or the icon. */
+  botLook?(botId: string): PushSenderLook | undefined;
   now(): number;
 }
 
@@ -71,6 +74,8 @@ export function pushesForFrame(payload: Record<string, unknown>, deps: FramePush
     const unique = [...new Set(people.map((id) => id.trim().toLowerCase()).filter(Boolean))];
     const senderName = note.botName.trim();
     const senderId = note.botId.trim();
+    // a bot's own banner wears its mascot; a person's message has no bot id
+    const senderLook = senderName && senderId ? deps.botLook?.(senderId) : undefined;
     return unique.filter((person) => !deps.muted(note, person)).map((personId) => ({
       kind,
       personId,
@@ -82,6 +87,7 @@ export function pushesForFrame(payload: Record<string, unknown>, deps: FramePush
       ...(senderName ? { senderName } : {}),
       ...(senderId ? { senderId } : {}),
       ...(note.avatarUrl ? { avatarUrl: note.avatarUrl } : {}),
+      ...(senderLook ? { senderLook } : {}),
       ...(note.requestId ? { requestId: note.requestId } : {}),
       ...(note.kind === "approval" || note.kind === "question" ? { prompt: note.kind as "approval" | "question" } : {}),
       ...(note.kind === "approval" && note.needsKey ? { needsKey: true } : {}),

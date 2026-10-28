@@ -116,12 +116,76 @@ public struct PushSenderIdentity: Equatable, Sendable {
     public var conversationId: String
     /// Relative path on this server, only when `AccountAvatar` accepts it.
     public var avatarUrl: String?
+    /// A bot's look: the banner's face is its mascot. Nil for a person.
+    public var look: PushSenderLook?
+    /// The server's version of that look, the rendered face's cache key.
+    public var lookVersion: String?
 
-    public init(id: String, displayName: String, conversationId: String, avatarUrl: String? = nil) {
+    public init(id: String, displayName: String, conversationId: String, avatarUrl: String? = nil, look: PushSenderLook? = nil, lookVersion: String? = nil) {
         self.id = id
         self.displayName = displayName
         self.conversationId = conversationId
         self.avatarUrl = avatarUrl
+        self.look = look
+        self.lookVersion = lookVersion
+    }
+}
+
+/// A bot's look as a push carries it (`senderLook`, server/push/payload.ts):
+/// the same fields the app draws a bot's mascot from. A look this build
+/// cannot read falls back the way a bot's does (the owl, no skin).
+public struct PushSenderLook: Codable, Hashable, Sendable {
+    public var color: String
+    public var mascotLook: MascotLook?
+    public var mascotSkin: MascotSkin?
+    public var avatarCrop: AvatarCrop?
+
+    public init(color: String, mascotLook: MascotLook? = nil, mascotSkin: MascotSkin? = nil, avatarCrop: AvatarCrop? = nil) {
+        self.color = color
+        self.mascotLook = mascotLook
+        self.mascotSkin = mascotSkin
+        self.avatarCrop = avatarCrop
+    }
+
+    /// The look of a bot the app already has.
+    public init(bot: Bot) {
+        self.init(color: bot.color, mascotLook: bot.mascotLook, mascotSkin: bot.mascotSkin, avatarCrop: bot.avatarCrop)
+    }
+
+    enum CodingKeys: String, CodingKey { case color, mascotLook, mascotSkin, avatarCrop }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        color = try c.decode(String.self, forKey: .color)
+        mascotLook = (try? c.decodeIfPresent(MascotLook.self, forKey: .mascotLook)) ?? nil
+        mascotSkin = (try? c.decodeIfPresent(MascotSkin.self, forKey: .mascotSkin)) ?? nil
+        avatarCrop = (try? c.decodeIfPresent(AvatarCrop.self, forKey: .avatarCrop)) ?? nil
+    }
+
+    /// The `senderLook` dictionary of a push, or nil.
+    public init?(userInfo value: Any?) {
+        guard let dictionary = value as? [String: Any],
+              JSONSerialization.isValidJSONObject(dictionary),
+              let data = try? JSONSerialization.data(withJSONObject: dictionary),
+              let look = try? JSONDecoder().decode(PushSenderLook.self, from: data),
+              !look.color.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        self = look
+    }
+
+    /// What the mascot views draw.
+    public var resolvedLook: CompleteMascotLook { (mascotLook ?? .owl).complete }
+    public var resolvedSkin: MascotSkin { mascotSkin ?? .none }
+
+    /// A key that changes with what is drawn, for a look the app built itself
+    /// (a local banner). The server sends its own (`senderLookVersion`).
+    public func fingerprint(avatarUrl: String? = nil) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var data = (try? encoder.encode(self)) ?? Data(color.utf8)
+        data.append(contentsOf: Array("|\(avatarUrl ?? "")".utf8))
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return "l\(digest.prefix(15))"
     }
 }
 
@@ -136,6 +200,9 @@ public struct PushPayload: Equatable, Sendable {
     public var senderName: String?
     public var senderId: String?
     public var avatarUrl: String?
+    /// A bot sender's look and its version (communication notification face).
+    public var senderLook: PushSenderLook?
+    public var senderLookVersion: String?
     /// The approval Allow or Deny answers. Absent on a question or a message.
     public var requestId: String?
     /// `approval` or `question` when `kind` is approval.
@@ -171,6 +238,14 @@ public struct PushPayload: Equatable, Sendable {
         } else {
             avatarUrl = nil
         }
+        senderLook = PushSenderLook(userInfo: userInfo["senderLook"])
+        // a file name part: hex only
+        if let version = string("senderLookVersion"), version.count <= 64,
+           version.allSatisfy({ $0.isHexDigit }) {
+            senderLookVersion = version.lowercased()
+        } else {
+            senderLookVersion = nil
+        }
         requestId = string("requestId")
         prompt = string("prompt")
         if let flag = userInfo["needsKey"] as? Bool {
@@ -195,7 +270,9 @@ public struct PushPayload: Equatable, Sendable {
             id: id,
             displayName: displayName,
             conversationId: threadId ?? id,
-            avatarUrl: avatarUrl
+            avatarUrl: avatarUrl,
+            look: senderLook,
+            lookVersion: senderLook == nil ? nil : (senderLookVersion ?? senderLook?.fingerprint(avatarUrl: avatarUrl))
         )
     }
 

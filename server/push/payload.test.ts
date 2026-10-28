@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { APPROVAL_SOUND, buildApnsRequest, collapseId, NUDGE_SOUND, pushCategory, type PushMessage } from "./payload.ts";
+import { APNS_PAYLOAD_MAX, APPROVAL_SOUND, buildApnsRequest, collapseId, NUDGE_SOUND, pushCategory, pushSenderLook, senderLookVersion, type PushMessage } from "./payload.ts";
 
 const message = (patch: Partial<PushMessage> = {}): PushMessage => ({
   kind: "message",
@@ -220,5 +220,53 @@ describe("an approval push", () => {
     const body = JSON.parse(buildApnsRequest({ message: message({ senderName: "Alice" }), bundleId: "ca.pulsatrix.sagax", nowMs: 2_000_000 }).body);
     expect(body.aps.alert.subtitle).toBeUndefined();
     expect(body.requestId).toBeUndefined();
+  });
+
+  describe("a bot's mascot on the banner", () => {
+    const scout = (patch: Partial<PushMessage> = {}) => message({
+      title: "Scout finished", body: "Pushed the branch.", threadId: "t_scout", botId: "scout", groupId: undefined,
+      senderName: "Scout", senderId: "scout",
+      senderLook: { color: "teal", mascotLook: { character: "shape", shape: "bean", skins: { shape: "glossy" } }, avatarCrop: "mascot" },
+      ...patch,
+    });
+
+    it("carries the bot's id, name, look, look version and thread for grouping", () => {
+      const request = buildApnsRequest({ message: scout(), bundleId: "ca.pulsatrix.sagax", nowMs: 2_000_000 });
+      const body = JSON.parse(request.body);
+      expect(body.aps["mutable-content"]).toBe(1);
+      expect(body.aps["thread-id"]).toBe("t_scout");
+      expect(body).toMatchObject({ senderId: "scout", senderName: "Scout", botId: "scout", threadId: "t_scout" });
+      expect(body.senderLook).toEqual({ color: "teal", mascotLook: { character: "shape", shape: "bean", skins: { shape: "glossy" } }, avatarCrop: "mascot" });
+      expect(body.senderLookVersion).toMatch(/^[0-9a-f]{16}$/);
+      // nothing more than before: the look is cosmetic, the text is the same
+      expect(Object.keys(body).sort()).toEqual(["aps", "at", "botId", "kind", "senderId", "senderLook", "senderLookVersion", "senderName", "threadId"]);
+      expect(Buffer.byteLength(request.body)).toBeLessThanOrEqual(APNS_PAYLOAD_MAX);
+    });
+
+    it("changes the look version when the look or the picture changes, not otherwise", () => {
+      const look = pushSenderLook({ color: "teal", mascotLook: { character: "owl" } })!;
+      expect(senderLookVersion(look)).toBe(senderLookVersion({ ...look }));
+      expect(senderLookVersion(look)).not.toBe(senderLookVersion({ ...look, color: "red" }));
+      expect(senderLookVersion(look)).not.toBe(senderLookVersion({ ...look, mascotSkin: "gold" }));
+      expect(senderLookVersion(look)).not.toBe(senderLookVersion(look, "/api/attachments/a.png"));
+    });
+
+    it("cleans a look it cannot trust and never gives a person one", () => {
+      expect(pushSenderLook({ color: "javascript:alert(1)" })).toBeUndefined();
+      expect(pushSenderLook(null)).toBeUndefined();
+      expect(pushSenderLook({ color: "blue", mascotSkin: "none", avatarCrop: "weird", extra: "secret", soul: "instructions" })).toEqual({ color: "blue" });
+      const person = JSON.parse(buildApnsRequest({ message: scout({ senderName: undefined }), bundleId: "x", nowMs: 0 }).body);
+      expect(person.senderLook).toBeUndefined();
+      expect(person.senderLookVersion).toBeUndefined();
+    });
+
+    it("drops the look, never the push, when the payload would pass 4 KB", () => {
+      const big = buildApnsRequest({ message: scout({ body: "x".repeat(200), titleLocArgs: Array.from({ length: 40 }, () => "y".repeat(100)), titleLocKey: "%@" }), bundleId: "x", nowMs: 0 });
+      const body = JSON.parse(big.body);
+      expect(body.senderLook).toBeUndefined();
+      expect(body.senderLookVersion).toBeUndefined();
+      expect(body.senderName).toBe("Scout");
+      expect(body.aps["mutable-content"]).toBe(1);
+    });
   });
 });

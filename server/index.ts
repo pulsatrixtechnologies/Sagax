@@ -1236,6 +1236,7 @@ import { setReachMeSmsHandler } from "./reach-me/inbound.ts";
 import { createReachMeRoutes } from "./routes/reach-me.ts";
 import type { ReachChannelId } from "../shared/reach-me.ts";
 import { pushesForFrame } from "./push/frames.ts";
+import { pushSenderLook } from "./push/payload.ts";
 import { createPushDeviceRoutes } from "./routes/push-devices.ts";
 import { achievementById } from "../shared/achievements-catalog.ts";
 import { PRESENCE_SWEEP_MS, PRESENCE_VISIBLE_PREFERENCE, presenceHidden, publicPresence, type PresenceView } from "../shared/presence.ts";
@@ -1739,6 +1740,11 @@ function observePushFrame(payload: Record<string, unknown>): void {
           if (IDENTITY.kind === "perspicax") language = userPreferenceStore.get(person).preferences["omb-language"] ?? "";
         } catch { /* the default language */ }
         return language.toLowerCase().startsWith("fr") ? item.name.fr : item.name.en;
+      },
+      // the bot's mascot on the phone's banner (docs/ios-push.md)
+      botLook: (botId) => {
+        const bot = store.bot(botId);
+        return bot ? pushSenderLook(bot) : undefined;
       },
       now: () => Date.now(),
     });

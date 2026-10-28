@@ -11,14 +11,26 @@ import UserNotifications
 /// the App ID; without it `updating(from:)` throws and the title fallback
 /// is what the phone shows.
 enum CommunicationNotification {
-    /// NSE entry: download the avatar when we can, then donate the intent.
+    /// NSE entry: find the sender's face (the bot's mascot drawn here, or
+    /// the picture it chose, or a person's photo), then donate the intent.
+    /// Without a face the banner still names the sender, with the app icon.
     static func decorate(_ content: UNMutableNotificationContent) async -> UNNotificationContent {
         guard let payload = PushPayload(userInfo: content.userInfo),
               let sender = payload.senderIdentity
         else { return content }
         content.title = sender.displayName
-        let imageData = await loadAvatar(sender.avatarUrl)
+        let imageData = await avatarData(for: sender)
         return applyingIntent(content, sender: sender, imageData: imageData)
+    }
+
+    /// The face's bytes: from the App Group cache, drawn, or downloaded.
+    static func avatarData(for sender: PushSenderIdentity) async -> Data? {
+        await NotificationAvatarResolver.imageData(
+            for: sender,
+            cache: NotificationAvatarCache.appGroup(SagaxSharedConfiguration.appGroupIdentifier),
+            download: { await loadAvatar($0) },
+            render: { look in await MascotAvatarRenderer.png(look) }
+        )
     }
 
     /// Donate `INSendMessageIntent` and return `content.updating(from:)`.
@@ -29,35 +41,8 @@ enum CommunicationNotification {
         sender: PushSenderIdentity,
         imageData: Data?
     ) -> UNNotificationContent {
-        let image = imageData.flatMap { data -> INImage? in
-            guard !data.isEmpty else { return nil }
-            return INImage(imageData: data)
-        }
-        let handle = INPersonHandle(value: sender.id, type: .unknown)
-        let person = INPerson(
-            personHandle: handle,
-            nameComponents: nil,
-            displayName: sender.displayName,
-            image: image,
-            contactIdentifier: nil,
-            customIdentifier: sender.id
-        )
-        let intent = INSendMessageIntent(
-            recipients: nil,
-            outgoingMessageType: .outgoingMessageText,
-            content: content.body,
-            speakableGroupName: nil,
-            conversationIdentifier: sender.conversationId,
-            serviceName: "Sagax",
-            sender: person,
-            attachments: nil
-        )
-        if let image {
-            intent.setImage(image, forParameterNamed: \.sender)
-        }
-        let interaction = INInteraction(intent: intent, response: nil)
-        interaction.direction = .incoming
-        interaction.donate(completion: nil)
+        let intent = CommunicationIntentFactory.intent(sender, body: content.body, imageData: imageData)
+        CommunicationIntentFactory.interaction(intent).donate(completion: nil)
         do {
             let updated = try content.updating(from: intent)
             // updating(from:) has dropped the category or requestId on some
