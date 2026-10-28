@@ -343,3 +343,50 @@ describe("2026-10-28: Full access never asks for a typed GO", () => {
     expect(ask).toMatch(/never ask for a typed GO/);
   });
 });
+
+describe("2026-10-28: a part run on another engine (run_with_engine)", () => {
+  const base = { identity: "perspicax" as const, restrictedByPolicy: false, ownerPrincipalId: BOB, localPrincipalId: LOCAL };
+  // the sub-turn's speaker: the same bot, for the person of the source turn (index.ts peerSpeaker)
+  const relaySpeaker = { origin: "peer" as const, fromBotId: "bot-self", principalId: BOB };
+
+  it("a Grok part runs on the person's own Grok sign-in, so their Grok connectors (Teams, Outlook) are in that turn", () => {
+    const plan = resolveEngineAccess({
+      identity: "perspicax", speaker: relaySpeaker, owner: { principalId: BOB },
+      instance: { instanceId: "grok", driver: "grokAgent", installed: true },
+      subscriptionSignedIn: (pid, driver) => pid === BOB && driver === "grokAgent", hasKey: () => false, keyBacked: true,
+    });
+    // the person's own subscription, never the server's or the organization's key
+    expect(plan).toMatchObject({ ok: true, via: "subscription", payerPrincipalId: BOB });
+    const input = { ...base, driver: "grokAgent", via: "subscription" as const, payerPrincipalId: plan.ok ? plan.payerPrincipalId! : "", speaker: relaySpeaker };
+    expect(accountConnectorsForTurn(input)).toBe("own");
+    expect(grokCloudConnectorsForTurn(input)).toBe(true);
+  });
+
+  it("a part keeps a routine's lineage and payer: no sign-in of the person is borrowed by a routine", () => {
+    const routineHop = { origin: "peer" as const, fromBotId: "bot-self", principalId: ADA, routine: true as const, routinePayer: BOB };
+    const plan = resolveEngineAccess({
+      identity: "perspicax", speaker: routineHop, owner: { principalId: BOB },
+      instance: { instanceId: "grok", driver: "grokAgent", installed: true },
+      subscriptionSignedIn: (pid) => pid === ADA, hasKey: () => false, keyBacked: false,
+    });
+    expect(plan).toMatchObject({ ok: false, routine: true });
+  });
+
+  it("someone else's Grok sign-in never serves the part: foreign, no connectors", () => {
+    const input = { ...base, driver: "grokAgent", via: "subscription" as const, payerPrincipalId: ADA, speaker: relaySpeaker };
+    expect(grokCloudConnectorsForTurn(input)).toBe(false);
+  });
+
+  it("a turn without the connector is pointed at run_with_engine, never at \"I can't switch engines\"", () => {
+    const text = engineConnectorsPrompt({ driver: "claudeAgent", claudeAi: false, grokCloud: false, relay: true });
+    expect(text).toContain("run_with_engine");
+    expect(text).toContain("Microsoft Teams");
+    expect(text).toContain("open_connector_setup");
+    expect(engineConnectorsPrompt({ driver: "claudeAgent", claudeAi: true, grokCloud: false, relay: true })).toContain("run_with_engine");
+    // a turn one hop away has no run_with_engine: not named
+    expect(engineConnectorsPrompt({ driver: "claudeAgent", claudeAi: false, grokCloud: false })).not.toContain("run_with_engine");
+    for (const full of [true, false]) {
+      expect(engineConnectorsPrompt({ driver: "claudeAgent", claudeAi: false, grokCloud: false, relay: true, full })).not.toMatch(/[–—]/);
+    }
+  });
+});

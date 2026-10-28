@@ -134,6 +134,9 @@ function outwardRule(full: boolean): string {
     ? ` This turn runs in Full access: ${OUTWARD_ACTS.charAt(0).toLowerCase()}${OUTWARD_ACTS.slice(1)} go out when the person asked for them, with no confirmation and no typed GO; only a Refuse or Ask first rule, or a recipient outside the bot's allowed recipients, stops one, and Sagax shows that itself. Make the call with the exact recipients, subject, time and attendees, and say it is done only once the call succeeded. Reads, drafts and reply drafts do not ask.`
     : ` ${OUTWARD_ACTS} wait for the person's approval card: make the call with the exact recipients, subject, time and attendees (Sagax shows the card; never ask for a typed GO), and say it is done only once the call succeeded. Reads, drafts and reply drafts do not ask.`;
 }
+/** run_with_engine (server/run-with-engine.ts): the way to another engine of
+ * this person's that has the connector. */
+const RELAY_HINT = " When the connector needed is on another engine of this person's (their own Grok account's Outlook, Microsoft Teams or SharePoint, or their claude.ai connectors), call run_with_engine with that engine: it runs that part on their own sign-in there and gives you the result. Never answer that you cannot switch engines.";
 
 const GROK_DRIVERS = new Set(["grokAgent", "grok"]);
 
@@ -147,14 +150,18 @@ const GROK_DRIVERS = new Set(["grokAgent", "grok"]);
  * there (server/connector-switch.ts); a turn told it has none is one where
  * no such engine was found, so the bot says so and may offer a teammate
  * (coordinate_bots in a person's chat, ask_bot in a routine). */
-export function engineConnectorsPrompt(input: { driver: string; claudeAi: boolean; grokCloud: boolean; foreign?: boolean; full?: boolean }): string {
+export function engineConnectorsPrompt(input: { driver: string; claudeAi: boolean; grokCloud: boolean; foreign?: boolean; full?: boolean; relay?: boolean }): string {
   const outward = outwardRule(input.full === true);
-  if (input.claudeAi && input.driver === "claudeAgent") return `${claudeAiConnectorsPrompt(true)}${outward}`;
+  const relay = input.relay ? RELAY_HINT : "";
+  if (input.claudeAi && input.driver === "claudeAgent") return `${claudeAiConnectorsPrompt(true)}${relay}${outward}`;
   if (input.foreign && ACCOUNT_CONNECTOR_DRIVERS.has(input.driver)) {
-    return `\nThis turn runs on an engine account that is not the speaker's own (the bot owner's or another person's sign-in), so its mail, calendar, Microsoft Teams and SharePoint connectors are not used for this person: they belong to someone else. If asked for one of those, say so plainly, do not read or send anything through them, and do not claim anything was sent. The person can connect their own account to use their own.`;
+    return `\nThis turn runs on an engine account that is not the speaker's own (the bot owner's or another person's sign-in), so its mail, calendar, Microsoft Teams and SharePoint connectors are not used for this person: they belong to someone else. If asked for one of those, say so plainly, do not read or send anything through them, and do not claim anything was sent. The person can connect their own account to use their own.${relay}`;
   }
   if (input.grokCloud && GROK_DRIVERS.has(input.driver)) {
-    return `\nThis turn runs on the person's own xAI account of this Grok engine, so its cloud connectors (${GROK_CLOUD_CONNECTORS.map((connector) => connector.name).join(", ")}) are reachable through use_tool when the account connected them on grok.com: find one with search_tool (for example "teams" or "outlook"), then call it. They act with that account's access. If one is missing or needs sign-in, or the person asks to connect one, call use_tool with tool_name agents__open_connector_setup right away: it posts the card that opens ${GROK_CONNECTORS_URL} for them; then answer in one short sentence.${outward}`;
+    return `\nThis turn runs on the person's own xAI account of this Grok engine, so its cloud connectors (${GROK_CLOUD_CONNECTORS.map((connector) => connector.name).join(", ")}) are reachable through use_tool when the account connected them on grok.com: find one with search_tool (for example "teams" or "outlook"), then call it. They act with that account's access. If one is missing or needs sign-in, or the person asks to connect one, call use_tool with tool_name agents__open_connector_setup right away: it posts the card that opens ${GROK_CONNECTORS_URL} for them; then answer in one short sentence.${relay}${outward}`;
+  }
+  if (input.relay) {
+    return `\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector of this person's.${RELAY_HINT} If no engine you may use has it, say so plainly and do not claim anything was sent. When the person asks to connect one, call open_connector_setup (agents__open_connector_setup) once: it posts the card for their own Grok or Claude account, or says why there is none.${outward}`;
   }
   return "\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector, and no other engine of this person was found with the one needed (Sagax moves such a request on its own when it finds one). If asked for one of those, say so plainly and do not claim anything was sent: the person can connect it on Claude (claude.ai connectors, such as Microsoft 365 or Gmail) or on Grok (the xAI account's cloud connectors, such as Outlook, Microsoft Teams or SharePoint, on an organization server), and you can offer to ask a teammate bot on that engine with your teammate tools. When the person asks to connect one, call the Sagax tool open_connector_setup (agents__open_connector_setup) once: it posts the right card, or says why there is none.";
 }

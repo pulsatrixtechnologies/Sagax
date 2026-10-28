@@ -147,6 +147,8 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   // Dispatch
   p("bots:ask", "dispatch", "ask_bot"),
   p("bots:delegate", "dispatch", "delegate_bot"),
+  // a part of the bot's own work on another engine it may use (server/run-with-engine.ts)
+  p("engines:relay", "dispatch", "run_with_engine"),
   p("bots:send", "dispatch", "send_to_bot", "sagax", ["sagax_send"]),
   p("bots:coordinate", "dispatch", "coordinate_bots"),
   p("agents:send", "dispatch", "send_prompt"),

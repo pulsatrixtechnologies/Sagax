@@ -47,6 +47,8 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   ask_bot: "conversation",
   send_to_bot: "conversation",
   delegate_bot: "conversation",
+  // the member's own bot on another engine the member may use, for the member
+  run_with_engine: "conversation",
   coordinate_bots: "conversation",
   post_to_room: "conversation",
   react_to_message: "conversation",

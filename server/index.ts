@@ -663,6 +663,7 @@ import { introAdvance } from "./intro-tour.ts";
 import { SoloGoals, soloGoalCommand, soloGoalContinuePrompt, soloGoalLine, soloGoalSystemPrompt, withoutSoloGoalMarker } from "./solo-goal.ts";
 import { soloGoalLineText, type SoloGoalLine } from "../shared/solo-goal-line.ts";
 import { handoffModel } from "../shared/handoff-model.ts";
+import { chooseRelayEngine, relayOpening, relayResultText, relayThreadLevel } from "./run-with-engine.ts";
 import { approvalLevelPrompt } from "./approval-level-prompt.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
@@ -6322,7 +6323,8 @@ type AskBotOutcome = {
  * turn's result is its asker's (reportsToRequester). */
 const awaitedAsks = new Set<{ threadId: string }>();
 
-function askBotAndWait(targetBotId: string, message: string, depth: number, fromBotId?: string, fromThreadId?: string, targetThreadId?: string): Promise<AskBotOutcome> {
+function askBotAndWait(targetBotId: string, message: string, depth: number, fromBotId?: string, fromThreadId?: string, targetThreadId?: string,
+  options: { timeoutMs?: number; selfRelay?: boolean } = {}): Promise<AskBotOutcome> {
   const target = store.bot(targetBotId);
   if (!target) return Promise.resolve({ status: "error", text: "(no such bot)" });
   const threadId = targetThreadId ?? peerThreadFor(target);
@@ -6354,7 +6356,7 @@ function askBotAndWait(targetBotId: string, message: string, depth: number, from
     });
     // Timing out does NOT stop the peer's turn — the caller decides whether
     // the still-running work becomes a delegation claim ticket instead.
-    const timer = setTimeout(() => finish({ status: "timeout", text }), ASK_BOT_TIMEOUT_MS);
+    const timer = setTimeout(() => finish({ status: "timeout", text }), options.timeoutMs ?? ASK_BOT_TIMEOUT_MS);
     // The asker's identity rides on the stored line as well as in the note
     // prefixed to it: the wording is for the model reading this turn, the
     // field is for anything that reads the transcript later.
@@ -6364,7 +6366,9 @@ function askBotAndWait(targetBotId: string, message: string, depth: number, from
       threadId,
       commsDepth: depth + 1,
       unattended,
-      peerAsk: asker
+      // run_with_engine: the bot's own part on another engine, never a
+      // teammate's message (its opening says so, server/run-with-engine.ts)
+      peerAsk: asker && !options.selfRelay
         ? unattended
           ? { botId: asker.id, name: asker.name, unattended: true }
           : { botId: asker.id, name: asker.name }
@@ -16059,6 +16063,9 @@ bus.subscribe((event: RuntimeEvent) => {
           toolMessageByItem.delete(itemKey);
           // a "Connect Microsoft Teams" card's proof: whose turn made this call, on which bot
           connectorSetupProofs.record({ threadId: event.threadId, botId: bot?.id, principalId: connectorSetupSpeaker(event.threadId), name: toolName, input: existing?.input, ok: event.ok === true, at: Date.now() });
+          // a part run on another engine (run_with_engine) proves the card of the conversation it came from
+          const relayParent = relayParentThreads.get(event.threadId);
+          if (relayParent) connectorSetupProofs.record({ threadId: relayParent, botId: bot?.id, principalId: connectorSetupSpeaker(relayParent), name: toolName, input: existing?.input, ok: event.ok === true, at: Date.now() });
           const appPiece = event.resultText ? noteAppRead(toolName, event.resultText) : null;
           if (appPiece) {
             const kept = appPiecesByThread.get(event.threadId) ?? [];
@@ -17487,6 +17494,13 @@ bus.subscribe((event: RuntimeEvent) => {
  * the request was mirrored there when the delegation drained, and a
  * channel that only ever shows requests is half a record. Mirror the
  * reply on success; mirror a failed/stopped terminal chip otherwise. */
+/** run_with_engine: the thread a part runs in -> the conversation it came
+ * from (server/run-with-engine.ts). Bounded; in memory. */
+const relayParentThreads = new Map<string, string>();
+function noteRelayParent(threadId: string, parentThreadId: string): void {
+  relayParentThreads.set(threadId, parentThreadId);
+  if (relayParentThreads.size > 500) relayParentThreads.delete(relayParentThreads.keys().next().value!);
+}
 const delegationWatch = new Map<string, {
   channelId?: string;
   toBotId: string;
@@ -22253,7 +22267,8 @@ async function startTurn(
         // bot whose driver actually mounted the tools
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
-        { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker, { level: promptApprovalLevel }) },
+        // run_with_engine is shown to a person's own direct turn only (not one hop away)
+        { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker, { level: promptApprovalLevel, relay: Boolean(integrations.agents) && commsDepth === 0 }) },
         // the level this turn really runs at (approvalModeForTurn), so Full never asks for a typed GO
         { id: "approval-level", label: "Approval level", text: approvalLevelPrompt(promptApprovalLevel) },
         // what this turn reaches, in one line: "what connectors do you have" needs no tool call (server/turn-reach.ts)
@@ -29079,6 +29094,40 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
   }
   return engines;
 }
+/** run_with_engine (server/run-with-engine.ts): the engines a part of this
+ * bot's work may run on for this turn's payer. Only what the organization
+ * and the payer's own credentials allow: an engine enabled here, not refused
+ * by policy or the organization's list (orgEngineTurnRefusal, which lets the
+ * payer's own subscription or key through), confining a guest's turn, and on
+ * an organization server withholding host tools and resolving to the payer's
+ * access. Unlike Auto, a level the engine cannot run does not exclude it: the
+ * part's thread runs at Ask instead (parentThreadModel's rule). On a solo
+ * server an engine known not to be signed in is left out. */
+function relayEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = false): AutoEngine[] {
+  const engines: AutoEngine[] = [];
+  for (const instance of registry.instances()) {
+    if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
+    if (orgEngineTurnRefusal(bot, instance, speaker)) continue;
+    if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
+    let via: AutoEngine["via"] = "server";
+    if (IDENTITY.kind === "perspicax") {
+      if (instance.adapter.capabilities.withholdsHostTools !== true) continue;
+      const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+      if (!plan.ok) continue;
+      via = plan.via;
+    } else if (engineProbes.get(instance.instanceId)?.ready === false) continue;
+    const options = instance.models.options.filter((option) => !hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id }));
+    engines.push({
+      instanceId: instance.instanceId,
+      driverKind: instance.driverKind,
+      displayName: engineDisplayName(instance),
+      models: { default: instance.models.default, options },
+      ...(instance.adapter.capabilities.effortLevels ? { effortLevels: instance.adapter.capabilities.effortLevels } : {}),
+      via,
+    });
+  }
+  return engines;
+}
 /** Whether a recorded pick can still run for this payer. */
 function autoRecordUsable(record: AutoModelRecord | undefined, engines: readonly AutoEngine[], skip: readonly AutoChainEntry[]): boolean {
   if (!record) return false;
@@ -29363,7 +29412,7 @@ function connectorSwitchForTurn(bot: BotRecord, threadId: string, speaker: TurnS
 /** What a turn is told about mail, calendar, Teams and SharePoint
  * (harness-connectors.ts engineConnectorsPrompt). */
 function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker,
-  turn: { level?: ApprovalMode } = {}): string {
+  turn: { level?: ApprovalMode; relay?: boolean } = {}): string {
   const input = accountConnectorInput(bot, instance, speaker);
   const account = accountConnectorsForTurn(input);
   return engineConnectorsPrompt({
@@ -29371,8 +29420,9 @@ function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof w
     claudeAi: claudeAiConnectorsForTurn(input),
     grokCloud: grokCloudConnectorsForTurn(input) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
     foreign: account === "foreign",
-    // a Full access turn is told so: no card, no typed GO (2026-10-28)
+    // what Full and run_with_engine change in the connector rules (2026-10-28)
     full: turn.level === "full",
+    relay: turn.relay === true,
   });
 }
 /** Where a person sets their model keys (Perspicax console, slice 4). */
@@ -37284,14 +37334,22 @@ function connectorSetupSpeaker(threadId: string): string | undefined {
 }
 /** The bot's engine and whose account it runs on for this turn (#943). */
 function connectorSetupContext(botId: string, threadId: string): ConnectorSetupContext | null {
-  const bot = store.bot(botId);
+  // the engine this conversation runs on, which may not be the bot's default
+  const bot = store.projectBotForTask(botId, threadId) ?? store.bot(botId);
   const instance = bot ? registry.get(bot.modelSelection.instanceId) : undefined;
   const speaker = turnSpeakers.get(threadId);
   if (!bot || !instance || !speaker) return null;
   const driver = instance.driverKind;
+  // 2026-10-28: the person's own Grok or Claude sign-in on another engine
+  // this bot may run (run_with_engine), so a card never dead-ends on "this
+  // engine can't attach connectors to your own account".
+  const ownOn = (drivers: readonly string[]) => registry.instances().some((candidate) =>
+    candidate.enabled && drivers.includes(candidate.driverKind)
+    && accountConnectorsForTurn(accountConnectorInput(bot, candidate, speaker)) === "own");
   return {
     engine: driver === "claudeAgent" ? "claude" : driver === "grokAgent" || driver === "grok" ? "grok" : "other",
     account: accountConnectorsForTurn(accountConnectorInput(bot, instance, speaker, turnAccessByThread.get(threadId)?.via)),
+    ownAccounts: { grok: ownOn(["grokAgent", "grok"]), claude: ownOn(["claudeAgent"]) },
   };
 }
 
@@ -43637,6 +43695,100 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // start_thread: a bot opens a real thread — on itself for separate
       // work, or on a teammate as a handoff that should run on its own.
       // Never activates: a bot must not move what the person is looking at.
+      // run_with_engine (server/run-with-engine.ts): one part of this bot's
+      // work on another engine or model this turn's payer may use, in a
+      // fresh thread of the same bot, for the same person, at the same
+      // approval level; the result comes back to this call.
+      if (method === "POST" && path === "/api/internal/run-with-engine") {
+        const body = await readInternalBody();
+        const from = internalSender;
+        const fromThreadId = internalCapability.threadId;
+        const owner = connectorThread(from.id, fromThreadId);
+        if (!owner) return json(res, 403, { error: "source conversation does not belong to sender" });
+        if (owner.group) return json(res, 409, { error: "run_with_engine works from a direct conversation only; in a room, use coordinate_bots with a teammate on that engine." });
+        if (body.depth !== undefined && (!Number.isInteger(body.depth) || body.depth !== internalCapability.depth)) {
+          return json(res, 403, { error: "the recursion depth does not match this turn" });
+        }
+        // the part itself is one hop: it never hands a part on again
+        if (internalCapability.depth >= MAX_COMMS_DEPTH) {
+          return json(res, 409, { error: "This turn is already a part run on another engine: do this work here." });
+        }
+        const message = typeof body.message === "string" ? body.message.trim() : "";
+        const engineAsked = typeof body.engine === "string" ? body.engine : "";
+        if (!message || !engineAsked.trim()) return json(res, 400, { error: "engine and message are required" });
+        if (message.length > 20_000) return json(res, 400, { error: "message must be at most 20000 characters" });
+        const threadLimit = botTurnLimit(from, "threadsOpened");
+        if (internalCapability.openedThreads >= threadLimit) {
+          return json(res, 429, { error: `You have already opened ${threadLimit} threads this turn, which is the limit. Finish your turn and tell the person what is left.` });
+        }
+        // nothing of a confidential conversation leaves it, even to the same bot elsewhere
+        if (store.isConfidentialThread(fromThreadId)) return json(res, 403, { error: CONFIDENTIAL_PEER_REFUSED, code: "confidential_thread" });
+        // the same person, the same credentials and routine lineage as this turn
+        const speaker = peerSpeaker(from.id, fromThreadId);
+        const confined = cloudGuestDriven(fromThreadId) || botmailConfined(fromThreadId);
+        const engines = relayEnginesFor(from, speaker, confined);
+        const current = store.projectBotForTask(from.id, fromThreadId)?.modelSelection ?? from.modelSelection;
+        const choice = chooseRelayEngine({
+          engine: engineAsked,
+          ...(typeof body.model === "string" && body.model.trim() ? { model: body.model.trim() } : {}),
+          engines,
+          current: { instanceId: current.instanceId, model: current.model },
+        });
+        if (!choice.ok) return json(res, 200, { error: choice.error });
+        // a level the engine cannot run becomes Ask in that thread (parentThreadModel)
+        const relayLevel = relayThreadLevel({
+          botLevel: approvalModeFor(from),
+          fromDriver: registry.cliTarget(from.modelSelection.instanceId)?.driverKind,
+          toDriver: choice.driverKind,
+        });
+        const rawTitle = typeof body.title === "string" ? body.title.replace(/\s+/g, " ").trim() : "";
+        const title = (rawTitle || message.replace(/\s+/g, " ")).slice(0, 60).trim() || `On ${choice.engineLabel}`;
+        const selection: ModelSelection = { instanceId: choice.instanceId, model: choice.model };
+        const task = store.createTask(from.id, title, false, undefined, { botId: from.id, name: from.name, at: Date.now() },
+          relayLevel, openedThreadOwner(from, fromThreadId, from), selection, false, undefined, false);
+        if (!task) return json(res, 500, { error: "couldn't open a thread for that part" });
+        threadStarters.set(task.threadId, openerFrom(fromThreadId));
+        noteRelayParent(task.threadId, fromThreadId);
+        internalCapability.openedThreads += 1;
+        store.appendMessage(fromThreadId, {
+          role: "bot",
+          kind: "activity",
+          tool: { name: `Ran on ${choice.engineLabel} (${choice.model}): #${task.title}`, ok: true },
+          threadRef: { botId: from.id, threadId: task.threadId, title: task.title },
+        });
+        const sourceTitle = store.taskByThread(from.id, fromThreadId)?.title ?? "";
+        const waitMs = Math.max(5_000, Math.min(
+          Number(process.env.SAGAX_RUN_WITH_ENGINE_WAIT_MS) || 300_000,
+          mcpCallTimeoutMinutes(cfg) * 60_000 - 30_000,
+        ));
+        const outcome = await askBotAndWait(from.id, relayOpening({ engineLabel: choice.engineLabel, sourceTitle, message }),
+          internalCapability.depth, from.id, fromThreadId, task.threadId, { timeoutMs: waitMs, selfRelay: true });
+        requireActiveInternalCapability();
+        if (outcome.status === "timeout" && !delegationWatch.has(task.threadId)) {
+          // still running: the result is delivered here when it settles
+          const taskId = newId();
+          delegationWatch.set(task.threadId, {
+            toBotId: from.id,
+            toBotName: from.name,
+            taskId,
+            sourceThreadId: fromThreadId,
+            sourceBotId: from.id,
+            routineRunId: activeRoutineRunForThread(fromThreadId)?.id,
+            startedAtMs: Date.now() - waitMs,
+            ...externalCompletion(internalCapability),
+          });
+          delegatedThisTurn(taskId);
+          return json(res, 200, { timeout: true, taskId, engineLabel: choice.engineLabel, threadId: task.threadId });
+        }
+        const status = outcome.status === "timeout" ? "reply" : outcome.status;
+        return json(res, 200, {
+          status,
+          engineLabel: choice.engineLabel,
+          model: choice.model,
+          threadId: task.threadId,
+          text: relayResultText({ engineLabel: choice.engineLabel, model: choice.model, status, text: outcome.text }),
+        });
+      }
       if (method === "POST" && path === "/api/internal/threads") {
         const body = await readInternalBody();
         const from = internalSender;

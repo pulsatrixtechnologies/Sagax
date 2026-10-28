@@ -97,23 +97,37 @@ export type ConnectorSetupRoute =
   | { route: ConnectorSetupProvider; url: string }
   | { refusal: "foreign" | "not_on_engine" | "no_route" };
 
-/** Where the person signs in: the engine's own connectors, on the person's
- * own engine account only (2026-10-21). */
+/** Where the person signs in: their own Grok or Claude account, never one
+ * that belongs to someone else (2026-10-21). 2026-10-28: the card no longer
+ * dead-ends when the bot's engine brings no connector of the person's own
+ * (a key, someone else's sign-in, another engine): it opens the person's own
+ * Grok or Claude account when they have one here, which the bot then
+ * reaches with run_with_engine. `prefer` (the bot's `via`) wins when that
+ * account is the person's own. A refusal means there is no account of
+ * theirs at all, and the bot is told not to offer the card again. */
 export function chooseConnectorSetupRoute(input: {
   target: ConnectorSetupTarget;
   /** the engine the bot runs on */
   engine: "grok" | "claude" | "other";
   /** server/harness-connectors.ts accountConnectorsForTurn */
   account: "own" | "foreign" | "none";
+  /** the person's own sign-in on another engine of that family this bot may run */
+  ownAccounts?: { grok?: boolean; claude?: boolean };
   prefer?: ConnectorSetupProvider;
 }): ConnectorSetupRoute {
   const { target } = input;
+  const own = {
+    grok: Boolean(target.grok) && ((input.engine === "grok" && input.account === "own") || input.ownAccounts?.grok === true),
+    claude: (input.engine === "claude" && input.account === "own") || input.ownAccounts?.claude === true,
+  };
+  const route = (provider: ConnectorSetupProvider): ConnectorSetupRoute =>
+    ({ route: provider, url: provider === "grok" ? GROK_CONNECTORS_URL : CLAUDE_AI_CONNECTORS_URL });
+  if (input.prefer && own[input.prefer]) return route(input.prefer);
+  // the bot's own engine first, when it runs on the person's own account
+  if (input.account === "own" && (input.engine === "grok" || input.engine === "claude") && own[input.engine]) return route(input.engine);
+  if (own.grok) return route("grok");
+  if (own.claude) return route("claude");
   if (input.account === "foreign" && input.engine !== "other") return { refusal: "foreign" };
-  const engineRoute: ConnectorSetupRoute | null = input.account !== "own" ? null
-    : input.engine === "grok" ? (target.grok ? { route: "grok", url: GROK_CONNECTORS_URL } : null)
-      : input.engine === "claude" ? { route: "claude", url: CLAUDE_AI_CONNECTORS_URL }
-        : null;
-  if (engineRoute) return engineRoute;
   if (input.account === "own" && input.engine === "grok") return { refusal: "not_on_engine" };
   return { refusal: "no_route" };
 }

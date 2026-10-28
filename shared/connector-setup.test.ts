@@ -82,6 +82,46 @@ describe("where the person signs in", () => {
   });
 });
 
+describe("the card never offers what the bot cannot do (2026-10-28)", () => {
+  const teams = resolveConnectorSetupTarget("Teams")!;
+
+  it("a bot whose engine brings no connector of the person's (a key, another engine) opens the person's own Grok account", () => {
+    // "the setup card won't open from my side, because this engine can't attach connectors to your own account"
+    for (const engine of ["claude", "other", "grok"] as const) {
+      expect(chooseConnectorSetupRoute({ target: teams, engine, account: "none", ownAccounts: { grok: true } }), engine)
+        .toEqual({ route: "grok", url: GROK_CONNECTORS_URL });
+    }
+  });
+
+  it("a Claude bot on the person's own subscription goes to Grok when asked, if that Grok account is theirs", () => {
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "claude", account: "own", prefer: "grok", ownAccounts: { grok: true } }))
+      .toEqual({ route: "grok", url: GROK_CONNECTORS_URL });
+    // not theirs: their own Claude page, never someone else's Grok
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "claude", account: "own", prefer: "grok" }))
+      .toEqual({ route: "claude", url: CLAUDE_AI_CONNECTORS_URL });
+  });
+
+  it("someone else's engine account: the person's own account when they have one, else a refusal", () => {
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "foreign", ownAccounts: { claude: true } }))
+      .toEqual({ route: "claude", url: CLAUDE_AI_CONNECTORS_URL });
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "foreign", ownAccounts: {} })).toEqual({ refusal: "foreign" });
+  });
+
+  it("a connector outside Grok's catalog never opens grok.com", () => {
+    const calendar = resolveConnectorSetupTarget("Google Calendar")!;
+    expect(chooseConnectorSetupRoute({ target: calendar, engine: "other", account: "none", ownAccounts: { grok: true } })).toEqual({ refusal: "no_route" });
+    expect(chooseConnectorSetupRoute({ target: calendar, engine: "other", account: "none", ownAccounts: { grok: true, claude: true } }))
+      .toEqual({ route: "claude", url: CLAUDE_AI_CONNECTORS_URL });
+  });
+
+  it("every card it chooses opens an allowed page", () => {
+    for (const ownAccounts of [{ grok: true }, { claude: true }, { grok: true, claude: true }]) {
+      const route = chooseConnectorSetupRoute({ target: teams, engine: "other", account: "none", ownAccounts });
+      expect("url" in route && isConnectorSetupUrl(route.url)).toBe(true);
+    }
+  });
+});
+
 describe("outbound links", () => {
   it("allows only grok.com and claude.ai over https", () => {
     expect(isConnectorSetupUrl(GROK_CONNECTORS_URL)).toBe(true);

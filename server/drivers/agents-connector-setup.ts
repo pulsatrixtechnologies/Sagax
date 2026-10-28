@@ -23,7 +23,8 @@ export async function callConnectorSetupTool(args: Json, context: ToolCallContex
   const label = typeof r.label === "string" ? r.label : connector;
   if (r.status === "connected") return { text: `${label} is already connected for this person. Say so in one short sentence.` };
   const where = r.route === "claude" ? "claude.ai" : "grok.com";
+  const engine = r.route === "claude" ? "claude" : "grok";
   return {
-    text: `The card "Connect ${label}" is in the chat: its button opens ${where} in the person's browser, where they sign in; the card turns to connected once Sagax sees it work. Answer in one short sentence in their language (no link, no steps). Never say it is connected until a call through it succeeds.`,
+    text: `The card "Connect ${label}" is in the chat: its button opens ${where} in the person's browser, where they sign in to their own account; the card turns to connected once Sagax sees it work. Answer in one short sentence in their language (no link, no steps). Never say it is connected until a call through it succeeds. Once they are done, use it yourself; if you do not run on ${engine === "grok" ? "Grok" : "Claude"}, call run_with_engine with engine ${engine}.`,
   };
 }

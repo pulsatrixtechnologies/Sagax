@@ -15,6 +15,26 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Run a part on another engine: run_with_engine (2026-10-28)
+
+A bot may run one part of its work on another engine or model and get the
+result back in the same turn (`run_with_engine`, server/run-with-engine.ts,
+route `POST /api/internal/run-with-engine`). The part is the same bot, in a
+fresh thread, for the same person: its speaker is the source turn's
+(`peerSpeaker`), so the person's own sign-ins, keys, routine lineage and
+connectors apply, and the thread keeps the bot's approval level and rules
+(a Custom grant becomes Ask on another engine). The engines offered are the
+ones the payer may run here (`relayEnginesFor`): the organization's engine
+list and the person's own credentials are the only limit. Not in a room, not
+one hop away (`PEER_HOP_ABSENT_TOOLS`). A part still running after
+`SAGAX_RUN_WITH_ENGINE_WAIT_MS` (5 min) is delivered later like a delegation.
+
+Same day, the connection card: `open_connector_setup` opens the person's
+own Grok or Claude account even when the bot's engine brings none
+(`ownAccounts`), honors `via`, and reads the conversation's engine, not the
+bot's default. A refusal tells the bot not to offer the card again. A part's
+successful connector call proves the card of the conversation it came from.
+
 ## Every turn knows its approval level; Full never asks for a typed GO (2026-10-28)
 
 A bot in Full access answered "no sends without your typed GO": nothing in

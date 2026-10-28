@@ -224,6 +224,9 @@ describe("reachability guard: what a person's direct chat is told", () => {
     roster: peerRosterSystemPrompt(team.slice(1), true, false),
     rosterCreator: peerRosterSystemPrompt(team.slice(1), true, true),
     connectorsNone: engineConnectorsPrompt({ driver: "codex", claudeAi: false, grokCloud: false }),
+    // 2026-10-28: a person's own direct turn is pointed at run_with_engine, in Full or not
+    connectorsRelay: engineConnectorsPrompt({ driver: "codex", claudeAi: false, grokCloud: false, relay: true }),
+    connectorsRelayFull: engineConnectorsPrompt({ driver: "claudeAgent", claudeAi: true, grokCloud: false, relay: true, full: true }),
     // the Team incidents report: a turn of the Primary Bot with no automation source
     incident: incidentText({ kind: "failed", bot: { id: "b2", name: "Nova" }, threadId: "t1", detail: "crash" }, { count: 1, mayRetry: true, muted: false }),
     credential: CREDENTIAL_PROMPT,
@@ -243,6 +246,19 @@ describe("reachability guard: what a person's direct chat is told", () => {
     const problems = Object.entries(PROMPTS).flatMap(([prompt, text]) =>
       mentionedTools(text).filter((name) => !shown.has(name)).map((name) => `${prompt} names ${name}`));
     expect(problems).toEqual([]);
+  });
+});
+
+describe("reachability guard: run_with_engine (2026-10-28)", () => {
+  it("is offered where it can run: a person's direct chat and a routine, chief or member", () => {
+    for (const turn of [TURNS.direct, TURNS["direct-card"], TURNS.routine]) {
+      for (const role of Object.values(ROLES)) expect(names({ ...turn, ...role })).toContain("run_with_engine");
+    }
+  });
+  it("is never offered where it cannot: a room (the bot is busy there) or a part already one hop away", () => {
+    for (const turn of [TURNS.room, TURNS.teammate]) {
+      for (const role of Object.values(ROLES)) expect(names({ ...turn, ...role })).not.toContain("run_with_engine");
+    }
   });
 });
 
