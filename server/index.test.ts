@@ -7496,6 +7496,50 @@ describe("harness HTTP API", () => {
     }
   });
 
+  it("shows only the goal in a 1:1 /goal bubble; the instruction reaches the model (#1372)", async () => {
+    const instances = (await api("GET", "/api/instances")).body.instances;
+    const claude = instances.find((instance: { instanceId: string }) => instance.instanceId === "claude");
+    const bot = (await api("POST", "/api/bots", {
+      modelSelection: { instanceId: claude.instanceId, model: claude.models.default },
+    })).body.bot;
+    try {
+      rmSync(fakeClaudeDump, { force: true });
+      const sent = await api("POST", `/api/bots/${bot.id}/messages`, { text: "ship the notes", mode: "goal", sendId: randomUUID() });
+      expect(sent.status, JSON.stringify(sent.body)).toBe(202);
+      // the person's bubble is what they typed, never the internal prompt
+      expect(sent.body.message.text).toBe("ship the notes");
+      const stored = (await api("GET", "/api/bots")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id).messages
+        .filter((message: { role: string; kind: string }) => message.role === "user" && message.kind === "text");
+      expect(stored.at(-1).text).toBe("ship the notes");
+      expect(JSON.stringify(stored)).not.toContain("sagax-goal");
+      // the model gets the goal's instruction in its prompt
+      const dump = JSON.stringify(await readJsonFileWhenReady(fakeClaudeDump));
+      expect(dump).toContain("Goal: ship the notes");
+      expect(dump).toContain("sagax-goal");
+
+      // a retry of the same /goal status writes one row, drawn from tool.soloGoal
+      const statusSendId = randomUUID();
+      const status = await api("POST", `/api/bots/${bot.id}/messages`, { text: "/goal status", sendId: statusSendId });
+      const again = await api("POST", `/api/bots/${bot.id}/messages`, { text: "/goal status", sendId: statusSendId });
+      expect(status.status).toBe(200);
+      expect(again.body.message.id).toBe(status.body.message.id);
+      expect(status.body.message.tool.soloGoal).toEqual({ status: "working", goal: "ship the notes" });
+      const rows = (await api("GET", "/api/bots")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id).messages
+        .filter((message: { tool?: { soloGoal?: unknown } }) => message.tool?.soloGoal);
+      expect(rows).toHaveLength(1);
+
+      const stopped = await api("POST", `/api/bots/${bot.id}/messages`, { text: "/goal stop", sendId: randomUUID() });
+      expect(stopped.body.message.tool.soloGoal).toMatchObject({ status: "stopped", goal: "ship the notes" });
+    } finally {
+      await api("POST", `/api/bots/${bot.id}/interrupt`, {}).catch(() => undefined);
+      await expect.poll(async () => {
+        const state = (await api("GET", "/api/bots?messages=0")).body;
+        return state.bots.find((candidate: { id: string }) => candidate.id === bot.id)?.busy;
+      }, { timeout: 5_000 }).toBeFalsy();
+      await api("DELETE", `/api/bots/${bot.id}`).catch(() => undefined);
+    }
+  });
+
   it("offers an idempotent stop boundary for active local turns", async () => {
     const unsupported = await api("POST", "/api/local-computer/interrupt");
     expect(unsupported).toEqual({

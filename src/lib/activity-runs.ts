@@ -19,6 +19,7 @@ import { isQuietWorkspaceLine, parseWorkspaceLine, type WorkspaceLine } from "..
 import { isTechnicalNoticeName } from "../../shared/chat-notices";
 import type { SelectedComputer } from "../../shared/execution-target";
 import type { LocaleKey } from "@/locales";
+import type { SoloGoalLine, SoloGoalLineStatus } from "../../shared/solo-goal-line";
 
 export type ActivityTranscriptItem =
   | { kind: "message"; message: Message }
@@ -46,6 +47,9 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   // (server/connector-switch.ts), in the reader's language.
   const switched = message.kind === "activity" ? message.tool?.connectorSwitch : undefined;
   if (switched) return { kind: "notice", text: t("chat.connectorSwitch", { engine: switched.engine, connector: switched.connector }) };
+  // #1372: a 1:1 goal's status (server/solo-goal.ts), in the reader's language.
+  const goal = message.kind === "activity" ? message.tool?.soloGoal : undefined;
+  if (goal) return { kind: "notice", text: soloGoalLineLocalized(goal) };
   if (name?.startsWith("recovery:")) return { kind: "recovery", text: name.slice("recovery:".length).trim() };
   // The Kubernetes cluster of the server environments is starting
   // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.
@@ -63,6 +67,17 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   }
   if (name && isStoppedTurnName(name)) return { kind: "stopped", text: name.slice("stopped:".length).trim() };
   return null;
+}
+
+const SOLO_GOAL_KEYS: Record<SoloGoalLineStatus, LocaleKey> = {
+  none: "chat.soloGoal.none", working: "chat.soloGoal.working", blocked: "chat.soloGoal.blocked",
+  stopped: "chat.soloGoal.stopped", completed: "chat.soloGoal.completed", paused: "chat.soloGoal.paused",
+};
+
+/** A 1:1 goal's status row in the reader's language (shared/solo-goal-line.ts). */
+export function soloGoalLineLocalized(line: SoloGoalLine): string {
+  const text = t(SOLO_GOAL_KEYS[line.status] ?? "chat.soloGoal.stopped", { goal: line.goal ?? "", rounds: String(line.rounds ?? 0) });
+  return line.detail && (line.status === "completed" || line.status === "blocked") ? `${text} (${line.detail})` : text;
 }
 
 const WORKSPACE_ON: Record<SelectedComputer, LocaleKey> = {
