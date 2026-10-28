@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { availableTools, catalogProfileFromEnv, type CatalogProfile } from "./drivers/agents-catalog.ts";
-import { builtinAgentToolName, HOST_LEVEL_AGENT_TOOLS, MEMBER_OWN_SCOPE_AGENT_TOOLS, memberOwnScopeTool } from "./member-tool-scope.ts";
+import { builtinAgentToolName, HOST_LEVEL_AGENT_TOOLS, MEMBER_OWN_SCOPE_AGENT_TOOLS, memberOwnScopeTool, ownBotReadAct } from "./member-tool-scope.ts";
+import { describeApproval } from "../shared/approval-describe.ts";
 
 const everything: CatalogProfile = {
   externalRuntime: false, coordinating: false, ownThreadCreation: true, skillAuthoring: true, sharedComputers: true,
@@ -74,5 +75,20 @@ describe("member tool scope on an organization server", () => {
     expect(outside).not.toContain("end_call");
     expect(builtinAgentToolName("mcp__agents__list_bots")).toBe("list_bots");
     expect(builtinAgentToolName("mcp__agentsx__list_bots")).toBeNull();
+  });
+
+  it("treats a read with no effect of the member's own bot as not an admin act (#1269)", () => {
+    const scope = { ownsBot: (id: string) => id === "bot-1", callerBotId: "bot-1" };
+    const read = { method: "GET", path: "/api/bots/bot-1/export.zip" };
+    expect(ownBotReadAct("agents__act", read, scope)).toBe(true);
+    expect(ownBotReadAct("mcp__agents__act", JSON.stringify(read), scope)).toBe(true);
+    expect(describeApproval("agents__act", JSON.stringify(read)).risk).toBe("read");
+    expect(ownBotReadAct("agents__act", { method: "get", path: "/api/bots/bot-1/" }, scope)).toBe(true);
+    expect(ownBotReadAct("agents__act", { method: "POST", path: "/api/bots/bot-1" }, scope)).toBe(false);
+    expect(ownBotReadAct("agents__act", { method: "GET", path: "/api/bots/bot-2" }, scope)).toBe(false);
+    expect(ownBotReadAct("agents__act", { method: "GET", path: "/api/bots/bot-1%2fsecret" }, scope)).toBe(false);
+    expect(ownBotReadAct("agents__act", { ui: "showTeamMap" }, scope)).toBe(false);
+    expect(ownBotReadAct("agents__act", read, undefined)).toBe(false);
+    expect(ownBotReadAct("agents__manage_settings", { action: "get" }, scope)).toBe(false);
   });
 });

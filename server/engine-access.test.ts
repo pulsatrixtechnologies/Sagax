@@ -138,14 +138,33 @@ describe("the admin gate on a member's bot", () => {
     expect(gate("agents__memory_update")).toBe(false);
     expect(gate("agents__propose_routine")).toBe(false);
   });
-  it("lets the owner answer act and manage_settings, which run with the person's own rights (#1269)", () => {
-    expect(gate("agents__act")).toBe(false);
-    expect(gate("mcp__agents__act")).toBe(false);
+  it("lets the owner answer a read-only act on their own bot, and keeps an admin for a write or someone else's bot (#1269)", () => {
+    const owns = (id: string) => id === "bot-1" || id === "bot-1b";
+    const read = (tool: string, raw: unknown, owner = owns) => memberBotAdminApproval({
+      tool, workspaceRoot: root, rawInput: raw, ownsBot: owner, callerBotId: "bot-1",
+    });
+    const get = { method: "GET", path: "/api/bots/bot-1/soul" };
+    expect(read("agents__act", get)).toBe(false);
+    expect(read("mcp__agents__act", get)).toBe(false);
+    expect(read("agents__act", JSON.stringify({ method: "HEAD", path: "/api/bots/bot-1" }))).toBe(false);
+    expect(read("agents__act", { method: "GET", path: "/api/bots/bot-1b/activity" })).toBe(false);
+    expect(read("agents__act", { plugins: { action: "list" } })).toBe(false);
+    expect(read("agents__act", { plugins: { action: "list", botId: "bot-1b" } })).toBe(false);
+    // a write stays an admin card, and so does a read of someone else's bot
+    expect(read("agents__act", { method: "POST", path: "/api/bots/bot-1" })).toBe(true);
+    expect(read("agents__act", { method: "PATCH", path: "/api/bots/bot-1/soul" })).toBe(true);
+    expect(read("agents__act", { method: "DELETE", path: "/api/bots/bot-1" })).toBe(true);
+    expect(read("agents__act", { method: "GET", path: "/api/bots/bot-1", body: { name: "x" } })).toBe(true);
+    expect(read("agents__act", { method: "GET", path: "/api/bots/other/soul" })).toBe(true);
+    expect(read("agents__act", { method: "GET", path: "/api/bots/bot-1/../other" })).toBe(true);
+    expect(read("agents__act", { method: "GET", path: "/api/config" })).toBe(true);
+    expect(read("agents__act", { plugins: { action: "install", botId: "bot-1", marketplace: "m", plugin: "p" } })).toBe(true);
+    // no proof of whose bot, a command dressed as act, or another server's spelling
+    expect(gate("agents__act")).toBe(true);
+    expect(memberBotAdminApproval({ tool: "agents__act", workspaceRoot: root, rawInput: get })).toBe(true);
     expect(gate("agents__manage_settings")).toBe(false);
-    expect(ownerGate("agents__act")).toBe(false);
-    // a command dressed as act, or act on a server Sagax did not mount, is not the built-in
     expect(gate("agents__act", undefined, { command: "ls", cwd: root })).toBe(true);
-    expect(memberBotAdminApproval({ tool: "agents__act", workspaceRoot: root, foreignMcpServers: ["agents"] })).toBe(true);
+    expect(memberBotAdminApproval({ tool: "agents__act", workspaceRoot: root, foreignMcpServers: ["agents"], rawInput: get, ownsBot: owns })).toBe(true);
   });
   it("still needs an admin for a host-level agents tool or a command dressed as one", () => {
     expect(gate("agents__add_mcp_server")).toBe(true);

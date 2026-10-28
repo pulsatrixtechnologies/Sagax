@@ -15854,6 +15854,16 @@ bus.subscribe((event: RuntimeEvent) => {
         ownDestination,
         ownComputerChoice,
         foreignMcpServers: foreignServers,
+        // #1269: a read of the member's own bot is not an admin card
+        rawInput: event.input,
+        callerBotId: asker.id,
+        ownsBot: (id: string) => {
+          if (id === asker.id) return true;
+          const other = store.bot(id);
+          const mine = recordedBotOwner(asker);
+          const theirs = other ? recordedBotOwner(other) : undefined;
+          return Boolean(mine && theirs && mine === theirs);
+        },
       }));
       // Security review 2026-10-19: a holder of host.commands answers a
       // server-level card of their own bot only for their own turn, when the
