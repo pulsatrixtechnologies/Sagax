@@ -93,6 +93,9 @@ import {
   liveApprovalChange,
   liveApprovalTightens,
   isApprovalMode,
+  appliedLevelReason,
+  staleThreadException,
+  type AppliedApprovalLevel,
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
 import { isProactiveMode } from "../shared/proactive-mode.ts";
@@ -386,8 +389,9 @@ import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall, type RuleProductContext } from "./custom-rules-review.ts";
 import { createCustomRulesModelReviewer } from "./custom-rules-model.ts";
-import { compileRule, modelReviewCardEligible, turnStartOf, type CustomRule, type RuleProduct, type TurnStart } from "../shared/custom-rules.ts";
+import { compileRule, modelReviewCardEligible, turnStartOf, type CustomRule, type CustomRuleNotice, type RuleProduct, type TurnStart } from "../shared/custom-rules.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
+import { createAutoApprovalNotes, type ToolAutoApproval } from "./tool-auto-approval.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
 import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-draft-send.ts";
@@ -7087,6 +7091,26 @@ for (const pending of startupCatalogs) {
 }
 store.seedIfEmpty();
 hostedModels?.reconcile(store);
+// 2026-10-28 (one source of truth): a conversation that kept a level
+// nobody chose in it (an engine change that asked again, a grant that never
+// finished) while its bot's own setting is wider, on an engine that runs
+// that setting, follows its bot again: the selector showed the bot's
+// setting, the turns ran the conversation's. Never narrows a level; a
+// person's own choice in a conversation and a Primary Bot's handoff stay.
+for (const bot of store.bots) {
+  const setting = approvalModeFor({ approvalMode: bot.approvalMode, autoApprove: bot.autoApprove });
+  if (bot.approvalGrant) continue;
+  for (const task of bot.tasks ?? []) {
+    if (task.approvalOwn !== "engine" && task.approvalOwn !== "safety") continue;
+    const projected = store.projectBotForTask(bot.id, task.threadId);
+    if (!projected) continue;
+    const threadLevel = approvalModeFor({ approvalMode: projected.approvalMode, autoApprove: projected.autoApprove });
+    if (!staleThreadException({ exception: task.approvalOwn, threadLevel, setting, engineRunsSetting: supportsApprovalMode(projected.modelSelection, setting) })) continue;
+    if (store.patchTask(bot.id, task.threadId, { approvalOwn: undefined })) {
+      console.log(`[approval] bot ${bot.id}: a conversation follows its bot's level again (${threadLevel} -> ${setting})`);
+    }
+  }
+}
 // 2026-10-11, once per data directory: Full access on an organization
 // server is off until an admin turns it on. An organization that never saved
 // the setting and already runs bots on Full keeps it, as an explicit true.
@@ -8482,7 +8506,9 @@ const wireBot = (bot: BotRecord): WireBot => {
   // an organization viewer gets the readable ones only (botForViewer).
   const botConversations = interBotConversations(bot.id, store.bots, undefined, (ownerId, threadId) => threadBusy(ownerId, threadId));
   const coordinated = threadsWithActiveCoordination();
+  const level = approvalLevelOf(bot.id, bot.threadId);
   return { ...visible, waitingForTeammates: coordinated.has(bot.threadId) && !threadBusy(bot.id, bot.threadId),
+    ...(level ? { approvalSetting: level.setting, ...(level.applied ? { approvalApplied: level.applied } : {}) } : {}),
     ...(waitingApprovals.length ? { waitingApprovals } : {}),
     ...(botConversations.length ? { botConversations } : {}),
     mainThreadId: botMainThread(bot.id),
@@ -8700,6 +8726,32 @@ const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = b
   }
   return mode;
 };
+
+/** 2026-10-28 (one source of truth): the bot's own setting, and the level
+ * one of its conversations really runs at when that differs, with why.
+ * The same judgment as a turn (approvalModeForTurn on the conversation's
+ * projection), so what the selector and sagax_settings show is what the
+ * server applies. */
+function approvalLevelOf(botId: string, threadId?: string): { setting: ApprovalMode; applied?: AppliedApprovalLevel } | null {
+  const stored = store.bot(botId);
+  if (!stored) return null;
+  const setting = approvalModeFor({ approvalMode: stored.approvalMode, autoApprove: stored.autoApprove });
+  const thread = threadId ?? stored.threadId;
+  const projected = store.projectBotForTask(botId, thread) ?? stored;
+  const applied = approvalModeForTurn(projected, false, thread);
+  const task = store.taskByThread(botId, thread);
+  const threadLevel = task?.approvalOwn !== undefined ? approvalModeFor({ approvalMode: projected.approvalMode, autoApprove: projected.autoApprove }) : undefined;
+  const reason = appliedLevelReason(setting, applied, {
+    threadException: task?.approvalOwn,
+    ...(threadLevel ? { threadLevel } : {}),
+    pending: Boolean(stored.approvalGrant && (!stored.approvalGrant.threadOnly || stored.approvalGrant.threadId === thread)),
+    consentMissing: setting === "full" && orgDeniesFull(stored),
+    memberPolicy: memberOwnedInOrg(stored) && memberTurnLevel(setting, memberAutoApprovalAllowed(cfg.organization)) !== setting,
+    guest: cloudGuestDriven(thread),
+    mail: botmailConfined(thread),
+  });
+  return reason ? { setting, applied: { mode: applied, reason } } : { setting };
+}
 
 /** A level belongs to the requesting conversation, not whichever sibling is
  * selected in the UI or the bot's default for future conversations. */
@@ -13220,6 +13272,21 @@ onSteeredQueueChange(() => broadcast({ kind: "bot.queued", queues: publicBotQueu
 // item/request ids are only unique within a thread, so two bots acting at
 // once can collide on a bare id and patch each other's messages.
 const toolMessageByItem = new Map<string, string>(); // threadId:itemId -> messageId
+/** 2026-10-28: what answered a call's ask with no card, kept until the
+ * call's own row exists (server/tool-auto-approval.ts). */
+const autoApprovals = createAutoApprovalNotes();
+/** Put what answered an ask with no card on the call's own row: the newest
+ * row of this tool in the conversation that has none yet (Claude writes the
+ * row before it asks), else on the row the engine writes next. */
+function noteAutoApproval(threadId: string, names: ReadonlyArray<string | undefined>, approval: ToolAutoApproval, notice?: CustomRuleNotice): void {
+  const rows = store.messagesFor(threadId);
+  const row = autoApprovals.rowFor(rows, names);
+  if (row?.tool) {
+    store.patchMessage(threadId, row.id, { tool: { ...row.tool, autoApproval: approval, ...(notice ? { ruleNotice: notice } : {}) } });
+    return;
+  }
+  autoApprovals.remember(threadId, names, approval, notice);
+}
 const askMessageByRequest = new Map<string, string>(); // threadId:requestId -> messageId
 /** Approvals nobody answered, kept for the result of the turn that asked
  * them: the direct coordination outcome, a delegation's reply and a room
@@ -15903,10 +15970,12 @@ bus.subscribe((event: RuntimeEvent) => {
         // narration is folded in here, once, so call mode can read the
         // chip aloud without re-deriving it — and so the phrase a user
         // hears and the chip they see can never drift apart
+        const approved = autoApprovals.takePending(event.threadId, name);
         const message = pushMessage({
           role: "bot",
           kind: "activity",
           tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}),
+            ...(approved ? { autoApproval: approved.approval, ...(approved.notice ? { ruleNotice: approved.notice } : {}) } : {}),
             ...declaredToolProduct(bot?.id, name, event.input),
             ...(event.parentItemId ? { parentItemId: event.parentItemId } : {}) },
           // attributed to its turn so the digest can count it
@@ -16524,7 +16593,6 @@ bus.subscribe((event: RuntimeEvent) => {
         });
       }
       if (verdict?.approve && asker && event.requestId) {
-        const settled = verdict.approve;
         const instance = event.providerInstanceId
           ? registry.get(event.providerInstanceId)
           : registry.get(asker.modelSelection.instanceId);
@@ -16553,11 +16621,14 @@ bus.subscribe((event: RuntimeEvent) => {
             });
             return;
           }
-          pushMessage({
-            role: "bot",
-            kind: "activity",
-            tool: { name: `${settled}: ${summary.slice(0, 120)}`, ok: true, ...(verdict.source === "custom-rule" && customNotice ? { ruleNotice: customNotice } : {}) },
-          });
+          // 2026-10-28: an ask answered with no card is not a row of its
+          // own ("approved ... (full access)" read like a permission asked
+          // each time): what answered it goes on the call's own row, in its
+          // details (tool-auto-approval.ts).
+          noteAutoApproval(event.threadId, [tool, event.mcpTool], {
+            source: verdict.source,
+            ...("rule" in verdict && typeof verdict.rule === "string" ? { rule: verdict.rule } : {}),
+          }, verdict.source === "custom-rule" && customNotice ? customNotice : undefined);
           // Log only once the provider has actually taken the answer.
           appendDecision(DATA_DIR, {
             threadId: event.threadId,
@@ -16652,6 +16723,8 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(permission && event.mcpTool ? { mcpTool: event.mcpTool } : {}),
           ...(ownerRuleCandidate ? { ownerRule: ownerRuleCandidate } : {}),
           ...(ownerRuleFolderCandidate ? { ownerRuleFolder: ownerRuleFolderCandidate } : {}),
+          // the person's own "Ask first" rule held it: the line names it
+          ...(permission && owner?.kind === "card" && owner.reason === "ask-rule" && owner.rule ? { heldRule: { description: owner.rule.description.slice(0, 200) } } : {}),
           // the rule notice: an ask rule held this card, or an allow rule
           // matched without covering its risk class
           ...(permission && customNotice && (customNotice.outcome === "held" || customNotice.outcome === "risk") ? { customRule: customNotice } : {}),
@@ -16938,6 +17011,7 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       break;
     case "turn.completed": {
+      autoApprovals.clear(event.threadId);
       appPiecesByThread.delete(event.threadId);
       settleWaitingOnPersonChips(event.threadId);
       // A peer-started turn settles as coordination, not as news. What keeps
@@ -32425,6 +32499,7 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       const bot = store.projectBotForTask(botId, threadId) ?? store.bot(botId);
       return bot ? approvalModeForTurn(bot, false, threadId) : "ask";
     },
+    approvalLevel: (botId, threadId) => approvalLevelOf(botId, threadId),
     keyRequired: (person, classes, fallback) => securityKeys.required(person, classes, fallback),
     // 2026-10-20: the person asked their Primary Bot for this change now
     personAsked: (input, quote) => {
@@ -34755,6 +34830,12 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
       && canOnBot(viewerFacts, "bot.use", botFacts(otherRecord!));
   }, (ownerId, threadId) => threadBusy(ownerId, threadId));
   const narrowed: T = { ...narrowedBase };
+  // the level the viewer's own conversation runs at, never another person's
+  if (typeof narrowed.threadId === "string" && narrowed.threadId !== bot.threadId) {
+    const level = narrowed.threadId ? approvalLevelOf(record.id, narrowed.threadId) : null;
+    if (level?.applied) (narrowed as Record<string, unknown>).approvalApplied = level.applied;
+    else delete (narrowed as Record<string, unknown>).approvalApplied;
+  }
   if (conversations.length) (narrowed as Record<string, unknown>).botConversations = conversations;
   else delete (narrowed as Record<string, unknown>).botConversations;
   // Only the bot-to-bot cards this viewer answers (approvalOwnerId).

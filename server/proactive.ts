@@ -109,6 +109,10 @@ export function classifyProactiveActionKind(action: ProactiveActionInput): Proac
 export interface ProactiveDecisionInput {
   /** The stored bot; only its proactiveMode is read here. */
   bot: { proactiveMode?: unknown };
+  /** 2026-10-28: the level the turn runs at (approvalModeForTurn). At
+   * Full access a "read-auto" write takes the ordinary approval path
+   * (proactiveGate), and `coveredByRules` then answers for that path. */
+  approvalLevel?: string;
   action: ProactiveActionInput & {
     /** The full request the bot prepared, forwarded unchanged when a step
      * runs. Never narrowed or split — keeps #938's whole-request hold intact. */
@@ -142,7 +146,7 @@ export interface ProactiveDecision {
 export function decideProactiveStep(input: ProactiveDecisionInput): ProactiveDecision {
   const mode = proactiveModeFor(input.bot);
   const kind = classifyProactiveActionKind(input.action);
-  const disposition = proactiveGate({ mode, kind });
+  const disposition = proactiveGate({ mode, kind, ...(input.approvalLevel ? { approvalLevel: input.approvalLevel } : {}) });
   const base = {
     mayObserve: proactiveMayObserve(mode),
     disposition,

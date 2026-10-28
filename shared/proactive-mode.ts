@@ -67,6 +67,13 @@ export type ProactiveDisposition = "blocked" | "propose" | "auto" | "card" | "de
 export interface ProactiveGateInput {
   mode: ProactiveMode;
   kind: ProactiveActionKind;
+  /** 2026-10-28: the bot's approval level. At Full access, "read-auto"
+   * imposes no card of its own: a write goes the ordinary approval path
+   * ("defer"), where Full answers it and only the organization's Refuse and
+   * Ask first rules, the person's own Ask first rules and the outbound guard
+   * (sends outside Allowed recipients) still stop it. "propose" stays a
+   * proposal: the person chose to see it first. */
+  approvalLevel?: string;
 }
 
 /** Whether a bot on this mode may observe (read-only sensing of a condition)
@@ -77,8 +84,9 @@ export function proactiveMayObserve(mode: ProactiveMode): boolean {
 
 /** The pure per-step decision. It never lets a write run on its own: the only
  * disposition that executes without a card is "auto", returned for a read. */
-export function proactiveGate({ mode, kind }: ProactiveGateInput): ProactiveDisposition {
+export function proactiveGate({ mode, kind, approvalLevel }: ProactiveGateInput): ProactiveDisposition {
   if (mode === "off") return "blocked";
+  if (kind === "write" && mode === "read-auto" && approvalLevel === "full") return "defer";
   if (kind === "read") {
     // Propose offers even read-only follow-ups instead of running them; the
     // other two run their own reads (#875: a read never opens a card).

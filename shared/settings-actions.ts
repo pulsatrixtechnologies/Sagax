@@ -175,7 +175,8 @@ botField("bot.allowedRecipients", "allowedRecipients", "array", "Allowed recipie
 add({
   key: "bot.approvalMode", family: "bot", target: "bot", value: "enum:ask|edits|auto|full",
   label: "Approval level (ask, edits, auto = Approve for me, full)", where: "Bot editor > Permissions > Approval level",
-  read: botRead("approvalMode"),
+  // the bot's own setting (WireBot.approvalSetting), never a conversation's
+  read: botRead("approvalSetting"),
   write: (ids, v) => v === "full"
     ? { method: "PATCH", path: `/api/bots/${enc(ids.target!)}`, body: { approvalMode: "full", confirmFullAccess: true } }
     : { method: "PATCH", path: `/api/bots/${enc(ids.target!)}`, body: { approvalMode: v } },

@@ -12,7 +12,7 @@ import type { LimitFailoverLine } from "./limit-failover.ts";
 import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { DataBroadcast } from "./data-surface.ts";
-import type { ApprovalException, ApprovalMode } from "./approval-mode.ts";
+import type { AppliedApprovalLevel, ApprovalException, ApprovalMode } from "./approval-mode.ts";
 import type { ProactiveMode } from "./proactive-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
@@ -398,6 +398,14 @@ export interface WireBot {
    * (server/org-full-access.ts). Later grants by that person skip it. */
   fullAccessConsent?: { principalId: string; at: number };
   approvalMode?: ApprovalMode;
+  /** 2026-10-28 (one source of truth): the bot's own approval level as its
+   * owner chose it in Permissions, never a conversation's. `approvalMode`
+   * above may carry the open conversation's level. Server-derived. */
+  approvalSetting?: ApprovalMode;
+  /** The level the open conversation (`threadId`) really runs at, as the
+   * server judges its turns, with why, only when it is not
+   * `approvalSetting`. Absent: the conversation runs the bot's setting. */
+  approvalApplied?: AppliedApprovalLevel;
   /** How autonomously this bot may act on its own (shared/proactive-mode.ts):
    * absent/"off" = never; "propose", "read-auto" and "follow-rules" each gate
    * a proactive step through our approval model. Never a Chief orchestrator. */
@@ -757,6 +765,11 @@ export interface WireMessage {
     /** 2026-10-16: the person's custom rule that approved or refused this
      * call with no card (the rule notice, with a link to edit it). */
     ruleNotice?: CustomRuleNotice;
+    /** 2026-10-28: the call's permission ask was answered with no card
+     * (Full access, an Always allow, a saved rule, a read Sagax trusts):
+     * what answered it, shown only in the row's details, never on the line.
+     * `source` is the decision log's source (auto-approve.ts). */
+    autoApproval?: { source: string; rule?: string };
     /** 2026-10-18: the bot left an engine the organization no longer
      * offers and now runs on Auto (shared/offered-engines.ts). */
     engineMove?: OrgEngineMove;
@@ -1010,6 +1023,10 @@ export interface OptionCardData {
    * An ordinary card names the file's folder. An admin card names one
    * agent root for a read (`from: "admin"`). */
   ownerRuleFolder?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; /** the folder rule covers changing files (write, delete), not only reading */ writes?: boolean; /** set when this folder rule answers an admin card */ from?: "admin" | "hold" | "origin" };
+  /** 2026-10-28: the person's own "Ask first" rule that kept this card
+   * (whatever the approval level), in its own words, so the waiting line
+   * names it. An organization's or a custom rule rides `customRule`. */
+  heldRule?: { description: string };
   /** The owner's rule saved when answering this card. */
   ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule (an allowKey) the person saved when answering this card:

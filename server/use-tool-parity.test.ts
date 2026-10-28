@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createAgentCardGuard } from "./agent-tool-card-guard.ts";
+import { autoVerdict } from "./auto-approve.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "./agent-tool-policy.ts";
 import { reviewCustomRules } from "./custom-rules-review.ts";
 import { availableTools, catalogProfileFromEnv } from "./drivers/agents-catalog.ts";
@@ -159,6 +160,34 @@ describe("#1374: use_tool decides like the direct call", () => {
     const wrapped = unwrapAgentsBridge("mcp__agents__use_tool", useTool(TOOL));
     expect(hookRuns("pre_tool_use", hooks, wrapped.name)).toEqual(hookRuns("pre_tool_use", hooks, `mcp__agents__${TOOL}`));
     expect(hookRuns("pre_tool_use", hooks, wrapped.name)).toHaveLength(1);
+  });
+});
+
+// 2026-10-28: at Full access the server asks the person nothing, direct or
+// through use_tool: the ask is answered with no card. Only an organization's
+// Refuse and Ask first rules (and the person's own Ask first rule) still stop
+// it, the same way on both paths.
+describe("Full access asks nothing, direct or through use_tool", () => {
+  const verdictAtFull = (rules: CustomRule[], call: { tool: string; input: unknown }) => {
+    const kind = decide(rules, call);
+    const saved = rules[0];
+    return autoVerdict("full", call.tool, kind === "none" || !saved ? {} : { customRule: { behavior: kind as CustomRule["behavior"], id: saved.org ? `orule_${saved.id}` : saved.id } });
+  };
+
+  describe.each(Object.entries(ENTRIES))("%s", (_entry, entry) => {
+    it("no rule: approved with no card, the same on both paths", () => {
+      const direct = verdictAtFull([], entry(true));
+      expect(direct).toMatchObject({ source: "full-access" });
+      expect(direct.approve).toBeTruthy();
+      expect(verdictAtFull([], entry(false))).toEqual(direct);
+    });
+
+    it.each(Object.entries(RULES))("rule %s still decides, the same on both paths", (_name, saved) => {
+      const direct = verdictAtFull([saved], entry(true));
+      expect(direct.approve).toBeNull();
+      expect(direct.source).toBe(saved.behavior === "deny" ? "custom-rule-deny" : "custom-rule-ask");
+      expect(verdictAtFull([saved], entry(false))).toEqual(direct);
+    });
   });
 });
 

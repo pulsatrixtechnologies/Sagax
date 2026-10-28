@@ -103,6 +103,186 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Mettre à jour ou réinitialiser l'ordinateur de vos bots" } }
       }
     },
+    "step.detail.approval": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approval" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approbation" } }
+      }
+    },
+    "approval.auto.full": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved automatically: Full access" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé automatiquement : accès complet" } }
+      }
+    },
+    "approval.auto.level": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved automatically: Approve for me" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé automatiquement : approuver à ma place" } }
+      }
+    },
+    "approval.auto.rule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved automatically: your Always allow rule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé automatiquement : votre règle Toujours permettre" } }
+      }
+    },
+    "approval.auto.command": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved automatically: a saved command" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé automatiquement : une commande enregistrée" } }
+      }
+    },
+    "approval.auto.recipients": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved automatically: allowed recipients" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé automatiquement : destinataires autorisés" } }
+      }
+    },
+    "approval.auto.trusted": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved automatically: a read or a Sagax tool that needs no card" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé automatiquement : une lecture ou un outil Sagax qui ne demande pas de carte" } }
+      }
+    },
+    "approval.auto.answered": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved: your earlier answer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé : votre réponse précédente" } }
+      }
+    },
+    "approval.auto.other": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved automatically" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé automatiquement" } }
+      }
+    },
+    "approvalApplied.line": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This conversation runs at {level}: {reason}." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette conversation fonctionne en {level} : {reason}." } }
+      }
+    },
+    "approvalApplied.useSetting": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Use {level} here" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Utiliser {level} ici" } }
+      }
+    },
+    "approvalApplied.confirmFull": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Confirm Full access" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Confirmer l'accès complet" } }
+      }
+    },
+    "approvalApplied.reason.thread": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "you chose another level in this conversation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "vous avez choisi un autre niveau dans cette conversation" } }
+      }
+    },
+    "approvalApplied.reason.delegated": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "a Primary Bot gave this conversation its own level" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "un bot principal a donné son propre niveau à cette conversation" } }
+      }
+    },
+    "approvalApplied.reason.engine": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "an engine change asked again in this conversation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "un changement de moteur a redemandé dans cette conversation" } }
+      }
+    },
+    "approvalApplied.reason.safety": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "a level change did not finish" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "un changement de niveau ne s'est pas terminé" } }
+      }
+    },
+    "approvalApplied.reason.pending": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Full access waits for its confirmation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "l'accès complet attend sa confirmation" } }
+      }
+    },
+    "approvalApplied.reason.consent": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Full access needs your confirmation for this bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "l'accès complet demande votre confirmation pour ce bot" } }
+      }
+    },
+    "approvalApplied.reason.memberPolicy": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "your organization keeps this level off for members' bots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "votre organisation désactive ce niveau pour les bots des membres" } }
+      }
+    },
+    "approvalApplied.reason.engineUnsupported": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "this conversation's engine cannot run this level" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "le moteur de cette conversation ne peut pas utiliser ce niveau" } }
+      }
+    },
+    "approvalApplied.reason.guest": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "someone else drives this conversation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "quelqu'un d'autre mène cette conversation" } }
+      }
+    },
+    "approvalApplied.reason.mail": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "a routine woken by an email runs at Ask" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "une routine réveillée par un courriel fonctionne en mode Demander" } }
+      }
+    },
+    "approvalApplied.level.ask": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ask for approval" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demander l'autorisation" } }
+      }
+    },
+    "approvalApplied.level.edits": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Auto-accept edits" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Accepter les modifications automatiquement" } }
+      }
+    },
+    "approvalApplied.level.auto": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approve for me" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuver à ma place" } }
+      }
+    },
+    "approvalApplied.level.full": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Full access" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Accès complet" } }
+      }
+    },
+    "approvalApplied.level.custom": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Custom (config.toml)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Personnalisé (config.toml)" } }
+      }
+    },
+    "approval.receipt.autoReview": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approved by automatic review under your rule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Approuvé par l'examen automatique selon votre règle" } }
+      }
+    },
+    "approval.waiting.orgRule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paused by your organization's \"Ask first\" rule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente selon la règle « Demander d'abord » de votre organisation" } }
+      }
+    },
+    "approval.waiting.ownRule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paused by your \"Ask first\" rule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En pause selon votre règle « Demander d'abord »" } }
+      }
+    },
     "You declined this version. It will never be published.": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "You declined this version. It will never be published." } },

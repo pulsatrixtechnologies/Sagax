@@ -204,7 +204,7 @@ struct BotPanelPermissions: View {
     /// (2026-10-26); each switch asks for its own field.
     private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit, bot: bot) }
     private func edits(_ field: String) -> Bool { canEdit && session.canEditBotField(bot, field) }
-    private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: bot.autoApprove) }
+    private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: bot.approvalSettingMode, autoApprove: bot.autoApprove) }
     private var sectionName: String {
         let name = bot.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? String(localized: "Unassigned") : name
@@ -271,6 +271,9 @@ struct BotPanelPermissions: View {
                     .foregroundStyle(theme.inkSecondary)
                     .padding(.top, 6)
                     .accessibilityIdentifier("desktop-panel-approval-detail")
+                AppliedLevelNote(bot: bot)
+                    .foregroundStyle(theme.ink)
+                    .padding(.top, 6)
                 if session.surfaceGate.allows(.commandAllowlist) {
                     Button { allowlist = true } label: {
                         Text("Manage command allowlist").panelText(13, 19.5).foregroundStyle(theme.inkSecondary)

@@ -13,7 +13,8 @@ import type { LocaleKey } from "@/locales";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
 import { ApprovalHeading, TechnicalDetails } from "@/components/ApprovalParts";
 import { StepRow } from "@/components/StepRow";
-import { CustomRuleNoticeLine, CustomRuleSavedInset } from "@/components/CustomRuleNotice";
+import { CustomRuleNoticeLine, CustomRuleSavedInset, customRuleNoticeLine } from "@/components/CustomRuleNotice";
+import { readStep } from "@/lib/step-label";
 import { approvalPlain, describeAllowRule, describeApproval, isTechnicalText, parseToolId, type ApprovalRisk, type ToolHints } from "@/lib/approval-describe";
 import { outboundSummary } from "@/lib/approval-summary";
 import { cronLocale, niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
@@ -127,6 +128,34 @@ export function approvalPill(card: Pick<OptionCardData, "answered" | "expired" |
   if (card.answered === "allow" && card.alwaysAllowed) return { label: t("approval.pill.alwaysAllowed"), tone: "success" };
   if (card.answered === "allow") return { label: t("approval.pill.allowedOnce"), tone: "success" };
   return { label: t("approval.pill.declined"), tone: "danger" };
+}
+
+/** 2026-10-28: a settled ask nobody had to answer by hand at that moment
+ * (an Always allow saved or already kept, the model reviewer under the
+ * person's rule) reads as the call's ordinary step line. "Always allowed"
+ * and its check stay in the details, never on the line: a row of them under
+ * each call read like a permission asked each time, Full access included. */
+export function quietApprovalReceipt(card: Pick<OptionCardData, "answered" | "expired" | "undone" | "alwaysAllowed" | "ruleSaved" | "answeredBy">): boolean {
+  if (card.answered !== "allow" || card.expired === true || card.undone === true) return false;
+  return card.ruleSaved?.behavior === "allow" || Boolean(card.alwaysAllowed) || card.answeredBy?.via === "auto-review";
+}
+
+/** The product a card's tool serves, as the server declared it. */
+function productOf(hints: unknown): { product?: string; productId?: string } {
+  const value = hints && typeof hints === "object" ? hints as { product?: unknown; productId?: unknown } : {};
+  return {
+    ...(typeof value.product === "string" ? { product: value.product } : {}),
+    ...(typeof value.productId === "string" ? { productId: value.productId } : {}),
+  };
+}
+
+/** The line a card held by a rule waits on: the rule, named. */
+export function heldByRuleLine(card: Pick<OptionCardData, "customRule" | "heldRule">): { label: string; target?: string } | undefined {
+  if (card.customRule && (card.customRule.outcome === "held" || card.customRule.outcome === "risk")) {
+    return { label: customRuleNoticeLine(card.customRule), target: card.customRule.when ? `« ${card.customRule.when} »` : undefined };
+  }
+  if (card.heldRule?.description) return { label: t("customRules.notice.held"), target: `« ${card.heldRule.description} »` };
+  return undefined;
 }
 
 /** "Added to your Allow rules" with the rule in plain words and Edit rule,
@@ -468,19 +497,46 @@ export function ApprovalCard({
   // as a quiet step line. A proposal (routine, skill, profile, team setup)
   // keeps its card: what it changes, and for whom, is reviewed there.
   if (open && view) {
+    // an "Ask first" rule (the organization's or the person's) held it: the
+    // line says which rule, whatever the approval level
+    const byRule = !card.reviewing && !card.adminApproval ? heldByRuleLine(card) : undefined;
     return (
       <StepRow
         testId="approval-waiting"
-        data={{ "data-tour": "approval", "data-approval-waiting": card.requestId, ...(card.reviewing ? { "data-auto-review": "pending" } : {}) }}
+        data={{ "data-tour": "approval", "data-approval-waiting": card.requestId, ...(card.reviewing ? { "data-auto-review": "pending" } : {}), ...(byRule ? { "data-held-by-rule": "" } : {}) }}
         icon={<ShieldCheck size={13} aria-hidden="true" className="text-accent" />}
-        label={card.reviewing ? t("customRules.notice.reviewing") : card.adminApproval ? t("approval.waitingForAdmin") : t("approval.status.waitingApproval")}
-        target={card.adminApproval ? adminWillAnswerLine(card.adminNames) : undefined}
+        label={card.reviewing ? t("customRules.notice.reviewing") : card.adminApproval ? t("approval.waitingForAdmin") : byRule ? byRule.label : t("approval.status.waitingApproval")}
+        target={card.adminApproval ? adminWillAnswerLine(card.adminNames) : byRule?.target}
       />
     );
   }
 
   // Answered or expired, a tool approval is a one-line receipt (#455) that
   // opens on what was asked, the saved rule and the technical details.
+  if (view && quietApprovalReceipt(card)) {
+    const pill = approvalPill(card);
+    const step = readStep({ name: card.mcpTool ?? card.tool ?? "tool", ok: true, ...(card.toolInput ? { input: card.toolInput } : {}), ...productOf(card.toolHints) });
+    return (
+      <StepRow testId="approval-receipt-quiet" data={{ "data-approval-receipt": "quiet" }} label={step.label} target={step.target}>
+        {() => (
+          <div className="flex flex-col gap-1 text-[12.5px] text-ink-secondary" data-testid="approval-receipt-detail">
+            <div className="flex items-center gap-1.5 text-ink">
+              <Check size={13} aria-hidden="true" className="text-success" />
+              <span>{card.answeredBy?.via === "auto-review" ? t("customRules.notice.modelApproved") : pill?.label}</span>
+              {byVoice}
+            </div>
+            {view.summary && <div>{view.summary}</div>}
+            {card.alwaysAllowed && <AllowRuleInset rule={card.alwaysAllowed} />}
+            {card.ruleSaved && <OwnerRuleInset rule={card.ruleSaved} />}
+            {card.customRule && <CustomRuleNoticeLine notice={card.customRule} />}
+            {card.customRuleSaved && <CustomRuleSavedInset rule={card.customRuleSaved} botId={message.from?.botId} />}
+            {(view.args || card.tool) && <TechnicalDetails tool={card.tool} server={view.server} args={view.args} />}
+          </div>
+        )}
+      </StepRow>
+    );
+  }
+
   if (view) {
     const pill = approvalPill(card);
     // what was asked, as an action: "Send to Linear", "View accounts in Twilio"

@@ -172,7 +172,7 @@ struct StepMessageRow: View {
                 .accessibilityLabel([reading.label, reading.target].compactMap { $0 }.joined(separator: ", "))
                 .accessibilityIdentifier("step.\(message.id)")
                 if open {
-                    StepDetail(toolName: tool.name, args: args, result: result, words: words)
+                    StepDetail(toolName: tool.name, args: args, result: result, words: words, autoApproval: tool.autoApproval)
                 }
             }
         }
@@ -218,9 +218,19 @@ struct StepDetail: View {
     let args: [(key: String, value: String)]
     let result: (text: String, cut: Bool)?
     let words: StepWords
+    /// 2026-10-28: what answered the call's ask with no card; here only,
+    /// never on the step's line.
+    var autoApproval: ToolAutoApproval? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let autoApproval {
+                Text(verbatim: words.t("step.detail.approval")).font(.caption2.weight(.semibold)).foregroundStyle(Theme.textTertiary)
+                Text(verbatim: words.t("approval.auto.\(AutoApprovalReason.of(source: autoApproval.source).rawValue)"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("step-auto-approval")
+            }
             // the technical id lives here only, never on the folded line
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(verbatim: words.t("step.detail.tool")).font(.caption2.weight(.semibold)).foregroundStyle(Theme.textTertiary)

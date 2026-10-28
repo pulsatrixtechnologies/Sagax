@@ -37,7 +37,7 @@ import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-even
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
-import { approvalModeFor, threadApprovalFields, type ApprovalMode } from "../../shared/approval-mode";
+import { approvalModeFor, botApprovalSetting, threadApprovalFields, type ApprovalMode } from "../../shared/approval-mode";
 import type { ProactiveMode } from "../../shared/proactive-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
 import { onNudgeReceived, onNudgeSent, onNudgeSentEcho } from "@/lib/desktop-nudge";
@@ -181,6 +181,8 @@ export interface OptionCardData {
   ownerRule?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; from?: "admin" | "hold" | "origin" };
   /** 2026-10-26 (#1065): the second "Always allow", the whole folder of the file this card reads (and its subfolders). */
   ownerRuleFolder?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; writes?: boolean; from?: "admin" | "hold" | "origin" };
+  /** The person's own "Ask first" rule that kept this card (shared/wire.ts). */
+  heldRule?: { description: string };
   /** The owner's rule saved when answering this card. */
   ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule saved when this card was answered (server/index.ts) */
@@ -289,7 +291,7 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
    * narration of the same chip ("reading a file"), used by call mode. */
   /** `setup` marks an error fixed by installing something, not by retrying.
    * `summary` is the call's input on one redacted line (the shell command). */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; /** The product the server declared for the tool, and the id its tool names start with (shared/wire.ts). */ product?: string; productId?: string; itemId?: string; outputPath?: string; fullResult?: boolean; /** Files the call wrote (shared/wire.ts). */ files?: string[]; widget?: import("../../shared/cw-widgets/types").CwWidget; ruleNotice?: import("../../shared/custom-rules").CustomRuleNotice; engineMove?: import("../../shared/offered-engines").OrgEngineMove; limitFailover?: import("../../shared/limit-failover").LimitFailoverLine; connectorSwitch?: { engine: string; connector: string } };
+  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; /** The product the server declared for the tool, and the id its tool names start with (shared/wire.ts). */ product?: string; productId?: string; itemId?: string; outputPath?: string; fullResult?: boolean; /** Files the call wrote (shared/wire.ts). */ files?: string[]; widget?: import("../../shared/cw-widgets/types").CwWidget; ruleNotice?: import("../../shared/custom-rules").CustomRuleNotice; /** What answered the call's ask with no card (shared/wire.ts). */ autoApproval?: { source: string; rule?: string }; engineMove?: import("../../shared/offered-engines").OrgEngineMove; limitFailover?: import("../../shared/limit-failover").LimitFailoverLine; connectorSwitch?: { engine: string; connector: string } };
   /** user messages sent into a running turn — the model saw it mid-turn */
   steered?: boolean;
   /** a user message that did not come from typing here: through the
@@ -676,6 +678,10 @@ export interface Bot {
   autoApprove?: boolean;
   /** Explicit approval level; absent records use the legacy autoApprove bit. */
   approvalMode?: ApprovalMode;
+  /** The bot's own level as its owner chose it, never a conversation's (WireBot.approvalSetting). */
+  approvalSetting?: ApprovalMode;
+  /** The level the open conversation really runs at, with why, when it is not approvalSetting (WireBot.approvalApplied). */
+  approvalApplied?: import("../../shared/approval-mode").AppliedApprovalLevel;
   /** how autonomously this bot may act on its own (shared/proactive-mode.ts); absent/"off" = never */
   proactiveMode?: ProactiveMode;
   /** tools this bot may always use without asking */
@@ -5022,7 +5028,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             showError(new Error("That thread is no longer available"));
             break;
           }
-          const mode = approvalModeFor(bot);
+          // the bot's own setting, never the open conversation's level
+          const mode = botApprovalSetting(bot);
           const current = approvalModeFor(currentTaskBot(bot, action.threadId));
           const acknowledgeLocalAuto = action.acknowledgeLocalAuto === true;
           // Full, Custom, and leaving Custom stay on the private desktop

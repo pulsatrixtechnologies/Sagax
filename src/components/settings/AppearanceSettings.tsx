@@ -25,6 +25,7 @@ import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
+import { setShowTurnTiming, useShowTurnTiming } from "@/lib/turn-timing-preferences";
 import { contrastChoice, CONTRAST_CHOICES, MOTION_CHOICES, motionChoice, TEXT_SIZE_CHOICES, textSizeChoice } from "@/lib/accessibility-preferences";
 import { BOT_HOTKEY_MODIFIERS, botHotkeyModifierChoice, botHotkeysChoice, hardwareAccelerationChoice, hasDesktopShellPreferences, spellcheckChoice } from "@/lib/desktop-shell-preferences";
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
@@ -400,6 +401,7 @@ export function AppearanceSettings() {
   const personalSettings = state.config?.personalSettings === true;
   const runCard = useShowRunCard();
   const inspector = useShowInspectorButton();
+  const turnTiming = useShowTurnTiming();
   const unready = useShowUnreadyProviders();
   const logo = useShowSidebarLogo();
   const routinesBadge = useShowRoutinesBadge();
@@ -431,6 +433,7 @@ export function AppearanceSettings() {
         {advanced && (personalSettings || (!remoteActive && editConfig)) && <ToolCallsRow />}
         {advanced && <SwitchLine label={t("settings.runCard.title")} ariaLabel={t("settings.runCard.show")} checked={runCard} onChange={setShowRunCard} rowId="runCard" />}
         {advanced && <SwitchLine label={t("settings.inspectorButton.title")} ariaLabel={t("settings.inspectorButton.show")} checked={inspector} onChange={setShowInspectorButton} rowId="inspectorButton" />}
+        {advanced && <SwitchLine label={t("settings.turnTiming.title")} ariaLabel={t("settings.turnTiming.show")} checked={turnTiming} onChange={setShowTurnTiming} rowId="turnTiming" />}
         {advanced && <SwitchLine label={t("settings.unreadyProviders.title")} ariaLabel={t("settings.unreadyProviders.show")} checked={unready} onChange={setShowUnreadyProviders} rowId="unreadyProviders" />}
       </SettingsGroup>
       <SettingsGroup title={t("settings.group.sidebar")} groupId="sidebar">

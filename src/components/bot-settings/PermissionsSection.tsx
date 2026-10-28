@@ -23,7 +23,8 @@ import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { api, useStore, type Bot } from "@/state/store";
-import { approvalModeFor, liveApprovalChange, type ApprovalMode } from "../../../shared/approval-mode";
+import { liveApprovalChange, type ApprovalMode } from "../../../shared/approval-mode";
+import { AppliedLevelNote, proactiveLevelHint } from "./AppliedLevelNote";
 import { PROACTIVE_MODES, type ProactiveMode } from "../../../shared/proactive-mode";
 import { DEFAULT_OUTBOUND_POLICY, type OutboundPolicy } from "../../../shared/outbound";
 import { ApprovalModeSelector } from "../ApprovalModeSelector";
@@ -100,7 +101,7 @@ export function PermissionsSection({
       },
     });
   };
-  const levelNow = approvalModeFor(bot);
+  const levelNow = approvalMode;
   const setApprovalMode = (mode: ApprovalMode) => {
     if (mode === approvalMode) return;
     if (bot.busy && !liveApprovalChange(levelNow, mode)) {
@@ -123,6 +124,11 @@ export function PermissionsSection({
       return;
     }
     patch({ approvalMode: mode });
+  };
+  // Full access the server does not apply yet (its owner's confirmation is
+  // missing): the same flow as choosing it, confirmation included.
+  const setApprovalModeAgain = () => {
+    if (orgFullAccess === undefined || orgFullAccess === "allowed") setFullAccessTarget(bot.id);
   };
   // How autonomously this bot may act on its own. A level next to the approval
   // level, not a Chief orchestrator: the server enforces it per bot
@@ -160,8 +166,8 @@ export function PermissionsSection({
 
   const approvalSelector = showApproval && (
     <ApprovalModeSelector
-      approvalMode={bot.approvalMode}
-      autoApprove={bot.autoApprove}
+      approvalMode={approvalMode}
+      autoApprove={approvalMode === "auto"}
       providerName={engine?.displayName ?? bot.name}
       driverKind={engine?.driverKind ?? ""}
       onSelect={setApprovalMode}
@@ -197,11 +203,23 @@ export function PermissionsSection({
       {showApproval && approvalNotice && bot.busy && (
         <div role="alert" data-approval-notice="" className="mt-2 text-[12px] text-danger">{approvalNotice}</div>
       )}
+      {/* 2026-10-28: what the open conversation really runs at, when it is
+          not this setting, with why and the way back (server-derived). */}
+      {showApproval && !draft && bot.approvalApplied && (
+        <AppliedLevelNote
+          setting={approvalMode}
+          applied={bot.approvalApplied}
+          onUseSetting={bot.threadId ? () => {
+            if (bot.approvalApplied?.reason === "consent") { setApprovalModeAgain(); return; }
+            dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId: bot.threadId });
+          } : undefined}
+        />
+      )}
       {showApproval && advanced && !only && (
         <DescribedRow
           label={t("botPanel.permissions.proactive")}
           help={t("botPanel.permissions.proactiveHelp")}
-          description={t(`botPanel.permissions.proactive.${proactiveMode}.hint`)}
+          description={proactiveLevelHint(proactiveMode, approvalMode) ?? t(`botPanel.permissions.proactive.${proactiveMode}.hint`)}
           rowId="proactiveMode"
         >
           <PillSelect<ProactiveMode>

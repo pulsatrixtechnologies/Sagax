@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 
-import type { ApprovalMode } from "../shared/approval-mode.ts";
+import type { AppliedApprovalLevel, ApprovalMode } from "../shared/approval-mode.ts";
 import type { TurnFacts } from "../shared/bot-act.ts";
 import { acceptablePath, actorForTurn } from "../shared/bot-act.ts";
 import { checkPersonQuote, messageNamesCard, normalizeWords, personWrote } from "../shared/primary-request.ts";
@@ -32,6 +32,10 @@ export type SettingsActionDeps = {
   groupHumans?: (groupId: string) => readonly string[] | null;
   /** The speaking bot's level for this turn (approvalModeForTurn). */
   turnMode: (botId: string, threadId: string) => ApprovalMode;
+  /** 2026-10-28: a bot's own approval setting, and the level one of its
+   * conversations really runs at when that differs (approvalLevelOf), so a
+   * read says what the selector shows and what the server applies. */
+  approvalLevel?: (botId: string, threadId?: string) => { setting: ApprovalMode; applied?: AppliedApprovalLevel } | null;
   /** The step-up classes the person protects among these (security keys). */
   keyRequired: (person: string | null, classes: StepUpClass[], fallback: string | null) => StepUpClass[];
   audit: (row: { key: string; target?: string; value: unknown; secret: boolean; how: "run" | "allowed" | "rule"; botId: string; actor: string | null; primary?: { botName: string; messageId: string } }) => void;
@@ -374,6 +378,19 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         return text(status, error instanceof Error ? error.message : "The setting could not be read.");
       }
       if (value === undefined && read.list) return text(404, `No such ${spec.target} for this person, or no value.`);
+      // 2026-10-28 (one source of truth): the approval level is the bot's own
+      // setting, as Permissions shows it, never the level of whichever
+      // conversation the read landed on; this conversation's real level is
+      // said beside it when it differs, with why.
+      if (spec.key === "bot.approvalMode" && ids.target && deps.approvalLevel) {
+        const level = deps.approvalLevel(ids.target, ids.target === input.botId ? input.threadId : undefined);
+        if (level) {
+          return text(200, JSON.stringify({
+            key: spec.key, value: level.setting,
+            ...(level.applied ? { thisConversation: level.applied.mode, because: level.applied.reason } : {}),
+          }));
+        }
+      }
       return text(200, JSON.stringify({ key: spec.key, value: value === undefined ? null : value }).slice(0, 8000));
     }
 
