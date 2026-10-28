@@ -68,10 +68,18 @@ function actionTokens(name: string): string[] {
     .filter(Boolean);
 }
 
+/** 2026-10-28: Perspicax Voice's `voice_sms` texts a number: the same send,
+ * card and allowed recipients as a Twilio Messages create. Its name has no
+ * send verb, so it is named here. */
+function isVoiceSms(tokens: readonly string[]): boolean {
+  return tokens.length >= 2 && tokens[tokens.length - 2] === "VOICE" && tokens[tokens.length - 1] === "SMS";
+}
+
 /** Does this tool send something to someone, or move money? */
 export function isOutboundTool(name: string): boolean {
   const tokens = actionTokens(name);
   if (tokens.length === 0) return false;
+  if (isVoiceSms(tokens)) return true;
   if (READ_VERBS.has(tokens[0])) return false;
   // A draft, a reply draft included, sends nothing until it is sent.
   if (tokens.includes("DRAFT") && !tokens.includes("SEND") && !tokens.includes("SENDS")) return false;
@@ -105,6 +113,7 @@ const NOT_A_MESSAGE = new Set([
 export function isMessageSendTool(name: string): boolean {
   if (!isOutboundTool(name)) return false;
   const tokens = actionTokens(name);
+  if (isVoiceSms(tokens)) return true;
   if (tokens.some((token) => NOT_A_MESSAGE.has(token))) return false;
   const server = name.startsWith("mcp__") ? (name.split("__")[1] ?? "").toUpperCase() : "";
   const toolkit = /^[A-Z][A-Z0-9]*_/.test(name) ? name.slice(0, name.indexOf("_")) : "";

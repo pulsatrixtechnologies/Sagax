@@ -25,7 +25,8 @@
 //     for this turn ended" (a disabled person mid-turn, S5-10);
 //   - no token is ever logged or put in an error.
 import { guardToolCall, type GuardOptions } from "./mcp-permissions.ts";
-import { telephonyRefusal } from "./telephony-guard.ts";
+import { telephonyRefusal, voiceToolCall } from "./telephony-guard.ts";
+import { placeArgsFromVoiceCall } from "../shared/outbound-call.ts";
 import type { SubjectTokenOutcome } from "./idp-session.ts";
 import type { DirectoryProfile, ExchangeResult } from "./perspicax-link.ts";
 import { PERSPICAX_READ_ONLY_TOOLS } from "./drivers/acp/grok-read-only-tools.ts";
@@ -112,10 +113,19 @@ export interface PerspicaxMcpOptions {
    * a session the bot opened becomes a Sagax session row and chat card. It
    * never changes the answer and its failures are its own. */
   onRemoteSupport?(call: { threadId: string; botId: string; principalId?: string; name: string; args: unknown; result: unknown }): void;
+  /** 2026-10-28: a bot's own voice_call (direct, call_tool or use_tool)
+   * goes to place_phone_call with its arguments: the same card, AI
+   * disclosure, pilot and do-not-call list. Absent: refused. */
+  placeCall?(turn: { threadId: string; generation: string; botId: string }, args: Record<string, unknown>): Promise<{ text: string; isError?: boolean }>;
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: string) => void;
 }
+
+/** What a bot reads in front of the answer when its voice_call became a
+ * place_phone_call. */
+export const VOICE_CALL_REDIRECTED = "Sagax placed this voice_call through place_phone_call (every call does: its card, the AI disclosure, the organization's rules). Use place_phone_call next time.";
+export const VOICE_CALL_UNAVAILABLE = "Refused by Sagax: a call goes through place_phone_call, which is not available here. Nothing was sent.";
 
 /** A token with less than this left is exchanged again before a call. */
 export const PERSPICAX_TOKEN_MIN_LIFE_MS = 60_000;
@@ -577,6 +587,19 @@ export class PerspicaxMcp {
     // a tools/call is always a request: one without an id would run with no
     // answer and no guard (re-review of #956)
     if (frame.method === "tools/call" && notification) return { status: 400, body: rpcError(null, -32600, "tools/call needs an id") };
+    // a bot's own voice_call, whatever the path, is a place_phone_call; a
+    // dry run sends nothing and goes as it is
+    if (!input.judged && frame.method === "tools/call") {
+      const params = isObject(frame.params) ? frame.params : {};
+      const voice = voiceToolCall(String(params.name ?? ""), params.arguments);
+      if (voice?.tool === "voice_call" && voice.args.dry_run !== true && voice.args._dry_run !== true) {
+        const placed = this.options.placeCall
+          ? await this.options.placeCall({ threadId: input.threadId, generation: input.generation, botId: input.botId }, placeArgsFromVoiceCall(voice.args))
+          : { text: VOICE_CALL_UNAVAILABLE, isError: true };
+        const text = this.options.placeCall ? `${VOICE_CALL_REDIRECTED}\n\n${placed.text}` : placed.text;
+        return { status: 200, body: { jsonrpc: "2.0", id, result: { content: [{ type: "text", text }], ...(placed.isError ? { isError: true } : {}) } } };
+      }
+    }
     const blocked = input.judged ? null : telephonyBlock(frame, this.twilioTools.get(input.profileId)) ?? await this.permissionBlock(entry, frame);
     if (blocked) return { status: 200, body: { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: blocked }], isError: true } } };
     const speaker = this.options.subjectOf(entry.principalId);
