@@ -11,9 +11,9 @@ import { BOT_PROFILE_LIMITS, fitsOnOneLine } from "../shared/bot-profile.ts";
 import { MASCOT_BODY_IDS, mascotBodySchema } from "../shared/mascot-bodies.ts";
 import { MASCOT_SKIN_IDS, mascotSkinSchema } from "../shared/mascot-skins.ts";
 import { MASCOT_CHARACTERS, mascotLookSchema } from "../shared/mascot-look.ts";
+import type { WireBot } from "../shared/wire.ts";
 
 import { FINISH_UNTIL_MAX, finishUntilText } from "./finish-until.ts";
-import type { BotRecord } from "./store.ts";
 
 // Shared with the package format, which checks the same rule on names it
 // carries; re-exported under its historical path.
@@ -89,26 +89,32 @@ export const profilePatchSchema = z.object({
 
 export type BotProfilePatchInput = z.input<typeof profilePatchSchema>;
 
+// WireBot, not BotRecord: the record type lives in store.ts, and that import
+// cycled through config and new-bot-defaults. avatarUrl is optional on the
+// record (absent clears); on the wire it is always string | null.
 export type BotProfilePatch = Partial<
-  Pick<
-    BotRecord,
-    | "name"
-    | "title"
-    | "description"
-    | "soul"
-    | "notifications"
-    | "avatarUrl"
-    | "avatarCrop"
-    | "avatarZoom"
-    | "avatarFocusX"
-    | "avatarFocusY"
-    | "mascotBody"
-    | "mascotSkin"
-    | "mascotLook"
-    | "voice"
-    | "speakReplies"
-    | "finishUntil"
-  >
+  Omit<
+    Pick<
+      WireBot,
+      | "name"
+      | "title"
+      | "description"
+      | "soul"
+      | "notifications"
+      | "avatarUrl"
+      | "avatarCrop"
+      | "avatarZoom"
+      | "avatarFocusX"
+      | "avatarFocusY"
+      | "mascotBody"
+      | "mascotSkin"
+      | "mascotLook"
+      | "voice"
+      | "speakReplies"
+      | "finishUntil"
+    >,
+    "avatarUrl"
+  > & { avatarUrl?: string }
 >;
 
 export type BotProfilePatchResult =
