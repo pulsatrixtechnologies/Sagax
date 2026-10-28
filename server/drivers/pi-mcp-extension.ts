@@ -94,7 +94,7 @@ export function splitStableMessages(messages: unknown[]): { messages: unknown[];
 }
 
 type WarmContext = {
-  model?: { api?: unknown; baseUrl?: unknown };
+  model?: { id?: unknown; api?: unknown; baseUrl?: unknown };
   modelRegistry?: { getApiKeyAndHeaders(model: unknown): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string | null>; baseUrl?: string }> };
 };
 
@@ -103,6 +103,10 @@ type WarmContext = {
 async function sendWarm(warm: Record<string, unknown>, ctx: WarmContext | undefined): Promise<void> {
   const model = ctx?.model;
   if (!model || model.api !== "openai-completions" || !ctx?.modelRegistry) return;
+  // The warm request was cut from a local model's own request. A session that
+  // resumed on another model (a cloud provider's key would pay for it, and the
+  // prompt would reach that provider) gets nothing.
+  if (typeof warm.model !== "string" || model.id !== warm.model) return;
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   const base = auth.ok ? auth.baseUrl ?? model.baseUrl : undefined;
   if (typeof base !== "string" || !base) return;

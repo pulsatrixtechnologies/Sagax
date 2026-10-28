@@ -751,7 +751,7 @@ describe("stable split and warm request (#1276)", () => {
     const fetched: Array<{ url: string; init: RequestInit }> = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => { fetched.push({ url: String(url), init: init! }); return new Response("{}"); });
     const context = {
-      model: { api: "openai-completions", baseUrl: "http://127.0.0.1:8000/v1/" },
+      model: { id: "local", api: "openai-completions", baseUrl: "http://127.0.0.1:8000/v1/" },
       modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }) },
     };
     const start = async () => {
@@ -771,5 +771,21 @@ describe("stable split and warm request (#1276)", () => {
     expect(fetched[0].url).toBe("http://127.0.0.1:8000/v1/chat/completions");
     expect(fetched[0].init.headers).toMatchObject({ authorization: "Bearer test-key" });
     expect(JSON.parse(String(fetched[0].init.body))).toEqual(warm);
+  });
+  it("sends no warm request when the resumed session is on another model (a cloud key would pay for it)", async () => {
+    const dir = tempDir();
+    const warm = { model: "local", messages: [{ role: "user", content: "shared" }], max_tokens: 1, stream: false };
+    const fetched: unknown[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => { fetched.push(url); return new Response("{}"); });
+    process.env.SAGAX_MCP_CONFIG = join(dir, "mcp.json");
+    writeFileSync(process.env.SAGAX_MCP_CONFIG, JSON.stringify({ warm, warmPath: join(dir, "warm.json") }));
+    const handlers = new Map<string, (event?: any, context?: any) => any>();
+    await extension({ registerTool() {}, on(event, handler) { handlers.set(event, handler); } });
+    await handlers.get("session_start")!({ reason: "resume" }, {
+      model: { id: "grok-4", api: "openai-completions", baseUrl: "https://api.x.ai/v1" },
+      modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "xai-key" }) },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetched).toEqual([]);
   });
 });
