@@ -29,6 +29,12 @@ organization server.
 (docs/openapi-connector.md). Their bots receive the operations in a 1:1
 turn. Other members do not. Header values stay out of the tool list.
 
+## YAML workflows (2026-10-27)
+
+`PUT /api/me/workflows` saves a file of send, wait and approve steps
+(docs/workflows.md). The runner does not start a model turn. An approve
+step waits until that person answers. Routines are unchanged.
+
 ## Web search with the person's own key (2026-10-26)
 
 Decision: an engine with no web search of its own (OpenAI-compatible

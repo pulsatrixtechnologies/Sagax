@@ -335,6 +335,8 @@ import { browserOwner, noteBrowserOwner, signBrowserVisit, WebBotAuthStore, webB
 import { createOpenApiRoutes } from "./routes/openapi-connector.ts";
 import { createOpenApiInternalRoutes } from "./routes/openapi-internal.ts";
 import { OpenApiStore, openApiScope } from "./openapi-connector.ts";
+import { createWorkflowRoutes } from "./routes/workflows.ts";
+import { advanceWorkflow, WorkflowStore, workflowScope } from "./workflows.ts";
 import { createWebSearchStore, webSearchScope } from "./web-search/store.ts";
 import { engineHasNativeWebSearch } from "./web-search/native.ts";
 import { isIP } from "node:net";
@@ -7419,6 +7421,24 @@ function openApiToolsEnv(botId: string, threadId: string): string {
   if (!scope) return "";
   const operations = openApiStore.publicOperations(scope);
   return operations.length ? JSON.stringify(operations) : "";
+}
+const workflowStore = new WorkflowStore(DATA_DIR);
+function workflowDeliver(scopeKey: string, botId: string, threadId: string, text: string): void {
+  const bot = store.bot(botId);
+  if (!bot) return;
+  const onBot = bot.threadId === threadId || Boolean(bot.tasks?.some((task) => task.threadId === threadId));
+  if (!onBot) return;
+  if (IDENTITY.kind === "perspicax" && effectiveBotOwner(bot).toLowerCase() !== scopeKey) return;
+  store.appendMessage(threadId, { role: "bot", kind: "text", text });
+}
+function workflowOwned(auth: RequestAuth, botId: string, threadId: string): boolean {
+  const bot = store.bot(botId);
+  if (!bot) return false;
+  const onBot = bot.threadId === threadId || Boolean(bot.tasks?.some((task) => task.threadId === threadId));
+  if (!onBot) return false;
+  if (IDENTITY.kind !== "perspicax") return true;
+  if (auth.kind !== "session") return false;
+  return sessionPrincipal(auth)?.toLowerCase() === effectiveBotOwner(bot).toLowerCase();
 }
 // A person's own Experimental switches and browser profiles on an
 // organization server (#1098, 2026-10-27, server/person-settings.ts): set by
@@ -35989,6 +36009,33 @@ ROUTES.push(createOpenApiRoutes({
   store: openApiStore,
   scope: (auth) => openApiScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
 }));
+ROUTES.push(createWorkflowRoutes({
+  store: workflowStore,
+  scope: (auth) => workflowScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
+  owns: workflowOwned,
+  deliver: (bot, thread, text) => {
+    const record = store.bot(bot);
+    if (!record) return;
+    if (record.threadId !== thread && !record.tasks?.some((task) => task.threadId === thread)) return;
+    store.appendMessage(thread, { role: "bot", kind: "text", text });
+  },
+  now: () => Date.now(),
+}));
+if (!process.env.VITEST) {
+  const workflowClock = setInterval(() => {
+    try {
+      for (const run of workflowStore.due(Date.now())) {
+        workflowStore.writeRun(advanceWorkflow(run, {
+          now: () => Date.now(),
+          deliver: (bot, thread, text) => workflowDeliver(run.scopeKey, bot, thread, text),
+        }));
+      }
+    } catch {
+      // One bad file does not stop the clock. An approval is never resumed here.
+    }
+  }, 2_000);
+  workflowClock.unref?.();
+}
 // A person's own Experimental switches and browser profiles (#1098,
 // server/routes/person-settings.ts): theirs, on an organization server.
 ROUTES.push(createPersonSettingsRoutes({
