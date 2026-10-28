@@ -645,6 +645,8 @@ export interface Bot {
    * fed to the Thinking timer so elapsed time survives thread switches. */
   turnStartedAt?: number | null;
   modelSelection: ModelSelection;
+  /** Where this bot's turns run. Absent means the server (the fleet). */
+  host?: { kind: "fleet" } | { kind: "machine"; userId: string; deviceId: string };
   /** Where this bot works: a computer, only the built-in browser tab, or
    * nowhere; unset = auto (cloud boat if one exists, else local). */
   computer?: "cloud" | "vm" | "local" | "browser" | "off";
@@ -3203,6 +3205,7 @@ export function reducer(state: AppState, action: Action): AppState {
         applyToAllThreads: _allThreads,
         organizationFullAccess: _orgFull,
         threadId: _threadId,
+        host,
         computer,
         ...rest
       } = action.patch;
@@ -3210,6 +3213,12 @@ export function reducer(state: AppState, action: Action): AppState {
       const followMode = action.patch.approvalMode;
       if (computer === null) botPatch.computer = undefined;
       else if (computer !== undefined) botPatch.computer = computer;
+      if (host === "fleet") botPatch.host = { kind: "fleet" };
+      else if (host && typeof host === "object" && host.kind === "machine") {
+        const userId = target?.host?.kind === "machine" ? target.host.userId : (target?.ownerUserId ?? "");
+        botPatch.host = { kind: "machine", deviceId: host.deviceId, userId };
+        if (host.model) botPatch.modelSelection = { ...(target?.modelSelection ?? { instanceId: host.model.instanceId, model: host.model.model }), instanceId: host.model.instanceId, model: host.model.model };
+      }
       return updateBot(next, action.botId, (b) => {
         const updated: Bot = { ...b, ...botPatch };
         // #1169: a new bot level reaches every thread; none keeps its own

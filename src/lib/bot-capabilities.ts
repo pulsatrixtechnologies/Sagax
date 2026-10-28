@@ -12,6 +12,21 @@ import { isClientBotPatchField, isMemberBotField } from "../../shared/viewer-cap
 import { viewerBotsReadOnly, viewerCan, viewerIsOrgMember } from "./viewer";
 import { BOT_FIELD_PERMISSIONS } from "../../shared/permissions";
 
+/** Owner or an editor. An organization admin with no grant on the bot is not
+ * an editor: the computer stays with the person who registered it. */
+export function canSetBotHost(
+  config: ConfigStatus | null | undefined,
+  bot: { ownerUserId?: string | null; grants?: readonly { target: string; level: string }[] },
+): boolean {
+  if (viewerBotsReadOnly(config)) return false;
+  const viewer = config?.viewer;
+  if (!viewer || viewer.operator) return true;
+  const principal = viewer.principalId?.trim().toLowerCase() ?? "";
+  const owner = bot.ownerUserId?.trim().toLowerCase() ?? "";
+  if (principal && principal === owner) return true;
+  return (bot.grants ?? []).some((grant) => grant.target === `user:${principal}` && (grant.level === "edit" || grant.level === "manage"));
+}
+
 export function viewerOwnsBot(
   config: ConfigStatus | null | undefined,
   bot: { ownerUserId?: string | null },

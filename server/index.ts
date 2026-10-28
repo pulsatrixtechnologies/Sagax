@@ -1279,19 +1279,28 @@ import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, l
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
 import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
+  assignBotHost,
   channelTurnGate,
+  createTurnBell,
   createWorkerRoutes,
   destinationForBot,
+  directMachinePlan,
   enqueueOfflineTurn,
+  expireWorkers,
   failPulledOnAuthorCancel,
   failTurnOnMembershipRemoval,
   failTurnOnWorkerClose,
   memberIdsDropBot,
+  parseTurnWrite,
+  selectionOnMachine,
   turnsOpenForMembership,
+  workerOwns,
   type DeviceQueuedTurn,
   type OpenTurnMessage,
   type Worker,
+  type WorkerTurnView,
 } from "./workers.ts";
+import { createMachineRunRoutes, createMachineRuns } from "./machine-run.ts";
 import { createDeciderRoutes } from "./routes/decider.ts";
 import { createThreadModelRoutes } from "./routes/thread-models.ts";
 import { createUndoRoutes } from "./routes/undo.ts";
@@ -3756,6 +3765,17 @@ utilityParentPort?.on("message", (event) => {
 
 const bus = new EventBus();
 bus.attach(registry.instances());
+const machineRuns = createMachineRuns({
+  engine(instanceId) {
+    // The named engine on this computer, or pi (its PI_CODING_AGENT_DIR,
+    // otherwise ~/.pi/agent) when that name is not installed here.
+    const named = registry.get(instanceId);
+    const instance = named ?? registry.instances().find((entry) => entry.driverKind === "piAgent");
+    return instance ? instance.adapter : null;
+  },
+  subscribe: (listener) => bus.subscribe(listener),
+});
+ROUTES.push(createMachineRunRoutes({ organization: IDENTITY.kind === "perspicax", runs: machineRuns }));
 let companyRuntimeReady!: () => void;
 const companyRuntimeStarted = new Promise<void>(resolve => { companyRuntimeReady = resolve; });
 /** The enrolled organisation's desktop policy: in memory only, read-only, and
@@ -9473,6 +9493,25 @@ const channelTaskBlocked = (group: GroupRecord) =>
 // before registering store listeners or recovering interrupted routines.
 const groupQueues = new Map<string, Promise<void>>();
 let registeredWorkers: Worker[] = [];
+const turnBell = createTurnBell();
+const MACHINE_OFFLINE_NOTE = "This bot runs on a computer that is off. It answers when that computer is on.";
+const machineTurnDone = new Map<string, {
+  threadId: string;
+  botId: string;
+  settle?: () => void;
+  coordination?: (outcome: { ok: boolean; text: string }) => void;
+  onError?: (message: string) => void;
+}>();
+const machinePrompts = new Map<string, string>();
+const machineApprovals = new Map<string, {
+  threadId: string;
+  requestId: string;
+  tool: string;
+  summary: string;
+  behavior?: "allow" | "deny" | "answer";
+  message?: string;
+}>();
+const machineProgressIds = new Map<string, string>();
 /** deviceId last registered by a session, or by a loopback user id. The
  * device map names the one session that is the current worker for that
  * device. A client does not send deviceId. */
@@ -9619,6 +9658,212 @@ function failTurnIfMemberLeft(group: GroupRecord, beforeHumanIds: string[], befo
     const partial = located ? partialAlreadyWritten(located.messages, messageId) : "";
     failQueuedMessage(messageId, partial, "The turn failed because a member left the channel.", removed);
   }
+}
+
+const machineTurnBots = new Map<string, string>();
+
+function replaceQueuedWorkerTurns(next: DeviceQueuedTurn[]) {
+  const keyOf = (item: DeviceQueuedTurn) => `${item.deviceId}\0${item.userId}\0${item.messageId}\0${item.botId ?? ""}`;
+  const prev = new Set(queuedWorkerTurns.filter((item) => !item.started).map(keyOf));
+  queuedWorkerTurns = next;
+  for (const item of next) {
+    if (item.botId) machineTurnBots.set(`${item.deviceId}\0${item.messageId}`, item.botId);
+    if (!item.started && !prev.has(keyOf(item))) turnBell.notify(item.deviceId, item.userId);
+  }
+}
+
+function finishMachineTurn(messageId: string, outcome: { ok: boolean; text: string }): void {
+  const held = machineTurnDone.get(messageId);
+  if (!held) return;
+  machineTurnDone.delete(messageId);
+  machinePrompts.delete(messageId);
+  machineProgressIds.delete(messageId);
+  for (const [requestId, row] of machineApprovals) {
+    if (row.threadId === held.threadId) machineApprovals.delete(requestId);
+  }
+  queuedWorkerTurns = queuedWorkerTurns.filter((item) => item.messageId !== messageId || item.botId !== held.botId);
+  forgetInflight(messageId);
+  store.setTaskActivity(held.botId, held.threadId, "idle");
+  if (!outcome.ok) held.onError?.(outcome.text || "The turn failed.");
+  held.coordination?.(outcome);
+  held.settle?.();
+}
+
+function machineBotFrom(botId: string | undefined): BotRecord | null {
+  if (!botId) return null;
+  const bot = store.bot(botId);
+  return bot?.host?.kind === "machine" ? bot : null;
+}
+
+function readWorkerTurn(input: { deviceId: string; userId: string; messageId: string; botId?: string }): WorkerTurnView | { status: number; error: string } | null {
+  const queued = queuedWorkerTurns.some((item) => item.messageId === input.messageId && item.deviceId === input.deviceId && item.userId === input.userId && (!input.botId || item.botId === input.botId));
+  const inflight = (inflightWorkerTurns.get(input.deviceId) ?? []).includes(input.messageId);
+  if (!queued && !inflight && !machineTurnDone.has(input.messageId)) return null;
+  const held = machineTurnDone.get(input.messageId);
+  const remembered = machineTurnBots.get(`${input.deviceId}\0${input.messageId}`);
+  const bot = machineBotFrom(input.botId) ?? machineBotFrom(held?.botId) ?? machineBotFrom(remembered);
+  let threadId = held?.threadId ?? locateChannelMessage(input.messageId)?.threadId ?? null;
+  if (!threadId && bot) {
+    for (const task of store.tasks(bot.id)) {
+      if (store.messagesFor(task.threadId).some((message) => message.id === input.messageId)) {
+        threadId = task.threadId;
+        break;
+      }
+    }
+  }
+  if (!bot || !threadId) return { status: 404, error: "no such turn" };
+  if (bot.host?.kind !== "machine" || bot.host.deviceId !== input.deviceId || bot.host.userId !== input.userId) {
+    return { status: 403, error: "forbidden" };
+  }
+  const messages = store.messagesFor(threadId);
+  const current = messages.find((message) => message.id === input.messageId);
+  const prompt = (current?.text ?? machinePrompts.get(input.messageId) ?? "").slice(0, 100_000);
+  const history = messages.filter((message) => message.kind === "text" && message.text && message.id !== input.messageId).slice(-12).map((message) => ({
+    role: message.role === "user" ? "user" as const : "assistant" as const,
+    text: message.text!.slice(0, 4_000),
+  }));
+  const approvals = [...machineApprovals.values()].filter((row) => row.threadId === threadId).map((row) => ({
+    requestId: row.requestId,
+    tool: row.tool,
+    summary: row.summary,
+    ...(row.behavior ? { behavior: row.behavior } : {}),
+    ...(row.message ? { message: row.message } : {}),
+  }));
+  return {
+    messageId: input.messageId,
+    botId: bot.id,
+    threadId,
+    prompt,
+    model: bot.modelSelection,
+    bot: { id: bot.id, name: bot.name, ...(bot.soul ? { soul: bot.soul.slice(0, 8_000) } : {}) },
+    history,
+    approvals,
+  };
+}
+
+function writeWorkerTurn(input: { deviceId: string; userId: string; messageId: string; body: unknown }): { status: number; body: Record<string, unknown> } {
+  if (!workerOwns(registeredWorkers, input.deviceId, input.userId)) return { status: 403, body: { error: "forbidden" } };
+  const parsed = parseTurnWrite(input.body);
+  if ("error" in parsed) return { status: 400, body: { error: parsed.error } };
+  if (parsed.kind === "done") {
+    finishMachineTurn(input.messageId, { ok: true, text: "" });
+    return { status: 200, body: { ok: true } };
+  }
+  const view = readWorkerTurn(input);
+  if (!view) return { status: 404, body: { error: "no such turn" } };
+  if ("error" in view) return { status: view.status, body: { error: view.error } };
+  const bot = store.bot(view.botId);
+  if (!bot) return { status: 404, body: { error: "no such turn" } };
+  const from = { botId: bot.id, name: bot.name, color: bot.color };
+  if (parsed.kind === "progress") {
+    const existing = machineProgressIds.get(input.messageId);
+    if (existing) store.patchMessage(view.threadId, existing, { text: parsed.text });
+    else {
+      const row = store.appendMessage(view.threadId, { role: "bot", kind: "text", text: parsed.text, from });
+      machineProgressIds.set(input.messageId, row.id);
+    }
+    store.setTaskActivity(bot.id, view.threadId, "working");
+    return { status: 200, body: { ok: true } };
+  }
+  if (parsed.kind === "approval") {
+    machineApprovals.set(parsed.requestId, { threadId: view.threadId, requestId: parsed.requestId, tool: parsed.tool, summary: parsed.summary });
+    store.appendMessage(view.threadId, {
+      role: "bot",
+      kind: "options",
+      from,
+      card: {
+        title: "Approval needed",
+        subtitle: parsed.summary || parsed.tool,
+        options: ["Allow", "Deny"],
+        requestId: parsed.requestId,
+        requestType: "permission",
+        tool: parsed.tool,
+      },
+    });
+    store.setTaskActivity(bot.id, view.threadId, "waiting-on-you");
+    return { status: 200, body: { ok: true } };
+  }
+  if (parsed.kind === "reply") {
+    const existing = machineProgressIds.get(input.messageId);
+    if (existing) store.patchMessage(view.threadId, existing, { text: parsed.text });
+    else store.appendMessage(view.threadId, { role: "bot", kind: "text", text: parsed.text, from });
+    finishMachineTurn(input.messageId, { ok: true, text: parsed.text });
+    return { status: 200, body: { ok: true } };
+  }
+  if (parsed.kind === "failed") {
+    store.appendMessage(view.threadId, { role: "bot", kind: "activity", from, tool: { name: parsed.text || "The turn failed.", ok: false } });
+    finishMachineTurn(input.messageId, { ok: false, text: parsed.text || "The turn failed." });
+    return { status: 200, body: { ok: true } };
+  }
+  finishMachineTurn(input.messageId, { ok: true, text: "" });
+  return { status: 200, body: { ok: true } };
+}
+
+function maySetBotHost(auth: RequestAuth, bot: BotRecord): boolean {
+  // On an organization server the process itself is not the member. A bot
+  // curling loopback must not move someone else's bot onto a computer.
+  if (auth.kind === "loopback") return IDENTITY.kind !== "perspicax" && auth.trust !== "service";
+  if (auth.kind !== "session") return false;
+  if (callerBotsReadOnly(auth)) return false;
+  return atLeast(viewerBotLevel(auth, bot), "edit");
+}
+
+function holdDirectMachineTurn(bot: BotRecord, threadId: string, text: string, opts: Parameters<typeof startTurn>[2]): Message {
+  const plan = directMachinePlan({ host: bot.host, workers: registeredWorkers });
+  if (plan.kind !== "hold") throw Object.assign(new Error("this bot does not run on a computer"), { status: 409 });
+  let userMessage = opts?.userMessage;
+  if (opts?.editedMessageId) {
+    const edited = store.branchMessage(threadId, opts.editedMessageId, text, opts.sendId, opts.sender, opts.dataContext);
+    if (!edited) throw Object.assign(new Error("only a user text message can be edited"), { status: 400 });
+    userMessage = edited;
+  }
+  if (!userMessage) {
+    if (opts?.cardContinuation) {
+      const id = `card-${randomUUID()}`;
+      machinePrompts.set(id, text);
+      userMessage = { id, at: Date.now(), role: "user", kind: "text", text };
+    } else {
+      userMessage = store.appendMessage(threadId, {
+        role: "user",
+        kind: "text",
+        text,
+        replyToId: opts?.replyTo?.id,
+        sendId: opts?.sendId,
+        ...(opts?.dataContext ? { dataContext: opts.dataContext } : {}),
+        peerAsk: opts?.peerAsk,
+        sender: opts?.sender,
+        ...(opts?.voiceCall ? { voiceCall: opts.voiceCall } : {}),
+        ...(opts?.relayed ? { relayed: true } : {}),
+      });
+    }
+  }
+  if (opts?.cardContinuation) machinePrompts.set(userMessage.id, text);
+  replaceQueuedWorkerTurns(enqueueOfflineTurn({
+    queued: queuedWorkerTurns,
+    messageId: userMessage.id,
+    deviceId: plan.deviceId,
+    userId: plan.userId,
+    authorId: userMessage.sender?.id ?? opts?.sender?.id ?? localPrincipalId(),
+    botId: bot.id,
+  }));
+  machineTurnDone.set(userMessage.id, {
+    threadId,
+    botId: bot.id,
+    settle: opts?.onTurnSettled,
+    coordination: opts?.coordination?.settle,
+    onError: opts?.onDispatchError,
+  });
+  if (!plan.online) {
+    store.appendMessage(threadId, {
+      role: "bot",
+      kind: "activity",
+      from: { botId: bot.id, name: bot.name, color: bot.color },
+      tool: { name: MACHINE_OFFLINE_NOTE, ok: false },
+    });
+  } else {
+    store.setTaskActivity(bot.id, threadId, "working");
+  }
+  return userMessage;
 }
 
 function failWorkerTurns(messageIds: readonly string[], detail = "The turn failed because the worker dropped."): void {
@@ -12768,6 +13013,19 @@ async function answerRequest(
   always?: boolean,
   rememberCommand?: boolean,
 ): Promise<RequestOutcome> {
+  // The engine is on the owner's computer, including a channel thread that
+  // has no bot of its own. Record the decision for that worker. This server
+  // does not run the tool.
+  const pendingMachine = machineApprovals.get(requestId);
+  if (pendingMachine && pendingMachine.threadId === threadId && !pendingMachine.behavior) {
+    pendingMachine.behavior = behavior;
+    if (message) pendingMachine.message = message;
+    const open = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+    if (open?.card && !open.card.answered) {
+      store.patchMessage(threadId, open.id, { card: { ...open.card, answered: behavior, ...(message ? { answeredText: message } : {}) } });
+    }
+    return behavior === "allow" ? "allowed-once" : behavior === "deny" ? "rejected" : "answered";
+  }
   // A member's bot on an organization server takes no session allow (the
   // engine's own suggestion could reach past the bot) and no entry in the
   // installation's saved command list (below, after the card is read). Its Always allow is an owner rule
@@ -19812,6 +20070,11 @@ async function startTurn(
   }
   let bot = store.projectBotForTask(botId, threadId);
   if (!bot) throw Object.assign(new Error("no such task"), { status: 404 });
+  // A bot pinned to a computer never starts on this server, including a 1:1.
+  // The desktop pulls the turn and runs it with the engines on that machine.
+  if (!opts?.warmOnly && directMachinePlan({ host: bot.host, workers: registeredWorkers }).kind === "hold") {
+    return holdDirectMachineTurn(bot, threadId, text, opts);
+  }
   // A person who does not own this bot runs on their own model and effort
   // when they set one. The stored bot and the thread stay the owner's.
   if (IDENTITY.kind === "perspicax") {
@@ -24110,14 +24373,15 @@ async function runGroupMemberTurn(
         deviceId,
         userId: deviceUserId,
         authorId: heldMessage?.sender?.id ?? localPrincipalId(),
+        botId: bot.id,
       });
       if (next !== queuedWorkerTurns) {
-        queuedWorkerTurns = next;
+        replaceQueuedWorkerTurns(next);
         if (destination.kind === "queued") {
           store.appendMessage(threadId, {
             role: "bot",
             kind: "activity",
-            tool: { name: "machine-offline", ok: false },
+            tool: { name: MACHINE_OFFLINE_NOTE, ok: false },
           });
         }
       }
@@ -25942,12 +26206,12 @@ function startGroupTurn(
     authorId: options.sender?.id ?? localPrincipalId(),
     queued: queuedWorkerTurns,
   });
-  queuedWorkerTurns = gate.queued;
+  replaceQueuedWorkerTurns(gate.queued);
   if (gate.status === "machine-offline") {
     store.appendMessage(threadId, {
       role: "bot",
       kind: "activity",
-      tool: { name: "machine-offline", ok: false },
+      tool: { name: MACHINE_OFFLINE_NOTE, ok: false },
     });
   }
   if (goalCoordinator) {
@@ -35714,7 +35978,33 @@ ROUTES.push(createWorkerRoutes({
     if (!decision.failed) return;
     failWorkerTurns([messageId], "The turn failed because the author cancelled.");
   },
+  bell: turnBell,
+  readTurn: readWorkerTurn,
+  writeTurn: writeWorkerTurn,
 }));
+setInterval(() => {
+  const next = expireWorkers(registeredWorkers, Date.now());
+  if (next === registeredWorkers) return;
+  const offline = next.filter((worker, index) => !worker.online && registeredWorkers[index]?.online);
+  registeredWorkers = next;
+  for (const worker of offline) {
+    const ids = [...(inflightWorkerTurns.get(worker.deviceId) ?? [])];
+    for (const messageId of ids) {
+      if (!machineTurnDone.has(messageId)) continue;
+      const held = machineTurnDone.get(messageId)!;
+      const bot = store.bot(held.botId);
+      store.appendMessage(held.threadId, {
+        role: "bot",
+        kind: "activity",
+        ...(bot ? { from: { botId: bot.id, name: bot.name, color: bot.color } } : {}),
+        tool: { name: "The turn failed because the computer went offline.", ok: false },
+      });
+      finishMachineTurn(messageId, { ok: false, text: "The turn failed because the computer went offline." });
+    }
+    const left = inflightWorkerTurns.get(worker.deviceId) ?? [];
+    if (left.length) failWorkerTurns(left, "The turn failed because the computer went offline.");
+  }
+}, 15_000).unref?.();
 /** A principal's sign-in email. The local operator without one takes the
  * profile email, and it is synced onto the principal, so the owner is shown
  * by address rather than by id. */
@@ -45784,14 +46074,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (existing.approvalGrant) {
         return json(res, 409, { error: "wait for the approval-level change to finish before changing models" });
       }
-      const checked = checkedModelSelection(
+      const onMachine = selectionOnMachine({ host: existing.host, workers: registeredWorkers, raw: body });
+      const checked = onMachine ?? checkedModelSelection(
         body,
         { selection: selected.modelSelection, busy: threadBusy(selected.id, selected.threadId) },
         true,
         sessionPrincipal(auth),
       );
       if (!checked.ok) return json(res, checked.status, { error: checked.error });
-      if (activeGroupTurnForBot(existing.id)) {
+      if (activeGroupTurnForBot(existing.id) && !onMachine) {
         const groupChecked = checkedModelSelection(checked.selection, { selection: existing.modelSelection, busy: true }, false, sessionPrincipal(auth));
         if (!groupChecked.ok) return json(res, groupChecked.status, { error: groupChecked.error });
       }
@@ -45964,6 +46255,26 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const field = companionBotFieldViolation(body);
         if (field) return json(res, 403, { error: `forbidden: a phone may change a bot's name, look, instructions, notifications, model and memory, not "${field}"` });
       }
+      if (Object.prototype.hasOwnProperty.call(body, "host")) {
+        const target = store.bot(m[1]);
+        if (!target) return json(res, 404, { error: "no such bot" });
+        if (!maySetBotHost(auth, target)) {
+          return json(res, 403, { error: "Only the bot's owner or an editor can choose where it runs." });
+        }
+        const assigned = assignBotHost({ callerUserId: channelActorId(auth), workers: registeredWorkers, host: (body as { host?: unknown }).host });
+        if (!assigned.ok) return json(res, assigned.status, { error: assigned.error });
+        const hosted = store.patchBot(target.id, {
+          host: assigned.host,
+          ...(assigned.model ? { modelSelection: assigned.model } : {}),
+        });
+        if (!hosted) return json(res, 404, { error: "no such bot" });
+        delete (body as { host?: unknown }).host;
+        if (Object.keys(body).length === 0) {
+          const visible = wireBot(store.bot(hosted.id)!);
+          broadcast({ kind: "bot", bot: visible });
+          return json(res, 200, { bot: visible });
+        }
+      }
       // Organization server: the bot's owner, signed in, turns Full on as
       // the bot's default (its new threads and routines) while the
       // organization allows it (org-full-access.ts). A request of its own:
@@ -46083,7 +46394,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       let normalizedSelection: ModelSelection | undefined;
       if (rawSelection !== undefined) {
-        const checked = checkedModelSelection(
+        const onMachine = existingBot ? selectionOnMachine({ host: existingBot.host, workers: registeredWorkers, raw: rawSelection }) : null;
+        const checked = onMachine ?? checkedModelSelection(
           rawSelection,
           selectedTask ? { selection: selectedTask.modelSelection, busy: threadBusy(selectedTask.id, selectedTask.threadId) } : undefined,
           body.requireAvailableModel === true,

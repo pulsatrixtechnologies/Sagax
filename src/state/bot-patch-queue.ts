@@ -43,6 +43,9 @@ export type BotUpdatePatch = Partial<
     | "modelSelection"
   >
 > & {
+  /** Where the bot's turns run. `fleet`, or a computer this person registered. */
+  host?: "fleet" | { kind: "machine"; deviceId: string; model?: { instanceId: string; model: string } };
+
   /** null is the wire representation for clearing an explicit destination
    * and returning to Auto. Bot state itself keeps Auto as an absent field. */
   computer?: Bot["computer"] | null;
@@ -67,7 +70,7 @@ export type BotUpdatePatch = Partial<
 /** A wire patch after clear-only values have been normalized for Bot state. */
 export type BotStatePatch = Omit<
   BotUpdatePatch,
-  "computer" | "acknowledgeLocalAuto" | "confirmFullAccess" | "applyToAllThreads" | "organizationFullAccess" | "threadId"
+  "computer" | "host" | "acknowledgeLocalAuto" | "confirmFullAccess" | "applyToAllThreads" | "organizationFullAccess" | "threadId"
 > & {
   computer?: Bot["computer"];
 };
@@ -127,6 +130,7 @@ const stateOverlay = (patch: BotUpdatePatch): BotStatePatch => {
     applyToAllThreads: _allThreads,
     organizationFullAccess: _orgFull,
     threadId: _threadId,
+    host: _host,
     computer,
     ...fields
   } = patch;
@@ -240,7 +244,8 @@ export function createBotPatchQueue(options: BotPatchQueueOptions): BotPatchQueu
       // same serialized lane, but never sit behind the cosmetic 400 ms
       // debounce where a message/routine could begin under stale permissions.
       const immediate = Object.prototype.hasOwnProperty.call(patch, "approvalMode") ||
-        Object.prototype.hasOwnProperty.call(patch, "modelSelection");
+        Object.prototype.hasOwnProperty.call(patch, "modelSelection") ||
+        Object.prototype.hasOwnProperty.call(patch, "host");
       if (immediate) {
         if (entry.timer !== null) clearTimeout(entry.timer);
         entry.timer = null;

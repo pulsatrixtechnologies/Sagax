@@ -141,8 +141,9 @@ describe("bot patch queue", () => {
     const queue = createBotPatchQueue({
       send: async (_botId, patch) => {
         sent.push(patch);
+        const { host: _host, ...rest } = patch;
         return bot({
-          ...patch,
+          ...rest,
           computer: patch.computer ?? undefined,
         });
       },
