@@ -361,11 +361,12 @@ const toolDefinitions = (externalRuntime: boolean) => [
   },
   {
     name: "shared_computer",
-    description: "Use a desktop explicitly shared by the user. Discover computer_id and folder_id with list_shared_computers. list_files/read_file/write_file are confined to chosen folders; paths are relative. read_file returns sha256; overwriting requires expected_sha256. Binary files support base64 encoding. run_command requires a SEPARATE unrestricted terminal grant. computer_tools lists the native computer-control tools; computer_call invokes one with arguments and needs a SEPARATE computer-control grant. Never substitute the server's filesystem when this desktop is offline. Actions are not retried automatically; inspect an uncertain outcome before retrying.",
+    description: "Use a desktop explicitly shared by the user. Discover computer_id and folder_id with list_shared_computers. list_files/read_file/write_file are confined to chosen folders; paths are relative. read_file returns sha256; overwriting requires expected_sha256. Binary files support base64 encoding. run_command requires a SEPARATE unrestricted terminal grant. computer_tools lists the native computer-control tools; computer_call invokes one with arguments and needs a SEPARATE computer-control grant. Never substitute the server's filesystem when this desktop is offline. read_copy reads the person's own stored copy of a lent folder or their Chrome reading list, which remains when the computer sleeps, and never another member's screen. Actions are not retried automatically; inspect an uncertain outcome before retrying.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
-      computer_id: { type: "string" }, action: { type: "string", enum: ["list_files", "read_file", "write_file", "run_command", "computer_tools", "computer_call"] },
+      computer_id: { type: "string" }, action: { type: "string", enum: ["list_files", "read_file", "write_file", "run_command", "computer_tools", "computer_call", "read_copy"] },
       folder_id: { type: "string" }, path: { type: "string" }, content: { type: "string" }, encoding: { type: "string", enum: ["utf8", "base64"] }, expected_sha256: { type: "string" },
       command: { type: "string" }, tool_name: { type: "string" }, arguments: { type: "object", additionalProperties: true },
+      kind: { type: "string", enum: ["chrome", "folder"] }, name: { type: "string" },
     }, required: ["computer_id", "action"] },
   },
   {

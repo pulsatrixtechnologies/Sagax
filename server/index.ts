@@ -64,6 +64,7 @@ import { autoCompactWindow, claudeSignedIn, resolveClaudeConfigDir, setSoloClaud
 import { claudeAccountLinked, soloClaudeAccountLinked, type SoloClaudeLinkCache } from "./claude-account.ts";
 import { claudeActivityEvents, isClaudeComputerTool } from "./claude-activity.ts";
 import { provenRequestPerson, SharedComputers, sharedComputerOperation, sharedComputerRegistration } from "./shared-computers.ts";
+import { publishPersonalCopy, readPersonalCopy } from "./personal-copy.ts";
 import { createUserComputerRouter } from "./user-computers.ts";
 import { SharedComputerControl } from "./shared-computer-control.ts";
 import { createCoordinator, type ComposedTurn, type Coordinator, type HandoffView } from "./coordinator.ts";
@@ -39936,6 +39937,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         sharedComputers.register(registration, { session: auth.session.id, person: CLOUD_HOME ? CLOUD_HOME_LENDER : personKey(auth.session) }, secret);
         return json(res, 200, { ok: true });
       }
+      if (path === "/api/shared-computers/copy") {
+        const person = CLOUD_HOME ? CLOUD_HOME_LENDER : personKey(auth.session);
+        const kind = body?.kind;
+        const name = body?.name;
+        const incoming = Array.isArray(body?.files) ? body.files : null;
+        if ((kind !== "chrome" && kind !== "folder") || typeof name !== "string" || !incoming) return json(res, 400, { error: "Send kind, name, and files." });
+        try {
+          const saved = publishPersonalCopy(DATA_DIR, {
+            person, kind, name, at: Date.now(),
+            files: incoming.map((file: { path?: unknown; text?: unknown }) => ({ path: String(file?.path ?? ""), text: String(file?.text ?? "") })),
+          });
+          return json(res, 200, { ok: true, ...saved });
+        } catch (error) {
+          return json(res, 400, { error: error instanceof Error ? error.message : "The copy was refused." });
+        }
+      }
       const route = /^\/api\/shared-computers\/([\w-]+)\/(poll|lease|result|disconnect)$/.exec(path);
       if (!route) return json(res, 404, { error: "not found" });
       const [, id, action] = route;
@@ -40899,6 +40916,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "This bot has no computer. Change its Computer setting to use a shared computer's apps and screen." });
         }
         const principal = sharedComputerPrincipal(internalCapability);
+        if (parsed.data.action === "read_copy") {
+          if (!principal) return json(res, 403, { error: "Only the person who published the copy can read it." });
+          const kind = parsed.data.kind;
+          const name = parsed.data.name;
+          if ((kind !== "chrome" && kind !== "folder") || !name) return json(res, 400, { error: "read_copy needs kind and name." });
+          const copy = readPersonalCopy(DATA_DIR, principal, kind, name);
+          if (!copy) return json(res, 404, { error: "No copy of that name for this person." });
+          return json(res, 200, { result: { at: copy.at, kind: copy.kind, name: copy.name, files: copy.files } });
+        }
         const why = CLOUD_HOME && !principal ? cloudLendingRefusal(internalCapability) : null;
         if (why === "someone-else" || why === "memory-changed") {
           return json(res, 403, { error: why === "someone-else" ? LENDING_SOMEONE_ELSE : LENDING_MEMORY_CHANGED });
