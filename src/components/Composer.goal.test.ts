@@ -96,21 +96,18 @@ describe("the goal chip in a room's composer", () => {
   const option = (label: string) => [...container.querySelectorAll<HTMLElement>('[role="option"]')]
     .find((row) => row.textContent?.includes(label));
 
-  it("turns goal mode on and off from the + menu's modes", () => {
+  it("keeps Loop and Goal mode out of the + menu, and offers /loop and /goal in the \"/\" menu", () => {
     restoreComposerDraft(draftId, { text: "", attachments: [], channelMode: "chat" });
     render();
     flushSync(() => container.querySelector<HTMLButtonElement>("[data-composer-plus]")!.click());
-    const row = container.querySelector<HTMLButtonElement>('[data-composer-plus-item="goal"]')!;
-    expect(row.getAttribute("role")).toBe("menuitemcheckbox");
-    expect(row.getAttribute("aria-checked")).toBe("false");
-    expect(row.dataset.composerPlusGroup).toBe("modes");
-    flushSync(() => row.click());
-    expect(chip()).not.toBeNull();
+    expect(container.querySelector('[data-composer-plus-item="goal"]')).toBeNull();
+    expect(container.querySelector('[data-composer-plus-item="loop"]')).toBeNull();
+    expect(container.querySelector('[data-composer-plus-menu]')!.textContent).not.toMatch(/Loop|Goal mode/);
+    expect(container.querySelectorAll('[data-composer-plus-menu] [role="separator"]').length).toBe(0);
     flushSync(() => container.querySelector<HTMLButtonElement>("[data-composer-plus]")!.click());
-    const on = container.querySelector<HTMLButtonElement>('[data-composer-plus-item="goal"]')!;
-    expect(on.getAttribute("aria-checked")).toBe("true");
-    flushSync(() => on.click());
-    expect(chip()).toBeNull();
+    type("/");
+    expect(option("/goal")).toBeDefined();
+    expect(option("/loop")).toBeDefined();
   });
 
   it("lists /goal's subcommands under Goal, dimmed when there is nothing to act on", () => {

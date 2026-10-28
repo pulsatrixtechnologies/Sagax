@@ -8395,8 +8395,6 @@
   "composer.plus.attach": "Joindre des fichiers",
   "composer.plus.teach": "Apprendre une tâche",
   "composer.plus.approval": "Autorisations",
-  "composer.plus.goalMode": "Mode objectif",
-  "composer.plus.loop": "Boucle",
   "composer.plus.setup": "Configurer ce bot",
   "composer.plus.model": "Modèle",
   "composer.plus.modelAria": "Modèle : {model}",

@@ -8408,8 +8408,6 @@
   "composer.plus.attach": "Attach files",
   "composer.plus.teach": "Teach a task",
   "composer.plus.approval": "Approvals",
-  "composer.plus.goalMode": "Goal mode",
-  "composer.plus.loop": "Loop",
   "composer.plus.setup": "Set up this bot",
   "composer.plus.model": "Model",
   "composer.plus.modelAria": "Model: {model}",

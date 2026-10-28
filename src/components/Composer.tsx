@@ -1,7 +1,7 @@
 import { track } from "@/lib/analytics";
 import { currentOpenPage } from "@/lib/open-page";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Repeat, Target, Users, X } from "lucide-react";
+import { ArrowUp, Clock, Target, Users, X } from "lucide-react";
 import { ComposerSendBlock } from "@/components/ComposerSendBlock";
 import { useSendBlock } from "@/lib/send-state";
 import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
@@ -1216,7 +1216,7 @@ export function Composer({
     setChannelMode("chat");
   };
   // The + menu, as in the reference design: attach files and teach a task,
-  // then a room's goal mode. The model and the approval level live in the
+  // (Loop and Goal mode are reached from the "/" menu). The model and the approval level live in the
   // bot's settings; typing /setup still sets the bot up.
   const plusItems: PlusMenuItem[] = [
     { id: "attach", group: "add", label: t("composer.plus.attach"), icon: ATTACH_ICON, onSelect: () => fileInput.current?.click() },
@@ -1229,40 +1229,6 @@ export function Composer({
       // in words, the same as picking /learn in the "/" menu; with a
       // browser, a choice between that and showing it there
       onSelect: () => browserTeach ? learnAvailable ? setTeachChooser(true) : showInBrowser() : startDraftWith("/learn "),
-    }] : []),
-    {
-      id: "loop",
-      group: "modes" as const,
-      label: t("composer.plus.loop"),
-      icon: <Repeat size={15} aria-hidden="true" />,
-      hint: "/loop",
-      onSelect: () => {
-        const rest = text.replace(/^\/loop\s*/i, "");
-        const next = `/loop ${rest}`;
-        editText(next);
-        setCaret(next.length);
-        requestAnimationFrame(() => {
-          inputRef.current?.focus();
-          inputRef.current?.setSelectionRange(next.length, next.length);
-        });
-      },
-    },
-    ...((group && !group.dm) || !group ? [{
-      id: "goal",
-      group: "modes" as const,
-      label: t("composer.plus.goalMode"),
-      icon: <Target size={15} aria-hidden="true" />,
-      hint: "/goal",
-      checked: goalModeOn,
-      onSelect: () => {
-        if (goalModeOn) {
-          leaveGoalMode();
-          return;
-        }
-        markDraftEdited(draftId);
-        setChannelMode("goal");
-        requestAnimationFrame(() => inputRef.current?.focus());
-      },
     }] : []),
   ];
   return (

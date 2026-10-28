@@ -313,34 +313,6 @@ final class RoomInfoUITests: XCTestCase {
         try eventually("the bot left") { try room(lab.id)?.memberIds == [lead.id] }
     }
 
-    // MARK: - Goal (RM11, CA14)
-
-    /// "+" > Goal puts the composer in goal mode; the send runs a team goal
-    /// and its card shows in the transcript.
-    @MainActor
-    func testGoalFromThePlusSheet() throws {
-        try setUpFixture()
-        let lab = try labRoom()
-        try idleRoom(lab)
-        defer { _ = try? request("POST", "/api/groups/\(lab.id)/interrupt", body: ["threadId": lab.threadId]) }
-        let app = try launch(try XCTUnwrap(try room(lab.id)).name)
-        tap(app, "composer-plus")
-        tap(app, "plus-goal")
-        let field = app.textFields["message-input"].exists ? app.textFields["message-input"] : app.textViews["message-input"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        XCTAssertEqual(field.value as? String, "/goal ")
-        let goal = "Livrer le plan trimestriel \(stamp())"
-        field.typeText(goal)
-        tap(app, "composer-send")
-        try eventually("the goal sent in goal mode") {
-            try page(lab.threadId).contains { $0.role == "user" && $0.text == goal && $0.channelMode == "goal" }
-        }
-        try eventually("the goal card on the server") { try page(lab.threadId).contains { $0.kind == "goal.run" } }
-        XCTAssertTrue(element(app, "goal-run-status").waitForExistence(timeout: 20), "the goal card in the transcript")
-        XCTAssertTrue(app.staticTexts[goal].exists, "the card names the goal")
-        attach("Goal card", app)
-    }
-
     // MARK: - Copy ID, move, delete (RM13, RM15, RM16)
 
     /// The room row's menu on the home (the desktop's RoomContextMenu):
