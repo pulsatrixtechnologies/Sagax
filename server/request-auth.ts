@@ -544,6 +544,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["DELETE", "POST"], path: /^\/api\/me\/workflows\/[a-z][a-z0-9-]{0,40}(?:\/run)?$/ },
   { methods: ["GET"], path: /^\/api\/me\/workflows\/runs\/wf_[a-f0-9]{16}$/ },
   { methods: ["POST"], path: /^\/api\/me\/workflows\/runs\/wf_[a-f0-9]{16}\/answer$/ },
+  // The local health report (server/routes/health-report.ts). The scanner
+  // is a separate process. No admin right.
+  { methods: ["GET"], path: /^\/api\/me\/health-report$/ },
   // The Code section (server/routes/code.ts): the person's own Perspicax
   // runs, called with their own sign-in token; Perspicax decides the rest.
   { methods: ["GET", "POST"], path: /^\/api\/code\/(?:status|environments|runs(?:\/[A-Za-z0-9_-]{1,80}(?:\/(?:events|stream|read|followup|approve|stop|archive|diff|commits|files))?)?)$/ },

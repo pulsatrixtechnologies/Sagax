@@ -37,6 +37,7 @@
     "pair": "node --experimental-strip-types server/openmausbot.ts pair",
     "dev:server": "node --experimental-strip-types server/dev-server.ts",
     "mcp": "node --experimental-strip-types scripts/mcp-server.ts",
+    "health-scan": "node --experimental-strip-types server/health-scan.ts",
     "control:omb": "node --experimental-strip-types scripts/control-omb.ts",
     "eval": "node --experimental-strip-types evals/runners/run-evals.ts",
     "dev:desktop": "node scripts/prepare-cloudflared.mjs --current && node scripts/dev-desktop.mjs",

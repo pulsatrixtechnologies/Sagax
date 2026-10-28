@@ -35,6 +35,13 @@ turn. Other members do not. Header values stay out of the tool list.
 (docs/workflows.md). The runner does not start a model turn. An approve
 step waits until that person answers. Routines are unchanged.
 
+## Health scan (2026-10-27)
+
+`server/health-scan.ts` is a separate process (docs/health-scan.md). It
+reads logs and databases without modifying them and writes
+`health-reports/latest.md`. `GET /api/me/health-report` shows that file.
+It does not call a model and it does not open a ticket.
+
 ## Web search with the person's own key (2026-10-26)
 
 Decision: an engine with no web search of its own (OpenAI-compatible

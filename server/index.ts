@@ -337,6 +337,7 @@ import { createOpenApiInternalRoutes } from "./routes/openapi-internal.ts";
 import { OpenApiStore, openApiScope } from "./openapi-connector.ts";
 import { createWorkflowRoutes } from "./routes/workflows.ts";
 import { advanceWorkflow, WorkflowStore, workflowScope } from "./workflows.ts";
+import { createHealthReportRoutes } from "./routes/health-report.ts";
 import { createWebSearchStore, webSearchScope } from "./web-search/store.ts";
 import { engineHasNativeWebSearch } from "./web-search/native.ts";
 import { isIP } from "node:net";
@@ -36036,6 +36037,11 @@ if (!process.env.VITEST) {
   }, 2_000);
   workflowClock.unref?.();
 }
+ROUTES.push(createHealthReportRoutes({
+  read: () => {
+    try { return readFileSync(join(DATA_DIR, "health-reports", "latest.md"), "utf8"); } catch { return null; }
+  },
+}));
 // A person's own Experimental switches and browser profiles (#1098,
 // server/routes/person-settings.ts): theirs, on an organization server.
 ROUTES.push(createPersonSettingsRoutes({
