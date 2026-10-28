@@ -25,7 +25,6 @@
   "include": [
     "server",
     "companion",
-    "enterprise",
     "shared/profil-fiche.ts",
     "shared/profil-fiche.test.ts",
     // pure IT tools model: typechecked under the server's no-DOM lib so it stays usable on both sides
