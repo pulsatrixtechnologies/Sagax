@@ -9,6 +9,7 @@ import type { Bot, ConfigStatus } from "@/state/store";
 import type { TurnPayerMode } from "../../shared/turn-payer";
 
 type RuntimeBot = Pick<Bot, "maxConcurrentThreads" | "maxParallelPerPerson" | "busySend" | "automaticRecovery">;
+type TurnLimitsPatch = NonNullable<Bot["turnLimits"]>;
 type RuntimeConfig = Pick<ConfigStatus, "threads" | "automaticRecovery"> | null | undefined;
 
 export type BotRecovery = NonNullable<Bot["automaticRecovery"]>;
@@ -20,6 +21,8 @@ export interface BotRuntimePatch {
   automaticRecovery?: BotRecovery;
   /** #1137: who pays for the bot's replies; null goes back to the default. */
   turnPayer?: TurnPayerMode | null;
+  /** #1098: per-turn anti-loop limits (shared/turn-limits.ts), merged. */
+  turnLimits?: TurnLimitsPatch;
 }
 
 /** #1137: who pays for this bot's replies now (its own choice, else the

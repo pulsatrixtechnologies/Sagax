@@ -381,8 +381,11 @@ export function pendingDelegationSnapshot(): Array<{
 /** How many handoffs one turn may queue. Small on purpose: this is the only
  * thing standing between a confused bot and a fan-out of real turns. Six,
  * not four: a lead running a weekly check-in over a five-member team is the
- * ordinary case, and hitting the cap there silently dropped one teammate. */
-const MAX_QUEUED_PER_THREAD = 6;
+ * ordinary case, and hitting the cap there silently dropped one teammate.
+ * #1098: an anti-loop limit for automated turns; a turn that is the bot
+ * owner's own direct request passes `maxQueued: Infinity` (their word is
+ * the limit). */
+export const MAX_QUEUED_PER_THREAD = 6;
 
 /** Validate and enqueue a delegation. Pushes a "Delegated to @B: reason"
  * chip to the source thread so the user can see what was queued. */
@@ -392,7 +395,7 @@ export function queueDelegation(
   item: DelegationItem,
   maxDepth: number,
   sourceThreadId = from.threadId,
-  options?: { front?: boolean },
+  options?: { front?: boolean; maxQueued?: number },
 ): QueuedDelegation {
   if (item.toBotId === from.id) return { result: "self" };
   if (!item.oneWay && item.depth >= maxDepth) return { result: "too_deep" };
@@ -402,7 +405,7 @@ export function queueDelegation(
   // Async handoff removes the backpressure that ask_bot got for free by
   // making the caller wait. Without a cap, one turn can queue unboundedly
   // and fan out into as many real turns on the next settle.
-  if (list.length >= MAX_QUEUED_PER_THREAD) return { result: "too_many" };
+  if (list.length >= (options?.maxQueued ?? MAX_QUEUED_PER_THREAD)) return { result: "too_many" };
   // If the source thread is a shared group that contains both bots, keep it
   // as the authoritative channel instead of routing into a pair DM later.
   const originatingGroup = item.originatingGroupId

@@ -52,6 +52,8 @@ const {
   maxBytesForAttachment,
   maxBytesForFileMime,
   IMAGE_MAX_BYTES,
+  fileMaxBytes,
+  imageMaxBytes,
   __resetAttachmentAccountingForTests,
   cleanupStaleAttachmentPartials,
   deleteAttachment,
@@ -66,6 +68,7 @@ const {
   saveImageUpload,
   validateAttachmentUploadId,
 } = await import("./attachments.ts");
+const { setSharedHost } = await import("./host-kind.ts");
 
 // The cache tracks committed bytes in memory; anything that mutates
 // ATTACHMENTS_DIR directly on disk (rmSync/truncateSync/writeFileSync, all
@@ -78,6 +81,22 @@ function resetDir() {
 
 const UPLOAD_A = "11111111-1111-4111-8111-111111111111";
 const UPLOAD_B = "22222222-2222-4222-8222-222222222222";
+
+describe("#1098: attachment ceilings by host", () => {
+  afterEach(() => setSharedHost(true));
+
+  it("keeps 32, 25 and 90 MB on a shared host and gives every kind 90 MB on a solo server", () => {
+    expect(imageMaxBytes(true)).toBe(IMAGE_MAX_BYTES);
+    expect(fileMaxBytes(true)).toBe(FILE_MAX_BYTES);
+    expect(imageMaxBytes(false)).toBe(ARCHIVE_MAX_BYTES);
+    expect(fileMaxBytes(false)).toBe(ARCHIVE_MAX_BYTES);
+    setSharedHost(false);
+    expect(maxBytesForFileMime("application/pdf")).toBe(ARCHIVE_MAX_BYTES);
+    expect(maxBytesForAttachment("a.pdf")).toBe(ARCHIVE_MAX_BYTES);
+    setSharedHost(true);
+    expect(maxBytesForFileMime("application/pdf")).toBe(FILE_MAX_BYTES);
+  });
+});
 
 describe("extensionForMime", () => {
   it("maps the accepted image mimes to extensions", () => {

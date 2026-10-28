@@ -53,6 +53,13 @@ describe("per-bot runtime settings: the runtime reads the bot", () => {
     expect(botMaxConcurrentThreads({}, {})).toBe(3);
   });
 
+  it("#1098: parallel tasks per person stay at most 10 on a shared host, up to 16 solo", () => {
+    expect(botMaxParallelPerPerson({ maxParallelPerPerson: 16 }, global, false)).toBe(16);
+    expect(botMaxParallelPerPerson({ maxParallelPerPerson: 16 }, global, true)).toBe(10);
+    expect(botRuntimeSettingsPatchSchema.safeParse({ maxParallelPerPerson: 16 }).success).toBe(true);
+    expect(botRuntimeSettingsPatchSchema.safeParse({ maxParallelPerPerson: 17 }).success).toBe(false);
+  });
+
   it("recovery is the bot's: off on the bot means no backup even when the global is on", () => {
     expect(botRecoveryBackups({ automaticRecovery: { enabled: false } }, global)).toEqual([]);
     expect(botRecoveryBackups({ automaticRecovery: { enabled: true, backup: { instanceId: "q", model: "m" } } }, {})).toEqual([{ instanceId: "q", model: "m" }]);

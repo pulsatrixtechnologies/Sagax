@@ -10,7 +10,7 @@ import { dirname, extname, resolve } from "node:path";
 
 import { fromMarkdown } from "mdast-util-from-markdown";
 
-import { ATTACHMENTS_DIR, IMAGE_MAX_BYTES } from "./attachments.ts";
+import { ATTACHMENTS_DIR, IMAGE_MAX_BYTES, imageMaxBytes } from "./attachments.ts";
 import type { TurnImageInput } from "./contracts.ts";
 import { decodeAttachmentAttribute } from "./message-file.ts";
 
@@ -92,7 +92,7 @@ function ownedImage(path: string, attachmentsDir: string): TurnImageInput | null
 
   try {
     const entry = lstatSync(expected);
-    if (!entry.isFile() || entry.isSymbolicLink() || entry.size <= 0 || entry.size > IMAGE_MAX_BYTES) return null;
+    if (!entry.isFile() || entry.isSymbolicLink() || entry.size <= 0 || entry.size > imageMaxBytes()) return null;
     const canonicalRoot = realpathSync(attachmentsDir);
     const canonicalFile = realpathSync(expected);
     if (dirname(canonicalFile) !== canonicalRoot) return null;
@@ -125,7 +125,8 @@ export function extractTurnImages(
 
   const attachmentsDir = options.attachmentsDir ?? ATTACHMENTS_DIR;
   const maxCount = options.maxCount ?? TURN_IMAGE_MAX_COUNT;
-  const maxBytes = options.maxBytes ?? TURN_IMAGE_MAX_BYTES;
+  // #1098: a solo server's larger picture ceiling (attachments.ts imageMaxBytes)
+  const maxBytes = options.maxBytes ?? TURN_IMAGE_MAX_COUNT * imageMaxBytes();
   const admitted = imageTagCandidates(text)
     .map((tag) => ({ tag, image: ownedImage(tag.path, attachmentsDir) }))
     .filter((item): item is { tag: TagCandidate; image: TurnImageInput } => item.image !== null);

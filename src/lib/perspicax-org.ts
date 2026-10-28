@@ -10,6 +10,7 @@ import { personAvatarSrc } from "@/lib/profile-management";
 import { PERSON_AVATAR_EVENT } from "@/lib/person-avatars";
 import type { OrgGithubTokenPublic } from "../../shared/org-github-tokens";
 import { personLabel } from "@/lib/human-label";
+import { setAttachmentHostShared } from "@/lib/composer-attachments";
 
 export interface PerspicaxOrg {
   org: { name: string; identity: { kind: "perspicax"; issuer: string; serverId?: string } };
@@ -113,7 +114,12 @@ let pending: Promise<PerspicaxOrg | null> | null = null;
 
 export function loadPerspicaxOrg(force = false): Promise<PerspicaxOrg | null> {
   if (force) pending = null;
-  pending ??= api<unknown>("/api/org").then((body) => (isPerspicaxOrg(body) ? body : null), () => null);
+  pending ??= api<unknown>("/api/org").then((body) => {
+    const org = isPerspicaxOrg(body) ? body : null;
+    // #1098: a solo server lifts the attachment ceilings
+    setAttachmentHostShared(org !== null);
+    return org;
+  }, () => null);
   return pending;
 }
 

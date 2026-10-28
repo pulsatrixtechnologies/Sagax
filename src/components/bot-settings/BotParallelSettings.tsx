@@ -7,7 +7,8 @@
 import { t } from "@/lib/i18n";
 import { BOT_THREAD_LIMITS, botParallelLimit, botThreadLimit } from "@/lib/bot-runtime-settings";
 import { useStore, type Bot } from "@/state/store";
-import { MAX_PARALLEL_PER_PERSON } from "../../../shared/parallel-tasks";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { maxParallelPerPersonFor } from "../../../shared/parallel-tasks";
 import { DescribedRow, HelpTip, PillSelect, SettingsGroup } from "../SettingsPrimitives";
 import { useBotRuntimeSettings } from "./useBotRuntimeSettings";
 
@@ -16,6 +17,8 @@ export function BotParallelSettings({ bot }: { bot: Bot }) {
   const { shown, save, saving, error } = useBotRuntimeSettings(bot);
   const threads = botThreadLimit(shown, state.config);
   const perPerson = botParallelLimit(shown, state.config);
+  // #1098: up to 16 on a solo server, 10 on an organization server
+  const ceiling = maxParallelPerPersonFor(usePerspicaxOrg() !== null);
   const title = t("botPanel.parallel.title");
   // 2026-10-16 : drawn like Settings: compact rows with pill menus, the
   // explanations behind the info buttons.
@@ -41,7 +44,7 @@ export function BotParallelSettings({ bot }: { bot: Bot }) {
             ariaLabel={t("botPanel.parallel.perPerson")}
             disabled={saving}
             onChange={(next) => { const value = Number(next); if (value !== perPerson) void save({ maxParallelPerPerson: value }); }}
-            options={Array.from({ length: MAX_PARALLEL_PER_PERSON }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
+            options={Array.from({ length: Math.max(ceiling, perPerson) }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
           />
         </DescribedRow>
         {saving && <p role="status" className="px-3.5 pb-2 text-[12px] text-ink-secondary">{t("settings.threads.saving")}</p>}

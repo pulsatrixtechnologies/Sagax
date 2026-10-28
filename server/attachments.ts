@@ -17,6 +17,7 @@ import { link, open, unlink } from "node:fs/promises";
 import { basename, dirname, join, extname, resolve, sep } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { UploadContentError, assertContentMatches, checkUploadedFile } from "./upload-content-check.ts";
+import { isSharedHost } from "./host-kind.ts";
 
 export const ATTACHMENTS_DIR = join(DATA_DIR, "attachments");
 
@@ -38,6 +39,17 @@ export const ARCHIVE_MAX_BYTES = 90 * 1024 * 1024;
  * silently evict them: once this ceiling is reached, a new upload gets an
  * explicit 507 and the person can decide what to remove. */
 export const ATTACHMENTS_MAX_BYTES = 512 * 1024 * 1024;
+
+/** #1098: the ceilings above (25, 32 and 90 MB) are the shared host's, an
+ * organization server. A solo server is the person's own machine: a picture
+ * and a document get the archive ceiling there, which stays under the
+ * 100 MB request ceiling of remote access. */
+export function imageMaxBytes(sharedHost = isSharedHost()): number {
+  return sharedHost ? IMAGE_MAX_BYTES : ARCHIVE_MAX_BYTES;
+}
+export function fileMaxBytes(sharedHost = isSharedHost()): number {
+  return sharedHost ? FILE_MAX_BYTES : ARCHIVE_MAX_BYTES;
+}
 
 /** Interrupted streamed uploads use private partial files. A crash can leave
  * one behind, so future uploads remove only our stale partials — never a
@@ -146,13 +158,13 @@ export function isArchiveAttachment(file: string): boolean {
 
 /** The per-file ceiling for a stored attachment, by its extension. */
 export function maxBytesForAttachment(file: string): number {
-  return isArchiveAttachment(file) ? ARCHIVE_MAX_BYTES : FILE_MAX_BYTES;
+  return isArchiveAttachment(file) ? ARCHIVE_MAX_BYTES : fileMaxBytes();
 }
 
 /** The per-file ceiling for an upload's claimed content type. */
 export function maxBytesForFileMime(mime: string | undefined): number {
   const value = normalizedMime(mime);
-  return value && ARCHIVE_MIMES[value] ? ARCHIVE_MAX_BYTES : FILE_MAX_BYTES;
+  return value && ARCHIVE_MIMES[value] ? ARCHIVE_MAX_BYTES : fileMaxBytes();
 }
 
 export function extensionForMime(mime: string | undefined): string | null {
@@ -309,7 +321,7 @@ class AttachmentReservation {
   private released = false;
   private readonly maxFileBytes: number;
 
-  constructor(maxFileBytes = FILE_MAX_BYTES) {
+  constructor(maxFileBytes = fileMaxBytes()) {
     this.maxFileBytes = maxFileBytes;
   }
 
@@ -598,8 +610,9 @@ export function saveImage(bytes: Buffer, mime: string, requestedUploadId?: strin
   const ext = extensionForMime(mime);
   if (!ext) throw Object.assign(new Error("unsupported image type"), { status: 400 });
   if (bytes.byteLength === 0) throw Object.assign(new Error("empty image"), { status: 400 });
-  if (bytes.byteLength > IMAGE_MAX_BYTES) {
-    throw Object.assign(new Error(`image exceeds ${IMAGE_MAX_BYTES} bytes`), { status: 413 });
+  const imageCeiling = imageMaxBytes();
+  if (bytes.byteLength > imageCeiling) {
+    throw Object.assign(new Error(`image exceeds ${imageCeiling} bytes`), { status: 413 });
   }
   try {
     assertContentMatches(mime.split(";")[0]!.trim().toLowerCase(), bytes.subarray(0, 4100));

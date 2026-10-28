@@ -87,7 +87,16 @@ export interface TaskParallelOf {
 
 /** Default number of parallel tasks one person may have running on one bot. */
 export const DEFAULT_MAX_PARALLEL_PER_PERSON = 3;
+/** The ceiling on an organization server (the shared host). */
 export const MAX_PARALLEL_PER_PERSON = 10;
+/** #1098: the ceiling on a solo server, the person's own machine. The bot's
+ * running conversations (at most 16) still bound it. */
+export const SOLO_MAX_PARALLEL_PER_PERSON = 16;
+
+/** The highest number of parallel tasks per person a bot may be set to. */
+export function maxParallelPerPersonFor(sharedHost: boolean): number {
+  return sharedHost ? MAX_PARALLEL_PER_PERSON : SOLO_MAX_PARALLEL_PER_PERSON;
+}
 
 /** Words that read as a change to the running work, not a new request. */
 const STEER_HINTS = [

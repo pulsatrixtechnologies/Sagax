@@ -704,6 +704,8 @@ export interface Bot {
   maxParallelPerPerson?: number;
   busySend?: "ask" | "steer" | "parallel" | "after";
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
+  /** #1098: per-turn anti-loop limits its owner set (shared/turn-limits.ts). */
+  turnLimits?: { roomPosts?: number; threadsOpened?: number; roomsCreated?: number };
   /** #1137, organization server: who pays for this bot's replies (its own
    * choice; absent: `turnPayerDefault`, which the server computes). */
   turnPayer?: "owner" | "speaker";

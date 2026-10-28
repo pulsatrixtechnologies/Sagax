@@ -4,13 +4,13 @@
 // jumps between pages with matches, Save a copy, and (desktop app) Open in
 // the default app. pdf.js data files (CMaps, standard fonts, wasm decoders)
 // are served by the app too (pdfjsAssetOptions), so every PDF renders offline. The bytes come through the exact-message file route like every
-// other attachment, bounded by FILE_MAX_BYTES and checked for the PDF
+// other attachment, bounded by fileMaxBytes() and checked for the PDF
 // signature before pdf.js sees them.
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, ExternalLink, LoaderCircle, MoveHorizontal, Search, ZoomIn, ZoomOut } from "lucide-react";
 
-import { FILE_MAX_BYTES } from "@/lib/composer-attachments";
+import { fileMaxBytes, soloAttachmentCeilings } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { clampPdfZoom, isPdfBytes, pdfFitWidthScale, pdfjsAssetOptions, pdfSearchPages, pdfZoomStep, readBoundedBytes } from "@/lib/pdf-view";
@@ -79,7 +79,7 @@ export function PdfViewer({ path, name, message, onClose, returnFocus }: PdfView
     void (async () => {
       try {
         const response = await requestMessageFile(path, message, controller.signal);
-        const bytes = await readBoundedBytes(response, controller.signal, FILE_MAX_BYTES);
+        const bytes = await readBoundedBytes(response, controller.signal, fileMaxBytes());
         if (!isPdfBytes(bytes)) throw new Error("invalid");
         const pdfjs = await loadPdfjs();
         controller.signal.throwIfAborted();
@@ -248,7 +248,7 @@ export function PdfViewer({ path, name, message, onClose, returnFocus }: PdfView
       )}
       {state.kind === "error" && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm">
-          <p role="alert" className="max-w-md text-ink-secondary">{t(state.reason === "size" ? "pdf.tooLarge" : state.reason === "invalid" ? "pdf.invalid" : state.reason === "password" ? "pdf.password" : "pdf.loadFailed")}</p>
+          <p role="alert" className="max-w-md text-ink-secondary">{t(state.reason === "size" ? (soloAttachmentCeilings() ? "pdf.tooLargeSolo" : "pdf.tooLarge") : state.reason === "invalid" ? "pdf.invalid" : state.reason === "password" ? "pdf.password" : "pdf.loadFailed")}</p>
           {state.reason === "load" && <button type="button" className="rounded-lg border border-hairline px-3 py-2 hover:bg-raised" onClick={() => setAttempt(attempt + 1)}>{t("chat.retry")}</button>}
         </div>
       )}
@@ -287,13 +287,13 @@ function useOpenInDefaultApp(path: string, name: string, message: MessageAttachm
     try {
       const signal = AbortSignal.timeout(60_000);
       const response = await requestMessageFile(path, message, signal);
-      const bytes = await readBoundedBytes(response, signal, FILE_MAX_BYTES);
+      const bytes = await readBoundedBytes(response, signal, fileMaxBytes());
       if (!isPdfBytes(bytes)) throw new Error("invalid");
       await bridge(bytes, name);
     } catch (problem) {
       // main's own wording is English; the person reads theirs
       const reason = problem instanceof Error ? problem.message : "";
-      setError(t(reason === "size" ? "pdf.tooLarge" : reason === "invalid" ? "pdf.invalid" : "pdf.openDefaultFailed"));
+      setError(t(reason === "size" ? (soloAttachmentCeilings() ? "pdf.tooLargeSolo" : "pdf.tooLarge") : reason === "invalid" ? "pdf.invalid" : "pdf.openDefaultFailed"));
     } finally {
       setBusy(false);
     }

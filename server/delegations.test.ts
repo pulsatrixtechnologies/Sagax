@@ -154,6 +154,16 @@ describe("queueDelegation", () => {
     expect(queueDelegation(commsBus, from, item, 1, sibling.threadId).result).toBe("ok");
   });
 
+  it("#1098: the owner's direct request lifts the six-handoff cap (maxQueued)", () => {
+    const item = { toBotId: target.id, message: "next task", depth: 0 };
+    for (let index = 0; index < 9; index++) {
+      expect(queueDelegation(commsBus, from, item, 1, from.threadId, { maxQueued: Number.POSITIVE_INFINITY }).result).toBe("ok");
+    }
+    expect(_pendingCount(from.threadId)).toBe(9);
+    // an automated turn on the same thread still meets the cap
+    expect(queueDelegation(commsBus, from, item, 1).result).toBe("too_many");
+  });
+
   it("queues, broadcasts, and drops a 'Delegated to @Target' chip on the source thread", () => {
     const result = queueDelegation(commsBus, from, {
       toBotId: target.id,

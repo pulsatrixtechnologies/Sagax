@@ -126,6 +126,7 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   maxParallelPerPerson: "settings",
   busySend: "settings",
   automaticRecovery: "settings",
+  turnLimits: "settings",
   // #1137: who pays is its owner's choice on this server, and the default is computed
   turnPayer: { drop: "who pays is the owner's choice on this server" },
   turnPayerDefault: { drop: "computed by the server" },
@@ -767,6 +768,7 @@ const settingsSchema = z.object({
   maxConcurrentThreads: botRuntimeSettingsShape.maxConcurrentThreads,
   maxParallelPerPerson: botRuntimeSettingsShape.maxParallelPerPerson,
   busySend: botRuntimeSettingsShape.busySend,
+  turnLimits: botRuntimeSettingsShape.turnLimits,
   automaticRecovery: z.object({ enabled: z.boolean(), backup: selectionSchema.optional() }).optional(),
   autoApprove: z.boolean().optional(),
   approvalMode: z.string().refine(isApprovalMode).optional(),
@@ -947,6 +949,7 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
       ...(settings.maxConcurrentThreads !== undefined ? { maxConcurrentThreads: settings.maxConcurrentThreads } : {}),
       ...(settings.maxParallelPerPerson !== undefined ? { maxParallelPerPerson: settings.maxParallelPerPerson } : {}),
       ...(settings.busySend !== undefined ? { busySend: settings.busySend } : {}),
+      ...(settings.turnLimits ? { turnLimits: settings.turnLimits } : {}),
       // A backup this server cannot run arrives off, never pointing nowhere.
       ...(settings.automaticRecovery ? {
         automaticRecovery: settings.automaticRecovery.enabled && settings.automaticRecovery.backup && host.engineUsable(settings.automaticRecovery.backup as ModelSelection)

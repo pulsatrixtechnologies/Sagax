@@ -5,7 +5,13 @@
 //   GET   /api/bots/:id/runtime-settings -> { settings, stored }
 //   PATCH /api/bots/:id/runtime-settings { maxConcurrentThreads?,
 //         maxParallelPerPerson?, busySend?, automaticRecovery?,
-//         turnPayer?: "owner" | "speaker" | null } -> same
+//         turnPayer?: "owner" | "speaker" | null,
+//         turnLimits?: { roomPosts?, threadsOpened?, roomsCreated? } } -> same
+//
+// `turnLimits` (#1098): the bot's per-turn anti-loop limits
+// (shared/turn-limits.ts), merged into what it has. `maxParallelPerPerson`
+// goes up to 16 on a solo server and stays at most 10 on an organization
+// server (shared/parallel-tasks.ts maxParallelPerPersonFor).
 //
 // `turnPayer` (#1137, shared/turn-payer.ts): who pays for the bot's replies
 // to the people it is shared with; null goes back to the default, which
@@ -40,13 +46,16 @@ import {
 } from "../bot-runtime-settings.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 import { grantStaysInOwnEnvironment, ORG_REACH_AREAS } from "../../shared/grant-reach.ts";
+import { maxParallelPerPersonFor } from "../../shared/parallel-tasks.ts";
+import { DEFAULT_TURN_LIMITS } from "../../shared/turn-limits.ts";
+import { isSharedHost } from "../host-kind.ts";
 import type { TurnPayerMode } from "../../shared/turn-payer.ts";
 
 const SETTINGS = /^\/api\/bots\/([\w-]+)\/runtime-settings$/;
 const GRANTS = /^\/api\/bots\/([\w-]+)\/tool-grants$/;
 const REVOKE = /^\/api\/bots\/([\w-]+)\/tool-grants\/(tg_[\w-]+)\/revoke$/;
 const MAX_ADMIN_DAYS = 30;
-const RUNTIME_FIELDS = ["maxConcurrentThreads", "maxParallelPerPerson", "busySend", "automaticRecovery", "turnPayer"] as const;
+const RUNTIME_FIELDS = ["maxConcurrentThreads", "maxParallelPerPerson", "busySend", "automaticRecovery", "turnPayer", "turnLimits"] as const;
 
 type StoredRuntime = BotRuntimeSettings & { turnPayer?: TurnPayerMode };
 type RuntimeBot = { id: string; name?: string } & StoredRuntime;
@@ -67,6 +76,9 @@ export interface BotRuntimeSettingsRouteDeps {
   /** #1137: the bot's default "who pays" when it has no choice of its own.
    * Absent: "speaker" (solo server, tests). */
   turnPayerDefault?(bot: RuntimeBot): TurnPayerMode;
+  /** #1098: an organization server (its ceilings protect the others).
+   * Absent: server/host-kind.ts. */
+  sharedHost?(): boolean;
   grants: Pick<ToolGrantStore, "all" | "grant" | "revoke">;
   audit(action: "bot.runtime_settings" | "tool_grants.grant" | "tool_grants.revoke", auth: RequestAuth, req: IncomingMessage, detail: Record<string, unknown>): void;
   now?: () => number;
@@ -87,6 +99,7 @@ function stored(bot: RuntimeBot): StoredRuntime {
 
 export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps): RouteHandler {
   const now = deps.now ?? Date.now;
+  const sharedHost = deps.sharedHost ?? isSharedHost;
   return async ({ req, res, path, method, auth, json, readBody }) => {
     const settings = path.match(SETTINGS);
     const grants = settings ? null : path.match(GRANTS);
@@ -102,7 +115,12 @@ export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps
       if (method !== "GET" && method !== "PATCH") return json(res, 405, { error: "GET or PATCH" });
       if (!deps.mayManage(auth, bot, "behaviour")) return json(res, 403, { error: "forbidden: only the bot's owner or an admin can change its settings", code: "bot_settings_owner_only" });
       const answer = (current: RuntimeBot) => json(res, 200, {
-        settings: { ...effectiveBotRuntimeSettings(current, deps.global()), turnPayer: current.turnPayer ?? deps.turnPayerDefault?.(current) ?? "speaker" },
+        settings: {
+          ...effectiveBotRuntimeSettings(current, deps.global()),
+          turnPayer: current.turnPayer ?? deps.turnPayerDefault?.(current) ?? "speaker",
+          turnLimits: { ...DEFAULT_TURN_LIMITS, ...current.turnLimits },
+          maxParallelPerPersonCeiling: maxParallelPerPersonFor(sharedHost()),
+        },
         stored: stored(current),
       });
       if (method === "GET") return answer(bot);
@@ -113,7 +131,12 @@ export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps
         return json(res, 400, { error: message });
       }
       const { turnPayer, ...runtime } = parsed.data;
+      const ceiling = maxParallelPerPersonFor(sharedHost());
+      if (runtime.maxParallelPerPerson !== undefined && runtime.maxParallelPerPerson > ceiling) {
+        return json(res, 400, { error: `at most ${ceiling} parallel tasks per person on this server`, code: "parallel_ceiling" });
+      }
       const patch: StoredRuntime = { ...runtime } as BotRuntimeSettings;
+      if (runtime.turnLimits) patch.turnLimits = { ...bot.turnLimits, ...runtime.turnLimits };
       if (turnPayer !== undefined) patch.turnPayer = turnPayer ?? undefined;
       const recovery = parsed.data.automaticRecovery;
       if (recovery?.backup) {
