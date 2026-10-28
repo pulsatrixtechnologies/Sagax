@@ -1190,8 +1190,49 @@ public enum AccessRules {
     /// `mcpServersForBot`: the enabled servers, narrowed by the bot's own list.
     public static func mounted(_ all: [MCPServerListing], own: [String]?) -> [MCPServerListing] {
         let enabled = all.filter { $0.enabled != false }
-        guard let own else { return enabled }
-        return enabled.filter { own.contains($0.name) }
+        let mounted = own == nil ? enabled : enabled.filter { own!.contains($0.name) }
+        return deduped(mounted)
+    }
+
+    /// A connector's name with a repeated word folded once: "github-github"
+    /// is the same connector as "github" (src/lib/mcp-servers.ts connectorKey).
+    static func connectorKey(_ name: String) -> String {
+        let words = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            .split { $0 == "-" || $0 == "_" || $0.isWhitespace }.map(String.init)
+        return words.enumerated().filter { index, word in index == 0 || word != words[index - 1] }.map(\.element).joined(separator: "-")
+    }
+
+    /// A sign-in that still needs the person outranks one that does not.
+    private static func authRank(_ auth: String?) -> Int {
+        switch auth {
+        case "required": 4
+        case "expired": 3
+        case "error": 2
+        case "none": 1
+        case "connected": 0
+        default: -1
+        }
+    }
+
+    /// One row per connector. The first name stays; the row that still needs
+    /// a sign-in wins, so Authenticate is never hidden by the fold.
+    public static func deduped(_ servers: [MCPServerListing]) -> [MCPServerListing] {
+        var seen: [String: MCPServerListing] = [:]
+        var order: [String] = []
+        for server in servers {
+            let key = connectorKey(server.name)
+            if let known = seen[key] {
+                if authRank(server.auth) > authRank(known.auth) {
+                    var winner = server
+                    winner.name = known.name
+                    seen[key] = winner
+                }
+            } else {
+                order.append(key)
+                seen[key] = server
+            }
+        }
+        return order.compactMap { seen[$0] }
     }
 
     /// The bot's list after one switch: absent means every enabled server,

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Plug } from "lucide-react";
 import { t } from "@/lib/i18n";
-import { mcpServersForBot, useMcpServers, type McpServerSummary } from "@/lib/mcp-servers";
+import { dedupeConnectors, mcpServersForBot, useMcpServers, type McpServerSummary } from "@/lib/mcp-servers";
 import { Github, Slack } from "../../brand-icons";
 import { registerDevPod, type DevPodContext } from "../registry";
 
@@ -35,6 +35,9 @@ function ConnectorsBody({ data, ctx }: { data: McpServerSummary[]; ctx: DevPodCo
             >
               <ConnectorIcon name={server.name} />
               <span className="min-w-0 flex-1 truncate text-ink">{server.name}</span>
+              {server.auth && server.auth !== "connected" && server.auth !== "none" && (
+                <span data-connector-auth={server.auth} className="shrink-0 text-[12px] text-warning">{t("devPods.connectors.authenticate")}</span>
+              )}
             </button>
           </li>
         ))}
@@ -57,7 +60,7 @@ registerDevPod<McpServerSummary[]>({
   useData: (ctx) => {
     const { servers, error, refresh } = useMcpServers();
     if (servers === null) return error ? { status: "error", retry: () => void refresh() } : { status: "loading" };
-    const mounted = mcpServersForBot(servers, ctx.bot.mcpServers);
+    const mounted = dedupeConnectors(mcpServersForBot(servers, ctx.bot.mcpServers));
     return mounted.length ? { status: "ready", data: mounted } : { status: "empty" };
   },
   Body: ConnectorsBody,

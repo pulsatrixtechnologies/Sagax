@@ -71805,6 +71805,12 @@
         }
       }
     },
+    "devPods.connectors.authenticate": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Authenticate" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Authentifier" } }
+      }
+    },
     "devPods.connectors.title": {
       "localizations": {
         "en": {
