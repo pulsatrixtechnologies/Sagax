@@ -20508,46 +20508,46 @@
         }
       }
     },
-    "sent mid-turn": {
+    "taken into account": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "sent mid-turn"
+            "value": "taken into account"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "envoyé pendant le tour"
+            "value": "pris en compte"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "enviado durante o turno"
+            "value": "levado em conta"
           }
         }
       }
     },
-    "Sent while the bot was working: it saw this before its next step, inside the same turn.": {
+    "Sent while the bot was working: it took it into account right away, inside the work it was doing.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sent while the bot was working: it saw this before its next step, inside the same turn."
+            "value": "Sent while the bot was working: it took it into account right away, inside the work it was doing."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Envoyé pendant que le bot travaillait : il l'a vu avant son étape suivante, dans le même tour."
+            "value": "Envoyé pendant que le bot travaillait : il en a tenu compte tout de suite, dans le travail en cours."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enviado enquanto o bot trabalhava: ele viu isso antes do passo seguinte, dentro do mesmo turno."
+            "value": "Enviado enquanto o bot trabalhava: ele levou em conta na hora, dentro do trabalho em andamento."
           }
         }
       }

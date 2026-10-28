@@ -152,13 +152,13 @@ struct TextBubble: View {
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .modifier(CollapsedText(collapsed: collapsible && !expanded))
-                        // Sent into a running turn (MS20): the bot saw it
-                        // before its next step, inside the same turn.
+                        // Sent into a running turn (MS20): the bot took it
+                        // into account at once, inside its work (2026-10-28).
                         if message.steered == true {
-                            Text("sent mid-turn")
+                            Text("taken into account")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Theme.textTertiary)
-                                .accessibilityHint(Text("Sent while the bot was working: it saw this before its next step, inside the same turn."))
+                                .accessibilityHint(Text("Sent while the bot was working: it took it into account right away, inside the work it was doing."))
                                 .accessibilityIdentifier("steered-\(message.id)")
                         }
                         if collapsible {
