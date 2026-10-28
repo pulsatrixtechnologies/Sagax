@@ -26,6 +26,11 @@ enum DevPodsStrings {
     static var connectors: String { String(localized: "devPods.connectors.title", defaultValue: "Connectors") }
     static var outputs: String { String(localized: "devPods.outputs.title", defaultValue: "Outputs") }
     static var changes: String { String(localized: "devPods.changes.title", defaultValue: "Changes") }
+    static var tasks: String { String(localized: "devPods.tasks.title", defaultValue: "Background tasks") }
+    static func finished(_ count: Int) -> String {
+        String(localized: "devPods.tasks.finished", defaultValue: "{count} finished").replacingOccurrences(of: "{count}", with: String(count))
+    }
+    static var stopTask: String { String(localized: "Stop this task") }
     static var ownFolder: String { String(localized: "devPods.environment.ownFolder", defaultValue: "Its own folder") }
     static var branch: String { String(localized: "devPods.environment.branch", defaultValue: "Branch") }
     static var repository: String { String(localized: "devPods.environment.repository", defaultValue: "Repository") }
@@ -97,6 +102,50 @@ struct DevPodsView: View {
     private var contextShare: DevContextShare? { DevContextShare(input.task?.usage) }
     private var outputs: [DevOutput] { DevPodSources.outputs(input.messages) }
     private var changes: [DevChange] { DevPodSources.changes(input.messages) }
+
+    /// The parallel tasks of this conversation (the same ones its cards show).
+    private struct BackgroundTask: Identifiable {
+        var threadId: String
+        var title: String
+        var state: String
+        var elapsed: String?
+        var live: Bool
+        var id: String { threadId }
+    }
+
+    private var background: [BackgroundTask] {
+        let threadId = input.task?.threadId ?? input.bot.threadId
+        let now = Date().timeIntervalSince1970 * 1000
+        return (input.bot.tasks ?? []).compactMap { task -> BackgroundTask? in
+            guard let link = task.parallelOf, link.threadId == threadId else { return nil }
+            let done = link.outcome == "done" || link.outcome == "failed" || link.outcome == "stopped"
+            let waiting = task.activity == "waiting-on-you"
+            let state = done ? link.outcome! : waiting ? "waiting" : (task.busy == true ? "running" : "queued")
+            let live = state == "running" || state == "waiting" || state == "queued"
+            let started = task.turnStartedAt ?? link.at
+            let elapsed = live ? now - started : link.reportedAt.map { $0 - started }
+            return BackgroundTask(threadId: task.threadId, title: task.title, state: state, elapsed: elapsed.flatMap { $0 > 0 ? Self.elapsed($0) : nil }, live: live)
+        }
+    }
+
+    /// Minutes and seconds, the same reading the desktop gives (`formatElapsed`).
+    private static func elapsed(_ ms: Double) -> String {
+        let total = Int(ms / 1000)
+        let minutes = total / 60
+        let seconds = total % 60
+        return minutes > 0 ? "\(minutes)m \(String(format: "%02d", seconds))s" : "\(seconds)s"
+    }
+
+    private func taskState(_ state: String) -> String {
+        switch state {
+        case "running": String(localized: "devPods.tasks.state.running", defaultValue: "Running")
+        case "waiting": String(localized: "devPods.tasks.state.waiting", defaultValue: "Waiting")
+        case "done": String(localized: "devPods.tasks.state.done", defaultValue: "Done")
+        case "failed": String(localized: "devPods.tasks.state.failed", defaultValue: "Failed")
+        case "stopped": String(localized: "devPods.tasks.state.stopped", defaultValue: "Stopped")
+        default: String(localized: "devPods.tasks.state.queued", defaultValue: "Queued")
+        }
+    }
     private var mounted: [MCPServerListing] { servers.map { AccessRules.mounted($0, own: input.bot.mcpServers) } ?? [] }
 
     var body: some View {
@@ -107,6 +156,7 @@ struct DevPodsView: View {
                 connectorsSection
                 if !outputs.isEmpty { outputsSection }
                 if !changes.isEmpty { changesSection }
+                if !background.isEmpty { tasksSection }
                 if environment == nil, contextShare == nil, mounted.isEmpty, !serversFailed, outputs.isEmpty, changes.isEmpty {
                     Section {
                         Text(verbatim: DevPodsStrings.empty)
@@ -402,6 +452,42 @@ struct DevPodsView: View {
         }
         if let sha = change.sha {
             Button { UIPasteboard.general.string = sha } label: { Label(DevPodsStrings.copyCommit, systemImage: "doc.on.doc") }
+        }
+    }
+
+    // MARK: Background tasks
+
+    private var tasksSection: some View {
+        let finished = background.filter { ["done", "failed", "stopped"].contains($0.state) }.count
+        return Section {
+            ForEach(background) { task in
+                HStack(spacing: 8) {
+                    Text(verbatim: task.title).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(verbatim: [taskState(task.state), task.elapsed].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    if task.live {
+                        Button {
+                            Task { try? await session.profileClient?.stopParallelTask(botId: input.bot.id, threadId: task.threadId) }
+                        } label: {
+                            Image(systemName: "stop.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(Text(verbatim: DevPodsStrings.stopTask))
+                    }
+                }
+                .accessibilityIdentifier("dev-pods.task.\(task.threadId)")
+            }
+            if finished > 0 {
+                Text(verbatim: DevPodsStrings.finished(finished))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("dev-pods.tasks.finished")
+            }
+        } header: {
+            Text(verbatim: DevPodsStrings.tasks)
         }
     }
 }

@@ -71843,6 +71843,54 @@
         }
       }
     },
+    "devPods.tasks.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Background tasks" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tâches de fond" } }
+      }
+    },
+    "devPods.tasks.finished": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "{count} finished" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "{count} terminées" } }
+      }
+    },
+    "devPods.tasks.state.queued": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Queued" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En file" } }
+      }
+    },
+    "devPods.tasks.state.running": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Running" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En cours" } }
+      }
+    },
+    "devPods.tasks.state.waiting": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente de vous" } }
+      }
+    },
+    "devPods.tasks.state.done": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Done" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Terminée" } }
+      }
+    },
+    "devPods.tasks.state.failed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Failed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Échouée" } }
+      }
+    },
+    "devPods.tasks.state.stopped": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stopped" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Arrêtée" } }
+      }
+    },
     "devPods.changes.title": {
       "localizations": {
         "en": {
