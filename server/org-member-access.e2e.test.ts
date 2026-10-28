@@ -130,6 +130,8 @@ async function start() {
       SAGAX_OIDC_REFRESH_AFTER_SECONDS: "2",
       SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
       SAGAX_ORG_NAME: "Acme",
+      // MA-9: a member's own MCP servers at a local address (no DNS in tests)
+      SAGAX_PERSONAL_MCP_ALLOW_PRIVATE: "1",
       SAGAX_TEST_INTERNAL_CAPABILITY_KEY: CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -574,23 +576,29 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect(await botIds(uma)).not.toContain(writer.id);
   }, 90_000);
 
-  it("MA-9: a member's bot on Full access adds a remote MCP server switched on; a command stays off (2026-10-26)", async () => {
+  it("MA-9: a member's bot adds an MCP server to the member's own servers, on at Full access, off below (2026-10-28)", async () => {
     setUma("manage");
     const uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly !== true);
     const bot = await createBot(uma, "Uma Wires", "claude");
     const full = await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, uma, { approvalMode: "full", confirmFullAccess: true });
     expect(full.status, full.text).toBe(200);
     const token = await mint(bot.id, bot.threadId, ids.uma);
-    const remote = await internal(token, "/api/internal/mcp-servers", { name: "umadocs", url: "https://docs.example/mcp" });
+    const remote = await internal(token, "/api/internal/mcp-servers", { name: "umadocs", url: "https://127.0.0.1:9/mcp" });
     expect(remote.status, JSON.stringify(remote.body)).toBe(201);
-    expect(remote.body.enabled).toBe(true);
+    expect(remote.body).toMatchObject({ enabled: true, personal: true });
+    // her own list, never the server's shared one
+    const shared = await api("GET", "/api/mcp/servers", alice);
+    expect(JSON.stringify(shared.body)).not.toContain("umadocs");
+    // a command runs in her own environment; this server has none
     const command = await internal(token, "/api/internal/mcp-servers", { name: "umacmd", command: "npx", args: ["-y", "notes-mcp"] });
-    expect(command.status, JSON.stringify(command.body)).toBe(201);
-    expect(command.body.enabled).toBe(false);
-    // below Full: off, even a remote one
+    expect(command.status, JSON.stringify(command.body)).toBe(409);
+    expect(command.body.code).toBe("no_environment");
+    // below Full: off
     const ask = await createBot(uma, "Uma Asks", "claude");
-    const off = await internal(await mint(ask.id, ask.threadId, ids.uma), "/api/internal/mcp-servers", { name: "umaoff", url: "https://docs.example/other" });
-    expect(off.body.enabled).toBe(false);
-    for (const name of ["umadocs", "umacmd", "umaoff"]) await api("DELETE", `/api/mcp/servers/${name}`, alice);
+    const asking = await api("PATCH", `/api/bots/${ask.id}/tasks/${ask.threadId}`, uma, { approvalMode: "ask" });
+    expect(asking.status, asking.text).toBe(200);
+    const off = await internal(await mint(ask.id, ask.threadId, ids.uma), "/api/internal/mcp-servers", { name: "umaoff", url: "https://127.0.0.1:9/other" });
+    expect(off.body).toMatchObject({ enabled: false, personal: true });
+    for (const name of ["umadocs", "umaoff"]) await api("DELETE", `/api/me/mcp/servers/${name}`, uma);
   }, 90_000);
 });

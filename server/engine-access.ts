@@ -181,6 +181,65 @@ export function claudeAiOwnerScopedServer(server: string, via: string | undefine
   return via === "subscription" && /^claude_ai_[A-Za-z0-9]/i.test(server);
 }
 
+/** 2026-10-28 (a member does everything in their own environment):
+ * where a host-level agents tool call lands, as the harness knows it. */
+export interface MemberHostToolPlace {
+  /** The turn's Local VM is this bot's own (per-bot mode), never a VM the
+   * server shares between bots or a pooled seat other people reuse. */
+  ownLocalVm: boolean;
+  /** shared_computer reaches only the speaking person's own computers on
+   * this server, and that person owns the bot (organization server). */
+  ownComputers: boolean;
+  /** add_mcp_server adds to the speaking person's own server list (a
+   * remote URL of theirs, or a command in their own environment), never to
+   * the server's shared list (organization server). */
+  ownMcpList: boolean;
+  /** The bot's own folders (its task workspaces, its workspace). */
+  botRoots: readonly string[];
+}
+
+/** The Local VM's workspace as a bot names it (agents-catalog attach_file). */
+const VM_GUEST_WORKSPACE = "/home/cua/workspace";
+
+function argsOf(input: unknown): Record<string, unknown> | null {
+  let raw = input;
+  if (typeof raw === "string") {
+    try { raw = JSON.parse(raw); } catch { return null; }
+  }
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+}
+
+/** Whether a host-level agents tool call stays in the member's own
+ * environment (2026-10-28): then it is the owner's card at their own level,
+ * never an admin's. What would touch the shared server stays admin:
+ *   vm_exec          the bot's own Local VM only
+ *   shared_computer  the person's own computers only (the route lists the
+ *                    speaker's own on an organization server)
+ *   add_mcp_server   the person's own server list only
+ *   attach_file      a file of the bot's own folders (no dot folder), or of
+ *                    its own Local VM's workspace
+ * api_reload and review_write (Perspicax admin) never are. */
+export function memberOwnHostToolCall(tool: string | undefined, input: unknown, place: MemberHostToolPlace): boolean {
+  switch (builtinAgentToolName(tool?.trim())) {
+    case "vm_exec": return place.ownLocalVm;
+    case "shared_computer": return place.ownComputers;
+    case "add_mcp_server": return place.ownMcpList;
+    case "attach_file": {
+      const path = argsOf(input)?.path;
+      if (typeof path !== "string" || !path.trim() || !isAbsolute(path)) return false;
+      if (place.ownLocalVm && (path === VM_GUEST_WORKSPACE || path.startsWith(`${VM_GUEST_WORKSPACE}/`))
+        && !path.split("/").some((segment) => segment === ".." || segment === ".")) return true;
+      const real = realLocation(path);
+      return place.botRoots.some((root) => {
+        const rel = relative(realLocation(root), real);
+        if (rel === "" || isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
+        return !rel.split(sep).some((segment) => segment.startsWith("."));
+      });
+    }
+    default: return false;
+  }
+}
+
 /** Whether a permission card of a member's bot on an organization server
  * waits for an organization admin (rule until per-owner containers). Every
  * bot shares one container, one user and one HOME, so a write to the shared
@@ -234,6 +293,9 @@ export function memberBotAdminApproval(input: {
   ownsBot?: (id: string) => boolean;
   /** #1269: the calling bot, for an `act` plugin list that omits botId. */
   callerBotId?: string;
+  /** 2026-10-28: where a host-level agents tool lands for this turn
+   * (memberOwnHostToolCall). Absent: none is the member's own. */
+  hostPlace?: MemberHostToolPlace;
 }): boolean {
   if (input.ownEnvironment || input.ownDestination || input.ownComputerChoice || input.ownerRunsServerCommands) return false;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
@@ -249,6 +311,9 @@ export function memberBotAdminApproval(input: {
   // `agents__offer_shell_terminal` (a card the person approves) as a shell
   // command and sent the member's terminal offer to an admin.
   if (!input.command && builtin && memberOwnScopeTool(toolName)) return false;
+  // 2026-10-28: vm_exec, shared_computer, attach_file and add_mcp_server
+  // that stay in the member's own environment are the owner's card.
+  if (!input.command && builtin && input.hostPlace && memberOwnHostToolCall(toolName, input.rawInput, input.hostPlace)) return false;
   if (serverCommandApproval(input)) return true;
   // 2026-10-16: the Data tools are the bot's own database, confined to its
   // own folders on an organization server (sagax-internal-tools.ts).

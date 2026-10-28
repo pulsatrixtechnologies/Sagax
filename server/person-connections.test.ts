@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parsePersonalMcpInput, personalAuthHeaders, PersonConnections, PersonConnectionsError, principalDir } from "./person-connections.ts";
+import { parsePersonalMcpInput, personalAuthHeaders, personalMcpInputFromAgent, PersonConnections, PersonConnectionsError, principalDir } from "./person-connections.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -106,5 +106,28 @@ describe("personalMcpHostRefusal", () => {
     expect(await personalMcpHostRefusal("https://internal.example/mcp", { lookup: async () => [{ address: "10.0.0.5", family: 4 }] })).toBeTruthy();
     expect(await personalMcpHostRefusal("https://api.githubcopilot.com/mcp/", { lookup: async () => [{ address: "140.82.112.21", family: 4 }] })).toBeNull();
     expect(await personalMcpHostRefusal("http://127.0.0.1:9/mcp", { allowPrivate: true })).toBeNull();
+  });
+});
+
+// 2026-10-28: add_mcp_server on an organization server adds to the person's
+// own servers; what the bot sends becomes that list's own input
+describe("personalMcpInputFromAgent", () => {
+  it("maps a remote url, one header or OAuth, and a command in the person's environment", () => {
+    expect(personalMcpInputFromAgent({ name: "notes", url: "https://mcp.example.com/mcp" })).toEqual({ name: "notes", url: "https://mcp.example.com/mcp", type: "http", auth: "none" });
+    expect(personalMcpInputFromAgent({ name: "notes", url: "https://mcp.example.com/sse", type: "sse", headers: { "X-Api-Key": "k1" } }))
+      .toEqual({ name: "notes", url: "https://mcp.example.com/sse", type: "sse", auth: "token", headerName: "X-Api-Key", token: "k1" });
+    expect(personalMcpInputFromAgent({ name: "notes", url: "https://mcp.example.com/mcp", oauth: {} })).toMatchObject({ auth: "oauth" });
+    expect(personalMcpInputFromAgent({ name: "files", command: "npx", args: ["-y", "server"], env: { A: "1" } }))
+      .toEqual({ name: "files", command: "npx", args: ["-y", "server"], env: { A: "1" }, runsIn: "environment" });
+    const parsed = parsePersonalMcpInput(personalMcpInputFromAgent({ name: "notes", url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer t" } }));
+    expect(parsed.server).toMatchObject({ kind: "remote", auth: "token", headerName: "Authorization", token: "Bearer t" });
+  });
+
+  it("says why it cannot be one of the person's servers", () => {
+    expect(personalMcpInputFromAgent({ name: "n", url: "https://a.example.com", headers: { A: "1", B: "2" } })).toMatch(/one header/);
+    expect(personalMcpInputFromAgent({ name: "n", url: "https://a.example.com", oauth: { clientId: "c" } })).toMatch(/pre-registered/);
+    expect(personalMcpInputFromAgent({ name: "n", url: "https://a.example.com", command: "x" })).toMatch(/not both/);
+    expect(personalMcpInputFromAgent({ name: "n", command: "x", args: [1] })).toMatch(/args/);
+    expect(personalMcpInputFromAgent(null)).toMatch(/url or a command/);
   });
 });

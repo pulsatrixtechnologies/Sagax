@@ -309,6 +309,9 @@ export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | n
     // 2026-10-28: a secure entry card for the person's own key, and the
     // person's own lent computers (the route lists the speaker's only)
     "credentials:request": "self", "computers:use": "self",
+    // 2026-10-28: add_mcp_server adds to the person's own servers on an
+    // organization server (Settings > Connections), never the shared list
+    "mcp:add": "self",
   },
   // Automation never creates bots, widens access or runs host commands.
   // 2026-10-19: no person speaks in a service turn (a routine, a webhook):

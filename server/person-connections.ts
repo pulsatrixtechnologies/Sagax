@@ -166,6 +166,43 @@ export const personalMcpInputSchema = z.union([
 ]);
 export type PersonalMcpInput = z.infer<typeof personalMcpInputSchema>;
 
+/** 2026-10-28: an add_mcp_server call (agents-catalog.ts) as the person's
+ * own server (Settings > Connections), never the server's shared list. A
+ * remote URL with no header, one header (its token), or OAuth with dynamic
+ * sign-in; or a command, which runs in the person's own environment. Pure:
+ * parsePersonalMcpInput still validates what this returns. A string says
+ * why it cannot be one. */
+export function personalMcpInputFromAgent(body: unknown): PersonalMcpInput | string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "Send name with a url or a command.";
+  const value = body as Record<string, unknown>;
+  const name = typeof value.name === "string" ? value.name : "";
+  if (typeof value.url === "string" && value.command === undefined) {
+    const headers = value.headers && typeof value.headers === "object" && !Array.isArray(value.headers)
+      ? Object.entries(value.headers as Record<string, unknown>) : [];
+    if (headers.length > 1) return "Your own servers take one header (a token). Add this one in Settings > Connections, where you can name its header.";
+    if (headers.some(([, header]) => typeof header !== "string")) return "Header values must be text.";
+    const oauth = value.oauth && typeof value.oauth === "object" ? value.oauth as Record<string, unknown> : undefined;
+    if (oauth && (oauth.clientId !== undefined || oauth.clientSecret !== undefined)) {
+      return "Your own servers sign in without a pre-registered app. Add this one without oauth, then sign in from Settings > Connections.";
+    }
+    const type = value.type === "sse" ? "sse" as const : value.type === undefined || value.type === "http" ? "http" as const : null;
+    if (!type) return "type is http or sse.";
+    if (oauth) return { name, url: value.url, type, auth: "oauth" };
+    const [header] = headers;
+    return header
+      ? { name, url: value.url, type, auth: "token", headerName: header[0], token: String(header[1]) }
+      : { name, url: value.url, type, auth: "none" };
+  }
+  if (typeof value.command === "string" && value.url === undefined) {
+    const args = Array.isArray(value.args) && value.args.every((arg) => typeof arg === "string") ? value.args as string[] : value.args === undefined ? [] : null;
+    if (!args) return "args is a list of text values.";
+    const env = value.env && typeof value.env === "object" && !Array.isArray(value.env) ? value.env as Record<string, string> : value.env === undefined ? {} : null;
+    if (!env) return "env maps names to text values.";
+    return { name, command: value.command, args, env, runsIn: "environment" };
+  }
+  return "Send a remote url or a local command, not both.";
+}
+
 /** Validate one new personal server, or say why not. */
 export function parsePersonalMcpInput(input: unknown, now = Date.now(), allowPrivate = false): { name: string; server: PersonalMcpServer } {
   const parsed = personalMcpInputSchema.safeParse(input);

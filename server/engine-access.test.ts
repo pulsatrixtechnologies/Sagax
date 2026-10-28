@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -351,5 +351,62 @@ describe("who answers a server command of a member's bot", () => {
     expect(adminApprovalDecision({ identity: "perspicax", card: { ...card, dismissed: true }, callerIsOrgAdmin: false })).toBeNull();
     expect(adminApprovalDecision({ identity: "perspicax", card: null, callerIsOrgAdmin: false })).toBeNull();
     expect(adminApprovalDecision({ identity: "solo", card, callerIsOrgAdmin: false })).toBeNull();
+  });
+});
+
+// 2026-10-28 (a member does everything in their own environment):
+// vm_exec, shared_computer, attach_file and add_mcp_server wait for an
+// admin only when they would touch the shared server.
+describe("host-level agents tools in the member's own environment", () => {
+  let root = "";
+  let workspace = "";
+  beforeAll(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "own-host-")));
+    workspace = join(root, "task-workspaces", "b1");
+    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    writeFileSync(join(workspace, "report.pdf"), "pdf");
+    writeFileSync(join(workspace, ".claude", "settings.json"), "{}");
+    writeFileSync(join(root, "other.txt"), "x");
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  const place = (over: Partial<MemberHostToolPlace> = {}): MemberHostToolPlace => ({ ownLocalVm: false, ownComputers: false, ownMcpList: false, botRoots: [workspace], ...over });
+  const gate = (tool: string, input: unknown, hostPlace?: MemberHostToolPlace) => memberBotAdminApproval({ tool, workspaceRoot: workspace, rawInput: input, hostPlace });
+
+  it("vm_exec in the bot's own Local VM is the owner's card, a shared or pooled VM an admin's", () => {
+    expect(memberOwnHostToolCall("mcp__agents__vm_exec", { command: "ls" }, place({ ownLocalVm: true }))).toBe(true);
+    expect(gate("mcp__agents__vm_exec", { command: "ls" }, place({ ownLocalVm: true }))).toBe(false);
+    expect(gate("mcp__agents__vm_exec", { command: "ls" }, place())).toBe(true);
+    expect(gate("mcp__agents__vm_exec", { command: "ls" })).toBe(true);
+  });
+
+  it("shared_computer on the speaking owner's own computers is theirs", () => {
+    expect(gate("agents__shared_computer", { computer_id: "c", action: "list_files" }, place({ ownComputers: true }))).toBe(false);
+    expect(gate("agents__shared_computer", { computer_id: "c", action: "list_files" }, place())).toBe(true);
+  });
+
+  it("add_mcp_server into the person's own list is theirs, the shared list an admin's", () => {
+    expect(gate("mcp__agents__add_mcp_server", { name: "notes", command: "npx" }, place({ ownMcpList: true }))).toBe(false);
+    expect(gate("mcp__agents__add_mcp_server", { name: "notes", command: "npx" }, place())).toBe(true);
+  });
+
+  it("attach_file of the bot's own folders or own VM is theirs, anything else an admin's", () => {
+    expect(gate("mcp__agents__attach_file", JSON.stringify({ path: join(workspace, "report.pdf") }), place())).toBe(false);
+    expect(gate("mcp__agents__attach_file", { path: join(workspace, ".claude", "settings.json") }, place())).toBe(true);
+    expect(gate("mcp__agents__attach_file", { path: join(root, "other.txt") }, place())).toBe(true);
+    expect(gate("mcp__agents__attach_file", { path: join(workspace, "..", "..", "other.txt") }, place())).toBe(true);
+    expect(gate("mcp__agents__attach_file", { path: "/home/cua/workspace/out.png" }, place({ ownLocalVm: true }))).toBe(false);
+    expect(gate("mcp__agents__attach_file", { path: "/home/cua/workspace/../../etc/passwd" }, place({ ownLocalVm: true }))).toBe(true);
+    expect(gate("mcp__agents__attach_file", { path: "/home/cua/workspace/out.png" }, place())).toBe(true);
+    expect(gate("mcp__agents__attach_file", { path: "relative.txt" }, place())).toBe(true);
+  });
+
+  it("never the Perspicax admin tools, a shell command or a lookalike server", () => {
+    const all = place({ ownLocalVm: true, ownComputers: true, ownMcpList: true });
+    expect(gate("mcp__agents__api_reload", {}, all)).toBe(true);
+    expect(gate("mcp__agents__review_write", { id: "r", decision: "approve" }, all)).toBe(true);
+    expect(memberOwnHostToolCall("mcp__agentsx__vm_exec", { command: "ls" }, all)).toBe(false);
+    expect(memberBotAdminApproval({ tool: "mcp__agents__vm_exec", command: "rm -rf /", workspaceRoot: workspace, hostPlace: all })).toBe(true);
+    expect(memberBotAdminApproval({ tool: "mcp__agents__vm_exec", workspaceRoot: workspace, hostPlace: all, foreignMcpServers: ["agents"] })).toBe(true);
   });
 });
