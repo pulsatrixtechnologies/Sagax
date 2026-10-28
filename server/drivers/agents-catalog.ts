@@ -463,6 +463,22 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   {
+    name: "run_with_engine",
+    description:
+      "Run one part of your work on another engine or model you may use, and get its result in this turn. It runs as you, for the same person, on their own sign-in there (for example their Grok account's Outlook or Teams), at your approval level and rules. Never say you cannot switch engines. A refusal lists the engines you may use.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        engine: { type: "string", minLength: 1, maxLength: 120, description: "Engine id, name or family (grok, claude)." },
+        model: { type: "string", maxLength: 200, description: "Optional model id on it." },
+        message: { type: "string", minLength: 1, maxLength: 20000, description: "The complete request for that part." },
+        title: { type: "string", maxLength: 80 },
+      },
+      required: ["engine", "message"],
+    },
+  },
+  {
     name: "check_delegation",
     description: externalRuntime
       ? "Check one of this external runtime's delegations without waiting: queued, running, or finished with its result. Newly returned task ids can be checked immediately; the server enforces ownership and current peer access."
@@ -1783,7 +1799,9 @@ const ROOM_REPLACED_TOOLS = new Set(["ask_bot", "delegate_bot", "check_delegatio
 // and the route refuses it in a room (chat-widgets.ts proposePageCard).
 // Widgets and live HTML apps are one-to-one too (chat-widgets.ts and
 // chat-apps.ts refuse a room): offered where they work, not where they fail.
-const ROOM_ABSENT_TOOLS = new Set(["propose_page", "show_widget", "update_widget", "show_html", "update_html"]);
+// run_with_engine starts a thread of the bot itself, which a room turn cannot
+// (startTurn: the bot is already working in that room).
+const ROOM_ABSENT_TOOLS = new Set(["propose_page", "show_widget", "update_widget", "show_html", "update_html", "run_with_engine"]);
 // 2026-10-28: what a teammate's turn one hop away (profile.peerHop) is not
 // shown: every tool that would start another bot's turn, a job of its own,
 // or an agent-API prompt. The routes refuse these past one hop
@@ -1791,6 +1809,8 @@ const ROOM_ABSENT_TOOLS = new Set(["propose_page", "show_widget", "update_widget
 export const PEER_HOP_ABSENT_TOOLS: ReadonlySet<string> = new Set([
   "list_room_targets", "coordinate_bots", "send_to_bot", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation",
   "start_thread", "route_message", "send_prompt", "await_turn", "create_agent", "delete_agent",
+  // a part run on another engine is one hop already (server/run-with-engine.ts)
+  "run_with_engine",
 ]);
 const EXTERNAL_TOOL_NAMES = new Set(["list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation"]);
 const WATCHER_TOOL_NAMES = new Set(["create_options_card"]);

@@ -87,6 +87,8 @@ const BARE: Record<string, Kind> = {
   list_rooms: "rooms",
   post_to_room: "postRoom",
   start_thread: "startThread",
+  // a part of the work on another engine (server/run-with-engine.ts)
+  run_with_engine: "subagent",
   close_thread: "closeThread",
   list_threads: "listThreads",
   memory_update: "memory", memory_log: "memory", group_memory_update: "memory", rules_update: "memory", docs_update: "memory", memory_write: "memory",

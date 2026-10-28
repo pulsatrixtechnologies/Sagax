@@ -37,6 +37,8 @@ export interface ConnectorSetupContext {
   engine: "grok" | "claude" | "other";
   /** server/harness-connectors.ts accountConnectorsForTurn */
   account: "own" | "foreign" | "none";
+  /** The person's own sign-in on an engine of that family this bot may run. */
+  ownAccounts?: { grok?: boolean; claude?: boolean };
 }
 
 /** The tool calls that settled in each conversation, with whose turn and
@@ -84,9 +86,9 @@ const openBody = z.object({
 }).strict();
 
 const REFUSALS = {
-  foreign: "This bot's engine runs on an account that is not the person's own (the bot owner's or another person's sign-in), so its connectors are not theirs to connect here. Say so in one sentence; they can use a bot on their own engine account.",
-  not_on_engine: "That connector is not one of Grok's cloud connectors. Say so in one sentence.",
-  no_route: "This bot's engine brings no connectors of the person's own account. Say so in one sentence; a bot on Claude or Grok (organization server) can connect it.",
+  foreign: "No card was posted: this bot's engine runs on an account that is not the person's own, and the person has no Grok or Claude sign-in of their own here. Do not offer this card again. Say in one sentence that they can sign in to their own Grok or Claude account in Connect apps > My accounts.",
+  not_on_engine: "No card was posted: that connector is not one of Grok's cloud connectors and the person has no Claude sign-in of their own here. Do not offer this card again; say so in one sentence.",
+  no_route: "No card was posted: the person has no Grok or Claude sign-in of their own on this server, so there is no account of theirs to connect it to. Do not offer this card again. Say in one sentence that they can sign in to their own Grok or Claude account in Connect apps > My accounts, then ask again.",
 } as const;
 
 function check(view: ConnectorSetupView, proofs: readonly ConnectorSetupProof[], botId: string | undefined, claude: Array<{ name: string; status: string }> | null, now: number): ConnectorSetupView {

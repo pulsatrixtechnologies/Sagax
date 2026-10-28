@@ -865,6 +865,23 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (r.error) return { text: `Couldn't reach that bot: ${r.error}${note ? `\n\n${note}` : ""}`, isError: true };
     return { text: `${r.botName ?? "Bot"} replied:\n${r.text ?? "(no reply)"}${note ? `\n\n${note}` : ""}` };
   }
+  if (name === "run_with_engine") {
+    const engine = typeof args.engine === "string" ? args.engine.trim() : "";
+    const message = typeof args.message === "string" ? args.message.trim() : "";
+    if (!engine || !message) return { text: "run_with_engine needs engine (grok, claude, or an engine id) and message.", isError: true };
+    const model = typeof args.model === "string" ? args.model.trim() : "";
+    const title = typeof args.title === "string" ? args.title.trim() : "";
+    const r = await api("/api/internal/run-with-engine", {
+      method: "POST",
+      body: JSON.stringify({ engine, message, depth: DEPTH, ...(model ? { model } : {}), ...(title ? { title } : {}) }),
+    });
+    if (r.timeout) {
+      const taskId = String(r.taskId ?? "").trim();
+      return { text: `${String(r.engineLabel ?? "That engine")} is still working on it; the result will be delivered to this conversation automatically when it finishes (task id ${taskId}). Finish your turn now and tell the person in one short line.` };
+    }
+    if (r.error) return { text: String(r.error), isError: true };
+    return { text: String(r.text ?? "(no result)"), ...(r.status === "reply" ? {} : { isError: true }) };
+  }
   if (name === "delegate_bot") {
     const toBotId = String(args.bot_id ?? "").trim();
     const message = String(args.message ?? "").trim();

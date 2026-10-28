@@ -6,7 +6,7 @@ exposes to a bot or an AI client. The machine-readable form is the registry in
 `server/mcp-permissions.ts`; `server/mcp-permissions.test.ts` fails when a
 catalog tool has no permission.
 
-Totals: capabilities 148, covered 148, gaps 0.
+Totals: capabilities 149, covered 149, gaps 0.
 
 Sources read: the agents tool catalog, the internal routes it calls
 (`/api/internal/*`), the member API (`docs/org-member-api.md`), and the
@@ -108,6 +108,7 @@ Reading the table:
 | meetings:join | sagax | `join_meeting` | `meetings:join` | covered |
 | bots:ask | sagax | `ask_bot` | `bots:ask` | covered |
 | bots:delegate | sagax | `delegate_bot` | `bots:delegate` | covered |
+| engines:relay | sagax | `run_with_engine` | `engines:relay` | covered |
 | bots:send | sagax | `send_to_bot` | `bots:send` | covered |
 | bots:coordinate | sagax | `coordinate_bots` | `bots:coordinate` | covered |
 | agents:send | sagax | `send_prompt` | `agents:send` | covered |

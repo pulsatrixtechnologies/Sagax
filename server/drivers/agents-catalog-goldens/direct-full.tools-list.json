@@ -225,6 +225,41 @@
       }
     },
     {
+      "name": "run_with_engine",
+      "description": "Run one part of your work on another engine or model you may use, and get its result in this turn. It runs as you, for the same person, on their own sign-in there (for example their Grok account's Outlook or Teams), at your approval level and rules. Never say you cannot switch engines. A refusal lists the engines you may use.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "engine": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Engine id, name or family (grok, claude)."
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Optional model id on it."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 20000,
+            "description": "The complete request for that part."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "engine",
+          "message"
+        ]
+      }
+    },
+    {
       "name": "check_delegation",
       "description": "In a later turn, check what happened to a delegation without waiting: still queued, running (with elapsed time and the peer's recent activity), or finished with the result. Prefer this when a delegated bot is taking long or might be stuck — empty recent activity usually means it is stuck, not working. Do not poll it right after delegate_bot; completion is delivered to the conversation automatically.",
       "inputSchema": {

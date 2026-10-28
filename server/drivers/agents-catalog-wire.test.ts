@@ -158,15 +158,18 @@ const FULL = { direct: "direct+skills+shared+voice", room: "room+own-thread+skil
 // refuse them) moves the profiles out of 2% to the measured bytes.
 // 2026-10-28: routine folders add a `folder` field to the routine tools; the
 // six direct non-chief profiles move to the measured bytes.
+// 2026-10-28: run_with_engine (a part of the work on another engine the
+// person may use, server/run-with-engine.ts) joins direct turns; the eight
+// direct chief profiles move to the measured bytes.
 const BUDGET_BASELINE: Record<string, number> = {
-  "direct": 86070,
-  "direct+voice": 86811,
-  "direct+shared": 87815,
-  "direct+shared+voice": 88556,
-  "direct+skills": 88123,
-  "direct+skills+voice": 88864,
-  "direct+skills+shared": 89868,
-  "direct+skills+shared+voice": 90609,
+  "direct": 87952,
+  "direct+voice": 88919,
+  "direct+shared": 89953,
+  "direct+shared+voice": 90920,
+  "direct+skills": 90005,
+  "direct+skills+voice": 90972,
+  "direct+skills+shared": 92006,
+  "direct+skills+shared+voice": 92973,
   "room": 79152,
   "room+voice": 80119,
   "room+shared": 81153,
