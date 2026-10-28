@@ -1,10 +1,9 @@
 /** Isolated gallery for Playwright screenshots of two conversation events
- * (2026-10-15): the "Disabled · 5 routines" line with its menu, and the
- * Connect apps pill under the last message. Not shipped in the app.
+ * (2026-10-15): the "Disabled · 5 routines" line with its menu. The Connect
+ * apps pill left with the Composio integration (#1014). Not shipped in the app.
  * ?skin=<id>&lang=<code>&view=closed|open */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { ConnectAppsPill } from "../components/ConnectAppsPill";
 import { RoutineToggleLine } from "../components/RoutineToggleLine";
 import { setLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
@@ -28,7 +27,6 @@ const disabled = {
   ],
 };
 const enabled = { action: "enabled" as const, turnKey: "u1", routines: [{ id: "r4", name: "Résumé du matin" }] };
-const fav = (slug: string, label: string, domain: string) => ({ slug, label, logo: null, domain });
 
 let opened = false;
 
@@ -46,7 +44,6 @@ function Gallery() {
         <RoutineToggleLine event={disabled} canOpen={(id) => id !== "r5"} onOpen={() => {}} />
         <RoutineToggleLine event={enabled} canOpen={() => true} onOpen={() => {}} />
         <div className="self-start rounded-[18px] bg-card px-3 py-2 text-[13px] text-ink">C'est fait : 5 routines désactivées, le résumé du matin reste actif. Je n'ai pas pu envoyer le récapitulatif par courriel : Gmail n'est pas connecté.</div>
-        <ConnectAppsPill apps={[fav("gmail", "Gmail", "gmail.com"), fav("notion", "Notion", "notion.so"), fav("googledrive", "Google Drive", "drive.google.com")]} onOpen={() => {}} />
         <div className="h-64" />
       </div>
     </div>
