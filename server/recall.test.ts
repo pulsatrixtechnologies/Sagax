@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DATA_DIR } from "./config.ts";
 import { closeMessageDb, recallMatchTerm, recallTerms } from "./message-db.ts";
-import { buildRecall, CALL_RECALL_BUDGET, enoughMatches, memoryPassages, RECALL_CLOSE, RECALL_OPEN, recallQuery, renderRecall, sessionMemoryHitFor, sessionMemoryHitMayShow, topicPassages } from "./recall.ts";
+import { buildRecall, CALL_RECALL_BUDGET, enoughMatches, LOCAL_RECALL_BUDGET, memoryPassages, RECALL_CLOSE, RECALL_OPEN, recallQuery, renderRecall, sessionMemoryHitFor, sessionMemoryHitMayShow, topicPassages } from "./recall.ts";
 import { appendMemoryLog, searchMemoryFiles, writeMemoryFile, writeMemoryTopic, WORKSPACES_DIR } from "./workspace.ts";
 
 const BOT = "bot-recall-test";
@@ -47,6 +47,16 @@ describe("the recalled block", () => {
     expect(lines.at(-1)).toBe(RECALL_CLOSE);
     expect(block.text.split(RECALL_CLOSE)).toHaveLength(2);
     expect(block).toMatchObject({ notes: 1, conversations: 1 });
+  });
+
+  it("shows the same words once, whatever conversation they come from", () => {
+    const block = renderRecall([
+      { source: "conversation", label: 'chat "A"', snippet: "Alice: what is your role?" },
+      { source: "conversation", label: 'chat "B"', snippet: "Alice:  what is your role?" },
+      { source: "conversation", label: 'chat "B"', snippet: "Bot: I run the dispatch." },
+    ])!;
+    expect(block.text.split("\n").slice(2, -1)).toEqual(['[1] chat "A" (undated): Alice: what is your role?', '[2] chat "B" (undated): Bot: I run the dispatch.']);
+    expect(block.conversations).toBe(2);
   });
 
   it("drops passages past the cap and renders nothing when none fit", () => {
@@ -187,6 +197,15 @@ describe("recall from memory files", () => {
     expect(call.notes).toBeLessThanOrEqual(2);
     expect(call.text.length).toBeLessThanOrEqual(CALL_RECALL_BUDGET.chars);
     expect(call.text.length).toBeLessThan(full.text.length);
+  });
+
+  it("recalls two notes on a local model (#1276)", () => {
+    for (const topic of ["billing", "invoices", "finance", "ledger"]) {
+      writeMemoryTopic(BOT, `${topic}.md`, `---\naliases: [invoice]\n---\n- The invoice ${topic} note.\n`);
+    }
+    const local = buildRecall({ botId: BOT, message: "where is the invoice?", threadIds: [], label: () => "", author: () => "", budget: LOCAL_RECALL_BUDGET })!;
+    expect(local.notes).toBe(2);
+    expect(LOCAL_RECALL_BUDGET.conversations).toBe(2);
   });
 
   it("is null for a short message or nothing matching", () => {

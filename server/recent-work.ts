@@ -14,6 +14,8 @@ import type { BotRecord, GroupRecord, TaskRecord } from "./store.ts";
 /** How far back the brief looks: two days covers "since yesterday's standup". */
 export const RECENT_WORK_WINDOW_MS = 48 * 60 * 60_000;
 export const RECENT_WORK_MAX_LINES = 10;
+/** #1276: a turn on a local model gets the three newest lines; session_search finds the rest. */
+export const LOCAL_RECENT_WORK_LINES = 3;
 /** Characters the whole brief may take in a prompt — about 350 tokens. */
 export const RECENT_WORK_MAX_CHARS = 1_400;
 const SAID_CHARS = 160;
