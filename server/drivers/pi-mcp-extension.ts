@@ -29,6 +29,10 @@ interface McpServerDef {
   /** A URL server behind the remote proxy's tool directory: a big catalog
    * arrives as search_tools, describe_tool and call_tool (mcp-directory.ts). */
   directory?: boolean;
+  /** #1276: a catalog searched by the gate, or the agents catalog in a
+   * compact prompt: the same three tools, read the same way as a directory's
+   * (call_tool is the tool it runs, for the tool scope and the card). */
+  searched?: boolean;
 }
 
 interface McpConfig {
@@ -693,7 +697,7 @@ export default async function (pi: PiExtensionApi): Promise<void> {
       }
       const toolName = tool.name;
       const identity: ToolIdentity = { kind: "mcp", server: serverName, name: toolName };
-      const directoryTool = def.directory === true && isDirectoryTool(toolName);
+      const directoryTool = (def.directory === true || def.searched === true) && isDirectoryTool(toolName);
       if (scope !== undefined && !directoryTool && !allowsTool(scope, identity)) continue;
       const name = allocateToolName(serverName, toolName, used);
       try {

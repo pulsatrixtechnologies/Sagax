@@ -22,7 +22,7 @@
 // Local pane only lists `custom` options for custom-only engines.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 import { readAtRestSync } from "../content-at-rest.ts";
 import { PROVIDER_CREDENTIAL_ENV, stripWorkspaceCredentialEnv } from "../config.ts";
@@ -30,7 +30,7 @@ import { applyEngineCommandVariables } from "../credential-command-env.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { augmentedPath } from "../env-path.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
-import { searchedToolCall } from "../../shared/searched-tool-call.ts";
+import { SEARCH_CALL_TOOL, searchedToolCall } from "../../shared/searched-tool-call.ts";
 import { PERSPICAX_TOKEN_ENV, warmCommsEnv, warmPerspicaxEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { engineStartGate } from "../engine-start-gate.ts";
 import {
@@ -352,7 +352,11 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
     const stdio = gated ?? mcpStdioServer(server, { nodeEnv: NODE_ENV_FLAG, ...(directory ? { directory: { name } } : {}) });
     if (!stdio) throw new Error("Pi MCP server configuration is invalid");
     const original = server as { scope?: string };
-    servers[name] = { ...stdio, ...(original.scope ? { scope: original.scope } : {}), ...(directory ? { directory: true } : {}) };
+    // A searched catalog (the gate's search, the agents catalog in a compact
+    // prompt) is reached through call_tool: the extension reads that call as
+    // the tool it runs, for the tool scope and the card, as for a directory.
+    const searched = search !== undefined || (name === "agents" && turn.compactPrompt !== undefined);
+    servers[name] = { ...stdio, ...(original.scope ? { scope: original.scope } : {}), ...(directory ? { directory: true } : {}), ...(searched ? { searched: true } : {}) };
   }
   return Object.keys(servers).length ? servers : null;
 }
@@ -367,7 +371,8 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
  * the same title; an organization turn runs pi with --no-extensions. */
 export function piGatedMcpTool(title: unknown, mounted: Record<string, unknown> | null): string | undefined {
   if (typeof title !== "string" || !mounted) return undefined;
-  const match = /^Allow ([A-Za-z0-9][\w-]{0,63}):([A-Za-z][\w-]{0,127})\?$/.exec(title);
+  // the tool part admits every name a searched call can run (searched-tool-call.ts)
+  const match = /^Allow ([A-Za-z0-9][\w-]{0,63}):([A-Za-z0-9_][\w.:-]{0,199})\?$/.exec(title);
   if (!match || !Object.hasOwn(mounted, match[1]!)) return undefined;
   return `${match[1]}__${match[2]}`;
 }
@@ -386,16 +391,45 @@ export function piGatedMcpInput(message: unknown, mcpTool: string): string {
   return message || "(arguments not shown)";
 }
 
-/** #1276: a gated confirm for `call_tool` on a searched server reads as the
- * tool it runs, so the person's rules and Always allow apply by that tool's
- * name. Arguments cut by pi-mcp-extension (300 characters) do not parse: the
- * card stays the call_tool card it was, never an unnamed pass. */
-export function piSearchedCall(mcpTool: string, input: string): { mcpTool: string; input: string } {
+/** #1276: a gated confirm reads as the tool that really runs, as on Claude
+ * Code (shared/searched-tool-call.ts): a `call_tool` on a searched server, or
+ * the agents bridge's use_tool, is the tool it names with that tool's own
+ * arguments, so the person's and the organization's rules and Always allow
+ * apply by that tool's name. pi-mcp-extension already names the target in
+ * the card of a searched server's call_tool, whatever the arguments' length;
+ * a call_tool card left on a searched server (arguments that do not parse)
+ * runs nothing named, so it is `refused`, as a wrapper that must not run. */
+export function piSearchedCall(mcpTool: string, input: string, searched: ReadonlySet<string>): { mcpTool: string; input: string; refused?: string } {
   const cut = mcpTool.indexOf("__");
-  if (cut <= 0 || mcpTool.slice(cut + 2) !== "call_tool") return { mcpTool, input };
-  const runs = searchedToolCall(`mcp__${mcpTool}`, (() => { try { return JSON.parse(input); } catch { return null; } })(), new Set([mcpTool.slice(0, cut)]));
-  if (!runs.searched) return { mcpTool, input };
-  return { mcpTool: runs.name.slice("mcp__".length), input: JSON.stringify(runs.input) };
+  if (cut <= 0) return { mcpTool, input };
+  const server = mcpTool.slice(0, cut);
+  const parsed = (() => { try { return JSON.parse(input) as unknown; } catch { return null; } })();
+  const runs = searchedToolCall(`mcp__${mcpTool}`, parsed, searched);
+  if (runs.refused) return { mcpTool, input, refused: runs.refused };
+  if (runs.searched) return { mcpTool: runs.name.slice("mcp__".length), input: JSON.stringify(runs.input) };
+  if (searched.has(server) && mcpTool.slice(cut + 2) === SEARCH_CALL_TOOL) {
+    return { mcpTool, input, refused: "call_tool needs one tool name and its arguments as an object." };
+  }
+  return { mcpTool, input };
+}
+
+/** #1276: the servers whose catalog is searched on this turn (call_tool). */
+export function piSearchedServers(mounted: Record<string, unknown> | null): ReadonlySet<string> {
+  return new Set(Object.entries(mounted ?? {})
+    .filter(([, server]) => { const flags = server as { searched?: unknown; directory?: unknown }; return flags?.searched === true || flags?.directory === true; })
+    .map(([name]) => name));
+}
+
+/** #1276: the session a turn may resume. On an organization server pi keeps
+ * each person's sessions in that person's own pi home (`engineHome`, set
+ * for a key turn and a local model alike): a cursor outside its sessions
+ * folder is never resumed, the turn opens a new session instead. Solo (no
+ * home given) keeps the cursor as it is. */
+export function piResumableSession(cursor: unknown, engineHome: string | undefined): string | null {
+  if (typeof cursor !== "string" || !cursor) return null;
+  if (!engineHome) return cursor;
+  const sessions = resolve(engineHome, "sessions") + sep;
+  return resolve(cursor).startsWith(sessions) ? cursor : null;
 }
 
 /** A pi `get_available_models` response payload, parsed at its I/O boundary. */
@@ -1040,9 +1074,11 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         config: { ...mcpConfig, mcpServers: withoutTurnTokens(mcpServers ?? {}) },
         environment: input.environment ?? null, access: turn.access ?? null, command: turn.commandEnvironment ?? null,
       });
-      if (turn.compactPrompt && !turn.sessionReset && typeof turn.resumeCursor === "string") await settledPiStandby(threadId);
-      const standby = turn.compactPrompt && !turn.sessionReset && typeof turn.resumeCursor === "string"
-        ? takePiStandby(threadId, standbyKey, turn.resumeCursor)
+      // #1276: only a session of this turn's own pi home is ever resumed
+      const resumeCursor = piResumableSession(turn.resumeCursor, turn.access?.engineHome);
+      if (turn.compactPrompt && !turn.sessionReset && resumeCursor) await settledPiStandby(threadId);
+      const standby = turn.compactPrompt && !turn.sessionReset && resumeCursor
+        ? takePiStandby(threadId, standbyKey, resumeCursor)
         : (dropPiStandby(threadId), undefined);
       if (standby) {
         mcpTempDir = standby.dir;
@@ -1101,6 +1137,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // a tool's resolved name between its start and its end (gateway calls)
       const toolNames = new Map<string, string>();
       const mcpServerNames = Object.keys(mcpServers ?? {});
+      const searchedServers = piSearchedServers(mcpServers);
       // set when a compaction event arrives this turn; gates the receipt
       // write below so a compacted-around delivery is never claimed
       let compactionObserved = false;
@@ -1337,7 +1374,12 @@ export const PiDriver: ProviderDriver<PiConfig> = {
               const summary = String(evt.title ?? (isQuestion ? "pi has a question" : "pi wants confirmation")).slice(0, 200);
               const gatedTool = isQuestion ? undefined : piGatedMcpTool(evt.title, mcpServers);
               const gatedInput = gatedTool ? piGatedMcpInput(evt.message, gatedTool) : undefined;
-              const searchedCall = gatedTool && gatedInput !== undefined ? piSearchedCall(gatedTool, gatedInput) : undefined;
+              const searchedCall = gatedTool && gatedInput !== undefined ? piSearchedCall(gatedTool, gatedInput, searchedServers) : undefined;
+              if (searchedCall?.refused) {
+                // a wrapper that runs nothing named: refused, never a card
+                send({ type: "extension_ui_response", id: reqId, cancelled: true });
+                return;
+              }
               const mcpTool = searchedCall?.mcpTool ?? gatedTool;
               const mcpInput = searchedCall?.input ?? gatedInput;
               // A select is a question with named options; the structured
@@ -1516,7 +1558,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // harness persists session.started.sessionId as the resumeCursor and
       // hands it back next turn, so that id IS the resume handle — pi's
       // sessionFile, which switch_session expects as `sessionPath`.
-      const sessionPath = typeof turn.resumeCursor === "string" ? turn.resumeCursor : null;
+      const sessionPath = resumeCursor;
       let sessionFile = sessionPath;
       let sessionReady = false;
       if (standby) {
