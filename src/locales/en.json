@@ -1185,7 +1185,6 @@
   "botPanel.routines.edit": "Edit",
   "botPanel.routines.hint": "Routines are recurring tasks this Bot runs on a schedule. {ask} to set one up.",
   "botPanel.routines.hintAsk": "Ask it in chat",
-  "botPanel.routines.hintNew": "New routine",
   "botPanel.routines.instruction": "Instruction",
   "botPanel.routines.pause": "Pause",
   "botPanel.routines.resume": "Resume",

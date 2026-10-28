@@ -90,14 +90,17 @@ function render(routines: Routine[], runs: RoutineRun[]) {
 
 describe("RoutinesSection", () => {
   // Owner, 2026-10-27: a bot without routines shows no section (no title, no +,
-  // no dashed box), one quiet line. Asking in chat and "New routine" stay.
+  // no dashed box), one quiet line. Asking in chat stays, not underlined, and
+  // there is no "New routine" (owner, 2026-10-28).
   it("shows one quiet hint instead of the section when the bot has no routines", () => {
     const markup = render([], []);
     expect(markup).toContain("data-routines-hint");
     expect(markup).toContain("Routines are recurring tasks this Bot runs on a schedule.");
     expect(markup).toContain(">Ask it in chat</button>");
     expect(markup).toContain(" to set one up.");
-    expect(markup).toContain(">New routine</button>");
+    expect(markup).not.toContain("New routine");
+    expect(markup).not.toContain("data-routines-new");
+    expect(markup).not.toMatch(/data-routines-ask[^>]*underline/);
     expect(markup).not.toContain("No schedules yet.");
     expect(markup).not.toContain("border-dashed");
     expect(markup).not.toContain("<h2");
