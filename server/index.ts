@@ -214,6 +214,8 @@ import {
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
+import { BriefStore } from "./background-brief.ts";
+import { createBackgroundBriefRoutes } from "./routes/background-brief.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { companyTextForBots } from "./memory-company.ts";
 import { procedureSignal, recordProcedure } from "./memory-procedures.ts";
@@ -30206,6 +30208,16 @@ function prewakeComputerWhileTyping(botId: string, principalId: string | null | 
   void userSandbox.prewake(principal, botId);
 }
 // 2026-10-16: a person's custom auto-review rules (server/routes/custom-rules.ts).
+const backgroundBriefs = new BriefStore(join(DATA_DIR, "background-brief.json"));
+ROUTES.push(createBackgroundBriefRoutes({
+  store: backgroundBriefs,
+  owns: (auth, botId) => {
+    const me = ruleManager(auth);
+    return Boolean(me && botsOwnedBy(me).some((bot) => bot.id === botId));
+  },
+  fastModel: (botId) => store.bot(botId)?.modelSelection.fast?.model ?? null,
+  keep: (botId, line) => { updateMemory(botId, { action: "append", text: line }, { source: "background brief", readers: { kind: "person" } }); },
+}));
 ROUTES.push(createCustomRuleRoutes({
   store: customRules,
   manager: ruleManager,
