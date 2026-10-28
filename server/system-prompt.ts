@@ -133,8 +133,8 @@ export function buildSystemPrompt(
     { id: "verify-first", label: "Verify, never assume", text: VERIFY_FIRST_PROMPT },
     { id: "persona", label: "Identity", text: persona },
     { id: "soul", label: "Standing instructions (SOUL.md)", text: soulSystemPrompt(soul) },
-    ...parts.filter((part) => part.id === "rules"),
-    ...parts.filter((part) => part.id !== "rules"),
+    ...parts.filter((part) => part.id === "rules" || part.id === "finish-until"),
+    ...parts.filter((part) => part.id !== "rules" && part.id !== "finish-until"),
   ];
   // Routines, skills and the profile each end with the same paragraph on
   // following a proposal's result: said once, in the first of them.

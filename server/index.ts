@@ -53,6 +53,7 @@ import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntime
 import { z } from "zod";
 import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES, type CompactionRecord, type ReplayEntry } from "./context-rebuild.ts";
 import { deterministicSummary, draftSummary, foldPoint } from "./compaction-summary.ts";
+import { finishUntilPrompt, remindAfterCompaction } from "./finish-until.ts";
 import { staleSessionReason, type StaleSessionReason } from "./stale-session.ts";
 import { isSmallTalk, SMALL_TALK_CLOUD_REFUSAL, SMALL_TALK_TURN_NOTE } from "./small-talk.ts";
 import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
@@ -8389,6 +8390,7 @@ function previewSystemPrompt(bot: BotRecord) {
   });
   const privateWorkspace = instance && supportsWorkspaceFiles(instance.driverKind);
   const built = buildSystemPrompt(persona, bot.soul ?? "", [
+    { id: "finish-until", label: "Do not finish until", text: finishUntilPrompt(bot.finishUntil) },
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     {
       id: "setup",
@@ -17908,7 +17910,7 @@ async function compactConversation(input: {
       if (!current) return;
       if (!current.contextSummaries?.some(entry => entry.id === id)) {
         const bytes = history.reduce((n, entry) => n + Buffer.byteLength(entry.text), 0);
-        const entry = { id, at: Date.now(), summary: redactSecretsInText(deterministicSummary(fold.folded)), firstKeptId: fold.firstKeptId,
+        const entry = { id, at: Date.now(), summary: redactSecretsInText(remindAfterCompaction(deterministicSummary(fold.folded), bot.finishUntil)), firstKeptId: fold.firstKeptId,
           foldedThroughId, anchorId, tokensBefore: Math.ceil(bytes / 4), stale: true as const };
         store.patchTask(bot.id, threadId, { contextSummaries: [...(current.contextSummaries ?? []), entry].slice(-CONTEXT_SUMMARIES_KEPT) });
       }
@@ -17990,7 +17992,7 @@ async function compactConversation(input: {
     const id = `ctx-${createHash("sha256").update(`${threadId}:${anchorId}:${fold.firstKeptId}`).digest("hex").slice(0, 24)}`;
     const current = store.taskByThread(bot.id, threadId);
     if (!current || current.contextSummaries?.some(entry => entry.id === id)) return;
-    const entry = { id, at: Date.now(), summary: redactSecretsInText(summary), firstKeptId: fold.firstKeptId,
+    const entry = { id, at: Date.now(), summary: redactSecretsInText(remindAfterCompaction(summary, bot.finishUntil)), firstKeptId: fold.firstKeptId,
       foldedThroughId, anchorId, tokensBefore };
     store.patchTask(bot.id, threadId, { contextSummaries: [...(current.contextSummaries ?? []), entry].slice(-CONTEXT_SUMMARIES_KEPT) });
     console.info(`[context] ${bot.id} ${threadId}: folded ${fold.folded.length} message(s) at about ${tokensBefore} tokens (window ${window}${nativeCompactAt ? `, engine compacts at ${nativeCompactAt}` : ""})`);
@@ -21758,6 +21760,7 @@ async function startTurn(
         ? compactPromptFor(liveBot ?? bot, typeof turnPrincipal === "string" && turnPrincipal ? turnPrincipal : effectiveBotOwner(bot))
         : undefined;
       const builtPrompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
+        { id: "finish-until", label: "Do not finish until", text: finishUntilPrompt((liveBot ?? bot).finishUntil) },
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         { id: "ai-client", label: "AI client", text: aiClientThreadPerson(bot, threadId, commsDepth, userMessage) },
         { id: "model", label: "Model", text: onCall ? "" : modelPrompt({ engine: engineDisplayName(instance), model: String(model ?? ""), actual: modelFallbackByThread.get(threadId)?.requested === model ? modelFallbackByThread.get(threadId)?.actual : modelFallbackByPayer.get(modelFallbackPayerKey(threadId, instance.instanceId, String(model ?? ""))) }) },
@@ -25228,6 +25231,7 @@ async function runGroupMemberTurn(
     ? compactPromptFor(readyBot, roomSpeakerId || effectiveBotOwner(readyBot))
     : undefined;
   const roomBuilt = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
+    { id: "finish-until", label: "Do not finish until", text: finishUntilPrompt(store.bot(bot.id)?.finishUntil ?? bot.finishUntil) },
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     { id: "model", label: "Model", text: modelPrompt({ engine: engineDisplayName(instance), model: roomModel, actual: modelFallbackByPayer.get(modelFallbackPayerKey(threadId, instance.instanceId, roomModel)) }) },
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, ...(roomStable ? { cwdElsewhere: true } : {}) }) : "" },
