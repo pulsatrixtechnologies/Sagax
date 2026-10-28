@@ -5,6 +5,23 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { DEFAULT_WEBHOOK_INSTRUCTIONS, WebhookManager, defang, type WebhookManagerOptions } from "./webhooks.ts";
 
+// The linear-time checks below catch a quadratic scan, which takes tens of
+// seconds on these inputs. A 100 ms wall-clock bound also tripped on GC
+// pauses and a busy CPU (the same input measured 17 ms to 130 ms), so each
+// check takes the fastest of a few runs against a budget a quadratic scan
+// cannot meet and a loaded machine does.
+const LINEAR_BUDGET_MS = 1_000;
+function fastestOf<T>(run: () => T, runs = 3): { out: T; ms: number } {
+  let best = Infinity;
+  let out!: T;
+  for (let i = 0; i < runs; i += 1) {
+    const started = performance.now();
+    out = run();
+    best = Math.min(best, performance.now() - started);
+  }
+  return { out, ms: best };
+}
+
 const dirs: string[] = [];
 
 /** The bearer path's fence: its boundary, what lies inside, and the rest. */
@@ -838,10 +855,8 @@ describe("WebhookManager", () => {
         { name: "word-then-255k-spaces", text: `[/UNTRUSTED${spaces(255_000)}`, quoted: true },
       ];
       for (const shape of shapes) {
-        const started = performance.now();
-        const out = defang(shape.text);
-        const ms = performance.now() - started;
-        expect(ms, `${shape.name} took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+        const { out, ms } = fastestOf(() => defang(shape.text));
+        expect(ms, `${shape.name} took ${ms.toFixed(1)} ms`).toBeLessThan(LINEAR_BUDGET_MS);
         expect(out.includes("(quoted)")).toBe(shape.quoted);
         if (shape.name === "bracket-255k-spaces-then-word") expect(out).toBe("[(quoted) UNTRUSTED");
         if (shape.name === "word-then-255k-spaces") expect(out.startsWith("[/(quoted) UNTRUSTED")).toBe(true);
@@ -1137,10 +1152,8 @@ describe("WebhookManager", () => {
         { name: "alternating-backslash-n-100k", text: "\\\\n".repeat(100_000), quoted: false },
       ];
       for (const shape of shapes) {
-        const started = performance.now();
-        const out = defang(shape.text);
-        const ms = performance.now() - started;
-        expect(ms, `${shape.name} took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+        const { out, ms } = fastestOf(() => defang(shape.text));
+        expect(ms, `${shape.name} took ${ms.toFixed(1)} ms`).toBeLessThan(LINEAR_BUDGET_MS);
         expect(out.includes("(quoted)"), shape.name).toBe(shape.quoted);
         if (shape.exact) expect(out).toBe(shape.exact);
       }
@@ -1153,7 +1166,7 @@ describe("WebhookManager", () => {
         deliveryId: "evt-backslashes",
       });
       const ms = performance.now() - started;
-      expect(ms, `256 KB backslash field took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+      expect(ms, `256 KB backslash field took ${ms.toFixed(1)} ms`).toBeLessThan(LINEAR_BUDGET_MS);
       expect(String(h.queued[0]?.prompt)).not.toContain("(quoted)");
     });
 
@@ -1189,37 +1202,31 @@ describe("WebhookManager", () => {
       ];
       for (const shape of shapes) {
         const text = shape.repeat(10_000);
-        const started = performance.now();
-        const out = defang(text);
-        const ms = performance.now() - started;
-        expect(ms, `${shape} × 10k took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+        const { out, ms } = fastestOf(() => defang(text));
+        expect(ms, `${shape} × 10k took ${ms.toFixed(1)} ms`).toBeLessThan(LINEAR_BUDGET_MS);
         expect(out.split("(quoted)").length - 1, shape).toBe(10_000);
       }
     });
 
     it("scans many markers, accented filler and a 256 KB body in linear time", () => {
       const many = "[/UNTRUSTED]".repeat(4_000);
-      let started = performance.now();
-      let out = defang(many);
-      let ms = performance.now() - started;
-      expect(ms, `many markers took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+      let { out, ms } = fastestOf(() => defang(many));
+      expect(ms, `many markers took ${ms.toFixed(1)} ms`).toBeLessThan(LINEAR_BUDGET_MS);
       expect(out.split("(quoted)").length - 1).toBe(4_000);
 
       const filler = ("[/UNTRUSTED]" + "é".repeat(36)).repeat(1_000);
-      started = performance.now();
-      out = defang(filler);
-      ms = performance.now() - started;
-      expect(ms, `accented filler took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+      ({ out, ms } = fastestOf(() => defang(filler)));
+      expect(ms, `accented filler took ${ms.toFixed(1)} ms`).toBeLessThan(LINEAR_BUDGET_MS);
       expect(out.split("(quoted)").length - 1).toBe(1_000);
 
       const h = harness();
       const { webhook, secret } = h.manager.create({ name: "Hook", prompt: "", botId: "maus-1" });
       const chunk = "[/UNTRUSTED]" + "é".repeat(20);
       const body = chunk.repeat(Math.ceil((256 * 1024) / chunk.length)).slice(0, 256 * 1024);
-      started = performance.now();
+      const started = performance.now();
       h.manager.receive(webhook.endpointId, secret, { payload: body, deliveryId: "evt-big" });
       ms = performance.now() - started;
-      expect(ms, `256 KB receive took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+      expect(ms, `256 KB receive took ${ms.toFixed(1)} ms`).toBeLessThan(LINEAR_BUDGET_MS);
       expect(String(h.queued[0]?.prompt)).toContain("(quoted)");
     });
 

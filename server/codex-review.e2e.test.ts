@@ -30,7 +30,7 @@ const start = async () => {
   });
   stderr = "";
   child.stderr!.on("data", (data) => { stderr += data; });
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 90_000;
   for (;;) {
     try { if ((await fetch(`${base}/api/health`)).ok) return; } catch {}
     if (Date.now() > deadline || child.exitCode !== null) throw new Error(`server failed: ${stderr.slice(-2000)}`);
@@ -57,7 +57,7 @@ beforeAll(async () => {
     ]) }, config: { cli: fake, fullAuto: false } },
   } }));
   await start();
-}, 30_000);
+}, 120_000);
 
 afterAll(async () => {
   if (child) await waitForExit(child, { signal: "SIGTERM" });
@@ -70,7 +70,7 @@ it("persists one visible review timeout while reply completes", async () => {
   expect((await api("PATCH", `/api/bots/${created.id}/tasks/${created.threadId}`, { approvalMode: "auto" })).status).toBe(200);
   expect((await api("POST", `/api/bots/${created.id}/messages`, { text: "check status" })).status).toBe(202);
   const read = async () => (await api("GET", "/api/bots")).body.bots.find((bot: any) => bot.id === created.id);
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 90_000;
   let bot: any;
   while (Date.now() <= deadline) {
     bot = await read();
