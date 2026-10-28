@@ -4,10 +4,9 @@
 // notification when a request arrives. The server sends `org.approvals`
 // frames to admins' streams only (server/index.ts, orgAdminStream); the
 // first count comes from GET /api/org/approvals, which answers admins only.
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { t } from "@/lib/i18n";
-import { api } from "@/state/store";
 import { notificationSoundsEnabled } from "./notification-preferences";
 import { notificationSoundPlan, playNotificationSound, toneReady } from "./notification-sound";
 import type { ServerFrame } from "../../shared/wire";
@@ -51,13 +50,19 @@ export function setOrgApprovalsCount(next: number): void {
   emit(false);
 }
 
+/** The waiting-approvals read. The store owns `api`, so the caller passes
+ * this and the module does not import the store (#1381). */
+export type LoadOrgApprovals = () => Promise<{ approvals?: unknown[] }>;
+
 /** How many approvals wait for an admin; 0 for everyone else. Loads the
  * first count once when `admin` is true. */
-export function useOrgApprovalsCount(admin: boolean): number {
+export function useOrgApprovalsCount(admin: boolean, load: LoadOrgApprovals): number {
+  const loadRef = useRef(load);
+  loadRef.current = load;
   useEffect(() => {
     if (!admin || loaded) return;
     loaded = true;
-    void api<{ approvals?: unknown[] }>("/api/org/approvals")
+    void loadRef.current()
       .then((body) => setOrgApprovalsCount(Array.isArray(body.approvals) ? body.approvals.length : 0))
       .catch(() => { loaded = false; });
   }, [admin]);
