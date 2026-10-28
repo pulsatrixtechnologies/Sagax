@@ -483,7 +483,7 @@ import {
 import { promptWithReply, transcriptText, type ReplyTarget } from "./replies.ts";
 import { parseDataContext, type DataContext } from "./data-context.ts";
 import { DevPodsThreads, devPodsPrompt, parseDevPods } from "./dev-pods-prompt.ts";
-import { promptWithDataContext } from "../shared/data-context.ts";
+import { promptWithDataContext, setPageContextSource } from "../shared/data-context.ts";
 import { admit, DRAIN_COALESCE_MAX_ITEMS } from "./admission.ts";
 import { _loadPending, buildDelegationFailurePrompt, buildDelegationRevivalPrompt, DELEGATION_TTL_MS, DelegationWakeBudget, discardDelegations, drainDelegations, expireStaleDelegations, findDelegationReceipt, pendingDelegationInfo, pendingDelegationSnapshot, pendingThreads, queueDelegation, recordDelegationReceipt, releaseDelegationsWaitingOn, summarizeDelegatedActivity, type DelegationReceipt, type DelegationRunner, type QueueResult } from "./delegations.ts";
 import {
@@ -8203,6 +8203,31 @@ ROUTES.push(createPublishedPageRoutes({
   // a person's own edit loses secret-shaped text, as a bot's proposal does
   redact: redactSecretsInText,
 }));
+
+/** A message sent from an open page (2026-10-28, shared/data-context.ts):
+ * the page reference stays only when it is this person's own page of this
+ * bot; anything else is dropped, never widened. */
+function ownPageContext(context: DataContext | undefined, botId: string, auth: RequestAuth): DataContext | undefined {
+  if (!context?.page) return context;
+  const page = publishedPages.get(context.page.pageId);
+  const owner = IDENTITY.kind === "perspicax" && auth.kind === "session" ? auth.session.principalId?.trim() || undefined : undefined;
+  const mine = Boolean(page) && page!.botId === botId && (IDENTITY.kind === "perspicax"
+    ? Boolean(owner) && (page!.ownerId ?? "").toLowerCase() === owner!.toLowerCase()
+    : page!.ownerId === undefined);
+  if (mine) return context;
+  const { page: _dropped, ...rest } = context;
+  return rest.cardId ? rest : undefined;
+}
+
+// The page's current source for the model, read when a turn's prompt is
+// composed (the message keeps the reference only).
+setPageContextSource((ref) => {
+  const page = publishedPages.get(ref.pageId);
+  if (!page) return null;
+  const version = page.versions.at(-1);
+  const content = version ? publishedPages.content(page.id, version.n) : null;
+  return version && content !== null ? { kind: version.kind, version: version.n, content } : null;
+});
 
 /** Who is reading a published page (handlePublishedPagePublic): a session
  * cookie, or this computer's owner on a one-person server. On an
@@ -49006,7 +49031,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       // A Data context is put in front of the words the model gets, and a
       // press is read by its first line (server/replies.ts): it carries none.
-      const dataContext = press ? undefined : parseDataContext(body.dataContext);
+      const dataContext = press ? undefined : ownPageContext(parseDataContext(body.dataContext), bot.id, auth);
       // the coding view is on for the device that sent this (server/dev-pods-prompt.ts)
       devPodsThreads.note(threadId, parseDevPods(body.devPods));
       // Single stream (server/single-stream.ts): a client showing one
@@ -49525,7 +49550,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Regenerate resends the same words: the rerun gets the Data context
       // the message was sent with, so the model sees what it saw. Changed
       // words take the context the client sends now, if any.
-      const dataContext = parseDataContext(body.dataContext) ?? (text === source.text ? source.dataContext : undefined);
+      const dataContext = ownPageContext(parseDataContext(body.dataContext), bot.id, auth) ?? (text === source.text ? source.dataContext : undefined);
       devPodsThreads.note(bot.threadId, parseDevPods(body.devPods));
       if (typeof body.singleStream === "boolean") noteStreamSend(bot.id, bot.threadId, body.singleStream);
       // On a Cloud home an edit is its author's line, so the owner's own edit

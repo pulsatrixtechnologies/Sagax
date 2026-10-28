@@ -121,7 +121,8 @@ import { WidgetMessage } from "./widget/WidgetMessage";
 import { AppMessage } from "./AppMessage";
 import { PagePublishCard } from "./PublishedPages";
 import { PageSurface } from "./PageViewer";
-import { closePagePanel, latestPageVersionIn, openPageFor, useOpenPage } from "@/lib/open-page";
+import { PageBotStatus, pageBotStatusLine, PageRefChip } from "./PageComposerParts";
+import { closePagePanel, latestPageVersionIn, openPageFor, renameOpenPage, useOpenPage } from "@/lib/open-page";
 import { OutboundCard } from "./OutboundCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
@@ -733,6 +734,10 @@ const Bubble = memo(function Bubble({
                 }
               />
             </div>
+          )}
+          {/* sent from an open page: the page it is about (src/components/PageComposerParts.tsx) */}
+          {user && message.dataContext?.page && (
+            <div><PageRefChip page={message.dataContext.page} botId={botId} threadId={threadId} /></div>
           )}
           {user && webhookView ? (
             <div className="min-w-[300px] max-w-[520px]">
@@ -2507,6 +2512,13 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           rewinds the thread, which a live turn forbids (the server 409s it). */}
       <div ref={composerDockRef} data-composer-dock="" data-over-page={openPage ? "" : undefined} className={cn("pointer-events-none absolute inset-x-0 bottom-0", openPage ? "z-[7]" : "z-[2]")}>
       {confidential && <ConfidentialBanner position="bottom" className="mb-1" />}
+      {openPage && (
+        <PageBotStatus
+          status={pageBotStatusLine(messages, bot.busy === true, openPage.openedAt ?? 0)}
+          name={bot.name}
+          avatar={<BotAvatar bot={bot} primary={isViewersPrimaryBot(bot, viewerActorId(state.config))} state={stateForBot({ ...bot, messages })} size={22} />}
+        />
+      )}
       {canWrite === false ? (
         <NewConversationInstead onNew={() => dispatch({ type: "newTask", botId: bot.id })} />
       ) : (
@@ -2542,6 +2554,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
             initialTitle={openPage.title}
             {...(latestPageVersion !== undefined ? { latestVersion: latestPageVersion } : {})}
             onClose={() => closePagePanel(openPage.pageId)}
+            onChange={(next) => renameOpenPage(next.id, next.title)}
           />
         </div>
       )}

@@ -33,3 +33,20 @@ describe("parseDataContext", () => {
     }
   });
 });
+
+describe("parseDataContext: the page open over the conversation (2026-10-28)", () => {
+  it("accepts a page reference, alone or with a Data card, its title cut to one line", () => {
+    expect(parseDataContext({ page: { pageId: "abcdefgh12345678", title: "  Bilan \n du mois ", version: 3 } })).toEqual({ page: { pageId: "abcdefgh12345678", title: "Bilan du mois", version: 3 } });
+    expect(parseDataContext({ cardId: "c_2", page: { pageId: "abcdefgh12345678", title: "Bilan" } })).toEqual({ cardId: "c_2", page: { pageId: "abcdefgh12345678", title: "Bilan" } });
+  });
+
+  it("refuses a page id that is not one, a foreign field, a draft without a card", () => {
+    for (const bad of [
+      { page: { pageId: "../etc", title: "x" } }, { page: { pageId: "abcdefgh12345678", title: "x", owner: "y" } },
+      { page: { pageId: "abcdefgh12345678", title: "x", version: 0 } }, { page: { pageId: "abcdefgh12345678" } },
+      { draftSql: "select 1", page: { pageId: "abcdefgh12345678", title: "x" } },
+    ]) {
+      expect(refused(bad)).toBe(400);
+    }
+  });
+});
