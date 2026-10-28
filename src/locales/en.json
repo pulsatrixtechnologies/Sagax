@@ -9251,6 +9251,8 @@
   "teach.titleRequired": "Give the skill a name first.",
   "teach.noSteps": "There are no steps to save.",
   "teach.exists": "This bot already has a skill named {name}. Choose another name.",
+  "teach.replaceAsk": "This bot already has a skill named {name}. Replace it? The other skills stay.",
+  "teach.replace": "Replace this skill",
   "teach.saveFailed": "The skill could not be saved: {detail}",
   "teach.introScreen": "Edit, reorder or remove steps, then save them as a skill of {bot}. It is added turned off: turn it on in Skills after reading it. {bot} replays it on its computer with screenshots, clicks and typing, and its usual approvals.",
   "teach.field.screen": "On the screen",

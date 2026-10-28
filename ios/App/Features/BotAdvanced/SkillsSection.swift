@@ -27,6 +27,7 @@ final class BotSkillsModel: ObservableObject {
     @Published var importMessage = ""
     @Published var reviewing: SkillSheet?
     @Published var viewing: SkillSheet?
+    @Published var showingPath = false
 
     let botId: String
     var client: CompanionClient?
@@ -154,6 +155,8 @@ struct BotSkillsSection: View {
                     .disabled(model.importing || SkillRules.importSource(source) == nil)
                     .accessibilityIdentifier("skills-import")
             }
+            Button(String(localized: "Show a path")) { model.showingPath = true }
+                .accessibilityIdentifier("skills-show-path")
             if !model.importMessage.isEmpty {
                 Text(verbatim: model.importMessage).font(.footnote).foregroundStyle(Theme.textSecondary)
             }
@@ -415,6 +418,11 @@ struct BotSkillsPage: View {
         ThemedList { BotSkillsSection(bot: bot, model: model) }
             .sheet(item: $model.reviewing) { sheet in SkillReviewSheet(sheet: sheet, model: model) }
             .sheet(item: $model.viewing) { sheet in SkillTextSheet(sheet: sheet, model: model) }
+            .sheet(isPresented: $model.showingPath) {
+                if let client = model.client {
+                    ShownPathSheet(botId: bot.id, client: client) { Task { await model.refresh() } }
+                }
+            }
             .navigationTitle(String(localized: "Skills"))
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("skills-page")

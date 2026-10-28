@@ -100,6 +100,11 @@ private struct PhoneLibrarySkills: View {
             .padding(.horizontal, Theme.Profile.cardMargin - 16)
             .sheet(item: $model.reviewing) { sheet in SkillReviewSheet(sheet: sheet, model: model) }
             .sheet(item: $model.viewing) { sheet in SkillTextSheet(sheet: sheet, model: model) }
+            .sheet(isPresented: $model.showingPath) {
+                if let client = model.client {
+                    ShownPathSheet(botId: bot.id, client: client) { Task { await model.refresh() } }
+                }
+            }
             .accessibilityIdentifier("library-skills")
     }
 }

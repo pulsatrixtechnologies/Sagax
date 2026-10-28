@@ -1,5 +1,18 @@
 import Foundation
 
+/// The answer of a path shown once. `code` is `exists` when saving would
+/// replace a skill and the person has not agreed.
+public struct ShownPathAnswer: Decodable, Sendable {
+    public var ok: Bool?
+    public var code: String?
+    public var name: String?
+    public var markdown: String?
+    public var exists: Bool?
+    public var refused: Bool?
+    public var installed: String?
+    public var replaced: Bool?
+}
+
 // The advanced bot panel's calls (WP16), the same requests the desktop's
 // bot settings sections make. Which pairing may reach which is the
 // sidecar's (`ALLOWED`, D1) and the server's (`CLIENT_ALLOW`) call; the app
@@ -56,6 +69,16 @@ public extension CompanionClient {
     /// `DELETE /api/bots/:id/skills/:name`.
     func removeSkill(botId: String, name: String) async throws {
         try await send(skillRequest("DELETE", botId: botId, name: name))
+    }
+
+    /// A path shown once. `refuse` writes nothing. `save` adds a disabled
+    /// skill. `replace` replaces only that name, after the person agreed.
+    func postShownPath(botId: String, mode: String, title: String, detail: String, lines: [String], replace: Bool) async throws -> ShownPathAnswer {
+        guard Self.validRouteID(botId) else { throw APIError.badURL }
+        let steps = lines.enumerated().map { index, line in ["id": "\(index + 1)", "kind": "note", "text": line] }
+        var body: [String: Any] = ["mode": mode, "title": title, "description": detail, "steps": steps]
+        if replace { body["replace"] = true }
+        return try await send(makeRequest("POST", "/api/bots/\(botId)/shown-path", body: body), as: ShownPathAnswer.self)
     }
 
     /// `POST /api/bots/:id/skills {source}`: imported skills land disabled.
