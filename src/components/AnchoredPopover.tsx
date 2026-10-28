@@ -9,7 +9,7 @@
 //
 // Dismiss: pass `containsRef` to usePopoverDismiss via `useAnchoredDismissRoot`
 // so a press inside the portalled menu is not an "outside" press.
-import { createElement, useLayoutEffect, useMemo, useRef, type CSSProperties, type KeyboardEventHandler, type ReactNode, type RefObject } from "react";
+import { createElement, useLayoutEffect, useMemo, useRef, type CSSProperties, type KeyboardEventHandler, type PointerEventHandler, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { placeAnchored, type PopoverAlign, type PopoverSide } from "@/lib/anchored-placement";
 
@@ -63,9 +63,15 @@ export function AnchoredPopover({
   style?: CSSProperties;
   children: ReactNode;
   onKeyDown?: KeyboardEventHandler<HTMLElement>;
+  onPointerDown?: PointerEventHandler<HTMLElement>;
   id?: string;
   role?: string;
   "aria-label"?: string;
+  /** A menu playing its exit animation is inert meanwhile (useMenuMotion's exitProps). */
+  "aria-hidden"?: boolean;
+  inert?: boolean;
+  /** Markers the menu's own code and tests find it by. */
+  [data: `data-${string}`]: string | boolean | undefined;
 }) {
   const own = useRef<HTMLElement | null>(null);
   const ref = popoverRef ?? own;
@@ -77,9 +83,11 @@ export function AnchoredPopover({
       if (!node || !anchor) return;
       node.style.maxHeight = maxHeight ? `${maxHeight}px` : "";
       const box = node.getBoundingClientRect();
+      // Layout size, not the box: the opening pop scales the menu for a
+      // moment. The box stands in where there is no layout (tests).
       const result = placeAnchored({
         anchor: anchor.getBoundingClientRect(),
-        size: { width: box.width, height: box.height },
+        size: { width: node.offsetWidth || box.width, height: node.offsetHeight || box.height },
         viewport: { width: window.innerWidth, height: window.innerHeight },
         align,
         side,

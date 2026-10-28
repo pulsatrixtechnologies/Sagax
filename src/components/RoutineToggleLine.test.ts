@@ -69,7 +69,7 @@ describe("the routines line", () => {
   it("opens a menu of every routine, each with the clock and its whole name for truncation", () => {
     const container = render(five);
     flushSync(() => line(container).click());
-    const menu = container.querySelector("[data-routine-toggle-menu]")!;
+    const menu = document.body.querySelector("[data-routine-toggle-menu]")!;
     expect(menu.getAttribute("role")).toBe("menu");
     const items = [...menu.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
     expect(items.map((item) => item.textContent)).toEqual(five.routines.map((routine) => routine.name));
@@ -81,10 +81,66 @@ describe("the routines line", () => {
     const onOpen = vi.fn();
     const container = render(five, onOpen);
     flushSync(() => line(container).click());
-    const item = (id: string) => container.querySelector<HTMLButtonElement>(`[data-routine-toggle-item="${id}"]`)!;
+    const item = (id: string) => document.body.querySelector<HTMLButtonElement>(`[data-routine-toggle-item="${id}"]`)!;
     expect(item("r5").disabled).toBe(true);
     flushSync(() => item("r2").click());
     expect(onOpen).toHaveBeenCalledWith(five.routines[1]);
+  });
+
+  it("keeps a press in the menu inside, and closes on a press outside or Escape", () => {
+    const container = render(five);
+    flushSync(() => line(container).click());
+    const menu = document.body.querySelector<HTMLElement>("[data-routine-toggle-menu]")!;
+    flushSync(() => menu.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    expect(line(container).getAttribute("aria-expanded")).toBe("true");
+    flushSync(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
+    expect(line(container).getAttribute("aria-expanded")).toBe("false");
+    flushSync(() => line(container).click());
+    flushSync(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(line(container).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  // 2026-10-28: a menu drawn inside the card was cut by an ancestor that
+  // scrolls or hides its overflow. The menu now hangs on <body>, fixed
+  // against its trigger, flipped and shifted to stay in the window.
+  it("opens outside a scrolling ancestor and stays in the window near its corner", () => {
+    const scroller = document.createElement("div");
+    scroller.style.overflow = "auto";
+    scroller.style.height = "120px";
+    document.body.append(scroller);
+    root = createRoot(scroller);
+    flushSync(() => root!.render(createElement(RoutineToggleLine, { event: five, canOpen: () => true, onOpen: vi.fn() })));
+    const button = line(scroller);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    // The trigger sits in the bottom right corner of the window.
+    const rect = (left: number, top: number, w: number, h: number) => ({ left, top, right: left + w, bottom: top + h, width: w, height: h, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+    const real = HTMLElement.prototype.getBoundingClientRect;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this === button) return rect(width - 60, height - 30, 50, 20);
+      if (this.hasAttribute("data-anchored-popover")) return rect(0, 0, 300, 200);
+      return real.call(this);
+    });
+    try {
+      flushSync(() => button.click());
+      const menu = document.body.querySelector<HTMLElement>("[data-routine-toggle-menu]")!;
+      expect(menu).not.toBeNull();
+      expect(scroller.contains(menu)).toBe(false);
+      expect(menu.parentElement).toBe(document.body);
+      expect(menu.hasAttribute("data-anchored-popover")).toBe(true);
+      expect(menu.className).toContain("fixed");
+      const top = Number.parseFloat(menu.style.top);
+      const left = Number.parseFloat(menu.style.left);
+      // Flipped above the trigger (no room below) and shifted left of the edge.
+      expect(menu.dataset.side).toBe("top");
+      expect(top).toBeGreaterThanOrEqual(0);
+      expect(top + 200).toBeLessThanOrEqual(height);
+      expect(top + 200).toBeLessThanOrEqual(height - 30);
+      expect(left).toBeGreaterThanOrEqual(0);
+      expect(left + 300).toBeLessThanOrEqual(width);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("draws nothing for a line with no routine left", () => {

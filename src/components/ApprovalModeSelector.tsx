@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Check, ChevronDown, ChevronRight, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 import { reportAchievement } from "@/lib/achievements";
 
@@ -6,6 +6,7 @@ import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type Approv
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { useMenuMotion } from "./MenuMotion";
+import { AnchoredPopover } from "./AnchoredPopover";
 import { t } from "@/lib/i18n";
 import { focusFirstMenuItem, moveMenuFocus } from "@/lib/menu-keys";
 import type { LocaleKey } from "@/locales";
@@ -130,7 +131,9 @@ export function ApprovalModeSelector({
   const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  // Outside the + menu the levels are drawn on <body> (AnchoredPopover), so
+  // the bot panel that scrolls around this row never cuts them.
+  const menuRef = useRef<HTMLElement | null>(null);
   const savedMode = approvalModeFor({ approvalMode, autoApprove });
   // Old Antigravity Auto settings still ask. Do not display or silently grant
   // the new Auto/full-access behavior until the user explicitly selects it.
@@ -156,7 +159,7 @@ export function ApprovalModeSelector({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) setOpen(false);
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -239,6 +242,109 @@ export function ApprovalModeSelector({
       </div>
     );
   }
+  const menuProps = {
+    role: "menu",
+    "aria-label": t("approvalMode.menuAria", { provider: providerName }),
+    onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => {
+      if (moveMenuFocus(event.currentTarget, event.key, document.activeElement)) { event.preventDefault(); event.stopPropagation(); return; }
+      if (row && event.key === "ArrowLeft") { event.preventDefault(); event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); }
+    },
+  };
+  // Same surface and scale as the right-click menus: no heading, 13px rows,
+  // and nothing listed that cannot be picked here.
+  const menuClass = cn("flex w-[260px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5", motion.className);
+  const menuItems = (
+    <>
+      {!advanced && (
+        <>
+          {choices.map((choice) => {
+            const selected = known && mode === choice.mode;
+            const Icon = choice.mode === "ask" ? Hand : ShieldCheck;
+            return (
+              <button
+                key={choice.mode}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                disabled={modesDisabled}
+                data-approval-choice={choice.mode}
+                title={disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : undefined}
+                onClick={() => {
+                  if (modesDisabled) return;
+                  onSelect(choice.mode);
+                  setOpen(false);
+                  onDone?.();
+                }}
+                className={cn(
+                  "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",
+                  modesDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
+                )}
+              >
+                <Icon size={16} className="mt-px shrink-0 text-ink" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
+                    {choice.label}
+                    {selected && <Check size={14} className="shrink-0" />}
+                  </span>
+                  <span className="text-[12px] leading-4 text-ink-tertiary">{choice.hint}</span>
+                </span>
+              </button>
+            );
+          })}
+          {!known && <p data-approval-custom className="px-2 py-1 text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
+        </>
+      )}
+      {advanced && visibleOptions.map((option) => {
+        const selected = option.mode === mode;
+        const Icon = option.Icon;
+        // The organization turned Full off: shown, greyed, with why.
+        const orgOff = option.mode === "full" && orgFullAccess === "disabled";
+        const optionDisabled = modesDisabled || orgOff;
+        return (
+          <Fragment key={option.mode}>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={selected}
+              disabled={optionDisabled}
+              data-approval-mode={option.mode}
+              title={
+                disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : orgOff ? t("approvalMode.full.orgDisabled") : undefined
+              }
+              onClick={() => {
+                if (optionDisabled) return;
+                onSelect(option.mode);
+                setOpen(false);
+                onDone?.();
+              }}
+              className={cn(
+                "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",
+                optionDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
+              )}
+            >
+              <Icon size={16} className="mt-px shrink-0 text-ink" />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
+                  {option.label}
+                  {selected && <Check size={14} className="shrink-0" />}
+                </span>
+                <span className="text-[12px] leading-4 text-ink-tertiary">
+                  {option.description}
+                </span>
+                {orgOff && (
+                  <span className="mt-0.5 text-[12px] leading-4 text-warning" data-full-access-org-off>
+                    {t("approvalMode.full.orgDisabled")}
+                  </span>
+                )}
+              </span>
+            </button>
+            {option.mode === "full" && allowlistAction}
+          </Fragment>
+        );
+      })}
+      {advanced && !visibleOptions.some((option) => option.mode === "full") && allowlistAction}
+    </>
+  );
   return (
     <div className={cn("relative flex items-center", row && "w-full")} ref={wrapperRef}>
       {row ? (
@@ -297,115 +403,29 @@ export function ApprovalModeSelector({
       </button>
       )}
 
-      {motion.shown && (
+      {motion.shown && (row ? (
         <div
-          ref={menuRef}
-          role="menu"
-          aria-label={t("approvalMode.menuAria", { provider: providerName })}
-          onKeyDown={(event) => {
-            if (moveMenuFocus(event.currentTarget, event.key, document.activeElement)) { event.preventDefault(); event.stopPropagation(); return; }
-            if (row && event.key === "ArrowLeft") { event.preventDefault(); event.stopPropagation(); setOpen(false); triggerRef.current?.focus(); }
-          }}
+          ref={(node) => { menuRef.current = node; }}
+          {...menuProps}
           {...motion.exitProps}
-          className={cn(
-            // Same surface and scale as the right-click menus: no heading,
-            // 13px rows, and nothing listed that cannot be picked here.
-            "absolute z-40 flex w-[260px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5",
-            row ? "bottom-0 left-full ml-2" : menuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2",
-            !row && (align === "right" ? "right-0" : "left-0"),
-            motion.className,
-          )}
+          className={cn("absolute bottom-0 left-full z-40 ml-2", menuClass)}
         >
-          {!advanced && (
-            <>
-              {choices.map((choice) => {
-                const selected = known && mode === choice.mode;
-                const Icon = choice.mode === "ask" ? Hand : ShieldCheck;
-                return (
-                  <button
-                    key={choice.mode}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    disabled={modesDisabled}
-                    data-approval-choice={choice.mode}
-                    title={disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : undefined}
-                    onClick={() => {
-                      if (modesDisabled) return;
-                      onSelect(choice.mode);
-                      setOpen(false);
-                      onDone?.();
-                    }}
-                    className={cn(
-                      "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",
-                      modesDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
-                    )}
-                  >
-                    <Icon size={16} className="mt-px shrink-0 text-ink" />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
-                        {choice.label}
-                        {selected && <Check size={14} className="shrink-0" />}
-                      </span>
-                      <span className="text-[12px] leading-4 text-ink-tertiary">{choice.hint}</span>
-                    </span>
-                  </button>
-                );
-              })}
-              {!known && <p data-approval-custom className="px-2 py-1 text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
-            </>
-          )}
-          {advanced && visibleOptions.map((option) => {
-            const selected = option.mode === mode;
-            const Icon = option.Icon;
-            // The organization turned Full off: shown, greyed, with why.
-            const orgOff = option.mode === "full" && orgFullAccess === "disabled";
-            const optionDisabled = modesDisabled || orgOff;
-            return (
-              <Fragment key={option.mode}>
-                <button
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={selected}
-                  disabled={optionDisabled}
-                  data-approval-mode={option.mode}
-                  title={
-                    disabled ? t("approvalMode.busy") : requiresLocalDesktop ? t("approvalMode.customLocalOnly") : orgOff ? t("approvalMode.full.orgDisabled") : undefined
-                  }
-                  onClick={() => {
-                    if (optionDisabled) return;
-                    onSelect(option.mode);
-                    setOpen(false);
-                    onDone?.();
-                  }}
-                  className={cn(
-                    "flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover",
-                    optionDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
-                  )}
-                >
-                  <Icon size={16} className="mt-px shrink-0 text-ink" />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
-                      {option.label}
-                      {selected && <Check size={14} className="shrink-0" />}
-                    </span>
-                    <span className="text-[12px] leading-4 text-ink-tertiary">
-                      {option.description}
-                    </span>
-                    {orgOff && (
-                      <span className="mt-0.5 text-[12px] leading-4 text-warning" data-full-access-org-off>
-                        {t("approvalMode.full.orgDisabled")}
-                      </span>
-                    )}
-                  </span>
-                </button>
-                {option.mode === "full" && allowlistAction}
-              </Fragment>
-            );
-          })}
-          {advanced && !visibleOptions.some((option) => option.mode === "full") && allowlistAction}
+          {menuItems}
         </div>
-      )}
+      ) : (
+        <AnchoredPopover
+          anchorRef={triggerRef}
+          popoverRef={menuRef}
+          side={menuDirection === "up" ? "top" : "bottom"}
+          align={align === "right" ? "end" : "start"}
+          gap={8}
+          {...menuProps}
+          {...motion.exitProps}
+          className={menuClass}
+        >
+          {menuItems}
+        </AnchoredPopover>
+      ))}
     </div>
   );
 }

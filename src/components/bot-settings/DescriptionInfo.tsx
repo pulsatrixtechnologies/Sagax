@@ -7,6 +7,7 @@ import { Info } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { AnchoredPopover } from "../AnchoredPopover";
 import { inputCls } from "./field";
 
 export function DescriptionInfo({
@@ -34,12 +35,16 @@ export function DescriptionInfo({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const rootRef = useRef<HTMLSpanElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  // Drawn on <body> (AnchoredPopover): the panel's scrolling body, which
+  // hides its sideways overflow, no longer cuts it.
+  const popoverRef = useRef<HTMLElement | null>(null);
   useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
   useEffect(() => {
     if (!open) return;
     // A click elsewhere closes it, as any popover.
     const onDown = (event: PointerEvent) => {
-      if (rootRef.current && event.target instanceof Node && !rootRef.current.contains(event.target)) {
+      if (rootRef.current && event.target instanceof Node && !rootRef.current.contains(event.target) && !popoverRef.current?.contains(event.target)) {
         setOpen(false);
         setEditing(false);
       }
@@ -59,6 +64,7 @@ export function DescriptionInfo({
   return (
     <span ref={rootRef} className="relative inline-flex shrink-0">
       <button
+        ref={buttonRef}
         type="button"
         aria-label={label}
         aria-expanded={open}
@@ -73,7 +79,11 @@ export function DescriptionInfo({
         <Info size={14} strokeWidth={1.75} />
       </button>
       {open && (
-        <div
+        <AnchoredPopover
+          anchorRef={buttonRef}
+          popoverRef={popoverRef}
+          align="center"
+          gap={8}
           role="dialog"
           aria-label={label}
           data-description-info="popover"
@@ -84,7 +94,7 @@ export function DescriptionInfo({
             event.nativeEvent.stopImmediatePropagation?.();
             close();
           }}
-          className="absolute left-1/2 top-full z-30 mt-2 w-[min(280px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-hairline-weak popover-surface bg-elevated p-3 text-left shadow-xl"
+          className="w-[min(280px,calc(100vw-32px))] rounded-xl border border-hairline-weak popover-surface bg-elevated p-3 text-left shadow-xl"
         >
           <div className="mb-1.5 text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{label}</div>
           {editing ? (
@@ -116,7 +126,7 @@ export function DescriptionInfo({
               )}
             </>
           )}
-        </div>
+        </AnchoredPopover>
       )}
     </span>
   );
