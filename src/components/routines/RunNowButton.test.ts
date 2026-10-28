@@ -58,7 +58,9 @@ describe("the Run now button", () => {
   it("is enabled when no run is in flight", () => {
     const markup = render();
     expect(markup).toContain("data-run-now");
-    expect(markup).toContain(">Run now</button>");
+    expect(markup).toContain("<span>Run now</span>");
+    // Icon-only in a narrow action bar: the name and tooltip stay.
+    expect(markup).toContain('aria-label="Run now" title="Run now"');
     expect(markup).not.toContain("disabled");
   });
 

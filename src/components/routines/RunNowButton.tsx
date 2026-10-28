@@ -33,10 +33,12 @@ export function routineRunInFlight(runs: readonly Pick<RoutineRun, "routineId" |
   return runs.some((run) => run.routineId === routineId && IN_FLIGHT.has(run.status));
 }
 
-export function RunNowButton({ routine, bot, className, onStarted, onError }: {
+export function RunNowButton({ routine, bot, className, labelClassName, onStarted, onError }: {
   routine: Routine;
   bot: Bot | undefined;
   className: string;
+  /** Classes of the label span (an action bar hides it when compact). */
+  labelClassName?: string;
   onStarted?: (run: RoutineRun) => void;
   onError?: (error: unknown) => void;
 }) {
@@ -62,9 +64,9 @@ export function RunNowButton({ routine, bot, className, onStarted, onError }: {
     });
   };
   return (
-    <button type="button" data-run-now onClick={run} disabled={disabled} title={inFlight ? t("routines.runNow.inFlight") : undefined} className={className}>
-      {starting ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-      {starting ? t("routines.runNow.starting") : t("routines.runNow")}
+    <button type="button" data-run-now onClick={run} disabled={disabled} aria-label={t("routines.runNow")} title={inFlight ? t("routines.runNow.inFlight") : t("routines.runNow")} className={className}>
+      {starting ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+      <span className={labelClassName}>{starting ? t("routines.runNow.starting") : t("routines.runNow")}</span>
     </button>
   );
 }
