@@ -7,7 +7,7 @@ import { CustomDomainSettings } from "./CustomDomainSettings";
 import { PerspicaxOrgSettings } from "./PerspicaxOrgSettings";
 import { ConnectServerWizard } from "./ConnectServerWizard";
 import { OrgDirectory, type OrgPersonView, type PendingInviteView } from "./OrgDirectory";
-import type { OrgRole } from "../../server/org-directory.ts";
+import type { OrgRole } from "../../shared/org-role";
 import { isPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
 import { ServerModeComputerAccess } from "./ServerModeSettings";
 import { OrgMemorySettings } from "./OrgMemorySettings";

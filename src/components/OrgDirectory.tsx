@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { copyText } from "@/lib/copy-text";
-import type { OrgRole } from "../../server/org-directory.ts";
+import type { OrgRole } from "../../shared/org-role";
 import { t } from "@/lib/i18n";
 import { Card, CountPill, DANGER_PILL, DescribedRow, PILL, SettingsGroup, cardCount } from "./SettingsPrimitives";
 import { OrgCreateForm, orgHostFromInput } from "./OrgCreateForm";

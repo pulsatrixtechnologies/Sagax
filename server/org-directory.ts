@@ -1,5 +1,7 @@
+import type { OrgRole } from "../shared/org-role.ts";
+
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-export type OrgRole = "owner" | "admin" | "member";
+export type { OrgRole };
 export interface OrgInvite {
   token: string;
   email: string;
