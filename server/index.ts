@@ -1145,6 +1145,8 @@ import { phoneConnectionTransport } from "../shared/phone-transport.ts";
 import { ipcPeer } from "./request-auth.ts";
 import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT, PHONE_TOOLS_FRAME, phoneToolsFrameAllowed } from "../shared/phone-tools.ts";
 import { createArtifactStore } from "./artifacts.ts";
+import { createPreferenceStore } from "./preference-import.ts";
+import { createPreferenceImportRoutes } from "./routes/preference-import.ts";
 import { createArtifactInternalRoutes, createArtifactRoutes } from "./routes/artifacts.ts";
 import { createArtifactRefresher } from "./artifact-refresh.ts";
 import { createArtifactSourceRunner, toolResultValue, type ToolAnswer } from "./artifact-sources.ts";
@@ -1928,6 +1930,7 @@ const securityKeyCeremonies = securityKeyCeremonyRoutes({ keys: securityKeys });
 // Artifacts: the widgets bots saved (server/artifacts.ts). Clients get ids
 // only and fetch the change with their own rights.
 const artifactStore = createArtifactStore({ file: join(DATA_DIR, "artifacts.json"), onChange: (frame) => broadcast({ ...frame }) });
+const preferenceStore = createPreferenceStore({ file: join(DATA_DIR, "bot-preferences.json") });
 // The files pinned in a conversation's Library tab (server/thread-file-pins.ts).
 const threadFilePins = createThreadFilePins({ file: join(DATA_DIR, "thread-file-pins.json") });
 // 2026-10-16: people's custom auto-review rules, in their own words
@@ -29296,6 +29299,16 @@ const artifactRefresher = createArtifactRefresher({
   }),
 });
 artifactRefresher.start();
+ROUTES.push(createPreferenceImportRoutes({
+  preferences: () => preferenceStore,
+  isOwnPrimary: (auth, botId) => {
+    const bot = store.bot(botId);
+    if (!bot?.chiefOfStaff) return false;
+    const viewerId = channelFilterViewerId(auth);
+    if (!viewerId) return true;
+    return effectiveBotOwner(bot) === viewerId;
+  },
+}));
 ROUTES.push(createArtifactRoutes({
   artifacts: () => artifactStore,
   refreshNow: (artifact) => artifactRefresher.refreshNow(artifact.id),

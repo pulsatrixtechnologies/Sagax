@@ -207,6 +207,8 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"exact","route":"/api/me/github/token","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/mcp/servers","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"prefix","route":"/api/me/mcp/servers/","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
+  {"method":"POST","kind":"exact","route":"/api/me/preference-import/apply","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":false},
+  {"method":"POST","kind":"exact","route":"/api/me/preference-import/preview","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/phone-calls","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"prefix","route":"/api/me/phone-calls/","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"GET","kind":"exact","route":"/api/me/phone-tools/card-scan","tier":"admin","readOnly":true,"scope":"me:admin","defaultEnabled":false},

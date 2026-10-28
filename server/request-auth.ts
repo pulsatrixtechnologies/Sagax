@@ -568,6 +568,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // 2026-10-26: the person's own tool access (server/routes/my-tool-grants.ts),
   // always the caller's own; a scope past their environment stays an admin's
   { methods: ["GET", "POST"], path: /^\/api\/me\/tool-grants$/ },
+  // Import preference lines onto the person's own primary bot. The handler
+  // checks the bot. Not the agent import, and not an admin route.
+  { methods: ["POST"], path: /^\/api\/me\/preference-import\/(?:preview|apply)$/ },
   { methods: ["POST"], path: /^\/api\/me\/tool-grants\/tg_[\w-]+\/revoke$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only, or the owner's own bot: see clientBotPatchViolation
   // iOS parity (docs/ios-companion.md): the owner's (or an admin's) picture

@@ -7183,6 +7183,18 @@ and `server/browser-teach.test.ts`:
   same review in Skills (one step per line).
 - Not done: recording the desktop screen (only the bot's browser).
 
+## Preference import
+
+Paste preference lines onto the person's own primary bot
+(`shared/preference-import.ts`, `POST /api/me/preference-import/preview`
+then `apply`). The card lists each line as add, already there, or replace.
+Apply writes only the ids the person checked. A replace is not written
+unless that line was checked. Lines left unchecked, and preferences that
+were not in the paste, stay. This is not the agent import. Not an admin
+route: another bot, or a bot that is not their primary, is 404
+`not_primary`. The card is `PreferenceImportCard` under Settings > Import.
+Covered by `shared/preference-import.test.ts`.
+
 ## Artifacts: saved widgets that refresh without a turn (2026-10-16)
 
 A bot saves a widget as an artifact (`save_artifact`, `update_artifact`,

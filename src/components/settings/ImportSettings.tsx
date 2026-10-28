@@ -8,6 +8,7 @@ import type { GrokLeftOut } from "../../../shared/grok-import";
 import { TeamImportPreview } from "../bot-catalog/TemplateTools";
 import { GrokImportBox, GrokLeftOutList } from "../GrokImportBox";
 import { SettingsGroup } from "../SettingsPrimitives";
+import { PreferenceImportCard } from "./PreferenceImportCard";
 
 export function ImportSettings() {
   const [pending, setPending] = useState<{ preview: PendingTeamImport; leftOut: GrokLeftOut[] } | null>(null);
@@ -35,6 +36,7 @@ export function ImportSettings() {
           )}
         </div>
       </SettingsGroup>
+      <PreferenceImportCard />
     </div>
   );
 }
