@@ -470,10 +470,16 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const xavier = (await botsOf(bob)).find((b) => b.id === shared.id)!;
     const mine = xavier.messages.find((m) => m.role === "user" && m.kind === "text" && m.text === "no key now") as { id?: string } | undefined;
     expect(mine?.id).toBeTruthy();
-    const cardsBefore = (await accessCards(bob, shared.id)).length;
+    const cardsBefore = await accessCards(bob, shared.id);
+    const editRefusals = () => log.split(`bot=${shared.id} refused: no_access`).length;
+    const refusedBeforeEdit = editRefusals();
     const edited = await api("POST", `/api/bots/${shared.id}/messages/${mine!.id}/edit`, bob, { text: "edited by bob" });
     expect(edited.status, edited.text).toBe(202);
-    await waitFor(async () => (await accessCards(bob, shared.id)).length > cardsBefore);
+    // The same missing sign-in was already shown on this thread, so the edit
+    // is refused without a second copy of that card (shared/failure-dedup.ts).
+    await waitFor(async () => editRefusals() > refusedBeforeEdit);
+    expect(cardsBefore.some((row) => row.access?.reason === "no_access")).toBe(true);
+    expect((await accessCards(bob, shared.id)).length).toBe(cardsBefore.length);
     await sleep(300);
     expect(promptsNow()).not.toContain("edited by bob");
 
@@ -615,6 +621,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect((await api("PATCH", "/api/config", alice, { anthropic: { key: ORG_KEY } })).status).toBe(200);
     const erin = await signIn(ERIN);
     const wren = await createBot(erin, "Wren", "hold");
+    // New bots start on Approve for me (#1098). This case checks cards, so it pins Ask.
+    expect((await api("PATCH", `/api/bots/${wren.id}`, erin, { approvalMode: "ask" })).status).toBe(200);
     const holdDump = join(home, "hold-dump.json");
     expect((await api("POST", `/api/bots/${wren.id}/messages`, erin, { text: "hold for cards" })).status).toBe(202);
     await waitFor(async () => existsSync(holdDump), 20_000);
@@ -747,6 +755,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
   it("S3-7d (2026-10-14): a member's bot asks its owner, never an admin, for what stays in the owner's rights; rules, modes and the admin route", async () => {
     const erin = await signIn(ERIN);
     const cora = await createBot(erin, "Cora", "hold");
+    // New bots start on Approve for me (#1098). This case checks the owner's card, so it pins Ask.
+    expect((await api("PATCH", `/api/bots/${cora.id}`, erin, { approvalMode: "ask" })).status).toBe(200);
     const holdDump = join(home, "hold-dump.json");
     rmSync(holdDump, { force: true });
     expect((await api("POST", `/api/bots/${cora.id}/messages`, erin, { text: "update my tickets" })).status).toBe(202);
