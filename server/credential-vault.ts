@@ -892,7 +892,7 @@ export class CredentialVault {
   chooseWallet(principalId: string, wallet: unknown, chosen: boolean): WalletLinkView {
     if (!isSingleUseWallet(wallet)) throw new CredentialVaultError("wallet must be shop_pay or link", "unknown_wallet");
     const document = structuredClone(this.load(principalId));
-    const wallets = { ...(document.wallets ?? {}) };
+    const wallets = document.wallets ? { ...document.wallets } : {};
     if (chosen) wallets[wallet] = { chosen: true };
     else delete wallets[wallet];
     const next: VaultDocument = {
