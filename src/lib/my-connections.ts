@@ -4,6 +4,7 @@
 // (server/routes/bot-plugins.ts). Nothing here ever holds a token the
 // server sent: the server never sends one.
 import { api } from "@/state/store";
+import type { MarketplaceCredentialView } from "../../shared/github-credentials";
 
 export type GithubStatus =
   | { state: "none"; deviceFlow: boolean }
@@ -96,8 +97,10 @@ export type MarketplaceVisibility = "private" | "org";
 export interface MarketplaceListing {
   name: string;
   source: string;
-  /** A token is saved for it on this bot (never the token itself). */
+  /** This bot picks a credential for it (never the token itself). */
   hasToken?: boolean;
+  /** The credential it picks (absent: Automatic) and the one that read it last. */
+  credential?: MarketplaceCredentialView;
   /** "private" (the person who added it) or "org" (shared with everyone) */
   visibility?: MarketplaceVisibility;
   /** this viewer added it, so may change its visibility */
@@ -153,10 +156,13 @@ export interface BotPluginsView {
 
 const pluginsPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/plugins`;
 export const loadBotPlugins = (botId: string) => api<BotPluginsView>(pluginsPath(botId));
-export const addMarketplace = (botId: string, source: string, options: { ref?: string; token?: string; visibility?: MarketplaceVisibility } = {}) =>
+export const addMarketplace = (botId: string, source: string, options: { ref?: string; token?: string; credential?: string; visibility?: MarketplaceVisibility } = {}) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, {
-    method: "POST", body: JSON.stringify({ source, ...(options.ref ? { ref: options.ref } : {}), ...(options.token ? { token: options.token } : {}), ...(options.visibility ? { visibility: options.visibility } : {}) }), timeoutMs: 180_000,
+    method: "POST", body: JSON.stringify({ source, ...(options.ref ? { ref: options.ref } : {}), ...(options.token ? { token: options.token } : {}), ...(options.credential ? { credential: options.credential } : {}), ...(options.visibility ? { visibility: options.visibility } : {}) }), timeoutMs: 180_000,
   });
+/** The credential of the one list this bot picks for a marketplace (null: Automatic). */
+export const chooseMarketplaceCredential = (botId: string, name: string, credential: string | null) =>
+  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/credential`, { method: "PUT", body: JSON.stringify({ credential }) });
 /** This bot's token for a marketplace of the one list (kept per bot and source). */
 export const setMarketplaceToken = (botId: string, name: string, token: string) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/token`, { method: "PUT", body: JSON.stringify({ token }) });

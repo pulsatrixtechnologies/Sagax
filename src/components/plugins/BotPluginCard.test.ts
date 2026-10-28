@@ -103,27 +103,27 @@ describe("one marketplace list, two scopes", () => {
     expect(html).not.toMatch(/disabled=""[^>]*data-marketplace-remove="acme-tools"/);
   });
 
-  it("has a token field per marketplace for the bot only, says one is saved, and opens it where the git host refused", () => {
-    const tokens = { onSave: async () => true, onRemove: async () => true };
-    expect(renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [market] }))).not.toContain("data-marketplace-token-open");
-    const saved = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [{ ...market, hasToken: true }], tokens }));
-    expect(saved).toContain("data-marketplace-token-open=\"acme-tools\"");
-    expect(saved).toContain("Token saved");
-    expect(saved).not.toContain("data-marketplace-token-form");
-    const refused = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [{ ...market, hasToken: true }], tokens, needsToken: "acme-tools" }));
-    expect(refused).toContain("data-marketplace-token-form=\"acme-tools\"");
-    expect(refused).toContain("Replace and update");
-    expect(refused).toContain("Remove the token");
-    expect(refused).toContain("type=\"password\"");
+  it("has no token field any more: each marketplace picks a credential of the list, or Automatic, and says which one read it", () => {
+    const credentials = { onChoose: async () => true };
+    expect(renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [market] }))).not.toContain("data-marketplace-credential=");
+    const html = renderToStaticMarkup(createElement(MarketplacesSection, {
+      ...props, credentials,
+      marketplaces: [{ ...market, hasToken: true, credential: { chosen: { id: "gt_0000000000000001", label: "Other organization", owner: "mine" as const }, used: { via: "credential" as const, label: "Other organization", at: 1 } } }],
+    }));
+    expect(html).toContain("data-marketplace-credential=\"acme-tools\"");
+    expect(html).toContain("Automatic");
+    expect(html).toMatch(/value="gt_0000000000000001"[^>]*selected|selected=""[^>]*value="gt_0000000000000001"/);
+    expect(html).toContain("Read with Other organization");
+    expect(html).not.toContain("type=\"password\"");
+    const person = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, credentials, marketplaces: [{ ...market, credential: { used: { via: "person" as const, login: "someone", at: 1 } } }] }));
+    expect(person).toContain("Read with your GitHub account (@someone)");
   });
 
-  it("says the token is kept for everyone in the Everyone scope", () => {
-    const tokens = { scope: "workspace" as const, onSave: async () => true, onRemove: async () => true };
-    const html = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [{ ...market, hasToken: true }], tokens, needsToken: "acme-tools" }));
-    expect(html).toContain("data-marketplace-token-form=\"acme-tools\"");
-    expect(html).toContain("Token saved");
-    expect(html).toContain("for everyone. Only an admin can change it.");
-    expect(html).not.toContain("for this bot and this marketplace only");
+  it("points at the pick where the git host refused, and offers one for an add", () => {
+    const credentials = { scope: "workspace" as const, onChoose: async () => true };
+    const html = renderToStaticMarkup(createElement(MarketplacesSection, { ...props, marketplaces: [market], credentials, needsToken: "acme-tools" }));
+    expect(html).toContain("data-marketplace-token=\"acme-tools\"");
+    expect(html).toContain("for everyone");
   });
 });
 

@@ -73,6 +73,8 @@ const SERVER_ROUTE = /^\/api\/me\/mcp\/servers\/([a-z][a-z0-9_-]{0,31})(?:\/oaut
 
 export function createPersonConnectionRoutes(deps: PersonConnectionRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
+    // the credential list has its own route (server/routes/github-credentials.ts)
+    if (path === "/api/me/github/credentials") return PASS;
     const mine = path === "/api/me/connections" || path === "/api/me/github" || path.startsWith("/api/me/github/") || path === "/api/me/mcp/servers" || path.startsWith("/api/me/mcp/servers/");
     if (!mine) return PASS;
     res.setHeader("cache-control", "private, no-store");

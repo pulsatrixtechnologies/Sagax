@@ -7,6 +7,7 @@
 // The bot scope is offered when a bot is in reach: the one a bot panel sent
 // the person here with, else the conversation open behind the panel.
 import type { BotPluginsView, InstalledPlugin, PluginContents } from "./my-connections";
+import type { MarketplaceCredentialView } from "../../shared/github-credentials";
 
 export type PluginScope = "workspace" | "bot";
 
@@ -26,7 +27,7 @@ export function initialPluginScope(pluginsBotId: string | null, bot: { id: strin
  * No servers nor skills: a bot install links nothing of the workspace's.
  * `hasToken`: this bot keeps a token for the marketplace. */
 export function botScopeMarketplaces(view: BotPluginsView): Array<{
-  name: string; source: string; description?: string; hasToken?: boolean;
+  name: string; source: string; description?: string; hasToken?: boolean; credential?: MarketplaceCredentialView;
   visibility?: "private" | "org"; mine?: boolean;
   plugins: Array<{
     name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[];
@@ -38,6 +39,7 @@ export function botScopeMarketplaces(view: BotPluginsView): Array<{
     source: market.source,
     ...(market.description ? { description: market.description } : {}),
     ...(market.hasToken ? { hasToken: true } : {}),
+    ...(market.credential ? { credential: market.credential } : {}),
     ...(market.visibility ? { visibility: market.visibility } : {}),
     ...(market.mine ? { mine: true } : {}),
     plugins: market.plugins.map((plugin) => ({
@@ -86,27 +88,39 @@ export function marketplaceRoute(input: { workspaceManager: boolean; scope: Plug
   return input.botView?.canChange ? "bot" : null;
 }
 
-/** The installation's token per marketplace (Connect apps, "Everyone",
- * an admin only; server/routes/marketplaces.ts): saved, then the
- * marketplace is fetched again with it; or removed. The token goes to the
- * server once and never comes back (`hasToken` only). */
-export function workspaceMarketplaceTokens<L>(deps: {
-  api: (path: string, init: { method: string; body?: string }) => Promise<{ marketplaces?: L[] }>;
-  /** the panel's busy and error handling (`marketAction`) */
+/** Each marketplace's pick of a credential of the one list (Connect apps >
+ * Sources > GitHub, 2026-10-28), in place of a token field: the bot's
+ * (`/api/bots/:id/plugins/.../credential`, its owner or a manager) or the
+ * installation's (`/api/marketplaces/:name/credential`, the workspace's
+ * managers). After a pick the marketplace is fetched again with it. */
+export function marketplaceCredentialControls<L>(deps: {
+  route: "bot" | "workspace";
+  botId?: string;
+  api: (path: string, init: { method: string; body?: string; timeoutMs?: number }) => Promise<{ marketplaces?: L[] }>;
   run: (busy: string, work: () => Promise<unknown>) => Promise<boolean>;
-  loaded: (marketplaces: L[]) => void;
-}): { scope: "workspace"; onSave: (name: string, token: string) => Promise<boolean>; onRemove: (name: string) => Promise<boolean> } {
-  const at = (name: string) => `/api/marketplaces/${encodeURIComponent(name)}`;
+  /** the bot scope's listing after the pick */
+  botLoaded?: (view: BotPluginsView) => void | Promise<void>;
+  /** the workspace's listing after the pick */
+  loaded?: (marketplaces: L[]) => void;
+}): { scope: "bot" | "workspace"; onChoose: (name: string, credential: string | null) => Promise<boolean> } {
+  const name = (value: string) => encodeURIComponent(value);
+  if (deps.route === "bot" && deps.botId) {
+    const base = `/api/bots/${encodeURIComponent(deps.botId)}/plugins/marketplaces`;
+    return {
+      scope: "bot",
+      onChoose: (market, credential) => deps.run(`refresh:${market}`, async () => {
+        await deps.api(`${base}/${name(market)}/credential`, { method: "PUT", body: JSON.stringify({ credential }) });
+        const view = await deps.api(`${base}/${name(market)}/update`, { method: "POST", timeoutMs: 180_000 }) as unknown as BotPluginsView;
+        await deps.botLoaded?.(view);
+      }),
+    };
+  }
   return {
     scope: "workspace",
-    onSave: (name, token) => deps.run(`refresh:${name}`, async () => {
-      await deps.api(`${at(name)}/token`, { method: "PUT", body: JSON.stringify({ token }) });
-      const result = await deps.api(`${at(name)}/refresh`, { method: "POST", body: "{}" });
-      deps.loaded(result.marketplaces ?? []);
-    }),
-    onRemove: (name) => deps.run(`token:${name}`, async () => {
-      const result = await deps.api(`${at(name)}/token`, { method: "DELETE" });
-      deps.loaded(result.marketplaces ?? []);
+    onChoose: (market, credential) => deps.run(`refresh:${market}`, async () => {
+      await deps.api(`/api/marketplaces/${name(market)}/credential`, { method: "PUT", body: JSON.stringify({ credential }) });
+      const result = await deps.api(`/api/marketplaces/${name(market)}/refresh`, { method: "POST", body: "{}", timeoutMs: 180_000 });
+      deps.loaded?.(result.marketplaces ?? []);
     }),
   };
 }

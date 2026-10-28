@@ -1,10 +1,10 @@
 // Reading a private GitHub repository for a bot's plugins and skills.
 //
-// Which credential, in order: the token saved for this marketplace on this
-// bot (server/marketplace-tokens.ts), the acting person's own GitHub
-// connection (Connect apps > Sources, server/github-connect.ts), then the
-// organization's GitHub tokens (Settings > Organization > Plugins and
-// GitHub). Before a clone, GET /repos/{owner}/{repo} on api.github.com
+// Which credential, in order: the one this marketplace picks on this bot
+// (Connect apps > Sources > GitHub, server/github-credentials.ts), then
+// Automatic: the acting person's own GitHub connection
+// (server/github-connect.ts), their other credentials, then the
+// organization's. Before a clone, GET /repos/{owner}/{repo} on api.github.com
 // tells which one reads the repository and, when none does, why: GitHub
 // answers 404 for a private repository it will not show, 401 for a bad
 // token, 403 with `x-github-sso` when the organization's SAML sign-on has
@@ -15,11 +15,13 @@
 // URL, an argv, a file or a log line.
 import { githubOrigins, githubTokenKind } from "./github-connect.ts";
 
-export type GithubCredentialVia = "marketplace" | "person" | "organization";
+export type GithubCredentialVia = "marketplace" | "person" | "own" | "organization";
 
 export interface GithubCredential {
   token: string;
   via: GithubCredentialVia;
+  /** The credential's id in the one list (server/github-credentials.ts). Never the token. */
+  id?: string;
   /** The organization token's label, for messages. Never the token. */
   label?: string;
   /** The person's GitHub login (via "person"): tells a repository of their
@@ -54,8 +56,9 @@ export interface GithubAccessFailure {
 }
 
 const VIA_TEXT: Record<GithubCredentialVia, string> = {
-  marketplace: "this marketplace's token",
+  marketplace: "the credential this marketplace uses",
   person: "your GitHub connection",
+  own: "your GitHub credential",
   organization: "the organization's GitHub token",
 };
 
@@ -110,7 +113,7 @@ export function githubAccessFailure(
     if (!credential) {
       return {
         code: "private_needs_token", status: 422, fix: "connect_or_token",
-        message: `GitHub answered 404 for ${repo}: it is private, or it does not exist. Connect your GitHub account in Connect apps (Personal), ${context === "marketplace" ? "or add a token for this marketplace" : "or ask an administrator for an organization GitHub token"}.`,
+        message: `GitHub answered 404 for ${repo}: it is private, or it does not exist. Connect your GitHub account in Connect apps > Sources > GitHub, ${context === "marketplace" ? "or add a credential there and pick it for this marketplace" : "or add a credential there for this repository's owner"}.`,
       };
     }
     return {
