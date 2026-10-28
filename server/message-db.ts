@@ -21,8 +21,7 @@ import { ContentKeyring, ContentKeyUnavailable, ensureContentKeySchema, localKek
 import { resolveVaultKey } from "./mcp-oauth.ts";
 import { blindSnippet, indexColumns, indexSourcesOf, recallHolds, recallMatch, recallTermsFor, skeletonOf, type RecallTerm } from "./message-sealing.ts";
 import { peerProvenanceAuthor, WEBHOOK_AUTHOR, type WorkOrigin } from "./peer-provenance.ts";
-import type { ResolvedSender, SteerQueueReason } from "../shared/wire.ts";
-import type { Message } from "./store.ts";
+import type { ResolvedSender, SteerQueueReason, WireMessage as Message } from "../shared/wire.ts";
 import type { UsageTrigger } from "./usage-ledger.ts";
 import { MessageSearchWorker } from "./message-search-worker.ts";
 import { searchMessagesInDatabase, type SealedKeyMaterial, type SearchHit } from "./message-search-query.ts";
