@@ -16,7 +16,7 @@ This repository does not do that apply.
 Two provisioners run side by side. The production compose service stays
 `SANDBOX_BACKEND=docker` and keeps the Docker socket. A second process,
 `deploy/k8s/provisioner/`, runs with `SANDBOX_BACKEND=kubernetes` and
-talks to the Kubernetes API (`server/sandboxd-k8s.ts`). That value does
+talks to the Kubernetes API (`server/sandboxd-k8s/sandboxd-k8s.ts`). That value does
 not exit. The pool manifests (`deploy/k8s/sandboxes/`), the Helm chart
 and the OpenTofu modules (`deploy/k8s/helm/`, `deploy/k8s/tofu/`) are the
 same tree.

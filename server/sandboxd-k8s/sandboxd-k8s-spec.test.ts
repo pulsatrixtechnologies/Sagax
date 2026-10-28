@@ -25,7 +25,7 @@ import {
   storageClassEncrypts,
   type K8sSandboxConfig,
 } from "./sandboxd-k8s-spec.ts";
-import { DEFAULT_EGRESS_DENY, sandboxContainerSpec, sandboxKeyForPrincipal, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
+import { DEFAULT_EGRESS_DENY, sandboxContainerSpec, sandboxKeyForPrincipal, sandboxdConfigFromEnv } from "../user-sandbox-spec.ts";
 
 const DIGEST = "ab".repeat(32);
 const REGISTRY = "ghcr.io/pulsatrixtechnologies";
@@ -388,22 +388,22 @@ describe("readiness and quantities", () => {
 
 describe("image scripts and manifests", () => {
   it("builds both architectures and never pushes", () => {
-    const build = readFileSync(new URL("../scripts/build-sandbox-image.sh", import.meta.url), "utf8");
+    const build = readFileSync(new URL("../../scripts/build-sandbox-image.sh", import.meta.url), "utf8");
     expect(build).toContain("linux/amd64,linux/arm64");
     expect(build).not.toMatch(/--push\b/);
     expect(build).toContain("SANDBOX_IMAGE_PUSH");
-    const scan = readFileSync(new URL("../scripts/scan-sandbox-image.sh", import.meta.url), "utf8");
+    const scan = readFileSync(new URL("../../scripts/scan-sandbox-image.sh", import.meta.url), "utf8");
     expect(scan).toContain("not scanned");
-    const verify = readFileSync(new URL("../scripts/verify-sandbox-image-signature.sh", import.meta.url), "utf8");
+    const verify = readFileSync(new URL("../../scripts/verify-sandbox-image-signature.sh", import.meta.url), "utf8");
     expect(verify).toContain("did not verify a signature");
-    const workflow = readFileSync(new URL("../.github/workflows/sandbox-image.yml", import.meta.url), "utf8");
+    const workflow = readFileSync(new URL("../../.github/workflows/sandbox-image.yml", import.meta.url), "utf8");
     expect(workflow).toContain("workflow_dispatch");
     expect(workflow).not.toContain("push:");
     expect(workflow).toContain("did not verify a signature");
   });
 
   it("keeps the provisioner off cluster-admin and off the docker socket", () => {
-    const rbac = readFileSync(new URL("../deploy/k8s/provisioner/rbac.yaml", import.meta.url), "utf8");
+    const rbac = readFileSync(new URL("../../deploy/k8s/provisioner/rbac.yaml", import.meta.url), "utf8");
     expect(rbac).not.toContain("cluster-admin");
     expect(rbac).toContain("storageclasses");
     expect(rbac).toContain("sagax-sandbox-workload");
@@ -417,16 +417,16 @@ describe("image scripts and manifests", () => {
     expect(rbac).toMatch(/resources: \["networkpolicies"\]\r?\n\s+verbs: \["get", "list", "create", "delete"\]/);
     expect(rbac).not.toContain("pods/log");
     expect(rbac).toMatch(/resourceNames: \["sandboxes"\]/);
-    const deployment = readFileSync(new URL("../deploy/k8s/provisioner/sandboxd-deployment.yaml", import.meta.url), "utf8");
+    const deployment = readFileSync(new URL("../../deploy/k8s/provisioner/sandboxd-deployment.yaml", import.meta.url), "utf8");
     expect(deployment).not.toContain("docker.sock");
     expect(deployment).toContain("example.invalid/sagax:must-set");
     expect(deployment).toContain("type: ClusterIP");
     expect(deployment).toContain("SAGAX_SANDBOX_K8S_NODE_SELECTOR");
     expect(deployment).toContain("SAGAX_SANDBOX_K8S_TOLERATION");
     expect(deployment).toMatch(/runAsUser: 1001/);
-    const namespace = readFileSync(new URL("../deploy/k8s/provisioner/namespace.yaml", import.meta.url), "utf8");
+    const namespace = readFileSync(new URL("../../deploy/k8s/provisioner/namespace.yaml", import.meta.url), "utf8");
     expect(namespace).toContain("restricted");
-    const allow = readFileSync(new URL("../deploy/k8s/provisioner/networkpolicy-provisioner.yaml", import.meta.url), "utf8");
+    const allow = readFileSync(new URL("../../deploy/k8s/provisioner/networkpolicy-provisioner.yaml", import.meta.url), "utf8");
     expect(allow).toContain("app: sagax-sandboxd");
     expect(allow).toContain("6443");
     expect(allow).toContain("k8s-app: kube-dns");

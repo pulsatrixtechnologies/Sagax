@@ -9,8 +9,8 @@ import { accessSync, constants as fsConstants, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Duplex } from "node:stream";
 
-import { createSandboxAudit, type SandboxAudit } from "./sandbox-audit.ts";
-import { ensureSandboxdKey, readSandboxdKey, SANDBOXD_RUNS_AUTH_CONTEXT, sandboxdKeySource, SandboxdVerifier } from "./sandboxd-auth.ts";
+import { createSandboxAudit, type SandboxAudit } from "../sandbox-audit.ts";
+import { ensureSandboxdKey, readSandboxdKey, SANDBOXD_RUNS_AUTH_CONTEXT, sandboxdKeySource, SandboxdVerifier } from "../sandboxd-auth.ts";
 import type { K8sClient } from "./sandboxd-k8s-client.ts";
 import {
   IMAGE_ANNOTATION,
@@ -33,12 +33,12 @@ import {
   type K8sGuards,
   type K8sSandboxConfig,
 } from "./sandboxd-k8s-spec.ts";
-import { SandboxError, SandboxService } from "./sandboxd-core.ts";
-import { SANDBOX_STARTING_CODE } from "./sandbox-k8s-wake.ts";
+import { SandboxError, SandboxService } from "../sandboxd-core.ts";
+import { SANDBOX_STARTING_CODE } from "../sandbox-k8s-wake.ts";
 import { SPARE_TICK_MS, SpareScaler, spareConfigFromEnv } from "./sandboxd-k8s-spare.ts";
-import { runsConfigFromEnv } from "./sandboxd-runs-spec.ts";
-import type { ContainerStats, ContainerSummary, DockerApi, ExecRequest, ExecResult, TtyExec, TtySize } from "./sandboxd-docker.ts";
-import { createSandboxdHandler, createSandboxdUpgradeHandler } from "./sandboxd.ts";
+import { runsConfigFromEnv } from "../sandboxd-runs-spec.ts";
+import type { ContainerStats, ContainerSummary, DockerApi, ExecRequest, ExecResult, TtyExec, TtySize } from "../sandboxd-docker.ts";
+import { createSandboxdHandler, createSandboxdUpgradeHandler } from "../sandboxd.ts";
 import {
   SANDBOX_INSTANCE_LABEL,
   SANDBOX_KEY_RE,
@@ -48,7 +48,7 @@ import {
   sandboxNames,
   sandboxdConfigFromEnv,
   type SandboxdConfig,
-} from "./user-sandbox-spec.ts";
+} from "../user-sandbox-spec.ts";
 
 type Obj = Record<string, unknown>;
 
@@ -638,7 +638,7 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
     const spareSweep = setInterval(() => { void backend.syncSpare(); }, 30_000);
     spareSweep.unref();
   }
-  // 2026-10-26: the reserve node follows the people at work (server/sandboxd-k8s-spare.ts).
+  // 2026-10-26: the reserve node follows the people at work (server/sandboxd-k8s/sandboxd-k8s-spare.ts).
   // The dedicated-node reserve (k8s.dedicated.spare, syncSpare above) already
   // follows the people at work: when it is on, it owns the reserve alone.
   const spare = spareConfigFromEnv(env, sandbox.maxRunning);
@@ -653,7 +653,7 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
   }
   let runsServer: { close(callback?: () => void): unknown } | null = null;
   if (runs) {
-    const { RunService, createRunsServer } = await import("./sandboxd-runs.ts");
+    const { RunService, createRunsServer } = await import("../sandboxd-runs.ts");
     const runsKey = readSandboxdKey(runs.keyFile);
     if (sandboxKeys().includes(runsKey)) {
       audit.record({ action: "runs.start", outcome: "denied", detail: { reason: "shared_key" } });

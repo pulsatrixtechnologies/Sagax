@@ -100,7 +100,7 @@ provisioner:
   image: ghcr.io/pulsatrixtechnologies/sagax:0.1.0
   port: 8791
   # 2026-10-26: the provisioner sets the reserve Deployment's replicas from
-  # the people at work (server/sandboxd-k8s-spare.ts): none while nobody
+  # the people at work (server/sandboxd-k8s/sandboxd-k8s-spare.ts): none while nobody
   # works, SAGAX_SANDBOX_K8S_SPARE_COUNT while someone does, none from
   # SAGAX_SANDBOX_K8S_SPARE_MAX_ACTIVE at work. Grants it the scale of that
   # one Deployment in systemNamespace, nothing else. Set

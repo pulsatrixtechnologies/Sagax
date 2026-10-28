@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { SandboxService } from "./sandboxd-core.ts";
-import { podFromDockerSpec, type K8sSandboxConfig } from "./sandboxd-k8s-spec.ts";
+import { podFromDockerSpec, type K8sSandboxConfig } from "./sandboxd-k8s/sandboxd-k8s-spec.ts";
 import { FakeDocker } from "./testing/fake-docker.ts";
 import { sandboxContainerSpec, sandboxKeyForPrincipal, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
 import { callUserSandboxTool } from "./user-sandbox-tools.ts";

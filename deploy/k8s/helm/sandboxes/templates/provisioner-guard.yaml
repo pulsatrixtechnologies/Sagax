@@ -6,7 +6,7 @@
 #  - an exec (or attach, port-forward) only into a person's sandbox Pod
 #    (sagax-user-<key>), never into the provisioner itself or another Pod;
 #  - a NetworkPolicy only of the two shapes the provisioner writes
-#    (server/sandboxd-k8s-spec.ts): the namespace default deny, or one
+#    (server/sandboxd-k8s/sandboxd-k8s-spec.ts): the namespace default deny, or one
 #    person's policy with no ingress and egress to the public internet minus
 #    every egressDeny range. A stolen provisioner token cannot open a sandbox
 #    to the cluster, the node network or the cloud metadata service.

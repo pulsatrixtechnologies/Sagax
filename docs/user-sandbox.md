@@ -333,7 +333,7 @@ api.githubcopilot.com are reachable; only private destinations are dropped.
 
 `SANDBOX_BACKEND` defaults to `docker` and leaves this table in force. Set it
 to `kubernetes` on the provisioner that should call the Kubernetes API
-(`server/sandboxd-k8s.ts`). The compose provisioner stays `docker`. Sagax
+(`server/sandboxd-k8s/sandboxd-k8s.ts`). The compose provisioner stays `docker`. Sagax
 runs both and sends a person to Kubernetes only when
 `SAGAX_SANDBOX_CANARY_PEOPLE`, `SAGAX_SANDBOX_CANARY_BOTS` or
 `SAGAX_SANDBOX_ROUTE=kubernetes` says so. `SAGAX_SANDBOX_ROUTE=docker` sends

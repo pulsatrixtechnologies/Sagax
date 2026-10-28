@@ -19,7 +19,7 @@ import {
   type K8sGuards,
   type K8sSandboxConfig,
   type K8sToleration,
-} from "./sandboxd-k8s-spec.ts";
+} from "./sandboxd-k8s/sandboxd-k8s-spec.ts";
 import { DEFAULT_EGRESS_DENY, SANDBOX_INSTANCE_LABEL, SANDBOX_UID, SANDBOX_WORKSPACE, cidrContains, parseCidr, type SandboxdConfig } from "./user-sandbox-spec.ts";
 
 const MiB = 1024 * 1024;
