@@ -34,6 +34,7 @@ import {
   type CustomRuleDecision,
   type CustomRuleNotice,
   type ModelRuleVerdict,
+  type TurnStart,
 } from "../shared/custom-rules.ts";
 
 export const MODEL_REVIEW_TIMEOUT_MS = 30_000;
@@ -57,6 +58,8 @@ export interface ModelReviewCard {
   facts: CallFacts;
   call: { tool: string; input?: string; summary?: string };
   language?: string;
+  /** Who started this turn. Absent reads as the person being here. */
+  startedBy?: TurnStart;
 }
 
 export interface ModelReviewDeps {
@@ -123,14 +126,14 @@ export function createCustomRulesModelReviewer(deps: ModelReviewDeps): CustomRul
   };
 
   const judge = async (card: ModelReviewCard): Promise<ModelRuleVerdict> => {
-    const rules = modelReviewRules(card.rules, card.botId);
+    const rules = modelReviewRules(card.rules, card.botId, card.startedBy ?? "person", card.facts);
     if (!modelReviewWanted(card.local, rules)) return { kind: "none" };
     const review = deps.reviewer(card.botId);
     if (!review) return { kind: "none" };
-    const prompt = customRulesJudgePrompt(rules, card.call, card.facts, card.language);
+    const prompt = customRulesJudgePrompt(rules, card.call, card.facts, card.language, card.startedBy);
     const key = createHash("sha256").update(card.botId).update("\0").update(prompt).digest("hex");
     const reply = await ask(review, key, prompt);
-    return modelCustomDecision(card.local, rules, card.facts, reply);
+    return modelCustomDecision(card.local, rules, card.facts, reply, card.startedBy);
   };
 
   const reviewCard = async (card: ModelReviewCard): Promise<ModelRuleVerdict> => {

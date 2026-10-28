@@ -6,9 +6,9 @@
 //                                        (its own and those for all bots), or all of
 //                                        them, and the products its servers declare
 //                                        (the words a rule may name a product by)
-//   POST   /api/custom-rules          { when | text, behavior?, botId, riskScope?, fromCard? }
+//   POST   /api/custom-rules          { when | text, behavior?, botId, riskScope?, startedBy?, fromCard? }
 //                                     -> { rule }   (201)
-//   PATCH  /api/custom-rules/:id      { when?, behavior?, botId?, riskScope?, enabled? }
+//   PATCH  /api/custom-rules/:id      { when?, behavior?, botId?, riskScope?, enabled?, startedBy? }
 //   DELETE /api/custom-rules/:id
 //   GET    /api/custom-rules/policy   -> { alwaysAllow, orgRules }: the organization's
 //                                        approval policy (server/custom-rules-org.ts)
@@ -32,12 +32,14 @@ import {
   compileSavedRule,
   isCustomRuleBehavior,
   isRiskClass,
+  isTurnStart,
   parseRuleSentence,
   type CompiledRule,
   type CustomRule,
   type CustomRuleBinding,
   type RiskClass,
   type RuleProduct,
+  type TurnStart,
 } from "../../shared/custom-rules.ts";
 import { ORG_ALWAYS_ALLOW_OFF, ORG_RULE_LOCKED } from "../custom-rules-org.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -59,6 +61,10 @@ export interface CustomRuleRouteDeps {
    * tool, folder and engine instance): null when there is no such open
    * card, undefined when the card is not a shell command. */
   bindingFor?: (personId: string, card: { threadId: string; requestId: string }) => CustomRuleBinding | null | undefined;
+  /** Who started the turn of an open card, so a send allowed from a
+   * routine's card is saved for a routine and not as if the person had
+   * just asked. Absent: no stamp. */
+  turnStart?: (threadId: string) => TurnStart;
   audit: (row: { action: string; personId: string; botId?: string | null; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
   home?: string;
   /** 2026-10-27 (#1220): the products a rule may name, as this person's
@@ -92,6 +98,16 @@ function riskScopeOf(value: unknown): RiskClass[] | null {
   if (!Array.isArray(value) || !value.every(isRiskClass)) return null;
   return value;
 }
+
+/** Undefined: the field was omitted. Null: the person cleared it. */
+function explicitStart(value: unknown): { ok: true; value: TurnStart | null | undefined } | { ok: false } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (isTurnStart(value)) return { ok: true, value };
+  return { ok: false };
+}
+
+const STARTED_BY_REFUSAL = { error: "startedBy is person, routine or delegation" } as const;
 
 export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler {
   const productsFor = (me: string, botId: string | null): readonly RuleProduct[] => deps.products?.(me, botId) ?? [];
@@ -142,6 +158,8 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       if (body.botId !== null && !ownsBot(me, body.botId)) return json(res, 400, { error: "a rule applies to one of your bots, or to all of them" });
       const riskScope = riskScopeOf(body.riskScope);
       if (!riskScope) return json(res, 400, { error: "riskScope lists destructive, irreversible, money or external-send" });
+      const start = explicitStart(body.startedBy);
+      if (!start.ok) return json(res, 400, STARTED_BY_REFUSAL);
       if (behavior === "allow" && !deps.store.orgPolicy().alwaysAllow) return json(res, 403, ORG_ALWAYS_ALLOW_OFF);
       if (behavior === "allow" && compileRule(when, deps.home).shellFamily) return json(res, 400, SHELL_FAMILY_REFUSAL);
       const card = body.fromCard && typeof body.fromCard === "object"
@@ -166,10 +184,18 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       }
       // check the card before anything is saved: a refusal leaves every
       // rule the person already has as it was
+      // A send allowed from a routine's own card names that routine. The
+      // person chose it there. A rule written with no start does not, so a
+      // routine does not send as if the person had just asked.
+      let startedBy: TurnStart | undefined = start.value ?? undefined;
+      if (startedBy === undefined && start.value !== null && card && behavior === "allow" && deps.turnStart?.(card.threadId as string) === "routine") {
+        const compiled = compileRule(when, deps.home);
+        if (compiled.actions.includes("send") || riskScope.includes("external-send")) startedBy = "routine";
+      }
       if (card && deps.fromCard) {
         const provisional: CustomRule = {
           id: "provisional", ownerId: me, botId, when: when.trim(), behavior, riskScope: behavior === "allow" ? riskScope : [],
-          enabled: true, ...(binding ? { binding } : {}), createdAt: 0, updatedAt: 0,
+          enabled: true, ...(startedBy ? { startedBy } : {}), ...(binding ? { binding } : {}), createdAt: 0, updatedAt: 0,
         };
         const covered = deps.fromCard(me, { threadId: card.threadId as string, requestId: card.requestId as string }, provisional);
         if (covered !== "covered") {
@@ -186,7 +212,7 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       let rule: CustomRule;
       try {
         const products = pinsOf(me, when, botId);
-        rule = deps.store.add({ ownerId: me, botId, when, behavior, riskScope, ...(binding ? { binding } : {}), ...(products?.length ? { products } : {}) });
+        rule = deps.store.add({ ownerId: me, botId, when, behavior, riskScope, ...(startedBy ? { startedBy } : {}), ...(binding ? { binding } : {}), ...(products?.length ? { products } : {}) });
       } catch (error) {
         const status = (error as { status?: number }).status ?? 500;
         return json(res, status, { error: error instanceof Error ? error.message : String(error) });
@@ -220,6 +246,8 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
       }
       const body = await readBody(req);
       if (body.behavior !== undefined && !isCustomRuleBehavior(body.behavior)) return json(res, 400, { error: "behavior must be allow, ask or deny" });
+      const start = explicitStart(body.startedBy);
+      if (!start.ok) return json(res, 400, STARTED_BY_REFUSAL);
       if (body.when !== undefined && (typeof body.when !== "string" || !body.when.trim())) return json(res, 400, { error: "A rule needs words." });
       if (body.enabled !== undefined && typeof body.enabled !== "boolean") return json(res, 400, { error: "enabled must be true or false" });
       if (body.botId !== undefined && body.botId !== null && !ownsBot(me, body.botId)) return json(res, 400, { error: "a rule applies to one of your bots, or to all of them" });
@@ -235,7 +263,8 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
         body.enabled === false ||
         (nextBehavior !== before.behavior && !(before.behavior === "ask" && nextBehavior === "deny")) ||
         (typeof body.when === "string" && body.when.trim() !== before.when) ||
-        (body.botId !== undefined && body.botId !== before.botId)
+        (body.botId !== undefined && body.botId !== before.botId) ||
+        (start.value !== undefined && (start.value ?? undefined) !== before.startedBy)
       )) {
         const refused = deps.stepUp(auth, me, "rules.remove", {
           op: "update-custom-rule", id,
@@ -282,6 +311,7 @@ export function createCustomRuleRoutes(deps: CustomRuleRouteDeps): RouteHandler 
             const products = pinsOf(me, body.when, body.botId !== undefined ? body.botId as string | null : before.botId);
             return products ? { products } : {};
           })(),
+          ...(start.value !== undefined ? { startedBy: start.value } : {}),
         });
       } catch (error) {
         const status = (error as { status?: number }).status ?? 500;

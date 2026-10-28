@@ -26,6 +26,7 @@ import {
   type CustomRuleDecision,
   type CustomRuleNotice,
   type RuleProduct,
+  type TurnStart,
 } from "../shared/custom-rules.ts";
 
 export type { CustomRuleCandidate, CustomRuleNotice };
@@ -95,6 +96,8 @@ export interface RuleProductContext {
   products?: readonly RuleProduct[];
   /** The gateway's product names are not read yet for this bot. */
   gatewayNamesUnknown?: boolean;
+  /** Who started the turn. Defaults to the person. */
+  startedBy?: TurnStart;
 }
 
 export function reviewCustomRules(rules: readonly CustomRule[], call: CustomRuleCall, botId: string, home: string | undefined = serverHome(), context: RuleProductContext = {}): { decision: CustomRuleDecision; facts: CallFacts } {

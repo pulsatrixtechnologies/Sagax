@@ -375,7 +375,7 @@ import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall, type RuleProductContext } from "./custom-rules-review.ts";
 import { createCustomRulesModelReviewer } from "./custom-rules-model.ts";
-import { compileRule, modelReviewCardEligible, type CustomRule, type RuleProduct } from "../shared/custom-rules.ts";
+import { compileRule, modelReviewCardEligible, turnStartOf, type CustomRule, type RuleProduct, type TurnStart } from "../shared/custom-rules.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
@@ -16036,7 +16036,7 @@ bus.subscribe((event: RuntimeEvent) => {
         }
         : null;
       const customReview = customCall && asker
-        ? reviewCustomRules(customRules.rulesOf(cardAnswerer, asker.id, { ownSandbox: ownSandboxCall }), customCall, asker.id, serverHome(), ruleProductsOf(asker.id))
+        ? reviewCustomRules(customRules.rulesOf(cardAnswerer, asker.id, { ownSandbox: ownSandboxCall }), customCall, asker.id, serverHome(), { ...ruleProductsOf(asker.id), startedBy: turnStartFor(event.threadId) })
         : null;
       const customDecision = customReview?.decision.kind === "allow"
         && (strictCard || guestDriven || safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true)
@@ -16560,6 +16560,7 @@ bus.subscribe((event: RuntimeEvent) => {
               threadId: event.threadId, requestId: event.requestId, botId: asker.id,
               instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId,
               rules: customRules.rulesOf(cardAnswerer, asker.id), local: customDecision, facts: customReview.facts,
+              startedBy: turnStartFor(event.threadId),
               call: { tool: event.mcpTool ?? event.tool, ...(typeof event.input === "string" ? { input: event.input } : {}), summary: event.summary },
               language: languageOfPerson(cardAnswerer),
             }).then(finishReview, () => finishReview({ kind: "none" }));
@@ -30332,6 +30333,7 @@ ROUTES.push(createCustomRuleRoutes({
   ownedBots: botsOwnedBy,
   home: serverHome(),
   products: ruleProductsOfPerson,
+  turnStart: turnStartFor,
   bindingFor: (personId, where) => {
     const message = store.messagesFor(where.threadId).find((row) => row.card?.requestId === where.requestId);
     const card = message?.card;
@@ -30355,7 +30357,7 @@ ROUTES.push(createCustomRuleRoutes({
       tool: card.tool, ...(card.mcpTool ? { mcpTool: card.mcpTool } : {}), ...(card.toolInput ? { input: card.toolInput } : {}), summary: card.subtitle,
       ...(binding ? { command: binding.command, ...(binding.cwd ? { cwd: binding.cwd } : {}), ...(binding.providerInstanceId ? { providerInstanceId: binding.providerInstanceId } : {}) } : {}),
     };
-    return ruleCoversCard(rule, call, bot.id, serverHome(), ruleProductsOf(bot.id)) ? "covered" : "not-covered";
+    return ruleCoversCard(rule, call, bot.id, serverHome(), { ...ruleProductsOf(bot.id), startedBy: turnStartFor(where.threadId) }) ? "covered" : "not-covered";
   },
   markCard: (where, rule) => {
     const message = store.messagesFor(where.threadId).find((row) => row.card?.requestId === where.requestId);
@@ -33243,6 +33245,15 @@ function principalCan(principalId: string | undefined | null, key: PermissionKey
   const person = principals.byId(id);
   if (!person || person.disabledAt !== undefined) return false;
   return can(principalPermissions(id), key);
+}
+/** Who started this turn, for a personal rule's "who started" condition. */
+function turnStartFor(threadId: string): TurnStart {
+  const speaker = turnSpeakers.get(threadId);
+  return turnStartOf({
+    origin: speaker?.origin,
+    routine: speaker?.origin === "peer" && speaker.routine === true,
+    routineLineage: turnRoutineLineage.has(threadId),
+  });
 }
 /** 2026-10-16 security review: whose turn asks, for the owner's own
  * environment (member-environment.ts ownEnvironmentTurnOrigin). Only the
