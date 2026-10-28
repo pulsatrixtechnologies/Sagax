@@ -1,6 +1,114 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "You declined this version. It will never be published.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You declined this version. It will never be published." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous avez refusé cette version. Elle ne sera jamais publiée." } }
+      }
+    },
+    "A newer version of this page is published.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A newer version of this page is published." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une version plus récente de cette page est publiée." } }
+      }
+    },
+    "This page is no longer published. Its old link no longer works.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This page is no longer published. Its old link no longer works." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette page n'est plus publiée. Son ancien lien ne fonctionne plus." } }
+      }
+    },
+    "Page proposed: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Page proposed: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Page proposée : %@" } }
+      }
+    },
+    "Version %lld": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Version %lld" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Version %lld" } }
+      }
+    },
+    "The bot proposes this page. It is not online: check it, choose who can see it, then publish it.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The bot proposes this page. It is not online: check it, choose who can see it, then publish it." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le bot propose cette page. Elle n'est pas en ligne : vérifiez-la, choisissez qui peut la voir, puis publiez-la." } }
+      }
+    },
+    "Expires": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Expires" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Expiration" } }
+      }
+    },
+    "Anyone with the link will see this page, without signing in. Press again to publish.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Anyone with the link will see this page, without signing in. Press again to publish." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toute personne ayant le lien verra cette page, sans se connecter. Appuyez de nouveau pour publier." } }
+      }
+    },
+    "Publish for anyone with the link": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Publish for anyone with the link" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Publier pour toute personne ayant le lien" } }
+      }
+    },
+    "Publish": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Publish" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Publier" } }
+      }
+    },
+    "Turned off by your organization.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Turned off by your organization." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Désactivé par votre organisation." } }
+      }
+    },
+    "Published. Who can see it: %@.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Published. Who can see it: %@." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Publiée. Qui peut la voir : %@." } }
+      }
+    },
+    "Only you, signed in to this server.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Only you, signed in to this server." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous seulement, connecté à ce serveur." } }
+      }
+    },
+    "People signed in to this server.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "People signed in to this server." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les personnes connectées à ce serveur." } }
+      }
+    },
+    "Anyone who has the link, without signing in.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Anyone who has the link, without signing in." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quiconque a le lien, sans se connecter." } }
+      }
+    },
+    "In 1 day": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In 1 day" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dans 1 jour" } }
+      }
+    },
+    "In 7 days": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In 7 days" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dans 7 jours" } }
+      }
+    },
+    "In 30 days": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In 30 days" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dans 30 jours" } }
+      }
+    },
     "Your number: %@": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Your number: %@" } },

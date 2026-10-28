@@ -132,6 +132,8 @@ public struct PublishedPageSummary: Decodable, Hashable, Sendable, Identifiable 
     public var expired: Bool
     public var updatedAt: Double
     public var versions: [PublishedPageVersion]
+    /// The version readers get; nil until one is published.
+    public var currentVersion: Int?
 
     public var isPublished: Bool { status == "published" && !expired }
 
@@ -146,10 +148,11 @@ public struct PublishedPageSummary: Decodable, Hashable, Sendable, Identifiable 
         expired = (try? values.decodeIfPresent(Bool.self, forKey: .expired)) ?? false
         updatedAt = (try? values.decodeIfPresent(Double.self, forKey: .updatedAt)) ?? 0
         versions = (try? values.decodeIfPresent([Lossy<PublishedPageVersion>].self, forKey: .versions))?.compactMap(\.value) ?? []
+        currentVersion = try? values.decodeIfPresent(Int.self, forKey: .currentVersion)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, status, access, expiresAt, url, expired, updatedAt, versions
+        case id, title, status, access, expiresAt, url, expired, updatedAt, versions, currentVersion
     }
 }
 
