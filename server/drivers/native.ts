@@ -6,7 +6,7 @@ import { appendFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { NATIVE_DIR } from "../config.ts";
-import { registerSealedLog, sealLogLines } from "../content-at-rest.ts";
+import { logAppended, registerSealedLog, sealLogLines } from "../content-at-rest.ts";
 import { redactSecrets } from "../redact.ts";
 import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
@@ -77,7 +77,10 @@ export function appendNative(threadId: string, entry: { dir: "in" | "out"; sourc
     // sealed at rest under the thread's key (server/content-at-rest.ts), on
     // disk when this returns, as before; the migration gathers the lines into
     // blocks once the log is quiet
-    appendFileSync(file, `${sealLogLines(file, [record], [JSON.stringify(record)]).join("\n")}\n`, { mode: 0o600 });
+    const line = JSON.stringify(record);
+    const data = `${sealLogLines(file, [record], [line]).join("\n")}\n`;
+    appendFileSync(file, data, { mode: 0o600 });
+    logAppended(file, [line], data);
     // Best-effort size cap (#1280) — same rule as the write itself: never
     // let logging break the run it is observing.
     capThreadLog(file, currentThreadLogCap());

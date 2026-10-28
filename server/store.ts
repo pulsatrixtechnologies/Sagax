@@ -22,6 +22,7 @@ import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, loadBrowserProfileIdAliases } from ".
 import * as mdb from "./message-db.ts";
 import { ThreadCache, type ThreadState } from "./thread-cache.ts";
 import { forgetBotMemoryJournal, journalFile } from "./memory-journal.ts";
+import { forgetLogMemory } from "./content-at-rest.ts";
 import { forgetWorkspaceUsage } from "./workspace-usage.ts";
 import { runCommand, type Command } from "./commands.ts";
 import { workspaceDir } from "./workspace.ts";
@@ -1596,6 +1597,8 @@ export class Store {
       join(EVENTS_DIR, `${threadId}.ndjson`),
       join(NATIVE_DIR, `${threadId}.ndjson`),
     ]) {
+      // what a view kept of it in memory goes too (server/content-at-rest.ts)
+      forgetLogMemory(file);
       try {
         unlinkSync(file);
       } catch {}

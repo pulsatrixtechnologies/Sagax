@@ -244,7 +244,7 @@ try {
     batch.push({ record, line: JSON.stringify(record) });
     if (batch.length === 4) {
       const at = performance.now();
-      const lines = atRest && "sealLogLines" in atRest ? call<string[]>(atRest, "sealLogLines", eventsFile, batch.map((item) => item.record), batch.map((item) => item.line)) : batch.map((item) => item.line);
+      const lines = atRest && "sealLogLines" in atRest ? call<string[]>(atRest, "sealLogLines", eventsFile, batch.map((item) => item.record), batch.map((item) => item.line), undefined, { remember: true }) : batch.map((item) => item.line);
       appendFileSync(eventsFile, `${lines.join("\n")}\n`, { mode: 0o600 });
       busMs += performance.now() - at;
       batch.length = 0;
@@ -252,10 +252,37 @@ try {
   }
   out.busAppendPerEventUs = round((busMs / 20_000) * 1000, 1);
   const inspector = (limit: number) => call(threadEvents, "readThreadEvents", { eventsDir, nativeDir, threadId: "thread1", limit });
+  const busAppend = (count: number, base: number) => {
+    const items = Array.from({ length: count }, (_, k) => {
+      const record = { eventId: `w${base}-${k}`, provider: "bench", providerInstanceId: "p", threadId: "thread1", createdAt: new Date(1_900_000_000_000 + base * 10 + k).toISOString(), turnId: "tw", type: "content.delta", streamKind: "assistant_text", itemId: `w${base}-${k}`, delta: prose(200) };
+      return { record, line: JSON.stringify(record) };
+    });
+    const lines = atRest && "sealLogLines" in atRest ? call<string[]>(atRest, "sealLogLines", eventsFile, items.map((item) => item.record), items.map((item) => item.line), undefined, { remember: true }) : items.map((item) => item.line);
+    const data = `${lines.join("\n")}\n`;
+    appendFileSync(eventsFile, data, { mode: 0o600 });
+    if (atRest && "logAppended" in atRest) call(atRest, "logAppended", eventsFile, items.map((item) => item.line), data);
+  };
+  // a view that polls a log being written: a few lines appended between two reads
+  for (const limit of [300, 2000]) {
+    inspector(limit);
+    const reads: number[] = [];
+    for (let i = 0; i < 20; i++) {
+      for (let k = 0; k < 8; k++) call(native, "appendNative", "thread1", { dir: "out", source: "bench", msg: payload });
+      busAppend(4, limit * 100 + i);
+      const at = performance.now();
+      inspector(limit);
+      reads.push(performance.now() - at);
+    }
+    out[`inspector${limit}WhileWritingMs`] = round(median(reads), 3);
+  }
   out.inspector300LiveMs = round(await time(20, () => inspector(300)), 3);
   out.inspector2000LiveMs = round(await time(20, () => inspector(2000)), 3);
   out.activityToolRunsLiveMs = round(await time(20, () => call(activity, "readToolRuns", eventsDir, "thread1")), 2);
   await settle();
+  // the first read after the migration gathered the log: nothing of it opened yet
+  const cold = performance.now();
+  inspector(2000);
+  out.inspector2000FirstReadMs = round(performance.now() - cold, 2);
   out.inspector300Ms = round(await time(20, () => inspector(300)), 3);
   out.inspector2000Ms = round(await time(20, () => inspector(2000)), 3);
   out.activityToolRunsMs = round(await time(20, () => call(activity, "readToolRuns", eventsDir, "thread1")), 2);

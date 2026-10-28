@@ -4,7 +4,7 @@
 // logs, the reversible migration and its check before every replacement, a
 // Key Vault that stops answering in the middle of it, erasure and the
 // backup's plaintext copy.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
@@ -22,6 +22,7 @@ import {
   exportPlainCopy,
   holdPlain,
   LogReader,
+  forgetLogMemory,
   sealLogLines,
   setAtRestThreadFiles,
   readAtRestSync,
@@ -259,7 +260,8 @@ describe("event logs", () => {
     expect(readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line).p[0].dir)).toEqual(["out", "in"]);
     const { lines } = readRecentLines(file, 10, (value): value is { msg: { text: string } } => Boolean(value));
     expect(lines.map((line) => line.msg.text)).toEqual(["the meadow password", "a second line"]);
-    // a reader that needs only the "in" line opens nothing it drops
+    // a reader that needs only the "in" line opens nothing it drops (read from the disk)
+    forgetLogMemory(file);
     const only = readRecentLines(file, 10, (value): value is { dir: string } => Boolean(value), (projection) => projection.dir !== "in");
     expect(only.lines.map((line) => (line as { msg?: unknown }).msg === undefined)).toEqual([true, false]);
   });
@@ -279,6 +281,29 @@ describe("event logs", () => {
     expect(readFileSync(file, "utf8")).not.toContain("written before the kill");
     const { lines } = readRecentLines(file, 10, (value): value is { msg: { text: string } } => Boolean(value));
     expect(lines.map((line) => line.msg.text)).toEqual(["written before the kill"]);
+  });
+
+  it("serves a view's next read from what it read and what this process appended since, and from the disk once the file changed otherwise", () => {
+    const file = join(NATIVE_DIR, "t8.ndjson");
+    const read = () => readRecentLines(file, 10, (value): value is { msg: { text: string } } => Boolean(value)).lines.map((line) => line.msg.text);
+    appendNative("t8", { dir: "out", source: "test", msg: { text: "one" } });
+    expect(read()).toEqual(["one"]);
+    appendNative("t8", { dir: "out", source: "test", msg: { text: "two" } });
+    expect(read()).toEqual(["one", "two"]);
+    // another writer: the memory no longer matches the file, the disk answers
+    appendFileSync(file, `${JSON.stringify({ at: "x", dir: "in", source: "elsewhere", msg: { text: "three" } })}\n`);
+    expect(read()).toEqual(["one", "two", "three"]);
+  });
+
+  it("keeps what this process just wrote or opened only while its key lives", () => {
+    threadOwners = { t7: { owner: "person-a", confidential: false } };
+    appendNative("t7", { dir: "out", source: "test", msg: { text: "cached orchid" } });
+    const file = join(NATIVE_DIR, "t7.ndjson");
+    const read = () => readRecentLines(file, 10, (value): value is { msg: { text: string } } => Boolean(value)).lines.map((line) => line.msg.text);
+    expect(read()).toEqual(["cached orchid"]);
+    // the person is erased: their key goes, and what was kept opened of it with it
+    eraseContentOwner("person-a");
+    expect(read()).toEqual([]);
   });
 
   it("gathers a log's one-line blocks into blocks once it is quiet, checked line for line", async () => {

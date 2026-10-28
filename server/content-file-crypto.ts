@@ -18,7 +18,7 @@
 // the original line, byte for byte.
 //
 // No key material is ever logged or put in an error message.
-import { createCipheriv, createDecipheriv, randomBytes, randomFillSync, type KeyObject } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomFillSync, type KeyObject } from "node:crypto";
 
 import { ContentSealError, open, seal, type ContentKeyMaterial } from "./content-crypto.ts";
 
@@ -232,8 +232,21 @@ export function blockAad(key: { keyId: string; owner: string }, context: string,
 }
 
 /** The physical lines of one sealed block (no newlines). */
+// block ids from a pool: one random fill per 512 blocks, not one per append
+const idPool = Buffer.alloc((BLOCK_ID_CHARS / 2) * 512);
+let idOffset = idPool.length;
+function nextBlockId(): string {
+  if (idOffset + BLOCK_ID_CHARS / 2 > idPool.length) {
+    randomFillSync(idPool);
+    idOffset = 0;
+  }
+  const id = idPool.toString("hex", idOffset, idOffset + BLOCK_ID_CHARS / 2);
+  idOffset += BLOCK_ID_CHARS / 2;
+  return id;
+}
+
 export function sealBlock(key: FileKey, context: string, lines: readonly string[], projections: readonly Record<string, unknown>[]): string[] {
-  const blockId = randomBytes(BLOCK_ID_CHARS / 2).toString("hex");
+  const blockId = nextBlockId();
   const projection = JSON.stringify(projections);
   const sealed = seal(key.dek, lines.join("\n"), blockAad(key, context, blockId, lines.length, projection)).toString("base64");
   const out: string[] = [];

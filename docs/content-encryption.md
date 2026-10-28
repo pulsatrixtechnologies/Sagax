@@ -273,6 +273,18 @@ bus); a log appended a line at a time (the native tee) has blocks of one,
 which the migration gathers into blocks of 64, checked line for line before
 it replaces anything, once the log has been quiet for a minute.
 
+**A view reads from memory what it just read**: the inspector and Activity
+read a log's tail from the disk once, opening only the blocks the range
+covers; that tail, opened, stays in this process's memory (at most 2,000
+lines a log, 16 MB in all, 5 minutes) with what this process appends to the
+log since (the writer holds that text already), so the view's next read of
+a log being written needs neither the disk nor the cipher. Blocks a reader
+opened are kept the same way (16 MB, 5 minutes) and the content keys stay
+unwrapped in memory as before. A file changed by anything else (another
+writer, a rotation, the migration) no longer matches and is read from the
+disk again; a key that changes or goes, an erasure and a deleted thread
+empty that memory; the migration's own checks always read the disk.
+
 **Every reader opens both kinds**: `readAtRestSync`, `readMemoryText`,
 `atRestStream` (`openMessageFile(...).stream()`), `LogReader`. A plain
 file reads exactly as before.
@@ -353,45 +365,47 @@ kept originals are never exported. A restore brings plain files, which the
 destination's migration seals under its own keys.
 
 **Still plain**: a file while a turn holds it (and up to 10 minutes after;
-an opened conversation with no turn, 10 minutes);
+an opened conversation with no turn, 10 minutes); in the server's memory only,
+the tail of a log a view read and the blocks it opened, for 5 minutes;
 the copies staged on a person's computer or in their server environment;
 conversation work folders (`task-workspaces/`) and the engines' own
 transcripts; logs that carry no content by design (usage ledger, problem
 log, remote-control and terminal audits, the decision model's log).
 
 **Performance** (`node --experimental-strip-types scripts/bench-content-at-rest.ts --before <main checkout>`,
-synthetic text, medians of 4 runs, macOS arm64, Node 26, 2026-10-27, a
-loaded shared host: compare columns, not values; "before" is main without
-this change, "on" reads what the migration already sealed; logs written as
-the server writes them, every line on disk when its append returns: the
-native tee a line at a time, the bus 4 events per append):
+synthetic text, macOS arm64, Node 26, 2026-10-27. Paired: each pass runs
+main, off and on one after the other in the same minute, 6 passes; medians,
+and the ratio is the median of each pass's on / main. "On" reads what the
+migration already sealed; logs written as the server writes them, every line
+on disk when its append returns: the native tee a line at a time, the bus 4
+events per append; "while being written" appends 8 native lines and a bus
+batch between two reads of a view):
 
-| Measure | Before | Off | On |
-|---|---:|---:|---:|
-| memory write (8 KB, index included) | 7.2 ms | 7.8 ms | 7.2 ms |
-| memory read (MEMORY.md) | 0.022 ms | 0.025 ms | 0.044 ms |
-| memory in the prompt | 0.81 ms | 0.77 ms | 0.83 ms |
-| memory search | 0.39 ms | 0.42 ms | 0.44 ms |
-| what a turn waits for memory (30 sealed files) | n/a | 0.016 ms | 0.012 ms |
-| upload 5 MB / 20 MB | 11.7 / 32.8 ms | 13.7 / 35.5 ms | 9.7 / 32.1 ms |
-| download 5 MB / 20 MB | 7.8 / 20.6 ms | 7.3 / 24.2 ms | 9.6 / 31.3 ms |
-| what a turn waits for a sealed 20 MB attachment | n/a | 0.05 ms | 0.12 ms |
-| native tee append, per line (sealed, on disk) | 116 µs | 76 µs | 142 µs |
-| bus append, per event (4 per append) | 23 µs | 27 µs | 41 µs |
-| inspector, 300 lines, log being written | 0.88 ms | 0.97 ms | 3.8 ms |
-| inspector, 2,000 lines, log being written | 12.8 ms | 5.7 ms | 56.6 ms |
-| Activity tool runs, log being written | 3.8 ms | 2.5 ms | 3.6 ms |
-| inspector, 300 lines, log quiet (gathered) | 0.69 ms | 0.77 ms | 1.3 ms |
-| inspector, 2,000 lines, log quiet (gathered) | 10.2 ms | 7.3 ms | 11.9 ms |
-| Activity tool runs, log quiet (gathered) | 3.5 ms | 2.1 ms | 2.8 ms |
+| Measure | Main | Off | On | On / main |
+|---|---:|---:|---:|---:|
+| memory write (8 KB, index included) | 7.8 ms | 7.5 ms | 7.3 ms | 0.99 |
+| memory read (MEMORY.md) | 0.018 ms | 0.029 ms | 0.009 ms | 0.47 |
+| memory in the prompt | 0.67 ms | 0.74 ms | 0.71 ms | 0.96 |
+| memory search | 0.32 ms | 0.35 ms | 0.36 ms | 1.12 |
+| what a turn waits for memory / a sealed 20 MB attachment | n/a | 0.008 / 0.04 ms | 0.006 / 0.07 ms | |
+| upload 1 MB / 20 MB | 1.3 / 10.1 ms | 4.4 / 10.5 ms | 1.6 / 10.4 ms | 1.27 / 1.02 |
+| download 1 MB / 20 MB | 0.8 / 7.0 ms | 0.9 / 6.7 ms | 1.1 / 8.7 ms | 1.49 / 1.26 |
+| inspector 300 lines, log being written | 0.60 ms | 0.64 ms | 0.53 ms | 0.91 |
+| inspector 2,000 lines, log being written | 5.4 ms | 3.8 ms | 2.8 ms | 0.53 |
+| inspector 300 / 2,000 lines, log quiet | 0.53 / 5.3 ms | 0.51 / 3.6 ms | 0.41 / 2.7 ms | 0.76 / 0.51 |
+| Activity, being written / quiet | 2.6 / 2.6 ms | 1.6 / 1.6 ms | 1.2 / 1.2 ms | 0.48 / 0.45 |
+| inspector 2,000 lines, first read after the migration gathered the log | 5.1 ms | 3.4 ms | 28 ms | 5.6 |
+| native tee append, per line (calm host, 3 pairs) | 32-35 µs | | 40-42 µs | 1.19 |
+| bus append, per event (calm host, 3 pairs) | 7-16 µs | | 9.5-10 µs | 1.3 |
 
-Migration (640 files and 20 logs, 57 MB): sealed in 10-11 s on this loaded
-host (5-6 MB/s, paced), event-loop delay p99 4-5 ms, longest 20-22 ms; back
-to plain in 10-16 s.
+Migration (640 files and 20 logs, 57 MB): 8 s (7 MB/s, paced), event-loop
+delay p99 2 ms, longest 6 ms; back to plain in 8 s.
 
-A turn waits for no opening and every file read and write is at main's
-level. Sealing a log line on its own costs about 5 µs on top of the write;
-reading one opens it on its own (about 5 µs a line): a log still being
-written, a line at a time, reads several times slower than main until the
-migration gathers it, a minute after it goes quiet; then reads are close to
-main.
+Every read a view repeats is at or below main (the tail and the blocks it
+opened stay in memory, and the tail reader no longer rebuilds its window at
+every chunk). Still above main: an append, by one AES-GCM per append and its
+base64 framing (+7 µs a native line, +2 µs a bus event: the price of a line
+sealed and on disk when the append returns); the first read of a log the
+migration just gathered, which opens every block it shows (once, then
+memory); and a sealed attachment's download (+0.3 ms on 1 MB, +1.7 ms on
+20 MB), which opens its chunks as it streams.

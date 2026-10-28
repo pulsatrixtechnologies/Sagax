@@ -13,7 +13,7 @@
 // thousands of native lines and the panel wants the recent ones first.
 import { closeSync, fstatSync, openSync, readSync, type Stats } from "node:fs";
 import { join } from "node:path";
-import { isProjectedRecord, LogReader } from "./content-at-rest.ts";
+import { isProjectedRecord, LogReader, logTail, rememberTail } from "./content-at-rest.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import type { InspectorEntry, InspectorPage, NativeRecord } from "../shared/inspector.ts";
 
@@ -119,6 +119,20 @@ export function readRecentLines<T>(file: string, limit: number, valid: RecordGua
   try {
     const stat = fstatSync(fd);
     const total = countLines(fd, file, stat);
+    // A sealed log a view read a moment ago, unchanged but for this
+    // process's own appends: its newest lines are in memory, opened
+    // (server/content-at-rest.ts), and need no disk read nor opening.
+    const tail = logTail(file, stat);
+    if (tail && (tail.fromStart || tail.lines.length >= limit)) {
+      // newest first, as parseRecent does, straight from the kept lines
+      const kept: T[] = [];
+      for (let index = tail.lines.length - 1; index >= 0 && kept.length < limit; index--) {
+        let value: unknown;
+        try { value = JSON.parse(tail.lines[index]!); } catch { continue; }
+        if (valid(value)) kept.push(value);
+      }
+      if (kept.length >= limit || tail.fromStart) return { lines: kept.reverse(), total };
+    }
     let position = stat.size;
     // the window as chunks, newest last; joined and decoded only when it
     // holds enough lines to parse (never once per chunk)
@@ -149,6 +163,24 @@ export function readRecentLines<T>(file: string, limit: number, valid: RecordGua
     }
     if (lines.length === 0 && held > 0) {
       lines = parseRecent(reader, windowText(), position === 0, limit, valid);
+    }
+    // a sealed log: its tail, opened, kept for the next read of this view
+    if (held > 0 && reader.sawSealed) {
+      const window = windowText().split("\n");
+      const fromStart = position === 0;
+      if (!fromStart) window.shift();
+      // a file that ends mid-line (a write in progress) is not kept
+      const complete = window.at(-1) === "";
+      if (complete) window.pop();
+      const originals: string[] = [];
+      for (let index = 0; index < window.length; index++) {
+        let raw: string | null | undefined;
+        try { raw = reader.raw(window, index); } catch { raw = null; }
+        if (typeof raw === "string") originals.push(raw);
+        else if (raw === undefined) originals.length = 0;
+        else { originals.length = 0; break; }
+      }
+      if (complete && originals.length) rememberTail(file, stat, originals, fromStart && originals.length === window.length);
     }
     return { lines, total };
   } finally {

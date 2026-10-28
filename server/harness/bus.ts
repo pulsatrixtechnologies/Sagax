@@ -14,7 +14,7 @@
 import { basename, join } from "node:path";
 
 import { EVENTS_DIR } from "../config.ts";
-import { appendLog, registerSealedLog, sealLogLines } from "../content-at-rest.ts";
+import { appendLog, logAppended, registerSealedLog, sealLogLines } from "../content-at-rest.ts";
 import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { redactSecrets } from "../redact.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
@@ -334,7 +334,10 @@ export class EventBus {
     // batch is one block, on disk when the append returns, as before
     const lines = sealLogLines(file, records, plain);
     try {
-      await this.appendLog(file, lines.join("\n") + "\n", { mode: 0o600 });
+      const data = lines.join("\n") + "\n";
+      await this.appendLog(file, data, { mode: 0o600 });
+      // a view of this log reads what was just written from memory (server/content-at-rest.ts)
+      logAppended(file, plain, data);
       if (warning) this.pendingLogWarnings.delete(threadId);
       // Best-effort size cap (#1280): an open thread's canonical log
       // otherwise grows without bound for as long as the thread stays open.

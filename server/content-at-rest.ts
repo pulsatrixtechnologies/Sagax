@@ -225,7 +225,36 @@ export function openIfSealed(bytes: Buffer, path: string): Buffer {
 /** readFileSync for a file that may be sealed (small files: memory, a
  * manifest, a picture). Throws like readFileSync; ContentErased (ENOENT)
  * for erased content, ContentKeyUnavailable (503) when its key is locked. */
+// Small sealed files a reader just opened (MEMORY.md is read at every turn):
+// kept opened in memory while the file is unchanged, at most 5 minutes and
+// 8 MB in all, emptied with the rest when a key changes or goes.
+const OPENED_MAX_FILE = 256 * 1024;
+const OPENED_BYTES = 8 * 1024 * 1024;
+const opened = new Map<string, { ino: number; size: number; mtimeMs: number; at: number; plain: Buffer }>();
+let openedBytes = 0;
+
+function forgetOpened(): void {
+  opened.clear();
+  openedBytes = 0;
+}
+
 export function readAtRestSync(path: string, fd?: number): Buffer {
+  if (fd === undefined && rootOf(path)) {
+    let stat: Stats | null = null;
+    try { stat = statSync(path); } catch { stat = null; }
+    const known = stat ? opened.get(path) : undefined;
+    if (stat && known && known.ino === stat.ino && known.size === stat.size && known.mtimeMs === stat.mtimeMs && Date.now() - known.at < BLOCK_CACHE_MS) return known.plain;
+    const bytes = readFileSync(path);
+    const plain = openIfSealed(bytes, path);
+    if (stat && plain !== bytes && bytes.length === stat.size && bytes.length <= OPENED_MAX_FILE) {
+      const old = opened.get(path);
+      if (old) openedBytes -= old.plain.length;
+      opened.set(path, { ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, at: Date.now(), plain });
+      openedBytes += plain.length;
+      for (const [name, entry] of opened) { if (openedBytes <= OPENED_BYTES) break; opened.delete(name); openedBytes -= entry.plain.length; }
+    }
+    return plain;
+  }
   return openIfSealed(readFileSync(fd ?? path), path);
 }
 
@@ -807,13 +836,146 @@ const BLOCK_COMPACT = 64;
 /** Records as the physical lines to append (no newlines): consecutive
  * records under one key sealed as one block, a record without a key (off,
  * not available yet) as its plain JSON, as before. */
-export function sealLogLines(file: string, records: readonly Record<string, unknown>[], lines: readonly string[], blockMax = BLOCK_MAX): string[] {
+// The blocks a reader may ask for again soon, opened (in memory only): what
+// a writer of this process just sealed (it held the text already) and what
+// a reader just opened, for as long as a view of the log lasts. Bounded in
+// bytes and in time, emptied when a key changes or goes, and a file's
+// entries go when the migration rewrites it. Never consulted by the
+// migration's own read-back, which always opens from the disk.
+const BLOCK_CACHE_BYTES = 16 * 1024 * 1024;
+const BLOCK_CACHE_MS = 5 * 60_000;
+const blockCache = new Map<string, { lines: string[]; bytes: number; at: number; file: string }>();
+let blockCacheBytes = 0;
+
+function cacheBlock(blockId: string, file: string, lines: string[]): void {
+  const bytes = lines.reduce((sum, line) => sum + line.length * 2, 64);
+  if (bytes > BLOCK_CACHE_BYTES / 8) return;
+  const old = blockCache.get(blockId);
+  if (old) { blockCacheBytes -= old.bytes; blockCache.delete(blockId); }
+  blockCache.set(blockId, { lines, bytes, at: Date.now(), file });
+  blockCacheBytes += bytes;
+  const now = Date.now();
+  for (const [id, entry] of blockCache) {
+    if (blockCacheBytes <= BLOCK_CACHE_BYTES && now - entry.at < BLOCK_CACHE_MS) break;
+    blockCache.delete(id);
+    blockCacheBytes -= entry.bytes;
+  }
+}
+
+function cachedBlock(blockId: string): string[] | null {
+  const entry = blockCache.get(blockId);
+  if (!entry) return null;
+  if (Date.now() - entry.at >= BLOCK_CACHE_MS) { blockCache.delete(blockId); blockCacheBytes -= entry.bytes; return null; }
+  // most recently used last
+  blockCache.delete(blockId);
+  entry.at = Date.now();
+  blockCache.set(blockId, entry);
+  return entry.lines;
+}
+
+function forgetCachedBlocks(file?: string): void {
+  forgetTails(file);
+  if (!file) forgetOpened();
+  if (!file) { blockCache.clear(); blockCacheBytes = 0; return; }
+  for (const [id, entry] of blockCache) if (entry.file === file) { blockCache.delete(id); blockCacheBytes -= entry.bytes; }
+}
+
+// The tail of a log a view of it just read, opened (in memory only, for as
+// long as the view lasts): the next read of an unchanged file, or of one
+// this process only appended to since, is served from here instead of the
+// disk. Bounded per file and in all, emptied with the block cache.
+const TAIL_LINES = 2_000;
+const TAIL_BYTES = 16 * 1024 * 1024;
+interface Tail { ino: number; size: number; lines: string[]; fromStart: boolean; at: number; bytes: number }
+const tails = new Map<string, Tail>();
+let tailBytes = 0;
+
+function forgetTails(file?: string): void {
+  if (!file) { tails.clear(); tailBytes = 0; return; }
+  const entry = tails.get(file);
+  if (entry) { tails.delete(file); tailBytes -= entry.bytes; }
+}
+
+function trimTail(entry: Tail): void {
+  // trimmed in steps, not at every append: an append stays O(1)
+  if (entry.lines.length < TAIL_LINES * 1.5) return;
+  const drop = Math.max(0, entry.lines.length - TAIL_LINES);
+  if (drop) {
+    for (let i = 0; i < drop; i++) entry.bytes -= entry.lines[i]!.length * 2;
+    tailBytes -= entry.lines.slice(0, drop).reduce((sum, line) => sum + line.length * 2, 0);
+    entry.lines = entry.lines.slice(drop);
+    entry.fromStart = false;
+  }
+}
+
+function storeTail(file: string, entry: Tail): void {
+  forgetTails(file);
+  tails.set(file, entry);
+  tailBytes += entry.bytes;
+  const now = Date.now();
+  for (const [name, other] of tails) {
+    if (tailBytes <= TAIL_BYTES && now - other.at < BLOCK_CACHE_MS) break;
+    tails.delete(name);
+    tailBytes -= other.bytes;
+  }
+}
+
+/** What a view last read of `file` (its newest lines, opened), when the
+ * file is still exactly what that was plus what this process appended. */
+export function logTail(file: string, stat: { ino: number; size: number }): { lines: string[]; fromStart: boolean } | null {
+  const entry = tails.get(file);
+  if (!entry) return null;
+  if (entry.ino !== stat.ino || entry.size !== stat.size || Date.now() - entry.at >= BLOCK_CACHE_MS) { forgetTails(file); return null; }
+  entry.at = Date.now();
+  tails.delete(file);
+  tails.set(file, entry);
+  return { lines: entry.lines, fromStart: entry.fromStart };
+}
+
+/** A view read these newest lines of `file` (complete, opened, ending at the end of the file). */
+export function rememberTail(file: string, stat: { ino: number; size: number }, lines: string[], fromStart: boolean): void {
+  if (exported) return;
+  const kept = lines.length > TAIL_LINES ? lines.slice(-TAIL_LINES) : lines;
+  const entry: Tail = { ino: stat.ino, size: stat.size, lines: kept, fromStart: fromStart && kept.length === lines.length, at: Date.now(), bytes: kept.reduce((sum, line) => sum + line.length * 2, 64) };
+  if (entry.bytes > TAIL_BYTES / 4) return;
+  storeTail(file, entry);
+}
+
+/** This process appended `lines` (originals) as `bytes` bytes to `file`. */
+function appendedToTail(file: string, lines: readonly string[], bytes: number): void {
+  const entry = tails.get(file);
+  if (!entry) return;
+  entry.size += bytes;
+  for (const line of lines) entry.lines.push(line);
+  const added = lines.reduce((sum, line) => sum + line.length * 2, 0);
+  entry.bytes += added;
+  tailBytes += added;
+  trimTail(entry);
+}
+
+/** A writer's append of a sealed log is done: what it wrote goes to the
+ * view's memory too (the writer holds the text already). */
+export function logAppended(file: string, originals: readonly string[], data: string): void {
+  appendedToTail(file, originals, Buffer.byteLength(data, "utf8"));
+}
+
+/** A log removed (its thread deleted): what memory kept of it goes too. */
+export function forgetLogMemory(file: string): void {
+  forgetCachedBlocks(file);
+}
+
+export function sealLogLines(file: string, records: readonly Record<string, unknown>[], lines: readonly string[], blockMax = BLOCK_MAX, options: { remember?: boolean } = {}): string[] {
   const spec = logOf(file);
   if (!spec) return [...lines];
   const out: string[] = [];
   let run: { key: FileKey; lines: string[]; projections: Record<string, unknown>[] } | null = null;
   const flush = () => {
-    if (run) out.push(...sealBlock(run.key, logContext(file), run.lines, run.projections));
+    if (run) {
+      const sealed = sealBlock(run.key, logContext(file), run.lines, run.projections);
+      // the writer holds this text already: a reader of this process need not open it again
+      if (options.remember) cacheBlock(sealed[sealed.length - 1]!.slice(BLOCK_PREFIX.length, BLOCK_PREFIX.length + BLOCK_ID_CHARS), file, run.lines);
+      out.push(...sealed);
+    }
     run = null;
   };
   const fileKey = spec.perFile ? sealingKeySafe(spec.scope(records[0] ?? {}, file)) : undefined;
@@ -866,8 +1028,16 @@ export class LogReader {
   private readonly blocks = new Map<string, { last: NonNullable<BlockLine["last"]>; projections: Record<string, unknown>[] | null; lines: string[] | null | "erased" }>();
   /** a sealed record was met whose key is locked on this launch */
   locked = false;
+  /** a sealed block line was met */
+  sawSealed = false;
 
-  constructor(file: string, projectionOnly?: (projection: Record<string, unknown>) => boolean) {
+  private readonly file: string;
+  /** read every block from the disk (the migration's checks), never the cache */
+  private readonly fromDisk: boolean;
+
+  constructor(file: string, projectionOnly?: (projection: Record<string, unknown>) => boolean, options: { fromDisk?: boolean } = {}) {
+    this.file = file;
+    this.fromDisk = options.fromDisk === true;
     this.context = logContext(file);
     this.projectionOnly = projectionOnly;
   }
@@ -916,6 +1086,7 @@ export class LogReader {
   private locate(lines: readonly string[], index: number): { position: number; blockId: string; last: NonNullable<BlockLine["last"]> } | null | undefined {
     const end = this.endsOf(lines)[index]!;
     if (end === -2) return undefined;
+    this.sawSealed = true;
     if (end === -1) return null;
     const raw = lines[end]!;
     const blockId = raw.slice(BLOCK_PREFIX.length, BLOCK_PREFIX.length + BLOCK_ID_CHARS);
@@ -937,6 +1108,10 @@ export class LogReader {
   }
 
   private openNow(entry: { last: NonNullable<BlockLine["last"]>; lines: string[] | null | "erased" }, blockId: string): string[] | "erased" {
+    if (!this.fromDisk) {
+      const cached = cachedBlock(blockId);
+      if (cached && cached.length === entry.last.n) return (entry.lines = cached);
+    }
     const key = keyById(entry.last.keyId);
     if (key === "destroyed") return (entry.lines = "erased");
     if (!key) { this.locked = true; throw new ContentKeyUnavailable(); }
@@ -944,6 +1119,7 @@ export class LogReader {
     try { lines = openBlock(key, this.context, blockId, entry.last); }
     catch { lines = "erased"; }
     entry.lines = lines;
+    if (lines !== "erased" && !this.fromDisk) cacheBlock(blockId, this.file, lines);
     return lines;
   }
 
@@ -1023,7 +1199,7 @@ const LOG_IDLE_MS = 60_000;
  * `[original, kept]` pairs, where `kept` is set for a line copied as it is
  * (erased, locked, or a block cut by the window: never regrouped). */
 async function* originalsOf(file: string, start: number, end: number, onLocked: () => void, contextFile = file): AsyncGenerator<{ raw: string; original: string | null; record: Record<string, unknown> | null }> {
-  const reader = new LogReader(contextFile);
+  const reader = new LogReader(contextFile, undefined, { fromDisk: true });
   let pending: string[] = [];
   const emit = function* (lines: string[], complete: boolean) {
     // keep the lines of a block whose end is not here yet
@@ -1149,7 +1325,7 @@ export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: Re
       const tailLines = tail.split("\n");
       const torn = tailLines.pop()!;
       if (tailLines.length) {
-        const reader = new LogReader(file);
+        const reader = new LogReader(file, undefined, { fromDisk: true });
         const items = tailLines.map((raw, i) => {
           let original: string | null | undefined;
           try { original = reader.raw(tailLines, i); } catch { locked = true; original = null; }
@@ -1158,7 +1334,7 @@ export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: Re
           return { raw, original: typeof original === "string" ? original : null, record };
         });
         const rewritten = rewriteLines(spec, file, items, on, keep);
-        const check = new LogReader(file);
+        const check = new LogReader(file, undefined, { fromDisk: true });
         for (let i = 0; i < rewritten.length; i++) {
           let back: string | null | undefined;
           try { back = check.raw(rewritten, i); } catch { back = null; }
@@ -1177,6 +1353,8 @@ export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: Re
       await out.close();
       out = null;
       renameSync(temp, file);
+      // its old blocks are gone: so is what was kept of them
+      forgetCachedBlocks(file);
       return { outcome: "done" as const, plainLeft: keep.plain || locked };
     } catch {
       return { outcome: "skipped" as const, plainLeft: keep.plain || locked };
@@ -1198,7 +1376,7 @@ export function migrateLogFileSync(file: string): ReplaceOutcome {
   const text = readFileSync(file, "utf8");
   const lines = text.split("\n");
   const torn = lines.pop()!;
-  const reader = new LogReader(file);
+  const reader = new LogReader(file, undefined, { fromDisk: true });
   const items = lines.map((raw, i) => {
     let original: string | null | undefined;
     try { original = reader.raw(lines, i); } catch { original = null; }
@@ -1207,7 +1385,7 @@ export function migrateLogFileSync(file: string): ReplaceOutcome {
     return { raw, original: typeof original === "string" ? original : null, record };
   });
   const rewritten = rewriteLines(spec, file, items, contentEncryptionOn(), { plain: false });
-  const check = new LogReader(file);
+  const check = new LogReader(file, undefined, { fromDisk: true });
   for (let i = 0; i < rewritten.length; i++) {
     let back: string | null | undefined;
     try { back = check.raw(rewritten, i); } catch { back = null; }
@@ -1224,6 +1402,7 @@ export function migrateLogFileSync(file: string): ReplaceOutcome {
     const now = lstatSync(file);
     if (!sameFile(before, now)) return "changed";
     renameSync(temp, file);
+    forgetCachedBlocks(file);
     return "done";
   } catch {
     return "skipped";
@@ -1338,9 +1517,10 @@ function scheduleAtRest(delay = PAUSE_MS): void {
 }
 
 onContentAtRest({
-  changed: () => { seen.clear(); logSeen.clear(); scheduleAtRest(); },
-  beforeErase: (owner, keyIds) => resealBeforeErase(owner, keyIds),
-  moved: (threadIds, botIds) => resealMoved(threadIds, botIds),
+  // a key changed or goes: nothing opened under the old ones stays in memory
+  changed: () => { seen.clear(); logSeen.clear(); forgetCachedBlocks(); scheduleAtRest(); },
+  beforeErase: (owner, keyIds) => { forgetCachedBlocks(); resealBeforeErase(owner, keyIds); },
+  moved: (threadIds, botIds) => { forgetCachedBlocks(); resealMoved(threadIds, botIds); },
 });
 
 let threadFiles: (threadId: string) => string[] = () => [];
@@ -1729,6 +1909,7 @@ export function resetAtRestState(): void {
   scopeHints.clear();
   seen.clear();
   logSeen.clear();
+  forgetCachedBlocks();
   if (timer) { clearTimeout(timer); timer = null; }
   graceMs = Number.isInteger(graceFromEnv) && graceFromEnv >= 0 ? graceFromEnv : GRACE_MS;
 }
