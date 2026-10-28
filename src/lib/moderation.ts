@@ -7,8 +7,41 @@
 // the desktop and the phone agree; this module keeps one copy for the page
 // and hides nothing by itself: the transcript asks `isBlockedLine`.
 import { useSyncExternalStore } from "react";
-import { api, type ConfigStatus, type Group, type Message } from "@/state/store";
 import { otherAuthorName } from "@/lib/viewer";
+
+/** The store owns `api`. It binds that function once, so this module does
+ * not import the store (#1381). */
+export type ModerationApi = <T>(
+  path: string,
+  init?: RequestInit & { timeoutMs?: number; stepUpTry?: "recent" | "fresh" },
+) => Promise<T>;
+
+let boundApi: ModerationApi | null = null;
+
+export function bindModerationApi(next: ModerationApi): void {
+  boundApi = next;
+}
+
+function callApi<T>(path: string, init?: Parameters<ModerationApi>[1]): Promise<T> {
+  if (!boundApi) throw new Error("moderation api is not bound");
+  return boundApi<T>(path, init);
+}
+
+type LineMessage = Parameters<typeof otherAuthorName>[0];
+type LineConfig = Parameters<typeof otherAuthorName>[1];
+
+/** The only group fields a blocked direct conversation needs. */
+type BlockedDmGroup = {
+  threadId?: string;
+  peopleDm?: boolean;
+  humanIds?: readonly string[];
+  tasks?: readonly { threadId?: string }[] | null;
+};
+
+type BlockedDmState = {
+  groups: readonly BlockedDmGroup[];
+  config: { viewer?: { principalId?: string | null } | null } | null;
+};
 
 export const REPORT_REASONS = ["harassment", "hate", "sexual", "violence", "spam", "privacy", "other"] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
@@ -52,7 +85,7 @@ export interface TermsStatus {
 /** The person behind another person's line, or null: your own lines, a
  * bot's, and a line nobody is named on. The key is the sender id the
  * server wrote (lowercased), the one the blocked list holds. */
-export function personLineAuthor(message: Pick<Message, "role" | "sender"> & { id?: string }, config: ConfigStatus | null | undefined): { id: string; name: string } | null {
+export function personLineAuthor(message: LineMessage, config: LineConfig): { id: string; name: string } | null {
   if (message.role !== "user") return null;
   const name = otherAuthorName(message, config);
   if (name === null) return null;
@@ -81,7 +114,7 @@ function subscribe(listener: () => void): () => void {
  * older server without the route keeps an empty list. */
 export async function loadBlockedPeople(): Promise<void> {
   try {
-    const answer = await api<{ people?: BlockedPerson[] }>("/api/me/blocks");
+    const answer = await callApi<{ people?: BlockedPerson[] }>("/api/me/blocks");
     publish(Array.isArray(answer.people) ? answer.people : []);
   } catch {
     /* an older server, or nobody signed in: nothing is folded away */
@@ -98,14 +131,14 @@ export function isBlockedId(people: readonly BlockedPerson[], id: string | null 
 }
 
 /** Whether this line is from someone the viewer blocked. */
-export function isBlockedLine(message: Pick<Message, "role" | "sender"> & { id?: string }, config: ConfigStatus | null | undefined, people: readonly BlockedPerson[]): boolean {
+export function isBlockedLine(message: LineMessage, config: LineConfig, people: readonly BlockedPerson[]): boolean {
   if (!people.length) return false;
   const author = personLineAuthor(message, config);
   return author ? isBlockedId(people, author.id) : false;
 }
 
 export async function blockPerson(person: { id: string; name: string }): Promise<void> {
-  const answer = await api<{ people: BlockedPerson[] }>("/api/me/blocks", {
+  const answer = await callApi<{ people: BlockedPerson[] }>("/api/me/blocks", {
     method: "POST",
     body: JSON.stringify({ id: person.id, name: person.name }),
   });
@@ -113,13 +146,13 @@ export async function blockPerson(person: { id: string; name: string }): Promise
 }
 
 export async function unblockPerson(id: string): Promise<void> {
-  const answer = await api<{ people: BlockedPerson[] }>(`/api/me/blocks/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const answer = await callApi<{ people: BlockedPerson[] }>(`/api/me/blocks/${encodeURIComponent(id)}`, { method: "DELETE" });
   publish(answer.people);
 }
 
 /** A direct conversation between two people whose other person this viewer
  * blocked: its new-message notice stays quiet. */
-export function blockedDmSender(threadId: string, state: { groups: readonly Pick<Group, "threadId" | "tasks" | "peopleDm" | "humanIds">[]; config: ConfigStatus | null }): boolean {
+export function blockedDmSender(threadId: string, state: BlockedDmState): boolean {
   if (!blocked.length || !threadId) return false;
   const group = state.groups.find((entry) => entry.threadId === threadId || entry.tasks?.some((task) => task.threadId === threadId));
   if (!group?.peopleDm) return false;
@@ -132,7 +165,7 @@ export function blockedDmSender(threadId: string, state: { groups: readonly Pick
 
 export async function reportMessage(input: { threadId: string; messageId: string; reason: ReportReason; note?: string }): Promise<void> {
   const note = input.note?.trim();
-  await api(`/api/threads/${encodeURIComponent(input.threadId)}/messages/${encodeURIComponent(input.messageId)}/report`, {
+  await callApi(`/api/threads/${encodeURIComponent(input.threadId)}/messages/${encodeURIComponent(input.messageId)}/report`, {
     method: "POST",
     body: JSON.stringify({ reason: input.reason, ...(note ? { note } : {}) }),
   });
@@ -150,12 +183,12 @@ export function onReportsChanged(listener: () => void): () => void {
 
 /** Admins: every report, newest first. */
 export async function fetchReports(): Promise<ModerationReport[]> {
-  const answer = await api<{ reports?: ModerationReport[] }>("/api/moderation/reports");
+  const answer = await callApi<{ reports?: ModerationReport[] }>("/api/moderation/reports");
   return Array.isArray(answer.reports) ? answer.reports : [];
 }
 
 export async function resolveReport(id: string): Promise<ModerationReport> {
-  const answer = await api<{ report: ModerationReport }>(`/api/moderation/reports/${encodeURIComponent(id)}/resolve`, { method: "POST" });
+  const answer = await callApi<{ report: ModerationReport }>(`/api/moderation/reports/${encodeURIComponent(id)}/resolve`, { method: "POST" });
   return answer.report;
 }
 
@@ -164,14 +197,14 @@ export async function resolveReport(id: string): Promise<ModerationReport> {
 /** Null when the server has no such route (an older server): nothing to ask. */
 export async function fetchTerms(): Promise<TermsStatus | null> {
   try {
-    return await api<TermsStatus>("/api/me/terms");
+    return await callApi<TermsStatus>("/api/me/terms");
   } catch {
     return null;
   }
 }
 
 export async function acceptTerms(version: string): Promise<TermsStatus> {
-  return api<TermsStatus>("/api/me/terms", {
+  return callApi<TermsStatus>("/api/me/terms", {
     method: "POST",
     body: JSON.stringify({ version }),
   });

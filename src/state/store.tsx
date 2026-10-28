@@ -100,7 +100,9 @@ import { ThreadPrefetchContext } from "./thread-prefetch";
 import { createThreadPrefetcher, ThreadPageCache, type ThreadPage } from "@/lib/thread-page-cache";
 import { ARTIFACTS_EVENT } from "@/lib/artifact-events";
 import { makeConfidentialBody } from "@/lib/confidential-thread";
-import { blockedDmSender, notifyReportsChanged } from "@/lib/moderation";
+import { bindModerationApi, blockedDmSender, notifyReportsChanged } from "@/lib/moderation";
+
+bindModerationApi(api);
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);

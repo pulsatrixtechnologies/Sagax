@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ConfigStatus, Message } from "@/state/store";
-import { blockPerson, blockedDmSender, isBlockedId, isBlockedLine, personLineAuthor, unblockPerson } from "./moderation";
+import { api, type ConfigStatus, type Message } from "@/state/store";
+import { bindModerationApi, blockPerson, blockedDmSender, isBlockedId, isBlockedLine, personLineAuthor, unblockPerson } from "./moderation";
+
+bindModerationApi(api);
 
 const config = { viewer: { operator: false, principalId: "pr_alex", email: "alex@example.test", name: "Alex", role: "member", canCreateBots: true } } as unknown as ConfigStatus;
 const line = (fields: Partial<Message>): Message => ({ id: "m-1", role: "user", kind: "text", at: 1, text: "hi", ...fields }) as Message;
