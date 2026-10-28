@@ -2815,9 +2815,14 @@ function activeOrigin() {
 }
 
 
+// The artifact windows the Window menu names (set once they exist, below).
+let artifactWindowsMenu = { entries: () => [], show: () => false };
+
 function refreshApplicationMenu() {
   Menu.setApplicationMenu(
     buildApplicationMenu({
+      artifactWindows: artifactWindowsMenu.entries(),
+      onShowArtifactWindow: (artifactId) => artifactWindowsMenu.show(artifactId),
       environments: environmentsState.environments,
       activeId: environmentsState.activeId,
       onSwitch: (id) => void workspaceMenuAction(() => switchEnvironment(id)),
@@ -3631,6 +3636,9 @@ function wireAccountPage(win, contents) {
     }
     retroAssistantWindow.mainWindowGone();
     floatingBotWindows.mainWindowGone();
+    // the artifact windows are driven by this page: they go with it and the
+    // page opens them again when it is back
+    artifactWindows.mainWindowGone();
     mascotHotkey.disable();
     clearTrayRoster();
   });
@@ -3865,6 +3873,9 @@ function createWindow({ deferNavigation = false } = {}) {
     // the detached Hibou 98 assistant is driven by this window's page
     retroAssistantWindow.mainWindowGone();
     floatingBotWindows.mainWindowGone();
+    // the artifact windows are driven by this window's page: none is left
+    // behind to keep the app from quitting
+    artifactWindows.mainWindowGone();
     mascotHotkey.disable();
     clearTrayRoster();
   });
@@ -4549,7 +4560,35 @@ const artifactWindows = createArtifactWindows({
   },
   icon: () => currentWindowIcon(),
   log: (line) => slog(line),
+  screen,
+  // each artifact's window keeps its place (artifact-windows.json in the app's data)
+  boundsStore: {
+    read: () => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(app.getPath("userData"), "artifact-windows.json"), "utf8"));
+      } catch {
+        return null;
+      }
+    },
+    write: (value) => {
+      const file = path.join(app.getPath("userData"), "artifact-windows.json");
+      const temporary = `${file}.${process.pid}.tmp`;
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(temporary, JSON.stringify(value), { mode: 0o600 });
+        fs.renameSync(temporary, file);
+      } catch (error) {
+        try {
+          fs.rmSync(temporary, { force: true });
+        } catch {}
+        throw error;
+      }
+    },
+  },
+  // the Window menu names the open ones
+  onChange: () => refreshApplicationMenu(),
 });
+artifactWindowsMenu = artifactWindows;
 
 // The desktop mascot's call hotkey (Control+Option+Space by default): the
 // brain (the main page) asks for it while the setting is on and a mascot is

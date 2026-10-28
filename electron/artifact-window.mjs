@@ -18,13 +18,29 @@
  * plus contextIsolation, a sandbox and no Node. It may only navigate within its
  * own route; any other link goes to the system browser. Only the main window's
  * own page may ask for one.
+ *
+ * Each artifact's window keeps its place: its bounds (and whether it was
+ * maximized) are saved per artifact id through `boundsStore` and put back the
+ * next time it opens. A place on a screen that is gone comes back on the
+ * primary screen (window-state.cjs). A window dragged out of the app (the
+ * floating panel's title bar let go outside the app) opens where the pointer
+ * was. The windows go with the main window: they are driven by its page, so
+ * none is left behind to keep the app from quitting. `onChange` tells main the
+ * list changed, so the Window menu names them.
  */
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { resolveWindowState } = require("./window-state.cjs");
 
 export const ARTIFACT_WINDOW_PATH = "/artifact-window";
 export const ARTIFACT_WINDOW_SIZE = Object.freeze({ width: 960, height: 720 });
 export const ARTIFACT_WINDOW_MIN = Object.freeze({ width: 320, height: 240 });
 /** More artifact windows than this at once is a mistake, not a desk. */
 export const MAX_ARTIFACT_WINDOWS = 24;
+/** Places remembered: the most recently used artifacts. */
+export const MAX_REMEMBERED_PLACES = 100;
+const SCREEN_LIMIT = 100_000;
 const TITLE_MAX = 120;
 
 const ID_RE = /^[a-zA-Z0-9:_-]{1,128}$/;
@@ -32,21 +48,102 @@ const ID_RE = /^[a-zA-Z0-9:_-]{1,128}$/;
 const isString = (value) => Object.prototype.toString.call(value) === "[object String]";
 const clampSize = (value, fallback, min) =>
   Number.isFinite(value) ? Math.min(4000, Math.max(min, Math.round(value))) : fallback;
+const screenCoordinate = (value) =>
+  Number.isFinite(value) && Math.abs(value) <= SCREEN_LIMIT ? Math.round(value) : null;
 
 /** The request as the renderer sent it, or null: the bot and artifact ids, a
- * short plain title and an optional size. */
+ * short plain title, an optional size, an optional screen point to open at
+ * (`x`, `y`: where a dragged-out panel was let go) and `focus` (false: open or
+ * keep it without taking the focus, as when the app restores its windows). */
 export function sanitizeArtifactWindowRequest(raw) {
   if (!raw || typeof raw !== "object") return null;
   const { botId, artifactId } = raw;
   if (!isString(botId) || !ID_RE.test(botId) || !isString(artifactId) || !ID_RE.test(artifactId)) return null;
   // eslint-disable-next-line no-control-regex
   const title = isString(raw.title) ? raw.title.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, TITLE_MAX) : "";
+  const x = screenCoordinate(raw.x);
+  const y = screenCoordinate(raw.y);
   return {
     botId,
     artifactId,
     title: title || "Artifact",
     width: clampSize(raw.width, ARTIFACT_WINDOW_SIZE.width, ARTIFACT_WINDOW_MIN.width),
     height: clampSize(raw.height, ARTIFACT_WINDOW_SIZE.height, ARTIFACT_WINDOW_MIN.height),
+    ...(x !== null && y !== null ? { at: { x, y } } : {}),
+    focus: raw.focus !== false,
+  };
+}
+
+const integerRect = (value) =>
+  value && typeof value === "object" &&
+  [value.x, value.y, value.width, value.height].every((n) => Number.isInteger(n) && Math.abs(n) <= SCREEN_LIMIT) &&
+  value.width > 0 && value.height > 0;
+
+/** The saved places, artifact id -> { bounds, maximized }, oldest first.
+ * Anything malformed is dropped. */
+export function parseArtifactWindowPlaces(raw) {
+  const places = new Map();
+  const value = raw && typeof raw === "object" ? raw.windows : null;
+  if (!value || typeof value !== "object") return places;
+  for (const [artifactId, place] of Object.entries(value)) {
+    if (!ID_RE.test(artifactId) || !place || typeof place !== "object" || !integerRect(place.bounds)) continue;
+    const { x, y, width, height } = place.bounds;
+    places.set(artifactId, { bounds: { x, y, width, height }, maximized: place.maximized === true });
+  }
+  while (places.size > MAX_REMEMBERED_PLACES) places.delete(places.keys().next().value);
+  return places;
+}
+
+export function serializeArtifactWindowPlaces(places) {
+  return { version: 1, windows: Object.fromEntries(places) };
+}
+
+const contains = (area, point) =>
+  point.x >= area.x && point.x < area.x + area.width && point.y >= area.y && point.y < area.y + area.height;
+const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
+
+/**
+ * Where an artifact's window opens. `workAreas` puts the primary screen first;
+ * `home` is the work area of the screen the app is on.
+ * - Let go at a screen point: there, its title bar under the pointer, on that
+ *   point's screen (its remembered size, else the asked one).
+ * - A remembered place: back there, kept on a screen that still exists, else
+ *   on the primary screen.
+ * - Else: the asked size, centered on the app's screen.
+ */
+export function resolveArtifactWindowBounds({ place, workAreas, home, request }) {
+  const areas = (workAreas ?? []).filter(integerRect);
+  const size = {
+    width: place?.bounds.width ?? request.width,
+    height: place?.bounds.height ?? request.height,
+  };
+  if (request.at && areas.length > 0) {
+    const area = areas.find((candidate) => contains(candidate, request.at)) ?? areas[0];
+    const width = Math.min(Math.max(size.width, ARTIFACT_WINDOW_MIN.width), area.width);
+    const height = Math.min(Math.max(size.height, ARTIFACT_WINDOW_MIN.height), area.height);
+    return {
+      bounds: {
+        x: clamp(request.at.x - Math.round(width / 2), area.x, area.x + area.width - width),
+        y: clamp(request.at.y - 16, area.y, area.y + area.height - height),
+        width,
+        height,
+      },
+      maximized: false,
+    };
+  }
+  if (place) return resolveWindowState(place, areas, request, ARTIFACT_WINDOW_MIN);
+  const area = integerRect(home) ? home : areas[0];
+  if (!area) return { bounds: { width: request.width, height: request.height }, maximized: false };
+  const width = Math.min(request.width, area.width);
+  const height = Math.min(request.height, area.height);
+  return {
+    bounds: {
+      x: area.x + Math.round((area.width - width) / 2),
+      y: area.y + Math.round((area.height - height) / 2),
+      width,
+      height,
+    },
+    maximized: false,
   };
 }
 
@@ -85,12 +182,70 @@ function pageOrigin(event) {
  * @param {(url: string) => void} [deps.openExternal] a link out of the window (validated by the caller)
  * @param {() => unknown} [deps.icon]
  * @param {(line: string) => void} [deps.log]
+ * @param {Pick<import("electron").Screen, "getPrimaryDisplay" | "getAllDisplays" | "getDisplayMatching">} [deps.screen]
+ * @param {{ read(): unknown, write(value: unknown): void }} [deps.boundsStore] where each artifact's place is kept
+ * @param {() => void} [deps.onChange] the open windows or their titles changed (the Window menu)
  */
 export function createArtifactWindows(deps) {
   const { BrowserWindow, ipcMain, getMainWindow, isTrustedMain } = deps;
   const log = deps.log ?? (() => {});
+  const changed = () => {
+    try {
+      deps.onChange?.();
+    } catch (error) {
+      log(`artifact window: the menu did not update (${error?.message ?? error})`);
+    }
+  };
   /** artifactId -> { win, origin, botId, title, quiet } */
   const windows = new Map();
+  let places = null;
+  const readPlaces = () => {
+    if (places) return places;
+    try {
+      places = parseArtifactWindowPlaces(deps.boundsStore?.read());
+    } catch {
+      places = new Map();
+    }
+    return places;
+  };
+  const writePlaces = () => {
+    try {
+      deps.boundsStore?.write(serializeArtifactWindowPlaces(readPlaces()));
+    } catch (error) {
+      log(`artifact window: its place was not saved (${error?.message ?? error})`);
+    }
+  };
+  const remember = (artifactId, win) => {
+    if (win.isDestroyed()) return;
+    // A full-screen window keeps the place it had before.
+    if (win.isFullScreen?.()) return;
+    const bounds = win.getNormalBounds?.() ?? win.getBounds?.();
+    if (!integerRect(bounds)) return;
+    const all = readPlaces();
+    all.delete(artifactId); // re-inserted last: the most recent are kept
+    all.set(artifactId, { bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height }, maximized: win.isMaximized?.() === true });
+    while (all.size > MAX_REMEMBERED_PLACES) all.delete(all.keys().next().value);
+    writePlaces();
+  };
+  const screenAreas = () => {
+    try {
+      const primary = deps.screen?.getPrimaryDisplay();
+      if (!primary) return [];
+      const others = deps.screen.getAllDisplays().filter((display) => display.id !== primary.id);
+      return [primary, ...others].map((display) => display.workArea);
+    } catch {
+      return [];
+    }
+  };
+  const homeArea = () => {
+    try {
+      const main = getMainWindow();
+      if (!main || main.isDestroyed() || !deps.screen?.getDisplayMatching) return null;
+      return deps.screen.getDisplayMatching(main.getBounds()).workArea;
+    } catch {
+      return null;
+    }
+  };
 
   const live = (artifactId) => {
     const entry = windows.get(artifactId);
@@ -132,21 +287,34 @@ export function createArtifactWindows(deps) {
 
     const existing = live(request.artifactId);
     if (existing && existing.origin === origin) {
-      existing.win.setTitle?.(request.title);
-      existing.title = request.title;
-      bringForward(existing.win);
+      if (existing.title !== request.title) {
+        existing.win.setTitle?.(request.title);
+        existing.title = request.title;
+        changed();
+      }
+      if (request.focus) bringForward(existing.win);
       return "focused";
     }
     // Another server's window for this artifact id: it is not this artifact's.
     if (existing) closeQuietly(request.artifactId);
     if (windows.size >= MAX_ARTIFACT_WINDOWS) return "refused";
 
+    const placed = resolveArtifactWindowBounds({
+      place: readPlaces().get(request.artifactId),
+      workAreas: screenAreas(),
+      home: homeArea(),
+      request,
+    });
     const win = new BrowserWindow({
-      width: request.width,
-      height: request.height,
+      ...placed.bounds,
       minWidth: ARTIFACT_WINDOW_MIN.width,
       minHeight: ARTIFACT_WINDOW_MIN.height,
       resizable: true,
+      movable: true,
+      minimizable: true,
+      maximizable: true,
+      // macOS: its own Space in full screen, from the green button or the menu
+      fullscreenable: true,
       show: false,
       title: request.title,
       ...(deps.icon ? { icon: deps.icon() } : {}),
@@ -161,14 +329,37 @@ export function createArtifactWindows(deps) {
     });
     const entry = { win, origin, botId: request.botId, title: request.title, quiet: false };
     windows.set(request.artifactId, entry);
+    if (placed.maximized) win.maximize?.();
 
     win.once("ready-to-show", () => {
       if (win.isDestroyed()) return;
+      if (!request.focus && win.showInactive) {
+        win.showInactive();
+        return;
+      }
       win.show();
       win.focus();
     });
+    // Its place is kept as the person moves and sizes it, and when it closes.
+    let saveTimer = null;
+    const saveSoon = () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        saveTimer = null;
+        remember(request.artifactId, win);
+      }, 400);
+      saveTimer.unref?.();
+    };
+    for (const name of ["move", "resize", "maximize", "unmaximize"]) win.on(name, saveSoon);
+    win.on("close", () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = null;
+      remember(request.artifactId, win);
+    });
     win.on("closed", () => {
+      if (saveTimer) clearTimeout(saveTimer);
       if (windows.get(request.artifactId)?.win === win) windows.delete(request.artifactId);
+      changed();
       if (entry.quiet) return;
       // The person closed it: the page docks the artifact, as closing its
       // floating window does.
@@ -207,6 +398,7 @@ export function createArtifactWindows(deps) {
     void Promise.resolve(win.loadURL(artifactWindowUrl(origin, request.botId, request.artifactId))).catch((error) => {
       log(`artifact window: the page did not load (${error?.message ?? error})`);
     });
+    changed();
     return "created";
   }
 
@@ -228,6 +420,23 @@ export function createArtifactWindows(deps) {
     close,
     /** Artifact ids with a window open. */
     list: () => [...windows.keys()].filter((artifactId) => live(artifactId)),
+    /** The open windows for the Window menu, in the order they opened. */
+    entries: () => [...windows.keys()].flatMap((artifactId) => {
+      const entry = live(artifactId);
+      return entry ? [{ artifactId, title: entry.title }] : [];
+    }),
+    /** The Window menu picked one: it comes forward. */
+    show(artifactId) {
+      const entry = live(artifactId);
+      if (!entry) return false;
+      bringForward(entry.win);
+      return true;
+    },
+    /** The main window is gone: its page drove these windows, so they go too
+     * (quietly: the artifacts stay popped out and come back with it). */
+    mainWindowGone() {
+      for (const artifactId of windows.keys()) closeQuietly(artifactId);
+    },
     /** The main window now shows another server: its artifacts' windows go. */
     mainNavigated(url) {
       let origin = null;

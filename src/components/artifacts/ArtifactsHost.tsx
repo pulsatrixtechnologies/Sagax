@@ -50,7 +50,7 @@ export function ArtifactWindowBody({ data }: { data: ArtifactWindowData }) {
             data-artifact-own-window
             aria-label={t("artifacts.ownWindow")}
             title={t("artifacts.ownWindow")}
-            onClick={() => void openArtifactInOwnWindow({ id: data.artifactId, botId: data.botId, title: artifact.title })}
+            onClick={() => void openArtifactInOwnWindow({ id: data.artifactId, botId: data.botId, title: artifact.title, popped: true })}
           >
             <AppWindow size={13} aria-hidden="true" />
           </button>

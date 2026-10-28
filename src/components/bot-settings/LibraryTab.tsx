@@ -7,7 +7,7 @@
 // bot's Claude Code plugins in Connect apps, in that bot's scope.
 // (docs/superpowers/specs/2026-10-16-artifacts-design.md)
 import { useState, type ReactNode } from "react";
-import { AppWindow, Copy, Download, FolderOpen, LoaderCircle, MessageSquare, MoreHorizontal, PanelBottomClose, PictureInPicture2, Pin, PinOff, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { AppWindow, Copy, Download, ExternalLink, FolderOpen, LoaderCircle, MessageSquare, MoreHorizontal, PanelBottomClose, PictureInPicture2, Pin, PinOff, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
@@ -20,6 +20,7 @@ import { groupLibraryItems, libraryItems, type LibraryItem } from "@/lib/library
 import { AttachmentPreviewDialog, canonicalDownloadFilename } from "../AttachmentPreview";
 import type { ArtifactSummary } from "../../../shared/artifacts";
 import { ArtifactDialogs, artifactStatus, useArtifactActions, type ArtifactActions } from "../artifacts/ArtifactsSection";
+import { canOpenArtifactInOwnWindow } from "../artifacts/artifact-windows";
 import { copyablePath, downloadThreadFile, FileHover, KIND_ICON, MediaPreviewDialog, MenuItem, PopoverMenu, useThreadFiles } from "./FilesSection";
 
 /** Opens Connect apps in this bot's install scope. */
@@ -282,6 +283,9 @@ function ArtifactLibraryRow({ artifact, actions, now, openMenus }: { artifact: A
         <>
           <MenuItem icon={<AppWindow size={14} />} label={t("artifacts.open")} onClick={() => { close(); actions.open(artifact); }} />
           <MenuItem icon={pinned ? <PinOff size={14} /> : <Pin size={14} />} label={pinLabel} onClick={() => { close(); actions.toggleFavorite(artifact); }} />
+          {canOpenArtifactInOwnWindow() && (
+            <MenuItem icon={<ExternalLink size={14} />} label={t("artifacts.ownWindow")} onClick={() => { close(); actions.openInOwnWindow(artifact); }} />
+          )}
           <MenuItem
             icon={artifact.popped ? <PanelBottomClose size={14} /> : <PictureInPicture2 size={14} />}
             label={artifact.popped ? t("artifacts.dock") : t("artifacts.popOut")}

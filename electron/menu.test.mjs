@@ -93,4 +93,19 @@ describe("buildApplicationMenu", () => {
     expect(onLeaveServerMode).not.toHaveBeenCalled();
   });
 
+  it("the Window menu names each artifact open in its own window and brings it forward", () => {
+    const onShowArtifactWindow = vi.fn();
+    const artifactWindows = [{ artifactId: "art_1", title: "Live table" }];
+    const template = build("win32", { artifactWindows, onShowArtifactWindow });
+    const windowMenu = template.find((entry) => entry.label === "Window");
+    const item = windowMenu.submenu.find((entry) => entry.label === "Live table");
+    expect(item).toBeDefined();
+    item.click();
+    expect(onShowArtifactWindow).toHaveBeenCalledWith("art_1");
+    // none open: only the standard items
+    const empty = build("win32").find((entry) => entry.label === "Window");
+    expect(empty.submenu.map((entry) => entry.role)).toEqual(["minimize", "close"]);
+    // macOS lists every window in its own Window menu
+    expect(build("darwin", { artifactWindows }).at(-1)).toEqual({ role: "windowMenu" });
+  });
 });

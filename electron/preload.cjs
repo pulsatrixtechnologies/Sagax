@@ -646,6 +646,9 @@ const bridge = {
       title: String(request?.title ?? ""),
       ...(Number.isFinite(request?.width) ? { width: Number(request.width) } : {}),
       ...(Number.isFinite(request?.height) ? { height: Number(request.height) } : {}),
+      // a screen point to open at (a panel dragged out of the app)
+      ...(Number.isFinite(request?.x) && Number.isFinite(request?.y) ? { x: Number(request.x), y: Number(request.y) } : {}),
+      ...(request?.focus === false ? { focus: false } : {}),
     }),
     close: (artifactId) => ipcRenderer.invoke("artifact-window:close", { artifactId: String(artifactId ?? "") }),
     onClosed: cb => {

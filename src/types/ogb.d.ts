@@ -383,7 +383,9 @@ const __BASE_VERSION__: string;
       /** A popped-out artifact in a desktop window of its own, outside the
        * app's frame (electron/artifact-window.mjs). Absent in a browser. */
       artifactWindow?: {
-        open(request: { botId: string; artifactId: string; title: string; width?: number; height?: number }): Promise<"created" | "focused" | "refused">;
+        /** `x`, `y`: a screen point to open at (a panel dragged out of the
+         * app); `focus: false` opens or keeps it without taking the focus. */
+        open(request: { botId: string; artifactId: string; title: string; width?: number; height?: number; x?: number; y?: number; focus?: boolean }): Promise<"created" | "focused" | "refused">;
         close(artifactId: string): Promise<boolean>;
         onClosed(cb: (detail: { botId: string; artifactId: string }) => void): () => void;
       };
