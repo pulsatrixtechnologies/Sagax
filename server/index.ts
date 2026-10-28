@@ -91,6 +91,7 @@ import {
   modelSwitchNeedsAsk,
   isEmergencyApprovalDowngrade,
   liveApprovalChange,
+  liveApprovalTightens,
   isApprovalMode,
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
@@ -9260,6 +9261,8 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
     respond({ ok: false, error: "Auto mode on this computer requires confirming the warning" });
     return true;
   }
+  // #1373: what each running turn answers at before this change
+  const liveBefore = !emergencyDowngrade && liveApprovalChange(currentMode, mode) && botRunning(botId) ? runningTurnLevels(botId) : null;
   const updated = store.patchBot(botId, {
     approvalMode: mode,
     autoApprove: mode === "auto",
@@ -9285,6 +9288,13 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
           error instanceof Error ? error.message : String(error)
         }`,
       }),
+    );
+    return true;
+  }
+  if (liveBefore) {
+    void applyStricterApprovalLive(updated.id, liveBefore).then(
+      () => respond({ ok: true, bot: wireTrustedApprovalBot(store.bot(updated.id) ?? updated) }),
+      (error) => respond({ ok: false, error: stricterApprovalStopError(error) }),
     );
     return true;
   }
@@ -22744,6 +22754,98 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
   }
 
   await directStop;
+}
+
+/** #1373: the level each running turn of this bot answers its next tool
+ * call at, by thread: its own threads, its routine run and the room turn it
+ * speaks in (the level that turn was sent with, roomTurnLevels). */
+type RunningTurnLevels = Map<string, ApprovalMode> & { roomOwn?: ApprovalMode };
+function runningTurnLevels(botId: string): RunningTurnLevels {
+  const levels: RunningTurnLevels = new Map<string, ApprovalMode>();
+  const bot = store.bot(botId);
+  if (!bot) return levels;
+  const own = (threadId: string) =>
+    approvalModeForTurn(store.projectBotForTask(botId, threadId) ?? bot, isInternalTurn(threadId), threadId);
+  for (const task of store.tasks(botId)) {
+    if (threadBusy(botId, task.threadId)) levels.set(task.threadId, own(task.threadId));
+  }
+  const routineRun = routines?.activeBotRunForBot(botId);
+  if (routineRun?.threadId && !levels.has(routineRun.threadId)) levels.set(routineRun.threadId, own(routineRun.threadId));
+  const groupTurn = activeGroupTurnForBot(botId);
+  if (groupTurn) {
+    levels.set(groupTurn.threadId, roomTurnLevels.forRequest(groupTurn.threadId, botId, () => own(groupTurn.threadId)));
+    // the bot's own level there, apart from a level a Chief handed down
+    levels.roomOwn = approvalModeForTurn(bot, false, groupTurn.threadId);
+  }
+  return levels;
+}
+
+/** #1373: Ask, Edits or Auto changed while the bot works (`before` is
+ * runningTurnLevels from just before the change). Sagax already answers
+ * each request at the live level, but an engine may hold its own copy of
+ * the level for the turn (Claude's --permission-mode, an argv flag), and
+ * would keep running edits or commands unasked while the app shows Ask. A
+ * stricter level goes to the running engine, so the turn's next tool call
+ * is decided at it; an engine that cannot take it live has that turn
+ * stopped, never left running at the level the person just left. A wider
+ * level needs nothing here: the engine still asks, and Sagax answers at
+ * the new level. */
+async function applyStricterApprovalLive(botId: string, before: RunningTurnLevels): Promise<void> {
+  const bot = store.bot(botId);
+  if (!bot || before.size === 0) return;
+  // A room turn answers at the level it was sent with; only a stricter own
+  // level lowers it for the rest of that turn.
+  const groupTurn = activeGroupTurnForBot(botId);
+  if (groupTurn && before.has(groupTurn.threadId) && before.roomOwn) {
+    const ownNow = approvalModeForTurn(bot, false, groupTurn.threadId);
+    if (liveApprovalTightens(before.roomOwn, ownNow)) roomTurnLevels.tighten(groupTurn.threadId, botId, ownNow);
+  }
+  const after = runningTurnLevels(botId);
+  const stops: Array<Promise<void>> = [];
+  for (const [threadId, was] of before) {
+    const now = after.get(threadId);
+    if (!now || !liveApprovalTightens(was, now)) continue;
+    const adapter = runningTurnInstance(bot, threadId)?.adapter;
+    const applied = await (adapter?.applyApprovalMode?.(threadId, now) ?? Promise.resolve(false)).catch(() => false);
+    if (!applied) stops.push(stopTurnForStricterApproval(botId, threadId));
+  }
+  const failure = (await Promise.allSettled(stops)).find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failure) throw failure.reason;
+}
+
+/** The engine running this turn cannot change its level mid-turn: stop the
+ * turn, and say why in the conversation. */
+async function stopTurnForStricterApproval(botId: string, threadId: string): Promise<void> {
+  const bot = store.bot(botId);
+  if (!bot) return;
+  const groupTurn = activeGroupTurnForBot(botId);
+  const routineRun = routines?.activeBotRunForBot(botId);
+  if (groupTurn?.threadId === threadId) {
+    revokeInternalCapabilitiesForThread(threadId);
+    cancelGroupTurnOperations(groupTurn.group.id, threadId);
+    await runningTurnInstance(bot, threadId)?.adapter.interruptTurn(threadId);
+    closeOpenApprovals(threadId);
+  } else if (routineRun?.threadId === threadId) {
+    revokeInternalCapabilitiesForThread(threadId);
+    cancelDirectTurnDispatch(botId, threadId);
+    await routines!.cancelRun(routineRun.id);
+    closeOpenApprovals(threadId);
+  } else {
+    await stopDirectThread(botId, threadId);
+  }
+  store.appendMessage(threadId, {
+    role: "bot",
+    kind: "activity",
+    tool: { name: STRICTER_APPROVAL_STOP_NOTE, ok: true },
+  });
+}
+
+const STRICTER_APPROVAL_STOP_NOTE = "Stopped: this engine cannot change its approval level during a turn. Send your message again to continue at the new level.";
+
+function stricterApprovalStopError(error: unknown): string {
+  return `The approval level changed, but the running turn could not be stopped: ${
+    error instanceof Error ? error.message : String(error)
+  }`;
 }
 
 /** Whether the bot is working now: what forceStopBot would interrupt (a
@@ -47621,6 +47723,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           (freshBrowserBot.busy || browserRuntime.heldBy(currentBrowserSession(freshBrowserBot.id, freshBrowserBot.browserProfile)))) {
         return json(res, 409, { error: "Stop the bot and release browser control before changing its profile." });
       }
+      // #1373: what each running turn answers at before this change
+      const liveApprovalBefore = existingBot && patch.approvalMode !== undefined && requestedApprovalMode !== currentApprovalMode
+        && liveApprovalChange(currentApprovalMode, requestedApprovalMode) && botRunning(existingBot.id)
+        ? runningTurnLevels(existingBot.id) : null;
       if (profile.patch.soul !== undefined) {
         if (freshBrowserBot) assertTeamComputerChangeIdle(freshBrowserBot, { ...freshBrowserBot, ...patch } as BotRecord);
         // A mixed settings request must not turn a runtime revocation into
@@ -47669,6 +47775,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         broadcast({ kind: "sections", sections: store.sections });
         audienceChanged();
+      }
+      if (liveApprovalBefore) {
+        try {
+          await applyStricterApprovalLive(bot.id, liveApprovalBefore);
+        } catch (error) {
+          return json(res, 409, { error: stricterApprovalStopError(error) });
+        }
       }
       return json(res, 200, { bot: wireBot(store.bot(bot.id)!) });
     }
@@ -49547,12 +49660,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
       }
       const modeBefore = approvalModeFor(current);
+      // #1373: what each running turn answers at before this change
+      const liveApprovalBefore = patch.approvalMode && patch.approvalMode !== modeBefore
+        && liveApprovalChange(modeBefore, patch.approvalMode) && threadBusy(current.id, current.threadId)
+        ? runningTurnLevels(m[1]) : null;
       if (orgFullGrant) store.patchBot(m[1], { fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() } });
       const task = patch.modelSelection
         ? store.switchTaskModel(m[1], m[2], patch.modelSelection, body.updateBotDefault === true,
           { ...patch, ...hostedModels?.resetTask(current.modelSelection, patch.modelSelection) })!
         : store.patchTask(m[1], m[2], patch)!;
       if (patch.approvalMode) auditApprovalModeChange(auth, m[1], modeBefore, patch.approvalMode, m[2]);
+      if (liveApprovalBefore) {
+        try {
+          await applyStricterApprovalLive(m[1], liveApprovalBefore);
+        } catch (error) {
+          return json(res, 409, { error: stricterApprovalStopError(error) });
+        }
+      }
       return json(res, 200, { task: wireTask(task, store.bot(m[1])!.modelSelection), bot: projectBotTranscript(publicBot(store.bot(m[1])!), viewerForApproval(auth)) });
     }
     if (m && method === "DELETE") {

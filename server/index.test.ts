@@ -1267,6 +1267,7 @@ beforeAll(async () => {
       FAKE_CLAUDE_MODE: "hang",
       FAKE_CLAUDE_DUMP: fakeClaudeDump,
       FAKE_CLAUDE_PROMPTS: fakeClaudePrompts,
+      FAKE_CLAUDE_PERMISSION_LOG: join(home, "fake-claude-permission-modes.log"),
       // the one-shot text helper fails by default (its reply file is
       // missing), so first-message generated titles stay off until a test
       // writes that file — and its dump never overwrites a turn's dump
@@ -7446,6 +7447,45 @@ describe("harness HTTP API", () => {
       const blocked = await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "full" });
       expect(blocked.status).toBe(409);
       expect(blocked.body.error).toMatch(/stop this bot's turn before changing its approval level|does not support|trusted desktop/i);
+    } finally {
+      await api("POST", `/api/bots/${bot.id}/interrupt`, {}).catch(() => undefined);
+      await expect.poll(async () => {
+        const state = (await api("GET", "/api/bots?messages=0")).body;
+        return state.bots.find((candidate: { id: string }) => candidate.id === bot.id)?.busy;
+      }, { timeout: 5_000 }).toBeFalsy();
+      await api("DELETE", `/api/bots/${bot.id}`).catch(() => undefined);
+    }
+  });
+
+  it("applies Ask chosen during a turn to that turn's next tool call (#1373)", async () => {
+    const instances = (await api("GET", "/api/instances")).body.instances;
+    const claude = instances.find((instance: { instanceId: string }) => instance.instanceId === "claude");
+    const bot = (await api("POST", "/api/bots", {
+      modelSelection: { instanceId: claude.instanceId, model: claude.models.default },
+      settings: { approvalMode: "auto" },
+    })).body.bot;
+    const log = join(home, "fake-claude-permission-modes.log");
+    rmSync(log, { force: true });
+    try {
+      expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "keep working" })).status).toBe(202);
+      await expect.poll(async () => {
+        const state = (await api("GET", "/api/bots?messages=0")).body;
+        return state.bots.find((candidate: { id: string }) => candidate.id === bot.id)?.busy;
+      }, { timeout: 5_000 }).toBe(true);
+      // the CLI was launched in acceptEdits: before the fix it stayed there
+      // until the turn ended, while the app showed Ask
+      const lowered = await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" });
+      expect(lowered.status, JSON.stringify(lowered.body)).toBe(200);
+      expect(existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []).toEqual(["default"]);
+      // the running engine took it live: the turn goes on, now at Ask
+      const stored = (await api("GET", "/api/bots?messages=0")).body.bots.find(
+        (candidate: { id: string }) => candidate.id === bot.id,
+      );
+      expect(stored.busy).toBe(true);
+      expect(stored.approvalMode).toBe("ask");
+      // a wider level needs nothing from the engine: Sagax answers at it
+      expect((await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "edits" })).status).toBe(200);
+      expect(readFileSync(log, "utf8").trim().split("\n")).toEqual(["default"]);
     } finally {
       await api("POST", `/api/bots/${bot.id}/interrupt`, {}).catch(() => undefined);
       await expect.poll(async () => {

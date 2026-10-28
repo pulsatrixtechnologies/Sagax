@@ -3,7 +3,7 @@
 // stored on the shared room thread, so a request must read it from here, not
 // from the bot's own level. Without this, a turn the Chief ran on Full still
 // asked on engines that leave permission requests to the app (ACP).
-import type { ApprovalMode } from "../shared/approval-mode.ts";
+import { approvalModeWidens, type ApprovalMode } from "../shared/approval-mode.ts";
 
 export type RoomTurnLevels = ReturnType<typeof createRoomTurnLevels>;
 
@@ -23,6 +23,13 @@ export function createRoomTurnLevels() {
     /** The running room turn's level, or the bot's own when none is running. */
     forRequest(threadId: string, botId: string, own: () => ApprovalMode): ApprovalMode {
       return levels.get(key(threadId, botId))?.level ?? own();
+    },
+    /** #1373: the bot's own level became stricter during this room turn.
+     * The rest of the turn answers at it; a level is never raised here. The
+     * entry stays, so the turn's own release still clears it. */
+    tighten(threadId: string, botId: string, level: ApprovalMode): void {
+      const entry = levels.get(key(threadId, botId));
+      if (entry && approvalModeWidens(level, entry.level)) entry.level = level;
     },
   };
 }

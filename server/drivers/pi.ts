@@ -1802,6 +1802,10 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           queueing: true,
         },
         sendTurn,
+        // #1373: this engine keeps no copy of Ask, Edits or Auto (only Full
+        // is read at launch). Every other call asks Sagax, which answers at
+        // the live level, so a change applies to the next tool call as is.
+        applyApprovalMode: async () => true,
         interruptTurn: async (threadId) => active.get(threadId)?.stop(),
         respondToRequest: async (threadId, requestId, decision) => {
           const entry = active.get(threadId);

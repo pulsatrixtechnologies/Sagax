@@ -1371,6 +1371,16 @@ process.stdin.on("data", (c) => {
       out({ type: "control_response", response: { subtype: "success", request_id: control.request_id, response: { commands } } });
       continue;
     }
+    // #1373: set_permission_mode changes the running process's mode.
+    // FAKE_CLAUDE_PERMISSION_LOG: path to append each mode to.
+    // FAKE_CLAUDE_REFUSE_PERMISSION_MODE=1: answer with an error.
+    if (control?.type === "control_request" && control.request?.subtype === "set_permission_mode") {
+      if (process.env.FAKE_CLAUDE_PERMISSION_LOG) appendFileSync(process.env.FAKE_CLAUDE_PERMISSION_LOG, `${String(control.request.mode)}\n`);
+      out(process.env.FAKE_CLAUDE_REFUSE_PERMISSION_MODE === "1"
+        ? { type: "control_response", response: { subtype: "error", request_id: control.request_id, error: "refused" } }
+        : { type: "control_response", response: { subtype: "success", request_id: control.request_id, response: { mode: control.request.mode } } });
+      continue;
+    }
     if (turnRunning || lateTurnWaiting) {
       // folded into the running turn, unless it landed after that turn's
       // last model call — then the real CLI queues it for the next turn,

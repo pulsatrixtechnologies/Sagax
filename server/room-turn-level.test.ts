@@ -36,4 +36,17 @@ describe("room turn level", () => {
     releaseOld();
     expect(levels.forRequest("room-1", "dev", own)).toBe("full");
   });
+
+  it("lowers a running room turn to a stricter own level, never raises it (#1373)", () => {
+    const levels = createRoomTurnLevels();
+    const release = levels.dispatched("room-1", "dev", "auto");
+    levels.tighten("room-1", "dev", "full");
+    expect(levels.forRequest("room-1", "dev", own)).toBe("auto");
+    levels.tighten("room-1", "dev", "ask");
+    expect(levels.forRequest("room-1", "dev", own)).toBe("ask");
+    expect(autoVerdict(levels.forRequest("room-1", "dev", own), "shell")).toEqual({ approve: null, source: "no-grant" });
+    release();
+    levels.tighten("room-1", "dev", "ask");
+    expect(levels.forRequest("room-1", "dev", () => "edits")).toBe("edits");
+  });
 });
