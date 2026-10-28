@@ -137,6 +137,21 @@ describe("groupActivityRuns", () => {
     }
   });
 
+  it("keeps a Data receipt whose title starts with notice:", () => {
+    const receipt: Message = {
+      ...tool("notice: revenue by region"),
+      dataResult: { botId: "pepper", cardId: "c1", title: "notice: revenue by region", kind: "table", sql: "SELECT 1" },
+    };
+    expect(isHiddenStatusActivity(receipt)).toBe(false);
+    expect(isToolStep(receipt)).toBe(false);
+    const messages = [tool("Read"), tool("Edit"), receipt, tool("Bash"), tool("Write")];
+    for (const group of [groupActivityRuns, groupTranscript]) {
+      const items = group(messages);
+      expect(items.map((item) => item.kind)).toEqual(["run", "message", "run"]);
+      expect(items[1]).toEqual({ kind: "message", message: receipt });
+    }
+  });
+
   it("never draws an engine's technical notice (an MCP server skipped, a model fallback)", () => {
     for (const name of [
       'notice: MCP server "slack" was skipped for this turn: 401 Unauthorized',

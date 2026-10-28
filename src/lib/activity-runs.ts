@@ -86,9 +86,12 @@ export function workspaceLineText(line: WorkspaceLine): string {
  * (shared/chat-notices.ts, the list iOS reads too: Auto's pick, the
  * Workspace line, an automatic recovery, a stored engine notice such as an
  * MCP server skipped) and the "On your computer" Workspace line
- * (shared/workspace-line.ts isQuietWorkspaceLine). */
+ * (shared/workspace-line.ts isQuietWorkspaceLine). A Data receipt is the
+ * person's result. Older rows store the card title as the tool name, and
+ * that title can start with "notice:". */
 export function isHiddenStatusActivity(message: Message): boolean {
   if (message.kind !== "activity") return false;
+  if (message.dataResult) return false;
   const name = message.tool?.name;
   return isQuietWorkspaceLine(name) || isTechnicalNoticeName(name);
 }
