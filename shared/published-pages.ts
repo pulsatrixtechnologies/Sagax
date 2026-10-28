@@ -263,7 +263,6 @@ export interface PageInvites {
   people: string[];
   teams: string[];
 }
-export const PAGE_INVITE_LIMIT = 100;
 const INVITE_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
 
 /** The invite lists as a request gives them: checked, without duplicates
@@ -274,7 +273,7 @@ export function parsePageInvites(value: unknown, ownerId?: string): PageInvites 
   const record = value as Record<string, unknown>;
   const list = (raw: unknown, skip?: string): string[] | null => {
     if (raw === undefined) return [];
-    if (!Array.isArray(raw) || raw.length > PAGE_INVITE_LIMIT) return null;
+    if (!Array.isArray(raw)) return null;
     const seen = new Set<string>();
     const out: string[] = [];
     for (const entry of raw) {

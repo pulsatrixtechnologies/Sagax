@@ -672,7 +672,6 @@ describe("Share > Add people or groups (2026-10-28)", () => {
     const { id } = published(pages, "private", "pr_alice");
     expect((await call(routes(pages), session("pr_bob"), "POST", `/api/pages/${id}/invite`, { people: ["pr_bob"] })).status).toBe(404);
     expect((await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, { people: ["<script>"] })).status).toBe(400);
-    expect((await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, { people: Array.from({ length: 101 }, (_, n) => `pr_${n}`) })).status).toBe(400);
     expect((await call(routes(pages), session("pr_alice"), "POST", `/api/pages/${id}/invite`, "x")).status).toBe(400);
   });
 

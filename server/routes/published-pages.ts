@@ -61,7 +61,6 @@ import {
   PAGE_ACCESS,
   PAGE_COMMENT_PREFIX,
   PAGE_FRAME_PREFIX,
-  PAGE_INVITE_LIMIT,
   PAGE_KINDS,
   PAGE_LIMITS,
   PAGE_PREVIEW_FRAME_PREFIX,
@@ -683,7 +682,7 @@ async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, extr
     // no admin. Who reads it still follows its access (pageReadable).
     const body = await readBody(req) as Record<string, unknown> | null;
     const invites = parsePageInvites(body, page.ownerId);
-    if (!invites) return json(res, 400, { error: `Send { people: [principal ids], teams: [team ids] }, at most ${PAGE_INVITE_LIMIT} each.`, code: "bad_invites" });
+    if (!invites) return json(res, 400, { error: "Send { people: [principal ids], teams: [team ids] }.", code: "bad_invites" });
     const result = deps.pages.setInvites(page.id, invites, by);
     if (failed(result)) return json(res, result.status, { error: result.error, code: result.code });
     const origin = deps.origin(req);
