@@ -56,13 +56,13 @@ describe("validateBotCwdFor (the bot's remote computer)", () => {
   it("accepts a Windows path on a Windows computer without touching this disk", async () => {
     const { deps, asked } = make([{ id: "s", os: "windows", state: "connected" }], ok);
     const { validateBotCwdFor } = await import("./bot-cwd.ts");
-    expect(await validateBotCwdFor("c:/Users/zseilam/Downloads", deps)).toEqual({ ok: true, cwd: "C:\\Users\\zseilam\\Downloads" });
+    expect(await validateBotCwdFor("c:/Users/zseilam/Downloads", deps)).toEqual({ ok: true, cwd: "C:\\Users\\zseilam\\Downloads", remote: true });
     expect(asked).toEqual(["C:\\Users\\zseilam\\Downloads"]);
   });
   it("accepts a POSIX path on a POSIX computer, and rejects a relative or wrong-OS one", async () => {
     const { deps } = make([{ id: "s", os: "linux", state: "connected" }], ok);
     const { validateBotCwdFor } = await import("./bot-cwd.ts");
-    expect(await validateBotCwdFor("/srv/app", deps)).toEqual({ ok: true, cwd: "/srv/app" });
+    expect(await validateBotCwdFor("/srv/app", deps)).toEqual({ ok: true, cwd: "/srv/app", remote: true });
     expect(await validateBotCwdFor("relative/dir", deps)).toEqual({ ok: false, error: "working folder must be an absolute path" });
     expect(await validateBotCwdFor("C:\\Users", deps)).toEqual({ ok: false, error: "working folder must be an absolute path" });
   });

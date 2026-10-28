@@ -493,6 +493,10 @@ const appConfigSchema = z.object({
     /** 2026-10-08, the console's Settings: the engine instances bots may be
      * switched to from the console. Absent means every engine. */
     allowedEngines: z.array(z.string().max(80)).max(100).optional(),
+    /** #1098: folders of the server's disk an admin opened to members as
+     * working folders, keyed by principal id or `*` for every member
+     * (server/member-folders.ts). */
+    memberFolders: z.record(z.string().max(200), z.array(z.string().max(1024)).max(50)).optional(),
   }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
@@ -753,6 +757,9 @@ export interface AppConfig {
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     githubClientId?: string;
     allowedEngines?: string[];
+    /** #1098: folders of the server's disk an admin opened to members as
+     * working folders, by principal id or `*` (server/member-folders.ts). */
+    memberFolders?: Record<string, string[]>;
   };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;

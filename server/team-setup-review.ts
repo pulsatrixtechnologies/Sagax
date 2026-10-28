@@ -33,6 +33,9 @@ export interface MemberSetupContext {
   mayCreateBots: boolean;
   /** Whether the person holds this permission. */
   can(permission: PermissionKey): boolean;
+  /** #1098: whether this working folder is in the person's own roots on the
+   * server (server/member-folders.ts). Absent: any folder. */
+  folderAllowed?(folder: string): boolean;
 }
 
 export type MemberSetupRefusal = { code: typeof TEAM_SETUP_ADMIN_REQUIRED; error: string; permission?: PermissionKey };
@@ -64,6 +67,7 @@ export function memberTeamSetupRefusal(request: TeamSetupRequest, context: Membe
       const permission = FIELD_PERMISSIONS[field];
       if (!permission) return admin();
       if (!context.can(permission)) return missing(permission);
+      if (field === "cwd" && typeof value === "string" && context.folderAllowed && !context.folderAllowed(value)) return admin();
     }
   }
   return null;

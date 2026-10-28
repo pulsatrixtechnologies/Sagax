@@ -140,6 +140,8 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     }), { mode: 0o640 });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: { codex: { driver: "codex", config: { cli: FAKE_CODEX_LOGIN } } },
+      // #1098: a folder an admin opened to members (PM-3)
+      organization: { memberFolders: { "*": [join(home, "work")] } },
     }));
     await start();
     alice = await signIn(ALICE);

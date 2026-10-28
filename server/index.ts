@@ -187,6 +187,7 @@ import {
 } from "./avatar-image.ts";
 import { fitsOnOneLine, parseBotProfilePatch } from "./bot-profile.ts";
 import { groupTurnCwd } from "./room-cwd.ts";
+import { insideFolderRoots, MEMBER_FOLDER_REFUSED, openedMemberFolders, personFolder } from "./member-folders.ts";
 import { RoomTurnDeadline, RoomTurnStallRegistry, effectiveRoomTurnTimeoutMinutes, parseConversationTurnTimeout, roomTurnTimeoutMessage } from "./room-turn-timeout.ts";
 import { roomTurnEnd, type RoomClaimEnd } from "./room-turn-end.ts";
 import { pickComputer } from "./computer-selection.ts";
@@ -24075,6 +24076,8 @@ function teamSetupApplyRefusal(auth: RequestAuth, req: IncomingMessage) {
       sectionOf: (botId) => { const bot = store.bot(botId); return bot ? sectionKey(bot.section) : undefined; },
       mayCreateBots: botCreationAllowed(auth),
       can: (permission) => callerCan(auth, permission),
+      // #1098 (isolation): a folder outside the member's own roots
+      folderAllowed: (folder) => memberFolderRefusal(memberFolderPrincipal(auth), folder) === null,
     });
     return refusal ? { ...refusal } : null;
   };
@@ -34375,6 +34378,31 @@ function orgDeniesFull(bot: { ownerUserId?: unknown; fullAccessConsent?: unknown
 function sessionPrincipal(auth: RequestAuth): string | null {
   return auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
 }
+/** #1098 (isolation): the person whose own folder roots bound a working
+ * folder this request names on the server's disk, or null when none do (a
+ * solo server, the operator, an organization admin). "" is a caller with no
+ * person, refused. */
+function memberFolderPrincipal(auth: RequestAuth): string | null {
+  if (IDENTITY.kind !== "perspicax" || auth.kind === "loopback" || auth.scopes.includes("admin")) return null;
+  return sessionPrincipal(auth) ?? "";
+}
+/** A member's own roots on the server's disk (server/member-folders.ts):
+ * their person folder, the workspaces of their own bots, and the folders an
+ * admin opened to them. */
+function memberFolderRoots(principalId: string): string[] {
+  const person = principalId.trim().toLowerCase();
+  const roots = [personFolder(DATA_DIR, person)];
+  for (const bot of store.bots) {
+    if (effectiveBotOwner(bot).trim().toLowerCase() === person) roots.push(workspaceDir(bot.id), join(TASK_WORKSPACES_DIR, bot.id));
+  }
+  return [...roots, ...openedMemberFolders(cfg.organization?.memberFolders, person)];
+}
+/** Null when `principal` may name `folder` as a working folder. */
+function memberFolderRefusal(principal: string | null, folder: string | null | undefined): typeof MEMBER_FOLDER_REFUSED | null {
+  if (principal === null || !folder) return null;
+  if (!principal) return MEMBER_FOLDER_REFUSED;
+  return insideFolderRoots(folder, memberFolderRoots(principal)) ? null : MEMBER_FOLDER_REFUSED;
+}
 /** Organization server: why this request may not turn Full on for a bot,
  * or null. The caller must be the bot's owner, signed in. */
 function orgFullAccessRefusalFor(auth: RequestAuth, bot: BotRecord, confirmed: boolean) {
@@ -43671,6 +43699,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (body.cwd !== undefined) {
           const checkedCwd = validateBotCwd(body.cwd);
           if (!checkedCwd.ok) return json(res, 400, { error: checkedCwd.error });
+          // #1098 (isolation): a member's bot names a folder of its owner's own roots
+          const outside = memberOwnedInOrg(chief) ? memberFolderRefusal(effectiveBotOwner(chief), checkedCwd.cwd) : null;
+          if (outside) return json(res, 403, { ...outside, field: "cwd" });
           cwd = checkedCwd.cwd ?? undefined;
         }
         // Discovery can yield; check current authority and capacity again before writing.
@@ -46056,6 +46087,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const notYours = cloudThreadRefusal(auth, renamed.threadId);
         if (notYours) return json(res, 403, { error: notYours });
       }
+      // #1098 (isolation): a member's room folder stays in their own roots
+      const roomFolder = (body as { cwd?: unknown } | null)?.cwd;
+      if (typeof roomFolder === "string" && roomFolder.trim()) {
+        const checkedRoom = validateBotCwd(roomFolder);
+        const outside = checkedRoom.ok ? memberFolderRefusal(memberFolderPrincipal(auth), checkedRoom.cwd) : null;
+        if (outside) return json(res, 403, { ...outside, field: "cwd" });
+      }
       let group = updateChannel(m[1], body);
       if (movesSection) recordRoomMove(group.id, fromSection, sectionKey(group.section));
       // A room marked read by a person reads their @ tag too (server/room-mentions.ts).
@@ -46672,6 +46710,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const checkedCwd = validateBotCwd(settings.cwd ?? null);
       if (!checkedCwd.ok) return json(res, 400, { error: checkedCwd.error });
+      // #1098 (isolation): a member's new bot works in their own roots
+      const outsideCwd = memberCreate ? memberFolderRefusal(memberFolderPrincipal(auth), checkedCwd.cwd) : null;
+      if (outsideCwd) return json(res, 403, { ...outsideCwd, field: "cwd" });
       if (body.requireAvailableModel !== undefined && typeof body.requireAvailableModel !== "boolean") {
         return json(res, 400, { error: "requireAvailableModel must be true or false" });
       }
@@ -47442,6 +47483,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.cwd !== undefined) {
         const checked = await validateBotCwdFor(body.cwd, { principalId: terminalPrincipalId(auth), botId: m[1], sessions: remoteSessions });
         if (!checked.ok) return json(res, 400, { error: checked.error });
+        const outside = checked.remote ? null : memberFolderRefusal(memberFolderPrincipal(auth), checked.cwd);
+        if (outside) return json(res, 403, { ...outside, field: "cwd" });
         patch.cwd = checked.cwd ?? undefined;
       }
       if (body.hidden === true && existingBot?.chiefOfStaff && body.chiefOfStaff !== false) {
@@ -49411,6 +49454,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const checked = await validateBotCwdFor(body.cwd, { principalId: terminalPrincipalId(auth), botId: bot.id, sessions: remoteSessions });
         if (!checked.ok) return json(res, 400, { error: checked.error });
         if (!checked.cwd) return json(res, 400, { error: "Choose an existing working folder, or omit cwd to use the bot's default" });
+        const outside = checked.remote ? null : memberFolderRefusal(memberFolderPrincipal(auth), checked.cwd);
+        if (outside) return json(res, 403, { ...outside, field: "cwd" });
         cwd = checked.cwd;
       }
       if (body.approvalMode !== undefined && body.approvalMode !== "ask" && body.approvalMode !== "full") {
