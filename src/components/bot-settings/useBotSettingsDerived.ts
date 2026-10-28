@@ -9,7 +9,7 @@ import { instanceSupportsLocalComputer, localComputerDisabledReason, localComput
 import { stateForBot } from "@/lib/mascot";
 import { placeOffered } from "@/lib/place";
 import { useStore, type Bot } from "@/state/store";
-import { approvalModeFor } from "../../../shared/approval-mode";
+import { botApprovalSetting } from "../../../shared/approval-mode";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { t } from "@/lib/i18n";
 import { useBotEditor } from "./BotEditorContext";
@@ -75,7 +75,9 @@ export function useBotSettingsDerived(bot: Bot) {
   // it from the record — bots saved before approvalMode existed still carry
   // only autoApprove. Full and Custom need the packaged desktop's trusted
   // channel (SettingsPanel used the same test before the dialog replaced it).
-  const approvalMode = approvalModeFor(bot);
+  // 2026-10-28: the bot's own setting, never the open conversation's level
+  // (that one is `bot.approvalApplied`, shown beside it).
+  const approvalMode = botApprovalSetting(bot);
   const trustedModesAvailable = Boolean(window.ogb?.approvals && capabilities.host.packaged);
   const canCoordinate = engine?.capabilities?.agentsMcp === true;
   // An engine with computer tools can use a cloud computer, on Boat or a VPS.

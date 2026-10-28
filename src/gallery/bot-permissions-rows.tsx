@@ -16,9 +16,16 @@ const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
 setLocale(params.get("lang") ?? "en");
 
-const bot = { id: "cryptic", name: "Cryptic", approvalMode: "ask", approvePeerComms: true, emailDrafts: true, allowedRecipients: [] } as unknown as Bot;
+// ?level=mismatch (2026-10-28): the bot is on Full access while its open
+// conversation runs at Ask (an engine change asked again there), with
+// Proactive on "Read on its own, card to act"
+const mismatch = params.get("level") === "mismatch";
+const bot = {
+  id: "cryptic", name: "Cryptic", approvalMode: "ask", approvePeerComms: true, emailDrafts: true, allowedRecipients: [], threadId: "t1",
+  ...(mismatch ? { approvalSetting: "full", approvalApplied: { mode: "ask", reason: "engine" }, proactiveMode: "read-auto" } : {}),
+} as unknown as Bot;
 const derived = {
-  patch: () => {}, engine: undefined, canCoordinate: true, approvalMode: "ask",
+  patch: () => {}, engine: undefined, canCoordinate: true, approvalMode: mismatch ? "full" : "ask",
   trustedModesAvailable: false, sectionName: "", currentChief: undefined,
 } as unknown as ReturnType<typeof useBotSettingsDerived>;
 

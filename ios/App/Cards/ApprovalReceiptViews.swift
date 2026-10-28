@@ -312,16 +312,21 @@ struct ApprovalReceiptRow: View {
     var body: some View {
         let ink = ApprovalInk.of(desktop, accent: Theme.readable(MausPalette.color(chat.color)))
         let pill = ApprovalPill.of(card)
+        // 2026-10-28: an Always allow or the automatic review reads as the
+        // call's ordinary step line; "Always allowed" stays in the details.
+        let quiet = ApprovalReceiptRules.isQuiet(card)
         VStack(alignment: .leading, spacing: 6) {
             Button {
                 Haptics.selection()
                 withAnimation(.easeOut(duration: 0.15)) { open.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    icon(pill, ink: ink)
-                    Text(verbatim: pill.map(ApprovalWords.pill) ?? CardView.outcomeText(ApprovalOutcome.of(card) ?? .denied))
-                        .foregroundStyle(ink.secondary)
-                    Text(verbatim: "·").foregroundStyle(ink.tertiary)
+                    if !quiet {
+                        icon(pill, ink: ink)
+                        Text(verbatim: pill.map(ApprovalWords.pill) ?? CardView.outcomeText(ApprovalOutcome.of(card) ?? .denied))
+                            .foregroundStyle(ink.secondary)
+                        Text(verbatim: "·").foregroundStyle(ink.tertiary)
+                    }
                     Text(verbatim: ApprovalWords.target(card, session: session))
                         .foregroundStyle(ink.secondary)
                         .lineLimit(1)
@@ -342,7 +347,21 @@ struct ApprovalReceiptRow: View {
             .accessibilityHint(Text(open ? "Hides the request" : "Shows the request"))
             .accessibilityIdentifier("approval-receipt-\(message.id)")
 
-            if open { details(ink) }
+            if open {
+                if quiet {
+                    HStack(spacing: 6) {
+                        icon(pill, ink: ink)
+                        Text(verbatim: card.answeredBy?.via == "auto-review"
+                            ? String(localized: "approval.receipt.autoReview", defaultValue: "Approved by automatic review under your rule")
+                            : (pill.map(ApprovalWords.pill) ?? ""))
+                            .font(ink.font(12.5, .regular))
+                            .foregroundStyle(ink.secondary)
+                    }
+                    .padding(.leading, 18)
+                    .accessibilityIdentifier("approval-receipt-quiet-\(message.id)")
+                }
+                details(ink)
+            }
         }
         .frame(maxWidth: desktop != nil ? 840 : .infinity, alignment: .leading)
         .sheet(item: $detail) { pending in

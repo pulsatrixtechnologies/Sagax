@@ -61,10 +61,12 @@ describe("one approval card per request", () => {
       answered: "allow",
       ruleSaved: { id: "rule_1", behavior: "allow", description: "View accounts in Twilio (accounts)" },
     }));
-    const row = host.querySelector<HTMLButtonElement>('[data-testid="approval-receipt"] button')!;
-    expect(row.textContent).toContain("Toujours autorisé");
+    // 2026-10-28: the call's own step line; "Always allowed" only in the details
+    const row = host.querySelector<HTMLButtonElement>('[data-testid="approval-receipt-quiet"] button')!;
+    expect(row.textContent).not.toContain("Toujours autorisé");
     expect(host.querySelector("[data-owner-rule-saved]")).toBeNull();
     act(() => row.click());
+    expect(host.querySelector('[data-testid="approval-receipt-detail"]')?.textContent).toContain("Toujours autorisé");
     expect(row.getAttribute("aria-expanded")).toBe("true");
     expect(host.querySelector('[data-owner-rule-saved="allow"]')?.textContent).toContain("View accounts in Twilio (accounts)");
     expect(host.textContent).toContain("Voir la demande complète");
@@ -72,8 +74,8 @@ describe("one approval card per request", () => {
 
   it("opens on an earlier Allow rule (an allowKey) with Edit rule", () => {
     mount(twilioAsk({ answered: "allow", ownerRule: undefined, alwaysAllowed: "mcp:perspicax_quasar__twilio_api__query" }));
-    const row = host.querySelector<HTMLButtonElement>('[data-testid="approval-receipt"] button')!;
-    expect(row.textContent).toContain("Toujours autorisé");
+    const row = host.querySelector<HTMLButtonElement>('[data-testid="approval-receipt-quiet"] button')!;
+    expect(row.textContent).not.toContain("Toujours autorisé");
     act(() => row.click());
     expect(host.querySelector("[data-allow-rule]")).not.toBeNull();
   });

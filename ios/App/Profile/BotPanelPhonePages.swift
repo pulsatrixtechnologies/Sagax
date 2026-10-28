@@ -258,7 +258,7 @@ struct BotPermissionsSection: View {
     private var current: Bot { session.state.bot(bot.id) ?? bot }
     private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit, bot: current) }
     private func edits(_ field: String) -> Bool { canEdit && session.canEditBotField(current, field) }
-    private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: current.approvalMode, autoApprove: current.autoApprove) }
+    private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: current.approvalSettingMode, autoApprove: current.autoApprove) }
     private var sectionName: String {
         let name = current.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? String(localized: "Unassigned") : name
@@ -322,6 +322,7 @@ struct BotPermissionsSection: View {
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 Text(DesktopApprovalButton.detail(level))
+                AppliedLevelNote(bot: current)
                 Text("Applies to every thread of this bot at once: routines, delegated work and work another bot or an AI client sends here. A thread keeps its own level only when you chose one in it.")
             }
         }

@@ -119,7 +119,7 @@ import { draggedFolder, draggedThread, FOLDER_DRAG_TYPE, THREAD_DRAG_TYPE, moveF
 import { addBotCalendarDrag } from "@/lib/bot-drag";
 import { folderUnreadThreadIds, markBotRead, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
 import { personPickerThreads } from "@/lib/person-threads";
-import { approvalModeFor } from "../../shared/approval-mode";
+import { approvalModeFor, botApprovalSetting } from "../../shared/approval-mode";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
@@ -1850,7 +1850,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       onMakeConfidential: (task: Row) => dispatch({ type: "makeTaskConfidential", botId, threadId: task.threadId }),
       onRefreshPermissions: (task: Row) => {
         const current = latest.current;
-        const mode = approvalModeFor(current);
+        const mode = botApprovalSetting(current);
         const threadMode = approvalModeFor(currentTaskBot(current, task.threadId));
         if (mode === "full" && threadMode !== "full") { setPermissionRefresh({ threadId: task.threadId, kind: "full" }); return; }
         if (mode === "auto" && current.computer === "local" && threadMode !== "auto") { setPermissionRefresh({ threadId: task.threadId, kind: "local-auto" }); return; }

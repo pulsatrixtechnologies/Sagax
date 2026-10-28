@@ -153,6 +153,25 @@ describe("sagax_settings", () => {
     expect(h.planned.at(-1)).toMatchObject({ method: "PATCH", body: { modelSelection: { model: "m", effort: "high" } } });
   });
 
+  // 2026-10-28 (one source of truth): the level is the bot's own setting, as
+  // Permissions shows it, never the level of the conversation the read
+  // landed on; this conversation's real level is said beside it.
+  it("reads the bot's own approval setting, and this conversation's real level when it differs", async () => {
+    const projected = { bots: [{ id: "b1", approvalMode: "ask", approvalSetting: "full" }] };
+    const plain = await harness({ answer: projected }).call({ action: "get", key: "bot.approvalMode" });
+    expect(JSON.parse(String(plain.body.text))).toEqual({ key: "bot.approvalMode", value: "full" });
+    const seen: Array<[string, string | undefined]> = [];
+    const h = harness({
+      answer: projected,
+      approvalLevel: (botId, threadId) => { seen.push([botId, threadId]); return { setting: "full", applied: { mode: "ask", reason: "engine" } }; },
+    });
+    const read = await h.call({ action: "get", key: "bot.approvalMode" });
+    expect(JSON.parse(String(read.body.text))).toEqual({ key: "bot.approvalMode", value: "full", thisConversation: "ask", because: "engine" });
+    expect(seen).toEqual([["b1", "th1"]]);
+    const same = await harness({ answer: projected, approvalLevel: () => ({ setting: "full" }) }).call({ action: "get", key: "bot.approvalMode" });
+    expect(JSON.parse(String(same.body.text))).toEqual({ key: "bot.approvalMode", value: "full" });
+  });
+
   it("sets a device preference in the person's open app at Approve for me, and asks at Ask", async () => {
     const h = harness();
     await h.call({ action: "set", key: "appearance.skin", value: "night" });

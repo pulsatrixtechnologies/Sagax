@@ -172,6 +172,10 @@ public struct OptionCard: Codable, Hashable, Sendable {
     public var undone: Bool? = nil
     /// How the card was answered when not by a tap (`CardAnswerer.via`).
     public var answeredBy: CardAnsweredBy? = nil
+    /// 2026-10-28: the person's own "Ask first" rule that kept this card.
+    public var heldRule: HeldRule? = nil
+    /// The custom rule that decided this card (an "Ask first" one held it).
+    public var customRule: CardRuleNotice? = nil
     /// The engine's own `<server>__<tool>` when `tool` is only a kind (ACP
     /// "other") or a bare name.
     public var mcpTool: String? = nil
@@ -262,6 +266,9 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     public var product: String? = nil
     /// The id the tool's name starts with for that product, declared with it.
     public var productId: String? = nil
+    /// 2026-10-28: what answered the call's ask with no card; the row's
+    /// details only, never its line.
+    public var autoApproval: ToolAutoApproval? = nil
 
     public init(name: String, ok: Bool? = nil, spoken: String? = nil, setup: Bool? = nil, claudeUpdate: Bool? = nil, output: String? = nil, summary: String? = nil, widget: CwWidget? = nil) {
         self.name = name
@@ -275,7 +282,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId
+        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId, autoApproval
     }
 
     public init(from decoder: Decoder) throws {
@@ -291,6 +298,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         durationMs = try? box.decodeIfPresent(Double.self, forKey: .durationMs)
         product = try? box.decodeIfPresent(String.self, forKey: .product)
         productId = try? box.decodeIfPresent(String.self, forKey: .productId)
+        autoApproval = try? box.decodeIfPresent(ToolAutoApproval.self, forKey: .autoApproval)
         do {
             widget = try box.decodeIfPresent(CwWidget.self, forKey: .widget)
         } catch {
@@ -312,6 +320,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         try box.encodeIfPresent(durationMs, forKey: .durationMs)
         try box.encodeIfPresent(product, forKey: .product)
         try box.encodeIfPresent(productId, forKey: .productId)
+        try box.encodeIfPresent(autoApproval, forKey: .autoApproval)
     }
 
     /// The output worth expanding the chip for; nil when there is none.
@@ -932,6 +941,12 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// ask, auto, full, or custom. Missing on older harnesses; autoApprove
     /// remains the compatibility mirror for older companion builds.
     public var approvalMode: String?
+    /// 2026-10-28: the bot's own level as its owner chose it, never a
+    /// conversation's (`WireBot.approvalSetting`). Nil on older servers.
+    public var approvalSetting: String? = nil
+    /// The level the open conversation really runs at, with why, when it is
+    /// not `approvalSetting` (`WireBot.approvalApplied`).
+    public var approvalApplied: AppliedApprovalLevel? = nil
     public var autoApprove: Bool?
     public var alwaysAllow: [String]?
     /// People and bots this bot writes to without a card (`allowedRecipients`).
@@ -1060,6 +1075,8 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
         view.autoApprove = task?.autoApprove ?? autoApprove
         view.alwaysAllow = task?.alwaysAllow ?? alwaysAllow
         if selectedThreadId != threadId {
+            // the server judged the open conversation only
+            view.approvalApplied = nil
             view.messages = nil
             view.activeLeafId = nil
             view.hasMore = nil

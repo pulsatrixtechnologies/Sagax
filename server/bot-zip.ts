@@ -131,6 +131,8 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   // #1137: who pays is its owner's choice on this server, and the default is computed
   turnPayer: { drop: "who pays is the owner's choice on this server" },
   turnPayerDefault: { drop: "computed by the server" },
+  approvalSetting: { drop: "computed by the server" },
+  approvalApplied: { drop: "computed by the server" },
   autoApprove: "settings",
   approvalMode: "settings",
   proactiveMode: "settings",

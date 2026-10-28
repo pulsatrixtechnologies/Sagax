@@ -2,6 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ToolActivity } from "./ToolActivity";
+import { BotEditorStore } from "@/state/store";
+
+const store = { dispatch: () => {} } as unknown as Parameters<typeof BotEditorStore>[0]["value"];
+const inStore = (el: ReturnType<typeof createElement>) => renderToStaticMarkup(createElement(BotEditorStore, { value: store, children: el }));
 
 describe("ToolActivity", () => {
   it("is a quiet step row: plain words, no frame, no monospace, no green check", () => {
@@ -84,5 +88,28 @@ describe("ToolActivity", () => {
     expect(chip("this_computer", true)).not.toContain("data-step-row");
     // a refused switch keeps its details (the reason it failed)
     expect(chip("this_computer", false)).toContain("data-step-row");
+  });
+
+  // 2026-10-28: a call Full access (or an Always allow) answered with no card
+  // is an ordinary step line; what answered it is in the details only.
+  it("keeps what answered the call's ask off the line and in its details", () => {
+    const tool = { name: "mcp__desk__view_tickets", ok: true, input: "{}", autoApproval: { source: "full-access" } };
+    const closed = renderToStaticMarkup(createElement(ToolActivity, { tool }));
+    expect(closed).not.toContain("Approved automatically");
+    expect(closed).not.toContain("Always allowed");
+    expect(closed).not.toContain("text-success");
+    const open = renderToStaticMarkup(createElement(ToolActivity, { tool, defaultOpen: true }));
+    expect(open).toContain('data-testid="tool-auto-approval"');
+    expect(open).toContain("Approved automatically: Full access");
+    const rule = renderToStaticMarkup(createElement(ToolActivity, { tool: { ...tool, autoApproval: { source: "owner-rule", rule: "r1" } }, defaultOpen: true }));
+    expect(rule).toContain("Approved automatically: your Always allow rule");
+  });
+
+  it("moves a rule's approval into the details; a rule that held or refused keeps its line", () => {
+    const notice = { id: "c1", when: "reading the help desk", behavior: "allow" as const, botId: null, outcome: "approved" as const };
+    const approved = inStore(createElement(ToolActivity, { tool: { name: "mcp__desk__view_tickets", ok: true, ruleNotice: notice } }));
+    expect(approved).not.toContain("data-custom-rule-notice");
+    const refused = inStore(createElement(ToolActivity, { tool: { name: "mcp__desk__view_tickets", ok: false, ruleNotice: { ...notice, behavior: "deny" as const, outcome: "denied" as const } } }));
+    expect(refused).toContain('data-custom-rule-notice="denied"');
   });
 });

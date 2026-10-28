@@ -141,3 +141,82 @@ export function isEmergencyApprovalDowngrade(
 export function engineApprovalMode(level: ApprovalMode, rulesHold: boolean): ApprovalMode {
   return level === "full" && rulesHold ? "ask" : level;
 }
+
+/** Why the level a conversation runs at is not the bot's own setting
+ * (2026-10-28, one source of truth: what the selector shows is what the
+ * server applies). The server works it out where it judges a turn
+ * (approvalModeForTurn); every client reads it, never guesses it.
+ * - thread, delegated, engine, safety: the conversation holds its own level
+ *   (WireTask.approvalOwn);
+ * - pending: a Full or Custom choice still waits for its confirmation;
+ * - consent: Full needs the bot's current owner to confirm it;
+ * - member-policy: the organization keeps this level off for members' bots;
+ * - engine-unsupported: the conversation's engine cannot run this level;
+ * - guest: someone else drives this turn on a Cloud home;
+ * - mail: a routine woken by an email runs at Ask. */
+export const APPLIED_LEVEL_REASONS = [
+  "thread", "delegated", "engine", "safety", "pending", "consent", "member-policy", "engine-unsupported", "guest", "mail",
+] as const;
+export type AppliedLevelReason = (typeof APPLIED_LEVEL_REASONS)[number];
+
+/** The level a conversation really runs at, when it is not the bot's own
+ * setting; absent when both are the same. */
+export interface AppliedApprovalLevel {
+  mode: ApprovalMode;
+  reason: AppliedLevelReason;
+}
+
+export function isAppliedLevelReason(value: unknown): value is AppliedLevelReason {
+  return typeof value === "string" && (APPLIED_LEVEL_REASONS as readonly string[]).includes(value);
+}
+
+/** The first reason, in the order the server applies them, that keeps a
+ * conversation off its bot's setting. `applied` is the level the server
+ * computed for the turn; `checks` are the facts the server read. */
+export function appliedLevelReason(setting: ApprovalMode, applied: ApprovalMode, checks: {
+  /** the conversation's own exception (WireTask.approvalOwn), if any */
+  threadException?: unknown;
+  /** the level that exception holds */
+  threadLevel?: ApprovalMode;
+  pending?: boolean;
+  consentMissing?: boolean;
+  memberPolicy?: boolean;
+  guest?: boolean;
+  mail?: boolean;
+}): AppliedLevelReason | undefined {
+  if (applied === setting) return undefined;
+  if (checks.pending) return "pending";
+  if (isApprovalException(checks.threadException) && checks.threadLevel !== undefined && checks.threadLevel !== setting) return checks.threadException;
+  if (checks.guest) return "guest";
+  if (checks.mail) return "mail";
+  if (setting === "full" && checks.consentMissing) return "consent";
+  if (checks.memberPolicy) return "member-policy";
+  return "engine-unsupported";
+}
+
+/** Whether a conversation's own exception may give way to its bot's
+ * setting at start-up (2026-10-28 migration): an exception nobody chose in
+ * that conversation ("engine": an engine change asked again; "safety": a
+ * grant that never finished), narrower than the bot's setting, on an engine
+ * that runs the bot's setting. A person's own choice in the conversation
+ * ("thread") and a Primary Bot's handoff ("delegated") stay, and a level is
+ * never narrowed. */
+export function staleThreadException(input: {
+  exception: unknown;
+  threadLevel: ApprovalMode;
+  setting: ApprovalMode;
+  engineRunsSetting: boolean;
+}): boolean {
+  if (input.exception !== "engine" && input.exception !== "safety") return false;
+  if (!input.engineRunsSetting) return false;
+  // Custom is a separate grant, never reached by this pass
+  if (input.setting === "custom" || input.threadLevel === "custom") return false;
+  return approvalModeWidens(input.threadLevel, input.setting);
+}
+
+/** The bot's own setting as a client reads it: `approvalSetting` from a
+ * server that sends it (never a conversation's level), else the record's
+ * level as before. */
+export function botApprovalSetting(bot: { approvalSetting?: unknown; approvalMode?: unknown; autoApprove?: unknown; approvalGrant?: unknown }): ApprovalMode {
+  return isApprovalMode(bot.approvalSetting) ? bot.approvalSetting : approvalModeFor(bot);
+}

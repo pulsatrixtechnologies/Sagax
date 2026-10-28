@@ -195,7 +195,10 @@ struct CardView: View {
                     }
                     .padding(.top, 2)
 
-                } else if answeredInDock, let outcome = ApprovalOutcome.of(card) {
+                } else if answeredInDock, let found = ApprovalOutcome.of(card) {
+                    // 2026-10-28: an Always allow reads as allowed; the kept
+                    // rule shows in its inset below, never on the line
+                    let outcome: ApprovalOutcome = found == .alwaysAllowed && ApprovalReceiptRules.isQuiet(card) ? .allowed : found
                     Label(Self.outcomeText(outcome), systemImage: outcome == .allowed || outcome == .alwaysAllowed || card.answered == "allow" ? "checkmark.circle" : "xmark.circle")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.attentionSecondary)
@@ -241,9 +244,16 @@ struct CardView: View {
         if card.adminApproval == true && !session.answersServerCards {
             return String(localized: "This command runs on the server: waiting for an admin to approve it.")
         }
-        return ApprovalDockRules.isProposal(card)
-            ? String(localized: "Waiting for your confirmation below")
-            : String(localized: "Waiting for your approval")
+        if ApprovalDockRules.isProposal(card) { return String(localized: "Waiting for your confirmation below") }
+        // 2026-10-28: an "Ask first" rule held it: the line names the rule
+        if let rule = ApprovalReceiptRules.heldByRule(card) {
+            let label = rule.org
+                ? String(localized: "approval.waiting.orgRule", defaultValue: "Paused by your organization's \"Ask first\" rule")
+                : String(localized: "approval.waiting.ownRule", defaultValue: "Paused by your \"Ask first\" rule")
+            guard let words = rule.words, !words.isEmpty else { return label }
+            return "\(label) « \(words) »"
+        }
+        return String(localized: "Waiting for your approval")
     }
 
     static func outcomeText(_ outcome: ApprovalOutcome) -> String {

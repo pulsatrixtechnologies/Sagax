@@ -11,6 +11,8 @@ import { computerSelectTarget, toolExecutionTarget } from "../../shared/executio
 import { PlaceIcon } from "./PlaceIcon";
 import { StepRow } from "./StepRow";
 import { CustomRuleNoticeLine } from "./CustomRuleNotice";
+import { autoApprovalReason, type AutoApprovalReason } from "../../shared/auto-approval-reason";
+import type { LocaleKey } from "@/locales";
 
 type Tool = NonNullable<Message["tool"]>;
 
@@ -66,14 +68,32 @@ export function ToolActivity({ tool, place = null, nameOf, defaultOpen = false }
       {() => <ToolStepDetail tool={tool} status={status} />}
     </StepRow>
   );
-  // 2026-10-16: the person's custom rule that answered this with no card
-  if (!tool.ruleNotice) return row;
+  // 2026-10-16: the person's custom rule that answered this with no card.
+  // 2026-10-28: an approval stays in the details, never on the line; a rule
+  // that refused or held the call keeps its line.
+  if (!tool.ruleNotice || tool.ruleNotice.outcome === "approved") return row;
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       {row}
       <CustomRuleNoticeLine notice={tool.ruleNotice} compact />
     </div>
   );
+}
+
+const AUTO_APPROVAL_TEXT: Record<AutoApprovalReason, LocaleKey> = {
+  full: "approval.auto.full",
+  level: "approval.auto.level",
+  rule: "approval.auto.rule",
+  command: "approval.auto.command",
+  recipients: "approval.auto.recipients",
+  trusted: "approval.auto.trusted",
+  answered: "approval.auto.answered",
+  other: "approval.auto.other",
+};
+
+/** What answered a call's ask with no card, in words (its details only). */
+export function autoApprovalText(approval: { source: string } | undefined): string | undefined {
+  return approval ? t(AUTO_APPROVAL_TEXT[autoApprovalReason(approval.source)]) : undefined;
 }
 
 const KEY = "text-[11px] text-ink-tertiary";
@@ -99,6 +119,14 @@ export function ToolStepDetail({ tool, status }: { tool: Tool; status: string })
           {status}{duration && phase !== "running" ? ` · ${duration}` : ""}
         </span>
       </div>
+      {(tool.autoApproval || tool.ruleNotice?.outcome === "approved") && (
+        <div data-testid="tool-auto-approval" data-source={tool.autoApproval?.source}>
+          <div className={cn(KEY, "mb-0.5")}>{t("step.detail.approval")}</div>
+          {tool.ruleNotice?.outcome === "approved"
+            ? <CustomRuleNoticeLine notice={tool.ruleNotice} compact />
+            : <p className="text-[12px] text-ink">{autoApprovalText(tool.autoApproval)}</p>}
+        </div>
+      )}
       {(args.length > 0 || plainInput) && (
         <div>
           <div className={cn(KEY, "mb-0.5")}>{t("step.detail.arguments")}</div>

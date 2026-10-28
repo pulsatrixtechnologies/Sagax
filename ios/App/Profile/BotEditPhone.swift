@@ -90,7 +90,7 @@ struct BotEditSummaries {
             let name = selection.model.isEmpty ? String(localized: "Default") : selection.model
             return selection.auto == true ? String(localized: "Auto · \(name)") : name
         case .approvals:
-            let level = Self.levelTitle(ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: bot.autoApprove))
+            let level = Self.levelTitle(ApprovalLevel.of(approvalMode: bot.approvalSettingMode, autoApprove: bot.autoApprove))
             guard let rules else { return level }
             let counts = BotEditSummary.ruleCounts(rules, botId: bot.id)
             let parts = [

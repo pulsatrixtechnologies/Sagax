@@ -105,6 +105,14 @@ describe("the server decision, derived from the stored bot", () => {
       expect(d.execute).toBe(false);
     }
   });
+
+  it("at Full access, a read-auto write goes the ordinary approval path, no card of its own (2026-10-28)", () => {
+    const full = decideProactiveStep({ bot: { proactiveMode: "read-auto" }, approvalLevel: "full", action: { tool: "MAIL_SEND_MESSAGE" }, coveredByRules: covers(true) });
+    expect(full).toMatchObject({ disposition: "defer", execute: true, card: false });
+    // an organization rule or the outbound guard still stops it on that path
+    const held = decideProactiveStep({ bot: { proactiveMode: "read-auto" }, approvalLevel: "full", action: { tool: "MAIL_SEND_MESSAGE" }, coveredByRules: covers(false) });
+    expect(held).toMatchObject({ disposition: "defer", execute: false, card: true });
+  });
 });
 
 describe("the proactive budget bounds the loop (no runaway)", () => {

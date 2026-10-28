@@ -9,7 +9,7 @@ import { openTeamBotFromThread, teamBotSourceAllowed } from "@/lib/teambot-from-
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronLeft, MessagesSquare, MoreHorizontal, Plus, Search } from "lucide-react";
 import { api, currentTaskBot, useStore, type Bot, type BotProject, type Group, type GroupTaskUpdatePatch, type Task } from "@/state/store";
-import { approvalModeFor } from "../../shared/approval-mode";
+import { botApprovalSetting, approvalModeFor } from "../../shared/approval-mode";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
 import { moveFolder } from "@/lib/folder-order";
 import { folderUnreadThreadIds, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
@@ -583,7 +583,7 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
     onSnooze: (threadId, snoozedUntil) => dispatch({ type: "updateTask", botId: bot.id, threadId, patch: { snoozedUntil } }),
     // the same checks as the sidebar row had: a wider approval level asks first
     onRefreshPermissions: (threadId) => {
-      const mode = approvalModeFor(bot);
+      const mode = botApprovalSetting(bot);
       const threadMode = approvalModeFor(currentTaskBot(bot, threadId));
       if (mode === "full" && threadMode !== "full") { setPermissionRefresh({ threadId, kind: "full" }); return; }
       if (mode === "auto" && bot.computer === "local" && threadMode !== "auto") { setPermissionRefresh({ threadId, kind: "local-auto" }); return; }

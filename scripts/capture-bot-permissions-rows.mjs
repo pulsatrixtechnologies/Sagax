@@ -49,7 +49,7 @@ try {
     return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not in this gallery" }) });
   });
   for (const { id, label } of skins) {
-    await page.goto(`${base}?skin=${id}&lang=en`, { waitUntil: "load" });
+    await page.goto(`${base}?skin=${id}&lang=en${arg("--query") ? `&${arg("--query")}` : ""}`, { waitUntil: "load" });
     await page.waitForSelector('[data-settings-row="lifecycleHooks"]');
     await page.waitForSelector("[data-settings-group], [data-settings-row]");
     await page.waitForTimeout(300);

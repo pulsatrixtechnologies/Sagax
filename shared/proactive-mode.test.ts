@@ -84,4 +84,15 @@ describe("the safety invariant: no write executes unprompted from the proactive 
     // Propose never runs even a read.
     expect(proactiveGate({ mode: "propose", kind: "read" })).toBe("propose");
   });
+
+  // 2026-10-28: at Full access the proactive layer adds no card of its own;
+  // a write takes the ordinary approval path, where only the organization's
+  // Refuse and Ask first rules, the person's Ask first rules and the outbound
+  // guard still stop it. Propose stays a proposal.
+  it("at Full access, read-auto hands a write to the ordinary path instead of its own card", () => {
+    expect(proactiveGate({ mode: "read-auto", kind: "write", approvalLevel: "full" })).toBe("defer");
+    expect(proactiveGate({ mode: "read-auto", kind: "write", approvalLevel: "auto" })).toBe("card");
+    expect(proactiveGate({ mode: "propose", kind: "write", approvalLevel: "full" })).toBe("propose");
+    expect(proactiveGate({ mode: "off", kind: "write", approvalLevel: "full" })).toBe("blocked");
+  });
 });
