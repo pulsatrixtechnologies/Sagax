@@ -8389,16 +8389,16 @@ describe("harness HTTP API", () => {
 
   it("cards every ask when Claude's reviewer never started, and can hand the allow to Claude for the session", async () => {
     // Approve for me no longer launches the CLI reviewer (`--permission-mode
-    // auto`). It is acceptEdits plus a fixed allowlist, and the driver does
-    // not report nativeReview, so the old "automatic reviewer is not
-    // available" notice is not posted. The ask is still a card, and the
-    // session allow still reaches Claude.
+    // auto`), and on the solo desk it runs what no rule forbids without a card
+    // (#1264). So this test asks at the "Ask me" level, where every ask is a
+    // card: the card still offers the provider's session allow, and that allow
+    // still reaches Claude.
     const bot = (await api("POST", "/api/bots", { name: "Quill" })).body.bot;
     const conns: Socket[] = [];
     try {
       expect((await api("PATCH", `/api/bots/${bot.id}`, {
         modelSelection: { instanceId: "claude", model: "claude-haiku-4-5" },
-        approvalMode: "auto",
+        approvalMode: "ask",
       })).status).toBe(200);
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "count my notes" })).status).toBe(202);
@@ -8435,7 +8435,8 @@ describe("harness HTTP API", () => {
       const card = await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "wc -l notes.md")?.card, windowsPoll).toBeTruthy()
         .then(async () => (await messages()).find((m) => m.card?.subtitle === "wc -l notes.md")!.card!);
       expect(card.title).toBe("Approval needed");
-      expect(card.heldCode).toBe("approval.held.native");
+      // "Ask me" holds nothing back for a reviewer, so no held notice rides the card
+      expect(card.heldCode).toBeUndefined();
       // no app-side grant is offered for a provider's tool; the provider's
       // own session-wide allow is
       expect(card.allowKey).toBeUndefined();

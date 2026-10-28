@@ -1236,6 +1236,7 @@ import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../shared/sand
 import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv } from "./user-sandbox-manager.ts";
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
 import { createBotHistoryRoutes } from "./routes/bot-history.ts";
+import { createBotSendStateRoutes } from "./routes/bot-send-state.ts";
 import { createMeEngineModelsRoutes } from "./routes/me-engine-models.ts";
 import { createRoutineWatchCheckRoutes } from "./routes/routine-watch-check.ts";
 import { createThreadFilePinRoutes } from "./routes/thread-file-pins.ts";
@@ -34197,6 +34198,10 @@ ROUTES.push(createBotHistoryRoutes<BotRecord, ReturnType<typeof wireBot>>({
   wireBot: (bot) => wireBot(bot),
   broadcast: (event) => broadcast(event),
 }));
+ROUTES.push(createBotSendStateRoutes({
+  requestedTaskBot: (botId, threadId) => requestedTaskBot(botId, threadId),
+  sendStateFor: (bot, auth) => sendStateFor(bot, speakerFor(auth)),
+}));
 ROUTES.push(createRoutineWatchCheckRoutes({
   watchDeps: routineWatchDeps,
   hasBot: (botId) => Boolean(store.bot(botId)),
@@ -45166,16 +45171,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (bot.modelSelection.auto !== true) return json(res, 200, { auto: false });
       const turn = autoPickForTurn({ bot, threadId: bot.threadId, speaker: speakerFor(auth), role: "orchestration", text: "" });
       return json(res, 200, { auto: true, pick: turn ? autoModelRecord(turn.pick, Date.now()) : null, explanation: turn ? explainPick(turn.pick) : "" });
-    }
-    // The maintainer, 2026-10-27: whether this person's message can be answered now. A
-    // certain no (the engine not connected for them, the computer or local
-    // server behind the model down) keeps the composer from sending, with one
-    // line and the one thing to do; anything uncertain sends as before.
-    m = path.match(/^\/api\/bots\/([\w-]+)\/send-state$/);
-    if (m && method === "GET") {
-      res.setHeader("cache-control", "no-store");
-      const bot = requestedTaskBot(m[1], url.searchParams.get("threadId") ?? undefined);
-      return json(res, 200, { block: sendStateFor(bot, speakerFor(auth)) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/command-allowlist(?:\/([\w-]+))?$/);
     if (m && ["GET", "POST", "DELETE"].includes(method)) {
