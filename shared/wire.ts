@@ -436,6 +436,8 @@ export interface WireBot {
   alwaysAllow?: string[];
   /** Speak this bot's replies aloud as they settle, without being asked. */
   speakReplies?: boolean;
+  /** The person's own "do not finish until" sentence. Absent means off. Not a task list. */
+  finishUntil?: string;
   /** This bot's own voice id, so a room of bots doesn't sound like one person. */
   voice?: string;
   /** Whether this bot may send voice notes. Absent/true = allowed; false

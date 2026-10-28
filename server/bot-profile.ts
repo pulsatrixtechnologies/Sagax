@@ -12,6 +12,7 @@ import { MASCOT_BODY_IDS, mascotBodySchema } from "../shared/mascot-bodies.ts";
 import { MASCOT_SKIN_IDS, mascotSkinSchema } from "../shared/mascot-skins.ts";
 import { MASCOT_CHARACTERS, mascotLookSchema } from "../shared/mascot-look.ts";
 
+import { FINISH_UNTIL_MAX, finishUntilText } from "./finish-until.ts";
 import type { BotRecord } from "./store.ts";
 
 // Shared with the package format, which checks the same rule on names it
@@ -34,6 +35,7 @@ export const BOT_PROFILE_PATCH_FIELDS = [
   "mascotLook",
   "voice",
   "speakReplies",
+  "finishUntil",
 ] as const;
 
 export const profilePatchSchema = z.object({
@@ -76,6 +78,13 @@ export const profilePatchSchema = z.object({
     .max(BOT_PROFILE_LIMITS.voice, { error: "voice must be at most 200 characters" })
     .optional(),
   speakReplies: z.boolean({ error: "speakReplies must be true or false" }).optional(),
+  finishUntil: z.union([
+    z.string({ error: "finishUntil must be one sentence" })
+      .max(FINISH_UNTIL_MAX, { error: `finishUntil must be at most ${FINISH_UNTIL_MAX} characters` })
+      .refine((value) => !/[\r\n]/.test(value), { error: "finishUntil is one sentence, not a list" }),
+    z.literal(""),
+    z.null(),
+  ]).optional(),
 });
 
 export type BotProfilePatchInput = z.input<typeof profilePatchSchema>;
@@ -98,6 +107,7 @@ export type BotProfilePatch = Partial<
     | "mascotLook"
     | "voice"
     | "speakReplies"
+    | "finishUntil"
   >
 >;
 
@@ -142,8 +152,12 @@ export function parseBotProfilePatch(input: BotProfilePatchInput, strict = false
     return { ok: false, error: issue?.message ?? "invalid profile patch" };
   }
 
-  const { avatarUrl, ...fields } = parsed.data;
+  const { avatarUrl, finishUntil, ...fields } = parsed.data;
   const patch: BotProfilePatch = fields;
   if (avatarUrl !== undefined) patch.avatarUrl = avatarUrl || undefined;
+  if (finishUntil !== undefined) {
+    const text = finishUntilText(finishUntil);
+    patch.finishUntil = text || undefined;
+  }
   return { ok: true, patch };
 }
