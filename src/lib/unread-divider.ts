@@ -7,9 +7,15 @@
 // first message after it. With neither point there is no divider, and none
 // when nothing came in after it.
 import { peerLine } from "@/lib/peer-message";
-import type { Message } from "@/state/store";
 
-type Line = Pick<Message, "id" | "role" | "text" | "peerAsk">;
+/** The fields the divider reads. The full message stays in the store, so
+ * this module does not import it (#1381). */
+type Line = {
+  id: string;
+  role: "bot" | "user";
+  text?: string;
+  peerAsk?: { botId: string; name: string; unattended?: boolean };
+};
 
 /** A user-role line the person wrote, not one another bot delivered. */
 const fromPerson = (message: Line) => message.role === "user" && !peerLine(message);
@@ -48,7 +54,7 @@ export function threadReadCursor(bot: {
 /** The divider's message and every one after it, or null when the mounted
  * rows do not hold it. A list puts the divider above the first row that
  * draws one of these, so a hidden row under it does not lose it. */
-export function unreadMessageIds(messages: readonly Pick<Message, "id">[], messageId: string | null): ReadonlySet<string> | null {
+export function unreadMessageIds(messages: readonly Pick<Line, "id">[], messageId: string | null): ReadonlySet<string> | null {
   if (!messageId) return null;
   const at = messages.findIndex((message) => message.id === messageId);
   return at < 0 ? null : new Set(messages.slice(at).map((message) => message.id));
