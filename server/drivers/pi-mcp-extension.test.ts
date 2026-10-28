@@ -567,6 +567,75 @@ describe("Pi MCP extension registration", () => {
     await handlers.get("session_shutdown")?.();
   });
 
+  it("hands its tool lists to the next pi, which declares them and connects at the first call (#1276)", async () => {
+    const dir = tempDir();
+    const live = join(dir, "turn-live");
+    // a server whose credentials hold only while a turn runs: between turns
+    // (when the standby pi starts) it can list nothing
+    const script = fakeMcpScript(`
+      const { existsSync } = await import("node:fs");
+      let buffer = "";
+      process.stdin.setEncoding("utf8");
+      const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+      process.stdin.on("data", (chunk) => {
+        buffer += chunk;
+        let newline;
+        while ((newline = buffer.indexOf("\\n")) !== -1) {
+          const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          const ok = existsSync(${JSON.stringify(live)});
+          if (msg.method === "initialize") send({ jsonrpc: "2.0", id: msg.id, result: { capabilities: { tools: {} } } });
+          else if (!ok) send({ jsonrpc: "2.0", id: msg.id, error: { message: "unauthorized" } });
+          else if (msg.method === "tools/list") send({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "lookup", description: "Look up", inputSchema: { type: "object", properties: {} } }] } });
+          else if (msg.method === "tools/call") send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "found" }] } });
+        }
+      });
+    `);
+    const server = { command: process.execPath, args: [script] };
+    const mount = async (config: Record<string, unknown>) => {
+      const path = join(dir, `mcp-${Math.random()}.json`);
+      writeFileSync(path, JSON.stringify({ mcpServers: { data: server }, ...config }));
+      process.env.SAGAX_MCP_CONFIG = path;
+      const tools: RegisteredTool[] = [];
+      const handlers = new Map<string, ShutdownHandler>();
+      await extension({ registerTool(tool) { tools.push(tool); }, on(event, handler) { handlers.set(event, handler); } });
+      return { tools, shutdown: async () => handlers.get("session_shutdown")?.() };
+    };
+
+    writeFileSync(live, "1");
+    const cachePath = join(dir, "tools.json");
+    const first = await mount({ toolCachePath: cachePath });
+    expect(first.tools.map((tool) => tool.name)).toEqual(["data_lookup"]);
+    await first.shutdown();
+    const toolCache = JSON.parse(readFileSync(cachePath, "utf8"));
+    expect(toolCache).toEqual({ data: [{ name: "lookup", description: "Look up", inputSchema: { type: "object", properties: {} } }] });
+
+    // between turns: listing fails, the previous list stands in (same declaration)
+    await removeTempDir(live);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const nextCache = join(dir, "tools-next.json");
+    const standby = await mount({ toolCache, toolCachePath: nextCache });
+    expect(standby.tools.map((tool) => [tool.name, tool.description])).toEqual([["data_lookup", "Look up"]]);
+    expect(stderr).not.toHaveBeenCalled();
+    // and passes it on to the pi after it
+    expect(JSON.parse(readFileSync(nextCache, "utf8"))).toEqual(toolCache);
+
+    // the next turn runs: the first call connects
+    writeFileSync(live, "1");
+    await expect(
+      standby.tools[0].execute("call-1", {}, undefined, undefined, { ui: { confirm: async () => true } }),
+    ).resolves.toMatchObject({ content: [{ type: "text", text: "found" }] });
+    await standby.shutdown();
+
+    // with no list to stand in, a server that cannot list stays unmounted
+    await removeTempDir(live);
+    const bare = await mount({});
+    expect(bare.tools).toEqual([]);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining("unauthorized"));
+    await bare.shutdown();
+  });
+
   it("throws when an MCP tool result declares isError", async () => {
     const script = fakeMcpScript(`
       let buffer = "";

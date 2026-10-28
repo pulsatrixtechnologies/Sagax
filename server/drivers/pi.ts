@@ -105,6 +105,18 @@ interface PiStandby {
   timer: NodeJS.Timeout;
 }
 const PI_STANDBY_MS = 10 * 60_000;
+/** The tool lists a compact turn's pi mounted (pi-mcp-extension.ts toolCachePath). */
+const PI_TOOL_CACHE = "tools.json";
+/** What the thread's last pi mounted, for the standby that follows it. */
+function readPiToolCache(dir: string | null): Record<string, unknown> | undefined {
+  if (!dir) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(join(dir, PI_TOOL_CACHE), "utf8")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+}
 const piStandby = new Map<string, PiStandby>();
 /** A standby still starting, per thread: the next turn waits for it rather
  * than start a second pi (it is further along than a fresh one). */
@@ -177,6 +189,7 @@ async function runPiStandby(input: {
   cwd: string | undefined;
   env: Record<string, string | undefined>;
   config: Record<string, unknown>;
+  toolCache: Record<string, unknown> | undefined;
 }): Promise<void> {
   dropPiStandby(input.threadId);
   let dir: string | null = null;
@@ -184,7 +197,7 @@ async function runPiStandby(input: {
   try {
     dir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
     const scopeReadyPath = input.config.toolScope !== undefined ? join(dir, "scope-ready.json") : undefined;
-    writeFileSync(join(dir, "mcp.json"), JSON.stringify({ ...input.config, scopeReadyPath }), { mode: 0o600 });
+    writeFileSync(join(dir, "mcp.json"), JSON.stringify({ ...input.config, scopeReadyPath, toolCachePath: join(dir, PI_TOOL_CACHE), toolCache: input.toolCache }), { mode: 0o600 });
     child = spawnCli(input.cli, input.args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: input.cwd,
@@ -1051,7 +1064,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         mcpTempDir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
         if (toolScope !== undefined) scopeReadyPath = join(mcpTempDir, "scope-ready.json");
         try {
-          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ ...mcpConfig, scopeReadyPath }), { mode: 0o600 });
+          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ ...mcpConfig, scopeReadyPath, ...(turn.compactPrompt ? { toolCachePath: join(mcpTempDir, PI_TOOL_CACHE) } : {}) }), { mode: 0o600 });
         } catch (err) {
           // A failed write must not leave the temp dir behind — a partial file
           // could still hold the boat token / comms token.
@@ -1153,7 +1166,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         // #1276: once this pi has exited (its session file then holds the
         // whole turn), start the thread's next pi, its session resumed.
         if (ok && turn.compactPrompt && standbySession && (stopReason ?? "end_turn") === "end_turn") {
-          const resume = { threadId, key: standbyKey, sessionFile: standbySession, cli: config.cli, args: childArgs, cwd: turn.cwd, env: spawnEnv, config: mcpConfig };
+          const resume = { threadId, key: standbyKey, sessionFile: standbySession, cli: config.cli, args: childArgs, cwd: turn.cwd, env: spawnEnv, config: mcpConfig, toolCache: readPiToolCache(mcpTempDir) };
           if (child.exitCode !== null || child.signalCode !== null) void startPiStandby(resume);
           else child.once("exit", () => { void startPiStandby(resume); });
         }
