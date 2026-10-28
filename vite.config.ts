@@ -29,6 +29,17 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(forkVersion),
     __BASE_VERSION__: JSON.stringify(baseVersion),
   },
+  // Two pages: the app, and the bar around a published page that a reader
+  // opens from its link (page-reader.html, src/page-reader/). The server
+  // reads the built page-reader.html for its script and style tags.
+  build: {
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL("./index.html", import.meta.url)),
+        "page-reader": fileURLToPath(new URL("./page-reader.html", import.meta.url)),
+      },
+    },
+  },
   test: {
     environment: "node",
     include: [

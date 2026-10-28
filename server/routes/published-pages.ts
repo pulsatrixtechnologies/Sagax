@@ -1,12 +1,15 @@
 // Published pages (server/published-pages.ts, shared/published-pages.ts).
 //
 // Before the auth gate (handlePublishedPagePublic, server/index.ts):
-//   GET /pages/view/<token>    the reader's entry: a Sagax wrapper with a
-//     permanent banner ("not a Sagax screen, never enter a password") and the
-//     page in an iframe sandboxed to scripts only (Markdown: nothing). Its
-//     CSP runs no script, frames only this page's frame path (`frame-src`
-//     with the path, so the page cannot navigate its frame anywhere else)
-//     and cannot itself be framed. Who may read it is checked here:
+//   GET /pages/view/<token>    the reader's entry: a Sagax wrapper with its
+//     bar (2026-10-28: the title, the permanent notice "published by <bot>
+//     for <person>, not a Sagax screen, never enter a password", and the
+//     actions the reader has a right to) and the page in an iframe sandboxed
+//     to scripts only (Markdown: nothing). Its CSP runs only this server's
+//     own built bar script (script-src 'self', none without a built UI),
+//     reaches only this origin, frames only this page's frame path
+//     (`frame-src` with the path, so the page cannot navigate its frame
+//     anywhere else) and cannot itself be framed. Who may read it is checked here:
 //     "link" anyone holding the link; "org" a signed-in person of this
 //     server; "private" only the page's person (on a one-person server, the
 //     computer's owner). A bad signature, a revoked link, an expired page
@@ -50,10 +53,13 @@
 //          Add people or groups): who else reads it while it is shared with
 //          "People you invite"; the person's own choice, no admin
 import { randomBytes } from "node:crypto";
+import { readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { join } from "node:path";
 
 import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from "../published-pages.ts";
-import { commentAnswerDocument, pageDocument, wrapperDocument } from "../published-pages-render.ts";
+import { commentAnswerDocument, pageDocument, parseReaderAssets, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
+import type { ReaderBoot } from "../../shared/page-reader.ts";
 import { requestSource, type RequestAuth } from "../request-auth.ts";
 import { redactSecretsInText } from "../../shared/redact.ts";
 import { pageAudienceOf, pageMayEnter, parsePageAudience } from "../../shared/page-audience.ts";
@@ -145,6 +151,52 @@ export interface PublicPageOptions {
   redact?(text: string): string;
   /** The teams a person is in (team ids), for pages shared with a team. */
   teamsOf?(principalId: string): readonly string[];
+  /** The built tags of the reader's bar (readerAssetsFrom), or null: the bar
+   * then shows the title and the notice without its actions. */
+  readerAssets?(): ReaderAssets | null;
+  /** A signed-in reader's name, as the bar shows it. */
+  personName?(principalId: string): string;
+}
+
+const assetCache = new Map<string, { mtimeMs: number; assets: ReaderAssets | null }>();
+
+/** The reader's bar as this server's built UI has it (SAGAX_STATIC_DIR's
+ * page-reader.html), read again only when that file changes; null when there
+ * is none (a server run from source, without a built UI). */
+export function readerAssetsFrom(staticDir: string | null): ReaderAssets | null {
+  if (!staticDir) return null;
+  const file = join(staticDir, "page-reader.html");
+  try {
+    const { mtimeMs } = statSync(file);
+    const cached = assetCache.get(file);
+    if (cached && cached.mtimeMs === mtimeMs) return cached.assets;
+    const assets = parseReaderAssets(readFileSync(file, "utf8"));
+    assetCache.set(file, { mtimeMs, assets });
+    return assets;
+  } catch {
+    return null;
+  }
+}
+
+/** What the reader's bar is told: the page's id and Share only for the
+ * page's own person; nothing about the page for a reader who is not signed
+ * in beyond what the wrapper shows anyway. Pure. */
+export function readerBoot(input: { page: PageRecord; version: PageVersionRecord; viewer: PageViewer; lang: "fr" | "en"; personName: string; meName?: string }): ReaderBoot {
+  const owner = pageOwnedBy(input.page, input.viewer);
+  const me = input.viewer?.principalId
+    ? { id: input.viewer.principalId, name: owner ? input.personName : input.meName ?? "" }
+    : owner ? { id: "owner", name: input.personName } : undefined;
+  return {
+    v: 1,
+    lang: input.lang,
+    title: input.page.title ?? input.version.title,
+    kind: input.version.kind,
+    version: input.version.n,
+    ...(owner ? { pageId: input.page.id } : {}),
+    ...(me ? { me } : {}),
+    owner: { name: input.personName },
+    can: { share: owner },
+  };
 }
 
 const NOT_FOUND_HTML = (language: "fr" | "en") => language === "fr"
@@ -215,11 +267,15 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
     : known ? `${known}${input.framePath}` : host ? `${host}${input.framePath}` : "'self'";
   // reader comments: a plain form that may post to this page's comment path only
   const formAction = input.commentPath ? (known ? `${known}${input.commentPath}` : host ? `${host}${input.commentPath}` : "'self'") : "'none'";
+  // A reading link's bar runs this server's own built script, in the wrapper
+  // only (its CSP below); the app's preview runs none.
+  const assets = input.preview ? null : options.readerAssets?.() ?? null;
   const csp = [
     "default-src 'none'",
-    "script-src 'none'",
-    "style-src 'unsafe-inline'",
-    "img-src 'none'",
+    assets ? "script-src 'self'" : "script-src 'none'",
+    assets ? "style-src 'self' 'unsafe-inline'" : "style-src 'unsafe-inline'",
+    assets ? "img-src 'self' data: blob: https:" : "img-src 'none'",
+    ...(assets ? ["font-src 'self' data:", "connect-src 'self'"] : []),
     `frame-src ${frameSource}`,
     `child-src ${frameSource}`,
     "base-uri 'none'",
@@ -229,6 +285,9 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
   if (!input.preview) res.setHeader("cross-origin-opener-policy", "same-origin");
   res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": csp, "x-frame-options": input.preview ? "SAMEORIGIN" : "DENY" });
   const names = options.names(input.page);
+  const lang = language(req);
+  const viewer = input.preview ? null : options.viewer(req);
+  const meName = viewer?.principalId ? options.personName?.(viewer.principalId) : undefined;
   res.end(method === "HEAD" ? undefined : wrapperDocument({
     title: input.page.title ?? input.version.title,
     kind: input.version.kind,
@@ -237,8 +296,9 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
     frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${input.framePath}?t=${encodeURIComponent(input.ticket)}${input.annotate ? "&a=1" : ""}`
       + (input.preview && input.look?.keep !== undefined ? `&k=${input.look.keep}` : "")
       + (input.preview && input.look?.theme ? `&c=${input.look.theme}` : ""),
-    lang: language(req),
+    lang,
     preview: input.preview,
+    ...(input.preview ? {} : { reader: { boot: readerBoot({ page: input.page, version: input.version, viewer, lang, personName: names.personName, ...(meName ? { meName } : {}) }), assets } }),
     annotate: input.annotate === true,
     ...(input.preview && input.look?.bare ? { bare: true } : {}),
     ...(input.preview && input.look?.theme ? { theme: input.look.theme } : {}),

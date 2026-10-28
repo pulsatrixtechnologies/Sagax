@@ -142,6 +142,19 @@ color to orange where the skin paints the bot's color (`PUMPKIN_COLOR`).
   `shape-volume.depth.test.ts`; iOS `ShapeEngineTests`, `ShapeVolumeTests`.
   Gallery: `src/gallery/shape-set.html`.
 
+## The reader's bar of a published page (2026-10-28)
+
+A reading link (`/pages/view/<token>`) shows a bar instead of the yellow
+banner: the title, the full notice (published by <bot> for <person>, not a
+Sagax screen, never a password) always visible, and the actions the reader
+has a right to (shared/page-reader.ts `ReaderBoot`). The bar is a second
+Vite page (page-reader.html, src/page-reader/); the server reads the built
+tags from SAGAX_STATIC_DIR (`readerAssetsFrom`) and the wrapper's CSP allows
+only `script-src 'self'` and `connect-src 'self'`. The page's frame is
+unchanged (same sandbox and CSP). Share: the page's own person only, on the
+same routes and plan as the app (src/lib/page-share-plan.ts). Captures:
+`scripts/capture-page-reader.ts`.
+
 ## Routine folders (2026-10-28)
 
 A routine may sit in one folder of its bot (`folder`), and each bot keeps an
