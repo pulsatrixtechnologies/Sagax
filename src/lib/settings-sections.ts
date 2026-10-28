@@ -1,6 +1,6 @@
-// Which Settings page a section id opens today. Kept free of imports so the
-// store's reducer can use it.
-import type { AppSettingsSection } from "@/state/store";
+// Which Settings page a section id opens today. The ids live in
+// settings-section.ts so this file does not import the store.
+import type { AppSettingsSection } from "@/state/settings-section";
 
 /** Sections that are a card of another page now, and that card.
  * 2026-10-14: Integrations ("connections") and Models and accounts

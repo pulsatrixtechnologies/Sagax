@@ -1,7 +1,7 @@
 // Which bot-settings section this device last had open. One section for all
 // bots: the panel remounts per bot (App keys it by bot id), so the store
 // keeps the pointer during a session and this lib carries it across launches.
-import type { BotSettingsSection } from "@/state/store";
+import type { BotSettingsSection } from "@/state/settings-section";
 
 export const LAST_BOT_SECTION_KEY = "openmausbot.lastBotSection.v1";
 
