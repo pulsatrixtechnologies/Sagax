@@ -50,7 +50,7 @@ export interface MemoryJournalEntry {
   actor: MemoryActor;
   /** How it got there: "ui", "api", "turn", "disk" (changed outside the
    * app between turns — an editor, Obsidian), "revert", "import", and for
-   * upkeep "capture", "organize" or "tidy". */
+   * upkeep "capture", "organize", "tidy", "dream" or "procedure". */
   via: string;
   threadId?: string;
   kind: MemoryChangeKind;

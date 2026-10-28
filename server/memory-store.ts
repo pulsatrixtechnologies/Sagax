@@ -42,7 +42,7 @@ export const RULES_PATH = "RULES.md";
  * file per set, `rules/<id>.md`. RULES.md stays the first set's file. */
 export const RULE_SETS_DIR = "rules";
 
-export type MemoryDocKind = "index" | "topic" | "log" | "rules" | "ruleset" | "doc";
+export type MemoryDocKind = "index" | "topic" | "log" | "dream" | "rules" | "ruleset" | "doc";
 
 export interface MemoryDocRef {
   /** The workspace-relative path as the API spells it. */
@@ -77,11 +77,11 @@ export class MemoryStoreError extends Error {
 const BOT_ID = /^[\w-]{1,128}$/;
 
 function pathError(path: string): MemoryStoreError {
-  return new MemoryStoreError("path", 400, `not a memory file: ${JSON.stringify(path)}; use MEMORY.md, memory/<topic>.md, memory/log/<day>.md, RULES.md, rules/<set>.md or docs/<name>.md`);
+  return new MemoryStoreError("path", 400, `not a memory file: ${JSON.stringify(path)}; use MEMORY.md, memory/<topic>.md, memory/log/<day>.md, memory/dreams/<day>.md, RULES.md, rules/<set>.md or docs/<name>.md`);
 }
 
-/** Only three shapes exist: the index, one topic file directly under
- * memory/, or one daily log directly under memory/log/. The name gate is
+/** The index, one topic file directly under memory/, one daily log under
+ * memory/log/, or one dream account under memory/dreams/. The name gate is
  * the same one listing uses (workspace.ts isMemoryTopicName), so what the
  * API can reach and what the overview shows agree by construction. No
  * separators inside a name means no traversal; no leading dot means no
@@ -103,6 +103,9 @@ export function parseMemoryPath(path: string): MemoryDocRef {
   if (parts.length === 3 && parts[0] === "memory" && parts[1] === "log" && isMemoryTopicName(parts[2])) {
     return { path, kind: "log", name: parts[2] };
   }
+  if (parts.length === 3 && parts[0] === "memory" && parts[1] === "dreams" && /^\d{4}-\d{2}-\d{2}\.md$/.test(parts[2])) {
+    return { path, kind: "dream", name: parts[2] };
+  }
   throw pathError(path);
 }
 
@@ -116,6 +119,7 @@ function relativeSegments(ref: MemoryDocRef): string[] {
   if (ref.kind === "doc") return [DOCS_DIR, ref.name];
   if (ref.kind === "ruleset") return [RULE_SETS_DIR, ref.name];
   if (ref.kind === "topic") return ["memory", ref.name];
+  if (ref.kind === "dream") return ["memory", "dreams", ref.name];
   return ["memory", "log", ref.name];
 }
 
@@ -326,6 +330,7 @@ export function writeMemoryDoc(
   const ref = parseMemoryPath(path);
   ensureWorkspace(botId);
   if (ref.kind === "log") mkdirSync(join(workspaceDir(botId), "memory", "log"), { recursive: true, mode: 0o700 });
+  if (ref.kind === "dream") mkdirSync(join(workspaceDir(botId), "memory", "dreams"), { recursive: true, mode: 0o700 });
   if (ref.kind === "doc") mkdirSync(join(workspaceDir(botId), DOCS_DIR), { recursive: true, mode: 0o700 });
   if (ref.kind === "ruleset") mkdirSync(join(workspaceDir(botId), RULE_SETS_DIR), { recursive: true, mode: 0o700 });
   const absolute = resolveMemoryPath(botId, path);

@@ -33,11 +33,13 @@ export interface Candidate {
 }
 
 /** A model's topic name as a file name: lower-case words joined by dashes,
- * or null when nothing usable is left. "archive" and "memory" are reserved. */
+ * or null when nothing usable is left. Reserved names are the archive and
+ * the files dream maintains, so a captured fact cannot land in them. */
+const RESERVED_TOPIC = new Set(["archive", "memory", "company", "procedures", "dreams", "log"]);
 export function topicFileName(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const name = raw.toLowerCase().replace(/\.md$/, "").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 40);
-  if (!name || name === "archive" || name === "memory") return null;
+  if (!name || RESERVED_TOPIC.has(name)) return null;
   return `${name}.md`;
 }
 

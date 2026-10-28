@@ -214,6 +214,8 @@ import {
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
+import { companyTextForBots } from "./memory-company.ts";
+import { procedureSignal, recordProcedure } from "./memory-procedures.ts";
 import type { CaptureTurn } from "./memory-capture.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
 import { archivedAgent, canAccessBot, canAccessTeam, primaryCovers, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, sameOwnerBots, setPeerScope, setPrimaryCover, setSameOwner, roomPeerRosterSystemPrompt, roomRosterLine, uniquePeerName, PEER_ACCESS_HELP } from "./peer-roster.ts";
@@ -7031,6 +7033,18 @@ try {
 // unrecorded owner is the operator), then the one-time migration from one
 // Chief of Staff per section runs (idempotent, so at every boot).
 store.botOwnerKey = (bot) => effectiveBotOwner(bot);
+
+function memoryPromptFor(bot: BotRecord, opts: { managedWrites?: boolean; fileTools?: boolean } = {}): string {
+  return memorySystemPrompt(bot.id, {
+    ...opts,
+    enabled: bot.memoryEnabled !== false,
+    company: bot.memoryEnabled === false ? undefined : companyTextForBots({
+      ownerKey: store.botOwnerKey(bot),
+      bots: store.bots.map((item) => ({ id: item.id, ownerKey: store.botOwnerKey(item) })),
+      read: (id) => readMemoryTopic(id, "company.md"),
+    }),
+  });
+}
 // Organization server: a bot reaches its owner's bots and the bots shared
 // with them, never the rest of the organization (server/peer-scope.ts).
 if (IDENTITY.kind === "perspicax") {
@@ -8335,7 +8349,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (agentsMounted ? TEAM_MEMORY_PROMPT : "") },
     teamAvailabilityPart(agentsMounted && coordination ? peers : []),
     { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: agentsMounted }) },
-    { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
+    { id: "memory", label: "Memory", text: memoryPromptFor(bot, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace) }) },
     { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
   ], instance?.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
@@ -13651,6 +13665,34 @@ const memoryUpkeep = createMemoryUpkeep({
   quietMs: () => captureQuietMs(cfg),
   tidyHour: () => tidyHour(cfg),
   log: (line) => console.log(line),
+});
+
+// A successful procedure becomes a short note in memory/procedures.md.
+// The file is the record. No model is retrained from it.
+bus.subscribe((event: RuntimeEvent) => {
+  if (shouldIgnoreProviderEvent(event)) return;
+  if (store.isConfidentialThread(event.threadId)) return;
+  const signal = procedureSignal(event);
+  if (!signal) return;
+  try {
+    const bot = store.botByThread(event.threadId);
+    if (!bot || !upkeepEnabled(bot)) return;
+    if (CLOUD_HOME && !cloudOwnerOnlyThread(event.threadId)) return;
+    const write = () => recordProcedure(bot.id, {
+      date: memoryDate(),
+      source: memorySourceLabel({
+        room: store.groupByThread(event.threadId),
+        task: store.taskByThread(bot.id, event.threadId),
+        threadId: event.threadId,
+      }),
+      kind: signal.kind,
+      what: signal.what,
+    });
+    if (lendingMemory) lendingMemory.trustedWrite(bot.id, write);
+    else write();
+  } catch (error) {
+    console.error(`memory procedures: ${error instanceof Error ? error.message : error}`);
+  }
 });
 
 // OMB Cloud home: the first bot turn that finishes here is the setup
@@ -21419,7 +21461,7 @@ async function startTurn(
         { id: "stream", label: "Earlier topics", text: streamPart?.text ?? "" },
         // RULES.md: listed here, placed right after the soul by buildSystemPrompt
         { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: Boolean(integrations.agents) }) },
-        { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, enabled: bot.memoryEnabled !== false }) },
+        { id: "memory", label: "Memory", text: memoryPromptFor(bot, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace }) },
         // docs/: an index only, never the documents (server/workspace-files.ts)
         { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : worksInWorkspace ? "files" : "none" }) },
         // liveBot was captured before awaited setup work; an assignment PUT
@@ -24787,7 +24829,7 @@ async function runGroupMemberTurn(
     const drift = checkSoulDrift(bot.id, bot.soul ?? "", bot.soulHash ?? "");
     if (drift.drift !== Boolean(bot.soulDrift)) store.patchBot(bot.id, { soulDrift: drift.drift });
   }
-  const roomMemory = memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, enabled: bot.memoryEnabled !== false });
+  const roomMemory = memoryPromptFor(bot, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace });
   // The same brief a 1:1 turn gets: what this member said lately in its
   // other conversations, so a standup is answered from what happened. A
   // brief can carry a private chat into the room; as with session_search

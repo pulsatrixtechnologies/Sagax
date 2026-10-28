@@ -13,6 +13,11 @@
 //   - tidy-up: nightly, and on demand, expired entries are archived, exact
 //     duplicates merged (MEMORY.md and topic files) and contradictions in
 //     MEMORY.md struck (server/memory-tidy.ts).
+//   - dream: the same nightly and on-demand pass re-reads topics and the
+//     journal, merges topic files that say the same thing, promotes a
+//     repeated fact into MEMORY.md, and moves a contradicted or expired
+//     fact into the archive (server/memory-dream.ts). Notes stay in files.
+//     No model is trained.
 // Every memory write is a journal row with actor "upkeep", so the Memory
 // panel shows it and Undo works. The model steps need a one-shot text call
 // (`generateText`: Claude and the chat-completion engines, or
@@ -27,7 +32,8 @@ import { CaptureBuffer, captureItemLimit, capturePrompt, captureSize, parseCandi
 import { factIdentity, lineFactIdentity, notebookIdentities } from "./memory-entries.ts";
 import { mergeTopicText } from "./memory-topics.ts";
 import { applyMoves, MAX_MOVES, organizeCandidates, organizePrompt, parseMoves } from "./memory-organize.ts";
-import { recordMemoryChange } from "./memory-journal.ts";
+import { dreamTouched, planDream, type DreamPlan } from "./memory-dream.ts";
+import { journalMemoryDelete, journalMemoryWrite, readMemoryJournal, recordMemoryChange } from "./memory-journal.ts";
 import { applyTidy, contradictionCandidates, contradictionPrompt, parseContradictions, planChanges, planTidy, type Contradiction } from "./memory-tidy.ts";
 import { appendMemoryArchive, ARCHIVE_TOPIC, ensureWorkspace, listMemoryTopics, memoryDate, memoryEntry, memoryTopicIndex, readMemoryText, updateMemory, workspaceDir, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
 
@@ -106,6 +112,15 @@ export interface TidyReport {
   contradictionsChecked: boolean;
   /** Why it did not run, in the person's words. */
   note?: string;
+  /** The dream pass, when it changed a file. Absent when there was nothing to do. */
+  dream?: DreamReport;
+}
+
+export interface DreamReport {
+  at: number;
+  promoted: number;
+  merged: number;
+  archived: number;
 }
 
 export interface CaptureReport {
@@ -256,6 +271,8 @@ export interface MemoryUpkeep {
   /** Run one capture batch; resolves when written. Exposed for tests. */
   capture(batch: CaptureBatch): Promise<CaptureReport>;
   tidy(botId: string): Promise<TidyReport>;
+  /** The dream pass on its own. The nightly and on-demand tidy run it too. */
+  dream(botId: string): Promise<DreamReport>;
   status(botId: string): { lastTidy?: TidyReport; lastCapture?: CaptureReport; modelSteps: boolean };
   /** One scheduler pass: tidy every due bot. Exposed for tests. */
   tick(): Promise<void>;
@@ -594,6 +611,65 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     });
   }
 
+  function applyDream(botId: string, plan: DreamPlan, memoryBefore: string): void {
+    const today = memoryDate(now());
+    if (plan.archiveLines.length) {
+      const before = readRaw(botId, ARCHIVE_PATH);
+      appendMemoryArchive(botId, plan.archiveLines);
+      recordMemoryChange(botId, { path: ARCHIVE_PATH, actor: "upkeep", via: "dream", before, after: readRaw(botId, ARCHIVE_PATH) });
+    }
+    for (const topic of plan.topics) {
+      const path = `memory/${topic.name}`;
+      if (topic.text === null) {
+        journalMemoryDelete(botId, path, { actor: "upkeep", via: "dream" });
+        continue;
+      }
+      const before = readRaw(botId, path);
+      writeMemoryTopic(botId, topic.name, topic.text);
+      recordMemoryChange(botId, { path, actor: "upkeep", via: "dream", before, after: readRaw(botId, path) });
+    }
+    if (plan.memory !== memoryBefore) {
+      writeMemoryFile(botId, plan.memory);
+      recordMemoryChange(botId, { path: "MEMORY.md", actor: "upkeep", via: "dream", before: memoryBefore, after: readRaw(botId, "MEMORY.md") });
+    }
+    if (plan.company !== null) {
+      const path = "memory/company.md";
+      const before = readRaw(botId, path);
+      writeMemoryTopic(botId, "company.md", plan.company);
+      recordMemoryChange(botId, { path, actor: "upkeep", via: "dream", before, after: readRaw(botId, path) });
+    }
+    if (plan.account) {
+      const path = `memory/dreams/${today}.md`;
+      const existing = readRaw(botId, path);
+      const next = existing && existing.trim()
+        ? `${existing.endsWith("\n") ? existing : `${existing}\n`}${plan.account.replace(/^# Dream [^\n]*\n+/, "")}`
+        : plan.account;
+      journalMemoryWrite(botId, path, next, { actor: "upkeep", via: "dream" });
+    }
+  }
+
+  function runDream(botId: string): DreamReport {
+    const at = now().getTime();
+    const empty: DreamReport = { at, promoted: 0, merged: 0, archived: 0 };
+    if (paused || !upkeepEnabled(deps.bot(botId))) return empty;
+    ensureWorkspace(botId);
+    const today = memoryDate(now());
+    const memory = readRaw(botId, "MEMORY.md") ?? "";
+    const topics = listMemoryTopics(botId).map((topic) => ({ name: topic.name, text: readRaw(botId, `memory/${topic.name}`) ?? "" }));
+    let journal: { diff: string }[] = [];
+    try {
+      journal = readMemoryJournal(botId, 200).map((row) => ({ diff: row.diff }));
+    } catch {
+      journal = [];
+    }
+    const plan = planDream({ today, memory, topics, journal });
+    if (!dreamTouched(plan)) return empty;
+    if ((readRaw(botId, "MEMORY.md") ?? "") !== memory) return empty;
+    writing(botId, () => applyDream(botId, plan, memory));
+    log(`memory upkeep: dream for ${deps.bot(botId)?.name ?? botId} promoted ${plan.promoted.length}, merged ${plan.merged.length}, archived ${plan.archiveLines.length}`);
+    return { at, promoted: plan.promoted.length, merged: plan.merged.length, archived: plan.archiveLines.length };
+  }
+
   function appendArchive(botId: string, archived: readonly string[]): void {
     const archiveBefore = readRaw(botId, ARCHIVE_PATH);
     appendMemoryArchive(botId, archived);
@@ -666,6 +742,13 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       topicExpired += topicPlan.expired.length;
       topicDuplicates += topicPlan.duplicates.length;
     }
+    let dream: DreamReport | undefined;
+    try {
+      const dreamed = runDream(botId);
+      if (dreamed.promoted || dreamed.merged || dreamed.archived) dream = dreamed;
+    } catch (error) {
+      log(`memory upkeep: dream failed for ${bot?.name ?? botId}: ${(error as Error).message}`);
+    }
     const report: TidyReport = {
       at,
       expired: plan.expired.length + topicExpired,
@@ -675,6 +758,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       ...(organized ? { organized } : {}),
       contradictionsChecked,
       ...(note ? { note } : {}),
+      ...(dream ? { dream } : {}),
     };
     record(botId, { lastTidy: report });
     if (report.expired || report.duplicates || report.superseded || organized) log(`memory upkeep: tidied ${bot?.name ?? botId} — ${report.expired} expired, ${report.duplicates} duplicate(s), ${report.superseded} contradicted`);
@@ -735,6 +819,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     },
     capture: (batch) => new Promise<CaptureReport>((resolve, reject) => enqueue({ batch, done: { resolve, reject } })),
     tidy,
+    dream: (botId) => track(Promise.resolve().then(() => runDream(botId))),
     status(botId) {
       // the core judgements are upkeep's own bookkeeping, not status
       const { lastTidy, lastCapture } = loadState().bots[botId] ?? {};

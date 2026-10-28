@@ -33,7 +33,11 @@ its group.
 ├── MEMORY.md            the notes that load into every conversation
 └── memory/
     ├── <topic>.md       longer notes the bot reads on demand
+    ├── company.md       stable facts about how this person's organization works
+    ├── procedures.md    what worked, dated, with its source
     ├── archive.md       older notes moved out of MEMORY.md, and expired ones
+    ├── dreams/
+    │   └── 2026-10-27.md   what the dream pass promoted, merged and archived
     └── log/
         └── 2026-09-10.md   what the bot did that day, in its own words
 ```
@@ -203,6 +207,30 @@ off. It keeps the notes in shape without the bot having to decide to:
 "Exactly the same fact" is narrow on purpose: spacing, a bullet and a final
 full stop are ignored, nothing else — `Balance is -10` and `Balance is 10`,
 `C++` and `C`, `1.5` and `15` are different facts.
+
+## Dream
+
+The same upkeep pass, nightly and on **Tidy up now**, also runs a dream.
+It re-reads the memory journal and the topic files. Topic files that carry
+the same facts become one file. A fact that shows up more than once is
+promoted into `MEMORY.md`. A fact that is contradicted (already struck on
+an earlier day) or past its `until` day moves to `memory/archive.md`.
+The archive is written first: nothing is removed without a copy there.
+A line struck today stays, so the tidy-up can still show what it just
+replaced. The pass writes a short account at `memory/dreams/<date>.md`
+and a journal row for every file it changes, so Undo puts that file back.
+
+A line with no `readers` mark is left where it was and still loads.
+A line marked `readers person` is private: it is never copied into
+`memory/company.md`. A line marked `readers company` is a stable fact
+about how this person's organization works. `memory/company.md` is not
+private memory. Every bot of the same person reads it. A bot of another
+member does not.
+
+`memory/procedures.md` records what worked: an approval that was granted,
+a task whose steps finished, or a correction from the person that the
+next turn followed. Each note has a date and a source. Remove the line
+to drop it. No model is retrained from these files.
 
 Every upkeep change is a journal row by **Memory upkeep** and can be undone.
 Upkeep pauses while a backup runs. The model steps need an engine with a
