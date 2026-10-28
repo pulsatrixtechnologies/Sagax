@@ -440,11 +440,21 @@ enum ThemeUIKit {
         let tint: UIColor? = (palette.id == .black || palette.id == .dim) && palette.botAccent == nil ? nil : palette.accent.uiColor
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
-            // An overlay window (the unlock banner's) stays transparent.
-            for window in windowScene.windows where !(window is PassthroughWindow) {
+            for window in windowScene.windows where ThemeUIKit.paints(window) {
                 window.tintColor = tint
                 window.backgroundColor = palette.desktop.uiColor
             }
         }
+    }
+
+    /// Only the app's own window takes the skin: the one at the normal
+    /// level. The scene also lists the system's keyboard windows (above the
+    /// app, full screen, transparent) once the keyboard has been up; painted
+    /// with the skin's desktop colour, they covered the whole app with one
+    /// flat colour after Back from a chat where the person typed (TestFlight
+    /// build 81, 2026-10-27). An overlay window (the unlock banner's) stays
+    /// transparent too.
+    static func paints(_ window: UIWindow) -> Bool {
+        !(window is PassthroughWindow) && window.windowLevel == .normal
     }
 }
