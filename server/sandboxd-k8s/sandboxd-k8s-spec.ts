@@ -3,7 +3,7 @@
 // the same way the Docker spec is (server/user-sandbox-spec.ts).
 import { isAbsolute } from "node:path";
 
-import { SANDBOX_INSTANCE_LABEL, SANDBOX_KEY_RE, SANDBOX_LABEL, SANDBOX_UID, SANDBOX_USER_LABEL, SANDBOX_WORKSPACE, cidrContains, parseCidr, sandboxLabels, sandboxNames, type SandboxdConfig } from "./user-sandbox-spec.ts";
+import { SANDBOX_INSTANCE_LABEL, SANDBOX_KEY_RE, SANDBOX_LABEL, SANDBOX_UID, SANDBOX_USER_LABEL, SANDBOX_WORKSPACE, cidrContains, parseCidr, sandboxLabels, sandboxNames, type SandboxdConfig } from "../user-sandbox-spec.ts";
 
 const MiB = 1024 * 1024;
 

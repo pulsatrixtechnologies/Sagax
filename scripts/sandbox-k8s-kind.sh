@@ -42,4 +42,4 @@ export SAGAX_SANDBOX_K8S_STORAGE_CLASS="${storage_class:-local-path}"
 echo "storage class: $SAGAX_SANDBOX_K8S_STORAGE_CLASS"
 export SAGAX_SANDBOX_K8S_REQUIRE_SIGNED=0
 export SAGAX_SANDBOX_K8S_REQUIRE_ENCRYPTION=false
-pnpm exec vitest run server/sandboxd-k8s.integration.test.ts
+pnpm exec vitest run server/sandboxd-k8s/sandboxd-k8s.integration.test.ts

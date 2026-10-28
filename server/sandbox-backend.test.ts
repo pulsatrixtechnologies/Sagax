@@ -39,7 +39,7 @@ describe("sandbox backend switch", () => {
     const provisioner = readFileSync(join(ROOT, "server/sandboxd.ts"), "utf8");
     expect(provisioner).toContain("startKubernetesProvisioner");
     expect(provisioner).not.toContain("assertSandboxBackendSupported");
-    const spec = readFileSync(join(ROOT, "server/sandboxd-k8s-spec.ts"), "utf8");
+    const spec = readFileSync(join(ROOT, "server/sandboxd-k8s/sandboxd-k8s-spec.ts"), "utf8");
     expect(spec).toContain('raw === "kubernetes"');
   });
 
