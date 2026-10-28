@@ -1249,6 +1249,7 @@
   "botTasks.reopen": "Reopen",
   "botTasks.hint": "Separate from the code work journal. The bot can add, move forward and finish. You can reopen.",
   "botTasks.error": "The task list could not be loaded.",
+  "serverRoute.needsUpdate": "Available after the server update.",
   "botPanel.tab.files": "Files",
   "botPanel.tab.library": "Library",
   "botPanel.library.pinned": "Pinned",

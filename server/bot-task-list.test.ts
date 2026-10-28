@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -99,5 +99,27 @@ describe("bot task routes", () => {
     });
     expect(JSON.parse((await idone).body)).toMatchObject({ code: "bad_action" });
     expect(tasks.list("bot-1")[0]?.state).toBe("done");
+  });
+
+  // 2026-10-28: the panel's first read on a server with no task yet. No file,
+  // or a file that does not parse, is an empty list (200), never an error.
+  it("answers an empty list when bot-tasks.json is missing or unreadable", async () => {
+    for (const content of [null, "{not json", "[]", JSON.stringify({ tasks: "nope" })]) {
+      const dir = mkdtempSync(join(tmpdir(), "sagax-tasks-"));
+      dirs.push(dir);
+      const file = join(dir, "bot-tasks.json");
+      if (content !== null) writeFileSync(file, content);
+      const routes = createBotTaskRoutes({
+        tasks: () => createBotTaskStore({ file }),
+        mayUseBot: () => true,
+        owner: () => "pr_a",
+        mayView: () => true,
+      });
+      const { req, res, done } = request("/api/bots/bot-1/task-list", "GET");
+      await routes({ req, res, url: new URL(`http://x${req.url}`), path: req.url!, method: "GET", auth: auth("pr_a"), json, readBody });
+      const answer = await done;
+      expect(answer.status, String(content)).toBe(200);
+      expect(JSON.parse(answer.body)).toEqual({ tasks: [] });
+    }
   });
 });
