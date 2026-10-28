@@ -15,6 +15,7 @@ import { itemCreator, itemDescription, itemName, type BotCatalogDetail, type Cat
 import { ChatMarkdown } from "../ChatMarkdown";
 import { Breadcrumb, type Crumb } from "../Breadcrumb";
 import { CatalogMascot, itemLook, nameColor } from "./BotCatalogView";
+import { TemplateAppChips } from "./TemplateAppChips";
 
 export type CatalogTab = "soul" | "memories" | "skills" | "routines" | "integrations";
 export const CATALOG_TABS: readonly CatalogTab[] = ["soul", "memories", "skills", "routines", "integrations"];
@@ -117,18 +118,6 @@ export interface BotCatalogDetailViewProps {
   /** Inside another window (Connect apps): the pages above Browse Bots, for
    * the breadcrumb. Absent: its own window, the plain back button. */
   trail?: readonly Crumb[];
-}
-
-/** The apps a template uses, as chips. */
-export function TemplateAppChips({ apps }: { apps: readonly string[] }) {
-  if (!apps.length) return null;
-  return (
-    <span className="flex flex-wrap items-center gap-1" data-catalog-apps="">
-      {apps.map((app) => (
-        <span key={app} data-catalog-app={app} className="rounded-full border border-hairline-weak px-1.5 py-px text-[10.5px] leading-[15px] text-ink-secondary">{app}</span>
-      ))}
-    </span>
-  );
 }
 
 export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBack, creatorAvatar, actions, below, preview, trail }: BotCatalogDetailViewProps) {
