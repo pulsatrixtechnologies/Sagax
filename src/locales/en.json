@@ -1867,6 +1867,8 @@
   "chat.pinnedJump": "Jump to the pinned message",
   "chat.previousVersion": "Previous version",
   "chat.privateConversation": "Private conversation. To talk with several people, create a group.",
+  "chat.turnTiming.first": "First text: {ms} ms",
+  "chat.turnTiming.wait": "Wait before send: {ms} ms",
   "chat.provisioning": "Setting up this bot's computer…",
   "chat.regenerate": "Regenerate response",
   "chat.reply": "Reply",

@@ -19,6 +19,26 @@ interface TurnClock {
 
 const clocks = new Map<string, TurnClock>();
 
+export interface TurnTiming {
+  queueMs?: number;
+  firstResponseMs?: number;
+}
+
+/** Writes the numbers onto the conversation. Absent in tests. */
+let writeTiming: ((threadId: string, timing: TurnTiming) => void) | null = null;
+
+export function setTurnTimingWriter(writer: ((threadId: string, timing: TurnTiming) => void) | null): void {
+  writeTiming = writer;
+}
+
+function publish(threadId: string, row: TurnClock): void {
+  const timing: TurnTiming = {};
+  if (row.queueMs !== undefined) timing.queueMs = row.queueMs;
+  if (row.firstResponseMs !== undefined) timing.firstResponseMs = row.firstResponseMs;
+  if (timing.queueMs === undefined && timing.firstResponseMs === undefined) return;
+  writeTiming?.(threadId, timing);
+}
+
 function take(threadId: string): TurnClock {
   const existing = clocks.get(threadId);
   if (existing) return existing;
@@ -47,6 +67,7 @@ export function noteFirstResponse(threadId: string, at = Date.now()): void {
   row.firstAt = at;
   const from = row.sentAt ?? row.startedAt ?? row.queuedAt;
   if (from !== undefined) row.firstResponseMs = Math.max(0, Math.round(at - from));
+  publish(threadId, row);
 }
 
 /** Queue wait and time to first answer. Null until that moment has happened. */
@@ -58,6 +79,7 @@ export function turnCounters(threadId: string): { queueMs: number | null; firstR
 /** Test helper. Production turns just age out of the map. */
 export function clearTurnCounters(): void {
   clocks.clear();
+  writeTiming = null;
 }
 
 /** Mark one step of a thread's turn; `first` restarts the clock. The line
@@ -77,6 +99,7 @@ export function turnTrace(threadId: string, step: string, first = false): void {
     row.sentAt = now;
     const from = row.queuedAt ?? row.startedAt;
     if (from !== undefined) row.queueMs = Math.max(0, Math.round(now - from));
+    publish(threadId, row);
   }
   if (!enabled()) return;
   const start = row.startedAt ?? now;

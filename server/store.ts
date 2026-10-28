@@ -197,7 +197,7 @@ const TASK_PATCH_FIELDS = [
   "title", "projectId", "modelSelection", "approvalMode", "autoApprove", "alwaysAllow", "approvalOwn",
   "unread", "lastReadMessageId", "rewound", "archivedAt", "pinned", "pinnedMessageId", "resumeCursors", "lastInstanceId", "cwd",
   "routineRunId", "routineResults", "surface", "surfaceSource", "snoozedUntil", "link", "linkAuto", "appliedCompactionId", "contextSummaries", "contextFloor", "lastContextModel",
-  "autoModel", "autoWorkspace", "streamSegment", "segmentDigest",
+  "autoModel", "autoWorkspace", "streamSegment", "segmentDigest", "turnTiming",
 ] as const satisfies readonly (keyof TaskRecord)[];
 export type TaskPatch = Partial<Pick<TaskRecord, typeof TASK_PATCH_FIELDS[number]>>;
 
@@ -713,6 +713,11 @@ export function grantsFromDirect(directGrants: readonly unknown[], owner: string
 
 export function directFromGrants(grants: readonly BotGrant[]): string[] {
   return grants.filter((grant) => grant.target.startsWith("user:")).map((grant) => grant.target.slice(5));
+}
+
+function wholeMs(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return undefined;
+  return Math.round(value);
 }
 
 export class Store {
@@ -1728,12 +1733,12 @@ export class Store {
   /** A thread's organization state, the same fields a bot thread takes:
    * archive, snooze, folder and pin. `undefined` clears a field. A folder
    * must be one of this group's. */
-  patchGroupTask(groupId: string, threadId: string, patch: Partial<Pick<GroupTaskRecord, "archivedAt" | "snoozedUntil" | "projectId" | "pinned">>): GroupTaskRecord | null {
+  patchGroupTask(groupId: string, threadId: string, patch: Partial<Pick<GroupTaskRecord, "archivedAt" | "snoozedUntil" | "projectId" | "pinned" | "turnTiming">>): GroupTaskRecord | null {
     const group = this.group(groupId);
     const task = this.groupTaskByThread(groupId, threadId);
     if (!group || !task) return null;
     if (patch.projectId !== undefined && !group.projects?.some((project) => project.id === patch.projectId)) return null;
-    for (const field of ["archivedAt", "snoozedUntil", "projectId", "pinned"] as const) {
+    for (const field of ["archivedAt", "snoozedUntil", "projectId", "pinned", "turnTiming"] as const) {
       if (!Object.prototype.hasOwnProperty.call(patch, field)) continue;
       const value = patch[field];
       if (value === undefined || (field === "pinned" && value !== true)) delete task[field];
@@ -3309,6 +3314,41 @@ export class Store {
     }, revocation && (() => Object.assign(task, revocation)));
     this.emit({ type: "bot", botId });
     return task;
+  }
+
+  /** Queue wait and time to first text, on the conversation. Not a message. */
+  noteConversationTiming(threadId: string, timing: { queueMs?: number; firstResponseMs?: number }): void {
+    const queueMs = wholeMs(timing.queueMs);
+    const firstResponseMs = wholeMs(timing.firstResponseMs);
+    if (queueMs === undefined && firstResponseMs === undefined) return;
+    const merge = (current: { queueMs?: number; firstResponseMs?: number } | undefined) => {
+      const next = {
+        ...(current?.queueMs !== undefined ? { queueMs: current.queueMs } : {}),
+        ...(current?.firstResponseMs !== undefined ? { firstResponseMs: current.firstResponseMs } : {}),
+        ...(queueMs !== undefined ? { queueMs } : {}),
+        ...(firstResponseMs !== undefined ? { firstResponseMs } : {}),
+      };
+      if (next.queueMs === current?.queueMs && next.firstResponseMs === current?.firstResponseMs) return null;
+      return next;
+    };
+    const bot = this.botByThread(threadId);
+    if (bot && this.taskByThread(bot.id, threadId)) {
+      const next = merge(this.taskByThread(bot.id, threadId)?.turnTiming);
+      if (next) this.patchTask(bot.id, threadId, { turnTiming: next });
+      return;
+    }
+    const group = this.groupByThread(threadId);
+    if (!group) return;
+    if (this.groupTaskByThread(group.id, threadId)) {
+      const next = merge(this.groupTaskByThread(group.id, threadId)?.turnTiming);
+      if (next) this.patchGroupTask(group.id, threadId, { turnTiming: next });
+      return;
+    }
+    const next = merge(group.turnTiming);
+    if (!next) return;
+    group.turnTiming = next;
+    this.saveGroups();
+    this.emit({ type: "group", groupId: group.id });
   }
 
   suggestTaskLink(botId: string, threadId: string, text: string): TaskRecord | null {

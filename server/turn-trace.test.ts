@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { clearTurnCounters, noteFirstResponse, noteTurnQueued, turnCounters, turnTrace } from "./turn-trace.ts";
+import { clearTurnCounters, noteFirstResponse, noteTurnQueued, setTurnTimingWriter, turnCounters, turnTrace } from "./turn-trace.ts";
 
 describe("turn trace (SAGAX_TURN_TRACE)", () => {
   afterEach(() => {
@@ -40,5 +40,22 @@ describe("turn trace (SAGAX_TURN_TRACE)", () => {
     noteFirstResponse(thread);
     expect(turnCounters(thread)).toEqual({ queueMs: 90, firstResponseMs: 160 });
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("writes the numbers for the conversation and keeps no words", () => {
+    const seen: Array<{ threadId: string; timing: { queueMs?: number; firstResponseMs?: number } }> = [];
+    setTurnTimingWriter((threadId, timing) => seen.push({ threadId, timing }));
+    let now = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    noteTurnQueued("thread-1", 1_000);
+    now = 1_040;
+    turnTrace("thread-1", "send");
+    now = 1_200;
+    noteFirstResponse("thread-1");
+    expect(seen).toEqual([
+      { threadId: "thread-1", timing: { queueMs: 40 } },
+      { threadId: "thread-1", timing: { queueMs: 40, firstResponseMs: 160 } },
+    ]);
+    expect(JSON.stringify(seen)).not.toContain("hello");
   });
 });

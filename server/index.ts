@@ -866,7 +866,7 @@ import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultra
 import { routeTurnModel, type TurnModelSwitch } from "./turn-model-routing.ts";
 import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
-import { noteFirstResponse, noteTurnQueued, turnTrace } from "./turn-trace.ts";
+import { noteFirstResponse, noteTurnQueued, setTurnTimingWriter, turnTrace } from "./turn-trace.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput } from "./harness-connectors.ts";
@@ -6704,6 +6704,7 @@ const store = new Store(
   newBotApprovalMode,
   newBotGreetingLanguage,
 );
+setTurnTimingWriter((threadId, timing) => store.noteConversationTiming(threadId, timing));
 // One-time notice (migration): Composio was removed this release. Connected
 // apps now come only from the engines' own connectors (Claude, Grok) and
 // Pulsatrix MCP. Tell admins once, in the server log the console's Logs tab

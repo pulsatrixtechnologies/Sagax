@@ -22,6 +22,7 @@ import { PlaceIcon } from "./PlaceIcon";
 import { ScreenFrame } from "./ScreenFrame";
 import { effectivePlace, placeLabelKey } from "@/lib/place";
 import { ThreadChip } from "./ThreadChip";
+import { TurnTimingLine } from "./TurnTimingLine";
 import { InputRequestCard } from "./InputRequestCard";
 import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
 import { ToolActivity, botNames } from "./ToolActivity";
@@ -1551,6 +1552,7 @@ export function GroupView({ group: stored }: { group: Group }) {
         </div>
       )}
 
+      <TurnTimingLine timing={group.tasks?.find((task) => task.threadId === group.threadId)?.turnTiming ?? group.turnTiming} />
       {/* Bulletin: one pinned line; click to edit */}
       {!stored.peopleDm && <div className="w-full px-5">
         {bulletinOpen ? (
