@@ -82051,12 +82051,6 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Disponible après la mise à jour du serveur." } }
       }
     },
-    "The task list could not be loaded.": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The task list could not be loaded." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "La liste de tâches n'a pas pu être chargée." } }
-      }
-    },
     "botTasks.state.waiting": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Needs you" } },

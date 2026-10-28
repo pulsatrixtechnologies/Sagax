@@ -16,7 +16,10 @@
 // `bot.tasks` (ids only) when the bot adds or moves a task, and the section
 // reads again; it also reads again when the window comes back into view.
 // A server without the route yet (an older one) says it comes with the
-// server update, never an error.
+// server update, never an error. A list that cannot be read (network, 5xx,
+// 403, an invalid answer) shows nothing at all, like an empty one: no red
+// line. The cause goes to the console, the last known list stays on screen,
+// and the section reads again by itself (backoff) until a read works.
 import { Check, CircleDashed, ListTodo, MessageCircleQuestion, MoreHorizontal, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -72,6 +75,11 @@ export function botTaskAnswerDraft(task: Pick<BotTask, "title">): string {
   return t("botTasks.answerDraft", { title: task.title });
 }
 
+/** The quiet retry after a failed read: 2 s, then doubling, never past 60 s. */
+export function taskListRetryDelay(attempt: number): number {
+  return Math.min(60_000, 2_000 * 2 ** Math.max(0, attempt));
+}
+
 const listPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/task-list`;
 
 type MenuState = { task: BotTask; x: number; y: number; trigger: HTMLElement };
@@ -91,6 +99,7 @@ export function BotTaskSection({ botId }: { botId: string }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   // Only the newest read lands: a slow answer never overwrites a newer one.
   const readSeq = useRef(0);
+  const retry = useRef<{ timer: ReturnType<typeof setTimeout> | null; attempt: number }>({ timer: null, attempt: 0 });
   // The row a closed detail hands the focus back to.
   const returnFocus = useRef<string | null>(null);
 
@@ -102,10 +111,13 @@ export function BotTaskSection({ botId }: { botId: string }) {
 
   const load = useCallback(() => {
     const seq = ++readSeq.current;
+    if (retry.current.timer) { clearTimeout(retry.current.timer); retry.current.timer = null; }
     api<{ tasks: BotTask[] }>(listPath(botId))
       .then((body) => {
         if (seq !== readSeq.current) return;
-        setTasks(Array.isArray(body?.tasks) ? body.tasks : []);
+        if (!Array.isArray(body?.tasks)) throw new Error("the task list answer is not a list");
+        retry.current.attempt = 0;
+        setTasks(body.tasks);
         setState("ok");
       })
       .catch((error: unknown) => {
@@ -113,6 +125,11 @@ export function BotTaskSection({ botId }: { botId: string }) {
         const next = taskListFailure(error);
         if (next.tasks) setTasks(next.tasks);
         setState(next.state);
+        if (next.state !== "failed") { retry.current.attempt = 0; return; }
+        // Not shown: the last known list stays, or nothing. Read again quietly.
+        console.warn(`[bot-tasks] the task list of ${botId} could not be loaded`, error);
+        const delay = taskListRetryDelay(retry.current.attempt++);
+        retry.current.timer = setTimeout(() => { retry.current.timer = null; load(); }, delay);
       });
   }, [botId]);
 
@@ -121,6 +138,7 @@ export function BotTaskSection({ botId }: { botId: string }) {
     setState("ok");
     setFinishing({});
     seenStates.current = null;
+    retry.current.attempt = 0;
     clearTimers();
     setOpenId(null);
     setMenu(null);
@@ -136,6 +154,7 @@ export function BotTaskSection({ botId }: { botId: string }) {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       readSeq.current += 1;
+      if (retry.current.timer) { clearTimeout(retry.current.timer); retry.current.timer = null; }
       clearTimers();
       window.removeEventListener(BOT_TASKS_EVENT, onFrame);
       window.removeEventListener("focus", onVisible);
@@ -263,8 +282,9 @@ export function BotTaskSection({ botId }: { botId: string }) {
   };
 
   // Nothing to show, nothing rendered: no title, no empty line. The section
-  // stays while a task is open in place, and for the server-update and error lines.
-  if (state === "ok" && total === 0 && !open) return null;
+  // stays while a task is open in place, and for the server-update line. A
+  // failed read is not shown: the last known list, or nothing.
+  if (state !== "needsUpdate" && total === 0 && !open) return null;
 
   return (
     <section data-bot-settings-section="task-list" aria-labelledby={`bot-tasks-${botId}`} className="flex flex-col gap-3">
@@ -273,7 +293,6 @@ export function BotTaskSection({ botId }: { botId: string }) {
         <h2 id={`bot-tasks-${botId}`} className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("botTasks.title")}</h2>
       </div>
       {state === "needsUpdate" ? <p data-bot-tasks-needs-update="true" className="text-[12px] text-ink-tertiary">{t("serverRoute.needsUpdate")}</p> : null}
-      {state === "failed" ? <p className="text-[12px] text-danger">{t("botTasks.error")}</p> : null}
       {state !== "needsUpdate" && listed && total > 0 ? (
         <ul data-bot-task-list="true" className={cn(GROUPED_CARD, listed.some((task) => task.state === "waiting") && "border-accent/40")}>{listed.map(row)}</ul>
       ) : null}

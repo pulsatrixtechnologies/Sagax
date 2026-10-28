@@ -7,10 +7,16 @@
 // its glyph for a moment, then its row fades and folds away. A row opens its detail (the
 // bot's note, its history, every action); a long press or "..." offers the
 // same actions. An older server without the route says it comes with the
-// server update, never a red error. Shown on the desktop panel's Details
+// server update, never a red error. A list that cannot be read (network, 5xx,
+// 403, an invalid answer) is not shown at all, like an empty one: the last
+// known list stays, the cause goes to the log, and the card reads again by
+// itself (backoff) until a read works. Shown on the desktop panel's Details
 // and on the phone panel, next to Suggestions.
 import CompanionCore
+import os
 import SwiftUI
+
+private let log = Logger(subsystem: "ca.pulsatrix.sagax", category: "bot-tasks")
 
 // MARK: - Wording
 
@@ -94,6 +100,9 @@ struct BotTaskListCard: View {
     @State private var working: Set<String> = []
     @State private var opened: OpenedTask?
     @State private var removing: BotTodo?
+    /// The quiet read again after a failed one, and how many failed in a row.
+    @State private var retry: Task<Void, Never>?
+    @State private var failures = 0
 
     private enum Load: Equatable { case ok, needsUpdate, failed }
 
@@ -102,8 +111,9 @@ struct BotTaskListCard: View {
     private var listed: [BotTodo] { BotTodoList.listed(tasks ?? [], finishing: finishing) }
 
     /// Nothing in progress, nothing shown: the whole section is hidden (no
-    /// title, no empty line). The update and error lines still show.
-    private var isHidden: Bool { load == .ok && listed.isEmpty }
+    /// title, no empty line). Only the update line shows. A failed read is
+    /// not shown: the last known list, or nothing.
+    private var isHidden: Bool { BotTodoList.sectionHidden(needsUpdate: load == .needsUpdate, listedIsEmpty: listed.isEmpty) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -121,11 +131,14 @@ struct BotTaskListCard: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("panel-tasks")
         .task(id: "\(session.connection?.id ?? "")|\(bot.id)") {
+            retry?.cancel()
+            failures = 0
             tasks = nil
             finishing = []
             load = .ok
             await reload()
         }
+        .onDisappear { retry?.cancel() }
         .onValueChange(of: scenePhase) { phase in
             if phase == .active { Task { await reload() } }
         }
@@ -169,20 +182,13 @@ struct BotTaskListCard: View {
         case .needsUpdate:
             note("Available after the server update.", color: Theme.textTertiary)
                 .accessibilityIdentifier("panel-tasks-needs-update")
-        case .failed where tasks == nil:
-            note("The task list could not be loaded.", color: Theme.danger)
         default:
             if tasks != nil {
-                VStack(alignment: .leading, spacing: 8) {
-                    if load == .failed {
-                        note("The task list could not be loaded.", color: Theme.danger)
-                    }
-                    if !listed.isEmpty {
-                        rows(listed)
-                            .accessibilityIdentifier("panel-tasks-list")
-                    }
+                if !listed.isEmpty {
+                    rows(listed)
+                        .accessibilityIdentifier("panel-tasks-list")
                 }
-            } else {
+            } else if load == .ok {
                 ProgressView()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -405,16 +411,33 @@ struct BotTaskListCard: View {
     private func reload() async {
         guard let client = session.settingsClient else { return }
         let botId = bot.id
+        retry?.cancel()
         do {
             let next = try await client.botTodos(botId: botId)
             guard botId == bot.id else { return }
+            failures = 0
             setTasks(next)
             load = .ok
         } catch is CancellationError {
             return
         } catch {
             guard botId == bot.id else { return }
-            apply(BotTodoList.outcome(of: error))
+            let outcome = BotTodoList.outcome(of: error)
+            apply(outcome)
+            if case .failed = outcome { scheduleRetry(error: error, botId: botId) }
+        }
+    }
+
+    /// Not shown, but never given up: the cause goes to the log and the
+    /// card reads again after 2 s, doubling up to 60 s.
+    private func scheduleRetry(error: Error, botId: String) {
+        log.error("The task list of \(botId, privacy: .public) could not be loaded: \(String(describing: error), privacy: .public)")
+        let delay = BotTodoList.retryDelay(attempt: failures)
+        failures += 1
+        retry = Task {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled, botId == bot.id else { return }
+            await reload()
         }
     }
 
@@ -441,6 +464,7 @@ struct BotTaskListCard: View {
         case .needsUpdate:
             load = .needsUpdate
         case .failed:
+            // the last known list stays on screen
             load = .failed
         }
     }

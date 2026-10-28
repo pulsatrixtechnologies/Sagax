@@ -1245,7 +1245,6 @@
   "botTasks.doing": "In progress",
   "botTasks.done": "Done",
   "botTasks.reopen": "Reopen",
-  "botTasks.error": "The task list could not be loaded.",
   "botTasks.answer": "Answer",
   "botTasks.complete": "Mark done",
   "botTasks.resume": "Put back in progress",

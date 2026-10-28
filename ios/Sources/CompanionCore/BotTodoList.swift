@@ -234,6 +234,17 @@ public enum BotTodoList {
         return .failed
     }
 
+    /// The card shows nothing when there is nothing to list, and a failed
+    /// read is not a reason to show anything: only the older server's line.
+    public static func sectionHidden(needsUpdate: Bool, listedIsEmpty: Bool) -> Bool {
+        !needsUpdate && listedIsEmpty
+    }
+
+    /// The quiet read again after a failed one: 2 s, doubling, never past 60 s.
+    public static func retryDelay(attempt: Int) -> TimeInterval {
+        min(60, 2 * pow(2, Double(max(0, attempt))))
+    }
+
     public static func routeMissing(code: Int, message: String?) -> Bool {
         let text = message ?? ""
         if code == 404 { return text.hasPrefix("no route:") }
