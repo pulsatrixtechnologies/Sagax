@@ -1,6 +1,8 @@
 // In-app auto-updater (electron-updater). Updates download by themselves as
-// soon as a check finds one (macOS also stages the ZIP at once) and install
-// on the person's confirmed "Restart to install" (macOS and AppImage also
+// soon as a check finds one (macOS also stages the ZIP at once), the hourly
+// check keeps looking for a newer release while one waits, and the feed is
+// read once more right before installing, so one update always lands on the
+// latest release. They install on the person's confirmed "Restart to install" (macOS and AppImage also
 // when the app quits; Windows never installs on quit, see below). Nothing
 // restarts by itself in the middle of a call or a turn. One state object is
 // broadcast on every transition, to this app's own page (the local page, or
@@ -22,7 +24,7 @@ import {
 } from "./package-install-command.mjs";
 import { openBlankTerminal } from "./terminal-launch.mjs";
 import { createUpdaterCoordinator } from "./updater-coordinator.mjs";
-import { configureUpdateFeed, fetchReleaseNotes, readUpdatePrefs, updateChannel, writeUpdatePrefs } from "./update-feed.mjs";
+import { configureUpdateFeed, fetchReleaseNotes, fetchSkippedReleaseNotes, readUpdatePrefs, updateChannel, writeUpdatePrefs } from "./update-feed.mjs";
 import { ACTIVITY_STALE_MS, AWAY_INSTALL_IDLE_SECONDS, awayInstallDecision, cleanActiveBots } from "./update-away.mjs";
 import { systemIdleSnapshot } from "./system-idle.mjs";
 import { confirmLanguage, confirmedInstall, updateConfirmOptions } from "./update-confirm.mjs";
@@ -288,6 +290,10 @@ export function startUpdater() {
     silentInstall: !windows,
     confirmInstall: confirmInstallNatively,
     fetchReleaseNotes: (version) => fetchReleaseNotes(version, { fetch: (url, init) => net.fetch(url, init) }),
+    // The feed carries the newest release's notes alone: one update over
+    // several releases shows every skipped version's notes too.
+    fetchSkippedNotes: (from, to) =>
+      fetchSkippedReleaseNotes(from, to, { fetch: (url, init) => net.fetch(url, init), allowPrerelease: autoUpdater?.allowPrerelease === true }),
   });
 
   // first check ~15s after launch (let the app settle), then hourly — never

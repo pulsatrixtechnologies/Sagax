@@ -234,41 +234,43 @@ test("a restart watchdog keeps Windows/AppImage installs locked against overlapp
   let quits = 0;
   let watchdog;
   t.mock.method(globalThis, "setTimeout", (callback, delay) => {
-    assert.equal(delay, 120_000);
+    // The feed read before the install has its own deadline.
+    if (delay !== 120_000) return { unref() {} };
     watchdog = callback;
     return { unref() {} };
   });
   h.updater.quitAndInstall = () => { quits += 1; };
   await downloadInto(h);
+  h.updater.checkForUpdates = async () => h.updater.emit("update-not-available", { version: "2.0.0" });
+  await h.coordinator.install({ confirmed: true });
   h.updater.checkForUpdates = () => assert.fail("install still owns the updater");
-  h.coordinator.install({ confirmed: true });
   watchdog();
   h.updater.downloadUpdate = () => assert.fail("a retry must not overlap a slow installer");
   await h.coordinator.check(true);
-  h.coordinator.install({ confirmed: true });
+  await h.coordinator.install({ confirmed: true });
   assert.equal(h.getState().status, "installing");
   assert.match(h.getState().message, /Quit and reopen/);
   assert.equal(quits, 1);
 });
 
-test("an asynchronous native install error escapes the restarting spinner", () => {
+test("an asynchronous native install error escapes the restarting spinner", async () => {
   const { updater, coordinator, getState, states } = harness();
   const error = new Error("native staging failed");
   updater.quitAndInstall = () => updater.emit("error", error);
 
-  coordinator.install({ confirmed: true });
+  await coordinator.install({ confirmed: true });
 
   assert.deepEqual(getState(), { status: "error", message: "native staging failed" });
   assert.equal(errorStates(states).length, 1);
 });
 
-test("a synchronous install failure becomes a user-visible error", () => {
+test("a synchronous install failure becomes a user-visible error", async () => {
   const { updater, coordinator, getState } = harness();
   updater.quitAndInstall = () => {
     throw new Error("install threw");
   };
 
-  coordinator.install({ confirmed: true });
+  await coordinator.install({ confirmed: true });
 
   assert.deepEqual(getState(), { status: "error", message: "install threw" });
 });
@@ -592,35 +594,49 @@ test("without a hand-off the install still quits and installs", async () => {
   };
 
   await downloadInto(h, ["/tmp/Pulsa Bot-2.0.0.AppImage"]);
-  h.coordinator.install({ confirmed: true });
+  await h.coordinator.install({ confirmed: true });
 
   assert.equal(called, 1);
   assert.equal(h.getState().status, "installing");
 });
 
-test("a staged update survives hourly checks until the user explicitly checks again", async () => {
+test("a staged update stays ready through hourly checks until a newer release replaces it", async () => {
   const h = harness();
   await downloadInto(h);
   let checks = 0;
+  let latest = "2.0.0";
   h.updater.checkForUpdates = async () => {
     checks += 1;
     h.updater.emit("checking-for-update");
-    h.updater.emit("update-available", { version: "2.1.0" });
+    h.updater.emit("update-available", { version: latest });
   };
+  h.updater.downloadUpdate = () => assert.fail("the ready release is not downloaded again");
   const staged = h.getState();
 
+  // The hourly check reads the feed; the same release leaves it ready.
   await h.coordinator.check();
-  assert.equal(checks, 0);
+  assert.equal(checks, 1);
   assert.deepEqual(h.getState(), staged);
 
-  // Checking again finds the newer one, and it downloads by itself.
+  // A failing hourly check leaves it ready too.
+  h.updater.checkForUpdates = () => Promise.reject(new Error("offline"));
+  await h.coordinator.check();
+  assert.deepEqual(h.getState(), staged);
+
+  // A newer release published since downloads in its place, by itself.
+  latest = "2.1.0";
+  h.updater.checkForUpdates = async () => {
+    checks += 1;
+    h.updater.emit("checking-for-update");
+    h.updater.emit("update-available", { version: latest });
+  };
   h.updater.downloadUpdate = async () => {
     h.updater.emit("update-downloaded", { version: "2.1.0" });
     return ["/tmp/Sagax-2.1.0-amd64.deb"];
   };
-  await h.coordinator.check(true);
+  await h.coordinator.check();
   await settle();
-  assert.equal(checks, 1);
+  assert.equal(checks, 2);
   assert.equal(h.getState().status, "downloaded");
   assert.equal(h.getState().version, "2.1.0");
 });
@@ -901,7 +917,7 @@ test("Windows installs with the installer's progress window and reopens Sagax; e
     const calls = [];
     h.updater.quitAndInstall = (...args) => { calls.push(args); };
     await downloadInto(h, ["/tmp/Sagax-2.0.0-setup.exe"]);
-    h.coordinator.install({ confirmed: true });
+    await h.coordinator.install({ confirmed: true });
     assert.deepEqual(calls, [expected], String(silentInstall));
   }
 });
@@ -989,4 +1005,177 @@ test("a stalled preparation becomes a recoverable restart-required error, not a 
   h.updater.checkForUpdates = () => assert.fail("recovery requires a restart first");
   await h.coordinator.check(true);
   assert.equal(h.getState().status, "error");
+});
+
+// 2026-10-28 (owner, macOS): 0.8.7 then 0.8.8 came out hours apart. The app
+// had downloaded 0.8.7, installed it on "Restart to install", and came back
+// up announcing 0.8.8. The feed is read again right before installing, so a
+// release published after the download installs instead, in one update.
+function fakeFeed(h, { current = "1.0.0", nativeStaging = false } = {}) {
+  const feed = { latest: "1.1.0", notes: {}, checks: 0, downloads: [], installs: [], failCheck: false };
+  let offered = null;
+  h.updater.currentVersion = { version: current };
+  h.updater.checkForUpdates = async () => {
+    feed.checks += 1;
+    if (feed.failCheck) throw new Error("feed unreachable");
+    h.updater.emit("checking-for-update");
+    if (feed.latest === current) {
+      h.updater.emit("update-not-available", { version: current });
+      return;
+    }
+    offered = feed.latest;
+    h.updater.emit("update-available", { version: feed.latest, releaseNotes: feed.notes[feed.latest] });
+  };
+  h.updater.downloadUpdate = async () => {
+    const version = offered;
+    feed.downloads.push(version);
+    h.updater.emit("download-progress", { percent: 50 });
+    h.updater.emit("update-downloaded", { version, releaseNotes: feed.notes[version] });
+    await settle();
+    return [`/tmp/Sagax-${version}${nativeStaging ? "-mac.zip" : "-setup.exe"}`];
+  };
+  h.updater.quitAndInstall = () => {
+    feed.installs.push(h.getState().version);
+  };
+  return feed;
+}
+
+for (const [platform, options] of [["macOS", { nativeStaging: true }], ["Windows", { silentInstall: false }], ["AppImage", {}]]) {
+  test(`${platform}: A downloaded, B published since, one click installs B`, async () => {
+    const h = harness(options);
+    const feed = fakeFeed(h, { nativeStaging: options.nativeStaging === true });
+    feed.latest = "1.1.0";
+    await h.coordinator.check();
+    await settle();
+    assert.equal(h.getState().status, "downloaded");
+    assert.equal(h.getState().version, "1.1.0");
+
+    feed.latest = "1.2.0";
+    await h.coordinator.install({ confirmed: true });
+    await settle();
+    await settle();
+
+    assert.deepEqual(feed.downloads, ["1.1.0", "1.2.0"]);
+    assert.deepEqual(feed.installs, ["1.2.0"], "one install, of the newest release");
+    assert.equal(h.getState().status, "installing");
+    assert.equal(h.getState().version, "1.2.0");
+  });
+
+  test(`${platform}: nothing newer on the feed installs what is ready without downloading again`, async () => {
+    const h = harness(options);
+    const feed = fakeFeed(h, { nativeStaging: options.nativeStaging === true });
+    await h.coordinator.check();
+    await settle();
+    await h.coordinator.install({ confirmed: true });
+    assert.deepEqual(feed.downloads, ["1.1.0"]);
+    assert.deepEqual(feed.installs, ["1.1.0"]);
+  });
+
+  test(`${platform}: a feed that fails right before the install still installs what is ready`, async () => {
+    const h = harness(options);
+    const feed = fakeFeed(h, { nativeStaging: options.nativeStaging === true });
+    await h.coordinator.check();
+    await settle();
+    feed.failCheck = true;
+    await h.coordinator.install({ confirmed: true });
+    assert.deepEqual(feed.installs, ["1.1.0"]);
+    assert.equal(h.getState().status, "installing");
+  });
+}
+
+test("a feed that never answers before the install gives up after its deadline and installs what is ready", async () => {
+  const h = harness({ refreshTimeoutMs: 5 });
+  const feed = fakeFeed(h);
+  await h.coordinator.check();
+  await settle();
+  h.updater.checkForUpdates = () => new Promise(() => {});
+  await h.coordinator.install({ confirmed: true });
+  assert.deepEqual(feed.installs, ["1.1.0"]);
+});
+
+test("a second click while the feed is read again installs once", async () => {
+  const h = harness();
+  const feed = fakeFeed(h);
+  await h.coordinator.check();
+  await settle();
+  const first = h.coordinator.install({ confirmed: true });
+  await h.coordinator.install({ confirmed: true });
+  await first;
+  assert.deepEqual(feed.installs, ["1.1.0"]);
+});
+
+test("the notes before an update cover every skipped version, not the newest alone", async () => {
+  const asked = [];
+  const h = harness({
+    fetchSkippedNotes: async (from, to) => {
+      asked.push([from, to]);
+      return [
+        { version: "1.1.0", note: "## 1.1.0 notes" },
+        { version: "1.0.5", note: "## 1.0.5 notes" },
+      ];
+    },
+  });
+  const feed = fakeFeed(h);
+  feed.latest = "1.2.0";
+  feed.notes["1.2.0"] = "## 1.2.0 notes";
+  h.updater.downloadUpdate = () => new Promise(() => {});
+  await h.coordinator.check();
+  await settle();
+
+  assert.deepEqual(asked, [["1.0.0", "1.2.0"]]);
+  assert.deepEqual(h.getState().notes, [
+    { version: "1.2.0", note: "## 1.2.0 notes" },
+    { version: "1.1.0", note: "## 1.1.0 notes" },
+    { version: "1.0.5", note: "## 1.0.5 notes" },
+  ]);
+  assert.match(h.getState().releaseNotes, /1\.2\.0 notes[\s\S]*1\.1\.0 notes[\s\S]*1\.0\.5 notes/);
+});
+
+test("A ready, B published: the notes shown for B still cover A and every version since the running one", async () => {
+  const h = harness({
+    fetchSkippedNotes: async (from, to) => (to === "1.2.0" ? [{ version: "1.1.0", note: "A notes" }] : []),
+  });
+  const feed = fakeFeed(h);
+  feed.notes["1.1.0"] = "A notes";
+  feed.notes["1.2.0"] = "B notes";
+  await h.coordinator.check();
+  await settle();
+  assert.equal(h.getState().notes, "A notes");
+
+  feed.latest = "1.2.0";
+  const downloads = h.updater.downloadUpdate;
+  let downloading;
+  h.updater.downloadUpdate = () => {
+    downloading = h.getState();
+    return downloads();
+  };
+  await h.coordinator.install({ confirmed: true });
+  await settle();
+  await settle();
+  assert.equal(downloading.version, "1.2.0");
+  assert.deepEqual(h.getState().notes, [
+    { version: "1.2.0", note: "B notes" },
+    { version: "1.1.0", note: "A notes" },
+  ]);
+  assert.deepEqual(feed.installs, ["1.2.0"]);
+});
+
+test("feed notes already listing a skipped version keep theirs; a failed read of skipped notes leaves the update alone", async () => {
+  const merged = harness({ fetchSkippedNotes: async () => [{ version: "1.1.0", note: "from the API" }] });
+  const feed = fakeFeed(merged);
+  feed.latest = "1.2.0";
+  feed.notes["1.2.0"] = [{ version: "1.2.0", note: "B" }, { version: "1.1.0", note: "from the feed" }];
+  merged.updater.downloadUpdate = () => new Promise(() => {});
+  await merged.coordinator.check();
+  await settle();
+  assert.deepEqual(merged.getState().notes, [{ version: "1.2.0", note: "B" }, { version: "1.1.0", note: "from the feed" }]);
+
+  const failed = harness({ fetchSkippedNotes: async () => { throw new Error("offline"); } });
+  const other = fakeFeed(failed);
+  other.notes["1.1.0"] = "only the newest";
+  failed.updater.downloadUpdate = () => new Promise(() => {});
+  await failed.coordinator.check();
+  await settle();
+  assert.equal(failed.getState().status, "downloading");
+  assert.equal(failed.getState().notes, "only the newest");
 });

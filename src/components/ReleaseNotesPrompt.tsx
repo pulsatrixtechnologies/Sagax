@@ -110,7 +110,11 @@ export function ReleaseNotesPrompt() {
   // Always offer the running version, even when this build has no file for it.
   if (browse && !versions.includes(version)) versions.unshift(version);
   const previous = readPrevious();
-  const sinceEntries = browse && previous ? bundledNotesSince(previous, version, catalog) : [];
+  const sinceEntries = previous ? bundledNotesSince(previous, version, catalog) : [];
+  // After an update that went over several releases (0.8.6 straight to
+  // 0.8.9), "What's new" shows every version since the one installed before,
+  // not the newest alone.
+  const cumulative = !browse && sinceEntries.length > 1;
   const close = () => setOpen(false);
 
   // 2026-10-16 : drawn like Settings, in Settings' reading column: the
@@ -157,7 +161,7 @@ export function ReleaseNotesPrompt() {
           </div>
         ) : undefined}
       >
-        {browse && since ? (
+        {(browse && since) || cumulative ? (
           <ReleaseNotesBody notes={sinceEntries} language={language} headings />
         ) : (
           <div className="flex flex-col gap-3">
