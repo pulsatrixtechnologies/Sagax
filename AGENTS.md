@@ -6882,7 +6882,11 @@ the agents tool `propose_page`; the person publishes it from its card
 (`shared/published-pages.ts`, store `server/published-pages.ts`, renderer
 `server/published-pages-render.ts`, routes `server/routes/published-pages.ts`,
 UI `src/components/PublishedPages.tsx`: the chat card and Settings > Pages
-publiées). Keep these rules, covered by `server/published-pages.test.ts`,
+publiées). On iPhone, Settings > Pages > Snapshot frames that version's
+preview wrapper only (`ios/Sources/CompanionCore/PagePreview.swift`): the
+same `/pages/preview/<id>/<n>` path the desktop frames, and its
+preview-frame, on the API origin. Another host or path is not loaded.
+Keep these rules, covered by `server/published-pages.test.ts`,
 `server/published-pages.e2e.test.ts`, `server/published-pages-prelude.test.ts`,
 `src/components/PublishedPages.test.ts` and `electron/page-frame-guard.node-test.mjs`
 (two security reviews of #646 folded in):
