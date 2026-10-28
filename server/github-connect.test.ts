@@ -132,7 +132,7 @@ describe("Sagax's GitHub sync in the server environment", () => {
     try { body(home, join(home, ".config/gh/hosts.yml"), join(home, ".git-credentials")); } finally { rmSync(home, { recursive: true, force: true }); }
   };
   // What gh auth login writes (gh 2.40 and later): the person's own sign-in.
-  const personLogin = "github.com:\n    users:\n        owner:\n            oauth_token: gho_person\n    git_protocol: https\n    oauth_token: gho_person\n    user: jc\n";
+  const personLogin = "github.com:\n    users:\n        owner:\n            oauth_token: gho_person\n    git_protocol: https\n    oauth_token: gho_person\n    user: owner\n";
 
   it("never overwrites a gh auth login the person made, and takes Sagax's git line out", () => withHome((home, hosts, creds) => {
     mkdirSync(join(home, ".config/gh"), { recursive: true });
@@ -160,7 +160,7 @@ describe("Sagax's GitHub sync in the server environment", () => {
 
   it("adopts a file it wrote before the marker existed by its token, never another token", () => withHome((home, hosts) => {
     mkdirSync(join(home, ".config/gh"), { recursive: true });
-    const legacy = "github.com:\n    oauth_token: gho_one\n    user: jc\n    git_protocol: https\n";
+    const legacy = "github.com:\n    oauth_token: gho_one\n    user: owner\n    git_protocol: https\n";
     writeFileSync(hosts, legacy);
     expect(run(home, { token: "gho_one", login: "owner" })).toBe("sagax-github-ready");
     writeFileSync(hosts, legacy.replace("gho_one", "gho_other"));
@@ -170,7 +170,7 @@ describe("Sagax's GitHub sync in the server environment", () => {
 
   it("still knows its own file after gh rewrote it into the multi-account layout", () => withHome((home, hosts, creds) => {
     run(home, { token: "gho_one", login: "owner" });
-    const migrated = "github.com:\n    users:\n        owner:\n            oauth_token: gho_one\n    git_protocol: https\n    oauth_token: gho_one\n    user: jc\n";
+    const migrated = "github.com:\n    users:\n        owner:\n            oauth_token: gho_one\n    git_protocol: https\n    oauth_token: gho_one\n    user: owner\n";
     writeFileSync(hosts, migrated);
     // A new Sagax token (reconnect): the replaced one marks the file as Sagax's.
     expect(run(home, { token: "gho_two", login: "owner" }, { token: "gho_one", login: "owner" })).toBe("sagax-github-ready");
