@@ -38,7 +38,7 @@ import {
   PictureInPicture2,
   UserRoundPen,
 } from "lucide-react";
-import { api, useStore, formatTime, visibleMessages, currentTaskBot, botOpensTo, openBot, startNewTopic, type AppState, type Bot, type BotProject, type ConfigStatus, type FolderOwnerKind, type Group, type GroupTaskUpdatePatch, type InstanceInfo, type Message } from "@/state/store";
+import { api, useStore, formatTime, visibleMessages, currentTaskBot, openBot, startNewTopic, type AppState, type Bot, type BotProject, type ConfigStatus, type FolderOwnerKind, type Group, type GroupTaskUpdatePatch, type InstanceInfo, type Message } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
@@ -70,7 +70,6 @@ import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { BotRoleTag, PersonLabelTag } from "./LabelTag";
-import { SidebarUnreadThreads, sidebarUnreadThreads } from "./SidebarUnreadThreads";
 import { nudgeLineText } from "@/lib/nudge-line";
 import { ChevronsRight, Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
@@ -172,12 +171,11 @@ import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 import { SidebarProfileMenu } from "./SidebarProfileMenu";
 import { SidebarFoot } from "./SidebarFoot";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
-import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
+import { useShowThreads, useThreadsMode } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
 import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
-import { botShowsUnread, iconUnreadDotPosition, isInterBotThread, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
-import { threadReadCursor, unreadMessageCount } from "@/lib/unread-divider";
-import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
+import { botShowsUnread, botUnreadCount, iconUnreadDotPosition, isInterBotThread, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
+import { sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
 import { groupMemberBots } from "@/lib/group-members";
 import { plainPreviewText } from "@/lib/plain-preview";
@@ -417,8 +415,8 @@ export function GroupListItem({
   // thread button otherwise, never both), and once there is a list (a
   // second thread, or a person's folder) to open. So every row kind sits at
   // one inset in the header location, the avatar and the name aligned.
-  const threadsLocation = useThreadsLocationChoice();
-  const inSidebar = showThreads && threadsLocation === "sidebar";
+  const threadsMode = useThreadsMode();
+  const inSidebar = threadsMode === "sidebar";
   const hasThreadList = inSidebar && (group.peopleDm
     ? (group.tasks?.length ?? 1) > 1 || (group.projects?.length ?? 0) > 0 || Boolean(query)
     : (group.tasks?.length ?? 1) > 1 || Boolean(query));
@@ -459,7 +457,7 @@ export function GroupListItem({
       }}
       className={cn(
         "relative flex w-full items-center text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
-        density === "icons" ? "justify-center rounded-lg px-1 py-1.5" : density === "compact" ? cn(inSidebar ? "gap-1.5 py-1" : "gap-2 py-1.5", "rounded-lg pr-9") : "h-[54px] gap-2 rounded-[10px] py-2 pr-2",
+        density === "icons" ? "justify-center rounded-lg px-1 py-1.5" : density === "compact" ? "gap-2 rounded-lg py-1.5 pr-9" : "h-[54px] gap-2 rounded-[10px] py-2 pr-2",
         // The same box and inset as BotListItem (Grok Bot's 54px row), so
         // every row's avatar and name line up: a room or a person moves like
         // a bot row (#152), only in the sidebar location, where its chevron
@@ -472,9 +470,9 @@ export function GroupListItem({
       data-people-dm={peer ? peer.id : undefined}
     >
       {peer
-        ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} presenceId={peer.id} presenceRing="border-sidebar" /></span>
-        : <StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} />}
-      <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
+        ? <span data-sidebar-row-avatar className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} presenceId={peer.id} presenceRing="border-sidebar" /></span>
+        : <span data-sidebar-row-avatar className="flex shrink-0"><StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} /></span>}
+      <div data-sidebar-row-name className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
           <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", (selected && !expanded) || group.unread ? "font-semibold" : "font-medium")}>
             <span className="min-w-0 truncate">{rowName}</span>
@@ -497,15 +495,23 @@ export function GroupListItem({
       onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
       <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", expanded && "rotate-90")} />
     </button>}
-    {!group.dm && !group.peopleDm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
+    {/* one conversation: no thread is made or opened from the row */}
+    {!group.dm && !group.peopleDm && density !== "icons" && threadsMode !== "one" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
       className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70 touch:disabled:opacity-40"><Plus size={14} /></button>}
     </div>
-    {expanded && (group.peopleDm
+    {expanded && <div className={threadListIndent(density)}>{group.peopleDm
       ? <PersonThreadList group={group} name={rowName} selected={selected} density={density} query={rowName.toLowerCase().includes(query.toLowerCase()) ? "" : query} />
-      : <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />)}
+      : <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}</div>}
     </>
   );
+}
+
+/** Sidebar mode: the threads under a bot, a room or a person sit under the
+ * row's text, past its avatar and the gap after it (36px + 8px comfortable,
+ * 28px + 8px compact), the same for every kind of row. */
+export function threadListIndent(density: SidebarDensity): string {
+  return density === "compact" ? "ml-9" : "ml-11";
 }
 
 /** Scroll the row of a thread the person asked to open into view, once the
@@ -1942,6 +1948,7 @@ export function BotListItem({
   startRename = false,
   onRenameStarted,
   selection,
+  query = "",
 }: {
   bot: Bot;
   density: SidebarDensity;
@@ -1959,10 +1966,11 @@ export function BotListItem({
   const remoteClient = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
   const [renaming, setRenaming] = useState(false);
   const selected = state.activeView === "chat" && state.selectedId === bot.id;
-  // Grok Bot's rows (2026-10-15): a bot's threads no longer unfold under
-  // it, whatever Settings > Threads location says; the chat header's thread
-  // button is the one place for them. Only its unread threads (at most
-  // three, never the one on screen) sit under the row (SidebarUnreadThreads).
+  // Settings > Conversation threads (useThreadsMode), one reader for the
+  // row: "sidebar" folds the bot open on its threads (a chevron, the choice
+  // remembered per bot); "header" and "one" draw one line per bot, nothing
+  // under it and no chevron.
+  const threadsMode = useThreadsMode();
   const deleting = state.deletingBots[bot.id] === true;
   const mascotMotion = selected && state.mascotMotion?.botId === bot.id ? state.mascotMotion : null;
   const pendingQueued = state.pendingQueued;
@@ -1980,7 +1988,9 @@ export function BotListItem({
   // The role (Bot settings > Title) is the pill beside the name, as Grok
   // Bot draws it ("Service Desk Ops").
   const title = bot.title.trim();
-  const unreadThreads = !iconOnly && showThreads ? sidebarUnreadThreads(bot, selected ? bot.threadId : null) : [];
+  const inSidebar = threadsMode === "sidebar" && !iconOnly;
+  const [threadsOpen, setThreadsOpen] = useSearchDisclosure(`bot:${bot.id}`, inSidebar ? query : "", searchMatchesThreads(query, bot.tasks, bot.projects), true);
+  const threadsListed = inSidebar && threadsOpen;
   const rowClass = cn(
     "flex items-center text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
     iconOnly
@@ -1988,14 +1998,18 @@ export function BotListItem({
       ? "mx-auto h-[54px] w-[54px] shrink-0 justify-center rounded-[10px] p-[9px]"
       : cn("w-full", comfortable
         ? "h-[54px] gap-2 rounded-[10px] py-2 pl-2 pr-2"
-        : "gap-2 rounded-lg py-1.5 pl-2 pr-9"),
+        : "gap-2 rounded-lg py-1.5 pl-2 pr-9",
+        // room for the chevron, at the inset a room's row has there
+        inSidebar && "pl-6"),
     // room for New thread and the "..." while they show (hover, focus, touch)
     !iconOnly && !selection?.active && "group-hover:pr-[64px] group-focus-within:pr-[64px] max-md:pr-[64px] touch:pr-[64px]",
     // room for the selection check
     !iconOnly && selection?.active && "pr-9",
     // The Primary Bot is called out by the star on its avatar, not by
     // tinting the whole row.
-    selected || selection?.selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
+    // folded open on its threads, the thread on screen carries the one
+    // highlight (BotThreadList), as a room's does
+    (selected && !threadsListed) || selection?.selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
   );
   const activityTasks = sidebarBotActivityTasks(bot, pendingQueued);
   const waiting = bot.activity === "waiting-on-you" || activityTasks.some((task) => task.activity === "waiting-on-you");
@@ -2010,7 +2024,7 @@ export function BotListItem({
   const teammateWait = !waiting && !working && (Boolean(bot.waitingForTeammates) || activityTasks.some((task) => Boolean(task.waitingForTeammates)));
   const queued = activityTasks.some((task) => task.queued);
   const unread = botShowsUnread(bot);
-  const unreadCount = unread ? unreadMessageCount(visible, threadReadCursor(bot)) : null;
+  const unreadCount = botUnreadCount(bot, visible, threadsListed);
   // quiet rows drop the last-message preview but keep a line that reports
   // something happening now; an idle bot is just its name
   const statusLine = deleting || lineWorking || waiting || teammateWait || queued;
@@ -2027,10 +2041,8 @@ export function BotListItem({
   const body = (
     <>
       {/* flex, not inline: an inline wrapper adds a baseline gap under the
-          avatar and makes the row taller than before the presence dot. It
-          fades out under the unread threads' disclosure while that is
-          pointed at, as Grok Bot does. */}
-      <span className="relative flex shrink-0 transition-opacity group-has-[[data-sidebar-threads-toggle]:hover]/threads:opacity-0 group-has-[[data-sidebar-threads-toggle]:focus-visible]/threads:opacity-0" title={iconOnly ? undefined : [bot.name, title].filter(Boolean).join(" · ")}>
+          avatar and makes the row taller than before the presence dot. */}
+      <span data-sidebar-row-avatar className="relative flex shrink-0" title={iconOnly ? undefined : [bot.name, title].filter(Boolean).join(" · ")}>
         <SidebarMascotAvatar
           botId={bot.id}
           bot={bot}
@@ -2052,7 +2064,7 @@ export function BotListItem({
         {teammateWait && <StatusDot tone="accent" testId="teammate-wait-dot" role="status" label={t("sidebar.preview.waitingOnTeammate")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
         {!teammateWait && !waiting && !working && queued && <StatusDot tone="queued" testId="queued-dot" role="status" label={t("task.queued")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
       </span>
-      <div className={cn("flex min-w-0 flex-1 flex-col", iconOnly && "hidden", trailingDot && "mr-4 group-hover:mr-0 group-focus-within:mr-0 max-md:mr-0 touch:mr-0")}>
+      <div data-sidebar-row-name className={cn("flex min-w-0 flex-1 flex-col", iconOnly && "hidden", trailingDot && "mr-4 group-hover:mr-0 group-focus-within:mr-0 max-md:mr-0 touch:mr-0")}>
         <div data-sidebar-bot-title className="flex min-w-0 items-center gap-1.5">
           <span className="flex min-w-0 shrink items-center gap-1 text-[14px] font-medium leading-5 text-sidebar-ink">
             {bot.pinned && <Pin size={12} className="shrink-0 text-sidebar-ink-secondary" />}
@@ -2126,10 +2138,6 @@ export function BotListItem({
     const insideRenameInput = event.target instanceof HTMLInputElement;
     if (botListItemPointerIntent(event.type, insideRenameInput) === "select") openConversation();
   };
-  const openThread = (threadId: string) => {
-    if (selected && threadId === bot.threadId) return;
-    navigate(() => dispatch({ type: "switchTask", botId: bot.id, threadId }));
-  };
 
   const row = (
     <div className="group relative" title={iconOnly ? [bot.name, bot.title?.trim()].filter(Boolean).join(" · ") : undefined}>
@@ -2148,7 +2156,7 @@ export function BotListItem({
             : undefined
         }
         aria-busy={deleting || undefined}
-        aria-current={selected && !renaming && !selection?.active ? "page" : undefined}
+        aria-current={selected && !threadsListed && !renaming && !selection?.active ? "page" : undefined}
         aria-pressed={selection?.active ? selection.selected : undefined}
         data-sidebar-bot-row={bot.id}
         data-sidebar-unread={unread ? "" : undefined}
@@ -2183,7 +2191,7 @@ export function BotListItem({
       {!renaming && !deleting && !iconOnly && !selection?.active && <>
         {/* direct New thread, beside the "..." (2026-10-15) */}
         {showThreads && <button type="button" data-sidebar-bot-new-thread={bot.id} aria-label={t("task.newShort")} title={t("task.newShort")}
-          onClick={() => dispatch({ type: "newTask", botId: bot.id })}
+          onClick={() => { if (inSidebar) setThreadsOpen(true); dispatch({ type: "newTask", botId: bot.id }); }}
           className="pointer-events-none absolute right-8 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><Plus size={14} /></button>}
         <button type="button" aria-label={t("sidebar.bot.actions", { name: bot.name })} title={t("sidebar.bot.actions", { name: bot.name })} aria-haspopup="menu" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); onMenu({ botId: bot.id, x: rect.left, y: rect.bottom }); }}
           className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><MoreHorizontal size={15} /></button>
@@ -2193,16 +2201,25 @@ export function BotListItem({
           <Loader2 size={12} className="animate-spin" />
         </span>
       )}
+      {inSidebar && !renaming && <button type="button" data-sidebar-bot-threads-toggle={bot.id}
+        aria-label={t(threadsOpen ? "task.collapseNamed" : "task.expandNamed", { name: bot.name })} aria-expanded={threadsOpen}
+        onClick={() => setThreadsOpen((open) => !open)}
+        className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
+        <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", threadsOpen && "rotate-90")} />
+      </button>}
     </div>
   );
 
-  return (
-    <>
-    <SidebarUnreadThreads bot={bot} threads={unreadThreads} onOpen={openThread}>{row}</SidebarUnreadThreads>
-    {/* Threads off: only the activity rows. */}
-    {!showThreads && <SidebarBotActivity bot={bot} rowThreadId={selected ? bot.threadId : botOpensTo(bot, showThreads)} density={density} pendingQueued={pendingQueued} dispatch={dispatch} />}
-    </>
-  );
+  // "sidebar": the bot's threads under its row while it is open, the one on
+  // screen highlighted. "header" and "one": nothing under the row, of any
+  // kind; an unread thread adds to the row's count (botUnreadCount).
+  if (!threadsListed) return row;
+  return <>
+    {row}
+    <div className={threadListIndent(density)}>
+      <BotThreadList bot={bot} selected={selected} density={density} query={bot.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />
+    </div>
+  </>;
 }
 
 export function ArchivedBotRow({

@@ -2,7 +2,8 @@
 // (shared/parallel-tasks.ts): its name, where it stands (from the task's own
 // live state: running, waiting for the person's approval, waiting for a
 // slot, done, failed, stopped), how long it has run, Stop while it is not
-// done and Open to read or steer it in its own thread. Its approvals live in
+// done and Open to read or steer it in its own thread (threads hidden: in
+// the side column, the conversation stays on screen). Its approvals live in
 // that thread; the card says when one waits so the person knows which task
 // asks.
 import { useEffect, useState } from "react";

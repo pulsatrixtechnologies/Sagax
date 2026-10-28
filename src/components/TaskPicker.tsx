@@ -24,9 +24,8 @@ import { t } from "@/lib/i18n";
 import { formatTaskTokens, headlineTokens, usageDetail } from "@/lib/usage";
 import { nextRename } from "@/lib/rename";
 import { BotProjectDialog, FolderActions, FolderIcon, NewThreadButton } from "./BotProjects";
-import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
+import { useShowThreads, useThreadsMode } from "@/lib/thread-preferences";
 import { threadsOffReturnTarget } from "./thread-home";
-import { threadsWhenTreeHidden } from "./SidebarBotActivity";
 import { formatUpdatedAt, orderedThreadList, threadByline, threadRecency, threadUpdatedLabel, useRelativeNow, useSnoozeExpiry } from "./SidebarThreadRow";
 import { ThreadMenu, type ThreadMenuActions } from "./ThreadMenu";
 import { ConfidentialBadge } from "./ConfidentialBanner";
@@ -495,35 +494,6 @@ function ConversationTaskPicker({
   );
 }
 
-/** The sibling-activity dropdown shown only while the sidebar thread tree is
- * hidden, ordered exactly like the sidebar so both surfaces agree. */
-export function BotActivityPicker({ bot }: { bot: Bot }) {
-  const { state, dispatch } = useStore();
-  const showThreads = useShowThreads();
-  if (showThreads) return null;
-  const activity = threadsWhenTreeHidden(bot, state.pendingQueued).filter((task) => task.threadId !== bot.threadId);
-  // A display preference must not strand a sibling approval or queued job,
-  // including on narrow screens where the sidebar is closed. This is an
-  // activity switcher only: idle histories and creation remain hidden.
-  if (!activity.length) return null;
-  return (
-    <div className="flex shrink-0 items-center gap-2 px-5 py-2" data-background-activity>
-      <select
-        aria-label={t("task.otherActivity", { count: activity.length })}
-        value=""
-        onChange={(event) => dispatch({ type: "switchTask", botId: bot.id, threadId: event.target.value })}
-        className="max-w-[180px] shrink-0 truncate rounded-full border border-hairline/40 bg-panel px-2.5 py-1 text-[12.5px] text-ink-secondary"
-      >
-        <option value="" disabled>{t("task.otherActivity", { count: activity.length })}</option>
-        {activity.map((task) => <option key={task.threadId} value={task.threadId}>
-          {task.title} · {task.activity === "waiting-on-you" ? t("task.waiting") : task.waitingForTeammates ? t("task.waitingOnTeammate") : task.busy || task.activity === "working" ? t("chat.activity.working") : task.queued ? t("task.queued") : t("task.unread")}
-        </option>)}
-      </select>
-      <span dir="auto" className="truncate text-[12px] text-ink-secondary">{bot.tasks?.find((task) => task.threadId === bot.threadId)?.title}</span>
-    </div>
-  );
-}
-
 /** The conversation a thread chip left behind. Shown in the chat column,
  * threads on or off, until that conversation is on screen again. */
 export function ThreadReturnLink({ ownerId, threadId }: { ownerId: string; threadId: string }) {
@@ -590,15 +560,14 @@ export function botPickerThreads(bot: Pick<Bot, "tasks">): Task[] {
 
 export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen?: boolean }) {
   const { state, dispatch } = useStore();
-  // A bot's threads live here whatever Threads location says: the sidebar
-  // no longer unfolds a bot's thread list (the reference design's rows, 2026-10-15),
-  // it only lists its unread threads. Rooms and people keep the setting.
-  const showThreads = useShowThreads();
+  // In the chat header mode only (useThreadsMode): the sidebar mode lists a
+  // bot's threads under its row instead, and one conversation has none.
+  const threadsMode = useThreadsMode();
   const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [folderSaving, setFolderSaving] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
-  if (!showThreads) return null;
+  if (threadsMode !== "header") return null;
   const projects = bot.projects ?? [];
   const projectIds = projects.map((project) => project.id);
   const threadActions: PickerThreadActions = {
@@ -710,9 +679,7 @@ export function GroupTaskPicker({ group }: { group: Group }) {
   }, [group.tasks]);
   // Like a bot's and a person's: in the header location only; the sidebar
   // location lists the room's threads under its row instead, never both.
-  const threadsOn = useShowThreads();
-  const location = useThreadsLocationChoice();
-  if (!threadsOn || location !== "header") return null;
+  if (useThreadsMode() !== "header") return null;
   return (
     <ConversationTaskPicker
       threadId={group.threadId}
@@ -738,12 +705,11 @@ export function GroupTaskPicker({ group }: { group: Group }) {
  * no bot). */
 export function PersonThreadPicker({ group, initialOpen = false }: { group: Group; initialOpen?: boolean }) {
   const { dispatch } = useStore();
-  const threadsOn = useShowThreads();
-  const location = useThreadsLocationChoice();
+  const threadsMode = useThreadsMode();
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [folderSaving, setFolderSaving] = useState(false);
   const [folderError, setFolderError] = useState<string | null>(null);
-  if (!group.peopleDm || !threadsOn || location !== "header") return null;
+  if (!group.peopleDm || threadsMode !== "header") return null;
   const projects = group.projects ?? [];
   const projectIds = projects.map((project) => project.id);
   const update = (threadId: string, patch: GroupTaskUpdatePatch) => dispatch({ type: "updateGroupTask", groupId: group.id, threadId, patch });

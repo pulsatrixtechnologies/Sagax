@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Bot, Group, GroupTask, Task } from "@/state/store";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { t } from "@/lib/i18n";
-import { attentionHasRunningWork, attentionJumpAction, attentionOwnerName, attentionRowStatus, attentionTriggerLabel, attentionUnpinAction, crossBotAttentionThreads, crossBotPinnedThreads, sidebarBotActivityTasks, sidebarGroupActivityTasks, threadsWhenTreeHidden } from "./SidebarBotActivity";
+import { attentionHasRunningWork, attentionJumpAction, attentionOwnerName, attentionRowStatus, attentionTriggerLabel, attentionUnpinAction, crossBotAttentionThreads, crossBotPinnedThreads, sidebarBotActivityTasks, sidebarGroupActivityTasks } from "./SidebarBotActivity";
 
 const task = (threadId: string, title: string, extra: Partial<Task>): Task =>
   ({ threadId, title, createdAt: 0, ...extra }) as Task;
@@ -112,7 +112,6 @@ describe("cross-bot attention", () => {
       task("a4", "Archived queue", { archivedAt: 0 }),
     ]);
     expect(sidebarBotActivityTasks(alpha, { a4: [{}] })).toEqual([]);
-    expect(threadsWhenTreeHidden(alpha, { a4: [{}] })).toEqual([]);
     expect(crossBotAttentionThreads([alpha], { a4: [{}] }).map((entry) => entry.task.threadId)).toEqual(["a1"]);
   });
 

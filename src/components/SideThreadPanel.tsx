@@ -6,7 +6,7 @@
 // chat, like the other docked panels.
 import { useEffect, useMemo } from "react";
 import { Loader2, Maximize2, X } from "lucide-react";
-import { useStore, type Bot } from "@/state/store";
+import { api, useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import {
@@ -19,6 +19,7 @@ import {
   useSideThread,
 } from "@/lib/side-thread";
 import { useSideTranscript } from "@/lib/use-side-transcript";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { BotAvatar } from "./Avatar";
 import { ChatView } from "./ChatView";
 import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
@@ -45,9 +46,17 @@ export function SideThreadPanel() {
 
 function SideThreadColumn({ bot, threadId }: { bot: Bot; threadId: string }) {
   const { dispatch } = useStore();
+  const showThreads = useShowThreads();
   const panel = useDockedPanelWidth(SIDE_BOUNDS);
   const transcript = useSideTranscript(threadId);
-  const title = bot.tasks?.find((task) => task.threadId === threadId)?.title?.trim() || t("task.newShort");
+  const task = bot.tasks?.find((candidate) => candidate.threadId === threadId);
+  const title = task?.title?.trim() || t("task.newShort");
+  // On screen in this column is read: with threads hidden it is the only
+  // place this thread opens, so its unread must clear here.
+  const unread = task?.unread === true;
+  useEffect(() => {
+    if (unread) api(`/api/bots/${bot.id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
+  }, [unread, bot.id, threadId]);
   // The chat view reads a bot whose open thread is this one, with this
   // column's messages; the bot's other fields (its threads' busy state,
   // approvals, model) are the store's, so they stay live.
@@ -69,9 +78,11 @@ function SideThreadColumn({ bot, threadId }: { bot: Bot; threadId: string }) {
         <span dir="auto" className="truncate text-[13.5px] font-medium leading-5 text-ink">{title}</span>
         <span className="truncate text-[11.5px] leading-4 text-ink-secondary">{bot.name}</span>
       </span>
-      <button type="button" data-side-thread-open-main onClick={openInMain} aria-label={t("sideThread.openInMain")} title={t("sideThread.openInMain")} className={CIRCLE_BUTTON}>
+      {/* Threads hidden: the one conversation never gives way to another
+          thread, so this column is the only place this one opens. */}
+      {showThreads && <button type="button" data-side-thread-open-main onClick={openInMain} aria-label={t("sideThread.openInMain")} title={t("sideThread.openInMain")} className={CIRCLE_BUTTON}>
         <Maximize2 size={15} strokeWidth={1.75} aria-hidden="true" />
-      </button>
+      </button>}
       <button type="button" data-side-thread-close onClick={closeSideThread} aria-label={t("sideThread.close")} title={t("sideThread.close")} className={CIRCLE_BUTTON}>
         <X size={17} strokeWidth={1.75} aria-hidden="true" />
       </button>

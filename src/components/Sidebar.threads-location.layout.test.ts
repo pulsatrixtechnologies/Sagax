@@ -8,6 +8,7 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }))
 vi.mock("@/lib/thread-preferences", async (original) => ({ ...await original<typeof import("@/lib/thread-preferences")>(),
   useShowThreads: () => prefs.show,
   useThreadsLocationChoice: () => prefs.location,
+  useThreadsMode: () => ((prefs.show) ? prefs.location : "one") as "one" | "header" | "sidebar",
 }));
 import { BotListItem, BotThreadList } from "./Sidebar";
 import { TaskPicker } from "./TaskPicker";
@@ -44,17 +45,17 @@ describe("threads location: one place at a time", () => {
     expect(header()).toContain('aria-label="All threads"');
   });
 
-  // The reference design's rows (owner, 2026-10-15): a bot's thread list no longer unfolds
-  // in the sidebar, whatever the setting; the header button is always its
-  // place. Rooms and people keep the setting.
-  it("In the sidebar location too, a bot's threads stay in the header and nothing unfolds under the bot", () => {
+  // Settings > Conversation threads > In the sidebar: the bot folds open on
+  // its threads under a chevron, and nothing about threads is in the chat
+  // header (the icon there belongs to the In the chat header mode only).
+  it("In the sidebar location, a bot's threads unfold under it and the header has no thread control", () => {
     prefs.location = "sidebar";
     const rail = sidebar();
     expect(rail).toContain('data-sidebar-bot-row="atlas"');
-    expect(rail).not.toContain("data-sidebar-thread-row");
-    expect(rail).not.toContain("data-sidebar-project");
-    expect(rail).not.toContain("Collapse Atlas threads");
-    expect(header()).toContain('aria-label="All threads"');
+    expect(rail).toContain("data-sidebar-thread-row");
+    expect(rail).toContain('data-sidebar-bot-threads-toggle="atlas"');
+    expect(rail).toContain("Collapse Atlas threads");
+    expect(header()).toBe("");
   });
 
   it("lists folders and chats straight, with no My conversations or Threads heading", () => {

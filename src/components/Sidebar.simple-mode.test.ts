@@ -5,7 +5,7 @@ import type { AppState, Bot, Group } from "@/state/store";
 import type { SidebarDensity } from "@/lib/sidebar-preferences";
 
 const fixture = vi.hoisted(() => ({ showThreads: true, state: {} as Partial<AppState>, dispatch: vi.fn() }));
-vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads, useThreadsLocationChoice: () => "header" }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads, useThreadsLocationChoice: () => "header", useThreadsMode: () => ((fixture.showThreads) ? "header" : "one") as "one" | "header" | "sidebar" }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }));
 vi.mock("react-dom", () => ({ createPortal: (node: ReactNode) => node }));
 vi.mock("@/state/store", async (importOriginal) => {
@@ -14,7 +14,7 @@ vi.mock("@/state/store", async (importOriginal) => {
 });
 
 import { BotContextMenu, BotListItem, GroupListItem } from "./Sidebar";
-import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
+import { sidebarBotActivityTasks } from "./SidebarBotActivity";
 
 const bot: Bot = {
   id: "atlas", threadId: "last-selected", name: "Atlas", title: "", description: "",
@@ -23,7 +23,7 @@ const bot: Bot = {
   projects: [{ id: "private-folder", name: "Quiet folder" }],
   // Threads hidden (the single stream): "idle-history" and "last-selected"
   // are its topics, the newest last; the jobs the bot opened stay apart and
-  // show as activity rows.
+  // never get a row under the bot.
   tasks: [
     { threadId: "last-selected", title: "Last selected conversation", createdAt: 1 },
     { threadId: "idle-history", title: "Idle history", createdAt: 0, projectId: "private-folder" },
@@ -168,7 +168,8 @@ describe("bot-first sidebar", () => {
     expect(markup).toContain('data-testid="waiting-dot"');
     if (density !== "icons") {
       expect(markup).toContain('aria-current="page"');
-      expect(markup).toMatch(/sr-only[^>]*>Unread threads</); // bold name plus a screen-reader label, no dot (478bd6216)
+      // the job's unread reply has no line of its own: it is the row's count
+      expect(markup).toMatch(/sr-only[^>]*>1 unread</);
       // New thread beside the bot's "..." (owner, 2026-10-15)
       expect(markup).toContain('aria-label="New thread"');
     }
@@ -188,7 +189,7 @@ describe("bot-first sidebar", () => {
     expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "newTask", botId: bot.id });
   });
 
-  it.each(densities)("hides thread browsing and creation but keeps attention accessible in %s density", (density) => {
+  it.each(densities)("hides every thread under the bot but keeps its attention on the row in %s density", (density) => {
     fixture.showThreads = false;
     const markup = renderToStaticMarkup(createElement(BotListItem, rowProps(density)));
     expect(markup).not.toContain("data-sidebar-thread-row");
@@ -198,11 +199,13 @@ describe("bot-first sidebar", () => {
     expect(markup).not.toContain("New thread");
     expect(markup).not.toContain("New folder");
     expect(markup).not.toContain("Expand Atlas threads");
+    // one conversation per bot: no thread is a line of its own, whatever it is
+    expect(markup).not.toContain("data-sidebar-activity-row");
+    expect(markup).not.toContain("data-sidebar-bot-activity");
+    expect(markup).not.toContain("data-sidebar-unread-thread");
+    for (const title of ["Review permission", "Running job", "Next job", "Finished reply"]) expect(markup).not.toContain(title);
+    // the row itself still says a sibling waits
     expect(markup).toContain('data-testid="waiting-dot"');
-    for (const id of ["approval", "working", "queued", "unread"]) expect(markup).toContain(`data-sidebar-activity-row="${id}"`);
-    expect(markup).toContain('aria-label="Atlas: Review permission · Waiting for you…"');
-    expect(markup).toContain('aria-label="Atlas: Next job · Queued"');
-    expect(markup).toContain('aria-label="Atlas: Finished reply · Unread"');
   });
 
   it("offers New thread first in the bot context menu with threads on, and no folder creation", () => {
@@ -281,8 +284,8 @@ describe("bot-first sidebar", () => {
   });
 
 
-  it("does not change group collaboration histories or creation", () => {
-    fixture.showThreads = false;
+  it("keeps a room's histories, and its New thread outside one conversation", () => {
+    fixture.showThreads = true;
     const group: Group = {
       id: "group", name: "Planning", threadId: "group-thread", memberIds: [], defaultResponder: { kind: "mentions" }, bulletin: "", unread: false, createdAt: 0, messages: [],
       tasks: [{ threadId: "group-thread", title: "Group conversation", createdAt: 1 }, { threadId: "group-earlier", title: "Earlier planning", createdAt: 0 }],
@@ -362,6 +365,17 @@ describe("people rows line up with bot rows", () => {
 });
 
 describe("bot row does not move with thread mode", () => {
+  it("draws no New thread on a room in one conversation", () => {
+    fixture.showThreads = false;
+    const group: Group = {
+      id: "group", name: "Planning", threadId: "group-thread", memberIds: [], defaultResponder: { kind: "mentions" }, bulletin: "", unread: false, createdAt: 0, messages: [],
+      tasks: [{ threadId: "group-thread", title: "Group conversation", createdAt: 1 }, { threadId: "group-earlier", title: "Earlier planning", createdAt: 0 }],
+    };
+    const markup = renderToStaticMarkup(createElement(GroupListItem, { group, density: "comfortable", onMenu: vi.fn() }));
+    expect(markup).not.toContain('aria-label="New thread"');
+    expect(markup).not.toContain("data-sidebar-thread-row");
+  });
+
   const stripButtonPadding = (cls: string) => cls.split(" ").filter((c) => !/pr-\[5\.75rem\]/.test(c)).sort();
   it.each(["comfortable", "compact", "icons"] as const)("has the same wrapper and avatar classes with threads on and off, %s density", (density) => {
     const grab = (showThreads: boolean) => {
@@ -370,7 +384,7 @@ describe("bot row does not move with thread mode", () => {
       function Capture() { tree = BotListItem({ ...rowProps(density), bot }); return tree; }
       const markup = renderToStaticMarkup(createElement(Capture));
       const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
-      const avatar = markup.match(/<span class="relative flex shrink-0[^"]*"[^>]*>/)?.[0];
+      const avatar = markup.match(/<span data-sidebar-row-avatar[^>]*>/)?.[0];
       return { row: stripButtonPadding(String(row.props.className)), avatar };
     };
     const on = grab(true);
@@ -402,46 +416,50 @@ describe("activity-only escape hatch", () => {
     const tasks = sidebarBotActivityTasks({ ...bot, busy: true, activity: "waiting-on-you" }, fixture.state.pendingQueued!);
     expect(tasks.map((task) => task.threadId)).toEqual(["approval", "working", "queued", "unread"]);
   });
+});
 
-  it("switches directly to the requested work and offers no thread-management actions", () => {
-    let tree: ReactNode;
-    function Capture() { tree = SidebarBotActivity({ bot, rowThreadId: bot.threadId, density: "comfortable", pendingQueued: fixture.state.pendingQueued!, dispatch: fixture.dispatch }); return tree; }
-    const markup = renderToStaticMarkup(createElement(Capture));
-    findElement(tree, "data-sidebar-activity-row", "approval")!.props.onClick!({} as MouseEvent);
-    expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "switchTask", botId: bot.id, threadId: "approval" });
-    expect(markup).not.toContain("Actions for");
-    expect(markup).not.toContain("New thread");
-    expect(markup).not.toContain("Delete");
-  });
+describe("one conversation per bot (threads off)", () => {
+  // The regression: an unread thread outside the one conversation (a bell
+  // row, "hello · Unread") was drawn as a line under the bot.
+  const helper: Bot = {
+    ...bot, id: "helper", name: "Helper", threadId: "stream-now", unread: true,
+    messages: [
+      { id: "u1", role: "user", kind: "text", text: "status?", at: 1 },
+      { id: "b1", role: "bot", kind: "text", text: "one", at: 2 },
+      { id: "b2", role: "bot", kind: "text", text: "two", at: 3 },
+      { id: "b3", role: "bot", kind: "text", text: "three", at: 4 },
+    ],
+    tasks: [
+      { threadId: "stream-earlier", title: "hello", createdAt: 1, unread: true },
+      { threadId: "stream-now", title: "Now", createdAt: 2, unread: true },
+      { threadId: "bot-job", title: "Job report", createdAt: 3, unread: true, openedBy: { botId: "helper", name: "Helper", at: 3 } },
+    ],
+  };
 
-  it("removes selected and settled activity but keeps unread completed replies", () => {
-    const selected = { ...bot, threadId: "approval", tasks: bot.tasks!.map((task) => task.threadId === "working" ? { ...task, busy: false, activity: "idle" as const } : task) };
-    const markup = renderToStaticMarkup(createElement(SidebarBotActivity, { bot: selected, rowThreadId: selected.threadId, density: "compact", pendingQueued: fixture.state.pendingQueued!, dispatch: fixture.dispatch }));
-    expect(markup).not.toContain('data-sidebar-activity-row="approval"');
-    expect(markup).not.toContain('data-sidebar-activity-row="working"');
-    expect(markup).toContain('data-sidebar-activity-row="unread"');
-  });
-
-  it("lists a reply in the thread a bot was left on, since its row opens the main thread", () => {
-    // This window left Atlas on an older thread a routine's reply has since
-    // landed in; the person last wrote in another one, the main thread.
-    const left: Bot = { ...bot, threadId: "left-behind", mainThreadId: "main-chat", tasks: [
-      { threadId: "left-behind", title: "Routine report", createdAt: 1, unread: true },
-      { threadId: "main-chat", title: "Main chat", createdAt: 2, unread: true },
-    ] };
-    const rows = () => {
-      const markup = renderToStaticMarkup(createElement(BotListItem, { ...rowProps("comfortable"), bot: left }));
-      return ["left-behind", "main-chat"].filter((threadId) => markup.includes(`data-sidebar-activity-row="${threadId}"`));
-    };
+  it.each(densities)("draws no thread line under the bot, its unread joins the row's count, %s density", (density) => {
     fixture.showThreads = false;
-    expect(rows()).toEqual(["left-behind"]);
-    // On screen, the thread it shows is the row, and the main thread a sibling.
-    fixture.state.selectedId = left.id;
-    expect(rows()).toEqual(["main-chat"]);
-    // With threads shown nothing is listed under the bot (Sagax: the chat
-    // header's thread button is the one place for threads).
-    fixture.showThreads = true;
-    fixture.state.selectedId = "other-bot";
-    expect(rows()).toEqual([]);
+    for (const selectedId of ["other-bot", "helper"]) {
+      fixture.state = { ...fixture.state, bots: [helper], selectedId };
+      const markup = renderToStaticMarkup(createElement(BotListItem, { ...rowProps(density), bot: helper }));
+      expect(markup).not.toContain("data-sidebar-activity-row");
+      expect(markup).not.toContain("data-sidebar-unread-thread");
+      expect(markup).not.toContain(">hello<");
+      expect(markup).not.toContain("Job report");
+      // three unread messages on screen and two unread threads elsewhere
+      if (density !== "icons") expect(markup).toContain('data-unread-count="5"');
+    }
+  });
+
+  it("opens the one conversation from the row", () => {
+    fixture.showThreads = false;
+    fixture.state = { ...fixture.state, bots: [helper], selectedId: "other-bot" };
+    let tree: ReactNode;
+    function Capture() { tree = BotListItem({ ...rowProps("comfortable"), bot: helper }); return tree; }
+    renderToStaticMarkup(createElement(Capture));
+    findElement(tree, "data-sidebar-bot-row", helper.id)!.props.onClick!({ type: "click", target: {} } as MouseEvent);
+    const calls = fixture.dispatch.mock.calls.map(([action]) => action as { type: string; threadId?: string });
+    expect(calls[0]).toEqual({ type: "select", id: helper.id });
+    expect(calls.some((action) => action.type === "switchTask" && action.threadId !== "stream-now")).toBe(false);
   });
 });
+

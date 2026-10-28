@@ -11,7 +11,7 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }))
 const threads = vi.hoisted(() => ({ show: false }));
 vi.mock("@/lib/thread-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/thread-preferences")>(),
-  useShowThreads: () => threads.show,
+  useShowThreads: () => threads.show, useThreadsMode: () => ((threads.show) ? "header" : "one") as "one" | "header" | "sidebar",
 }));
 beforeEach(() => { threads.show = false; });
 

@@ -1,6 +1,6 @@
 // The desktop sidebar measured on the reference design (owner, 2026-10-15): one row per
-// bot (portrait, name, role pill, last message), only its unread threads
-// under it, the Primary Bot at the top with its star and role, "My team" and
+// bot (portrait, name, role pill, last message), its threads under it in
+// the sidebar mode only, the Primary Bot at the top with its star and role, "My team" and
 // "Built-in" sections, and a foot of the avatar and the Connect apps pill.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -16,6 +16,7 @@ const fixture = vi.hoisted(() => ({
 vi.mock("@/lib/thread-preferences", async (original) => ({ ...await original<typeof import("@/lib/thread-preferences")>(),
   useShowThreads: () => true,
   useThreadsLocationChoice: () => "sidebar" as const,
+  useThreadsMode: () => "sidebar" as const,
 }));
 vi.mock("./SidebarProfileMenu", async (original) => ({
   ...await original<typeof import("./SidebarProfileMenu")>(),
@@ -44,7 +45,7 @@ vi.mock("@/state/store", async (importOriginal) => {
 import { setLocale } from "@/lib/i18n";
 import { StoreProvider } from "@/state/store";
 import { Sidebar } from "./Sidebar";
-import { SIDEBAR_UNREAD_THREAD_LIMIT, sidebarUnreadThreads } from "./SidebarUnreadThreads";
+import { forgetSearchDisclosuresForTests } from "@/lib/search-disclosure";
 
 const bot = (id: string, extra: Partial<Bot> = {}): Bot => ({
   id, threadId: `t-${id}`, name: id, title: "", description: "", notifications: true, color: "green", unread: false,
@@ -66,38 +67,23 @@ afterEach(() => {
   setLocale("en");
 });
 
-describe("unread threads under a bot", () => {
+describe("threads under a bot in the sidebar mode", () => {
   const tasks: Task[] = [
-    { threadId: "main", title: "Main", createdAt: 1, updatedAt: 1 },
-    { threadId: "a", title: "A", createdAt: 2, updatedAt: 20, unread: true },
-    { threadId: "b", title: "B", createdAt: 3, updatedAt: 50, unread: true },
-    { threadId: "c", title: "C", createdAt: 4, updatedAt: 40, unread: true },
-    { threadId: "d", title: "D", createdAt: 5, updatedAt: 30, unread: true },
-    { threadId: "run", title: "Routine", createdAt: 6, updatedAt: 90, unread: true, routineRunId: "r1" },
-    { threadId: "hidden", title: "AI client", createdAt: 7, updatedAt: 91, unread: true, hidden: true as const },
-    { threadId: "archived", title: "Old", createdAt: 8, updatedAt: 92, unread: true, archivedAt: 5 },
-    { threadId: "peer", title: "Peer", createdAt: 9, updatedAt: 93, unread: true, openedBy: { botId: "other", name: "Other", at: 1 } },
+    { threadId: "t-atlas", title: "Main", createdAt: 1, updatedAt: 1 },
+    { threadId: "a", title: "Alpha", createdAt: 2, updatedAt: 20 },
+    { threadId: "b", title: "Bravo", createdAt: 3, updatedAt: 50, unread: true },
   ];
+  beforeEach(() => forgetSearchDisclosuresForTests());
 
-  it("lists only the unread ones a person can open, newest first, three at most", () => {
-    expect(SIDEBAR_UNREAD_THREAD_LIMIT).toBe(3);
-    expect(sidebarUnreadThreads({ id: "atlas", tasks }, null).map((task) => task.threadId)).toEqual(["b", "c", "d"]);
-  });
-
-  it("never lists the thread on screen", () => {
-    expect(sidebarUnreadThreads({ id: "atlas", tasks }, "b").map((task) => task.threadId)).toEqual(["c", "d", "a"]);
-  });
-
-  it("draws them nested under the row with a disclosure, and no full thread list even in the sidebar location", () => {
+  it("lists every thread of the bot, read or not, under its chevron", () => {
     fixture.state = { bots: [bot("atlas", { title: "Ops", tasks })], sections: [] };
     const html = render();
-    const rows = [...html.matchAll(/data-sidebar-unread-thread="([^"]+)"/g)].map((match) => match[1]);
-    expect(rows).toEqual(["b", "c", "d"]);
-    expect(html).toContain('aria-label="Fils d&#x27;atlas"');
-    expect(html).toContain('data-sidebar-threads-toggle="atlas"');
-    expect(html).not.toContain("data-sidebar-thread-row");
-    const nested = html.match(/<button[^>]*data-sidebar-unread-thread="b"[^>]*>/)?.[0] ?? "";
-    for (const token of ["ml-11", "h-8", "rounded-[10px]", "px-2"]) expect(nested.split(/[\s"]/)).toContain(token);
+    expect(html).toContain('data-sidebar-bot-threads-toggle="atlas"');
+    expect(html).toMatch(/data-sidebar-bot-threads-toggle="atlas"[^>]*aria-expanded="true"|aria-expanded="true"[^>]*data-sidebar-bot-threads-toggle="atlas"/);
+    for (const title of ["Alpha", "Bravo"]) expect(html).toContain(title);
+    expect(html).toContain("data-sidebar-thread-row");
+    // no unread-only sub-rows any more
+    expect(html).not.toContain("data-sidebar-unread-thread");
   });
 });
 

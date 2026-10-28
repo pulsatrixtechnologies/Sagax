@@ -25,7 +25,14 @@ vi.mock("react", () => ({
   },
 }));
 
-const { forgetSearchDisclosuresForTests, searchMatchesThreads, useSearchDisclosure } = await import("./search-disclosure");
+const saved = vi.hoisted(() => new Map<string, string>());
+vi.stubGlobal("localStorage", {
+  getItem: (key: string) => saved.get(key) ?? null,
+  setItem: (key: string, value: string) => { saved.set(key, value); },
+  removeItem: (key: string) => { saved.delete(key); },
+});
+
+const { forgetSearchDisclosuresForTests, reloadSearchDisclosuresForTests, searchMatchesThreads, useSearchDisclosure } = await import("./search-disclosure");
 
 /** One row: render with a query, return [open, set]. Renders twice so an
  * effect's state change is visible, as React would show it. */
@@ -104,5 +111,27 @@ describe("sidebar search disclosure (MOCA-293)", () => {
     expect(searchMatchesThreads("post run", tasks)).toBe(false);
     expect(searchMatchesThreads("launch", [], [{ name: "Launch week" }])).toBe(true);
     expect(searchMatchesThreads("  ", tasks)).toBe(false);
+  });
+});
+
+// Conversation threads > In the sidebar: a bot folded open or shut stays so
+// across a reload, a list refresh (the row remounts) and another bot's
+// selection (no auto-open writes over the choice).
+describe("a bot's fold in the sidebar mode", () => {
+  it("survives a remount and a reload, per bot", () => {
+    const atlas = row("bot:atlas", true);
+    const [, set] = atlas("", false);
+    set(false);
+    expect(atlas("", false)[0]).toBe(false);
+    // the list refreshed: the row mounts again
+    runtime.slots = []; runtime.deps = [];
+    expect(row("bot:atlas", true)("", false)[0]).toBe(false);
+    // the app reloaded: the choice comes back from this device
+    reloadSearchDisclosuresForTests();
+    runtime.slots = []; runtime.deps = [];
+    expect(row("bot:atlas", true)("", false)[0]).toBe(false);
+    // another bot keeps its own (open by default)
+    runtime.slots = []; runtime.deps = [];
+    expect(row("bot:iris", true)("", false)[0]).toBe(true);
   });
 });

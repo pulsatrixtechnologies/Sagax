@@ -20,6 +20,7 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }))
 vi.mock("@/lib/thread-preferences", async (original) => ({ ...await original<typeof import("@/lib/thread-preferences")>(),
   useShowThreads: () => fixture.show,
   useThreadsLocationChoice: () => fixture.location,
+  useThreadsMode: () => ((fixture.show) ? fixture.location : "one") as "one" | "header" | "sidebar",
 }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),

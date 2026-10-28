@@ -19,7 +19,7 @@ vi.mock("./DesktopCapabilities", () => ({
 // off (that is covered in ThreadChip.test.ts).
 vi.mock("@/lib/thread-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/thread-preferences")>(),
-  useShowThreads: () => true,
+  useShowThreads: () => true, useThreadsMode: () => "header" as "one" | "header" | "sidebar",
 }));
 
 import { GroupView, RoomToolChip } from "./GroupView";

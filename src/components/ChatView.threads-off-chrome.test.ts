@@ -54,7 +54,7 @@ vi.mock("./ModelPicker", () => ({ ModelPicker: () => createElement("span") }));
 vi.mock("./ApprovalModeSelector", () => ({ ApprovalModeSelector: () => createElement("span") }));
 vi.mock("@/lib/thread-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/thread-preferences")>(),
-  useShowThreads: () => prefs.showThreads,
+  useShowThreads: () => prefs.showThreads, useThreadsMode: () => ((prefs.showThreads) ? "header" : "one") as "one" | "header" | "sidebar",
 }));
 
 const { ChatView } = await import("./ChatView");

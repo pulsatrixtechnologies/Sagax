@@ -11,6 +11,7 @@ vi.mock("./DesktopCapabilities", () => ({
 vi.mock("@/lib/thread-preferences", () => ({
   useShowThreads: () => true,
   useThreadsLocationChoice: () => "header",
+  useThreadsMode: () => "header" as "one" | "header" | "sidebar",
 }));
 
 import { ConfirmDialogCard } from "./ConfirmDialog";

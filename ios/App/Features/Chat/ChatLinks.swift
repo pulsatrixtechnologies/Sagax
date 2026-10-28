@@ -7,6 +7,16 @@ extension ChatView {
     /// A chip that opened a thread on this bot switches this screen in
     /// place; one that opened a thread on a teammate pushes that chat.
     func openThread(_ ref: ThreadRef) {
+        // Threads hidden: a thread outside this conversation (a parallel
+        // task's detail, a job, a run) opens over it; Done brings the
+        // conversation back where it was. Never a switch in place.
+        if case let .bot(shown) = current, shown.id == ref.botId,
+           let task = shown.tasks?.first(where: { $0.threadId == ref.threadId }),
+           FreshTopic.opensBeside(task, shown: shown.tasks?.first { $0.threadId == selectedThreadId }, showThreads: threadPrefs.showThreads) {
+            cancelThreadOpen()
+            besideThread = BesideThread(botId: ref.botId, threadId: ref.threadId)
+            return
+        }
         cancelThreadOpen()
         let shownBotId: String? = current.isBot ? current.id : nil
         threadOpenTask = Task {

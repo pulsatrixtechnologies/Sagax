@@ -56,7 +56,7 @@ vi.mock("./ComposerControls", async (importOriginal) => {
 // A static render reads a store's server snapshot: the choice comes from here.
 vi.mock("@/lib/thread-preferences", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/thread-preferences")>();
-  return { ...original, useShowThreads: () => fixture.stored.threads === null ? original.SHOW_THREADS_DEFAULT : fixture.stored.threads === "1",
+  return { ...original, useShowThreads: () => fixture.stored.threads === null ? original.SHOW_THREADS_DEFAULT : fixture.stored.threads === "1", useThreadsMode: () => ((fixture.stored.threads === null ? original.SHOW_THREADS_DEFAULT : fixture.stored.threads === "1") ? "header" : "one") as "one" | "header" | "sidebar",
     useShowThreadsChoice: () => fixture.stored.threads === null ? original.SHOW_THREADS_DEFAULT : fixture.stored.threads === "1",
     setShowThreads: (on: boolean) => { fixture.stored.threads = on ? "1" : "0"; } };
 });

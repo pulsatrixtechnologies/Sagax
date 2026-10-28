@@ -40,7 +40,7 @@ vi.mock("@/lib/thread-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/thread-preferences")>(),
   // These cases exercise threads-on chip grouping (ThreadChip now hides
   // receipts when threads are off; see ThreadChip.test.ts).
-  useShowThreads: () => true,
+  useShowThreads: () => true, useThreadsMode: () => "header" as "one" | "header" | "sidebar",
 }));
 
 const { ChatView } = await import("./ChatView");

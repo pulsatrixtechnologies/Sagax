@@ -59,3 +59,28 @@ export function segmentsToReach<T extends StreamTaskFacts>(tasks: readonly T[] |
   const at = above.findIndex((task) => task.threadId === threadId);
   return at < 0 ? 0 : at + 1;
 }
+
+/** With threads hidden: the unread threads the one conversation holds
+ * besides `shownThreadId`, read with it when it is on screen. Its other
+ * segments (drawn above it) and the parallel tasks of a segment (their
+ * answer is posted in the conversation, #1145). Nothing when the thread on
+ * screen is not a segment (a confidential or bot-opened thread is shown
+ * alone). No thread gets a sidebar row of its own in this mode, so a reply
+ * left unread there would keep the bot's badge up for good. */
+export function streamUnreadReadWith(tasks: StreamTasks, shownThreadId: string): string[] {
+  const all = facts(tasks);
+  const shown = all.find((task) => task.threadId === shownThreadId);
+  if (!shown || !isStreamSegment(shown)) return [];
+  const segments = new Set(all.filter(isStreamSegment).map((task) => task.threadId));
+  const inStream = (task: NonNullable<StreamTasks>[number]) => {
+    const source = parallelSource(task);
+    return segments.has(task.threadId) || (source !== undefined && segments.has(source));
+  };
+  return (tasks ?? []).filter((task) => task.unread === true && task.threadId !== shownThreadId && inStream(task))
+    .map((task) => task.threadId);
+}
+
+function parallelSource(task: NonNullable<StreamTasks>[number]): string | undefined {
+  const of = task.parallelOf as { threadId?: unknown } | undefined;
+  return typeof of?.threadId === "string" ? of.threadId : undefined;
+}

@@ -49,4 +49,17 @@ final class FreshTopicTests: XCTestCase {
         XCTAssertEqual(FreshTopic.parseAfter("0"), 0)
         XCTAssertEqual(FreshTopic.afterMs(hours: 4), 14_400_000)
     }
+
+    /// One conversation per bot: a sub-task's detail (a parallel task), a
+    /// bot's job or a run opens over the conversation, never in its place.
+    func testASubTaskOpensBesideTheOneConversation() {
+        let now = BotTask(threadId: "now", title: "Now", createdAt: 2)
+        var sub = BotTask(threadId: "sub", title: "Sub-task", createdAt: 3)
+        sub.parallelOf = TaskParallelOf(threadId: "now", messageId: "m", at: 3)
+        let earlier = BotTask(threadId: "earlier", title: "hello", createdAt: 1)
+        XCTAssertTrue(FreshTopic.opensBeside(sub, shown: now, showThreads: false))
+        XCTAssertFalse(FreshTopic.opensBeside(earlier, shown: now, showThreads: false), "an earlier topic is the conversation itself")
+        XCTAssertFalse(FreshTopic.opensBeside(sub, shown: sub, showThreads: false), "already on screen")
+        XCTAssertFalse(FreshTopic.opensBeside(sub, shown: now, showThreads: true), "threads shown: a thread is a destination")
+    }
 }

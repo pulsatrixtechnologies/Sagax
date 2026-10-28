@@ -3,9 +3,9 @@
 // client; Automations > Logs still lists it, as "Nothing to report".
 import { describe, expect, it } from "vitest";
 
-import { botShowsUnread, taskHiddenFromSidebar } from "@/lib/bot-unread";
+import { botShowsUnread, botUnreadCount, taskHiddenFromSidebar } from "@/lib/bot-unread";
 import { streamHomeThread } from "@/lib/single-stream";
-import { sidebarBotActivityTasks, threadsWhenTreeHidden } from "@/components/SidebarBotActivity";
+import { sidebarBotActivityTasks } from "@/components/SidebarBotActivity";
 import { routineRunLabel } from "@/lib/routine-display";
 import { routineRunMatchesStatus, type RoutineRun } from "@/lib/routines";
 import { initialState, reducer, type Bot } from "@/state/store";
@@ -78,11 +78,11 @@ describe("a routine results thread with threads hidden", () => {
     expect(streamHomeThread(katarina.tasks, "chat")).toBe("chat");
   });
 
-  it("stays out of the threads-hidden activity list even when pinned", () => {
+  it("never adds to the one conversation's count, even pinned and unread", () => {
     const pinned = {
       ...katarina,
-      tasks: [katarina.tasks![0]!, { ...katarina.tasks![1]!, pinned: true as const, unread: false }],
+      tasks: [katarina.tasks![0]!, { ...katarina.tasks![1]!, pinned: true as const, unread: true }],
     } as Bot;
-    expect(threadsWhenTreeHidden(pinned, {}).map((task) => task.threadId)).toEqual([]);
+    expect(botUnreadCount(pinned, [], false)).toBeNull();
   });
 });

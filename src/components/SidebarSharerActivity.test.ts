@@ -6,7 +6,7 @@ import { StoreProvider, type Bot, type Group } from "@/state/store";
 import { applyPresenceList, resetPresence } from "@/lib/presence";
 
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }));
-vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => true, useThreadsLocationChoice: () => "header" }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => true, useThreadsLocationChoice: () => "header", useThreadsMode: () => "header" as "one" | "header" | "sidebar" }));
 vi.mock("@/lib/perspicax-org", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/perspicax-org")>();
   const people = new Map([["pr_ada", { principalId: "pr_ada", name: "Ada Lovelace", login: "ada", role: "member" as const, disabled: false, avatarUrl: "/api/people/pr_ada/avatar" }]]);

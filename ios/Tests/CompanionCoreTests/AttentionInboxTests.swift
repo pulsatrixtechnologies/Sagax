@@ -95,6 +95,19 @@ final class AttentionInboxTests: XCTestCase {
         XCTAssertNil(entry.destinationBot(in: state))
     }
 
+    /// One conversation per bot (threads hidden): no thread is a line of
+    /// its own, so an unread reply in another thread (a bell "Unread" line)
+    /// stays the bot row's dot; only what waits on the person is listed.
+    func testOneConversationListsNoUnreadThreadAsALine() {
+        let helper = bot("h", "Helper", "h0", tasks: [
+            task("h0", "Now"),
+            task("h1", "hello", unread: true),
+            task("h2", "Needs you", activity: "waiting-on-you"),
+        ], unread: true)
+        XCTAssertEqual(rosterAttentionThreads([helper], showThreads: false).map(\.task.threadId), ["h2"])
+        XCTAssertEqual(rosterAttentionThreads([helper], showThreads: true).map(\.task.threadId), ["h2", "h1"])
+    }
+
     private func task(
         _ id: String, _ title: String,
         busy: Bool? = false, activity: String? = nil,

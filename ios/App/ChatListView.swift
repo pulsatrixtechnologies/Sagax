@@ -421,7 +421,7 @@ struct ChatListView: View {
     /// same rule and order as the thread tree, so the inbox can never
     /// disagree with it.
     private var attention: [AttentionThread] {
-        crossBotAttentionThreads(session.state.bots)
+        rosterAttentionThreads(session.state.bots, showThreads: sidebarPrefs.showThreads)
     }
 
     @ViewBuilder

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { StoreProvider, type Bot } from "@/state/store";
 
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }));
-vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => true, useThreadsLocationChoice: () => "header" }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => true, useThreadsLocationChoice: () => "header", useThreadsMode: () => "header" as "one" | "header" | "sidebar" }));
 
 import { BotListItem } from "./Sidebar";
 

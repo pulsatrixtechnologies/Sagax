@@ -12,7 +12,7 @@ const fixture = vi.hoisted(() => ({
   threadReturn: null as null | { ownerId: string; threadId: string },
   dispatch: vi.fn(),
 }));
-vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads, useThreadsLocationChoice: () => fixture.location }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads, useThreadsLocationChoice: () => fixture.location, useThreadsMode: () => ((fixture.showThreads) ? fixture.location : "one") as "one" | "header" | "sidebar" }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   useStore: () => ({
@@ -21,7 +21,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
   }),
 }));
 
-const { TaskPicker, BotActivityPicker, GroupTaskPicker, ThreadReturnLink, ThreadsOffReturnLink, botPickerThreads } = await import("./TaskPicker");
+const { TaskPicker, GroupTaskPicker, ThreadReturnLink, ThreadsOffReturnLink, botPickerThreads } = await import("./TaskPicker");
 const bot: Bot = {
   id: "pepper", name: "Pepper", color: "green", threadId: "current", title: "", description: "",
   notifications: true, unread: false, busy: true, messages: [], modelSelection: { instanceId: "fake", model: "fake" },
@@ -36,6 +36,7 @@ const bot: Bot = {
 };
 beforeEach(() => {
   fixture.showThreads = true;
+  fixture.location = "header";
   fixture.queued = {};
   fixture.bots = [];
   fixture.groups = [];
@@ -48,38 +49,17 @@ describe("optional bot thread picker", () => {
     expect(renderToStaticMarkup(createElement(TaskPicker, { bot }))).toContain('aria-label="All threads"');
   });
 
-  it("hides quiet histories and creation but keeps sibling activity reachable", () => {
-    fixture.showThreads = false;
-    fixture.queued = { queued: [{ queueId: "pending" }] };
+  // Settings > Conversation threads: the thread control is in the chat
+  // header in the "In the chat header" mode only; one conversation and the
+  // sidebar mode have none there (no picker, no activity selector).
+  it("draws the bot's thread control in the chat header mode only", () => {
+    fixture.location = "header";
+    expect(renderToStaticMarkup(createElement(TaskPicker, { bot }))).toContain('aria-label="All threads"');
+    fixture.location = "sidebar";
     expect(renderToStaticMarkup(createElement(TaskPicker, { bot }))).toBe("");
-    const markup = renderToStaticMarkup(createElement(BotActivityPicker, { bot }));
-    expect(markup).toContain('aria-label="Other activity (4)"');
-    expect(markup).toContain('value="waiting">Approval needed · Waiting');
-    expect(markup).toContain('value="working">Research · Working');
-    expect(markup).toContain('value="queued">Next job · Queued');
-    expect(markup).toContain('value="unread">Finished reply · Unread');
-    expect(markup).not.toContain("Quiet history");
-    expect(markup).toContain("Current chat");
-    expect(markup).not.toContain('value="current"');
-    expect(markup).not.toContain("All threads");
-    expect(markup).not.toContain("New thread");
-    expect(markup).not.toContain("Rename");
-    expect(fixture.dispatch).not.toHaveBeenCalled();
-  });
-
-  it("selects the exact sibling without creating or stopping work", () => {
+    fixture.location = "header";
     fixture.showThreads = false;
-    const picker = BotActivityPicker({ bot });
-    const select = picker!.props.children[0];
-    expect(select.type).toBe("select");
-    select.props.onChange({ target: { value: "waiting" } });
-    expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "switchTask", botId: "pepper", threadId: "waiting" });
-  });
-
-  it("renders nothing when only the selected conversation is working", () => {
-    fixture.showThreads = false;
-    expect(renderToStaticMarkup(createElement(BotActivityPicker, { bot: { ...bot, tasks: bot.tasks!.slice(0, 2) } }))).toBe("");
-    expect(fixture.dispatch).not.toHaveBeenCalled();
+    expect(renderToStaticMarkup(createElement(TaskPicker, { bot }))).toBe("");
   });
 
   it("shows the channel picker only while threads are on, as a round header button", () => {

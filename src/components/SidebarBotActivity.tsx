@@ -1,12 +1,9 @@
 import { BellDot, CircleAlert, Clock3, Loader2, Pin, PinOff, type LucideIcon } from "lucide-react";
-import type { Dispatch } from "react";
-import type { Action, AppState, Bot, Group, Task } from "@/state/store";
+import type { Bot, Group, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { taskHiddenFromSidebar } from "@/lib/bot-unread";
-import { parallelTaskInStream } from "./parallel-approvals";
 import { isArchived, orderedSidebarThreads, orderedThreadList, threadRecency, threadUpdatedLabel } from "./SidebarThreadRow";
-import type { SidebarDensity } from "@/lib/sidebar-preferences";
 
 /** Attention is not history browsing: idle conversations never enter this list.
  * Read the sibling's own status, not the bot's aggregate busy/waiting flags. */
@@ -24,22 +21,6 @@ export function sidebarBotActivityTasks(bot: Bot, queued: Record<string, unknown
     // the one thing that still reaches the person is an approval it waits on.
     .filter((task) => !isArchived(task) || (archivedApprovals && task.activity === "waiting-on-you"))
     .filter((task) => task.activity === "waiting-on-you" || task.activity === "working" || task.busy || task.waitingForTeammates === true || task.queued || task.unread);
-}
-
-/** What stays reachable when the thread tree is folded away: anything that
- * needs the person, plus a pin, in pin-then-update order. The bell does not
- * use this — it stays on attention order. */
-export function threadsWhenTreeHidden(bot: Bot, queued: Record<string, unknown[]>) {
-  // #1145: a parallel task of the one conversation is no row of its own:
-  // its approvals and questions join that conversation (parallel-approvals.ts)
-  const attention = sidebarBotActivityTasks(bot, queued).filter((task) => !parallelTaskInStream(bot, task));
-  const seen = new Set(attention.map((task) => task.threadId));
-  const pinned = (bot.tasks ?? [])
-    // an automatic routine results thread never surfaces here either, even
-    // pinned (2026-10-22: routines stay out of the unified conversation)
-    .filter((task) => task.pinned === true && !task.routineRunId && task.routineResults !== true && !seen.has(task.threadId))
-    .map((task) => ({ ...task, queued: Boolean(queued[task.threadId]?.length) }));
-  return orderedThreadList([...attention, ...pinned]);
 }
 
 /** The room-level twin of sidebarBotActivityTasks: a room's own aggregate
@@ -234,34 +215,4 @@ export function PinnedThreadRows({ entries, now, onJump, onUnpin }: { entries: A
       </div>;
     })}
   </>;
-}
-
-/** The escape hatch for other ongoing conversations when their tree is hidden.
- * These are selection-only buttons: no create, rename, move, or delete menu.
- * `rowThreadId` is the thread the bot's own row stands for, so it gets no
- * row here: the one on screen while the bot is, else the one its row opens
- * (botOpensTo). With threads hidden that is the bot's main thread, and the
- * thread the bot was left on gets a row like any sibling: a reply landing
- * there must not wait for the bot to be opened first. */
-export function SidebarBotActivity({ bot, rowThreadId, density, pendingQueued, dispatch }: { bot: Bot; rowThreadId: string; density: SidebarDensity; pendingQueued: AppState["pendingQueued"]; dispatch: Dispatch<Action> }) {
-  const tasks = threadsWhenTreeHidden(bot, pendingQueued).filter((task) => task.threadId !== rowThreadId);
-  if (!tasks.length) return null;
-  const iconOnly = density === "icons";
-  return <div data-sidebar-bot-activity={bot.id} className={cn("mb-1 space-y-0.5", !iconOnly && "ml-6")}>
-    {tasks.map((task) => {
-      const waiting = task.activity === "waiting-on-you";
-      const teammateWait = !waiting && task.waitingForTeammates === true;
-      const working = !waiting && !teammateWait && (task.busy || task.activity === "working");
-      const status = waiting ? t("sidebar.preview.waiting") : working ? t("chat.activity.working") : teammateWait ? t("sidebar.preview.waitingOnTeammate") : task.queued ? t("task.queued") : t("task.unread");
-      const label = `${bot.name}: ${task.title} · ${status}${task.unread && (waiting || working || teammateWait || task.queued) ? ` · ${t("task.unread")}` : ""}`;
-      const Icon = waiting ? CircleAlert : working ? Loader2 : teammateWait || task.queued ? Clock3 : BellDot;
-      return <button key={task.threadId} type="button" data-sidebar-activity-row={task.threadId} aria-label={label} title={label}
-        onClick={() => dispatch({ type: "switchTask", botId: bot.id, threadId: task.threadId })}
-        className={cn("flex min-h-7 w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] outline-none hover:bg-sidebar-hover focus-visible:ring-1 focus-visible:ring-accent/60", iconOnly && "justify-center", waiting ? "text-warning" : "text-sidebar-ink-secondary")}>
-        <Icon size={12} aria-hidden="true" className={cn("shrink-0", working && "animate-spin text-success", teammateWait && "text-warning", task.unread && !waiting && !working && !teammateWait && "text-accent")} />
-        {!iconOnly && <><span className="min-w-0 flex-1 truncate">{task.title}</span><span className="shrink-0 text-[10px]">{waiting ? t("task.waiting") : status}</span>
-          {task.unread && (waiting || working || teammateWait || task.queued) && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />}</>}
-      </button>;
-    })}
-  </div>;
 }
