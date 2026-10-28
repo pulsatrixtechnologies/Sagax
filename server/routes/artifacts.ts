@@ -4,6 +4,8 @@
 //   GET    /api/artifacts                       { artifacts: summary[] } every bot this viewer sees
 //   GET    /api/bots/:id/artifacts              { artifacts: summary[] }
 //   GET    /api/bots/:id/artifacts/:aid         { artifact }  with its document and last data
+//   GET    ...?versions=1                       also { versions } of earlier documents
+//   POST   /api/bots/:id/artifacts/:aid         { restoreRev } puts that document back
 //   PATCH  /api/bots/:id/artifacts/:aid         { favorite?, popped? }  nothing else
 //   DELETE /api/bots/:id/artifacts/:aid
 //   POST   /api/bots/:id/artifacts/:aid/refresh run its source now (artifact-refresh.ts)
@@ -41,7 +43,7 @@ const flagsBody = z.object({ favorite: z.boolean().optional(), popped: z.boolean
 const watchBody = z.object({ ids: z.array(z.string().max(80)).max(100) }).strict();
 
 export function createArtifactRoutes(deps: ArtifactRouteDeps): RouteHandler {
-  return async ({ req, res, path, method, auth, json, readBody }) => {
+  return async ({ req, res, url, path, method, auth, json, readBody }) => {
     if (path === "/api/artifacts") {
       if (method !== "GET") return json(res, 405, { error: "GET only" });
       res.setHeader("cache-control", "private, no-store");
@@ -80,7 +82,17 @@ export function createArtifactRoutes(deps: ArtifactRouteDeps): RouteHandler {
       const next = await deps.refreshNow(artifact, auth);
       return json(res, 200, { artifact: next ?? artifact });
     }
-    if (method === "GET") return json(res, 200, { artifact });
+    if (method === "GET") {
+      const versions = url.searchParams.get("versions") === "1" ? store.versions(artifact.id) : undefined;
+      return json(res, 200, versions ? { artifact, versions } : { artifact });
+    }
+    if (method === "POST") {
+      const parsed = z.object({ restoreRev: z.number().int() }).strict().safeParse(await readBody(req));
+      if (!parsed.success) return json(res, 400, { error: "Send { restoreRev } to put that version back." });
+      const result = store.restore(botId!, artifact.id, parsed.data.restoreRev);
+      if (!result.ok) return json(res, result.status, { error: result.error });
+      return json(res, 200, { artifact: result.artifact });
+    }
     if (method === "PATCH") {
       const parsed = flagsBody.safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "Only favorite and popped can be changed here. Ask the bot for anything else." });
