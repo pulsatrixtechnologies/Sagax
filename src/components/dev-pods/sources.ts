@@ -54,6 +54,21 @@ export interface DevChange {
   sha?: string;
   url?: string;
   messageId: string;
+  /** What the bot last did to a pull request, read off its own commands.
+   * Not the forge's live state: nothing here asks the forge. */
+  action?: "opened" | "merged" | "closed" | "updated";
+}
+
+const PR_ACTION = /\bgh\s+pr\s+(create|merge|close|edit|ready|reopen)\b/;
+
+/** The pull request verb in a command, as the state the bot left it in. */
+export function pullAction(command: string): DevChange["action"] | undefined {
+  const verb = PR_ACTION.exec(command)?.[1];
+  if (verb === "create") return "opened";
+  if (verb === "merge") return "merged";
+  if (verb === "close") return "closed";
+  if (verb === "edit" || verb === "ready" || verb === "reopen") return "updated";
+  return undefined;
 }
 
 const PR_URLS = /https?:\/\/(?:www\.)?github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/gi;
@@ -71,7 +86,11 @@ export function devChanges(messages: readonly Message[]): DevChange[] {
   const add = (change: DevChange, titled = true) => {
     const known = found.get(change.key);
     if (!known) found.set(change.key, { ...change, titled });
-    else if (titled && !known.titled) found.set(change.key, { ...known, title: change.title, titled });
+    else {
+      // Newest first, so the state already kept is the latest one.
+      if (titled && !known.titled) found.set(change.key, { ...known, title: change.title, titled });
+      if (!known.action && change.action) found.set(change.key, { ...found.get(change.key)!, action: change.action });
+    }
   };
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
@@ -92,6 +111,7 @@ export function devChanges(messages: readonly Message[]): DevChange[] {
           number: ref.number,
           url: ref.url,
           messageId: message.id,
+          ...(pullAction(command) ? { action: pullAction(command) } : {}),
         }, Boolean(title));
       }
       const commit = COMMIT_LINE.exec(output);
