@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { removeTempDir } from "../testing/cleanup.ts";
-import { STABLE_CWD_NOTE, stableCwdTurn } from "./pi-mcp-extension.ts";
+import { STABLE_ACK, STABLE_CWD_NOTE, STABLE_END_MARKER, splitStableMessages, stableCwdTurn } from "./pi-mcp-extension.ts";
 import { startFakeHttpMcp } from "../testing/fake-http-mcp-server.ts";
 import { whopLikeCatalog } from "../testing/whop-like-catalog.ts";
 import { buildMcpServers } from "./pi.ts";
@@ -567,6 +567,75 @@ describe("Pi MCP extension registration", () => {
     await handlers.get("session_shutdown")?.();
   });
 
+  it("hands its tool lists to the next pi, which declares them and connects at the first call (#1276)", async () => {
+    const dir = tempDir();
+    const live = join(dir, "turn-live");
+    // a server whose credentials hold only while a turn runs: between turns
+    // (when the standby pi starts) it can list nothing
+    const script = fakeMcpScript(`
+      const { existsSync } = await import("node:fs");
+      let buffer = "";
+      process.stdin.setEncoding("utf8");
+      const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+      process.stdin.on("data", (chunk) => {
+        buffer += chunk;
+        let newline;
+        while ((newline = buffer.indexOf("\\n")) !== -1) {
+          const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          const ok = existsSync(${JSON.stringify(live)});
+          if (msg.method === "initialize") send({ jsonrpc: "2.0", id: msg.id, result: { capabilities: { tools: {} } } });
+          else if (!ok) send({ jsonrpc: "2.0", id: msg.id, error: { message: "unauthorized" } });
+          else if (msg.method === "tools/list") send({ jsonrpc: "2.0", id: msg.id, result: { tools: [{ name: "lookup", description: "Look up", inputSchema: { type: "object", properties: {} } }] } });
+          else if (msg.method === "tools/call") send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "found" }] } });
+        }
+      });
+    `);
+    const server = { command: process.execPath, args: [script] };
+    const mount = async (config: Record<string, unknown>) => {
+      const path = join(dir, `mcp-${Math.random()}.json`);
+      writeFileSync(path, JSON.stringify({ mcpServers: { data: server }, ...config }));
+      process.env.SAGAX_MCP_CONFIG = path;
+      const tools: RegisteredTool[] = [];
+      const handlers = new Map<string, ShutdownHandler>();
+      await extension({ registerTool(tool) { tools.push(tool); }, on(event, handler) { handlers.set(event, handler); } });
+      return { tools, shutdown: async () => handlers.get("session_shutdown")?.() };
+    };
+
+    writeFileSync(live, "1");
+    const cachePath = join(dir, "tools.json");
+    const first = await mount({ toolCachePath: cachePath });
+    expect(first.tools.map((tool) => tool.name)).toEqual(["data_lookup"]);
+    await first.shutdown();
+    const toolCache = JSON.parse(readFileSync(cachePath, "utf8"));
+    expect(toolCache).toEqual({ data: [{ name: "lookup", description: "Look up", inputSchema: { type: "object", properties: {} } }] });
+
+    // between turns: listing fails, the previous list stands in (same declaration)
+    await removeTempDir(live);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const nextCache = join(dir, "tools-next.json");
+    const standby = await mount({ toolCache, toolCachePath: nextCache });
+    expect(standby.tools.map((tool) => [tool.name, tool.description])).toEqual([["data_lookup", "Look up"]]);
+    expect(stderr).not.toHaveBeenCalled();
+    // and passes it on to the pi after it
+    expect(JSON.parse(readFileSync(nextCache, "utf8"))).toEqual(toolCache);
+
+    // the next turn runs: the first call connects
+    writeFileSync(live, "1");
+    await expect(
+      standby.tools[0].execute("call-1", {}, undefined, undefined, { ui: { confirm: async () => true } }),
+    ).resolves.toMatchObject({ content: [{ type: "text", text: "found" }] });
+    await standby.shutdown();
+
+    // with no list to stand in, a server that cannot list stays unmounted
+    await removeTempDir(live);
+    const bare = await mount({});
+    expect(bare.tools).toEqual([]);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining("unauthorized"));
+    await bare.shutdown();
+  });
+
   it("throws when an MCP tool result declares isError", async () => {
     const script = fakeMcpScript(`
       let buffer = "";
@@ -623,5 +692,100 @@ describe("stableCwdTurn (#1276)", () => {
   it("leaves an already fixed or missing cwd alone", () => {
     expect(stableCwdTurn({ cwd: STABLE_CWD_NOTE })).toBeUndefined();
     expect(stableCwdTurn({})).toBeUndefined();
+  });
+});
+
+describe("splitStableMessages (#1276)", () => {
+  it("cuts the marked message around a fixed reply and keeps the messages that end at the shared part", () => {
+    const system = { role: "system", content: "sys" };
+    const first = { role: "user", content: `shared${STABLE_END_MARKER}recent work\n\nquestion` };
+    const later = [{ role: "assistant", content: "answer" }, { role: "user", content: "next" }];
+    const split = splitStableMessages([system, first, ...later]);
+    expect(split?.messages).toEqual([
+      system,
+      { role: "user", content: "shared" },
+      { role: "assistant", content: STABLE_ACK },
+      { role: "user", content: "recent work\n\nquestion" },
+      ...later,
+    ]);
+    expect(split?.stable).toEqual([system, { role: "user", content: "shared" }]);
+  });
+
+  it("reads text parts and leaves an unmarked transcript alone", () => {
+    const parts = { role: "user", content: [{ type: "text", text: "shared" }, { type: "text", text: `${STABLE_END_MARKER}rest` }] };
+    expect(splitStableMessages([parts])?.messages).toEqual([
+      { role: "user", content: "shared" },
+      { role: "assistant", content: STABLE_ACK },
+      { role: "user", content: "rest" },
+    ]);
+    expect(splitStableMessages([{ role: "user", content: "plain" }])).toBeUndefined();
+  });
+});
+
+describe("stable split and warm request (#1276)", () => {
+  it("rewrites every provider request and writes the warm request once, without credentials", async () => {
+    const dir = tempDir();
+    const warmPath = join(dir, "warm.json");
+    process.env.SAGAX_MCP_CONFIG = join(dir, "mcp.json");
+    writeFileSync(process.env.SAGAX_MCP_CONFIG, JSON.stringify({ splitStable: true, warmPath }));
+    const handlers = new Map<string, (event?: any, context?: any) => any>();
+    await extension({ registerTool() {}, on(event, handler) { handlers.set(event, handler); } });
+    const payload = { model: "local", stream: true, stream_options: { include_usage: true }, max_completion_tokens: 900, tools: [{ type: "function" }], messages: [
+      { role: "system", content: "sys" },
+      { role: "user", content: `shared${STABLE_END_MARKER}question` },
+    ] };
+    const sent = await handlers.get("before_provider_request")!({ payload });
+    expect(sent.messages.map((message: { content: string }) => message.content)).toEqual(["sys", "shared", STABLE_ACK, "question"]);
+    expect(JSON.parse(readFileSync(warmPath, "utf8"))).toEqual({
+      model: "local", tools: [{ type: "function" }], max_tokens: 1, stream: false,
+      messages: [{ role: "system", content: "sys" }, { role: "user", content: "shared" }],
+    });
+    await handlers.get("before_provider_request")!({ payload: { ...payload, messages: [{ role: "user", content: `other${STABLE_END_MARKER}x` }] } });
+    expect(JSON.parse(readFileSync(warmPath, "utf8")).messages).toEqual([{ role: "system", content: "sys" }, { role: "user", content: "shared" }]);
+  });
+
+  it("sends the warm request once when a standby resumes its session, through the session's provider", async () => {
+    const dir = tempDir();
+    const warm = { model: "local", messages: [{ role: "user", content: "shared" }], max_tokens: 1, stream: false };
+    const config = { warm, warmPath: join(dir, "warm.json") };
+    const fetched: Array<{ url: string; init: RequestInit }> = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => { fetched.push({ url: String(url), init: init! }); return new Response("{}"); });
+    const context = {
+      model: { id: "local", api: "openai-completions", baseUrl: "http://127.0.0.1:8000/v1/" },
+      modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }) },
+    };
+    const start = async () => {
+      process.env.SAGAX_MCP_CONFIG = join(dir, `mcp-${Math.random()}.json`);
+      writeFileSync(process.env.SAGAX_MCP_CONFIG, JSON.stringify(config));
+      const handlers = new Map<string, (event?: any, context?: any) => any>();
+      await extension({ registerTool() {}, on(event, handler) { handlers.set(event, handler); } });
+      return handlers.get("session_start")!;
+    };
+    const first = await start();
+    await first({ reason: "startup" }, context);
+    expect(fetched).toEqual([]);
+    await first({ reason: "resume" }, context);
+    // pi loads the extension again for the resumed session: still one warm
+    await (await start())({ reason: "resume" }, context);
+    await vi.waitFor(() => expect(fetched).toHaveLength(1));
+    expect(fetched[0].url).toBe("http://127.0.0.1:8000/v1/chat/completions");
+    expect(fetched[0].init.headers).toMatchObject({ authorization: "Bearer test-key" });
+    expect(JSON.parse(String(fetched[0].init.body))).toEqual(warm);
+  });
+  it("sends no warm request when the resumed session is on another model (a cloud key would pay for it)", async () => {
+    const dir = tempDir();
+    const warm = { model: "local", messages: [{ role: "user", content: "shared" }], max_tokens: 1, stream: false };
+    const fetched: unknown[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => { fetched.push(url); return new Response("{}"); });
+    process.env.SAGAX_MCP_CONFIG = join(dir, "mcp.json");
+    writeFileSync(process.env.SAGAX_MCP_CONFIG, JSON.stringify({ warm, warmPath: join(dir, "warm.json") }));
+    const handlers = new Map<string, (event?: any, context?: any) => any>();
+    await extension({ registerTool() {}, on(event, handler) { handlers.set(event, handler); } });
+    await handlers.get("session_start")!({ reason: "resume" }, {
+      model: { id: "grok-4", api: "openai-completions", baseUrl: "https://api.x.ai/v1" },
+      modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "xai-key" }) },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetched).toEqual([]);
   });
 });

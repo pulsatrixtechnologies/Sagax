@@ -22,7 +22,8 @@
 // Local pane only lists `custom` options for custom-only engines.
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { readAtRestSync } from "../content-at-rest.ts";
 import { PROVIDER_CREDENTIAL_ENV, stripWorkspaceCredentialEnv } from "../config.ts";
@@ -41,6 +42,8 @@ import {
   writePromptSplitReceipt,
 } from "./prompt-split.ts";
 import type { PromptSplitReceipt } from "./prompt-split.ts";
+import { STABLE_END_MARKER } from "./pi-mcp-extension.ts";
+import { COMPACT_VOLATILE_LAST } from "../compact-prompt.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
@@ -105,6 +108,20 @@ interface PiStandby {
   timer: NodeJS.Timeout;
 }
 const PI_STANDBY_MS = 10 * 60_000;
+/** The tool lists a compact turn's pi mounted (pi-mcp-extension.ts toolCachePath). */
+const PI_TOOL_CACHE = "tools.json";
+/** The request that warms a local server for the bot's next conversation. */
+const PI_WARM = "warm.json";
+/** What the thread's last pi mounted, for the standby that follows it. */
+function readPiToolCache(dir: string | null, file = PI_TOOL_CACHE): Record<string, unknown> | undefined {
+  if (!dir) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(join(dir, file), "utf8")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+}
 const piStandby = new Map<string, PiStandby>();
 /** A standby still starting, per thread: the next turn waits for it rather
  * than start a second pi (it is further along than a fresh one). */
@@ -177,6 +194,8 @@ async function runPiStandby(input: {
   cwd: string | undefined;
   env: Record<string, string | undefined>;
   config: Record<string, unknown>;
+  toolCache: Record<string, unknown> | undefined;
+  warm: Record<string, unknown> | undefined;
 }): Promise<void> {
   dropPiStandby(input.threadId);
   let dir: string | null = null;
@@ -184,7 +203,7 @@ async function runPiStandby(input: {
   try {
     dir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
     const scopeReadyPath = input.config.toolScope !== undefined ? join(dir, "scope-ready.json") : undefined;
-    writeFileSync(join(dir, "mcp.json"), JSON.stringify({ ...input.config, scopeReadyPath }), { mode: 0o600 });
+    writeFileSync(join(dir, "mcp.json"), JSON.stringify({ ...input.config, scopeReadyPath, toolCachePath: join(dir, PI_TOOL_CACHE), toolCache: input.toolCache, warmPath: join(dir, PI_WARM), warm: input.warm }), { mode: 0o600 });
     child = spawnCli(input.cli, input.args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: input.cwd,
@@ -224,6 +243,105 @@ async function runPiStandby(input: {
     if (dir) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } }
   }
 }
+/** #1276: a pi started ahead for the bot's next new conversation. It boots
+ * with no MCP server (its config comes with that conversation), so the
+ * conversation pays a session switch instead of a whole pi start. */
+interface PiFresh {
+  child: ReturnType<typeof spawnCli>;
+  dir: string;
+  sessionsRoot: string;
+  onData: (chunk: string) => void;
+  timer: NodeJS.Timeout;
+}
+const piFresh = new Map<string, PiFresh>();
+const piFreshStarting = new Set<string>();
+
+function closePiFresh(entry: PiFresh): void {
+  clearTimeout(entry.timer);
+  try { entry.child.stdin.end(); } catch { /* already closed */ }
+  try { killCliTree(entry.child); } catch { /* already gone */ }
+  try { rmSync(entry.dir, { recursive: true, force: true }); } catch { /* best effort */ }
+}
+
+/** The pi started ahead for this contract, or undefined (pi starts as before). */
+export function takePiFresh(key: string): PiFresh | undefined {
+  const entry = piFresh.get(key);
+  if (!entry) return undefined;
+  piFresh.delete(key);
+  if (entry.child.exitCode !== null || entry.child.killed) {
+    closePiFresh(entry);
+    return undefined;
+  }
+  clearTimeout(entry.timer);
+  piStandbyChildren.delete(entry.child);
+  entry.child.stdout.off("data", entry.onData);
+  entry.child.removeAllListeners("close");
+  return entry;
+}
+
+/** pi's own folder name for a session's cwd (session-manager getDefaultSessionDirPath). */
+export function piSessionDirName(cwd: string): string {
+  return `--${resolve(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+}
+
+/** A new, empty pi session for this cwd, as pi writes one (header only):
+ * switch_session to it gives the pi started ahead this conversation's folder. */
+export function writePiSession(sessionsRoot: string, cwd: string): string {
+  const dir = join(sessionsRoot, piSessionDirName(cwd));
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const id = randomUUID();
+  const timestamp = new Date().toISOString();
+  const file = join(dir, `${timestamp.replace(/[:.]/g, "-")}_${id}.jsonl`);
+  writeFileSync(file, JSON.stringify({ type: "session", version: 3, id, timestamp, cwd }) + "\n", { flag: "wx", mode: 0o600 });
+  return file;
+}
+
+async function startPiFresh(input: { key: string; cli: string; args: string[]; cwd: string | undefined; env: Record<string, string | undefined> }): Promise<void> {
+  if (piFresh.has(input.key) || piFreshStarting.has(input.key)) return;
+  piFreshStarting.add(input.key);
+  let dir: string | null = null;
+  let child: ReturnType<typeof spawnCli> | null = null;
+  try {
+    dir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
+    writeFileSync(join(dir, "mcp.json"), JSON.stringify({ mcpServers: {} }), { mode: 0o600 });
+    child = spawnCli(input.cli, input.args, { stdio: ["pipe", "pipe", "pipe"], cwd: input.cwd, env: { ...input.env, SAGAX_MCP_CONFIG: join(dir, "mcp.json") } }, "bot");
+    const started = child;
+    watchPiStandbyExit();
+    piStandbyChildren.add(started);
+    started.once("close", () => piStandbyChildren.delete(started));
+    started.stderr?.resume();
+    started.stdin.on("error", () => { /* closed with the process */ });
+    const chunks = new PiRpcChunks();
+    let answer: (file: string | null) => void = () => {};
+    const ready = new Promise<string | null>((resolve) => { answer = resolve; });
+    const onData = piLineReader((line) => {
+      const frame = decodePiFrame(line, chunks) as { type?: string; command?: string; data?: { sessionFile?: unknown } } | null;
+      if (frame?.type === "response" && frame.command === "get_state") answer(typeof frame.data?.sessionFile === "string" ? frame.data.sessionFile : null);
+    });
+    started.stdout.setEncoding("utf8");
+    started.stdout.on("data", onData);
+    started.on("close", () => answer(null));
+    started.stdin.write(JSON.stringify(PI_NEGOTIATE_FRAME) + "\n");
+    started.stdin.write(JSON.stringify({ type: "get_state" }) + "\n");
+    const timeout = new Promise<null>((resolve) => { const t = setTimeout(() => resolve(null), 20_000); t.unref?.(); });
+    const bootSession = await Promise.race([ready, timeout]);
+    if (!bootSession) throw new Error("pi started ahead did not answer");
+    const entry: PiFresh = {
+      child: started, dir, sessionsRoot: dirname(dirname(bootSession)), onData,
+      timer: setTimeout(() => { if (piFresh.get(input.key) === entry) { piFresh.delete(input.key); closePiFresh(entry); } }, PI_STANDBY_MS),
+    };
+    entry.timer.unref?.();
+    started.on("close", () => { if (piFresh.get(input.key) === entry) { piFresh.delete(input.key); closePiFresh(entry); } });
+    if (piFresh.has(input.key)) { closePiFresh(entry); return; }
+    piFresh.set(input.key, entry);
+  } catch {
+    if (child) { try { killCliTree(child); } catch { /* already gone */ } }
+    if (dir) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } }
+  } finally {
+    piFreshStarting.delete(input.key);
+  }
+}
+
 /** After this many bare turns on one pi session the full prompt rides
  * again even without a compaction event: any history rewrite the events
  * miss (an older pi, a missed line) still loses at most this many turns
@@ -277,6 +395,22 @@ export function piThinkingLevel(effort: EffortLevel): (typeof NATIVE_EFFORT_LEVE
   if (effort === "none") return "off";
   if (effort === ULTRACODE_EFFORT) return "max";
   return effort;
+}
+
+/** #1276: the turn message with STABLE_END_MARKER after what every new
+ * conversation of the bot shares: the stable half and the volatile sections
+ * before the first per-conversation one (COMPACT_VOLATILE_LAST, which
+ * compactVolatileOrder puts last). A message without that text is unchanged. */
+export function markSharedPrompt(
+  message: string,
+  halves: { stable: string | null; volatile: string },
+  sections: Array<{ id: string; text: string }> | undefined,
+): string {
+  if (!halves.stable) return message;
+  const own = (sections ?? []).findIndex((section) => COMPACT_VOLATILE_LAST.includes(section.id));
+  const shared = halves.stable + (own < 0 ? halves.volatile : sections!.slice(0, own).map((section) => section.text).join(""));
+  const at = message.indexOf(shared);
+  return at < 0 ? message : message.slice(0, at + shared.length) + STABLE_END_MARKER + message.slice(at + shared.length);
 }
 
 /** Mirror of the Claude driver's integration → stdio MCP mount: every entry is
@@ -1062,7 +1196,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       const mcpServers = buildMcpServers(turn.compactPrompt ? withWarmTokens(turn, threadId) : turn);
       let mcpTempDir: string | null = null;
       let scopeReadyPath: string | undefined;
-      const mcpConfig: Record<string, unknown> = { mcpServers: mcpServers ?? {}, toolScope, approvalMode: turn.approvalMode, ...(turn.compactPrompt ? { stableCwd: true } : {}) };
+      const mcpConfig: Record<string, unknown> = { mcpServers: mcpServers ?? {}, toolScope, approvalMode: turn.approvalMode, ...(turn.compactPrompt ? { stableCwd: true, splitStable: true } : {}) };
       const mounts = Boolean(mcpServers || toolScope !== undefined);
       const standbyArgs = [
         ...(turn.compactPrompt ? PI_ARGS.filter((arg) => arg !== "--no-session") : PI_ARGS),
@@ -1080,14 +1214,22 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       const standby = turn.compactPrompt && !turn.sessionReset && resumeCursor
         ? takePiStandby(threadId, standbyKey, resumeCursor)
         : (dropPiStandby(threadId), undefined);
+      // #1276: a new conversation takes the pi started ahead for this bot's
+      // contract (everything but the folder and the MCP servers, which it
+      // receives now) and switches it to a new session in this folder.
+      const freshKey = JSON.stringify({
+        bot: turn.botId ?? null, cli: config.cli, args: standbyArgs,
+        environment: input.environment ?? null, access: turn.access ?? null, command: turn.commandEnvironment ?? null,
+      });
+      const ahead = !standby && turn.compactPrompt && typeof turn.resumeCursor !== "string" && turn.cwd && mounts ? takePiFresh(freshKey) : undefined;
       if (standby) {
         mcpTempDir = standby.dir;
         scopeReadyPath = standby.scopeReadyPath;
       } else if (mounts) {
-        mcpTempDir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
+        mcpTempDir = ahead ? ahead.dir : mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
         if (toolScope !== undefined) scopeReadyPath = join(mcpTempDir, "scope-ready.json");
         try {
-          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ ...mcpConfig, scopeReadyPath }), { mode: 0o600 });
+          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ ...mcpConfig, scopeReadyPath, ...(turn.compactPrompt ? { toolCachePath: join(mcpTempDir, PI_TOOL_CACHE), warmPath: join(mcpTempDir, PI_WARM) } : {}) }), { mode: 0o600 });
         } catch (err) {
           // A failed write must not leave the temp dir behind — a partial file
           // could still hold the boat token / comms token.
@@ -1115,7 +1257,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // spawnCli can throw synchronously (unresolvable CLI); if it does, the
       // 0600 temp file with the boat token / comms token must
       // not be left on disk — settle() never runs because no child existed.
-      const child = standby ? standby.child : (() => {
+      const child = standby ? standby.child : ahead ? ahead.child : (() => {
         try {
           return spawnCli(config.cli, childArgs, {
             stdio: ["pipe", "pipe", "pipe"],
@@ -1174,7 +1316,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // omp-style runtime chunks any oversized frame it sends back. Vanilla
       // pi refuses the unknown command; no waiter is keyed for the reply,
       // so either answer is ignored.
-      if (!standby) send(PI_NEGOTIATE_FRAME);
+      if (!standby && !ahead) send(PI_NEGOTIATE_FRAME);
 
       /** Emit buffered assistant text as its own item, then clear it. */
       const flushAssistantText = () => {
@@ -1190,9 +1332,13 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         // #1276: once this pi has exited (its session file then holds the
         // whole turn), start the thread's next pi, its session resumed.
         if (ok && turn.compactPrompt && standbySession && (stopReason ?? "end_turn") === "end_turn") {
-          const resume = { threadId, key: standbyKey, sessionFile: standbySession, cli: config.cli, args: childArgs, cwd: turn.cwd, env: spawnEnv, config: mcpConfig };
+          const resume = { threadId, key: standbyKey, sessionFile: standbySession, cli: config.cli, args: childArgs, cwd: turn.cwd, env: spawnEnv, config: mcpConfig, toolCache: readPiToolCache(mcpTempDir),
+            // a conversation's first turn warms the bot's next one (the standby sends it)
+            warm: typeof turn.resumeCursor === "string" ? undefined : readPiToolCache(mcpTempDir, PI_WARM) };
           if (child.exitCode !== null || child.signalCode !== null) void startPiStandby(resume);
           else child.once("exit", () => { void startPiStandby(resume); });
+          // and a pi for the bot's next new conversation, if none waits yet
+          if (mounts && turn.cwd) void startPiFresh({ key: freshKey, cli: config.cli, args: childArgs, cwd: turn.cwd, env: spawnEnv });
         }
         if (agentEndTimer) {
           clearTimeout(agentEndTimer);
@@ -1566,10 +1712,21 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         standbySession = sessionFile;
         emit({ ...base(threadId, turnId), type: "session.started", sessionId: sessionFile, model: turn.model ?? null });
       } else try {
-        const command = sessionPath ? "switch_session" : "new_session";
-        const hsPromise = awaitResponse(command);
-        send(sessionPath ? { type: "switch_session", sessionPath } : { type: "new_session" });
+        // #1276: a compact turn's pi keeps its session (no --no-session), so a
+        // fresh one already started a new session: a new_session would
+        // replace it, and pi reloads every extension (and its MCP servers)
+        // for the new one, about half a second per new conversation.
+        const fresh = !sessionPath && turn.compactPrompt;
+        // the pi started ahead moves to this folder: a new session written
+        // for it, then switch_session (pi reloads the extension, which reads
+        // this conversation's MCP servers)
+        const aheadSession = ahead && turn.cwd ? writePiSession(ahead.sessionsRoot, turn.cwd) : null;
+        const command = sessionPath || aheadSession ? "switch_session" : "new_session";
+        const hsPromise = fresh && !aheadSession ? Promise.resolve(undefined) : awaitResponse(command);
+        if (aheadSession) send({ type: "switch_session", sessionPath: aheadSession });
+        else if (!fresh) send(sessionPath ? { type: "switch_session", sessionPath } : { type: "new_session" });
         const hs = (await hsPromise) as { sessionFile?: string; sessionId?: string } | undefined;
+        if (aheadSession) sessionFile = aheadSession;
         if (hs?.sessionFile) sessionFile = hs.sessionFile;
         // #1276: pi answers new_session without the file; a compact turn
         // asks for it, so the next turn resumes this session (switch_session).
@@ -1593,7 +1750,14 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         });
       } catch {
         // without a session we can still try a bare prompt; pi --no-session
-        // accepts a prompt without an explicit session.
+        // accepts a prompt without an explicit session. Not a pi started
+        // ahead: without its switch it has another folder and no MCP servers.
+        if (ahead) {
+          const message = "pi could not open this conversation; send the message again";
+          emit({ ...base(threadId, turnId), type: "runtime.error", message });
+          settle(false);
+          throw new Error(message);
+        }
       }
 
       // pin the chosen model (composite id or host::model inject → provider + modelId)
@@ -1670,7 +1834,10 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           turn.system,
           turn.text,
           Boolean(turn.mentionTurn),
-          PI_PROMPT_RE_ANCHOR_TURNS,
+          // #1276: on a local model the full prompt goes again
+          // only after a compaction pi reports, not every few turns: a periodic
+          // re-anchor cost a slow turn (12 to 21 s) for a backstop.
+          turn.compactPrompt ? 0 : PI_PROMPT_RE_ANCHOR_TURNS,
           turn.systemVolatileSections,
         );
         message = composed.text;
@@ -1678,6 +1845,11 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       } else {
         message = turn.system ? `${turn.system}\n\n${turn.text}` : turn.text;
       }
+      // #1276: what every new conversation of the bot shares (the stable half
+      // and the volatile sections before the per-conversation ones, which
+      // compactVolatileOrder puts last) becomes its own message
+      // (pi-mcp-extension.ts), where a local server keeps a cache for them.
+      if (turn.compactPrompt) message = markSharedPrompt(message, halves, turn.systemVolatileSections);
       // events cannot interleave with this synchronous stretch, so any
       // compaction recorded above already invalidated what compose read
       try {
