@@ -1363,6 +1363,7 @@ import { createAntigravityAccountRoutes } from "./routes/antigravity-accounts.ts
 import { findAntigravityLeftovers, removeAntigravityLeftovers } from "./drivers/antigravity-temp.ts";
 import { createLiveRoutes } from "./routes/live.ts";
 import { createUsageRoutes } from "./routes/usage.ts";
+import { createOrgLibraryRoutes } from "./routes/org-library.ts";
 
 const PORT = Number(process.env.SAGAX_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.SAGAX_WEBHOOK_PORT || PORT + 1);
@@ -23689,6 +23690,12 @@ orgLibrary = new OrgLibrary({
   if (early) orgLibrary.applyRelay(early.library);
   pendingOrgLibraryRelay = null;
 }
+ROUTES.push(createOrgLibraryRoutes({
+  library: () => orgLibrary,
+  importDeps: async () => packageImportDeps(await defaultSelection()),
+  projectBot: (bot, auth) => projectBotTranscript(publicBot(store.bot(bot.id) ?? bot), viewerForApproval(auth)),
+  projectGroup: (group) => ({ ...publicGroupState(store.group(group.id) ?? group), messages: [] }),
+}));
 // The scheduler receipt and room transcript live in separate durable stores.
 // If the process exited between those two writes, prefer the correlated
 // RoutineRun's terminal truth; an uncorrelated manual goal is simply failed
@@ -46078,59 +46085,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         console.warn("bot directory lookup failed:", error instanceof Error ? error.message : String(error));
       }
       return json(res, 200, { directory });
-    }
-    // ── the organization library (server/org-library.ts) ─────────────────
-    // Admin scope: one install per server that the organization keeps up to
-    // date, its skills and connections server-wide (unlike a person's own
-    // team file import, /api/teams/import). With no organization every read answers
-    // {organization: null} and nothing else changes.
-    if (method === "GET" && path === "/api/org-library") {
-      return json(res, 200, orgLibrary?.list() ?? { organization: null, packages: [] });
-    }
-    m = path.match(/^\/api\/org-library\/packages\/([a-f0-9-]{36})$/);
-    if (m && method === "GET") {
-      const outcome = orgLibrary?.preview(m[1]!);
-      if (!outcome) return json(res, 404, { error: "This package is not in your organization's library.", code: "not_listed" });
-      return outcome.ok ? json(res, 200, outcome.value) : json(res, outcome.status, { error: outcome.error, code: outcome.code });
-    }
-    if (method === "POST" && path === "/api/org-library/add") {
-      // One click, no confirmation: the person's click is the decision.
-      const body = await readBody(req);
-      const packageId = typeof body?.packageId === "string" && /^[a-f0-9-]{36}$/.test(body.packageId) ? body.packageId : null;
-      if (!packageId) return json(res, 400, { error: "Choose a package from your organization's library." });
-      if (!orgLibrary) return json(res, 404, { error: "This package is not in your organization's library.", code: "not_listed" });
-      const outcome = orgLibrary.add(packageId, packageImportDeps(await defaultSelection()));
-      if (!outcome.ok) return json(res, outcome.status, { error: outcome.error, code: outcome.code });
-      if (outcome.value.alreadyAdded) return json(res, 200, outcome.value);
-      const imported = outcome.value.result;
-      return json(res, 201, {
-        alreadyAdded: false,
-        installId: imported.installId,
-        name: imported.name,
-        section: imported.section,
-        bots: imported.bots.map((bot) => projectBotTranscript(publicBot(store.bot(bot.id) ?? bot), viewerForApproval(auth))),
-        groups: imported.groups.map((created) => ({ ...publicGroupState(store.group(created.id) ?? created), messages: [] })),
-        routines: imported.routines,
-        offeredSkills: imported.offeredSkills,
-        connections: imported.connections,
-        skipped: imported.skipped,
-        brief: imported.brief,
-        notes: imported.notes,
-        presets: imported.presets ?? [],
-      });
-    }
-    if (method === "GET" && path === "/api/org-library/skills") {
-      const botId = url.searchParams.get("botId") ?? undefined;
-      return json(res, 200, orgLibrary?.offeredSkills(botId) ?? { organization: null, skills: [] });
-    }
-    if (method === "POST" && path === "/api/org-library/skills") {
-      const body = await readBody(req);
-      const parsed = z.object({ botId: z.string().min(1).max(128), installId: z.string().regex(/^[a-f0-9]{32}$/), name: z.string().min(1).max(64) })
-        .safeParse(body);
-      if (!parsed.success) return json(res, 400, { error: "Choose a bot and a skill from your organization's library." });
-      if (!orgLibrary) return json(res, 404, { error: "This package is not in your organization's library.", code: "not_listed" });
-      const outcome = orgLibrary.addOfferedSkill(parsed.data.botId, parsed.data.installId, parsed.data.name);
-      return outcome.ok ? json(res, 201, { skill: outcome.value }) : json(res, outcome.status, { error: outcome.error, code: outcome.code });
     }
     if (method === "POST" && path === "/api/teams/import") {
       // Import is additive-only. A manifest is untrusted input (catalog,
