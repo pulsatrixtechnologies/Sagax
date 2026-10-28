@@ -22,6 +22,11 @@ import {
   buildMcpServers,
   piGatedMcpInput,
   piGatedMcpTool,
+  piSearchedCall,
+  dropPiStandby,
+  settledPiStandby,
+  takePiStandby,
+  withWarmTokens,
   decodePiFrame,
   ensurePiInjectModel,
   fetchPiModels,
@@ -190,6 +195,32 @@ describe("piGatedMcpInput", () => {
   });
 });
 
+describe("piSearchedCall (#1276)", () => {
+  it("reads call_tool on a searched server as the tool it runs", () => {
+    expect(piSearchedCall("ops__call_tool", JSON.stringify({ name: "update_ticket", arguments: { id: 7 } })))
+      .toEqual({ mcpTool: "ops__update_ticket", input: JSON.stringify({ id: 7 }) });
+  });
+
+  it("keeps the call_tool card when the arguments were cut or name no tool", () => {
+    expect(piSearchedCall("ops__call_tool", "{\"name\": \"update_tic")).toEqual({ mcpTool: "ops__call_tool", input: "{\"name\": \"update_tic" });
+    expect(piSearchedCall("ops__call_tool", "{}")).toEqual({ mcpTool: "ops__call_tool", input: "{}" });
+    expect(piSearchedCall("ops__get_ticket", "{}")).toEqual({ mcpTool: "ops__get_ticket", input: "{}" });
+  });
+});
+
+describe("pi standby (#1276)", () => {
+  it("serves nothing when no standby waits, and dropping is safe", async () => {
+    expect(takePiStandby("no-thread", "key", "/sessions/a.jsonl")).toBeUndefined();
+    expect(() => dropPiStandby("no-thread")).not.toThrow();
+    await expect(settledPiStandby("no-thread")).resolves.toBeUndefined();
+  });
+
+  it("leaves a turn without tokens as it is", () => {
+    const turn = { threadId: "t", text: "Go", integrations: { agents: { command: "node", args: [], env: { KEEP: "1" } } } };
+    expect(withWarmTokens(turn as never, "t")).toEqual(turn);
+  });
+});
+
 describe("buildMcpServers", () => {
   it("mounts a selected custom mail server without unrelated built-ins", () => {
     const servers = buildMcpServers({ threadId: "selected", text: "Read mail", toolScope: { allow: ["mcp:mail:*"] }, integrations: {
@@ -213,6 +244,24 @@ describe("buildMcpServers", () => {
     // 0 = never trim: mounted as it is, with no gate and no extra field
     expect(budget("never")).toBeUndefined();
     expect(JSON.stringify(servers?.never)).not.toContain("resultBudget");
+  });
+
+  it("compact prompt (#1276): Sagax tools compact, the bot's own big catalogs searched", () => {
+    const compactPrompt = { agents: { core: "used" as const, pinned: ["list_bots", "ask_bot", "list_bots"] }, pinned: { ops: ["get_ticket"] } };
+    const servers = buildMcpServers({ threadId: "compact", text: "Go", compactPrompt, integrations: {
+      agents: { command: "node", args: ["agents"], env: { KEEP: "1" } },
+      custom: { ops: { command: "node", args: ["ops"], env: {} } },
+    } }) as Record<string, { env: Record<string, string> }>;
+    expect(JSON.parse(servers.agents!.env.SAGAX_COMPACT_TOOLS!)).toEqual({ core: "used", pinned: ["ask_bot", "list_bots"] });
+    expect(servers.agents!.env.KEEP).toBe("1");
+    expect(JSON.parse(servers.ops!.env.SAGAX_GATE_SEARCH!).pinned).toEqual(["get_ticket"]);
+    // without a compact prompt nothing changes
+    const plain = buildMcpServers({ threadId: "plain", text: "Go", integrations: {
+      agents: { command: "node", args: ["agents"], env: {} },
+      custom: { ops: { command: "node", args: ["ops"], env: {} } },
+    } }) as Record<string, { env?: Record<string, string> }>;
+    expect(plain.agents?.env?.SAGAX_COMPACT_TOOLS).toBeUndefined();
+    expect(plain.ops?.env?.SAGAX_GATE_SEARCH).toBeUndefined();
   });
 
   it("rejects malformed policy and mounts nothing for native-only selection", () => {

@@ -180,3 +180,11 @@ describe("every tool stays reachable", () => {
     expect(() => parseGateSearch("{bad", fail)).toThrow();
   });
 });
+
+describe("usesCompactPrompt on pi (#1276)", () => {
+  it("is on for a pi model of a local host only", () => {
+    expect(usesCompactPrompt({ driverKind: "piAgent", model: "omlx/Some-Model" })).toBe(true);
+    expect(usesCompactPrompt({ driverKind: "piAgent", model: "anthropic/claude-sonnet-5" })).toBe(false);
+    expect(usesCompactPrompt({ driverKind: "piAgent", model: "omlx/Some-Model", bot: "full" })).toBe(false);
+  });
+});
