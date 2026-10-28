@@ -111,22 +111,29 @@ export function ownerModeForTurn(input: {
 }
 
 /** Reads of the Perspicax surface beyond the reviewed Grok list: the
- * catalog, the identity lookup, the agents directory and transcripts, the
- * lease list, and ConnectWise's named finds and gets. */
+ * catalog, the identity lookup, the agents directory and transcripts, and
+ * the lease list. */
 const PERSPICAX_EXTRA_READS: ReadonlySet<string> = new Set([
   "api_list", "identity", "list_agents", "find_agents", "get_agent",
   "read_transcript", "read_transcript_cold", "read_transcript_page", "read_latest_page", "read_latest_page_with_threads",
   "list_pending_approvals", "claim_list",
-  "cw_psa__get_ticket",
 ]);
 
-/** The connectors whose generic read (`<api>__query`) holds no credential
- * field: ConnectWise (already reviewed, cw_psa__query) and BookStack. The
- * other connectors (one of them returns an account's token) keep the
- * owner's own mode (rule 1) or their card. */
-const CONNECTOR_QUERY = /^(?:cw_psa|bookstack)__query$/;
-/** ConnectWise's named finds (cw_psa__find_tickets, ...). */
-const CW_FIND = /^cw_psa__find_[a-z0-9_]+$/;
+/** The reads a connector serves by name, after its `<api>__`: the generic
+ * query and the named finds and gets of its recipes. Answered by Sagax only
+ * for a connector Perspicax marks as reviewed (api_list `reviewed_reads`:
+ * its reads return no credential); every other connector keeps the owner's
+ * own mode (rule 1) or its card. */
+const CONNECTOR_READ = /^(?:query|(?:find|get)(?:_[a-z0-9]+)+)$/;
+
+/** Whether a tool is a named read of a connector whose reads Perspicax
+ * marked as reviewed. */
+function reviewedConnectorRead(tool: string, reviewedReads: (api: string) => boolean): boolean {
+  const split = tool.indexOf("__");
+  if (split <= 0) return false;
+  const read = tool.slice(split + 2);
+  return CONNECTOR_READ.test(read) && reviewedReads(tool.slice(0, split));
+}
 
 /** Coordination leases: they keep two runs off one record. */
 const PERSPICAX_LEASES: ReadonlySet<string> = new Set(["claim", "claim_renew", "claim_release"]);
@@ -143,12 +150,16 @@ export type PerspicaxSelfAnswer = "read" | "lease";
 
 /** Whether Sagax answers a Perspicax call itself (rule 3), and why. The
  * caller has already checked that no other server of the turn could have
- * spelled the name (sagax-internal-tools.ts foreignToolSpelling). */
-export function perspicaxSelfAnswer(name: string | undefined): PerspicaxSelfAnswer | null {
+ * spelled the name (sagax-internal-tools.ts foreignToolSpelling).
+ * `reviewedReads` says whether Perspicax marked a connector's reads as
+ * reviewed for this bot (perspicax-mcp.ts reviewedReads); without it, or
+ * before api_list was read, no connector read is answered (its card stays). */
+export function perspicaxSelfAnswer(name: string | undefined,
+  reviewedReads: (api: string) => boolean = () => false): PerspicaxSelfAnswer | null {
   const tool = perspicaxTool(name);
   if (!tool) return null;
   if (PERSPICAX_LEASES.has(tool)) return "lease";
-  if (PERSPICAX_READ_ONLY_TOOLS.has(tool) || PERSPICAX_EXTRA_READS.has(tool) || CONNECTOR_QUERY.test(tool) || CW_FIND.test(tool)) return "read";
+  if (PERSPICAX_READ_ONLY_TOOLS.has(tool) || PERSPICAX_EXTRA_READS.has(tool) || reviewedConnectorRead(tool, reviewedReads)) return "read";
   return null;
 }
 

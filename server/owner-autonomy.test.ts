@@ -59,8 +59,7 @@ describe("ownerModeForTurn", () => {
 
 describe("perspicaxSelfAnswer", () => {
   it("knows the reads and the leases of Sagax's own Perspicax mount", () => {
-    for (const tool of ["cw_psa__query", "cw_psa__find_tickets", "cw_psa__find_schedule_entries", "cw_psa__get_ticket", "api_list", "api_search",
-      "memory_recall", "memory_search", "bookstack__query", "flow", "list_agents", "claim_list", "work_search"]) {
+    for (const tool of ["api_list", "api_search", "memory_recall", "memory_search", "flow", "list_agents", "claim_list", "work_search"]) {
       expect(perspicaxSelfAnswer(`mcp__perspicax_quasar_agent__${tool}`)).toBe("read");
       expect(perspicaxSelfAnswer(`perspicax_pulsatrix_flow_jc__${tool}`)).toBe("read");
     }
@@ -77,6 +76,24 @@ describe("perspicaxSelfAnswer", () => {
     expect(perspicaxSelfAnswer("mcp__evil__perspicax_x__claim")).toBeNull();
     expect(perspicaxSelfAnswer("mcp__perspicax_x__y__claim")).toBeNull();
     expect(perspicaxSelfAnswer("mcp__sagax-environment__run_command")).toBeNull();
+  });
+  it("answers a connector's named reads only when Perspicax marks its reads as reviewed", () => {
+    const reviewed = new Set(["acme_desk", "example_wiki"]);
+    const marked = (api: string) => reviewed.has(api);
+    for (const tool of ["acme_desk__query", "acme_desk__find_tickets", "acme_desk__find_schedule_entries", "acme_desk__get_ticket", "example_wiki__query"]) {
+      expect(perspicaxSelfAnswer(`mcp__perspicax_quasar_agent__${tool}`, marked)).toBe("read");
+      expect(perspicaxSelfAnswer(`perspicax_quasar_agent__${tool}`, marked)).toBe("read");
+      // no mark (an older Perspicax, or api_list not read yet): the card stays
+      expect(perspicaxSelfAnswer(`mcp__perspicax_quasar_agent__${tool}`)).toBeNull();
+      expect(perspicaxSelfAnswer(`mcp__perspicax_quasar_agent__${tool}`, () => false)).toBeNull();
+    }
+    for (const tool of ["acme_desk__write", "acme_desk__action", "acme_desk__update_ticket", "acme_desk__log_time", "acme_desk__query_write",
+      "acme_desk__find_", "acme_desk__find_x__write", "vpn_api__query", "vpn_api__find_keys", "__query"]) {
+      expect(perspicaxSelfAnswer(`mcp__perspicax_quasar_agent__${tool}`, marked)).toBeNull();
+    }
+    const asked: string[] = [];
+    perspicaxSelfAnswer("mcp__perspicax_quasar_agent__acme_desk__query", (api) => { asked.push(api); return true; });
+    expect(asked).toEqual(["acme_desk"]);
   });
   it("answers a lease at every level and a read only where work already runs unasked", () => {
     expect(perspicaxSelfAnswerAt("lease", "ask")).toBe(true);
