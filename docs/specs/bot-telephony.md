@@ -907,3 +907,52 @@ interne** (conditions de l'ÉFVP Loi 25 du 2026-10-22) :
 - Limite assumée : sans le crochet de la ligne (P0) ni Media Streams (P2),
   l'appel est **à sens unique**. La suite (deux voix, liste blanche, heures,
   plafonds réglables, SVI, SMS entrants : P0 à P5) attend l'ÉFVP complète.
+
+## 10. Appel sortant conversationnel (2026-10-28)
+
+GO du propriétaire : « Fais un test call pour un collègue. Je veux savoir si tu
+peux l'entendre, dialoguer avec lui et me revenir avec un résumé. »
+
+- **Outil** : `place_phone_call` avec `mode: "conversation"`, `objective`
+  (200 caractères), `instructions` (1000), `max_minutes` (1 à 20, 5 par
+  défaut), `language`, `voicemail` (300, facultatif). Le mode `message`
+  (section 9) ne change pas.
+- **Carte** : la même carte d'approbation (numéro à cocher, Appeler ou Ne pas
+  appeler), qui montre le numéro, l'objectif, la durée maximale et la phrase
+  d'annonce telle qu'elle sera dite. Une approbation vaut pour un appel ; un
+  objectif, une consigne, une durée ou un message de boîte vocale différents
+  demandent une nouvelle carte. L'essai à blanc passe par `voice_call`
+  (`dry_run`) sur la ligne de la personne.
+- **Ligne et clé** : l'appel part de la ligne Perspicax Voice de la personne
+  qui parle au bot, avec ses propres identifiants Twilio (`voice_call` avec
+  l'accès Perspicax du tour, jamais la clé d'un autre membre ; Perspicax
+  #520). Aucun `from` ni `Twiml` du bot.
+- **Annonce IA** : dite par la ligne avant toute parole du modèle, fixe :
+  « Bonjour, ici <bot>, un assistant IA qui appelle au nom de <personne>. »
+- **Pendant l'appel** : la voix temps réel de Perspicax Voice (le même moteur
+  que les appels entrants de la ligne) écoute, répond et poursuit l'objectif,
+  puis raccroche poliment à l'objectif atteint, à la demande du
+  correspondant ou à la durée maximale. Boîte vocale (AMD de Twilio) : le
+  message court. Pas de réponse, occupé : rien n'est dit.
+- **Arrêt demandé** : le correspondant qui demande de ne plus être appelé
+  termine l'appel ; son numéro va sur la liste d'arrêt de la personne
+  (`stopped` dans `outbound-calls.json`), et le bot ne peut plus l'appeler
+  pour elle.
+- **Résultat** : Perspicax publie `call_result` (contrat `perspicax-voice/1`)
+  sur `/api/org/telephony/inbound`. Sagax l'accepte seulement si l'assertion
+  signée nomme la personne dont la ligne a placé cet appel (`sub`), pour le
+  `callSid` placé, une seule fois. La carte devient la carte de résultat
+  (état, durée, 3 à 5 points, engagements, transcription derrière « Voir la
+  transcription ») et le bot reçoit le résultat dans un nouveau tour, les
+  paroles du correspondant marquées comme données non fiables.
+- **Conservation** : la transcription vit seulement sur le message de la
+  conversation (scellé avec la clé de contenu de la personne) ; elle en est
+  retirée 30 jours après l'appel (« transcription expirée »), le résumé reste.
+  `outbound-calls.json` ne garde que des métadonnées (issue, durée), jamais un
+  mot dit ; journaux et audit gardent le numéro masqué.
+- **Règles** : le pilote d'organisation, la liste « Ne pas appeler » et les
+  règles Refuser et Demander d'abord s'appliquent comme pour le mode message.
+- Code : `shared/outbound-call.ts`, `server/outbound-calls.ts`,
+  `server/outbound-wiring.ts`, `server/bot-inbound-telephony.ts`. Tests :
+  `server/outbound-conversation.test.ts` (cycle complet, faux Twilio et fausse
+  voix temps réel).

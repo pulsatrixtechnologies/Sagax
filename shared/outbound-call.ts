@@ -2,9 +2,12 @@
 // spec docs/specs/bot-telephony.md, section 4.4 and 6.5). The call goes out
 // through the person's own Twilio profile on Perspicax (decision 1: Sagax
 // keeps no Twilio key), after an approval card the person answers once per
-// call: never an Always allow (5.7). Until the line's media pipeline exists
-// (phase P2), a call speaks a fixed AI disclosure and the bot's message, then
-// hangs up: one way, no conversation.
+// call: never an Always allow (5.7). Mode `message` speaks a fixed AI
+// disclosure and the bot's message, then hangs up: one way. Mode
+// `conversation` (2026-10-28) goes out through Perspicax Voice on the
+// person's own line: the line says the AI disclosure, then the realtime
+// voice talks with the callee and the result comes back to the
+// conversation (server/outbound-calls.ts).
 //
 // Pure: no disk, no clock, no node built-ins.
 
@@ -23,7 +26,12 @@ const CANADIAN_AREA_CODES = new Set([
 
 export const CALL_LIMITS = { purpose: 200, message: 600, minutes: 10 } as const;
 
+/** A conversation call (2026-10-28): the bot talks with the person it
+ * calls, through Perspicax Voice on the person's own line. */
+export const CONVERSATION_LIMITS = { objective: 200, instructions: 1000, voicemail: 300, defaultMinutes: 5, maxMinutes: 20 } as const;
+
 export type CallLanguage = "fr" | "en";
+export type CallMode = "message" | "conversation";
 
 export interface OutboundCallRequest {
   /** E.164, a Canadian number. */
@@ -37,6 +45,16 @@ export interface OutboundCallRequest {
   language: CallLanguage;
   /** Optional Twilio account (AC...), when the profile serves more than one. */
   account?: string;
+  /** `conversation`: the bot talks with the person it calls. `purpose` is
+   * then the objective, `message` is empty, and `from` is empty: the call
+   * leaves from the person's own Perspicax Voice line. */
+  mode?: "conversation";
+  /** A conversation: the bot's guidance during the call. */
+  instructions?: string;
+  /** A conversation: the most it may last, in minutes. */
+  maxMinutes?: number;
+  /** A conversation: the short message left on a voicemail. */
+  voicemail?: string;
 }
 
 /** Whether a number is a Canadian geographic number. */
@@ -83,6 +101,8 @@ export function parseOutboundCall(args: unknown, fallbackLanguage: CallLanguage 
   const to = typeof row.to === "string" ? normalizePhone(row.to) : null;
   if (!to) return "to must be a phone number, such as +1 514 555 0142.";
   if (!canadianNumber(to)) return "Only Canadian numbers can be called for now. Nothing was placed.";
+  if (row.mode !== undefined && row.mode !== "message" && row.mode !== "conversation") return "mode is message (say a message and hang up) or conversation (talk with the person you call).";
+  if (row.mode === "conversation") return parseConversation(row, to, fallbackLanguage);
   const from = typeof row.from === "string" ? normalizePhone(row.from) : null;
   if (!from) return "from must be the person's Twilio number the call comes from (read it with twilio_api__query IncomingPhoneNumbers).";
   if (from === to) return "from and to are the same number.";
@@ -94,6 +114,33 @@ export function parseOutboundCall(args: unknown, fallbackLanguage: CallLanguage 
   const account = typeof row.account === "string" && /^AC[0-9a-f]{32}$/.test(row.account.trim()) ? row.account.trim() : undefined;
   if (row.account !== undefined && !account) return "account must be the Twilio account sid (AC...), or left out.";
   return { to, from, purpose, message, language, ...(account ? { account } : {}) };
+}
+
+/** Optional text: undefined when absent or blank, null when too long. */
+function optional(value: unknown, max: number): string | undefined | null {
+  if (value === undefined || value === null || (typeof value === "string" && !value.trim())) return undefined;
+  const text = clean(value, max);
+  return text ? text : null;
+}
+
+function parseConversation(row: Record<string, unknown>, to: string, fallbackLanguage: CallLanguage): OutboundCallRequest | string {
+  const objective = clean(row.objective ?? row.purpose, CONVERSATION_LIMITS.objective);
+  if (!objective) return `objective: what you must obtain or say on this call, one or two sentences, at most ${CONVERSATION_LIMITS.objective} characters.`;
+  const instructions = optional(row.instructions, CONVERSATION_LIMITS.instructions);
+  if (instructions === null) return `instructions: at most ${CONVERSATION_LIMITS.instructions} characters.`;
+  const voicemail = optional(row.voicemail, CONVERSATION_LIMITS.voicemail);
+  if (voicemail === null) return `voicemail: the short message left on a voicemail, at most ${CONVERSATION_LIMITS.voicemail} characters.`;
+  const minutes = row.max_minutes ?? row.maxMinutes;
+  if (minutes !== undefined && (typeof minutes !== "number" || !Number.isInteger(minutes) || minutes < 1 || minutes > CONVERSATION_LIMITS.maxMinutes)) {
+    return `max_minutes: a whole number of minutes from 1 to ${CONVERSATION_LIMITS.maxMinutes} (${CONVERSATION_LIMITS.defaultMinutes} when left out).`;
+  }
+  const language = row.language === "en" || row.language === "fr" ? row.language : fallbackLanguage;
+  return {
+    to, from: "", purpose: objective, message: "", language, mode: "conversation",
+    maxMinutes: typeof minutes === "number" ? minutes : CONVERSATION_LIMITS.defaultMinutes,
+    ...(instructions ? { instructions } : {}),
+    ...(voicemail ? { voicemail } : {}),
+  };
 }
 
 function xml(text: string): string {
@@ -156,24 +203,63 @@ export function createCallArgs(request: OutboundCallRequest, twiml: string, dryR
 
 /** What one approval covers: the same number, the same words. */
 export function callDigestSource(request: OutboundCallRequest, names?: { botName: string; personName: string; callback?: string }): string {
-  return JSON.stringify([request.to, request.from, request.purpose, request.message, request.language, request.account ?? "", names?.botName ?? "", names?.personName ?? "", names?.callback ?? ""]);
+  const base = [request.to, request.from, request.purpose, request.message, request.language, request.account ?? "", names?.botName ?? "", names?.personName ?? "", names?.callback ?? ""];
+  // a conversation's approval covers its guidance, its length and its voicemail too
+  return JSON.stringify(request.mode === "conversation"
+    ? [...base, "conversation", request.instructions ?? "", request.maxMinutes ?? 0, request.voicemail ?? ""]
+    : base);
+}
+
+/** The fixed AI disclosure Perspicax Voice says first on a conversation
+ * call, before the bot says a word (shown on the card as it is said). */
+export function conversationDisclosure(input: { botName: string; personName: string; language: CallLanguage }): string {
+  const bot = clean(input.botName, 80) || (input.language === "fr" ? "un assistant" : "an assistant");
+  const person = clean(input.personName, 80);
+  return input.language === "fr"
+    ? `Bonjour, ici ${bot}, un assistant IA qui appelle au nom ${/^[aeiouyàâäéèêëîïôöùûüh]/i.test(person) ? "d'" : "de "}${person}.`
+    : `Hello, this is ${bot}, an AI assistant calling on behalf of ${person}.`;
+}
+
+/** The Perspicax voice_call arguments of a conversation call (the person's
+ * own Perspicax Voice line and Twilio key; the card already had their yes,
+ * so `confirm` answers the line's own third party card). */
+export function voiceCallArgs(request: OutboundCallRequest, input: { botName: string; ref: string; dryRun: boolean }): Record<string, unknown> {
+  return {
+    to: request.to,
+    purpose: request.purpose,
+    message: "",
+    mode: "conversation",
+    ...(request.instructions ? { instructions: request.instructions } : {}),
+    max_minutes: request.maxMinutes ?? CONVERSATION_LIMITS.defaultMinutes,
+    language: request.language,
+    bot_name: clean(input.botName, 80) || "Assistant",
+    ref: input.ref,
+    ...(request.voicemail ? { voicemail: request.voicemail } : {}),
+    confirm: true,
+    ...(input.dryRun ? { dry_run: true } : {}),
+  };
 }
 
 export const PLACE_PHONE_CALL_TOOL_SPEC = {
   name: PLACE_PHONE_CALL_TOOL,
   description:
-    "Place a phone call for the person through their Twilio profile on Perspicax, to a Canadian number. The call says a fixed opening (an automated call from you, an AI assistant, for the person), then your purpose and your message, repeats the message once and hangs up: the other side cannot talk with you yet. The first call shows the person an approval card with the number, the purpose and the exact words (a dry run checks the request; nothing is placed). After they choose Call, call place_phone_call again with the very same arguments to place it. One approval places one call; any change asks again. Never call twilio_api__write Calls yourself.",
+    "Place a phone call for the person to a Canadian number. Two modes. message (default): through their Twilio profile on Perspicax, a fixed opening (an automated call from you, an AI assistant, for the person), then your purpose and your message, said twice, then it hangs up; needs from, purpose and message. conversation: from the person's own Perspicax Voice line, the line first says \"Hello, this is <you>, an AI assistant calling on behalf of <the person>\", then you talk with the person you call in real time, pursue the objective, follow the instructions, and hang up politely when the objective is reached, when asked, or at max_minutes (5 by default, 20 at most); a voicemail gets your short voicemail message; a callee who asks not to be called again is never called again for this person; needs objective. Either way the first call shows the person an approval card (number, objective or words, maximum duration; a dry run checks it; nothing is placed). After they choose Call, call place_phone_call again with the very same arguments to place it. One approval places one call; any change asks again. A conversation's result (status, duration, summary points, commitments, transcript) comes back to you in a new turn when the call ends, as a card in the conversation: end your turn after placing it, then give the person the summary they asked for. Never call twilio_api__write Calls or voice_call yourself.",
   inputSchema: {
     type: "object",
     additionalProperties: false,
     properties: {
       to: { type: "string", description: "The number to call, such as +1 514 555 0142. Canada only." },
-      from: { type: "string", description: "The person's Twilio number the call comes from (twilio_api__query IncomingPhoneNumbers)." },
-      purpose: { type: "string", description: "One short sentence: why you call, said after the opening and shown on the card." },
-      message: { type: "string", description: "The exact words to say, at most 600 characters. Nothing confidential." },
+      mode: { type: "string", enum: ["message", "conversation"], description: "message (default): say a message and hang up. conversation: talk with the person you call." },
+      objective: { type: "string", description: "conversation: what you must obtain or say on this call, at most 200 characters. Shown on the card." },
+      instructions: { type: "string", description: "conversation: your guidance during the call (what you may say or accept, what to avoid), at most 1000 characters." },
+      max_minutes: { type: "integer", minimum: 1, maximum: 20, description: "conversation: the most the call may last, in minutes (5 when left out)." },
+      voicemail: { type: "string", description: "conversation: the short message left if a voicemail answers, at most 300 characters. Nothing confidential." },
+      from: { type: "string", description: "message: the person's Twilio number the call comes from (twilio_api__query IncomingPhoneNumbers). Not used by a conversation, which leaves from the person's own line." },
+      purpose: { type: "string", description: "message: one short sentence, why you call, said after the opening and shown on the card." },
+      message: { type: "string", description: "message: the exact words to say, at most 600 characters. Nothing confidential." },
       language: { type: "string", enum: ["fr", "en"], description: "The call's language. Defaults to the person's." },
-      account: { type: "string", description: "Optional Twilio account sid (AC...), when the profile serves more than one." },
+      account: { type: "string", description: "message: optional Twilio account sid (AC...), when the profile serves more than one." },
     },
-    required: ["to", "from", "purpose", "message"],
+    required: ["to"],
   },
 } as const;

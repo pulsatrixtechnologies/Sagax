@@ -10,9 +10,12 @@
 import { formatPhone } from "../shared/outbound-call.ts";
 import { purchaseContents } from "../shared/payment-vault.ts";
 import { walletName } from "../shared/single-use-card.ts";
-import type { OutboundCard } from "../shared/wire.ts";
+import type { OutboundCallResult, OutboundCard } from "../shared/wire.ts";
 import type { PurchaseListing } from "./credential-vault.ts";
-import { callAnswerNote, callCard, callCardText, OutboundCalls, placePhoneCall, type OutboundCallRecord, type PlaceCallDeps } from "./outbound-calls.ts";
+import {
+  applyResult, callAnswerNote, callCard, callCardText, callResultNote, OutboundCalls, placePhoneCall,
+  type IncomingCallResult, type OutboundCallRecord, type PlaceCallDeps,
+} from "./outbound-calls.ts";
 import type { PrimaryCard } from "./primary-approvals.ts";
 import { createOutboundCallRoutes, type OutboundCallRouteDeps } from "./routes/outbound-calls.ts";
 import type { InternalRouteHandler } from "./routes/internal-route.ts";
@@ -30,6 +33,14 @@ export interface OutboundWiringDeps {
   personName(botId: string, threadId: string): string;
   language(): "fr" | "en";
   twilio(turn: { threadId: string; generation: string; botId: string }, args: Record<string, unknown>): ReturnType<PlaceCallDeps["twilio"]>;
+  /** Perspicax voice_call as the person who speaks in the turn (their own
+   * line and key). Absent: no Perspicax on this server. */
+  voice?(turn: { threadId: string; generation: string; botId: string }, args: Record<string, unknown>): ReturnType<PlaceCallDeps["twilio"]>;
+  /** A conversation call is said to be made on behalf of the person who
+   * asked for it: their name. */
+  principalName?(principalId: string): string | undefined;
+  /** The person's Perspicax id (the `sub` Perspicax signs), or null. */
+  principalSub?(principalId: string): string | null;
   /** Start the bot's next turn with this note (index.ts dispatchSecretResume). */
   wake(botId: string, threadId: string, messageId: string, prompt: string): void;
   now?: () => number;
@@ -120,8 +131,19 @@ export function outboundWiring(deps: OutboundWiringDeps) {
     }
   }
 
-  function callRow(row: OutboundCallRecord, messageId?: string): string | undefined {
-    return upsert(row.threadId, callCard(row, deps.botName(row.botId), calls.settings().callbackNumber), callCardText(row), messageId);
+  function callRow(row: OutboundCallRecord, messageId?: string, result?: OutboundCallResult): string | undefined {
+    const card = callCard(row, deps.botName(row.botId), calls.settings().callbackNumber);
+    return upsert(row.threadId, result ? { ...card, result } : card, callCardText(row), messageId);
+  }
+
+  /** A conversation's transcript past its 30 days leaves the card; the
+   * summary stays, with a line saying the transcript expired. */
+  function dropTranscript(row: OutboundCallRecord): void {
+    const message = rowOf(row.threadId, row.id, row.messageId);
+    const result = message?.outbound?.result;
+    if (!message || !result) return;
+    const { transcript: _dropped, truncated: _cut, ...kept } = result;
+    deps.store.patchMessage(row.threadId, message.id, { outbound: { ...message.outbound!, result: { ...kept, transcriptExpired: true } } });
   }
 
   const api = {
@@ -131,10 +153,19 @@ export function outboundWiring(deps: OutboundWiringDeps) {
     async placeCall(context: { principalId: string | null; botId: string; threadId: string; generation: string; room: boolean }, args: unknown): Promise<{ text: string; isError?: boolean }> {
       if (context.room) return { text: "A phone call is placed from a direct conversation, not a room. Nothing was placed.", isError: true };
       if (!context.principalId) return { text: "This conversation has no person to approve a call. Nothing was placed.", isError: true };
+      const turn = { threadId: context.threadId, generation: context.generation, botId: context.botId };
+      const conversation = Boolean(args && typeof args === "object" && (args as { mode?: unknown }).mode === "conversation");
+      const voice = deps.voice;
       return placePhoneCall({
         calls,
-        twilio: (callArgs) => deps.twilio({ threadId: context.threadId, generation: context.generation, botId: context.botId }, callArgs),
-        names: { botName: deps.botName(context.botId), personName: deps.personName(context.botId, context.threadId) },
+        twilio: (callArgs) => deps.twilio(turn, callArgs),
+        ...(voice ? { voice: (callArgs: Record<string, unknown>) => voice(turn, callArgs) } : {}),
+        names: {
+          botName: deps.botName(context.botId),
+          // a conversation is made on behalf of the person who asked for it
+          // (their own line); a one-way message keeps its earlier wording
+          personName: (conversation ? deps.principalName?.(context.principalId) : undefined) || deps.personName(context.botId, context.threadId),
+        },
         language: deps.language(),
         card: callRow,
       }, { principalId: context.principalId, botId: context.botId, threadId: context.threadId }, args);
@@ -171,6 +202,30 @@ export function outboundWiring(deps: OutboundWiringDeps) {
       });
     },
 
+    /** Perspicax's call_result for a conversation call (the telephony
+     * route checked the signed assertion; `sub` is the line's owner). The
+     * card becomes the result card and the bot gets the result. */
+    callResult(input: { sub: string; result: IncomingCallResult }): "applied" | "unknown" | "not_yours" | "already" {
+      const outcome = applyResult(calls, {
+        result: input.result,
+        sub: input.sub,
+        subOf: (principalId) => deps.principalSub?.(principalId) ?? null,
+        now: (deps.now ?? Date.now)(),
+      });
+      if (!outcome.applied) return outcome.reason;
+      const botName = deps.botName(outcome.row.botId);
+      const messageId = callRow(outcome.row, outcome.row.messageId, outcome.result);
+      deps.wake(outcome.row.botId, outcome.row.threadId, messageId ?? outcome.row.id, callResultNote(outcome.row, outcome.result, botName));
+      return "applied";
+    },
+
+    /** Drop the transcripts past their 30 days (run on a timer). */
+    sweepTranscripts(): number {
+      const due = calls.takeExpiredTranscripts();
+      for (const row of due) dropTranscript(row);
+      return due.length;
+    },
+
     /** The Primary Bot's list: Call or Do not call, never an Always allow. */
     primaryPending(principalId: string, needsKey: boolean): PrimaryCard[] {
       return calls.pending(principalId).map((row) => ({
@@ -180,7 +235,9 @@ export function outboundWiring(deps: OutboundWiringDeps) {
         botName: deps.botName(row.botId),
         at: row.createdAt,
         title: `Call ${formatPhone(row.request.to)}?`,
-        line: `${row.request.purpose} It says: "${row.request.message}"`.slice(0, 240),
+        line: (row.request.mode === "conversation"
+          ? `Conversation, ${row.request.maxMinutes ?? 5} min max. Objective: ${row.request.purpose}`
+          : `${row.request.purpose} It says: "${row.request.message}"`).slice(0, 240),
         kind: "permission" as const,
         needsKey,
         options: ["deny"],

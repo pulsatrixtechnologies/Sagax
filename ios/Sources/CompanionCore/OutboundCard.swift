@@ -53,6 +53,17 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
     public var purpose: String?
     public var script: String?
     public var language: String?
+    /// "conversation" when the bot talks with the person it calls; nil for
+    /// the one-way message (or a mode from a newer server, drawn as one).
+    public var mode: String?
+    /// A conversation call: what the bot must obtain or say, its guidance,
+    /// the most it may last, and the short message it leaves on voicemail.
+    public var objective: String?
+    public var instructions: String?
+    public var maxMinutes: Int?
+    public var voicemail: String?
+    /// A conversation call once it ended; placed without one: under way.
+    public var result: OutboundCallResult?
     public var merchant: String?
     public var amount: String?
     public var currency: String?
@@ -64,6 +75,9 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
     public var mismatchTotal: String?
     public var via: String?
     public var error: String?
+
+    /// A call the bot holds as a conversation (place_phone_call mode conversation).
+    public var isConversation: Bool { kind == .call && mode == "conversation" }
 
     /// A card this phone knows how to draw and answer.
     public var isDrawable: Bool { kind != .unknown && !id.isEmpty }
@@ -77,6 +91,7 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, status, botName, destination, from, callback, purpose, script, language
+        case mode, objective, instructions, maxMinutes, voicemail, result
         case merchant, amount, currency, cardLabel, items, flights, orderRef, declared, mismatchTotal, via, error
     }
 
@@ -94,6 +109,13 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
         purpose = try? row.decodeIfPresent(String.self, forKey: .purpose)
         script = try? row.decodeIfPresent(String.self, forKey: .script)
         language = try? row.decodeIfPresent(String.self, forKey: .language)
+        mode = try? row.decodeIfPresent(String.self, forKey: .mode)
+        objective = try? row.decodeIfPresent(String.self, forKey: .objective)
+        instructions = try? row.decodeIfPresent(String.self, forKey: .instructions)
+        maxMinutes = (try? row.decodeIfPresent(Int.self, forKey: .maxMinutes))
+            ?? (try? row.decodeIfPresent(Double.self, forKey: .maxMinutes)).map { Int($0.rounded()) }
+        voicemail = try? row.decodeIfPresent(String.self, forKey: .voicemail)
+        result = try? row.decodeIfPresent(OutboundCallResult.self, forKey: .result)
         merchant = try? row.decodeIfPresent(String.self, forKey: .merchant)
         amount = try? row.decodeIfPresent(String.self, forKey: .amount)
         currency = try? row.decodeIfPresent(String.self, forKey: .currency)
@@ -105,6 +127,75 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
         mismatchTotal = try? row.decodeIfPresent(String.self, forKey: .mismatchTotal)
         via = try? row.decodeIfPresent(String.self, forKey: .via)
         error = try? row.decodeIfPresent(String.self, forKey: .error)
+    }
+}
+
+/// How a conversation call ended (shared/wire.ts `OutboundCallResult`).
+/// Lenient: an outcome or a reason this phone does not know decodes as
+/// `.unknown` instead of losing the message it arrived on.
+public struct OutboundCallResult: Codable, Hashable, Sendable {
+    public enum Outcome: String, Codable, Sendable { case completed, voicemail, noAnswer = "no-answer", busy, failed, unknown }
+    public enum EndedBy: String, Codable, Sendable { case goal, callee, stopRequest = "stop-request", timeLimit = "time-limit", hangUp = "hang-up", unknown }
+
+    public struct Line: Codable, Hashable, Sendable {
+        /// "bot" or "callee" (anything else is drawn as the other party).
+        public var speaker: String
+        public var text: String
+        public var isBot: Bool { speaker == "bot" }
+        public init(speaker: String, text: String) {
+            self.speaker = speaker
+            self.text = text
+        }
+    }
+
+    public var outcome: Outcome
+    public var endedBy: EndedBy?
+    public var doNotCallAgain: Bool
+    public var durationSec: Int
+    public var points: [String]
+    public var commitments: [String]
+    public var transcript: [Line]
+    public var truncated: Bool
+    public var transcriptExpired: Bool
+    /// epoch ms
+    public var endedAt: Double?
+
+    public init(outcome: Outcome, endedBy: EndedBy? = nil, doNotCallAgain: Bool = false, durationSec: Int = 0, points: [String] = [], commitments: [String] = [], transcript: [Line] = [], truncated: Bool = false, transcriptExpired: Bool = false, endedAt: Double? = nil) {
+        self.outcome = outcome
+        self.endedBy = endedBy
+        self.doNotCallAgain = doNotCallAgain
+        self.durationSec = durationSec
+        self.points = points
+        self.commitments = commitments
+        self.transcript = transcript
+        self.truncated = truncated
+        self.transcriptExpired = transcriptExpired
+        self.endedAt = endedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case outcome, endedBy, doNotCallAgain, durationSec, points, commitments, transcript, truncated, transcriptExpired, endedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let row = try decoder.container(keyedBy: CodingKeys.self)
+        outcome = (try? row.decode(String.self, forKey: .outcome)).flatMap(Outcome.init(rawValue:)) ?? .unknown
+        endedBy = (try? row.decodeIfPresent(String.self, forKey: .endedBy)).flatMap { $0 }.map { EndedBy(rawValue: $0) ?? .unknown }
+        doNotCallAgain = (try? row.decodeIfPresent(Bool.self, forKey: .doNotCallAgain)) ?? false
+        let seconds = (try? row.decodeIfPresent(Double.self, forKey: .durationSec)).flatMap { $0 } ?? 0
+        durationSec = seconds.isFinite && seconds > 0 ? Int(seconds.rounded()) : 0
+        points = (try? row.decodeIfPresent([String].self, forKey: .points)).flatMap { $0 } ?? []
+        commitments = (try? row.decodeIfPresent([String].self, forKey: .commitments)).flatMap { $0 } ?? []
+        transcript = (try? row.decodeIfPresent([Line].self, forKey: .transcript)).flatMap { $0 } ?? []
+        truncated = (try? row.decodeIfPresent(Bool.self, forKey: .truncated)) ?? false
+        transcriptExpired = (try? row.decodeIfPresent(Bool.self, forKey: .transcriptExpired)) ?? false
+        endedAt = (try? row.decodeIfPresent(Double.self, forKey: .endedAt)).flatMap { $0 }
+    }
+
+    /// "4:07": whole seconds as minutes and seconds.
+    public static func duration(_ seconds: Int) -> String {
+        let total = max(0, seconds)
+        return "\(total / 60):" + String(format: "%02d", total % 60)
     }
 }
 
@@ -139,18 +230,30 @@ public enum OutboundCardRules {
     /// waits, and for a purchase that is done (its title says so).
     public enum Status: Hashable, Sendable {
         case callApproved, callDone, callDenied, callFailed
+        /// A conversation call placed and not ended yet.
+        case callInProgress
         case purchaseApproved, purchaseDenied
     }
 
     public static func status(_ card: OutboundCardData, status: String? = nil) -> Status? {
-        switch (card.kind, status ?? card.status) {
-        case (.call, "approved"): .callApproved
-        case (.call, "done"): .callDone
-        case (.call, "denied"): .callDenied
-        case (.call, "failed"): .callFailed
-        case (.purchase, "approved"): .purchaseApproved
-        case (.purchase, "denied"): .purchaseDenied
-        default: nil
+        let status = status ?? card.status
+        if card.isConversation {
+            switch status {
+            case "approved": return .callApproved
+            case "done": return card.result == nil ? .callInProgress : nil
+            case "denied": return .callDenied
+            case "failed": return card.result == nil ? .callFailed : nil
+            default: return nil
+            }
+        }
+        switch (card.kind, status) {
+        case (.call, "approved"): return .callApproved
+        case (.call, "done"): return .callDone
+        case (.call, "denied"): return .callDenied
+        case (.call, "failed"): return .callFailed
+        case (.purchase, "approved"): return .purchaseApproved
+        case (.purchase, "denied"): return .purchaseDenied
+        default: return nil
         }
     }
 
