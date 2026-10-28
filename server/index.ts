@@ -916,6 +916,7 @@ import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnector
 import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch } from "./connector-switch.ts";
 import { connectorNeed } from "../shared/engine-connectors.ts";
 import { forgetTurnReach, noteTurnReach, reachContributions, reachSummaryPrompt, registerReachProvider } from "./turn-reach.ts";
+import { turnConnectorsRecord } from "./turn-connectors.ts";
 import { remoteSessionReach } from "./remote-session-reach.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
 import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
@@ -22457,11 +22458,14 @@ async function startTurn(
         sections: prompt.sections,
         promptBytes: Buffer.byteLength(prompt.stable) + Buffer.byteLength(prompt.volatile),
         messages: transcript.length,
+        messageBytes: transcript.reduce((sum, entry) => sum + Buffer.byteLength(entry.text ?? ""), 0),
         toolsBytes: catalogBytes.tools,
         agentsBytes: catalogBytes.agents,
       });
       if (buckets) turnContextBuckets.set(threadId, buckets);
       else turnContextBuckets.delete(threadId);
+      // the dev panel's Connectors card: what this turn really reached
+      if (!warmOnly) store.patchTask(bot.id, threadId, { connectors: turnConnectorsFor(liveBot ?? bot, instance, speaker, integrations, turnPlace.principal, instance.adapter.capabilities.customMcp === true) });
       if (!warmOnly) turnTrace(threadId, "prompt-built");
       // the Files list's "last used": what this turn's prompt carried
       markWorkspaceUse(bot.id, promptSectionPaths(prompt.sections));
@@ -29465,6 +29469,46 @@ function turnReachPrompt(bot: BotRecord, instance: Parameters<typeof withholdHos
   });
 }
 
+/** The Connectors record of a direct turn (server/turn-connectors.ts): the
+ * servers this turn mounted by source, the person's own servers it could not
+ * use, the bot's plugins and the speaker's own engine account connectors,
+ * by the same payer-is-speaker rule as the reach section. Names only. */
+function turnConnectorsFor(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string; driverKind: string }, speaker: TurnSpeaker,
+  integrations: NonNullable<SendTurnInput["integrations"]>, principal: string | null, customMcp: boolean) {
+  const account = accountConnectorInput(bot, instance, speaker);
+  const claudeAi = claudeAiConnectorsForTurn(account);
+  let claudeConnectors: Array<{ name: string; status: string }> | undefined;
+  if (claudeAi) {
+    const owner = claudeAccountForPrincipal(connectorPrincipalFor(account));
+    const inventory = "unavailable" in owner ? undefined : claudeAiInventory.peek(owner.key, { cli: owner.cli, env: owner.env });
+    if (inventory && inventory.auth === "subscription") claudeConnectors = inventory.connectors;
+  }
+  const remote = remoteMcpServers();
+  const serverServers = Object.keys(engineMcpServers(bot)).map((name) => {
+    const spec = remote[name];
+    const auth = spec ? mcpOAuth.status(name, spec, bot.mcpAccounts?.[name])?.auth : undefined;
+    return { name, ...(auth ? { auth } : {}) };
+  });
+  let personalServers: string[] = [];
+  const person = principal?.trim().toLowerCase();
+  if (IDENTITY.kind === "perspicax" && person && customMcp && !personIntegrationsOff(person)) {
+    try {
+      personalServers = Object.entries(personConnections.servers(person)).filter(([, server]) => server.enabled).map(([name]) => name);
+    } catch { /* unreadable: none listed */ }
+  }
+  const plugins = (pluginDirsFor(bot, instance).pluginDirs ?? []).map((dir) => basename(dir));
+  if (!plugins.length && pluginSkillsForTurn(bot, instance)) plugins.push(...botPlugins.enabledPlugins(bot.id).map((plugin) => plugin.name));
+  return turnConnectorsRecord({
+    at: Date.now(),
+    mounted: Object.keys(integrations.custom ?? {}),
+    serverServers,
+    personalServers,
+    plugins,
+    claudeAi,
+    ...(claudeConnectors ? { claudeConnectors } : {}),
+    grokCloud: grokCloudConnectorsForTurn(account) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
+  });
+}
 function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): boolean {
   return claudeAiConnectorsForTurn(accountConnectorInput(bot, instance, speaker, via));
 }

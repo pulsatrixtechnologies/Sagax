@@ -11,12 +11,10 @@ import { t } from "@/lib/i18n";
 import { formatTick, niceTicks, parseChartSpec, type ChartSpec } from "@/lib/rich-blocks";
 import { BlockFrame, BlockHeader, ToolButton, useSkinScheme } from "./rich-ui";
 import { RichTable, type TableModel } from "./RichTable";
+import { CHART_PALETTE } from "@/lib/chart-palette";
 
 // Categorical slots, light and dark steps of the same eight hues.
-export const CHART_PALETTE = {
-  light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"],
-  dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
-} as const;
+export { CHART_PALETTE };
 
 const W = 640;
 const H = 280;

@@ -560,6 +560,8 @@ export interface Task {
   openedBy?: ThreadOpener;
   /** A parallel task: the conversation and request it answers. */
   parallelOf?: TaskParallelOf;
+  /** What the last direct turn could reach, by source (shared/turn-connectors.ts). */
+  connectors?: import("../../shared/turn-connectors").TurnConnectors;
   /** set when a bot closed this thread with close_thread; the sidebar folds
    * it out of the default list (still under "show all", never deleted) and
    * the server clears it when a new turn starts there */
@@ -603,12 +605,13 @@ export interface TaskUsage {
   lastTurn?: { input: number; output: number; cachedInput?: number; costUsd: number | null };
   /** what filled the model's window on the last model call, and the window's size when known.
    * promptBytes is the assembled system prompt, in bytes, when that turn measured it.
-   * buckets are the sizes that turn could measure (a message count, and bytes). */
+   * buckets are the sizes that turn could measure (a message count, and bytes:
+   * messageBytes is the size of those messages). */
   context?: {
     tokens: number;
     window?: number;
     promptBytes?: number;
-    buckets?: Partial<Record<"messages" | "tools" | "memory" | "skills" | "agents" | "prompt", number>>;
+    buckets?: Partial<Record<"messages" | "messageBytes" | "tools" | "memory" | "skills" | "agents" | "prompt", number>>;
   };
 }
 

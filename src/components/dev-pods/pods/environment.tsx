@@ -1,25 +1,19 @@
-// Environment: the computer the bot works on (its place and, when the
-// transcript or the server says it, Connecting or Ready), the folder its
-// shell runs in, and the repository and branch the server read there.
-import { useEffect, useRef, useState } from "react";
-import { FolderGit2, GitBranch, Monitor, MoreHorizontal, Plus, Radio, Settings } from "lucide-react";
+// Environment: where the bot works, on one line (the server, this computer
+// or the person's server environment, with Connecting or Ready when the
+// transcript or the server proves it), the folder its shell runs in, and the
+// repository and branch the server read there. Each line has its own menu.
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, Cloud, FolderGit2, GitBranch, Monitor, MoreHorizontal, Plus } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { api, type Bot } from "@/state/store";
 import { copyText } from "@/lib/copy-text";
-import { openExternalLink } from "@/lib/app-links";
 import { effectivePlace, isComputerPlace, placeLabelKey, type EffectivePlace } from "@/lib/place";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
-import { focusRemoteSessionLocal } from "@/lib/remote-session-focus";
 import { cn } from "@/lib/cn";
 import { approvalModeFor } from "../../../../shared/approval-mode";
-import { useMenuMotion } from "../../MenuMotion";
 import { LocalComputerAutoWarning } from "../../LocalComputerAutoWarning";
-import { focusRemoteSession } from "../../remote-session/remote-session-client";
-import { RemoteTakeover } from "../../remote-session/RemoteScreenCard";
-import { takeRemoteControl } from "../../remote-session/RemoteSessionsSection";
-import { useRemoteSessions } from "../../remote-session/use-remote-sessions";
 import { DEV_WINDOW } from "../detector";
-import { remoteControlOffer } from "../remote-control";
+import { DEV_MENU_ITEM, DevMenu } from "../DevMenu";
 import { registerDevPod, type DevPodContext } from "../registry";
 import { currentBranch, folderLabel, isParallelTaskBranch } from "../sources";
 
@@ -71,34 +65,13 @@ export function environmentWork(payload: unknown, threadId: string): { repo?: En
   return { ...(repo ? { repo } : {}), ...(branch ? { branch } : {}) };
 }
 
-const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover";
-
-/** A "..." menu anchored to its button. Closes on a choice, Escape, or a
- * press outside it. */
-function RowMenu({ open, label, onToggle, onClose, children }: { open: boolean; label: string; onToggle: () => void; onClose: () => void; children: React.ReactNode }) {
-  const motion = useMenuMotion(open);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!ref.current?.parentElement?.contains(event.target as Node)) onClose();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("pointerdown", onPointer, true);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer, true);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [open, onClose]);
+/** A "..." button and its menu, drawn outside the card (DevMenu). */
+function RowMenu({ open, label, onToggle, onClose, children, testId = "" }: { open: boolean; label: string; onToggle: () => void; onClose: () => void; children: ReactNode; testId?: string }) {
+  const button = useRef<HTMLButtonElement>(null);
   return (
-    <div className="relative shrink-0">
+    <>
       <button
+        ref={button}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -106,22 +79,20 @@ function RowMenu({ open, label, onToggle, onClose, children }: { open: boolean; 
         title={label}
         onClick={onToggle}
         className={MINI_BUTTON}
-        data-env-menu=""
+        data-env-menu={testId}
       >
         <MoreHorizontal size={14} />
       </button>
-      {motion.shown && (
-        <div ref={ref} role="menu" className={cn("absolute right-0 top-7 z-40 flex w-[210px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5", motion.className)} {...motion.exitProps}>
-          {children}
-        </div>
-      )}
-    </div>
+      <DevMenu open={open} anchorRef={button} label={label} onClose={onClose}>{children}</DevMenu>
+    </>
   );
 }
 
 const ROW = "flex min-h-[28px] items-center gap-2";
 const ROW_ICON = "shrink-0 text-ink-secondary";
 const MINI_BUTTON = "flex size-6 shrink-0 items-center justify-center rounded-md text-ink-secondary transition-colors hover:bg-hover hover:text-ink";
+/** Wraps instead of cutting: a place or a folder is read whole. */
+const ROW_TEXT = "min-w-0 flex-1 break-words text-ink [overflow-wrap:anywhere]";
 
 /** The branch as a person reads it: Sagax's parallel-task branches are named
  * after an id, so they read as what they are (the name stays in the tooltip). */
@@ -140,18 +111,22 @@ async function saveFolder(bot: Bot, cwd: string | null): Promise<void> {
   await api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ cwd }) });
 }
 
+/** The places a person picks here, on the bot's own Works on setting. */
+const PLACE_CHOICES = ["cloud", "local"] as const;
+
+function PlaceIcon({ place }: { place: EffectivePlace }) {
+  const Icon = place === "cloud" ? Cloud : Monitor;
+  return <Icon size={14} strokeWidth={1.75} aria-hidden="true" className={ROW_ICON} />;
+}
+
 function EnvironmentBody({ data, ctx }: { data: EnvironmentData; ctx: DevPodContext }) {
-  const [menu, setMenu] = useState<"folder" | "branch" | null>(null);
+  const [menu, setMenu] = useState<"place" | "folder" | "branch" | null>(null);
   const [work, setWork] = useState<{ repo?: EnvironmentRepo; branch?: string }>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [placeWarning, setPlaceWarning] = useState(false);
-  const [controlling, setControlling] = useState<string | null>(null);
   const organization = usePerspicaxOrg() !== null;
-  const { rows: sessions } = useRemoteSessions(ctx.bot.id);
-  const remote = remoteControlOffer(ctx.messages, sessions);
-  const controlled = sessions.find((row) => row.id === controlling)
-    ?? ctx.messages.find((message) => message.remoteSession?.id === controlling)?.remoteSession;
-  const close = () => setMenu(null);
+  const close = useCallback(() => setMenu(null), []);
+  const toggle = (which: "place" | "folder" | "branch") => () => setMenu((current) => (current === which ? null : which));
   const savePlace = (place: "local" | "cloud", acknowledged = false) => {
     if (ctx.bot.computer === place) return;
     if (place === "local" && !acknowledged && approvalModeFor(ctx.bot) === "auto") {
@@ -163,24 +138,6 @@ function EnvironmentBody({ data, ctx }: { data: EnvironmentData; ctx: DevPodCont
       botId: ctx.bot.id,
       patch: { computer: place, ...(place === "local" && acknowledged ? { acknowledgeLocalAuto: true } : {}) },
     });
-  };
-  const openRemote = () => {
-    if (!remote) return;
-    if (remote.link) {
-      void openExternalLink(remote.link);
-      return;
-    }
-    if (remote.sessionId && remote.controllable) {
-      takeRemoteControl({
-        botId: ctx.bot.id,
-        sessionId: remote.sessionId,
-        focusLocal: focusRemoteSessionLocal,
-        focusRemote: focusRemoteSession,
-        openWindow: () => setControlling(remote.sessionId!),
-      });
-      return;
-    }
-    if (remote.messageId) ctx.dispatch({ type: "focusMessage", threadId: ctx.bot.threadId, messageId: remote.messageId });
   };
   const folder = data.folder;
   const local = localFolder(folder);
@@ -218,101 +175,73 @@ function EnvironmentBody({ data, ctx }: { data: EnvironmentData; ctx: DevPodCont
 
   return (
     <div className="flex flex-col gap-1">
-      <div className={cn(ROW, "gap-1")} data-env-place="">
-        <span className="sr-only">{t("devPods.environment.savePlace")}</span>
-        {(["local", "cloud"] as const).map((place) => (
-          <button
-            key={place}
-            type="button"
-            data-env-place={place}
-            aria-pressed={ctx.bot.computer === place}
-            onClick={() => savePlace(place)}
-            className={cn("min-w-0 flex-1 truncate rounded-md px-1.5 py-0.5 text-left text-[12px]", ctx.bot.computer === place ? "bg-selected text-ink" : "text-ink-secondary hover:bg-hover hover:text-ink")}
-          >
-            {t(placeLabelKey(place, organization))}
+      <div className={ROW} data-env-place="">
+        <PlaceIcon place={data.place} />
+        <span className="sr-only">{t("devPods.environment.where")}</span>
+        <span data-env-place-label="" className={ROW_TEXT}>{data.placeLabel}</span>
+        {data.state && (
+          <span data-env-state={data.state} className="flex shrink-0 items-center gap-1.5 text-[12px] text-ink-secondary">
+            <span aria-hidden="true" className={cn("size-1.5 rounded-full", data.state === "ready" ? "bg-success" : "animate-pulse bg-warning")} />
+            {t(data.state === "ready" ? "devPods.environment.ready" : "devPods.environment.connecting")}
+          </span>
+        )}
+        <RowMenu open={menu === "place"} label={t("devPods.environment.placeMenu")} onToggle={toggle("place")} onClose={close} testId="place">
+          {PLACE_CHOICES.map((place) => (
+            <button
+              key={place}
+              type="button"
+              role="menuitemradio"
+              aria-checked={ctx.bot.computer === place}
+              data-env-place-choice={place}
+              className={DEV_MENU_ITEM}
+              onClick={run(() => savePlace(place))}
+            >
+              <span className="min-w-0 flex-1">{t(placeLabelKey(place, organization))}</span>
+              {ctx.bot.computer === place && <Check size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />}
+            </button>
+          ))}
+          <div aria-hidden="true" className="mx-2 my-0.5 h-px bg-hairline-weak" />
+          <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => ctx.dispatch({ type: "toggleSettings", open: true, section: "worksOn", botId: ctx.bot.id }))}>
+            {t("devPods.environment.settings")}
           </button>
-        ))}
+        </RowMenu>
       </div>
-      {data.computer && (
-        <div className={ROW} data-env-computer="">
-          <Monitor size={14} strokeWidth={1.75} aria-hidden="true" className={ROW_ICON} />
-          <span className="min-w-0 flex-1 truncate text-ink">{data.placeLabel}</span>
-          {data.state && (
-            <span data-env-state={data.state} className="flex shrink-0 items-center gap-1.5 text-[12px] text-ink-secondary">
-              <span aria-hidden="true" className={cn("size-1.5 rounded-full", data.state === "ready" ? "bg-success" : "animate-pulse bg-warning")} />
-              {t(data.state === "ready" ? "devPods.environment.ready" : "devPods.environment.connecting")}
-            </span>
-          )}
-          <button type="button" className={MINI_BUTTON} onClick={() => ctx.dispatch({ type: "toggleSettings", open: true, section: "worksOn", botId: ctx.bot.id })} aria-label={t("devPods.environment.settings")} title={t("devPods.environment.settings")}>
-            <Settings size={13} />
-          </button>
-        </div>
-      )}
       <div className={ROW} data-env-folder="">
         <FolderGit2 size={14} strokeWidth={1.75} aria-hidden="true" className={ROW_ICON} />
-        <span className="min-w-0 flex-1 truncate text-ink" title={folder ?? undefined}>
+        <span className="sr-only">{t("devPods.environment.folder")}</span>
+        <span className={ROW_TEXT} title={folder ?? undefined}>
           {folder ? folderLabel(folder) : <span className="text-ink-secondary">{t("devPods.environment.ownFolder")}</span>}
         </span>
-        <RowMenu open={menu === "folder"} label={t("devPods.environment.folderMenu")} onToggle={() => setMenu(menu === "folder" ? null : "folder")} onClose={close}>
-          {local && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void reveal())}>{t("devPods.environment.showInFinder")}</button>}
-          {folder && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void copyText(folder))}>{t("devPods.environment.copyPath")}</button>}
-          {local && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void pickFolder("change"))}>{t("devPods.environment.changeFolder")}</button>}
-          <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void pickFolder("add"))}>{t("devPods.environment.addFolder")}</button>
-          {local && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void openTerminal(local))}>{t("devPods.environment.openTerminal")}</button>}
+        <RowMenu open={menu === "folder"} label={t("devPods.environment.folderMenu")} onToggle={toggle("folder")} onClose={close} testId="folder">
+          {local && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void reveal())}>{t("devPods.environment.showInFinder")}</button>}
+          {folder && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void copyText(folder))}>{t("devPods.environment.copyPath")}</button>}
+          {local && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void pickFolder("change"))}>{t("devPods.environment.changeFolder")}</button>}
+          <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void pickFolder("add"))}>{t("devPods.environment.addFolder")}</button>
+          {local && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void openTerminal(local))}>{t("devPods.environment.openTerminal")}</button>}
         </RowMenu>
       </div>
       {work.repo && (
         <div className={cn(ROW, "pl-[22px]")} data-env-repo="">
           <span className="sr-only">{t("devPods.environment.repository")}</span>
-          <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-secondary" title={work.repo.name}>{work.repo.name}</code>
+          <code className="min-w-0 flex-1 break-all font-mono text-[12px] text-ink-secondary" title={work.repo.name}>{work.repo.name}</code>
         </div>
       )}
       {branch && (
         <div className={ROW} data-env-branch="">
           <GitBranch size={14} strokeWidth={1.75} aria-hidden="true" className={ROW_ICON} />
           <span className="sr-only">{t("devPods.environment.branch")}</span>
-          <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink" title={branch}>{environmentBranchLabel(branch)}</code>
-          <RowMenu open={menu === "branch"} label={t("devPods.environment.branchMenu")} onToggle={() => setMenu(menu === "branch" ? null : "branch")} onClose={close}>
-            <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void copyText(branch))}>{t("devPods.environment.copyBranch")}</button>
-            {local && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void openTerminal(local))}>{t("devPods.environment.openTerminal")}</button>}
+          <code className="min-w-0 flex-1 break-all font-mono text-[12px] text-ink" title={branch}>{environmentBranchLabel(branch)}</code>
+          <RowMenu open={menu === "branch"} label={t("devPods.environment.branchMenu")} onToggle={toggle("branch")} onClose={close} testId="branch">
+            <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void copyText(branch))}>{t("devPods.environment.copyBranch")}</button>
+            {local && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void openTerminal(local))}>{t("devPods.environment.openTerminal")}</button>}
           </RowMenu>
-        </div>
-      )}
-      {remote && (
-        <div className={ROW} data-env-remote="" data-env-remote-socket={remote.socketOnly ? "1" : "0"}>
-          <Radio size={14} strokeWidth={1.75} aria-hidden="true" className={ROW_ICON} />
-          <span className="min-w-0 flex-1 truncate text-ink">{t("devPods.environment.remoteControl")}</span>
-          {remote.controllable && remote.sessionId && (
-            <button
-              type="button"
-              data-env-remote-toggle=""
-              aria-pressed={controlling === remote.sessionId}
-              onClick={() => {
-                if (controlling === remote.sessionId) setControlling(null);
-                else takeRemoteControl({
-                  botId: ctx.bot.id,
-                  sessionId: remote.sessionId!,
-                  focusLocal: focusRemoteSessionLocal,
-                  focusRemote: focusRemoteSession,
-                  openWindow: () => setControlling(remote.sessionId!),
-                });
-              }}
-              className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink"
-            >
-              {t("devPods.environment.remoteToggle")}
-            </button>
-          )}
-          <button type="button" data-env-remote-open="" onClick={openRemote} className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink">{t("devPods.environment.remoteOpen")}</button>
-          {remote.copy && (
-            <button type="button" data-env-remote-copy="" onClick={() => void copyText(remote.copy!)} className="rounded-md px-1.5 py-0.5 text-[12px] text-ink-secondary hover:bg-hover hover:text-ink">{t("devPods.environment.remoteCopy")}</button>
-          )}
         </div>
       )}
       {notice && <p data-env-notice="" className="px-1 text-[12px] text-danger">{notice}</p>}
       {!folder && (
         <button type="button" data-env-add="" onClick={() => void pickFolder("add")} className={cn(ROW, "rounded-md px-1 text-ink-secondary hover:bg-hover hover:text-ink")}>
           <Plus size={14} strokeWidth={1.75} aria-hidden="true" className={ROW_ICON} />
-          <span className="min-w-0 flex-1 truncate">{t("devPods.environment.addFolder")}</span>
+          <span className="min-w-0 flex-1">{t("devPods.environment.addFolder")}</span>
         </button>
       )}
       <LocalComputerAutoWarning
@@ -320,7 +249,6 @@ function EnvironmentBody({ data, ctx }: { data: EnvironmentData; ctx: DevPodCont
         onCancel={() => setPlaceWarning(false)}
         onConfirm={() => { setPlaceWarning(false); savePlace("local", true); }}
       />
-      {controlled && <RemoteTakeover botId={ctx.bot.id} view={controlled} state="running" onClose={() => setControlling(null)} />}
     </div>
   );
 }

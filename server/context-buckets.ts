@@ -5,7 +5,7 @@
 // the model's window.
 import { AGENT_API_TOOL_NAMES, availableTools, catalogProfileFromEnv } from "./drivers/agents-catalog.ts";
 
-export const CONTEXT_BUCKET_KEYS = ["messages", "tools", "memory", "skills", "agents", "prompt"] as const;
+export const CONTEXT_BUCKET_KEYS = ["messages", "messageBytes", "tools", "memory", "skills", "agents", "prompt"] as const;
 export type ContextBucketKey = typeof CONTEXT_BUCKET_KEYS[number];
 export type ContextBuckets = Partial<Record<ContextBucketKey, number>>;
 
@@ -44,11 +44,13 @@ export function toolDefinitionBytes(env: NodeJS.ProcessEnv | undefined): { tools
 }
 
 /** The buckets a turn can actually name. Sections are the prompt parts
- * already built (their byte sizes). `messages` is a count, not a byte size. */
+ * already built (their byte sizes). `messages` is a count, not a byte size;
+ * `messageBytes` is the size of the messages the turn handed over. */
 export function measureContextBuckets(input: {
   sections?: ReadonlyArray<{ id: string; bytes?: number; text?: string }>;
   promptBytes?: number;
   messages?: number;
+  messageBytes?: number;
   toolsBytes?: number;
   agentsBytes?: number;
 }): ContextBuckets | undefined {
@@ -61,6 +63,7 @@ export function measureContextBuckets(input: {
   }
   return contextBuckets({
     messages: input.messages,
+    messageBytes: input.messageBytes,
     tools: input.toolsBytes,
     memory,
     skills,

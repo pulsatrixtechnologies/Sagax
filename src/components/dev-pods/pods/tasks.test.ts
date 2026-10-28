@@ -34,6 +34,15 @@ describe("background tasks", () => {
     expect(finishedCount(tasks)).toBe(1);
   });
 
+  it("points at the task's result once it reported back in this conversation", () => {
+    const [entry] = backgroundTasks({
+      bot: bot([task("done-1", "Old", link("conv", { outcome: "done", reportedAt: 4_000 }))]),
+      task: undefined,
+      messages: [{ id: "r1", role: "bot", kind: "text", text: "done", at: 5, parallelTask: { threadId: "done-1", title: "Old", requestMessageId: "m", role: "result" } }] as never,
+    }, 5_000);
+    expect(entry).toMatchObject({ threadId: "done-1", resultMessageId: "r1" });
+  });
+
   it("is empty when the conversation has no background task", () => {
     expect(backgroundTasks({ bot: bot([]), task: undefined }, 1)).toEqual([]);
   });

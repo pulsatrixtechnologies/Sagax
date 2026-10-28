@@ -363,11 +363,7 @@ devPods.changes.autoFix
 devPods.changes.dismiss
 devPods.changes.draft
 devPods.changes.mergeReady
-devPods.context.notSplit
-devPods.context.systemPrompt
 devPods.dismiss
-devPods.environment.remoteCopy
-devPods.environment.remoteOpen
 devPods.menu.hide
 devPods.tasks.finished
 engineSetup.claude.start

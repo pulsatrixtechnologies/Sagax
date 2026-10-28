@@ -2,14 +2,14 @@
 // from its own gh and git rows and the pull request links in its replies.
 // The menu opens the link or copies it; a local commit with no link offers
 // its place in the conversation and its id.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { GitCommitHorizontal, GitPullRequest, MoreHorizontal } from "lucide-react";
 import { openExternalLink } from "@/lib/app-links";
 import { copyText } from "@/lib/copy-text";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
-import { useMenuMotion } from "../../MenuMotion";
+import { DEV_MENU_ITEM, DevMenu } from "../DevMenu";
 import { registerDevPod, type DevPodContext } from "../registry";
 import { devChanges, type DevChange } from "../sources";
 import type { LocaleKey } from "@/locales";
@@ -37,38 +37,15 @@ export interface PullStats {
   autoMerge?: boolean;
 }
 
-const MENU_ITEM = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover";
-
-function ChangeMenu({ change, ctx, open, onClose }: { change: DevChange; ctx: DevPodContext; open: boolean; onClose: () => void }) {
-  const motion = useMenuMotion(open);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!ref.current?.parentElement?.contains(event.target as Node)) onClose();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("pointerdown", onPointer, true);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer, true);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [open, onClose]);
-  if (!motion.shown) return null;
+function ChangeMenu({ change, ctx, open, anchorRef, onClose }: { change: DevChange; ctx: DevPodContext; open: boolean; anchorRef: RefObject<HTMLButtonElement | null>; onClose: () => void }) {
   const run = (action: () => void) => () => { onClose(); action(); };
   return (
-    <div ref={ref} role="menu" className={cn("absolute right-0 top-7 z-40 flex w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5", motion.className)} {...motion.exitProps}>
-      {change.url && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void openExternalLink(change.url!))}>{t("devPods.changes.open")}</button>}
-      {change.url && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void copyText(change.url!))}>{t("devPods.changes.copy")}</button>}
-      <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => ctx.dispatch({ type: "focusMessage", threadId: ctx.bot.threadId, messageId: change.messageId }))}>{t("devPods.changes.show")}</button>
-      {change.sha && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(() => void copyText(change.sha!))}>{t("devPods.changes.copySha")}</button>}
-    </div>
+    <DevMenu open={open} anchorRef={anchorRef} label={t("devPods.changes.more", { title: change.title })} onClose={onClose} width={200}>
+      {change.url && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void openExternalLink(change.url!))}>{t("devPods.changes.open")}</button>}
+      {change.url && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void copyText(change.url!))}>{t("devPods.changes.copy")}</button>}
+      <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => ctx.dispatch({ type: "focusMessage", threadId: ctx.bot.threadId, messageId: change.messageId }))}>{t("devPods.changes.show")}</button>
+      {change.sha && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(() => void copyText(change.sha!))}>{t("devPods.changes.copySha")}</button>}
+    </DevMenu>
   );
 }
 
@@ -85,6 +62,8 @@ function ChangeRow({ change, ctx, stats, notice, onAct }: {
   onAct?: (action: "draft" | "close" | "autofix" | "merge-ready" | "archive") => void;
 }) {
   const [open, setOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setOpen(false), []);
   const Icon = change.kind === "pull" ? GitPullRequest : GitCommitHorizontal;
   const where = change.kind === "pull"
     ? `${change.repo ?? ""} #${change.number}`
@@ -120,6 +99,7 @@ function ChangeRow({ change, ctx, stats, notice, onAct }: {
         {notice && <span data-change-notice="" className="text-[12px] text-danger">{notice}</span>}
       </div>
       <button
+        ref={menuButton}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -130,7 +110,7 @@ function ChangeRow({ change, ctx, stats, notice, onAct }: {
       >
         <MoreHorizontal size={14} />
       </button>
-      <ChangeMenu change={change} ctx={ctx} open={open} onClose={() => setOpen(false)} />
+      <ChangeMenu change={change} ctx={ctx} open={open} anchorRef={menuButton} onClose={close} />
     </li>
   );
 }
