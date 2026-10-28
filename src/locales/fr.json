@@ -1021,7 +1021,6 @@
   "prefImport.error": "Ces préférences n'ont pas pu être lues.",
   "prefImport.noPrimary": "Vous n'avez pas encore de bot principal.",
   "botTasks.title": "Tâches",
-  "botTasks.empty": "Aucune tâche en cours. Demandez à votre bot d'en noter une, par exemple « Ajoute une tâche : renouveler le domaine ».",
   "botTasks.waiting": "Vous attend",
   "botTasks.doing": "En cours",
   "botTasks.done": "Terminées",

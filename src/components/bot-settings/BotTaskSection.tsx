@@ -262,6 +262,10 @@ export function BotTaskSection({ botId }: { botId: string }) {
     );
   };
 
+  // Nothing to show, nothing rendered: no title, no empty line. The section
+  // stays while a task is open in place, and for the server-update and error lines.
+  if (state === "ok" && total === 0 && !open) return null;
+
   return (
     <section data-bot-settings-section="task-list" aria-labelledby={`bot-tasks-${botId}`} className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
@@ -270,9 +274,6 @@ export function BotTaskSection({ botId }: { botId: string }) {
       </div>
       {state === "needsUpdate" ? <p data-bot-tasks-needs-update="true" className="text-[12px] text-ink-tertiary">{t("serverRoute.needsUpdate")}</p> : null}
       {state === "failed" ? <p className="text-[12px] text-danger">{t("botTasks.error")}</p> : null}
-      {state !== "needsUpdate" && tasks && total === 0 ? (
-        <p data-bot-tasks-empty="true" className="text-[12px] leading-4 text-ink-tertiary">{t("botTasks.empty")}</p>
-      ) : null}
       {state !== "needsUpdate" && listed && total > 0 ? (
         <ul data-bot-task-list="true" className={cn(GROUPED_CARD, listed.some((task) => task.state === "waiting") && "border-accent/40")}>{listed.map(row)}</ul>
       ) : null}

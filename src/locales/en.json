@@ -1241,7 +1241,6 @@
   "prefImport.error": "Those preferences could not be read.",
   "prefImport.noPrimary": "You have no primary bot yet.",
   "botTasks.title": "Tasks",
-  "botTasks.empty": "No task in progress. Ask your bot to note one, for example “Add a task: renew the domain”.",
   "botTasks.waiting": "Needs you",
   "botTasks.doing": "In progress",
   "botTasks.done": "Done",

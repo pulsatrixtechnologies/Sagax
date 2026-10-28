@@ -67,7 +67,8 @@ describe("bot task list against an older server", () => {
   it("shows an empty list on the current server, and keeps the error for a real failure", async () => {
     vi.stubGlobal("fetch", answer(200, { tasks: [] }));
     await mount(createElement(BotTaskSection, { botId: "bot-1" }));
-    expect(host.querySelector("[data-bot-tasks-empty]")?.textContent).toContain("Ask your bot to note one");
+    expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
+    expect(host.textContent).toBe("");
     expect(host.querySelector(".text-danger")).toBeNull();
 
     act(() => root.unmount());
@@ -106,7 +107,7 @@ describe("bot task list stays live", () => {
       const fetchMock = vi.fn(async () => new Response(JSON.stringify({ tasks: store.list("bot-1") }), { status: 200, headers: { "content-type": "application/json" } }));
       vi.stubGlobal("fetch", fetchMock);
       await mount(createElement(BotTaskSection, { botId: "bot-1" }));
-      expect(host.querySelector("[data-bot-tasks-empty]")).not.toBeNull();
+      expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
 
       // the bot's task_list tool: add one doing, one waiting, and finish a third
       const internal = createBotTaskInternalRoutes({ tasks: () => store, ownsThread: () => true, speaker: () => "pr_a" });
@@ -129,7 +130,7 @@ describe("bot task list stays live", () => {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 
       expect(frames.every((frame) => frame.kind === "bot.tasks" && frame.botId === "bot-1" && frame.audience === "pr_a")).toBe(true);
-      expect(host.querySelector("[data-bot-tasks-empty]")).toBeNull();
+      expect(host.querySelector("[data-bot-settings-section]")).not.toBeNull();
       // one list: what waits for the person first, then in progress; the task done at once is not listed
       const order = Array.from(host.querySelectorAll("[data-bot-task]")).map((node) => node.getAttribute("data-bot-task"));
       expect(order).toEqual(["waiting", "doing"]);
@@ -232,12 +233,13 @@ describe("bot task interaction", () => {
     }
   });
 
-  it("shows one discreet line, no card and no group, when nothing is in progress", async () => {
+  it("hides the whole section, title included, when nothing is in progress", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ tasks: [tasks[2]] }), { status: 200, headers: { "content-type": "application/json" } })));
     await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+    expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
     expect(host.querySelector("[data-bot-task]")).toBeNull();
-    expect(host.querySelector("[data-bot-task-list]")).toBeNull();
-    expect(host.querySelector("[data-bot-tasks-empty]")?.textContent).toContain("No task in progress");
+    expect(host.querySelector("h2")).toBeNull();
+    expect(host.textContent).toBe("");
   });
 
   it("opens a task in place with its note and history, and Escape gives the focus back", async () => {

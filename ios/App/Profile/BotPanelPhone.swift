@@ -234,9 +234,7 @@ private struct PhoneBotPanelContent: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
                     // the desktop's Details > Tasks: the to-do list the bot keeps
-                    BotTaskListCard(bot: current) { openThread($0) }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
+                    BotTaskListCard(bot: current, openThread: { openThread($0) }, insets: true)
                     AnyView(overviewCard)
                         .padding(.top, 8)
                     if let mailRow {

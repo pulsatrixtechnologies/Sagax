@@ -82027,12 +82027,6 @@
         "fr": { "stringUnit": { "state": "translated", "value": "La liste de tâches n'a pas pu être chargée." } }
       }
     },
-    "No task in progress. Ask your bot to note one, for example \"Add a task: renew the domain\".": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No task in progress. Ask your bot to note one, for example \"Add a task: renew the domain\"." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Aucune tâche en cours. Demandez à votre bot d'en noter une, par exemple « Ajoutez une tâche : renouveler le domaine »." } }
-      }
-    },
     "botTasks.state.waiting": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Needs you" } },

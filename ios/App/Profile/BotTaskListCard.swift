@@ -84,6 +84,8 @@ struct BotTaskListCard: View {
     let bot: Bot
     /// Opens a conversation of this bot (the task's, else the bot's main one).
     let openThread: (String) -> Void
+    /// The phone panel's own margins, only while the section shows.
+    var insets = false
 
     @State private var tasks: [BotTodo]?
     @State private var load: Load = .ok
@@ -99,15 +101,23 @@ struct BotTaskListCard: View {
 
     private var listed: [BotTodo] { BotTodoList.listed(tasks ?? [], finishing: finishing) }
 
+    /// Nothing in progress, nothing shown: the whole section is hidden (no
+    /// title, no empty line). The update and error lines still show.
+    private var isHidden: Bool { load == .ok && listed.isEmpty }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tasks")
-                .font(Theme.Font.label)
-                .foregroundStyle(Theme.textTertiary)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.horizontal, 4)
-            content
+            if !isHidden {
+                Text("Tasks")
+                    .font(Theme.Font.label)
+                    .foregroundStyle(Theme.textTertiary)
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, 4)
+                content
+            }
         }
+        .padding(.horizontal, insets && !isHidden ? 16 : 0)
+        .padding(.top, insets && !isHidden ? 12 : 0)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("panel-tasks")
         .task(id: "\(session.connection?.id ?? "")|\(bot.id)") {
@@ -162,20 +172,12 @@ struct BotTaskListCard: View {
         case .failed where tasks == nil:
             note("The task list could not be loaded.", color: Theme.danger)
         default:
-            if let tasks {
+            if tasks != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     if load == .failed {
                         note("The task list could not be loaded.", color: Theme.danger)
                     }
-                    if listed.isEmpty {
-                        // one discreet line, no card
-                        Text("No task in progress. Ask your bot to note one, for example \"Add a task: renew the domain\".")
-                            .font(Theme.Font.label)
-                            .foregroundStyle(Theme.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 4)
-                            .accessibilityIdentifier("panel-tasks-empty")
-                    } else {
+                    if !listed.isEmpty {
                         rows(listed)
                             .accessibilityIdentifier("panel-tasks-list")
                     }
