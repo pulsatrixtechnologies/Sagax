@@ -1295,6 +1295,7 @@ import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type 
 import { DesktopLocalModels } from "./desktop-local-models.ts";
 import { withDesktopModelPerson } from "./desktop-model-grant.ts";
 import { isDesktopInjectModel, isLocalModelId, setDesktopInjectModels } from "./drivers/local-inject.ts";
+import { isPiLocalModel } from "./pi-local-model.ts";
 import { defaultTurnPayerMode, effectiveTurnPayerMode, type TurnPayerMode } from "../shared/turn-payer.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
@@ -28316,6 +28317,11 @@ function warmPayerAccountModels(bot: BotRecord, speaker: TurnSpeaker): void {
  * (server/turn-model-routing.ts has the order). Null when the bot's model
  * runs as it is, or nothing does (the access card then says what to do).
  * A routine never comes here: it runs on its owner's credentials. */
+/** #1422 (pi-local-model.ts) for a bot's selection on a registered engine. */
+function piLocalModel(selection: { instanceId: string; model?: string | null }): boolean {
+  return isPiLocalModel(registry.get(selection.instanceId)?.driverKind, selection.model);
+}
+
 function speakerTurnSelection(bot: BotRecord, speaker: TurnSpeaker): TurnModelSwitch | null {
   if (IDENTITY.kind !== "perspicax" || bot.modelSelection.auto === true || speaker.origin !== "person") return null;
   const person = speaker.principalId?.trim().toLowerCase() || "";
@@ -28345,6 +28351,7 @@ function speakerTurnSelection(bot: BotRecord, speaker: TurnSpeaker): TurnModelSw
       return ids && hostedModels ? ids.filter((model) => hostedModels!.allows({ instanceId: selection.instanceId, model })) : ids;
     },
     exempt: (selection) => isDesktopInjectModel(selection.model)
+      || piLocalModel(selection)
       || registry.get(selection.instanceId)?.models.options.find((option) => option.id === selection.model)?.custom === true,
     effortOn: (selection, model) => {
       const instance = registry.get(selection.instanceId);
@@ -28661,7 +28668,13 @@ function orgRefusalOf(plan: Extract<EngineCredentialPlan, { ok: false }>, speake
 function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): OrgAccessRefusal | null {
   if (IDENTITY.kind !== "perspicax") return null;
   const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
-  return plan.ok ? null : orgRefusalOf(plan, speaker);
+  if (plan.ok) return null;
+  const refusal = orgRefusalOf(plan, speaker);
+  // #1422: a pi model on a local host runs on that machine's own server and
+  // needs no key of the person who pays. Policy refusals still hold.
+  if (refusal.cause === "no_credentials" && instance.driverKind === "piAgent"
+    && piLocalModel({ instanceId: instance.instanceId, model: bot.modelSelection.model })) return null;
+  return refusal;
 }
 /** A turn admitted with a person's key that Perspicax no longer gives (and
  * nothing after it serves): the dispatch stops with the access card. */
@@ -28682,6 +28695,8 @@ function principalLoginDir(principalId: string, driver: SubscriptionDriver): str
  * at dispatch; undefined in solo mode. Throws EngineAccessLost. */
 async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): Promise<TurnAccess | undefined> {
   if (IDENTITY.kind !== "perspicax") return undefined;
+  // #1422: a local pi model uses the machine's own pi setup, no key to fetch.
+  if (instance.driverKind === "piAgent" && piLocalModel({ instanceId: instance.instanceId, model: bot.modelSelection.model })) return undefined;
   const input = orgEngineInput(bot, instance, speaker);
   const outcome = await materializeEngineAccess(input, resolveEngineAccess(input), {
     dataDir: DATA_DIR,
@@ -38164,6 +38179,9 @@ function orgEngineAllowRefusal(instanceId: string, payer?: string | null): strin
  * it runs when the turn's payer pays with their own subscription or key. */
 function orgEngineTurnRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): string | undefined {
   if (consoleEngineAllowed(instance.instanceId)) return undefined;
+  // #1422: a local pi model costs the organization nothing and stays on the
+  // person's machine: no admin allowance is needed for it.
+  if (instance.driverKind === "piAgent" && piLocalModel({ instanceId: instance.instanceId, model: bot.modelSelection.model })) return undefined;
   return paidByPerson(resolveEngineAccess(orgEngineInput(bot, instance, speaker))) ? undefined : ORG_ENGINE_NOT_ALLOWED;
 }
 /** #1098: this person's own subscription or key would pay for their turn
