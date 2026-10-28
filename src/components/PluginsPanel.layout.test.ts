@@ -30,10 +30,10 @@ describe("Plugins panel views", () => {
   };
   const page = (overrides: Partial<ConnectAppsViewProps> = {}) => renderToStaticMarkup(createElement(ConnectAppsView, {
     tab: "discover", onTab: noop, counts: { installed: 2 }, refreshing: false, onRefresh: noop,
-    discover: createElement(DiscoverView, discoverProps), installed: "INSTALLED", accounts: "ACCOUNTS", sources: "SOURCES", ...overrides,
+    discover: createElement(DiscoverView, discoverProps), installed: "INSTALLED", providers: "PROVIDERS", pages: "PAGES", sources: "SOURCES", ...overrides,
   }));
 
-  it("one page: Connect Apps, then the four tabs with Discover first and open, the count on Installed", () => {
+  it("one page: Connect Apps, then the five tabs with Discover first and open, the count on Installed", () => {
     const html = page();
     expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>/);
     expect(html).not.toContain("data-plugins-connected");
@@ -42,13 +42,13 @@ describe("Plugins panel views", () => {
     expect(html).not.toContain("Manage plugins and skills");
     expect(html).toMatch(/aria-label="Installed, 2 connected"[^>]*data-plugins-tab="installed"/);
     const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*><span data-plugins-tab-label="[^"]*">([^<]+)</g)].map((match) => [match[1], match[2]]);
-    expect(tabs).toEqual([["discover", "Discover"], ["installed", "Installed"], ["accounts", "My accounts"], ["sources", "Sources"]]);
+    expect(tabs).toEqual([["discover", "Discover"], ["installed", "Installed"], ["providers", "Providers"], ["pages", "Pages"], ["sources", "Sources"]]);
     expect(html).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
     expect(html).toMatch(/id="plugins-title"[\s\S]*?role="tablist"[\s\S]*?placeholder="Search across apps and skills"/);
     expect(html).not.toContain("INSTALLED");
     expect(page({ tab: "sources" })).toContain("SOURCES");
     // a tab left out is not drawn; a tab not offered falls back to Discover
-    const noSources = page({ tabs: ["discover", "installed", "accounts"], tab: "sources" });
+    const noSources = page({ tabs: ["discover", "installed", "providers", "pages"], tab: "sources" });
     expect(noSources).not.toContain('data-plugins-tab="sources"');
     expect(noSources).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
   });

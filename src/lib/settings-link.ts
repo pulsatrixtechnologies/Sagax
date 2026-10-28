@@ -54,7 +54,7 @@ export function settingsSectionLabel(section: AppSettingsSection): string {
 
 type SettingsDispatch = (action:
   | { type: "toggleAppSettings"; open: true; section: AppSettingsSection }
-  | { type: "togglePlugins"; open: true; page: "pages" | "sources" }) => void;
+  | { type: "togglePlugins"; open: true; page: "pages" | "providers" | "sources" }) => void;
 
 /** Opens Settings on a section, and a card when the sentence points at one.
  * A section that became a card of another page opens that card. */

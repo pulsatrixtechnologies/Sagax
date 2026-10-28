@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Headless screenshots of where GitHub lives in Connect apps (Playwright, no
- * window): the Sources tab, My accounts (its GitHub service when there is
+ * window): the Sources tab, Providers (its GitHub service when there is
  * one) and the GitHub entry of Installed, for an organization member and an
  * admin, light and dark. `--fail` answers GET /api/me/connections with a bare
  * proxy 502 (no JSON body, "Bad Gateway"), what a Sagax restart behind the
@@ -73,11 +73,11 @@ try {
         if (/Bad Gateway|\b502\b/.test(text)) raw.push(`${role}-${scheme}-${name}`);
         await page.locator('[role="dialog"]').first().screenshot({ path: join(outDir, `${prefix}-${role}-${name}-${scheme}.png`) });
       };
-      for (const tab of ["sources", "accounts"]) {
+      for (const tab of ["sources", "providers"]) {
         if (!await page.locator(`[data-plugins-tab="${tab}"]`).count()) continue;
         await page.click(`[data-plugins-tab="${tab}"]`);
         await page.waitForSelector(`[data-plugins-manage="${tab}"]`);
-        if (tab === "accounts" && await page.locator('[data-accounts-service-pill="github"]').count()) await page.click('[data-accounts-service-pill="github"]');
+        if (tab === "providers" && await page.locator('[data-accounts-service-pill="github"]').count()) await page.click('[data-accounts-service-pill="github"]');
         // with --fail: past the asks again (1.5 + 3 + 6 s), what stays on screen
         if (fail) await page.waitForTimeout(12_000);
         await shot(tab);

@@ -16,7 +16,7 @@ import { buildPluginItems } from "@/lib/plugins-model";
 import { installedEntries, privateSkills } from "@/lib/installed-model";
 import { GROK_CLOUD_CONNECTORS } from "../../../shared/grok-cloud-connectors";
 import { bringsLabel, InstalledView, type InstalledViewProps } from "./InstalledView";
-import { ConnectAppsView, connectedCounts } from "./ConnectAppsView";
+import { ConnectAppsView, connectedCounts, normalizeConnectAppsTab, CONNECT_APPS_TABS, connectAppsTabLabel } from "./ConnectAppsView";
 import { HarnessConnectorGroups, connectorGroups, noticeAction } from "./HarnessConnectorGroups";
 import { AccountsView, accountServices } from "./AccountsView";
 import { SourcesView } from "./SourcesView";
@@ -49,21 +49,21 @@ beforeEach(() => setLocale("en"));
 afterEach(() => setLocale("en"));
 
 describe("Connect apps tabs", () => {
-  const shell = (tab: "installed" | "discover" | "accounts" | "sources") => renderToStaticMarkup(createElement(ConnectAppsView, {
+  const shell = (tab: "installed" | "discover" | "providers" | "pages" | "sources") => renderToStaticMarkup(createElement(ConnectAppsView, {
     tab, onTab: noop, refreshing: false, onRefresh: noop,
-    installed: createElement(InstalledView, props()), discover: "D", accounts: "A", sources: "S",
+    installed: createElement(InstalledView, props()), discover: "D", providers: "A", pages: "G", sources: "S",
   }));
 
-  it("no N connected button: its count sits on Installed and My accounts (2026-10-28)", () => {
+  it("no N connected button: its count sits on Installed and Providers (2026-10-28)", () => {
     const entries = installedEntries(items);
     // GitHub (three rows folded into one) and Twilio Docs: two entries, as Installed shows them
-    expect(connectedCounts({ entries, engineConnected: 3 })).toEqual({ installed: 2, accounts: 3 });
+    expect(connectedCounts({ entries, engineConnected: 3 })).toEqual({ installed: 2, providers: 3 });
     expect(connectedCounts({ entries: [], engineConnected: 0 })).toEqual({});
-    const html = renderToStaticMarkup(createElement(ConnectAppsView, { tab: "discover", onTab: noop, counts: { installed: 6, accounts: 3 }, refreshing: false, onRefresh: noop }));
+    const html = renderToStaticMarkup(createElement(ConnectAppsView, { tab: "discover", onTab: noop, counts: { installed: 6, providers: 3 }, refreshing: false, onRefresh: noop }));
     expect(html).not.toContain("data-plugins-connected");
     expect(html).not.toMatch(/\d+ connected</);
     expect(html).toMatch(/aria-label="Installed, 6 connected"[^>]*data-plugins-tab="installed"[\s\S]*?data-plugins-tab-count="6"/);
-    expect(html).toMatch(/aria-label="My accounts, 3 connected"[^>]*data-plugins-tab="accounts"/);
+    expect(html).toMatch(/aria-label="Providers, 3 connected"[^>]*data-plugins-tab="providers"/);
     // no counter where nothing is connected
     expect(html).not.toMatch(/data-plugins-tab="discover"[^>]*>[\s\S]*?data-plugins-tab-count[\s\S]*?data-plugins-tab="installed"/);
   });
@@ -72,7 +72,7 @@ describe("Connect apps tabs", () => {
     const html = shell("installed");
     expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps</);
     const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*><span data-plugins-tab-label="[^"]*">([^<]+)</g)].map((match) => [match[1], match[2]]);
-    expect(tabs).toEqual([["discover", "Discover"], ["installed", "Installed"], ["accounts", "My accounts"], ["sources", "Sources"]]);
+    expect(tabs).toEqual([["discover", "Discover"], ["installed", "Installed"], ["providers", "Providers"], ["pages", "Pages"], ["sources", "Sources"]]);
     expect(html).not.toContain("data-plugins-advanced");
     expect(html).not.toContain("Advanced");
   });
@@ -99,7 +99,7 @@ describe("Connect apps tabs", () => {
   });
 
   it("says nothing about an administrator to a member", () => {
-    for (const tab of ["installed", "discover", "accounts", "sources"] as const) {
+    for (const tab of ["installed", "discover", "providers", "pages", "sources"] as const) {
       expect(shell(tab)).not.toMatch(/administrator|admin/i);
     }
   });
@@ -154,12 +154,12 @@ describe("the \"...\" menu of an entry", () => {
     click(host.querySelector("[data-entry-menu]"));
     expect([...host.querySelectorAll("[data-entry-action]")].map((node) => node.textContent)).toEqual(["Mettre à jour", "Pour quels bots", "Retirer"]);
     flushSync(() => root.render(createElement(ConnectAppsView, { tab: "installed", onTab: noop, counts: { installed: 2 }, refreshing: false, onRefresh: noop })));
-    expect([...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent)).toEqual(["Découvrir", "Installés2", "Mes comptes", "Sources"]);
+    expect([...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent)).toEqual(["Découvrir", "Installés2", "Fournisseurs", "Pages", "Sources"]);
     expect(host.querySelector('[data-plugins-tab="installed"]')?.getAttribute("aria-label")).toBe("Installés, 2 connectés");
   });
 });
 
-describe("My accounts: the engines' connectors", () => {
+describe("Providers: the engines' connectors", () => {
   const claude = {
     available: true,
     connectors: [
@@ -197,15 +197,14 @@ describe("My accounts: the engines' connectors", () => {
     expect(groups.map((group) => [group.id, group.name])).toEqual([["claude", "Claude"], ["grok", "Grok"], ["codex", "ChatGPT"]]);
   });
 
-  it("My accounts: a pill per service, one click shows only that one", () => {
+  it("Providers: a pill per service, one click shows only that one", () => {
     const groups = connectorGroups({ claude, grok: { connectors: GROK_CLOUD_CONNECTORS } });
     expect(accountServices(groups, true)).toEqual(["all", "claude", "grok", "servers"]);
     expect(accountServices(groups.slice(0, 1), false)).toEqual([]);
-    const html = renderToStaticMarkup(createElement(AccountsView, { groups, servers: "MY-SERVERS", pages: "PAGES" }));
+    const html = renderToStaticMarkup(createElement(AccountsView, { groups, servers: "MY-SERVERS" }));
     const pills = [...html.matchAll(/data-accounts-service-pill="([^"]+)"[^>]*>([^<]+)</g)].map((match) => [match[1], match[2]]);
     expect(pills).toEqual([["all", "All"], ["claude", "Claude"], ["grok", "Grok"], ["servers", "My MCP servers"]]);
     expect(html).toContain("MY-SERVERS");
-    expect(html).toContain("PAGES");
     expect(html).not.toContain("Your connections");
     expect(html).not.toContain("GitHub");
   });
@@ -229,7 +228,7 @@ describe("My accounts: the engines' connectors", () => {
     expect(renderToStaticMarkup(createElement(HarnessConnectorGroups, { groups: [] }))).toBe("");
   });
 
-  it("My accounts with a Grok account and a Claude sign-in the server could not read: both sections, the Claude pill, the reason and the way to connect", () => {
+  it("Providers with a Grok account and a Claude sign-in the server could not read: both sections, the Claude pill, the reason and the way to connect", () => {
     const groups = connectorGroups({ claude: { available: false, reason: "not_signed_in", connectors: [] }, grok: { connectors: GROK_CLOUD_CONNECTORS } });
     const html = renderToStaticMarkup(createElement(AccountsView, { groups, servers: "MY-SERVERS", onSetUp: noop }));
     const pills = [...html.matchAll(/data-accounts-service-pill="([^"]+)"[^>]*>([^<]+)</g)].map((match) => match[2]);
@@ -251,7 +250,7 @@ describe("For which bots", () => {
   });
 });
 
-describe("My accounts and Sources: a click on a service pill, GitHub in My accounts", () => {
+describe("Providers and Sources: a click on a service pill, GitHub in Providers", () => {
   let host: HTMLDivElement;
   let root: Root;
   beforeEach(() => {
@@ -266,13 +265,12 @@ describe("My accounts and Sources: a click on a service pill, GitHub in My accou
 
   it("Grok alone: its connectors only, no other engine, no servers, no pages", () => {
     const groups = connectorGroups({ claude: { available: true, connectors: [{ name: "Gmail", status: "connected" }] }, grok: { connectors: GROK_CLOUD_CONNECTORS } });
-    flushSync(() => root.render(createElement(AccountsView, { groups, servers: createElement("div", { "data-servers": "" }), pages: createElement("div", { "data-pages": "" }) })));
+    flushSync(() => root.render(createElement(AccountsView, { groups, servers: createElement("div", { "data-servers": "" }) })));
     flushSync(() => (host.querySelector('[data-accounts-service-pill="grok"]') as HTMLElement).click());
     expect(host.querySelector("[data-accounts-service]")?.getAttribute("data-accounts-service")).toBe("grok");
     expect(host.querySelector('[data-harness-group="grok"]')).not.toBeNull();
     expect(host.querySelector('[data-harness-group="claude"]')).toBeNull();
     expect(host.querySelector("[data-servers]")).toBeNull();
-    expect(host.querySelector("[data-pages]")).toBeNull();
     flushSync(() => (host.querySelector('[data-accounts-service-pill="all"]') as HTMLElement).click());
     expect(host.querySelector('[data-harness-group="claude"]')).not.toBeNull();
     expect(host.querySelector("[data-servers]")).not.toBeNull();
@@ -288,7 +286,7 @@ describe("My accounts and Sources: a click on a service pill, GitHub in My accou
     expect(member).not.toMatch(/admin/i);
   });
 
-  it("My accounts: GitHub is a service of its own, first, with the account and the other credentials", () => {
+  it("Providers: GitHub is a service of its own, first, with the account and the other credentials", () => {
     const groups = connectorGroups({ claude: { available: true, connectors: [{ name: "Gmail", status: "connected" }] } });
     flushSync(() => root.render(createElement(AccountsView, { groups, github: createElement("div", { "data-github-here": "" }), servers: createElement("div", { "data-servers": "" }) })));
     const pills = [...host.querySelectorAll("[data-accounts-service-pill]")].map((pill) => pill.getAttribute("data-accounts-service-pill"));
@@ -298,5 +296,33 @@ describe("My accounts and Sources: a click on a service pill, GitHub in My accou
     expect(host.querySelector("[data-github-here]")).not.toBeNull();
     expect(host.querySelector('[data-harness-group="claude"]')).toBeNull();
     expect(host.querySelector("[data-servers]")).toBeNull();
+  });
+});
+
+describe("Providers (once My accounts) and Pages: names and old links", () => {
+  it("the tab is named for the providers, Pages has its own tab", () => {
+    expect(CONNECT_APPS_TABS).toEqual(["discover", "installed", "providers", "pages", "sources"]);
+    expect(connectAppsTabLabel("providers")).toBe("Providers");
+    expect(connectAppsTabLabel("pages")).toBe("Pages");
+    setLocale("fr");
+    try {
+      expect(connectAppsTabLabel("providers")).toBe("Fournisseurs");
+      expect(connectAppsTabLabel("pages")).toBe("Pages");
+    } finally {
+      setLocale("en");
+    }
+  });
+
+  it("the old tab id and the old link lead to Providers; Pages and the rest stay", () => {
+    expect(normalizeConnectAppsTab("accounts")).toBe("providers");
+    for (const tab of CONNECT_APPS_TABS) expect(normalizeConnectAppsTab(tab)).toBe(tab);
+    expect(normalizeConnectAppsTab("nope")).toBeNull();
+    expect(normalizeConnectAppsTab(null)).toBeNull();
+  });
+
+  it("Providers no longer draws the pages", () => {
+    const html = renderToStaticMarkup(createElement(AccountsView, { groups: [] }));
+    expect(html).not.toContain("data-plugins-pages");
+    expect(accountServices([], false, false)).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Connect apps > My accounts > GitHub (2026-10-28): the one GitHub
+// Connect apps > Providers > GitHub (2026-10-28): the one GitHub
 // connection, and one list of other credentials beside it. A member changes
 // their own with no admin, sees the organization's marked and read only; an
 // admin may add one for the whole organization. No token is ever on the
@@ -36,7 +36,7 @@ const view = (canManageOrg: boolean): GithubCredentialsView => ({
   ],
 });
 
-describe("My accounts > GitHub", () => {
+describe("Providers > GitHub", () => {
   it("shows the connection, then one list with the organization's marked, and no token", () => {
     setGithubCredentialsForTest(view(false));
     const html = renderToStaticMarkup(createElement(GithubAccountSection, { connection: createElement("div", { "data-test-connection": "" }) }));

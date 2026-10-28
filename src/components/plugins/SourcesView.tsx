@@ -4,7 +4,7 @@
 //   - Marketplaces: add, list, fetch again, remove, and who sees each one.
 //     A private one reads with the person's GitHub account by default; a
 //     row picks another credential in a small selector only when one
-//     exists. The account and those credentials are in My accounts > GitHub.
+//     exists. The account and those credentials are in Providers > GitHub.
 //   - Organization (admins only, the same right as before): allowed
 //     marketplaces.
 //

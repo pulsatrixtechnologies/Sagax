@@ -67,7 +67,7 @@ describe("Organization sources and access", () => {
     setLocale("fr");
     const html = page();
     expect(html).toContain("Marketplaces autorisés");
-    expect(html).toContain("dans Mes comptes &gt; GitHub");
+    expect(html).toContain("dans Fournisseurs &gt; GitHub");
   });
 
   it("sends the marketplace list the route accepts", () => {

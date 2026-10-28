@@ -28,3 +28,13 @@ describe("a routine line in the conversation opens the routine", () => {
     expect(reducer(state, { type: "openRoutine", botId: "ghost", routineId: "r1" })).toBe(state);
   });
 });
+
+describe("links to a tab of Connect apps (Providers was My accounts)", () => {
+  it("opens on Pages, Providers or Sources, and the old accounts link leads to Providers", () => {
+    for (const page of ["pages", "providers", "sources"] as const) {
+      expect(reducer(initialState, { type: "togglePlugins", open: true, page }).pluginsPage).toBe(page);
+    }
+    expect(reducer(initialState, { type: "togglePlugins", open: true, page: "accounts" }).pluginsPage).toBe("providers");
+    expect(reducer(initialState, { type: "togglePlugins", open: true }).pluginsPage).toBeNull();
+  });
+});

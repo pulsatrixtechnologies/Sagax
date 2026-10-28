@@ -101,7 +101,7 @@ const MANAGE_API: Record<string, unknown> = {
     { id: "bot-b", name: "Atlas", instanceId: "grok-main", model: "default", ownerUserId: "p-1", mcpServers: ["twilio-docs"], threads: [], messages: [] },
   ], groups: [], sections: [] },
   "/api/org": ORG,
-  // My accounts > GitHub: the account, and one list of other credentials (2026-10-28)
+  // Providers > GitHub: the account, and one list of other credentials (2026-10-28)
   "/api/me/github/credentials": { canManageOrg: admin, deviceFlow: true, credentials: [
     { id: "gt_0000000000000011", label: "Second GitHub organization", hint: "9c1d", owner: "mine", chosenBy: 1 },
     { id: "gt_0000000000000001", label: "Private repositories", hint: "4f2a", owner: "org", chosenBy: 0 },
@@ -150,7 +150,15 @@ const MANAGE_API: Record<string, unknown> = {
     { name: "Google Calendar", status: "connected" },
     { name: "Canva", status: "needs_auth" },
   ] }, codex: { available: false } },
-  "/api/pages": { pages: [] },
+  "/api/pages": { pages: [
+    { id: "pg-kpi", title: "Weekly KPIs", status: "published", access: "org", expiresAt: null, currentVersion: 2, botId: "bot-a", threadId: "t1", createdAt: 1_761_600_000_000, updatedAt: 1_761_650_000_000, expired: false, url: "https://sagax.example/p/pg-kpi", reachable: true, versions: [
+      { n: 1, kind: "html", title: "Weekly KPIs", createdAt: 1_761_600_000_000, state: "published", bytes: 4200, botId: "bot-a" },
+      { n: 2, kind: "html", title: "Weekly KPIs", createdAt: 1_761_650_000_000, state: "published", bytes: 4800, botId: "bot-a" },
+    ] },
+    { id: "pg-test", title: "KPI Test", status: "draft", access: "private", expiresAt: null, currentVersion: null, botId: "bot-a", threadId: "t2", createdAt: 1_761_610_000_000, updatedAt: 1_761_610_000_000, expired: false, versions: [
+      { n: 1, kind: "html", title: "KPI Test", createdAt: 1_761_610_000_000, state: "proposed", bytes: 1300, botId: "bot-a" },
+    ] },
+  ] },
   // Rocket's own plugins (the "For Rocket" scope): Code Review on it, GitHub not
   "/api/bots/bot-a/plugins": {
     marketplaces: [{ name: "claude-plugins-official", source: "anthropics/claude-plugins-official", visibility: "org", addedAt: 1, updatedAt: 1, plugins: [

@@ -1,5 +1,5 @@
 // A person's own connections (organization server), since 2026-10-28 both
-// in Connect apps > My accounts: GitHub (MyGithubConnection, in its GitHub
+// in Connect apps > Providers: GitHub (MyGithubConnection, in its GitHub
 // section) and their MCP servers (MyMcpServers). What each state draws, in English
 // and in French. A bot's plugins: see
 // src/components/plugins/BotPluginCard.test.ts.

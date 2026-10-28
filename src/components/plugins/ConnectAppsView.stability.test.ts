@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Connect apps, 2026-10-28 regressions:
 //   - the install scope stays under the title on every tab (it vanished on
-//     My accounts and the tabs jumped up); on My accounts it shows turned
+//     Providers and the tabs jumped up); on Providers it shows turned
 //     off, with the reason;
 //   - no "N connected" button any more (the owner: it repeated Installed):
 //     Discover is the first tab, the count sits on Installed and My
@@ -31,7 +31,7 @@ const items = buildPluginItems({
   marketplaces: [{ name: "claude-plugins-official", plugins: [{ name: "github", installed: true, servers: ["github-github"], skills: [] }] }],
 });
 const noop = () => {};
-const TABS: ConnectAppsTab[] = ["installed", "discover", "accounts", "sources"];
+const TABS: ConnectAppsTab[] = ["installed", "discover", "providers", "pages", "sources"];
 
 let host: HTMLDivElement;
 let root: Root;
@@ -49,18 +49,18 @@ afterEach(() => {
 const view = (tab: ConnectAppsTab, extra: Record<string, unknown> = {}) => renderToStaticMarkup(createElement(ConnectAppsView, {
   tab, onTab: noop, refreshing: false, onRefresh: noop,
   scope: createElement("div", { "data-test-scope": "" }, "SCOPE"),
-  installed: "I", discover: "D", accounts: "A", sources: "S", ...extra,
+  installed: "I", discover: "D", providers: "A", pages: "G", sources: "S", ...extra,
 }));
 
 describe("the scope bar on every tab", () => {
-  it("draws the scope above the tabs on each tab, My accounts included", () => {
+  it("draws the scope above the tabs on each tab, Providers included", () => {
     for (const tab of TABS) {
       const html = view(tab);
       expect(html, tab).toMatch(/data-plugins-scope-slot[\s\S]*?data-test-scope[\s\S]*?role="tablist"/);
     }
   });
 
-  it("on My accounts the toggle is shown turned off, with the line that says why", () => {
+  it("on Providers the toggle is shown turned off, with the line that says why", () => {
     flushSync(() => root.render(createElement(ScopeToggle, { scope: "bot", botName: "Rocket", onScope: noop, disabled: true, describedBy: "why" })));
     const group = host.querySelector('[role="radiogroup"]')!;
     expect(group.getAttribute("aria-disabled")).toBe("true");
@@ -74,8 +74,8 @@ describe("the scope bar on every tab", () => {
 });
 
 describe("the header and the tab row", () => {
-  it("Discover first, then Installed, My accounts and Sources; no N connected button", () => {
-    expect(CONNECT_APPS_TABS).toEqual(["discover", "installed", "accounts", "sources"]);
+  it("Discover first, then Installed, Providers, Pages and Sources; no N connected button", () => {
+    expect(CONNECT_APPS_TABS).toEqual(["discover", "installed", "providers", "pages", "sources"]);
     const html = view("discover", { counts: { installed: 6 } });
     expect(html).not.toContain("data-plugins-connected");
     expect(html).toMatch(/<header[^>]*><h2 id="plugins-title"[^>]*>Connect Apps<\/h2><div class="mt-3" data-plugins-scope-slot/);

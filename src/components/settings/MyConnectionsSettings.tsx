@@ -1,6 +1,6 @@
 // A person's own connections on an organization server (it was Settings >
 // Mes connexions, then Connect apps > Manage > Your connections). Since
-// 2026-10-28 both are in Connect apps > My accounts: their GitHub account
+// 2026-10-28 both are in Connect apps > Providers: their GitHub account
 // ("Connecter GitHub": a code to type at GitHub, or a token), the one GitHub
 // source of every use (GithubAccountSection), and their own MCP servers
 // ("Ajouter un serveur MCP": an address with no sign-in, a token, OAuth
@@ -61,7 +61,7 @@ function Loading({ error }: { error: string | null }) {
     : <p className="text-[12.5px] text-ink-secondary">{t("myConnections.loading")}</p>;
 }
 
-/** Connect apps > My accounts > GitHub: the person's own GitHub connection,
+/** Connect apps > Providers > GitHub: the person's own GitHub connection,
  * inside GithubAccountSection. `onEnableApp` is the link to where an admin
  * sets the OAuth App, shown when Connect GitHub has no app (a member reads
  * the sentence without a link). */
@@ -76,7 +76,7 @@ export function MyGithubConnection({ initial, onEnableApp }: { initial?: MyConne
   );
 }
 
-/** Connect apps > My accounts: the person's own MCP servers. */
+/** Connect apps > Providers: the person's own MCP servers. */
 export function MyMcpServers({ initial }: { initial?: MyConnections }) {
   const { data, error, refresh } = useMyConnections(initial, (value) => value.servers.some((server) => server.kind === "remote" && server.authPending));
   if (!data) return <Loading error={error} />;

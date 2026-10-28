@@ -123,7 +123,7 @@ the cause (`code`) and the fix (`fix`):
 | `forbidden` | 403 | a token with Contents: read (or the repo scope) |
 
 A private marketplace reads with the person's GitHub account (Connect apps >
-My accounts > GitHub) by default. Another credential (another GitHub
+Providers > GitHub) by default. Another credential (another GitHub
 organization, another git host such as GitLab or Gitea) is added beside the
 account, in the one list (`github-credentials.enc`, AES-256-GCM with the vault
 key, never shown again, never in a zip), and each marketplace row of Connect

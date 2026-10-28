@@ -1,9 +1,10 @@
-// Connect apps > My accounts (2026-10-27): what the person's own accounts
+// Connect apps > Providers (2026-10-27, named My accounts until 2026-10-28):
+// what the person's own provider accounts
 // bring, with one row of pills to pick a service: All, then GitHub (the one
 // GitHub connection of every use, and the other credentials beside it,
 // 2026-10-28), each engine with connectors (Claude, Grok, ChatGPT when its
 // connectors are listed) and the person's own MCP servers. One click shows
-// only that service. Then the person's published pages, under All only.
+// only that service. The published pages have their own tab (Pages).
 import { useState, type ReactNode } from "react";
 
 import { t } from "@/lib/i18n";
@@ -37,8 +38,6 @@ export interface AccountsViewProps {
   servers?: ReactNode;
   /** Claude Code on this computer (a solo installation): Claude's */
   claudeCode?: ReactNode;
-  /** the person's published pages (hidden by itself when there are none) */
-  pages?: ReactNode;
   /** set an engine up, from a section with no account (Settings > Models and voice) */
   onSetUp?: (engine: HarnessEngine) => void;
   /** the pill to show, when the parent opens a service (a link to GitHub) */
@@ -46,7 +45,7 @@ export interface AccountsViewProps {
   onService?: (service: AccountService) => void;
 }
 
-export function AccountsView({ groups, refreshing, onRefresh, github, servers, claudeCode, pages, onSetUp, service: asked, onService }: AccountsViewProps) {
+export function AccountsView({ groups, refreshing, onRefresh, github, servers, claudeCode, onSetUp, service: asked, onService }: AccountsViewProps) {
   const [own, setOwn] = useState<AccountService>("all");
   const chosen = asked ?? own;
   const setChosen = onService ?? setOwn;
@@ -86,7 +85,6 @@ export function AccountsView({ groups, refreshing, onRefresh, github, servers, c
           {claudeCode}
         </section>
       )}
-      {pages && service === "all" && <div className="mt-6 first:mt-0" data-plugins-pages>{pages}</div>}
     </div>
   );
 }

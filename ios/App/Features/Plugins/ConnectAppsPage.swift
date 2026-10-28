@@ -3,13 +3,13 @@
 // (`ConnectApps` in CompanionCore, a port of plugins-model.ts):
 //
 // - Connect apps (2026-10-27, the desktop's one page): "N connected >" and
-//   the four tabs Installed | Discover | My accounts | Sources, Discover
+//   the four tabs Discover, Installed, Providers, Sources, Discover
 //   open. Discover: search across what can still be added, one filter
 //   button (the reference iOS app's marketplace) whose menu holds All, the
 //   desktop's categories in its order and the type filter, a section per
 //   category with View all, one row per app with Add or Connect, Browse
 //   Bots. Installed: one line per thing, deduplicated, with a "..." menu;
-//   the private skills when there are some. My accounts: a pill per
+//   the private skills when there are some. Providers: a pill per
 //   service (All, Claude, Slack, My MCP servers), the engines' connectors,
 //   the person's own MCP servers. Sources: the person's GitHub connection
 //   and the marketplaces. Empty sections are hidden. There is no "Manage
@@ -495,7 +495,7 @@ struct ConnectAppsMain: View {
         }
     }
 
-    /// "N connected >" with up to four icons: Installed, or My accounts when
+    /// "N connected >" with up to four icons: Installed, or Providers when
     /// only the Claude account's connectors are connected (#1194).
     private var connectedLink: some View {
         let summary = model.summary
@@ -600,7 +600,7 @@ enum ConnectAppsTab: Hashable, Identifiable {
         switch self {
         case .installed: String(localized: "Installed")
         case .discover: String(localized: "Discover")
-        case .accounts: String(localized: "My accounts")
+        case .accounts: String(localized: "Providers")
         case .sources: String(localized: "Sources")
         }
     }
@@ -611,7 +611,7 @@ enum ConnectAppsTab: Hashable, Identifiable {
         #if DEBUG
         switch UserDefaults.standard.string(forKey: "parityConnectAppsTab") {
         case "installed": return .installed
-        case "accounts": return .accounts
+        case "accounts", "providers": return .accounts
         case "sources": return .sources
         default: return .discover
         }
@@ -621,7 +621,7 @@ enum ConnectAppsTab: Hashable, Identifiable {
     }
 }
 
-/// My accounts' pills: one service at a time.
+/// Providers' pills: one service at a time.
 enum ConnectAccountsService: Hashable {
     case all, claude, slack, servers
 
@@ -635,7 +635,7 @@ enum ConnectAccountsService: Hashable {
     }
 }
 
-/// Installed, My accounts and Sources: the sections each tab adds to the
+/// Installed, Providers and Sources: the sections each tab adds to the
 /// Connect apps list (Discover is the main view's own).
 struct ConnectAppsManage: View {
     @Environment(\.themePalette) var themePalette
@@ -770,7 +770,7 @@ struct ConnectAppsManage: View {
         return counts.isEmpty ? String(localized: "1 connector") : counts.joined(separator: " · ")
     }
 
-    // MARK: My accounts: the engines' connectors, then the person's own
+    // MARK: Providers: the engines' connectors, then the person's own
 
     /// All, Claude, Slack (when a bot has a Slack link), and the person's
     /// own MCP servers on an organization server (#218); fewer than two

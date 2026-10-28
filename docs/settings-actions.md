@@ -323,9 +323,9 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| Add your MCP server ({name, url/command, auth, ...}) | Connect apps > My accounts | `sagax_settings` get, set `connections.mcpServer` | secret |
-| Your MCP server on or off ({name, enabled}) | Connect apps > My accounts | `sagax_settings` set `connections.mcpServerEnabled` | simple |
-| Remove your MCP server (its name) | Connect apps > My accounts | `sagax_settings` set `connections.mcpServerRemove` | suppression |
+| Add your MCP server ({name, url/command, auth, ...}) | Connect apps > Providers | `sagax_settings` get, set `connections.mcpServer` | secret |
+| Your MCP server on or off ({name, enabled}) | Connect apps > Providers | `sagax_settings` set `connections.mcpServerEnabled` | simple |
+| Remove your MCP server (its name) | Connect apps > Providers | `sagax_settings` set `connections.mcpServerRemove` | suppression |
 | Disconnect GitHub (true) | Connect apps > Sources > GitHub | `sagax_settings` set `connections.githubDisconnect` | suppression + secret |
 | Your web search provider ({provider: brave/exa/parallel/firecrawl/searxng, baseUrl}; null forgets it). The key is pasted in Settings only: the answer says whether one is saved, never the key | Settings > Models > Web search | `sagax_settings` get, set `connections.webSearch` | simple |
 

@@ -229,7 +229,7 @@ export function privateSkills(items: readonly PluginItem[]): PluginItem[] {
 }
 
 /** Catalog rows for Discover: what can still be added (installed ones live
- * in Installed; the engines' connectors in My accounts). An app a
+ * in Installed; the engines' connectors in Providers). An app a
  * conversation needs (`focus`, its Connect apps pill) stays while it is not
  * connected, installed or not, so the pill always lands on it. */
 export function discoverItems(items: readonly PluginItem[], focus: readonly string[] = []): PluginItem[] {

@@ -706,12 +706,12 @@ add({
 
 // ── connections (the person's own) ─────────────────────────────────────
 add({
-  key: "connections.mcpServer", family: "connections", target: "none", value: "object", label: "Add your MCP server ({name, url|command, auth, ...})", where: "Connect apps > My accounts",
+  key: "connections.mcpServer", family: "connections", target: "none", value: "object", label: "Add your MCP server ({name, url|command, auth, ...})", where: "Connect apps > Providers",
   read: () => ({ path: "/api/me/mcp/servers" }),
   write: (_ids, v) => ({ method: "POST", path: "/api/me/mcp/servers", body: v }), classes: always("secret"),
 });
 add({
-  key: "connections.mcpServerEnabled", family: "connections", target: "none", value: "object", label: "Your MCP server on or off ({name, enabled})", where: "Connect apps > My accounts",
+  key: "connections.mcpServerEnabled", family: "connections", target: "none", value: "object", label: "Your MCP server on or off ({name, enabled})", where: "Connect apps > Providers",
   write: (_ids, v) => {
     const s = v as { name?: unknown; enabled?: unknown } | null;
     if (!s || typeof s.name !== "string" || typeof s.enabled !== "boolean") return "value is {name, enabled}.";
@@ -719,7 +719,7 @@ add({
   },
 });
 add({
-  key: "connections.mcpServerRemove", family: "connections", target: "none", value: "string", label: "Remove your MCP server (its name)", where: "Connect apps > My accounts",
+  key: "connections.mcpServerRemove", family: "connections", target: "none", value: "string", label: "Remove your MCP server (its name)", where: "Connect apps > Providers",
   write: (_ids, v) => typeof v === "string" && v ? { method: "DELETE", path: `/api/me/mcp/servers/${enc(v)}` } : "value is the server's name.",
   classes: always("delete"),
 });

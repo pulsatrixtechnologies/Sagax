@@ -15,7 +15,7 @@
 // its administrators, and on a personal server for its owner.
 //
 // A private marketplace reads with the credential the installation picks
-// for it (the one list, Connect apps > My accounts > GitHub), else the
+// for it (the one list, Connect apps > Providers > GitHub), else the
 // acting person's GitHub connection, then their other credentials and the
 // organization's. The pick is audited (`marketplace.credential`) and never
 // carries a token (`hasToken` only says there is one).

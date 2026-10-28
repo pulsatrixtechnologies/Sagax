@@ -1,9 +1,11 @@
 // Connect Apps: one page (2026-10-27, the owner: one place per subject). The
 // title, the install scope, then four tabs: Discover (the catalog, its
 // search and Browse Bots; the view a person lands on, first since
-// 2026-10-28), Installed, My accounts and Sources (with the organization's
+// 2026-10-28), Installed, Providers (the engine accounts: Claude, Codex,
+// Grok, GitHub, 2026-10-28, once "My accounts"), Pages (the published
+// pages, which used to sit under My accounts) and Sources (with the organization's
 // part for an admin). The "N connected" button is gone (2026-10-28): its
-// count sits on Installed and My accounts, which list them with their logos. No sub-page repeats a tab: "Manage plugins and skills" and
+// count sits on Installed and Providers, which list them with their logos. No sub-page repeats a tab: "Manage plugins and skills" and
 // a section opened alone are gone, View all filters Discover in place.
 // A page opened from a tab (a plugin's detail, a skill, "For which bots")
 // opens inside that tab's panel, under the same title, scope and tabs, as a
@@ -92,15 +94,23 @@ export function sectionTitle(section: Pick<PluginSection, "id">, sourceLabel?: (
   return t(SECTION_KEY[section.id] ?? "connectApps.section.other");
 }
 
-export type ConnectAppsTab = "installed" | "discover" | "accounts" | "sources";
+export type ConnectAppsTab = "installed" | "discover" | "providers" | "pages" | "sources";
+
+/** The tab an older name or link points at: "accounts" (My accounts, now
+ * Providers) leads to "providers"; anything unknown is not a tab. */
+export function normalizeConnectAppsTab(value: string | null | undefined): ConnectAppsTab | null {
+  if (value === "accounts") return "providers";
+  return value === "installed" || value === "discover" || value === "providers" || value === "pages" || value === "sources" ? value : null;
+}
 /** Discover first (2026-10-28, the owner): it is where Connect Apps opens,
  * unless a link asks for another tab. */
-export const CONNECT_APPS_TABS: readonly ConnectAppsTab[] = ["discover", "installed", "accounts", "sources"];
+export const CONNECT_APPS_TABS: readonly ConnectAppsTab[] = ["discover", "installed", "providers", "pages", "sources"];
 
 const TAB_KEY = {
   installed: "connectApps.manage.tab.installed",
   discover: "connectApps.manage.tab.discover",
-  accounts: "connectApps.manage.tab.accounts",
+  providers: "connectApps.manage.tab.providers",
+  pages: "connectApps.manage.tab.pages",
   sources: "connectApps.manage.tab.sources",
 } as const satisfies Record<ConnectAppsTab, LocaleKey>;
 
@@ -112,13 +122,13 @@ export function connectAppsTabLabel(tab: ConnectAppsTab): string {
 /** What the old "N connected" header counted, now on the tab that lists
  * them (2026-10-28, the owner: the button repeated Installed): the
  * person's own connected entries on Installed (the rows it shows), their
- * engine accounts' connected connectors on My accounts. Zero: no counter. */
+ * engine accounts' connected connectors on Providers. Zero: no counter. */
 export function connectedCounts(input: { entries: readonly { status: PluginItem["status"] }[]; engineConnected: number }): Partial<Record<ConnectAppsTab, number>> {
   // the rows Installed shows (one per thing, installedEntries), connected
   const own = input.entries.filter((entry) => entry.status === "connected").length;
   return {
     ...(own > 0 ? { installed: own } : {}),
-    ...(input.engineConnected > 0 ? { accounts: input.engineConnected } : {}),
+    ...(input.engineConnected > 0 ? { providers: input.engineConnected } : {}),
   };
 }
 
@@ -131,7 +141,7 @@ export interface ConnectAppsViewProps {
   /** connected things per tab (connectedCounts): a counter beside its name */
   counts?: Partial<Record<ConnectAppsTab, number>>;
   /** the install scope (everyone, or one bot) under the title, on every tab
-   * (My accounts shows it turned off, with why): the title and the tabs
+   * (Providers and Pages show it turned off, with why): the title and the tabs
    * never move from one tab to another */
   scope?: ReactNode;
   /** a page opened from the open tab (a plugin's detail, a skill): shown in
@@ -143,7 +153,8 @@ export interface ConnectAppsViewProps {
   onRefresh: () => void;
   installed?: ReactNode;
   discover?: ReactNode;
-  accounts?: ReactNode;
+  providers?: ReactNode;
+  pages?: ReactNode;
   sources?: ReactNode;
 }
 
@@ -154,7 +165,7 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
     <div className="flex min-h-0 flex-1 flex-col" data-plugins-main={shown}>
       <header className={CATEGORY_MODAL.titleBar}>
         <h2 id="plugins-title" className={CATEGORY_MODAL.title}>{t("connectApps.title")}</h2>
-        {/* on every tab, so nothing below it moves (My accounts turns it off) */}
+        {/* on every tab, so nothing below it moves (Providers and Pages turn it off) */}
         {scope && <div className="mt-3" data-plugins-scope-slot>{scope}</div>}
       </header>
       <div className="flex shrink-0 items-end gap-2 border-b border-hairline-weak px-4 sm:px-8" data-plugins-manage-bar>
@@ -208,7 +219,8 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
           <>
             {shown === "installed" && props.installed}
             {shown === "discover" && props.discover}
-            {shown === "accounts" && props.accounts}
+            {shown === "providers" && props.providers}
+            {shown === "pages" && props.pages}
             {shown === "sources" && props.sources}
           </>
         )}

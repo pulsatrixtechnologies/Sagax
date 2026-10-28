@@ -248,7 +248,7 @@ describe("a bot's private marketplace", () => {
     };
     const refused = await call("POST", "/marketplaces", { source: "acme/private" });
     expect(refused).toMatchObject({ status: 422, body: { code: "private_needs_token", fix: "connect_or_token" } });
-    expect(refused.body.error).toContain("Connect your GitHub account in Connect apps > My accounts > GitHub");
+    expect(refused.body.error).toContain("Connect your GitHub account in Connect apps > Providers > GitHub");
     // a token sent here is not kept: the one list is the only place for one
     expect((await call("POST", "/marketplaces", { source: "acme/private", token: "good-token-123" })).status).toBe(422);
     const added = await call("POST", "/marketplaces", { source: "acme/private", credential: add("pr_a", "good-token-123") });
