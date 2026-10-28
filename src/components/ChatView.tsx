@@ -36,6 +36,7 @@ import {
   Reply,
   Webhook,
   X,
+  AppWindow,
 } from "lucide-react";
 import { WorkingDots } from "@/components/WorkingIndicator";
 import { TerminalChatEmbed } from "@/components/terminal/TerminalChatEmbed";
@@ -122,6 +123,8 @@ import { AppMessage } from "./AppMessage";
 import { PagePublishCard } from "./PublishedPages";
 import { PageSurface } from "./PageViewer";
 import { PageBotStatus, pageBotStatusLine, PageRefChip } from "./PageComposerParts";
+import { MenuItem } from "./bot-settings/FilesSection";
+import { openPageInOwnWindow } from "@/lib/page-windows";
 import { closePagePanel, latestPageVersionIn, openPageFor, renameOpenPage, useOpenPage } from "@/lib/open-page";
 import { OutboundCard } from "./OutboundCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
@@ -2555,6 +2558,12 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
             {...(latestPageVersion !== undefined ? { latestVersion: latestPageVersion } : {})}
             onClose={() => closePagePanel(openPage.pageId)}
             onChange={(next) => renameOpenPage(next.id, next.title)}
+            moreItems={(close) => (
+              <MenuItem icon={<AppWindow size={14} />} label={t("pages.openWindow")} onClick={() => {
+                close();
+                void openPageInOwnWindow({ id: openPage.pageId, botId: openPage.botId, title: openPage.title });
+              }} />
+            )}
           />
         </div>
       )}

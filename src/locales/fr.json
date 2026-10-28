@@ -10187,7 +10187,6 @@
   "myConnections.preferences.cleared": "Applications réinitialisées : {count}.",
   "myConnections.preferences.nothing": "Rien à effacer.",
   "microphone.waitingForPermission": "Le microphone attend votre autorisation : répondez à la demande du système et il démarrera.",
-  "pages.openFull": "Ouvrir en pleine page",
   "pages.untitled": "Page sans titre",
   "pages.rename": "Renommer la page",
   "pages.versionPick": "Version affichée",
@@ -11668,5 +11667,10 @@
   "pages.share.copied": "Copié",
   "pages.share.browser": "Ouvrir dans le navigateur",
   "pages.shareMenu": "Partager…",
-  "pages.botWorking": "Je m'en occupe"
+  "pages.botWorking": "Je m'en occupe",
+  "pages.openWindow": "Ouvrir dans une fenêtre",
+  "pages.deleteTitle": "Supprimer cette page ?",
+  "pages.deleteBody": "« {title} » et toutes ses versions sont supprimées, et son lien ne fonctionne plus.",
+  "pages.moreAria": "Plus d'options pour {title}",
+  "pages.deleteMenu": "Supprimer…"
 }

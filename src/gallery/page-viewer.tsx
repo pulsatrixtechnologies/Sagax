@@ -1,5 +1,5 @@
 /** Isolated gallery for headless screenshots of a published page's full-page
- * viewer (src/components/PageViewer.tsx) and its card. Not shipped in the app.
+ * surface (src/components/PageViewer.tsx PageSurface) and its card. Not shipped in the app.
  * ?lang=<code>&skin=<id>&page=<pageId>&kind=html|markdown|presentation
  * &status=published|draft&policy=off&view=dialog|card
  * The page id must be one a pages server behind /pages/ knows (the capture
@@ -9,7 +9,7 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 
-import { PageViewerDialog } from "../components/PageViewer";
+import { PageSurface } from "../components/PageViewer";
 import { PagePublishCard } from "../components/PublishedPages";
 import { setLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
@@ -40,14 +40,14 @@ let page: PublishedPageSummary = {
   access: published ? "link" : "private",
   expiresAt: null,
   currentVersion: published ? 2 : null,
-  botId: "bot-katarina",
-  threadId: "thread-katarina",
+  botId: "bot-gallery",
+  threadId: "thread-gallery",
   createdAt: now - 86_400_000,
   updatedAt: now,
   expired: false,
   versions: [
-    { n: 1, kind, title: "Rapport mensuel", createdAt: now - 86_400_000, state: "proposed", bytes: 1200, botId: "bot-katarina" },
-    { n: 2, kind, title: "Rapport mensuel", createdAt: now - 3_600_000, state: published ? "published" : "proposed", bytes: 1400, botId: "bot-katarina" },
+    { n: 1, kind, title: "Rapport mensuel", createdAt: now - 86_400_000, state: "proposed", bytes: 1200, botId: "bot-gallery" },
+    { n: 2, kind, title: "Rapport mensuel", createdAt: now - 3_600_000, state: published ? "published" : "proposed", bytes: 1400, botId: "bot-gallery" },
   ],
   comments: 1,
   ...(published ? { url: `https://sagax.example.com/pages/view/${"x".repeat(22)}.${"y".repeat(32)}`, path: "/pages/view/x", reachable: true } : {}),
@@ -71,7 +71,7 @@ window.fetch = async (input, init) => {
   const source = /^\/versions\/(\d+)\/source$/.exec(rest);
   if (source) {
     const content = kind === "presentation"
-      ? "# Bilan du trimestre\n\nKatarina, octobre 2026\n\n---\n\n## Ventes\n\n- Septembre : en hausse\n- Octobre : stable\n\n---\n\n## Prochaines étapes\n\n1. Relancer les clients\n2. Préparer le budget"
+      ? "# Bilan du trimestre\n\nOctobre 2026\n\n---\n\n## Ventes\n\n- Septembre : en hausse\n- Octobre : stable\n\n---\n\n## Prochaines étapes\n\n1. Relancer les clients\n2. Préparer le budget"
       : "<!doctype html><html><body><h1>Rapport mensuel</h1><h2>Ventes</h2><p>Les ventes de septembre sont en hausse.</p></body></html>";
     return reply({ version: { n: Number(source[1]), kind, title: page.title }, content });
   }
@@ -116,11 +116,12 @@ function Gallery() {
   return (
     <div className="min-h-screen bg-canvas p-6 text-ink">
       <div className="mx-auto max-w-[760px]">
-        <div className="mb-3 rounded-2xl bg-card px-4 py-3 text-[14px]">Katarina : voici la page demandée.</div>
+        <div className="mb-3 rounded-2xl bg-card px-4 py-3 text-[14px]">Voici la page demandée.</div>
         <PagePublishCard message={message} />
         <button type="button" data-gallery-open className="text-[12px] text-accent" onClick={() => setOpen(true)}>open</button>
       </div>
-      {open && <PageViewerDialog pageId={pageId} returnFocus={null} onClose={() => setOpen(false)} />}
+      {/* the open page, as the conversation's full panel draws it */}
+      {open && <div className="fixed inset-0 z-50 flex"><PageSurface pageId={pageId} onClose={() => setOpen(false)} /></div>}
     </div>
   );
 }

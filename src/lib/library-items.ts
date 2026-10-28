@@ -1,14 +1,17 @@
-// The Library tab's model: a conversation's files and its bot's artifacts in
-// one list, the pinned ones first, the rest grouped by how recent they are.
+// The Library tab's model: a conversation's files, its bot's artifacts and
+// the pages it made for this person in one list, the pinned ones first, the rest grouped by how recent they are.
 // A file is pinned on the server per conversation (POST
 // /api/threads/:id/files/:fileId/pin); an artifact's pin is its favorite
 // flag, which the server already keeps per bot.
 import type { ThreadFile } from "./chat-files";
 import type { ArtifactSummary } from "../../shared/artifacts";
+import type { PublishedPageSummary } from "../../shared/published-pages";
 
 export type LibraryItem =
   | { kind: "file"; key: string; at: number; pinned: boolean; file: ThreadFile }
-  | { kind: "artifact"; key: string; at: number; pinned: boolean; artifact: ArtifactSummary };
+  | { kind: "artifact"; key: string; at: number; pinned: boolean; artifact: ArtifactSummary }
+  /** A page the bot made for this person (2026-10-28): its pin is the page's. */
+  | { kind: "page"; key: string; at: number; pinned: boolean; page: PublishedPageSummary };
 
 export const LIBRARY_PERIODS = ["thisWeek", "older"] as const;
 export type LibraryPeriod = (typeof LIBRARY_PERIODS)[number];
@@ -21,8 +24,9 @@ export interface LibraryGroups {
 
 const WEEK_MS = 7 * 24 * 3_600_000;
 
-export function libraryItems(files: readonly ThreadFile[] | null, artifacts: readonly ArtifactSummary[] | null): LibraryItem[] {
+export function libraryItems(files: readonly ThreadFile[] | null, artifacts: readonly ArtifactSummary[] | null, pages: readonly PublishedPageSummary[] | null = null): LibraryItem[] {
   return [
+    ...(pages ?? []).map((page): LibraryItem => ({ kind: "page", key: `page:${page.id}`, at: page.updatedAt, pinned: page.pinned === true, page })),
     ...(files ?? []).map((file): LibraryItem => ({ kind: "file", key: `file:${file.id}`, at: file.at, pinned: file.pinned === true, file })),
     ...(artifacts ?? []).map((artifact): LibraryItem => ({ kind: "artifact", key: `artifact:${artifact.id}`, at: artifact.updatedAt, pinned: artifact.favorite === true, artifact })),
   ];
