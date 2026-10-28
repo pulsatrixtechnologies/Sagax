@@ -1172,6 +1172,11 @@ function mutatingPublicRoute(method: string, path: string): boolean {
   // Remote viewer config and its WebSocket upgrade hand out a desktop's VNC
   // password and control. Native owners open the direct viewer instead.
   if (path.startsWith("/api/desktop-viewer/")) return true;
+  // A loopback GET of the Local VM status includes viewer_url, and that URL
+  // carries the VNC password. 127.0.0.1 is shared by every process on the
+  // machine, so this read needs the desktop owner header. The list and
+  // screenshot routes are not this path.
+  if (upper === "GET" && /^\/api\/(?:bots\/[\w-]+\/)?local-computer$/.test(path)) return true;
   if (["GET", "HEAD", "OPTIONS"].includes(upper)) return false;
   // Agent integrations have their own high-entropy, per-boot authorization
   // and narrower route semantics. Pairing-code exchange is intentionally
@@ -1230,7 +1235,12 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
     // A browser sign-in's session is its browser's cookie, never a bearer token, and
     // its changes come from this origin's own page, which a browser says so.
     if (via === "bearer" && session.cookieOnly) return { auth: null, status: 401, error: "unauthorized: this session belongs to a browser; sign in with a pairing code", code: "session_cookie_only", sessionId: session.id, via };
-    if (via === "cookie" && session.cookieOnly && !["GET", "HEAD", "OPTIONS"].includes(method) && !provesSameOrigin(req)) {
+    // A simple GET carries no Origin. Reads classed as effects (a stored
+    // secret, the desktop viewer, a connector-card refresh) still have to
+    // come from this origin's own page. A same-origin fetch sends
+    // Sec-Fetch-Site: same-origin.
+    if (via === "cookie" && session.cookieOnly && (!["GET", "HEAD", "OPTIONS"].includes(method) || mutatingPublicRoute(method, path)) &&
+      !provesSameOrigin(req)) {
       return deny(403, "forbidden: this browser's session makes changes only from its own page");
     }
     const needed = requiredScope(method, path, options.features ?? {});
