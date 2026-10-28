@@ -71,7 +71,7 @@ window.fetch = async (input, init) => {
   const source = /^\/versions\/(\d+)\/source$/.exec(rest);
   if (source) {
     const content = kind === "presentation"
-      ? "# Bilan du trimestre\n\nKatarina, octobre 2026\n\n---\n\n## Ventes\n\n- Septembre : en hausse\n- Octobre : stable\n\n---\n\n## Prochaines étapes\n\n1. Relancer les clients\n2. Préparer le budget"
+      ? "# Bilan du trimestre\n\nOctobre 2026\n\n---\n\n## Ventes\n\n- Septembre : en hausse\n- Octobre : stable\n\n---\n\n## Prochaines étapes\n\n1. Relancer les clients\n2. Préparer le budget"
       : "<!doctype html><html><body><h1>Rapport mensuel</h1><h2>Ventes</h2><p>Les ventes de septembre sont en hausse.</p></body></html>";
     return reply({ version: { n: Number(source[1]), kind, title: page.title }, content });
   }
