@@ -241,10 +241,28 @@ describe("credential vault routes", () => {
     expect((await none.call("POST", "/api/bots/bot-a/vault-cards/q2/self-start", { threadId: "t1" })).body).toMatchObject({ code: "no_browser" });
   });
 
+  it("connects Shop Pay or Link without echoing a number, on the person's own route", async () => {
+    const { call, audits } = await serve();
+    const pan = "4242424242424242";
+    expect((await call("POST", "/api/me/credentials/wallets", { wallet: "other_wallet", chosen: true })).status).toBe(400);
+    const linked = await call("POST", "/api/me/credentials/wallets", { wallet: "link", chosen: true, pan, note: pan });
+    expect(linked.status).toBe(200);
+    expect(linked.text).not.toContain(pan);
+    expect(linked.body.wallets.link).toMatchObject({ chosen: true, ready: false });
+    expect(linked.body.wallets.shop_pay.chosen).toBe(false);
+    expect(linked.body.wallets.link.missing).toContain("link-cli spend-request create");
+    expect(JSON.stringify(audits)).not.toContain(pan);
+    expect(audits.at(-1)).toEqual({ action: "credentials.wallet", detail: { wallet: "link", chosen: true } });
+    const listed = await call("POST", "/api/me/credentials/list", {});
+    expect(listed.text).not.toContain(pan);
+    expect(listed.body.wallets.link.chosen).toBe(true);
+    expect(requiredScope("POST", "/api/me/credentials/wallets")).toBe("client");
+  });
+
   it("refuses a caller with no person, and keeps the routes member scope and off for agents", async () => {
     const { call } = await serve({ principal: null });
     expect((await call("POST", "/api/me/credentials/list", {})).status).toBe(403);
-    for (const [method, path] of [["POST", "/api/me/credentials/list"], ["POST", "/api/me/credentials"], ["PATCH", "/api/me/credentials/abcdef012345"], ["POST", "/api/bots/b1/vault-cards/m1/grant"]] as const) {
+    for (const [method, path] of [["POST", "/api/me/credentials/list"], ["POST", "/api/me/credentials"], ["POST", "/api/me/credentials/wallets"], ["PATCH", "/api/me/credentials/abcdef012345"], ["POST", "/api/bots/b1/vault-cards/m1/grant"]] as const) {
       expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     }
     expect(requiredScope("GET", "/api/me/credentials/list")).toBe("admin");

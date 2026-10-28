@@ -375,6 +375,17 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
   of ASCII digits, the latest expiry and the name. Nothing is uploaded,
   kept or logged; the security code is typed. Desktop has no on-device
   text reader yet.
+- **One-time card** (Shop Pay or Link, a wallet the person already has):
+  Settings > Credentials stores the choice only
+  (`POST /api/me/credentials/wallets`, the person's own vault, client
+  scope, not an admin gate). `request_purchase` may pass `wallet`
+  `shop_pay` or `link` instead of a saved card. The existing purchase
+  approval stays in front of any send. This build does not ship the shop
+  CLI or `@stripe/link-cli` and holds no session, so the ask returns
+  `provider_unconfigured`, nothing is charged, and the saved number is
+  not typed into the page. A card number never enters the prompt or the
+  journal (`shared/single-use-card.ts`). Tests:
+  `shared/single-use-card.test.ts`, `server/credential-vault.payment.test.ts`.
 - Not done: a device tool on the phone (row 81): Sagax has no phone tools.
 - Tests: `shared/computer-app.test.ts`, `server/computer-app.test.ts`,
   `server/harness/bus.test.ts` (publish gate), `server/owner-approval.test.ts`

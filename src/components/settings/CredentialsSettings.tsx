@@ -10,11 +10,11 @@
 // (CredentialsTransfer.tsx).
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { allowBotAlways, answerPurchase, createCredential, deleteCredential, importOnePasswordItem, loadCredentials, loadOnePasswordItems, parseDomains, revealCredential, revealCredentialNotes, revokeBot, updateCredential, type CredentialVaultState, type OnePasswordItem, type PurchaseListing, type VaultItemDraft, type VaultItemListing } from "@/lib/credential-vault";
+import { allowBotAlways, answerPurchase, chooseSingleUseWallet, createCredential, deleteCredential, importOnePasswordItem, loadCredentials, loadOnePasswordItems, parseDomains, revealCredential, revealCredentialNotes, revokeBot, updateCredential, type CredentialVaultState, type OnePasswordItem, type PurchaseListing, type VaultItemDraft, type VaultItemListing } from "@/lib/credential-vault";
 import { t, activeLocale } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import { VAULT_INJECTION_MODES, type VaultApiInjection, type VaultInjectionMode, type VaultItemKind } from "../../../shared/credential-vault";
-import { EditorBox, EditorField, FIELD, PILL, PillSelect, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow, Switch } from "../SettingsPrimitives";
+import { EditorBox, EditorField, FIELD, PILL, PillSelect, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow, Switch, SwitchRow } from "../SettingsPrimitives";
 import { ExportPanel, ImportPanel, importOutcomeText } from "./CredentialsTransfer";
 import { PhoneCardScanButton, scannedCardFields } from "./PhoneCardScanButton";
 import { botLabel } from "@/lib/human-label";
@@ -173,9 +173,50 @@ export function CredentialsSettings() {
           )}
         </SettingsGroup>
       </div>
+      <SingleUseWallets data={data} onChanged={refresh} onError={setError} />
       {(data.purchases ?? []).length > 0 && <PurchaseList purchases={data.purchases ?? []} onChanged={refresh} onError={setError} />}
       <OnePasswordCard data={data} onImported={refresh} />
     </div>
+  );
+}
+
+function SingleUseWallets({ data, onChanged, onError }: {
+  data: CredentialVaultState;
+  onChanged: () => Promise<void>;
+  onError: (error: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const set = async (wallet: "shop_pay" | "link", chosen: boolean) => {
+    setBusy(true);
+    onError(null);
+    try {
+      await chooseSingleUseWallet(wallet, chosen);
+      await onChanged();
+    } catch (failure) {
+      onError(message(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <SettingsGroup title={t("vault.singleUse.title")} groupId="credentials.wallets">
+      <SettingsTextRow>{t("vault.singleUse.intro")}</SettingsTextRow>
+      {(["shop_pay", "link"] as const).map((wallet) => {
+        const row = data.wallets?.[wallet];
+        const label = wallet === "shop_pay" ? t("vault.singleUse.shopPay") : t("vault.singleUse.link");
+        return (
+          <div key={wallet} className="px-3.5 py-2.5" data-single-use-wallet={wallet}>
+            <SwitchRow
+              label={label}
+              description={row?.chosen ? t("vault.singleUse.notLive", { missing: row.missing }) : t("vault.singleUse.connect")}
+              checked={row?.chosen === true}
+              disabled={busy || Boolean(data.unavailable)}
+              onChange={(next) => { void set(wallet, next); }}
+            />
+          </div>
+        );
+      })}
+    </SettingsGroup>
   );
 }
 

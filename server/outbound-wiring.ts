@@ -9,6 +9,7 @@
 // number, a security code, or an id in its words.
 import { formatPhone } from "../shared/outbound-call.ts";
 import { purchaseContents } from "../shared/payment-vault.ts";
+import { walletName } from "../shared/single-use-card.ts";
 import type { OutboundCard } from "../shared/wire.ts";
 import type { PurchaseListing } from "./credential-vault.ts";
 import { callAnswerNote, callCard, callCardText, OutboundCalls, placePhoneCall, type OutboundCallRecord, type PlaceCallDeps } from "./outbound-calls.ts";
@@ -47,7 +48,7 @@ export function purchaseOutboundCard(listing: PurchaseListing, botName: string):
     merchant: listing.merchant,
     amount: listing.amount,
     currency: listing.currency,
-    cardLabel: `${listing.cardBrand.charAt(0).toUpperCase()}${listing.cardBrand.slice(1)} •••• ${listing.cardLast4}`,
+    cardLabel: listing.wallet ? walletName(listing.wallet) : `${listing.cardBrand.charAt(0).toUpperCase()}${listing.cardBrand.slice(1)} •••• ${listing.cardLast4}`,
     ...(listing.items?.length ? { items: listing.items } : {}),
     ...(listing.flights?.length ? { flights: listing.flights } : {}),
     ...(listing.orderRef ? { orderRef: listing.orderRef } : {}),

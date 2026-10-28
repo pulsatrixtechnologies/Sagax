@@ -9,6 +9,7 @@ import {
   parsePurchaseCall, parseReceiptCall, RECORD_PURCHASE_TOOL, RECORD_PURCHASE_TOOL_SPEC, REQUEST_PURCHASE_TOOL, REQUEST_PURCHASE_TOOL_SPEC,
   type PurchaseCategory, type PurchaseFlightLeg, type PurchaseItem,
 } from "../shared/payment-vault.ts";
+import { redactCardNumbers, type SingleUseWallet } from "../shared/single-use-card.ts";
 import { clearScript, loginOutcomeText, loginStateScript, markerScript, MAX_LOGIN_STEPS, parseLoginState, stepFields, submitScript, type LoginField, type LoginOutcome, type LoginPageState } from "./login-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
@@ -89,7 +90,7 @@ export interface CredentialFillAccess {
    * the whole browser session, so it cannot plant a listener before a fill. */
   armed(): boolean;
   /** Ask the person to approve a payment. The value never comes back. */
-  requestPurchase?(input: { pageUrl: string; amount: string; currency: string; cardId: string; category?: PurchaseCategory; merchant?: string; addressId?: string; contactId?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
+  requestPurchase?(input: { pageUrl: string; amount: string; currency: string; cardId?: string; wallet?: SingleUseWallet; category?: PurchaseCategory; merchant?: string; addressId?: string; contactId?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
   /** The shop confirmed the order: the receipt for the person. */
   recordPurchase?(input: { pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
 }
@@ -894,16 +895,18 @@ export class BrowserRuntime {
     const call = parsePurchaseCall(params);
     if (typeof call === "string") return toolText(call, true);
     if (!credentials?.requestPurchase) return toolText("Purchases are not available in this browser.", true);
-    const cardId = itemIdFromHandle(call.credential);
+    const cardId = call.wallet ? null : itemIdFromHandle(call.credential);
     const addressId = call.address ? itemIdFromHandle(call.address) : null;
     const contactId = call.contact ? itemIdFromHandle(call.contact) : null;
-    if (!cardId || (call.address && !addressId) || (call.contact && !contactId)) return toolText("request_purchase needs a card handle (cred_...).", true);
+    if ((call.address && !addressId) || (call.contact && !contactId) || (!call.wallet && !cardId)) return toolText("request_purchase needs a card handle (cred_...) or wallet shop_pay or link.", true);
     const href = await this.engineUrl(client);
     beforeDispatch?.();
     if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
     if (!href) return toolText("The page's address could not be read; nothing was asked.", true);
     const opened = credentials.requestPurchase({
-      pageUrl: href, amount: call.amount, currency: call.currency, cardId,
+      pageUrl: href, amount: call.amount, currency: call.currency,
+      ...(cardId ? { cardId } : {}),
+      ...(call.wallet ? { wallet: call.wallet } : {}),
       ...(call.category ? { category: call.category } : {}),
       ...(call.merchant ? { merchant: call.merchant } : {}),
       ...(addressId ? { addressId } : {}),
@@ -911,7 +914,7 @@ export class BrowserRuntime {
       ...(call.items ? { items: call.items } : {}),
       ...(call.flights ? { flights: call.flights } : {}),
     });
-    return toolText(opened.message, !opened.ok);
+    return toolText(redactCardNumbers(opened.message), !opened.ok);
   }
 
   /** The receipt of a purchase the person approved, from the shop's
