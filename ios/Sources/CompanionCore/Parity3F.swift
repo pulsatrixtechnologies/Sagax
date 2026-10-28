@@ -134,6 +134,18 @@ public struct PublishedPageSummary: Decodable, Hashable, Sendable, Identifiable 
     public var versions: [PublishedPageVersion]
     /// The version readers get; nil until one is published.
     public var currentVersion: Int?
+    /// The bot that made it and the conversation it belongs to.
+    public var botId: String
+    public var threadId: String
+    public var createdAt: Double
+    /// The Library's pin.
+    public var pinned: Bool
+    /// The people and teams invited to read it (Share).
+    public var invites: PageInvites?
+    /// The person's own comments on it.
+    public var comments: Int?
+    /// False when the page is only reachable on this computer's network.
+    public var reachable: Bool?
 
     public var isPublished: Bool { status == "published" && !expired }
 
@@ -149,10 +161,18 @@ public struct PublishedPageSummary: Decodable, Hashable, Sendable, Identifiable 
         updatedAt = (try? values.decodeIfPresent(Double.self, forKey: .updatedAt)) ?? 0
         versions = (try? values.decodeIfPresent([Lossy<PublishedPageVersion>].self, forKey: .versions))?.compactMap(\.value) ?? []
         currentVersion = try? values.decodeIfPresent(Int.self, forKey: .currentVersion)
+        botId = (try? values.decodeIfPresent(String.self, forKey: .botId)) ?? ""
+        threadId = (try? values.decodeIfPresent(String.self, forKey: .threadId)) ?? ""
+        createdAt = (try? values.decodeIfPresent(Double.self, forKey: .createdAt)) ?? 0
+        pinned = (try? values.decodeIfPresent(Bool.self, forKey: .pinned)) ?? false
+        invites = try? values.decodeIfPresent(PageInvites.self, forKey: .invites)
+        comments = try? values.decodeIfPresent(Int.self, forKey: .comments)
+        reachable = try? values.decodeIfPresent(Bool.self, forKey: .reachable)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, title, status, access, expiresAt, url, expired, updatedAt, versions, currentVersion
+        case botId, threadId, createdAt, pinned, invites, comments, reachable
     }
 }
 

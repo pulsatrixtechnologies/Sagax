@@ -28,7 +28,7 @@ public final class DemoServer: @unchecked Sendable {
     /// Delay between streamed chunks; tests use zero.
     public var chunkDelay: TimeInterval
 
-    private let lock = NSLock()
+    let lock = NSLock()
     private let now: Date
     private var bots: [Bot]
     private var rooms: [Room]
@@ -53,6 +53,8 @@ public final class DemoServer: @unchecked Sendable {
     ]
     /// Every request the demo answered, for tests.
     private var handled: [String] = []
+    /// Atlas's made-up page (DemoPages.swift), in memory only.
+    var demoPage: DemoPage
 
     public init(now: Date = Date(), language: DemoLanguage = .english, chunkDelay: TimeInterval = 0.06, calendar: Calendar = .current) {
         self.now = now
@@ -64,6 +66,7 @@ public final class DemoServer: @unchecked Sendable {
         rooms = fixture.rooms
         routines = fixture.routines
         runs = fixture.runs
+        demoPage = DemoPage(language: language, at: (now.timeIntervalSince1970 * 1000).rounded() - 11 * 60_000)
         // A made-up organization (serverEnvironmentId marks a server pairing)
         // so Share is offered on the pinned bot, the same gate as a real one.
         connection = Connection(
@@ -130,7 +133,8 @@ public final class DemoServer: @unchecked Sendable {
         case ("GET", ["api", "threads"]) where parts.count == 4 && parts[3] == "messages":
             return encode(page(threadId: parts[2]))
         case ("POST", ["api", "bots"]) where parts.count == 4 && parts[3] == "messages":
-            return send(text: json["text"] as? String ?? "", botId: parts[2], groupId: nil, threadId: json["threadId"] as? String, onCall: json["voiceCall"] != nil)
+            return send(text: json["text"] as? String ?? "", botId: parts[2], groupId: nil, threadId: json["threadId"] as? String, onCall: json["voiceCall"] != nil,
+                        page: ((json["dataContext"] as? [String: Any])?["page"]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }.flatMap { try? JSONDecoder().decode(PageContextRef.self, from: $0) })
         case ("POST", ["api", "groups"]) where parts.count == 4 && parts[3] == "messages":
             return send(text: json["text"] as? String ?? "", botId: nil, groupId: parts[2], threadId: json["threadId"] as? String, onCall: json["voiceCall"] != nil)
         case ("POST", ["api", "threads"]) where parts.count == 4 && parts[3] == "respond":
@@ -147,6 +151,8 @@ public final class DemoServer: @unchecked Sendable {
             return accountSession()
         case (_, ["api", "bots"]) where parts.count >= 4 && parts[3] == "grants":
             return shareGrants(method: method, botId: parts[2], target: parts.count > 4 ? parts[4] : nil, json: json)
+        case (_, ["api", "pages"]):
+            return pages(method: method, parts: parts, json: json)
         case ("GET", ["api", "org"]) where parts.count == 3 && parts[2] == "directory":
             return shareDirectory()
         case ("POST", ["api", "bots"]) where parts.count == 4 && (parts[3] == "read" || parts[3] == "always-allow"),
@@ -314,7 +320,7 @@ public final class DemoServer: @unchecked Sendable {
         return .init(status: 200, body: body)
     }
 
-    private func refusal(status: Int) -> Response {
+    func refusal(status: Int) -> Response {
         let body = (try? JSONSerialization.data(withJSONObject: ["error": language.pick(Self.unavailable, Self.unavailableFrench), "code": "demo"])) ?? Data()
         return .init(status: status, body: body)
     }
@@ -362,7 +368,7 @@ public final class DemoServer: @unchecked Sendable {
         return now.timeIntervalSince1970 * 1000 + Double(counter) * 1000
     }
 
-    private func send(text: String, botId: String?, groupId: String?, threadId: String?, onCall: Bool) -> Response {
+    private func send(text: String, botId: String?, groupId: String?, threadId: String?, onCall: Bool, page: PageContextRef? = nil) -> Response {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return refusal(status: 400) }
         lock.lock()
@@ -372,7 +378,9 @@ public final class DemoServer: @unchecked Sendable {
         guard bot != nil || room != nil else { return refusal(status: 404) }
         let thread = bot?.threadId ?? room!.threadId
         let parent = lastMessageID(thread: thread)
-        let user = Message(id: nextID("you"), role: .user, kind: .text, at: stamp(), text: trimmed, parentId: parent)
+        var user = Message(id: nextID("you"), role: .user, kind: .text, at: stamp(), text: trimmed, parentId: parent)
+        // a message sent from the open page keeps it (its chip)
+        if let page, page.isDrawable { user.dataContext = MessageDataContext(page: page) }
         record(user, thread: thread)
         emit(.message(threadId: thread, message: user))
         let speaker = bot ?? bots.first(where: { room!.memberIds.contains($0.id) })!

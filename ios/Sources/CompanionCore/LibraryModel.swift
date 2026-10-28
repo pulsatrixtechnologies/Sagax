@@ -81,11 +81,14 @@ public struct BotArtifactDocument: Equatable, Sendable {
 public enum LibraryEntry: Identifiable, Hashable, Sendable {
     case file(ThreadFile)
     case artifact(BotArtifact)
+    /// A page the bot made (`GET /api/pages`, this bot's), 2026-10-28.
+    case page(PublishedPageSummary)
 
     public var id: String {
         switch self {
         case let .file(file): "file:\(file.id)"
         case let .artifact(artifact): "artifact:\(artifact.id)"
+        case let .page(page): "page:\(page.id)"
         }
     }
 
@@ -94,6 +97,7 @@ public enum LibraryEntry: Identifiable, Hashable, Sendable {
         switch self {
         case let .file(file): file.at
         case let .artifact(artifact): artifact.updatedAt
+        case let .page(page): page.updatedAt
         }
     }
 
@@ -101,6 +105,7 @@ public enum LibraryEntry: Identifiable, Hashable, Sendable {
         switch self {
         case let .file(file): file.pinned
         case let .artifact(artifact): artifact.favorite
+        case let .page(page): page.pinned
         }
     }
 }
@@ -116,9 +121,9 @@ public struct LibraryGroups: Equatable, Sendable {
 public enum LibraryRules {
     /// Pinned on top whatever the age; the rest in the last seven days, or
     /// older. Each part is newest first. `now` and the times are milliseconds.
-    public static func groups(files: [ThreadFile], artifacts: [BotArtifact], now: Double) -> LibraryGroups {
+    public static func groups(files: [ThreadFile], artifacts: [BotArtifact], pages: [PublishedPageSummary] = [], now: Double) -> LibraryGroups {
         let week = 7.0 * 24 * 3_600_000
-        let entries = (files.map(LibraryEntry.file) + artifacts.map(LibraryEntry.artifact))
+        let entries = (files.map(LibraryEntry.file) + artifacts.map(LibraryEntry.artifact) + pages.map(LibraryEntry.page))
             .sorted { $0.at != $1.at ? $0.at > $1.at : $0.id < $1.id }
         let rest = entries.filter { !$0.pinned }
         return LibraryGroups(

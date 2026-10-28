@@ -169,7 +169,7 @@ final class Session: ObservableObject {
     /// terms of use still wait for this account's one acceptance.
     @Published var blockedPeople: [Moderation.BlockedPerson] = []
     @Published var termsPending = false
-    private var demoServer: DemoServer?
+    private(set) var demoServer: DemoServer?
     /// Which way the connect screen opened: a computer (QR, nearby,
     /// address and code) or an organization (Sign in with Pulsatrix).
     @Published private(set) var connectMode: ConnectMode = .computer

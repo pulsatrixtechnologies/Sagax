@@ -25,6 +25,20 @@ struct TextBubble: View {
     /// So a bubble repaints when the person flips the bot-colour switch.
     @ObservedObject private var bubblePrefs = SidebarPrefsModel.shared
     @ObservedObject private var openBot = ThemeStore.shared
+    /// The page chip over a message sent from an open page (2026-10-28).
+    @Environment(\.openPagePanel) private var openPagePanel
+    @State private var chipPage: PageContextRef?
+
+    /// Over this conversation when it can, else on its own.
+    private func openPage(_ ref: PageContextRef) {
+        Haptics.selection()
+        if let openPagePanel {
+            openPagePanel(OpenPageRef(pageId: ref.pageId, botId: chat.id, threadId: chat.threadId, title: ref.title,
+                                      openedAt: Date().timeIntervalSince1970 * 1000))
+        } else {
+            chipPage = ref
+        }
+    }
 
     private var attachedContent: AttachedMessageContent {
         AttachedMessageContent.parse(message.text ?? "")
@@ -71,6 +85,14 @@ struct TextBubble: View {
                     Text(speaker.name)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.readable(MausPalette.color(speaker.color)))
+                }
+                // Sent while a page was open: the page as a chip over the
+                // words (PageComposerParts.tsx PageRefChip); a tap opens it.
+                if mine, let ref = message.dataContext?.page, ref.isDrawable {
+                    PageRefChip(ref: ref, foreground: desktop?.bubbleUserInk ?? BubbleColor.mineText) { openPage(ref) }
+                        .fullScreenCover(isPresented: Binding(get: { chipPage != nil }, set: { if !$0 { chipPage = nil } })) {
+                            if let chipPage { PageFullScreen(pageId: chipPage.pageId, title: chipPage.title) }
+                        }
                 }
                 // The message this one answers (MS8): tap to jump to it.
                 if let targetId = message.replyToId, let target = context.lookup(targetId) {

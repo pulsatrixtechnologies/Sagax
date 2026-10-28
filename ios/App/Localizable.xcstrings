@@ -82140,6 +82140,204 @@
         "en": { "stringUnit": { "state": "translated", "value": "More actions" } },
         "fr": { "stringUnit": { "state": "translated", "value": "Plus d'actions" } }
       }
+    },
+    "No longer shared": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No longer shared" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "N'est plus partagée" } }
+      }
+    },
+    "Open the page %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open the page %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la page %@" } }
+      }
+    },
+    "Untitled page": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Untitled page" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Page sans titre" } }
+      }
+    },
+    "Version %lld declined": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Version %lld declined" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Version %lld refusée" } }
+      }
+    },
+    "Version %lld to review": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Version %lld to review" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Version %lld à examiner" } }
+      }
+    },
+    "Version %lld, replaced by a newer one": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Version %lld, replaced by a newer one" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Version %lld, remplacée par une plus récente" } }
+      }
+    },
+    "On it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Je m'en occupe" } }
+      }
+    },
+    "A group of your organization": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A group of your organization" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un groupe de votre organisation" } }
+      }
+    },
+    "A person of your organization": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A person of your organization" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une personne de votre organisation" } }
+      }
+    },
+    "Add people or groups": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add people or groups" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter des personnes ou des groupes" } }
+      }
+    },
+    "Anyone in your organization": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Anyone in your organization" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toute votre organisation" } }
+      }
+    },
+    "Anyone with the link will see this page, without signing in. Confirm to switch it to a public link.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Anyone with the link will see this page, without signing in. Confirm to switch it to a public link." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toute personne ayant le lien verra cette page, sans se connecter. Confirmez pour la passer en lien public." } }
+      }
+    },
+    "General access": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "General access" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Accès général" } }
+      }
+    },
+    "Group · %lld people": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Group · %lld people" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Groupe · %lld personnes" } }
+      }
+    },
+    "No one matches.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No one matches." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Personne ne correspond." } }
+      }
+    },
+    "Not shared yet. Copying the link, opening it or choosing who can see it shares version %lld.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not shared yet. Copying the link, opening it or choosing who can see it shares version %lld." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pas encore partagée. Copier le lien, l'ouvrir ou choisir qui peut la voir partage la version %lld." } }
+      }
+    },
+    "Only on this computer's network.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Only on this computer's network." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Seulement sur le réseau de cet ordinateur." } }
+      }
+    },
+    "Only you and the people or groups you add.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Only you and the people or groups you add." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous seul et les personnes ou groupes ajoutés." } }
+      }
+    },
+    "Open in browser": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open in browser" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir dans le navigateur" } }
+      }
+    },
+    "Owner": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Owner" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Propriétaire" } }
+      }
+    },
+    "People you invite": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "People you invite" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Personnes invitées" } }
+      }
+    },
+    "Share version %lld instead": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Share version %lld instead" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Partager plutôt la version %lld" } }
+      }
+    },
+    "Stop sharing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stop sharing" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Arrêter le partage" } }
+      }
+    },
+    "Who has access": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Who has access" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Qui a accès" } }
+      }
+    },
+    "Your organization turned off public links: this page is shown only to people signed in to this server until links are allowed again.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your organization turned off public links: this page is shown only to people signed in to this server until links are allowed again." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Votre organisation a désactivé les liens publics : cette page n'est montrée qu'aux personnes connectées à ce serveur, jusqu'à ce que les liens soient permis de nouveau." } }
+      }
+    },
+    "Decline version %lld": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Decline version %lld" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Refuser la version %lld" } }
+      }
+    },
+    "Rename the page": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Rename the page" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Renommer la page" } }
+      }
+    },
+    "Sagax is not connected.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sagax is not connected." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sagax n'est pas connecté." } }
+      }
+    },
+    "Versions (%lld)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Versions (%lld)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Versions (%lld)" } }
+      }
+    },
+    "Share…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Share…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Partager…" } }
+      }
+    },
+    "Delete…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Delete…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Supprimer…" } }
+      }
+    },
+    "Share “%@”": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Share “%@”" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Partager « %@ »" } }
+      }
+    },
+    "Shared · %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Shared · %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Partagée · %@" } }
+      }
     }
   },
   "version": "1.0"
