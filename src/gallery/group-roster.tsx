@@ -1,6 +1,6 @@
 /** Isolated gallery for Playwright screenshots of a group's roster: the group
- * panel's People and Bots and the one "Manage members" dialog both "+ Add"
- * open (#1240, #1260). It answers /api itself with a made-up organization,
+ * panel's People and Bots. "+ Add" opens an inline picker; "Manage members"
+ * opens people and bots together, then Done (#1240, #1260). It answers /api itself with a made-up organization,
  * so nothing reaches a server. Not shipped in the app.
  * ?skin=<id>&lang=<code>&owner=1 (the viewer owns the group; else a member
  * in someone else's group) */

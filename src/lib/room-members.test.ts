@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { nextHumanIds, nextMemberIds, rosterBotChoices } from "./room-members";
+import { addableRosterBots, nextHumanIds, nextMemberIds, rosterBotChoices } from "./room-members";
 
 const pick = (...ids: string[]) => new Set(ids);
 
@@ -66,5 +66,26 @@ describe("rosterBotChoices", () => {
       "mine-archived",
     ]);
     expect(rosterBotChoices(bots, { memberIds: [], ownsRoom: false, actorId: "" })).toEqual([]);
+  });
+});
+
+describe("addableRosterBots", () => {
+  const bots = [
+    { id: "mine", ownerUserId: "pr_me" },
+    { id: "mine-in", ownerUserId: "pr_me" },
+    { id: "mine-archived", ownerUserId: "pr_me", hidden: true },
+    { id: "theirs", ownerUserId: "pr_ada" },
+    { id: "theirs-in", ownerUserId: "pr_ada" },
+  ];
+
+  it("offers a member only their own bots that are not already in the room (#1240)", () => {
+    expect(addableRosterBots(bots, { memberIds: ["mine-in", "theirs-in"], ownsRoom: false, actorId: "pr_me" }).map((b) => b.id)).toEqual(["mine"]);
+  });
+
+  it("offers the owner every bot that is not already in the room", () => {
+    expect(addableRosterBots(bots, { memberIds: ["mine-in", "theirs-in"], ownsRoom: true, actorId: "pr_me" }).map((b) => b.id)).toEqual([
+      "mine",
+      "theirs",
+    ]);
   });
 });
