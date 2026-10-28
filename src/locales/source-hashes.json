@@ -15316,7 +15316,14 @@
       "organization.plugins.moved": "698bfa3c8301c7c2fd829c4ca1de9152ee4ceb580e5c1ca56fabf7343442d26b",
       "organization.plugins.open": "81393d1e2beb18cd4154bbfc9b7011fa622be464b28955dec6473b5d15869419",
       "settings.experimental.serverSetting": "b06702b9cc47f48f32bb625dfe71781db23b87624a520f3f5f02edf8d76a48c2",
-      "settings.profiles.personalEmpty": "e02d55f0e971e47d53284590bd8004caf9bf289b9e30a3dd2442f9580ae58066"
+      "settings.profiles.personalEmpty": "e02d55f0e971e47d53284590bd8004caf9bf289b9e30a3dd2442f9580ae58066",
+      "botPanel.model.hostComputer": "455813e46d74aa1a4a2ca02b8df12b221e335fca4fc2a133ce92df9de5a73239",
+      "botPanel.model.hostEngines": "8fdcede71c2214f051e10f37dca9ab3a697a7fe62770e56d8066f80a7d82ebe2",
+      "botPanel.model.hostOffline": "b4dc66dde806261bdda8607d8707aa727d308cd80272381a5583f63899918467",
+      "botPanel.model.hostNoComputer": "17e014211124ea8242876916f34ccad9229cd7b611d1ba461c427693b49cf6ac",
+      "botPanel.model.hostServer": "73ceb49ce6df85244fa7c99a6dbe477b738007b13c6c1abe468004175b7b2eeb",
+      "botPanel.model.where": "2666aff372f66bbe6546cbe5af53d779ccd87bdda159b648d66be96330f041e1",
+      "botPanel.model.whereHelp": "1598745aa171d64e68791b3469498790f7173122ea6852c63f815ab11f4b7940"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

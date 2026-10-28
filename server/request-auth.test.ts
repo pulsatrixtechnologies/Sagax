@@ -147,9 +147,12 @@ describe("scopes", () => {
       ["POST", "/api/org/invites/tok/accept"],
       ["GET", "/api/org"],
       ["POST", "/api/workers"],
+      ["GET", "/api/workers"],
       ["POST", "/api/workers/laptop/pull"],
       ["POST", "/api/workers/laptop/drop"],
       ["POST", "/api/workers/queue/m1/cancel"],
+      ["GET", "/api/workers/laptop/turns/m1"],
+      ["POST", "/api/workers/laptop/turns/m1"],
       ["GET", "/api/threads/t/files"], ["GET", `/api/threads/t/files/${"a1".repeat(12)}`],
       ["POST", `/api/threads/t/files/${"a1".repeat(12)}/pin`],
       // 2026-10-22: a webhook runs on the bot's own computer, so its
@@ -261,7 +264,7 @@ describe("scopes", () => {
     expect(companionBotFieldViolation({ memoryEnabled: false, memoryUpkeep: true, name: "Scout", soul: "x", modelSelection: {} })).toBeNull();
     // the voice notes switch of the bot panel (row BA11)
     expect(companionBotFieldViolation({ voiceNotes: false })).toBeNull();
-    for (const field of ["approvalMode", "cwd", "computer", "mcpServers", "autoApprove", "browserProfile", "visibility", "hidden"]) {
+    for (const field of ["approvalMode", "cwd", "computer", "mcpServers", "autoApprove", "browserProfile", "visibility", "hidden", "host"]) {
       expect(companionBotFieldViolation({ memoryEnabled: true, [field]: "x" }), field).toBe(field);
     }
     expect(companionBotFieldViolation([])).toBe("body");

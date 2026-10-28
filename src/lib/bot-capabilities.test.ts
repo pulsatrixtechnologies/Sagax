@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigStatus } from "@/state/store";
-import { canEditBotField, canStepPrimary, canTeachInBrowser, showBotArchive, showBotDelete, showBotRename, showBotVisibility, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
+import { canEditBotField, canSetBotHost, canStepPrimary, canTeachInBrowser, showBotArchive, showBotDelete, showBotRename, showBotVisibility, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = {
@@ -73,6 +73,18 @@ describe("canEditBotField", () => {
     const readOnly = { viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus;
     expect(canEditBotField(readOnly, own, "name")).toBe(false);
     expect(canEditBotField(readOnly, own, "color")).toBe(false);
+  });
+});
+
+describe("where a bot runs", () => {
+  it("lets the owner or an editor choose the computer, not another admin", () => {
+    expect(canSetBotHost(member, own)).toBe(true);
+    expect(canSetBotHost(member, other)).toBe(false);
+    expect(canSetBotHost(member, { ...other, grants: [{ target: `user:${ZARA}`, level: "edit" }] })).toBe(true);
+    expect(canSetBotHost({ viewer: { ...member.viewer!, role: "admin" } } as ConfigStatus, other)).toBe(false);
+    expect(canSetBotHost(null, other)).toBe(true);
+    const readOnly = { viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus;
+    expect(canSetBotHost(readOnly, own)).toBe(false);
   });
 });
 

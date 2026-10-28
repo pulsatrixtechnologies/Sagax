@@ -1,12 +1,32 @@
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 import { turnDestination, type BotHost } from "./turn-route.ts";
+import { isEffortLevel, type ModelSelection } from "../shared/wire.ts";
+
+/** One engine on a person's computer, as that computer published it. No keys. */
+export interface WorkerEngine {
+  instanceId: string;
+  label: string;
+  driverKind?: string;
+  models: { id: string; label: string }[];
+}
 
 export interface Worker {
   deviceId: string;
   userId: string;
   online: boolean;
+  /** Name the computer published. Absent: the device id. */
+  name?: string;
+  /** Engines and models on that computer. Absent until it publishes them. */
+  engines?: WorkerEngine[];
+  /** Last register or pull, epoch ms. Absent on a record that does not time out. */
+  seenAt?: number;
 }
+
+const DEVICE_ID = /^[\w-]{1,80}$/;
+const TEXT_LIMIT = 100_000;
+export const PULL_WAIT_MS = 20_000;
+export const WORKER_OFFLINE_MS = 45_000;
 
 /** Same deviceId is one entry. The new record replaces it. Other devices stay. */
 export function registerWorker(workers: Worker[], worker: Worker): Worker[] {
@@ -266,6 +286,8 @@ export interface DeviceQueuedTurn {
   userId: string;
   authorId: string;
   started: boolean;
+  /** Which bot this hold is for. Absent on rows queued before bots were named. */
+  botId?: string;
 }
 
 export function destinationForBot(input: { host?: BotHost; workers: Worker[] }): ReturnType<typeof turnDestination> {
@@ -289,8 +311,10 @@ export function enqueueOfflineTurn(input: {
   deviceId: string;
   userId: string;
   authorId: string;
+  botId?: string;
 }): DeviceQueuedTurn[] {
-  if (input.queued.some((item) => !item.started && item.messageId === input.messageId && item.deviceId === input.deviceId && item.userId === input.userId)) {
+  const botId = input.botId ?? "";
+  if (input.queued.some((item) => !item.started && item.messageId === input.messageId && item.deviceId === input.deviceId && item.userId === input.userId && (item.botId ?? "") === botId)) {
     return input.queued;
   }
   return [...input.queued, {
@@ -299,6 +323,7 @@ export function enqueueOfflineTurn(input: {
     userId: input.userId,
     authorId: input.authorId,
     started: false,
+    ...(botId ? { botId } : {}),
   }];
 }
 
@@ -362,6 +387,7 @@ export function channelTurnGate(input: {
         deviceId: destination.deviceId,
         userId: host.kind === "machine" ? host.userId : "",
         authorId,
+        botId: bot.id,
       });
     } else if (destination.kind === "queued" && host.kind === "machine") {
       held = true;
@@ -371,6 +397,7 @@ export function channelTurnGate(input: {
         deviceId: host.deviceId,
         userId: host.userId,
         authorId,
+        botId: bot.id,
       });
     }
   }
@@ -389,17 +416,265 @@ export function pullQueuedForSession(input: {
   return { status: 200, ids: pulled.ids, queued: pulled.queued };
 }
 
+function clip(value: unknown, max: number): string {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function publishedEngines(value: unknown): WorkerEngine[] | { error: string } {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) return { error: "engines must be a list" };
+  const engines: WorkerEngine[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const row = entry as { instanceId?: unknown; label?: unknown; driverKind?: unknown; models?: unknown };
+    const instanceId = clip(row.instanceId, 120);
+    if (!instanceId || !Array.isArray(row.models)) continue;
+    const models: { id: string; label: string }[] = [];
+    for (const model of row.models) {
+      if (!model || typeof model !== "object" || Array.isArray(model)) continue;
+      const id = clip((model as { id?: unknown }).id, 200);
+      if (!id) continue;
+      const label = clip((model as { label?: unknown }).label, 200) || id;
+      models.push({ id, label });
+      if (models.length >= 80) break;
+    }
+    if (!models.length) continue;
+    const driverKind = clip(row.driverKind, 60);
+    engines.push({
+      instanceId,
+      label: clip(row.label, 120) || instanceId,
+      ...(driverKind ? { driverKind } : {}),
+      models,
+    });
+    if (engines.length >= 40) break;
+  }
+  return engines;
+}
+
+/** The caller's computers only. Another member's device is not in the list. */
+export function workersForSession(workers: Worker[], userId: string): Array<{
+  deviceId: string;
+  name: string;
+  online: boolean;
+  engines: WorkerEngine[];
+}> {
+  const caller = userId.trim();
+  return workers.filter((worker) => worker.userId === caller).map((worker) => ({
+    deviceId: worker.deviceId,
+    name: worker.name || worker.deviceId,
+    online: worker.online,
+    engines: worker.engines ?? [],
+  }));
+}
+
+export function workerOwns(workers: Worker[], deviceId: string, userId: string): boolean {
+  return workers.some((worker) => worker.deviceId === deviceId && worker.userId === userId);
+}
+
+/** A computer that stopped pulling is offline. A record with no seenAt stays as it is. */
+export function expireWorkers(workers: Worker[], now: number, ttlMs = WORKER_OFFLINE_MS): Worker[] {
+  let changed = false;
+  const next = workers.map((worker) => {
+    if (!worker.online || worker.seenAt === undefined || now - worker.seenAt <= ttlMs) return worker;
+    changed = true;
+    return { ...worker, online: false };
+  });
+  return changed ? next : workers;
+}
+
+export function pullWaitMs(body: unknown): number {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return 0;
+  const row = body as { wait?: unknown; waitMs?: unknown };
+  if (typeof row.waitMs === "number" && Number.isFinite(row.waitMs)) {
+    return Math.max(0, Math.min(25_000, Math.floor(row.waitMs)));
+  }
+  return row.wait === true ? PULL_WAIT_MS : 0;
+}
+
+/** Wakes a long poll when a turn is queued for that computer. */
+export function createTurnBell() {
+  type Waiter = { deviceId: string; userId: string; resolve: (hit: boolean) => void };
+  const waiters: Waiter[] = [];
+  return {
+    notify(deviceId: string, userId: string) {
+      for (const waiter of waiters.slice()) {
+        if (waiter.deviceId === deviceId && waiter.userId === userId) waiter.resolve(true);
+      }
+    },
+    wait(deviceId: string, userId: string, timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
+      if (signal?.aborted || timeoutMs <= 0) return Promise.resolve(false);
+      return new Promise((resolve) => {
+        const waiter: Waiter = {
+          deviceId,
+          userId,
+          resolve: (hit) => {
+            cleanup();
+            resolve(hit);
+          },
+        };
+        const timer = setTimeout(() => waiter.resolve(false), timeoutMs);
+        const onAbort = () => waiter.resolve(false);
+        const cleanup = () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", onAbort);
+          const index = waiters.indexOf(waiter);
+          if (index >= 0) waiters.splice(index, 1);
+        };
+        signal?.addEventListener("abort", onAbort, { once: true });
+        waiters.push(waiter);
+      });
+    },
+  };
+}
+
+function engineHasModel(worker: Worker, instanceId: string, model: string): boolean {
+  return (worker.engines ?? []).some((engine) => engine.instanceId === instanceId && engine.models.some((option) => option.id === model));
+}
+
+/** `fleet`, or a machine the caller registered, with a model that computer published. */
+export function assignBotHost(input: {
+  callerUserId: string;
+  workers: Worker[];
+  host: unknown;
+}): { ok: true; host: BotHost; model?: ModelSelection } | { ok: false; status: 400 | 403; error: string } {
+  const caller = input.callerUserId.trim();
+  if (!caller) return { ok: false, status: 403, error: "Sign in to choose where this bot runs." };
+  if (input.host === "fleet" || (input.host && typeof input.host === "object" && !Array.isArray(input.host) && (input.host as { kind?: unknown }).kind === "fleet")) {
+    return { ok: true, host: { kind: "fleet" } };
+  }
+  if (!input.host || typeof input.host !== "object" || Array.isArray(input.host)) {
+    return { ok: false, status: 400, error: "host must be fleet or a machine" };
+  }
+  const row = input.host as { kind?: unknown; deviceId?: unknown; model?: unknown };
+  if (row.kind !== "machine") return { ok: false, status: 400, error: "host must be fleet or a machine" };
+  const deviceId = typeof row.deviceId === "string" ? row.deviceId.trim() : "";
+  if (!DEVICE_ID.test(deviceId)) return { ok: false, status: 400, error: "deviceId is required" };
+  const worker = input.workers.find((entry) => entry.deviceId === deviceId && entry.userId === caller);
+  if (!worker) return { ok: false, status: 403, error: "That computer is not registered on your account." };
+  if (!row.model || typeof row.model !== "object" || Array.isArray(row.model)) {
+    return { ok: false, status: 400, error: "name the model on that computer" };
+  }
+  const modelRow = row.model as { instanceId?: unknown; model?: unknown; effort?: unknown };
+  const instanceId = clip(modelRow.instanceId, 120);
+  const model = clip(modelRow.model, 200);
+  if (!instanceId || !model) return { ok: false, status: 400, error: "name the model on that computer" };
+  if (!engineHasModel(worker, instanceId, model)) {
+    return { ok: false, status: 400, error: "That model is not on this computer." };
+  }
+  const selection: ModelSelection = { instanceId, model };
+  if (modelRow.effort !== undefined) {
+    if (!isEffortLevel(modelRow.effort)) return { ok: false, status: 400, error: "effort is not recognized" };
+    selection.effort = modelRow.effort;
+  }
+  return { ok: true, host: { kind: "machine", userId: caller, deviceId }, model: selection };
+}
+
+/** A model change on a machine bot must be one that computer published. Null: not a machine bot. */
+export function selectionOnMachine(input: {
+  host?: BotHost;
+  workers: Worker[];
+  raw: unknown;
+}): { ok: true; selection: ModelSelection } | { ok: false; status: number; error: string } | null {
+  const host = input.host;
+  if (host?.kind !== "machine") return null;
+  if (!input.raw || typeof input.raw !== "object" || Array.isArray(input.raw)) {
+    return { ok: false, status: 400, error: "modelSelection must be an object" };
+  }
+  const row = input.raw as { instanceId?: unknown; model?: unknown; effort?: unknown };
+  const instanceId = clip(row.instanceId, 120);
+  const model = clip(row.model, 200);
+  if (!instanceId || !model) return { ok: false, status: 400, error: "modelSelection.instanceId is required" };
+  const worker = input.workers.find((entry) => entry.deviceId === host.deviceId && entry.userId === host.userId);
+  if (!worker || !engineHasModel(worker, instanceId, model)) {
+    return { ok: false, status: 400, error: "That model is not on this computer." };
+  }
+  const selection: ModelSelection = { instanceId, model };
+  if (row.effort !== undefined) {
+    if (!isEffortLevel(row.effort)) return { ok: false, status: 400, error: "effort is not recognized" };
+    selection.effort = row.effort;
+  }
+  return { ok: true, selection };
+}
+
+/** A 1:1 turn for a machine bot never starts on the fleet. */
+export function directMachinePlan(input: {
+  host?: BotHost;
+  workers: Worker[];
+}): { kind: "fleet" } | { kind: "hold"; deviceId: string; userId: string; online: boolean } {
+  const destination = destinationForBot({ host: input.host, workers: input.workers });
+  if (destination.kind === "fleet") return { kind: "fleet" };
+  if (input.host?.kind !== "machine") return { kind: "fleet" };
+  return {
+    kind: "hold",
+    deviceId: input.host.deviceId,
+    userId: input.host.userId,
+    online: destination.kind === "worker",
+  };
+}
+
+export type TurnWrite =
+  | { kind: "progress"; text: string }
+  | { kind: "reply"; text: string }
+  | { kind: "failed"; text: string }
+  | { kind: "done" }
+  | { kind: "approval"; requestId: string; tool: string; summary: string }
+  | { error: string };
+
+export function parseTurnWrite(body: unknown): TurnWrite {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "body must be a JSON object" };
+  const row = body as { kind?: unknown; text?: unknown; requestId?: unknown; tool?: unknown; summary?: unknown };
+  const text = typeof row.text === "string" ? row.text.slice(0, TEXT_LIMIT) : "";
+  if (row.kind === "progress" || row.kind === "reply") {
+    if (!text.trim()) return { error: "text is required" };
+    return { kind: row.kind, text };
+  }
+  if (row.kind === "failed") return { kind: "failed", text };
+  if (row.kind === "done") return { kind: "done" };
+  if (row.kind === "approval") {
+    const requestId = clip(row.requestId, 120);
+    const tool = clip(row.tool, 200);
+    const summary = clip(row.summary, 500);
+    if (!DEVICE_ID.test(requestId) && !/^[\w.:-]{1,120}$/.test(requestId)) return { error: "requestId is required" };
+    if (!tool) return { error: "tool is required" };
+    return { kind: "approval", requestId, tool, summary };
+  }
+  return { error: "kind must be progress, reply, failed, approval or done" };
+}
+
 export function registerWorkerBody(input: {
   workers: Worker[];
   userId: string;
-  body: { deviceId?: unknown } | null;
+  body: { deviceId?: unknown; name?: unknown; engines?: unknown } | null;
+  now?: number;
 }): { status: 200; worker: Worker; workers: Worker[] } | { status: 400; error: string } {
   const deviceId = typeof input.body?.deviceId === "string" ? input.body.deviceId.trim() : "";
   const userId = input.userId.trim();
   if (!deviceId) return { status: 400, error: "deviceId is required" };
+  if (!DEVICE_ID.test(deviceId)) return { status: 400, error: "deviceId is required" };
   if (!userId) return { status: 400, error: "session user is required" };
-  const worker: Worker = { deviceId, userId, online: true };
+  const engines = publishedEngines(input.body?.engines);
+  if ("error" in engines) return { status: 400, error: engines.error };
+  const name = clip(input.body?.name, 80);
+  const worker: Worker = {
+    deviceId,
+    userId,
+    online: true,
+    ...(name ? { name } : {}),
+    ...(engines.length ? { engines } : {}),
+    ...(input.now !== undefined ? { seenAt: input.now } : {}),
+  };
   return { status: 200, worker, workers: registerWorker(input.workers, worker) };
+}
+
+export interface WorkerTurnView {
+  messageId: string;
+  botId: string;
+  threadId: string;
+  prompt: string;
+  model: ModelSelection;
+  bot: { id: string; name: string; soul?: string };
+  history: { role: "user" | "assistant"; text: string }[];
+  approvals: { requestId: string; tool: string; summary: string; behavior?: "allow" | "deny" | "answer"; message?: string }[];
 }
 
 export interface WorkerRouteDeps {
@@ -409,6 +684,9 @@ export interface WorkerRouteDeps {
   replaceQueued(queued: DeviceQueuedTurn[]): void;
   userId(auth: RequestAuth): string;
   authorId(auth: RequestAuth): string;
+  bell?: ReturnType<typeof createTurnBell>;
+  readTurn?(input: { deviceId: string; userId: string; messageId: string; botId?: string }): WorkerTurnView | { status: number; error: string } | null;
+  writeTurn?(input: { deviceId: string; userId: string; messageId: string; body: unknown }): { status: number; body: Record<string, unknown> };
   /** The caller that just registered this device, so approval delivery can
    * tell that session from the owner's other sessions. */
   rememberDevice?(input: { sessionId?: string; userId: string; deviceId: string }): void;
@@ -420,8 +698,39 @@ export interface WorkerRouteDeps {
   onAuthorCancel?(input: { messageId: string; authorId: string }): void;
 }
 
+function turnsForPull(ids: string[], beforeQueue: DeviceQueuedTurn[], deviceId: string, userId: string) {
+  return ids.map((id) => {
+    const item = beforeQueue.find((row) => row.messageId === id && row.deviceId === deviceId && row.userId === userId);
+    return { messageId: id, ...(item?.botId ? { botId: item.botId } : {}) };
+  });
+}
+
 export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
-  return async ({ req, res, path, method, auth, json, readBody }) => {
+  return async ({ req, res, url, path, method, auth, json, readBody }) => {
+    if (method === "GET" && path === "/api/workers") {
+      return json(res, 200, { workers: workersForSession(deps.workers(), deps.userId(auth)) });
+    }
+    const turnPath = path.match(/^\/api\/workers\/([\w-]+)\/turns\/([\w.-]+)$/);
+    if (turnPath && (method === "GET" || method === "POST")) {
+      const deviceId = turnPath[1]!;
+      const messageId = turnPath[2]!;
+      const userId = deps.userId(auth);
+      if (!workerOwns(deps.workers(), deviceId, userId)) return json(res, 403, { error: "forbidden" });
+      if (method === "GET") {
+        const view = deps.readTurn?.({
+          deviceId,
+          userId,
+          messageId,
+          botId: url.searchParams.get("botId") ?? undefined,
+        });
+        if (!view) return json(res, 404, { error: "no such turn" });
+        if ("error" in view) return json(res, view.status, { error: view.error });
+        return json(res, 200, view);
+      }
+      const body = await readBody(req);
+      const written = deps.writeTurn?.({ deviceId, userId, messageId, body }) ?? { status: 404, body: { error: "no such turn" } };
+      return json(res, written.status, written.body);
+    }
     if (method !== "POST") return PASS;
     if (path === "/api/workers") {
       const body = await readBody(req);
@@ -429,6 +738,7 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
         workers: deps.workers(),
         userId: deps.userId(auth),
         body: body && typeof body === "object" && !Array.isArray(body) ? body : null,
+        now: Date.now(),
       });
       if (result.status === 400) return json(res, 400, { error: result.error });
       deps.replace(result.workers);
@@ -441,31 +751,53 @@ export function createWorkerRoutes(deps: WorkerRouteDeps): RouteHandler {
     }
     const pull = path.match(/^\/api\/workers\/([\w-]+)\/pull$/);
     if (pull) {
-      const beforeQueue = deps.queued();
-      const result = pullQueuedForSession({
-        deviceId: pull[1]!,
-        userId: deps.userId(auth),
-        workers: deps.workers(),
-        queued: beforeQueue,
-      });
+      const body = await readBody(req);
+      const deviceId = pull[1]!;
+      const userId = deps.userId(auth);
+      const take = () => {
+        const beforeQueue = deps.queued();
+        const result = pullQueuedForSession({
+          deviceId,
+          userId,
+          workers: deps.workers(),
+          queued: beforeQueue,
+        });
+        return { beforeQueue, result };
+      };
+      let { beforeQueue, result } = take();
       if (result.status === 403) return json(res, 403, { error: result.error });
+      const waitMs = result.ids.length ? 0 : pullWaitMs(body);
+      if (waitMs > 0 && deps.bell) {
+        const controller = new AbortController();
+        const onClose = () => controller.abort();
+        req.once("close", onClose);
+        const hit = await deps.bell.wait(deviceId, userId, waitMs, controller.signal);
+        req.off("close", onClose);
+        if (controller.signal.aborted || res.writableEnded) return;
+        if (hit) ({ beforeQueue, result } = take());
+        if (result.status === 403) return json(res, 403, { error: result.error });
+      }
+      const seen = deps.workers().map((worker) => worker.deviceId === deviceId && worker.userId === userId
+        ? { ...worker, online: true, seenAt: Date.now() }
+        : worker);
+      deps.replace(seen);
       deps.replaceQueued(result.queued);
       if (result.ids.length) {
         const authorIds = result.ids.map((id) => beforeQueue.find((item) => item.messageId === id)?.authorId ?? "");
-        deps.onTurnPulled?.({ deviceId: pull[1]!, userId: deps.userId(auth), messageIds: result.ids, authorIds });
+        deps.onTurnPulled?.({ deviceId, userId, messageIds: result.ids, authorIds });
         bindWorkerSocket({
           socket: req.socket,
           response: res,
           onClose() {
             deps.onWorkerSocketClose?.({
-              deviceId: pull[1]!,
-              userId: deps.userId(auth),
-              messageIds: result.ids,
+              deviceId,
+              userId,
+              messageIds: result.status === 200 ? result.ids : [],
             });
           },
         });
       }
-      return json(res, 200, { ids: result.ids });
+      return json(res, 200, { ids: result.ids, turns: turnsForPull(result.ids, beforeQueue, deviceId, userId) });
     }
     const drop = path.match(/^\/api\/workers\/([\w-]+)\/drop$/);
     if (drop) {

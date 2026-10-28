@@ -36,7 +36,8 @@ import { createOrganizationEntry, ORGANIZATION_DEEP_LINK, isOrganizationDeepLink
 import { chatLinkFrom } from "./chat-link.mjs";
 import { createRotatingLog } from "./log-file.mjs";
 import { createOrgJoin, forgetDetail } from "./org-join.mjs";
-import { createOwnerIdentitySync } from "./owner-identity.mjs";
+import { createOwnerIdentitySync, organizationOrigins } from "./owner-identity.mjs";
+import { createMachineWorker, readMachineIdentity } from "./machine-worker.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
 import { createWindowNudger } from "./window-nudge.mjs";
 import { createDesktopAttention } from "./desktop-attention.mjs";
@@ -841,6 +842,14 @@ const ownerIdentitySync = createOwnerIdentitySync({
   },
   log: slog,
 });
+const machineWorker = createMachineWorker({
+  origins: () => organizationOrigins(environmentsState),
+  localOrigin: () => `http://127.0.0.1:${SERVER_PORT}`,
+  identity: () => readMachineIdentity(path.join(app.getPath("userData"), "machine-worker.json")),
+  fetchOrg: (url, init) => session.defaultSession.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
+  fetchLocal: (url, init) => fetch(url, init),
+  log: (line) => slog(line),
+});
 const serverSupervisor = createServerSupervisor({
   restart: () => startServerOn(SERVER_PORT),
   stop: stopUtilityServer,
@@ -853,6 +862,7 @@ const serverSupervisor = createServerSupervisor({
     // Who owns this computer in their organization (name, address, avatar).
     void ownerIdentitySync.serverReady();
     ownerIdentitySync.start();
+    void machineWorker.start();
     // A restarted runtime has no library catalog until main sends it again.
     orgLibrary?.runtimeReady();
     if (managedDesktop) void managedDesktop.refresh().catch(() => {});

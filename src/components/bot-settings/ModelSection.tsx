@@ -20,6 +20,7 @@ import { ThreadModelsLine } from "../ThreadModelsLine";
 import { botRecovery } from "@/lib/bot-runtime-settings";
 import { BotRecoverySettings } from "./BotRecoverySettings";
 import { BotPayerSettings } from "./BotPayerSettings";
+import { BotHostSettings } from "./BotHostSettings";
 
 export function ModelSection({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
@@ -51,7 +52,8 @@ export function ModelSection({ bot }: { bot: Bot }) {
   return (
     <div className="flex flex-col gap-5">
       <SettingsGroup title={t("botSettings.nav.model")} groupId="botModel">
-        <div className="px-3.5 py-2.5">
+        {!draft && <BotHostSettings bot={bot} />}
+        {bot.host?.kind === "machine" ? null : <div className="px-3.5 py-2.5">
           <ModelPicker
             bot={shown}
             contained
@@ -68,10 +70,10 @@ export function ModelSection({ bot }: { bot: Bot }) {
           {!draft && turn.busy && <ModelLockLine bot={bot} lock={turn} />}
           {/* Right below the picker, so it shows the moment the model changes. */}
           {!draft && <ThreadModelsLine bot={bot} className="mt-2" />}
-        </div>
+        </div>}
         {/* Share the model picker's effort choices, but edit the profile
             default. Simple keeps the saved effort and does not show it. */}
-        {advanced && <EffortRow
+        {bot.host?.kind !== "machine" && advanced && <EffortRow
           bot={shown}
           viewerLocal={viewerLocal}
           pill={{ label: effortTitle, help: effortHelp }}
@@ -86,11 +88,11 @@ export function ModelSection({ bot }: { bot: Bot }) {
       </SettingsGroup>
       {/* #1137: who pays for this bot's replies (organization server, the
           owner or an admin; Simple and Advanced). */}
-      {!draft && bot.turnPayerDefault && canEditBotField(state.config, bot, "automaticRecovery") && <BotPayerSettings key={`payer:${bot.id}`} bot={bot} />}
+      {bot.host?.kind !== "machine" && !draft && bot.turnPayerDefault && canEditBotField(state.config, bot, "automaticRecovery") && <BotPayerSettings key={`payer:${bot.id}`} bot={bot} />}
       {/* 2026-10-15: this bot's automatic recovery (it was Settings >
           General > Advanced for every bot), then its ordered backups. */}
-      {advanced && !draft && canEditBotField(state.config, bot, "automaticRecovery") && <BotRecoverySettings key={`recovery:${bot.id}`} bot={bot} />}
-      {advanced && !draft && botRecovery(bot, state.config).enabled && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
+      {bot.host?.kind !== "machine" && advanced && !draft && canEditBotField(state.config, bot, "automaticRecovery") && <BotRecoverySettings key={`recovery:${bot.id}`} bot={bot} />}
+      {bot.host?.kind !== "machine" && advanced && !draft && botRecovery(bot, state.config).enabled && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
     </div>
   );
 }

@@ -920,10 +920,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },
   // A member's machine checks in as a worker. The handler binds it to the session user.
   // Pull and cancel stay on that session: registering does not run the queued turns.
-  { methods: ["POST"], path: /^\/api\/workers$/ },
+  { methods: ["GET", "POST"], path: /^\/api\/workers$/ },
   { methods: ["POST"], path: /^\/api\/workers\/[\w-]+\/pull$/ },
   { methods: ["POST"], path: /^\/api\/workers\/[\w-]+\/drop$/ },
   { methods: ["POST"], path: /^\/api\/workers\/queue\/[\w-]+\/cancel$/ },
+  { methods: ["GET", "POST"], path: /^\/api\/workers\/[\w-]+\/turns\/[\w.-]+$/ },
 ];
 
 /** Organization server (2026-10-09): admin-scope routes a person reaches

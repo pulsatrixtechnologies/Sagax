@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { requiredScope } from "./request-auth.ts";
 import { turnDestination } from "./turn-route.ts";
 import {
+  assignBotHost,
   bindWorkerSocket,
   cancelQueued,
+  createTurnBell,
+  directMachinePlan,
+  expireWorkers,
   failPulledOnAuthorCancel,
   channelTurnGate,
   failTurn,
@@ -12,12 +16,16 @@ import {
   failTurnOnWorkerClose,
   invokeFleetRunner,
   memberIdsChangeDuringHeldTurn,
+  parseTurnWrite,
+  pullWaitMs,
+  selectionOnMachine,
   turnsOpenForMembership,
   pullQueuedForSession,
   queueTurn,
   registerWorker,
   registerWorkerBody,
   takeQueued,
+  workersForSession,
 } from "./workers.ts";
 
 describe("workers", () => {
@@ -65,7 +73,7 @@ describe("workers", () => {
       messageId: "m1",
       queued: [],
     })).toEqual({
-      queued: [{ messageId: "m1", deviceId: "laptop", userId: "morgan@example.test", authorId: "", started: false }],
+      queued: [{ messageId: "m1", deviceId: "laptop", userId: "morgan@example.test", authorId: "", started: false, botId: "desk" }],
       fleetIds: [],
       status: "machine-offline",
     });
@@ -127,7 +135,7 @@ describe("workers", () => {
     expect(gate.status).toBe("machine-offline");
     const pulled = takeQueued("laptop", gate.queued, "morgan@example.test");
     expect(pulled.ids).toEqual(["m1"]);
-    expect(pulled.started).toEqual([{ messageId: "m1", deviceId: "laptop", userId: "morgan@example.test", authorId: "p_morgan", started: true }]);
+    expect(pulled.started).toEqual([{ messageId: "m1", deviceId: "laptop", userId: "morgan@example.test", authorId: "p_morgan", started: true, botId: "desk" }]);
     expect(takeQueued("laptop", pulled.queued, "morgan@example.test").ids).toEqual([]);
     expect(takeQueued("studio", gate.queued, "morgan@example.test").ids).toEqual([]);
   });
@@ -146,8 +154,8 @@ describe("workers", () => {
     });
     expect(gate.fleetIds).toEqual(["fleet-bot"]);
     expect(gate.queued).toEqual([
-      { messageId: "m1", deviceId: "laptop", userId: "morgan@example.test", authorId: "p_morgan", started: false },
-      { messageId: "m1", deviceId: "studio", userId: "ada@example.test", authorId: "p_morgan", started: false },
+      { messageId: "m1", deviceId: "laptop", userId: "morgan@example.test", authorId: "p_morgan", started: false, botId: "desk" },
+      { messageId: "m1", deviceId: "studio", userId: "ada@example.test", authorId: "p_morgan", started: false, botId: "other" },
     ]);
     expect(gate.status).toBe("machine-offline");
   });
@@ -525,8 +533,114 @@ describe("workers", () => {
 
   it("lets a session register, pull, and cancel a worker queue at client scope", () => {
     expect(requiredScope("POST", "/api/workers")).toBe("client");
+    expect(requiredScope("GET", "/api/workers")).toBe("client");
     expect(requiredScope("POST", "/api/workers/laptop/pull")).toBe("client");
     expect(requiredScope("POST", "/api/workers/laptop/drop")).toBe("client");
     expect(requiredScope("POST", "/api/workers/queue/m1/cancel")).toBe("client");
+    expect(requiredScope("GET", "/api/workers/laptop/turns/m1")).toBe("client");
+    expect(requiredScope("POST", "/api/workers/laptop/turns/m1")).toBe("client");
+  });
+
+  it("publishes the computer name and engines, and lists only that person's computers", () => {
+    const registered = registerWorkerBody({
+      workers: [{ deviceId: "studio", userId: "ada@example.test", online: true, name: "Ada", engines: [{ instanceId: "pi", label: "pi", models: [{ id: "local", label: "Local" }] }] }],
+      userId: "morgan@example.test",
+      body: {
+        deviceId: "laptop",
+        name: "Morgan's Mac",
+        engines: [{ instanceId: "pi", label: "pi", driverKind: "piAgent", models: [{ id: "qwen", label: "Qwen" }] }],
+      },
+      now: 10,
+    });
+    expect(registered.status).toBe(200);
+    if (registered.status !== 200) return;
+    expect(registered.worker).toMatchObject({ deviceId: "laptop", userId: "morgan@example.test", name: "Morgan's Mac", online: true, seenAt: 10 });
+    expect(workersForSession(registered.workers, "morgan@example.test")).toEqual([{
+      deviceId: "laptop",
+      name: "Morgan's Mac",
+      online: true,
+      engines: [{ instanceId: "pi", label: "pi", driverKind: "piAgent", models: [{ id: "qwen", label: "Qwen" }] }],
+    }]);
+    expect(workersForSession(registered.workers, "ada@example.test").map((worker) => worker.deviceId)).toEqual(["studio"]);
+    expect(workersForSession(registered.workers, "morgan@example.test")).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ deviceId: "studio" })]),
+    );
+  });
+
+  it("points a bot only at a computer the caller registered, and only at a model that computer published", () => {
+    const workers = [{
+      deviceId: "laptop",
+      userId: "morgan@example.test",
+      online: true,
+      engines: [{ instanceId: "pi", label: "pi", models: [{ id: "qwen", label: "Qwen" }] }],
+    }];
+    expect(assignBotHost({
+      callerUserId: "ada@example.test",
+      workers,
+      host: { kind: "machine", deviceId: "laptop", model: { instanceId: "pi", model: "qwen" } },
+    })).toEqual({ ok: false, status: 403, error: "That computer is not registered on your account." });
+    expect(assignBotHost({
+      callerUserId: "morgan@example.test",
+      workers,
+      host: { kind: "machine", deviceId: "laptop", model: { instanceId: "pi", model: "other" } },
+    }).ok).toBe(false);
+    expect(assignBotHost({
+      callerUserId: "morgan@example.test",
+      workers,
+      host: { kind: "machine", deviceId: "laptop", model: { instanceId: "pi", model: "qwen" } },
+    })).toEqual({
+      ok: true,
+      host: { kind: "machine", userId: "morgan@example.test", deviceId: "laptop" },
+      model: { instanceId: "pi", model: "qwen" },
+    });
+    expect(assignBotHost({ callerUserId: "morgan@example.test", workers, host: "fleet" })).toEqual({
+      ok: true,
+      host: { kind: "fleet" },
+    });
+    const machine = { kind: "machine" as const, userId: "morgan@example.test", deviceId: "laptop" };
+    expect(selectionOnMachine({ host: machine, workers, raw: { instanceId: "pi", model: "qwen" } })).toEqual({
+      ok: true,
+      selection: { instanceId: "pi", model: "qwen" },
+    });
+    expect(selectionOnMachine({ host: { kind: "fleet" }, workers, raw: { instanceId: "pi", model: "qwen" } })).toBeNull();
+  });
+
+  it("holds a direct turn for the computer and does not start it on the fleet", () => {
+    const host = { kind: "machine" as const, userId: "morgan@example.test", deviceId: "laptop" };
+    expect(directMachinePlan({ host, workers: [] })).toEqual({
+      kind: "hold",
+      deviceId: "laptop",
+      userId: "morgan@example.test",
+      online: false,
+    });
+    const online = directMachinePlan({
+      host,
+      workers: [{ deviceId: "laptop", userId: "morgan@example.test", online: true }],
+    });
+    expect(online.kind === "hold" && online.online).toBe(true);
+    expect(directMachinePlan({ host: { kind: "fleet" }, workers: [] })).toEqual({ kind: "fleet" });
+  });
+
+  it("waits for a queued turn, then stops waiting", async () => {
+    expect(pullWaitMs({ wait: true })).toBe(20_000);
+    expect(pullWaitMs({})).toBe(0);
+    const bell = createTurnBell();
+    const pending = bell.wait("laptop", "morgan@example.test", 1_000);
+    bell.notify("laptop", "morgan@example.test");
+    await expect(pending).resolves.toBe(true);
+    await expect(bell.wait("laptop", "ada@example.test", 5)).resolves.toBe(false);
+  });
+
+  it("marks a quiet computer offline and accepts a turn report", () => {
+    const fresh = [{ deviceId: "laptop", userId: "morgan@example.test", online: true, seenAt: 1_000 }];
+    expect(expireWorkers(fresh, 1_000 + 45_000)).toBe(fresh);
+    expect(expireWorkers(fresh, 1_000 + 45_001)[0]?.online).toBe(false);
+    expect(parseTurnWrite({ kind: "reply", text: "bonjour" })).toEqual({ kind: "reply", text: "bonjour" });
+    expect(parseTurnWrite({ kind: "approval", requestId: "req-1", tool: "Bash", summary: "list" })).toMatchObject({
+      kind: "approval",
+      requestId: "req-1",
+      tool: "Bash",
+    });
+    expect("error" in parseTurnWrite({ kind: "nope" })).toBe(true);
   });
 });
