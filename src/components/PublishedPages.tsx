@@ -7,7 +7,7 @@
 // the person, its link, who can see it, its expiry, its versions, Revoke
 // and Delete.
 import { useEffect, useRef, useState } from "react";
-import { FileText, Loader2, Maximize2, Pin, Trash2, XCircle } from "lucide-react";
+import { FileText, Loader2, Maximize2, Pin, Share, Trash2, XCircle } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -15,13 +15,13 @@ import { PillSelect, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextR
 import { api, useStore, type Message } from "@/state/store";
 import { shareAudienceBody } from "../../shared/page-audience";
 import {
-  PAGE_ACCESS,
   type PageAccess,
   type PagesPolicy,
   type PublishedPageSummary,
 } from "../../shared/published-pages";
-import { ACCESS_LABEL, ExpirySelect, expiryFromHours, LinkRow, needsLinkConfirm, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
+import { ACCESS_LABEL, expiryFromHours, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
 import { PageGlyph, PageViewerDialog } from "./PageViewer";
+import { PageSharePopover } from "./PageShare";
 import { useWidgetTheme } from "./WidgetFrame";
 import { openPagePanel } from "@/lib/open-page";
 
@@ -195,8 +195,7 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
   const [error, setError] = useState("");
   const [previewing, setPreviewing] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmRevoke, setConfirmRevoke] = useState(false);
-  const [pendingAccess, setPendingAccess] = useState<PageAccess | null>(null);
+  const [sharing, setSharing] = useState(false);
   const [viewing, setViewing] = useState(false);
   const openButton = useRef<HTMLButtonElement>(null);
   const call = async (path: string, init: RequestInit) => {
@@ -238,50 +237,18 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
         {t("pages.updated", { when: when(page.updatedAt) })}
         {page.expiresAt !== null && ` · ${t("pages.expiresOn", { when: when(page.expiresAt) })}`}
       </p>
-      {published && (
-        <>
-          <LinkRow page={page} />
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 text-[12.5px] text-ink">
-              <span>{t("pages.whoCanSee")}</span>
-              <PillSelect<PageAccess>
-                ariaLabel={t("pages.whoCanSee")}
-                value={pendingAccess ?? page.access}
-                disabled={busy}
-                onChange={(next) => {
-                  // the same second press as a first publish for a public link
-                  if (needsLinkConfirm(page.access, next)) return setPendingAccess(next);
-                  void call("", { method: "PATCH", body: JSON.stringify({ access: next }) });
-                }}
-                options={PAGE_ACCESS.map((access) => ({ value: access, label: t(ACCESS_LABEL[access]), disabled: access === "link" && linkOff && page.access !== "link" }))}
-              />
-            </div>
-            <ExpirySelect value={-1} disabled={busy} onChange={(hours) => void call("", { method: "PATCH", body: JSON.stringify({ expiresAt: expiryFromHours(hours) }) })} />
-            {confirmRevoke ? (
-              <span role="alert" className="flex items-center gap-2 text-[12px]">
-                {t("pages.unpublishConfirm", { name: page.title })}
-                <button type="button" data-page-revoke disabled={busy} onClick={() => { setConfirmRevoke(false); void call("/revoke", { method: "POST", body: "{}" }); }}
-                  className="rounded px-1.5 py-1 text-danger hover:bg-danger/10 disabled:opacity-40">{t("pages.unpublish")}</button>
-                <button type="button" onClick={() => setConfirmRevoke(false)} className="rounded px-1.5 py-1 text-ink-secondary hover:bg-hover">{t("pages.cancel")}</button>
-              </span>
-            ) : (
-              <button type="button" disabled={busy} onClick={() => setConfirmRevoke(true)}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[12.5px] text-danger hover:bg-danger/10 disabled:opacity-40">
-                <XCircle size={13} />{t("pages.unpublish")}
-              </button>
-            )}
-          </div>
-          {pendingAccess && (
-            <span role="alert" className="flex flex-wrap items-center gap-2 text-[12px]">
-              <span className="text-warning">{t("pages.confirmLinkChange")}</span>
-              <button type="button" disabled={busy} onClick={() => { const next = pendingAccess; setPendingAccess(null); void call("", { method: "PATCH", body: JSON.stringify({ access: next }) }); }}
-                className="rounded px-1.5 py-1 text-accent hover:bg-hover">{t("pages.publishConfirm")}</button>
-              <button type="button" onClick={() => setPendingAccess(null)} className="rounded px-1.5 py-1 text-ink-secondary hover:bg-hover">{t("pages.cancel")}</button>
-            </span>
-          )}
-          {linkOff && page.access === "link" && <p className="text-[12px] text-warning">{t("pages.linkOffActive")}</p>}
-        </>
-      )}
+      {/* sharing: the one Share popover (src/components/PageShare.tsx) */}
+      <div className="relative flex flex-wrap items-center gap-2 text-[12px]">
+        {published && <span className="text-ink-secondary">{t("pages.card.published", { access: t(ACCESS_LABEL[page.access]) })}</span>}
+        <button type="button" data-page-share aria-expanded={sharing} aria-haspopup="dialog" onClick={() => setSharing((open) => !open)}
+          className="inline-flex items-center gap-1 rounded-full border border-hairline/60 px-2.5 py-1 text-ink hover:bg-raised">
+          <Share size={12} />{t("pages.shareMenu")}
+        </button>
+        {sharing && (
+          <PageSharePopover page={page} version={page.currentVersion ?? page.versions.at(-1)?.n ?? 1} linkOff={linkOff} onChange={onChange} onClose={() => setSharing(false)}
+            className="absolute left-0 top-full z-[5] mt-1" />
+        )}
+      </div>
       <details className="text-[12px]">
         <summary className="cursor-pointer text-ink-secondary">{t("pages.versions", { count: String(page.versions.length) })}</summary>
         <ul className="mt-1.5 space-y-1.5">

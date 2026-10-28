@@ -46,6 +46,9 @@
 //          its frame (?a=1) runs ANNOTATE_SOURCE, which only posts to the app
 //   GET    /api/pages/policy                { linkSharing } any person
 //   PUT    /api/admin/pages/policy          { linkSharing } organization admins (audited)
+//   POST   /api/pages/:id/invite            { people, teams } (2026-10-28, Share >
+//          Add people or groups): who else reads it while it is shared with
+//          "People you invite"; the person's own choice, no admin
 import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
@@ -65,7 +68,9 @@ import {
   PAGE_SCROLL_MAX,
   PAGE_VIEW_PREFIX,
   pageCsp,
+  pageInvites,
   parsePageAnchor,
+  parsePageInvites,
   parsePageTitle,
   validExpiry,
   type PageAccess,
@@ -81,19 +86,26 @@ import { PASS, type RouteHandler } from "./table.ts";
 export type PageViewer = { principalId?: string; computerOwner: boolean } | null;
 
 /** Whether this reader may read this page. While the organization's switch
- * for public links is off, a page shared by link reads as "org". Pure. */
-export function pageReadable(page: Pick<PageRecord, "access" | "ownerId">, viewer: PageViewer, policy?: PagesPolicy): boolean {
+ * for public links is off, a page shared by link reads as "org". A page
+ * shared with "People you invite" (`private`) reads for its person and the
+ * people and teams they invited (`teamsOf`: the reader's teams). Pure. */
+export function pageReadable(page: Pick<PageRecord, "access" | "ownerId" | "invites">, viewer: PageViewer, policy?: PagesPolicy, teamsOf?: (principalId: string) => readonly string[]): boolean {
   if (page.access === "link" && policy?.linkSharing !== false) return true;
   if (!viewer) return false;
   if (page.access === "org" || page.access === "link") return true;
   if (page.ownerId === undefined) return viewer.computerOwner;
-  return (viewer.principalId ?? "").toLowerCase() === page.ownerId.toLowerCase();
+  if ((viewer.principalId ?? "").toLowerCase() === page.ownerId.toLowerCase()) return true;
+  const principalId = viewer.principalId;
+  return Boolean(principalId) && pageInvites(page.invites, principalId, principalId && teamsOf ? teamsOf(principalId) : []);
 }
 
 /** Whether this reader is the page's own person (the preview). Pure. */
 export function pageOwnedBy(page: Pick<PageRecord, "ownerId">, viewer: PageViewer): boolean {
   return pageReadable({ access: "private", ownerId: page.ownerId }, viewer);
 }
+
+const readableBy = (options: PublicPageOptions, page: PageRecord, viewer: PageViewer) =>
+  pageReadable(page, viewer, options.pages!.policy(), options.teamsOf ? (id) => options.teamsOf!(id) : undefined);
 
 /** A viewer as a frame ticket carries it, and back. Pure. */
 export function viewerKey(viewer: PageViewer): string {
@@ -131,6 +143,8 @@ export interface PublicPageOptions {
   separate?: { pagesOrigin: URL; appOrigin: URL } | null;
   /** Secret-shaped text out of a reader's comment (default: redactSecretsInText). */
   redact?(text: string): string;
+  /** The teams a person is in (team ids), for pages shared with a team. */
+  teamsOf?(principalId: string): readonly string[];
 }
 
 const NOT_FOUND_HTML = (language: "fr" | "en") => language === "fr"
@@ -238,7 +252,7 @@ function serveWrapper(options: PublicPageOptions, req: IncomingMessage, res: Ser
   const token = tokenAfter(path, PAGE_VIEW_PREFIX);
   const opened = token && options.pages ? options.pages.open(token) : null;
   const viewer = options.viewer(req);
-  if (!opened || !ownerActive(options, opened.page) || !pageReadable(opened.page, viewer, options.pages!.policy())) return notFound(req, res, method);
+  if (!opened || !ownerActive(options, opened.page) || !readableBy(options, opened.page, viewer)) return notFound(req, res, method);
   const subject = `link:${opened.page.linkId!}`;
   const commentPath = readerCommentsOpen(options, opened.page) ? `${PAGE_COMMENT_PREFIX}${token}` : undefined;
   return sendWrapper(options, req, res, method, { ...opened, framePath: `${PAGE_FRAME_PREFIX}${token}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: false, ...(commentPath ? { commentPath } : {}) });
@@ -316,7 +330,7 @@ function serveReaderComment(options: PublicPageOptions, req: IncomingMessage, re
   };
   const opened = token && options.pages ? options.pages.open(token) : null;
   const viewer = options.viewer(req);
-  if (!opened || !ownerActive(options, opened.page) || !pageReadable(opened.page, viewer, options.pages!.policy()) || !readerCommentsOpen(options, opened.page)) {
+  if (!opened || !ownerActive(options, opened.page) || !readableBy(options, opened.page, viewer) || !readerCommentsOpen(options, opened.page)) {
     req.resume();
     return notFound(req, res, "POST");
   }
@@ -379,7 +393,7 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
   if (!target || bound === null || !ownerActive(options, target.page)) return notFound(req, res, method);
   const reader = options.separate ? viewerFromKey(bound) : options.viewer(req);
   if (options.separate && reader && options.viewerActive && !options.viewerActive(reader)) return notFound(req, res, method);
-  const allowed = preview ? pageOwnedBy(target.page, reader) : pageReadable(target.page, reader, pages.policy());
+  const allowed = preview ? pageOwnedBy(target.page, reader) : readableBy(options, target.page, reader);
   const content = allowed ? pages.content(target.page.id, target.version.n) : null;
   if (content === null) return notFound(req, res, method);
   const ancestors = options.separate ? options.separate.appOrigin.origin : "'self'";
@@ -549,6 +563,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       || (method === "DELETE" && /^\/api\/pages\/([\w-]+)\/reader-comments\/([\w-]+)$/.exec(path) && { route: "readerRemove", match: /^\/api\/pages\/([\w-]+)\/reader-comments\/([\w-]+)$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/share$/.exec(path) && { route: "share", match: /^\/api\/pages\/([\w-]+)\/share$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/place$/.exec(path) && { route: "place", match: /^\/api\/pages\/([\w-]+)\/place$/.exec(path)! })
+      || (method === "POST" && /^\/api\/pages\/([\w-]+)\/invite$/.exec(path) && { route: "invite", match: /^\/api\/pages\/([\w-]+)\/invite$/.exec(path)! })
       || null;
     if (extra) return pageExtras(deps, { req, res, method, auth, json, readBody }, extra);
     const match = /^\/api\/pages\/([\w-]+)(?:\/(publish|decline|revoke)|\/versions\/(\d+))?$/.exec(path);
@@ -636,7 +651,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
 }
 
 type ExtrasContext = Pick<Parameters<RouteHandler>[0], "req" | "res" | "method" | "auth" | "json" | "readBody">;
-type Extra = { route: "source" | "edit" | "comments" | "comment" | "uncomment" | "readerComments" | "readerApprove" | "readerRemove" | "share" | "place"; match: RegExpExecArray };
+type Extra = { route: "source" | "edit" | "comments" | "comment" | "uncomment" | "readerComments" | "readerApprove" | "readerRemove" | "share" | "place" | "invite"; match: RegExpExecArray };
 
 /** Lot R8: the person's editor (source and own edit), their comments, and
  * the moderation of readers' comments. The same rules as the routes above: a
@@ -658,6 +673,17 @@ async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, extr
     const parsed = parsePageAudience(body);
     if (!parsed.ok) return json(res, 400, { error: parsed.error, code: "bad_audience" });
     const result = deps.pages.share(page.id, parsed.value, by);
+    if (failed(result)) return json(res, result.status, { error: result.error, code: result.code });
+    const origin = deps.origin(req);
+    return json(res, 200, { page: deps.pages.summary(result, origin, deps.reachable(origin)) });
+  }
+  if (route === "invite") {
+    // Share > Add people or groups: the person's own page, their own choice;
+    // no admin. Who reads it still follows its access (pageReadable).
+    const body = await readBody(req) as Record<string, unknown> | null;
+    const invites = parsePageInvites(body, page.ownerId);
+    if (!invites) return json(res, 400, { error: "Send { people: [principal ids], teams: [team ids] }.", code: "bad_invites" });
+    const result = deps.pages.setInvites(page.id, invites, by);
     if (failed(result)) return json(res, result.status, { error: result.error, code: result.code });
     const origin = deps.origin(req);
     return json(res, 200, { page: deps.pages.summary(result, origin, deps.reachable(origin)) });
