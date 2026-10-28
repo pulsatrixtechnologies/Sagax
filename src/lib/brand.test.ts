@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { brandSwitchVars } from "./switch-colors";
 import { accentInk, applyBrand, bootstrapBrand, brand, brandVars, DEFAULT_BRAND, iconType, luminance } from "./brand";
 
 describe("brand", () => {
@@ -24,7 +25,10 @@ describe("brand", () => {
       "--color-focus": "#1D4ED8",
       "--color-accent-text": "#1D4ED8",
       "--color-accent-ink": "#ffffff",
+      ...brandSwitchVars("#1D4ED8"),
     });
+    // the switch track per scheme comes with it
+    expect(brandVars({ name: "X", accent: "#1D4ED8" })["--brand-switch-on-light"]).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("keeps the default brand when the server is old, slow, or refuses", async () => {

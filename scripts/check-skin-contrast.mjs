@@ -382,6 +382,13 @@ function measure(tokens, pairs) {
   return { measured, problems, missing: [...missing] };
 }
 
+/** Every skin context of `css`: the base skins, "x+t" for a tint and
+ * "x+t+full" for a full-surface colour (the gradient ends `@from`/`@to` are
+ * measuring points, not contexts, and are left out). */
+export function skinIds(css) {
+  return [...parseSkins(css).keys()].filter((id) => !id.includes("@"));
+}
+
 /** One skin's tokens as they resolve at its root, as `#rrggbb[aa]` hex:
  * what a tuning script nudges, and what a test can assert on. */
 export function skinTokens(css, id) {
