@@ -9,14 +9,19 @@
  * red for errors. Skins retune the accent, success, warning and danger
  * tokens in styles.css; these constants only pick which token a meaning uses.
  *
- * Measured by `pnpm check:contrast`: the accent track against the surfaces it
- * sits on (3:1, through its ring) and every pill tint against the card (4.5:1).
+ * Measured by `pnpm check:contrast`: every pill tint against the card (4.5:1).
+ *
+ * The switch (2026-10-28): the on track is the accent and the off track a
+ * neutral grey, each at the lightness src/lib/switch-colors.ts derives per
+ * skin and variant (src/styles/skin-switch.css), with an edge when a surface
+ * needs one; the thumb is white in both states, never dark on a coloured
+ * track. src/lib/switch-colors.test.ts holds every pair at 3:1.
  */
-export const SWITCH_ON = "bg-accent ring-1 ring-inset ring-accent-border";
-export const SWITCH_OFF = "bg-ink/10";
-/** The thumb takes the ink paired with the track, so it reads on every skin. */
-export const SWITCH_THUMB_ON = "bg-[var(--color-accent-ink)]";
-export const SWITCH_THUMB_OFF = "bg-ink";
+export const SWITCH_ON = "bg-[var(--color-switch-on)] shadow-[inset_0_0_0_1.5px_var(--color-switch-on-edge)]";
+export const SWITCH_OFF = "bg-[var(--color-switch-off)] shadow-[inset_0_0_0_1.5px_var(--color-switch-off-edge)]";
+/** The thumb: white in both states, its position says on or off. */
+export const SWITCH_THUMB_ON = "bg-white shadow-[0_1px_2px_rgb(0_0_0/0.3)]";
+export const SWITCH_THUMB_OFF = SWITCH_THUMB_ON;
 
 /** A status chip for a state: on, active, connected, ready, paused, waiting,
  * queued or scheduled. Off, idle or stopped states use `bg-control text-ink-secondary`. */

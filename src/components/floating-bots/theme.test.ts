@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { accentInk } from "@/lib/brand";
 import { applyFloatingTheme, cleanTheme, readAppTheme, themeVars } from "./theme";
 import { chatFrameRate, mascotTaskFor } from "./FloatingBotView";
+import { brandSwitchVars } from "@/lib/switch-colors";
 
 /** The bits of an element the theme touches: its data attributes and inline custom properties. */
 function element() {
@@ -35,6 +36,7 @@ describe("the desktop balloon wears the app's theme", () => {
       "--color-focus": "#ff6600",
       "--color-accent-text": "#ff6600",
       "--color-accent-ink": accentInk("#ff6600"),
+      ...brandSwitchVars("#ff6600"),
     });
     expect(Object.values(themeVars({ skin: "midnight" })).every((value) => value === "")).toBe(true);
   });

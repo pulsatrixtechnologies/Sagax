@@ -434,7 +434,7 @@ enum ThemeUIKit {
         UITabBar.appearance().scrollEdgeAppearance = tab
 
         // Black and Dim keep the measured #68CE67; other skins use their accent.
-        UISwitch.appearance().onTintColor = palette.toggleOn.uiColor
+        UISwitch.appearance().onTintColor = palette.switchColors.on.uiColor
         UITableView.appearance().backgroundColor = background
 
         let tint: UIColor? = (palette.id == .black || palette.id == .dim) && palette.botAccent == nil ? nil : palette.accent.uiColor

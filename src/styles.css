@@ -15,6 +15,8 @@
 @import "./styles/skin-duo.css";
 @import "./styles/skin-ambiance.css";
 @import "./styles/skin-texture.css";
+/* The switch's tracks per skin and variant, generated (pnpm gen:switch). */
+@import "./styles/skin-switch.css";
 
 /* Phones and tablets have no hover, and Tailwind only applies `hover:` and
    `group-hover:` under `@media (hover: hover)`. A control revealed on hover

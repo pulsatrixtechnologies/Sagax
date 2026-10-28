@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { accentInk } from "@/lib/brand";
 import { SKIN_IDS, type SkinId } from "@/lib/skins";
+import { BRAND_SWITCH_VARS, brandSwitchVars } from "@/lib/switch-colors";
 
 export interface FloatingTheme {
   /** The app's skin (src/lib/skins.ts). */
@@ -17,7 +18,7 @@ export interface FloatingTheme {
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
-const ACCENT_VARS = ["--color-accent", "--color-accent-border", "--color-focus", "--color-accent-text", "--color-accent-ink"] as const;
+const ACCENT_VARS = ["--color-accent", "--color-accent-border", "--color-focus", "--color-accent-text", "--color-accent-ink", ...BRAND_SWITCH_VARS] as const;
 
 export const isSkinId = (value: unknown): value is SkinId => typeof value === "string" && (SKIN_IDS as readonly string[]).includes(value);
 
@@ -71,6 +72,7 @@ export function themeVars(theme: FloatingTheme | undefined): Record<string, stri
     "--color-focus": theme.accent,
     "--color-accent-text": theme.accent,
     "--color-accent-ink": accentInk(theme.accent),
+    ...brandSwitchVars(theme.accent),
   };
 }
 

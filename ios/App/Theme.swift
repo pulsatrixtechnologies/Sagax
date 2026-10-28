@@ -125,10 +125,16 @@ enum Theme {
     static var addedText: Color { palette.addedText.color }
 
     // MARK: Accents
-    /// Switches: #68CE67 on Black and Dim, the skin's accent elsewhere (as the desktop).
-    static var toggleOn: Color { palette.toggleOn.color }
-    static var toggleOff: Color { palette.toggleOff.color }
-    static var toggleKnob: Color { palette.toggleKnob.color }
+    /// Switches: the skin's switch accent (#68CE67 on Black and Dim, the
+    /// skin's or the bot's accent elsewhere) and a neutral off, each at the
+    /// lightness that holds 3:1 with the white knob and the surfaces
+    /// (CompanionCore/SwitchContrast.swift), with an edge when needed.
+    static var toggleOn: Color { palette.switchColors.on.color }
+    static var toggleOff: Color { palette.switchColors.off.color }
+    static var toggleOnEdge: Color? { palette.switchColors.onEdge?.color }
+    static var toggleOffEdge: Color? { palette.switchColors.offEdge?.color }
+    /// White in both states, never dark on a coloured track.
+    static var toggleKnob: Color { SwitchContrast.knob.color }
     /// Links and action text ("Upload", "Add routine", action rows): #2D6DE7
     /// on Black and Dim as measured, the skin's accent text elsewhere (the
     /// accent fill can be too dark or too light to read as text: Dusk's plum).
@@ -682,26 +688,36 @@ struct CardRow: View {
 }
 
 /// The iOS 26 switch as measured: 60x27 track, white pill knob 35x23.
+/// The knob is white in both states and its side says on or off; the track
+/// holds 3:1 with the knob and the surface, through an edge when needed.
 struct ParityToggleStyle: ToggleStyle {
     @Environment(\.themePalette) var themePalette
+    @Environment(\.isEnabled) private var isEnabled
     var width: CGFloat = 60.33
     var height: CGFloat = 26.67
 
     func makeBody(configuration: Configuration) -> some View {
         let knobWidth = width * 0.586
         let knobHeight = height - 4
+        let edge = configuration.isOn ? Theme.toggleOnEdge : Theme.toggleOffEdge
         Button {
             Haptics.selection()
             withAnimation(.easeOut(duration: 0.22)) { configuration.isOn.toggle() }
         } label: {
             ZStack(alignment: configuration.isOn ? .trailing : .leading) {
                 Capsule().fill(configuration.isOn ? Theme.toggleOn : Theme.toggleOff)
+                if let edge {
+                    Capsule().strokeBorder(edge, lineWidth: 1.5)
+                }
                 Capsule()
                     .fill(Theme.toggleKnob)
+                    .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
                     .frame(width: knobWidth, height: knobHeight)
                     .padding(2)
             }
             .frame(width: width, height: height)
+            // disabled: dimmed, the knob keeps its side
+            .opacity(isEnabled ? 1 : 0.55)
         }
         .buttonStyle(.plain)
         .accessibilityValue(configuration.isOn ? Text("On") : Text("Off"))

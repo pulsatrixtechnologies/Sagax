@@ -20,7 +20,7 @@ export function Switch({
       role="switch"
       aria-checked={checked}
       className={cn(
-        "relative h-5 w-11 shrink-0 cursor-pointer rounded-full transition-colors enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none",
+        "relative h-5 w-11 shrink-0 cursor-pointer rounded-full transition-colors enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55 disabled:saturate-50 motion-reduce:transition-none",
         checked ? SWITCH_ON : SWITCH_OFF,
         className,
       )}

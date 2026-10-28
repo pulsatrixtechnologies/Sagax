@@ -9,15 +9,16 @@ import { PILL_INFO, SWITCH_OFF, SWITCH_ON } from "@/lib/status-tones";
 const read = (file: string) => readFileSync(join(process.cwd(), file), "utf8");
 
 describe("semantic tones", () => {
-  it("paints the on switch in the accent, never in the success green", () => {
+  it("paints the on switch in the accent track, never in the success green, with a white thumb", () => {
     const on = renderToStaticMarkup(createElement(Switch, { checked: true }));
-    expect(SWITCH_ON).toContain("bg-accent");
-    expect(on).toContain("bg-accent ring-1 ring-inset ring-accent-border");
-    expect(on).toContain("bg-[var(--color-accent-ink)]");
-    expect(on).not.toMatch(/success|green/);
+    expect(SWITCH_ON).toContain("bg-[var(--color-switch-on)]");
+    expect(on).toContain(SWITCH_ON);
+    expect(on).toContain("bg-white");
+    expect(on).not.toMatch(/success|green|accent-ink/);
     const off = renderToStaticMarkup(createElement(Switch, { checked: false }));
     expect(off).toContain(SWITCH_OFF);
-    expect(off).not.toContain("bg-accent");
+    expect(off).toContain("bg-white");
+    expect(off).not.toContain("--color-switch-on)");
   });
 
   it("reads on, paused and waiting states in the accent tint", () => {
