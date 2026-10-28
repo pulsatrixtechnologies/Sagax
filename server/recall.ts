@@ -14,6 +14,7 @@ import { parseTopicHeader, readTopicHead, topicBody, topicWords } from "./memory
 import { listMemoryTopics, memoryDate, readMemoryFile, readMemoryLog, readMemoryTopic, searchMemoryFiles, workspaceDir } from "./workspace.ts";
 import { withoutExpired } from "./memory-entries.ts";
 import { memoryHitMayShow, memoryMayShow, memoryReadersOf, withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
+import { fusePassages, semanticPassages } from "./semantic-recall.ts";
 import { join } from "node:path";
 
 /** Below this many characters a message is a nod, not a question. */
@@ -130,6 +131,9 @@ export interface RecallInput {
   /** Where this recall would be shown. A wider place does not receive a
    * captured fact stamped for somewhere narrower. Absent: the person. */
   audience?: MemoryDestination;
+  /** When true, local vector passages may follow the FTS5 passages.
+   * Off unless the caller asks. No model is downloaded. */
+  semantic?: boolean;
 }
 
 const TOPIC_PASSAGE_CHARS = 600;
@@ -252,5 +256,12 @@ export function buildRecall(input: RecallInput): RecallResult | null {
   const topics = topicPassages(input.botId, query, input.audience);
   const named = new Set(topics.map((passage) => passage.label));
   const notes = [...topics, ...memoryPassages(input.botId, query, input.audience).filter((passage) => !named.has(passage.label))].slice(0, input.budget?.notes ?? MEMORY_HITS);
-  return renderRecall([...notes, ...conversationPassages(input, query)], input.budget?.chars);
+  const lexical = [...notes, ...conversationPassages(input, query)];
+  // FTS5 fills the block first. Vectors, when a local index is ready, only take a free slot.
+  const cap = (input.budget?.notes ?? MEMORY_HITS) + (input.threadIds.length ? CONVERSATION_HITS : 0);
+  const vectors = input.semantic
+    ? semanticPassages(input.botId, query, cap).filter((passage) => input.threadIds.length > 0 || passage.source !== "conversation")
+    : [];
+  const passages = input.semantic ? fusePassages(lexical, vectors, cap) : lexical;
+  return renderRecall(passages, input.budget?.chars);
 }
