@@ -1,6 +1,6 @@
-// A person's own connections (organization server), since 2026-10-27 in two
-// places of Connect apps: GitHub in Sources (MyGithubConnection), their MCP
-// servers in My accounts (MyMcpServers). What each state draws, in English
+// A person's own connections (organization server), since 2026-10-28 both
+// in Connect apps > My accounts: GitHub (MyGithubConnection, in its GitHub
+// section) and their MCP servers (MyMcpServers). What each state draws, in English
 // and in French. A bot's plugins: see
 // src/components/plugins/BotPluginCard.test.ts.
 import { createElement } from "react";
@@ -28,7 +28,7 @@ describe("Mes connexions", () => {
     expect(organizationHidesSection("privacy", false)).toBe(true);
   });
 
-  it("GitHub alone in Sources, the servers alone in My accounts", () => {
+  it("GitHub and the servers are two parts, each alone", () => {
     const github = renderToStaticMarkup(createElement(MyGithubConnection, { initial: base }));
     expect(github).toContain("Connect GitHub");
     expect(github).not.toContain("Add an MCP server");
@@ -47,15 +47,16 @@ describe("Mes connexions", () => {
     expect(html).toContain("No MCP server of your own yet.");
   });
 
-  // 2026-10-26: no OAuth App on the server simply means "Use a token", with
-  // no word about an administrator.
-  it("offers only Use a token when the server has no GitHub OAuth App, in French", () => {
+  // 2026-10-28: one Connect GitHub whatever the server has; without its
+  // OAuth App it asks for a token, and one sentence says an admin can turn
+  // the sign-in on.
+  it("one Connect GitHub (a token) when the server has no GitHub OAuth App, in French", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, github: { state: "none", deviceFlow: false } } }));
-    expect(html).not.toContain("Connecter GitHub</button>");
-    expect(html).toContain("Utiliser un jeton");
-    expect(html).not.toContain("application OAuth GitHub");
-    expect(html).not.toMatch(/administrat/i);
+    expect(html).toContain('data-github-connect="token"');
+    expect(html).toContain("Connecter GitHub</button>");
+    expect(html).not.toContain("Utiliser un jeton");
+    expect(html).toContain("L&#x27;admin peut activer Connecter GitHub");
     expect(html).toContain("Ajouter un serveur MCP");
   });
 

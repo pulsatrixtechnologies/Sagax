@@ -4,13 +4,15 @@
 // remove it. One list for both install scopes: each marketplace becomes a
 // chip and a section of Connect apps, for everyone and for each bot.
 //
-// With `credentials` (2026-10-28), each marketplace picks a credential of
-// the one list in Sources > GitHub (server/github-credentials.ts), or
-// Automatic, and says which one read it last; it has no token field of its
-// own any more. In the bot scope the pick is that bot's (its owner or a
-// manager), in the "Everyone" scope the installation's. When the git host
-// refuses an add or a refresh, the parent says so (`needsToken`) and the
-// pick opens there.
+// With `credentials` (2026-10-28), a marketplace reads with the person's
+// GitHub account (My accounts > GitHub) by default ("Automatic") and says
+// which credential read it last. Only when the person has other credentials
+// beside that account (server/github-credentials.ts) does each row offer a
+// small selector to pick one; there is no token field here. In the bot scope
+// the pick is that bot's (its owner or a manager), in the "Everyone" scope
+// the installation's. When the git host refuses an add or a refresh, the
+// parent says so (`needsToken`): the pick opens there, or a link to My
+// accounts > GitHub when there is nothing to pick.
 import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, Lock, Plus, RefreshCw, Store, Trash2, Users } from "lucide-react";
 
@@ -104,6 +106,12 @@ export function credentialUsedText(view: MarketplaceCredentialView | undefined):
   return t("sources.market.usedNone");
 }
 
+/** The viewer has a credential to pick, or the row already picks one. */
+function useHasCredentials(load: boolean): boolean {
+  const { view } = useGithubCredentials(load);
+  return credentialOptions(view).length > 0;
+}
+
 /** Automatic, or one credential of the list. */
 function CredentialSelect({ value, chosen, onChange, disabled, label, id }: {
   value: string | null;
@@ -115,12 +123,15 @@ function CredentialSelect({ value, chosen, onChange, disabled, label, id }: {
 }) {
   const { view } = useGithubCredentials();
   const options = credentialOptions(view, chosen);
-  const ownerText = (owner: "mine" | "org" | "other") => (owner === "org" ? ` · ${t("sources.github.orgBadge")}` : owner === "other" ? ` · ${t("sources.market.otherPerson")}` : "");
+  const orgBadge = t("sources.github.orgBadge");
+  const otherPerson = t("sources.market.otherPerson");
+  const automatic = t("sources.market.automatic");
+  const ownerText = (owner: "mine" | "org" | "other") => (owner === "org" ? ` · ${orgBadge}` : owner === "other" ? ` · ${otherPerson}` : "");
   return (
     <select value={value ?? ""} disabled={disabled} aria-label={label} data-marketplace-credential={id}
       onChange={(event) => onChange(event.target.value || null)}
       className="max-w-[220px] min-w-0 truncate rounded-lg border border-border bg-raised px-2 py-1 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-40">
-      <option value="">{t("sources.market.automatic")}</option>
+      <option value="">{automatic}</option>
       {options.map((option) => (
         <option key={option.id} value={option.id} disabled={option.owner === "other"}>{option.label}{ownerText(option.owner)}</option>
       ))}
@@ -128,7 +139,7 @@ function CredentialSelect({ value, chosen, onChange, disabled, label, id }: {
   );
 }
 
-export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefresh, onRemove, onSetVisibility, canChooseVisibility, disabled, removeKeepsInstalls, credentials, needsToken }: {
+export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefresh, onRemove, onSetVisibility, canChooseVisibility, disabled, removeKeepsInstalls, credentials, needsToken, onOpenGithub }: {
   marketplaces: MarketplaceSummary[] | null;
   /** "add", or the name being refreshed or removed */
   busy: string | null;
@@ -150,6 +161,8 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
   /** the git host refused: "add" offers a credential for the source being
    * added, a name points at that marketplace's pick */
   needsToken?: string | null;
+  /** My accounts > GitHub: the GitHub account and the other credentials */
+  onOpenGithub?: () => void;
 }) {
   const [source, setSource] = useState("");
   const [ref, setRef] = useState("");
@@ -163,6 +176,11 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
   }, [credentials, needsToken]);
   const forEveryone = credentials?.scope === "workspace";
   const pickHint = forEveryone ? t("sources.market.pickHintWorkspace") : t("sources.market.pickHint");
+  const hasCredentials = useHasCredentials(Boolean(credentials));
+  const needsPick = t("sources.market.needsPick");
+  const openGithub = onOpenGithub
+    ? <button type="button" className="ui-button text-[12px]" data-marketplace-open-github onClick={onOpenGithub}>{t("connectApps.detail.openGithub")}</button>
+    : null;
   return (
     <section className="mt-6" data-plugins-marketplaces>
       <h3 className="mb-1 text-[13px] font-semibold text-ink">{t("connectApps.market.title")}</h3>
@@ -208,7 +226,13 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
           <span className="text-[11.5px] text-ink-secondary">{visibility === "org" ? t("connectApps.market.visibility.orgHint") : t("connectApps.market.visibility.privateHint")}</span>
         </div>
       )}
-      {credentials && needs === "add" && source.trim() && (
+      {credentials && needs === "add" && source.trim() && !hasCredentials && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-inset px-3 py-2" data-marketplace-add-token="">
+          <p className="min-w-0 flex-1 text-[12px] text-ink-secondary">{t("sources.market.needsAccount")}</p>
+          {openGithub}
+        </div>
+      )}
+      {credentials && needs === "add" && source.trim() && hasCredentials && (
         <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-inset px-3 py-2" data-marketplace-add-token="">
           <p className="text-[12px] text-ink-secondary">{t("sources.market.addOffer")}</p>
           <div className="flex flex-wrap items-center gap-2">
@@ -227,6 +251,7 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
             </button>
           </div>
           <p className="text-[11.5px] text-ink-secondary">{pickHint}</p>
+          {openGithub && <div>{openGithub}</div>}
         </div>
       )}
       {error && <p role="alert" className="mt-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</p>}
@@ -260,7 +285,7 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
                       {...(onSetVisibility && market.mine ? { onToggle: () => onSetVisibility(market.name, market.visibility === "org" ? "private" : "org") } : {})}
                     />
                   )}
-                  {credentials && (
+                  {credentials && (hasCredentials || market.credential?.chosen) && (
                     <CredentialSelect id={market.name} value={market.credential?.chosen?.id ?? null} chosen={market.credential?.chosen}
                       disabled={disabled || busy !== null}
                       label={t("sources.market.pickAria", { name: market.name })}
@@ -279,7 +304,10 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
                   </button>
                 </div>
                 {credentials && needs === market.name && (
-                  <p className="mt-2 border-t border-hairline/60 pt-2 text-[11.5px] text-ink-secondary" data-marketplace-token={market.name}>{t("sources.market.needsPick")} {pickHint}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-hairline/60 pt-2" data-marketplace-token={market.name}>
+                    <p className="min-w-0 flex-1 text-[11.5px] text-ink-secondary">{hasCredentials || market.credential?.chosen ? `${needsPick} ${pickHint}` : t("sources.market.needsAccount")}</p>
+                    {openGithub}
+                  </div>
                 )}
               </li>
             );

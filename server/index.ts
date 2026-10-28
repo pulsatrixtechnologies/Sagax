@@ -1091,13 +1091,14 @@ import { chooseHookTarget, commandWithFiles, dispatchLifecycleHooks, lifecycleEv
 import { spawnPcHook } from "./lifecycle-hook-exec.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
 import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
-import { OrgGithubTokens, OrgGithubTokensError } from "./org-github-tokens.ts";
-import { GithubCredentials, GithubCredentialsError, LOCAL_OWNER, ORG_OWNER, WORKSPACE_SCOPE } from "./github-credentials.ts";
+import { OrgGithubTokens } from "./org-github-tokens.ts";
+import { GithubCredentials, LOCAL_OWNER, ORG_OWNER } from "./github-credentials.ts";
 import { OrgBotSecrets } from "./org-bot-secrets.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalMcpInputFromAgent, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
+import { readsGithubToken, withGithubToken } from "./github-mcp-token.ts";
 import { createGithubCredentialRoutes } from "./routes/github-credentials.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
 import { testStdioMcpCommand, testStdioMcpStream } from "./mcp-stdio-test.ts";
@@ -7974,9 +7975,16 @@ function githubCredentialsFor(actor: string | null | undefined, repoOwner?: stri
   const names = (entry: GithubCredential) => `${entry.label ?? ""} ${entry.login ?? ""}`.toLowerCase();
   return [...credentials.filter((entry) => names(entry).includes(wanted)), ...credentials.filter((entry) => !names(entry).includes(wanted))];
 }
-/** The marketplaces' side of the list for server/bot-plugins.ts: a former
- * token field (a bot's `act`, an older client) becomes a credential of the
- * person who saves it, kept for that marketplace only. */
+/** The one GitHub account a turn's MCP servers read (a plugin's
+ * `${GITHUB_PERSONAL_ACCESS_TOKEN}`, server/github-mcp-token.ts): the
+ * person's GitHub connection on an organization server, the operator's own
+ * credential on a solo one. Never the organization's shared credentials. */
+function githubAccountToken(principalId: string | null | undefined): string | undefined {
+  if (IDENTITY.kind === "perspicax") return usablePersonGithub(principalId)?.token;
+  return githubCredentialsFor(localPrincipalId())[0]?.token;
+}
+/** The marketplaces' side of the list for server/bot-plugins.ts: each
+ * marketplace's pick of a credential, and what read it last. */
 const marketplaceCredentials = {
   get: (scope: string, source: string) => { migrateGithubCredentials(); return githubCredentials.get(scope, source); },
   chosen: (scope: string, source: string) => { migrateGithubCredentials(); return githubCredentials.chosenSecret(scope, source); },
@@ -7984,14 +7992,7 @@ const marketplaceCredentials = {
   usable: (credential: string, actor: string | undefined) => usableCredential(credential, actor),
   noteUsed: (scope: string, source: string, used: { via: "person" | "credential" | "none"; credential?: string; login?: string }) => githubCredentials.noteUsed(scope, source, used),
   describe: (scope: string, source: string, viewer: string | undefined) => githubCredentials.describe(scope, source, credentialOwner(viewer) ?? ""),
-  set: (scope: string, source: string, token: string, addedBy?: string) => {
-    migrateGithubCredentials();
-    const owner = scope === WORKSPACE_SCOPE ? (IDENTITY.kind === "perspicax" ? ORG_OWNER : LOCAL_OWNER)
-      : credentialOwner(addedBy) ?? store.bot(scope)?.ownerUserId?.trim().toLowerCase() ?? (IDENTITY.kind === "perspicax" ? ORG_OWNER : LOCAL_OWNER);
-    const bot = scope === WORKSPACE_SCOPE ? undefined : store.bot(scope)?.name ?? scope;
-    githubCredentials.setMarketplaceToken(scope, source, token, owner, bot ? `${source} (${bot})` : source);
-  },
-  remove: (scope: string, source: string) => { migrateGithubCredentials(); return githubCredentials.removeMarketplaceToken(scope, source); },
+  remove: (scope: string, source: string) => { migrateGithubCredentials(); return githubCredentials.unpick(scope, source); },
   sourcesFor: (scope: string) => { migrateGithubCredentials(); return githubCredentials.sourcesFor(scope); },
   forgetBot: (scope: string) => githubCredentials.forgetScope(scope),
 };
@@ -8378,7 +8379,7 @@ ROUTES.push(createMcpServerRenameRoutes({
   afterRename: async (to, server) => {
     if (isRemoteMcpServer(server)) await probeMcpOAuth([to]);
   },
-  response: () => mcpServerResponse(),
+  response: (auth) => mcpServerResponse(mcpViewer(auth)),
 }));
 /** A person's own MCP server (Settings > Connections), the one way it is
  * added: their screen, and since 2026-10-28 their bot's add_mcp_server on
@@ -21644,7 +21645,7 @@ async function startTurn(
       // never pre-allowed, so every call rides the normal permission flow.
       if (instance.adapter.capabilities.customMcp === true) {
         await refreshMcpOAuth(bot);
-        attachCustomMcp(integrations, engineMcpServers(bot, threadId), cfg);
+        attachCustomMcp(integrations, withGithubToken(engineMcpServers(bot, threadId), githubAccountToken(orgSpeakerPrincipal(bot, speaker))), cfg);
       }
       // Slice 5: the bot's Perspicax profiles, as the person who speaks.
       let perspicaxPrompt = "";
@@ -25487,7 +25488,7 @@ async function runGroupMemberTurn(
   // user-configured MCP servers: same gating as the 1:1 site above.
   if (instance.adapter.capabilities.customMcp === true) {
     await refreshMcpOAuth(bot);
-    attachCustomMcp(integrations, engineMcpServers(bot, threadId), cfg);
+    attachCustomMcp(integrations, withGithubToken(engineMcpServers(bot, threadId), githubAccountToken(orgSpeakerPrincipal(bot, roomAccessSpeaker))), cfg);
   }
   // Slice 5: the bot's Perspicax profiles, as the person who speaks in the room.
   let roomPerspicaxPrompt = "";
@@ -28528,11 +28529,25 @@ const mcpServerPatchSchema = z.object({
   disabledTools: z.array(z.string().regex(/^[^*\x00-\x1f\x7f]{1,256}$/)).max(MAX_DISABLED_TOOLS).optional(),
 }).strict();
 
-function mcpServerResponse() {
+/** Whose GitHub connection the MCP listing reads (a session's person). */
+function mcpViewer(auth: RequestAuth): string | null {
+  return auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
+}
+function mcpServerResponse(viewer?: string | null) {
   // While enrolled with custom servers off, say which servers stay configured
   // but never reach bots, and why. Nothing here is written to config.json.
   const policy = managedPolicy.current();
   const remote = remoteMcpServers();
+  // a server that reads the GitHub connection (server/github-mcp-token.ts)
+  // is connected when the viewer has one; never the token itself
+  let viewerGithub: boolean | undefined;
+  const githubState = (name: string): { github?: "connected" | "missing" } => {
+    const spec = remote[name];
+    // undefined: the caller is not known here (the next listing says)
+    if (!spec || viewer === undefined || !readsGithubToken(spec)) return {};
+    viewerGithub ??= Boolean(githubAccountToken(viewer));
+    return { github: viewerGithub ? "connected" : "missing" };
+  };
   const servers = listMcpServers(cfg.mcpServers).map(server => {
     const auth = "url" in server && remote[server.name] ? mcpOAuth.status(server.name, remote[server.name]) : undefined;
     const accounts = auth ? mcpOAuth.accounts(server.name, remote[server.name]!) : [];
@@ -28544,7 +28559,8 @@ function mcpServerResponse() {
         ...account, ...(mcpOAuth.pendingFor(server.name, account.id) ? { authPending: true } : {}),
       })) } : {}),
     } : server;
-    return managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? listed : { ...listed, managedBy: policy!.organizationName };
+    const withGithub = { ...listed, ...githubState(server.name) };
+    return managedPolicy.mcpAllowed(server.name, "url" in server ? server.url : undefined) ? withGithub : { ...withGithub, managedBy: policy!.organizationName };
   });
   // a server saved under a name Sagax now reserves is never mounted: listed
   // apart so the settings say so and offer a rename (#695 follow-up)
@@ -28557,8 +28573,8 @@ function mcpServerResponse() {
 }
 /** GET /api/mcp/servers for a person who does not manage the installation's
  * servers: the names a bot's MCP choice offers, and their state. */
-function mcpServerNamesResponse() {
-  const full = mcpServerResponse();
+function mcpServerNamesResponse(viewer?: string | null) {
+  const full = mcpServerResponse(viewer);
   return {
     servers: full.servers.map((server) => {
       const row = server as Record<string, unknown>;
@@ -28569,6 +28585,7 @@ function mcpServerNamesResponse() {
         ...(typeof row.auth === "string" ? { auth: row.auth } : {}),
         ...(typeof row.source === "string" ? { source: row.source } : {}),
         ...(typeof row.managedBy === "string" ? { managedBy: row.managedBy } : {}),
+        ...(typeof row.github === "string" ? { github: row.github } : {}),
       };
     }),
     ...(full.managed ? { managed: { organizationName: full.managed.organizationName } } : {}),
@@ -31574,7 +31591,6 @@ ROUTES.push(createMarketplaceRoutes({
   mayManage: mayManageMarketplaces,
   // the installation's token per marketplace (Everyone scope): an admin's
   workspace: botPlugins,
-  mayManageTokens: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) || callerCan(auth, "server.settings") : computerOwner(auth)),
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   viewer: marketplaceViewer,
   mayShareOrgWide: mayShareMarketplaceOrgWide,
@@ -31611,7 +31627,7 @@ ROUTES.push(createMarketplaceRoutes({
     const record = pluginMarketplaces.recordInstall(marketplace, plugin, {
       ...(version ? { version } : {}), ...(revision ? { revision } : {}), servers: addedServers, serverNames, skills: addedSkills,
     });
-    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse().servers } };
+    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse(mcpViewer(auth)).servers } };
   },
   update: async (marketplace, plugin, { auth }) => {
     const installed = pluginMarketplaces.installed().find((entry) => entry.key === `${plugin}@${marketplace}`);
@@ -31679,7 +31695,7 @@ ROUTES.push(createMarketplaceRoutes({
       ...(version ? { version } : {}), ...(revision ? { revision } : {}),
       servers: Object.values(serverNames), serverNames, skills,
     });
-    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse().servers } };
+    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse(mcpViewer(auth)).servers } };
   },
   audit: (auth, row) => appendAdminAction(DATA_DIR, {
     category: "mcp", ...row, actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
@@ -31750,7 +31766,7 @@ ROUTES.push(createPluginRoutes({
     const server = remoteMcpServers([name])[name];
     if (!server) return { status: 500, body: { error: "The plugin could not be added." } };
     const auth0 = mcpOAuth.status(name, server)?.auth ?? "none";
-    const answer: Record<string, unknown> = { name, alreadyInstalled: Boolean(existing), auth: auth0, servers: mcpServerResponse().servers };
+    const answer: Record<string, unknown> = { name, alreadyInstalled: Boolean(existing), auth: auth0, servers: mcpServerResponse(mcpViewer(auth)).servers };
     if (auth0 === "required" || auth0 === "expired") {
       const started = await startMcpSignIn(req, auth, name, server, {
         ...(typeof returnTo === "string" ? { returnTo } : {}), ...(typeof callbackOrigin === "string" ? { callbackOrigin } : {}),
@@ -37122,40 +37138,10 @@ if (IDENTITY.kind === "perspicax") {
         before: { githubClientId: before }, after: { githubClientId: clientId }, actor: orgAuditActor(auth),
       });
     },
-    // Access tokens live in org-github-tokens.enc, not in config.json, so a
-    // client id or marketplace save cannot drop them. The audit records the
-    // operation, the count, the id and the label. Never the token.
     botSecrets: {
       list: () => orgBotSecrets.list(),
       change: (change) => orgBotSecrets.change(change),
       teamBot: (id) => Boolean(store.bot(id)),
-    },
-    githubTokens: {
-      list: () => { migrateGithubCredentials(); return githubCredentials.listOrg(); },
-      change: (change, auth) => {
-        migrateGithubCredentials();
-        const before = githubCredentials.listOrg();
-        try {
-          githubCredentials.change(ORG_OWNER, change);
-        } catch (error) {
-          if (error instanceof GithubCredentialsError) throw new OrgGithubTokensError(error.message, error.code, error.status);
-          throw error;
-        }
-        const next = githubCredentials.listOrg();
-        const touched = next.find((entry) => !before.some((previous) => previous.id === entry.id))
-          ?? (change.op === "add" ? undefined : next.find((entry) => entry.id === change.id));
-        orgAudit({
-          category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["githubTokens"],
-          before: { count: before.length },
-          after: {
-            op: change.op,
-            count: next.length,
-            ...(change.op === "remove" ? { id: change.id } : {}),
-            ...(touched ? { id: touched.id, label: touched.label } : {}),
-          },
-          actor: orgAuditActor(auth),
-        });
-      },
     },
     pendingAdminApprovals,
     teams: orgDirectoryTeams,
@@ -51552,11 +51538,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the installation's servers reads only what its own bot's MCP choice
       // needs: each server's name, kind and state. Never a command, its
       // arguments, a URL, a header or variable name, or an OAuth client.
+      const viewer = mcpViewer(auth);
       if (auth.kind === "session" && !auth.scopes.includes("admin") && !callerCan(auth, "host.shell")) {
-        return json(res, 200, mcpServerNamesResponse());
+        return json(res, 200, mcpServerNamesResponse(viewer));
       }
       await probeMcpOAuth(undefined, url.searchParams.get("reprobe") === "1");
-      return json(res, 200, mcpServerResponse());
+      return json(res, 200, mcpServerResponse(viewer));
     }
 
     // ── OAuth sign-in for a remote MCP server (server/mcp-oauth.ts) ──
@@ -51583,7 +51570,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (action === "probe") {
         if (!managedPolicy.mcpAllowed(name, server.url)) return json(res, 403, { error: mcpPolicyRefusal(name, server) ?? "Your organization has not approved this server.", code: "managed_policy" });
         await mcpOAuth.probe(name, server, AbortSignal.timeout(10_000)).catch(() => undefined);
-        return json(res, 200, mcpServerResponse());
+        return json(res, 200, mcpServerResponse(mcpViewer(auth)));
       }
       if (action === "disconnect") {
         const asked = body && typeof body === "object" ? (body as Record<string, unknown>).account : undefined;
@@ -51599,7 +51586,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             if (updated) broadcast({ kind: "bot", bot: wireBot(updated) });
           }
         }
-        return json(res, 200, mcpServerResponse());
+        return json(res, 200, mcpServerResponse(mcpViewer(auth)));
       }
       if (!managedPolicy.mcpAllowed(name, server.url)) {
         return json(res, 403, { error: mcpPolicyRefusal(name, server) ?? "Your organization has not approved this server.", code: "managed_policy" });
@@ -51666,7 +51653,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         persistMcpServers({ ...current, [name]: parsed.server });
         await mcpOAuth.forget(name).catch(() => undefined);
         await probeMcpOAuth([name]);
-        return json(res, 201, mcpServerResponse());
+        return json(res, 201, mcpServerResponse(mcpViewer(auth)));
       } finally {
         mcpConfigBusy = false;
       }
@@ -51706,7 +51693,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         persistMcpServers({ ...current, ...parsed.servers });
         for (const added of names) await mcpOAuth.forget(added).catch(() => undefined);
         await probeMcpOAuth(names);
-        return json(res, 201, { ...mcpServerResponse(), added: names });
+        return json(res, 201, { ...mcpServerResponse(mcpViewer(auth)), added: names });
       } finally {
         mcpConfigBusy = false;
       }
@@ -51728,7 +51715,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           delete next[name];
           persistMcpServers(next);
           await mcpOAuth.forget(name).catch(() => undefined);
-          return json(res, 200, mcpServerResponse());
+          return json(res, 200, mcpServerResponse(mcpViewer(auth)));
         }
 
         const existing = parseStoredMcpServer(name, current[name]);
@@ -51749,7 +51736,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             else delete next.disabledTools;
           }
           persistMcpServers({ ...current, [name]: next });
-          return json(res, 200, mcpServerResponse());
+          return json(res, 200, mcpServerResponse(mcpViewer(auth)));
         }
 
         const parsed = parseMcpServerMutation(name, body, existing.server);
@@ -51763,7 +51750,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const nextUrl = isRemoteMcpServer(parsed.server) ? parsed.server.url : undefined;
         if (previousUrl !== nextUrl) await mcpOAuth.forget(name).catch(() => undefined);
         if (nextUrl) await probeMcpOAuth([name]);
-        return json(res, 200, mcpServerResponse());
+        return json(res, 200, mcpServerResponse(mcpViewer(auth)));
       } finally {
         mcpConfigBusy = false;
       }

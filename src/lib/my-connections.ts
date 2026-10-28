@@ -156,19 +156,13 @@ export interface BotPluginsView {
 
 const pluginsPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/plugins`;
 export const loadBotPlugins = (botId: string) => api<BotPluginsView>(pluginsPath(botId));
-export const addMarketplace = (botId: string, source: string, options: { ref?: string; token?: string; credential?: string; visibility?: MarketplaceVisibility } = {}) =>
+export const addMarketplace = (botId: string, source: string, options: { ref?: string; credential?: string; visibility?: MarketplaceVisibility } = {}) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, {
-    method: "POST", body: JSON.stringify({ source, ...(options.ref ? { ref: options.ref } : {}), ...(options.token ? { token: options.token } : {}), ...(options.credential ? { credential: options.credential } : {}), ...(options.visibility ? { visibility: options.visibility } : {}) }), timeoutMs: 180_000,
+    method: "POST", body: JSON.stringify({ source, ...(options.ref ? { ref: options.ref } : {}), ...(options.credential ? { credential: options.credential } : {}), ...(options.visibility ? { visibility: options.visibility } : {}) }), timeoutMs: 180_000,
   });
 /** The credential of the one list this bot picks for a marketplace (null: Automatic). */
 export const chooseMarketplaceCredential = (botId: string, name: string, credential: string | null) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/credential`, { method: "PUT", body: JSON.stringify({ credential }) });
-/** This bot's token for a marketplace of the one list (kept per bot and source). */
-export const setMarketplaceToken = (botId: string, name: string, token: string) =>
-  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/token`, { method: "PUT", body: JSON.stringify({ token }) });
-export const removeMarketplaceToken = (botId: string, name: string) =>
-  api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/token`, { method: "DELETE" });
-
 /** Refusals of a private repository that a token (or a GitHub connection) fixes. */
 export const MARKETPLACE_ACCESS_CODES = new Set(["private_needs_token", "not_found_or_no_access", "bad_token", "forbidden", "sso_required", "repository_unreadable", "org_not_covered"]);
 export const updateMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/update`, { method: "POST", timeoutMs: 180_000 });

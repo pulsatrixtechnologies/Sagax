@@ -1,13 +1,14 @@
 // Settings > Organization > GitHub OAuth App (admins, 2026-10-28). The
 // client id of the organization's GitHub OAuth App, whose device flow lets
-// each person "Connect GitHub" in Connect apps > Sources > GitHub
-// (server/github-connect.ts). It is a server setting, so it left Sources,
-// which keeps one sentence when it is missing. A client id is public; it
-// saves through PATCH /api/org/settings { githubClientId } as before. Set
+// each person "Connect GitHub" in Connect apps > My accounts > GitHub
+// (server/github-connect.ts). It is a server setting, so it is not in
+// Connect apps, which keeps one sentence when it is missing. A client id is
+// public; it saves through PATCH /api/org/settings { githubClientId }. Set
 // on the server (SAGAX_GITHUB_CLIENT_ID), it is shown and not edited here.
 import { useState } from "react";
 
 import { t } from "@/lib/i18n";
+import { readableError } from "@/lib/plain-error";
 import { loadPerspicaxOrg, type PerspicaxOrg } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
 import { DescribedRow } from "../SettingsPrimitives";
@@ -27,7 +28,7 @@ export function OrgGithubApp({ initial }: { initial: Settings }) {
       void loadPerspicaxOrg(true);
       setStatus({ kind: "saved", text: t("organization.plugins.saved") });
     } catch (failure) {
-      setStatus({ kind: "error", text: failure instanceof Error ? failure.message : String(failure) });
+      setStatus({ kind: "error", text: readableError(failure) });
     } finally {
       setBusy(false);
     }

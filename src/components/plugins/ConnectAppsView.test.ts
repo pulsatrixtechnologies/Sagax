@@ -251,7 +251,7 @@ describe("For which bots", () => {
   });
 });
 
-describe("My accounts and Sources: a click on a service pill, GitHub in Sources", () => {
+describe("My accounts and Sources: a click on a service pill, GitHub in My accounts", () => {
   let host: HTMLDivElement;
   let root: Root;
   beforeEach(() => {
@@ -278,11 +278,25 @@ describe("My accounts and Sources: a click on a service pill, GitHub in Sources"
     expect(host.querySelector("[data-servers]")).not.toBeNull();
   });
 
-  it("Sources: the person's GitHub first, the marketplaces, then the organization's part marked for admins", () => {
-    const html = renderToStaticMarkup(createElement(SourcesView, { github: "GH", marketplaces: "MARKETS", organization: "ORG" }));
-    expect(html).toMatch(/data-plugins-sources[\s\S]*GH[\s\S]*MARKETS[\s\S]*data-plugins-sources-admin[\s\S]*Organization sources and access[\s\S]*Admins only[\s\S]*ORG/);
-    const member = renderToStaticMarkup(createElement(SourcesView, { github: "GH", marketplaces: "MARKETS" }));
+  it("Sources: the marketplaces only, then the organization's part marked for admins; no GitHub section", () => {
+    const html = renderToStaticMarkup(createElement(SourcesView, { marketplaces: "MARKETS", organization: "ORG" }));
+    expect(html).toMatch(/data-plugins-sources[\s\S]*MARKETS[\s\S]*data-plugins-sources-admin[\s\S]*Organization sources and access[\s\S]*Admins only[\s\S]*ORG/);
+    expect(html).not.toContain("GitHub");
+    expect(html).not.toContain("data-accounts-github");
+    const member = renderToStaticMarkup(createElement(SourcesView, { marketplaces: "MARKETS" }));
     expect(member).not.toContain("data-plugins-sources-admin");
     expect(member).not.toMatch(/admin/i);
+  });
+
+  it("My accounts: GitHub is a service of its own, first, with the account and the other credentials", () => {
+    const groups = connectorGroups({ claude: { available: true, connectors: [{ name: "Gmail", status: "connected" }] } });
+    flushSync(() => root.render(createElement(AccountsView, { groups, github: createElement("div", { "data-github-here": "" }), servers: createElement("div", { "data-servers": "" }) })));
+    const pills = [...host.querySelectorAll("[data-accounts-service-pill]")].map((pill) => pill.getAttribute("data-accounts-service-pill"));
+    expect(pills).toEqual(["all", "github", "claude", "grok", "servers"]);
+    expect(host.querySelector("[data-github-here]")).not.toBeNull();
+    flushSync(() => (host.querySelector('[data-accounts-service-pill="github"]') as HTMLElement).click());
+    expect(host.querySelector("[data-github-here]")).not.toBeNull();
+    expect(host.querySelector('[data-harness-group="claude"]')).toBeNull();
+    expect(host.querySelector("[data-servers]")).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { isTechnicalError, plainErrorLine } from "./plain-error";
+import { isTechnicalError, isTransientFailure, plainErrorLine, readableError, retryTransient } from "./plain-error";
 import { setLocale } from "./i18n";
 import { requestTooLargeMessage } from "../../shared/request-too-large";
 import { botsSaveFailure } from "../../shared/bots-save-failure";
@@ -61,5 +61,38 @@ describe("a provider refusing a message as too large", () => {
     setLocale("fr");
     expect(plainErrorLine(`  ${requestTooLargeMessage("vendor/model-1.5")}\n`)).toBe("Ce message est trop volumineux pour vendor/model-1.5. Commencez une nouvelle conversation ou choisissez un modèle qui en accepte davantage.");
     expect(plainErrorLine("This message is too large for the box.")).toBeUndefined();
+  });
+});
+
+describe("readableError", () => {
+  it("never shows a proxy's bare status, and keeps a sentence someone wrote", () => {
+    const proxy = Object.assign(new Error("502 Bad Gateway"), { status: 502 });
+    expect(readableError(proxy)).toBe("Something went wrong on the other end. Try again.");
+    expect(readableError(proxy)).not.toMatch(/502|Bad Gateway/);
+    expect(readableError(new Error("GitHub refused this token."))).toBe("GitHub refused this token.");
+  });
+
+  it("knows a failure a moment fixes: a restart behind the proxy, or no answer at all", () => {
+    expect(isTransientFailure(Object.assign(new Error("502 Bad Gateway"), { status: 502 }))).toBe(true);
+    expect(isTransientFailure(Object.assign(new Error("x"), { status: 504 }))).toBe(true);
+    expect(isTransientFailure(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isTransientFailure(Object.assign(new Error("GitHub refused this token."), { status: 400 }))).toBe(false);
+    expect(isTransientFailure(Object.assign(new Error("not here"), { status: 404 }))).toBe(false);
+  });
+});
+
+describe("retryTransient", () => {
+  it("asks again while the server restarts, and stops at the first real answer", async () => {
+    let calls = 0;
+    const answer = await retryTransient(async () => {
+      calls += 1;
+      if (calls < 3) throw Object.assign(new Error("502 Bad Gateway"), { status: 502 });
+      return "ok";
+    }, [0, 0, 0]);
+    expect(answer).toBe("ok");
+    expect(calls).toBe(3);
+    let refused = 0;
+    await expect(retryTransient(async () => { refused += 1; throw Object.assign(new Error("No."), { status: 403 }); }, [0, 0])).rejects.toThrow("No.");
+    expect(refused).toBe(1);
   });
 });

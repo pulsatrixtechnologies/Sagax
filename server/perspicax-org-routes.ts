@@ -7,11 +7,10 @@
 //   PATCH /api/org/settings   { interimAttachDays?, allowFullAccess?,
 //                             memberEnvironmentAutonomy?, confidentialThreadsByDefault?,
 //                             memberAutoApproval?, allowVaultExport?,
-//                             pluginMarketplaces?, githubClientId?,
-//                             githubTokens? }
-//                             (organization admin). githubTokens is one
-//                             explicit change (add, remove, rename, replace).
-//                             The answer lists labels and hints, never a token.
+//                             pluginMarketplaces?, githubClientId? }
+//                             (organization admin). The organization's
+//                             GitHub credentials are in the one list
+//                             (server/routes/github-credentials.ts).
 //   GET   /api/org/approvals  approvals waiting for an organization admin
 //                             (server commands of members' bots)
 //   GET   /api/org/routine-delegation
@@ -21,11 +20,9 @@
 //
 // Registered before the interim organization routes, which answer only in
 // solo mode (server/org-routes.ts).
-import type { OrgGithubTokenPublic } from "../shared/org-github-tokens.ts";
 import type { OrgBotSecretPublic } from "../shared/org-bot-secrets.ts";
 import type { DirectoryPerson, DirectoryState } from "./perspicax-link.ts";
 import { OrgBotSecretsError, parseOrgBotSecretChange, type OrgBotSecretChange } from "./org-bot-secrets.ts";
-import { OrgGithubTokensError, parseOrgGithubTokenChange, type OrgGithubTokenChange } from "./org-github-tokens.ts";
 import type { OrgFlowPluginsStatus } from "./org-flow-plugins.ts";
 import type { Principal } from "./principals.ts";
 import type { RequestAuth } from "./request-auth.ts";
@@ -68,11 +65,6 @@ export interface OrgSettings {
    * client id; null: people paste a token). `fromEnvironment` when it comes
    * from SAGAX_GITHUB_CLIENT_ID. */
   github?: { clientId: string | null; fromEnvironment: boolean };
-  /** Access tokens for repository groups. Admins only. Labels and hints,
-   * never the token. Absent for a member. */
-  githubTokens?: OrgGithubTokenPublic[];
-  /** The encrypted list could not be read. Admins only. Nothing was cleared. */
-  githubTokensUnavailable?: boolean;
 }
 
 export interface OrgDirectoryEntry {
@@ -150,12 +142,6 @@ export interface PerspicaxOrgRouteDeps {
   savePluginMarketplaces?(policy: unknown, auth: RequestAuth): void;
   /** Set (or with null clear) the GitHub OAuth App client id. */
   saveGithubClientId?(clientId: string | null, auth: RequestAuth): void;
-  /** The organization's GitHub access tokens. list() is labels and hints.
-   * change() applies one explicit step and must not return the token. */
-  githubTokens?: {
-    list(): OrgGithubTokenPublic[];
-    change(change: OrgGithubTokenChange, auth: RequestAuth): void;
-  };
   /** Team secrets (admin only). list() has no values. change() writes one. */
   botSecrets?: {
     list(): OrgBotSecretPublic[];
@@ -214,15 +200,7 @@ export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], b
 }
 
 export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHandler {
-  const settingsFor = (auth: RequestAuth): OrgSettings => {
-    const settings = deps.settings();
-    if ((deps.viewerRole(auth) !== "admin" && !deps.delegated?.(auth, "server.settings")) || !deps.githubTokens) return settings;
-    try {
-      return { ...settings, githubTokens: deps.githubTokens.list() };
-    } catch {
-      return { ...settings, githubTokensUnavailable: true };
-    }
-  };
+  const settingsFor = (_auth: RequestAuth): OrgSettings => deps.settings();
   return async ({ req, res, path, method, auth, json, readBody }) => {
     if (path !== "/api/org" && !path.startsWith("/api/org/")) return PASS;
     const directory = deps.directory();
@@ -260,8 +238,7 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       const vaultExport = keys?.includes("allowVaultExport");
       const marketplaces = keys?.includes("pluginMarketplaces");
       const githubClient = keys?.includes("githubClientId");
-      const githubTokens = keys?.includes("githubTokens");
-      const known = new Set(["interimAttachDays", "allowFullAccess", "memberEnvironmentAutonomy", "confidentialThreadsByDefault", "memberAutoApproval", "allowVaultExport", "pluginMarketplaces", "githubClientId", "githubTokens"]);
+      const known = new Set(["interimAttachDays", "allowFullAccess", "memberEnvironmentAutonomy", "confidentialThreadsByDefault", "memberAutoApproval", "allowVaultExport", "pluginMarketplaces", "githubClientId"]);
       if (!keys || !keys.length || keys.some((key) => !known.has(key)) ||
         (days && (!deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90)) ||
         (fullAccess && (!deps.saveAllowFullAccess || typeof body.allowFullAccess !== "boolean")) ||
@@ -270,18 +247,8 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
         (memberAuto && (!deps.saveMemberAutoApproval || typeof body.memberAutoApproval !== "boolean")) ||
         (vaultExport && (!deps.saveAllowVaultExport || typeof body.allowVaultExport !== "boolean")) ||
         (marketplaces && !deps.savePluginMarketplaces) ||
-        (githubClient && (!deps.saveGithubClientId || (body.githubClientId !== null && (typeof body.githubClientId !== "string" || !/^[\x21-\x7e]{1,128}$/.test(body.githubClientId.trim()))))) ||
-        (githubTokens && !deps.githubTokens)) {
-        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }, { allowFullAccess: true | false }, { memberEnvironmentAutonomy: true | false }, { confidentialThreadsByDefault: true | false }, { memberAutoApproval: true | false }, { allowVaultExport: true | false }, { pluginMarketplaces: { mode: \"any\" } | { mode: \"list\", allow: [...] } }, { githubClientId: string | null } or { githubTokens: { op: \"add\" | \"remove\" | \"rename\" | \"replace\" } }" });
-      }
-      let tokenChange: OrgGithubTokenChange | undefined;
-      if (githubTokens) {
-        try {
-          tokenChange = parseOrgGithubTokenChange(body.githubTokens);
-        } catch (error) {
-          const knownError = error instanceof OrgGithubTokensError ? error : null;
-          return json(res, knownError?.status ?? 400, { error: knownError?.message ?? "That GitHub token change is not valid.", code: knownError?.code ?? "invalid_token" });
-        }
+        (githubClient && (!deps.saveGithubClientId || (body.githubClientId !== null && (typeof body.githubClientId !== "string" || !/^[\x21-\x7e]{1,128}$/.test(body.githubClientId.trim())))))) {
+        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }, { allowFullAccess: true | false }, { memberEnvironmentAutonomy: true | false }, { confidentialThreadsByDefault: true | false }, { memberAutoApproval: true | false }, { allowVaultExport: true | false }, { pluginMarketplaces: { mode: \"any\" } | { mode: \"list\", allow: [...] } } or { githubClientId: string | null }" });
       }
       try {
         if (marketplaces) deps.savePluginMarketplaces!(body.pluginMarketplaces, auth);
@@ -296,9 +263,7 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
         if (memberAuto) deps.saveMemberAutoApproval!(body.memberAutoApproval, auth);
         if (vaultExport) deps.saveAllowVaultExport!(body.allowVaultExport, auth);
         if (githubClient) deps.saveGithubClientId!(typeof body.githubClientId === "string" ? body.githubClientId.trim() : null, auth);
-        if (tokenChange) deps.githubTokens!.change(tokenChange, auth);
       } catch (error) {
-        if (error instanceof OrgGithubTokensError) return json(res, error.status, { error: error.message, code: error.code });
         return json(res, 500, { error: `the organization settings could not be saved: ${error instanceof Error ? error.message : String(error)}` });
       }
       return json(res, 200, { settings: settingsFor(auth) });

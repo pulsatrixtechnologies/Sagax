@@ -1,11 +1,11 @@
 // A person's own connections on an organization server (it was Settings >
 // Mes connexions, then Connect apps > Manage > Your connections). Since
-// 2026-10-27 each has one place in Connect apps: their GitHub account
-// ("Connecter GitHub": a code to type at GitHub, or a token) is in Sources,
-// with everything else GitHub, and their own MCP servers ("Ajouter un
-// serveur MCP": an address with no sign-in, a token, OAuth through this
-// server, or their GitHub account; or a command that runs in their server
-// environment) are in My accounts. Same routes, same storage. Only for them:
+// 2026-10-28 both are in Connect apps > My accounts: their GitHub account
+// ("Connecter GitHub": a code to type at GitHub, or a token), the one GitHub
+// source of every use (GithubAccountSection), and their own MCP servers
+// ("Ajouter un serveur MCP": an address with no sign-in, a token, OAuth
+// through this server, or their GitHub account; or a command that runs in
+// their server environment). Same routes, same storage. Only for them:
 // no other person's bot turn ever gets these
 // (server/routes/person-connections.ts). When an admin manages them
 // (Perspicax `sagax_integrations: off`), each part is read-only under a short
@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { openExternalLink } from "@/lib/app-links";
 import { t } from "@/lib/i18n";
+import { readableError, retryTransient } from "@/lib/plain-error";
 import {
   addPersonalServer, connectGithubToken, disconnectGithub, disconnectPersonalServer, GITHUB_MCP_URL, loadMyConnections, parseArgsLine,
   parseEnvLines, removePersonalServer, setPersonalServerEnabled, startGithubDevice, startPersonalServerSignIn, suggestServerName,
@@ -23,17 +24,18 @@ import {
 } from "@/lib/my-connections";
 import { Card, Switch } from "../SettingsPrimitives";
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const message = readableError;
 const inputClass = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none";
 
 /** GET /api/me/connections, asked again every two seconds while `waiting`
- * says a code or a sign-in is pending. */
+ * says a code or a sign-in is pending. A server restarting behind its proxy
+ * (a bare 502) is asked again before anything shows. */
 function useMyConnections(initial: MyConnections | undefined, waiting: (data: MyConnections) => boolean) {
   const [data, setData] = useState<MyConnections | null>(initial ?? null);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     try {
-      setData(await loadMyConnections());
+      setData(await retryTransient(loadMyConnections));
       setError(null);
     } catch (failure) {
       setError(message(failure));
@@ -59,17 +61,17 @@ function Loading({ error }: { error: string | null }) {
     : <p className="text-[12.5px] text-ink-secondary">{t("myConnections.loading")}</p>;
 }
 
-/** Connect apps > Sources: the person's own GitHub connection. `bare`:
- * inside the Sources GitHub section (2026-10-28), without its own card;
- * `onEnableApp` is the link to where an admin sets the OAuth App, shown when
- * Connect GitHub has no app (a member reads the sentence without a link). */
-export function MyGithubConnection({ initial, bare = false, onEnableApp }: { initial?: MyConnections; bare?: boolean; onEnableApp?: () => void }) {
+/** Connect apps > My accounts > GitHub: the person's own GitHub connection,
+ * inside GithubAccountSection. `onEnableApp` is the link to where an admin
+ * sets the OAuth App, shown when Connect GitHub has no app (a member reads
+ * the sentence without a link). */
+export function MyGithubConnection({ initial, onEnableApp }: { initial?: MyConnections; onEnableApp?: () => void }) {
   const { data, error, refresh } = useMyConnections(initial, (value) => value.github.state === "pending");
   if (!data) return <Loading error={error} />;
   return (
     <div className="flex flex-col gap-3" data-my-github>
       {data.managedByAdmin && <IntegrationsManagedNotice />}
-      <GithubCard data={data} onChanged={refresh} bare={bare} onEnableApp={onEnableApp} />
+      <GithubCard data={data} onChanged={refresh} onEnableApp={onEnableApp} />
     </div>
   );
 }
@@ -97,7 +99,7 @@ export function IntegrationsManagedNotice() {
   );
 }
 
-function GithubCard({ data, onChanged, bare = false, onEnableApp }: { data: MyConnections; onChanged: () => Promise<void>; bare?: boolean; onEnableApp?: () => void }) {
+function GithubCard({ data, onChanged, onEnableApp }: { data: MyConnections; onChanged: () => Promise<void>; onEnableApp?: () => void }) {
   const github = data.github;
   const locked = data.managedByAdmin === true;
   const [busy, setBusy] = useState(false);
@@ -116,7 +118,7 @@ function GithubCard({ data, onChanged, bare = false, onEnableApp }: { data: MyCo
       setBusy(false);
     }
   };
-  const body = (
+  return (
       <div className="flex flex-col gap-2.5 text-[13px]" data-github-state={github.state}>
         {github.state === "connected" && (
           <div className="flex items-center justify-between gap-3">
@@ -147,16 +149,14 @@ function GithubCard({ data, onChanged, bare = false, onEnableApp }: { data: MyCo
             {github.state === "error" && <p role="alert" className="text-[12px] text-danger">{github.error}</p>}
             <div className="flex flex-wrap gap-2">
               {/* One Connect GitHub: the device flow when the organization's
-                  OAuth App is set, else a token (bare, in Sources). */}
-              {(github.deviceFlow || bare) && (
-                <button type="button" className="ui-button ui-button-primary" disabled={busy} data-github-connect={github.deviceFlow ? "device" : "token"}
-                  onClick={() => (github.deviceFlow ? void run(startGithubDevice) : setTokenOpen((open) => !open))}>{t("myConnections.github.connect")}</button>
-              )}
-              {(github.deviceFlow || !bare) && (
+                  OAuth App is set, else a token. */}
+              <button type="button" className="ui-button ui-button-primary" disabled={busy} data-github-connect={github.deviceFlow ? "device" : "token"}
+                onClick={() => (github.deviceFlow ? void run(startGithubDevice) : setTokenOpen((open) => !open))}>{t("myConnections.github.connect")}</button>
+              {github.deviceFlow && (
                 <button type="button" className="ui-button" disabled={busy} onClick={() => setTokenOpen((open) => !open)}>{t("myConnections.github.useToken")}</button>
               )}
             </div>
-            {bare && !github.deviceFlow && (
+            {!github.deviceFlow && (
               <p className="text-[12px] leading-relaxed text-ink-secondary" data-github-app-missing>
                 {onEnableApp
                   ? <button type="button" className="text-accent-text underline-offset-2 hover:underline" onClick={onEnableApp}>{t("sources.github.enableApp")}</button>
@@ -182,15 +182,8 @@ function GithubCard({ data, onChanged, bare = false, onEnableApp }: { data: MyCo
             <div><button type="submit" className="ui-button ui-button-primary" disabled={busy || !token.trim()}>{t("myConnections.github.saveToken")}</button></div>
           </form>
         )}
-        <p className="text-[12px] leading-relaxed text-ink-secondary">{bare ? t("sources.github.connectionUses") : data.sandbox ? t("myConnections.github.usesEnvironment") : t("myConnections.github.uses")}</p>
         {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
       </div>
-  );
-  if (bare) return body;
-  return (
-    <Card cardId="myConnections.github" title={t("myConnections.github.title")} subtitle={t("myConnections.github.subtitle")}>
-      {body}
-    </Card>
   );
 }
 

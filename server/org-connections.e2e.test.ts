@@ -413,21 +413,25 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     const clientId = await api("PATCH", "/api/org/settings", alice, { githubClientId: " Ov23liExampleClient " });
     expect(clientId.status, clientId.text).toBe(200);
     expect(clientId.body.settings.github).toMatchObject({ clientId: "Ov23liExampleClient" });
+    // the organization's GitHub credentials are in the one list
+    // (/api/me/github/credentials), not in these settings (2026-10-28)
     const secret = "ghp_" + "e2e".repeat(12) + "9876";
-    const added = await api("PATCH", "/api/org/settings", alice, { githubTokens: { op: "add", label: "Depots internes", token: secret } });
+    const refused = await api("PATCH", "/api/org/settings", alice, { githubTokens: { op: "add", label: "Depots internes", token: secret } });
+    expect(refused.status).toBe(400);
+    expect(refused.text).not.toContain(secret);
+    const added = await api("POST", "/api/me/github/credentials", alice, { op: "add", label: "Depots internes", token: secret, scope: "org" });
     expect(added.status, added.text).toBe(200);
     expect(added.text).not.toContain(secret);
-    const listed = added.body.settings.githubTokens as Array<{ id: string; label: string; hint: string }>;
-    expect(listed.map((entry) => entry.label)).toContain("Depots internes");
     const read = await api("GET", "/api/org", alice);
     expect(read.text).not.toContain(secret);
-    expect(read.body.settings.githubTokens.map((entry: { label: string }) => entry.label)).toContain("Depots internes");
-    // a member sees none of it and cannot change it
-    const memberRead = await api("GET", "/api/org", bob);
-    expect(memberRead.body.settings).not.toHaveProperty("githubTokens");
+    expect(read.body.settings).not.toHaveProperty("githubTokens");
+    // a member sees the organization's by label only, and cannot change the client id
+    const memberRead = await api("GET", "/api/me/github/credentials", bob);
+    expect(memberRead.text).not.toContain(secret);
+    expect(memberRead.body.credentials.map((entry: { label: string }) => entry.label)).toContain("Depots internes");
     expect((await api("PATCH", "/api/org/settings", bob, { githubClientId: "Ov23liOther" })).status).toBe(403);
-    const id = listed.find((entry) => entry.label === "Depots internes")!.id;
-    expect((await api("PATCH", "/api/org/settings", alice, { githubTokens: { op: "remove", id } })).status).toBe(200);
+    const id = (added.body.credentials as Array<{ id: string; label: string }>).find((entry) => entry.label === "Depots internes")!.id;
+    expect((await api("POST", "/api/me/github/credentials", alice, { op: "remove", id })).status).toBe(200);
     expect((await api("PATCH", "/api/org/settings", alice, { githubClientId: null })).status).toBe(200);
   });
 

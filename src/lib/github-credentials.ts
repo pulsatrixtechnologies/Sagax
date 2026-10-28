@@ -1,11 +1,14 @@
-// Connect apps > Sources > GitHub (2026-10-28): the one list of credentials
-// (server/routes/github-credentials.ts) and each marketplace's pick of one.
-// The list is shared by the GitHub section and the marketplace rows through
-// one small store, loaded once and refreshed after each change. Nothing here
-// ever holds a token the server sent: the server never sends one.
+// Connect apps > My accounts > GitHub (2026-10-28): the one list of
+// credentials beside the GitHub account (server/routes/github-credentials.ts)
+// and each marketplace's pick of one in Sources. The list is shared by the
+// GitHub section and the marketplace rows through one small store, loaded
+// once and refreshed after each change. A server restarting behind its proxy
+// is asked again before anything shows; a failure shows as a plain line.
+// Nothing here ever holds a token the server sent: the server never sends one.
 import { useEffect, useSyncExternalStore } from "react";
 
 import type { GithubCredentialPublic, MarketplaceCredentialView } from "../../shared/github-credentials";
+import { readableError, retryTransient } from "@/lib/plain-error";
 import { api } from "@/state/store";
 
 export type { GithubCredentialPublic, MarketplaceCredentialView };
@@ -35,9 +38,9 @@ const emit = () => { for (const listener of listeners) listener(); };
 
 export function loadGithubCredentials(force = false): Promise<void> {
   if (loading && !force) return loading;
-  loading = api<GithubCredentialsView>(PATH)
+  loading = retryTransient(() => api<GithubCredentialsView>(PATH))
     .then((view) => { current = view; failed = null; })
-    .catch((error: unknown) => { failed = error instanceof Error ? error.message : String(error); })
+    .catch((error: unknown) => { failed = readableError(error); })
     .finally(() => { loading = null; emit(); });
   return loading;
 }
@@ -61,13 +64,14 @@ function subscribe(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
-/** The list (null while it loads) and the error of its last load. */
-export function useGithubCredentials(): { view: GithubCredentialsView | null; error: string | null } {
+/** The list (null while it loads) and the error of its last load. `load`
+ * false: only what is already loaded (a screen with nothing to pick). */
+export function useGithubCredentials(load = true): { view: GithubCredentialsView | null; error: string | null } {
   const view = useSyncExternalStore(subscribe, () => current, () => current);
   const error = useSyncExternalStore(subscribe, () => failed, () => failed);
   useEffect(() => {
-    if (!current && !loading) void loadGithubCredentials();
-  }, []);
+    if (load && !current && !loading) void loadGithubCredentials();
+  }, [load]);
   return { view, error };
 }
 

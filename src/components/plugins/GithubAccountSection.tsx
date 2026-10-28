@@ -1,19 +1,19 @@
-// Connect apps > Sources > GitHub (2026-10-28, owner: "one option, one
-// place"). GitHub was in three places on this tab: the person's connection
-// card, a token per marketplace, and the organization's labeled tokens with
-// the OAuth App (admins). Now one section:
+// Connect apps > My accounts > GitHub (2026-10-28, owner: "one GitHub
+// connection, the one in Connect apps"). The person's GitHub account is the
+// one GitHub source of every use: private marketplaces, gh and git in their
+// bots, and the GitHub plugin's MCP server (its token placeholder is that
+// account, server/github-mcp-token.ts). Sources lists marketplaces only.
 //
 //   - Connection: Connect GitHub (the device flow when the organization's
 //     OAuth App is set, else a token), the account connected and what it is
-//     for (clone, gh, the GitHub MCP, private marketplaces). Organization
-//     server only, as before (`connection`).
-//   - More credentials: one list of labeled tokens (another GitHub
-//     organization, a group of repositories, another git host). The
-//     person's own, which they add, rename, replace and remove with no
-//     admin, and the organization's, marked "Organization", which an
-//     organization admin changes (server/routes/github-credentials.ts).
-//   - Each marketplace (MarketplacesSection, below) picks one of them, or
-//     Automatic.
+//     for. Organization server only (`connection`).
+//   - Other credentials, only where the account cannot reach: another
+//     GitHub organization, a group of repositories, another git host. The
+//     person's own (add, rename, replace, remove with no admin) and the
+//     organization's, marked "Organization", which an organization admin
+//     changes (server/routes/github-credentials.ts). A marketplace row in
+//     Sources picks one of them in a small selector; by default it reads
+//     with the GitHub account.
 //
 // The OAuth App's client id is a server setting: it is in Settings >
 // Organization (admins). Here, when it is missing, one sentence says an
@@ -22,6 +22,7 @@ import { useState, type ReactNode } from "react";
 import { GitBranch } from "lucide-react";
 
 import { t } from "@/lib/i18n";
+import { readableError } from "@/lib/plain-error";
 import { changeGithubCredential, useGithubCredentials, type GithubCredentialPublic } from "@/lib/github-credentials";
 import { MAX_ORG_GITHUB_TOKENS, ORG_GITHUB_TOKEN_HINT_SAVED } from "../../../shared/org-github-tokens";
 import { MAX_PERSON_GITHUB_CREDENTIALS } from "../../../shared/github-credentials";
@@ -32,19 +33,19 @@ function hintText(hint: string): string {
   return hint === ORG_GITHUB_TOKEN_HINT_SAVED ? t("organization.githubTokens.savedHint") : `•••• ${hint}`;
 }
 
-export function GithubSourcesSection({ connection }: {
-  /** the person's GitHub connection (MyGithubConnection bare), organization server */
+export function GithubAccountSection({ connection }: {
+  /** the person's GitHub connection (MyGithubConnection), organization server */
   connection?: ReactNode;
 }) {
   return (
-    <section className="mb-6 rounded-2xl border border-border bg-card px-4 py-4 sm:px-5" data-plugins-sources-github data-sources-github>
+    <section className="rounded-2xl border border-border bg-card px-4 py-4 sm:px-5" data-accounts-github>
       <div className="mb-1 flex items-center gap-2">
         <GitBranch size={16} aria-hidden="true" className="text-ink" />
-        <h3 className="text-[13px] font-semibold text-ink">GitHub</h3>
+        <h3 className="text-[13px] font-semibold text-ink">{t("myConnections.github.title")}</h3>
       </div>
       <p className="mb-4 text-[12px] leading-relaxed text-ink-secondary">{t("sources.github.intro")}</p>
       {connection && (
-        <div className="mb-5 flex flex-col gap-1.5" data-sources-github-connection>
+        <div className="mb-5 flex flex-col gap-1.5" data-github-connection>
           <span className="text-[12.5px] font-medium text-ink">{t("sources.github.connection")}</span>
           {connection}
         </div>
@@ -72,13 +73,14 @@ function GithubCredentialList() {
       await work();
       return true;
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
       return false;
     } finally {
       setBusy(false);
     }
   };
   const close = () => { setEditing(null); setDraft(""); };
+  const replaceLabel = t("organization.githubTokens.replace");
 
   if (!view) {
     return loadError
@@ -93,7 +95,7 @@ function GithubCredentialList() {
   const canAdd = !locked || view.canManageOrg;
 
   return (
-    <div className="flex flex-col gap-2" data-sources-github-credentials data-github-credentials={view.credentials.length ? "list" : "empty"}>
+    <div className="flex flex-col gap-2" data-github-credentials={view.credentials.length ? "list" : "empty"}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-[12.5px] font-medium text-ink">{t("sources.github.credentials")}</span>
         {canAdd && !adding && (
@@ -124,7 +126,7 @@ function GithubCredentialList() {
                 {mayChange(entry) && open === null && (
                   <div className="flex flex-wrap gap-2">
                     <button type="button" className="ui-button" disabled={busy} onClick={() => { setAdding(false); setEditing({ id: entry.id, mode: "rename" }); setDraft(entry.label); }}>{t("sources.github.rename")}</button>
-                    <button type="button" className="ui-button" disabled={busy} onClick={() => { setAdding(false); setEditing({ id: entry.id, mode: "replace" }); setDraft(""); }}>{t("organization.githubTokens.replace")}</button>
+                    <button type="button" className="ui-button" disabled={busy} onClick={() => { setAdding(false); setEditing({ id: entry.id, mode: "replace" }); setDraft(""); }}>{replaceLabel}</button>
                     <button type="button" className="ui-button text-danger" disabled={busy} onClick={() => { setAdding(false); setEditing({ id: entry.id, mode: "remove" }); }}>{t("organization.githubTokens.remove")}</button>
                   </div>
                 )}

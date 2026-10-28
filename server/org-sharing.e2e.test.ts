@@ -241,12 +241,10 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // The organization's key serves by itself (2026-10-01): bob has no
     // subscription and no key of his own. Slice 8: the settings also carry
     // the interim attach window (none here). The org's GitHub OAuth App
-    // (none), the plugin marketplace policy (any, the default) and the
-    // labeled access tokens (none).
+    // (none) and the plugin marketplace policy (any, the default).
     expect((await api("GET", "/api/org", alice)).body.settings).toEqual({
       orgKeyConfigured: true, allowFullAccess: true, allowVaultExport: true, memberEnvironmentAutonomy: true, confidentialThreadsByDefault: false, memberAutoApproval: true, interimAttach: { until: null, people: 0 },
       github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
-      githubTokens: [],
       // Pulsatrix Flow for members (#1091)
       flowPlugins: expect.anything(),
     });

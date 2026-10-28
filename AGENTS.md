@@ -4656,26 +4656,20 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   mounted (`withoutHostCommands`) on an organization server.
 - Connecter GitHub (`server/github-connect.ts`): the device flow of the
   organization's GitHub OAuth App (`SAGAX_GITHUB_CLIENT_ID`, or
-  `organization.githubClientId` from Connect apps > Sources), else a pasted
+  `organization.githubClientId` from Settings > Organization), else a pasted
   token. The token goes into the person's environment for gh and git
   (`githubSandboxArgv`, through `SAGAX_GH_TOKEN`, never the argv), into their
   personal servers with auth `github`, and into Sagax's own fetches for them
-  (private skills, private marketplaces). One connection per person. It is
-  not the organization's list of access tokens below.
-- Organization access tokens (`server/org-github-tokens.ts`,
-  `DATA_DIR/org-github-tokens.enc`, the mcp-oauth vault key, left out of
-  workspace backups): an admin keeps up to 20 labeled GitHub access tokens
-  in Connect apps > Sources > Organization sources and access
-  (OrgSourcesAccess, admins only; since 2026-10-27, Settings > Organization
-  keeps one link there on card `organization.plugins`). They are access tokens,
-  not extra OAuth App client ids. `PATCH /api/org/settings` applies one
-  change (`add`, `remove`, `rename`, `replace`). A rename carries no secret
-  and a replace is its own step. `GET /api/org` lists the label and a last-4
-  hint, or the word saved, for an admin only. No answer, audit row or log
-  contains the token. A bot uses the same route through `act` (the hold card
-  is the route summary, with no body). Tests:
-  `server/org-github-tokens.test.ts`, `server/perspicax-org-routes.test.ts`,
-  `src/components/settings/OrgPluginPolicy.test.ts`.
+  (private skills, private marketplaces), and since 2026-10-28 into the
+  GitHub plugin's MCP server (its `${GITHUB_PERSONAL_ACCESS_TOKEN}`, see "My
+  accounts > GitHub" below). One connection per person.
+- Organization access tokens: since 2026-10-28 the organization's labeled
+  credentials of the one list (`server/github-credentials.ts`, owner `org`),
+  changed by an organization admin through `POST /api/me/github/credentials`
+  `{ scope: "org" }` (a bot through `act` on that route). `PATCH
+  /api/org/settings` no longer takes `githubTokens` and `GET /api/org` no
+  longer lists them. `server/org-github-tokens.ts` stays as the reader the
+  migration uses.
 - Plugins (`server/bot-plugins.ts`, `/api/bots/:id/plugins/*`): per bot, the
   owner or a person with manage changes them, use reads. One marketplace
   list (`server/plugin-marketplaces.ts`, 2026-10-09) serves both install
@@ -4692,11 +4686,10 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   `server/bot-plugins.test.ts`, `server/routes/bot-plugins.test.ts`). A
   marketplace known only by its marketplace.json address cannot install on
   a bot (422 `manifest_only`). Added or fetched again through a bot, a
-  private marketplace reads with that bot's token for it first
-  (`server/marketplace-tokens.ts`, keyed by bot and source, the token field
-  of Connect apps > Sources > Marketplaces in the bot scope), then the
-  person's GitHub connection, then the organization's GitHub tokens; the
-  bot listing says `hasToken`, never the token, and `updateAvailable` when
+  private marketplace reads with the credential that bot picks for it (the
+  one list, My accounts > GitHub), else the person's GitHub connection, then
+  their other credentials and the organization's; the bot listing says
+  `hasToken` (a pick), never the token, and `updateAvailable` when
   the marketplace offers another version or other files (Install again
   updates in place, its switch kept). A bot zip restored on a new bot takes
   its marketplaces into the list the way the migration does, without one
@@ -4801,44 +4794,67 @@ gallery `connect-apps.html?view=manage|org-settings`).
   connectors grouped by engine (`HarnessConnectorGroups`), each card naming
   its service; the person's own MCP servers (`MyMcpServers`, organization
   server); Claude Code on this computer (solo); the published pages (All
-  only). The "What your engines reach" panel is gone.
-- Sources (`SourcesView`): every GitHub setting in one GitHub section
-  (`GithubSourcesSection`, 2026-10-28, see below), the marketplaces, each
-  picking a credential of that list or Automatic, then for an organization
-  admin only the allowed marketplaces (`OrgSourcesAccess`). The GitHub OAuth
-  App's client id is in Settings > Organization (`OrgGithubApp`). Settings > Organization shows one link there
-  (`togglePlugins` page `sources`, also an old link to `organization.plugins`).
-  Same routes and storage as before; no right changed.
+  only). The "What your engines reach" panel is gone. Since 2026-10-28 a
+  GitHub pill comes first: the person's GitHub account and the other
+  credentials (`GithubAccountSection`, see "My accounts > GitHub" below).
+- Sources (`SourcesView`): the marketplaces only (add, list, fetch again,
+  remove, who sees each), then for an organization admin the allowed
+  marketplaces (`OrgSourcesAccess`). The GitHub OAuth App's client id is in
+  Settings > Organization (`OrgGithubApp`). Settings > Organization shows one
+  link to Sources (`togglePlugins` page `sources`, also an old link to
+  `organization.plugins`).
 - "N connected" (`connectedTab`) opens Installed, or My accounts when only
   engine connectors are connected (#1194).
 - Every empty section is hidden. iOS has the same tabs (segmented) and
-  pills (All, Claude, Slack, My MCP servers); its GitHub card is in Sources.
+  pills (All, Claude, Slack, My MCP servers); its GitHub card is under Your
+  connections.
 
-## Sources > GitHub: one list of credentials (2026-10-28)
+## My accounts > GitHub: one GitHub connection (2026-10-28)
 
-Owner: GitHub was in three places on Connect apps > Sources ("100%
-confusion"); one option, one place. One section `GithubSourcesSection`:
+Owner: Sources showed a GitHub section beside the GitHub plugin already
+Connected in Installed ("that should be only marketplaces"). One GitHub
+connection, the person's own (`server/person-connections.ts`,
+`/api/me/github/*`), in Connect apps > My accounts > GitHub
+(`GithubAccountSection`, first pill), serves every use: private marketplace
+clones, gh and git in their environment, private skills, and the GitHub
+plugin's MCP server. Sources lists marketplaces only.
 
-- Connection (organization server): `MyGithubConnection bare`, one Connect
+- The GitHub plugin (claude-plugins-official) ships its server with
+  `Authorization: Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}`. Sagax never
+  expanded it, so the row said Connected for nobody's account. Now
+  `server/github-mcp-token.ts` replaces that placeholder (also
+  `GITHUB_TOKEN`, `GH_TOKEN`, in headers or env) at each 1:1 and room turn
+  with the turn person's GitHub connection (`githubAccountToken`: the
+  person's connection on an organization server, the operator's own
+  credential solo, never the organization's), never in config.json. `GET
+  /api/mcp/servers` says `github: "connected" | "missing"` for that viewer;
+  the Installed row and the server's page follow it, with "Open My accounts >
+  GitHub".
+- Connection (organization server): `MyGithubConnection`, one Connect
   GitHub (device flow when the OAuth App is set, else a token); without the
   app, "An admin can turn on Connect GitHub" (a link to Settings >
   Organization `organization.githubApp` for an admin).
+- A load that meets a proxy's bare 502/503/504 (Sagax restarting behind
+  Caddy during a deploy) is asked again (`retryTransient`); a failure is one
+  plain line (`readableError`), never the raw status.
 - One list (`server/github-credentials.ts`, `github-credentials.enc`, vault
   key, AAD `sagax github-credentials v1`, out of workspace backups): labeled
   credentials owned by a person (principal id, `local` solo) or by the
   organization (`org`, marked Organization). `GET/POST
   /api/me/github/credentials` (`server/routes/github-credentials.ts`, member
   scope): a person adds, renames, replaces and removes their own with no
-  admin; the organization's need an organization admin (`PATCH
-  /api/org/settings githubTokens` still works on the same list). No answer
-  carries a token (label, last 4).
-- Each marketplace picks one (`PUT /api/bots/:id/plugins/marketplaces/:name/credential`,
-  owner or manager; `PUT /api/marketplaces/:name/credential`, the workspace's
-  managers; `credential` on add) or Automatic: the person's connection, their
-  credentials, the organization's, a label or login naming the repository's
-  owner first. The listing carries `credential: { chosen?, used? }` (what read
-  it last). The former token routes still work: a token becomes a credential
-  of whoever saves it, `onlyWhereChosen`, picked by that marketplace.
+  admin; the organization's need an organization admin. No answer carries a
+  token (label, last 4). The list is only for what the GitHub account cannot
+  reach (another GitHub organization, another git host).
+- Each marketplace reads with the GitHub account by default (Automatic: the
+  person's connection, their credentials, the organization's, a label or
+  login naming the repository's owner first). A row shows a small selector
+  only when the person has another credential (`PUT
+  /api/bots/:id/plugins/marketplaces/:name/credential`, owner or manager;
+  `PUT /api/marketplaces/:name/credential`, the workspace's managers;
+  `credential` on add). The listing carries `credential: { chosen?, used? }`
+  (what read it last). The former token routes (`.../token`, `token` on add)
+  are gone: a credential is added in My accounts > GitHub and picked.
 - Migration at first use (`migrateGithubCredentials`): `org-github-tokens.enc`
   (ids and labels kept) and `marketplace-tokens.enc` (each token becomes an
   `onlyWhereChosen` credential of the person who added it, else the bot's
@@ -4846,7 +4862,9 @@ confusion"); one option, one place. One section `GithubSourcesSection`:
   marketplace keeps the same effective credential; idempotent; the old files
   are removed after the new one is written. Tests:
   `server/github-credentials.test.ts`, `server/routes/github-credentials.test.ts`,
-  `server/bot-plugins.test.ts`, `src/components/plugins/GithubSourcesSection.test.ts`.
+  `server/bot-plugins.test.ts`, `server/github-mcp-token.test.ts`,
+  `src/components/plugins/GithubAccountSection.test.ts`,
+  `src/components/PluginsPanel.gestures.test.ts`.
 
 ## Reserved MCP server names (2026-10-17)
 

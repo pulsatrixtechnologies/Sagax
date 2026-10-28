@@ -46,6 +46,9 @@ export interface PluginItem {
   recommended?: boolean;
   /** the rows of other sources folded into this one (same app) */
   merged?: string[];
+  /** an MCP server that reads the person's GitHub account (the GitHub
+   * plugin's token placeholder): whether that account is connected */
+  githubAccount?: "connected" | "missing";
 }
 
 /** Tag words to a category, first rule first. A tag is a marketplace
@@ -99,6 +102,8 @@ interface McpListing {
   auth?: string;
   managedBy?: string;
   source?: string;
+  /** reads the person's GitHub account (server/github-mcp-token.ts) */
+  github?: "connected" | "missing";
 }
 interface FeaturedListing {
   id: string; name: string; description: string; url: string; domain: string; auth: string; installed?: boolean;
@@ -280,7 +285,9 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
     // the provider's site (its favicon is the logo), not the MCP host
     const mark = server.url ? providerMark(server.name, server.url) : null;
     const domain = mark?.site ?? null;
-    const needsAuth = server.auth === "required" || server.auth === "expired" || server.auth === "error";
+    // a server that reads the GitHub account is connected when the account
+    // is (its own sign-in state is the placeholder's, not the person's)
+    const needsAuth = server.github ? server.github === "missing" : server.auth === "required" || server.auth === "expired" || server.auth === "error";
     items.push({
       key: `mcp:${server.name}`,
       kind: "mcp",
@@ -296,6 +303,7 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       source: server.source ?? "manual",
       ...(server.source && serverParent.has(server.name) ? { parent: serverParent.get(server.name) } : {}),
       ...(sources.whop?.server === server.name ? { parent: WHOP_KEY } : {}),
+      ...(server.github ? { githubAccount: server.github } : {}),
     });
   }
   for (const listing of sources.featured ?? []) {

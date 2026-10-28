@@ -1,4 +1,4 @@
-// Connect apps > Sources > GitHub: the one list of credentials
+// Connect apps > My accounts > GitHub: the one list of credentials
 // (server/github-credentials.ts), 2026-10-28.
 //
 //   GET  /api/me/github/credentials

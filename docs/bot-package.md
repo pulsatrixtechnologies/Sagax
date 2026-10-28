@@ -122,14 +122,15 @@ the cause (`code`) and the fix (`fix`):
 | `rate_limited` | 403 or 429 with `x-ratelimit-remaining: 0` | wait for the reset |
 | `forbidden` | 403 | a token with Contents: read (or the repo scope) |
 
-The token of a marketplace is stored like MCP header values: AES-256-GCM in
-`marketplace-tokens.enc` with the vault key, per bot and marketplace, never
-shown again, never in a zip. The field is in Connect apps > Sources >
-Marketplaces with "For <bot>" chosen (the marketplace itself is
-in the installation's one list; its token stays that bot's). `PUT` and
-`DELETE /api/bots/:id/plugins/marketplaces/:name/token` set and remove it;
-removing the marketplace from that bot or deleting the bot takes it along.
-The same field reads a marketplace on another git host (GitLab, Gitea).
+A private marketplace reads with the person's GitHub account (Connect apps >
+My accounts > GitHub) by default. Another credential (another GitHub
+organization, another git host such as GitLab or Gitea) is added beside the
+account, in the one list (`github-credentials.enc`, AES-256-GCM with the vault
+key, never shown again, never in a zip), and each marketplace row of Connect
+apps > Sources picks it (`PUT /api/bots/:id/plugins/marketplaces/:name/credential`,
+with "For <bot>" chosen; the marketplace itself is in the installation's one
+list). Removing the marketplace from that bot or deleting the bot drops the
+pick.
 
 A bot's own plugins reach its turns: Claude loads each enabled plugin with
 `--plugin-dir` (skills, commands, agents); every other workspace engine

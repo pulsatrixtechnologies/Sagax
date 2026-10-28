@@ -80,3 +80,34 @@ export function plainErrorLine(raw: string): string | undefined {
   const key = KINDS.find(([pattern]) => pattern.test(text))?.[1] ?? "error.plain.generic";
   return t(key);
 }
+
+/** What a screen shows for a failure: a sentence someone wrote stays as it
+ * is; a machine's words (a proxy's bare "502 Bad Gateway", "Failed to
+ * fetch") become one plain line. Never the raw status. */
+export function readableError(failure: unknown): string {
+  const raw = failure instanceof Error ? failure.message : String(failure);
+  return plainErrorLine(raw) ?? raw;
+}
+
+/** A failure that a moment fixes: the server restarting behind its proxy
+ * (502, 503, 504) or a request that never reached it. A screen asks again
+ * before it shows anything. */
+export function isTransientFailure(failure: unknown): boolean {
+  const status = (failure as { status?: unknown } | null)?.status;
+  if (status === 502 || status === 503 || status === 504) return true;
+  const raw = failure instanceof Error ? failure.message : String(failure);
+  return UNREACHABLE.test(raw.trim());
+}
+
+/** `work`, asked again after each delay while it fails for a moment
+ * (isTransientFailure); any other failure, or the last one, is thrown. */
+export async function retryTransient<T>(work: () => Promise<T>, delays: readonly number[] = [1_500, 3_000, 6_000]): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await work();
+    } catch (failure) {
+      if (attempt >= delays.length || !isTransientFailure(failure)) throw failure;
+      await new Promise((done) => setTimeout(done, delays[attempt]));
+    }
+  }
+}
