@@ -17,7 +17,8 @@ export interface Crumb {
 export function Breadcrumb({ trail, current, onBack, backData }: {
   /** The levels above the current page, the outermost first. */
   trail: readonly Crumb[];
-  current: string;
+  /** absent: the page names itself below (a detail's own name), not twice */
+  current?: string;
   onBack: () => void;
   /** Extra data attribute on the back button (tests, tours). */
   backData?: Record<string, string>;
@@ -48,12 +49,14 @@ export function Breadcrumb({ trail, current, onBack, backData }: {
               >
                 {crumb.label}
               </button>
-              <ChevronRight size={13} className="shrink-0 text-ink-tertiary" aria-hidden="true" />
+              {(current !== undefined || index < trail.length - 1) && <ChevronRight size={13} className="shrink-0 text-ink-tertiary" aria-hidden="true" />}
             </li>
           ))}
-          <li aria-current="page" className="truncate px-1.5 py-0.5 font-medium text-ink" data-breadcrumb-current="">
-            {current}
-          </li>
+          {current !== undefined && (
+            <li aria-current="page" className="truncate px-1.5 py-0.5 font-medium text-ink" data-breadcrumb-current="">
+              {current}
+            </li>
+          )}
         </ol>
       </nav>
     </div>

@@ -122,8 +122,8 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
 
   return (
     <>
-      <PluginPageHeader titleId="plugins-title" title={creating ? t("connectApps.skill.new") : skill.name} trail={trail} onBack={onBack} />
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-7 pt-1 sm:px-8" data-plugins-skill={skill?.name ?? "new"}>
+      <PluginPageHeader title={creating ? t("connectApps.skill.new") : skill.name} trail={trail} onBack={onBack} />
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-7 pt-3 sm:px-8" data-plugins-skill={skill?.name ?? "new"}>
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 sm:px-5">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-raised text-ink-secondary"><BookOpen size={20} aria-hidden="true" /></div>
           <div className="min-w-0 flex-[1_1_200px]">

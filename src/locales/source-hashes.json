@@ -15165,7 +15165,15 @@
       "botTasks.reopen": "a886d1dc4f128e2791731e8b288c8d7c74f8a8608e23ca8e167b3038ab48054f",
       "botTasks.hint": "8672fcc054c1f25a7201c86e13092ed72d015b9f31698ca20fb7c0cf9c8e3925",
       "botTasks.error": "069ad8a334088629b0edcdf5871b746ecee71879e7f20490e5670bdf6cf2b36f",
-      "serverRoute.needsUpdate": "f5b836bc3d9a9ecc9c1275fbae27cc364d4f6f0003f7f10beee60a8772c2be1f"
+      "serverRoute.needsUpdate": "f5b836bc3d9a9ecc9c1275fbae27cc364d4f6f0003f7f10beee60a8772c2be1f",
+      "connectApps.scope.accountsNote": "d1bf4dc81248adbefaf61251e5a623dcfc2235c031697ec3e958592ac641e465",
+      "connectApps.scope.workspaceNote": "5d98e064bc6864a7b77c869cd2aa9ab13a4a459637017562b20969b6ef8f1a6f",
+      "connectApps.detail.state.everyoneOn": "31bba3c97e60ca841852f85325cdb04377ac16bf18191cf905f4bd8cc6c8df88",
+      "connectApps.detail.state.everyoneOff": "4aa393c07e47e6b4bef78df92a94944fab2ddc333a7938bf792a7e3d50798b3a",
+      "connectApps.detail.state.botOn": "dbc523a991661da90a4de1cc40c07db392b61f9fdbc56b15a58beba46d6ec5f4",
+      "connectApps.detail.state.botOff": "a38cb2ef285e6c9c780bc5b077bbf674c5f636537c510d0ed479dc2d9fab86e6",
+      "connectApps.detail.id": "3843971dcfdee5083e6289e1bbdbb003e538b5a8a668fc43ae4f19d415ac18a2",
+      "connectApps.detail.repository": "13d6ff07b8a5d792ec87d5ec83bff2730ee77fa8f4fcd89ca5f1d688f64b4c73"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

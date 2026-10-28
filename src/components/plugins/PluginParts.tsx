@@ -1,14 +1,13 @@
 // Small pieces the three Plugins views share: the icon, the status word and
 // the page header with its back arrow.
 import { useState, type ReactNode } from "react";
-import { BookOpen, ChevronLeft, Puzzle, ServerCog } from "lucide-react";
+import { BookOpen, Puzzle, ServerCog } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { WHOP_KEY, type PluginItem, type PluginStatus } from "@/lib/plugins-model";
 import { Breadcrumb, type Crumb } from "../Breadcrumb";
-import { CATEGORY_MODAL } from "../category-modal";
 import { WhopIcon } from "../WhopIcon";
 
 /** A connectable app's catalog card, as the Connect apps views read it. */
@@ -106,42 +105,26 @@ export function PluginStatusLabel({ status, className }: { status: PluginStatus;
   );
 }
 
-/** A sub-page's header: back arrow, title, close. */
-/** A page's header in the panel's window: the breadcrumb (back, the pages
- * above, this one), then its title. The close button is the window's. */
-export function PluginPageHeader({ title, trail, onBack, titleId, plainBack = false }: {
+/** The back row of a page opened from a Connect apps tab (2026-10-28), as a
+ * Settings sub-page's: the back button, the tab it came from and the pages
+ * between, then this page's name. Connect Apps' own title, scope and tabs
+ * stay above it, so the page reads as part of the same window and its name
+ * is never a second big title. A page that names itself in its own header
+ * (a plugin's detail) leaves the name out here (`named`). */
+export function PluginPageHeader({ title, trail, onBack, named = false }: {
   title: string;
-  /** the pages above this one, Connect apps first (absent: Connect apps) */
+  /** the tab it came from, then the pages above this one (absent: Connect apps) */
   trail?: readonly Crumb[];
   onBack: () => void;
-  titleId: string;
-  /** The reference design's manage page: a chevron and the parent name, then the title.
-   * No crumb for the current page. */
-  plainBack?: boolean;
+  /** the page shows its name itself: no current crumb */
+  named?: boolean;
 }) {
   const crumbs = trail ?? [{ label: t("connectApps.title"), onSelect: onBack }];
-  if (plainBack) {
-    const parent = crumbs[0];
-    return (
-      <header className={CATEGORY_MODAL.titleBar}>
-        <button
-          type="button"
-          onClick={parent?.onSelect ?? onBack}
-          data-plugins-back=""
-          className="-ml-1.5 mb-2 flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[13px] leading-[18px] text-ink-secondary hover:bg-hover hover:text-ink"
-        >
-          <ChevronLeft size={16} aria-hidden="true" />
-          {parent?.label ?? t("connectApps.title")}
-        </button>
-        <h2 id={titleId} className={cn(CATEGORY_MODAL.title, "truncate")}>{title}</h2>
-      </header>
-    );
-  }
   return (
-    <header className={CATEGORY_MODAL.titleBar}>
-      <Breadcrumb trail={crumbs} current={title} onBack={onBack} backData={{ "data-plugins-back": "" }} />
-      <h2 id={titleId} className={cn(CATEGORY_MODAL.title, "truncate")}>{title}</h2>
-    </header>
+    <div className="shrink-0 px-4 pt-3 sm:px-8" data-plugins-page-bar>
+      <Breadcrumb trail={crumbs} current={named ? undefined : title} onBack={onBack} backData={{ "data-plugins-back": "" }} />
+      <h3 className="sr-only" data-plugins-page-title>{title}</h3>
+    </div>
   );
 }
 

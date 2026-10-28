@@ -5,7 +5,11 @@
  * stand-in /api shaped like an organization member's, or an admin's with
  * --role admin), its four tabs (Discover first, where a person lands), My
  * accounts with one service picked, the "..." menu of an entry and its "For
- * which bots"; for an admin, Settings > Organization too.
+ * which bots"; for an admin, Settings > Organization too. 2026-10-28: the
+ * tabs in the bot's scope (the scope bar on every tab, turned off on My
+ * accounts: the tab row must not move, checked here), "N connected" hovered
+ * and focused, a plugin's page in its tab (everyone, then the bot's scope),
+ * and a Settings sub-page in the same window size to compare.
  * Usage: node scripts/capture-connect-apps-manage.mjs [--out DIR] [--port N]
  *   [--lang fr] [--skin pulsatrix] [--scheme dark|light] [--role member|admin]
  */
@@ -82,6 +86,24 @@ try {
       await shot("4b-sources-admin");
     }
   }
+  // the tab row stays where it is on every tab (the scope bar never leaves)
+  const tabRowTop = async () => (await page.locator("[data-plugins-manage-tabs]").boundingBox())?.y;
+  const tops = {};
+  for (const tab of ["installed", "discover", "accounts", "sources"]) {
+    await page.click(`[data-plugins-tab="${tab}"]`);
+    await page.waitForSelector(`[data-plugins-manage="${tab}"]`);
+    tops[tab] = await tabRowTop();
+  }
+  console.log("tab row top (everyone):", JSON.stringify(tops));
+  if (new Set(Object.values(tops)).size !== 1) throw new Error(`the tab row moves between tabs: ${JSON.stringify(tops)}`);
+  await page.click('[data-plugins-tab="installed"]');
+  await page.hover("[data-plugins-connected]");
+  await shot("5a-connected-hover");
+  await page.mouse.move(0, 0);
+  await page.focus("[data-plugins-connected]");
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await shot("5b-connected-focus");
   await page.click("[data-plugins-connected]");
   await page.waitForSelector('[data-plugins-manage="installed"], [data-plugins-manage="accounts"]');
   await shot("5-connected-opens");
@@ -93,6 +115,43 @@ try {
   await page.click('[data-entry-action="bots"]');
   await page.waitForSelector("[data-plugins-bots-for]");
   await shot("7-for-which-bots");
+  // a plugin's page, in its tab
+  await page.click('[data-plugins-tab="installed"]');
+  await page.locator('[data-installed-entry="plugin:github@claude-plugins-official"] button').first().click();
+  await page.waitForSelector("[data-plugins-detail]");
+  await shot("8-detail-github");
+  await page.click('[data-plugins-back]');
+  await page.locator('[data-installed-entry="plugin:code-review@claude-plugins-official"] button').first().click();
+  await page.waitForSelector("[data-plugins-detail]");
+  await shot("8b-detail-code-review-update");
+  // the bot's scope: every tab, then the same plugin's page for the bot
+  if (await page.locator('[data-plugins-scope-option="bot"]').count()) {
+    await page.click('[data-plugins-tab="installed"]');
+    await page.click('[data-plugins-scope-option="bot"]');
+    await page.waitForTimeout(500);
+    const botTops = {};
+    for (const tab of ["installed", "discover", "accounts", "sources"]) {
+      if (!await page.locator(`[data-plugins-tab="${tab}"]`).count()) continue;
+      await page.click(`[data-plugins-tab="${tab}"]`);
+      await page.waitForSelector(`[data-plugins-manage="${tab}"]`);
+      botTops[tab] = await tabRowTop();
+      await shot(`9-bot-${tab}`);
+    }
+    console.log("tab row top (bot):", JSON.stringify(botTops));
+    if (new Set(Object.values(botTops)).size !== 1) throw new Error(`the tab row moves between tabs (bot): ${JSON.stringify(botTops)}`);
+    // GitHub's page for everyone, then the scope turned to the bot on that page
+    await page.click('[data-plugins-scope-option="workspace"]');
+    await page.click('[data-plugins-tab="installed"]');
+    await page.locator('[data-installed-entry="plugin:github@claude-plugins-official"] button').first().click();
+    await page.waitForSelector("[data-plugins-detail]");
+    await page.click('[data-plugins-scope-option="bot"]');
+    await page.waitForSelector('[data-plugins-detail-primary="install-bot"]', { timeout: 5_000 }).catch(() => undefined);
+    await shot("9b-bot-detail-github");
+    await page.click('[data-plugins-scope-option="workspace"]').catch(() => undefined);
+  }
+  await page.goto(`${base}?view=settings-subpage&${query}`, { waitUntil: "networkidle" });
+  await page.waitForSelector("[data-settings-subpage]");
+  await shot("10-settings-subpage");
   if (role === "admin") {
     await page.goto(`${base}?view=org-settings&${query}`, { waitUntil: "networkidle" });
     await page.waitForTimeout(1200);

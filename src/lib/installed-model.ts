@@ -195,6 +195,34 @@ export function installedEntries(items: readonly PluginItem[], catalog: readonly
   return entries.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The mark an entry shows (its row and its page): the app's real logo,
+ * else its site's, else the kind's own mark. A plugin with a logo shows it
+ * as an app does. */
+export function entryIcon(entry: Pick<InstalledEntry, "primary" | "name" | "logo" | "domain">): Pick<PluginItem, "key" | "kind" | "name" | "logo" | "domain"> {
+  return {
+    key: entry.primary.key,
+    kind: entry.primary.kind === "plugin" && (entry.logo || entry.domain) ? "app" : entry.primary.kind,
+    name: entry.name,
+    logo: entry.logo,
+    domain: entry.domain,
+  };
+}
+
+/** What a page opened from Installed shows as its name and mark: the entry
+ * it stands for when it is that entry's own row ("GitHub" with its logo for
+ * github@claude-plugins-official), else its readable name and its own mark
+ * (a server the plugin brought). */
+export function detailIdentity(item: PluginItem, entries: readonly InstalledEntry[]): { name: string; icon: Pick<PluginItem, "key" | "kind" | "name" | "logo" | "domain"> } {
+  const entry = entries.find((candidate) => candidate.primary.key === item.key);
+  if (entry) return { name: entry.name, icon: entryIcon(entry) };
+  const name = item.kind === "skill" ? item.name : readableName(item.name);
+  if (item.kind === "plugin" && !item.logo && !item.domain) {
+    const mark = providerMark(name);
+    if (mark.logo || mark.site) return { name, icon: { key: item.key, kind: "app", name, logo: mark.logo, domain: mark.site } };
+  }
+  return { name, icon: { key: item.key, kind: item.kind, name, logo: item.logo, domain: item.domain } };
+}
+
 /** Private skills: the person's own, not brought by an installed plugin. */
 export function privateSkills(items: readonly PluginItem[]): PluginItem[] {
   return items.filter((item) => item.kind === "skill" && !item.parent).sort((a, b) => a.name.localeCompare(b.name));

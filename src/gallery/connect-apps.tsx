@@ -7,8 +7,10 @@
  * account with Gmail, Google Drive and Google Calendar, a Grok account.
  * Names are neutral. role=admin: the same person as an organization admin
  * (the organization's sources and access). org-settings: Settings >
- * Organization for that person. scripts/capture-connect-apps-manage.mjs
- * clicks through the tabs. */
+ * Organization for that person. settings-subpage: a Settings sub-page in
+ * the same window size, the navigation Connect apps' pages follow
+ * (2026-10-28). The bot Rocket has its own plugins (For Rocket).
+ * scripts/capture-connect-apps-manage.mjs clicks through the tabs. */
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { X } from "lucide-react";
@@ -16,6 +18,7 @@ import { BotCatalogView } from "../components/bot-catalog/BotCatalogView";
 import { CATEGORY_MODAL, cardActionClass } from "../components/category-modal";
 import { PluginsPanel } from "../components/PluginsPanel";
 import { PerspicaxOrgSettings } from "../components/PerspicaxOrgSettings";
+import { SettingsSubPage } from "../components/SettingsSubPage";
 import type { PerspicaxOrg } from "../lib/perspicax-org";
 import { catalogCategories, catalogSections, catalogTemplates } from "../lib/bot-catalog";
 import { setLocale, t } from "../lib/i18n";
@@ -143,11 +146,20 @@ const MANAGE_API: Record<string, unknown> = {
     { name: "Canva", status: "needs_auth" },
   ] }, codex: { available: false } },
   "/api/pages": { pages: [] },
+  // Rocket's own plugins (the "For Rocket" scope): Code Review on it, GitHub not
+  "/api/bots/bot-a/plugins": {
+    marketplaces: [{ name: "claude-plugins-official", source: "anthropics/claude-plugins-official", visibility: "org", addedAt: 1, updatedAt: 1, plugins: [
+      { name: "github", description: "GitHub's MCP server", installed: false, external: false, category: "development", contents: { agents: [], commands: [], skills: [] } },
+      { name: "code-review", description: "Reviews a pull request", installed: true, external: false, category: "development", contents: { agents: ["reviewer"], commands: ["review"], skills: ["code-review"] } },
+    ] }],
+    plugins: [{ key: "code-review@claude-plugins-official", name: "code-review", marketplace: "claude-plugins-official", enabled: true, removed: [], declaredMcpServers: [] }],
+    policy: { mode: "any" }, engine: { loadsPlugins: true }, canChange: true,
+  },
   "/api/routines": { routines: [], runs: [] },
   "/api/webhooks": { webhooks: [], attempts: [] },
 };
 
-if (params.get("view") === "manage" || params.get("view") === "org-settings") {
+if (["manage", "org-settings", "settings-subpage"].includes(params.get("view") ?? "manage")) {
   const realFetch = window.fetch.bind(window);
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
@@ -163,6 +175,23 @@ function Manage() {
   return <PluginsPanel />;
 }
 
+/** A Settings sub-page (General > About me) in Connect apps' window size:
+ * the navigation the panel's own pages follow. */
+function SettingsSubpageSample() {
+  return (
+    <div className={CATEGORY_MODAL.backdrop}>
+      <div role="dialog" aria-label="Settings" className={CATEGORY_MODAL.frame}>
+        <div className={CATEGORY_MODAL.content}>
+          <button type="button" aria-label="Close" className={CATEGORY_MODAL.close}><X size={18} /></button>
+          <SettingsSubPage pageId="about-me" sectionLabel={t("settings.section.general")} title="About me" onBack={() => {}}>
+            <div className="rounded-[14px] border-[0.5px] border-border p-4 text-[13px] text-ink-secondary">Text a bot reads about you.</div>
+          </SettingsSubPage>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Settings > Organization as the settings window draws it. */
 function OrgSettings() {
   return (
@@ -175,6 +204,7 @@ function OrgSettings() {
 const VIEWS: Record<string, () => React.ReactNode> = {
   manage: () => <Manage />,
   "org-settings": () => <OrgSettings />,
+  "settings-subpage": () => <SettingsSubpageSample />,
   bots: () => <Bots />,
   "bots-in-apps": () => <Bots inApps />,
 };
