@@ -197,10 +197,14 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   const rootRef = useRef<HTMLDivElement>(null);
   const theme = useWidgetTheme(rootRef).scheme;
 
+  // the caller's handler may change on every render: read it from a ref, so
+  // loading the page never runs again because of it
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   const update = useCallback((next: PublishedPageSummary) => {
     setPage(next);
-    onChange?.(next);
-  }, [onChange]);
+    onChangeRef.current?.(next);
+  }, []);
 
   const load = useCallback((asked?: number | null) => {
     let live = true;
