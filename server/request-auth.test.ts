@@ -592,9 +592,13 @@ describe("resolveRequestAuth", () => {
     expect(connectorRefresh.status).toBe(403);
     // The remote viewer route hands out a desktop password and its RFB
     // socket; native owners use the direct viewer instead.
-    for (const path of ["/api/desktop-viewer/vps/bot-1", "/api/desktop-viewer/local/shared/websockify"]) {
-      expect(resolveRequestAuth(request({ host: "127.0.0.1:8799" }, "GET"), options(path)).status).toBe(403);
+    for (const path of ["/api/desktop-viewer/vps/bot-1", "/api/desktop-viewer/local/shared/websockify",
+      "/api/local-computer", "/api/bots/bot-1/local-computer"]) {
+      expect(resolveRequestAuth(request({ host: "127.0.0.1:8799" }, "GET"), options(path)).status, path).toBe(403);
+      expect(resolveRequestAuth(request({ host: "127.0.0.1:8799", "x-openmausbot-desktop-owner": "owner-token-123" }, "GET"), options(path)).auth?.kind, path)
+        .toBe("loopback");
     }
+    expect(resolveRequestAuth(request({ host: "127.0.0.1:8799" }, "GET"), options("/api/local-computer/instances")).auth?.kind).toBe("loopback");
     expect(resolveRequestAuth(
       request({ host: "127.0.0.1:8799" }, "POST"),
       options("/api/internal/ask-bot"),
@@ -651,6 +655,17 @@ describe("resolveRequestAuth", () => {
       expect(refused.status).toBe(403);
     }
     expect(resolve(cloud, "/api/bots", "POST").error).toBe("forbidden: this browser's session makes changes only from its own page");
+    const connectorRefresh = "/api/bots/bot-1/connector-cards/card-1/status";
+    const secretRead = "/api/local-computer";
+    const notItsPage: Record<string, string>[] = [{}, { "sec-fetch-site": "same-site" }, { "sec-fetch-site": "cross-site" }, { origin: "https://evil.example" }];
+    for (const headers of notItsPage) {
+      expect(resolve({ ...cloud, ...headers }, connectorRefresh, "GET").auth, JSON.stringify(headers)).toBeNull();
+      expect(resolve({ ...cloud, ...headers }, secretRead, "GET").auth, JSON.stringify(headers)).toBeNull();
+      expect(resolve({ ...cloud, ...headers }, "/api/desktop-viewer/vps/bot-1", "GET").auth, JSON.stringify(headers)).toBeNull();
+    }
+    expect(resolve({ ...cloud, "sec-fetch-site": "same-origin" }, connectorRefresh, "GET").auth?.kind).toBe("session");
+    expect(resolve({ ...cloud, "sec-fetch-site": "same-origin" }, secretRead, "GET").auth?.kind).toBe("session");
+    expect(resolve({ ...cloud, "sec-fetch-site": "same-site" }, "/api/bots", "GET").auth?.kind).toBe("session");
     // Any other session's cookie keeps the old rule: a missing Origin passes.
     const paired = pairedToken();
     expect(resolve({ host: "omb-u-0123456789ab.fly.dev", "x-forwarded-proto": "https", cookie: `${cookieName}=${paired}` }, "/api/bots", "POST").auth?.kind).toBe("session");
