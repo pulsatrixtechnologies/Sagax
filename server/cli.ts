@@ -68,13 +68,14 @@ import {
   type TunnelAccount,
   type TunnelRecovery,
 } from "./tunnel.ts";
+import { createDataArchive, restoreDataArchive, verifyDataArchive } from "./data-dir-archive.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 export interface CliOptions {
   /** No --data-dir and no SAGAX_DATA_DIR (or OMB_DATA_DIR): ~/.sagax (or an old ~/.openmausbot). */
   dataDirIsDefault?: boolean;
-  command: "setup" | "start" | "serve" | "pair" | "sessions" | "status" | "login" | "logout" | "access" | "service" | "browser" | "fleet" | "help";
+  command: "setup" | "start" | "serve" | "pair" | "sessions" | "status" | "login" | "logout" | "access" | "service" | "browser" | "fleet" | "backup" | "restore" | "help";
   port: number;
   dataDir: string;
   label?: string;
@@ -121,9 +122,15 @@ export interface CliOptions {
   /** Internal guided-start presentation; serve remains script-friendly. */
   guided?: boolean;
   phone?: "ios" | "android";
+  /** backup --output, or the archive named by restore. */
+  archive?: string;
+  /** restore --verify: check hashes, write nothing. */
+  verify?: boolean;
+  /** restore --apply: the only flag that writes the archive over the data folder. */
+  apply?: boolean;
 }
 
-const COMMANDS = ["setup", "start", "serve", "pair", "sessions", "status", "login", "logout", "access", "service", "browser", "fleet", "help", "--help", "-h"];
+const COMMANDS = ["setup", "start", "serve", "pair", "sessions", "status", "login", "logout", "access", "service", "browser", "fleet", "backup", "restore", "help", "--help", "-h"];
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env): CliOptions | { error: string } {
   const implicitStart = !argv.length || (argv[0]!.startsWith("--") && argv[0] !== "--help");
@@ -208,6 +215,10 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
       else if (options.command === "fleet" && arg === "--keep-data") options.keepData = true;
       else if (options.command === "fleet" && options.fleetAction === "upgrade" && arg === "--to") options.fleetVersion = value();
       else if (options.command === "fleet" && arg === "--chat-only") options.chatOnly = true;
+      else if (options.command === "backup" && arg === "--output") options.archive = resolve(value());
+      else if (options.command === "restore" && arg === "--verify") options.verify = true;
+      else if (options.command === "restore" && arg === "--apply") options.apply = true;
+      else if ((options.command === "backup" || options.command === "restore") && !arg.startsWith("--") && !options.archive) options.archive = resolve(arg);
       else return { error: `unknown argument "${arg}"` };
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) };
@@ -227,6 +238,9 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
     if (options.fleetAction === "users" && !options.fleetUserAction) return { error: "fleet users needs: NAME add|remove EMAIL [--chat-only]" };
     if (options.cap !== undefined && (!Number.isFinite(options.cap) || options.cap < 0)) return { error: "--cap must be a dollar amount of 0 or more" };
   }
+  if (options.command === "backup" && !options.archive) return { error: "backup needs --output FILE" };
+  if (options.command === "restore" && !options.archive) return { error: "restore needs the archive path" };
+  if (options.command === "restore" && !options.verify && !options.apply) return { error: "restore needs --verify (check only) or --apply (write the data folder)" };
   return options;
 }
 
@@ -246,6 +260,8 @@ export const USAGE = `sagax — your team of AI bots, ready in a few steps
   sagax access list | add EMAIL [--chat-only] | remove EMAIL
   sagax service install [--domain HOST | --tunnel | --tailscale] [--port N] [--data-dir DIR] | uninstall
   sagax browser install [--with-deps] | status
+  sagax backup --output FILE [--data-dir DIR]
+  sagax restore --verify ARCHIVE | --apply ARCHIVE [--data-dir DIR]
   sagax fleet init --domain HOST [--operator USER] | create NAME --admin EMAIL [--member EMAIL] [--brand FILE]
               [--anthropic-key-file FILE] [--cap USD] [--license-key KEY] [--memory 1G]
             | list | users NAME add|remove EMAIL [--chat-only] | suspend NAME | resume NAME
@@ -1196,6 +1212,38 @@ export async function runOnboardingCommand(
   }
 }
 
+async function runBackup(options: CliOptions): Promise<number> {
+  const archive = options.archive;
+  if (!archive) return 2;
+  try {
+    const report = await createDataArchive(options.dataDir, archive);
+    const line = options.json ? JSON.stringify({ ok: true, archive, ...report }) : `Backup written: ${archive} (${report.files} files)`;
+    console.log(line);
+    return 0;
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
+}
+
+function runRestore(options: CliOptions): number {
+  const archive = options.archive;
+  if (!archive) return 2;
+  // --verify never writes. --apply is the only way the data folder changes.
+  const checked = options.apply && !options.verify
+    ? restoreDataArchive(archive, options.dataDir, true)
+    : verifyDataArchive(archive);
+  if (!checked.ok) {
+    console.error(checked.error ?? "The archive did not verify.");
+    return 1;
+  }
+  const applied = "applied" in checked && checked.applied === true;
+  console.log(options.json
+    ? JSON.stringify({ ok: true, files: checked.files, applied })
+    : applied ? `Restored ${checked.files} files into ${options.dataDir}` : `Archive verified (${checked.files} files). Nothing was written.`);
+  return 0;
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const options = parseArgs(argv);
   if ("error" in options) {
@@ -1274,6 +1322,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       return runLogout(options);
     case "browser":
       return runBrowser(options);
+    case "backup":
+      return runBackup(options);
+    case "restore":
+      return runRestore(options);
     default:
       console.log(USAGE);
       return 0;
