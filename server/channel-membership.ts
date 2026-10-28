@@ -1,6 +1,6 @@
-/** Who someone is to a channel: the operator at this computer (owner), an
- * admin, or a member. */
-export type OrgRole = "owner" | "admin" | "member";
+import type { OrgRole } from "../shared/org-role.ts";
+
+export type { OrgRole };
 
 /** True only when the actor owns the bot. An admin is not an exception. */
 export function canPlaceBot(input: { actorId: string; ownerUserId: string }): boolean {
