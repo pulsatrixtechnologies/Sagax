@@ -4207,6 +4207,11 @@ The Use Messages switch is `messages.json` in the data dir. Sends to someone
 on the bot's allowed recipients go through. Everyone else gets a card.
 Group chats are refused. This is not a desktop-bridge action: an
 organization server must not ask the signed-in Mac to open Messages.
+An image attached to a message is named on the read and returned by
+`read_attachment` only when the file is inside the Messages folder and
+at most 1.5 MB (`server/imessage-db.ts`). A file is sent only from the
+bot's own folder, by iMessage, and the card shows the file's name, not
+its path.
 
 Plugin lifecycle hooks are stripped from the folder Claude loads with
 `--plugin-dir`. The commands are kept under `bot-plugins/<bot>/computer-hooks/`

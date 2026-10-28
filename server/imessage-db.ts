@@ -3,7 +3,7 @@
 // ~/Library/Messages itself and never launches Messages.app.
 import { DatabaseSync } from "node:sqlite";
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, sep } from "node:path";
+import { basename, isAbsolute, join, sep } from "node:path";
 
 const APPLE_EPOCH = 978_307_200;
 
@@ -42,6 +42,17 @@ export type ChatRow = {
   handles: string[];
 };
 
+/** A file on a message. The path on disk is never included. */
+export type MessageAttachment = {
+  id: number;
+  name: string;
+  mime?: string;
+  uti?: string;
+  bytes: number;
+  /** True when the file sits inside the Messages directory and can be read. */
+  readable: boolean;
+};
+
 export type MessageRow = {
   id: number;
   guid: string;
@@ -52,12 +63,37 @@ export type MessageRow = {
   service: string;
   text: string;
   fallback: boolean;
+  attachments: MessageAttachment[];
+};
+
+/** An image the bot may receive, and only up to this many bytes. */
+export const MESSAGE_ATTACHMENT_MAX_BYTES = 1_500_000;
+
+const IMAGE_UTIS = new Set([
+  "public.image", "public.jpeg", "public.jpg", "public.png", "public.gif",
+  "public.heic", "public.heif", "public.webp", "public.tiff", "public.bmp",
+]);
+
+/** An image the bot may be shown. Other files stay metadata. */
+export function attachmentIsImage(item: { mime?: string; uti?: string }): boolean {
+  if (item.mime?.toLowerCase().startsWith("image/")) return true;
+  const uti = item.uti?.toLowerCase() ?? "";
+  return IMAGE_UTIS.has(uti);
+}
+
+export type AttachmentRead = {
+  attachment: MessageAttachment;
+  /** Present only for a readable image within the cap. */
+  bytes: Buffer | null;
+  reason?: "outside" | "large" | "kind" | "missing";
 };
 
 export type MessagesReader = {
   findChats(query?: { displayName?: string; handle?: string; limit?: number }): ChatRow[];
   items(chatGuid: string, limit?: number): MessageRow[];
   search(needle: string, limit?: number): MessageRow[];
+  /** One attachment of one message. Null when that message has no such id. */
+  readAttachment(messageGuid: string, attachmentId: number): AttachmentRead | null;
 };
 
 function limitOf(value: number | undefined, fallback: number, max: number): number {
@@ -73,6 +109,54 @@ function rows(db: DatabaseSync, sql: string, args: Array<string | number> = []):
 
 function str(value: unknown): string {
   return typeof value === "string" ? value : value == null ? "" : String(value);
+}
+
+function attachmentName(row: Record<string, unknown>): string {
+  const transfer = str(row.transfer_name).trim();
+  const file = str(row.filename).trim();
+  const base = basename(transfer || file).replace(/[\u0000]/g, "");
+  return (base && base !== "." && base !== ".." ? base : "attachment").slice(0, 200);
+}
+
+function attachmentPath(db: DatabaseSync, attachmentId: number): string | null {
+  try {
+    const row = rows(db, `SELECT filename FROM attachment WHERE ROWID = ?`, [attachmentId])[0];
+    const file = str(row?.filename).trim();
+    return file || null;
+  } catch {
+    return null;
+  }
+}
+
+function loadAttachments(db: DatabaseSync, dir: string): Map<number, MessageAttachment[]> {
+  const map = new Map<number, MessageAttachment[]>();
+  let found: Array<Record<string, unknown>> = [];
+  try {
+    found = rows(db, `SELECT j.message_id AS message_id, a.ROWID AS id, a.transfer_name AS transfer_name,
+      a.filename AS filename, a.mime_type AS mime_type, a.uti AS uti, a.total_bytes AS total_bytes
+      FROM message_attachment_join j JOIN attachment a ON a.ROWID = j.attachment_id`);
+  } catch {
+    return map;
+  }
+  for (const row of found) {
+    const messageId = Number(row.message_id);
+    const filename = str(row.filename).trim();
+    const mime = str(row.mime_type).trim();
+    const uti = str(row.uti).trim();
+    const bytes = Number(row.total_bytes);
+    const item: MessageAttachment = {
+      id: Number(row.id),
+      name: attachmentName(row),
+      ...(mime ? { mime } : {}),
+      ...(uti ? { uti } : {}),
+      bytes: Number.isFinite(bytes) && bytes > 0 ? Math.min(bytes, Number.MAX_SAFE_INTEGER) : 0,
+      readable: Boolean(filename && fileInsideRoot(dir, filename)),
+    };
+    const list = map.get(messageId) ?? [];
+    list.push(item);
+    map.set(messageId, list);
+  }
+  return map;
 }
 
 export function openMessagesReader(dir: string): { reader: MessagesReader; close: () => void } {
@@ -108,11 +192,13 @@ export function openMessagesReader(dir: string): { reader: MessagesReader; close
     const extracted = textFromAttributedBody(row.attributedBody);
     return extracted ? { text: extracted, fallback: true } : { text: "", fallback: false };
   };
+  const attachments = loadAttachments(db, dir);
   const mapMessage = (row: Record<string, unknown>): MessageRow => {
     const body = bodyOf(row);
     const handle = str(row.handle).trim();
+    const id = Number(row.id);
     return {
-      id: Number(row.id),
+      id,
       guid: str(row.guid),
       chatGuid: str(row.chat_guid),
       date: appleDate(row.date),
@@ -121,6 +207,7 @@ export function openMessagesReader(dir: string): { reader: MessagesReader; close
       service: str(row.service) || "iMessage",
       text: body.text,
       fallback: body.fallback,
+      attachments: attachments.get(id) ?? [],
     };
   };
   const messageSql = `SELECT m.ROWID AS id, m.guid AS guid, c.guid AS chat_guid, m.date AS date,
@@ -147,6 +234,24 @@ export function openMessagesReader(dir: string): { reader: MessagesReader; close
       const cap = limitOf(limit, 30, 100);
       return rows(db, `${messageSql} WHERE c.guid = ? ORDER BY m.date DESC LIMIT ?`, [chatGuid, cap]).map(mapMessage);
     },
+    readAttachment(messageGuid, attachmentId) {
+      const guid = messageGuid.trim();
+      if (!guid || !Number.isInteger(attachmentId)) return null;
+      const found = rows(db, `${messageSql} WHERE m.guid = ? LIMIT 1`, [guid]).map(mapMessage)[0];
+      const attachment = found?.attachments.find((item) => item.id === attachmentId);
+      if (!attachment) return null;
+      if (!attachment.readable) return { attachment, bytes: null, reason: "outside" };
+      if (!attachmentIsImage(attachment)) return { attachment, bytes: null, reason: "kind" };
+      const path = attachmentPath(db, attachmentId);
+      const inside = path ? fileInsideRoot(dir, path) : null;
+      if (!inside) return { attachment, bytes: null, reason: "missing" };
+      let size = 0;
+      try { size = statSync(inside).size; } catch { return { attachment, bytes: null, reason: "missing" }; }
+      if (size > MESSAGE_ATTACHMENT_MAX_BYTES) return { attachment: { ...attachment, bytes: size }, bytes: null, reason: "large" };
+      const bytes = readBoundedFile(dir, inside, MESSAGE_ATTACHMENT_MAX_BYTES);
+      if (!bytes) return { attachment, bytes: null, reason: "missing" };
+      return { attachment: { ...attachment, bytes: bytes.length }, bytes };
+    },
     search(needle, limit) {
       const cap = limitOf(limit, 30, 100);
       const like = `%${needle.replace(/[\\%_]/g, "")}%`;
@@ -154,6 +259,15 @@ export function openMessagesReader(dir: string): { reader: MessagesReader; close
     },
   };
   return { reader, close: () => db.close() };
+}
+
+/** The first root that contains `target`, or null. */
+export function fileInsideRoots(roots: readonly string[], target: string): string | null {
+  for (const root of roots) {
+    const inside = fileInsideRoot(root, target);
+    if (inside) return inside;
+  }
+  return null;
 }
 
 /** A file under `root` (realpath), or null when it is not. */

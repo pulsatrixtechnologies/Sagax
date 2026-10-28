@@ -1043,6 +1043,7 @@ import { bindImessageMessage, takeImessageSend } from "./imessage-cards.ts";
 import { createOsascriptSender } from "./imessage-send.ts";
 import { readMessagesSettings } from "./imessage-settings.ts";
 import { messagesOnBotMac } from "../shared/imessage.ts";
+import { fileInsideRoots } from "./imessage-db.ts";
 import { chooseHookTarget, commandWithFiles, dispatchLifecycleHooks, lifecycleEvent, type HookRun, type HookTarget } from "./lifecycle-hooks.ts";
 import { spawnPcHook } from "./lifecycle-hook-exec.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
@@ -32219,8 +32220,18 @@ async function resolveImessageCard(res: ServerResponse, threadId: string, reques
     json(res, 409, { error: "Messages is not available on this Mac.", code: "messages_not_on_this_mac" });
     return true;
   }
+  let file = pending.file;
+  if (file) {
+    const inside = fileInsideRoots([workspaceDir(pending.botId), join(TASK_WORKSPACES_DIR, pending.botId, pending.threadId)], file);
+    if (!inside) {
+      store.patchMessage(threadId, message.id, { card: { ...card, answered: "deny", subtitle: "That file is not in this bot's folder. Nothing was sent." } });
+      json(res, 409, { error: "That file is not in this bot's folder.", code: "messages_file_outside" });
+      return true;
+    }
+    file = inside;
+  }
   try {
-    await imessageSender.send({ to: pending.to, text: pending.text, service: pending.service });
+    await imessageSender.send({ to: pending.to, text: pending.text, service: pending.service, ...(file ? { file } : {}) });
     store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", subtitle: `Sent to ${pending.to}.` } });
     json(res, 200, { ok: true, outcome: "allowed-once" });
   } catch (error) {
@@ -40406,6 +40417,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           useMessages: readMessagesSettings(DATA_DIR).useMessages,
           dbDir: messagesOnBotMac({ platform: process.platform, identityKind: IDENTITY.kind }).ok
             ? join(homedir(), "Library", "Messages") : null,
+          filesRoots: [workspaceDir(internalSender.id), join(TASK_WORKSPACES_DIR, internalSender.id, internalCapability.threadId)],
           allowedRecipients: internalSender.allowedRecipients,
           grantsAllowed: standingGrantsAllowed(),
           stepUp: (args) => autoAnswerStepUp(internalSender, internalCapability.threadId, {
@@ -40418,19 +40430,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           threadId: internalCapability.threadId,
           openCard: (pending) => {
             const preview = pending.text.length > 240 ? `${pending.text.slice(0, 240)}...` : pending.text;
+            const line = pending.fileName ? `${preview ? `${preview} ` : ""}File: ${pending.fileName}` : preview;
             const message = store.appendMessage(internalCapability.threadId, {
               role: "bot",
               kind: "options",
               from: { botId: internalSender.id, name: internalSender.name, color: internalSender.color },
               card: {
                 title: "Approval needed",
-                subtitle: `Message to ${pending.to}: ${preview}`,
+                subtitle: `Message to ${pending.to}: ${line}`,
                 options: ["Allow", "Deny"],
                 requestId: pending.requestId,
                 requestType: "permission",
                 tool: "send_message",
-                toolInput: JSON.stringify({ to: pending.to, text: pending.text, service: pending.service }),
-                plain: { title: `Message to ${pending.to}`, line: preview, risk: "write" },
+                toolInput: JSON.stringify({ to: pending.to, text: pending.text, service: pending.service, ...(pending.fileName ? { file: pending.fileName } : {}) }),
+                plain: { title: `Message to ${pending.to}`, line, risk: "write" },
               },
             });
             bindImessageMessage(pending.requestId, message.id);
