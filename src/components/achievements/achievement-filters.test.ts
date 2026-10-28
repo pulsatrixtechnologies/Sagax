@@ -8,7 +8,8 @@ import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
 import { MASCOT_CHARACTERS } from "../../../shared/mascot-look";
 import { resetAchievementsForTests, unlocksFromSnapshot } from "@/lib/achievements";
 import { setLocale } from "@/lib/i18n";
-import { AchievementsPage } from "./AchievementsPage";
+import { StoreProvider } from "@/state/store";
+import { AchievementsScreen } from "./AchievementsScreen";
 import { achievementMatches, achievementRewardFilterLabel, achievementRewardFilters, type AchievementListQuery } from "./achievement-filters";
 
 function achievement(overrides: Partial<AchievementDefinition> & Pick<AchievementDefinition, "id" | "rewards">): AchievementDefinition {
@@ -184,17 +185,22 @@ describe("achievements page reward controls", () => {
     expect(achievementRewardFilters(NOTHING_LOCKED)).toEqual(["all", "title", ...MASCOT_CHARACTERS]);
   });
 
-  it("puts search and the reward and status menus on the filter row, with the mascot names the app already uses", () => {
+  it("puts the search and the status in the header, the reward in Filters, with the mascot names the app already uses", () => {
     resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
-    const html = renderToStaticMarkup(createElement(AchievementsPage));
+    const render = () => renderToStaticMarkup(createElement(StoreProvider, null, createElement(AchievementsScreen)));
+    const html = render();
     expect(html).not.toContain('role="tablist"');
     expect(html).toContain('data-achievement-search=""');
     expect(html).toContain('placeholder="Search"');
     expect(html).toContain('aria-label="Search achievements"');
-    // pill menus (2026-10-16): the current choice shows, the list opens on demand
-    expect(html).toMatch(/aria-label="Reward" aria-haspopup="listbox"/);
-    expect(html).toContain(">All rewards</span>");
-    expect(html).toMatch(/aria-label="Show" aria-haspopup="listbox"/);
+    // the status: the header's segment, as Automations' List and Calendar
+    expect(html).toMatch(/role="group"[^>]*aria-label="Show"/);
+    // the reward: a select of Filters, as Automations' bot
+    const filters = html.slice(html.indexOf("data-achievements-filters"));
+    expect(filters).toMatch(/aria-label="Reward" data-achievement-reward-select=""/);
+    expect(filters).toContain(">All rewards</option>");
+    expect(filters).toContain(">Gives a title</option>");
+    expect(filters).toContain(">Owl</option>");
     const labels = () => achievementRewardFilters(unlocksFromSnapshot(snapshot())).map(achievementRewardFilterLabel);
     expect(labels()).toContain("All rewards");
     expect(labels()).toContain("Gives a title");
@@ -202,10 +208,10 @@ describe("achievements page reward controls", () => {
     for (const hidden of ["Shapes", "Trombi", "Bunbu", "Crab"]) expect(labels()).not.toContain(hidden);
     expect(achievementRewardFilterLabel("title")).toBe("Gives a title");
     setLocale("fr");
-    const french = renderToStaticMarkup(createElement(AchievementsPage));
+    const french = render();
     expect(french).toContain('placeholder="Rechercher"');
     expect(french).toContain('aria-label="Rechercher des succès"');
-    expect(french).toContain(">Toutes les récompenses</span>");
+    expect(french).toContain(">Toutes les récompenses</option>");
     expect(labels()).toContain("Donne un titre");
     expect(labels()).toContain("Hibou");
     for (const hidden of ["Formes", "Trombi", "Bunbu"]) expect(labels()).not.toContain(hidden);

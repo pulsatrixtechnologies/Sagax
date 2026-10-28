@@ -11585,5 +11585,9 @@
   "chat.soloGoal.blocked": "Waiting for you: {goal}",
   "chat.soloGoal.stopped": "Goal stopped: {goal}",
   "chat.soloGoal.completed": "Goal done: {goal}",
-  "chat.soloGoal.paused": "Paused after {rounds} turns: {goal}. Send a message to continue."
+  "chat.soloGoal.paused": "Paused after {rounds} turns: {goal}. Send a message to continue.",
+  "achievements.pageMenu": "Achievements menu",
+  "achievements.settings.subtitle": "What colleagues see on your card and how unlocks reach you.",
+  "achievements.settings.card": "Your card",
+  "achievements.settings.notifications": "When you unlock one"
 }

@@ -25,6 +25,7 @@ vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 
 const { initialState } = await import("@/state/store");
 const { RoutinesPage, RoutineEditor, EventDetails } = await import("./RoutineCalendarPage");
+const { PageMenuItem } = await import("./content-page");
 const SOURCE = readFileSync(join(process.cwd(), "src/components/RoutineCalendarPage.tsx"), "utf8");
 
 const bot: Bot = {
@@ -51,8 +52,13 @@ function buttonsFrom(render: () => ReactNode): Map<string, Button> {
   function visit(node: ReactNode) {
     Children.forEach(node, (child) => {
       if (!isValidElement<Button>(child)) return;
-      if (child.type === "button") buttons.set(child.props["aria-label"] ?? child.props.title ?? textOf(child.props.children), child.props);
+      // a ☰ entry (content-page.tsx) renders a button of its own
+      if (child.type === "button" || child.type === PageMenuItem) buttons.set(child.props["aria-label"] ?? child.props.title ?? textOf(child.props.children), child.props);
       visit(child.props.children);
+      // the shared header takes its controls as props (primary, actions)
+      for (const [key, value] of Object.entries(child.props as Record<string, unknown>)) {
+        if (key !== "children" && isValidElement(value)) visit(value);
+      }
     });
   }
   function Capture() { visit(render()); return null; }
@@ -226,7 +232,7 @@ describe("the Automations header (Owner, 2026-10-27: one row, secondary controls
   it("labels every icon-only control and clears the Windows caption buttons", () => {
     const html = header();
     for (const label of ["Previous dates", "Next dates", "Create an automation", "Filters"]) expect(html).toContain(`title="${label}"`);
-    expect(html).toContain("@container/automations-header");
-    expect(SOURCE).toMatch(/data-automations-actions[^\n]*controlsShiftStyle/);
+    expect(html).toContain("@container/page-header");
+    expect(SOURCE).toMatch(/actionsStyle=\{[^\n]*controlsShiftStyle/);
   });
 });

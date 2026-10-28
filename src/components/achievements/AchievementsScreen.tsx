@@ -1,38 +1,52 @@
-// Achievements, a full page of the content frame like Automations and
-// Remote sessions (activeView "achievements"; store action showAchievements,
-// from the account menu, the person panel's Achievements tab and the
-// `#achievements/<category>` address). One column since 2026-10-28: the
-// header (the way back, the page's title, the settings gear in the top-right
-// corner), then AchievementsPage: the progress card, the recent unlocks, the
-// toolbar (search, the category filter with each category's unlocked count,
-// reward, status) and the grid. The categories are a filter of the toolbar,
-// not a left column, so the cards take the page's whole width. The
-// feature-wide settings open from the gear (AchievementSettingsPage, still
-// `#achievements/settings`).
+// Achievements, a full page of the content frame (activeView "achievements";
+// store action showAchievements, from the account menu, the person panel's
+// Achievements tab and the `#achievements/<category>` address). A sister of
+// Automations since 2026-10-28: the same pieces (content-page.tsx). One row
+// of header: the trophy and the title (with "› Settings" on its settings),
+// the status segment (All, Unlocked, Locked) and the search, then on the
+// right the points and the streak, Filters (the category with each one's
+// unlocked count, the reward) and the ☰ menu (All achievements, Settings).
+// Under it, AchievementsPage in the centred column: the heading with the
+// level, the recent unlocks, one section per category. The settings
+// (AchievementSettingsPage, still `#achievements/settings`) are a section
+// of the ☰ menu, as Run logs and Webhooks are on Automations.
 import { useEffect, useRef, useState } from "react";
-import { Settings } from "lucide-react";
+import { Flame, Settings, Trophy } from "lucide-react";
 import { isBackShortcut } from "@/lib/back-shortcut";
 import { t } from "@/lib/i18n";
-import { CATEGORY_MODAL } from "../category-modal";
-import { BackButton } from "../Breadcrumb";
-import { useStore, type AchievementsCategory } from "@/state/store";
-import { WindowDragStrip, useCaptionChrome } from "../DesktopCapabilities";
 import { cn } from "@/lib/cn";
-import { AchievementSettingsPage, AchievementsPage } from "./AchievementsPage";
-import type { AchievementsNavCategory } from "./achievement-filters";
+import { unlocksFromSnapshot, useAchievements } from "@/lib/achievements";
+import { useStore, type AchievementsCategory } from "@/state/store";
+import { useCaptionChrome } from "../DesktopCapabilities";
+import {
+  PAGE_FIELD_LABEL, PAGE_FILTER_RESET, PAGE_INDICATOR, PAGE_SELECT,
+  PageBody, PageFilters, PageHeader, PageMenu, PageMenuItem, PageMenuSeparator, PageSearch, PageSegment, PageTopStrip, useDismissMenus,
+} from "../content-page";
+import { AchievementSettingsPage, AchievementsPage, achievementCategoryLabel, formatPoints } from "./AchievementsPage";
+import {
+  ACHIEVEMENTS_SCREEN_CATEGORIES, achievementCategoryCounts, achievementRewardFilterLabel, achievementRewardFilters,
+  type AchievementRewardFilter, type AchievementStatusFilter, type AchievementsNavCategory,
+} from "./achievement-filters";
 
-/** What the page shows: a category, or the settings (the header's gear). */
+/** What the page shows: a category, or the settings (the ☰ menu's Settings). */
 export type AchievementsScreenCategory = AchievementsCategory;
 export { ACHIEVEMENTS_SCREEN_CATEGORIES, achievementCategoryCounts, type AchievementCategoryCounts, type AchievementsNavCategory } from "./achievement-filters";
 
 export function AchievementsScreen({ initialCategory }: { initialCategory?: AchievementsScreenCategory }) {
   const { state, dispatch } = useStore();
-  const { dragProps, controlsShiftStyle } = useCaptionChrome();
+  const { dragProps, noDragStyle, controlsShiftStyle } = useCaptionChrome();
+  const { snapshot } = useAchievements();
   const focus = state.achievementsFocus;
   const start = initialCategory ?? focus.category;
   const [category, setCategory] = useState<AchievementsNavCategory>(start === "settings" ? "all" : start);
   const [settingsOpen, setSettingsOpen] = useState(start === "settings");
+  const [status, setStatus] = useState<AchievementStatusFilter>("all");
+  const [reward, setReward] = useState<AchievementRewardFilter>("all");
+  const [search, setSearch] = useState("");
   const mainRef = useRef<HTMLElement>(null);
+  const filtersRef = useRef<HTMLDetailsElement>(null);
+  const menuRef = useRef<HTMLDetailsElement>(null);
+  useDismissMenus([filtersRef, menuRef]);
 
   // A link to another category (or to the settings) while the page shows re-selects it.
   const seen = useRef(focus.nonce);
@@ -44,54 +58,86 @@ export function AchievementsScreen({ initialCategory }: { initialCategory?: Achi
   }, [focus]);
 
   // The page takes focus so Escape and Cmd/Ctrl+[ work at once; Tab then
-  // reaches the way back, the gear and the toolbar.
+  // reaches the header's controls.
   useEffect(() => { mainRef.current?.focus({ preventScroll: true }); }, []);
 
   const back = () => dispatch({ type: "showChat" });
+  const closeMenus = () => { for (const menu of [filtersRef.current, menuRef.current]) menu?.removeAttribute("open"); };
+
+  const counts = achievementCategoryCounts(new Set((snapshot?.items ?? []).filter((item) => item.unlockedAt).map((item) => item.id)));
+  const activeFilters = (category !== "all" ? 1 : 0) + (reward !== "all" ? 1 : 0);
+  const clearFilters = () => { setCategory("all"); setReward("all"); };
+  const pointsLabel = snapshot ? `${t("achievements.colleaguePoints", { points: formatPoints(snapshot.points) })}, ${t("achievements.level", { level: snapshot.level.level })}` : "";
 
   return (
     <main
       ref={mainRef}
       tabIndex={-1}
       data-achievements-screen=""
-      className="relative flex h-full min-w-0 flex-1 flex-col bg-app outline-none"
+      className="flex h-full min-w-0 flex-1 flex-col bg-app outline-none"
       onKeyDown={(event) => {
-        // Escape (unless a popover inside already took it) and Cmd/Ctrl+[ go back.
+        // Escape (unless a popover inside already took it) closes an open
+        // menu, then leaves the settings, then goes back; Cmd/Ctrl+[ goes back.
         if (event.defaultPrevented) return;
+        if (event.key === "Escape" && (filtersRef.current?.open || menuRef.current?.open)) { event.preventDefault(); closeMenus(); return; }
+        if (event.key === "Escape" && settingsOpen) { event.preventDefault(); setSettingsOpen(false); return; }
         if (event.key === "Escape" || isBackShortcut(event)) { event.preventDefault(); back(); }
       }}
     >
-      <WindowDragStrip />
-      <div className="min-h-0 flex-1 overflow-y-auto" data-achievements-pane="">
-        <div className="mx-auto flex w-full max-w-[1120px] flex-col px-4 pb-10 sm:px-8">
-          {/* The page's header: the way back, the title, the settings gear */}
-          <header {...dragProps} data-achievements-header="" className={cn("flex items-center gap-1.5 pb-4 pt-4 sm:pt-6", dragProps.style && "pt-9 sm:pt-9")}>
-            <span className="-ml-1.5 flex"><BackButton onBack={back} data={{ "data-achievements-back": "" }} /></span>
-            <h1 className={cn(CATEGORY_MODAL.title, "min-w-0 flex-1 truncate")}>{t("achievements.menu")}</h1>
-            <button
-              type="button"
-              data-achievements-settings-button=""
-              onClick={() => setSettingsOpen((open) => !open)}
-              aria-label={t("achievements.settings.title")}
-              aria-pressed={settingsOpen}
-              title={t("achievements.settings.title")}
-              style={controlsShiftStyle}
-              className={cn(
-                "window-no-drag -mr-1.5 flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary",
-                settingsOpen && "bg-selected text-ink",
-              )}
-            >
-              <Settings size={17} strokeWidth={1.5} aria-hidden="true" />
-            </button>
-          </header>
-          {settingsOpen ? (
-            // Settings' reading width; the group's own title names it
-            <div className="w-full max-w-[720px]"><AchievementSettingsPage /></div>
-          ) : (
-            <AchievementsPage category={category} onCategory={setCategory} />
+      <PageTopStrip />
+      <PageHeader
+        name="achievements"
+        icon={Trophy}
+        title={t("achievements.menu")}
+        section={settingsOpen ? t("achievements.settings.title") : null}
+        {...dragProps}
+        topbar
+        primaryStyle={noDragStyle}
+        actionsStyle={{ ...noDragStyle, ...controlsShiftStyle }}
+        primary={!settingsOpen && <>
+          <PageSegment label={t("achievements.filter")} value={status} onChange={setStatus} options={[
+            { value: "all", label: t("achievements.category.all") },
+            { value: "unlocked", label: t("achievements.filter.unlocked") },
+            { value: "locked", label: t("achievements.filter.locked") },
+          ]} />
+          <PageSearch value={search} onChange={setSearch} placeholder={t("achievements.search")} label={t("achievements.searchLabel")} data-achievement-search="" />
+        </>}
+        actions={<>
+          {snapshot && <span role="status" data-achievement-points="" title={pointsLabel} aria-label={pointsLabel} className={cn(PAGE_INDICATOR, "font-medium text-ink")}>
+            <Trophy size={14} className="text-[#e0a82e]" aria-hidden="true" />{formatPoints(snapshot.points)}
+          </span>}
+          {snapshot && snapshot.streak > 0 && <span role="status" data-achievement-streak="" title={t("achievements.streak", { days: snapshot.streak })} aria-label={t("achievements.streak", { days: snapshot.streak })} className={cn(PAGE_INDICATOR, "text-ink")}>
+            <Flame size={14} className="text-[#f97316]" aria-hidden="true" />{snapshot.streak}
+          </span>}
+          {!settingsOpen && (
+            <PageFilters name="achievements" menuRef={filtersRef} activeCount={activeFilters}>
+              <label className="block">
+                <span className={PAGE_FIELD_LABEL}>{t("achievements.categories")}</span>
+                <select aria-label={t("achievements.categories")} data-achievement-category-select="" value={category} onChange={(event) => setCategory(event.target.value as AchievementsNavCategory)} className={PAGE_SELECT}>
+                  {ACHIEVEMENTS_SCREEN_CATEGORIES.map((id) => (
+                    <option key={id} value={id} data-achievement-category={id}>{achievementCategoryLabel(id)} ({counts[id].unlocked}/{counts[id].total})</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className={PAGE_FIELD_LABEL}>{t("achievements.rewardFilter")}</span>
+                <select aria-label={t("achievements.rewardFilter")} data-achievement-reward-select="" value={reward} onChange={(event) => setReward(event.target.value as AchievementRewardFilter)} className={PAGE_SELECT}>
+                  {achievementRewardFilters(unlocksFromSnapshot(snapshot ?? { rewards: [] })).map((id) => <option key={id} value={id}>{achievementRewardFilterLabel(id)}</option>)}
+                </select>
+              </label>
+              {activeFilters > 0 && <button type="button" data-achievement-filter-reset="" onClick={clearFilters} className={PAGE_FILTER_RESET}>{t("routines.scope.reset")}</button>}
+            </PageFilters>
           )}
-        </div>
-      </div>
+          <PageMenu name="achievements" menuRef={menuRef} label={t("achievements.pageMenu")}>
+            <PageMenuItem icon={Trophy} current={!settingsOpen} data-achievements-menu-list="" onClick={() => { closeMenus(); setSettingsOpen(false); }}>{t("achievements.panel.all")}</PageMenuItem>
+            <PageMenuSeparator />
+            <PageMenuItem icon={Settings} current={settingsOpen} data-achievements-menu-settings="" onClick={() => { closeMenus(); setSettingsOpen(true); }}>{t("achievements.settings.title")}</PageMenuItem>
+          </PageMenu>
+        </>}
+      />
+      <PageBody data-achievements-pane="">
+        {settingsOpen ? <AchievementSettingsPage /> : <AchievementsPage category={category} status={status} reward={reward} search={search} />}
+      </PageBody>
     </main>
   );
 }

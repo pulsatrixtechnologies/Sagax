@@ -11585,5 +11585,9 @@
   "chat.soloGoal.blocked": "En attente de vous : {goal}",
   "chat.soloGoal.stopped": "Objectif arrêté : {goal}",
   "chat.soloGoal.completed": "Objectif atteint : {goal}",
-  "chat.soloGoal.paused": "En pause après {rounds} tours : {goal}. Envoyez un message pour continuer."
+  "chat.soloGoal.paused": "En pause après {rounds} tours : {goal}. Envoyez un message pour continuer.",
+  "achievements.pageMenu": "Menu des succès",
+  "achievements.settings.subtitle": "Ce que vos collègues voient sur votre carte et comment les déblocages vous parviennent.",
+  "achievements.settings.card": "Votre carte",
+  "achievements.settings.notifications": "Quand vous en débloquez un"
 }

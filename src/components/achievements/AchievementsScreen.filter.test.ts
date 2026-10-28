@@ -1,15 +1,17 @@
 // @vitest-environment happy-dom
-// The Achievements page in one column (2026-10-28): the categories are a
-// filter of the toolbar, not a left column. Picking one narrows the grid to
-// it, the counts stay on every pill, the gear swaps the cards for the
-// settings and back, and the page takes focus so Escape works at once.
+// The Achievements page, a sister of Automations (2026-10-28): the
+// categories are in Filters (as Automations' bot), the status is the
+// header's segment, the settings a section of the ☰ menu. Picking a
+// category narrows the rows to it, the counts stay on every option, the
+// menu swaps the rows for the settings and back, and the page takes focus
+// so Escape works at once.
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
-import type { AchievementSnapshot } from "../../../shared/achievements";
+import { ACHIEVEMENT_CATEGORIES, type AchievementSnapshot } from "../../../shared/achievements";
 import { resetAchievementsForTests } from "@/lib/achievements";
 import { setLocale } from "@/lib/i18n";
 import { StoreProvider } from "@/state/store";
@@ -34,8 +36,16 @@ function snapshot(): AchievementSnapshot {
 }
 
 const cards = () => [...host.querySelectorAll<HTMLElement>("[data-achievement-grid] [data-achievement]")].map((card) => card.dataset.achievement);
-const chip = (id: string) => host.querySelector<HTMLButtonElement>(`[data-achievement-category-filter] [data-achievement-category="${id}"]`)!;
+const select = () => host.querySelector<HTMLSelectElement>("[data-achievement-category-select]")!;
 const click = (element: HTMLElement) => flushSync(() => { element.click(); });
+function choose(id: string) {
+  flushSync(() => {
+    select().value = id;
+    select().dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+const segment = (label: string) => [...host.querySelectorAll<HTMLButtonElement>("[data-achievements-primary] [role=group] button")].find((button) => button.textContent === label)!;
+const byCategory = () => ACHIEVEMENT_CATEGORIES.flatMap((category) => ACHIEVEMENTS.filter((item) => item.category === category).map((item) => item.id));
 
 beforeEach(() => {
   setLocale("en");
@@ -54,32 +64,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the category filter", () => {
+describe("the Achievements page", () => {
   it("has no navigation column; the page takes focus for its keyboard", () => {
     expect(host.querySelector("nav")).toBeNull();
     expect(document.activeElement).toBe(host.querySelector("[data-achievements-screen]"));
   });
 
-  it("narrows the grid to the chosen category and back to All", () => {
-    expect(cards()).toHaveLength(ACHIEVEMENTS.length);
-    expect(chip("all").getAttribute("aria-pressed")).toBe("true");
-    click(chip("voice"));
-    const voice = ACHIEVEMENTS.filter((item) => item.category === "voice").map((item) => item.id);
-    expect(cards()).toEqual(voice);
-    expect(chip("voice").getAttribute("aria-pressed")).toBe("true");
-    expect(chip("all").getAttribute("aria-pressed")).toBe("false");
+  it("narrows the rows to the category chosen in Filters, and back to All", () => {
+    expect(cards()).toEqual(byCategory());
+    expect(select().value).toBe("all");
+    choose("voice");
+    expect(cards()).toEqual(ACHIEVEMENTS.filter((item) => item.category === "voice").map((item) => item.id));
+    expect(host.querySelector("[data-achievements-filter-count]")!.textContent).toBe("1");
     // the recent unlocks belong to All
     expect(host.querySelector("[data-recent-achievement]")).toBeNull();
-    // every pill keeps its count while another is chosen
-    expect(chip("onboarding").querySelector("[data-achievement-category-count]")!.textContent).toBe(`2/${ACHIEVEMENTS.filter((item) => item.category === "onboarding").length}`);
-    expect(chip("all").querySelector("[data-achievement-category-count]")!.textContent).toBe(`2/${ACHIEVEMENTS.length}`);
-    click(chip("all"));
-    expect(cards()).toHaveLength(ACHIEVEMENTS.length);
+    // every option keeps its count while another is chosen
+    const onboarding = ACHIEVEMENTS.filter((item) => item.category === "onboarding").length;
+    expect(select().querySelector<HTMLOptionElement>('option[value="onboarding"]')!.textContent).toBe(`Getting started (2/${onboarding})`);
+    expect(select().querySelector<HTMLOptionElement>('option[value="all"]')!.textContent).toBe(`All (2/${ACHIEVEMENTS.length})`);
+    // Clear filters brings All back
+    click(host.querySelector<HTMLButtonElement>("[data-achievement-filter-reset]")!);
+    expect(cards()).toEqual(byCategory());
+    expect(host.querySelector("[data-achievements-filter-count]")).toBeNull();
     expect(host.querySelector("[data-recent-achievement]")).not.toBeNull();
   });
 
-  it("combines with the search, and says so when nothing is left", () => {
-    click(chip("onboarding"));
+  it("filters on the status segment, combines with the search, and says so when nothing is left", () => {
+    click(segment("Unlocked"));
+    expect(segment("Unlocked").getAttribute("aria-pressed")).toBe("true");
+    expect(cards().sort()).toEqual(["first-words", "hello-bot"]);
+    click(segment("All"));
+    choose("onboarding");
     const input = host.querySelector<HTMLInputElement>("[data-achievement-search]")!;
     flushSync(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -90,15 +105,24 @@ describe("the category filter", () => {
     expect(host.querySelector("[data-achievements-empty]")!.textContent).toBe("No achievement matches these filters.");
   });
 
-  it("the gear swaps the cards for the settings, and back to the same category", () => {
-    click(chip("streaks"));
-    const gear = host.querySelector<HTMLButtonElement>("[data-achievements-settings-button]")!;
-    click(gear);
-    expect(gear.getAttribute("aria-pressed")).toBe("true");
+  it("the ☰ menu opens the settings and comes back to the same category; Escape leaves the settings first", () => {
+    choose("streaks");
+    click(host.querySelector<HTMLButtonElement>("[data-achievements-menu-settings]")!);
     expect(host.querySelector("[data-achievements-settings-page]")).not.toBeNull();
     expect(host.querySelector("[data-achievement-grid]")).toBeNull();
-    click(gear);
-    expect(chip("streaks").getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector("[data-achievements-section]")!.textContent).toBe("Settings");
+    // the six settings are there: the title, then five switches
+    const settings = host.querySelector("[data-achievements-settings-page]")!;
+    expect(settings.querySelector('[data-settings-row="achievements.title"]')).not.toBeNull();
+    for (const label of ["Show my points", "Show my title", "Show my points to colleagues", "Unlock banners", "System notification in the background"]) {
+      expect(settings.querySelector(`[aria-label="${label}"]`), label).not.toBeNull();
+    }
+    // Escape: back to the list, on the same category
+    flushSync(() => { host.querySelector("[data-achievements-screen]")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(host.querySelector("[data-achievements-settings-page]")).toBeNull();
     expect(cards()).toEqual(ACHIEVEMENTS.filter((item) => item.category === "streaks").map((item) => item.id));
+    click(host.querySelector<HTMLButtonElement>("[data-achievements-menu-settings]")!);
+    click(host.querySelector<HTMLButtonElement>("[data-achievements-menu-list]")!);
+    expect(select().value).toBe("streaks");
   });
 });

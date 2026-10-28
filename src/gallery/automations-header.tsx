@@ -2,7 +2,7 @@
  * (the calendar, the list and the logs, with problem runs, paused routines and
  * the organization scope). Neutral fictional bots and routines; a mocked fetch
  * answers the page's reads so nothing connects. Not shipped in the app.
- * ?view=calendar|list|logs&width=<px>&lang=<code>&skin=<id> (pulsatrix: dark, pulsatrix-light: light) */
+ * ?view=calendar|list|logs&width=<px>&height=<px>&lang=<code>&skin=<id> (pulsatrix: dark, pulsatrix-light: light) */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -19,6 +19,7 @@ applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? ski
 setLocale(params.get("lang") ?? "en");
 const view = (params.get("view") ?? "calendar") as "calendar" | "list" | "logs";
 const width = Number(params.get("width") ?? 1100);
+const height = Number(params.get("height") ?? 560);
 
 const NOW = Date.now();
 const H = 3_600_000;
@@ -79,8 +80,11 @@ const value = { state, dispatch: () => {}, flushBotPatches: async () => null, re
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BotEditorStore value={value}>
-      <div data-gallery-sample={view} className="flex h-[560px] overflow-hidden bg-app text-ink" style={{ width }}>
-        <RoutinesPage fill onBack={() => {}} onOpenRoom={() => {}} />
+      <div data-gallery-sample={view} className="flex overflow-hidden bg-app text-ink" style={{ width, height }}>
+        {/* the app's content frame, so a skin's card treatment shows as in the app */}
+        <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col">
+          <RoutinesPage fill onBack={() => {}} onOpenRoom={() => {}} />
+        </div>
       </div>
     </BotEditorStore>
   </StrictMode>,
