@@ -11547,5 +11547,11 @@
   "botPanel.permissions.proactive.read-auto.fullHint": "With Full access, a proactive action runs like any other: no card of its own. Your organization's Refuse and Ask first rules, your own Ask first rules and sends outside Allowed recipients still stop it.",
   "botPanel.permissions.proactive.propose.fullHint": "Propose only is stricter than Full access: a proactive action still waits for your yes on its card. Choose Read on its own, card to act, or Follow approval rules to let it run like the rest.",
   "settings.turnTiming.title": "Turn timing (developer)",
-  "settings.turnTiming.show": "Show the wait before send and the first text time in conversations"
+  "settings.turnTiming.show": "Show the wait before send and the first text time in conversations",
+  "chat.soloGoal.none": "No goal is set for this conversation.",
+  "chat.soloGoal.working": "Working on: {goal}",
+  "chat.soloGoal.blocked": "Waiting for you: {goal}",
+  "chat.soloGoal.stopped": "Goal stopped: {goal}",
+  "chat.soloGoal.completed": "Goal done: {goal}",
+  "chat.soloGoal.paused": "Paused after {rounds} turns: {goal}. Send a message to continue."
 }

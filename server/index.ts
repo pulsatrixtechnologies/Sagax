@@ -659,7 +659,8 @@ import { pickBotName } from "./names.ts";
 import { botSkillTemplateSchema, newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
 import { greetingLanguage } from "./new-bot-greeting.ts";
 import { introAdvance } from "./intro-tour.ts";
-import { SoloGoals, soloGoalCommand, soloGoalPrompt, soloGoalStatusText } from "./solo-goal.ts";
+import { SoloGoals, soloGoalCommand, soloGoalContinuePrompt, soloGoalLine, soloGoalSystemPrompt, withoutSoloGoalMarker } from "./solo-goal.ts";
+import { soloGoalLineText, type SoloGoalLine } from "../shared/solo-goal-line.ts";
 import { handoffModel } from "../shared/handoff-model.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
@@ -15693,6 +15694,15 @@ async function localVmInventoryPayload() {
 }
 
 const soloGoals = new SoloGoals();
+/** #1372: a goal's status row, in English for any client, drawn in the
+ * reader's language by the app (tool.soloGoal). Not a "notice:" row: the
+ * chat hides those (shared/chat-notices.ts), and the person needs this one. */
+function appendSoloGoalRow(threadId: string, line: SoloGoalLine, turnId?: string): Message {
+  return store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: soloGoalLineText(line), ok: true, soloGoal: line }, ...(turnId ? { turnId } : {}) });
+}
+/** #1372: /goal status and /goal stop answered once per sendId, so a retry
+ * of the same send gets the same row instead of a second one. */
+const soloGoalReceipts = new Map<string, Message>();
 
 bus.subscribe((event: RuntimeEvent) => {
   if (shouldIgnoreProviderEvent(event)) return;
@@ -15843,6 +15853,11 @@ bus.subscribe((event: RuntimeEvent) => {
       pushStoppedTurn(turnId);
       return;
     }
+    // #1372: a 1:1 goal's marker is read, then taken out of what is shown.
+    const goalSettled = bot ? soloGoals.noteReply(event.threadId, spoken.text) : null;
+    spoken.text = withoutSoloGoalMarker(spoken.text);
+    if (goalSettled) appendSoloGoalRow(event.threadId, soloGoalLine(goalSettled), turnId);
+    if (!spoken.text.trim()) return;
     spoken.text = citeAppFigures(dashFreeReply(spoken.text, event.threadId, bot), appPiecesByThread.get(event.threadId) ?? []);
     // "👍" written after reacting 👍 says the same thing twice: the
     // reaction stands alone and no bubble is written.
@@ -15851,7 +15866,6 @@ bus.subscribe((event: RuntimeEvent) => {
     const roomRan = !bot && speaker ? roomTurnRuns.get(event.threadId) : undefined;
     const ran = bot ? turnRunByThread.get(event.threadId) : roomRan && roomRan.botId === speaker?.botId ? roomRan.run : undefined;
     pushMessage({ role: "bot", kind: "text", text: spoken.text, turnId, ...(ran ? { turnRun: ran } : {}) });
-    soloGoals.noteReply(event.threadId, spoken.text);
     lastReply.set(event.threadId, spoken.text);
   };
 
@@ -17147,6 +17161,7 @@ bus.subscribe((event: RuntimeEvent) => {
           if (!isCurrent()) return;
           clearThreadStopping(event.threadId);
           scheduleVoiceCallWatchdog(bot.id, event.threadId);
+          scheduleSoloGoalRound(bot.id, event.threadId, { ok: event.ok, stopped: clientStopped });
           if (store.taskByThread(bot.id, event.threadId)?.activity !== "dead") {
             store.setTaskActivity(bot.id, event.threadId, resourceOwner?.computerParkedOn !== undefined ? "parked.computer" : "idle");
           }
@@ -18888,6 +18903,49 @@ bus.subscribe((event: RuntimeEvent) => {
 
 /** Call words already retried once by the watchdog (message ids). */
 const voiceCallRetried = new Set<string>();
+
+/** #1372: a 1:1 goal works until it is done. A moment after a turn of a
+ * conversation whose goal still works settles, the harness starts the next
+ * turn toward it on its own: no message from the person, the words reach
+ * the model only (cardContinuation). It waits instead when the person
+ * stopped the turn (the goal stops with it), the turn failed, the person
+ * already wrote again (their turn carries the goal), or after
+ * SOLO_GOAL_MAX_ROUNDS turns on its own, where it says so. */
+function scheduleSoloGoalRound(botId: string, threadId: string, outcome: { ok: boolean; stopped: boolean }): void {
+  const goal = soloGoals.get(threadId);
+  if (!goal || goal.status !== "working") return;
+  if (outcome.stopped) {
+    const stopped = soloGoals.stop(threadId);
+    if (stopped) appendSoloGoalRow(threadId, soloGoalLine(stopped));
+    return;
+  }
+  if (!outcome.ok) return;
+  const timer = setTimeout(() => {
+    try {
+      const current = soloGoals.get(threadId);
+      if (!current || current.status !== "working") return;
+      if (threadBusy(botId, threadId) || hasQueuedSteeredMessages(botId, threadId) || stoppingThreads.has(threadId)) return;
+      if (voiceCalls.active(threadId) || activeGroupTurnForBot(botId) || botAtThreadCapacity(botId)) return;
+      if (!store.projectBotForTask(botId, threadId) || !store.taskByThread(botId, threadId)) return;
+      try {
+        assertWithinBudget(cfg, DATA_DIR);
+      } catch {
+        return;
+      }
+      if (!soloGoals.nextRound(threadId)) {
+        appendSoloGoalRow(threadId, { ...soloGoalLine(current), status: "paused", rounds: current.rounds });
+        return;
+      }
+      const speaker = turnSpeakers.get(threadId);
+      void startTurn(botId, soloGoalContinuePrompt(current), { threadId, cardContinuation: true, ...(speaker ? { speaker } : {}) })
+        .catch((error) => console.warn(`[goal] thread ${threadId}: the next turn could not start: ${error instanceof Error ? error.message : String(error)}`));
+    } catch (error) {
+      console.warn("[goal] next turn failed", error);
+    }
+  }, SOLO_GOAL_ROUND_DELAY_MS);
+  timer.unref?.();
+}
+const SOLO_GOAL_ROUND_DELAY_MS = 500;
 
 /** A moment after a direct turn settles on a thread on a live call: words
  * said on the call with no answer after them run once more
@@ -22058,6 +22116,8 @@ async function startTurn(
         : undefined;
       const builtPrompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "finish-until", label: "Do not finish until", text: finishUntilPrompt((liveBot ?? bot).finishUntil) },
+        // #1372: a 1:1 goal's instruction, while it works; never the person's message
+        { id: "goal", label: "Goal", text: soloGoalSystemPrompt(soloGoals.get(threadId)) },
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         { id: "ai-client", label: "AI client", text: aiClientThreadPerson(bot, threadId, commsDepth, userMessage) },
         { id: "model", label: "Model", text: onCall ? "" : modelPrompt({ engine: engineDisplayName(instance), model: String(model ?? ""), actual: modelFallbackByThread.get(threadId)?.requested === model ? modelFallbackByThread.get(threadId)?.actual : modelFallbackByPayer.get(modelFallbackPayerKey(threadId, instance.instanceId, String(model ?? ""))) }) },
@@ -48509,18 +48569,27 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? soloGoalCommand(typed, body.mode === "goal" ? "goal" : undefined)
         : { kind: "none" as const };
       if (solo.kind === "status" || solo.kind === "stop") {
+        // a retry of the same send answers with the row it already wrote
+        const receiptKey = typeof body.sendId === "string" && body.sendId ? `${threadId}:${body.sendId}` : null;
+        const earlier = receiptKey ? soloGoalReceipts.get(receiptKey) : undefined;
+        if (earlier) return json(res, 200, { ok: true, threadId, message: earlier });
         if (solo.kind === "stop") {
           soloGoals.stop(threadId);
           if (threadBusy(bot.id, threadId)) await stopDirectThreadByPerson(bot.id, threadId);
         }
-        const note = soloGoalStatusText(soloGoals.get(threadId));
-        const message = store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: note, ok: true } });
+        const message = appendSoloGoalRow(threadId, soloGoalLine(soloGoals.get(threadId)));
+        if (receiptKey) {
+          soloGoalReceipts.set(receiptKey, message);
+          if (soloGoalReceipts.size > 500) soloGoalReceipts.delete(soloGoalReceipts.keys().next().value!);
+        }
         return json(res, 200, { ok: true, threadId, message });
       }
-      const postedText = solo.kind === "start" ? (soloGoals.start(threadId, solo.goal), soloGoalPrompt(solo.goal)) : typed;
+      // #1372: the person's message is the goal they typed, nothing more.
+      // The instruction rides the system prompt while the goal works.
+      const postedText = solo.kind === "start" ? solo.goal : typed;
       // An engine command the chat cannot run is refused before it is
-      // recorded (server/harness-commands.ts).
-      if (typed.startsWith("/")) {
+      // recorded (server/harness-commands.ts). /goal is Sagax's own.
+      if (solo.kind !== "start" && typed.startsWith("/")) {
         const command = await typedCommandForTurn(extractTurnImages(typed).text, harnessCommandSource(bot, threadId, { speaker: harnessCommandSpeaker(auth) }), harnessCommands);
         if (command.kind === "unavailable") return json(res, 409, unavailableCommandError(command));
       }
@@ -48597,7 +48666,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // field an older server ignores, or busyMode "auto"): the bot
       // orchestrates (server/busy-routing.ts). A send that names no mode (the
       // API, an older build) keeps joining the running turn.
-      const busyMode: BusySendRequest = guardedBody || voiceCall ? "steer" : (body.busyMode ?? (body.routeWhileBusy === true ? "auto" : "steer"));
+      // #1372: a new goal waits for the running turn, so the turn that takes
+      // it up carries the goal's instruction in its system prompt.
+      const busyMode: BusySendRequest = guardedBody || voiceCall ? "steer"
+        : solo.kind === "start" ? "after"
+          : (body.busyMode ?? (body.routeWhileBusy === true ? "auto" : "steer"));
       const messageSpeaker = speakerFor(auth);
       const postedActor = misuseActor(messageSpeaker.origin === "person" ? messageSpeaker.principalId : undefined, messageSpeaker.origin);
       const messageMisuse = misuseRefusal(text, { ...postedActor, surface: "message", botId: bot.id, threadId });
@@ -48615,6 +48688,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 200, { ok: true, threadId, stopped: true });
       }
       if (pressKey) widgetPressesInFlight.set(pressKey, sendId);
+      // #1372: the goal starts only now, after every refusal above; a send
+      // refused below puts back what was there. A person writing again in a
+      // conversation whose goal waits on them sets it working again.
+      const goalBefore = soloGoals.get(threadId);
+      if (solo.kind === "start") soloGoals.start(threadId, solo.goal);
+      else if (!pressed && !voiceCall && !guarded) soloGoals.resume(threadId);
+      const restoreGoal = () => { if (solo.kind === "start") soloGoals.restore(threadId, goalBefore); };
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,
         sendFingerprint(text, replyTo?.id),
@@ -48854,7 +48934,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }
           return startOrQueueDirectMessage(bot.id, threadId, text, replyTo, sendId, messageSender(auth), trigger, speakerFor(auth), voiceCall, undefined, undefined, dataContext);
         },
-      ).finally(() => {
+      ).catch((error: unknown) => {
+        restoreGoal();
+        throw error;
+      }).finally(() => {
         if (pressKey) widgetPressesInFlight.delete(pressKey);
       });
       // Only an accepted message (started, steered or queued) answers the

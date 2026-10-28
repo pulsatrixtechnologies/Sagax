@@ -9,6 +9,7 @@
  * fails compilation until it is either declared here or explicitly listed
  * as server-private. */
 import type { LimitFailoverLine } from "./limit-failover.ts";
+import type { SoloGoalLine } from "./solo-goal-line.ts";
 import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { DataBroadcast } from "./data-surface.ts";
@@ -780,6 +781,9 @@ export interface WireMessage {
      * has the connector it needed (server/connector-switch.ts); drawn in
      * the reader's language. */
     connectorSwitch?: { engine: string; connector: string };
+    /** #1372: a 1:1 goal's status (server/solo-goal.ts); drawn in the
+     * reader's language. */
+    soloGoal?: SoloGoalLine;
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's

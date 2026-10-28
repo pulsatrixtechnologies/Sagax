@@ -11547,5 +11547,11 @@
   "botPanel.permissions.proactive.read-auto.fullHint": "Avec l'accès complet, une action proactive s'exécute comme les autres : aucune carte à elle. Les règles Refuser et Demander d'abord de votre organisation, vos propres règles Demander d'abord et les envois hors des destinataires autorisés l'arrêtent toujours.",
   "botPanel.permissions.proactive.propose.fullHint": "Proposer seulement est plus strict que l'accès complet : une action proactive attend toujours votre oui sur sa carte. Choisissez Lire seul, carte pour agir, ou Suivre les règles d'approbation pour qu'elle s'exécute comme le reste.",
   "settings.turnTiming.title": "Minutage des tours (développeur)",
-  "settings.turnTiming.show": "Afficher l'attente avant l'envoi et le délai du premier texte dans les conversations"
+  "settings.turnTiming.show": "Afficher l'attente avant l'envoi et le délai du premier texte dans les conversations",
+  "chat.soloGoal.none": "Aucun objectif n'est fixé pour cette conversation.",
+  "chat.soloGoal.working": "Objectif en cours : {goal}",
+  "chat.soloGoal.blocked": "En attente de vous : {goal}",
+  "chat.soloGoal.stopped": "Objectif arrêté : {goal}",
+  "chat.soloGoal.completed": "Objectif atteint : {goal}",
+  "chat.soloGoal.paused": "En pause après {rounds} tours : {goal}. Envoyez un message pour continuer."
 }

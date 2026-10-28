@@ -395,3 +395,11 @@ describe("the connector switch line (review of #943)", () => {
     expect(statusActivity(message)).toEqual({ kind: "notice", text: "Switched to Claude for Gmail" });
   });
 });
+
+describe("a 1:1 goal's status row (#1372)", () => {
+  it("is shown, and reads in the person's language from the structured line", () => {
+    const message: Message = { id: "g", at: 1, role: "bot", kind: "activity", tool: { name: "Done: ship the notes (notes shipped)", ok: true, soloGoal: { status: "completed", goal: "ship the notes", detail: "notes shipped" } } };
+    expect(isHiddenStatusActivity(message)).toBe(false);
+    expect(statusActivity(message)).toEqual({ kind: "notice", text: "Goal done: ship the notes (notes shipped)" });
+  });
+});

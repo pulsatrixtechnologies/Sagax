@@ -41,7 +41,9 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * Workspace setting and with who speaks; volatile, so neither relaunches. */
 // "reach" (server/turn-reach.ts) follows the speaker and what a feature
 // opened for the conversation: volatile, so neither relaunches.
-const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "model", "stream", "workplace", "reach"]);
+// "goal" (server/solo-goal.ts) comes and goes with a 1:1 /goal: volatile,
+// so starting or finishing a goal never relaunches the engine.
+const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "model", "stream", "workplace", "reach", "goal"]);
 /** Claude Code keeps its process across turns and tells a reused process
  * what changed in its volatile half: the surface paragraph changes when a
  * teammate's reply resumes a person's turn (no computer choice there), and
