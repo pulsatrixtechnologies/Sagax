@@ -12,6 +12,7 @@ import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, useStore, type Bot, type Message, type Task } from "../state/store";
 import { applyPresenceList } from "../lib/presence";
 import { Sidebar } from "../components/Sidebar";
+import { MASCOT_CHARACTERS, type MascotLook } from "../../shared/mascot-look";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
@@ -91,7 +92,10 @@ const dmGroups = sharing ? [
 
 // ?character=<id> dresses the whole team as that mascot (shape, frog...)
 const characterParam = params.get("character");
-if (characterParam) for (const member of team) (member as Bot & { mascotLook?: unknown }).mascotLook = { character: characterParam };
+if (characterParam && (MASCOT_CHARACTERS as readonly string[]).includes(characterParam)) {
+  const look = { character: characterParam } as MascotLook;
+  for (const member of team) member.mascotLook = look;
+}
 
 // ?many=N adds N pinned bots, to check the rail's vertical scroll
 for (let i = 0; i < Number(params.get("many") ?? 0); i += 1) {

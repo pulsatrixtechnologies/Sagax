@@ -26,8 +26,8 @@ const bot = {
 
 const files: ThreadFile[] = [
   { id: "img", messageId: "m1", source: "upload", path: "skyline.png", name: "skyline.png", mime: "image/png", at: NOW - 3_600_000, size: 284_000, available: true },
-  { id: "txt", messageId: "m2", source: "bot", path: "notes.md", name: "notes.md", mime: "text/markdown", at: NOW - 7_200_000, size: 1_900, available: true },
-  { id: "pdf", messageId: "m3", source: "bot", path: "report.pdf", name: "report.pdf", mime: "application/pdf", at: NOW - 9_000_000, size: 512_000, available: true },
+  { id: "txt", messageId: "m2", source: "written", path: "notes.md", name: "notes.md", mime: "text/markdown", at: NOW - 7_200_000, size: 1_900, available: true },
+  { id: "pdf", messageId: "m3", source: "written", path: "report.pdf", name: "report.pdf", mime: "application/pdf", at: NOW - 9_000_000, size: 512_000, available: true },
 ];
 
 createRoot(document.getElementById("root")!).render(

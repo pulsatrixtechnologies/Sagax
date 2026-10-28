@@ -1,7 +1,7 @@
 /** Isolated gallery for headless screenshots of the "Connect Microsoft
  * Teams" card (shared/connector-setup.ts). No server: the buttons do nothing
  * here. Not shipped in the app. ?skin=<id>&lang=<code>&only=<sample> */
-import { StrictMode } from "react";
+import { StrictMode, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
 import type { ConnectorSetupView } from "../../shared/connector-setup";
@@ -23,7 +23,7 @@ const teams: ConnectorSetupView = {
 const outlook: ConnectorSetupView = { ...teams, id: "cs_0123456789abcdef02", connector: "outlook", label: "Outlook", provider: "claude", url: "https://claude.ai/customize/connectors" };
 
 const noop = () => {};
-const samples: Array<{ id: string; width: number; render: () => JSX.Element }> = [
+const samples: Array<{ id: string; width: number; render: () => ReactElement }> = [
   { id: "waiting", width: 560, render: () => <ConnectorSetupBody view={teams} checking={false} opened={false} onConnect={noop} onDone={noop} /> },
   { id: "opened", width: 560, render: () => <ConnectorSetupBody view={teams} checking={false} opened onConnect={noop} onDone={noop} /> },
   { id: "pending", width: 560, render: () => <ConnectorSetupBody view={{ ...teams, status: "pending" }} checking={false} opened onConnect={noop} onDone={noop} /> },

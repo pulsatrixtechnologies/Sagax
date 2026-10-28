@@ -2,7 +2,7 @@
  * Settings > Credentials (2026-10-26): how Sagax sends it on a bot's request,
  * and the command variable the person may turn on. No server: the buttons do
  * nothing here. Not shipped in the app. ?skin=<id>&lang=<code>&only=<sample> */
-import { StrictMode } from "react";
+import { StrictMode, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
 import type { VaultItemListing } from "../../shared/credential-vault";
@@ -30,7 +30,7 @@ const withVariable: VaultItemListing = { ...base, id: "b1b2c3d4e5f6a7b8c9d0e1f2"
 const botName = (id: string) => bots.find((bot) => bot.id === id)?.name ?? "Bot";
 const noop = async () => {};
 
-const samples: Array<{ id: string; width: number; render: () => JSX.Element }> = [
+const samples: Array<{ id: string; width: number; render: () => ReactElement }> = [
   {
     id: "rows", width: 720, render: () => (
       <SettingsGroup title="Identifiants" groupId="gallery.rows">
