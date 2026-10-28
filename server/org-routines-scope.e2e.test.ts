@@ -1,4 +1,4 @@
-// The Automations page scope (2026-10-09, JC) through the real server:
+// The Automations page scope (2026-10-09, the owner) through the real server:
 //
 //   mine     a member without keys sees only their own routines, and a
 //            wider scope is 403 naming the missing key

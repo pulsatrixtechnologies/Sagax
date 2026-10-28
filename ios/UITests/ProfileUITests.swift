@@ -380,7 +380,7 @@ final class ProfileUITests: XCTestCase {
 
     // MARK: Library
 
-    /// The Links chip (JC 2026-10-18): every link once, without the code
+    /// The Links chip (owner 2026-10-18): every link once, without the code
     /// mark a message wrapped it in (no `%60`), a computer-only address
     /// greyed "On the computer" that copies instead of failing to open, and
     /// a web link that opens in the in-app browser. SAGAX_SHOTS keeps the

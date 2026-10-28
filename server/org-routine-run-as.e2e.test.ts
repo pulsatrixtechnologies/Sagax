@@ -1,4 +1,4 @@
-// "Runs as" in the routine modal (JC, 2026-10-08) through the real server:
+// "Runs as" in the routine modal (owner, 2026-10-08) through the real server:
 // who may choose the person a routine runs as, and that the run then acts
 // with that person's delegation.
 //

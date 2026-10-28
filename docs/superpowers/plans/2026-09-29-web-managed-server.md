@@ -337,7 +337,7 @@ import { createServerEmailSignIn } from "./account-signin.ts";
 import { EmailOtpStore } from "./email-otp.ts";
 
 describe("server-issued email sign-in", () => {
-  const allow = { admins: ["jc@example.com"], members: ["@example.com"] };
+  const allow = { admins: ["owner@example.com"], members: ["@example.com"] };
   it("is disabled until mail is configured", () => {
     expect(createServerEmailSignIn({ allow, otp: new EmailOtpStore(), mailer: () => null }).enabled()).toBe(false);
   });
@@ -382,11 +382,11 @@ For the last test: when sending fails, `start` voids the issued code. Call `otp.
     - text: `<inviter> invited you. Sign in with this address at <publicUrl>/pair within 7 days.`
     - A send failure does not undo the invite. The route's JSON gains `mailed: boolean`.
   - **`AppConfig` (`server/config.ts`):** add `mail?: MailSettings` to the type and the Zod schema. It must round-trip through `saveConfig` (the save/patch logic belongs to Task 4).
-- Append an e2e case to `server/org-identity.e2e.test.ts`: boot with `SAGAX_MAIL_PROVIDER=sendgrid`, `SAGAX_MAIL_FROM`, `SAGAX_SENDGRID_API_KEY`, and `SAGAX_SIGNIN_EMAILS=jc@example.com`. Stub `globalThis.fetch` for `api.sendgrid.com` if the harness runs in-process. If it runs as a child process, add a `mailer` test seam the harness can set, e.g. env `SAGAX_MAIL_CAPTURE_FILE` that writes messages to a file instead of sending; name it in the report. Then:
-  - `POST /api/auth/email/start` for jc@example.com;
+- Append an e2e case to `server/org-identity.e2e.test.ts`: boot with `SAGAX_MAIL_PROVIDER=sendgrid`, `SAGAX_MAIL_FROM`, `SAGAX_SENDGRID_API_KEY`, and `SAGAX_SIGNIN_EMAILS=owner@example.com`. Stub `globalThis.fetch` for `api.sendgrid.com` if the harness runs in-process. If it runs as a child process, add a `mailer` test seam the harness can set, e.g. env `SAGAX_MAIL_CAPTURE_FILE` that writes messages to a file instead of sending; name it in the report. Then:
+  - `POST /api/auth/email/start` for owner@example.com;
   - read the code from the captured message;
   - `POST /api/auth/email/verify`;
-  - expect a session whose `principalId` is the local operator's principal (profile email jc@example.com).
+  - expect a session whose `principalId` is the local operator's principal (profile email owner@example.com).
 - [ ] **Step 4:** Run `npx vitest run server/account-signin.test.ts server/email-otp.test.ts server/org-identity.e2e.test.ts server/org-routes.test.ts` and `pnpm -s typecheck`.
 - [ ] **Step 5: Commit** `feat: sign in by email with codes this server sends`, followed by the Co-Authored-By line.
 
@@ -438,7 +438,7 @@ describe("first admin", () => {
     expect(shouldIssueFirstAdminCode({ desktopManaged: false, liveSessions: 0, admins: [] })).toBe(true);
     expect(shouldIssueFirstAdminCode({ desktopManaged: true, liveSessions: 0, admins: [] })).toBe(false);
     expect(shouldIssueFirstAdminCode({ desktopManaged: false, liveSessions: 1, admins: [] })).toBe(false);
-    expect(shouldIssueFirstAdminCode({ desktopManaged: false, liveSessions: 0, admins: ["jc@example.com"] })).toBe(false);
+    expect(shouldIssueFirstAdminCode({ desktopManaged: false, liveSessions: 0, admins: ["owner@example.com"] })).toBe(false);
   });
   it("prints one line with the pairing link", () => {
     const line = firstAdminLine({ publicUrl: "http://localhost:8080", code: "ABCD-EFGH-JKLM", expiresAt: Date.UTC(2026, 8, 29, 12, 0) });

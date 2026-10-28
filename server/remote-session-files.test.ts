@@ -1,4 +1,4 @@
-// The remote file browser of a Tailcat session (2026-10-21, JC: Télécharger
+// The remote file browser of a Tailcat session (2026-10-21, the owner: Télécharger
 // and Envoyer un fichier open a browser of the remote computer). A folder is
 // listed only for the session's owner, the path travels as data, and the
 // listing never carries the tunnel address.

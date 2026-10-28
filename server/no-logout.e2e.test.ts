@@ -1,4 +1,4 @@
-// 2026-10-20 (JC): a person is signed out ONLY when their session is
+// 2026-10-20 (owner): a person is signed out ONLY when their session is
 // revoked, their account disabled, or after 30 days without use. Never by a
 // Sagax or Perspicax deploy, an app update, a refresh that failed, or a
 // sensitive action. A real organization server on a fake Perspicax that

@@ -47,7 +47,7 @@ function inMode(advanced: boolean, ...args: Parameters<typeof render>) {
   }
 }
 
-// JC, 2026-10-14: the composer's approval icon stays in both modes; its menu
+// Owner, 2026-10-14: the composer's approval icon stays in both modes; its menu
 // offers the bot settings' two choices in Simple, the five levels in
 // Advanced.
 describe("approval control in the composer", () => {

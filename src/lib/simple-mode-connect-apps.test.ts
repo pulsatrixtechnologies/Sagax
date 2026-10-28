@@ -8,7 +8,7 @@ import { DEFAULT_INTERFACE_MODE } from "./interface-mode";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// JC, 2026-10-16: an organization member could not open Connect apps. They
+// Owner, 2026-10-16: an organization member could not open Connect apps. They
 // start on Simple, and the shell closed Connect apps the moment it opened in
 // Simple, so the sidebar pill (shown in both modes) did nothing for them.
 // Since 2026-10-16 everyone starts on Advanced; a person who chooses Simple

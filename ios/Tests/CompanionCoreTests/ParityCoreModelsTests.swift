@@ -89,11 +89,11 @@ final class ParityCoreModelsTests: XCTestCase {
 
     func testDecodesAnOwnerWaitProjection() throws {
         let message = try decode(Message.self, #"""
-        {"id":"m5","role":"bot","kind":"options","at":5,"state":"waiting-on-owner","ownerName":"JC",
+        {"id":"m5","role":"bot","kind":"options","at":5,"state":"waiting-on-owner","ownerName":"Owner",
          "card":{"title":"Run tests?","subtitle":"","options":["Allow","Deny"]}}
         """#)
         XCTAssertEqual(message.ownerWait, .waitingOnOwner)
-        XCTAssertEqual(message.ownerName, "JC")
+        XCTAssertEqual(message.ownerName, "Owner")
         let settled = try decode(Message.self, #"{"id":"m6","role":"bot","kind":"options","at":6,"state":"owner-settled"}"#)
         XCTAssertEqual(settled.ownerWait, .ownerSettled)
     }
@@ -210,7 +210,7 @@ final class ParityCoreModelsTests: XCTestCase {
      "durationMinutes":30,"timeoutMinutes":45,"nextRunAt":1788386400000,"createdAt":1,"updatedAt":2,
      "target":"bot","overlap":"queue","skippedRuns":3,"failureStreak":1,
      "attachments":[{"id":"a1","kind":"file","name":"brief.md","path":"/x/brief.md","size":120}],
-     "sourceThreadId":"t0","resultsThreadId":"t5","runAs":{"principalId":"p1","name":"JC"},
+     "sourceThreadId":"t0","resultsThreadId":"t5","runAs":{"principalId":"p1","name":"Owner"},
      "suspended":{"reason":"person_out","at":9}}
     """#
 
@@ -222,7 +222,7 @@ final class ParityCoreModelsTests: XCTestCase {
         XCTAssertEqual(routine.overlap, "queue")
         XCTAssertEqual(routine.attachments?.first?.name, "brief.md")
         XCTAssertEqual(routine.resultsThreadId, "t5")
-        XCTAssertEqual(routine.runAs?.name, "JC")
+        XCTAssertEqual(routine.runAs?.name, "Owner")
         XCTAssertEqual(routine.suspended?.reason, "person_out")
         XCTAssertEqual(try roundTrip(routine), routine)
 
@@ -359,7 +359,7 @@ final class SurfaceGateTests: XCTestCase {
         XCTAssertTrue(admin.allows(.botOverview))
     }
 
-    func testJCsDecisions() {
+    func testOwnersDecisions() {
         // D1: the advanced panel opens on a sidecar once its routes do
         XCTAssertTrue(sidecar.allows(.advancedBotPanel))
         XCTAssertFalse(SurfaceGate(scope: .sidecar, sidecarRoutes: []).allows(.advancedBotPanel))

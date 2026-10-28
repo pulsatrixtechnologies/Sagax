@@ -10,7 +10,7 @@
 
 The token pairs are checked exactly by the unit test
 (ios/Tests/CompanionCoreTests/SkinsTests.swift); this script checks what was
-actually drawn, where a view may use the wrong token (JC's light-bubble bug).
+actually drawn, where a view may use the wrong token (Owner's light-bubble bug).
 
 Each screen is cut into tiles of about 24x16 pt. In a tile, the ground is the
 most common colour; "ink" is the pixels far from it (CIE dE > 12). A tile with

@@ -47,7 +47,7 @@ describe("claude unlocks", () => {
     expect(characterUnlocked({ enforced: true, keys: new Set(["character:crab"]) }, "crab")).toBe(true);
   });
 
-  it("lets an earned skin bring its character, Trombi's easter egg excepted (JC, 2026-10-14)", () => {
+  it("lets an earned skin bring its character, Trombi's easter egg excepted (Owner, 2026-10-14)", () => {
     const pearl = { enforced: true, keys: new Set(["skin:crab:pearl", "skin:shape:outline", "skin:trombi:gold"]) };
     expect(characterUnlocked(pearl, "crab")).toBe(true);
     expect(characterUnlocked(pearl, "shape")).toBe(true);

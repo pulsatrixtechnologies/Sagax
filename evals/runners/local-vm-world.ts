@@ -63,7 +63,7 @@ export class LocalVmWorld extends BaseWorld {
       SAGAX_STATIC_DIR: ui,
       SAGAX_TEST_VM_STATE: this.stateFile,
       // scenarios name a fixed Works on (Workspace is always Auto otherwise,
-      // JC 2026-10-18)
+      // Owner 2026-10-18)
       SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
     };

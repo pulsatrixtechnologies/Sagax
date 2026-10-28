@@ -1,4 +1,4 @@
-// "Runs as" in the routine modal (JC, 2026-10-08): a dropdown for an admin
+// "Runs as" in the routine modal (owner, 2026-10-08): a dropdown for an admin
 // or a team manager, the line alone for anyone else, nothing on a solo
 // server.
 import { createElement } from "react";

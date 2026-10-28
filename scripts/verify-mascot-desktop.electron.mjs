@@ -8,7 +8,7 @@
 //  - bubble: opened in each corner, it opens on the side with room (below
 //    near the top, to the right near the left edge), stays on the display
 //    and inside its window (never cut), and never covers the character;
-//  - menu: the right click pops main's native menu with JC's items, and
+//  - menu: the right click pops main's native menu with the owner's items, and
 //    Moves plays the move in the window;
 //  - effects: a sign and the thought dots are drawn beside the character,
 //    never over it, on the side the screen leaves room on;

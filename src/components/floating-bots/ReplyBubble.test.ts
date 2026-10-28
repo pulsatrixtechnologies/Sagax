@@ -6,7 +6,7 @@ import type { FloatingBalloon } from "./protocol";
 
 const reply = (over: Partial<FloatingBalloon> = {}): FloatingBalloon => ({
   kind: "chat",
-  text: "Bonjour **JC**",
+  text: "Bonjour **Owner**",
   streaming: false,
   truncated: false,
   open: "Ouvrir dans Sagax",
@@ -42,7 +42,7 @@ describe("the mascot's reply, drawn like voice mode", () => {
     const html = renderToStaticMarkup(createElement(ReplyBubble, { name: "Pulsabot", balloon: reply(), onEvent: noop, hover: noop, below: false, held: false }));
     expect(html).toContain("data-reply-bubble");
     expect(html).toContain("fb-reply-tail");
-    expect(html).toContain("<strong>JC</strong>");
+    expect(html).toContain("<strong>Owner</strong>");
     expect(html).not.toContain('role="dialog"');
     expect(html).not.toContain("fb-grip");
     expect(html).not.toContain("fb-head");

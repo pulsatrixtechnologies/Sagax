@@ -1,4 +1,4 @@
-// Routine runs work in the background (JC 2026-10-22): "when routine runs you
+// Routine runs work in the background (owner 2026-10-22): "when routine runs you
 // don't need to show something within the chat or the sidebar (left)...
 // simply let it run in the background". Through the real server and the fake
 // engine: a run that ends with nothing to report leaves the person's

@@ -62,7 +62,7 @@ describe("BotListItem", () => {
 
   it("has a New thread button beside a keyboard-accessible bot menu, and no New folder", () => {
     const markup = renderRow(bot());
-    // New thread is back on the row (JC, 2026-10-15)
+    // New thread is back on the row (owner, 2026-10-15)
     expect(markup).toContain('aria-label="New thread"');
     expect(markup).toContain('data-sidebar-bot-new-thread="atlas"');
     expect(markup).not.toContain("New folder");
@@ -75,7 +75,7 @@ describe("BotListItem", () => {
   });
 
   // Threads on: nothing under the bot, so no disclosure to fold it either
-  // (JC, 2026-10-08). The chat header's picker lists the threads.
+  // (owner, 2026-10-08). The chat header's picker lists the threads.
   it("draws no thread toggle and no thread rows, whatever the bot holds", () => {
     for (const candidate of [bot(), bot(twoThreads()), bot({ projects: [{ id: "p1", name: "Research" }] })]) {
       const markup = renderRow(candidate);
@@ -212,7 +212,7 @@ describe("BotListItem", () => {
   });
 
 
-  // The reference design's row (JC, 2026-10-15): the role (Bot settings > Title) is a
+  // The reference design's row (owner, 2026-10-15): the role (Bot settings > Title) is a
   // pill right after the name, in the same line.
   it("draws the role as a pill right after the name", () => {
     const markup = renderRow(bot({ title: "ConnectWise Ops & MS 365" }));

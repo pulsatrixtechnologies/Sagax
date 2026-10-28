@@ -4,8 +4,8 @@ import type { ConfigStatus } from "@/state/store";
 import { canEditConfig, canManageBackups, canManageComputers, canViewUsage, otherAuthorName, viewerActorId, viewerBotsReadOnly, viewerCan, viewerCanCreateBots, viewerIsOrgMember } from "./viewer";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
-const member = { viewer: { operator: false, principalId: ZARA, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true, operatorName: "JC" } } as ConfigStatus;
-const operator = { viewer: { operator: true, principalId: "pr_local", email: "jc@example.com", name: "JC", role: "owner", canCreateBots: true } } as ConfigStatus;
+const member = { viewer: { operator: false, principalId: ZARA, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true, operatorName: "Owner" } } as ConfigStatus;
+const operator = { viewer: { operator: true, principalId: "pr_local", email: "owner@example.com", name: "Owner", role: "owner", canCreateBots: true } } as ConfigStatus;
 
 describe("viewerCan (2026-10-09)", () => {
   it("reads the server's list, else the member defaults for a member, else everything", () => {
@@ -23,7 +23,7 @@ describe("viewerCan (2026-10-09)", () => {
 describe("viewer", () => {
   it("uses the server's principal, else the profile email, else local-owner", () => {
     expect(viewerActorId(member)).toBe(ZARA);
-    expect(viewerActorId({ profile: { name: "JC", email: "JC@example.com" } } as ConfigStatus)).toBe("jc@example.com");
+    expect(viewerActorId({ profile: { name: "Owner", email: "OWNER@example.com" } } as ConfigStatus)).toBe("owner@example.com");
     expect(viewerActorId(null)).toBe("local-owner");
   });
 
@@ -57,7 +57,7 @@ describe("viewer", () => {
     const fromZara = { role: "user" as const, sender: { name: "zara@example.test", id: ZARA } };
     const fromOperator = { role: "user" as const };
     expect(otherAuthorName(fromZara, member)).toBeNull();
-    expect(otherAuthorName(fromOperator, member)).toBe("JC");
+    expect(otherAuthorName(fromOperator, member)).toBe("Owner");
     expect(otherAuthorName(fromZara, operator)).toBe("zara@example.test");
     expect(otherAuthorName(fromOperator, operator)).toBeNull();
     expect(otherAuthorName({ role: "bot" }, member)).toBeNull();
@@ -69,6 +69,6 @@ describe("viewer", () => {
     expect(otherAuthorName(sending, member)).toBeNull();
     expect(otherAuthorName(sending, operator)).toBeNull();
     // a stored line without a sender is still the operator's for a member
-    expect(otherAuthorName({ id: "m1", role: "user" as const }, member)).toBe("JC");
+    expect(otherAuthorName({ id: "m1", role: "user" as const }, member)).toBe("Owner");
   });
 });

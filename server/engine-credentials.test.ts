@@ -265,7 +265,7 @@ describe("materializeEngineAccess", () => {
   });
 });
 
-// 2026-10-16 (JC): the organization's key serves only the people Perspicax
+// 2026-10-16 (owner): the organization's key serves only the people Perspicax
 // gives the engine to (`sagax_server_engines`; an admin always).
 describe("resolveEngineAccess: the organization's key per person", () => {
   const given = (list: Record<string, string[]>) => (principalId: string, instanceId: string) =>

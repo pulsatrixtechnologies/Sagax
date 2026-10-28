@@ -182,7 +182,7 @@ describe("Scanner avec l'iPhone (row 84)", () => {
     expect((await call("POST", "/api/me/phone-tools/card-scan", {})).status).toBe(403);
   });
 
-  it("the server relays only a sealed envelope the form opens; it never holds the number (JC 2026-10-21)", async () => {
+  it("the server relays only a sealed envelope the form opens; it never holds the number (Owner 2026-10-21)", async () => {
     const call = await serve();
     await call("POST", "/api/me/phone-tools/device", { tools: ["card_scan"], transport: "protected" }, phone);
     // the form's one-time key is required

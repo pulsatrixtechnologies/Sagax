@@ -1,4 +1,4 @@
-// Settings nav in headed groups (2026-10-16, JC): as Cursor Settings and
+// Settings nav in headed groups (2026-10-16, the owner): as Cursor Settings and
 // the reference design keep their rail short, Sagax groups its pages under Personal, AI,
 // Installation and App. Every page stays reachable, the search keeps working,
 // and a heading with nothing under it is not drawn.

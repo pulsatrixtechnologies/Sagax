@@ -70,7 +70,7 @@ describe("ChatNotice", () => {
   });
 });
 
-// 2026-10-22 (JC): no "Showing saved messages" banner with an X over the chat.
+// 2026-10-22 (owner): no "Showing saved messages" banner with an X over the chat.
 describe("no saved-messages banner", () => {
   it("neither the chat nor a room draws it", async () => {
     const banners = await import("./ChatErrorBanner");

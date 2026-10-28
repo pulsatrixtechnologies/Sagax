@@ -525,7 +525,7 @@ describe("older packages", () => {
     const fx = fixture();
     const document = {
       format: "openmaus.package", version: 2,
-      package: { id: "atlas", release: "1.0.0", name: "Atlas", tagline: "Sales digest", summary: "One bot.", category: "Sales", author: { name: "JC" }, license: "MIT",
+      package: { id: "atlas", release: "1.0.0", name: "Atlas", tagline: "Sales digest", summary: "One bot.", category: "Sales", author: { name: "Owner" }, license: "MIT",
         outcomes: ["A digest"], setupMinutes: 5, requirements: { apps: [], capabilities: [] }, team: { name: "Sales" },
         agents: [{ key: "atlas", name: "Atlas", soul: "Cite sources.", appearance: { color: "purple" } }] },
     };

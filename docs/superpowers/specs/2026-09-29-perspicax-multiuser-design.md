@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-29
 **Branch:** `develop` (Pulsa Bot, `9c70b9c`), Perspicax `main` à `66c930d` (tag `v1.6.0`)
-**Status:** proposition, à approuver par JC
+**Status:** proposition, à approuver par the owner
 **Remplace:** les décisions 1 et 2 (serveur quelconque, courriels émis par Pulsa Bot) et la tranche 1b de `2026-09-28-collaborative-org-design.md`, ainsi que le système intérim d'invitations et de codes par courriel.
 **Garde:** les décisions 4 à 10 de ce même document (niveaux `use`/`run`/`edit`/`manage`, routines avec l'accès du propriétaire, conteneur par propriétaire, serveur comme VM derrière `computer:use`), réécrites ici avec l'identité, les rôles et les équipes venant de Perspicax. La décision 3 (invités) et le tableau des rôles owner/admin/member/guest sont remplacés par le modèle de Perspicax (section 3).
 
@@ -12,7 +12,7 @@
 
 Une seule façon d'être plusieurs dans Pulsa Bot: le serveur privé Pulsatrix Perspicax. Perspicax est le fournisseur d'identité (comptes OAuth 2.1, mot de passe plus TOTP ou passkey, utilisateurs, équipes, comptes de service), il configure le MCP de chaque personne (`/mcp?profile=<slug>`) et il héberge une section « Pulsa Bot » dans sa console. Pulsa Bot continue d'exécuter les bots: engines CLI, ordinateurs, transcripts, routines.
 
-Succès de la première tranche: JC ouvre `https://bot.<domaine>`, clique « Se connecter avec Perspicax », entre son mot de passe et son TOTP sur la page de Perspicax, revient connecté dans Pulsa Bot comme un principal stable, avec le rôle déduit de son rôle Perspicax.
+Succès de la première tranche: Owner ouvre `https://bot.<domaine>`, clique « Se connecter avec Perspicax », entre son mot de passe et son TOTP sur la page de Perspicax, revient connecté dans Pulsa Bot comme un principal stable, avec le rôle déduit de son rôle Perspicax.
 
 ### Non-buts
 
@@ -214,9 +214,9 @@ Un module `server/authz.ts` absorbe `channel-visibility.ts` et `direct-grants.ts
 
 La branche `fix/member-identity` (`server/viewer-identity.ts`, `memberBotFieldViolation` dans `request-auth.ts`) se garde telle quelle: le nom et le courriel viennent des claims au lieu de l'adresse de connexion.
 
-### Les sections de la barre latérale sont des canaux (décision de JC, 2026-09-30)
+### Les sections de la barre latérale sont des canaux (décision de the owner, 2026-09-30)
 
-Aujourd'hui une section de la barre latérale n'est qu'une étiquette texte posée sur un bot (`bot.section`, créée depuis le menu d'un bot: « Déplacer vers l'équipe » puis « Nouvelle équipe… », `Sidebar.tsx`). JC veut qu'une section soit vue comme un canal, au sens Discord ou Teams:
+Aujourd'hui une section de la barre latérale n'est qu'une étiquette texte posée sur un bot (`bot.section`, créée depuis le menu d'un bot: « Déplacer vers l'équipe » puis « Nouvelle équipe… », `Sidebar.tsx`). Owner veut qu'une section soit vue comme un canal, au sens Discord ou Teams:
 
 - Une section **est** un canal d'organisation: elle a un identifiant, un nom, des membres (utilisateurs ou équipes Perspicax, `user:<ulid>` / `team:<ulid>`, avec les rôles de canal `moderator`, `participant`, `readonly`) et sa propre conversation de groupe.
 - Les bots rangés dans une section sont les bots du canal: être membre de la section donne `bot.use` sur ces bots (niveau par défaut réglable par section, jamais plus que `run` sans droit explicite), et l'accès suit l'appartenance, comme un droit d'équipe. Retirer quelqu'un de la section lui retire cet accès tout de suite (scénario C).
@@ -260,7 +260,7 @@ Le jeton obtenu est un jeton MCP ordinaire: le journal de Perspicax (`mcp_reques
 
 ### Délégation pour les routines
 
-**Décision de JC, 2026-10-08 (remplace le consentement ci-dessous) :** sur un serveur d'organisation, une routine agit toujours au nom de son propriétaire. Aucun consentement, aucun interrupteur, aucune carte « reconnecter mes routines ». Sagax obtient la délégation lui-même, par le lien, avec un échange de jeton RFC 8693 du jeton d'accès de connexion de la personne (`requested_token_type` refresh token, `scope=openid profile email offline_access pulsabot:routines`, `resource` l'origine du serveur) : à chaque connexion, à chaque renouvellement de connexion tant que la personne utilise Sagax (glissement quotidien), et à une exécution qui n'en trouve pas. Une famille terminée par Perspicax est réémise ; une exécution qui ne peut pas en obtenir une est sautée, jamais suspendue. Seule une personne désactivée, supprimée ou déconnectée par Perspicax (`person_out`), ou sans `run` sur le bot (`no_right`), suspend une routine. Perspicax doit accepter cet échange (refusé jusqu'à 1.8.13) et retirer la révocation en libre-service (#166).
+**Décision de the owner, 2026-10-08 (remplace le consentement ci-dessous) :** sur un serveur d'organisation, une routine agit toujours au nom de son propriétaire. Aucun consentement, aucun interrupteur, aucune carte « reconnecter mes routines ». Sagax obtient la délégation lui-même, par le lien, avec un échange de jeton RFC 8693 du jeton d'accès de connexion de la personne (`requested_token_type` refresh token, `scope=openid profile email offline_access pulsabot:routines`, `resource` l'origine du serveur) : à chaque connexion, à chaque renouvellement de connexion tant que la personne utilise Sagax (glissement quotidien), et à une exécution qui n'en trouve pas. Une famille terminée par Perspicax est réémise ; une exécution qui ne peut pas en obtenir une est sautée, jamais suspendue. Seule une personne désactivée, supprimée ou déconnectée par Perspicax (`person_out`), ou sans `run` sur le bot (`no_right`), suspend une routine. Perspicax doit accepter cet échange (refusé jusqu'à 1.8.13) et retirer la révocation en libre-service (#166).
 
 Historique : une routine qui tourne pendant que son propriétaire est hors ligne n'a pas de jeton d'accès vivant à échanger. Le propriétaire consent une fois (« Autoriser mes routines à agir en mon nom »): un flux d'autorisation séparé avec `scope=openid offline_access pulsabot:routines` crée une famille de refresh distincte de celle de sa session, scellée sur le serveur Pulsa Bot. Avant chaque routine: rafraîchir cette famille (vol unique par principal), échanger, exécuter, révoquer. La famille survit à la déconnexion des appareils, pas à la désactivation du compte ni à une révocation depuis Pulsa Bot ou la console Perspicax.
 
@@ -275,7 +275,7 @@ Aujourd'hui un jeton OAuth MCP part dans les en-têtes de la configuration MCP d
 
 ## 4 bis. Bots exécutés sur le serveur
 
-Exigence de JC: un bot créé en mode organisation fonctionne depuis le serveur, et reste utilisable quand on le partage. Tout tour d'un bot d'organisation s'exécute dans le serveur Pulsa Bot de la compose, jamais sur le poste de qui parle.
+Exigence de the owner: un bot créé en mode organisation fonctionne depuis le serveur, et reste utilisable quand on le partage. Tout tour d'un bot d'organisation s'exécute dans le serveur Pulsa Bot de la compose, jamais sur le poste de qui parle.
 
 ### Engines présents dans l'image
 
@@ -290,7 +290,7 @@ Aujourd'hui les accès sont communs à tout le serveur: comptes Claude nommés (
 
 | Accès | Où | Qui le pose | Pour quels tours |
 |---|---|---|---|
-Révision du 2026-10-01 (décision de JC, remplace la décision 7 du 2026-09-28 « la clé du propriétaire sert tout le monde », l'interrupteur `memberBotsUseOrgKey` et la règle « les abonnements connectés sur ce serveur restent aux bots des admins »): **la personne qui parle paie.**
+Révision du 2026-10-01 (décision de the owner, remplace la décision 7 du 2026-09-28 « la clé du propriétaire sert tout le monde », l'interrupteur `memberBotsUseOrgKey` et la règle « les abonnements connectés sur ce serveur restent aux bots des admins »): **la personne qui parle paie.**
 
 | Accès | Où | Qui le pose | Pour quels tours |
 |---|---|---|---|
@@ -509,7 +509,7 @@ Scénarios de bout en bout, joués sur la compose unique de développement (inst
 | E | B écrit au bot de A, qui a un profil MCP Perspicax | les appels MCP apparaissent dans le journal de Perspicax sous l'utilisateur B, client `pulsa-bot:<server id>`, `client_name` « Pulsa Bot (<bot id>) »; si B ne détient pas le profil, l'outil est absent et le bot le dit | 5 |
 | F | le bot de A utilise un engine sans accès résolu | B reçoit la carte « aucune clé » dans le fil, A reçoit l'avis; aucun tour vide | 3 |
 
-## 11. Positions et questions pour JC
+## 11. Positions et questions pour the owner
 
 Positions retenues (recommandation acceptée sauf avis contraire):
 

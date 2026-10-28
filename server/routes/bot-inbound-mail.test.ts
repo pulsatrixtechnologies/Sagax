@@ -83,7 +83,7 @@ describe("GET /api/bots/:id/inbound-mail", () => {
   });
 });
 
-describe("PUT /api/bots/:id/inbound-mail (v2, JC decision 4): the owner changes the address", () => {
+describe("PUT /api/bots/:id/inbound-mail (v2, Owner decision 4): the owner changes the address", () => {
   const put = (base: string, botId: string, body: unknown) => fetch(`${base}/api/bots/${botId}/inbound-mail`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   afterEach(() => {
     changes = [];

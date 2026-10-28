@@ -21,18 +21,18 @@ import {
 } from "./custom-rules.ts";
 import { reviewSafety, safetyReviewPrompt, tightenSafety } from "./safety-review.ts";
 
-const HOME = "/Users/jc";
+const HOME = "/Users/example";
 
 let seq = 0;
 function rule(when: string, behavior: CustomRule["behavior"], extra: Partial<CustomRule> = {}): CustomRule {
   seq += 1;
-  return { id: `r${seq}`, ownerId: "jc", botId: null, when, behavior, riskScope: [], enabled: true, createdAt: seq, updatedAt: seq, ...extra };
+  return { id: `r${seq}`, ownerId: "owner", botId: null, when, behavior, riskScope: [], enabled: true, createdAt: seq, updatedAt: seq, ...extra };
 }
 
-const readDoc = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/plan.md" }), home: HOME });
-const readSsh = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/.ssh/id_ed25519" }), home: HOME });
+const readDoc = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/example/Documents/plan.md" }), home: HOME });
+const readSsh = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "/Users/example/.ssh/id_ed25519" }), home: HOME });
 const sendMail = callFacts({ tool: "mcp__outlook__send_mail", input: JSON.stringify({ to: ["a@example.com"], subject: "Hi", body: "x" }), classKey: "outbound:send", home: HOME });
-const writeDoc = callFacts({ tool: "Write", input: JSON.stringify({ file_path: "/Users/jc/Documents/plan.md", content: "x" }), home: HOME });
+const writeDoc = callFacts({ tool: "Write", input: JSON.stringify({ file_path: "/Users/example/Documents/plan.md", content: "x" }), home: HOME });
 
 describe("parseRuleSentence", () => {
   it("reads allow, ask and deny from the person's words", () => {
@@ -46,7 +46,7 @@ describe("parseRuleSentence", () => {
 
 describe("compileRule and paths", () => {
   it("normalizes home folders and refuses climbing out", () => {
-    expect(normalizePath("/Users/jc/Documents/../Documents/a", HOME)).toBe("~/Documents/a");
+    expect(normalizePath("/Users/example/Documents/../Documents/a", HOME)).toBe("~/Documents/a");
     expect(normalizePath("$HOME/Documents", HOME)).toBe("~/Documents");
     expect(normalizePath("../etc/passwd", HOME)).toBeNull();
     expect(normalizePath("relative/file", HOME)).toBeNull();

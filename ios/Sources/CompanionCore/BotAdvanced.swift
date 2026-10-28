@@ -1079,7 +1079,7 @@ public struct BotInboundMail: Decodable, Equatable, Sendable {
 
 /// What the profile shows: the address (not an id, shown as is) and
 /// whether it still waits for the administrator to turn it on (addresses
-/// are off by default, JC decision 1 of 2026-10-21).
+/// are off by default, the owner decision 1 of 2026-10-21).
 public struct BotInboundMailRow: Equatable, Sendable {
     public var address: String
     public var waitingForAdmin: Bool

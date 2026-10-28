@@ -10,7 +10,7 @@ import { routineNextRunPhrase, routineUpcomingState, upcomingRoutines } from "@/
 import { CalendarSidebar } from "./CalendarSidebar";
 import { RoutineList } from "./RoutineList";
 
-// 2026-10-18 (JC): the calendar's right panel lists what runs next, in the
+// 2026-10-18 (owner): the calendar's right panel lists what runs next, in the
 // list view's own rows, and bots are dragged from the left sidebar.
 const NOW = new Date(2026, 9, 18, 8, 0).getTime();
 const at = (day: number, hour: number) => new Date(2026, 9, day, hour, 0).getTime();

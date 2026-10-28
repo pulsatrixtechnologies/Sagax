@@ -1,6 +1,6 @@
-// The one thread menu (JC, 2026-10-14): the sidebar's thread rows and the
-// header's All threads picker share it. One menu, no More (JC,
-// 2026-10-15), in the reference design's short sections (JC, 2026-10-16): Rename,
+// The one thread menu (owner, 2026-10-14): the sidebar's thread rows and the
+// header's All threads picker share it. One menu, no More (owner,
+// 2026-10-15), in the reference design's short sections (owner, 2026-10-16): Rename,
 // Regenerate title, Pin, Move › | Archive, Snooze › | Copy link, Remove
 // link | Refresh permissions | Delete.
 import { createElement, isValidElement, type ReactNode } from "react";

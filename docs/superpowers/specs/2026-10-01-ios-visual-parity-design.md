@@ -5,7 +5,7 @@ server and shared code the screens need · Branch: `feat/ios-visual-parity`
 
 ## Goal
 
-JC's decision (2026-10-01): the iPhone app must look **identical** to the 21
+Owner's decision (2026-10-01): the iPhone app must look **identical** to the 21
 reference screenshots, screen for screen, in layout, sizes, colours, type,
 mascots and behaviour.
 
@@ -15,7 +15,7 @@ mascots and behaviour.
   account", and no third-party logo ships unless its plugin really exists in
   our catalog. Copying another product's name or marks would get the app
   rejected and is not ours to use.
-- **Our mascots and our customization (JC, 2026-10-01).** Wherever the
+- **Our mascots and our customization (owner, 2026-10-01).** Wherever the
   screenshots show their shape characters, we draw **our Sagax characters**
   with each bot's own stored look. The layout, sizes and placement stay
   identical; what sits inside a mascot frame or a picker is ours (see "Sagax
@@ -403,7 +403,7 @@ The following get new methods and `Codable` models, each with tests:
 - `cron` schedule decoding
 - `Bot.mascotLook`, `Bot.instructionsLead`
 
-## Phases (one branch and PR each, merged on JC's GO)
+## Phases (one branch and PR each, merged on the owner's GO)
 
 1. **P0 Foundations:** `Theme.swift`; the Sagax mascots on iOS
    (`OwlMascotView`, `ShapeMascotView`, `TrombiMascotView`, picture, and the
@@ -440,7 +440,7 @@ The following get new methods and `Codable` models, each with tests:
     off by more than 1 pt.
 - **Each phase PR** includes the side-by-side images for its screens, plus
   `swift test` (CompanionCore), the server tests, and `make ci` run locally.
-- **JC** checks each phase on a real device before the merge.
+- **the owner** checks each phase on a real device before the merge.
 
 ## Risks
 

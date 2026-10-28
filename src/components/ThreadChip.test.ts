@@ -73,7 +73,7 @@ describe("ThreadChip", () => {
   });
 
   it("draws nothing when threads are off: the single stream shows no thread indicator in the chat", () => {
-    // JC 2026-10-22: Threads off (Settings > Appearance) must leave no thread
+    // Owner 2026-10-22: Threads off (Settings > Appearance) must leave no thread
     // row or receipt in the chat. The thread stays reachable through the bot
     // panel and the sidebar activity list, never a chip in the single stream.
     fixture.showThreads = false;

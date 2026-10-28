@@ -1,4 +1,4 @@
-// Workspace is always Auto (JC 2026-10-18): nobody picks a place for a bot
+// Workspace is always Auto (owner 2026-10-18): nobody picks a place for a bot
 // or a conversation any more; the bot picks where each task runs. These pin
 // the rule (autoOnlyDestination) and the one-time, idempotent move of what
 // an older build saved (Store.retireFixedWorkspaces). Off is a restriction,

@@ -1,4 +1,4 @@
-// server.experimental is a separate, explicit right (2026-10-22, JC): it is
+// server.experimental is a separate, explicit right (2026-10-22, the owner): it is
 // NOT implied by server.settings. A settings delegate who should also manage
 // the experiments is given both keys in Perspicax.
 import { describe, expect, it } from "vitest";

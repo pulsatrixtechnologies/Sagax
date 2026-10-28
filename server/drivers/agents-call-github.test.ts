@@ -28,7 +28,7 @@ describe("connect_github", () => {
   });
 
   it("says what to do in every other state, never asking for a token", () => {
-    expect(githubConnectText({ state: "connected", login: "jc", orgAccessUrl: "https://github.com/settings/connections/applications/Iv1" })).toContain("settings/connections/applications/Iv1");
+    expect(githubConnectText({ state: "connected", login: "owner", orgAccessUrl: "https://github.com/settings/connections/applications/Iv1" })).toContain("settings/connections/applications/Iv1");
     expect(githubConnectText({ state: "group" })).toContain("never in a group");
     expect(githubConnectText({ state: "not_person" })).toContain("never from a routine");
     expect(githubConnectText({ state: "admin_only" })).toContain("administrator");

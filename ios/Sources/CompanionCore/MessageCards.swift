@@ -162,7 +162,7 @@ public enum BusySendMode: String, Codable, CaseIterable, Hashable, Sendable {
     case parallel
     /// Wait for the running turn, then run.
     case after
-    /// The bot decides (JC 2026-10-18, server/busy-routing.ts): joins the
+    /// The bot decides (owner 2026-10-18, server/busy-routing.ts): joins the
     /// running turn, runs as a parallel task or waits for it. Sent as
     /// `routeWhileBusy: true`, which an older server ignores (steer).
     case auto

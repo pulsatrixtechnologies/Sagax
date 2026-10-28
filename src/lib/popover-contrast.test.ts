@@ -1,5 +1,5 @@
 // Popovers read from their own surface tokens, in every skin and wherever
-// they open. JC, 2026-10-08: on Pulsatrix Light the thread picker opened
+// they open. Owner, 2026-10-08: on Pulsatrix Light the thread picker opened
 // from the navy chat header drew its rows in the header's light ink on its
 // own white card (1.11:1), because `.content-topbar` re-points `ink` for
 // its subtree and the popover is part of that subtree.

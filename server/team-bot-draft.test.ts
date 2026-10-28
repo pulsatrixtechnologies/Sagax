@@ -1,6 +1,6 @@
 // "Create a Team Bot from this conversation" (server/team-bot-draft.ts,
 // server/routes/team-bot-from-thread.ts): the draft from the bot's model or
-// the conversation; memory never carries over (JC 2026-10-21), the pure plan helpers stay covered.
+// the conversation; memory never carries over (owner 2026-10-21), the pure plan helpers stay covered.
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import { describe, expect, it } from "vitest";
@@ -120,7 +120,7 @@ describe("team bot routes", () => {
     expect(unreadable.status).toBe(404);
   });
 
-  it("never carries a conversation or the bot's private memory, whatever is asked (JC 2026-10-21)", async () => {
+  it("never carries a conversation or the bot's private memory, whatever is asked (Owner 2026-10-21)", async () => {
     const { handler, writes } = harness({ generate: () => null });
     for (const body of [
       { threadId: "t1", newBotId: "neo", notes: ["memory/clients.md"] },

@@ -19,7 +19,7 @@ const request: TerminalRequestCardData = {
   threadId: "t-1",
   destinations: [
     { resourceId: "mine", provider: "sandbox", label: "Ordinateur infonuagique", hostLabel: "Environnement serveur" },
-    { resourceId: "mine", provider: "desktop", label: "Cet ordinateur", hostLabel: "MacBook de JC" },
+    { resourceId: "mine", provider: "desktop", label: "Cet ordinateur", hostLabel: "MacBook de Owner" },
     { resourceId: "default", provider: "unraid", label: "Serveur unRAID", hostLabel: "fs01" },
   ],
 };
@@ -37,7 +37,7 @@ describe("terminal card destination", () => {
 
   it("names the person's own environments in the app's language and a server host by its name", () => {
     expect(terminalDestinationLabel(request.destinations![0]!)).toBe(`${t("terminal.destination.sandbox")} · Environnement serveur`);
-    expect(terminalDestinationLabel(request.destinations![1]!)).toBe(`${t("terminal.destination.desktop")} · MacBook de JC`);
+    expect(terminalDestinationLabel(request.destinations![1]!)).toBe(`${t("terminal.destination.desktop")} · MacBook de Owner`);
     expect(terminalDestinationLabel(request.destinations![2]!)).toBe("Serveur unRAID · fs01");
     expect(terminalDestinationKey(request)).toBe("sandbox:mine");
   });

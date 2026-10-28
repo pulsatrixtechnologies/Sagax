@@ -7,7 +7,7 @@
 // day the server lists that account's connectors. They read the same way.
 // A group with no connector is hidden. Each card names the service it
 // reaches (CapabilityTags) and sits under its engine: the summary panel
-// "What your engines reach" is gone (JC, 2026-10-27).
+// "What your engines reach" is gone (owner, 2026-10-27).
 import { ExternalLink, RefreshCw } from "lucide-react";
 
 import { openExternalLink } from "@/lib/app-links";

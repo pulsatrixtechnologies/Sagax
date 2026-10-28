@@ -1,6 +1,6 @@
 // iPad I4/I4b: More > Access as the current desktop draws it
 // (`bot-settings/AccessSection.tsx`), every card inline: Works on (Auto or
-// Off: the bot picks the place per task, JC 2026-10-18; the Off note; the Auto note and the cloud backend while a cloud computer is
+// Off: the bot picks the place per task, the owner 2026-10-18; the Off note; the Auto note and the cloud backend while a cloud computer is
 // offered), the working folder, Connected apps and the built-in browser
 // while Experimental features has them on, MCP servers (one switch each),
 // Webhooks and Always allowed. On an organization server Works on is its

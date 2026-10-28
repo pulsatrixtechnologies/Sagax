@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// A message sent while a bot's question waits (JC 2026-10-21, #885): the
+// A message sent while a bot's question waits (owner 2026-10-21, #885): the
 // question stays open, nothing answers it for the person, and the composer
 // says so.
 import { createElement } from "react";

@@ -56,7 +56,7 @@ function render(candidate = bot) {
 }
 beforeEach(() => { fixture.slots = []; fixture.state.revealThread = null; });
 
-// JC (2026-10-12): bot row + its selected thread made two stacked rounded
+// Owner (2026-10-12): bot row + its selected thread made two stacked rounded
 // blocks. Since the reference design's rows (2026-10-15) the thread list no longer
 // unfolds under the bot, even in the sidebar location: the selected bot row
 // carries the one highlight.

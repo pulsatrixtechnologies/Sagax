@@ -90,7 +90,7 @@ describe("outbound wiring", () => {
     expect(words).not.toMatch(/\d{12,}/);
   });
 
-  it("the Primary Bot answers a call or a purchase this once or no, never always (JC 2026-10-22)", () => {
+  it("the Primary Bot answers a call or a purchase this once or no, never always (Owner 2026-10-22)", () => {
     expect(primaryOutboundDecision("purchase", { behavior: "allow" })).toEqual({ decision: "once" });
     expect(primaryOutboundDecision("call", { behavior: "allow" })).toHaveProperty("refused");
     expect(primaryOutboundDecision("call", { behavior: "deny" })).toEqual({ decision: "deny" });

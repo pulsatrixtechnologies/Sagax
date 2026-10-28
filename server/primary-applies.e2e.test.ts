@@ -1,5 +1,5 @@
 // The Primary Bot applies the person's changes to their own bots at once
-// (JC, 2026-10-20: "le bot principal fait tout"), through a real isolated
+// (owner, 2026-10-20: "le bot principal fait tout"), through a real isolated
 // server and fake engines only:
 //
 //   model      "Passe SWAT, DOGE, Bot Designer et Disk Saver sur l'instance

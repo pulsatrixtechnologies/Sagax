@@ -112,7 +112,7 @@ describe("the single stream in the main chat", () => {
     }
   });
 
-  // JC 2026-10-22: threads off = one unified conversation, so no cross-topic
+  // Owner 2026-10-22: threads off = one unified conversation, so no cross-topic
   // "new activity" pill surfaces at the top; the topic is reached by reading
   // back (PreviousTopicsLine), never a banner.
   it("draws no earlier-topic activity pill for the topic under a fresh one", () => {
@@ -232,7 +232,7 @@ describe("the single stream in the main chat", () => {
   });
 
   // The unified conversation never raises a pill for an earlier topic that
-  // has something new (JC 2026-10-22): it is read back in place, not jumped to.
+  // has something new (owner 2026-10-22): it is read back in place, not jumped to.
   it("draws no earlier-topic activity pill for an earlier topic that has something new", () => {
     preferences.setShowThreads(false);
     const markup = render({ ...bot, tasks: bot.tasks!.map((task) => task.threadId === "first" ? { ...task, unread: true } : task) });

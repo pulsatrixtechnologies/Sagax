@@ -47,7 +47,7 @@ describe("canEditBotField", () => {
     for (const field of ["name", "soul", "notifications", "modelSelection", "avatarUrl", "color"]) {
       expect(canEditBotField(member, own, field), field).toBe(true);
     }
-    // 2026-10-26 (JC): every setting of their own bot, without an admin
+    // 2026-10-26 (owner): every setting of their own bot, without an admin
     for (const field of ["computer", "browser", "approvalMode", "proactiveMode", "mcpServers", "toolScope", "fallback", "memoryEnabled", "chiefOfStaff", "hidden", "section", "visibility", "outbound", "approvePeerComms"]) {
       expect(canEditBotField(member, own, field), field).toBe(true);
       expect(canEditBotField(member, other, field), field).toBe(false);

@@ -47,7 +47,7 @@ describe("roomActivityVisible", () => {
     expect(roomActivityVisible(opened, false)).toBe(true);
   });
 
-  // JC 2026-10-22: a bot-to-bot comm chip is verbose detail, not a trace the
+  // Owner 2026-10-22: a bot-to-bot comm chip is verbose detail, not a trace the
   // clean chat keeps. With tool calls (the details toggle) off it goes with
   // the other steps; a failed send still shows as a failure.
   it("shows a bot-to-bot comm chip only when tool calls are on", () => {

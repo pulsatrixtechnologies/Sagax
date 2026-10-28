@@ -117,7 +117,7 @@ export function ExperimentalSettings() {
   const manage = canManageExperimental(state.config);
   const personal = state.config?.personalSettings === true;
   const profiles = (state.config?.browserProfiles ?? []).filter((profile) => (editConfig ? !profile.personal : profile.personal));
-  // 2026-10-26 (JC): generated conversation titles were on only after a
+  // 2026-10-26 (owner): generated conversation titles were on only after a
   // hand edit of config.json; they get their switch here.
   const llmThreadTitles = llmThreadTitlesEnabled(state.config);
   const llmThreadTitlesServed = typeof state.config?.features?.llmThreadTitles === "boolean";

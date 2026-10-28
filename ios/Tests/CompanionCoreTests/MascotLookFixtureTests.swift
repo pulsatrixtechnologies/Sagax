@@ -128,7 +128,7 @@ final class MascotLookFixtureTests: XCTestCase {
         }
     }
 
-    /// The rule JC needs: a known character never comes back as the owl.
+    /// The rule the owner needs: a known character never comes back as the owl.
     func testAKnownCharacterNeverFallsBackToTheOwl() throws {
         let f = try fixture()
         var checked = 0

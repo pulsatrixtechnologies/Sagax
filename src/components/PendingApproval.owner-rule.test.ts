@@ -51,7 +51,7 @@ describe("owner rule buttons", () => {
     expect(result.html).toContain("data-org-always-allow-off");
   });
 
-  // 2026-10-20 (JC, after the reference design): Deny, Always allow, Allow once; Always
+  // 2026-10-20 (owner, after the reference design): Deny, Always allow, Allow once; Always
   // deny and the rule's scope live in Settings > Security
   it("offers exactly Deny, Always allow and Allow once", () => {
     const result = view();

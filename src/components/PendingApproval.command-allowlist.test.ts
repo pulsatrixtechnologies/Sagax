@@ -61,7 +61,7 @@ describe("remembering exact command approvals", () => {
 
   it("answers and remembers in one action without a separate preference update", () => {
     const result = view();
-    // 2026-10-20 (JC): one "Always allow"; its hint names what it keeps
+    // 2026-10-20 (owner): one "Always allow"; its hint names what it keeps
     expect(result.html).toContain(">Always allow<");
     expect(result.html).toContain("/work/project");
     expect(result.buttons.filter((button) => button.props.children === "Always allow")).toHaveLength(1);

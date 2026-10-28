@@ -28,7 +28,7 @@ function gateNeeds(runtime: string) {
 }
 
 describe("CI concurrency", () => {
-  it("runs once, on the release candidate: dispatch only, never on a PR, push or merge queue (JC 2026-10-14)", () => {
+  it("runs once, on the release candidate: dispatch only, never on a PR, push or merge queue (Owner 2026-10-14)", () => {
     expect(Object.keys(workflow.on)).toEqual(["workflow_dispatch"]);
     expect(workflow.on).not.toHaveProperty("push");
     expect(workflow.on).not.toHaveProperty("pull_request");
@@ -226,7 +226,7 @@ describe("public server image (install.sh, docs/install.md)", () => {
   const release = parse(readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"));
   const job = release.jobs["server-image"];
 
-  it("builds once per published release: no new push or pull-request trigger (JC 2026-10-14)", () => {
+  it("builds once per published release: no new push or pull-request trigger (Owner 2026-10-14)", () => {
     expect(Object.keys(release.on).sort()).toEqual(["push", "release", "workflow_dispatch"]);
     expect(release.on.release.types).toEqual(["published"]);
     expect(release.on.push.branches).toEqual(["main"]);

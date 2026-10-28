@@ -641,7 +641,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     const address = await api("GET", `/api/bots/${mira.id}/inbound-mail`, alice);
     expect(address.status, address.text).toBe(200);
     expect(address.body).toEqual({ available: false, address: null, enabled: false, canChange: false });
-    // one audit row per delivery: the full sender (JC decision 3), never the subject or text
+    // one audit row per delivery: the full sender (owner decision 3), never the subject or text
     const rows = await waitFor(async () => {
       const audit = await api("GET", "/api/org/admin/audit?category=webhook", { bearer: idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin" }) });
       const found = ((audit.body.rows ?? []) as Array<any>).filter((row) => row.action === "bot-mail.delivered");

@@ -88,17 +88,17 @@ describe("welcomeViewer", () => {
 
   it("reads an organization server's managed profile, and nothing else as one", () => {
     const session = {
-      kind: "session", scopes: ["admin", "client"], identity: "perspicax", name: "Alex", email: "jc@example.test",
+      kind: "session", scopes: ["admin", "client"], identity: "perspicax", name: "Alex", email: "owner@example.test",
       profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.example.test/console/me",
     };
     expect(welcomeViewer(session)).toEqual({
       hosted: false, canSave: true,
-      profileManaged: { by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "jc@example.test" },
+      profileManaged: { by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "owner@example.test" },
     });
     // a link that is not a web page is dropped; the note stays
     expect(welcomeViewer({ ...session, profileManageUrl: "javascript:alert(1)" }).profileManaged?.url).toBeNull();
     // a solo server sends no field; any other value is not Perspicax's
-    expect(welcomeViewer({ kind: "session", scopes: ["admin", "client"], name: "JC" }).profileManaged).toBeUndefined();
+    expect(welcomeViewer({ kind: "session", scopes: ["admin", "client"], name: "Owner" }).profileManaged).toBeUndefined();
     expect(welcomeViewer({ ...session, profileManagedBy: "other" }).profileManaged).toBeUndefined();
   });
 

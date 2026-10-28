@@ -115,7 +115,7 @@ struct DesktopComposerPill: View {
         // an admin, or the bot's owner on an organization server (2026-10-26)
         if let bot, session.canAdminister || session.canEditBotField(bot, "approvalMode") {
             DesktopApprovalButton(bot: bot, open: menuBinding(.approval), openAllowlist: openAllowlist)
-            // No place chip (JC 2026-10-18): Workspace is always Auto and
+            // No place chip (owner 2026-10-18): Workspace is always Auto and
             // the bot picks where each task runs.
         }
     }

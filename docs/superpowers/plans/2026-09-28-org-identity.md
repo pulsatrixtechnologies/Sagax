@@ -90,9 +90,9 @@ describe("principal registry", () => {
   it("has exactly one local operator and gives it the profile email", () => {
     const { reg } = registry();
     const a = reg.localOperator();
-    const b = reg.localOperator("jc@example.com");
+    const b = reg.localOperator("owner@example.com");
     expect(b.id).toBe(a.id);
-    expect(b).toMatchObject({ local: true, email: "jc@example.com" });
+    expect(b).toMatchObject({ local: true, email: "owner@example.com" });
     expect(reg.list().filter((p) => p.local)).toHaveLength(1);
   });
 
@@ -277,9 +277,9 @@ const fresh = () => new PrincipalRegistry({ path: join(mkdtempSync(join(tmpdir()
 describe("identity migration", () => {
   it("maps emails and local-owner to principals and leaves principal ids alone", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@example.com");
+    const local = registry.localOperator("owner@example.com");
     expect(principalIdFor("local-owner", registry)).toBe(local.id);
-    expect(principalIdFor("JC@example.com", registry)).toBe(local.id);
+    expect(principalIdFor("OWNER@example.com", registry)).toBe(local.id);
     const morgan = principalIdFor("morgan@example.com", registry);
     expect(morgan).toMatch(/^pr_/);
     expect(principalIdFor(morgan, registry)).toBe(morgan);
@@ -287,10 +287,10 @@ describe("identity migration", () => {
 
   it("rewrites org owner, humanIds, bot owners, grants and pairing sessions once", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@example.com");
+    const local = registry.localOperator("owner@example.com");
     const input = {
-      org: { ownerUserId: "jc@example.com" },
-      groups: [{ id: "g1", humanIds: ["jc@example.com", "morgan@example.com"] }, { id: "g2" }],
+      org: { ownerUserId: "owner@example.com" },
+      groups: [{ id: "g1", humanIds: ["owner@example.com", "morgan@example.com"] }, { id: "g2" }],
       bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["morgan@example.com"] }, { id: "b2" }],
       sessions: [{ id: "s-phone" }, { id: "s-morgan", email: "morgan@example.com", userId: "cp_7" }],
       registry,
@@ -741,7 +741,7 @@ function actorEmail(auth: RequestAuth): string | undefined {
 
 - [ ] **Step 1: Write the failing e2e test**
 
-Boot the harness on a temp `DATA_DIR`. Seed `config.json` with a profile email `jc@example.com`, then:
+Boot the harness on a temp `DATA_DIR`. Seed `config.json` with a profile email `owner@example.com`, then:
 1. `POST /api/org` over loopback with `host: { kind: "this-computer" }`. Expect 400 with `/server address/`.
 2. `POST /api/org` with `host: { kind: "server", url: "https://sagax.example.com" }`. Expect 200, and `org.ownerUserId` matches `/^pr_/`.
 3. `POST /api/auth/pairing` over loopback (the pairing-code route), exchange the code on `POST /api/pair`, then `GET /api/org` with the session cookie. Expect 200. Then `GET /api/sessions` (or the route that lists sessions; `grep -n '"/api/sessions"' server/index.ts`) and expect the new session to carry the same `principalId` as the org owner.

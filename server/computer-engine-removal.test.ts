@@ -101,7 +101,7 @@ describe("moving saved bots off the engine", () => {
     const moves = store.retireInstances(removed, replacement, boat);
 
     const reloaded = new Store(newBotDefault);
-    // Workspace is always Auto (JC 2026-10-18): no Works on is written.
+    // Workspace is always Auto (owner 2026-10-18): no Works on is written.
     expect(reloaded.bot(auto.id)?.computer).toBeUndefined();
     expect(moves.find(move => move.botId === auto.id)?.cloud).toBe(true);
     // The removed engine never ran on a VPS, nor on This computer: those
@@ -137,7 +137,7 @@ describe("moving saved bots off the engine", () => {
     expect(reloaded.bot(bot.id)?.computer).toBeUndefined();
     const task = reloaded.taskByThread(bot.id, second.threadId)!;
     expect(task.modelSelection).toEqual(replacement);
-    // Workspace is always Auto (JC 2026-10-18): no conversation pin.
+    // Workspace is always Auto (owner 2026-10-18): no conversation pin.
     expect(task.surface).toBeUndefined();
     expect(task.surfaceSource).toBeUndefined();
     expect(reloaded.taskByThread(bot.id, bot.threadId)?.surface).toBeUndefined();

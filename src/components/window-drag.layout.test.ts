@@ -1,4 +1,4 @@
-// JC, 2026-10-08: the window must move by grabbing anywhere along the top
+// Owner, 2026-10-08: the window must move by grabbing anywhere along the top
 // strip, not only the sidebar. The three header rows (sidebar head, chat
 // header, docked panel header) are drag regions; every interactive control in
 // them is no-drag, or it would stop clicking. These read the sources: the

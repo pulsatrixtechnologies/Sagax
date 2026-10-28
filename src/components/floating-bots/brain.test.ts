@@ -98,7 +98,7 @@ describe("floating bot brain: poses and balloons", () => {
     expect(snapshot(b, session).balloon?.input).toEqual({ label: "inputLabel", placeholder: "placeholder", send: "send" });
   });
 
-  it("lays the menu out as JC asked: talk, call, open; switch bot and moves; put back; options and settings", () => {
+  it("lays the menu out as Owner asked: talk, call, open; switch bot and moves; put back; options and settings", () => {
     const menu = floatingMenu(full, newFloatingSession(), true, true, { call: "start", bots, moves }, "bot_a");
     expect(menu.map((item) => item.type === "separator" ? "-" : item.id)).toEqual(["balloon", "call", "open", "-", "switch", "moves", "-", "snooze", "dock", "-", "options", "settings"]);
     expect(menu.map((item) => item.label).filter(Boolean)).toEqual(["menuTalk", "menuCall", "menuOpen", "menuSwitch", "menuMoves", "menuSnooze", "menuDock", "menuOptions", "menuSettings"]);

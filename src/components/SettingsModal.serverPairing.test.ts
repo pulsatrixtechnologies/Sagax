@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppSettingsSection } from "@/state/store";
 import { SettingsModal } from "./SettingsModal";
 
-// 2026-10-14 (JC): Settings > Pair devices is hidden. Every device signs in
+// 2026-10-14 (owner): Settings > Pair devices is hidden. Every device signs in
 // with the organization (OAuth through Sagax Business), so the app offers no
 // pairing code and no phone flow any more. The server's pairing routes stay
 // (the iOS app or an older build may still use them); an old link or

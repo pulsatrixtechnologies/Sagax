@@ -57,11 +57,11 @@ describe("the greeting beat", () => {
   });
 });
 
-const JC: ManagedProfile = { by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "jc@example.test" };
+const Owner: ManagedProfile = { by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "owner@example.test" };
 
 describe("the greeting on an organization server", () => {
   it("never asks for a name or an email, and shows them read-only", () => {
-    const { html, tree } = render(false, JC);
+    const { html, tree } = render(false, Owner);
     expect(html).not.toContain("<input");
     expect(html).not.toContain("you@example.com");
     expect(html).toContain("Pulsatrix Perspicax");
@@ -72,12 +72,12 @@ describe("the greeting on an organization server", () => {
     expect(store.api).not.toHaveBeenCalled();
     // the identity block carries the person and the link
     const identity = nodes(tree).find((node) => node.type === ManagedProfileIdentity);
-    expect((identity!.props as unknown as { profile: ManagedProfile }).profile).toEqual(JC);
+    expect((identity!.props as unknown as { profile: ManagedProfile }).profile).toEqual(Owner);
   });
 
   it("says it in French", () => {
     setLocale("fr");
-    const { html } = render(false, JC);
+    const { html } = render(false, Owner);
     expect(html).toContain("Pulsatrix Perspicax");
     expect(html).not.toContain("<input");
   });
@@ -88,29 +88,29 @@ describe("the managed identity block", () => {
 
   it("shows the name and email read-only with the note and the Perspicax link", () => {
     setLocale("fr");
-    const html = markup(JC);
+    const html = markup(Owner);
     expect(html).not.toContain("<input");
     expect(html).toContain("Alex");
-    expect(html).toContain("jc@example.test");
+    expect(html).toContain("owner@example.test");
     expect(html).toContain("Géré par votre organisation (Pulsatrix Perspicax)");
     expect(html).toContain("Modifier dans Perspicax");
   });
 
   it("opens the issuer console's profile page", () => {
-    const tree = ManagedProfileIdentity({ profile: JC });
+    const tree = ManagedProfileIdentity({ profile: Owner });
     const link = nodes(tree).find((node) => node.type === "button");
     link!.props.onClick!();
     expect(openExternalLink).toHaveBeenCalledWith("https://pulsatrix.example.test/console/me");
   });
 
   it("shows the Perspicax avatar, else the letters", () => {
-    expect(markup({ ...JC, avatarUrl: "/api/people/pr_1/avatar?v=0a1b" })).toContain('src="/api/people/pr_1/avatar?v=0a1b"');
-    expect(markup(JC)).not.toContain("<img");
+    expect(markup({ ...Owner, avatarUrl: "/api/people/pr_1/avatar?v=0a1b" })).toContain('src="/api/people/pr_1/avatar?v=0a1b"');
+    expect(markup(Owner)).not.toContain("<img");
   });
 
   it("keeps the note without a usable link", () => {
     setLocale("en");
-    const html = markup({ ...JC, url: null });
+    const html = markup({ ...Owner, url: null });
     expect(html).toContain("Managed by your organization (Pulsatrix Perspicax)");
     expect(html).not.toContain("Edit in Perspicax");
   });

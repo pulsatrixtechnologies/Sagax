@@ -1,4 +1,4 @@
-// Connect Apps: one page (2026-10-27, JC: one place per subject). The
+// Connect Apps: one page (2026-10-27, the owner: one place per subject). The
 // title with "N connected" at its right, the install scope, then four tabs:
 // Installed, Discover (the catalog, its search and Browse Bots; the view a
 // person lands on), My accounts and Sources (with the organization's part

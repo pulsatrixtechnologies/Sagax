@@ -42,12 +42,12 @@ beforeEach(() => {
   resetPersonLabelsForTests();
   fixture.dispatch.mockReset();
   fixture.org = { org: { name: "Pulsatrix" } };
-  fixture.viewer = { principalId: "pr_jc", name: "Alex Martin", email: "jc@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
+  fixture.viewer = { principalId: "pr_owner", name: "Alex Martin", email: "owner@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
   calls = [];
   vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ path, method: init?.method, body });
-    if (path.endsWith("/label")) return new Response(JSON.stringify({ principalId: "pr_jc", label: body?.label ?? null }), { status: 200 });
+    if (path.endsWith("/label")) return new Response(JSON.stringify({ principalId: "pr_owner", label: body?.label ?? null }), { status: 200 });
     return new Response(JSON.stringify({ labels: [] }), { status: 200 });
   }));
   host = document.createElement("div");
@@ -69,7 +69,7 @@ describe("Settings > General account card", () => {
     expect(card).not.toBeNull();
     const text = card.textContent ?? "";
     expect(text.indexOf("Alex Martin")).toBeLessThan(text.indexOf("Add a label"));
-    expect(text.indexOf("Add a label")).toBeLessThan(text.indexOf("jc@example.com"));
+    expect(text.indexOf("Add a label")).toBeLessThan(text.indexOf("owner@example.com"));
     expect(text).toContain("Edit in Perspicax");
     expect(card.querySelector("[data-account-managed]")?.getAttribute("title")).toBe("Connected to bot.example.test · Organization: Pulsatrix");
     // Sign out at the right of the row, no help paragraph
@@ -89,8 +89,8 @@ describe("Settings > General account card", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); input.blur(); });
-    await vi.waitFor(() => expect(personLabel("pr_jc")).toBe("CTO"));
-    expect(calls).toContainEqual({ path: "/api/people/pr_jc/label", method: "PUT", body: { label: "CTO" } });
+    await vi.waitFor(() => expect(personLabel("pr_owner")).toBe("CTO"));
+    expect(calls).toContainEqual({ path: "/api/people/pr_owner/label", method: "PUT", body: { label: "CTO" } });
   });
 
   it("Sign out calls the desktop's leave, and says so when it fails", async () => {

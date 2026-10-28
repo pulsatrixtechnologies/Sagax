@@ -22,7 +22,7 @@ const notice = { id: "crule_1", when: "la lecture de fichiers dans ~/Documents",
 function message(extra: Partial<NonNullable<Message["card"]>> = {}): Message {
   return {
     id: "approval-1", at: 1, role: "bot", kind: "options",
-    card: { title: "Approval needed", subtitle: "{}", options: ["Allow", "Deny"], tool: "Read", requestId: "request-1", requestType: "permission", toolInput: '{"file_path":"/Users/jc/Documents/a.md"}', ...extra },
+    card: { title: "Approval needed", subtitle: "{}", options: ["Allow", "Deny"], tool: "Read", requestId: "request-1", requestType: "permission", toolInput: '{"file_path":"/Users/example/Documents/a.md"}', ...extra },
   };
 }
 
@@ -68,7 +68,7 @@ describe("Toujours permettre ceci", () => {
     return renderToStaticMarkup(PendingApprovalActions({ pending, bot, threadId: "thread-1", onCancelTurn: vi.fn() }));
   };
 
-  // 2026-10-20 (JC): one "Always allow", one click, no editor on the card
+  // 2026-10-20 (owner): one "Always allow", one click, no editor on the card
   it("is offered as the one Always allow when the server proposes a rule for this card", () => {
     const html = render({ customRuleCandidate: { when: notice.when, risks: [] } });
     expect(html).toContain(">Always allow<");

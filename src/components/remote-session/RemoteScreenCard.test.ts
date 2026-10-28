@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Tailcat screen in the chat (JC 2026-10-22, session 8F2NZU: "c'est 0 le
+// The Tailcat screen in the chat (owner 2026-10-22, session 8F2NZU: "c'est 0 le
 // comportement voulu"): the bot computer's own screen card and window, with
 // a remote session as their source. Take control never opens the Computer
 // tab; the window drives #950's live control WebSocket.

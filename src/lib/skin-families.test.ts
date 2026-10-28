@@ -59,7 +59,7 @@ describe("skin families", () => {
     }
   });
 
-  it("gives Pulsatrix, Studio and Atelier their own look, each colour, the duo-tones and the moods (JC, 2026-10-19)", () => {
+  it("gives Pulsatrix, Studio and Atelier their own look, each colour, the duo-tones and the moods (Owner, 2026-10-19)", () => {
     const ids = (family: string, group: string) => findFamily(family)!.variants.filter((v) => v.group === group).map((v) => v.id);
     const richer = { duo: ["aurore", "ocean", "neon", "foret"], ambiance: ["cyberpunk", "sunset", "nordic", "candy"] };
     for (const family of ["studio", "atelier"]) {
@@ -208,7 +208,7 @@ describe("first paint", () => {
   });
 });
 
-// Mood picker (JC, 2026-10-22): "the mood contains a light theme in the dark
+// Mood picker (owner, 2026-10-22): "the mood contains a light theme in the dark
 // mode and vice versa". The swatch rows list only the variants that have a
 // skin in the scheme worn now; Auto stays in the mode pill.
 describe("skin appearance and the picker's scheme filter", () => {

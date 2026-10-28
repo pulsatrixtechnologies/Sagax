@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The tray beside a message, in the reference design's shapes (JC, 2026-10-15): the row
+// The tray beside a message, in the reference design's shapes (owner, 2026-10-15): the row
 // (react, reply, …), the quick reaction pill, and the … menu that starts with
 // the same reactions, then Reply, Copy, Copy request ID, then Sagax's own.
 import { act, createElement } from "react";
@@ -217,7 +217,7 @@ describe("MessageHoverActions: the … menu", () => {
   });
 });
 
-describe("MessageHoverActions: placement (JC, 2026-10-18)", () => {
+describe("MessageHoverActions: placement (Owner, 2026-10-18)", () => {
   // A transcript row has content-visibility: auto, which paints nothing
   // outside the row: the popups live on document.body and are placed there.
   const atRow = (box: { left: number; top: number; width: number; height: number }) => {

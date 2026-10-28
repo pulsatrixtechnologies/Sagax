@@ -1,4 +1,4 @@
-// "Run now" (JC, 2026-10-08): the bot's owner, the person the routine runs
+// "Run now" (owner, 2026-10-08): the bot's owner, the person the routine runs
 // as and an admin see it; disabled while a run is in flight; it starts the
 // run through the store's runRoutine and shows it at once.
 import { createElement } from "react";

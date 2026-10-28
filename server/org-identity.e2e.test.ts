@@ -119,7 +119,7 @@ posixOnly("org identity", () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-identity-"));
     data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
-    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@example.com" } }));
+    writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "Owner", email: "owner@example.com" } }));
     // Zara is a person this server knows by address, with a device bound to
     // her principal (a pairing session, not an email sign-in).
     writeFileSync(join(data, "principals.json"), JSON.stringify({ version: 1, principals: [{ id: ZARA_ID, kind: "human", email: ZARA, createdAt: 1 }] }));
@@ -170,12 +170,12 @@ posixOnly("org identity", () => {
     ownerId = config.body.viewer.principalId;
     expect(ownerId).toMatch(/^pr_/);
     const local = principalsFile().principals.filter((p) => p.local);
-    expect(local).toEqual([expect.objectContaining({ id: ownerId, email: "jc@example.com" })]);
+    expect(local).toEqual([expect.objectContaining({ id: ownerId, email: "owner@example.com" })]);
     kioskStream?.abort();
   });
 
   it("pairs a phone from this computer as the same person", async () => {
-    const pairing = await api("POST", "/api/auth/pairing", { label: "JC's phone", scopes: ["admin", "client"] });
+    const pairing = await api("POST", "/api/auth/pairing", { label: "Owner's phone", scopes: ["admin", "client"] });
     expect(pairing.status, JSON.stringify(pairing.body)).toBe(200);
     const paired = await api("POST", "/api/auth/pair", { code: pairing.body.code });
     expect(paired.status, JSON.stringify(paired.body)).toBe(200);
@@ -232,9 +232,9 @@ posixOnly("org identity", () => {
     const token = await pairAs(["admin", "client"]);
     const session = await api("GET", "/api/auth/session", undefined, token);
     expect(session.body.profileManagedBy).toBeUndefined();
-    const saved = await api("PUT", "/api/config", { profile: { name: "JC Martin", email: "jc@example.com" } }, token);
+    const saved = await api("PUT", "/api/config", { profile: { name: "Owner Martin", email: "owner@example.com" } }, token);
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-    expect(saved.body.profile).toMatchObject({ name: "JC Martin", email: "jc@example.com" });
+    expect(saved.body.profile).toMatchObject({ name: "Owner Martin", email: "owner@example.com" });
     const config = await api("GET", "/api/config", undefined, token);
     expect(config.body.viewer.profileManagedBy).toBeUndefined();
     expect(config.body.viewer.profileManageUrl).toBeUndefined();
@@ -265,21 +265,21 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
     const data2 = join(home2, ".sagax");
     mkdirSync(data2, { recursive: true });
     writeFileSync(join(data2, "config.json"), JSON.stringify({
-      profile: { name: "JC", email: "jc@example.com" },
-      signIn: { admins: ["jc@example.com"], members: ["dana@example.test"] },
+      profile: { name: "Owner", email: "owner@example.com" },
+      signIn: { admins: ["owner@example.com"], members: ["dana@example.test"] },
       invites: [
         { token: "e".repeat(32), email: "eve@example.test", createdAt: 1, expiresAt: 2 },
         { token: "f".repeat(32), email: "fay@example.test", createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 },
       ],
-      org: { name: "Example", host: { kind: "server", url: "https://server.example.com" }, ownerUserId: "jc@example.com" },
+      org: { name: "Example", host: { kind: "server", url: "https://server.example.com" }, ownerUserId: "owner@example.com" },
       mail: { provider: "smtp", from: "bot@example.com", smtp: { host: "smtp.example.com" } },
     }));
     // Dana signed in with an emailed code under an older build: her address
     // is on the list, so her session survives the seeding registry's close.
     const seeded = new SessionRegistry({ file: join(data2, "sessions.json"), emailScopes: () => ["client"] });
     const emailToken = seeded.issue({ label: "Dana's laptop", email: "dana@example.test", scopes: ["client"] }).token;
-    const pairing = seeded.openPairing({ scopes: ["admin", "client"], label: "JC's phone" });
-    const paired = seeded.exchange({ code: pairing.code, label: "JC's phone", source: "test" });
+    const pairing = seeded.openPairing({ scopes: ["admin", "client"], label: "Owner's phone" });
+    const paired = seeded.exchange({ code: pairing.code, label: "Owner's phone", source: "test" });
     if (!paired.ok) throw new Error(paired.error);
     seeded.close();
     const port = await freePortBlock([0, 1]);
@@ -322,7 +322,7 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
       }
       expect(log2).not.toMatch(/ignoring .*config\.json/);
       // The old profile still applies: the config file loaded.
-      expect((await call("GET", "/api/config")).body.profile.name).toBe("JC");
+      expect((await call("GET", "/api/config")).body.profile.name).toBe("Owner");
       // Email sign-in for the server's list: a code is mailed, a wrong one is refused.
       expect((await call("GET", "/.well-known/openmausbot/environment")).body.capabilities.emailSignIn).toBe(true);
       expect(await call("POST", "/api/auth/email/start", { body: { email: "dana@example.test" } })).toMatchObject({ status: 200, body: { ok: true } });
@@ -339,7 +339,7 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
       expect(await call("GET", "/api/org", { token: paired.token })).toMatchObject({ status: 404, body: { code: "no_organization" } });
       expect((await call("GET", "/join")).status).not.toBe(302);
       const config2 = JSON.parse(readFileSync(join(data2, "config.json"), "utf8")) as Record<string, unknown>;
-      expect(config2.signIn).toEqual({ admins: ["jc@example.com"], members: ["dana@example.test"] });
+      expect(config2.signIn).toEqual({ admins: ["owner@example.com"], members: ["dana@example.test"] });
       // An admin issues an invitation; it is mailed with its /join link.
       const issued = await call("POST", "/api/org/invites", { body: { email: "gus@example.test" }, token: paired.token });
       expect(issued.status, JSON.stringify(issued.body)).toBe(200);
@@ -352,7 +352,7 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
       expect((await call("GET", "/api/bots", { token: emailToken })).status).toBe(200);
       expect((await call("GET", "/api/bots", { token: paired.token })).status).toBe(200);
       const sessions2 = JSON.parse(readFileSync(join(data2, "sessions.json"), "utf8")) as { sessions: { label: string }[] };
-      expect(sessions2.sessions.map((session) => session.label).sort()).toEqual(["Dana's laptop", "JC's phone"]);
+      expect(sessions2.sessions.map((session) => session.label).sort()).toEqual(["Dana's laptop", "Owner's phone"]);
     } finally {
       await waitForExit(child2, { signal: "SIGTERM" });
       await removeTempDir(home2);

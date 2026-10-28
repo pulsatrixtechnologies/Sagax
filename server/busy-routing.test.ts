@@ -22,7 +22,7 @@ describe("classifyBusySend", () => {
   });
 
   it("answers a question or a request to explain inline, never as a parallel task", () => {
-    // JC's exact shape: a plain question sent while the bot is busy.
+    // Owner's exact shape: a plain question sent while the bot is busy.
     expect(classifyBusySend({ text: "ques qui c'est passé pourquoi l'ecan est apparu et la connexion à été coupé le shell a jamais fonctionner non plus" }))
       .toMatchObject({ mode: "steer", sure: true, why: "question" });
     expect(classifyBusySend({ text: "pourquoi l'écran est apparu ?" })).toMatchObject({ mode: "steer", sure: true, why: "question" });
@@ -103,16 +103,16 @@ describe("routing handles", () => {
   it("open, bind, read, drop and expire", () => {
     let now = 1_000;
     const steers = new RoutableSteers<{ who: string }>(() => now);
-    steers.open("h1", { botId: "b", threadId: "t", text: "hi", context: { who: "jc" } });
+    steers.open("h1", { botId: "b", threadId: "t", text: "hi", context: { who: "owner" } });
     expect(steers.get("h1")?.messageId).toBeUndefined();
     steers.bind("h1", "m1");
-    expect(steers.get("h1")).toMatchObject({ botId: "b", threadId: "t", messageId: "m1", context: { who: "jc" } });
-    steers.open("h2", { botId: "b", threadId: "t2", text: "x", context: { who: "jc" } });
+    expect(steers.get("h1")).toMatchObject({ botId: "b", threadId: "t", messageId: "m1", context: { who: "owner" } });
+    steers.open("h2", { botId: "b", threadId: "t2", text: "x", context: { who: "owner" } });
     steers.forgetThread("t2");
     expect(steers.get("h2")).toBeUndefined();
     steers.drop("h1");
     expect(steers.get("h1")).toBeUndefined();
-    steers.open("h3", { botId: "b", threadId: "t", text: "x", context: { who: "jc" } });
+    steers.open("h3", { botId: "b", threadId: "t", text: "x", context: { who: "owner" } });
     now += ROUTE_HANDLE_TTL_MS + 1;
     expect(steers.get("h3")).toBeUndefined();
   });

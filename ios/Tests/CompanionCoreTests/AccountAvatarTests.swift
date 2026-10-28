@@ -57,8 +57,8 @@ final class AccountAvatarTests: XCTestCase {
 
     func testAnOrganizationSessionNamesThePersonsVersionedAvatar() throws {
         let json = #"""
-        {"kind":"session","id":"sess_1","label":"JC's iPhone","scopes":["client"],"via":"bearer","environmentId":"env",
-         "identity":"perspicax","principalId":"pr_0b1c2d3e-0000-4000-8000-000000000001","email":"jc@example.test",
+        {"kind":"session","id":"sess_1","label":"Owner's iPhone","scopes":["client"],"via":"bearer","environmentId":"env",
+         "identity":"perspicax","principalId":"pr_0b1c2d3e-0000-4000-8000-000000000001","email":"owner@example.test",
          "name":"Alex Martin","login":"amartin","role":"admin","teams":[],
          "profileManagedBy":"perspicax","profileManageUrl":"https://px.example.test/console/me",
          "avatarUrl":"/api/people/pr_0b1c2d3e-0000-4000-8000-000000000001/avatar?v=0123456789abcdef"}
@@ -73,7 +73,7 @@ final class AccountAvatarTests: XCTestCase {
     func testAPersonalComputerNamesNoPhoto() throws {
         // Through the companion sidecar: loopback, the owner's name and the
         // computer's, no avatar (a personal computer has no Perspicax link).
-        let json = #"{"kind":"loopback","scopes":["admin","client"],"environmentId":"env","name":"JC","computerName":"Studio"}"#
+        let json = #"{"kind":"loopback","scopes":["admin","client"],"environmentId":"env","name":"Owner","computerName":"Studio"}"#
         XCTAssertNil(try JSONDecoder().decode(AuthSession.self, from: Data(json.utf8)).avatar)
         XCTAssertNil(try JSONDecoder().decode(AccountIdentity.self, from: Data(json.utf8)).avatar)
     }

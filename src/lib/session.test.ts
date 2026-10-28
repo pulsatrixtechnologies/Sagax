@@ -182,7 +182,7 @@ describe("previewing a Sagax Business return credential (2026-10-13, desktop 0.5
   });
 });
 
-// 2026-10-20 (JC: signed out only when the session is revoked, the account
+// 2026-10-20 (owner: signed out only when the session is revoked, the account
 // disabled or after 30 days without use): the web app and the desktop's
 // server window decide at boot from /api/auth/session.
 describe("whether the sign-in screen shows: silent retries, definitive codes only", () => {

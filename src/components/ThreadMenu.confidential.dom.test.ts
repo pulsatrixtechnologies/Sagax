@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Make confidential (JC 2026-10-16): one way only. The menu asks first,
+// Make confidential (owner 2026-10-16): one way only. The menu asks first,
 // because it is permanent; a confidential thread offers no way back.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";

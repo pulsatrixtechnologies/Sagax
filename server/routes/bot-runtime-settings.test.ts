@@ -54,7 +54,7 @@ async function serve(auth: RequestAuth, opts: { global?: BotRuntimeSettings & Re
   return { bots, grants, audits, send };
 }
 
-describe("a bot's runtime settings (JC 2026-10-15)", () => {
+describe("a bot's runtime settings (Owner 2026-10-15)", () => {
   it("#1098: the owner sets the bot's turn limits, merged into what it has", async () => {
     const { send, bots } = await serve(session("pr_owner"));
     expect((await send("PATCH", "/api/bots/bot-1/runtime-settings", { turnLimits: { roomPosts: 10 } })).status).toBe(200);
@@ -125,7 +125,7 @@ describe("a bot's runtime settings (JC 2026-10-15)", () => {
   });
 });
 
-describe("a bot's tool access (JC 2026-10-15)", () => {
+describe("a bot's tool access (Owner 2026-10-15)", () => {
   it("grants, lists only this bot's grants, revokes, and audits", async () => {
     const { send, grants, audits } = await serve(admin);
     grants.grant({ kind: "bot", id: "bot-2" }, "agents:read", "x");
@@ -153,7 +153,7 @@ describe("a bot's tool access (JC 2026-10-15)", () => {
     expect((await send("POST", "/api/bots/bot-1/tool-grants", { subject: { kind: "user", id: "pr_x" }, scope: "agents:read" })).status).toBe(400);
   });
 
-  it("the owner grants every tier in their own environment; a scope past it stays an admin's, within 30 days (JC 2026-10-26)", async () => {
+  it("the owner grants every tier in their own environment; a scope past it stays an admin's, within 30 days (Owner 2026-10-26)", async () => {
     const owner = await serve(session("pr_owner"));
     expect((await owner.send("POST", "/api/bots/bot-1/tool-grants", { scope: "agents:write" })).status).toBe(201);
     // create_agent (agents:admin) makes a temporary agent of the owner's own: theirs to grant

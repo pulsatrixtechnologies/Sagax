@@ -270,7 +270,7 @@ describe("person row menu", () => {
     expect(labels).toContain(t("persona.menu.rename"));
     expect(labels).not.toContain("Rename Bot");
     expect(labels).not.toContain(t("personPanel.view"));
-    // Move to › at the first level (JC, 2026-10-15); Mark as Unread left
+    // Move to › at the first level (owner, 2026-10-15); Mark as Unread left
     // the bot menu (0.5.7).
     expect(html).toContain(`>${t("sidebar.bot.moveTo")}<`);
     expect(html).toContain('aria-haspopup="menu"');

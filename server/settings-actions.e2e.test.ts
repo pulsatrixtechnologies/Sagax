@@ -1,4 +1,4 @@
-// sagax_settings through a real server on an isolated fixture (JC,
+// sagax_settings through a real server on an isolated fixture (owner,
 // 2026-10-19: "Tout doit être modifiable via les bots"). A bot's turn calls
 // the internal route with its own capability, as the agents MCP tool does:
 // - bot, routine, group and server families: the owner's bot at Approve for

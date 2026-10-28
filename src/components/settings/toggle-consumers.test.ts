@@ -1,4 +1,4 @@
-// Audit (2026-10-22, JC): every switch of Settings > Appearance and
+// Audit (2026-10-22, the owner): every switch of Settings > Appearance and
 // Experimental features must change what it claims. Per switch, two checks:
 // the setter really stores the new value, and the consumer reads the same
 // preference (so the screen reacts). toggle -> consumer table: the PR body.

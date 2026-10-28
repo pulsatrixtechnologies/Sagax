@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Tailcat card's fold and its remote file browser (2026-10-21, JC: "Le
+// The Tailcat card's fold and its remote file browser (2026-10-21, the owner: "Le
 // bouton Détails est weird", "Télécharger ... devrait afficher un file
 // browser distant. Même chose pour Envoyer un fichier").
 import { act, createElement } from "react";

@@ -66,7 +66,7 @@ describe("Mastery unlock registry", () => {
     expect(masteryLock(none, "owl", "gold")).toEqual({ locked: false });
   });
 
-  it("lets an earned skin bring its character, in that skin only (JC, 2026-10-14)", () => {
+  it("lets an earned skin bring its character, in that skin only (Owner, 2026-10-14)", () => {
     // the rung of Shiba's first coat, before the character's own achievement
     const coat = new Set([masteryKey("second-wind")]);
     expect(masteryLock(coat, "shiba")).toEqual({ locked: false });

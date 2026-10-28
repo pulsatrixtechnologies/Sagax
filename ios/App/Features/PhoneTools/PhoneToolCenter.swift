@@ -1,4 +1,4 @@
-// Phone tools on this iPhone (audit row 81, JC 2026-10-21). A bot asks the
+// Phone tools on this iPhone (audit row 81, the owner 2026-10-21). A bot asks the
 // person's own phone for something only it knows; the person approves on
 // this phone (Refuser / Toujours permettre / Permettre une fois) and the
 // phone runs the iOS call in the foreground. Rules and shaping are in
@@ -89,7 +89,7 @@ final class PhoneToolCenter: ObservableObject {
         let request = queue.removeFirst()
         let offeredSet = Set(offered)
         let protected = session?.phoneCredentialTransportIsProtected ?? false
-        // plain local Wi-Fi: no card, a refusal that says why (JC 2026-10-21)
+        // plain local Wi-Fi: no card, a refusal that says why (owner 2026-10-21)
         if let reason = PhoneToolRules.transportRefusal(protectedTransport: protected) {
             await send(request, PhoneToolAnswer.refused(reason))
             await next()

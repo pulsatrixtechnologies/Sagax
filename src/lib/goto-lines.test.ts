@@ -64,7 +64,7 @@ describe("gotoTargetOf", () => {
 });
 
 describe("collapseGotoLines", () => {
-  it("folds JC's stack into one group of three targets, newest occurrence last", () => {
+  it("folds Owner's stack into one group of three targets, newest occurrence last", () => {
     const items: Item[] = [
       exchange("ts", "Timesheets"),
       exchange("sales", "Sales"),
@@ -142,7 +142,7 @@ describe("silentChatItem", () => {
     expect(silentChatItem(text(), false)).toBe(false);
   });
 
-  // JC 2026-10-22: a bot-to-bot comm chip is verbose detail. With tool calls
+  // Owner 2026-10-22: a bot-to-bot comm chip is verbose detail. With tool calls
   // off it is silent (hidden, and so it does not break a stack of go-to
   // lines); with tool calls on it shows like any step.
   it("treats a comm chip as silent with tool calls off, visible with them on", () => {

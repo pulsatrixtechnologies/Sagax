@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The release notes' X only closed when clicked below it (JC, 2026-10-18,
+// The release notes' X only closed when clicked below it (owner, 2026-10-18,
 // 0.5.17): the dialog was mounted inside the shell before the chat header,
 // and Electron resolves -webkit-app-region in DOM order, so the header's
 // 56 px drag strip cut the upper part of the button out. DialogLayer puts

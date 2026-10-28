@@ -66,7 +66,7 @@ describe("the exchange with the control plane", () => {
 });
 
 describe("server-issued email sign-in", () => {
-  const allow = { admins: ["jc@example.com"], members: ["@example.com"] };
+  const allow = { admins: ["owner@example.com"], members: ["@example.com"] };
   it("is disabled until mail is configured", () => {
     expect(createServerEmailSignIn({ allow, otp: new EmailOtpStore(), mailer: () => null }).enabled()).toBe(false);
   });

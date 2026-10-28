@@ -1,4 +1,4 @@
-// Threads off = one unified conversation (JC 2026-10-22): the chat shows no
+// Threads off = one unified conversation (owner 2026-10-22): the chat shows no
 // cross-thread chrome at the top. The "Other activity (N)" dropdown
 // (BotActivityPicker), the "New activity on an earlier topic" pill
 // (EarlierTopicActivity) and the "Back to conversation" links

@@ -86,7 +86,7 @@ describe("thread control placement", () => {
     expect(markup).toMatch(/<textarea[^>]*disabled=""[^>]*aria-busy="true"/);
     expect(markup).not.toContain("Finish group setup");
   });
-  // JC, 2026-10-08: one chat bar for both modes, Advanced's. JC, 2026-10-18:
+  // Owner, 2026-10-08: one chat bar for both modes, Advanced's. Owner, 2026-10-18:
   // no place row at all, the bot picks where each task runs.
   it("renders the same composer row in Simple and Advanced mode, with no place row", () => {
     const composerOf = (advanced: boolean) => {

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { toolChangesRules } from "../shared/step-up.ts";
 import { dataPublicHttps, dataToolName, foreignToolSpelling, sagaxInternalSelfAnswers, sagaxInternalTool } from "./sagax-internal-tools.ts";
 
-// JC, 2026-10-16: a member's bot (Moss, Grok Build) asked an approval for
+// Owner, 2026-10-16: a member's bot (Moss, Grok Build) asked an approval for
 // data__data_load, and the card went to the organization admins.
 describe("Sagax's own person-scoped tools", () => {
   it("names the Data tools exactly, in every engine's spelling", () => {

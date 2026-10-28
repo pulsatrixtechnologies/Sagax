@@ -49,7 +49,7 @@ on:
   # A Sagax release is published from the build Mac (`gh release create
   # pulsa-vX.Y.Z`, docs/releasing.md). That publish is the one moment the
   # public server image is built: once per release, never on a push or a PR
-  # (JC 2026-10-14). Every other job skips this event.
+  # (owner 2026-10-14). Every other job skips this event.
   release:
     types: [published]
 

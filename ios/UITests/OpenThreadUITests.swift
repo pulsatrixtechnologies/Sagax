@@ -1,6 +1,6 @@
 import XCTest
 
-/// Bug 2026-10-16 (iOS 0.5.9 to 0.5.11, JC: "I cannot open a chat"): a tap
+/// Bug 2026-10-16 (iOS 0.5.9 to 0.5.11, the owner: "I cannot open a chat"): a tap
 /// pushed the chat and it closed itself on its first frame, with no request
 /// and no word, when the bot's selected thread was outside its thread list.
 ///
@@ -9,7 +9,7 @@ import XCTest
 /// organization server can send), Viewer with no thread of the person's.
 ///
 /// The last one creates a bot, edits it and opens it against a real server
-/// (the parity fixture, organization mode is JC's case):
+/// (the parity fixture, organization mode is the owner's case):
 ///
 ///   PARITY_ORG=1 PARITY_ORG_PHONE=1 node ios/parity/fixture-server.mjs &
 ///   TEST_RUNNER_PARITY_ENDPOINT=... TEST_RUNNER_PARITY_TOKEN=... \

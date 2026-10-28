@@ -35,7 +35,7 @@ describe("RoutineRunCard", () => {
     const legacy = renderToStaticMarkup(createElement(RoutineRunCard, { message: message("completed") }));
     expect(legacy).toContain('dateTime="1970-01-01T00:00:00.001Z"');
   });
-  // 2026-10-22 (JC): one concise message, the bot's report only, with a
+  // 2026-10-22 (owner): one concise message, the bot's report only, with a
   // small "Routine: <name> · View run" line under it.
   it("reads as the bot's report with the routine named under it and a link to the run", () => {
     const markup = renderToStaticMarkup(createElement(RoutineRunCard, {

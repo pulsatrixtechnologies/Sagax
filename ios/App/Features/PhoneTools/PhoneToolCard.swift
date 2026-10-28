@@ -268,7 +268,7 @@ private struct PhoneCardScanCard: View {
     private var publicKey: String? { request.string("publicKey") }
     private var matchCode: String? { publicKey.flatMap { try? PhoneCardSeal.matchCode($0) } }
 
-    /// Sealed here for the form's one-time key (JC 2026-10-21): the server
+    /// Sealed here for the form's one-time key (owner 2026-10-21): the server
     /// relays the envelope and never sees the number.
     private func send(number: String, read: CardScanResult) async {
         guard let publicKey else { return await PhoneToolCenter.shared.choose(.deny) }

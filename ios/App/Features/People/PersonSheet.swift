@@ -147,7 +147,7 @@ struct PersonSheetContent: View {
     /// PersonPanel.tsx's header (#219): the name, then their title and
     /// points, then their label (editable by them, an admin or their team's
     /// manager), the role line only for an admin or a disabled account, then
-    /// Message (no Close conversation: JC 2026-10-14, as on desktop #469).
+    /// Message (no Close conversation: Owner 2026-10-14, as on desktop #469).
     private func header(_ model: PersonSheetModel) -> some View {
         VStack(spacing: 6) {
             PersonAvatar(initials: model.initials, size: 88, presenceId: personId)

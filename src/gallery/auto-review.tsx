@@ -18,9 +18,9 @@ setLocale(params.get("lang") ?? "fr");
 
 const bot = { id: "bot-ottoline", name: "Ottoline", color: "violet", approvalMode: "ask" } as unknown as Bot;
 const RULES = [
-  { id: "r1", ownerId: "jc", botId: null, when: "toucher aux factures du client Acme", behavior: "deny", riskScope: [], enabled: true, createdAt: 1, updatedAt: 1, compiled: { recognized: false } },
-  { id: "r2", ownerId: "jc", botId: "bot-ottoline", when: "tout ce qui touche au projet Sagax", behavior: "allow", riskScope: [], enabled: true, createdAt: 2, updatedAt: 2, compiled: { recognized: false } },
-  { id: "r3", ownerId: "jc", botId: "bot-ottoline", when: "la lecture de fichiers dans ~/Documents", behavior: "allow", riskScope: [], enabled: true, createdAt: 3, updatedAt: 3, compiled: { recognized: true } },
+  { id: "r1", ownerId: "owner", botId: null, when: "toucher aux factures du client Acme", behavior: "deny", riskScope: [], enabled: true, createdAt: 1, updatedAt: 1, compiled: { recognized: false } },
+  { id: "r2", ownerId: "owner", botId: "bot-ottoline", when: "tout ce qui touche au projet Sagax", behavior: "allow", riskScope: [], enabled: true, createdAt: 2, updatedAt: 2, compiled: { recognized: false } },
+  { id: "r3", ownerId: "owner", botId: "bot-ottoline", when: "la lecture de fichiers dans ~/Documents", behavior: "allow", riskScope: [], enabled: true, createdAt: 3, updatedAt: 3, compiled: { recognized: true } },
 ];
 
 const realFetch = window.fetch.bind(window);

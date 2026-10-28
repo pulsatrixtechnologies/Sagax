@@ -100,7 +100,7 @@ posixOnly("identity migration at boot", () => {
     home = mkdtempSync(join(tmpdir(), "omb-identity-migration-"));
     data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
-    write("config.json", { profile: { name: "JC", email: "jc@example.com" } });
+    write("config.json", { profile: { name: "Owner", email: "owner@example.com" } });
     // A first boot only builds a valid bot and channel; they are then
     // rewritten to what a build before principals stored.
     await start();
@@ -123,14 +123,14 @@ posixOnly("identity migration at boot", () => {
     rmSync(join(data, "principals.json"), { force: true });
     const config = read("config.json");
     delete config.identityMigratedAt;
-    config.org = { name: "Example", host: { kind: "server", url: "https://server.example.com" }, ownerUserId: "jc@example.com" };
-    config.profile = { name: "JC", email: "jc@example.com" };
+    config.org = { name: "Example", host: { kind: "server", url: "https://server.example.com" }, ownerUserId: "owner@example.com" };
+    config.profile = { name: "Owner", email: "owner@example.com" };
     write("config.json", config);
     write("bots.json", (read("bots.json") as any[]).map((b) => (b.id === botId ? { ...b, ownerUserId: "local-owner", directGrants: ["morgan@example.com"] } : b)));
-    write("groups.json", (read("groups.json") as any[]).map((g) => (g.id === channelId ? { ...g, humanIds: ["jc@example.com", "morgan@example.com"] } : g)));
+    write("groups.json", (read("groups.json") as any[]).map((g) => (g.id === channelId ? { ...g, humanIds: ["owner@example.com", "morgan@example.com"] } : g)));
     rmSync(join(data, "sessions.json"), { force: true });
     const registry = new SessionRegistry({ file: join(data, "sessions.json") });
-    const admin = registry.issue({ label: "JC's old phone", scopes: ["admin", "client"] });
+    const admin = registry.issue({ label: "Owner's old phone", scopes: ["admin", "client"] });
     const kiosk = registry.issue({ label: "Lobby kiosk", scopes: ["client"] });
     registry.close();
     adminToken = admin.token;
@@ -154,7 +154,7 @@ posixOnly("identity migration at boot", () => {
     const local = principals.filter((p) => p.local);
     expect(local).toHaveLength(1);
     const localId = local[0]!.id;
-    expect(local[0]!.email).toBe("jc@example.com");
+    expect(local[0]!.email).toBe("owner@example.com");
     const emails = principals.map((p) => p.email).filter(Boolean);
     expect(new Set(emails).size).toBe(emails.length);
     const morgan = principals.find((p) => p.email === "morgan@example.com")!;
@@ -163,7 +163,7 @@ posixOnly("identity migration at boot", () => {
 
     // Slice 8: the interim organization is gone; its old key is left as it
     // was (ignored), never rewritten.
-    expect(first.orgOwner).toBe("jc@example.com");
+    expect(first.orgOwner).toBe("owner@example.com");
     expect(first.bot).toEqual({ ownerUserId: localId, directGrants: [morgan.id] });
     expect(first.humanIds).toEqual([localId, morgan.id]);
     const byId = new Map(first.sessions.map((s) => [s.id, s.principalId]));
@@ -174,7 +174,7 @@ posixOnly("identity migration at boot", () => {
 
   it("names the old admin device it promoted to the operator", () => {
     expect(log).toContain(adminSessionId);
-    expect(log).toContain("JC's old phone");
+    expect(log).toContain("Owner's old phone");
     expect(log).not.toContain(kioskSessionId);
   });
 

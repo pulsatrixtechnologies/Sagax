@@ -169,7 +169,7 @@ describe("workspace backup data boundary", () => {
     ]) expect(engineCredentialPath(path), path).toBe(false);
   });
 
-  it("leaves out every secret Sagax keeps itself (JC 2026-10-18 « Exclure tout »), and a turn's dead bearers", () => {
+  it("leaves out every secret Sagax keeps itself (Owner 2026-10-18 « Exclure tout »), and a turn's dead bearers", () => {
     for (const path of ["principals/pr_ana/mcp-oauth.enc", "principals/pr_ana/mcp-oauth.enc.12.0a1b-2c.tmp", "principals/pr_ana/cloud-agent-credentials.enc",
       "principals/pr_ana/connections.enc", "principals/pr_ana/credential-vault.enc", "principals/pr_ana/engine-api-keys.enc", "principals/pr_ana/future-store.enc",
       "marketplace-tokens.enc", "idp-revocations.enc", "Marketplace-Tokens.enc", "credential-vault.enc", "principals/pr_ana/codex/auth.json",

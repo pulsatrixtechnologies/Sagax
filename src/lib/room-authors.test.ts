@@ -4,9 +4,9 @@ import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import type { ConfigStatus } from "@/state/store";
 import { continuesRun, isOwnMessage, personDisplayName, personInitials, roomAuthor, runCorners, RUN_GAP_MS } from "./room-authors";
 
-const JC = "pr_jc";
+const Owner = "pr_owner";
 const SAM = "pr_sam";
-const member = { viewer: { operator: false, principalId: JC, email: "jc@example.com", name: "JC", role: "member", canCreateBots: true, operatorName: "Operator Jo" } } as ConfigStatus;
+const member = { viewer: { operator: false, principalId: Owner, email: "owner@example.com", name: "Owner", role: "member", canCreateBots: true, operatorName: "Operator Jo" } } as ConfigStatus;
 const operator = { viewer: { operator: true, principalId: "pr_local", email: "op@example.com", name: "Op", role: "owner", canCreateBots: true } } as ConfigStatus;
 const people = new Map<string, OrgDirectoryPerson>([
   [SAM, { principalId: SAM, name: "Sam Taylor", login: "staylor", email: "sam@example.com", role: "member", disabled: false, avatarUrl: "/api/people/pr_sam/avatar?v=3" }],
@@ -27,9 +27,9 @@ describe("room authors", () => {
   });
 
   it("places the viewer's own lines as self, whoever the viewer is", () => {
-    expect(roomAuthor({ role: "user", sender: { name: "JC", id: JC } }, member, people)).toEqual({ kind: "self", key: "self" });
+    expect(roomAuthor({ role: "user", sender: { name: "Owner", id: Owner } }, member, people)).toEqual({ kind: "self", key: "self" });
     expect(roomAuthor({ role: "user" }, operator, people)).toEqual({ kind: "self", key: "self" });
-    expect(isOwnMessage({ role: "user", sender: { name: "JC", id: JC } }, member)).toBe(true);
+    expect(isOwnMessage({ role: "user", sender: { name: "Owner", id: Owner } }, member)).toBe(true);
     // An older server sends no viewer: every person line stays yours.
     expect(roomAuthor({ role: "user", sender: { name: "sam@example.com", id: SAM } }, null, people).kind).toBe("self");
   });
@@ -51,7 +51,7 @@ describe("room authors", () => {
 
   it("groups consecutive lines from one author within five minutes", () => {
     const sam = roomAuthor({ role: "user", sender: { name: "S", id: SAM } }, member, people);
-    const self = roomAuthor({ role: "user", sender: { name: "JC", id: JC } }, member, people);
+    const self = roomAuthor({ role: "user", sender: { name: "Owner", id: Owner } }, member, people);
     const at = new Date(2026, 9, 1, 12).getTime();
     expect(continuesRun({ at, author: sam }, { at: at + 60_000, author: sam })).toBe(true);
     expect(continuesRun({ at, author: sam }, { at: at + RUN_GAP_MS + 1, author: sam })).toBe(false);

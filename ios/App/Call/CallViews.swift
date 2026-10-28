@@ -9,7 +9,7 @@
 //   motion) that lies over the thread and folds back into the bar. There is
 //   no full-screen stage: hanging up leaves the plain header.
 // - A room's call (src/components/GroupCallView.tsx) uses the same bar under
-//   the room's name (JC, 2026-10-09: no full-screen call on iOS): the
+//   the room's name (owner, 2026-10-09: no full-screen call on iOS): the
 //   members' faces side by side in the avatar's seat, the one speaking or
 //   working in focus, and the room's state ("Nova is speaking").
 import CompanionCore

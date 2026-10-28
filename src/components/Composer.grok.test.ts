@@ -230,7 +230,7 @@ describe("composer controls (Grok Bot's prompt bar)", () => {
     expect($("[data-dictation-chip]")).toBeNull();
   });
 
-  // JC, 2026-10-16: on one line the buttons sat 2 px below the bar's middle
+  // Owner, 2026-10-16: on one line the buttons sat 2 px below the bar's middle
   // (28 px buttons end-aligned with a 32 px field). Both groups now sit in a
   // band as tall as the field's first line and center in it.
   it("centers the + and the right-hand buttons on the field's first line", () => {

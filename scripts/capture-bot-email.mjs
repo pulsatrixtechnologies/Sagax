@@ -64,12 +64,12 @@ try {
     await page.locator('[data-gallery-panel="overview"]').screenshot({ path: join(outDir, `profile-${label}.png`) });
     await page.locator('[data-gallery-panel="builder"]').screenshot({ path: join(outDir, `trigger-builder-${label}.png`) });
     await page.locator('[data-gallery-panel="row"]').screenshot({ path: join(outDir, `trigger-row-${label}.png`) });
-    // addresses are off by default (JC decision 1): greyed, waiting for the admin
+    // addresses are off by default (owner decision 1): greyed, waiting for the admin
     enabled = false;
     await page.goto(`${base}?skin=${id}&lang=fr`, { waitUntil: "load" });
     await page.waitForSelector("[data-bot-email-pending]");
     await page.locator('[data-gallery-panel="overview"]').screenshot({ path: join(outDir, `profile-pending-${label}.png`) });
-    // the owner changes it (JC decision 4): the form, then a taken name
+    // the owner changes it (owner decision 4): the form, then a taken name
     await page.click('[data-bot-email-address] button:has-text("Changer")');
     await page.waitForSelector("[data-bot-email-form]");
     await page.fill("[data-bot-email-form] input", "factures");

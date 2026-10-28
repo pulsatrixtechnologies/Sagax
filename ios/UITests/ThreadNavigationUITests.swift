@@ -59,7 +59,7 @@ final class ThreadNavigationUITests: XCTestCase {
         XCTAssertFalse(transcriptContains("I am reviewing iCloud here", in: app))
     }
 
-    /// Threads hidden (the desktop's default, JC 2026-10-19): every thread
+    /// Threads hidden (the desktop's default, the owner 2026-10-19): every thread
     /// of the bot is still one touch from its chat, the threads button in
     /// the header, and one more touch switches the chat there in place.
     @MainActor

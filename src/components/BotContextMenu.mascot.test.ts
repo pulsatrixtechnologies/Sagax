@@ -1,5 +1,5 @@
 // The mascot's menu in the bot panel (BotContextMenu variant "mascot"):
-// Edit bot and Put on the desktop (JC, 2026-10-14). Rename is the name in
+// Edit bot and Put on the desktop (owner, 2026-10-14). Rename is the name in
 // the panel, and Make primary bot is in the sidebar menu's More. No Browse
 // Bots row (it lives in the sidebar).
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";

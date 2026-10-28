@@ -58,7 +58,7 @@ describe("glass surface", () => {
     }
   });
 
-  // 2026-10-16 (JC): every window follows Settings, the Triggers pop-up
+  // 2026-10-16 (owner): every window follows Settings, the Triggers pop-up
   // included (DIALOG frame); the glass pane stays available for others.
   it("sits in a safe area clear of the window's own buttons, at every window size", () => {
     const frame = rule(".glass-popup-frame");

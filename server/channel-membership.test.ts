@@ -6,8 +6,8 @@ describe("channel membership", () => {
     expect(applyHumanIds({ dm: true, humanIds: ["morgan@example.test"] })).toEqual({ ok: false, error: "dm-has-no-humans" });
   });
   it("lets only the bot owner place it", () => {
-    expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId: "jc" })).toBe(false);
-    expect(canPlaceBot({ actorId: "jc", ownerUserId: "jc" })).toBe(true);
+    expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId: "owner" })).toBe(false);
+    expect(canPlaceBot({ actorId: "owner", ownerUserId: "owner" })).toBe(true);
   });
   it("lets an admin edit people and stops a member", () => {
     expect(canEditHumans("admin")).toBe(true);
@@ -16,24 +16,24 @@ describe("channel membership", () => {
   });
   it("refuses an admin who is not the bot owner", () => {
     const ownerUserId = ownerUserIdForPlacement({
-      recordedOwnerUserId: "jc",
+      recordedOwnerUserId: "owner",
       orgOwnerUserId: "ada@example.test",
       localOperatorId: "local-owner",
     });
-    expect(ownerUserId).toBe("jc");
+    expect(ownerUserId).toBe("owner");
     expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId })).toBe(false);
-    expect(canPlaceBot({ actorId: "jc", ownerUserId })).toBe(true);
+    expect(canPlaceBot({ actorId: "owner", ownerUserId })).toBe(true);
   });
   it("lets only the org owner place a bot that has no owner", () => {
     const ownerUserId = ownerUserIdForPlacement({
-      orgOwnerUserId: "jc",
+      orgOwnerUserId: "owner",
       localOperatorId: "local-owner",
     });
-    expect(ownerUserId).toBe("jc");
+    expect(ownerUserId).toBe("owner");
     expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId })).toBe(false);
     expect(canPlaceBot({ actorId: "morgan@example.test", ownerUserId })).toBe(false);
     expect(canPlaceBot({ actorId: "local-owner", ownerUserId })).toBe(false);
-    expect(canPlaceBot({ actorId: "jc", ownerUserId })).toBe(true);
+    expect(canPlaceBot({ actorId: "owner", ownerUserId })).toBe(true);
   });
   it("lets only the local operator place a bot before an organization exists", () => {
     const ownerUserId = ownerUserIdForPlacement({ localOperatorId: "local-owner" });

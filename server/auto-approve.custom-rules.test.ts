@@ -6,11 +6,11 @@ import { approvalHeldNote, autoVerdict } from "./auto-approve.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard } from "./custom-rules-review.ts";
 import type { CustomRule } from "../shared/custom-rules.ts";
 
-const HOME = "/Users/jc";
+const HOME = "/Users/example";
 let seq = 0;
 function rule(when: string, behavior: CustomRule["behavior"], extra: Partial<CustomRule> = {}): CustomRule {
   seq += 1;
-  return { id: `r${seq}`, ownerId: "jc", botId: null, when, behavior, riskScope: [], enabled: true, createdAt: seq, updatedAt: seq, ...extra };
+  return { id: `r${seq}`, ownerId: "owner", botId: null, when, behavior, riskScope: [], enabled: true, createdAt: seq, updatedAt: seq, ...extra };
 }
 
 describe("autoVerdict with a custom rule", () => {
@@ -44,13 +44,13 @@ describe("autoVerdict with a custom rule", () => {
 });
 
 // reviewCustomRules resolves each path on this disk: on Windows
-// /Users/jc/... becomes D:\Users\jc\..., which no folder rule reads, so a
+// /Users/example/... becomes D:\Users\example\..., which no folder rule reads, so a
 // folder allow fails closed there (server/custom-rules.security.test.ts,
 // "Windows paths fail closed") and no candidate is offered.
 const windows = process.platform === "win32";
 
 describe("reviewCustomRules and the rule notice", () => {
-  const read = { tool: "Read", input: JSON.stringify({ file_path: "/Users/jc/Documents/plan.md" }), paths: ["/Users/jc/Documents/plan.md"] };
+  const read = { tool: "Read", input: JSON.stringify({ file_path: "/Users/example/Documents/plan.md" }), paths: ["/Users/example/Documents/plan.md"] };
   const send = { tool: "mcp__outlook__send_mail", input: JSON.stringify({ to: ["a@example.com"], subject: "Bonjour" }) };
 
   it("deny wins over ask over allow, and the notice names the rule that decided", () => {

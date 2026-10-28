@@ -328,7 +328,7 @@ describe("groupTranscript", () => {
   });
 
   it("never shows a short turn as two rows: narration and its tools are one group", () => {
-    // JC's capture: "Worked for 15s" then "Used 2 tools" under it
+    // Owner's capture: "Worked for 15s" then "Used 2 tools" under it
     const user: Message = { id: "u3", at: 1_000, role: "user", kind: "text", text: "check" };
     const said = assistant("Let me check.", "turn-3", false, 2_000);
     const first = { ...tool("Read"), at: 3_000 };

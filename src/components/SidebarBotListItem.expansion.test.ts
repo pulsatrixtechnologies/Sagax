@@ -62,7 +62,7 @@ function expectSoleRow(markup: string) {
 }
 beforeEach(() => { fixture.slots = []; fixture.state.revealThread = null; });
 
-// Threads on: nothing unfolds under a bot any more (JC, 2026-10-08). The row
+// Threads on: nothing unfolds under a bot any more (owner, 2026-10-08). The row
 // stays the conversation being looked at, with its preview, whatever the bot
 // holds and whatever thread a chip asked to reveal.
 describe("bot row with threads on never expands", () => {

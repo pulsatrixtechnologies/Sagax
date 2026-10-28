@@ -116,7 +116,7 @@ describe("app language preference", () => {
     }
 
     it("a language chosen on the organization server's page opens the next launch screen in French", async () => {
-      // JC 2026-10-16: Français picked in Settings on the organization's
+      // Owner 2026-10-16: Français picked in Settings on the organization's
       // page (another origin, another storage); the launch screen on the
       // local page followed macOS (en-US) instead.
       const bridge = desktop();

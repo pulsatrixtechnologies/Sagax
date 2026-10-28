@@ -159,10 +159,10 @@ describe("piLineReader", () => {
 });
 
 describe("piGatedMcpTool", () => {
-  const mounted = { data: {}, perspicax_jc: {}, "my-mail": {} };
+  const mounted = { data: {}, perspicax_owner: {}, "my-mail": {} };
   it("names the tool of the extension's own gated confirm, like the other engines", () => {
     expect(piGatedMcpTool("Allow data:data_sql?", mounted)).toBe("data__data_sql");
-    expect(piGatedMcpTool("Allow perspicax_jc:claim?", mounted)).toBe("perspicax_jc__claim");
+    expect(piGatedMcpTool("Allow perspicax_owner:claim?", mounted)).toBe("perspicax_owner__claim");
     expect(piGatedMcpTool("Allow my-mail:send-draft?", mounted)).toBe("my-mail__send-draft");
   });
   it("names nothing for an unmounted server, another title or a question", () => {

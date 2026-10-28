@@ -101,7 +101,7 @@ describe("QuestionCard", () => {
     expect(markup).toContain("Model");
     expect(markup).toContain("Style");
     expect(markup).toContain("0 of 2 answered");
-    // free text sits behind the "Other" row, so the card reads like JC's capture
+    // free text sits behind the "Other" row, so the card reads like the owner's capture
     expect(markup).toContain(">Other<");
   });
 

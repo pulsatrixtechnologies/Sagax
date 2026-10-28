@@ -1,5 +1,5 @@
 // The organization server's session cookie must outlive an app update and a
-// quit (2026-10-20, JC: never signed out by an update). The cookie is a
+// quit (2026-10-20, the owner: never signed out by an update). The cookie is a
 // persistent one (Max-Age, re-issued on use) in the default session's jar
 // under userData, which an update never touches; the startup eviction
 // (startup-cache-eviction.mjs) empties the HTTP cache only. What remained is

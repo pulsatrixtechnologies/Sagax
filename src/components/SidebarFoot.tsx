@@ -1,4 +1,4 @@
-// The sidebar's foot (JC, 2026-10-27): the same row as the profile row of the
+// The sidebar's foot (owner, 2026-10-27): the same row as the profile row of the
 // reference design, one state at every width:
 //   - the avatar and the FULL name, normal weight, no background pill (it
 //     opens the account menu, as before);

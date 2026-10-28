@@ -16,7 +16,7 @@ export function LocalComputerAutoWarning({
   onConfirm: () => void;
 }) {
   const confirmRef = useRef<HTMLButtonElement>(null);
-  // 2026-10-26 (JC): read once per computer. Once confirmed, the next
+  // 2026-10-26 (owner): read once per computer. Once confirmed, the next
   // switch to Auto here goes through without the card (src/lib/local-auto-ack.ts).
   const acknowledged = open && localAutoAcknowledged();
   const autoConfirmed = useRef(false);

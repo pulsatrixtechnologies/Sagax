@@ -183,7 +183,7 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
         {admin && <OrgTeamSecrets />}
         {botRows}
       </SettingsGroup>
-      {/* 2026-10-27 (JC: one place per subject): where plugins come from,
+      {/* 2026-10-27 (owner: one place per subject): where plugins come from,
           the organization's GitHub tokens and its OAuth App are managed in
           Connect apps > Sources, in its admin part. Here, one link. */}
       {admin && (

@@ -41,7 +41,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
 });
 `;
 
-/** Every side-effecting tool JC listed, plus generic writes. */
+/** Every side-effecting tool the owner listed, plus generic writes. */
 const WRITE_TOOLS = [
   "cw_psa__write", "cw_psa__action", "cw_psa__update_ticket", "cw_psa__log_time", "cw_psa__book_schedule_entry",
   "memory_write", "memory_forget", "memory_promote", "memory_propose", "memory_feedback",
@@ -112,7 +112,7 @@ describe("mcp-gate approval", () => {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
-        SAGAX_GATE_NAME: "perspicax_jc",
+        SAGAX_GATE_NAME: "perspicax_owner",
         SAGAX_GATE_BUDGET: "0",
         SAGAX_GATE_UPSTREAM: JSON.stringify({ command: process.execPath, args: [upstreamJs], env: { CALLS: join(scratch, "calls") } }),
         SAGAX_GATE_APPROVAL_SOCKET: socketPath,
@@ -157,10 +157,10 @@ describe("mcp-gate approval", () => {
       const reply = await call(100 + index, name, { note: "x" });
       expect(reply.id).toBe(100 + index);
       expect(reply.result.isError).toBe(true);
-      expect(reply.result.content[0].text).toContain(`perspicax_jc__${name} did not run`);
+      expect(reply.result.content[0].text).toContain(`perspicax_owner__${name} did not run`);
     }
     expect(asks.map((ask) => ask.tool)).toEqual(WRITE_TOOLS);
-    expect(asks.every((ask) => ask.server === "perspicax_jc" && ask.token === "tok-1")).toBe(true);
+    expect(asks.every((ask) => ask.server === "perspicax_owner" && ask.token === "tok-1")).toBe(true);
     expect(asks[0].summary).toBe('{"note":"x"}');
     expect(upstreamCalls()).toEqual([]);
   });

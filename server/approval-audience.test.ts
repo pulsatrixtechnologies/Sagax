@@ -4,29 +4,29 @@ import { answerApproval, approvalAnswerStatus, approvalAudience, approvalDeliver
 describe("approval audience", () => {
   it("sends the card to the owner session on the executing machine", () => {
     expect(approvalAudience({
-      ownerUserId: "jc",
-      host: { kind: "machine", userId: "jc", deviceId: "studio" },
-    })).toEqual({ userId: "jc", deviceId: "studio" });
+      ownerUserId: "owner",
+      host: { kind: "machine", userId: "owner", deviceId: "studio" },
+    })).toEqual({ userId: "owner", deviceId: "studio" });
   });
 
   it("does not take channel members as an audience", () => {
-    const audience = approvalAudience({ ownerUserId: "jc", host: { kind: "fleet" } });
-    expect(audience.userId).toBe("jc");
+    const audience = approvalAudience({ ownerUserId: "owner", host: { kind: "fleet" } });
+    expect(audience.userId).toBe("owner");
     expect(Object.keys(audience)).toEqual(["userId", "deviceId"]);
   });
 
   it("keeps the card for that session and withholds the payload from everyone else", () => {
     const audience = approvalAudience({
-      ownerUserId: "jc",
-      host: { kind: "machine", userId: "jc", deviceId: "studio" },
+      ownerUserId: "owner",
+      host: { kind: "machine", userId: "owner", deviceId: "studio" },
     });
     const card = { id: "m1", kind: "options" as const, card: { title: "Approval needed", requestId: "r1", tool: "bash" } };
-    expect(receivesApprovalCard({ userId: "jc", deviceId: "studio" }, audience)).toBe(true);
-    expect(receivesApprovalCard({ userId: "jc", deviceId: null }, audience)).toBe(false);
-    expect(receivesApprovalCard({ userId: "jc", deviceId: "laptop" }, audience)).toBe(false);
+    expect(receivesApprovalCard({ userId: "owner", deviceId: "studio" }, audience)).toBe(true);
+    expect(receivesApprovalCard({ userId: "owner", deviceId: null }, audience)).toBe(false);
+    expect(receivesApprovalCard({ userId: "owner", deviceId: "laptop" }, audience)).toBe(false);
     expect(approvalDelivery({
       audience,
-      viewer: { userId: "jc", deviceId: "studio" },
+      viewer: { userId: "owner", deviceId: "studio" },
       message: card,
       ownerName: "Alex",
     })).toBe(card);
@@ -76,7 +76,7 @@ describe("approval audience", () => {
   });
 
   it("refuses a non-owner answer and leaves the card unchanged", () => {
-    const audience = approvalAudience({ ownerUserId: "jc", host: { kind: "fleet" } });
+    const audience = approvalAudience({ ownerUserId: "owner", host: { kind: "fleet" } });
     const card = { id: "m1", kind: "options" as const, card: { title: "Approval needed", requestId: "r1", tool: "bash" } };
     const before = { ...card, card: { ...card.card } };
     const refused = answerApproval({ callerUserId: "morgan@example.test", audience, card });
@@ -87,7 +87,7 @@ describe("approval audience", () => {
   });
 
   it("leaves questions and an approval with no live bot on the ordinary answer path", () => {
-    const audience = approvalAudience({ ownerUserId: "jc", host: { kind: "fleet" } });
+    const audience = approvalAudience({ ownerUserId: "owner", host: { kind: "fleet" } });
     expect(approvalAnswerStatus({
       question: true,
       audience,
@@ -106,15 +106,15 @@ describe("approval audience", () => {
     expect(approvalAnswerStatus({
       question: false,
       audience,
-      callerUserId: "jc",
+      callerUserId: "owner",
     })).toBeNull();
   });
 
   it("matches the owner on any device when the host is the fleet", () => {
-    const audience = approvalAudience({ ownerUserId: "jc", host: { kind: "fleet" } });
+    const audience = approvalAudience({ ownerUserId: "owner", host: { kind: "fleet" } });
     expect(audience.deviceId).toBeNull();
-    expect(receivesApprovalCard({ userId: "jc", deviceId: null }, audience)).toBe(true);
-    expect(receivesApprovalCard({ userId: "jc", deviceId: "studio" }, audience)).toBe(true);
+    expect(receivesApprovalCard({ userId: "owner", deviceId: null }, audience)).toBe(true);
+    expect(receivesApprovalCard({ userId: "owner", deviceId: "studio" }, audience)).toBe(true);
     expect(receivesApprovalCard({ userId: "morgan@example.test", deviceId: null }, audience)).toBe(false);
   });
 });

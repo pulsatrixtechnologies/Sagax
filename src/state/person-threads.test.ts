@@ -77,7 +77,7 @@ describe("sidebar preview of a conversation with a person", () => {
   });
 
   it("the direct message the viewer is sending reads \"You:\" before the server's copy lands", () => {
-    const member = { viewer: { principalId: "pr_alice", operator: false, operatorName: "JC" } } as Parameters<typeof groupPreview>[2];
+    const member = { viewer: { principalId: "pr_alice", operator: false, operatorName: "Owner" } } as Parameters<typeof groupPreview>[2];
     const sending: Group = { ...person, messages: [{ id: "optimistic-s1", sendId: "s1", role: "user", kind: "text", text: "see you at noon", at: 1 }] };
     expect(groupPreview(sending, [], member, [])).toBe("You: see you at noon");
     // the server's copy carries the sender: still the viewer's

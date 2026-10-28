@@ -11,7 +11,7 @@
 // live in a person's detail and on Settings > Achievements. The menu leads with
 // Usage, Help and Settings, then Tools (Automations, Team map, Remote
 // sessions, Achievements), then a hairline. Team map left the Automations
-// header for Tools (JC, 2026-10-27); the command palette opens it too.
+// header for Tools (owner, 2026-10-27); the command palette opens it too.
 // Archived bots, when there
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
@@ -308,7 +308,7 @@ export interface ProfileMenuHandlers {
  * organization › (a business session: Switch account ›), Sign out.
  * Automations came back here from the settings nav (2026-10-16) and sits
  * under Tools with Remote sessions and Achievements. Team map moved from
- * the Automations header to Tools (JC, 2026-10-27); the command palette
+ * the Automations header to Tools (owner, 2026-10-27); the command palette
  * opens it too. */
 export function profileMenuItems(input: {
   /** null: no plan reports a window, so Usage carries no percent */

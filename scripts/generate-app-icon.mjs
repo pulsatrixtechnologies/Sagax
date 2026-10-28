@@ -1,5 +1,5 @@
 // Regenerates every app icon output: the Pulsatrix owl mark on a night blue
-// tile (JC, 2026-10-14; the Sagax owl stays in the picker as "Owl").
+// tile (owner, 2026-10-14; the Sagax owl stays in the picker as "Owl").
 //
 // Run with `pnpm icons:generate` (it runs under Electron, which the repo
 // already ships, so Chromium rasterises the SVGs; no extra image tooling).

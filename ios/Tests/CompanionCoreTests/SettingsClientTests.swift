@@ -75,9 +75,9 @@ final class SettingsClientTests: XCTestCase {
     // MARK: Account
 
     func testAccountIdentityOfAPersonalComputerShowsOwnerAndComputer() async throws {
-        respond(#"{"kind":"loopback","scopes":["admin"],"environmentId":"env","name":"JC","computerName":"Studio"}"#)
+        respond(#"{"kind":"loopback","scopes":["admin"],"environmentId":"env","name":"Owner","computerName":"Studio"}"#)
         let identity = try await client().accountIdentity()
-        XCTAssertEqual(identity.displayName(fallback: "x"), "JC")
+        XCTAssertEqual(identity.displayName(fallback: "x"), "Owner")
         XCTAssertNil(identity.detail, "never the computer's host name under the person")
         XCTAssertEqual(SettingsStub.captured?.url?.path, "/api/auth/session")
     }

@@ -80,7 +80,7 @@ final class Parity3ETests: XCTestCase {
 
     func testPostResultsRoundTripsAndIsSentOnlyWhenItChanges() throws {
         // A migrated routine decodes postResults=true; it stays silent only
-        // when the editor turns it off (JC 2026-10-22).
+        // when the editor turns it off (owner 2026-10-22).
         let original = try routine(#"""
         {"id":"r1","name":"Digest","prompt":"p","botId":"b1","runOn":"maus","enabled":true,
          "schedule":{"type":"daily","time":"09:00","weekdays":[1]},"durationMinutes":30,

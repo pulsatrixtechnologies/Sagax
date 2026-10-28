@@ -2,7 +2,7 @@
 // (secret target "vaultLogin") answered on the phone, as on the computer
 // (src/components/VaultRequestCard.tsx): the person's saved logins for the
 // site, and their 1Password items for it when 1Password is on their
-// computer. Refuse, Always allow (one tap) or Allow once (JC #875). The phone
+// computer. Refuse, Always allow (one tap) or Allow once (owner #875). The phone
 // never sees a password: it sends a choice; the value is read on the
 // computer only when the bot fills it (1Password may ask there first).
 import SwiftUI

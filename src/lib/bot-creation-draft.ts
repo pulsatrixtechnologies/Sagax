@@ -29,7 +29,7 @@ export class BotCreationDraft {
   constructor(defaults: NewBotDefaults, readonly changed: () => void, private network: typeof api = api) {
     this.template = structuredClone(defaults);
     // Approve for me is the mode a new bot starts in, This computer too
-    // (2026-10-26, JC: the person's own machine; its warning shows once per
+    // (2026-10-26, the owner: the person's own machine; its warning shows once per
     // computer, LocalComputerAutoWarning). A saved template that already
     // names a mode stays as given.
     if (this.template.profile.approvalMode === undefined) {

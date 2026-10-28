@@ -3,7 +3,7 @@
 // reaches, beside its name on its card, and the line on an engine's card in
 // Settings > Engines. Read-only: the connectors are managed on claude.ai and
 // grok.com. The summary panel per capability ("What your engines reach")
-// was removed on 2026-10-27 (JC): each card already names its service and
+// was removed on 2026-10-27 (owner): each card already names its service and
 // sits under its engine.
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";

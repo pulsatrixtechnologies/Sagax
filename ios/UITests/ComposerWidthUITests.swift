@@ -1,6 +1,6 @@
 import XCTest
 
-/// The phone composer spans the screen like the reference chat bar (JC,
+/// The phone composer spans the screen like the reference chat bar (owner,
 /// 2026-10-18): 12 pt from each edge of the safe area, the field taking
 /// everything after the "+", and the quick-reply row above it scrolling from
 /// edge to edge, its first chip on the bar's leading edge and its last one

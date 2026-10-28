@@ -10,9 +10,9 @@ const fresh = () => new PrincipalRegistry({ path: join(mkdtempSync(join(tmpdir()
 describe("identity migration", () => {
   it("maps emails and local-owner to principals and leaves principal ids alone", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@example.com");
+    const local = registry.localOperator("owner@example.com");
     expect(principalIdFor("local-owner", registry)).toBe(local.id);
-    expect(principalIdFor("JC@example.com", registry)).toBe(local.id);
+    expect(principalIdFor("OWNER@example.com", registry)).toBe(local.id);
     const morgan = principalIdFor("morgan@example.com", registry);
     expect(morgan).toMatch(/^pr_/);
     expect(principalIdFor(morgan, registry)).toBe(morgan);
@@ -20,10 +20,10 @@ describe("identity migration", () => {
 
   it("rewrites org owner, humanIds, bot owners, grants and pairing sessions once", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@example.com");
+    const local = registry.localOperator("owner@example.com");
     const input = {
-      org: { ownerUserId: "jc@example.com" },
-      groups: [{ id: "g1", humanIds: ["jc@example.com", "morgan@example.com"] }, { id: "g2" }],
+      org: { ownerUserId: "owner@example.com" },
+      groups: [{ id: "g1", humanIds: ["owner@example.com", "morgan@example.com"] }, { id: "g2" }],
       bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["morgan@example.com"] }, { id: "b2" }],
       sessions: [
         { id: "s-phone", scopes: ["admin", "client"] },
@@ -57,7 +57,7 @@ describe("identity migration", () => {
 
   it("skips sessions with userId but no email (incomplete migration state)", () => {
     const registry = fresh();
-    registry.localOperator("jc@example.com");
+    registry.localOperator("owner@example.com");
     const input = {
       org: null,
       groups: [],
@@ -74,7 +74,7 @@ describe("identity migration", () => {
 
   it("maps only the literal local-owner to the operator and drops blank refs", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@example.com");
+    const local = registry.localOperator("owner@example.com");
     expect(principalIdFor("", registry)).toBe("");
     expect(principalIdFor("   ", registry)).toBe("");
     expect(principalIdFor("Local-Owner", registry)).toBe(local.id);
@@ -103,10 +103,10 @@ describe("identity migration", () => {
 
   it("applies the changes and names each promoted pairing session", () => {
     const registry = fresh();
-    const local = registry.localOperator("jc@example.com");
+    const local = registry.localOperator("owner@example.com");
     const lines: string[] = [];
     const patched: unknown[] = [];
-    let owner = "jc@example.com";
+    let owner = "owner@example.com";
     applyIdentityMigration({
       registry,
       org: { ownerUserId: owner },
@@ -115,7 +115,7 @@ describe("identity migration", () => {
       patchGroup: (id, patch) => patched.push({ id, ...patch }),
       bots: [{ id: "b1", ownerUserId: "local-owner" }],
       patchBot: (id, patch) => patched.push({ id, ...patch }),
-      sessions: [{ id: "s-phone", label: "JC's phone", scopes: ["admin"] }, { id: "s-kiosk", label: "Kiosk", scopes: ["client"] }],
+      sessions: [{ id: "s-phone", label: "Owner's phone", scopes: ["admin"] }, { id: "s-kiosk", label: "Kiosk", scopes: ["client"] }],
       setPrincipal: (id, principalId) => patched.push({ id, principalId }),
       log: (line) => lines.push(line),
     });
@@ -123,7 +123,7 @@ describe("identity migration", () => {
     expect(patched).toEqual([{ id: "b1", ownerUserId: local.id }, { id: "s-phone", principalId: local.id }]);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("s-phone");
-    expect(lines[0]).toContain("JC's phone");
+    expect(lines[0]).toContain("Owner's phone");
   });
 });
 

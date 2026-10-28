@@ -115,13 +115,13 @@ describe("OrgDirectory", () => {
     const html = render({
       org: { name: "Example" },
       people: [
-        { id: "pr_00000000-0000-4000-8000-00000000000a", role: "owner", email: "jc@example.com" },
+        { id: "pr_00000000-0000-4000-8000-00000000000a", role: "owner", email: "owner@example.com" },
         { id: "pr_11111111-1111-4111-8111-111111111111", role: "member" },
       ],
       onCreate() {},
       onInvite() {},
     }).html;
-    expect(html).toContain(">jc@example.com<");
+    expect(html).toContain(">owner@example.com<");
     expect(html).toContain("Owner");
     expect(html).toContain(">Unknown person<");
     expect(html).not.toContain("pr_11111111");

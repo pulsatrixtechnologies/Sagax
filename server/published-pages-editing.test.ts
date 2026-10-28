@@ -394,7 +394,7 @@ describe("review of #952: annotation anchors in comments (F3)", () => {
   });
 });
 
-describe("reader comments on a published page (JC 2026-10-21)", () => {
+describe("reader comments on a published page (Owner 2026-10-21)", () => {
   const form = (fields: Record<string, string>) => new URLSearchParams(fields).toString();
   const formHeaders = { "content-type": "application/x-www-form-urlencoded" };
   function shared(pages: PublishedPages, access: "link" | "org" | "private" = "link") {

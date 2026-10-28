@@ -1,5 +1,5 @@
 // Settings > Organization, General > Advanced and Backups laid out as the reference
-// design's (0.5.6, JC): grey headings over cards of rows, lists folded behind a
+// design's (0.5.6, the owner): grey headings over cards of rows, lists folded behind a
 // count pill, destructive actions in a red pill, no help paragraphs, nothing
 // technical (host names, raw ids), and a search that finds them.
 import { createElement } from "react";

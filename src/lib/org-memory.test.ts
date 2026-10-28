@@ -4,7 +4,7 @@ import { orgMemoryStatus, refusedCount, resetOrgMemoryForTests, runOrgMemoryAuto
 const base: OrgMemoryState = {
   connected: false,
   server: null,
-  vault: "/Users/jc/Library/Application Support/sagax/org-memory/vault",
+  vault: "/Users/example/Library/Application Support/sagax/org-memory/vault",
   cloned: false,
   obsidianConfigured: false,
   obsidianUrl: "obsidian://open?path=x",

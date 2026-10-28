@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isReadOnlyCommand, runCommandOf, singleProgramOf } from "./read-only-command.ts";
 
 describe("isReadOnlyCommand", () => {
-  it("passes the command of JC's card (2026-10-20)", () => {
+  it("passes the command of Owner's card (2026-10-20)", () => {
     expect(isReadOnlyCommand("ls /workspace/sagax-plugins/ 2>/dev/null; echo CLAUDECODE=$CLAUDECODE; ls ~/.pulsatrix-flow | head")).toBe(true);
   });
 

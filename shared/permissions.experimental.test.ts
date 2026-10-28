@@ -1,4 +1,4 @@
-// server.experimental (2026-10-22, JC): the delegable right over Settings >
+// server.experimental (2026-10-22, the owner): the delegable right over Settings >
 // Experimental, and the body guard that holds a delegate who holds only it to
 // the experiment switches alone.
 import { describe, expect, it } from "vitest";

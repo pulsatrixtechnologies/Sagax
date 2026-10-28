@@ -38,7 +38,7 @@ const points = (): AchievementSnapshot => ({
 
 beforeEach(() => {
   fixture.badge = true;
-  fixture.state = { config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"] };
+  fixture.state = { config: { profile: { name: "Jean-Baptiste Exemplar", email: "owner@example.com" } } as AppState["config"] };
   resetAchievementsForTests();
   vi.stubGlobal("window", {});
 });
@@ -60,7 +60,7 @@ describe("sidebar footer row", () => {
 
   const withBadge = () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "owner@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
     };
@@ -122,7 +122,7 @@ describe("sidebar footer row", () => {
 
   it("puts the routines badge at the right of the row, beside the name, opening Automations", () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "owner@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [
         { id: "r1", botId: "b1", enabled: true, nextRunAt: 1 },
@@ -167,7 +167,7 @@ describe("sidebar footer row", () => {
 
   it("says one routine in the singular", () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "owner@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
     };
@@ -182,7 +182,7 @@ describe("sidebar footer row", () => {
 
   it("keeps the routines count and icon without any dot when an automation failed, and clears the failed label once seen", () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "owner@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
       routineRuns: [{ status: "failed" }] as AppState["routineRuns"],
@@ -273,10 +273,10 @@ describe("the footer avatar (Grok Bot's foot, 2026-10-16)", () => {
   });
 });
 
-describe("the routines badge in Grok Bot's foot (JC, 2026-10-16)", () => {
+describe("the routines badge in Grok Bot's foot (Owner, 2026-10-16)", () => {
   const active = () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "owner@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
     };

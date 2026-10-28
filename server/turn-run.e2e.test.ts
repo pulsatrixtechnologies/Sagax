@@ -43,7 +43,7 @@ it("stores the model and effort a turn ran on, and none when the effort was the 
   }
 }, 90_000);
 
-// JC, 2026-10-13: each model takes only its own levels. Claude Haiku 4.5 takes
+// Owner, 2026-10-13: each model takes only its own levels. Claude Haiku 4.5 takes
 // none (Claude Code's initialize), so a client from before per-model levels
 // that keeps "high" across the switch has it dropped, and the turn sends none.
 it("drops a level the picked model does not take, so its own default runs", async () => {

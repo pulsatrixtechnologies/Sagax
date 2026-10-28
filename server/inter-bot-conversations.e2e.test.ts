@@ -1,4 +1,4 @@
-// A bot-to-bot conversation in BOTH bots' chats (2026-10-19, JC). Real
+// A bot-to-bot conversation in BOTH bots' chats (2026-10-19, the owner). Real
 // organization server, fake Claude CLI: Bob, who owns both bots, has the first ask
 // a second bot. Then:
 //

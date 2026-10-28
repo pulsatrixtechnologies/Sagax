@@ -1,6 +1,6 @@
 // Private threads on a Perspicax organization server, through the real
 // server, the fake provider (server/testing/fake-oidc-provider.ts) and the
-// fake Claude CLI (JC: "When talking to a shared bot, we should not be able
+// fake Claude CLI (owner: "When talking to a shared bot, we should not be able
 // to use the same thread. Being multiple in the same chat is for groups."):
 //
 //   PT-1  bob opens alice's shared bot on his own thread; neither reads,

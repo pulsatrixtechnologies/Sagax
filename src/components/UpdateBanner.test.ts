@@ -111,7 +111,7 @@ describe("UpdateBanner", () => {
     expect(html).not.toContain("Try again</button>");
   });
 
-  // 2026-10-22 (JC): the "preparing took too long" card told the person to
+  // 2026-10-22 (owner): the "preparing took too long" card told the person to
   // quit and reopen, but offered no enabled control to do it. The remedy is
   // now a clickable button, never greyed out.
   it("offers an enabled quit-and-reopen control on the non-retryable error card", () => {
@@ -239,7 +239,7 @@ describe("the person's own check, followed in the dialog", () => {
     }
   });
 
-  // 2026-10-22 (JC's screenshot): Settings > Updates showed the "Quit and
+  // 2026-10-22 (owner's screenshot): Settings > Updates showed the "Quit and
   // reopen" label on a disabled button, so the remedy could not be clicked.
   // The row's whole import graph is too heavy to mount here, so pin the fix at
   // the source: the restart-required state must not disable the button, and it

@@ -175,7 +175,7 @@ private struct SettingsRootPage: View {
     }
 
     /// The Pulsatrix logo over "Sagax", then the app version and the
-    /// copyright (no server address or server version: JC, 2026-10-15).
+    /// copyright (no server address or server version: Owner, 2026-10-15).
     private var footer: some View {
         VStack(spacing: 0) {
             PulsatrixLogoMark(size: 52)

@@ -34,7 +34,7 @@ const SKILL = "---\nname: release-notes\ndescription: Writes release notes.\n---
 function marketplaceRepo(root: string) {
   write(root, {
     ".claude-plugin/marketplace.json": {
-      name: "devjc", owner: { name: "JC" },
+      name: "devjc", owner: { name: "Owner" },
       plugins: [
         { name: "notes", source: "./plugins/notes", description: "Notes server and a skill", version: "1.2.0" },
         { name: "remote-one", source: { source: "github", repo: "acme/remote-plugin" }, description: "Elsewhere" },

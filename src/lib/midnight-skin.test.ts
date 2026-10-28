@@ -1,4 +1,4 @@
-// Midnight is the reference design's own dark theme. JC, 2026-10-14: "Le thème Midnight
+// Midnight is the reference design's own dark theme. Owner, 2026-10-14: "Le thème Midnight
 // de Sagax doit être identique au thème de the reference design." the reference design (0.70.2) ships
 // "Sand Light" and "Sand Dark"; its dark window is Sand Dark, a neutral ramp
 // (window #121212, rail #0e0e0e, pane #161616, raised #1f1f1f) with

@@ -24,7 +24,7 @@ const bridge = (connected: boolean, place: "computer" | "server"): DesktopBridge
   desktops: connected ? [{ id: "d1", name: "JeanChrophesMBP", platform: "darwin", online: true, busy: false, lastSeenAt: 1, capabilities: { localVm: true }, system: SYSTEM }] : [],
 });
 const runtime = { found: true, runtime: "docker" as const, cli: "docker", product: "Docker Desktop", daemonUp: true, installed: ["Docker Desktop"] };
-const status = (vm: DesktopLocalVmStatus["vm"], extra: Partial<DesktopLocalVmStatus> = {}): DesktopLocalVmStatus => ({ runtime, workspace: "/Users/jc/.openmausbot/vm-home", vm, setup: null, install: null, ...extra });
+const status = (vm: DesktopLocalVmStatus["vm"], extra: Partial<DesktopLocalVmStatus> = {}): DesktopLocalVmStatus => ({ runtime, workspace: "/Users/example/.openmausbot/vm-home", vm, setup: null, install: null, ...extra });
 const STALE = { name: "openmausbot-computer", state: "exited", managed: true, stale: "missing_folder" as const, folder: "/private/var/folders/5f/T/omb-org-mcp-Em133z/.openmausbot/vm-home", folderExists: false };
 
 describe("Computer tab on an organization server", () => {
@@ -120,7 +120,7 @@ describe("Computer tab on an organization server", () => {
   });
 
   it("names each state of the screen", () => {
-    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: true, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: true, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/example/.openmausbot/vm-home", folderExists: true }) }));
     expect(running).toContain('data-computer-screen="running"');
     expect(running).toContain(">Running<");
     expect(running).toMatch(/<button[^>]*aria-label="Pause"(?![^>]*disabled="")/);
@@ -134,9 +134,9 @@ describe("Computer tab on an organization server", () => {
   it("shows a state chip only when the state is not obvious from the screen", () => {
     expect(showsStateChip("running")).toBe(false);
     for (const state of ["off", "starting", "paused", "error"] as const) expect(showsStateChip(state)).toBe(true);
-    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/example/.openmausbot/vm-home", folderExists: true }) }));
     expect(running).not.toContain("data-power=");
-    const paused = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "paused", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    const paused = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "paused", stale: null, folder: "/Users/example/.openmausbot/vm-home", folderExists: true }) }));
     expect(paused).toContain('data-power="paused"');
     const off = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "local", computerOff: false, botName: "Luna", initialLocal: status(null) }));
     expect(off).toContain('data-power="off"');
@@ -147,7 +147,7 @@ describe("Computer tab on an organization server", () => {
   it("hides Play / Pause / Stop until intent, except Play on a machine that is off", () => {
     expect(controlsAlwaysShown("off")).toBe(true);
     for (const state of ["running", "starting", "paused", "error"] as const) expect(controlsAlwaysShown(state)).toBe(false);
-    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+    const running = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "vm", computerOff: false, botName: "Luna", initialLocal: status({ ...STALE, state: "running", stale: null, folder: "/Users/example/.openmausbot/vm-home", folderExists: true }) }));
     expect(running).toContain('data-controls="hidden"');
     expect(running).toMatch(/data-screen-controls="hidden"[^>]*pointer-events-none opacity-0/);
     // Off with nothing else to press: Play is shown at once.
@@ -156,7 +156,7 @@ describe("Computer tab on an organization server", () => {
     expect(serverOff).toMatch(/<button[^>]*aria-label="Start"/);
   });
 
-  // JC 2026-10-14: on the Local VM that is off, Démarrer sat on top of the
+  // Owner 2026-10-14: on the Local VM that is off, Démarrer sat on top of the
   // floating Play / Pause / Stop bar. The off screen's own primary action
   // replaces the bar; elsewhere the bar sits under the state, never over it.
   it("never draws Démarrer and the control bar together on a machine that is off", () => {
@@ -165,7 +165,7 @@ describe("Computer tab on an organization server", () => {
     expect(showsControlBar("running", { pause: () => {} }, [])).toBe(true);
     expect(showsControlBar("off", undefined, [])).toBe(false);
     const off = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "local", computerOff: false, botName: "Luna",
-      initialLocal: status({ ...STALE, state: "exited", stale: null, folder: "/Users/jc/.openmausbot/vm-home", folderExists: true }) }));
+      initialLocal: status({ ...STALE, state: "exited", stale: null, folder: "/Users/example/.openmausbot/vm-home", folderExists: true }) }));
     expect(off).toContain('data-computer-screen="off"');
     expect(off).toMatch(/<button[^>]*>Start<\/button>/);
     expect(off).not.toContain("data-screen-controls");
@@ -181,7 +181,7 @@ describe("Computer tab on an organization server", () => {
   });
 });
 
-// JC 2026-10-15: the cloud's cluster sleeps outside office hours and the
+// Owner 2026-10-15: the cloud's cluster sleeps outside office hours and the
 // server wakes it (up to 9 minutes). The screen says "Starting" with one
 // quiet line, never "Error", during that window; an error screen shows its
 // Retry alone (no control bar over it) and one message only.
@@ -268,7 +268,7 @@ describe("the cloud screen while its cluster wakes", () => {
   });
 });
 
-describe("one dot per screen in the picker (JC 2026-10-15)", () => {
+describe("one dot per screen in the picker (Owner 2026-10-15)", () => {
   it("merges where the bot works into the state dot: one dot on the button and one per row, the detail in its label", () => {
     const markup = renderToStaticMarkup(createElement(ScreenPicker, {
       items: [
@@ -297,7 +297,7 @@ describe("one dot per screen in the picker (JC 2026-10-15)", () => {
 });
 
 describe("the bot's Works on", () => {
-  it("offers Auto and Off only, with the meaning in each tooltip (JC 2026-10-18)", () => {
+  it("offers Auto and Off only, with the meaning in each tooltip (Owner 2026-10-18)", () => {
     const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: null, onChange: () => {}, organization: true }));
     // the Workspace page titles it: one visible title, the heading for the
     // radio group read by assistive tech only, the meaning shown under it

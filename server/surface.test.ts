@@ -302,7 +302,7 @@ describe("placeUnavailable", () => {
   });
 });
 
-// JC 2026-10-16: "Il doit toujours être en automatique, et le mode choisi à
+// Owner 2026-10-16: "Il doit toujours être en automatique, et le mode choisi à
 // chaque tour lui-même." Auto never remembers a place, on any server: where a
 // turn worked is never the conversation's setting. Only the person's own pin
 // (or a legacy pin of unknown origin, which may be theirs) holds a place.

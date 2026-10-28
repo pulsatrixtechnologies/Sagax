@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import CompanionCore
 
-// JC, 2026-10-20: a person is signed out only when the session is revoked,
+// Owner, 2026-10-20: a person is signed out only when the session is revoked,
 // the account disabled, or after 30 days without use. Never because of a
 // deploy, an app update, a transient error, a stale copy of the token or a
 // sensitive action. Prod, 2026-10-20 11:41 UTC: one burst of 401s put the

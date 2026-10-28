@@ -14,7 +14,7 @@ import { newBotDefaultsSchema } from "./new-bot-defaults.ts";
 
 const backup = { instanceId: "codex", model: "gpt-5" };
 
-describe("per-bot runtime settings: migration (JC 2026-10-15)", () => {
+describe("per-bot runtime settings: migration (Owner 2026-10-15)", () => {
   it("copies the global values onto every bot that has none, without loss", () => {
     const global = { threads: { maxConcurrentPerBot: 7, maxParallelPerPerson: 2 }, automaticRecovery: { enabled: true, backup } };
     const plan = planRuntimeSettingsMigration([{ id: "a" }, { id: "b" }], global);

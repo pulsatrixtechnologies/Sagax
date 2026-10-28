@@ -138,7 +138,7 @@ describe("bot draft dialog", () => {
     expect(submit.props.disabled).toBe(true);
   });
 
-  describe("the page (JC 2026-10-14)", () => {
+  describe("the page (Owner 2026-10-14)", () => {
     function page(options: { moreOpen?: boolean; defaultsMode?: boolean; state?: Record<string, unknown> } = {}) {
       fixture.state = options.state ?? {};
       vi.stubGlobal("window", { addEventListener() {}, removeEventListener() {} });

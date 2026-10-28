@@ -382,7 +382,7 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // (port of OpenMausBot #2930, server/request-auth.ts fromBrowser).
   if (parentEnv.SAGAX_DEV_TRUST_LOCAL_BROWSER !== "0") childEnv.SAGAX_DEV_TRUST_LOCAL_BROWSER = "1";
   // A suite that drives a fixed Works on or a conversation pin through the
-  // HTTP API (Workspace is always Auto otherwise, JC 2026-10-18) opts in
+  // HTTP API (Workspace is always Auto otherwise, the owner 2026-10-18) opts in
   // with this test seam; nothing else turns it on.
   if (parentEnv.SAGAX_TEST_FIXED_WORKSPACE === "1") Object.assign(childEnv, { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1" });
   // The fake engine's own knobs (mode, replies, tool calls) are the one thing

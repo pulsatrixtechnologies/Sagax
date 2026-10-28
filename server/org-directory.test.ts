@@ -33,8 +33,8 @@ describe("acceptInvite", () => {
 
 describe("roleOf", () => {
   it("gives the creator owner and keeps admins distinct from members", () => {
-    const lists = { ownerUserId: "jc", admins: ["jc", "ada@example.test"], members: ["morgan@example.test"] };
-    expect(roleOf({ ...lists, userId: "jc" })).toBe("owner");
+    const lists = { ownerUserId: "owner", admins: ["owner", "ada@example.test"], members: ["morgan@example.test"] };
+    expect(roleOf({ ...lists, userId: "owner" })).toBe("owner");
     expect(roleOf({ ...lists, userId: "ada@example.test" })).toBe("admin");
     expect(roleOf({ ...lists, userId: "morgan@example.test" })).toBe("member");
     expect(roleOf({ ...lists, userId: "stranger" })).toBeNull();

@@ -46,7 +46,7 @@ describe("personalAuthHeaders", () => {
     expect(personalAuthHeaders({ ...base, auth: "token", token: "t1" }, undefined)).toEqual({ Authorization: "Bearer t1" });
     expect(personalAuthHeaders({ ...base, auth: "token", token: "Basic abc" }, undefined)).toEqual({ Authorization: "Basic abc" });
     expect(personalAuthHeaders({ ...base, auth: "token", token: "k", headerName: "X-API-Key" }, undefined)).toEqual({ "X-API-Key": "k" });
-    expect(personalAuthHeaders({ ...base, auth: "github" }, { token: "gho_1", login: "jc", via: "device", connectedAt: 1 })).toEqual({ Authorization: "Bearer gho_1" });
+    expect(personalAuthHeaders({ ...base, auth: "github" }, { token: "gho_1", login: "owner", via: "device", connectedAt: 1 })).toEqual({ Authorization: "Bearer gho_1" });
     expect(personalAuthHeaders({ ...base, auth: "github" }, undefined)).toBeNull();
     expect(personalAuthHeaders({ ...base, auth: "none" }, undefined)).toEqual({});
   });

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// 2026-10-26 (JC): Auto on This computer is the person's own machine. The
+// 2026-10-26 (owner): Auto on This computer is the person's own machine. The
 // warning shows the first time; after that OK it confirms itself, on every
 // bot and every conversation, so no card stands between the person and
 // their own computer.

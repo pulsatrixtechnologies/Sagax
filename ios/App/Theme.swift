@@ -258,7 +258,7 @@ enum Theme {
         /// Composer row: 12 pt from each edge of the safe area, 30 pt above
         /// the bottom. The chat bar of the reference app runs almost the full
         /// width, its "+" and its field 12 pt from the edges with the
-        /// keyboard open or closed (JC, 2026-10-18: "la chatbar est pas
+        /// keyboard open or closed (owner, 2026-10-18: "la chatbar est pas
         /// assez large"). The earlier 29.3 pt (measure-chat-profile.md) left
         /// the bar narrow on every phone.
         static let composerMargin: CGFloat = 12

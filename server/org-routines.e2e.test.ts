@@ -2,7 +2,7 @@
 // their person's name (scenario D). The fake provider keeps routine
 // delegation families apart from sign-in ones and reports them in its
 // directory; the fake Claude CLI really calls the Perspicax MCP profile of
-// the bot (FAKE_CLAUDE_MCP_CALLS). Since 2026-10-08 (JC) a routine always
+// the bot (FAKE_CLAUDE_MCP_CALLS). Since 2026-10-08 (owner) a routine always
 // acts in its owner's name: the delegation is issued at sign-in by token
 // exchange through the link, never asked, and cannot be turned off.
 //

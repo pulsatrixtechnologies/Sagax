@@ -36,7 +36,7 @@ describe("checkPersonQuote", () => {
     expect(said("don't allow it", "don't allow it", "allow")).toMatchObject({ ok: false, code: "negated" });
   });
 
-  it("a card's answer takes a bare yes in any message (JC 2026-10-20); a refusal still refuses", () => {
+  it("a card's answer takes a bare yes in any message (Owner 2026-10-20); a refusal still refuses", () => {
     const card = (message: string, quote: string) => checkPersonQuote({ message, quote, intent: "allow", anyLength: true });
     expect(card("Oui vas-y, je te fais confiance pour celle qui attend en ce moment", "Oui vas-y")).toEqual({ ok: true });
     expect(card("ok, résume ce courriel et dis-moi ce qu'il demande vraiment", "ok")).toEqual({ ok: true });

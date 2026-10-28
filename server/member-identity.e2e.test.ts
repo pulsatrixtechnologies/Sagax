@@ -21,7 +21,7 @@ const PORT = await freePortBlock([0, 1]);
 const BASE = `http://127.0.0.1:${PORT}`;
 const posixOnly = describe.skipIf(process.platform === "win32");
 const OWNER_NAME = "Alex Martin";
-const OWNER_EMAIL = "jc@example.com";
+const OWNER_EMAIL = "owner@example.com";
 const OWNER_ABOUT = "private note about the operator";
 const ZARA = "zara@example.test";
 const MAX = "max@example.test";
@@ -272,7 +272,7 @@ posixOnly("an organization member's identity and bots", () => {
     for (const id of mine) expect((await api("DELETE", `/api/bots/${id}`, { as: "zara" })).status).toBe(200);
   });
 
-  // JC 2026-10-09: a member manages her own bot's Rules and Docs like its
+  // Owner 2026-10-09: a member manages her own bot's Rules and Docs like its
   // Soul (server/routes/bot-workspace.ts); MEMORY.md stays an admin's.
   it("lets a member edit her own bot's rules and documents, and no one else's", async () => {
     const rules = await api("PUT", `/api/bots/${zaraBot}/workspace/file`, { as: "zara", body: { path: "RULES.md", text: "# Rules\n\n- Never quote a price.\n" } });

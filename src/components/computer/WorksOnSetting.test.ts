@@ -39,7 +39,7 @@ function control(organization: boolean, value: WorksOnMode = null) {
   return renderToStaticMarkup(createElement(WorksOnControl, { value, organization, onChange: () => {} }));
 }
 
-describe("one Works on control: Auto or Off (JC 2026-10-18)", () => {
+describe("one Works on control: Auto or Off (Owner 2026-10-18)", () => {
   it("offers no place on a solo or an organization server, only Auto and Off", () => {
     expect(labels(control(false))).toEqual(["Auto", "Off"]);
     expect(labels(control(true))).toEqual(["Auto · picks per task", "Off"]);

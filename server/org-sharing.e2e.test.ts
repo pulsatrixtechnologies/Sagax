@@ -605,7 +605,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const unconfirmed = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full" });
     expect(unconfirmed.status, unconfirmed.text).toBe(409);
     expect(unconfirmed.body.code).toBe("full_access_confirm_required");
-    // 2026-10-26 (JC): Ask or Auto on their own bot is the owner's own setting
+    // 2026-10-26 (owner): Ask or Auto on their own bot is the owner's own setting
     expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "auto" })).status).toBe(200);
     // an admin is not the owner: never Full on someone else's bot
     const full = await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full", confirmFullAccess: true });

@@ -223,7 +223,7 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     expect(SOURCE.match(/showApprovals/g)).toHaveLength(1);
   });
 
-  it("opens Team map from Tools, right after Automations (JC, 2026-10-27)", () => {
+  it("opens Team map from Tools, right after Automations (Owner, 2026-10-27)", () => {
     let opened = 0;
     const tools = toolsOf(items({ teamMapActive: true, handlers: { ...handlers, onTeamMap: () => { opened += 1; } } }));
     const entry = tools.submenu!.find((item) => item.key === "team-map")!;
@@ -240,7 +240,7 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     expect(toolsOf(items({ teamMap: false })).submenu!.some((entry) => entry.key === "team-map")).toBe(false);
   });
 
-  it("opens Automations from Tools and keeps the tour anchor, with no dot (JC, 2026-10-18)", () => {
+  it("opens Automations from Tools and keeps the tour anchor, with no dot (Owner, 2026-10-18)", () => {
     let opened = 0;
     const tools = toolsOf(items({
       automationsActive: true,

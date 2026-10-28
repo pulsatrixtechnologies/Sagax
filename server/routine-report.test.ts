@@ -17,7 +17,7 @@ describe("routineReportOutcome", () => {
     }
   });
 
-  it("is quiet only when the WHOLE message is a no-op (JC review 2026-10-22)", () => {
+  it("is quiet only when the WHOLE message is a no-op (Owner review 2026-10-22)", () => {
     for (const quiet of ["Nothing to report.", "Rien à signaler.", "Nothing to flag.", "Done. Nothing to report.", "ok — nothing to do", "No change needed."]) {
       expect(routineReportOutcome(quiet).quiet, quiet).toBe(true);
     }
@@ -61,7 +61,7 @@ describe("routineRunReportable", () => {
     expect(routineRunReportable({ status: "completed", goalStatus: "completed", quiet: true, postResults: true })).toBe(false);
   });
 
-  it("posts a completed result only when the routine posts results (JC 2026-10-22)", () => {
+  it("posts a completed result only when the routine posts results (Owner 2026-10-22)", () => {
     expect(routineRunReportable({ status: "completed", postResults: true })).toBe(true);
     expect(routineRunReportable({ status: "completed", postResults: false })).toBe(false);
     expect(routineRunReportable({ status: "completed" })).toBe(false);

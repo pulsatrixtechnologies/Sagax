@@ -1,4 +1,4 @@
-// The desktop sidebar measured on the reference design (JC, 2026-10-15): one row per
+// The desktop sidebar measured on the reference design (owner, 2026-10-15): one row per
 // bot (portrait, name, role pill, last message), only its unread threads
 // under it, the Primary Bot at the top with its star and role, "My team" and
 // "Built-in" sections, and a foot of the avatar and the Connect apps pill.

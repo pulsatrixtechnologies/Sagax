@@ -27,10 +27,10 @@ describe("agent tool guard before the card (B2.1)", () => {
 
   it("shadow: a default write shows the card, and a decline is audited with the speaker", () => {
     const { guard, rows } = setup();
-    expect(guard.opened({ requestId: "r1", mcpTool: "agents__send_prompt", bot, speakerPrincipalId: "pr_jc" })).toMatchObject({ deny: false });
+    expect(guard.opened({ requestId: "r1", mcpTool: "agents__send_prompt", bot, speakerPrincipalId: "pr_owner" })).toMatchObject({ deny: false });
     guard.resolved("r1", "deny", "user");
     expect(rows.map((r) => r.outcome)).toEqual(["card", "declined"]);
-    expect(rows[1]!.detail).toMatchObject({ phase: "card_answer", guard: "default", guardAllow: true, guardMode: "shadow", speakerPrincipalId: "pr_jc", scope: "agents:write" });
+    expect(rows[1]!.detail).toMatchObject({ phase: "card_answer", guard: "default", guardAllow: true, guardMode: "shadow", speakerPrincipalId: "pr_owner", scope: "agents:write" });
     expect(guard.pendingCount()).toBe(0);
   });
 
@@ -51,11 +51,11 @@ describe("agent tool guard before the card (B2.1)", () => {
 
   it("enforce: grant check, then speaker check, before any card", () => {
     const { guard, rows, grants } = setup("enforce");
-    expect(guard.opened({ requestId: "d", mcpTool: "agents__create_agent", bot, speakerPrincipalId: "pr_jc" })).toMatchObject({ deny: true, decision: { reason: "not_granted" } });
+    expect(guard.opened({ requestId: "d", mcpTool: "agents__create_agent", bot, speakerPrincipalId: "pr_owner" })).toMatchObject({ deny: true, decision: { reason: "not_granted" } });
     grants.grant({ kind: "bot", id: "bot-1" }, "agents:admin", "test");
-    expect(guard.opened({ requestId: "e", mcpTool: "agents__create_agent", bot, speakerPrincipalId: "pr_jc" })).toMatchObject({ deny: true, decision: { reason: "speaker_not_granted" } });
-    grants.grant({ kind: "user", id: "pr_jc" }, "agents:admin", "test");
-    expect(guard.opened({ requestId: "f", mcpTool: "agents__create_agent", bot, speakerPrincipalId: "pr_jc" })).toMatchObject({ deny: false, decision: { reason: "grant" } });
+    expect(guard.opened({ requestId: "e", mcpTool: "agents__create_agent", bot, speakerPrincipalId: "pr_owner" })).toMatchObject({ deny: true, decision: { reason: "speaker_not_granted" } });
+    grants.grant({ kind: "user", id: "pr_owner" }, "agents:admin", "test");
+    expect(guard.opened({ requestId: "f", mcpTool: "agents__create_agent", bot, speakerPrincipalId: "pr_owner" })).toMatchObject({ deny: false, decision: { reason: "grant" } });
     expect(rows.map((r) => r.outcome)).toEqual(["refused", "refused", "card"]);
     guard.resolved("d", "deny");
     expect(rows).toHaveLength(3);

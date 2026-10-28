@@ -1,4 +1,4 @@
-// Settings > Experimental is gated on server.experimental (2026-10-22, JC):
+// Settings > Experimental is gated on server.experimental (2026-10-22, the owner):
 // an organization member who lacks the right never sees the section; one an
 // admin gave it (or server.settings, which implies it) does. The switches
 // write features only; the deeper browser-profile controls stay with a
@@ -79,7 +79,7 @@ describe("Settings > Experimental gated on server.experimental", () => {
   });
 
   it("hides the section from a server.settings-only delegate (no implication)", async () => {
-    // 2026-10-22 (JC): server.experimental is explicit; server.settings alone,
+    // 2026-10-22 (owner): server.experimental is explicit; server.settings alone,
     // even with editConfig, does not reveal Experimental.
     fixture.viewer = { role: "member", operator: false, permissions: ["server.settings"], capabilities: { editConfig: true, manageKeys: true, manageComputers: true, viewUsage: true, manageBackups: true, pairDevices: true } };
     const html = await render();

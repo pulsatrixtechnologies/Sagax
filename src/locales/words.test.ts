@@ -15,7 +15,7 @@ const ALLOWED = new Set([
   "serverEnvironment.reset.confirm", // the same /workspace path
   "orgComputer.confirmRunning", // the same /workspace path
   "sandboxDesktop.outdated", // the same /workspace path
-  // JC 2026-10-15 : the bot's work location is called Workspace
+  // Owner 2026-10-15 : the bot's work location is called Workspace
   "botPanel.access.browserOff",
   "botPanel.access.browserOffShort",
   "botWorkplace.help",
@@ -28,6 +28,10 @@ const ALLOWED = new Set([
   "place.fromBot",
   "place.offHint",
   "toolTarget.workingOn",
+  // The bot wizard names the same work location.
+  "botWizard.step.tools.intro",
+  "botWizard.tools.questionHint",
+  "botWizard.recap.tools.workspace",
   // Keys another branch adds with its own wording go here until reviewed.
 ]);
 

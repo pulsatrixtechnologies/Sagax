@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// JC, 2026-10-14: one entry for a room's goal mode. /goal starts it; the
+// Owner, 2026-10-14: one entry for a room's goal mode. /goal starts it; the
 // chip shows only while it is on, says so, and turns it off.
 import { createElement } from "react";
 import { flushSync } from "react-dom";

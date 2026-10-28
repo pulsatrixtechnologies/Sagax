@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The group header's blue focus frame: keyboard focus only (JC, 2026-10-15).
+// The group header's blue focus frame: keyboard focus only (owner, 2026-10-15).
 // A click, or focus handed back after the group's right-click menu, marks the
 // header data-pointer-focus, which styles.css draws without an outline.
 import { createElement } from "react";

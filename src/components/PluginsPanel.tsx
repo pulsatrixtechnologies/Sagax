@@ -1,7 +1,7 @@
 // Plugins: one panel, after the "Connect apps" screens people know from
 // desktop assistants.
 //
-//   - Connect apps (2026-10-27, JC: one place per subject): one page with
+//   - Connect apps (2026-10-27, the owner: one place per subject): one page with
 //     "N connected" in its title row and four tabs. Discover (where a person
 //     lands: the catalog, its search, the category pills and Browse Bots),
 //     Installed (one line per thing, deduplicated, with a "..." menu:

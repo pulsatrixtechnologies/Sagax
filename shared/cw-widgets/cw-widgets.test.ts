@@ -42,7 +42,7 @@ describe("ConnectWise tool names", () => {
     for (const name of [
       "cw_psa__query",
       "cw_psa_query",
-      "mcp__perspicax_pulsatrix_flow_jc__cw_psa__query",
+      "mcp__perspicax_pulsatrix_flow_owner__cw_psa__query",
       "mcp__claude_ai_Connectwise_PSA__cw_psa__query",
       "cw_psa_schedule__query",
       "mcp__connectwise__get_ticket",

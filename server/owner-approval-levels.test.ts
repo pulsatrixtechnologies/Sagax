@@ -1,4 +1,4 @@
-// One approval level, rules first (2026-10-26, JC): the matrix of the four
+// One approval level, rules first (2026-10-26, the owner): the matrix of the four
 // levels against a rule of each behavior (and none). A rule decides
 // whatever the level: Deny refuses even in Full access, Ask shows a card
 // even in Full access or Approve for me, Allow automatically goes without a

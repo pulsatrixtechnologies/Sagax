@@ -317,7 +317,7 @@ it("mounts every Grok MCP server through the gate so cw_psa__query is registered
 });
 
 it("accepts a Grok alias of an allowed tool in the selected catalog", () => {
-  const scope = { allow: ["native:*", "mcp:perspicax_jc:cw_psa__query"] };
-  expect(allowsRegisteredTool(scope, "perspicax_jc", "cw_psa_query")).toBe(true);
-  expect(allowsRegisteredTool(scope, "perspicax_jc", "cw_psa_write")).toBe(false);
+  const scope = { allow: ["native:*", "mcp:perspicax_owner:cw_psa__query"] };
+  expect(allowsRegisteredTool(scope, "perspicax_owner", "cw_psa_query")).toBe(true);
+  expect(allowsRegisteredTool(scope, "perspicax_owner", "cw_psa_write")).toBe(false);
 });

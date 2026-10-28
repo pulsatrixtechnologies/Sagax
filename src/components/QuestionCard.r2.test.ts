@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// No way to skip a waiting question (JC #885, 2026-10-21), and the error
+// No way to skip a waiting question (owner #885, 2026-10-21), and the error
 // shown when an answer does not reach the bot.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";

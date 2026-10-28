@@ -1,5 +1,5 @@
 // Organization sources and access: since 2026-10-27 in Connect apps >
-// Sources, its admin part (JC: one place per subject, every GitHub setting
+// Sources, its admin part (owner: one place per subject, every GitHub setting
 // together); Settings > Organization keeps one link there. An organization
 // admin only, as before. A saved token is a label and a hint; the secret
 // field is empty until the person types one.

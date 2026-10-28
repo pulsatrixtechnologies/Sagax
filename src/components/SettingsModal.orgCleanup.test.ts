@@ -173,7 +173,7 @@ describe("an organization member", () => {
   });
 });
 
-// 2026-10-15 (JC): People and Installations are hidden in the app, like
+// 2026-10-15 (owner): People and Installations are hidden in the app, like
 // Email, Activity and Pair devices; managing several people or
 // installations is Sagax Business's job. Their server routes stay.
 describe("People and Installations are hidden in the app", () => {

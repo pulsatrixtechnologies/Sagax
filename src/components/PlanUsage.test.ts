@@ -87,7 +87,7 @@ describe("Plan usage rows", () => {
     expect(html).toContain("data-plan-refresh");
   });
 
-  // 2026-10-16: the card vanished in these cases and JC lost his 5-hour and
+  // 2026-10-16: the card vanished in these cases and the owner lost his 5-hour and
   // weekly limits; it now stays with one line saying why.
   it("no connected provider: the card stays with one line, also while loading and after a failed read", () => {
     const failing = render({

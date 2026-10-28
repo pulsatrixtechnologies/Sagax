@@ -13,7 +13,7 @@ import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 
 // Drives a fixed Works on through the HTTP API (scripts/control-omb.ts passes
-// the seam to the fixture): Workspace is always Auto otherwise (JC 2026-10-18).
+// the seam to the fixture): Workspace is always Auto otherwise (owner 2026-10-18).
 process.env.SAGAX_TEST_FIXED_WORKSPACE = "1";
 
 const BOAT_TOKEN = "box_verification_fixture";

@@ -1,6 +1,6 @@
 # Réunions avec preneur de notes, mise à jour planifiée et économiseur de disque
 
-Date : 2026-10-16. Responsable : JC. Statut : vague 2 de la parité avec la référence,
+Date : 2026-10-16. Responsable : Owner. Statut : vague 2 de la parité avec la référence,
 paquet D. Deux PR, une par élément. La pause des routines pendant l'absence
 est déjà livrée (#609) et n'est pas reprise ici.
 
@@ -15,7 +15,7 @@ Statut : implanté dans `feat/meeting-notetaker` pour Google Meet, derrière un
 réglage **expérimental désactivé par défaut** (Réglages > Fonctions
 expérimentales > Preneur de notes en réunion (Google Meet), config
 `features.meetingNotetaker`). Validation sur une vraie réunion à faire par
-JC avant de l'activer.
+Owner avant de l'activer.
 
 Le serveur applique ce réglage : désactivé, l'outil `join_meeting` n'est pas
 offert aux bots (`SAGAX_MEETINGS`), et la route interne, `/api/meetings/*` et

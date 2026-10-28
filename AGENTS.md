@@ -4541,7 +4541,7 @@ image rebuilt.
 
 ## Connect apps: one page, one place per subject (2026-10-27)
 
-JC's redesign (after #1153 and #1194): "Manage plugins and skills" moved up
+Owner's redesign (after #1153 and #1194): "Manage plugins and skills" moved up
 into Connect apps, which is now one page (`src/components/plugins/ConnectAppsView.tsx`,
 wired in `PluginsPanel.tsx`; iOS `ConnectAppsPage.swift`): the title with
 "N connected", the install scope, then four tabs. No sub-page repeats a tab

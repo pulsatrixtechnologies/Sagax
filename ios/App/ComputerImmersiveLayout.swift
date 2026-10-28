@@ -1,5 +1,5 @@
 // Full-screen computer stages: the picture fills the window; chrome floats
-// on top and auto-hides in landscape (JC, TestFlight 27).
+// on top and auto-hides in landscape (owner, TestFlight 27).
 import SwiftUI
 
 /// Floating top and bottom chrome over a full-screen computer stage.

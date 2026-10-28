@@ -127,7 +127,7 @@ describe("routine setup", () => {
   });
 });
 
-describe("the routine details modal (JC, 2026-10-08: larger, less vertical)", () => {
+describe("the routine details modal (Owner, 2026-10-08: larger, less vertical)", () => {
   const routine = {
     id: "dispatch", name: "Dispatch matin TN", prompt: "Read the board.\n".repeat(40), target: "bot", botId: bot.id, runOn: "maus", enabled: true,
     schedule: { type: "daily", time: "06:00", weekdays: [1, 2, 3, 4, 5] }, durationMinutes: 30, nextRunAt: null, createdAt: 1, updatedAt: 1,
@@ -176,7 +176,7 @@ describe("the routine details modal (JC, 2026-10-08: larger, less vertical)", ()
   });
 });
 
-describe("the Automations header (JC, 2026-10-27: one row, secondary controls grouped)", () => {
+describe("the Automations header (Owner, 2026-10-27: one row, secondary controls grouped)", () => {
   function header() {
     const html = markupOf();
     return html.slice(html.indexOf("<header"), html.indexOf("</header>"));

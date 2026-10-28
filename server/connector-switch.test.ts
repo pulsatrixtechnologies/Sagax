@@ -10,7 +10,7 @@ const claude = (connectors: string[], extra: Partial<SwitchEngine> = {}): Switch
 });
 const base = { model: "grok-4.7", price: 18 };
 
-describe("switching a request to the engine that has its connector (JC 2026-10-21)", () => {
+describe("switching a request to the engine that has its connector (Owner 2026-10-21)", () => {
   it("switches when the bot's engine lacks it and another engine of this person has it", () => {
     expect(pickConnectorSwitch({ need: { capability: "mail", hint: "Gmail" }, current: grok, base, candidates: [claude(["Gmail"])] }))
       .toEqual({ instanceId: "claude", model: "sonnet", engineLabel: "Claude", connector: "Gmail" });

@@ -1,4 +1,4 @@
-// The model reviewer of custom rules (examen automatique, lot A1, JC
+// The model reviewer of custom rules (examen automatique, lot A1, the owner
 // 2026-10-21), through a real isolated server and the fake Claude engine:
 // a card the matcher leaves to the person is judged by the one-shot
 // reviewer against the person's rules written in free text. An allow it

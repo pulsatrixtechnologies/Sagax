@@ -1,10 +1,10 @@
 # Permissions des bots : droits du propriétaire, modes et règles par personne
 
-Date : 2026-10-14. Responsable : JC. Statut : implanté dans
+Date : 2026-10-14. Responsable : Owner. Statut : implanté dans
 `feat/bot-owner-permissions` (Sagax). Perspicax : aucun changement serveur
 requis (voir section 9).
 
-Plainte de JC : « un bot créé par un utilisateur doit être capable de faire
+Plainte de the owner : « un bot créé par un utilisateur doit être capable de faire
 des choses ; là, TOUT ce qu'un bot fait spamme un admin d'approbations. »
 
 ## 1. État d'avant (cause du spam admin)

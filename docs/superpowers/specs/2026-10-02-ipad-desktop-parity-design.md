@@ -6,7 +6,7 @@ references and the harness in `ios/parity/desktop/` · Branch: `feat/ios-desktop
 
 ## Goal
 
-JC's requirement (2026-10-02): **the iPad version of the app must look exactly like the
+Owner's requirement (2026-10-02): **the iPad version of the app must look exactly like the
 Electron one.** The Electron app is the React renderer in `src/` (shell `electron/`,
 server `server/`). Today the iPad shows the phone surfaces in readable columns
 (`ios/App/CompanionLayout.swift`: roster 680 pt, chat 760 pt, header 900 pt, one
@@ -389,7 +389,7 @@ else needs `admin`). A phone paired with admin scope reaches the admin routes on
 server; the sidecar has no admin notion (a companion request reaches the harness as the
 loopback owner, which narrows it further: bot and room `PATCH` to member fields).
 
-**The reference for a paired iPad is the desktop's own remote-client mode** (JC,
+**The reference for a paired iPad is the desktop's own remote-client mode** (owner,
 2026-10-02). The Electron app can itself pair with another computer
 (`electron/desktop-companion-client.mjs`): a loopback relay injects the device token and
 forwards every `/api/*` call to that computer's sidecar, through the same `ALLOWED`
@@ -594,7 +594,7 @@ python3 ios/parity/desktop/diff-ipad.py [--gate] [--viewport WxH] [surface ...]
   viewports), scores 13.6 % to 33.6 % with 4.5 % to 7.9 % masked, as expected for a
   placeholder; sheets render reference, capture and heatmap side by side.
 
-## Decisions (JC, 2026-10-02)
+## Decisions (owner, 2026-10-02)
 
 1. **834 portrait:** the iPad keeps the docked sidebar, as the reference shows (the
    renderer is below its 840 pt minimum there).

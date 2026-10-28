@@ -45,7 +45,7 @@ describe("grokApprovalGateEnabled", () => {
 describe("gateReadOnlyTools", () => {
   it("lets the reviewed reads through and never a write", () => {
     const agents = gateReadOnlyTools({ name: "agents", builtin: true });
-    const perspicax = gateReadOnlyTools({ name: "perspicax_jc", builtin: false, spec: bridge });
+    const perspicax = gateReadOnlyTools({ name: "perspicax_owner", builtin: false, spec: bridge });
     expect(agents).toContain("list_bots");
     expect(perspicax).toEqual(expect.arrayContaining(["api_search", "cw_psa__query", "memory_search", "flow"]));
     for (const tool of WRITES) {

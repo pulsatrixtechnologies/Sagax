@@ -79,7 +79,7 @@ final class AchievementToastUITests: XCTestCase {
         shot(app, "3-touch-after-banner")
     }
 
-    /// While the banner shows, nothing under it gets a touch (JC
+    /// While the banner shows, nothing under it gets a touch (owner
     /// 2026-10-19): a touch on the card stays on the card (the account
     /// button under it does not open its menu), the close button closes
     /// the banner only, and a touch outside the card closes the banner

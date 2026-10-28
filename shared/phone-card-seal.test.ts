@@ -14,7 +14,7 @@ import {
   toBase64Url,
 } from "./phone-card-seal.ts";
 
-describe("card scan sealed for the form (JC 2026-10-21: the server never sees the number)", () => {
+describe("card scan sealed for the form (Owner 2026-10-21: the server never sees the number)", () => {
   it("seals on the phone side and opens only in the form that made the key", async () => {
     const key = await createCardScanKey();
     expect(isCardSealPublicKey(key.publicKey)).toBe(true);

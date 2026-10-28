@@ -335,7 +335,7 @@ afterAll(() => new Promise<void>((resolve) => { server.closeAllConnections(); se
 beforeEach(() => {
   state = manager();
   owners = new Map([
-    ["bot_abc", { principalId: "pr_jc", sub: "u_123", active: true }],
+    ["bot_abc", { principalId: "pr_owner", sub: "u_123", active: true }],
     ["bot_off", { principalId: "pr_out", sub: "u_out", active: false }],
     ["bot_local", { principalId: "pr_local", sub: null, active: true }],
   ]);
@@ -418,8 +418,8 @@ describe(`POST ${BOT_MAIL_PATH}`, () => {
     expect(got).toMatchObject({ status: 202, body: { triggers: 2, delivered: 1, duplicate: 0, ignored: 1 } });
     expect(got.body).not.toHaveProperty("reason");
     expect(state.queued).toHaveLength(1);
-    // JC decision 3 (v2): the audit row keeps the full sender address, never the subject or the text
-    expect(rows).toEqual([{ botId: "bot_abc", botName: "Cryptic", ownerPrincipalId: "pr_jc", triggers: 2, delivered: 1, duplicate: 0, ignored: 1, sender: "ana@example.com" }]);
+    // Owner decision 3 (v2): the audit row keeps the full sender address, never the subject or the text
+    expect(rows).toEqual([{ botId: "bot_abc", botName: "Cryptic", ownerPrincipalId: "pr_owner", triggers: 2, delivered: 1, duplicate: 0, ignored: 1, sender: "ana@example.com" }]);
     const audit = JSON.stringify(rows);
     expect(audit).not.toContain("Facture");
     expect(audit).not.toContain("voici");

@@ -2,7 +2,7 @@
 // The bot's browser window speaks the person's language: its tab strip,
 // address bar, menu and every connection state ("Connecting…", the
 // interrupted stream and its automatic reconnect) come from the locale
-// packs, never English written in the component (JC 2026-10-15).
+// packs, never English written in the component (owner 2026-10-15).
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";

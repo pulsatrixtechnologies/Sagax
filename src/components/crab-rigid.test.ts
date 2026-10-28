@@ -1,4 +1,4 @@
-// JC 2026-10-12: the desktop crab came apart (legs and arms turning and
+// Owner 2026-10-12: the desktop crab came apart (legs and arms turning and
 // stretching on their own) and filled the whole mascot box. The rig keeps
 // one rigid pixel sprite, and the desktop draws it at its old footprint.
 import { describe, expect, it } from "vitest";

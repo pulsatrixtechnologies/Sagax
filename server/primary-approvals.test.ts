@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { cardRef, createPrimaryApprovals, primaryAnswerable, type PrimaryCard, type PrimaryTurn } from "./primary-approvals.ts";
 
-const TURN: PrimaryTurn = { botId: "quasar", botName: "Quasar", person: "pr_jc", message: { id: "m1", text: "Oui vas-y, approuve-la. Toujours permettre pour Ottoline.", at: 20_000 } };
+const TURN: PrimaryTurn = { botId: "quasar", botName: "Quasar", person: "pr_owner", message: { id: "m1", text: "Oui vas-y, approuve-la. Toujours permettre pour Ottoline.", at: 20_000 } };
 const card = (over: Partial<PrimaryCard> = {}): PrimaryCard => ({
   threadId: "t-kat", requestId: "r1", botId: "ottoline", botName: "Ottoline", at: 1_000,
   title: "Allow Ottoline to run a command?", line: "npm test", kind: "permission", needsKey: false,
@@ -86,7 +86,7 @@ describe("sagax_approvals", () => {
     expect(audits).toEqual(["cancel"]);
   });
 
-  it("a bare yes in a long message answers the latest card and says which (JC 2026-10-20)", async () => {
+  it("a bare yes in a long message answers the latest card and says which (Owner 2026-10-20)", async () => {
     const long = harness([card()], { ...TURN, message: { ...TURN.message, text: "Oui vas-y, je te fais confiance, approuve celle qui attend depuis tantôt." } });
     const answered = await long.run({ action: "answer", decision: "allow", quote: "Oui vas-y" });
     expect(answered.status).toBe(200);
@@ -171,7 +171,7 @@ describe("primaryAnswerable", () => {
     expect(primaryAnswerable({ decidable: false, scope: "team" })).toBe(false);
     // an admin's card the member only waits on
     expect(primaryAnswerable({ decidable: false, scope: "org" })).toBe(false);
-    // 2026-10-20 (JC): the person's own confidential thread's card is theirs
+    // 2026-10-20 (owner): the person's own confidential thread's card is theirs
     expect(primaryAnswerable({ decidable: true, scope: "mine", confidential: true } as { decidable: boolean; scope: string })).toBe(true);
   });
 });

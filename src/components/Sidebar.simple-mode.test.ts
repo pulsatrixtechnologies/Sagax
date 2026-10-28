@@ -169,7 +169,7 @@ describe("bot-first sidebar", () => {
     if (density !== "icons") {
       expect(markup).toContain('aria-current="page"');
       expect(markup).toMatch(/sr-only[^>]*>Unread threads</); // bold name plus a screen-reader label, no dot (478bd6216)
-      // New thread beside the bot's "..." (JC, 2026-10-15)
+      // New thread beside the bot's "..." (owner, 2026-10-15)
       expect(markup).toContain('aria-label="New thread"');
     }
   });
@@ -225,7 +225,7 @@ describe("bot-first sidebar", () => {
       expect(main.html).toContain("Hide from sidebar");
       const ids = [...main.html.matchAll(/data-menu-item="([\w-]+)"/g)].map((match) => match[1]);
       if (shown) {
-        // the first entry, at the first level (JC, 2026-10-15)
+        // the first entry, at the first level (owner, 2026-10-15)
         expect(ids[0]).toBe("new-thread");
         expect(main.html).toContain(">New thread<");
         fixture.dispatch.mockClear();

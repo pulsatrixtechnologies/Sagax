@@ -28,14 +28,14 @@ describe("grokReadOnlyAllowRules", () => {
   });
 
   it("allows only the reviewed read tools on a Perspicax bridge", () => {
-    const rules = grokReadOnlyAllowRules({ custom: { perspicax_jc: bridge() } });
-    expect(rules).toEqual([...PERSPICAX_READ_ONLY_TOOLS, "cw_psa_query"].map((n) => `MCPTool(perspicax_jc__${n})`).sort());
-    expect(rules).toContain("MCPTool(perspicax_jc__cw_psa__query)");
-    expect(rules).toContain("MCPTool(perspicax_jc__memory_search)");
+    const rules = grokReadOnlyAllowRules({ custom: { perspicax_owner: bridge() } });
+    expect(rules).toEqual([...PERSPICAX_READ_ONLY_TOOLS, "cw_psa_query"].map((n) => `MCPTool(perspicax_owner__${n})`).sort());
+    expect(rules).toContain("MCPTool(perspicax_owner__cw_psa__query)");
+    expect(rules).toContain("MCPTool(perspicax_owner__memory_search)");
   });
 
   it("never allows a write, action, send, approval or command tool", () => {
-    const rules = grokReadOnlyAllowRules({ agents, custom: { perspicax_jc: bridge(), "sagax-environment": bridge() } });
+    const rules = grokReadOnlyAllowRules({ agents, custom: { perspicax_owner: bridge(), "sagax-environment": bridge() } });
     for (const tool of WRITES) {
       expect(rules.some((rule) => rule.endsWith(`__${tool})`))).toBe(false);
     }

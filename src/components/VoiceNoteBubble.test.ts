@@ -65,12 +65,12 @@ describe("VoiceNoteBubble", () => {
     const markup = renderToStaticMarkup(createElement(VoiceNoteBubble, {
       attachment: { kind: "audio", path: "/attachments/123e4567-e89b-12d3-a456-426614174000.wav", mime: "audio/wav" },
       src: "blob:voice-note",
-      words: [{ text: "Bonjour", start: 0, end: 0.5 }, { text: "JC", start: 0.6, end: 1 }],
+      words: [{ text: "Bonjour", start: 0, end: 0.5 }, { text: "Owner", start: 0.6, end: 1 }],
     }));
     expect(markup).toContain('src="blob:voice-note"');
     expect(markup).toContain("data-voice-note-words");
     expect(markup).toContain('aria-label="Go to “Bonjour” in the voice note"');
-    expect(markup).toContain('aria-label="Go to “JC” in the voice note"');
+    expect(markup).toContain('aria-label="Go to “Owner” in the voice note"');
   });
 
   it("shows no words without timings", () => {

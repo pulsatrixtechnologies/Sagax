@@ -552,7 +552,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       expect(boatPrompts).toHaveLength(0);
       expect(boatCalls.filter(call => call.method === "POST" && call.path === "/boxes")).toHaveLength(state === "wake" ? 0 : 1);
       expect(boatCalls.some(call => call.path.endsWith("/resume"))).toBe(state === "wake");
-      // The move held that request only (JC 2026-10-16: nothing is recorded,
+      // The move held that request only (owner 2026-10-16: nothing is recorded,
       // each turn decides again): the next message follows the bot's own
       // Workspace, and the bot may select the cloud computer again.
       expect((await api("GET", "/api/bots?messages=0")).bots.find((b: any) => b.id === bot.id).tasks[0]).not.toHaveProperty("surface");
@@ -606,7 +606,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       const state = await api("GET", "/api/bots?messages=30");
       const saved = state.bots.find((b: any) => b.id === bot.id);
       // the model picked the VM for this request only: the conversation
-      // records no place, so the next message decides again (JC 2026-10-16)
+      // records no place, so the next message decides again (owner 2026-10-16)
       expect(saved.tasks.find((task: any) => task.threadId === bot.threadId)).not.toHaveProperty("surface");
       expect(saved.messages.filter((message: any) => message.role === "user" && message.kind === "text")).toHaveLength(1);
       expect((await call("GET")).status).toBe(401);
