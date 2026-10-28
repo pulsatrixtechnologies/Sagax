@@ -768,6 +768,8 @@ export function describeGrokAccountError(code: AccountErrorCode, model?: string)
       return `Grok refused this turn${which}: the Grok account it runs on has no active subscription. Renew it at grok.com, or choose another model for this bot.`;
     case "quota_or_region_restriction":
       return `Grok refused this turn${which}: the Grok account it runs on reached its usage limit. Wait for it to reset, or choose another model for this bot.`;
+    case "model_access_disabled":
+      return `Grok refused this turn${which}: the Grok account it runs on has this model turned off. Choose another model for this bot.`;
   }
 }
 

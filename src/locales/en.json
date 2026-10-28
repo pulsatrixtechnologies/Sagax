@@ -2308,6 +2308,7 @@
   "composer.dictation.unavailable": "Dictation isn't available in this build.",
   "composer.error.clipboardImage": "Could not read the clipboard image. Try attaching the image file instead.",
   "composer.error.engineRemoved": "This bot's engine is no longer available: choose another in Edit bot > Model",
+  "composer.error.modelAccessDisabled": "OpenCode has this model turned off for the account that pays for it. Pick another model in Edit bot > Model, or ask whoever manages that account to turn it on.",
   "composer.error.noEngine": "This bot has no engine: choose one in Edit bot > Model",
   "composer.error.noImages": "The selected responder does not support image attachments.",
   "composer.failed.attachment": "attachment",

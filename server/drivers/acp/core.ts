@@ -114,9 +114,9 @@ import { readUseToolCall } from "../../../shared/mcp-gateway-call.ts";
 /** Failures the person fixes on their provider account, not by retrying:
  * the process that reported one is healthy and stays pooled. */
 export type AccountErrorCode = Extract<ProviderErrorCode,
-  "invalid_credentials" | "inactive_subscription" | "insufficient_funds" | "quota_or_region_restriction">;
+  "invalid_credentials" | "inactive_subscription" | "insufficient_funds" | "quota_or_region_restriction" | "model_access_disabled">;
 const ACCOUNT_ERROR_CODES: ReadonlySet<ProviderErrorCode> = new Set<AccountErrorCode>([
-  "invalid_credentials", "inactive_subscription", "insufficient_funds", "quota_or_region_restriction",
+  "invalid_credentials", "inactive_subscription", "insufficient_funds", "quota_or_region_restriction", "model_access_disabled",
 ]);
 const isAccountError = (code: ProviderErrorCode | undefined): code is AccountErrorCode =>
   code !== undefined && ACCOUNT_ERROR_CODES.has(code);

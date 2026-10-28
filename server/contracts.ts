@@ -32,6 +32,9 @@ export type ProviderErrorCode =
   /** The account has no credit left for a pay-as-you-go model. */
   | "insufficient_funds"
   | "quota_or_region_restriction"
+  /** #1450: the paying account has this model turned off; another model
+   * of the same engine may still run. */
+  | "model_access_disabled"
   | "upstream_outage"
   | "model_catalog_outage";
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MODEL_ACCESS_DISABLED_MESSAGE } from "../../../shared/model-access-disabled.ts";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -300,6 +301,9 @@ describe("OpenCode catalog", () => {
     ["Internal error: Insufficient account funds.", "insufficient_funds"],
     ["Internal error: An active OpenCode Go subscription is required", "inactive_subscription"],
     ["Internal error: Monthly usage limit reached for this key", "quota_or_region_restriction"],
+    // #1450, from production logs on an organization server (Zen workspace
+    // with the model turned off in its model settings)
+    ["Internal error: Upstream request failed: Model access is disabled", "model_access_disabled"],
   ] as const)("classifies the real APIError %s", (message, expected) => {
     expect(classifyOpenCodeError(apiError(message))).toBe(expected);
   });
@@ -327,6 +331,13 @@ describe("OpenCode catalog", () => {
   // index.ts keeps only the first 160 characters of a chat error, so a fix
   // longer than that was cut mid-command. With provider keys and `opencode
   // auth login` the refusing account may not be Zen's.
+  it("#1450: a model turned off on the paying account gets the one sentence the app translates, never the vendor's words", () => {
+    const text = describeOpenCodeAccountError("model_access_disabled", "opencode/big-pickle");
+    expect(text).toBe(MODEL_ACCESS_DISABLED_MESSAGE);
+    expect(text).not.toContain("Upstream request failed");
+    expect(text.length).toBeLessThanOrEqual(160);
+  });
+
   it.each(["invalid_credentials", "insufficient_funds", "inactive_subscription", "quota_or_region_restriction"] as const)(
     "words %s briefly and names the provider that refused",
     (code) => {
