@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { engineApprovalMode, fullAccessRulesHold, type ApprovalMode } from "../shared/approval-mode.ts";
+import { engineApprovalMode, type ApprovalMode } from "../shared/approval-mode.ts";
 import { autoVerdict } from "./auto-approve.ts";
 import { ownerDecision, ownerVerdictOver, ruleCandidateFor, type OwnerRule, type RuleBehavior } from "./owner-approval.ts";
 import { ownerModeForTurn } from "./owner-autonomy.ts";
@@ -65,28 +65,13 @@ describe("4 levels x a rule Deny / Ask / Allow / none", () => {
     }
   });
 
-  it("the engine runs at Ask under Full access while a holding rule is in force (organization Ask or Deny, or any Deny)", () => {
+  it("the engine runs at Ask under Full access while an Ask or Deny rule is in force, so the rule sees every call", () => {
     expect(engineApprovalMode("full", true)).toBe("ask");
     expect(engineApprovalMode("full", false)).toBe("full");
     for (const level of ["ask", "edits", "auto", "custom"] as const) {
       expect(engineApprovalMode(level, true)).toBe(level);
       expect(engineApprovalMode(level, false)).toBe(level);
     }
-  });
-
-  it("at Full access a person's own Ask rule does not hold the engine at Ask; an organization Ask or Deny, and any Deny, still do", () => {
-    expect(fullAccessRulesHold([{ behavior: "ask" }])).toBe(false);
-    expect(fullAccessRulesHold([{ behavior: "ask", org: false }])).toBe(false);
-    expect(fullAccessRulesHold([{ behavior: "allow" }])).toBe(false);
-    expect(fullAccessRulesHold([{ behavior: "deny", enabled: false }])).toBe(false);
-    expect(fullAccessRulesHold([{ behavior: "ask", org: true, enabled: false }])).toBe(false);
-    expect(fullAccessRulesHold([{ behavior: "deny" }])).toBe(true);
-    expect(fullAccessRulesHold([{ behavior: "deny", org: true }])).toBe(true);
-    expect(fullAccessRulesHold([{ behavior: "ask", org: true }])).toBe(true);
-    expect(fullAccessRulesHold([{ behavior: "ask" }, { behavior: "deny" }])).toBe(true);
-    expect(engineApprovalMode("full", fullAccessRulesHold([{ behavior: "ask" }]))).toBe("full");
-    expect(engineApprovalMode("full", fullAccessRulesHold([{ behavior: "ask", org: true }]))).toBe("ask");
-    expect(engineApprovalMode("full", fullAccessRulesHold([{ behavior: "deny" }]))).toBe("ask");
   });
 
   it("request.opened reads the owner's rules even when the level answered (index.ts ownerLayer)", () => {

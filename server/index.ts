@@ -82,8 +82,6 @@ import { canWorkOnCloud, type CloudEngine } from "../shared/cloud-computer.ts";
 import {
   approvalModeFor,
   engineApprovalMode,
-  fullAccessRulesHold,
-  type FullAccessHoldRule,
   approvalModeWidens,
   hasNativeAutoReview,
   modelSwitchNeedsAsk,
@@ -32973,26 +32971,24 @@ function auditApprovalModeChange(auth: RequestAuth | null, botId: string, before
   });
 }
 /** Audit: one turn ran with Full access. */
-/** 2026-10-27: at Full access, whether the engine must run natively at Ask.
- * An organization Ask or Deny, and any Deny, hold it so those rules see
- * every call. A person's own Ask rule does not (shared/approval-mode.ts
- * fullAccessRulesHold): Full stays Full, and that Ask rule still cards the
- * matching call once it reaches Sagax. */
+/** 2026-10-26 (one approval level): whether an Ask or Deny rule could
+ * decide a call of this bot's turn: the owner's (or the conversation's
+ * person's) own rules for this bot, their rules in their own words, and the
+ * organization's rules. */
 function rulesHoldTurn(bot: BotRecord, threadId: string): boolean {
   const people = new Set<string>([approvalOwnerId(bot, threadId)]);
   const speaker = turnSpeakerPrincipals.get(threadId);
   if (speaker && isPrincipalId(speaker)) people.add(speaker);
-  const held: FullAccessHoldRule[] = [];
   for (const person of people) {
     if (!person) continue;
-    for (const rule of ownerApprovals.rulesOf(person, bot.id)) held.push({ behavior: rule.behavior });
-    for (const rule of customRules.rulesOf(person, bot.id)) held.push({ behavior: rule.behavior, org: rule.org === true, enabled: rule.enabled });
+    if (ownerApprovals.rulesOf(person, bot.id).some((rule) => rule.behavior !== "allow")) return true;
+    if (customRules.rulesOf(person, bot.id).some((rule) => rule.enabled && rule.behavior !== "allow")) return true;
   }
-  return fullAccessRulesHold(held);
+  return false;
 }
 /** The level the engine runs natively (shared/approval-mode.ts
- * engineApprovalMode): Full with a holding rule runs it at Ask so that
- * rule sees every call; Sagax answers the rest as Full. */
+ * engineApprovalMode): Full with a rule in force runs it at Ask so the rule
+ * sees every call; Sagax answers the rest as Full. */
 function engineTurnLevel(bot: BotRecord, threadId: string, level: ApprovalMode): ApprovalMode {
   return engineApprovalMode(level, level === "full" && rulesHoldTurn(bot, threadId));
 }

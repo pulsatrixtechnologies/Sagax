@@ -2431,12 +2431,9 @@ rules, covered by `server/owner-approval.test.ts`,
   refuses, an ask keeps its card even in Full access, an allow goes without
   a card even at Ask), then the level for what no rule covers
   (`ownerVerdictOver`, matrix in `server/owner-approval-levels.test.ts`).
-  At Full access the engine stays at Full when the only holding rules are
-  the person's own Ask rules (`fullAccessRulesHold`): those still card the
-  matching call once it reaches Sagax. An organization Ask or Deny, and any
-  Deny, still run the engine at Ask so those rules see every call
-  (`engineApprovalMode`); Sagax answers the rest as Full. The old
-  `GET/PUT /api/bots/:id/permission-mode` is gone; stored
+  At Full with an Ask or Deny rule in force, the engine runs at Ask so the
+  rule sees every call (`engineApprovalMode`); Sagax answers the rest as
+  Full. The old `GET/PUT /api/bots/:id/permission-mode` is gone; stored
   modes were carried into the level once (`approval-level-migration.ts`).
   No level or rule answers an admin card, a safety hold, a sandbox
   widening, a question, a guest's turn or a teammate tool.
