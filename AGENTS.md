@@ -15,6 +15,19 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Every turn knows its approval level; Full never asks for a typed GO (2026-10-28)
+
+A bot in Full access answered "no sends without your typed GO": nothing in
+its prompt said it ran in Full, and a loaded instruction (a plugin skill
+asking for the operator's GO before a send) filled the gap. Every direct
+and room turn now gets an "Approval level" section
+(server/approval-level-prompt.ts) with the level it really runs at
+(`approvalModeForTurn`, `roomTurnApprovalMode`). Full: act without asking,
+never ask for a typed GO or a confirmation; only Refuse and Ask first rules
+and recipients outside the allowed list hold a call, and Sagax shows that
+itself. Below Full the card asks, never a typed word. The connectors
+section says the same for mail, Teams and calendar (`outwardRule`).
+
 ## Grok's own connectors reach the person's Grok turn (2026-10-28)
 
 Grok's grok.com connectors (Outlook, Microsoft Teams, Gmail, SharePoint)

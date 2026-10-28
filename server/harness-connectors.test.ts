@@ -323,3 +323,23 @@ describe("2026-10-28: Grok's own connectors in the person's Grok turn", () => {
     expect(text).toContain("Microsoft Teams");
   });
 });
+
+describe("2026-10-28: Full access never asks for a typed GO", () => {
+  it("Full access: a send asks for no card and no typed GO; only Refuse, Ask first and allowed recipients stop it", () => {
+    for (const input of [
+      { driver: "claudeAgent", claudeAi: true, grokCloud: false, full: true },
+      { driver: "grokAgent", claudeAi: false, grokCloud: true, full: true },
+    ]) {
+      const text = engineConnectorsPrompt(input);
+      expect(text).toContain("Full access");
+      expect(text).not.toMatch(/wait for the person's approval card/);
+      expect(text).toMatch(/no confirmation and no typed GO/);
+      expect(text).toMatch(/Ask first/);
+      expect(text).toMatch(/allowed recipients/);
+    }
+    // below Full the card stays, and the bot never asks for a typed word either
+    const ask = engineConnectorsPrompt({ driver: "claudeAgent", claudeAi: true, grokCloud: false });
+    expect(ask).toMatch(/approval card/);
+    expect(ask).toMatch(/never ask for a typed GO/);
+  });
+});

@@ -663,6 +663,7 @@ import { introAdvance } from "./intro-tour.ts";
 import { SoloGoals, soloGoalCommand, soloGoalContinuePrompt, soloGoalLine, soloGoalSystemPrompt, withoutSoloGoalMarker } from "./solo-goal.ts";
 import { soloGoalLineText, type SoloGoalLine } from "../shared/solo-goal-line.ts";
 import { handoffModel } from "../shared/handoff-model.ts";
+import { approvalLevelPrompt } from "./approval-level-prompt.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -22224,6 +22225,7 @@ async function startTurn(
       const compactPrompt = usesCompactPrompt({ ...promptMode, driverKind: instance.driverKind, model })
         ? compactPromptFor(liveBot ?? bot, typeof turnPrincipal === "string" && turnPrincipal ? turnPrincipal : effectiveBotOwner(bot))
         : undefined;
+      const promptApprovalLevel = approvalModeForTurn(bot, commsDepth > 0, threadId);
       const builtPrompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "finish-until", label: "Do not finish until", text: finishUntilPrompt((liveBot ?? bot).finishUntil) },
         // #1372: a 1:1 goal's instruction, while it works; never the person's message
@@ -22251,7 +22253,9 @@ async function startTurn(
         // bot whose driver actually mounted the tools
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
-        { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker) },
+        { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker, { level: promptApprovalLevel }) },
+        // the level this turn really runs at (approvalModeForTurn), so Full never asks for a typed GO
+        { id: "approval-level", label: "Approval level", text: approvalLevelPrompt(promptApprovalLevel) },
         // what this turn reaches, in one line: "what connectors do you have" needs no tool call (server/turn-reach.ts)
         { id: "reach", label: "Reach", text: turnReachPrompt(liveBot ?? bot, instance, speaker, threadId, integrations, Boolean(mountedComputer)) },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT + myChromePromptFor(bot, threadId) : "" },
@@ -25800,6 +25804,7 @@ async function runGroupMemberTurn(
   const roomCompactPrompt = usesCompactPrompt({ ...roomPromptMode, driverKind: instance.driverKind, model: roomModel })
     ? compactPromptFor(readyBot, roomSpeakerId || effectiveBotOwner(readyBot))
     : undefined;
+  const roomPromptLevel = roomTurnApprovalMode(readyBot, threadId, orchestration);
   const roomBuilt = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "finish-until", label: "Do not finish until", text: finishUntilPrompt(store.bot(bot.id)?.finishUntil ?? bot.finishUntil) },
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
@@ -25809,7 +25814,8 @@ async function runGroupMemberTurn(
     { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
-    { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(readyBot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" }) },
+    { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(readyBot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" }, { level: roomPromptLevel }) },
+    { id: "approval-level", label: "Approval level", text: approvalLevelPrompt(roomPromptLevel) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note, cloudHome: Boolean(CLOUD_HOME) }) },
@@ -29356,7 +29362,8 @@ function connectorSwitchForTurn(bot: BotRecord, threadId: string, speaker: TurnS
 }
 /** What a turn is told about mail, calendar, Teams and SharePoint
  * (harness-connectors.ts engineConnectorsPrompt). */
-function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker): string {
+function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker,
+  turn: { level?: ApprovalMode } = {}): string {
   const input = accountConnectorInput(bot, instance, speaker);
   const account = accountConnectorsForTurn(input);
   return engineConnectorsPrompt({
@@ -29364,6 +29371,8 @@ function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof w
     claudeAi: claudeAiConnectorsForTurn(input),
     grokCloud: grokCloudConnectorsForTurn(input) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
     foreign: account === "foreign",
+    // a Full access turn is told so: no card, no typed GO (2026-10-28)
+    full: turn.level === "full",
   });
 }
 /** Where a person sets their model keys (Perspicax console, slice 4). */
