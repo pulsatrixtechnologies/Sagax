@@ -126,6 +126,31 @@ test("the API passes through with the session; a write from the bundled page car
   assert.deepEqual(other.init, { bypassCustomProtocolHandlers: true });
 });
 
+test("a published page's address is the server's, never the app shell (0.8.11: the card drew Sagax)", async () => {
+  const dir = bundleDir();
+  for (const pathname of ["/pages/preview/abcdefgh12/1", "/pages/preview-frame/abcdefgh12/1", "/pages/view/tok.sig", "/pages/frame/tok.sig", "/pages/comment/tok.sig", "/pages/unknown"]) {
+    assert.equal(ui.servedByServer(pathname), true, pathname);
+    assert.deepEqual(ui.routeRequest({ url: `${ORG}${pathname}`, method: "GET" }, ORG), { kind: "pass" }, pathname);
+  }
+  const fetched = [];
+  const handle = ui.createBundledUiHandler({
+    origin: () => ORG,
+    staticDir: () => dir,
+    fetch: async (input, init) => { fetched.push({ url: typeof input === "string" ? input : input.url, init }); return new Response("<p>the page</p>", { status: 200 }); },
+    readFile: async (file) => readFileSync(file),
+  });
+  // the card's frame: no referrer (referrerPolicy no-referrer), still the person's preview
+  const preview = await handle(request(`${ORG}/pages/preview/abcdefgh12/1?bare=1&theme=dark`));
+  assert.doesNotMatch(await preview.text(), /DESKTOP BUNDLE/);
+  assert.equal(fetched[0].url, `${ORG}/pages/preview/abcdefgh12/1?bare=1&theme=dark`);
+  assert.equal(fetched[0].init.credentials, "include");
+  // a reader comment is a write: no session unless the bundled page sent it
+  await handle(request(`${ORG}/pages/comment/tok.sig`, { method: "POST", body: "text=x" }));
+  assert.equal(fetched[1].init.credentials, "omit");
+  assert.equal(ui.pageDocument(request(`${ORG}/pages/view/tok.sig`)), true);
+  assert.equal(ui.pageDocument(request(`${ORG}/api/bots`)), false);
+});
+
 test("every saved organization server is drawn from the bundle, and each one's session rides with its own page only", async () => {
   const OTHER = "https://other-org.example.test";
   assert.equal(ui.bundledOriginFor([ORG, OTHER], `${OTHER}/pair`), OTHER);

@@ -22,7 +22,11 @@ struct PagePublishCardView<Fallback: View>: View {
     @ViewBuilder let fallback: () -> Fallback
     @State private var page: PublishedPageSummary?
     @State private var missing = false
+    /// The server answered 404: the page was deleted. The card stays, said so.
+    @State private var deleted = false
     @State private var previewPath: String?
+    /// No preview to draw: a neutral line, never a spinner that does not end.
+    @State private var previewUnavailable = false
     @State private var openedAlone = false
 
     static var thumbHeight: CGFloat { 190 }
@@ -100,6 +104,12 @@ struct PagePublishCardView<Fallback: View>: View {
                         .scaleEffect(0.5, anchor: .topLeading)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
+                } else if deleted || previewUnavailable {
+                    Text(deleted ? String(localized: "Page deleted") : String(localized: "Preview unavailable"))
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityIdentifier("page-card-unavailable")
                 } else {
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -118,6 +128,7 @@ struct PagePublishCardView<Fallback: View>: View {
     /// "Page", then where this version stands.
     private var stateLine: String {
         let label = String(localized: "Page")
+        if deleted { return "\(label) · \(String(localized: "Page deleted"))" }
         guard let state = PageViewRules.cardState(page: page, version: ref.version), state != .draft else { return label }
         let detail: String
         switch state {
@@ -162,10 +173,15 @@ struct PagePublishCardView<Fallback: View>: View {
         guard let client = session.settingsClient else { return }
         do {
             page = try await client.publishedPage(id: ref.pageId)
+        } catch APIError.status(404, _) {
+            deleted = true
+            return
         } catch {
             missing = true
             return
         }
         previewPath = (try? await client.pageVersionPreview(id: ref.pageId, version: ref.version))?.previewPath
+        // only the page's own preview address is ever drawn (PagePreview.src)
+        if previewPath.flatMap(PagePreview.src) == nil { previewUnavailable = true }
     }
 }

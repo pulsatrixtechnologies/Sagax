@@ -43,7 +43,7 @@ import {
   type PublishedPageSummary,
   type ReaderComment,
 } from "../../shared/published-pages";
-import { ACCESS_LABEL, needsLinkConfirm, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
+import { ACCESS_LABEL, needsLinkConfirm, pageErrorText, pageGone, previewSrc, usePagesPolicy, when } from "./page-controls";
 import { PageSharePopover } from "./PageShare";
 import { SwitchRow } from "./SettingsPrimitives";
 import { useWidgetTheme } from "./WidgetFrame";
@@ -200,6 +200,10 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   const [sent, setSent] = useState(false);
   const [reloads, setReloads] = useState(0);
   const [sharing, setSharing] = useState(false);
+  // the page was deleted (or is not this person's): said once, no spinner
+  const [gone, setGone] = useState(false);
+  // the page or its version could not be asked: no endless spinner either
+  const [failed, setFailed] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const theme = useWidgetTheme(rootRef).scheme;
@@ -221,7 +225,11 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
         update(answer.page);
         setVersion((current) => pageVersionToShow(answer.page, asked ?? current));
       })
-      .catch((cause) => { if (live) setError(errorText(cause)); });
+      .catch((cause) => {
+        if (!live) return;
+        if (pageGone(cause)) setGone(true);
+        else { setError(errorText(cause)); setFailed(true); }
+      });
     return () => { live = false; };
   }, [pageId, update]);
   useEffect(() => load(initialVersion ?? null), [load, initialVersion]);
@@ -252,8 +260,16 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
     if (version === null) return;
     let live = true;
     api<{ version: { previewPath: string } }>(`/api/pages/${encodeURIComponent(pageId)}/versions/${version}`)
-      .then((answer) => { if (live) setPreviewPath(answer.version.previewPath); })
-      .catch((cause) => { if (live) setError(errorText(cause)); });
+      .then((answer) => {
+        if (!live) return;
+        // only the page's own preview address is ever framed (previewSrc)
+        if (previewSrc(answer.version.previewPath)) { setPreviewPath(answer.version.previewPath); setFailed(false); }
+        else setFailed(true);
+      })
+      .catch((cause) => {
+        // a deleted page is said by the page's own answer (gone wins)
+        if (live) { setError(errorText(cause)); setFailed(true); }
+      });
     return () => { live = false; };
   }, [pageId, version, reloads]);
 
@@ -310,8 +326,10 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input,textarea,select,[role=menu],dialog")) return;
+      // the target may be the window or the document (focus nowhere):
+      // Escape still closes, it never throws
+      const target = event.target;
+      if (typeof Element !== "undefined" && target instanceof Element && target.closest("input,textarea,select,[role=menu],dialog")) return;
       onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -329,12 +347,17 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   const proposed = page && shown && shown.state === "proposed" && page.currentVersion !== shown.n;
 
   return (
-    <div ref={rootRef} data-page-surface={pageId} className={cn("relative flex h-full min-h-0 w-full min-w-0 flex-col bg-app text-ink", className)}>
+    // window-no-drag: the page covers the conversation's header, a window
+    // drag region in the desktop app (styles.css). Without it the drag region
+    // under the page took every click on × and the round buttons (0.8.11:
+    // no way out of a page). The page runs to the top edge, so none of it
+    // drags the window.
+    <div ref={rootRef} data-page-surface={pageId} className={cn("window-no-drag relative flex h-full min-h-0 w-full min-w-0 flex-col bg-app text-ink", className)}>
       {/* floats over the page, as the reference design draws it: the page
           runs to the top edge; only the round buttons and the pill catch
           the pointer */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-[2] flex h-14 items-center gap-2 px-3 [&>*]:pointer-events-auto">
-        <button type="button" data-page-close aria-label={t("pages.close")} title={t("pages.close")} onClick={onClose} className={ROUND}>
+        <button type="button" data-page-close aria-label={t("pages.close")} title={t("pages.close")} onClick={onClose} className={cn(ROUND, "window-no-drag")}>
           <X size={17} />
         </button>
         <div className="!pointer-events-none absolute inset-x-28 flex justify-center">
@@ -374,13 +397,17 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
       </header>
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-          {(annotating || error) && (
+          {(annotating || error) && !gone && !(failed && !src) && (
             <div className="mt-14">
               {annotating && <p role="status" className="border-y border-hairline/30 bg-accent/10 px-3 py-1.5 text-[12px] text-ink">{t("pages.annotate.hint")}</p>}
               {error && <p role="alert" className="px-3 py-1.5 text-[12px] text-danger">{error}</p>}
             </div>
           )}
-          {src ? (
+          {gone ? (
+            <PageUnavailable kind="gone" onClose={onClose} />
+          ) : failed && !src ? (
+            <PageUnavailable kind="failed" detail={error} onClose={onClose} />
+          ) : src ? (
             // a new address (mode, theme, a new version) draws the frame again
             <iframe key={src} ref={frameRef} data-page-viewer-frame title={t("pages.previewTitle", { title })} src={src}
               referrerPolicy="no-referrer" allow="" className="min-h-0 w-full flex-1 border-0 bg-transparent" style={{ colorScheme: theme }} />
@@ -417,6 +444,23 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
           </aside>
         )}
       </div>
+    </div>
+  );
+}
+
+/** In place of the page when it cannot be drawn: deleted, or its preview
+ * could not be asked. A neutral line and Close, never a spinner that does
+ * not end, never the app. */
+export function PageUnavailable({ kind, detail, onClose }: { kind: "gone" | "failed"; detail?: string; onClose(): void }) {
+  return (
+    <div data-page-unavailable={kind} role="alert" className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+      <PageGlyph size={36} className="rounded-xl opacity-60" />
+      <p className="text-[14px] font-medium text-ink">{kind === "gone" ? t("pages.gone") : t("pages.previewUnavailable")}</p>
+      {kind === "failed" && detail ? <p className="max-w-md text-[12px] text-ink-secondary">{detail}</p> : null}
+      <button type="button" data-page-unavailable-close onClick={onClose}
+        className="window-no-drag rounded-full border border-hairline/60 bg-raised px-4 py-1.5 text-[13px] font-medium text-ink hover:bg-raised-hover">
+        {t("pages.close")}
+      </button>
     </div>
   );
 }

@@ -19,7 +19,7 @@ import {
   type PagesPolicy,
   type PublishedPageSummary,
 } from "../../shared/published-pages";
-import { ACCESS_LABEL, expiryFromHours, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
+import { ACCESS_LABEL, expiryFromHours, pageErrorText, pageGone, previewSrc, usePagesPolicy, when } from "./page-controls";
 import { PageGlyph } from "./PageViewer";
 import { openPageInOwnWindow } from "@/lib/page-windows";
 import { PageSharePopover } from "./PageShare";
@@ -90,7 +90,11 @@ export function PagePublishCard({ message }: { message: Message }) {
   const ref = message.pagePublish!;
   const [page, setPage] = useState<PublishedPageSummary | null>(null);
   const [missing, setMissing] = useState(false);
+  // deleted (the server's 404): the card stays, said "Page deleted"
+  const [deleted, setDeleted] = useState(false);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+  // no preview to draw: a neutral line in its place, never a spinner forever
+  const [noPreview, setNoPreview] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
   const theme = useWidgetTheme(cardRef).scheme;
 
@@ -98,10 +102,10 @@ export function PagePublishCard({ message }: { message: Message }) {
     let live = true;
     api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(ref.pageId)}`)
       .then((answer) => { if (live) setPage(answer.page); })
-      .catch(() => { if (live) setMissing(true); });
+      .catch((cause) => { if (!live) return; if (pageGone(cause)) setDeleted(true); else setMissing(true); });
     api<{ version: { previewPath: string } }>(`/api/pages/${encodeURIComponent(ref.pageId)}/versions/${ref.version}`)
       .then((answer) => { if (live) setPreviewPath(answer.version.previewPath); })
-      .catch(() => { /* the line below still says what it is */ });
+      .catch(() => { if (live) setNoPreview(true); });
     return () => { live = false; };
   }, [ref.pageId, ref.version]);
 
@@ -109,8 +113,11 @@ export function PagePublishCard({ message }: { message: Message }) {
     return <div className="chat-text w-fit max-w-[min(80%,560px)] rounded-[18px] bg-card px-3 py-[7px] text-[13px] text-ink">{message.text}</div>;
   }
   const title = page?.title || ref.title;
-  const status = pageCardState(page, ref.version);
-  const src = previewPath ? previewSrc(previewPath, { bare: true, theme }) : null;
+  const status = deleted ? "deleted" : pageCardState(page, ref.version);
+  // the page's own preview address, and nothing else, is ever framed: any
+  // other answer (an older server, a bad path) is "Preview unavailable"
+  const src = !deleted && previewPath ? previewSrc(previewPath, { bare: true, theme }) : null;
+  const unavailable = deleted || noPreview || (previewPath !== null && src === null);
   // the page names its own bot and conversation
   const open = () => { if (page) openPagePanel({ pageId: ref.pageId, botId: page.botId, threadId: page.threadId, title, version: ref.version }); };
   return (
@@ -121,6 +128,8 @@ export function PagePublishCard({ message }: { message: Message }) {
           <iframe title="" tabIndex={-1} src={src} loading="lazy" referrerPolicy="no-referrer" allow=""
             className="pointer-events-none absolute left-0 top-0 h-[400px] w-[200%] origin-top-left scale-50 border-0 bg-transparent"
             style={{ colorScheme: theme }} />
+        ) : unavailable ? (
+          <div data-page-thumb-unavailable className="flex h-full items-center justify-center text-[12px] text-ink-tertiary">{deleted ? t("pages.card.deleted") : t("pages.previewUnavailableShort")}</div>
         ) : (
           <div className="flex h-full items-center justify-center"><Loader2 size={14} className="animate-spin text-ink-secondary" /></div>
         )}
@@ -131,7 +140,7 @@ export function PagePublishCard({ message }: { message: Message }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13.5px] font-medium text-ink">{title}</span>
           <span data-page-card-state={status ?? ""} className="block truncate text-[12px] text-ink-secondary">
-            {t("pages.label")}{status && status !== "draft" ? ` · ${status === "published" && page ? t("pages.card.published", { access: page.access === "private" && ((page.invites?.people.length ?? 0) + (page.invites?.teams.length ?? 0)) > 0 ? t("pages.share.invited") : t(ACCESS_LABEL[page.access]) }) : t(`pages.card.${status}`, { n: String(ref.version) })}` : ""}
+            {t("pages.label")}{status === "deleted" ? ` · ${t("pages.card.deleted")}` : status && status !== "draft" ? ` · ${status === "published" && page ? t("pages.card.published", { access: page.access === "private" && ((page.invites?.people.length ?? 0) + (page.invites?.teams.length ?? 0)) > 0 ? t("pages.share.invited") : t(ACCESS_LABEL[page.access]) }) : t(`pages.card.${status}`, { n: String(ref.version) })}` : ""}
           </span>
         </span>
       </footer>

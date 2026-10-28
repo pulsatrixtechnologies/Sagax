@@ -25,7 +25,7 @@ import { usePerspicaxOrg, type OrgDirectory, type OrgDirectoryPerson } from "@/l
 import { groupPeopleCandidates } from "@/lib/private-threads";
 import { api, useStore } from "@/state/store";
 import type { PageAccess, PageInvites, PublishedPageSummary } from "../../shared/published-pages";
-import { ExpirySelect, expiryFromHours, needsLinkConfirm, openPage, pageErrorText } from "./page-controls";
+import { ExpirySelect, expiryFromHours, needsLinkConfirm, openPage, pageErrorText, pageReadingUrl } from "./page-controls";
 import { useOrgDirectory } from "./GroupPeoplePicker";
 
 export interface ShareStep {
@@ -184,7 +184,9 @@ export function PageSharePopover({ page, version, linkOff, onChange, onClose, cl
   };
   const withLink = async (use: (url: string) => void) => {
     const next = await run({ kind: "link" });
-    if (next?.url) use(next.url);
+    // the page's reading link only, never the app's address
+    const link = pageReadingUrl(next?.url);
+    if (link) use(link);
   };
   const ownerName = (viewerId && people.get(viewerId.toLowerCase())?.name) || state.config?.profile?.name?.trim() || t("pages.share.you");
 

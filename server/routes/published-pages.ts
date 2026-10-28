@@ -435,15 +435,25 @@ export function handlePagesOriginRequest(options: PublicPageOptions, req: Incomi
   return serveFrame(options, req, res, path, method);
 }
 
+/** Whether an address belongs to the published pages (/pages and below):
+ * it is answered by handlePublishedPagePublic, a page or a 404, and never by
+ * the UI's SPA fallback. Pure. */
+export function isPagesPath(path: string): boolean {
+  return path === "/pages" || path.startsWith("/pages/");
+}
+
 /** Answer a published page's wrapper, preview or frame on the app's origin;
  * false when the request is not one. */
 export function handlePublishedPagePublic(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): boolean {
+  if (!isPagesPath(path)) return false;
   const view = path.startsWith(PAGE_VIEW_PREFIX);
   const previewWrapper = path.startsWith(PAGE_PREVIEW_PREFIX);
   const frame = isFramePath(path);
   const comment = path.startsWith(PAGE_COMMENT_PREFIX);
-  if (!view && !previewWrapper && !frame && !comment) return false;
   common(res);
+  // Any other address under /pages is no page: an explicit 404, never the
+  // app's SPA page (which a page's card would then draw as its preview).
+  if (!view && !previewWrapper && !frame && !comment) return notFound(req, res, method);
   if (comment) {
     if (method !== "POST") {
       res.writeHead(405, { allow: "POST", "content-type": "text/plain; charset=utf-8", "content-security-policy": "default-src 'none'; sandbox" });
