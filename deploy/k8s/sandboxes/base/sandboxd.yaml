@@ -1,6 +1,6 @@
 # The provisioner. replicas is 0 so applying this tree does not start a
 # process. SANDBOX_BACKEND=kubernetes runs the Kubernetes backend
-# (server/sandboxd-k8s.ts). Scale up from the cutover runbook.
+# (server/sandboxd-k8s/sandboxd-k8s.ts). Scale up from the cutover runbook.
 apiVersion: v1
 kind: Service
 metadata:

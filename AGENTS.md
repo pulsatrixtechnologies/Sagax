@@ -771,7 +771,7 @@ computer only to show its state.
   (`server/sandbox-typing-prewake.ts` throttle, 2 min per person and bot),
   which uses `UserSandboxManager.prewake` (Kubernetes with the wake only, a
   bot that used it in 7 days only). Opening a conversation never wakes.
-- Reserve: `server/sandboxd-k8s-spare.ts` (provisioner, every 15 s) sets the
+- Reserve: `server/sandboxd-k8s/sandboxd-k8s-spare.ts` (provisioner, every 15 s) sets the
   reserve Deployment from the sandbox Pods: 0 with nobody, `SPARE_COUNT`
   while someone works, 0 from `SPARE_MAX_ACTIVE`. Env
   `SAGAX_SANDBOX_K8S_SPARE_DEPLOYMENT`, chart `provisioner.spareScaler`
@@ -4288,7 +4288,7 @@ not open a shared machine. Keep these rules, each covered by `server/user-sandbo
 - Only `sagax-sandboxd` (`server/sandboxd.ts`) holds the Docker socket; the
   Sagax server calls it with signed requests (`server/sandboxd-auth.ts`).
   `SANDBOX_BACKEND` defaults to `docker`. `kubernetes`
-  (`server/sandboxd-k8s.ts`) is the same API with one Pod and one PVC per
+  (`server/sandboxd-k8s/sandboxd-k8s.ts`) is the same API with one Pod and one PVC per
   person, NetworkPolicies for egress, and no docker.sock. It runs; it does
   not exit. Secret encryption and NetworkPolicy enforcement are operator
   attestations. Sagax keeps both provisioners and routes with
@@ -4299,7 +4299,7 @@ not open a shared machine. Keep these rules, each covered by `server/user-sandbo
   (`provisioner/`, `sandboxes/`, `helm/`, `tofu/`). Copy a workspace with
   `scripts/sandbox-workspace-migrate.ts` (source kept, checksums, both
   directions). Runbook: `docs/ops/sandboxes/cutover-rollback.md`. Tests:
-  `server/sandboxd-k8s-spec.test.ts`, `server/sandboxd-k8s.test.ts`,
+  `server/sandboxd-k8s/sandboxd-k8s-spec.test.ts`, `server/sandboxd-k8s/sandboxd-k8s.test.ts`,
   `server/sandbox-route.test.ts`, `server/sandbox-backend.test.ts`,
   `server/sandbox-workspace-copy.test.ts`; kind only with
   `SAGAX_SANDBOX_K8S_INTEGRATION=1` (`scripts/sandbox-k8s-kind.sh`).

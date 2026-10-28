@@ -112,7 +112,7 @@ subjects:
 {{- end }}
 {{- if .Values.provisioner.spareScaler.enabled }}
 ---
-# The reserve follows the people at work (server/sandboxd-k8s-spare.ts): the
+# The reserve follows the people at work (server/sandboxd-k8s/sandboxd-k8s-spare.ts): the
 # provisioner reads and sets the scale of the one reserve Deployment.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

@@ -520,7 +520,7 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
       // (authorized_keys), `.git-credentials` or a dotfile is refused, and
       // the write lands on the resolved path only while the path still
       // leads there. The contents never ride the command line: a variable
-      // when small, stdin beyond (sandboxd-k8s.ts withExecEnv carries both
+      // when small, stdin beyond (server/sandboxd-k8s/sandboxd-k8s.ts withExecEnv carries both
       // on stdin on Kubernetes).
       const where = await resolveInSandbox(path, exec);
       if ("refused" in where) return text(where.refused, true);

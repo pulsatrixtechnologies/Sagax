@@ -18,7 +18,7 @@ kind: Role
 metadata:
   name: sagax-sandboxd
   namespace: sandboxes
-# Only the verbs server/sandboxd-k8s.ts uses. Exec keeps `get` and `create`:
+# Only the verbs server/sandboxd-k8s/sandboxd-k8s.ts uses. Exec keeps `get` and `create`:
 # the websocket upgrade is a GET and is still refused without `get` (checked
 # on Kubernetes 1.35). No
 # patch on Pods or NetworkPolicies, no log reads, no LimitRange. What the

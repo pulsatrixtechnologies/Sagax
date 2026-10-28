@@ -276,7 +276,7 @@ node only while it is useful:
    `SAGAX_SANDBOX_K8S_SPARE_DEPLOYMENT=<system namespace>/sagax-sandbox-spare`
    on the provisioner and `provisioner.spareScaler.enabled: true` in the
    chart (a Role on that one Deployment's scale). The provisioner counts
-   the sandbox Pods every 15 s (`server/sandboxd-k8s-spare.ts`): no reserve
+   the sandbox Pods every 15 s (`server/sandboxd-k8s/sandboxd-k8s-spare.ts`): no reserve
    while nobody works, `SAGAX_SANDBOX_K8S_SPARE_COUNT` (default 1) while
    someone does, none once `SAGAX_SANDBOX_K8S_SPARE_MAX_ACTIVE` (default
    the running limit) are at work. It overrides the warm schedule's
@@ -481,7 +481,7 @@ screenshots, the GitHub connection, the desktop passwords, a person's MCP
 server variables) go on stdin as one JSON object whose size the command
 names; a python3 loader in the sandbox image reads exactly that many bytes,
 sets them and execs the real command (`withExecEnv` in
-`server/sandboxd-k8s.ts`). They never ride the command line, which is in
+`server/sandboxd-k8s/sandboxd-k8s.ts`). They never ride the command line, which is in
 the API server's request URL and in the process list. The in-chat terminal
 keeps no variable (`TERM` stays the pod's).
 
@@ -522,10 +522,10 @@ workflow are not evidence.
 
 ## Tests
 
-Unit tests do not need a cluster: `server/sandboxd-k8s-spec.test.ts`,
-`server/sandboxd-k8s.test.ts`, `server/sandboxd-runs-spec.test.ts` and
+Unit tests do not need a cluster: `server/sandboxd-k8s/sandboxd-k8s-spec.test.ts`,
+`server/sandboxd-k8s/sandboxd-k8s.test.ts`, `server/sandboxd-runs-spec.test.ts` and
 `server/sandboxd-runs.test.ts` (the run listener over real mutual TLS). The kind script
-`scripts/sandbox-k8s-kind.sh` runs `server/sandboxd-k8s.integration.test.ts`
+`scripts/sandbox-k8s-kind.sh` runs `server/sandboxd-k8s/sandboxd-k8s.integration.test.ts`
 only when `SAGAX_SANDBOX_K8S_INTEGRATION=1`, then deletes the cluster. It is
 not part of `pnpm test:unit`.
 

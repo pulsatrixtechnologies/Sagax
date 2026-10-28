@@ -19,7 +19,7 @@ modules. Nothing here mounts a Docker socket. The Docker provisioner stays
 the compose service. Sagax routes between them
 (`docs/ops/sandboxes/cutover-rollback.md`).
 
-One tree, four layers. The provisioner process is real: `SANDBOX_BACKEND=kubernetes` runs it (`server/sandboxd-k8s.ts`). It does not exit.
+One tree, four layers. The provisioner process is real: `SANDBOX_BACKEND=kubernetes` runs it (`server/sandboxd-k8s/sandboxd-k8s.ts`). It does not exit.
 
 | Layer | Path | Job |
 |---|---|---|
