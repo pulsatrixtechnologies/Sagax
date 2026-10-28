@@ -3187,14 +3187,15 @@ they share no stem) and `context_length` becomes `contextWindow`.
   link). Scope, do not widen: the bridge forwards `POST /v1/messages` only to
   a loopback endpoint (127.0.0.1 or localhost, the allowlisted ports) that
   the desktop itself probed and published as speaking the Anthropic protocol
-  (`probeAnthropicMessages` in `electron/local-models.mjs`: one POST with no
-  messages, 8 s timeout; 404/405/501 means no, cached 5 s; 2xx/4xx means
-  yes, cached 10 minutes; a timeout or another 5xx is no answer and keeps the
-  last definite one for another window, and a server that stops answering
-  `/models` forgets it. The bridge probes all endpoints at once.
-  A one-slot server such as DwarfStar queues the probe behind a real turn, so
-  a short timeout read "busy" as "does not speak it" and refused the next
-  Claude Code turn, 2026-10-18). The desktop re-checks that
+  (`probeAnthropicMessages` in `electron/local-models.mjs`: the catalog GET
+  `/v1/models` already says the server is up. The messages check posts `{}`,
+  with no model name and no max_tokens, so nothing is loaded and nothing is
+  generated. 404, 405 and 501 mean the route is absent, cached one minute;
+  any other definite answer means yes, cached 10 minutes. A timeout or
+  another 5xx is no answer and keeps the last definite one, and a server
+  that stops answering `/models` forgets it. The bridge probes all endpoints
+  at once. The empty body is refused before a one-slot server queues it).
+  The desktop re-checks that
   flag before it fetches (`executeLocalModel` `allowMessages`), and the server
   route refuses `/messages` for an unpublished endpoint or a GET. A path
   outside the allowlist is 404 whatever its query (`count_tokens?beta=true`);
