@@ -6,7 +6,7 @@
 // refuses a model on another engine, moves a bot whose engine left the list
 // onto Auto on an allowed engine, and Auto never picks outside the list. No
 // menu lists another provider (2026-10-18): shared/offered-engines.ts.
-import type { ModelSelection } from "./wire.ts";
+import type { ModelSelection } from "./model-selection.ts";
 
 export type AllowedEngines = readonly string[] | null | undefined;
 
