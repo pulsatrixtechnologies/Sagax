@@ -159,6 +159,32 @@ public enum BotTodoList {
         )
     }
 
+    /// How long a task that just moved to Done keeps its checked row before
+    /// the row folds away (`BOT_TASK_DONE_LINGER_MS`).
+    public static let doneLinger: TimeInterval = 2.5
+
+    /// The panel's one list: what waits for the person first, then what is
+    /// in progress, newest first. A done task is not listed, except the ones
+    /// that just moved to Done (`finishing`), kept among the in-progress rows
+    /// until their row folds away (`listBotTasks`).
+    public static func listed(_ tasks: [BotTodo], finishing: Set<String> = []) -> [BotTodo] {
+        let groups = grouped(tasks)
+        let rest = (groups.doing + groups.done.filter { finishing.contains($0.id) })
+            .sorted { $0.updatedAt > $1.updatedAt }
+        return groups.waiting + rest
+    }
+
+    /// The ids that went from open to Done between two reads. Nothing on the
+    /// first read: a task already done when it first shows is never listed.
+    public static func justFinished(from old: [BotTodo]?, to new: [BotTodo]) -> Set<String> {
+        guard let old else { return [] }
+        let before = Dictionary(old.map { ($0.id, $0.state) }, uniquingKeysWith: { _, last in last })
+        return Set(new.filter { task in
+            guard task.state == .done, let was = before[task.id] else { return false }
+            return was != .done
+        }.map(\.id))
+    }
+
     /// The moves the person is offered, in menu order (`personBotTaskActions`).
     public static func moves(for state: BotTodoState) -> [BotTodoAction] {
         switch state {

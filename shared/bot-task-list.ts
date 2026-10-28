@@ -160,4 +160,19 @@ export function groupBotTasks(tasks: readonly BotTask[]): Record<BotTaskState, B
   return groups;
 }
 
+/** How long a task that just moved to Done keeps its row, checked, before
+ * the row folds away (ms), and how long the fold itself takes. */
+export const BOT_TASK_DONE_LINGER_MS = 2500;
+export const BOT_TASK_DONE_FOLD_MS = 350;
+
+/** The panel's one list: what waits for the person first, then what is in
+ * progress, newest first. A task that is done is not listed, except the ones
+ * that just moved to Done (`finishing`), which stay among the in-progress
+ * rows until their row folds away. */
+export function listBotTasks(tasks: readonly BotTask[], finishing: ReadonlySet<string> = new Set()): BotTask[] {
+  const groups = groupBotTasks(tasks);
+  const rest = [...groups.doing, ...groups.done.filter((task) => finishing.has(task.id))].sort((a, b) => b.updatedAt - a.updatedAt);
+  return [...groups.waiting, ...rest];
+}
+
 export const BOT_TASK_GROUP_ORDER: readonly BotTaskState[] = ["waiting", "doing", "done"];

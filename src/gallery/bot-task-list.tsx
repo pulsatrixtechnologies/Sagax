@@ -2,7 +2,7 @@
  * above the Routines section so the two can be compared. Neutral made-up
  * tasks and routines; it answers /api itself, so nothing reaches a server.
  * Not shipped in the app.
- * ?skin=<id>&lang=<code>&state=empty|tasks|open|detail|menu */
+ * ?skin=<id>&lang=<code>&state=empty|tasks|open|detail|menu|done */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { BotTaskSection } from "../components/bot-settings/BotTaskSection";
@@ -22,7 +22,7 @@ const state = params.get("state") ?? "tasks";
 const bot = { id: "pepper", threadId: "t1", name: "Pepper", title: "Pepper", description: "", notifications: false, color: "green", unread: false, messages: [] } as unknown as Bot;
 const H = 3_600_000;
 const now = Date.now();
-const tasks = state === "empty" ? [] : [
+const tasks: Array<Record<string, unknown>> = state === "empty" ? [] : [
   { id: "task_aaaaaaaa1", botId: "pepper", title: "Draft the weekly team summary", state: "doing", history: [{ state: "doing", at: now - 3 * H, by: "bot" }], createdAt: now - 3 * H, updatedAt: now - H },
   { id: "task_aaaaaaaa2", botId: "pepper", threadId: "t1", title: "Choose between the two meeting times for Thursday afternoon with the whole team", state: "waiting", note: "Both rooms are free at 2 PM and 4 PM.\nThe 4 PM room has a screen for the demo.", history: [{ state: "doing", at: now - 5 * H, by: "bot" }, { state: "waiting", at: now - 2 * H, by: "bot" }], createdAt: now - 5 * H, updatedAt: now - 2 * H },
   { id: "task_aaaaaaaa3", botId: "pepper", title: "Renew the domain before it expires", state: "done", history: [{ state: "doing", at: now - 30 * H, by: "bot" }, { state: "done", at: now - 20 * H, by: "bot" }], createdAt: now - 30 * H, updatedAt: now - 20 * H },
@@ -44,6 +44,12 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const path = new URL(url, location.href).pathname;
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   if (path === "/api/bots/pepper/task-list") return json({ tasks });
+  const move = path.match(/\/api\/bots\/pepper\/task-list\/([^/]+)\/complete$/);
+  if (move && init?.method === "POST") {
+    const task = tasks.find((item) => item.id === move[1]);
+    if (task) { task.state = "done"; task.updatedAt = Date.now(); }
+    return json({ task });
+  }
   if (path === "/api/routines") return json({ routines, runs: [], folders: {} });
   if (path === "/api/bots") return json({ bots: [bot], groups: [], sections: [], computerControl: {} });
   return realFetch(input, init);

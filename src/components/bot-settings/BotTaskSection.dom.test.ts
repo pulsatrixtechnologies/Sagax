@@ -67,7 +67,8 @@ describe("bot task list against an older server", () => {
   it("shows an empty list on the current server, and keeps the error for a real failure", async () => {
     vi.stubGlobal("fetch", answer(200, { tasks: [] }));
     await mount(createElement(BotTaskSection, { botId: "bot-1" }));
-    expect(host.querySelector("[data-bot-tasks-empty]")?.textContent).toContain("Ask your bot to note one");
+    expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
+    expect(host.textContent).toBe("");
     expect(host.querySelector(".text-danger")).toBeNull();
 
     act(() => root.unmount());
@@ -106,7 +107,7 @@ describe("bot task list stays live", () => {
       const fetchMock = vi.fn(async () => new Response(JSON.stringify({ tasks: store.list("bot-1") }), { status: 200, headers: { "content-type": "application/json" } }));
       vi.stubGlobal("fetch", fetchMock);
       await mount(createElement(BotTaskSection, { botId: "bot-1" }));
-      expect(host.querySelector("[data-bot-tasks-empty]")).not.toBeNull();
+      expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
 
       // the bot's task_list tool: add one doing, one waiting, and finish a third
       const internal = createBotTaskInternalRoutes({ tasks: () => store, ownsThread: () => true, speaker: () => "pr_a" });
@@ -129,16 +130,15 @@ describe("bot task list stays live", () => {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 
       expect(frames.every((frame) => frame.kind === "bot.tasks" && frame.botId === "bot-1" && frame.audience === "pr_a")).toBe(true);
-      expect(host.querySelector("[data-bot-tasks-empty]")).toBeNull();
-      // what waits for the person comes first, then in progress, then Done folded with its count
-      const groups = Array.from(host.querySelectorAll("[data-bot-task-group]")).map((node) => node.getAttribute("data-bot-task-group"));
-      expect(groups).toEqual(["waiting", "doing", "done"]);
+      expect(host.querySelector("[data-bot-settings-section]")).not.toBeNull();
+      // one list: what waits for the person first, then in progress; the task done at once is not listed
+      const order = Array.from(host.querySelectorAll("[data-bot-task]")).map((node) => node.getAttribute("data-bot-task"));
+      expect(order).toEqual(["waiting", "doing"]);
       expect(host.querySelector('[data-bot-task="waiting"]')?.textContent).toContain("Pick a meeting time");
       expect(host.querySelector('[data-bot-task="doing"]')?.textContent).toContain("Draft the summary");
-      expect(host.querySelector('[data-bot-task="done"]')).toBeNull();
-      expect(host.querySelector("[data-bot-tasks-done-toggle]")?.textContent).toBe("Done1");
-      await act(async () => { (host.querySelector("[data-bot-tasks-done-toggle]") as HTMLButtonElement).click(); });
-      expect(host.querySelector('[data-bot-task="done"]')?.textContent).toContain("Renew the domain");
+      expect(host.textContent).not.toContain("Renew the domain");
+      expect(host.querySelector("[data-bot-task-group]")).toBeNull();
+      expect(host.querySelector("[data-bot-tasks-done-toggle]")).toBeNull();
       // the panel read again on each change, never remounted
       expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
     } finally {
@@ -171,20 +171,75 @@ describe("bot task interaction", () => {
   const press = (target: Element, key: string, extra: KeyboardEventInit = {}) =>
     act(async () => { target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...extra })); });
 
-  it("shows each state where the server put it, done folded and checked", async () => {
+  it("lists Needs you then In progress in one list, with no group, no count and no intro", async () => {
     serve();
     await mount(createElement(BotTaskSection, { botId: "bot-1" }));
-    expect(host.querySelector('[data-bot-task-group="waiting"] [data-bot-task="waiting"]')?.textContent).toContain("Choose between");
-    expect(host.querySelector('[data-bot-task-group="doing"] [data-bot-task="doing"]')?.textContent).toContain("Draft the weekly summary");
-    // the done one is never shown in progress
-    expect(host.querySelector('[data-bot-task-group="doing"]')?.textContent).not.toContain("Demo task");
-    expect(host.querySelector("[data-bot-tasks-done-toggle]")?.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => { (host.querySelector("[data-bot-tasks-done-toggle]") as HTMLButtonElement).click(); });
-    expect(host.querySelector('[data-bot-task-group="done"] [data-bot-task="done"]')?.textContent).toContain("Demo task");
+    expect(Array.from(host.querySelectorAll("[data-bot-task]")).map((node) => node.getAttribute("data-bot-task"))).toEqual(["waiting", "doing"]);
+    expect(host.querySelector('[data-bot-task="waiting"]')?.textContent).toContain("Choose between");
+    expect(host.querySelector('[data-bot-task="doing"]')?.textContent).toContain("Draft the weekly summary");
+    // a task already done is not shown, and there is no Done group, toggle or counter
+    expect(host.textContent).not.toContain("Demo task");
+    expect(host.querySelector("[data-bot-task-group]")).toBeNull();
+    expect(host.querySelector("[data-bot-tasks-done-toggle]")).toBeNull();
+    expect(host.querySelector("h3")).toBeNull();
+    expect(host.textContent).not.toContain("What this bot is doing for you");
+    expect(host.textContent).not.toMatch(/Needs you\d|In progress\d|Done\d/);
+    expect(host.querySelector("h2")?.textContent).toBe("Tasks");
+    // Needs you stands out: the accent tint on the row
+    expect(host.querySelector('[data-bot-task="waiting"]')?.className).toContain("bg-accent");
+    expect(host.querySelector('[data-bot-task="doing"]')?.className).not.toContain("bg-accent");
     // the full title stays readable: two lines and a tooltip
     const title = host.querySelector('[data-bot-task="waiting"] [title]');
     expect(title?.getAttribute("title")).toBe(tasks[0]!.title);
     expect(title?.className).toContain("line-clamp-2");
+  });
+
+  it("shows a green check on the task that moves to Done, then folds the row away", async () => {
+    const live: BotTask[] = tasks.map((task) => ({ ...task }));
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), "http://x").pathname;
+      calls.push(`${init?.method ?? "GET"} ${path}`);
+      if (init?.method === "POST") live.find((task) => path.includes(task.id))!.state = "done";
+      return new Response(JSON.stringify(path.endsWith("/task-list") ? { tasks: live } : { task: live[0] }), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+    await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+    expect(host.querySelector('[data-bot-task-open="task_doing0001"]')).not.toBeNull();
+    vi.useFakeTimers();
+    try {
+      await act(async () => { (host.querySelector('[data-bot-task-menu="task_doing0001"]') as HTMLButtonElement).click(); });
+      await act(async () => { (document.querySelector('[data-bot-task-menu-open="task_doing0001"] [data-bot-task-action="complete"]') as HTMLButtonElement).click(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      expect(calls).toContain("POST /api/bots/bot-1/task-list/task_doing0001/complete");
+      // the row is still there, with the green check in place of its icon
+      const row = () => host.querySelector('[data-bot-task-open="task_doing0001"]')?.closest("li");
+      expect(row()?.getAttribute("data-bot-task")).toBe("done");
+      expect(row()?.getAttribute("data-bot-task-finishing")).toBe("check");
+      expect(row()?.querySelector("[data-bot-task-check]")).not.toBeNull();
+      expect(row()?.className).toContain("grid-rows-[1fr]");
+      // after about 2.5 s it fades and folds its height
+      await act(async () => { await vi.advanceTimersByTimeAsync(2600); });
+      expect(row()?.getAttribute("data-bot-task-finishing")).toBe("fold");
+      expect(row()?.className).toContain("grid-rows-[0fr]");
+      // then it is gone, with no Done group and no counter; the other rows stay
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      expect(row() ?? null).toBeNull();
+      expect(host.querySelector('[data-bot-task-open="task_waiting01"]')).not.toBeNull();
+      expect(host.querySelector("[data-bot-task-group]")).toBeNull();
+      expect(host.querySelector("[data-bot-tasks-done-toggle]")).toBeNull();
+      expect(host.textContent).not.toContain("Draft the weekly summary");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hides the whole section, title included, when nothing is in progress", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ tasks: [tasks[2]] }), { status: 200, headers: { "content-type": "application/json" } })));
+    await mount(createElement(BotTaskSection, { botId: "bot-1" }));
+    expect(host.querySelector("[data-bot-settings-section]")).toBeNull();
+    expect(host.querySelector("[data-bot-task]")).toBeNull();
+    expect(host.querySelector("h2")).toBeNull();
+    expect(host.textContent).toBe("");
   });
 
   it("opens a task in place with its note and history, and Escape gives the focus back", async () => {
@@ -219,13 +274,6 @@ describe("bot task interaction", () => {
     await act(async () => { (host.querySelector('[data-bot-task-menu="task_doing0001"]') as HTMLButtonElement).click(); });
     await act(async () => { (document.querySelector('[data-bot-task-menu-open="task_doing0001"] [data-bot-task-action="remove"]') as HTMLButtonElement).click(); });
     expect(calls).toContainEqual({ method: "DELETE", path: "/api/bots/bot-1/task-list/task_doing0001" });
-
-    // a done task offers Reopen
-    await act(async () => { (host.querySelector("[data-bot-tasks-done-toggle]") as HTMLButtonElement).click(); });
-    await act(async () => { (host.querySelector('[data-bot-task-menu="task_done00001"]') as HTMLButtonElement).click(); });
-    const reopen = document.querySelector('[data-bot-task-menu-open="task_done00001"] [data-bot-task-action="reopen"]') as HTMLButtonElement;
-    await act(async () => { reopen.click(); });
-    expect(calls).toContainEqual({ method: "POST", path: "/api/bots/bot-1/task-list/task_done00001/reopen" });
   });
 
   it("Answer opens the conversation of the task with the task named in the composer", async () => {

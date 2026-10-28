@@ -82027,36 +82027,6 @@
         "fr": { "stringUnit": { "state": "translated", "value": "La liste de tâches n'a pas pu être chargée." } }
       }
     },
-    "No tasks yet. Ask your bot to note a task, for example \"Add a task: renew the domain\".": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "No tasks yet. Ask your bot to note a task, for example \"Add a task: renew the domain\"." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Aucune tâche pour l'instant. Demandez à votre bot de noter une tâche, par exemple « Ajoutez une tâche : renouveler le domaine »." } }
-      }
-    },
-    "What this bot is doing for you. Anything that needs you comes first.": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "What this bot is doing for you. Anything that needs you comes first." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Ce que ce bot fait pour vous. Ce qui vous attend passe en premier." } }
-      }
-    },
-    "botTasks.group.waiting": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Needs you" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Vous attend" } }
-      }
-    },
-    "botTasks.group.doing": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "In progress" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "En cours" } }
-      }
-    },
-    "botTasks.group.done": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Done" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Terminées" } }
-      }
-    },
     "botTasks.state.waiting": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Needs you" } },

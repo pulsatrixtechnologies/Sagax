@@ -1,8 +1,10 @@
 // The bot panel's Tasks card (src/components/bot-settings/BotTaskSection.tsx):
 // what the bot is doing for the person (CompanionCore/BotTodoList.swift).
-// Rows in rounded cards like Routines: a state glyph, the title, a line on
-// when it last moved. "Needs you" comes first, in the accent, with Answer on
-// the row; then In progress; then Done, folded. A row opens its detail (the
+// One rounded card like Routines, no group titles: a state glyph, the title,
+// a line on when it last moved. "Needs you" rows come first, tinted with the
+// accent, with Answer on the row; then the rows in progress. A done task is
+// not listed: the one that just moved to Done shows a green check in place of
+// its glyph for a moment, then its row fades and folds away. A row opens its detail (the
 // bot's note, its history, every action); a long press or "..." offers the
 // same actions. An older server without the route says it comes with the
 // server update, never a red error. Shown on the desktop panel's Details
@@ -82,10 +84,13 @@ struct BotTaskListCard: View {
     let bot: Bot
     /// Opens a conversation of this bot (the task's, else the bot's main one).
     let openThread: (String) -> Void
+    /// The phone panel's own margins, only while the section shows.
+    var insets = false
 
     @State private var tasks: [BotTodo]?
     @State private var load: Load = .ok
-    @State private var showsDone = false
+    /// Tasks that just moved to Done: their row stays, checked, until it folds.
+    @State private var finishing: Set<String> = []
     @State private var working: Set<String> = []
     @State private var opened: OpenedTask?
     @State private var removing: BotTodo?
@@ -94,27 +99,30 @@ struct BotTaskListCard: View {
 
     struct OpenedTask: Identifiable, Hashable { let id: String }
 
-    private var groups: BotTodoGroups { BotTodoList.grouped(tasks ?? []) }
+    private var listed: [BotTodo] { BotTodoList.listed(tasks ?? [], finishing: finishing) }
+
+    /// Nothing in progress, nothing shown: the whole section is hidden (no
+    /// title, no empty line). The update and error lines still show.
+    private var isHidden: Bool { load == .ok && listed.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+            if !isHidden {
                 Text("Tasks")
                     .font(Theme.Font.label)
                     .foregroundStyle(Theme.textTertiary)
                     .accessibilityAddTraits(.isHeader)
-                Text("What this bot is doing for you. Anything that needs you comes first.")
-                    .font(Theme.Font.label)
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                content
             }
-            .padding(.horizontal, 4)
-            content
         }
+        .padding(.horizontal, insets && !isHidden ? 16 : 0)
+        .padding(.top, insets && !isHidden ? 12 : 0)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("panel-tasks")
         .task(id: "\(session.connection?.id ?? "")|\(bot.id)") {
             tasks = nil
+            finishing = []
             load = .ok
             await reload()
         }
@@ -164,16 +172,14 @@ struct BotTaskListCard: View {
         case .failed where tasks == nil:
             note("The task list could not be loaded.", color: Theme.danger)
         default:
-            if let tasks {
+            if tasks != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     if load == .failed {
                         note("The task list could not be loaded.", color: Theme.danger)
                     }
-                    if tasks.isEmpty {
-                        note("No tasks yet. Ask your bot to note a task, for example \"Add a task: renew the domain\".", color: Theme.textTertiary)
-                            .accessibilityIdentifier("panel-tasks-empty")
-                    } else {
-                        list(groups)
+                    if !listed.isEmpty {
+                        rows(listed)
+                            .accessibilityIdentifier("panel-tasks-list")
                     }
                 }
             } else {
@@ -186,82 +192,21 @@ struct BotTaskListCard: View {
         }
     }
 
-    private func list(_ groups: BotTodoGroups) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if !groups.waiting.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    groupHeader("botTasks.group.waiting", count: groups.waiting.count, accent: true)
-                    rows(groups.waiting, accent: true)
-                }
-                .accessibilityIdentifier("panel-tasks-waiting")
-            }
-            if !groups.doing.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    groupHeader("botTasks.group.doing", count: groups.doing.count, accent: false)
-                    rows(groups.doing, accent: false)
-                }
-                .accessibilityIdentifier("panel-tasks-doing")
-            }
-            if !groups.done.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Button {
-                        Haptics.selection()
-                        withAnimation(.snappy(duration: 0.2)) { showsDone.toggle() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            groupHeader("botTasks.group.done", count: groups.done.count, accent: false)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(Theme.textTertiary)
-                                .rotationEffect(.degrees(showsDone ? 90 : 0))
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text("\(String(localized: "botTasks.group.done")), \(groups.done.count)"))
-                    .accessibilityValue(showsDone ? Text("Expanded") : Text("Collapsed"))
-                    .accessibilityAddTraits([.isHeader, .isButton])
-                    .accessibilityIdentifier("panel-tasks-done-toggle")
-                    if showsDone {
-                        rows(groups.done, accent: false)
-                    }
-                }
-                .accessibilityIdentifier("panel-tasks-done")
-            }
-        }
-    }
-
-    private func groupHeader(_ key: LocalizedStringKey, count: Int, accent: Bool) -> some View {
-        HStack(spacing: 6) {
-            Text(key)
-                .font(Theme.Font.labelMedium)
-                .foregroundStyle(accent ? Theme.accentText : Theme.textSecondary)
-            Text(verbatim: "\(count)")
-                .font(Theme.Font.labelMedium)
-                .monospacedDigit()
-                .foregroundStyle(accent ? Theme.accentText : Theme.textTertiary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background((accent ? Theme.accentText : Theme.textTertiary).opacity(0.14), in: Capsule())
-        }
-        .padding(.horizontal, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
-    }
-
-    private func rows(_ items: [BotTodo], accent: Bool) -> some View {
-        VStack(spacing: 0) {
+    private func rows(_ items: [BotTodo]) -> some View {
+        let needsYou = items.contains { $0.state == .waiting }
+        return VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, task in
-                if index > 0 { CardHairline(leadingInset: 44) }
-                row(task)
+                VStack(spacing: 0) {
+                    if index > 0 { CardHairline(leadingInset: 44) }
+                    row(task)
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             }
         }
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
-            if accent {
+            if needsYou {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Theme.accentText.opacity(0.5), lineWidth: 1)
             }
@@ -332,6 +277,7 @@ struct BotTaskListCard: View {
         .padding(.leading, 12)
         .padding(.trailing, 8)
         .padding(.vertical, 10)
+        .background(task.state == .waiting ? Theme.accentText.opacity(0.07) : Color.clear)
         .opacity(busy ? 0.5 : 1)
         .disabled(busy)
         .contentShape(Rectangle())
@@ -381,7 +327,7 @@ struct BotTaskListCard: View {
         switch state {
         case .waiting: Theme.accentText
         case .doing: Theme.textSecondary
-        case .done: Theme.textTertiary
+        case .done: Theme.success
         }
     }
 
@@ -462,7 +408,7 @@ struct BotTaskListCard: View {
         do {
             let next = try await client.botTodos(botId: botId)
             guard botId == bot.id else { return }
-            tasks = next
+            setTasks(next)
             load = .ok
         } catch is CancellationError {
             return
@@ -472,10 +418,25 @@ struct BotTaskListCard: View {
         }
     }
 
+    /// A task that went from open to Done keeps its row, checked, for a
+    /// moment; then the row fades and folds away.
+    private func setTasks(_ next: [BotTodo]) {
+        let moved = BotTodoList.justFinished(from: tasks, to: next)
+        tasks = next
+        // a reopened task is listed again at once
+        finishing = finishing.filter { id in next.first { $0.id == id }?.state == .done }
+        guard !moved.isEmpty else { return }
+        finishing.formUnion(moved)
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(BotTodoList.doneLinger * 1_000_000_000))
+            withAnimation(.easeOut(duration: 0.35)) { finishing.subtract(moved) }
+        }
+    }
+
     private func apply(_ outcome: BotTodoLoad) {
         switch outcome {
         case let .loaded(list):
-            tasks = list
+            setTasks(list)
             load = .ok
         case .needsUpdate:
             load = .needsUpdate

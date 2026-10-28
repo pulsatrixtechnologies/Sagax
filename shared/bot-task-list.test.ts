@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canReopenBotTask, findBotTask, groupBotTasks, nextBotTaskState, parseBotTaskCreate, personBotTaskActions, sameBotTaskOwner, type BotTask } from "./bot-task-list.ts";
+import { canReopenBotTask, findBotTask, groupBotTasks, listBotTasks, nextBotTaskState, parseBotTaskCreate, personBotTaskActions, sameBotTaskOwner, type BotTask } from "./bot-task-list.ts";
 
 describe("bot task list", () => {
   it("moves doing to waiting, and either open state to done", () => {
@@ -37,6 +37,13 @@ describe("bot task list grouping and owner", () => {
     expect(groups.waiting.map((item) => item.id)).toEqual(["d", "c"]);
     expect(groups.doing.map((item) => item.id)).toEqual(["a"]);
     expect(groups.done.map((item) => item.id)).toEqual(["b"]);
+  });
+
+  it("lists Needs you then In progress in one list, and no done task unless it just finished", () => {
+    const task = (id: string, state: BotTask["state"], updatedAt: number): BotTask => ({ id, botId: "b", title: id, state, createdAt: 0, updatedAt });
+    const all = [task("a", "doing", 1), task("b", "done", 5), task("c", "waiting", 2), task("d", "waiting", 9), task("e", "doing", 4), task("f", "done", 3)];
+    expect(listBotTasks(all).map((item) => item.id)).toEqual(["d", "c", "e", "a"]);
+    expect(listBotTasks(all, new Set(["b"])).map((item) => item.id)).toEqual(["d", "c", "b", "e", "a"]);
   });
 
   it("compares owners without case, and an absent side matches", () => {
