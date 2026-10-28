@@ -1226,7 +1226,7 @@ function telephonyDirectives(directives: NormalizedTriggerEvent["directives"]): 
   return [
     "",
     "[PERSPICAX LINE DIRECTIVES]",
-    "Set for this line in Perspicax. thirdPartyCall says whether a call to a third party needs an approval card (card) or not (direct); clientPhoneSource says where a client's mobile number comes from (connectwise: look it up there; provided: the caller gives it).",
+    "Set for this line in Perspicax. thirdPartyCall says whether a call to a third party needs an approval card (card) or not (direct); clientPhoneSource says where a client's mobile number comes from (psa_contact: look it up on the client's contact in the PSA; provided: the caller gives it).",
     ...entries.map(([key, value]) => `- ${metadataValue(key, 64)}: ${metadataValue(value, 64)}`),
     "[/PERSPICAX LINE DIRECTIVES]",
   ];
