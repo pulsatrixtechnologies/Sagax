@@ -8,8 +8,9 @@
 //
 //   - POST /api/v1/memory/work: one row when a bot turn on an organization
 //     server starts with Perspicax profiles mounted (a vendor-touching task).
-//     Rows are batched (at most WORK_BATCH_MAX = 50, Perspicax's cap) and
-//     sent a moment later, one batch in flight at a time.
+//     Rows are batched (at most WORK_BATCH_MAX = 50, Perspicax's cap, and
+//     one person per batch) and sent a moment later, one batch in flight at
+//     a time.
 //   - POST /api/v1/memory/duplicates: before a routine run, its instructions
 //     are checked; a hint ("someone did this on <day>, work:<id>") is
 //     attached to the run and given to the bot with the run's prompt.
@@ -25,9 +26,10 @@
 //     DUPLICATE_TEXT_MAX characters);
 //   - a person is named by their Perspicax user id only; a turn with no
 //     Perspicax person (the server's operator, an unknown speaker) sends
-//     nothing;
+//     nothing; each call carries that person's own token next to the link
+//     token when there is one (`subject`, PerspicaxDirectory.linkPostJson);
 //   - no token, prompt or answer body is ever logged.
-import type { LinkPostResult } from "./perspicax-link.ts";
+import type { LinkPostLimits, LinkPostResult } from "./perspicax-link.ts";
 
 export const WORK_PATH = "/api/v1/memory/work";
 export const DUPLICATES_PATH = "/api/v1/memory/duplicates";
@@ -89,7 +91,7 @@ export interface RunMemoryHint {
 }
 
 export interface MemorySignalsLink {
-  linkPostJson(path: string, body: unknown, limits: { timeoutMs: number; maxBytes: number }): Promise<LinkPostResult>;
+  linkPostJson(path: string, body: unknown, limits: LinkPostLimits): Promise<LinkPostResult>;
 }
 
 export interface PerspicaxMemoryOptions {
@@ -245,10 +247,10 @@ export class PerspicaxMemory {
         this.queue = [];
         return;
       }
-      const batch = this.queue.splice(0, WORK_BATCH_MAX);
+      const batch = this.nextBatch();
       let result: LinkPostResult;
       try {
-        result = await link.linkPostJson(WORK_PATH, { rows: batch }, { timeoutMs: WORK_TIMEOUT_MS, maxBytes: ANSWER_MAX_BYTES });
+        result = await link.linkPostJson(WORK_PATH, { rows: batch }, { timeoutMs: WORK_TIMEOUT_MS, maxBytes: ANSWER_MAX_BYTES, subject: batch[0]!.person });
       } catch {
         result = { ok: false, error: "unreachable" };
       }
@@ -259,6 +261,21 @@ export class PerspicaxMemory {
         this.once(`work:${result.status ?? result.error}`, `perspicax memory: ${batch.length} work row(s) not recorded (${why})`);
       }
     }
+  }
+
+  /** The next batch: the oldest row's person, their rows in order, at most
+   * WORK_BATCH_MAX. One person per batch, so it goes with that person's own
+   * token. The other rows keep their place. */
+  private nextBatch(): WorkRow[] {
+    const person = this.queue[0]!.person;
+    const batch: WorkRow[] = [];
+    const rest: WorkRow[] = [];
+    for (const row of this.queue) {
+      if (row.person === person && batch.length < WORK_BATCH_MAX) batch.push(row);
+      else rest.push(row);
+    }
+    this.queue = rest;
+    return batch;
   }
 
   /** Ask Perspicax whether this work was already done. Null on any failure
@@ -277,7 +294,7 @@ export class PerspicaxMemory {
         objects: (input.objects ?? []).filter((ref) => REF.test(ref)).slice(0, 10),
         tags: (input.tags ?? []).filter((tag) => TAG.test(tag)).slice(0, 16),
         participants: (input.participants ?? []).slice(0, 50),
-      }, { timeoutMs: DUPLICATES_TIMEOUT_MS, maxBytes: ANSWER_MAX_BYTES });
+      }, { timeoutMs: DUPLICATES_TIMEOUT_MS, maxBytes: ANSWER_MAX_BYTES, subject: person });
     } catch {
       return null;
     }
@@ -303,7 +320,7 @@ export class PerspicaxMemory {
         ...(input.turn ? { turn: input.turn } : {}),
         ...(input.used?.length ? { used: input.used.slice(0, 50), how: input.how ?? "cited" } : {}),
         ...(input.hint ? { hint: input.hint, verdict: input.verdict } : {}),
-      }, { timeoutMs: WORK_TIMEOUT_MS, maxBytes: ANSWER_MAX_BYTES });
+      }, { timeoutMs: WORK_TIMEOUT_MS, maxBytes: ANSWER_MAX_BYTES, subject: input.person.trim() });
       return result.ok;
     } catch {
       return false;

@@ -28,7 +28,7 @@ const TOKEN_A = `pxat1.${"a".repeat(43)}`;
 const TOKEN_B = `pxat1.${"b".repeat(43)}`;
 
 type Handler = (req: IncomingMessage, body: unknown, res: ServerResponse) => void | Promise<void>;
-interface Seen { path: string; authorization: string; body: any }
+interface Seen { path: string; authorization: string; subject?: string; body: any }
 
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
@@ -45,7 +45,8 @@ async function fakePerspicax(handler: Handler) {
     req.on("end", () => {
       const raw = Buffer.concat(chunks).toString("utf8");
       const body = raw ? JSON.parse(raw) : null;
-      seen.push({ path: req.url ?? "", authorization: String(req.headers.authorization ?? ""), body });
+      const subject = req.headers["x-perspicax-subject-token"];
+      seen.push({ path: req.url ?? "", authorization: String(req.headers.authorization ?? ""), ...(typeof subject === "string" ? { subject } : {}), body });
       inflight += 1;
       maxInflight = Math.max(maxInflight, inflight);
       res.on("close", () => { inflight -= 1; });
@@ -72,6 +73,8 @@ async function fakePerspicax(handler: Handler) {
     onRoleNarrowed: () => {},
     version: "0.1.101",
     log: () => {},
+    // 2026-10-28: each person's own token, by their Perspicax user id
+    subjectToken: async (sub) => (sub.startsWith("01J") ? `token-of-${sub}` : null),
   });
   const log: string[] = [];
   const memory = new PerspicaxMemory({ link: () => directory, log: (line) => log.push(line), flushDelayMs: 5 });
@@ -106,6 +109,23 @@ describe("the work feed (POST /api/v1/memory/work)", () => {
     expect(h.maxInflight()).toBe(1);
     expect(h.seen[0]!.body.rows[0]).toEqual(row(0));
     expect(WORK_BATCH_MAX).toBe(50);
+  });
+
+  it("2026-10-28: one person per batch, each with that person's own token, rows kept in order", async () => {
+    const h = await fakePerspicax((_req, body, res) => json(res, 200, { ids: (body as { rows: unknown[] }).rows.map((_r, i) => `w${i}`) }));
+    const of = (person: string, n: number): WorkRow => ({ ...row(n), person });
+    h.memory.recordWork(of("01JALICE", 1));
+    h.memory.recordWork(of("01JBOB", 2));
+    h.memory.recordWork(of("01JALICE", 3));
+    h.memory.recordWork(of("NOTOKEN", 4));
+    await settle(h.memory);
+    expect(h.seen.map((call) => [call.subject, call.body.rows.map((r: WorkRow) => r.intent)])).toEqual([
+      ["token-of-01JALICE", ["Routine run on Atlas 1", "Routine run on Atlas 3"]],
+      ["token-of-01JBOB", ["Routine run on Atlas 2"]],
+      // no token at hand: the link token alone, as before
+      [undefined, ["Routine run on Atlas 4"]],
+    ]);
+    expect(h.seen.every((call) => call.authorization === `Bearer ${TOKEN_A}`)).toBe(true);
   });
 
   it("follows a rotated link token after a 401", async () => {
@@ -162,6 +182,7 @@ describe("the duplicate check (POST /api/v1/memory/duplicates)", () => {
     expect(h.seen).toHaveLength(1);
     expect(h.seen[0]!.path).toBe(DUPLICATES_PATH);
     expect(h.seen[0]!.authorization).toBe(`Bearer ${TOKEN_A}`);
+    expect(h.seen[0]!.subject).toBe("token-of-01JPERSON");
     expect(h.seen[0]!.body).toEqual({ person: "01JPERSON", text: `Triage the new tickets ${"y".repeat(4000 - 23)}`, objects: ["sagax:routine:r1"], tags: [], participants: [] });
     expect(hint).toMatchObject({
       turn: "01JTURN",
@@ -207,5 +228,6 @@ describe("the feedback (POST /api/v1/memory/feedback)", () => {
       [FEEDBACK_PATH, { person: "01JPERSON", hint: "h1", verdict: "same" }],
       [FEEDBACK_PATH, { person: "01JPERSON", turn: "01JTURN", used: ["hint:h1"], how: "cited" }],
     ]);
+    expect(h.seen.map((call) => call.subject)).toEqual(["token-of-01JPERSON", "token-of-01JPERSON"]);
   });
 });

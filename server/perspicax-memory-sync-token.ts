@@ -23,7 +23,7 @@
 //     failures are logged by kind only;
 //   - at most MINT_PER_MINUTE mints per person per minute (each mint revokes
 //     the previous token).
-import type { LinkPostResult } from "./perspicax-link.ts";
+import type { LinkPostLimits, LinkPostResult } from "./perspicax-link.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
@@ -39,7 +39,7 @@ export interface MemorySyncTokenRouteDeps {
   issuer: string;
   /** A link-authenticated POST to Perspicax (PerspicaxDirectory.linkPostJson),
    * or null when no link file is set. */
-  linkPost: ((path: string, body: unknown, limits: { timeoutMs: number; maxBytes: number }) => Promise<LinkPostResult>) | null;
+  linkPost: ((path: string, body: unknown, limits: LinkPostLimits) => Promise<LinkPostResult>) | null;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -86,7 +86,8 @@ export function createMemorySyncTokenRoute(deps: MemorySyncTokenRouteDeps): Rout
     if (times.length >= MINT_PER_MINUTE) return json(res, 429, { error: "Too many memory sync tokens asked; try again in a minute.", code: "rate_limited" });
     times.push(at);
     recent.set(sub, times);
-    const answer = await deps.linkPost(MINT_PATH(sub), {}, { timeoutMs: MINT_TIMEOUT_MS, maxBytes: MINT_MAX_BYTES });
+    // The person's own token goes with the link token (2026-10-28).
+    const answer = await deps.linkPost(MINT_PATH(sub), {}, { timeoutMs: MINT_TIMEOUT_MS, maxBytes: MINT_MAX_BYTES, subject: sub });
     if (answer.ok) {
       const body = answer.body && typeof answer.body === "object" ? (answer.body as Record<string, unknown>) : {};
       const info = body.info && typeof body.info === "object" ? (body.info as Record<string, unknown>) : {};

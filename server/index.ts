@@ -31163,6 +31163,25 @@ async function perspicaxAccessToken(principalId: string): Promise<string | null>
   const outcome = await idpSessions.subjectToken({ iss: person.subject.iss, sub: person.subject.sub });
   return outcome.ok ? outcome.token : null;
 }
+/** 2026-10-28: the token of the person a link call acts for, by their
+ * Perspicax user id: their live sign-in, else their routine delegation on
+ * this server (a routine runs while they are away). Null when they have
+ * neither, are unknown here or disabled: the call then goes with the link
+ * token alone. Never logged. */
+async function perspicaxLinkSubjectToken(sub: string): Promise<string | null> {
+  if (IDENTITY.kind !== "perspicax") return null;
+  const person = principals.bySubject(IDENTITY.issuer, sub);
+  if (!person || person.disabledAt !== undefined) return null;
+  if (idpSessions) {
+    const live = await idpSessions.subjectToken({ iss: IDENTITY.issuer, sub });
+    if (live.ok) return live.token;
+  }
+  if (routineConsents) {
+    const delegated = await routineConsents.subjectToken(person.id);
+    if (delegated.ok) return delegated.token;
+  }
+  return null;
+}
 /** The person a cloud agent request acts for: the signed-in person, or on a
  * solo server the operator's own loopback (never a reduced service caller or
  * the worker relay, and never a session without a person, such as a paired
@@ -36940,6 +36959,8 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     expect: { issuer: IDENTITY.issuer, publicOrigin: IDENTITY.publicOrigin, clientId: IDENTITY.clientId },
     principals,
     teamNames: orgTeams,
+    // 2026-10-28: the person a link call acts for, next to the link token.
+    subjectToken: (sub) => perspicaxLinkSubjectToken(sub),
     onPersonOut: (iss, sub) => {
       perspicaxMcp?.forgetSubject(iss, sub);
       routineConsents?.endForSubject(iss, sub);

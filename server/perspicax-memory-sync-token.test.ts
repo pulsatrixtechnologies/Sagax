@@ -50,7 +50,8 @@ describe("POST /api/me/memory-sync-token", () => {
     expect(out.body).toEqual({ server: "https://px.example.test", token: TOKEN, expiresAt: "2027-01-12T00:00:00.000Z" });
     expect(out.headers["cache-control"]).toBe("no-store");
     expect(linkPost).toHaveBeenCalledTimes(1);
-    expect(linkPost!.mock.calls[0]).toEqual(["/api/v1/pulsabot/people/A1/memory-sync-token", {}, expect.any(Object)]);
+    // 2026-10-28: the person's own token goes with the link token
+    expect(linkPost!.mock.calls[0]).toEqual(["/api/v1/pulsabot/people/A1/memory-sync-token", {}, expect.objectContaining({ subject: "A1" })]);
   });
 
   it("refuses a local request, a session without a provider account and another issuer's session", async () => {
