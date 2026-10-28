@@ -119,12 +119,13 @@ export interface TaskUsage {
   lastTurn?: { input: number; output: number; cachedInput?: number; costUsd: number | null };
   /** what filled the model's window on the last model call, and the window's size when known.
    * promptBytes is the assembled system prompt, in bytes, when that turn measured it.
-   * buckets are the sizes that turn could measure (a message count, and bytes). */
+   * buckets are the sizes that turn could measure (a message count, and bytes:
+   * messageBytes is the size of those messages). */
   context?: {
     tokens: number;
     window?: number;
     promptBytes?: number;
-    buckets?: Partial<Record<"messages" | "tools" | "memory" | "skills" | "agents" | "prompt", number>>;
+    buckets?: Partial<Record<"messages" | "messageBytes" | "tools" | "memory" | "skills" | "agents" | "prompt", number>>;
   };
 }
 
@@ -230,6 +231,9 @@ export interface WireTask {
   /** Last turn: wait before the engine was sent, and wait until the first
    * answer text. Numbers only. Stored on the conversation, never in a message. */
   turnTiming?: { queueMs?: number; firstResponseMs?: number };
+  /** What the last direct turn could reach, by source (shared/turn-connectors.ts):
+   * names and states only. Absent before the first turn that recorded it. */
+  connectors?: import("./turn-connectors.ts").TurnConnectors;
   /** Where this conversation works when pinned; absent = follow the bot. */
   surface?: Surface;
   /** The pin above is the machine's own record (where an Auto turn landed,

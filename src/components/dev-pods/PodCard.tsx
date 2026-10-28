@@ -2,17 +2,15 @@
 // options menu, also on right click) and body, inside its own error
 // boundary. A pod that throws, in its data hook or its body, shows its own
 // error card with Try again; the other pods never notice.
-import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useRef, useState, type ErrorInfo, type ReactNode, type RefObject } from "react";
 import { ChevronDown, MoreHorizontal } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { SIDE_CARD, SIDE_CARD_HEADER, SIDE_CARD_ICON_BUTTON } from "@/lib/side-card";
-import { useMenuMotion } from "../MenuMotion";
+import { DEV_MENU_ITEM, DevMenu } from "./DevMenu";
 import type { DevPodContext, DevPodDefinition } from "./registry";
 
 export const POD_CARD = `dev-pod ${SIDE_CARD}`;
-const MENU_ITEM =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
 const HEADER_ICON = SIDE_CARD_ICON_BUTTON;
 
 export interface PodMenuActions {
@@ -27,44 +25,17 @@ export interface PodMenuActions {
   onShowAll?: () => void;
 }
 
-function PodMenu({ name, open, onClose, actions }: { name: string; open: boolean; onClose: () => void; actions: PodMenuActions }) {
-  const motion = useMenuMotion(open);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) onClose();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("pointerdown", onPointer, true);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer, true);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [open, onClose]);
-  if (!motion.shown) return null;
+function PodMenu({ name, open, anchorRef, onClose, actions }: { name: string; open: boolean; anchorRef: RefObject<HTMLButtonElement | null>; onClose: () => void; actions: PodMenuActions }) {
   const run = (action: () => void) => () => { onClose(); action(); };
   return (
-    <div
-      ref={ref}
-      role="menu"
-      aria-label={t("devPods.menu.aria", { name })}
-      className={cn("absolute right-1 top-9 z-40 flex w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5", motion.className)}
-      {...motion.exitProps}
-    >
-      <button type="button" role="menuitem" className={MENU_ITEM} disabled={!actions.canMoveUp} onClick={run(actions.onMoveUp)}>{t("devPods.menu.moveUp")}</button>
-      <button type="button" role="menuitem" className={MENU_ITEM} disabled={!actions.canMoveDown} onClick={run(actions.onMoveDown)}>{t("devPods.menu.moveDown")}</button>
-      <button type="button" role="menuitem" data-pod-hide="" className={MENU_ITEM} onClick={run(actions.onHide)}>{t("devPods.menu.hide")}</button>
-      {actions.onShowAll && <button type="button" role="menuitem" className={MENU_ITEM} onClick={run(actions.onShowAll)}>{t("devPods.menu.showAll")}</button>}
+    <DevMenu open={open} anchorRef={anchorRef} label={t("devPods.menu.aria", { name })} onClose={onClose} width={200}>
+      <button type="button" role="menuitem" className={DEV_MENU_ITEM} disabled={!actions.canMoveUp} onClick={run(actions.onMoveUp)}>{t("devPods.menu.moveUp")}</button>
+      <button type="button" role="menuitem" className={DEV_MENU_ITEM} disabled={!actions.canMoveDown} onClick={run(actions.onMoveDown)}>{t("devPods.menu.moveDown")}</button>
+      <button type="button" role="menuitem" data-pod-hide="" className={DEV_MENU_ITEM} onClick={run(actions.onHide)}>{t("devPods.menu.hide")}</button>
+      {actions.onShowAll && <button type="button" role="menuitem" className={DEV_MENU_ITEM} onClick={run(actions.onShowAll)}>{t("devPods.menu.showAll")}</button>}
       <div aria-hidden="true" className="mx-2 my-0.5 h-px bg-hairline-weak" />
-      <button type="button" role="menuitem" data-pods-dismiss="" className={MENU_ITEM} onClick={run(actions.onDismissThread)}>{t("devPods.dismiss")}</button>
-    </div>
+      <button type="button" role="menuitem" data-pods-dismiss="" className={DEV_MENU_ITEM} onClick={run(actions.onDismissThread)}>{t("devPods.dismiss")}</button>
+    </DevMenu>
   );
 }
 
@@ -91,6 +62,8 @@ export function PodFrame({
   children?: ReactNode;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const open = !collapsible || !collapsed;
   const bodyId = `dev-pod-${id}-body`;
   return (
@@ -127,9 +100,11 @@ export function PodFrame({
           </div>
         )}
         <button
+          ref={menuButton}
           type="button"
           aria-haspopup="menu"
           aria-expanded={menuOpen}
+          data-pod-menu=""
           aria-label={t("devPods.menu.aria", { name: title })}
           title={t("devPods.menu.aria", { name: title })}
           onClick={() => setMenuOpen((value) => !value)}
@@ -138,7 +113,7 @@ export function PodFrame({
           <MoreHorizontal size={14} />
         </button>
       </div>
-      <PodMenu name={title} open={menuOpen} onClose={() => setMenuOpen(false)} actions={actions} />
+      <PodMenu name={title} open={menuOpen} anchorRef={menuButton} onClose={closeMenu} actions={actions} />
       {open && children ? <div id={bodyId} className="px-3 pb-3 text-[12.5px] leading-[18px]">{children}</div> : null}
     </section>
   );

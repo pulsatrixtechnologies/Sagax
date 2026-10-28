@@ -2,7 +2,7 @@
  * a chat laid out like ChatView (floating header, centered 960px
  * transcript, composer dock). Sample transcript, no server. Not shipped in
  * the app.
- * ?skin=<id>&lang=<code>&pods=on|off&overlay=1 */
+ * ?skin=<id>&lang=<code>&pods=on|off&overlay=1&context=high */
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MoreHorizontal } from "lucide-react";
@@ -47,11 +47,39 @@ const messages: Message[] = [
   }),
 ];
 
+// Two background tasks of this conversation, one with its result posted.
+messages.push(say("bot", "Sous-tâche A terminée : 3 fichiers vérifiés.", { parallelTask: { threadId: "bg-a", title: "Sous-tâche de test A", requestMessageId: "m1", role: "result" } } as Partial<Message>));
+const now = Date.now();
+const high = params.get("context") === "high";
+
 const bot = {
   id: "dev", threadId: "gallery", name: "Dev", title: "", description: "", color: "blue", notifications: true, unread: false, busy: false,
   messages, modelSelection: { instanceId: "x", model: "m" }, computer: "cloud", cwd: "/Users/me/Repository/acme/portal",
-  tasks: [{ threadId: "gallery", title: "SSO", createdAt: 1, busy: false, activity: "idle",
-    usage: { input: 1, output: 1, costUsd: null, turns: 4, context: { tokens: 142_000, window: 200_000 } } }],
+  tasks: [
+    { threadId: "gallery", title: "SSO", createdAt: 1, busy: false, activity: "idle",
+      usage: { input: 1, output: 1, costUsd: null, turns: 4, context: {
+        tokens: high ? 830_000 : 130_000, window: 1_000_000,
+        buckets: { messages: 42, messageBytes: high ? 2_900_000 : 210_000, tools: 112_810, memory: 19_285, skills: 31_000, agents: 9_400, prompt: 84_812 },
+      } },
+      connectors: { at: now, connectors: [
+        { name: "Gmail", source: "claude", state: "connected" },
+        { name: "Google Calendar", source: "claude", state: "connected" },
+        { name: "Microsoft 365", source: "claude", state: "reconnect" },
+        { name: "grok.com", source: "grok", state: "connected" },
+        { name: "atelier", source: "perspicax", state: "connected" },
+        { name: "notes-mcp", source: "personal", state: "connected" },
+        { name: "calendar-sync", source: "personal", state: "reconnect" },
+        { name: "github", source: "server", state: "connected" },
+        { name: "twilio-docs", source: "server", state: "connected" },
+        { name: "code-review", source: "plugin", state: "connected" },
+      ] } },
+    { threadId: "bg-a", title: "Sous-tâche de test A", createdAt: 2, busy: false, activity: "idle",
+      parallelOf: { threadId: "gallery", messageId: "m1", at: now - 65_000, outcome: "done", reportedAt: now - 60_000 } },
+    { threadId: "bg-b", title: "Sous-tâche de test B", createdAt: 3, busy: false, activity: "idle",
+      parallelOf: { threadId: "gallery", messageId: "m1", at: now - 65_000, outcome: "done", reportedAt: now - 58_000 } },
+    { threadId: "bg-c", title: "Audit des dépendances", createdAt: 4, busy: true, activity: "working", turnStartedAt: now - 42_000,
+      parallelOf: { threadId: "gallery", messageId: "m1", at: now - 42_000 } },
+  ],
 } as unknown as Bot;
 
 function Bubble({ message }: { message: Message }) {

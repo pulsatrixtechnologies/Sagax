@@ -10,7 +10,7 @@ const pod = (id: string, order: number): DevPodDefinition => ({
 
 describe("dev pod registry", () => {
   it("registers every file under pods/ by itself", () => {
-    expect(devPodDefinitions().map((definition) => definition.id)).toEqual(["environment", "context", "connectors", "outputs", "changes"]);
+    expect(devPodDefinitions().map((definition) => definition.id)).toEqual(["environment", "context", "connectors", "outputs", "changes", "tasks"]);
   });
 
   it("adds a pod by id and replaces one registered again", () => {

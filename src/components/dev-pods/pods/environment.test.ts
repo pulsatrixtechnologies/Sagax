@@ -7,9 +7,7 @@ import type { Bot, Message } from "@/state/store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const api = vi.fn(async (path: string): Promise<{ items?: unknown; sessions?: unknown[] }> => (
-  String(path).includes("remote-sessions") ? { sessions: [] } : { items: [] }
-));
+const api = vi.fn(async (_path: string): Promise<{ items?: unknown }> => ({ items: [] }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: (path: string) => api(path),
@@ -73,18 +71,14 @@ describe("environment work", () => {
 
 describe("environment folder menu", () => {
   it("offers the folder actions and shows the repository the server named", async () => {
-    api.mockImplementation(async (path: string) => (
-      String(path).includes("remote-sessions")
-        ? { sessions: [] }
-        : { items: [{ threadId: "thread-1", code: { repo: "acme/portal", branch: "fix/sso" } }] }
-    ));
+    api.mockImplementation(async () => ({ items: [{ threadId: "thread-1", code: { repo: "acme/portal", branch: "fix/sso" } }] }));
     await render({ folder: "/Users/me/acme/portal", branch: null });
     await act(async () => { await Promise.resolve(); });
     expect(container.querySelector("[data-env-repo]")!.textContent).toContain("acme/portal");
     expect(container.querySelector("[data-env-branch]")!.textContent).toContain("fix/sso");
     const menu = container.querySelector<HTMLButtonElement>("[data-env-folder] [data-env-menu]")!;
     await act(async () => { menu.click(); });
-    const items = [...container.querySelectorAll("[role='menuitem']")].map((node) => node.textContent);
+    const items = [...document.body.querySelectorAll("[role='menuitem']")].map((node) => node.textContent);
     expect(items).toEqual([
       t("devPods.environment.showInFinder"),
       t("devPods.environment.copyPath"),
@@ -98,30 +92,29 @@ describe("environment folder menu", () => {
     await render({ folder: "remote:work", branch: "main" });
     const menu = container.querySelector<HTMLButtonElement>("[data-env-folder] [data-env-menu]")!;
     await act(async () => { menu.click(); });
-    const items = [...container.querySelectorAll("[role='menuitem']")].map((node) => node.textContent);
+    const items = [...document.body.querySelectorAll("[role='menuitem']")].map((node) => node.textContent);
     expect(items).toEqual([t("devPods.environment.copyPath"), t("devPods.environment.addFolder")]);
   });
 
-  it("saves this computer or the cloud computer on the bot's own setting", async () => {
+  it("says where the bot works on one line, and saves a new place from its menu", async () => {
     const dispatch = vi.fn();
     await render({ folder: "/Users/me/acme/portal", branch: null }, { dispatch });
-    const cloud = container.querySelector<HTMLButtonElement>('[data-env-place="cloud"]')!;
+    expect(container.querySelectorAll("[data-env-place]")).toHaveLength(1);
+    expect(container.querySelector("[data-env-place-label]")!.textContent).toBe("This computer");
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-env-menu="place"]')!.click(); });
+    const cloud = document.body.querySelector<HTMLButtonElement>('[data-env-place-choice="cloud"]')!;
     await act(async () => { cloud.click(); });
     expect(dispatch).toHaveBeenCalledWith({ type: "updateBot", botId: "dev", patch: { computer: "cloud" } });
   });
 
-  it("shows a Tailcat socket instead of hiding the row, and does not copy the address", async () => {
-    const address = "tc" + "a".repeat(30);
+  it("never shows a Remote Control row, even with a link or a socket in the conversation", async () => {
     await render({ folder: null, branch: null }, {
-      messages: [{
-        id: "m2", role: "bot", kind: "text", text: `socket ${address}`,
-        terminalEmbed: { sessionId: "s", resourceId: "r", provider: "tailcat", hostLabel: "BQDHS7", label: "Remote", status: "live" },
-      }] as never,
+      messages: [
+        { id: "m1", role: "bot", kind: "text", text: "PR: https://example.com/acme/portal/pull/3" },
+        { id: "m2", role: "bot", kind: "text", text: "socket tc" + "a".repeat(30) },
+      ] as never,
     });
-    const row = container.querySelector("[data-env-remote]")!;
-    expect(row.getAttribute("data-env-remote-socket")).toBe("1");
-    expect(row.textContent).not.toContain(address);
-    expect(container.querySelector("[data-env-remote-copy]")).not.toBeNull();
-    expect(container.querySelector("[data-env-remote-toggle]")).toBeNull();
+    expect(container.querySelector("[data-env-remote]")).toBeNull();
+    expect(container.textContent).not.toContain("Remote");
   });
 });
