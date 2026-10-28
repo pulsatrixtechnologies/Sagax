@@ -1247,8 +1247,6 @@
   "chat.openConversationWith": "Ouvrir la conversation avec {name}",
   "chat.openProfile": "Ouvrir le profil de l'agent",
   "chat.openProfileAria": "Ouvrir le profil de {name}",
-  "chat.teammatesWorking": "Coéquipiers au travail",
-  "chat.teammatesWorking.open": "Voir les activités en cours",
   "chat.parallel.open": "Ouvrir",
   "chat.parallel.openApproval": "Examiner",
   "chat.parallel.result": "Réponse de la tâche en parallèle · {title}",

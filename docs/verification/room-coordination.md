@@ -3,8 +3,8 @@
 Independent bot conversations now dispatch as soon as a handoff is accepted;
 speakers in the same group chat still serialize. A Chief waiting for returned
 results exposes `waitingForTeammates: true`, not a fake active `busy` turn.
-The chat header shows **Teammates working**, leaves the composer usable and
-retains Stop. Explicit command-line `wait` still waits for the whole result.
+The composer stays usable and Stop is retained; the work shows in the bot
+panel (Details, Ongoing activities). Explicit command-line `wait` still waits for the whole result.
 Accepted handoffs survive a failed source provider turn; explicit Stop,
 deleted conversations and revoked routes keep their existing cancellation
 behavior. This does not remove task capacity limits.

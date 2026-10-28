@@ -1,7 +1,6 @@
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
 import { CloudAgentsCard, cloudAgentAnchors, useThreadCloudAgents } from "./code/CloudAgentsCard";
 import { downloadBotZip, showBotZipExport } from "@/lib/bot-zip";
-import { TeammatesWorkingChip } from "./TeammatesWorkingChip";
 import { ThreadLinkContext } from "@/components/ThreadLinkMenu";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { isStreamSegment, segmentsAbove, segmentsToReach } from "@/lib/single-stream";
@@ -2268,12 +2267,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
                 animated={mascotRowAnimated(bot, state.pendingQueued, mascotMotion?.kind)}
               />
             }
-          />
-          <TeammatesWorkingChip
-            busy={bot.busy}
-            waitingForTeammates={bot.waitingForTeammates}
-            panelOpen={panelOpen}
-            onOpen={() => dispatch({ type: "toggleSettings", open: true })}
           />
         </div>
         <div
