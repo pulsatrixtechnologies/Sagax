@@ -784,6 +784,31 @@ describe("server-owned browser MCP runtime", () => {
   });
 });
 
+describe("visit signature", () => {
+  it("refuses a tool call that would set headers or credentials, without starting the engine", async () => {
+    const value = runtime({ signNavigation: async () => { throw new Error("should not sign"); } });
+    const spec = { command: "/missing/browser", args: [], env: {} };
+    const headers = await value.agentRpc("s", spec, "tools/call", { name: "agent_browser_set_headers", arguments: { headers: { Authorization: "Bearer x" } } });
+    const credentials = await value.agentRpc("s", spec, "tools/call", { name: "agent_browser_set_credentials", arguments: {} });
+    expect(headers).toMatchObject({ isError: true });
+    expect(credentials).toMatchObject({ isError: true });
+    expect(JSON.stringify(headers)).toMatch(/not a login/);
+  });
+
+  it("asks for a signature before an http open and does not open when that fails", async () => {
+    const signed: string[] = [];
+    const value = new BrowserRuntime({
+      idleMs: 500,
+      signNavigation: async ({ url }) => { signed.push(url); throw new Error("The browser did not accept the visit signature."); },
+    });
+    try {
+      const refused = await value.agentRpc("sign", spec(), "tools/call", { name: "agent_browser_open", arguments: { url: "https://example.test/path" } }) as { isError?: boolean };
+      expect(signed).toEqual(["https://example.test/path"]);
+      expect(refused.isError).toBe(true);
+    } finally { await value.closeAll(); }
+  });
+});
+
 describe("browser MCP shaping at the runtime boundary", () => {
   it("strips harness-owned arguments before dispatch and bounds what a result puts into the conversation", async () => {
     const value = new BrowserRuntime({ idleMs: 500 });

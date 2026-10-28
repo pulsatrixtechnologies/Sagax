@@ -15,6 +15,14 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Signed bot visits (2026-10-27)
+
+The bot's own browser signs page opens (docs/web-bot-auth.md,
+server/web-bot-auth.ts). On unless that person turns it off
+(`PUT /api/me/web-bot-auth`, `{ enabled: false }`). Not a login. The
+person's attached browser is not signed. One key per person on an
+organization server.
+
 ## Web search with the person's own key (2026-10-26)
 
 Decision: an engine with no web search of its own (OpenAI-compatible

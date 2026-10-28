@@ -442,6 +442,22 @@ export function browserProfileChangeRefusal(runtime: Pick<BrowserRuntime, "perso
   return "Someone is signing in themselves in this bot's browser. Finish (Done) or decline the login card first.";
 }
 
+/** Tool names that would let a model set request headers or a password.
+ * A visit signature is attached by Sagax, never by a tool call, and it is
+ * not a login. */
+const BROWSER_HEADER_TOOLS: ReadonlySet<string> = new Set([
+  "agent_browser_set_headers", "agent_browser_set_credentials",
+]);
+
+export type SignBrowserNavigation = (input: { session: string; spec: BrowserSpawnSpec; url: string }) => Promise<void>;
+
+function browserCallUrl(params: unknown): string {
+  const args = (params as { arguments?: unknown } | null)?.arguments;
+  if (!args || typeof args !== "object") return "";
+  const url = (args as { url?: unknown }).url;
+  return typeof url === "string" ? url : "";
+}
+
 export class BrowserRuntime {
   private gates = new Map<string, Gate>();
   private clients = new Map<string, ClientEntry>();
@@ -478,9 +494,12 @@ export class BrowserRuntime {
     return this.personSignIns.has(session);
   }
 
-  constructor({ closeBrowser, applyViewport, pauseStream, egressNotice, now, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport; pauseStream?: PauseStream; egressNotice?: (session: string) => string | null; now?: () => number } = {}) {
+  private signNavigation?: SignBrowserNavigation;
+
+  constructor({ closeBrowser, applyViewport, pauseStream, egressNotice, now, signNavigation, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport; pauseStream?: PauseStream; egressNotice?: (session: string) => string | null; now?: () => number; signNavigation?: SignBrowserNavigation } = {}) {
     this.now = now ?? Date.now;
     this.egressNotice = egressNotice;
+    this.signNavigation = signNavigation;
     this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: DEFAULT_BROWSER_RESULT_BUDGET, recoveryCheckMs: 30_000, loginSettleMs: 8_000, loginPollMs: 250, ...options };
     this.closeBrowser = closeBrowser ?? (async () => false);
     this.applyViewport = applyViewport;
@@ -539,6 +558,9 @@ export class BrowserRuntime {
   }
 
   async agentRpc(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillAccess): Promise<unknown> {
+    if (method === "tools/call" && BROWSER_HEADER_TOOLS.has(toolNameOf(params) ?? "")) {
+      return toolText("The browser does not accept headers or credentials from a tool call. A signed visit is not a login. A saved login uses request_login, and the value stays hidden.", true);
+    }
     // agent_browser_read with a `url` fetches around the browser and its
     // egress gate; it reads the open page only (OpenMausBot #2930 port).
     if (method === "tools/call" && readsAroundBrowser(params)) return toolText(READ_OPEN_PAGE_ONLY, true);
@@ -672,6 +694,16 @@ export class BrowserRuntime {
           } catch (error) {
             releaseKeys();
             throw error;
+          }
+        }
+        if (this.signNavigation && method === "tools/call" && (toolName === "agent_browser_open" || toolName === "agent_browser_reload")) {
+          const url = browserCallUrl(params);
+          if (toolName === "agent_browser_reload" || /^https?:\/\//i.test(url)) {
+            try {
+              await this.signNavigation({ session, spec, url });
+            } catch (error) {
+              return toolText(error instanceof Error && error.message ? error.message : "The visit could not be signed.", true);
+            }
           }
         }
         // The model sees slimmed schemas and text-only, bounded results; the
