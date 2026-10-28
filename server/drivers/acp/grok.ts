@@ -22,7 +22,7 @@ import { grokHostToolArgs, grokOrgAgentProfile } from "../host-tools.ts";
 import { grokReadOnlyAllowRules } from "./grok-read-only-tools.ts";
 import { gateReadOnlyTools, grokApprovalGateEnabled } from "./grok-approval-gate.ts";
 import { knownGrokTools, knownGrokToolsSection, recordGrokToolUse, useToolName } from "./grok-tool-usage.ts";
-import { grokCatalogFor, grokCatalogSection, rememberGrokCatalog } from "./grok-tool-catalog.ts";
+import { grokCatalogFor, grokCatalogSection, noteGrokAccountReach, rememberGrokCatalog } from "./grok-tool-catalog.ts";
 import { GROK_CLOUD_CONNECTORS } from "../../../shared/grok-cloud-connectors.ts";
 import { turnReachFor } from "../../turn-reach.ts";
 import { allowsTool, canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
@@ -954,7 +954,14 @@ const support: AcpSupport = {
       // the bot answered that ConnectWise was not reachable. Wait, bounded
       // and best effort, until Grok resolved its servers and none is still
       // pending; on a timeout or an unreadable list the prompt goes anyway.
-      await waitForGrokMcpSettled(request, sessionId, GROK_MCP_SETTLE_MS, (catalog) => rememberGrokCatalog(sessionId, catalog));
+      // What the person's own xAI account brought (its grok.com connectors),
+      // kept by their sign-in folder: only on a turn that loads the gateway
+      // (grokCloudConnectorEnv), where an empty gateway means none.
+      const reachHome = turn.grokCloudConnectors === true && turn.withholdHostTools === true ? turn.access?.engineHome : undefined;
+      await waitForGrokMcpSettled(request, sessionId, GROK_MCP_SETTLE_MS, (catalog) => {
+        rememberGrokCatalog(sessionId, catalog);
+        noteGrokAccountReach(reachHome, catalog);
+      });
     }
     if (!turn.model) return;
     if (grokPinsModelInProfile(turn)) {

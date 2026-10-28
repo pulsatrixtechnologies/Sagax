@@ -23,3 +23,59 @@ export const GROK_CLOUD_CONNECTORS: readonly GrokCloudConnector[] = [
   { id: "sharepoint", name: "SharePoint", tag: "files" },
   { id: "salesforce", name: "Salesforce", tag: "crm" },
 ];
+
+/** A connector's name as a person or grok.com writes it ("Teams",
+ * "Microsoft Teams", "Outlook (Exchange)", "gmail") to its id here. */
+export const GROK_CONNECTOR_ALIASES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^(?:microsoft[\s_-]*teams|ms[\s_-]*teams|teams)$/, "microsoft-teams"],
+  [/^(?:outlook|microsoft outlook|outlook \(exchange\)|exchange|outlook mail|hotmail)$/, "outlook"],
+  [/^(?:gmail|google mail)$/, "gmail"],
+  [/^(?:google[\s_-]*drive|gdrive|drive)$/, "google-drive"],
+  [/^(?:one[\s_-]*drive)$/, "onedrive"],
+  [/^(?:share[\s_-]*point)$/, "sharepoint"],
+  [/^salesforce$/, "salesforce"],
+  [/^(?:x|twitter|x \(twitter\))$/, "x"],
+];
+
+export function grokConnectorIdForName(name: string): string | undefined {
+  const key = name.replace(/\s+/g, " ").trim().toLowerCase();
+  return GROK_CONNECTOR_ALIASES.find(([pattern]) => pattern.test(key))?.[1];
+}
+
+// ── the managed MCP gateway (2026-10-28, measured on grok 1.0.46 and 1.0.70)
+//
+// With `GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=true` the grok.com connectors
+// of the signed-in xAI account reach the CLI as ONE `_x.ai/mcp/list` server,
+// `managed_gateway:cursor` (type `managedGateway`, displayName
+// "Cursor (user-Teams)"), next to `managed_gateway:tasks` (Automations).
+// Every connector is a prefix of the tool names, already qualified for
+// use_tool, with `_XX` hex escapes:
+//   cursor__user-Teams-list_5fchats___10
+//   cursor__user-Outlook-send_5fmail___12
+//   cursor__user-Outlook-calendar-create_5fcalendar_5fevent___21
+// There is no `microsoft_teams` or `outlook` server, so a connector is read
+// from the tool names.
+
+export const GROK_GATEWAY_SERVER_PREFIX = "managed_gateway:";
+
+export function isGrokGatewayServer(name: string, type?: unknown): boolean {
+  return type === "managedGateway" || name.startsWith(GROK_GATEWAY_SERVER_PREFIX);
+}
+
+/** `list_5fchats` -> `list_chats`; `Google_20Drive` -> `Google Drive`. */
+export function decodeGrokGatewayName(raw: string): string {
+  return raw.replace(/_([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+/** The connector a gateway tool belongs to: its name as grok.com shows it
+ * ("Teams", "Outlook", "Google Drive") and its id here when it is one of
+ * GROK_CLOUD_CONNECTORS. Null for a tool that names no connector
+ * (`tasks__create`). */
+export function grokGatewayToolConnector(toolName: string): { name: string; id?: string } | null {
+  const match = /^[A-Za-z0-9_-]+?__(?:user|team|org|workspace)-([^-]+)/.exec(toolName);
+  if (!match) return null;
+  const name = decodeGrokGatewayName(match[1]!).trim();
+  if (!name) return null;
+  const id = grokConnectorIdForName(name);
+  return id ? { name, id } : { name };
+}

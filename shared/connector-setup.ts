@@ -17,7 +17,7 @@
 // that connector after the card, in a turn of the card's person on the
 // card's bot, never a sign-in tool. Until then a Grok card stays "pending".
 import { claudeAiConnectorCapabilities, grokConnectorCapabilities, type ConnectorCapability } from "./engine-connectors.ts";
-import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "./grok-cloud-connectors.ts";
+import { decodeGrokGatewayName, GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL, grokConnectorIdForName, grokGatewayToolConnector } from "./grok-cloud-connectors.ts";
 import { containsUuid, isOpaqueId } from "./human-id.ts";
 
 /** Where a person adds, signs in to and removes their claude.ai connectors. */
@@ -54,17 +54,6 @@ export interface ConnectorSetupView {
   checkedAt?: number;
 }
 
-const ALIASES: Array<[RegExp, string]> = [
-  [/^(?:microsoft[\s_-]*teams|ms[\s_-]*teams|teams)$/, "microsoft-teams"],
-  [/^(?:outlook|microsoft outlook|outlook \(exchange\)|exchange|outlook mail|hotmail)$/, "outlook"],
-  [/^(?:gmail|google mail)$/, "gmail"],
-  [/^(?:google[\s_-]*drive|gdrive|drive)$/, "google-drive"],
-  [/^(?:one[\s_-]*drive)$/, "onedrive"],
-  [/^(?:share[\s_-]*point)$/, "sharepoint"],
-  [/^salesforce$/, "salesforce"],
-  [/^(?:x|twitter|x \(twitter\))$/, "x"],
-];
-
 function cleanName(raw: string): string {
   // oxlint-disable-next-line no-control-regex -- control characters never belong in a name on screen
   return raw.replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim();
@@ -76,7 +65,7 @@ export function resolveConnectorSetupTarget(raw: string): ConnectorSetupTarget |
   // a name on screen, never an id (AGENTS.md "Never a UUID/GUID on screen")
   if (!label || containsUuid(label) || isOpaqueId(label)) return null;
   const key = label.toLowerCase();
-  const id = ALIASES.find(([pattern]) => pattern.test(key))?.[1];
+  const id = grokConnectorIdForName(key);
   const grok = id ? GROK_CLOUD_CONNECTORS.find((connector) => connector.id === id) : undefined;
   if (grok) {
     return {
@@ -181,8 +170,17 @@ export function connectorProofMatches(view: Pick<ConnectorSetupView, "provider" 
   if (!proof.ok || proof.at <= view.createdAt || !proof.owner || proof.owner !== view.owner || !cardBotId || proof.botId !== cardBotId) return false;
   const target = resolveConnectorSetupTarget(view.label) ?? resolveConnectorSetupTarget(view.connector);
   if (!target?.grok) return false;
-  const name = provenToolName(proof)?.toLowerCase().replace(/^mcp__/, "");
-  if (!name) return false;
+  const raw = provenToolName(proof)?.replace(/^mcp__/, "");
+  if (!raw) return false;
+  // grok's managed gateway (shared/grok-cloud-connectors.ts): the connector
+  // is in the tool name, `cursor__user-Teams-list_5fchats___10`
+  const gateway = grokGatewayToolConnector(raw);
+  if (gateway) {
+    // the tool itself, after `<server>__user-<Connector>-`: a sign-in step proves nothing
+    const tool = decodeGrokGatewayName(raw.slice(raw.indexOf("__") + 2)).replace(/^[a-z]+-[^-]+-?/i, "");
+    return gateway.id === target.grok && !AUTH_TOOL.test(tool);
+  }
+  const name = raw.toLowerCase();
   const server = `${target.grok.replace(/-/g, "_")}__`;
   if (!name.startsWith(server)) return false;
   return !AUTH_TOOL.test(name.slice(server.length));

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   GROK_CATALOG_CHARS_MAX,
+  grokAccountReach,
   grokCatalogFor,
+  grokGatewayConnectors,
+  noteGrokAccountReach,
   grokCatalogSection,
   readGrokCatalog,
   rememberGrokCatalog,
@@ -152,5 +156,63 @@ describe("grokCatalogSection", () => {
     // cut at a whole entry, never mid-name, and the bot's own tools survive
     expect(section.text).toMatch(/(\(30\)[,.]|tools\.|first: [^\n]*\.)$/);
     expect(section.text).toContain("Already used, call directly with use_tool without search_tool first: server_3__a_rather_long_tool_name_1.");
+  });
+});
+
+// 2026-10-28 (Sagax 0.8.13 on GOX): grok.com's connectors reach the CLI as
+// ONE managed gateway server whose tool names carry the connector. Sagax
+// looked for `microsoft_teams`/`outlook` servers, so a turn that had Teams
+// and Outlook was told "Connectable but not connected yet ... you have NO
+// tool". The fixture is the real answer's shape (grok 1.0.46), trimmed.
+const GATEWAY = JSON.parse(readFileSync(new URL("../../testing/grok-gateway-mcp-list.json", import.meta.url), "utf8"));
+const CONNECTABLE = [
+  { id: "outlook", label: "Outlook (Exchange)" }, { id: "microsoft-teams", label: "Microsoft Teams" }, { id: "gmail", label: "Gmail" },
+];
+
+describe("grok's managed gateway (grok.com connectors)", () => {
+  it("reads the gateway server with every tool, long names included", () => {
+    const gateway = readGrokCatalog(GATEWAY)!.find((server) => server.name === "managed_gateway:cursor")!;
+    expect(gateway.gateway).toBe(true);
+    expect(gateway.status).toBe("ready");
+    // 66 characters: over the 64 a function name may have, a valid catalog key
+    expect(gateway.tools).toContain("cursor__user-Outlook-calendar-respond_5fto_5fcalendar_5fevent___21");
+    expect(gateway.tools).toHaveLength(10);
+  });
+
+  it("groups the gateway's tools by connector, known ones first", () => {
+    const groups = grokGatewayConnectors(readGrokCatalog(GATEWAY)!);
+    expect(groups.map((group) => [group.id, group.label, group.tools.length])).toEqual([
+      ["microsoft-teams", "Microsoft Teams", 4],
+      ["outlook", "Outlook (Exchange)", 5],
+      [undefined, "Automations", 2],
+      [undefined, "Docs Hub", 1],
+    ]);
+  });
+
+  it("says Teams and Outlook are connected, with an exact tool to call, and offers only what is missing", () => {
+    const text = grokCatalogSection({ catalog: readGrokCatalog(GATEWAY), connectable: CONNECTABLE })!.text;
+    expect(text).toContain("Connected on this xAI account through grok.com");
+    expect(text).toContain("Microsoft Teams (4 tools, e.g. cursor__user-Teams-get_5fme___10)");
+    expect(text).toMatch(/Outlook \(Exchange\) \(5 tools, e.g. cursor__user-Outlook-[^)]*(list|get)_5f/);
+    expect(text).toMatch(/Connectable but not connected yet[^\n]*: Gmail\./);
+    expect(text).not.toMatch(/Connectable but not connected yet[^\n]*(Teams|Outlook)/);
+    // never `<server>__<tool>` with the gateway's own name
+    expect(text).not.toContain("managed_gateway:cursor");
+    expect(text).not.toContain("returned no grok.com connector");
+  });
+
+  it("says plainly when Grok returned no gateway at all for this sign-in", () => {
+    const text = grokCatalogSection({ catalog: readGrokCatalog({ servers: [], sessionMcpResolved: true }), connectable: CONNECTABLE })!.text;
+    expect(text).toContain("Connectable but not connected yet");
+    expect(text).toContain("Grok returned no grok.com connector at all for this sign-in");
+  });
+
+  it("keeps what an account's sign-in brought, by its folder", () => {
+    noteGrokAccountReach("/data/principals/p1/grok", GATEWAY, 1_000);
+    noteGrokAccountReach("/data/principals/p2/grok", { servers: [], sessionMcpResolved: true }, 2_000);
+    noteGrokAccountReach(undefined, GATEWAY);
+    expect(grokAccountReach("/data/principals/p1/grok")).toEqual({ gateway: true, connectors: ["microsoft-teams", "outlook"], at: 1_000 });
+    expect(grokAccountReach("/data/principals/p2/grok")).toEqual({ gateway: false, connectors: [], at: 2_000 });
+    expect(grokAccountReach("/data/principals/p3/grok")).toBeUndefined();
   });
 });

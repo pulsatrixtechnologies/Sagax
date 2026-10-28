@@ -22,6 +22,7 @@ import { promptSplitFingerprints, writePromptSplitReceipt } from "../prompt-spli
 import { GROK_TOOL_REUSE_HINT as HINT } from "./grok.ts";
 import { createAcpDriver, DEFAULT_ACP_PROMPT_IDLE_MS, skipSubscriptionAuthForLocalInject, type AcpSupport } from "./core.ts";
 import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp, grokConnectableConnectors } from "./grok.ts";
+import { grokAccountReach } from "./grok-tool-catalog.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { KimiAgentDriver } from "./kimi.ts";
@@ -1938,6 +1939,76 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(prompt).toContain("Outlook (Exchange)");
     expect(prompt).toContain("agents__open_connector_setup");
     expect(prompt).not.toContain("This list is complete");
+  });
+
+  it("mounts the person's grok.com Teams and Outlook through grok's gateway and says so, not \"connectable\" (2026-10-28)", async () => {
+    // Sagax 0.8.13 on GOX: the turn's catalog carried `managed_gateway:cursor`
+    // (Teams, Outlook) and the prompt still said "Connectable but not
+    // connected yet ... Microsoft Teams ... you have NO tool". The fake CLI
+    // answers _x.ai/mcp/list with the real answer's shape, its gateway only
+    // when the turn sets GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=true.
+    const dump = join(scratch, "grok-gateway.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    process.env.FAKE_ACP_MCP_LIST_FILE = fileURLToPath(new URL("../../testing/grok-gateway-mcp-list.json", import.meta.url));
+    onTestFinished(() => { delete process.env.FAKE_ACP_MCP_LIST_FILE; });
+    await create(GrokAgentDriver);
+    const rules = "Standing rules. " + randomUUID();
+    const home = join(scratch, "person-gateway");
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-grok-gateway-" + randomUUID(),
+      text: "lis mes messages Teams",
+      model: "grok-4.7",
+      system: rules,
+      systemStable: rules,
+      systemVolatile: "",
+      withholdHostTools: true,
+      grokCloudConnectors: true,
+      access: { via: "subscription", identity: "subscription:a", engineHome: home },
+      integrations: { agents: { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} } },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const seen = JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> };
+    expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("true");
+    const prompt = (JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8")) as Array<{ type: string; text: string }>)
+      .map((part) => part.text ?? "").join("\n");
+    expect(prompt).toContain("Connected on this xAI account through grok.com");
+    expect(prompt).toContain("Microsoft Teams (4 tools, e.g. cursor__user-Teams-get_5fme___10)");
+    expect(prompt).toContain("Outlook (Exchange) (5 tools");
+    expect(prompt).not.toMatch(/Connectable but not connected yet[^\n]*(Microsoft Teams|Outlook)/);
+    expect(prompt).toMatch(/Connectable but not connected yet[^\n]*Gmail/);
+    // what this sign-in brings is known now (setup card, connector switch)
+    expect(grokAccountReach(home)).toMatchObject({ gateway: true, connectors: ["microsoft-teams", "outlook"] });
+  });
+
+  it("a turn that keeps the gateway off (another person's account) sees none of it", async () => {
+    const dump = join(scratch, "grok-gateway-off.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    process.env.FAKE_ACP_MCP_LIST_FILE = fileURLToPath(new URL("../../testing/grok-gateway-mcp-list.json", import.meta.url));
+    onTestFinished(() => { delete process.env.FAKE_ACP_MCP_LIST_FILE; });
+    await create(GrokAgentDriver);
+    const rules = "Standing rules. " + randomUUID();
+    const home = join(scratch, "someone-else-gateway");
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-grok-gateway-off-" + randomUUID(),
+      text: "lis mes messages Teams",
+      model: "grok-4.7",
+      system: rules,
+      systemStable: rules,
+      systemVolatile: "",
+      withholdHostTools: true,
+      grokCloudConnectors: false,
+      access: { via: "subscription", identity: "subscription:b", engineHome: home },
+      integrations: { agents: { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} } },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const seen = JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> };
+    expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
+    const prompt = (JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8")) as Array<{ type: string; text: string }>)
+      .map((part) => part.text ?? "").join("\n");
+    expect(prompt).not.toContain("cursor__user-Teams");
+    expect(grokAccountReach(home)).toBeUndefined();
   });
 
   it("offers no connectable connectors on a solo turn (cloud connectors never load there)", async () => {

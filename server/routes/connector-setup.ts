@@ -69,7 +69,16 @@ export function createConnectorSetupProofs(options: { perThread?: number; thread
   };
 }
 
+/** What the person's own Grok sign-in brought on its last turn
+ * (server/drivers/acp/grok-tool-catalog.ts GrokAccountReach). */
+export interface GrokReachFact {
+  connectors: readonly string[];
+  at: number;
+}
+
 interface Shared {
+  /** The person's own Grok account reach, when a turn of theirs read it. */
+  grokReach?(principalId: string): GrokReachFact | undefined;
   /** The setup cards of a conversation. */
   cards(threadId: string): Array<{ messageId: string; view: ConnectorSetupView }>;
   proofs(): ConnectorSetupProofs;
@@ -91,11 +100,19 @@ const REFUSALS = {
   no_route: "No card was posted: the person has no Grok or Claude sign-in of their own on this server, so there is no account of theirs to connect it to. Do not offer this card again. Say in one sentence that they can sign in to their own Grok or Claude account in Connect apps > Providers, then ask again.",
 } as const;
 
-function check(view: ConnectorSetupView, proofs: readonly ConnectorSetupProof[], botId: string | undefined, claude: Array<{ name: string; status: string }> | null, now: number): ConnectorSetupView {
+/** Grok's own catalog, read after the card on a turn of the card's person,
+ * carries the connector (its managed gateway): evidence like a call. */
+function grokReachShows(view: ConnectorSetupView, reach: GrokReachFact | undefined): boolean {
+  const target = resolveConnectorSetupTarget(view.label) ?? resolveConnectorSetupTarget(view.connector);
+  return Boolean(reach && target?.grok && reach.at > view.createdAt && reach.connectors.includes(target.grok));
+}
+
+function check(view: ConnectorSetupView, proofs: readonly ConnectorSetupProof[], botId: string | undefined, claude: Array<{ name: string; status: string }> | null, now: number, grokReach?: GrokReachFact): ConnectorSetupView {
   const target = resolveConnectorSetupTarget(view.label);
-  // Grok: a call of the card's own person on the card's bot; Claude: that person's inventory only
+  // Grok: a call of the card's own person on the card's bot, or their Grok
+  // catalog that carries it; Claude: that person's inventory only
   const evidence = view.provider === "grok"
-    ? Boolean(botId) && proofs.some((proof) => connectorProofMatches(view, proof, botId!))
+    ? (Boolean(botId) && proofs.some((proof) => connectorProofMatches(view, proof, botId!))) || grokReachShows(view, grokReach)
     : Boolean(claude) && Boolean(target) && claudeInventoryShowsConnected(claude!, target!);
   return { ...view, status: evidence ? "connected" : "pending", checkedAt: now };
 }
@@ -127,11 +144,17 @@ export function createConnectorSetupInternalRoutes(deps: Shared & {
     if (!context) return json(res, 409, { error: "This bot has no engine right now. Answer in words." });
     const route = chooseConnectorSetupRoute({ target, ...context, ...(parsed.data.via ? { prefer: parsed.data.via } : {}) });
     if ("refusal" in route) return json(res, 409, { error: REFUSALS[route.refusal] });
+    // Already there: the person's Grok catalog carries it (grok's gateway).
+    // No card; the bot calls it.
+    if (route.route === "grok" && target.grok && deps.grokReach?.(principalId)?.connectors.includes(target.grok)) {
+      return json(res, 200, { ok: true, route: route.route, label: target.label, status: "connected", card: "none",
+        note: `${target.label} is already connected on this person's Grok account. No card was posted. Find its tools with search_tool ("${target.label}") and call them with use_tool by their full name.` });
+    }
     if (!isConnectorSetupUrl(route.url)) return json(res, 500, { error: "no setup page for that connector" });
     const owner = connectorSetupOwner(principalId);
     const existing = deps.cards(capability.threadId).find(({ view }) => view.owner === owner && view.provider === route.route && view.connector === target.id);
     if (existing) {
-      const view = existing.view.status === "connected" ? existing.view : check(existing.view, deps.proofs().list(capability.threadId), deps.botOf(capability.threadId), null, now());
+      const view = existing.view.status === "connected" ? existing.view : check(existing.view, deps.proofs().list(capability.threadId), deps.botOf(capability.threadId), null, now(), deps.grokReach?.(principalId));
       if (view !== existing.view && view.status !== existing.view.status) deps.patch(capability.threadId, existing.messageId, view);
       return json(res, 200, { ok: true, route: route.route, label: target.label, status: view.status, card: "existing" });
     }
@@ -169,7 +192,7 @@ export function createConnectorSetupRoutes(deps: Shared & {
     if (!card || card.view.owner !== connectorSetupOwner(principalId)) return json(res, 404, { error: "gone" });
     if (card.view.status === "connected") return json(res, 200, { view: card.view });
     const claude = card.view.provider === "claude" ? await deps.claudeConnectors(principalId).catch(() => null) : null;
-    const view = check(card.view, deps.proofs().list(threadId), deps.botOf(threadId), claude, now());
+    const view = check(card.view, deps.proofs().list(threadId), deps.botOf(threadId), claude, now(), card.view.provider === "grok" ? deps.grokReach?.(principalId) : undefined);
     deps.patch(threadId, card.messageId, view);
     return json(res, 200, { view });
   };

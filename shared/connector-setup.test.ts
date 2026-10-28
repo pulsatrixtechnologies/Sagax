@@ -173,6 +173,15 @@ describe("evidence that the connector works (review of #966)", () => {
     expect(connectorProofMatches(view(), proof({ name: "use_tool", input: "not json" }), "b1")).toBe(false);
   });
 
+  it("a call through grok's managed gateway proves the connector it names (2026-10-28)", () => {
+    const gateway = (tool: string) => proof({ name: "use_tool", input: JSON.stringify({ tool_name: tool }) });
+    expect(connectorProofMatches(view(), gateway("cursor__user-Teams-list_5fchats___10"), "b1")).toBe(true);
+    expect(connectorProofMatches(view(), proof({ name: "cursor__user-Teams-list_5fchats___10" }), "b1")).toBe(true);
+    expect(connectorProofMatches(view(), gateway("cursor__user-Outlook-list_5fmail_5fmessages___12"), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), gateway("cursor__user-Teams-start_5foauth___10"), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), gateway("tasks__list"), "b1")).toBe(false);
+  });
+
   it("a sign-in tool is no proof the connector works", () => {
     for (const name of ["mcp__microsoft_teams__authenticate", "mcp__microsoft_teams__complete_authentication", "mcp__microsoft_teams__oauth_start", "mcp__microsoft_teams__get_auth_url"]) {
       expect(connectorProofMatches(view(), proof({ name }), "b1")).toBe(false);
