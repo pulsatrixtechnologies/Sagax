@@ -173,14 +173,18 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   archive_cloud_agent: "own-account",
 });
 
-/** The agents tools that keep the admin gate, and why:
+/** The agents tools that keep the admin gate when they would touch the
+ * shared server, and why:
  *   api_reload, review_write
- *                   Perspicax admin tools
- *   add_mcp_server  starts a local program on the server
- *   attach_file     reads any path on the server into the chat
- *   vm_exec         a shell command (the owner's own Local VM is theirs
- *                   through engine-access.ts ownDestination)
- *   shared_computer files, a terminal or the screen of a shared desktop */
+ *                   Perspicax admin tools (always)
+ *   add_mcp_server  the server's shared list
+ *   attach_file     a path outside the bot's own folders
+ *   vm_exec         a Local VM the server shares or pools
+ *   shared_computer a computer that is not the speaking owner's
+ * 2026-10-28: the same four, when the call stays in the member's own
+ * environment (their own server list, the bot's own folders or Local VM,
+ * their own computers), are the owner's card at their own level
+ * (engine-access.ts memberOwnHostToolCall). They never answer themselves. */
 export const HOST_LEVEL_AGENT_TOOLS: ReadonlySet<string> = new Set([
   "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
 ]);

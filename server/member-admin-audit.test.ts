@@ -154,8 +154,11 @@ describe("member admin audit, section 2: in-chat terminal", () => {
 describe("member admin audit, section 3: MCP permission catalogue", () => {
   // 2026-10-26: create_agent and delete_agent on the member's own temporary
   // agents are theirs too
-  const own = ["rules_update", "docs_update", "request_login", "select_computer", "manage_pairing", "propose_team_setup", "create_bot", "propose_bot_deletion", "create_room", "manage_room", "create_agent", "delete_agent", "act", "manage_settings"];
-  const reserved = ["propose_team_memory", "add_mcp_server", "request_credential", "shared_computer", "vm_exec", "api_reload", "review_write", "memory_promote", "memory_review"];
+  const own = ["rules_update", "docs_update", "request_login", "select_computer", "manage_pairing", "propose_team_setup", "create_bot", "propose_bot_deletion", "create_room", "manage_room", "create_agent", "delete_agent", "act", "manage_settings",
+    // 2026-10-27/28: their own Local VM, team memory card, key request,
+    // computers, and their own server list (mcp-permissions.ts member)
+    "vm_exec", "propose_team_memory", "request_credential", "shared_computer", "add_mcp_server"];
+  const reserved = ["api_reload", "review_write", "memory_promote", "memory_review"];
 
   it.each(own)("%s: a member's own work (self scope); an admin's too", (tool) => {
     expect(decide({ id: OWNER, role: "member" }, tool, "self").allowed).toBe(true);

@@ -1078,7 +1078,7 @@ import { OrgGithubTokens } from "./org-github-tokens.ts";
 import { OrgBotSecrets } from "./org-bot-secrets.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
-import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
+import { parsePersonalMcpInput, personalMcpInputFromAgent, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
 import { testStdioMcpCommand, testStdioMcpStream } from "./mcp-stdio-test.ts";
@@ -1311,7 +1311,7 @@ import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAtt
 import { OFFICE_IMAGE_MAX_COUNT, OFFICE_IMAGES_MAX_TOTAL_BYTES, officeKind, officeMediaFolder, officeNote, readOfficeMedia } from "./office-media.ts";
 import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type MemberHostToolPlace, type TurnSpeaker } from "./engine-access.ts";
 import {
   assignBotHost,
   channelTurnGate,
@@ -8147,6 +8147,26 @@ ROUTES.push(createMcpServerRenameRoutes({
   },
   response: () => mcpServerResponse(),
 }));
+/** A person's own MCP server (Settings > Connections), the one way it is
+ * added: their screen, and since 2026-10-28 their bot's add_mcp_server on
+ * an organization server. */
+async function addPersonalMcpServer(principalId: string, body: unknown): Promise<void> {
+  const { name, server } = parsePersonalMcpInput(body, Date.now(), personalMcpPrivateAllowed());
+  if (server.kind === "remote") {
+    const hostRefusal = await personalMcpHostRefusal(server.url, { allowPrivate: personalMcpPrivateAllowed() });
+    if (hostRefusal) throw new PersonConnectionsError(hostRefusal, "private_address");
+  }
+  if (PERSONAL_MCP_RESERVED_PREFIX.test(name)) throw new PersonConnectionsError("That name is reserved by Sagax. Choose another one.", "invalid_name");
+  if (server.kind === "stdio" && !userSandbox) {
+    throw new PersonConnectionsError("This server has no server environments, so a command cannot run for you here. Add a remote server (an https address) instead.", "no_environment", 409);
+  }
+  personConnections.add(principalId, name, server);
+  if (server.kind === "remote" && server.auth === "oauth") {
+    const manager = personOAuth(principalId);
+    await manager.forget(name).catch(() => undefined);
+    await manager.probe(name, personalRemoteSpec(server), AbortSignal.timeout(10_000)).catch(() => undefined);
+  }
+}
 ROUTES.push(createPersonConnectionRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   managedByAdmin: integrationsLocked,
@@ -8166,23 +8186,7 @@ ROUTES.push(createPersonConnectionRoutes({
   },
   servers: {
     list: personalServerListing,
-    add: async (principalId, body) => {
-      const { name, server } = parsePersonalMcpInput(body, Date.now(), personalMcpPrivateAllowed());
-      if (server.kind === "remote") {
-        const hostRefusal = await personalMcpHostRefusal(server.url, { allowPrivate: personalMcpPrivateAllowed() });
-        if (hostRefusal) throw new PersonConnectionsError(hostRefusal, "private_address");
-      }
-      if (PERSONAL_MCP_RESERVED_PREFIX.test(name)) throw new PersonConnectionsError("That name is reserved by Sagax. Choose another one.", "invalid_name");
-      if (server.kind === "stdio" && !userSandbox) {
-        throw new PersonConnectionsError("This server has no server environments, so a command cannot run for you here. Add a remote server (an https address) instead.", "no_environment", 409);
-      }
-      personConnections.add(principalId, name, server);
-      if (server.kind === "remote" && server.auth === "oauth") {
-        const manager = personOAuth(principalId);
-        await manager.forget(name).catch(() => undefined);
-        await manager.probe(name, personalRemoteSpec(server), AbortSignal.timeout(10_000)).catch(() => undefined);
-      }
-    },
+    add: (principalId, body) => addPersonalMcpServer(principalId, body),
     setEnabled: async (principalId, name, enabled) => {
       personConnections.setEnabled(principalId, name, enabled);
       if (!enabled) stdioRelay.closePerson(principalId, name);
@@ -16040,6 +16044,9 @@ bus.subscribe((event: RuntimeEvent) => {
         foreignMcpServers: foreignServers,
         // #1269: a read of the member's own bot is not an admin card
         rawInput: event.input,
+        // 2026-10-28: vm_exec, shared_computer, attach_file and
+        // add_mcp_server that stay in the member's own environment
+        hostPlace: memberHostToolPlace(asker, event.threadId),
         callerBotId: asker.id,
         ownsBot: (id: string) => {
           if (id === asker.id) return true;
@@ -33566,6 +33573,20 @@ function ownEnvironmentOrigin(bot: BotRecord, threadId: string): "owner" | "othe
 /** 2026-10-26: what lets the person's own routine on their own bot,
  * or a hop between two of their own bots, count as their own turn
  * (member-environment.ts ownLineageTurn). A webhook never does. */
+/** 2026-10-28 (engine-access.ts memberOwnHostToolCall): where this turn's
+ * host-level agents tools land. The person's own computers and server list
+ * count only when the person speaking owns the bot: the card is theirs. */
+function memberHostToolPlace(bot: BotRecord, threadId: string): MemberHostToolPlace {
+  const speaker = turnSpeakerPrincipals.get(threadId)?.trim().toLowerCase() ?? "";
+  const speakerOwns = IDENTITY.kind === "perspicax" && Boolean(speaker) && !turnRoutineLineage.has(threadId)
+    && speaker === effectiveBotOwner(bot).trim().toLowerCase();
+  return {
+    ownLocalVm: localVmMode(cfg) === "per-bot",
+    ownComputers: speakerOwns,
+    ownMcpList: speakerOwns,
+    botRoots: [join(realpathSync(DATA_DIR), "task-workspaces", bot.id), workspaceDir(bot.id)],
+  };
+}
 function ownLineageFields(bot: BotRecord, threadId: string): { botOwnerPrincipalId: string; automationTrigger?: string; peerFromOwner?: string } {
   const speaker = turnSpeakers.get(threadId);
   const trigger = routineTriggerOf(threadId);
@@ -43655,6 +43676,44 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const updated = updateChannel(room.id, patch);
         return json(res, 200, { ok: true, memberIds: updated.memberIds, memberCount: updated.memberIds.length, message: `Updated room “${updated.name}”.` });
+      }
+      if (method === "POST" && path === "/api/internal/mcp-servers" && IDENTITY.kind === "perspicax") {
+        // 2026-10-28 (a member does everything in their own
+        // environment): on an organization server add_mcp_server adds to the
+        // speaking person's own servers (Settings > Connections): a remote URL
+        // of theirs, or a command run in their own environment. The server's
+        // shared list stays an admin's. A person whose integrations an admin
+        // manages is refused as their Connections screen is.
+        const threadId = internalCapability.threadId;
+        if (!connectorThread(internalSender.id, threadId)) return json(res, 403, { error: "source conversation does not belong to sender" });
+        const principalId = vaultPrincipalForThread(threadId);
+        if (!principalId) return json(res, 403, { error: "No person is behind this turn, so there is no server list to add to." });
+        if (personIntegrationsOff(principalId) || (!principalIsOrgAdmin(principalId) && !principalCan(principalId, "apps.ownIntegrations"))) {
+          return json(res, 403, { ...INTEGRATIONS_ADMIN_ONLY });
+        }
+        const input = personalMcpInputFromAgent(await readInternalBody());
+        if (typeof input === "string") return json(res, 400, { error: input });
+        try {
+          await addPersonalMcpServer(principalId, input);
+        } catch (error) {
+          if (error instanceof PersonConnectionsError) return json(res, error.status, { error: error.message, code: error.code });
+          throw error;
+        }
+        // Auto or Full access: on; Ask and Edits: off until the person turns it on.
+        const enabled = botAddedMcpServerEnabled({ approvalMode: sourceApprovalMode(internalSender.id, threadId), organization: false, remote: true });
+        if (!enabled) {
+          personConnections.setEnabled(principalId, input.name, false);
+          stdioRelay.closePerson(principalId, input.name);
+        }
+        const remote = "url" in input;
+        return json(res, 201, {
+          name: input.name, enabled, personal: true,
+          transport: remote ? input.type ?? "http" : "command",
+          target: remote ? input.url : input.command,
+          envKeys: remote ? [] : Object.keys(input.env ?? {}).sort(),
+          headerKeys: remote && input.headerName ? [input.headerName] : [],
+          where: remote ? "your own servers (Settings > Connections)" : "your own servers (Settings > Connections), run in your own environment",
+        });
       }
       if (method === "POST" && path === "/api/internal/mcp-servers") {
         // Same single-flight lock as POST /api/mcp/servers: two writers must

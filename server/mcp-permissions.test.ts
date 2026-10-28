@@ -97,7 +97,14 @@ describe("decide", () => {
     for (const tool of ["phone_tool", "connect_github", "request_credential", "shared_computer"]) {
       expect(decide(who("member"), tool), tool).toMatchObject({ allowed: true, reason: "ok" });
     }
-    expect(decide(who("member"), "add_mcp_server").allowed).toBe(false);
+  });
+
+  // 2026-10-28: add_mcp_server adds to the member's own servers on an
+  // organization server; a service turn and a viewer still cannot
+  it("lets a member add a server to their own list, at their own scope only", () => {
+    expect(decide(who("member"), "add_mcp_server")).toMatchObject({ allowed: true, permission: "mcp:add" });
+    expect(decide(who("member"), "add_mcp_server", "org").allowed).toBe(false);
+    expect(decide(who("viewer"), "add_mcp_server").allowed).toBe(false);
   });
 
   it("gives a viewer reads and nothing else", () => {
@@ -110,13 +117,13 @@ describe("decide", () => {
     expect(decide(who("member"), "memory_update").allowed).toBe(true);
     expect(decide(who("member"), "ask_bot", "self").allowed).toBe(true);
     expect(decide(who("member"), "ask_bot", "team")).toMatchObject({ allowed: false, reason: "scope_too_narrow" });
-    expect(decide(who("member"), "add_mcp_server").allowed).toBe(false);
+    expect(decide(who("member"), "api_reload").allowed).toBe(false);
   });
 
   it("lets an operator dispatch for a team but not administer", () => {
     expect(decide(who("operator"), "delegate_bot", "team").allowed).toBe(true);
     expect(decide(who("operator"), "delegate_bot", "org").allowed).toBe(false);
-    expect(decide(who("operator"), "add_mcp_server").allowed).toBe(false);
+    expect(decide(who("operator"), "api_reload").allowed).toBe(false);
   });
 
   it("lets an admin do everything at every scope", () => {
@@ -257,8 +264,8 @@ describe("guardToolCall", () => {
   it("audits in shadow only the denials, and the sampled share of allowed calls", async () => {
     const t = setup("shadow", "member");
     await guardToolCall(t.options, "memory_update", {}, t.run);
-    await guardToolCall(t.options, "add_mcp_server", {}, t.run);
-    expect(t.records.map((r) => [r.tool, r.decision])).toEqual([["add_mcp_server", "denied"]]);
+    await guardToolCall(t.options, "api_reload", {}, t.run);
+    expect(t.records.map((r) => [r.tool, r.decision])).toEqual([["api_reload", "denied"]]);
     expect(t.ran()).toBe(2);
     const draws = [0.05, 0.5];
     const sampled = { ...t.options, allowedSample: 0.1, random: () => draws.shift()! };
@@ -270,7 +277,7 @@ describe("guardToolCall", () => {
   it("audits every call in enforce mode", async () => {
     const t = setup("enforce", "member");
     await guardToolCall(t.options, "memory_update", {}, t.run);
-    await guardToolCall(t.options, "add_mcp_server", {}, t.run);
+    await guardToolCall(t.options, "api_reload", {}, t.run);
     expect(t.records.map((r) => r.decision)).toEqual(["allowed", "denied"]);
   });
 
@@ -376,7 +383,7 @@ describe("false denials in shadow (#1098)", () => {
     }
     // the operator's own wider tiers stay, and admin-only tools stay refused
     expect(decide(as("operator"), "delegate_bot", "team").allowed).toBe(true);
-    expect(decide(as("operator"), "add_mcp_server").allowed).toBe(false);
+    expect(decide(as("operator"), "api_reload").allowed).toBe(false);
   });
 
   it("lets a member run their own Local VM, act as themselves and propose team memory, never a service", () => {

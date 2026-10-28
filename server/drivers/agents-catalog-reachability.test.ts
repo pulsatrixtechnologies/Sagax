@@ -245,3 +245,15 @@ describe("reachability guard: what a person's direct chat is told", () => {
     expect(problems).toEqual([]);
   });
 });
+
+describe("reachability guard: a member's own environment (2026-10-28)", () => {
+  // vm_exec, shared_computer, attach_file and add_mcp_server are no longer
+  // an admin's when they stay in the member's own environment
+  // (engine-access.ts memberOwnHostToolCall): they must be offered there.
+  it("offers the host-level tools a member now answers in their own direct chat and routines", () => {
+    for (const turn of [TURNS.direct, TURNS["direct-card"], TURNS.routine]) {
+      const shown = names({ ...turn, ...ROLES.member, SAGAX_SHARED_COMPUTERS_ENABLED: "1" });
+      for (const name of ["vm_exec", "shared_computer", "attach_file", "add_mcp_server"]) expect(shown, name).toContain(name);
+    }
+  });
+});
