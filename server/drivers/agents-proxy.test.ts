@@ -772,6 +772,7 @@ describe("agents-proxy MCP surface", () => {
       "skills_list",
       "skill_manage",
       "add_mcp_server",
+      "make_video",
       "memory_recall",
       "memory_search",
       "memory_write",
@@ -2347,7 +2348,7 @@ describe("standing external runtime", () => {
   it("advertises only peer communication and receipt tools even when unrelated feature flags are set", async () => {
     const list = await externalRpc("tools/list");
     expect(list.result.tools.map((tool: any) => tool.name)).toEqual([
-      "list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation",
+      "list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation", "make_video",
     ]);
     expect(JSON.stringify(list.result.tools)).not.toMatch(/after your current turn finishes|earlier turn|same turn as delegate_bot/);
     for (const name of ["coordinate_bots", "start_thread", "create_bot", "request_credential", "memory_update", "skill_manage", "shared_computer", "tool_result_read", "act"]) {

@@ -257,7 +257,7 @@ describe("a bot's external runtime", () => {
       await client.rpc("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "fixture", version: "1" } });
       const tools = await client.rpc("tools/list");
       expect(tools.tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
-        "ask_bot", "check_delegation", "delegate_bot", "list_bots", "wait_delegation",
+        "ask_bot", "check_delegation", "delegate_bot", "list_bots", "make_video", "wait_delegation",
       ]);
       const roster = await client.rpc("tools/call", { name: "list_bots", arguments: {} });
       expect(roster.content[0].text).toContain("MCP teammate");
