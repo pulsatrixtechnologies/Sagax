@@ -21,14 +21,19 @@
 // - gates every MCP server the bot owns with the gate's own search
 //   (mcp-gate-search.ts): a big catalog lists whole only the tools this bot
 //   used, the rest are searched;
-// - keeps Claude Code's auto memory in one folder per bot and person;
+// - keeps Claude Code's auto memory in one folder per bot and person.
+//   Notes already written in Claude Code's own project folder are copied
+//   in once (adoptLegacyAutoMemory). localPrompt full on the bot, or
+//   SAGAX_LOCAL_PROMPT=full, leaves that folder unset, so Claude Code
+//   reads its own project memory again;
 // - turns Claude Code's own tool search off, so what is listed is exactly
 //   what Sagax lists, in the same order every time.
 // Other engines keep the full tools/list. Grok, Codex and Pi discover a tool
 // from that list. Hiding one there would make it unreachable. Approvals on
 // Claude Code still read the tool a call_tool runs.
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { constants, copyFileSync, lstatSync, mkdirSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import type { CompactPromptInput } from "./contracts.ts";
 
@@ -145,4 +150,49 @@ export function compactPins(usage: Map<string, Map<string, number>>, servers: re
 export function compactMemoryDir(dataDir: string, botId: string, person: string): string {
   const key = createHash("sha256").update(`${botId}\u0000${person.trim().toLowerCase()}`).digest("hex").slice(0, 32);
   return join(dataDir, "claude-auto-memory", key);
+}
+
+/** Claude Code's project key: every character that is not a letter or a
+ * digit becomes a hyphen. `/Users/a/b` is `-Users-a-b`. */
+export function claudeProjectKey(cwd: string): string {
+  return cwd.replace(/[^A-Za-z0-9]/g, "-");
+}
+
+/** Where Claude Code kept auto memory for one working folder before the
+ * compact prompt named a folder of its own. */
+export function legacyClaudeAutoMemoryDir(configDir: string, cwd: string): string {
+  return join(configDir, "projects", claudeProjectKey(cwd), "memory");
+}
+
+/** Copy notes already in Claude Code's project memory into the compact
+ * folder. A file the compact folder already has is left as it is. A symlink
+ * is not followed. Missing source is a no-op. Returns the names copied. */
+export function adoptLegacyAutoMemory(memoryDir: string, legacyDir: string): string[] {
+  const from = resolve(legacyDir);
+  const to = resolve(memoryDir);
+  if (from === to) return [];
+  let names: string[];
+  try {
+    if (!lstatSync(from).isDirectory()) return [];
+    names = readdirSync(from);
+  } catch {
+    return [];
+  }
+  mkdirSync(to, { recursive: true, mode: 0o700 });
+  const copied: string[] = [];
+  for (const name of names) {
+    if (!name || name === "." || name === ".." || name.includes("/") || name.includes("\\") || name.includes("\0")) continue;
+    const source = join(from, name);
+    const dest = join(to, name);
+    let stat: ReturnType<typeof lstatSync>;
+    try { stat = lstatSync(source); } catch { continue; }
+    if (!stat.isFile() || stat.isSymbolicLink()) continue;
+    try {
+      copyFileSync(source, dest, constants.COPYFILE_EXCL);
+      copied.push(name);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
+  return copied;
 }
