@@ -130,8 +130,38 @@ export interface DevOutput {
   key: string;
   name: string;
   path: string;
-  kind: "image" | "file" | "audio";
+  kind: "image" | "file" | "audio" | "artifact";
   messageId: string;
+  /** Set on an artifact: it opens on its own, not through a message. */
+  artifactId?: string;
+}
+
+/** An artifact as the list route answers it (shared/artifacts.ts), narrowed
+ * to what the pod shows. */
+export interface DevArtifact {
+  id: string;
+  title: string;
+  threadId?: string;
+  updatedAt: number;
+}
+
+/** The artifacts this conversation saved, newest first, in front of the
+ * files the bot attached. An artifact saved from another conversation is
+ * not this one's. */
+export function conversationOutputs(artifacts: readonly DevArtifact[], messages: readonly Message[], threadId: string): DevOutput[] {
+  const saved = artifacts
+    .filter((artifact) => artifact.threadId === threadId && artifact.id && artifact.title.trim())
+    .slice()
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((artifact): DevOutput => ({
+      key: `artifact:${artifact.id}`,
+      name: artifact.title.trim(),
+      path: "",
+      kind: "artifact",
+      messageId: "",
+      artifactId: artifact.id,
+    }));
+  return [...saved, ...devOutputs(messages)];
 }
 
 function basename(path: string): string {
