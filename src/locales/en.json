@@ -11466,5 +11466,13 @@
   "composer.command.soloGoalDesc": "Give this bot a goal and let it work until the goal is done",
   "botPanel.model.backupModel": "Backup model",
   "settings.usage.title": "Usage measure",
-  "settings.usage.help": "Off until you turn it on. Counts stay on this server and include no name."
+  "settings.usage.help": "Off until you turn it on. Counts stay on this server and include no name.",
+  "connectApps.scope.accountsNote": "Your accounts serve all your bots: the install scope applies to plugins, not to My accounts.",
+  "connectApps.scope.workspaceNote": "Plugins installed here bring their MCP servers and skills to every bot.",
+  "connectApps.detail.state.everyoneOn": "Installed for everyone",
+  "connectApps.detail.state.everyoneOff": "Not installed for everyone",
+  "connectApps.detail.state.botOn": "Installed on {name}",
+  "connectApps.detail.state.botOff": "Not installed on {name}",
+  "connectApps.detail.id": "ID",
+  "connectApps.detail.repository": "Repository"
 }

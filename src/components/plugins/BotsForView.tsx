@@ -38,8 +38,8 @@ export function BotsForView({ name, bots, busy, onToggle, onBack, trail }: {
 }) {
   return (
     <>
-      <PluginPageHeader titleId="plugins-title" title={t("connectApps.entry.botsTitle", { name })} trail={trail} onBack={onBack} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-3 sm:px-8" data-plugins-bots-for>
+      <PluginPageHeader title={t("connectApps.entry.botsTitle", { name })} trail={trail} onBack={onBack} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-7 pt-3 sm:px-8" data-plugins-bots-for>
         <p className="mb-3 text-[12.5px] leading-relaxed text-ink-secondary">{t("connectApps.entry.botsIntro", { name })}</p>
         {bots.length === 0 ? (
           <p className="rounded-xl bg-inset px-4 py-3 text-[12.5px] text-ink-secondary">{t("connectApps.entry.botsNone")}</p>

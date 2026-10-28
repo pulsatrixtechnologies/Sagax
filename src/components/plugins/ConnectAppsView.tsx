@@ -4,6 +4,9 @@
 // person lands on), My accounts and Sources (with the organization's part
 // for an admin). No sub-page repeats a tab: "Manage plugins and skills" and
 // a section opened alone are gone, View all filters Discover in place.
+// A page opened from a tab (a plugin's detail, a skill, "For which bots")
+// opens inside that tab's panel, under the same title, scope and tabs, as a
+// Settings sub-page does: a back row, then the page (2026-10-28).
 // The shared row parts (pills, section titles, PluginRow) live here too.
 import type { ReactNode } from "react";
 import { ChevronRight, Puzzle, RefreshCw } from "lucide-react";
@@ -99,11 +102,31 @@ const TAB_KEY = {
   sources: "connectApps.manage.tab.sources",
 } as const satisfies Record<ConnectAppsTab, LocaleKey>;
 
+/** A tab's name, for the tab itself and the back row of a page opened from it. */
+export function connectAppsTabLabel(tab: ConnectAppsTab): string {
+  return t(TAB_KEY[tab]);
+}
+
 /** Where "N connected" leads (#1132, #1194): Installed, or My accounts when
  * the number is only the engine accounts' connectors (nothing of the
  * person's own is connected, and not in a bot's scope). */
 export function connectedTab(input: { botScope: boolean; engineConnected: number; ownConnected: number }): ConnectAppsTab {
   return !input.botScope && input.engineConnected > 0 && input.ownConnected === 0 ? "accounts" : "installed";
+}
+
+/** Where a click on "N connected" goes from where the person is (2026-10-28:
+ * it did nothing on the tab it leads to). The number counts the person's own
+ * connections (Installed) and their engine accounts' connectors (My
+ * accounts): from one of the two, it shows the other part when there is
+ * one; otherwise it opens connectedTab's tab. `same` says the click stays
+ * on that tab (the panel then scrolls it to the top and takes the focus). */
+export function connectedTarget(input: { current: ConnectAppsTab; subpage: boolean; botScope: boolean; engineConnected: number; ownConnected: number }): { tab: ConnectAppsTab; same: boolean } {
+  const home = connectedTab(input);
+  let tab = home;
+  if (!input.subpage && !input.botScope && input.engineConnected > 0 && input.ownConnected > 0 && input.current === home) {
+    tab = home === "installed" ? "accounts" : "installed";
+  }
+  return { tab, same: !input.subpage && tab === input.current };
 }
 
 export interface ConnectAppsViewProps {
@@ -121,8 +144,13 @@ export interface ConnectAppsViewProps {
   logos?: readonly PluginItem[];
   /** "N connected": the tab that lists them (#1194) */
   onOpenConnected: () => void;
-  /** the install scope (everyone, or one bot) under the title */
+  /** the install scope (everyone, or one bot) under the title, on every tab
+   * (My accounts shows it turned off, with why): the title and the tabs
+   * never move from one tab to another */
   scope?: ReactNode;
+  /** a page opened from the open tab (a plugin's detail, a skill): shown in
+   * the tab's panel, the title, scope and tabs kept above it */
+  page?: ReactNode;
   /** notices between the tabs and the panel */
   notices?: ReactNode;
   refreshing: boolean;
@@ -134,7 +162,7 @@ export interface ConnectAppsViewProps {
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
-  const { tab, onTab, tabs = CONNECT_APPS_TABS, items, extraConnected = 0, logos = [], onOpenConnected, scope, notices, refreshing, onRefresh } = props;
+  const { tab, onTab, tabs = CONNECT_APPS_TABS, items, extraConnected = 0, logos = [], onOpenConnected, scope, page, notices, refreshing, onRefresh } = props;
   const shown = tabs.includes(tab) ? tab : tabs.includes("discover") ? "discover" : tabs[0] ?? "discover";
   const summary = connectedSummary(items, extraConnected);
   return (
@@ -144,8 +172,8 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
           <h2 id="plugins-title" className={CATEGORY_MODAL.title}>{t("connectApps.title")}</h2>
           <ConnectedButton count={summary.count} logos={logos} onOpen={onOpenConnected} />
         </div>
-        {/* the install scope is about plugins: My accounts is the person's own */}
-        {scope && shown !== "accounts" && <div className="mt-3">{scope}</div>}
+        {/* on every tab, so nothing below it moves (My accounts turns it off) */}
+        {scope && <div className="mt-3" data-plugins-scope-slot>{scope}</div>}
       </header>
       <div className="flex shrink-0 items-end gap-2 border-b border-hairline-weak px-4 sm:px-8" data-plugins-manage-bar>
         <div role="tablist" aria-label={t("connectApps.tabsAria")} className="flex min-w-0 flex-1 gap-5 overflow-x-auto" data-plugins-manage-tabs>
@@ -156,6 +184,8 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
               role="tab"
               id={`plugins-tab-${id}`}
               aria-selected={shown === id}
+              // a page is open: its tab stays marked, a click goes back to the tab
+              aria-current={page && shown === id ? "page" : undefined}
               aria-controls={`plugins-tabpanel-${id}`}
               data-plugins-tab={id}
               onClick={() => onTab(id)}
@@ -164,7 +194,7 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
                 shown === id ? "border-ink font-medium text-ink" : "border-transparent text-ink-secondary hover:text-ink",
               )}
             >
-              {t(TAB_KEY[id])}
+              {connectAppsTabLabel(id)}
             </button>
           ))}
         </div>
@@ -177,14 +207,20 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
         role="tabpanel"
         id={`plugins-tabpanel-${shown}`}
         aria-labelledby={`plugins-tab-${shown}`}
-        className={`${CATEGORY_MODAL.pane} ${CATEGORY_MODAL.list}`}
-        data-plugins-list
+        tabIndex={-1}
+        className={page ? "flex min-h-0 flex-1 flex-col outline-none" : `${CATEGORY_MODAL.pane} ${CATEGORY_MODAL.list} outline-none`}
+        data-plugins-list={page ? undefined : ""}
         data-plugins-manage={shown}
+        data-plugins-subpage={page ? "" : undefined}
       >
-        {shown === "installed" && props.installed}
-        {shown === "discover" && props.discover}
-        {shown === "accounts" && props.accounts}
-        {shown === "sources" && props.sources}
+        {page ?? (
+          <>
+            {shown === "installed" && props.installed}
+            {shown === "discover" && props.discover}
+            {shown === "accounts" && props.accounts}
+            {shown === "sources" && props.sources}
+          </>
+        )}
       </div>
     </div>
   );
@@ -195,7 +231,8 @@ export const CONNECTED_LOGOS = 4;
 
 /** "N connected" with the real logos of the connected apps, overlapping on
  * round white chips like the sidebar foot (each logo whole inside its chip);
- * one generic mark only when no connected app has one to show. */
+ * one generic mark only when no connected app has one to show. The whole
+ * row is the button: a hover fill and a keyboard focus ring say so. */
 function ConnectedButton({ count, logos, onOpen }: { count: number; logos: readonly PluginItem[]; onOpen: () => void }) {
   const shown = logos.slice(0, CONNECTED_LOGOS);
   return (
@@ -203,8 +240,9 @@ function ConnectedButton({ count, logos, onOpen }: { count: number; logos: reado
       type="button"
       data-plugins-connected
       onClick={onOpen}
-      className="flex shrink-0 items-center gap-2 text-[13px] leading-[18px] text-ink hover:text-ink"
+      className="-my-1 -mr-2 flex shrink-0 items-center gap-2 rounded-full py-1 pl-1.5 pr-2 text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none"
       aria-label={t("connectApps.connectedAria", { count })}
+      title={t("connectApps.connectedAria", { count })}
     >
       {shown.length > 0 ? (
         <span className="flex items-center -space-x-1.5" aria-hidden="true" data-plugins-connected-logos>

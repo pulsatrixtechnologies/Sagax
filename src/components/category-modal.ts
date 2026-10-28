@@ -20,7 +20,9 @@ export const CATEGORY_MODAL = {
   /** A pane's own title bar when there is no category select on a phone
    * (Browse Bots): the heading's type, shown at every width, clear of the
    * close button. */
-  titleBar: "shrink-0 px-4 pb-3 pr-12 pt-6 sm:px-8",
+  // pr-12 at every width: sm:px-8 used to override it, and the end of the
+  // title row (Connect Apps' "N connected" chevron) slid under the close button.
+  titleBar: "shrink-0 pb-3 pl-4 pr-12 pt-6 sm:pl-8",
   title: "text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink",
   body: "px-4 pb-6 pt-4 sm:px-8",
   /** The gray line under a title (Browse Bots, Connect apps). */
@@ -39,7 +41,7 @@ export const CATEGORY_MODAL = {
   grid: "grid grid-cols-1 gap-x-2 gap-y-0.5 md:grid-cols-2",
   /** A secondary button in a title bar or beside the search (Browse Bots,
    * N connected). */
-  outlineButton: "flex shrink-0 items-center gap-2 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink hover:bg-hover",
+  outlineButton: "flex shrink-0 items-center gap-2 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none",
 } as const;
 
 /** A filter pill: the chosen one filled with the accent. */

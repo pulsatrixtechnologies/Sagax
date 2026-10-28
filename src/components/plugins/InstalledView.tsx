@@ -10,7 +10,7 @@ import { BookOpen, ClipboardPaste, MoreHorizontal, Plus, RotateCw, Trash2, Users
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import type { InstalledBrings, InstalledEntry } from "@/lib/installed-model";
+import { entryIcon, type InstalledBrings, type InstalledEntry } from "@/lib/installed-model";
 import type { PluginItem } from "@/lib/plugins-model";
 import { PluginIcon, PluginStatusLabel } from "./PluginParts";
 
@@ -133,7 +133,7 @@ export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpe
 
 /** One installed entry: logo, name, what it brings, its state, "...". */
 export function InstalledRow({ entry, onOpen, actions }: { entry: InstalledEntry; onOpen: () => void; actions: EntryActions }) {
-  const icon = { key: entry.primary.key, kind: entry.primary.kind === "plugin" && (entry.logo || entry.domain) ? "app" as const : entry.primary.kind, name: entry.name, logo: entry.logo, domain: entry.domain };
+  const icon = entryIcon(entry);
   return (
     <div className="flex items-center gap-3 px-3 py-2" data-installed-entry={entry.key}>
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-1 py-0.5 text-left hover:bg-hover" aria-label={t("connectApps.openAria", { name: entry.name })}>

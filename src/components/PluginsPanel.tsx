@@ -37,7 +37,7 @@ import { viewerCan } from "@/lib/viewer";
 import { permissionMissingText } from "@/lib/permissions";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { canEditConfig } from "@/lib/viewer";
-import { discoverItems, installedEntries, privateSkills, type InstalledEntry } from "@/lib/installed-model";
+import { detailIdentity, discoverItems, installedEntries, privateSkills, type InstalledEntry } from "@/lib/installed-model";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
 import { WHOP_KEY, buildPluginItems, connectedSummary, isGrokConnector, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
 import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "../../shared/grok-cloud-connectors";
@@ -74,7 +74,7 @@ import {
 } from "./McpServersPanel";
 import { IntegrationsManagedNotice, MyGithubConnection, MyMcpServers } from "./settings/MyConnectionsSettings";
 import { useServerMode } from "./ServerModeSettings";
-import { ConnectAppsView, connectedTab, type ConnectAppsTab } from "./plugins/ConnectAppsView";
+import { ConnectAppsView, connectAppsTabLabel, connectedTarget, type ConnectAppsTab } from "./plugins/ConnectAppsView";
 import type { Crumb } from "./Breadcrumb";
 import { CATEGORY_MODAL, cardActionClass } from "./category-modal";
 import { BotCatalogPane } from "./lazy-screens";
@@ -92,7 +92,7 @@ import { PluginStatusLabel } from "./plugins/PluginParts";
 import { pluginShareLink } from "@/lib/plugin-link";
 import { connectedAppItems } from "@/lib/connected-apps";
 import { DataCenterDialog, type DataCenter } from "./plugins/DataCenterDialog";
-import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type PluginDetailProps } from "./plugins/PluginDetailView";
+import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type DetailInstallState, type PluginDetailProps } from "./plugins/PluginDetailView";
 import { SkillPage } from "./plugins/SkillPage";
 import { ScopeToggle } from "./plugins/ScopeToggle";
 import { BotPluginCard } from "./plugins/BotPluginCard";
@@ -580,6 +580,7 @@ export function PluginsPanel() {
     const busy = botBusy?.endsWith(`:${item.id}`) ? botBusy.slice(0, botBusy.indexOf(":")) : botBusy ? "other" : null;
     return (
       <BotPluginCard
+        installInHeader={scope === "bot"}
         botName={scopeBot.name}
         view={botView}
         plugin={plugin}
@@ -593,6 +594,41 @@ export function PluginsPanel() {
         }}
       />
     );
+  };
+  /** A marketplace plugin's page header (2026-10-28): where it is installed
+   * (for everyone, on the bot in reach) and its main action beside the name:
+   * Install for <bot> in that bot's scope, else Update when one waits. */
+  const detailHead = (item: PluginItem): Pick<PluginDetailProps, "installState" | "primaryAction"> => {
+    if (item.kind !== "plugin") return {};
+    const [plugin, marketplace] = [item.id.slice(0, item.id.lastIndexOf("@")), item.id.slice(item.id.lastIndexOf("@") + 1)];
+    // the workspace's own install: this list in its scope, else the
+    // workspace marketplaces when this person may read them
+    const everyone = scope === "workspace"
+      ? item.installed
+      : marketplaces?.find((market) => market.name === marketplace)?.plugins.find((entry) => entry.name === plugin)?.installed ?? null;
+    const onBot = scopeBot && botView ? botPluginState(botView, item.id) : null;
+    const installState: DetailInstallState[] = [
+      ...(everyone === null ? [] : [{ id: "everyone" as const, on: everyone, label: t(everyone ? "connectApps.detail.state.everyoneOn" : "connectApps.detail.state.everyoneOff") }]),
+      ...(onBot && scopeBot ? [{ id: "bot" as const, on: Boolean(onBot.installed), label: t(onBot.installed ? "connectApps.detail.state.botOn" : "connectApps.detail.state.botOff", { name: scopeBot.name }) }] : []),
+    ];
+    let primaryAction: ReactNode = null;
+    if (scope === "bot" && scopeBot && onBot && !onBot.installed && botView?.canChange) {
+      const busy = botBusy === `install:${item.id}`;
+      primaryAction = (
+        <button type="button" data-plugins-detail-primary="install-bot" disabled={botBusy !== null} onClick={() => installForBot(item.id)} className={cn(cardActionClass("primary"), "gap-1.5")}>
+          {busy && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+          {busy ? t("plugins.installing") : t("connectApps.botPlugin.install", { name: scopeBot.name })}
+        </button>
+      );
+    } else if (scope === "workspace" && item.installed && item.updateAvailable) {
+      primaryAction = (
+        <button type="button" data-plugins-detail-primary="update" disabled={installing !== null} onClick={() => void updatePlugin(item)} className={cn(cardActionClass("primary"), "gap-1.5")}>
+          {installing === item.id && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+          {t("connectApps.plugin.update")}
+        </button>
+      );
+    }
+    return { installState, primaryAction };
   };
   /** Add on a marketplace plugin: its MCP servers and skills, for every bot. */
   const installPlugin = async (item: PluginItem) => {
@@ -700,19 +736,30 @@ export function PluginsPanel() {
     </>
   );
 
+  // The scope sits under the title on every tab (2026-10-28: it vanished on
+  // My accounts and the tabs jumped up). My accounts lists the person's own
+  // engine accounts and servers, which serve all of their bots: the scope
+  // does not apply there, so it shows turned off with the reason in the
+  // note's place. Every line keeps its room on every tab (a bot-only notice
+  // is kept invisible on My accounts), so the tabs never move.
+  const accountsTab = tab === "accounts" && page.page === "main";
   const scopeControl = scopeBot ? (
-    <div data-plugins-scope-bar>
-      <ScopeToggle scope={scope} botName={scopeBot.name} onScope={setScopeChoice} />
-      {scope === "bot" && (
-        <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">
-          {t("connectApps.scope.botNote", { name: scopeBot.name })}
-          {botView && !botView.canChange && !botView.managedByAdmin && <> {t("plugins.readOnly")}</>}
-        </p>
-      )}
-      {scope === "bot" && botView?.managedByAdmin && <div className="mt-2"><IntegrationsManagedNotice /></div>}
-      {scope === "bot" && botView && botView.marketplaces.length === 0 && (
-        <p className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary" data-plugins-scope-empty>{t("connectApps.scope.noMarketplaces")}</p>
-      )}
+    <div data-plugins-scope-bar data-plugins-scope-tab={accountsTab ? "accounts" : "plugins"}>
+      <ScopeToggle scope={scope} botName={scopeBot.name} onScope={setScopeChoice} disabled={accountsTab} describedBy={accountsTab ? "plugins-scope-note" : undefined} />
+      <p id="plugins-scope-note" className="mt-2 min-h-[36px] text-[12px] leading-[18px] text-ink-secondary" data-plugins-scope-note={accountsTab ? "accounts" : scope}>
+        {accountsTab ? t("connectApps.scope.accountsNote") : scope === "bot" ? (
+          <>
+            {t("connectApps.scope.botNote", { name: scopeBot.name })}
+            {botView && !botView.canChange && !botView.managedByAdmin && <> {t("plugins.readOnly")}</>}
+          </>
+        ) : t("connectApps.scope.workspaceNote")}
+      </p>
+      <div className={cn(accountsTab && "invisible")} aria-hidden={accountsTab || undefined}>
+        {scope === "bot" && botView?.managedByAdmin && <div className="mt-2"><IntegrationsManagedNotice /></div>}
+        {scope === "bot" && botView && botView.marketplaces.length === 0 && (
+          <p className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary" data-plugins-scope-empty>{t("connectApps.scope.noMarketplaces")}</p>
+        )}
+      </div>
     </div>
   ) : null;
 
@@ -773,12 +820,17 @@ export function PluginsPanel() {
   const botsForEntry = page.page === "botsFor" ? entries.find((entry) => entry.key === page.key) : undefined;
 
   const detailItem = page.page === "detail" ? items.find((item) => item.key === page.key) : undefined;
-  // The breadcrumb: each page under the current one, Connect apps first.
+  // The breadcrumb: each page under the current one. A page opened from a
+  // tab shows in that tab under Connect Apps' title: its first crumb is the
+  // tab ("Installed"); Browse Bots fills the window: Connect apps.
   const pageLabel = (entry: Page): string => {
     switch (entry.page) {
-      case "main": return t("connectApps.title");
+      case "main": return page.page === "bots" ? t("connectApps.title") : connectAppsTabLabel(tab);
       case "botsFor": return t("connectApps.entry.bots");
-      case "detail": return items.find((item) => item.key === entry.key)?.name ?? t("connectApps.back");
+      case "detail": {
+        const item = items.find((candidate) => candidate.key === entry.key);
+        return item ? detailIdentity(item, entries).name : t("connectApps.back");
+      }
       case "skill": return entry.name ?? t("connectApps.skill.new");
       case "bots": return t("botCatalog.title");
     }
@@ -804,9 +856,11 @@ export function PluginsPanel() {
     return undefined;
   };
 
-  let content;
+  // A page opened from a tab (2026-10-28): inside that tab's panel, under
+  // the title, scope and tabs (Browse Bots alone fills the window).
+  let subpage: ReactNode = null;
   if (page.page === "skill" && (pageSkill || !page.name)) {
-    content = (
+    subpage = (
       <SkillPage
         key={page.name ?? "new"}
         skill={pageSkill}
@@ -824,7 +878,7 @@ export function PluginsPanel() {
       />
     );
   } else if (page.page === "botsFor" && botsForEntry) {
-    content = (
+    subpage = (
       <BotsForView
         name={botsForEntry.name}
         bots={botsForRows(botsForEntry)}
@@ -834,23 +888,53 @@ export function PluginsPanel() {
       />
     );
   } else if (page.page === "detail" && detailItem) {
-    content = (
+    const identity = detailIdentity(detailItem, entries);
+    subpage = (
       <PluginDetailView
         {...detailProps(detailItem, { mcp, mcpAccountDraft, setMcpAccountDraft,
           items, marketplaces: shownMarketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item), updatePlugin: (item) => void updatePlugin(item),
           scope, botCard: botCard(detailItem) })}
+        {...detailHead(detailItem)}
+        displayName={identity.name}
+        icon={identity.icon}
         onBack={back}
         trail={trail}
       />
     );
-  } else if (page.page === "bots") {
-    content = <BotCatalogPane onClose={close} backRef={botsBack} trail={trail} />;
   } else if (page.page === "detail" || page.page === "skill" || page.page === "botsFor") {
-    content = (
+    subpage = (
       <div className="flex flex-1 items-center justify-center gap-2 text-[13px] text-ink-secondary">
         <Loader2 size={14} className="animate-spin" /> {t("connectors.loadingCatalog")}
       </div>
     );
+  }
+
+  /** "N connected": the tab that lists the connections (connectedTarget),
+   * out of any page opened from a tab; on the tab already, its list goes
+   * back to the top and takes the focus, so the click always shows them. */
+  const openConnected = () => {
+    const target = connectedTarget({
+      current: tab, subpage: page.page !== "main", botScope: scope === "bot",
+      engineConnected: claudeConnectors, ownConnected: connectedSummary(scopedItems).count,
+    });
+    setStack([{ page: "main" }]);
+    setTab(target.tab);
+    requestAnimationFrame(() => {
+      const list = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-list]");
+      if (!list) return;
+      list.scrollTo?.({ top: 0, behavior: target.same ? "smooth" : "auto" });
+      list.focus({ preventScroll: true });
+    });
+  };
+  /** A tab: that tab's list (a page opened from a tab closes). */
+  const chooseTab = (next: ConnectAppsTab) => {
+    setStack([{ page: "main" }]);
+    setTab(next);
+  };
+
+  let content;
+  if (page.page === "bots") {
+    content = <BotCatalogPane onClose={close} backRef={botsBack} trail={trail} />;
   } else {
     const isOrgAdmin = perspicaxOrg?.viewerRole === "admin";
     const githubHere = organization && scope === "workspace";
@@ -865,7 +949,8 @@ export function PluginsPanel() {
     content = (
       <ConnectAppsView
         tab={tab}
-        onTab={setTab}
+        onTab={chooseTab}
+        page={subpage ?? undefined}
         tabs={tabs}
         items={scopedItems}
         extraConnected={scope === "bot" ? 0 : claudeConnectors}
@@ -879,7 +964,7 @@ export function PluginsPanel() {
         // #1132/#1194: the number counts the engine accounts' connectors
         // too, and those are listed under My accounts: with no app of its
         // own installed, the button opens there instead of an empty Installed.
-        onOpenConnected={() => setTab(connectedTab({ botScope: scope === "bot", engineConnected: claudeConnectors, ownConnected: connectedSummary(scopedItems).count }))}
+        onOpenConnected={openConnected}
         scope={scopeControl}
         notices={notices}
         refreshing={refreshing}
@@ -1215,6 +1300,12 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
       value: item.installedVersion && item.version ? item.version : t("connectApps.plugin.newerFiles"),
     }] : []),
   ];
+  // The technical id and the repository: secondary, in Details (the header
+  // shows the name people read).
+  const sourceDetails = [
+    { label: t("connectApps.detail.id"), value: item.id, mono: true },
+    ...(market?.source && market.source !== marketplace ? [{ label: t("connectApps.detail.repository"), value: market.source, mono: true }] : []),
+  ];
   // For a bot the page is that bot's install: the card says what it brings,
   // and its Update installs the marketplace's files again in place.
   if (scope === "bot") {
@@ -1224,6 +1315,7 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
       busy: installing !== null,
       details: [
         { label: t("connectApps.detail.source"), value: marketplace },
+        ...sourceDetails,
         ...versionDetails,
       ],
       children: (
@@ -1242,6 +1334,7 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
     ...(item.installed && item.updateAvailable ? { onUpdate: () => updatePlugin(item), updating: installing === item.id } : {}),
     details: [
       { label: t("connectApps.detail.source"), value: marketplace },
+      ...sourceDetails,
       ...versionDetails,
       { label: t("connectApps.plugin.connectors"), value: String(entry?.servers.length ?? 0) },
       { label: t("connectApps.filter.skills"), value: String(entry?.skills.length ?? 0) },

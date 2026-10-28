@@ -25,6 +25,8 @@ export interface BotPluginCardProps {
   onUninstall: () => void;
   /** Save the plugin's configuration values for this bot (throws the refusal). */
   onSaveConfig?: (values: Record<string, string | number | boolean>) => Promise<void>;
+  /** the page's header already offers "Install for <bot>" (not installed yet) */
+  installInHeader?: boolean;
 }
 
 function Names({ label, names }: { label: string; names: string[] }) {
@@ -37,7 +39,7 @@ function Names({ label, names }: { label: string; names: string[] }) {
   );
 }
 
-export function BotPluginCard({ botName, view, plugin, busy, onInstall, onToggle, onUninstall, onSaveConfig }: BotPluginCardProps) {
+export function BotPluginCard({ botName, view, plugin, busy, onInstall, onToggle, onUninstall, onSaveConfig, installInHeader = false }: BotPluginCardProps) {
   const installed = plugin.installed;
   const change = view.canChange;
   const contents = plugin.contents;
@@ -73,7 +75,7 @@ export function BotPluginCard({ botName, view, plugin, busy, onInstall, onToggle
         {view.managedByAdmin
           ? <div className="mt-2"><IntegrationsManagedNotice /></div>
           : !change && <p className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("plugins.readOnly")}</p>}
-        {change && (
+        {change && !(installInHeader && !installed) && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <button type="button" data-bot-plugin-install disabled={busy !== null} onClick={onInstall} className={installed ? "ui-button flex items-center gap-1.5 text-[12px]" : "ui-button ui-button-primary flex items-center gap-1.5 text-[12px]"}>
               {busy === "install" && <Loader2 size={13} className="animate-spin" />}

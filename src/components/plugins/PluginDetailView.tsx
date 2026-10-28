@@ -1,6 +1,10 @@
 // Plugins > one plugin: its switch, its accounts, its tools (each with a
 // switch for an MCP server: off means no bot sees it) and where it comes
 // from. Update, Test, Edit and Uninstall sit in one "..." menu by the name.
+// 2026-10-28: the page opens inside its Connect apps tab (a back row, no
+// second title): one header with the app's real mark and its name for
+// people, the technical id and source as small metadata, where it is
+// installed (everyone, this bot) and the main action beside it.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronDown, ChevronRight, FlaskConical, KeyRound, Link2, Loader2, LogOut, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 
@@ -30,10 +34,25 @@ export interface DetailAccount {
   removeLabel?: string;
 }
 
+/** Where the plugin is installed, one pill each: for everyone, on this bot. */
+export interface DetailInstallState {
+  id: "everyone" | "bot";
+  label: string;
+  on: boolean;
+}
+
 export interface PluginDetailProps {
   item: PluginItem;
-  /** host or command line under the name */
+  /** the name people read ("GitHub"); absent: the item's name */
+  displayName?: string;
+  /** the mark to show (the entry's real logo); absent: the item's own */
+  icon?: Pick<PluginItem, "key" | "kind" | "name" | "logo" | "domain">;
+  /** host, source or command line under the name, as small metadata */
   subtitle: string;
+  /** where it is installed (a marketplace plugin) */
+  installState?: DetailInstallState[];
+  /** the page's main action beside the name (Install for <bot>, Update) */
+  primaryAction?: ReactNode;
   onBack: () => void;
   /** the pages above this one in the panel (the breadcrumb) */
   trail?: readonly Crumb[];
@@ -69,7 +88,10 @@ export interface PluginDetailProps {
 }
 
 export function PluginDetailView(props: PluginDetailProps) {
-  const { item, subtitle, onBack, trail, busy, onUninstall, onUpdate, updating, onEdit, onTest, testing, enabled, accounts, accountAction, accountExtra, tools, details, link, children } = props;
+  const { item, displayName, icon, subtitle, installState, primaryAction, onBack, trail, busy, onUninstall, onUpdate, updating, onEdit, onTest, testing, enabled, accounts, accountAction, accountExtra, tools, details, link, children } = props;
+  const name = displayName ?? item.name;
+  // the technical name, when people read another one
+  const technical = name !== item.name ? item.name : null;
   const [linkCopied, setLinkCopied] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolList = tools?.list ?? null;
@@ -82,15 +104,40 @@ export function PluginDetailView(props: PluginDetailProps) {
 
   return (
     <>
-      <PluginPageHeader titleId="plugins-title" title={item.name} trail={trail} onBack={onBack} />
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-7 pt-1 sm:px-8" data-plugins-detail={item.key}>
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-4 sm:px-5">
-          <PluginIcon item={item} className="size-12" />
-          <div className="min-w-0 flex-[1_1_200px]">
-            <div className="truncate text-[15px] font-semibold text-ink">{item.name}</div>
-            <div className="truncate font-mono text-[11.5px] text-ink-secondary" title={subtitle}>{subtitle}</div>
+      <PluginPageHeader title={name} trail={trail} onBack={onBack} named />
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-7 pt-3 sm:px-8" data-plugins-detail={item.key}>
+        <div className="flex flex-wrap items-center gap-3 px-1" data-plugins-detail-head>
+          <PluginIcon item={icon ?? item} className="size-12" />
+          <div className="min-w-0 flex-[1_1_220px]">
+            <h2 className="truncate text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink" data-plugins-detail-name>{name}</h2>
+            {(technical || subtitle) && (
+              <div className="truncate text-[12px] leading-[18px] text-ink-secondary" data-plugins-detail-meta title={[technical, subtitle].filter(Boolean).join(" · ")}>
+                {technical && <span className="font-mono text-[11.5px]">{technical}</span>}
+                {technical && subtitle && <span aria-hidden="true"> · </span>}
+                {subtitle}
+              </div>
+            )}
+            {installState && installState.length > 0 && (
+              <ul className="mt-1.5 flex flex-wrap gap-1.5" data-plugins-install-state>
+                {installState.map((state) => (
+                  <li
+                    key={state.id}
+                    data-install-state={state.id}
+                    data-install-on={state.on ? "yes" : "no"}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11.5px] leading-[16px]",
+                      state.on ? "bg-success/10 text-success" : "bg-ink/[0.06] text-ink-secondary",
+                    )}
+                  >
+                    <span aria-hidden="true" className={cn("size-1.5 rounded-full", state.on ? "bg-success" : "bg-ink-tertiary")} />
+                    {state.label}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            {primaryAction}
             {enabled && (
               <label className="flex items-center gap-2 text-[12.5px] text-ink-secondary" data-plugin-enabled>
                 {t("connectApps.detail.enabled")}
@@ -98,7 +145,7 @@ export function PluginDetailView(props: PluginDetailProps) {
               </label>
             )}
             <PluginActionsMenu
-              name={item.name}
+              name={name}
               busy={busy}
               updateAvailable={Boolean(onUpdate)}
               actions={[
