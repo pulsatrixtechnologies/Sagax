@@ -30,6 +30,8 @@ import { applyEngineCommandVariables } from "../credential-command-env.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { augmentedPath } from "../env-path.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
+import { searchedToolCall } from "../../shared/searched-tool-call.ts";
+import { PERSPICAX_TOKEN_ENV, warmCommsEnv, warmPerspicaxEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { engineStartGate } from "../engine-start-gate.ts";
 import {
   deletePromptSplitReceipt,
@@ -86,6 +88,142 @@ const NODE_ENV_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
  *  before the response to that command is encoded, and vanilla pi has no
  *  handshake frame to wait for, so nobody gates on a reply. */
 const PI_NEGOTIATE_FRAME = { id: "negotiate", type: "negotiate_protocol", protocolVersion: 2 };
+
+/** #1276: a pi process started after a compact turn (a local model), its
+ * session already resumed, so the thread's next message skips pi's start,
+ * the MCP mounts and the session load (about a second). Adopted only by a
+ * turn with the same spawn contract (without the turn's tokens, which ride
+ * files) on the same session; closed after PI_STANDBY_MS or when the server
+ * exits. Anything else starts pi as before. */
+interface PiStandby {
+  child: ReturnType<typeof spawnCli>;
+  key: string;
+  sessionFile: string;
+  dir: string;
+  scopeReadyPath: string | undefined;
+  onData: (chunk: string) => void;
+  timer: NodeJS.Timeout;
+}
+const PI_STANDBY_MS = 10 * 60_000;
+const piStandby = new Map<string, PiStandby>();
+/** A standby still starting, per thread: the next turn waits for it rather
+ * than start a second pi (it is further along than a fresh one). */
+const piStandbyStarting = new Map<string, Promise<void>>();
+/** How long a turn waits for a standby still starting. */
+const PI_STANDBY_WAIT_MS = 3_000;
+
+/** Wait (bounded) for this thread's standby still starting, if any. */
+export async function settledPiStandby(threadId: string): Promise<void> {
+  const starting = piStandbyStarting.get(threadId);
+  if (!starting) return;
+  await Promise.race([starting, new Promise<void>((resolve) => { const t = setTimeout(resolve, PI_STANDBY_WAIT_MS); t.unref?.(); })]);
+}
+/** Every standby pi, started or still starting: none outlives the server. */
+const piStandbyChildren = new Set<ReturnType<typeof spawnCli>>();
+let piStandbyExitHook = false;
+function watchPiStandbyExit(): void {
+  if (piStandbyExitHook) return;
+  piStandbyExitHook = true;
+  const closeAll = () => {
+    for (const child of piStandbyChildren) { try { killCliTree(child); } catch { /* already gone */ } }
+    piStandbyChildren.clear();
+  };
+  process.once("exit", closeAll);
+  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.once(signal, closeAll);
+}
+
+function closePiStandby(entry: PiStandby): void {
+  clearTimeout(entry.timer);
+  try { entry.child.stdin.end(); } catch { /* already closed */ }
+  try { killCliTree(entry.child); } catch { /* already gone */ }
+  try { rmSync(entry.dir, { recursive: true, force: true }); } catch { /* best effort */ }
+}
+
+export function dropPiStandby(threadId: string): void {
+  const entry = piStandby.get(threadId);
+  if (!entry) return;
+  piStandby.delete(threadId);
+  closePiStandby(entry);
+}
+
+/** The standby process for this turn, or undefined (then pi starts as before). */
+export function takePiStandby(threadId: string, key: string, sessionFile: string): PiStandby | undefined {
+  const entry = piStandby.get(threadId);
+  if (!entry) return undefined;
+  piStandby.delete(threadId);
+  if (entry.key !== key || entry.sessionFile !== sessionFile || entry.child.exitCode !== null || entry.child.killed) {
+    closePiStandby(entry);
+    return undefined;
+  }
+  clearTimeout(entry.timer);
+  piStandbyChildren.delete(entry.child);
+  entry.child.stdout.off("data", entry.onData);
+  entry.child.removeAllListeners("close");
+  return entry;
+}
+
+function startPiStandby(input: Parameters<typeof runPiStandby>[0]): Promise<void> {
+  const run = runPiStandby(input).finally(() => { if (piStandbyStarting.get(input.threadId) === run) piStandbyStarting.delete(input.threadId); });
+  piStandbyStarting.set(input.threadId, run);
+  return run;
+}
+
+async function runPiStandby(input: {
+  threadId: string;
+  key: string;
+  sessionFile: string;
+  cli: string;
+  args: string[];
+  cwd: string | undefined;
+  env: Record<string, string | undefined>;
+  config: Record<string, unknown>;
+}): Promise<void> {
+  dropPiStandby(input.threadId);
+  let dir: string | null = null;
+  let child: ReturnType<typeof spawnCli> | null = null;
+  try {
+    dir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
+    const scopeReadyPath = input.config.toolScope !== undefined ? join(dir, "scope-ready.json") : undefined;
+    writeFileSync(join(dir, "mcp.json"), JSON.stringify({ ...input.config, scopeReadyPath }), { mode: 0o600 });
+    child = spawnCli(input.cli, input.args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd: input.cwd,
+      env: { ...input.env, SAGAX_MCP_CONFIG: join(dir, "mcp.json") },
+    }, "bot");
+    const started = child;
+    watchPiStandbyExit();
+    piStandbyChildren.add(started);
+    started.once("close", () => piStandbyChildren.delete(started));
+    started.stderr?.resume();
+    started.stdin.on("error", () => { /* closed with the process */ });
+    const chunks = new PiRpcChunks();
+    let answer: (ok: boolean) => void = () => {};
+    const resumed = new Promise<boolean>((resolve) => { answer = resolve; });
+    const onData = piLineReader((line) => {
+      const frame = decodePiFrame(line, chunks);
+      if (frame?.type === "response" && frame.command === "switch_session") answer(frame.success !== false);
+    });
+    started.stdout.setEncoding("utf8");
+    started.stdout.on("data", onData);
+    started.on("close", () => answer(false));
+    started.stdin.write(JSON.stringify(PI_NEGOTIATE_FRAME) + "\n");
+    started.stdin.write(JSON.stringify({ type: "switch_session", sessionPath: input.sessionFile }) + "\n");
+    const timeout = new Promise<boolean>((resolve) => { const t = setTimeout(() => resolve(false), 20_000); t.unref?.(); });
+    if (!(await Promise.race([resumed, timeout]))) throw new Error("pi standby did not resume its session");
+    const entry: PiStandby = {
+      child: started, key: input.key, sessionFile: input.sessionFile, dir, scopeReadyPath, onData,
+      timer: setTimeout(() => dropPiStandby(input.threadId), PI_STANDBY_MS),
+    };
+    entry.timer.unref?.();
+    started.on("close", () => { if (piStandby.get(input.threadId) === entry) dropPiStandby(input.threadId); });
+    // a turn may have taken the thread meanwhile: never keep two
+    if (piStandby.has(input.threadId)) { closePiStandby(entry); return; }
+    piStandby.set(input.threadId, entry);
+  } catch {
+    if (child) { try { killCliTree(child); } catch { /* already gone */ } }
+    if (dir) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } }
+  }
+}
 /** After this many bare turns on one pi session the full prompt rides
  * again even without a compaction event: any history rewrite the events
  * miss (an older pi, a missed line) still loses at most this many turns
@@ -144,6 +282,24 @@ export function piThinkingLevel(effort: EffortLevel): (typeof NATIVE_EFFORT_LEVE
 /** Mirror of the Claude driver's integration → stdio MCP mount: every entry is
  * a JSON-RPC 2.0 stdio server the pi-mcp-extension consumes. Returns null when
  * there is nothing to mount (the common case). */
+/** #1276: the turn's agents comms token and Perspicax capability ride the
+ * files the harness rewrites each turn (spawn-contract.ts), as for Claude
+ * Code's warm process, so the spawn contract holds no per-turn token. */
+export function withWarmTokens(turn: SendTurnInput, threadId: string): SendTurnInput {
+  const integrations = turn.integrations;
+  if (!integrations) return turn;
+  const agents = integrations.agents?.env?.SAGAX_COMMS_TOKEN
+    ? { ...integrations.agents, env: warmCommsEnv(threadId, turn.botId, integrations.agents.env) }
+    : integrations.agents;
+  const custom = integrations.custom
+    ? Object.fromEntries(Object.entries(integrations.custom).map(([name, server]) => {
+      const env = (server as { env?: Record<string, string> }).env;
+      return [name, env?.[PERSPICAX_TOKEN_ENV] ? { ...server, env: warmPerspicaxEnv(threadId, turn.botId, env) } : server];
+    }))
+    : integrations.custom;
+  return { ...turn, integrations: { ...integrations, ...(agents ? { agents } : {}), ...(custom ? { custom } : {}) } };
+}
+
 export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | null {
   const parsed = parseToolScope(turn.toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
@@ -159,7 +315,13 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
       ...(local.scope ? { scope: local.scope } : {}),
     };
   }
-  if (turn.integrations?.agents) servers.agents = { ...turn.integrations.agents };
+  if (turn.integrations?.agents) {
+    // #1276: a compact prompt (a local model) lists the heart of a chat turn
+    // and the bot's own most used Sagax tools; the rest are searched.
+    servers.agents = turn.compactPrompt
+      ? { ...turn.integrations.agents, env: { ...turn.integrations.agents.env, SAGAX_COMPACT_TOOLS: JSON.stringify({ core: turn.compactPrompt.agents.core, pinned: [...new Set(turn.compactPrompt.agents.pinned)].sort() }) } }
+      : { ...turn.integrations.agents };
+  }
   if (turn.integrations?.phone) servers.phone = { ...turn.integrations.phone };
   if (turn.integrations?.messages) servers.messages = { ...turn.integrations.messages };
   if (turn.integrations?.dweb) {
@@ -182,7 +344,11 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
     // Pi registers every tool it is given and has no tool search of its own,
     // so a URL server's big catalog is searched instead (mcp-directory.ts).
     const directory = remoteMcpSpec(server) !== undefined;
-    const gated = gateServer({ name, server, toolScope: parsed.scope, threadId: turn.threadId, nodeEnv: NODE_ENV_FLAG, directory, ...customServerGate(name, name in (turn.integrations?.custom ?? {}), turn.integrations?.customResultBudgets) });
+    // #1276: in a compact prompt the gate searches the bot's own big catalogs,
+    // listing whole only the tools the person's bots use.
+    const botOwned = name in (turn.integrations?.custom ?? {});
+    const search = turn.compactPrompt && botOwned && !directory ? { pinned: turn.compactPrompt.pinned[name] ?? [] } : undefined;
+    const gated = gateServer({ name, server, toolScope: parsed.scope, threadId: turn.threadId, nodeEnv: NODE_ENV_FLAG, directory, ...(search ? { search } : {}), ...customServerGate(name, botOwned, turn.integrations?.customResultBudgets) });
     const stdio = gated ?? mcpStdioServer(server, { nodeEnv: NODE_ENV_FLAG, ...(directory ? { directory: { name } } : {}) });
     if (!stdio) throw new Error("Pi MCP server configuration is invalid");
     const original = server as { scope?: string };
@@ -218,6 +384,18 @@ export function piGatedMcpInput(message: unknown, mcpTool: string): string {
   const tool = mcpTool.slice(cut + 2);
   if (message === `Run ${server}:${tool}`) return "{}";
   return message || "(arguments not shown)";
+}
+
+/** #1276: a gated confirm for `call_tool` on a searched server reads as the
+ * tool it runs, so the person's rules and Always allow apply by that tool's
+ * name. Arguments cut by pi-mcp-extension (300 characters) do not parse: the
+ * card stays the call_tool card it was, never an unnamed pass. */
+export function piSearchedCall(mcpTool: string, input: string): { mcpTool: string; input: string } {
+  const cut = mcpTool.indexOf("__");
+  if (cut <= 0 || mcpTool.slice(cut + 2) !== "call_tool") return { mcpTool, input };
+  const runs = searchedToolCall(`mcp__${mcpTool}`, (() => { try { return JSON.parse(input); } catch { return null; } })(), new Set([mcpTool.slice(0, cut)]));
+  if (!runs.searched) return { mcpTool, input };
+  return { mcpTool: runs.name.slice("mcp__".length), input: JSON.stringify(runs.input) };
 }
 
 /** A pi `get_available_models` response payload, parsed at its I/O boundary. */
@@ -816,6 +994,8 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // closure (send, child) alive until it fires.
       const askTimers = new Set<ReturnType<typeof setTimeout>>();
       let settled = false;
+      /** the session a standby pi resumes (#1276) */
+      let standbySession: string | null = null;
       // the last turn_end's outcome, replayed when the run's terminal
       // agent_end (or the grace fallback) settles the turn
       let endStopReason: string | undefined;
@@ -843,14 +1023,35 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // integrations → stdio MCP servers for the pi-mcp-extension. The config
       // carries credentials (boat token, comms token), so it goes
       // into a 0600 temp file removed when the turn settles — never on argv.
-      const mcpServers = buildMcpServers(turn);
+      // #1276: a compact turn's per-turn tokens ride files (as Claude Code's
+      // warm process does), so a standby pi with the same contract can serve it.
+      const mcpServers = buildMcpServers(turn.compactPrompt ? withWarmTokens(turn, threadId) : turn);
       let mcpTempDir: string | null = null;
       let scopeReadyPath: string | undefined;
-      if (mcpServers || toolScope !== undefined) {
+      const mcpConfig: Record<string, unknown> = { mcpServers: mcpServers ?? {}, toolScope, approvalMode: turn.approvalMode, ...(turn.compactPrompt ? { stableCwd: true } : {}) };
+      const mounts = Boolean(mcpServers || toolScope !== undefined);
+      const standbyArgs = [
+        ...(turn.compactPrompt ? PI_ARGS.filter((arg) => arg !== "--no-session") : PI_ARGS),
+        ...piHostToolArgs(turn.withholdHostTools === true),
+        ...(mounts ? ["-e", SPAWNED_PROXIES.piMcpExtension] : []),
+      ];
+      const standbyKey = JSON.stringify({
+        cli: config.cli, args: standbyArgs, cwd: turn.cwd ?? null,
+        config: { ...mcpConfig, mcpServers: withoutTurnTokens(mcpServers ?? {}) },
+        environment: input.environment ?? null, access: turn.access ?? null, command: turn.commandEnvironment ?? null,
+      });
+      if (turn.compactPrompt && !turn.sessionReset && typeof turn.resumeCursor === "string") await settledPiStandby(threadId);
+      const standby = turn.compactPrompt && !turn.sessionReset && typeof turn.resumeCursor === "string"
+        ? takePiStandby(threadId, standbyKey, turn.resumeCursor)
+        : (dropPiStandby(threadId), undefined);
+      if (standby) {
+        mcpTempDir = standby.dir;
+        scopeReadyPath = standby.scopeReadyPath;
+      } else if (mounts) {
         mcpTempDir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
         if (toolScope !== undefined) scopeReadyPath = join(mcpTempDir, "scope-ready.json");
         try {
-          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ mcpServers: mcpServers ?? {}, toolScope, scopeReadyPath, approvalMode: turn.approvalMode }), { mode: 0o600 });
+          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ ...mcpConfig, scopeReadyPath }), { mode: 0o600 });
         } catch (err) {
           // A failed write must not leave the temp dir behind — a partial file
           // could still hold the boat token / comms token.
@@ -864,25 +1065,26 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       }
       // `--no-extensions` still loads an explicit `-e`, so the Sagax MCP
       // extension stays while the person's own pi extensions do not.
-      const childArgs = [
-        ...PI_ARGS,
-        ...piHostToolArgs(turn.withholdHostTools === true),
-        ...(mcpTempDir ? ["-e", SPAWNED_PROXIES.piMcpExtension] : []),
-      ];
+      // #1276: a compact prompt (a local model) keeps pi's session, so the
+      // next turn resumes it (switch_session) and extends this very prompt:
+      // the local server's prefix cache serves everything but the new turn.
+      // Without it each turn replays the transcript into a fresh prompt.
+      const childArgs = standbyArgs;
+      const spawnEnv = piTurnEnvironment(piAccessEnvironment(piEnvironment({
+        ...process.env,
+        ...input.environment,
+        ...(mcpTempDir ? { SAGAX_MCP_CONFIG: join(mcpTempDir, "mcp.json") } : {}),
+      }), turn.access), turn.commandEnvironment);
 
       // spawnCli can throw synchronously (unresolvable CLI); if it does, the
       // 0600 temp file with the boat token / comms token must
       // not be left on disk — settle() never runs because no child existed.
-      const child = (() => {
+      const child = standby ? standby.child : (() => {
         try {
           return spawnCli(config.cli, childArgs, {
             stdio: ["pipe", "pipe", "pipe"],
             cwd: turn.cwd,
-            env: piTurnEnvironment(piAccessEnvironment(piEnvironment({
-              ...process.env,
-              ...input.environment,
-              ...(mcpTempDir ? { SAGAX_MCP_CONFIG: join(mcpTempDir, "mcp.json") } : {}),
-            }), turn.access), turn.commandEnvironment),
+            env: spawnEnv,
           }, "bot");
         } catch (err) {
           if (mcpTempDir) {
@@ -935,7 +1137,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // omp-style runtime chunks any oversized frame it sends back. Vanilla
       // pi refuses the unknown command; no waiter is keyed for the reply,
       // so either answer is ignored.
-      send(PI_NEGOTIATE_FRAME);
+      if (!standby) send(PI_NEGOTIATE_FRAME);
 
       /** Emit buffered assistant text as its own item, then clear it. */
       const flushAssistantText = () => {
@@ -948,6 +1150,13 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       const settle = (ok: boolean, stopReason?: string | null, usage?: { input?: number; output?: number }) => {
         if (settled) return;
         settled = true;
+        // #1276: once this pi has exited (its session file then holds the
+        // whole turn), start the thread's next pi, its session resumed.
+        if (ok && turn.compactPrompt && standbySession && (stopReason ?? "end_turn") === "end_turn") {
+          const resume = { threadId, key: standbyKey, sessionFile: standbySession, cli: config.cli, args: childArgs, cwd: turn.cwd, env: spawnEnv, config: mcpConfig };
+          if (child.exitCode !== null || child.signalCode !== null) void startPiStandby(resume);
+          else child.once("exit", () => { void startPiStandby(resume); });
+        }
         if (agentEndTimer) {
           clearTimeout(agentEndTimer);
           agentEndTimer = null;
@@ -1126,8 +1335,11 @@ export const PiDriver: ProviderDriver<PiConfig> = {
               const selectOptions: string[] = isSelect && Array.isArray(evt.options)
                 ? evt.options.filter((option): option is string => typeof option === "string") : [];
               const summary = String(evt.title ?? (isQuestion ? "pi has a question" : "pi wants confirmation")).slice(0, 200);
-              const mcpTool = isQuestion ? undefined : piGatedMcpTool(evt.title, mcpServers);
-              const mcpInput = mcpTool ? piGatedMcpInput(evt.message, mcpTool) : undefined;
+              const gatedTool = isQuestion ? undefined : piGatedMcpTool(evt.title, mcpServers);
+              const gatedInput = gatedTool ? piGatedMcpInput(evt.message, gatedTool) : undefined;
+              const searchedCall = gatedTool && gatedInput !== undefined ? piSearchedCall(gatedTool, gatedInput) : undefined;
+              const mcpTool = searchedCall?.mcpTool ?? gatedTool;
+              const mcpInput = searchedCall?.input ?? gatedInput;
               // A select is a question with named options; the structured
               // card renders from it while the flat choices keep older
               // clients answering. An input has nothing to pick from and
@@ -1307,13 +1519,30 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       const sessionPath = typeof turn.resumeCursor === "string" ? turn.resumeCursor : null;
       let sessionFile = sessionPath;
       let sessionReady = false;
-      try {
+      if (standby) {
+        sessionReady = true;
+        standbySession = sessionFile;
+        emit({ ...base(threadId, turnId), type: "session.started", sessionId: sessionFile, model: turn.model ?? null });
+      } else try {
         const command = sessionPath ? "switch_session" : "new_session";
         const hsPromise = awaitResponse(command);
         send(sessionPath ? { type: "switch_session", sessionPath } : { type: "new_session" });
         const hs = (await hsPromise) as { sessionFile?: string; sessionId?: string } | undefined;
         if (hs?.sessionFile) sessionFile = hs.sessionFile;
+        // #1276: pi answers new_session without the file; a compact turn
+        // asks for it, so the next turn resumes this session (switch_session).
+        if (!sessionFile && turn.compactPrompt) {
+          try {
+            const statePromise = awaitResponse("get_state");
+            send({ type: "get_state" });
+            const state = (await statePromise) as { sessionFile?: unknown } | undefined;
+            if (typeof state?.sessionFile === "string" && state.sessionFile) sessionFile = state.sessionFile;
+          } catch {
+            // no file: the next turn replays, as before
+          }
+        }
         sessionReady = true;
+        standbySession = sessionFile;
         emit({
           ...base(threadId, turnId),
           type: "session.started",

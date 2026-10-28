@@ -36,6 +36,24 @@ interface McpConfig {
   toolScope?: unknown;
   scopeReadyPath?: string;
   approvalMode?: string;
+  /** #1276: a compact prompt keeps pi's system prompt the same in every
+   * conversation; the conversation's folder rides the turn instead. */
+  stableCwd?: boolean;
+}
+
+/** What pi's cwd section says in a compact prompt (#1276). */
+export const STABLE_CWD_NOTE = "this conversation's own folder, given as \"Current working directory\" in the conversation";
+
+/** #1276: pi renders the process cwd into its system prompt, so two new
+ * conversations of the same bot diverge there and a local model's prefix
+ * cache serves nothing after it. The section names a fixed text; the real
+ * folder rides a short message of the turn, at the end of the prompt. pi's
+ * own tools keep the process cwd: nothing changes for files. */
+export function stableCwdTurn(options: { cwd?: unknown }): { customType: string; content: string; display: boolean } | undefined {
+  const real = options.cwd;
+  if (typeof real !== "string" || !real || real === STABLE_CWD_NOTE) return undefined;
+  options.cwd = STABLE_CWD_NOTE;
+  return { customType: "sagax-cwd", content: `Current working directory: ${real}`, display: false };
 }
 
 interface McpTool {
@@ -569,6 +587,13 @@ export default async function (pi: PiExtensionApi): Promise<void> {
   if (!parsed.ok) throw new Error(parsed.error);
   const scope = parsed.scope;
   if (scope !== undefined && (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function")) throw new Error("Pi tool selection enforcement APIs are unavailable");
+
+  if (config.stableCwd === true) {
+    pi.on("before_agent_start", (event) => {
+      const message = stableCwdTurn(event?.systemPromptOptions ?? {});
+      return message ? { message } : undefined;
+    });
+  }
 
   const used = new Set<string>();
   const identities = new Map<string, ToolIdentity>();
