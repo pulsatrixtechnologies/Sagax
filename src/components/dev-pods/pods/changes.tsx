@@ -58,7 +58,10 @@ function ChangeRow({ change, ctx }: { change: DevChange; ctx: DevPodContext }) {
       <Icon size={14} strokeWidth={1.75} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-secondary" />
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-ink" title={change.title}>{change.title}</span>
-        <span className="truncate font-mono text-[11.5px] text-ink-secondary">{where}</span>
+        <span className="flex items-center gap-1.5 truncate font-mono text-[11.5px] text-ink-secondary">
+          <span className="truncate">{where}</span>
+          {change.action && <span data-change-action={change.action} className="shrink-0 font-sans">{t(`devPods.changes.action.${change.action}`)}</span>}
+        </span>
       </div>
       <button
         type="button"
