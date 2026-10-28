@@ -163,6 +163,20 @@ describe("OpenAICompatDriver", () => {
     await inst.dispose();
   });
 
+  it("keeps a context window the endpoint publishes", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ data: [
+      { id: "vendor/model", name: "Vendor", context_length: 16384 },
+    ] }), { headers: { "content-type": "application/json" } })));
+    const inst = await OpenAICompatDriver.create({
+      instanceId: "compat-window", displayName: "Compat", enabled: true,
+      config: { url: "https://api.example.com/v1", apiKeyEnv: "OPENAI_COMPAT_API_KEY" },
+      environment: { OPENAI_COMPAT_API_KEY: "secret" },
+    });
+    await inst.refreshModels?.();
+    expect(inst.models.options.find((model) => model.id === "vendor/model")).toMatchObject({ contextWindow: 16384 });
+    await inst.dispose();
+  });
+
   it("rejects remote HTTP computer use before starting tools or a completion request", async () => {
     const request = vi.fn(async (_url: string | URL | Request) => new Response('{"data":[]}', { headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", request);

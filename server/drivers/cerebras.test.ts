@@ -58,6 +58,14 @@ describe("Cerebras provider", () => {
     await instance.dispose();
   });
 
+  it("uses the context window the endpoint publishes instead of the hardcoded table", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ data: [{ id: "gpt-oss-120b", context_window: 32768 }] })));
+    const instance = await create();
+    await instance.refreshModels?.();
+    expect(instance.models.options.find((model) => model.id === "gpt-oss-120b")?.contextWindow).toBe(32768);
+    await instance.dispose();
+  });
+
   it("streams text with usage requested and the built-in tools attached", async () => {
     let request: RequestInit | undefined;
     vi.stubGlobal("fetch", vi.fn(async (url, init) => {
