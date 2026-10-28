@@ -43,14 +43,18 @@ public struct VaultItemPublic: Decodable, Equatable, Sendable, Identifiable {
 public struct VaultList: Decodable, Equatable, Sendable {
     public var items: [VaultItemPublic]
     public var purchases: [VaultPurchasePublic]
+    public var wallets: [String: WalletLinkPublic]?
+    public var onePassword: OnePasswordStatusPublic?
 
     public init(from decoder: Decoder) throws {
         let row = try decoder.container(keyedBy: CodingKeys.self)
         items = try row.decode([VaultItemPublic].self, forKey: .items)
         purchases = try row.decodeIfPresent([VaultPurchasePublic].self, forKey: .purchases) ?? []
+        wallets = try row.decodeIfPresent([String: WalletLinkPublic].self, forKey: .wallets)
+        onePassword = try row.decodeIfPresent(OnePasswordStatusPublic.self, forKey: .onePassword)
     }
 
-    private enum CodingKeys: String, CodingKey { case items, purchases }
+    private enum CodingKeys: String, CodingKey { case items, purchases, wallets, onePassword }
 }
 
 public struct VaultPurchasePublic: Decodable, Equatable, Sendable, Identifiable {
