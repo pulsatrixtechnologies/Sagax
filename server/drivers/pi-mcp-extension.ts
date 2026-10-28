@@ -50,6 +50,68 @@ interface McpConfig {
    * whose listing fails now (its turn credentials expired with that turn)
    * declares these and connects at its first call, during a live turn. */
   toolCache?: Record<string, McpTool[]>;
+  /** #1276: the Sagax prompt's stable part rides its own user message
+   * (STABLE_END_MARKER), so a local server can keep its cache there. */
+  splitStable?: boolean;
+  /** Where this pi writes the request that warms that cache (no credentials). */
+  warmPath?: string;
+  /** The request a standby pi sends once its session is resumed. */
+  warm?: Record<string, unknown>;
+}
+
+/** #1276: Sagax writes this between its prompt's stable and volatile parts.
+ * The extension cuts the message there: a local server stores its prefix
+ * cache only at the end of a message, and a new conversation shares the
+ * stable part, never the volatile one. The text never reaches the model. */
+export const STABLE_END_MARKER = "\n<!-- sagax:stable-end -->\n";
+/** What the model reads between the stable part and the rest of the turn. */
+export const STABLE_ACK = "Understood.";
+
+type ChatMessage = { role?: unknown; content?: unknown };
+
+function messageText(content: unknown): string | undefined {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content) || !content.every((part) => part && typeof part === "object" && (part as { type?: unknown }).type === "text" && typeof (part as { text?: unknown }).text === "string")) return undefined;
+  return content.map((part) => (part as { text: string }).text).join("");
+}
+
+/** The provider messages with the first marked user message cut in two
+ * around a fixed reply, and the messages that end at the stable part. */
+export function splitStableMessages(messages: unknown[]): { messages: unknown[]; stable: unknown[] } | undefined {
+  const at = messages.findIndex((message) => (message as ChatMessage)?.role === "user" && messageText((message as ChatMessage).content)?.includes(STABLE_END_MARKER));
+  if (at < 0) return undefined;
+  const out: unknown[] = [];
+  let stable: unknown[] | undefined;
+  for (const [index, message] of messages.entries()) {
+    const text = (message as ChatMessage)?.role === "user" ? messageText((message as ChatMessage).content) : undefined;
+    const cut = text?.indexOf(STABLE_END_MARKER) ?? -1;
+    if (text === undefined || cut < 0) { out.push(message); continue; }
+    const head = { ...(message as object), content: text.slice(0, cut) };
+    if (index === at) stable = [...out, head];
+    out.push(head, { role: "assistant", content: STABLE_ACK }, { ...(message as object), content: text.slice(cut + STABLE_END_MARKER.length) });
+  }
+  return { messages: out, stable: stable! };
+}
+
+type WarmContext = {
+  model?: { api?: unknown; baseUrl?: unknown };
+  modelRegistry?: { getApiKeyAndHeaders(model: unknown): Promise<{ ok: boolean; apiKey?: string; headers?: Record<string, string | null>; baseUrl?: string }> };
+};
+
+/** Send the warm request through the session's own provider settings. Only
+ * an OpenAI-compatible local server takes it; anything else is left alone. */
+async function sendWarm(warm: Record<string, unknown>, ctx: WarmContext | undefined): Promise<void> {
+  const model = ctx?.model;
+  if (!model || model.api !== "openai-completions" || !ctx?.modelRegistry) return;
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+  const base = auth.ok ? auth.baseUrl ?? model.baseUrl : undefined;
+  if (typeof base !== "string" || !base) return;
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  for (const [key, value] of Object.entries(auth.headers ?? {})) if (typeof value === "string") headers[key] = value;
+  if (auth.apiKey && !Object.keys(headers).some((key) => key.toLowerCase() === "authorization")) headers.authorization = `Bearer ${auth.apiKey}`;
+  const signal = AbortSignal.timeout(120_000);
+  const res = await fetch(`${base.replace(/\/+$/, "")}/chat/completions`, { method: "POST", headers, body: JSON.stringify(warm), signal });
+  await res.arrayBuffer();
 }
 
 /** What pi's cwd section says in a compact prompt (#1276). */
@@ -598,6 +660,35 @@ export default async function (pi: PiExtensionApi): Promise<void> {
   if (!parsed.ok) throw new Error(parsed.error);
   const scope = parsed.scope;
   if (scope !== undefined && (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function")) throw new Error("Pi tool selection enforcement APIs are unavailable");
+
+  if (config.splitStable === true) {
+    let warmWritten = false;
+    pi.on("before_provider_request", (event) => {
+      const payload = event?.payload as { messages?: unknown[] } | undefined;
+      if (!payload || !Array.isArray(payload.messages)) return undefined;
+      const split = splitStableMessages(payload.messages);
+      if (!split) return undefined;
+      if (config.warmPath && !warmWritten) {
+        warmWritten = true;
+        const { stream: _stream, stream_options: _options, max_completion_tokens: _max, ...rest } = payload as Record<string, unknown>;
+        try { writeFileSync(config.warmPath, JSON.stringify({ ...rest, messages: split.stable, max_tokens: 1, stream: false }), { mode: 0o600 }); } catch { /* no warm then */ }
+      }
+      return { ...payload, messages: split.messages };
+    });
+  }
+  if (config.warm && typeof config.warm === "object") {
+    const warm = config.warm;
+    // a standby resumes its session (switch_session): its turn is next, its
+    // session idle, so the warm costs no turn anything
+    pi.on("session_start", (event, context) => {
+      if (event?.reason !== "resume") return;
+      // pi may load this extension twice for one session: one warm is enough
+      if (config.warmPath) {
+        try { writeFileSync(`${config.warmPath}.sent`, "", { flag: "wx", mode: 0o600 }); } catch { return; }
+      }
+      void sendWarm(warm, context as WarmContext).catch(() => { /* a cold cache only costs time */ });
+    });
+  }
 
   if (config.stableCwd === true) {
     pi.on("before_agent_start", (event) => {
