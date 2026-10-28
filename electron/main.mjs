@@ -23,6 +23,7 @@ import {
   readSafeLogTail,
 } from "./diagnostics.mjs";
 import { buildLogBundle, logBundleFileName, sanitizeRendererLines } from "./log-bundle.mjs";
+import { installOpenAtLogin } from "./open-at-login.mjs";
 import { foldGrokVoiceCredential, grokVoiceFoldLog, migrateWorkspaceCredentials, workspaceCredentialEnv } from "./workspace-credentials.mjs";
 import { flushSessionCookies } from "./session-persistence.mjs";
 import { evictStartupCacheOnce } from "./startup-cache-eviction.mjs";
@@ -5242,6 +5243,8 @@ ipcMain.handle("desktop:capabilities", async (event) =>
     localConnection: await cuaReady,
   }),
 );
+
+installOpenAtLogin({ ipcMain, app, guard: localWorkspaceOnly });
 
 const CREDENTIAL_PATCH = {
   xaiApiKey: (value) => ({ xai: { key: value } }),

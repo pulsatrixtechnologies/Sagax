@@ -44,6 +44,7 @@ import { workspacesAvailable } from "./WorkspacesSection";
 import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
 import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { AccountCard } from "./settings/AccountCard";
+import { OpenAtLoginRow } from "./OpenAtLoginOffer";
 import { DefaultBotSettings } from "./NewBotDialog";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { ImportSettings } from "./settings/ImportSettings";
@@ -786,6 +787,7 @@ export function SettingsModal() {
                 <SettingsGroup title={t("settings.group.account")} groupId="account">
                   {/* 2026-10-15: one account row (who, label, Sign out) */}
                   <AccountCard lockedServer={lockedServer} />
+                  <OpenAtLoginRow />
                   {(!state.config?.viewer || state.config.viewer.operator) && (
                     <SettingsSubPageRow
                       bare
