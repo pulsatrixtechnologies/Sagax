@@ -60,6 +60,11 @@ describe("openmausbot command line", () => {
     expect(verified).not.toHaveProperty("apply");
     expect(parseArgs(["restore", "--apply", "/tmp/sagax-backup.sgbk"], {})).toMatchObject({ command: "restore", apply: true });
     expect(parseArgs(["restore", "/tmp/sagax-backup.sgbk"], {})).toMatchObject({ error: expect.stringContaining("--verify") });
+    expect(parseArgs(["team", "apply", "/tmp/team.json"], {})).toMatchObject({ command: "team", teamAction: "apply", teamFile: resolve("/tmp/team.json") });
+    expect(parseArgs(["team"], {})).toMatchObject({ error: expect.stringContaining("team apply") });
+    expect(parseArgs(["task", "give", "--bot", "Ada", "--text", "Summarize"], {})).toMatchObject({ command: "task", taskAction: "give", taskBot: "Ada", taskText: "Summarize" });
+    expect(parseArgs(["task", "wait", "abc", "--timeout", "5"], {})).toMatchObject({ command: "task", taskAction: "wait", taskId: "abc", timeoutSec: 5 });
+    expect(parseArgs(["task", "give"], {})).toMatchObject({ error: expect.stringContaining("--bot") });
     expect(parseArgs(["serve", "--tailscale", "--tunnel"], {})).toEqual({ error: "choose one of --tailscale (your tailnet) and --tunnel (a public address)" });
     expect(parseArgs(["access", "add", "her@example.test", "--chat-only"], {})).toMatchObject({ command: "access", accessAction: "add", email: "her@example.test", chatOnly: true });
     expect(parseArgs(["access", "list"], {})).toMatchObject({ command: "access", accessAction: "list" });
