@@ -6,7 +6,8 @@
 // name and a count, its menu (Rename, Move up or down, Pause or Resume all,
 // Delete) and its + (a new routine in that folder). A row's menu (right
 // click, its "…", Shift+F10) moves it: the folders, New folder… and Remove
-// from folder. Rows can also be dragged onto a folder. When titles start
+// from folder. Rows can also be dragged (mouse or trackpad, pointer events) onto a folder,
+// its header or the no-folder area; Alt+Up / Alt+Down moves a focused row. When titles start
 // with "[X]", one quiet line offers to sort them into folders; it is marked
 // seen only when the sort worked or the person closed it with the x (a failed
 // try or an older server leaves it). "Sort by prefix" also stays in the
@@ -18,7 +19,7 @@
 // after the server update.", the prefix offer and dragging stay away, and a
 // call that still meets "no route" says the same line, never a red error.
 import { ArrowDown, ArrowUp, Check, ChevronRight, FolderInput, FolderMinus, FolderPlus, MoreHorizontal, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
-import { Fragment, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
 import { api, useStore, type Bot } from "@/state/store";
@@ -43,7 +44,7 @@ import {
   type RoutineFolderUndo,
 } from "../../../shared/routine-folders";
 import { navigateThreadMenu } from "../BotProjects";
-import { RoutineList, ROUTINE_DRAG_TYPE } from "./RoutineList";
+import { RoutineList } from "./RoutineList";
 
 interface FolderAnswer { folders: string[]; routines: Routine[]; undo?: RoutineFolderUndo }
 
@@ -99,8 +100,13 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
   const prefixPlan = useMemo(() => routinePrefixPlan(routines), [routines]);
   const settle = () => settleRoutinePrefixOffer(bot.id, { loaded: routines.length > 0, hasPrefixTitles: prefixPlan.length > 0, hasFolders: order.length > 0 || routines.some((routine) => !!routine.folder) });
   const [offerAnswered, setOfferAnswered] = useState(settle);
-  const [dragging, setDragging] = useState(false);
+  // A row held with the mouse or trackpad (pointer events): the routine, the
+  // pointer (for the preview) and the folder under it ("" = no folder).
+  const [drag, setDrag] = useState<{ routine: Routine; x: number; y: number } | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const dragging = drag !== null;
+  const dragCleanup = useRef<(() => void) | null>(null);
+  useEffect(() => () => dragCleanup.current?.(), []);
   const [busy, setBusy] = useState(false);
   const pending = useRef(new Set<string>());
   useEffect(() => { setCollapsed(collapsedRoutineFolders(bot.id)); setNotice(null); }, [bot.id]);
@@ -139,10 +145,30 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
     toggleFolder(folder);
   };
 
+  // The same call as Move to folder. The row moves at once; if the call
+  // fails the row goes back (act has already said why).
   const move = async (routineIds: string[], folder: string | null) => {
+    const known = folder === null || folders.some((name) => routineFolderKey(name) === routineFolderKey(folder));
+    const before = known ? routines.filter((routine) => routineIds.includes(routine.id)) : [];
+    for (const routine of before) {
+      const { folder: _old, ...rest } = routine;
+      dispatch({ type: "routinePatched", routine: folder === null ? rest : { ...rest, folder } });
+    }
     const answer = await act({ action: "move", botId: bot.id, routineIds, folder });
+    if (!answer) for (const routine of before) dispatch({ type: "routinePatched", routine });
     if (answer && folder) expand(folder);
   };
+  // Alt+Up / Alt+Down on a row: to the previous or next place in the list
+  // (no folder, then each folder in order).
+  const step = (routine: Routine, direction: -1 | 1) => {
+    const places: Array<string | null> = [null, ...folders];
+    const at = routine.folder ? places.findIndex((name) => name !== null && routineFolderKey(name) === routineFolderKey(routine.folder!)) : 0;
+    const target = places[at + direction];
+    if (target === undefined || at < 0) return;
+    void move([routine.id], target);
+    requestAnimationFrame(() => requestAnimationFrame(() => (document.querySelector(`[data-routine-id="${routine.id}"] button`) as HTMLElement | null)?.focus()));
+  };
+
   const reorder = (folder: string, direction: -1 | 1) => {
     const index = folders.indexOf(folder);
     const target = index + direction;
@@ -186,28 +212,67 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
     if (focus) requestAnimationFrame(() => trigger?.isConnected && trigger.focus());
   };
 
-  const dropProps = (folder: string | null) => ({
-    onDragOver: (event: DragEvent<HTMLDivElement>) => {
-      if (!event.dataTransfer.types.includes(ROUTINE_DRAG_TYPE)) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      setDropTarget(folder ?? "");
-    },
-    onDragLeave: (event: DragEvent<HTMLDivElement>) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget((current) => current === (folder ?? "") ? null : current);
-    },
-    onDrop: (event: DragEvent<HTMLDivElement>) => {
-      const id = event.dataTransfer.getData(ROUTINE_DRAG_TYPE);
+  // Pressing a row starts nothing until the pointer has moved a few pixels,
+  // so a click and the switch work as before. Once it moves, a preview follows
+  // the pointer, the folder under it lights up (a folded one opens after a
+  // moment), and letting go over a folder, its header or the no-folder area
+  // files the routine there. The click that ends a drag is swallowed.
+  const folderUnder = (x: number, y: number, fallback: EventTarget | null): string | null => {
+    const hit = (typeof document.elementFromPoint === "function" ? document.elementFromPoint(x, y) : null) ?? (fallback instanceof Element ? fallback : null);
+    const section = hit?.closest("[data-routine-folder-section]");
+    return section ? section.getAttribute("data-routine-folder-section") : null;
+  };
+  const startDrag = (routine: Routine, down: ReactPointerEvent<HTMLElement>) => {
+    dragCleanup.current?.();
+    const originX = down.clientX;
+    const originY = down.clientY;
+    let active = false;
+    let target: string | null = null;
+    const move = (event: PointerEvent) => {
+      if (!active) {
+        if (Math.hypot(event.clientX - originX, event.clientY - originY) < 5) return;
+        active = true;
+        document.body.style.userSelect = "none";
+      }
+      setDrag({ routine, x: event.clientX, y: event.clientY });
+      target = folderUnder(event.clientX, event.clientY, event.target);
+      setDropTarget(target);
+    };
+    const swallowClick = (event: MouseEvent) => { event.stopPropagation(); event.preventDefault(); };
+    const finish = (drop: boolean) => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", cancel, true);
+      window.removeEventListener("keydown", key, true);
+      document.body.style.userSelect = "";
+      dragCleanup.current = null;
+      setDrag(null);
       setDropTarget(null);
-      setDragging(false);
-      if (!id) return;
-      event.preventDefault();
-      const routine = routines.find((candidate) => candidate.id === id);
-      if (!routine || routineFolderKey(routine.folder ?? "") === routineFolderKey(folder ?? "")) return;
-      void move([id], folder);
-    },
-  });
+      if (!active) return;
+      window.addEventListener("click", swallowClick, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallowClick, true), 0);
+      if (drop && target !== null && routineFolderKey(routine.folder ?? "") !== routineFolderKey(target)) void move_(routine.id, target === "" ? null : target);
+    };
+    const up = () => finish(true);
+    const cancel = () => finish(false);
+    const key = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); finish(false); } };
+    const move_ = (id: string, folder: string | null) => void moveRef.current(id, folder);
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", cancel, true);
+    window.addEventListener("keydown", key, true);
+    dragCleanup.current = () => finish(false);
+  };
+  const moveRef = useRef<(id: string, folder: string | null) => void>(() => {});
+  moveRef.current = (id, folder) => { void move([id], folder); };
+  // A folded folder under the pointer opens after a short moment.
+  useEffect(() => {
+    if (!dragging || !dropTarget || !collapsed.has(routineFolderKey(dropTarget))) return;
+    const timer = setTimeout(() => expand(dropTarget), 600);
+    return () => clearTimeout(timer);
+  }, [dragging, dropTarget, collapsed]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const canDrag = editable && supported && folders.length > 0;
   const list = (items: Routine[], label?: string) => <RoutineList
     routines={items}
     viewerPrincipalId={viewerPrincipalId}
@@ -217,13 +282,17 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
     onOpen={onOpen}
     onToggle={(routine) => void flipRoutine(routine, pending.current, api, dispatch)}
     onRowMenu={editable ? (routine, at, trigger) => setMenu({ kind: "row", routine, x: at.x, y: at.y, trigger }) : undefined}
-    draggableRows={editable && supported && folders.length > 0}
+    onRowDragStart={canDrag ? startDrag : undefined}
+    onRowStep={canDrag ? step : undefined}
   />;
 
   const loose = groups[0]!;
-  return <div className="flex flex-col gap-1" data-routine-folders=""
-    onDragStart={(event) => { if (event.dataTransfer.types.includes(ROUTINE_DRAG_TYPE)) setDragging(true); }}
-    onDragEnd={() => { setDragging(false); setDropTarget(null); }}>
+  return <div className="flex flex-col gap-1" data-routine-folders="">
+    {drag && createPortal(<div data-routine-drag-preview="" aria-hidden="true"
+      style={{ left: drag.x + 12, top: drag.y + 8 }}
+      className="pointer-events-none fixed z-50 flex max-w-[260px] items-center gap-2 rounded-lg border-[0.5px] border-border bg-elevated px-3 py-1.5 text-[13px] leading-[18px] text-ink opacity-95 shadow-lg">
+      <FolderInput size={14} className="shrink-0 text-accent" /><span className="truncate">{drag.routine.name}</span>
+    </div>, document.body)}
     {showOffer && <div data-routine-prefix-offer="" role="note" className="mb-1 flex items-center gap-2 rounded-lg bg-inset px-3 py-2 text-[12px] leading-4 text-ink-secondary">
       <FolderInput size={14} className="shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{t("routineFolders.offer", { count: prefixPlan.length, folders: prefixFolders })}</span>
@@ -243,7 +312,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
     </div>}
 
     {(loose.routines.length > 0 || folders.length === 0 || loading || error) ? (
-      <div data-routine-folder-section="" {...(folders.length ? dropProps(null) : {})} className={cn("rounded-xl", dropTarget === "" && "ring-1 ring-accent/50")}>
+      <div data-routine-folder-section="" className={cn("rounded-xl", dropTarget === "" && "ring-1 ring-accent/50")}>
         <RoutineList
           routines={loose.routines}
           viewerPrincipalId={viewerPrincipalId}
@@ -254,11 +323,12 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
           onOpen={onOpen}
           onToggle={(routine) => void flipRoutine(routine, pending.current, api, dispatch)}
           onRowMenu={editable ? (routine, at, trigger) => setMenu({ kind: "row", routine, x: at.x, y: at.y, trigger }) : undefined}
-          draggableRows={editable && supported && folders.length > 0}
+          onRowDragStart={canDrag ? startDrag : undefined}
+          onRowStep={canDrag ? step : undefined}
         />
       </div>
     ) : dragging && (
-      <div data-routine-folder-section="" {...dropProps(null)} className={cn("rounded-lg border border-dashed border-hairline/60 px-3 py-2 text-center text-[12px] text-ink-tertiary", dropTarget === "" && "border-accent/60 text-ink-secondary")}>
+      <div data-routine-folder-section="" className={cn("rounded-lg border border-dashed border-hairline/60 px-3 py-2 text-center text-[12px] text-ink-tertiary", dropTarget === "" && "border-accent/60 text-ink-secondary")}>
         {t("routineFolders.dropOut")}
       </div>
     )}
@@ -268,7 +338,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
       const isCollapsed = collapsed.has(routineFolderKey(folder));
       const index = folders.indexOf(folder);
       const anyOn = group.routines.some((routine) => routine.enabled);
-      return <div key={folder} data-routine-folder-section={folder} {...dropProps(folder)}
+      return <div key={folder} data-routine-folder-section={folder}
         className={cn("flex flex-col rounded-lg", index > 0 || loose.routines.length > 0 ? "pt-1.5" : "", dropTarget === folder && "bg-hover/60 ring-1 ring-accent/50")}>
         {renaming === folder ? (
           <FolderNameInput initial={folder} label={t("routineFolders.renameLabel")} onCancel={() => setRenaming(null)} onSave={async (name) => {
