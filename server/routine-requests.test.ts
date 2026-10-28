@@ -449,6 +449,22 @@ describe("RoutineRequestService", () => {
     expect(routines.listRoutines()[0].precheck).toBeUndefined();
   });
 
+  it("a bot files its routine in a folder of its list, and takes it out again (2026-10-28)", async () => {
+    const { service, routines } = harness();
+    const created = await service.propose({ botId: "bot-a", threadId: "thread-a", proposal: createProposal({ folder: " Reports " }) });
+    expect(created.detail).toContain("Folder: Reports");
+    service.resolve({ botId: "bot-a", threadId: "thread-a", requestId: created.requestId, behavior: "allow" });
+    const routine = routines.listRoutines()[0];
+    expect(routine.folder).toBe("Reports");
+    expect(routines.foldersOf("bot-a")).toEqual(["Reports"]);
+    const moved = await service.propose({ botId: "bot-a", threadId: "thread-a", proposal: { action: "update", routineId: routine.id, changes: { folder: "Home" } } });
+    service.resolve({ botId: "bot-a", threadId: "thread-a", requestId: moved.requestId, behavior: "allow" });
+    expect(routines.listRoutines()[0].folder).toBe("Home");
+    const out = await service.propose({ botId: "bot-a", threadId: "thread-a", proposal: { action: "update", routineId: routine.id, changes: { folder: null } } });
+    service.resolve({ botId: "bot-a", threadId: "thread-a", requestId: out.requestId, behavior: "allow" });
+    expect(routines.listRoutines()[0].folder).toBeUndefined();
+  });
+
   it("canonicalizes receipt fingerprints and binds them to the card's conversation", async () => {
     const { service, store } = harness();
     await service.propose({ botId: "bot-a", threadId: "thread-a", proposal: createProposal() });

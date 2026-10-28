@@ -66,16 +66,20 @@ export interface RoutineRequestDefinition {
   overlap?: "skip" | "queue";
   /** 2026-10-26: run only when something changes (shared/routine-watch.ts). */
   watch?: RoutineWatchPrecheck;
+  /** 2026-10-28: the bot's folder it sits in (shared/routine-folders.ts). */
+  folder?: string;
 }
 
 export type RoutineRequestChanges =
-  & Omit<Partial<RoutineRequestDefinition>, "schedule" | "timeoutMinutes" | "watch">
+  & Omit<Partial<RoutineRequestDefinition>, "schedule" | "timeoutMinutes" | "watch" | "folder">
   & {
     schedule?: RoutineRequestScheduleChanges;
     /** `null` removes an existing safety cap. */
     timeoutMinutes?: number | null;
     /** `null` removes the watch: every due run starts its turn again. */
     watch?: RoutineWatchPrecheck | null;
+    /** `null` takes the routine out of its folder. */
+    folder?: string | null;
   };
 
 /** Another bot in the proposer's section that this proposal targets: a

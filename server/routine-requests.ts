@@ -12,6 +12,7 @@ import { SELF_ROUTINE_CAP, UNDO_STALE, type DirectApply, type DirectApplyCheck }
 import { redactSecretsInText } from "./redact.ts";
 import { loadRoutinePrecheck, parseRoutinePrecheck } from "./routine-precheck.ts";
 import type { RoutineWatchPrecheck } from "../shared/routine-watch.ts";
+import { cleanRoutineFolder, ROUTINE_FOLDER_MAX } from "../shared/routine-folders.ts";
 import { describeCondition } from "./routine-watch.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import {
@@ -114,6 +115,9 @@ const routineToolFieldsSchema = z.object({
   /** 2026-10-26: a watch pre-check (server/routine-precheck.ts); null in an
    * update removes it. */
   watch: z.unknown().optional(),
+  /** 2026-10-28: the bot's folder (shared/routine-folders.ts); null in an
+   * update takes it out of its folder. */
+  folder: z.string().max(200).nullable().optional(),
   /** Create only: true starts the routine live, false paused; absent
    * follows `routines.newPaused`. A webhook or email trigger follows the
    * same rule. Pause and resume are actions of their own. */
@@ -272,14 +276,16 @@ const storedDefinitionSchema = z.object({
   continuity: z.boolean().optional(),
   overlap: z.enum(["skip", "queue"]).optional(),
   watch: z.custom<RoutineWatchPrecheck>((value) => loadRoutinePrecheck(value)?.kind === "watch").optional(),
+  folder: z.string().min(1).max(ROUTINE_FOLDER_MAX).optional(),
 }).strict();
 const storedChangesSchema = storedDefinitionSchema
-  .omit({ schedule: true, timeoutMinutes: true, watch: true })
+  .omit({ schedule: true, timeoutMinutes: true, watch: true, folder: true })
   .partial()
   .extend({
     schedule: storedScheduleChangesSchema.optional(),
     timeoutMinutes: z.number().int().min(5).max(240).nullable().optional(),
     watch: z.custom<RoutineWatchPrecheck | null>((value) => value === null || loadRoutinePrecheck(value)?.kind === "watch").optional(),
+    folder: z.string().min(1).max(ROUTINE_FOLDER_MAX).nullable().optional(),
   })
   .strict()
   .refine(
@@ -757,6 +763,7 @@ function normalizeDefinition(input: RoutineToolDefinitionInput, now: number): Ro
     ...(input.continuity === true ? { continuity: true } : {}),
     ...(input.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(input.watch != null ? { watch: watchInput(input.watch)! } : {}),
+    ...(cleanRoutineFolder(input.folder) ? { folder: cleanRoutineFolder(input.folder)! } : {}),
   };
 }
 
@@ -775,6 +782,7 @@ function normalizeChanges(
   if (input.continuity !== undefined) changes.continuity = input.continuity === true;
   if (input.overlap !== undefined) changes.overlap = input.overlap;
   if (input.watch !== undefined) changes.watch = watchInput(input.watch);
+  if (input.folder !== undefined) changes.folder = cleanRoutineFolder(input.folder) ?? null;
   return changes;
 }
 
@@ -1047,9 +1055,10 @@ function effectiveDefinition(operation: RoutineRequestOperation, manager: Routin
     ...(existing.continuity ? { continuity: true } : {}),
     ...(existing.overlap ? { overlap: existing.overlap } : {}),
     ...(existing.precheck?.kind === "watch" ? { watch: structuredClone(existing.precheck) } : {}),
+    ...(existing.folder ? { folder: existing.folder } : {}),
   };
   if (operation.action !== "update") return base;
-  const { schedule, timeoutMinutes, watch, ...changes } = operation.changes;
+  const { schedule, timeoutMinutes, watch, folder, ...changes } = operation.changes;
   const merged: RoutineRequestDefinition = {
     ...base,
     ...changes,
@@ -1059,6 +1068,8 @@ function effectiveDefinition(operation: RoutineRequestOperation, manager: Routin
   else if (timeoutMinutes !== undefined) merged.timeoutMinutes = timeoutMinutes;
   if (watch === null) delete merged.watch;
   else if (watch !== undefined) merged.watch = watch;
+  if (folder === null) delete merged.folder;
+  else if (folder !== undefined) merged.folder = folder;
   return merged;
 }
 
@@ -1155,6 +1166,7 @@ function cardCopy(
       `Continuity: ${definition.continuity ? "Carries the previous run's report into the next run" : "Each run starts fresh"}`,
       `While busy: ${definition.overlap === "queue" ? "Queue one scheduled run; skip further occurrences until it starts" : "Skip overlapping scheduled occurrences"}`,
       ...(definition.watch ? [watchLine(definition.watch)] : []),
+      ...(definition.folder ? [`Folder: ${redactSecretsInText(definition.folder)}`] : []),
       // Last before the instructions: the one sentence that says what
       // confirming actually does, in the reader's terms.
       ...(operation.action === "create" || operation.action === "update"
@@ -1184,6 +1196,7 @@ function inputFromDefinition(definition: RoutineRequestDefinition, botId: string
     ...(definition.continuity ? { continuity: true } : {}),
     ...(definition.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(definition.watch ? { precheck: structuredClone(definition.watch) } : {}),
+    ...(definition.folder ? { folder: definition.folder } : {}),
   };
 }
 
@@ -1202,6 +1215,7 @@ function updateFromChanges(
   if (changes.continuity !== undefined) patch.continuity = changes.continuity;
   if (changes.overlap !== undefined) patch.overlap = changes.overlap;
   if (changes.watch !== undefined) patch.precheck = changes.watch === null ? null : structuredClone(changes.watch);
+  if (changes.folder !== undefined) patch.folder = changes.folder;
   return patch;
 }
 
@@ -1378,6 +1392,7 @@ function routineSnapshot(routine: Routine): RoutineRequestSnapshot | undefined {
     ...(routine.continuity ? { continuity: true } : {}),
     ...(routine.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(routine.precheck ? { precheck: structuredClone(routine.precheck) } : {}),
+    ...(routine.folder ? { folder: routine.folder } : {}),
     enabled: routine.enabled,
     ...(routine.target === "room-goal" ? { target: "room-goal" as const } : {}),
     ...(routine.groupId ? { groupId: routine.groupId } : {}),
@@ -1402,6 +1417,7 @@ function restorePatch(before: RoutineRequestSnapshot, now: number): Partial<Rout
     continuity: before.continuity === true,
     overlap: before.overlap ?? "skip",
     precheck: before.precheck === undefined ? null : structuredClone(before.precheck) as RoutineInput["precheck"],
+    folder: before.folder ?? null,
   };
 }
 
@@ -1670,6 +1686,7 @@ export class RoutineRequestService {
             ...(before.overlap === "queue" ? { overlap: "queue" as const } : {}),
             ...(before.precheck !== undefined ? { precheck: structuredClone(before.precheck) as RoutineInput["precheck"] } : {}),
             ...(before.resultsThreadId ? { resultsThreadId: before.resultsThreadId } : {}),
+            ...(before.folder ? { folder: before.folder } : {}),
           }).id;
           break;
         }

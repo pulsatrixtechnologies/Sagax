@@ -136,8 +136,11 @@ public struct ScopedRoutines: Sendable {
     public var scope: RoutineScope
     public var allowed: RoutineScopeAllowed
     public var facets: RoutineScopeFacets
+    /// Each bot's folder order (RoutineFolders.swift); empty from an older server.
+    public var folders: [String: [String]] = [:]
 
     init(response: RoutinesResponse, asked: RoutineScope) {
+        folders = response.folders ?? [:]
         routines = response.routines
         runs = response.runs
         scope = response.scope ?? asked

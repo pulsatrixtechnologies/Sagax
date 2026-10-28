@@ -176,6 +176,9 @@ export interface Routine {
    * a condition on its own receipts, or (2026-10-26) a watch that starts the
    * run only when something changes (shared/routine-watch.ts). */
   precheck?: RoutineWatchPrecheck | { kind: "condition"; test: string; [field: string]: unknown };
+  /** 2026-10-28 (shared/routine-folders.ts): the folder of its bot it sits
+   * in. Absent: no folder. */
+  folder?: string;
   nextRunAt: number | null;
   /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
   nominalRunAt?: number;
@@ -285,4 +288,7 @@ export interface RoutineInput {
   resultsThreadId?: string | null;
   /** Omission preserves it; null removes it (every due time starts a turn). */
   precheck?: Routine["precheck"] | null;
+  /** 2026-10-28: the bot's folder to put it in; null takes it out of its
+   * folder, omission preserves it. */
+  folder?: string | null;
 }

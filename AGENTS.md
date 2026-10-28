@@ -15,6 +15,16 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Routine folders (2026-10-28)
+
+A routine may sit in one folder of its bot (`folder`), and each bot keeps an
+ordered folder list (`routines.json` `folders`, shared/routine-folders.ts,
+docs/routine-folders.md). A folder change is never a definition change: no
+conversation line, no runAs move. `POST /api/routines/folders` (create,
+rename, delete, reorder, move, sort-by-prefix, restore) takes the same right
+as changing a routine of that bot, no admin. Sort by prefix runs only on the
+person's click and answers an Undo. Bots use `folder` on propose_routine.
+
 ## Signed bot visits (2026-10-27)
 
 The bot's own browser signs page opens (docs/web-bot-auth.md,

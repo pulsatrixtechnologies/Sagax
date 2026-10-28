@@ -43,6 +43,10 @@ struct TasksRoutinesView: View {
     @State private var triggers: [WebhookListing] = []
     @State private var triggerBaseURL: String?
     @State private var triggerBusy: String?
+    /// 2026-10-28: each bot's folder order (RoutineFolders) and the folder
+    /// header / row prompts.
+    @State private var folders: [String: [String]] = [:]
+    @StateObject private var folderController = RoutineFolderController()
 
     enum RoutinesSection: Hashable { case routines, logs }
     /// The desktop's Schedule view: List or Calendar (the default).
@@ -196,6 +200,12 @@ struct TasksRoutinesView: View {
                     }
                     .pickerStyle(.menu)
                     if organization { scopeFilters }
+                    if let botId = botFilter.botId, section == .routines {
+                        Button(String(localized: "New folder…"), systemImage: "folder.badge.plus") {
+                            folderController.askNewFolder(botId: botId)
+                        }
+                        .accessibilityIdentifier("routines-new-folder")
+                    }
                     if seenAllowed {
                         Button("Mark all as read", systemImage: "checkmark.circle") {
                             Task { await markAllSeen() }
@@ -251,6 +261,7 @@ struct TasksRoutinesView: View {
             }
             Task { await reload() }
         }
+        .routineFolderPrompts(folderController, session: session, folders: folderOrder(of:)) { await reload() }
         .sheet(item: $editor) { target in
             RoutineEditorView(routine: target.routine, seed: target.seed) { await reload() }
         }
@@ -340,66 +351,129 @@ struct TasksRoutinesView: View {
             Text("Every run uses the agent's existing model, tools, permissions, computer, and connected apps. Times follow the paired computer's local timezone.")
         }
 
+        // 2026-10-28: routines in no folder stay in "Routines" (every bot
+        // mixed, as before); each folder follows as its own section, the
+        // bot's order, one bot after another when the list shows them all.
+        let groups = folderGroups
         Section("Routines") {
-            let shown = botFilter.routines(routines)
-            if shown.isEmpty && !loading {
+            let loose = groups.first?.routines ?? []
+            if loose.isEmpty && groups.count == 1 && !loading {
                 EmptyStateView("No routines", systemImage: "calendar.badge.plus", description: Text("Schedule recurring or one-time agent work."))
             }
-            ForEach(shown) { routine in
-                // AU20: someone else's routine (a wider scope) is read-only
-                let canToggle = routine.mayEdit && routine.canToggle()
-                RoutineRow(
-                    routine: routine, bot: session.state.bot(routine.botId),
-                    unseenFailure: seenAllowed && runs.contains { $0.routineId == routine.id && $0.isUnseenProblem }
-                )
-                .contentShape(Rectangle())
-                .onTapGesture { if routine.mayEdit { editor = .edit(routine) } else { showLogs(of: routine) } }
-                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                    if canToggle {
-                        Button(routine.enabled ? "Pause" : "Resume") {
-                            Task { await toggle(routine) }
+            ForEach(loose) { routine in routineRow(routine) }
+        }
+        ForEach(groups.dropFirst()) { group in
+            if let folder = group.folder, let botId = group.botId {
+                Section {
+                    if !folderController.isCollapsed(botId: botId, folder: folder) {
+                        if group.routines.isEmpty {
+                            Text("No routines in this folder")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.textSecondary)
                         }
-                        .tint(routine.enabled ? Theme.warning : Theme.success)
+                        ForEach(group.routines) { routine in routineRow(routine) }
+                    }
+                } header: {
+                    RoutineFolderHeader(
+                        group: group, botId: botId, folder: folder,
+                        botName: botFilter.botId == nil ? botName(botId, in: group) : nil,
+                        controller: folderController
+                    ) { enabled in
+                        Task { await folderController.setEnabled(group.routines, enabled: enabled, session: session) { await reload() } }
                     }
                 }
-                .swipeActions(edge: .trailing) {
-                    if routine.mayEdit { Button("Delete", role: .destructive) { deleting = routine } }
-                    if routine.mayRun { Button("Run now") { Task { await runNow(routine) } }.tint(Theme.accent) }
-                }
-                .contextMenu {
-                    if let expression = routine.schedule.expression, routine.schedule.type == .cron {
-                        Button(String(localized: "Copy cron expression"), systemImage: "doc.on.doc") { PlatformBridge.copyToPasteboard(expression) }
-                    }
-                    if routine.mayRun {
-                        Button("Run now", systemImage: "play.fill") { Task { await runNow(routine) } }
-                    }
-                    if canToggle {
-                        Button(routine.enabled ? "Pause" : "Resume", systemImage: routine.enabled ? "pause" : "play") {
-                            Task { await toggle(routine) }
-                        }
-                    }
-                    if routine.mayEdit { Button("Edit", systemImage: "pencil") { editor = .edit(routine) } }
-                    Button("Run logs", systemImage: "doc.text") {
-                        routineFilter = routine.id
-                        statusFilter = .all
-                        section = .logs
-                    }
-                    if let results = RoutineResults.openTarget(for: routine, bots: session.state.bots, rooms: session.state.rooms) {
-                        Button("Open results thread", systemImage: "arrow.up.right.square") {
-                            Task { await session.openNotification(results) }
-                        }
-                    }
-                    if routine.mayEdit {
-                        Button("Delete", systemImage: "trash", role: .destructive) { deleting = routine }
-                    }
-                }
-                .accessibilityIdentifier("routines-row.\(routine.name)")
             }
         }
 
         RoutineTriggersSection(hooks: triggers, baseURL: triggerBaseURL, busyId: triggerBusy) { hook in
             Task { await toggleTrigger(hook) }
         }
+    }
+
+    /// One routine row with its swipes and menu.
+    private func routineRow(_ routine: Routine) -> some View {
+        // AU20: someone else's routine (a wider scope) is read-only
+        let canToggle = routine.mayEdit && routine.canToggle()
+        return RoutineRow(
+            routine: routine, bot: session.state.bot(routine.botId),
+            unseenFailure: seenAllowed && runs.contains { $0.routineId == routine.id && $0.isUnseenProblem }
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { if routine.mayEdit { editor = .edit(routine) } else { showLogs(of: routine) } }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            if canToggle {
+                Button(routine.enabled ? "Pause" : "Resume") {
+                    Task { await toggle(routine) }
+                }
+                .tint(routine.enabled ? Theme.warning : Theme.success)
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            if routine.mayEdit { Button("Delete", role: .destructive) { deleting = routine } }
+            if routine.mayRun { Button("Run now") { Task { await runNow(routine) } }.tint(Theme.accent) }
+            if routine.mayEdit {
+                Button(String(localized: "Folder"), systemImage: "folder") { folderController.moving = routine }
+                    .tint(Theme.textSecondary)
+            }
+        }
+        .contextMenu {
+            if let expression = routine.schedule.expression, routine.schedule.type == .cron {
+                Button(String(localized: "Copy cron expression"), systemImage: "doc.on.doc") { PlatformBridge.copyToPasteboard(expression) }
+            }
+            if routine.mayRun {
+                Button("Run now", systemImage: "play.fill") { Task { await runNow(routine) } }
+            }
+            if canToggle {
+                Button(routine.enabled ? "Pause" : "Resume", systemImage: routine.enabled ? "pause" : "play") {
+                    Task { await toggle(routine) }
+                }
+            }
+            if routine.mayEdit { Button("Edit", systemImage: "pencil") { editor = .edit(routine) } }
+            if routine.mayEdit {
+                RoutineFolderMoveMenu(routine: routine, folders: folderOrder(of: routine.botId), controller: folderController) { folder in
+                    Task { await folderController.perform(.move(botId: routine.botId, routineIds: [routine.id], folder: folder), session: session) { await reload() } }
+                }
+            }
+            Button("Run logs", systemImage: "doc.text") {
+                routineFilter = routine.id
+                statusFilter = .all
+                section = .logs
+            }
+            if let results = RoutineResults.openTarget(for: routine, bots: session.state.bots, rooms: session.state.rooms) {
+                Button("Open results thread", systemImage: "arrow.up.right.square") {
+                    Task { await session.openNotification(results) }
+                }
+            }
+            if routine.mayEdit {
+                Button("Delete", systemImage: "trash", role: .destructive) { deleting = routine }
+            }
+        }
+        .accessibilityIdentifier("routines-row.\(routine.name)")
+    }
+
+    /// The sections of the shown routines: one bot filtered, its folders;
+    /// all bots, the loose ones together then each bot's folders.
+    private var folderGroups: [RoutineFolderGroup] {
+        let shown = botFilter.routines(routines)
+        if let botId = botFilter.botId {
+            return RoutineFolders.group(shown, order: folders[botId] ?? [], botId: botId)
+        }
+        // the folders of the bots this list can show: visible bots and the
+        // bots of the routines shown (a wider scope)
+        let bots = visibleBots.map(\.id)
+        let present = Set(bots).union(shown.map(\.botId))
+        return RoutineFolders.groupAcrossBots(shown, folders: folders.filter { present.contains($0.key) }, botOrder: bots)
+    }
+
+    private func folderOrder(of botId: String) -> [String] {
+        RoutineFolders.ordered(folders[botId] ?? [], routines: routines.filter { $0.botId == botId })
+    }
+
+    private func botName(_ botId: String, in group: RoutineFolderGroup) -> String {
+        session.state.bot(botId)?.name
+            ?? group.routines.first?.bot?.name
+            ?? scopeFacets.botChoices.first { $0.id == botId }?.name
+            ?? String(localized: "Deleted agent")
     }
 
     private var showsPauseChrome: Bool {
@@ -496,14 +570,16 @@ struct TasksRoutinesView: View {
             let loaded = await session.loadScopedRoutines(scopeQuery)
             routines = loaded.routines.sorted(by: Routine.listOrder)
             runs = loaded.runs
+            folders = loaded.folders
             allowedScopes = loaded.allowed
             scopeFacets = loaded.facets
             // the server answered another scope (a permission taken back)
             if loaded.scope != scopeQuery.scope { scopeQuery = scopeQuery.choosing(loaded.scope) }
         } else {
-            let loaded = await session.loadRoutines()
+            let loaded = await session.loadRoutineListing()
             routines = loaded.routines.sorted(by: Routine.listOrder)
             runs = loaded.runs
+            folders = loaded.folders
         }
         let triggersLoaded = await session.loadTriggers()
         triggers = triggersLoaded.hooks

@@ -1395,6 +1395,8 @@ export type ServerFrame =
   | { kind: "group.deleted"; groupId: string }
   | { kind: "routine"; routine: Routine }
   | { kind: "routine.deleted"; routineId: string }
+  /** 2026-10-28: a bot's routine folders in their order (shared/routine-folders.ts). */
+  | { kind: "routine.folders"; botId: string; folders: string[] }
   | { kind: "routine.run"; run: RoutineRun }
   /** A cloud coding agent record changed (server/cloud-agents/manager.ts). */
   | { kind: "cloud.agent"; botId: string; item: CloudAgentWireItem }

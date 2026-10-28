@@ -1224,6 +1224,17 @@ public struct CompanionClient: Sendable {
         return (response.routines, response.runs)
     }
 
+    /// The listing with each bot's folder order (2026-10-28).
+    public func routineListing() async throws -> RoutineListing {
+        let response = try await send(try makeRequest("GET", "/api/routines"), as: RoutinesResponse.self)
+        return RoutineListing(routines: response.routines, runs: response.runs, folders: response.folders ?? [:])
+    }
+
+    /// One action on a bot's routine folders (`POST /api/routines/folders`).
+    public func routineFolders(_ action: RoutineFolderAction) async throws -> RoutineFolderResult {
+        try await send(try makeRequest("POST", "/api/routines/folders", encodedBody: action), as: RoutineFolderResult.self)
+    }
+
     /// AU20: the Automations listing in a scope (Mine, My teams, Everyone)
     /// with its filters (`GET /api/routines?scope=...`). Mine with no filter
     /// sends no parameter, so an older server answers as before.
