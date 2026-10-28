@@ -64,4 +64,18 @@ describe("spawn contract", () => {
     // without a file the value stays in the contract (a relaunch, never a stale capability)
     expect(JSON.stringify(withoutTurnTokens({ px: bridge("one") }))).not.toBe(JSON.stringify(withoutTurnTokens({ px: bridge("two") })));
   });
+
+  it("masks the agents turn values behind the tool gate, and reads the switches through it", () => {
+    const inner = (token: string, hop: string) => ({ SAGAX_COMMS_TOKEN: token, SAGAX_COMMS_TOKEN_FILE: "/t", SAGAX_TURN_DEPTH: hop, SAGAX_TURN_DEPTH_FILE: "/t.depth", SAGAX_PEER_HOP: hop, SAGAX_ROUTE_MESSAGES: hop === "1" ? "0" : "1" });
+    const gated = (token: string, hop: string) => ({ agents: { command: "node", env: { SAGAX_GATE_NAME: "agents", SAGAX_GATE_UPSTREAM: JSON.stringify({ command: "node", args: ["agents.js"], env: inner(token, hop) }) } } });
+    expect(JSON.stringify(withoutTurnTokens(gated("one", "0")))).toBe(JSON.stringify(withoutTurnTokens(gated("two", "1"))));
+    expect(JSON.stringify(withoutTurnTokens(gated("one", "0")))).not.toContain("one");
+    const config = (token: string) => ({ agents: { env: { SAGAX_GATE_CONFIG_abc: JSON.stringify({ SAGAX_GATE_UPSTREAM: JSON.stringify({ command: "node", env: inner(token, "0") }) }) } } });
+    expect(JSON.stringify(withoutTurnTokens(config("one")))).toBe(JSON.stringify(withoutTurnTokens(config("two"))));
+    expect(turnSwitches(gated("x", "0"))).toMatchObject({ SAGAX_ROUTE_MESSAGES: true, SAGAX_PEER_TOOLS: true });
+    expect(turnFiles(gated("x", "0"))).toEqual(["/t", "/t.depth"]);
+    // a person's process serves a teammate's reply; never the other way round
+    expect(switchesCover(turnSwitches(gated("x", "0")), turnSwitches(gated("y", "1")))).toBe(true);
+    expect(switchesCover(turnSwitches(gated("x", "1")), turnSwitches(gated("y", "0")))).toBe(false);
+  });
 });
