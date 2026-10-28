@@ -1,54 +1,65 @@
-import type { Bot, BotAnnouncement } from "./store";
+import type { ApprovalMode } from "../../shared/approval-mode";
+import type { BotAvatarCrop } from "../../shared/bot-avatar";
+import type { MascotLook } from "../../shared/mascot-look";
+import type { MascotSkinId } from "../../shared/mascot-skins";
+import type { ModelSelection } from "../../shared/model-selection";
+import type { ProactiveMode } from "../../shared/proactive-mode";
+import type { CloudBackend, MausColor } from "../../shared/wire";
+
+/** Where a bot works. The same union as `Bot["computer"]`, named here so this
+ * module does not import the store (#1381). */
+type BotComputer = "cloud" | "vm" | "local" | "browser" | "off";
+
+/** Fields a desktop bot PATCH may write. Same shapes as `Bot`, without
+ * importing it. */
+type BotPatchBody = {
+  name: string;
+  title: string;
+  description: string;
+  soul: string;
+  notifications: boolean;
+  cloudBackend: CloudBackend;
+  autoStartVps: boolean;
+  color: MausColor;
+  mascotExpression: string | null;
+  mascotSkin: MascotSkinId | null;
+  mascotLook: MascotLook | null;
+  avatarUrl: string | null;
+  avatarCrop: BotAvatarCrop;
+  avatarZoom: number;
+  avatarFocusX: number;
+  avatarFocusY: number;
+  autoApprove: boolean;
+  approvalMode: ApprovalMode;
+  proactiveMode: ProactiveMode;
+  outbound: { policy: "ask" | "allow"; dailyCap: number };
+  fallback: Array<{ instanceId: string; model: string }>;
+  speakReplies: boolean;
+  voice: string;
+  voiceNotes: boolean;
+  pinned: boolean;
+  hidden: boolean;
+  section: string;
+  pinnedMessageId: string;
+  chiefOfStaff: boolean;
+  approvePeerComms: boolean;
+  browser: boolean;
+  browserProfile: string | null;
+  memoryUpkeep: boolean;
+  teamMemorySharing: "shared" | "private";
+  mcpServers: string[] | null;
+  mcpAccounts: Record<string, string> | null;
+  modelSelection: ModelSelection;
+};
 
 /** Every field written through the desktop's broad bot PATCH boundary. */
-export type BotUpdatePatch = Partial<
-  Pick<
-    Bot,
-    | "name"
-    | "title"
-    | "description"
-    | "soul"
-    | "notifications"
-    | "cloudBackend"
-    | "autoStartVps"
-    | "color"
-    | "mascotExpression"
-    | "mascotSkin"
-    | "mascotLook"
-    | "avatarUrl"
-    | "avatarCrop"
-    | "avatarZoom"
-    | "avatarFocusX"
-    | "avatarFocusY"
-    | "autoApprove"
-    | "approvalMode"
-    | "proactiveMode"
-    | "outbound"
-    | "fallback"
-    | "speakReplies"
-    | "voice"
-    | "voiceNotes"
-    | "pinned"
-    | "hidden"
-    | "section"
-    | "pinnedMessageId"
-    | "chiefOfStaff"
-    | "approvePeerComms"
-    | "browser"
-    | "browserProfile"
-    | "memoryUpkeep"
-    | "teamMemorySharing"
-    | "mcpServers"
-    | "mcpAccounts"
-    | "modelSelection"
-  >
-> & {
+export type BotUpdatePatch = Partial<BotPatchBody> & {
   /** Where the bot's turns run. `fleet`, or a computer this person registered. */
   host?: "fleet" | { kind: "machine"; deviceId: string; model?: { instanceId: string; model: string } };
 
   /** null is the wire representation for clearing an explicit destination
    * and returning to Auto. Bot state itself keeps Auto as an absent field. */
-  computer?: Bot["computer"] | null;
+  computer?: BotComputer | null;
   /** Rides the PATCH body only: the server's proof that the local-auto
    * warning dialog was shown (see server/index.ts's consent gate). It must
    * reach the wire inside the coalesced body and must never fold into bot
@@ -72,39 +83,39 @@ export type BotStatePatch = Omit<
   BotUpdatePatch,
   "computer" | "host" | "acknowledgeLocalAuto" | "confirmFullAccess" | "applyToAllThreads" | "organizationFullAccess" | "threadId"
 > & {
-  computer?: Bot["computer"];
+  computer?: BotComputer;
 };
 
-interface BotPatchQueueEntry {
+interface BotPatchQueueEntry<B> {
   botId: string;
-  fallback: BotAnnouncement;
+  fallback: B;
   pending: BotUpdatePatch;
   inFlight: BotUpdatePatch;
   timer: ReturnType<typeof setTimeout> | null;
   running: boolean;
   controller: AbortController | null;
   cancelled: boolean;
-  idleWaiters: Array<(bot: BotAnnouncement | null) => void>;
+  idleWaiters: Array<(bot: B | null) => void>;
 }
 
-export interface BotPatchQueueOptions {
+export interface BotPatchQueueOptions<B> {
   delayMs?: number;
   send: (
     botId: string,
     patch: BotUpdatePatch,
     signal: AbortSignal,
-    current: BotAnnouncement,
-  ) => Promise<BotAnnouncement>;
-  reconcile: (botId: string, signal: AbortSignal) => Promise<BotAnnouncement | null>;
-  onAuthoritative: (bot: BotAnnouncement, optimisticOverlay: BotStatePatch) => void;
+    current: B,
+  ) => Promise<B>;
+  reconcile: (botId: string, signal: AbortSignal) => Promise<B | null>;
+  onAuthoritative: (bot: B, optimisticOverlay: BotStatePatch) => void;
   onError: (error: Error) => void;
 }
 
-export interface BotPatchQueue {
-  enqueue: (botId: string, patch: BotUpdatePatch, fallback: BotAnnouncement) => void;
+export interface BotPatchQueue<B> {
+  enqueue: (botId: string, patch: BotUpdatePatch, fallback: B) => void;
   /** Wait for the lane to settle and return the server-authoritative bot.
    * null means there was no queued write (or the lane was cancelled). */
-  flush: (botId: string) => Promise<BotAnnouncement | null>;
+  flush: (botId: string) => Promise<B | null>;
   overlayFor: (botId: string) => BotStatePatch;
   cancel: (botId: string) => void;
   /** Undo a dispose. Exists for React StrictMode, whose dev-mode mount probe
@@ -145,18 +156,18 @@ const stateOverlay = (patch: BotUpdatePatch): BotStatePatch => {
  * one another, and every response/error is folded back from an authoritative
  * server bot while preserving only edits that were made later.
  */
-export function createBotPatchQueue(options: BotPatchQueueOptions): BotPatchQueue {
-  const entries = new Map<string, BotPatchQueueEntry>();
+export function createBotPatchQueue<B>(options: BotPatchQueueOptions<B>): BotPatchQueue<B> {
+  const entries = new Map<string, BotPatchQueueEntry<B>>();
   const delayMs = options.delayMs ?? 400;
   let disposed = false;
 
-  const settleIfIdle = (entry: BotPatchQueueEntry) => {
+  const settleIfIdle = (entry: BotPatchQueueEntry<B>) => {
     if (entry.running || entry.timer !== null || hasFields(entry.pending)) return;
     entries.delete(entry.botId);
     for (const resolve of entry.idleWaiters.splice(0)) resolve(entry.fallback);
   };
 
-  const drain = async (entry: BotPatchQueueEntry): Promise<void> => {
+  const drain = async (entry: BotPatchQueueEntry<B>): Promise<void> => {
     if (disposed || entry.running || entry.timer !== null || !hasFields(entry.pending)) return;
     entry.running = true;
     const patch = entry.pending;
@@ -179,7 +190,7 @@ export function createBotPatchQueue(options: BotPatchQueueOptions): BotPatchQueu
         // A rejected patch is no longer optimistic. Re-read before rolling back
         // because a lost HTTP response may still have committed and broadcast.
         entry.inFlight = {};
-        let bot: BotAnnouncement | null = entry.fallback;
+        let bot: B | null = entry.fallback;
         try {
           bot = await options.reconcile(entry.botId, controller.signal);
           if (bot) entry.fallback = bot;
@@ -204,7 +215,7 @@ export function createBotPatchQueue(options: BotPatchQueueOptions): BotPatchQueu
     }
   };
 
-  const schedule = (entry: BotPatchQueueEntry) => {
+  const schedule = (entry: BotPatchQueueEntry<B>) => {
     if (entry.timer !== null) clearTimeout(entry.timer);
     entry.timer = setTimeout(() => {
       entry.timer = null;
@@ -262,7 +273,7 @@ export function createBotPatchQueue(options: BotPatchQueueOptions): BotPatchQueu
         clearTimeout(entry.timer);
         entry.timer = null;
       }
-      const idle = new Promise<BotAnnouncement | null>((resolve) => entry.idleWaiters.push(resolve));
+      const idle = new Promise<B | null>((resolve) => entry.idleWaiters.push(resolve));
       void drain(entry);
       settleIfIdle(entry);
       return idle;

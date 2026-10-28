@@ -4112,7 +4112,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state.settingsOpen, state.botSettingsExpandAccordion, state.botSettingsSection]);
   const botPatchQueue = useMemo(
     () =>
-      createBotPatchQueue({
+      createBotPatchQueue<BotAnnouncement>({
         send: (botId, patch, signal, currentBot) =>
           persistBotUpdate(botId, patch, signal, api, stepUpApprovals(window.ogb?.approvals), currentBot),
         reconcile: async (botId, signal) => {
