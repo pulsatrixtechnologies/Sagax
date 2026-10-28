@@ -32,8 +32,9 @@ let host: HTMLDivElement;
 let root: Root;
 const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); };
 const routines = [routine("r1", "Morning", "Daily"), routine("r2", "Backup", "Dev"), routine("r3", "Loose")];
-const mount = async () => {
-  await act(async () => { root.render(createElement(RoutineFolderList, { bot: bot as never, routines, runs: [], grouped: true, viewerPrincipalId: null, onOpen: () => {}, onCreateIn: () => {} })); });
+const runs: Array<{ id: string; routineId: string; status: string }> = [];
+const mount = async (list: Routine[] = routines) => {
+  await act(async () => { root.render(createElement(RoutineFolderList, { bot: bot as never, routines: list, runs: runs as never, grouped: true, viewerPrincipalId: null, onOpen: () => {}, onCreateIn: () => {} })); });
   await flush();
 };
 const pointer = (target: Element | Window, type: string, x: number, y: number, extra: Record<string, unknown> = {}) => {
@@ -148,5 +149,34 @@ describe("dragging a routine row", () => {
     await flush();
     const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(String(call[1].body)).folder).toBe("Dev");
+  });
+});
+
+describe("the row's state word (2026-10-28)", () => {
+  afterEach(() => { runs.length = 0; });
+
+  it("no Runs as chip in the row, even when it runs as someone else", async () => {
+    await mount([{ ...routines[2]!, runAs: { principalId: "pr_ada", name: "Ada" } } as Routine, routines[0]!]);
+    expect(host.textContent).not.toContain("Runs as");
+    expect(host.querySelector("[data-routine-run-as]")).toBeNull();
+  });
+
+  it("Paused for a paused routine, nothing for an active one that is not running", async () => {
+    await mount([{ ...routines[2]!, enabled: false } as Routine, routines[0]!]);
+    expect(row("r3").querySelector("[data-routine-paused]")?.textContent).toBe("Paused");
+    expect(row("r1").querySelector("[data-routine-paused]")).toBeNull();
+    expect(row("r1").querySelector("[data-routine-running]")).toBeNull();
+  });
+
+  it("Running for a live run, as quiet text that opens that run in Automations", async () => {
+    runs.push({ id: "run-9", routineId: "r1", status: "running" });
+    await mount();
+    const word = row("r1").querySelector("[data-routine-running]") as HTMLButtonElement;
+    expect(word.textContent).toBe("Running");
+    expect(word.getAttribute("aria-label")).toBe("Running: Morning");
+    expect(word.className).not.toMatch(/underline|border|bg-(?!transparent)/);
+    expect(row("r2").querySelector("[data-routine-running]")).toBeNull();
+    act(() => { word.click(); });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "showRoutines", section: "logs", botId: "bot-1", routineId: "r1", runStatus: "running", runId: "run-9" });
   });
 });

@@ -1303,7 +1303,7 @@ export interface AppState {
   routinesLoadState: "loading" | "ready" | "error";
   /** 2026-10-28: each bot's routine folders in order (shared/routine-folders.ts). */
   routineFolders: Record<string, string[]>;
-  routinesFocus: { section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter; nonce: number };
+  routinesFocus: { section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter; runId?: string; nonce: number };
   /** The Code section (src/components/code/CodePage.tsx): the run it opens,
    * or the list when none. */
   codeFocus: { runId?: string; nonce: number };
@@ -1559,7 +1559,7 @@ export type Action =
   | { type: "sidebarHidden"; keys: ReadonlySet<string> }
   | { type: "sections"; sections: string[] }
   | { type: "sectionDeleted"; section: string; sections: string[] }
-  | { type: "showRoutines"; section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter }
+  | { type: "showRoutines"; section?: "schedule" | "logs"; view?: "calendar" | "list"; botId?: string; routineId?: string; runStatus?: RoutineRunStatusFilter; runId?: string }
   | { type: "showTeamMap" }
   /** The Code section: the list, or one run when `runId` is set. */
   | { type: "showCode"; runId?: string }
@@ -2369,7 +2369,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         activeView: "routines",
-        routinesFocus: { section: action.section, view: action.view, botId: action.botId, routineId: action.routineId, runStatus: action.runStatus, nonce: state.routinesFocus.nonce + 1 },
+        routinesFocus: { section: action.section, view: action.view, botId: action.botId, routineId: action.routineId, runStatus: action.runStatus, runId: action.runId, nonce: state.routinesFocus.nonce + 1 },
         settingsOpen: false,
         personPanelId: null,
         computerOpen: false,
