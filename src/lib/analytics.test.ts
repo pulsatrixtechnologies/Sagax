@@ -1,21 +1,45 @@
-// Sagax sends no usage analytics: the module must stay inert.
+// The usage measure stays off until the person turns it on. Events go only
+// to this server, with a closed schema and no person name.
 import { describe, expect, it, vi } from "vitest";
 
 import * as analytics from "./analytics";
 
 describe("analytics", () => {
-  it("sends nothing", () => {
-    const fetchSpy = vi.fn();
+  it("sends nothing until the person turns the measure on, and never a name", async () => {
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/events")) return new Response("{}", { status: 202 });
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body)) as { enabled: boolean };
+        return new Response(JSON.stringify({ enabled: body.enabled, count: 0 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ enabled: false, count: 0 }), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchSpy);
-    analytics.initAnalytics();
-    analytics.track("app_opened", { platform: "desktop" });
+    await analytics.setUsageMeterEnabled(false);
+    fetchSpy.mockClear();
+    await analytics.initAnalytics();
+    analytics.track("app_opened", { surface: "desktop" });
     analytics.identifyEmail("someone@example.com");
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe("/api/me/usage-meter");
+    await analytics.setUsageMeterEnabled(true);
+    analytics.track("app_opened", { surface: "desktop", name: "Ada" });
+    analytics.track("page_view", {});
+    const posts = fetchSpy.mock.calls.filter((call) => String(call[0]).endsWith("/events"));
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(String((posts[0]?.[1] as RequestInit).body))).toEqual({
+      name: "app_opened",
+      props: { surface: "desktop" },
+    });
+    expect(JSON.stringify(fetchSpy.mock.calls)).not.toContain("someone@example.com");
+    expect(JSON.stringify(fetchSpy.mock.calls)).not.toContain("Ada");
+    await analytics.setUsageMeterEnabled(false);
     vi.unstubAllGlobals();
   });
 
-  it("has no opt-out switch left to expose", () => {
+  it("does not bring back the old analytics switch names", () => {
     expect("setAnalyticsEnabled" in analytics).toBe(false);
     expect("analyticsEnabled" in analytics).toBe(false);
+    expect(typeof analytics.setUsageMeterEnabled).toBe("function");
   });
 });

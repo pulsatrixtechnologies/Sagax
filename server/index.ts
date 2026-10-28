@@ -338,6 +338,8 @@ import { OpenApiStore, openApiScope } from "./openapi-connector.ts";
 import { createWorkflowRoutes } from "./routes/workflows.ts";
 import { advanceWorkflow, WorkflowStore, workflowScope } from "./workflows.ts";
 import { createHealthReportRoutes } from "./routes/health-report.ts";
+import { createUsageMeterRoutes } from "./routes/usage-meter.ts";
+import { UsageMeter, usageMeterScope } from "./usage-meter.ts";
 import { createWebSearchStore, webSearchScope } from "./web-search/store.ts";
 import { engineHasNativeWebSearch } from "./web-search/native.ts";
 import { isIP } from "node:net";
@@ -7443,6 +7445,7 @@ function workflowOwned(auth: RequestAuth, botId: string, threadId: string): bool
   if (auth.kind !== "session") return false;
   return sessionPrincipal(auth)?.toLowerCase() === effectiveBotOwner(bot).toLowerCase();
 }
+const usageMeter = new UsageMeter(DATA_DIR);
 // A person's own Experimental switches and browser profiles on an
 // organization server (#1098, 2026-10-27, server/person-settings.ts): set by
 // the person, no right to edit the installation needed.
@@ -36058,6 +36061,12 @@ ROUTES.push(createHealthReportRoutes({
   read: () => {
     try { return readFileSync(join(DATA_DIR, "health-reports", "latest.md"), "utf8"); } catch { return null; }
   },
+}));
+// The person's usage measure (server/routes/usage-meter.ts): off until they
+// turn it on. Their own switch, no admin right, on a solo or an organization server.
+ROUTES.push(createUsageMeterRoutes({
+  meter: usageMeter,
+  scope: (auth) => usageMeterScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
 }));
 // A person's own Experimental switches and browser profiles (#1098,
 // server/routes/person-settings.ts): theirs, on an organization server.

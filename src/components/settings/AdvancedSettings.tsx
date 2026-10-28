@@ -22,6 +22,7 @@ import { DescribedRow, PILL, SettingsGroup } from "../SettingsPrimitives";
 import { ThreadCleanupSettings } from "../ThreadCleanupSettings";
 import { PeopleToolAccessSettings } from "../ToolAccessSettings";
 import { OrganizationBotRows } from "./OrganizationBotRules";
+import { UsageMeterRow } from "./UsageMeterRow";
 
 /** The desktop app in "No server" mode: Settings > Organization is hidden
  * there (nothing to show until it joins one). */
@@ -58,6 +59,7 @@ export function GeneralAdvancedSettings() {
       <SettingsGroup title={t("settings.diagnostics.title")} groupId="diagnostics">
         <DiagnosticsRow />
         <DownloadLogsRow />
+        <UsageMeterRow />
         <SendFeedbackRow />
       </SettingsGroup>
     </div>
