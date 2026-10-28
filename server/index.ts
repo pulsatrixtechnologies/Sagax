@@ -137,7 +137,7 @@ import * as checkpoints from "./checkpoints.ts";
 import { commandReceipt } from "./commands.ts";
 import { buildTurnDigest, coverageForDriver, digestPromptLine, renderDigest, toolEvidence } from "./digest.ts";
 import { expireApprovalsAfterRestart } from "./approval-restart.ts";
-import { actorLabel, appendDecision, decisionCall, bindConfidentialDecisions, bindDecisionRetention, boundRetentionDays, decisionRetentionDays, decisionsCsv, flushDecisionLog, pruneDecisions, readDecisionRange, readDecisions, scrubThreadDecisions, withDecisionActor, type DecisionActor } from "./decision-log.ts";
+import { actorLabel, appendDecision, decisionCall, bindConfidentialDecisions, bindDecisionRetention, boundRetentionDays, decisionRetentionDays, decisionsCsv, flushDecisionLog, pruneDecisions, readDecisionRange, readDecisions, readSealedChain, scrubThreadDecisions, withDecisionActor, type DecisionActor } from "./decision-log.ts";
 import { validateBotCwd, validateBotCwdFor } from "./bot-cwd.ts";
 import {
   ATTACHMENTS_DIR,
@@ -31211,6 +31211,7 @@ ROUTES.push(createApprovalsInboxRoutes({
   pending: inboxPending,
   history: inboxHistory,
   journal: inboxJournal,
+  sealedJournal: () => readSealedChain(DATA_DIR),
   testRule: inboxTestRule,
   scopes: (_auth, viewer) => ({
     org: IDENTITY.kind === "perspicax",

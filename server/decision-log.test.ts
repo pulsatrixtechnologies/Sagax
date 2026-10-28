@@ -9,9 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { verifyJournal } from "./action-journal.ts";
 import {
   appendDecision, decisionFileFor, decisionRetentionDays, decisionsCsv, DEFAULT_DECISION_RETENTION_DAYS, flushDecisionLog,
-  pruneDecisions, readDecisionRange, readDecisions, withDecisionActor, type DecisionRow,
+  pruneDecisions, readDecisionRange, readDecisions, readSealedChain, sealedDecisionSources, withDecisionActor, type DecisionRow,
 } from "./decision-log.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
@@ -37,6 +38,24 @@ beforeEach(() => {
 
 afterEach(async () => {
   await removeTempDir(dir);
+});
+
+describe("the sealed chain", () => {
+  it("seals the link when the line is written and fails after the file is rewritten", async () => {
+    appendDecision(dir, row());
+    appendDecision(dir, row({ requestId: "req-2", tool: "Read" }));
+    await flushDecisionLog(dir);
+    const chain = readSealedChain(dir);
+    expect(chain.entries).toHaveLength(2);
+    expect(chain.entries[1]!.prev).toBe(chain.entries[0]!.hash);
+    expect(verifyJournal(chain, sealedDecisionSources(dir))).toEqual({ ok: true });
+    expect(JSON.stringify(chain)).not.toContain("git status");
+    writeFileSync(file(), readFileSync(file(), "utf8").replaceAll('"tool":"Bash"', '"tool":"Write"'));
+    expect(verifyJournal(chain, sealedDecisionSources(dir)).ok).toBe(false);
+    const chainPath = join(dir, "decisions", "chain.ndjson");
+    writeFileSync(chainPath, readFileSync(chainPath, "utf8").replaceAll('"tool":"Read"', '"tool":"Edit"'));
+    expect(verifyJournal(readSealedChain(dir)).ok).toBe(false);
+  });
 });
 
 describe("appendDecision / readDecisions", () => {
@@ -84,7 +103,7 @@ describe("appendDecision / readDecisions", () => {
     for (let i = 0; i < 50; i += 1) appendDecision(dir, row({ requestId: `req-${i}`, summary: "x".repeat(2_000) }));
     await flushDecisionLog(dir);
     expect(file()).toMatch(/decisions[\\/]\d{4}-\d{2}\.ndjson$/);
-    expect(readdirSync(join(dir, "decisions"))).toEqual([file().slice(-14)]);
+    expect(readdirSync(join(dir, "decisions")).sort()).toEqual(["chain.ndjson", file().slice(-14)].sort());
     expect(readDecisions(dir, 100)).toHaveLength(50);
     expect(existsSync(join(dir, "decisions.ndjson"))).toBe(false);
   });
