@@ -9040,6 +9040,7 @@
   "devPods.connectors.title": "Connectors",
   "devPods.connectors.more": "Show more",
   "devPods.connectors.less": "Show less",
+  "devPods.connectors.authenticate": "Authenticate",
   "devPods.outputs.title": "Outputs",
   "devPods.outputs.open": "Show {name} in the conversation",
   "devPods.changes.title": "Changes",

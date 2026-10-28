@@ -37,6 +37,7 @@ enum DevPodsStrings {
     static var copyCommit: String { String(localized: "devPods.changes.copySha", defaultValue: "Copy commit ID") }
     static var empty: String { String(localized: "devPods.empty", defaultValue: "Nothing to show yet. The pods fill in as the bot works.") }
     static var connectorsFailed: String { String(localized: "devPods.connectors.error", defaultValue: "Connectors could not load.") }
+    static var authenticate: String { String(localized: "devPods.connectors.authenticate", defaultValue: "Authenticate") }
     static var settingTitle: String { String(localized: "devPods.setting.title", defaultValue: "Development context pods") }
     static var settingDetail: String {
         String(localized: "devPods.setting.detail", defaultValue: "Off by default. When a bot works as a developer, a button in the conversation shows its environment, context, connectors, files and changes.")
@@ -285,6 +286,11 @@ struct DevPodsView: View {
                 ForEach(shown) { server in
                     Label {
                         Text(verbatim: server.name).lineLimit(1)
+                        if let auth = server.auth, auth != "connected", auth != "none" {
+                            Text(verbatim: DevPodsStrings.authenticate)
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                        }
                     } icon: {
                         Text(verbatim: String(server.name.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
                             .font(.caption2.weight(.semibold))

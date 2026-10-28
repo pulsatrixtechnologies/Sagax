@@ -9027,6 +9027,7 @@
   "devPods.connectors.title": "Connecteurs",
   "devPods.connectors.more": "Afficher plus",
   "devPods.connectors.less": "Afficher moins",
+  "devPods.connectors.authenticate": "Authentifier",
   "devPods.outputs.title": "Fichiers produits",
   "devPods.outputs.open": "Voir {name} dans la conversation",
   "devPods.changes.title": "Modifications",
