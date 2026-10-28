@@ -60,7 +60,7 @@ try {
       page.on("pageerror", (error) => { errors.push(String(error)); console.error(String(error)); });
       page.on("console", (message) => { if (message.type() === "error") console.error(message.text()); });
       const old = state.startsWith("old-");
-      await page.goto(`${base}?skin=${skin}&lang=${lang}&state=${old ? "prefixed" : state === "menu" ? "filed" : state}${old ? "&server=0.8.7" : ""}`, { waitUntil: "networkidle" });
+      await page.goto(`${base}?skin=${skin}&lang=${lang}&state=${old ? "prefixed" : state === "menu" || state === "drag" ? "filed" : state}${old ? "&server=0.8.7" : ""}`, { waitUntil: "networkidle" });
       const target = page.locator("[data-gallery-card]");
       await target.waitFor();
       await page.waitForTimeout(300);
@@ -80,6 +80,19 @@ try {
         await row.click({ button: "right", position: { x: 120, y: 20 } });
         await page.locator("[data-routine-folder-menu]").waitFor();
         await page.waitForTimeout(200);
+      }
+      if (state === "drag") {
+        // A routine held and carried over a folder: the preview follows the
+        // pointer and the folder under it lights up.
+        const from = await page.locator('[data-routine-folder-section=""] [data-routine-row]').first().boundingBox();
+        const over = await page.locator('[data-routine-folder-section="Reports"]').boundingBox();
+        if (!from || !over) throw new Error("drag: nothing to drag");
+        await page.mouse.move(from.x + 60, from.y + from.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(from.x + 90, from.y + from.height / 2 + 12, { steps: 4 });
+        await page.mouse.move(over.x + 120, over.y + over.height / 2, { steps: 8 });
+        await page.locator("[data-routine-drag-preview]").waitFor();
+        await page.waitForTimeout(150);
       }
       const file = join(outDir, `${prefix}${state}-${skin === "daylight" ? "light" : "dark"}.png`);
       await target.screenshot({ path: file });

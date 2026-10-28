@@ -13,7 +13,13 @@ Bot panel > Details > Routines:
   sidebar's sections. A folded folder is remembered per bot on this device.
 - A row's menu (right click, its "…" button, Shift+F10) has **Move to
   folder**: the bot's folders, **New folder…** and **Remove from folder**.
-  Rows can also be dragged onto a folder.
+  Rows can also be dragged with the mouse or trackpad: press a row and move
+  (a preview follows the pointer, the folder under it lights up, a folded
+  folder opens after a moment) and let go on a folder, its header or the
+  no-folder area. Esc cancels. The row moves at once and goes back if the call
+  fails. On a focused row, Alt+Up / Alt+Down moves it to the previous or next
+  folder. The order inside a folder is not stored (enabled first, then next
+  run, then name), so a drop only moves between folders.
 - A folder's menu (right click, "…", Shift+F10): **Rename**, **Move up** /
   **Move down** (also Alt+Up / Alt+Down on the header), **Pause the whole
   folder** or **Resume the whole folder**, **Delete folder** (its routines go

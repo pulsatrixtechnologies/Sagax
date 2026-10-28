@@ -1,5 +1,5 @@
 import { Loader2, MoreHorizontal, Repeat2 } from "lucide-react";
-import type { DragEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
@@ -32,10 +32,8 @@ const UPCOMING_TONES = {
   neutral: "bg-inset text-ink-secondary",
 } as const;
 
-/** The drag type of a routine row moved between folders (2026-10-28). */
-export const ROUTINE_DRAG_TYPE = "application/x-sagax-routine";
 
-export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, error, onOpen, onToggle, grouped = false, toggle = true, variant = "list", emptyText, onRowMenu, draggableRows = false, label }: {
+export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, error, onOpen, onToggle, grouped = false, toggle = true, variant = "list", emptyText, onRowMenu, onRowDragStart, onRowStep, label }: {
   routines: Routine[];
   /** Slice 6: the signed-in person on an organization server. */
   viewerPrincipalId?: string | null;
@@ -59,8 +57,13 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
   /** 2026-10-28: the row's menu (right click, the "…" button, Shift+F10 or
    * the context menu key): Move to folder. */
   onRowMenu?: (routine: Routine, at: { x: number; y: number }, trigger: HTMLElement) => void;
-  /** Rows may be dragged onto a folder of the list. */
-  draggableRows?: boolean;
+  /** A mouse or trackpad press on a row: the folder list may turn it into a
+   * drag (2026-10-28; pointer events, not HTML5 drag, which the desktop shell
+   * and the panel's drag strip made unreliable). Never from the switch or the
+   * row's own menu button. */
+  onRowDragStart?: (routine: Routine, event: ReactPointerEvent<HTMLElement>) => void;
+  /** Alt+Up / Alt+Down on a row: to the previous or next folder. */
+  onRowStep?: (routine: Routine, direction: -1 | 1) => void;
   /** The list's accessible name (a folder's name). */
   label?: string;
 }) {
@@ -71,11 +74,6 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
   const openMenu = (routine: Routine, trigger: HTMLElement, at?: { x: number; y: number }) => {
     const rect = trigger.getBoundingClientRect();
     onRowMenu?.(routine, at ?? { x: rect.left, y: rect.bottom + 4 }, trigger);
-  };
-  const onDragStart = (routine: Routine) => (event: DragEvent<HTMLDivElement>) => {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData(ROUTINE_DRAG_TYPE, routine.id);
-    event.dataTransfer.setData("text/plain", routine.name);
   };
   return <div aria-label={label ?? (upcoming ? t("routines.upcoming.list") : t("routines.list"))}>
     {error && <div role="alert" className="rounded-lg bg-danger/10 p-3 text-[12px] text-danger">{t("routines.loadError")}</div>}
@@ -105,16 +103,20 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           const whenLine = upcoming ? when : routine.schedule.type !== "once" || routine.enabled || routine.nextRunAt != null ? scheduleLabelCompact(routine.schedule) : when;
           const whenTitle = [pausedWithSwitch ? routineWhenLabel(routine) : when, rawCron].filter(Boolean).join("\n");
           return (
-            <div key={routine.id} data-routine-row
-              draggable={draggableRows && !readOnly ? true : undefined}
-              onDragStart={draggableRows && !readOnly ? onDragStart(routine) : undefined}
+            <div key={routine.id} data-routine-row data-routine-id={routine.id}
+              onPointerDown={onRowDragStart && !readOnly ? (event) => {
+                if (event.pointerType === "touch" || event.button !== 0) return;
+                if ((event.target as HTMLElement).closest?.("[role=switch],[data-routine-row-menu]")) return;
+                onRowDragStart(routine, event);
+              } : undefined}
               onContextMenu={onRowMenu && !readOnly ? (event) => { event.preventDefault(); openMenu(routine, event.currentTarget, { x: event.clientX, y: event.clientY }); } : undefined}
-              className={cn("group/routine", grouped ? cn("flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW, "py-1.5") : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover")}>
+              className={cn("group/routine", onRowDragStart && !readOnly && "cursor-grab select-none", grouped ? cn("flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW, "py-1.5") : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover")}>
               <button type="button" onClick={() => onOpen(routine)}
-                onKeyDown={onRowMenu && !readOnly ? (event) => {
-                  if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); openMenu(routine, event.currentTarget); }
+                onKeyDown={(onRowMenu || onRowStep) && !readOnly ? (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+                  if (onRowMenu && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) { event.preventDefault(); openMenu(routine, event.currentTarget); }
+                  else if (onRowStep && event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) { event.preventDefault(); onRowStep(routine, event.key === "ArrowUp" ? -1 : 1); }
                 } : undefined}
-                aria-keyshortcuts={onRowMenu && !readOnly ? "Shift+F10" : undefined}
+                aria-keyshortcuts={onRowMenu && !readOnly ? (onRowStep ? "Shift+F10 Alt+ArrowUp Alt+ArrowDown" : "Shift+F10") : undefined}
                 className="min-w-0 flex-1 text-left">
                 {state ? (
                   <span className="flex min-w-0 items-center gap-2">
