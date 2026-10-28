@@ -26,6 +26,7 @@ import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.t
 import { callTaskListTool, TASK_LIST_TOOL_NAMES } from "./agents-call-tasks.ts";
 import { HELP_TOOL_NAMES } from "./agents-help-tools.ts";
 import { WEB_SEARCH_TOOL_NAMES } from "./agents-web-search-tools.ts";
+import { isOpenApiTool } from "../openapi-tools.ts";
 import { SETTINGS_TOOL_NAMES } from "./agents-settings-tools.ts";
 import { APPROVALS_TOOL_NAMES } from "./agents-approvals-tools.ts";
 import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, PERSPICAX_TOOL_NAMES, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
@@ -1867,6 +1868,15 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     return {
       text: `Saved MCP server “${serverName}”${where} switched off. It stays off in MCP server settings until the user turns it on.${local}${named ? ` ${named}` : ""}`,
     };
+  }
+  if (isOpenApiTool(name)) {
+    if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
+    const { ok, body } = await apiResponse("/api/internal/openapi", {
+      method: "POST",
+      body: JSON.stringify({ name, arguments: args ?? {} }),
+    });
+    if (!ok) return { text: String(body.error ?? "The API call failed."), isError: true };
+    return { text: String(body.text ?? "") };
   }
   return { text: `Unknown tool: ${name}`, isError: true };
 }

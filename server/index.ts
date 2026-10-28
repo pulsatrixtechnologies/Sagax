@@ -332,6 +332,9 @@ import { createWebSearchRoutes } from "./routes/web-search.ts";
 import { createWebBotAuthRoutes } from "./routes/web-bot-auth.ts";
 import { applySignedBrowserHeaders } from "./web-bot-auth-apply.ts";
 import { browserOwner, noteBrowserOwner, signBrowserVisit, WebBotAuthStore, webBotAuthScope } from "./web-bot-auth.ts";
+import { createOpenApiRoutes } from "./routes/openapi-connector.ts";
+import { createOpenApiInternalRoutes } from "./routes/openapi-internal.ts";
+import { OpenApiStore, openApiScope } from "./openapi-connector.ts";
 import { createWebSearchStore, webSearchScope } from "./web-search/store.ts";
 import { engineHasNativeWebSearch } from "./web-search/native.ts";
 import { isIP } from "node:net";
@@ -4446,6 +4449,9 @@ function agentsIntegration(
         const scope = webSearchScopeForThread(threadId);
         return scope ? webSearchStore.ready(scope) : false;
       })() ? "1" : "0",
+      // The person's own OpenAPI operations. Empty in a room, for another
+      // member, and when they have not pasted a document. Headers stay out.
+      SAGAX_OPENAPI_TOOLS: openApiToolsEnv(botId, threadId),
     },
   };
 }
@@ -7400,6 +7406,20 @@ function vaultPrincipalForThread(threadId: string): string | null {
 // payer's), and the address guard for a SearXNG instance on an
 // organization server (its own network is not a member's to reach).
 const webSearchStore = createWebSearchStore(DATA_DIR);
+const openApiStore = new OpenApiStore(DATA_DIR);
+function openApiToolsEnv(botId: string, threadId: string): string {
+  if (store.groupByThread(threadId)) return "";
+  const organization = IDENTITY.kind === "perspicax";
+  const principal = organization ? vaultPrincipalForThread(threadId) : null;
+  if (organization) {
+    const bot = store.bot(botId);
+    if (!bot || !principal || effectiveBotOwner(bot).toLowerCase() !== principal.toLowerCase()) return "";
+  }
+  const scope = openApiScope(organization, principal);
+  if (!scope) return "";
+  const operations = openApiStore.publicOperations(scope);
+  return operations.length ? JSON.stringify(operations) : "";
+}
 // A person's own Experimental switches and browser profiles on an
 // organization server (#1098, 2026-10-27, server/person-settings.ts): set by
 // the person, no right to edit the installation needed.
@@ -29510,6 +29530,15 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     },
     refuseAddress: webSearchAddressRefusal,
   }),
+  createOpenApiInternalRoutes({
+    organization: () => IDENTITY.kind === "perspicax",
+    record: (capability) => {
+      if (!openApiToolsEnv(capability.botId, capability.threadId)) return null;
+      const organization = IDENTITY.kind === "perspicax";
+      const scope = openApiScope(organization, organization ? vaultPrincipalForThread(capability.threadId) : null);
+      return scope ? openApiStore.read(scope) : null;
+    },
+  }),
   // sagax_help (server/routes/self-knowledge-internal.ts)
   createSelfKnowledgeInternalRoutes({
     index: bundledKnowledgeIndex,
@@ -35955,6 +35984,10 @@ ROUTES.push(createWebSearchRoutes({
 ROUTES.push(createWebBotAuthRoutes({
   store: webBotAuthStore,
   scope: (auth) => webBotAuthScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
+}));
+ROUTES.push(createOpenApiRoutes({
+  store: openApiStore,
+  scope: (auth) => openApiScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
 }));
 // A person's own Experimental switches and browser profiles (#1098,
 // server/routes/person-settings.ts): theirs, on an organization server.

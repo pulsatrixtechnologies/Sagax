@@ -26,6 +26,7 @@ import { APPROVALS_TOOL_DEFINITIONS } from "./agents-approvals-tools.ts";
 import { phoneToolDefinition, phoneToolsFromEnv } from "./agents-phone-tools.ts";
 import { videoToolDefinition } from "./agents-video.ts";
 import { WEB_SEARCH_TOOL_DEFINITION } from "./agents-web-search-tools.ts";
+import { openApiToolDefinition, openApiToolsFromEnv } from "../openapi-tools.ts";
 import { VAULT_HTTP_TOOL } from "./agents-vault-http-tools.ts";
 import type { PhoneToolId } from "../../shared/phone-tools.ts";
 import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
@@ -94,6 +95,9 @@ export interface CatalogProfile {
   /** vault_http_request (agents-vault-http-tools.ts): this bot may send an
    * API key of the person here. Absent is off, so the wire goldens stay. */
   vaultHttp?: boolean;
+  /** Operations from the person's own OpenAPI document (server/openapi-tools.ts).
+   * Absent is off, so the wire goldens stay. */
+  openapiTools?: ReturnType<typeof openApiToolsFromEnv>;
 }
 
 /** The profile a spawned proxy was given. Everything is off unless the
@@ -125,6 +129,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     phoneTools: externalRuntime ? [] : phoneToolsFromEnv(env.SAGAX_PHONE_TOOLS),
     ...(!externalRuntime && env.SAGAX_WEB_SEARCH === "1" ? { webSearch: true } : {}),
     vaultHttp: !externalRuntime && env.SAGAX_VAULT_HTTP === "1",
+    ...(!externalRuntime && openApiToolsFromEnv(env.SAGAX_OPENAPI_TOOLS).length ? { openapiTools: openApiToolsFromEnv(env.SAGAX_OPENAPI_TOOLS) } : {}),
   };
 }
 
@@ -1924,6 +1929,7 @@ function catalogTools(profile: CatalogProfile) {
     ...(profile.claims && !profile.externalRuntime ? CLAIM_TOOLS : []),
     ...(profile.phoneTools?.length && !profile.externalRuntime ? [phoneToolDefinition(profile.phoneTools)] : []),
     ...(profile.webSearch === true && !profile.externalRuntime ? [WEB_SEARCH_TOOL_DEFINITION] : []),
+    ...(profile.openapiTools?.length && !profile.externalRuntime ? profile.openapiTools.map(openApiToolDefinition) : []),
     ...(profile.vaultHttp && !profile.externalRuntime ? [VAULT_HTTP_TOOL] : []),
   ];
   if (!profile.agentApi || profile.externalRuntime) return base;
