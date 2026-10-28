@@ -2,7 +2,8 @@
 //
 //   GET  /api/bots/:id/background-brief
 //   PUT  /api/bots/:id/background-brief   { enabled?, everyHours?, subjects? }
-//   POST /api/bots/:id/background-brief/pass { tools, pieces, costUsd }
+//   POST /api/bots/:id/background-brief/pass { costUsd? }
+//        Reads the apps already connected. No app: an empty queue.
 //   POST /api/bots/:id/background-brief/:suggestionId/reject
 //   POST /api/bots/:id/background-brief/:suggestionId/keep
 //
@@ -14,8 +15,8 @@ import { PASS, type RouteHandler } from "./table.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import {
   keptMemoryLine,
-  runBriefPass,
-  type BriefPiece,
+  readConnectedBrief,
+  type BriefAppCall,
   type BriefSettings,
   type BriefStore,
 } from "../background-brief.ts";
@@ -28,18 +29,10 @@ export interface BackgroundBriefRouteDeps {
   fastModel: (botId: string) => string | null;
   /** Write the kept line into the person's memory. */
   keep: (botId: string, line: string) => void;
-}
-
-function piecesOf(value: unknown): BriefPiece[] | null {
-  if (!Array.isArray(value)) return null;
-  const pieces: BriefPiece[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") return null;
-    const row = item as { piece?: unknown; asOf?: unknown; text?: unknown };
-    if (typeof row.piece !== "string" || typeof row.asOf !== "string" || typeof row.text !== "string") return null;
-    pieces.push({ piece: row.piece, asOf: row.asOf, text: row.text });
-  }
-  return pieces;
+  /** Names of the apps already connected. Empty: the queue stays empty. */
+  connected(botId: string): readonly string[];
+  /** A read of those apps. No send, no change, no browser. */
+  reads(botId: string): Promise<BriefAppCall>;
 }
 
 export function createBackgroundBriefRoutes(deps: BackgroundBriefRouteDeps): RouteHandler {
@@ -52,7 +45,10 @@ export function createBackgroundBriefRoutes(deps: BackgroundBriefRouteDeps): Rou
     const suggestionId = match[2];
     const action = match[3];
 
-    if (!suggestionId && method === "GET") return json(res, 200, deps.store.view(botId));
+    if (!suggestionId && method === "GET") {
+      const apps = deps.connected(botId).length;
+      return json(res, 200, { ...deps.store.view(botId), apps, ...(apps ? {} : { notice: "no_apps" as const }) });
+    }
     if (!suggestionId && method === "PUT") {
       const body = await readBody(req) as Partial<BriefSettings>;
       const subjects = Array.isArray(body.subjects) ? body.subjects.filter((item): item is string => typeof item === "string") : undefined;
@@ -64,14 +60,16 @@ export function createBackgroundBriefRoutes(deps: BackgroundBriefRouteDeps): Rou
       return json(res, 200, { settings });
     }
     if (suggestionId === "pass" && method === "POST") {
+      const connected = deps.connected(botId);
+      if (!connected.length) return json(res, 200, { added: [], apps: 0, notice: "no_apps" });
       if (!deps.store.due(botId)) return json(res, 409, { error: "This brief is off, or its cadence has not elapsed.", code: "brief_not_due" });
-      const body = await readBody(req) as { tools?: unknown; pieces?: unknown; costUsd?: unknown };
-      const tools = Array.isArray(body.tools) && body.tools.every((tool) => typeof tool === "string") ? body.tools : null;
-      const pieces = piecesOf(body.pieces);
-      if (!tools || !pieces || typeof body.costUsd !== "number") return json(res, 400, { error: "A pass names the read tools, the pieces, and its cost." });
-      const pass = runBriefPass({ tools, pieces, costUsd: body.costUsd, fastModel: deps.fastModel(botId) }, deps.store.view(botId).suggestions.filter((item) => item.status === "rejected").map((item) => item.identity));
-      if (!pass.ok) return json(res, 400, { error: pass.error });
-      return json(res, 200, { model: pass.model, costUsd: pass.costUsd, added: deps.store.recordPass(botId, pass) });
+      const body = await readBody(req) as { costUsd?: unknown };
+      const costUsd = typeof body.costUsd === "number" ? body.costUsd : 0;
+      const call = await deps.reads(botId);
+      const pass = await readConnectedBrief(call, { costUsd, fastModel: deps.fastModel(botId) }, deps.store.view(botId).suggestions.filter((item) => item.status === "rejected").map((item) => item.identity));
+      if (!pass.ok) return json(res, 400, { error: pass.error, apps: pass.apps });
+      if (pass.notice === "no_apps" || !pass.suggestions.length) return json(res, 200, { added: [], apps: pass.apps, ...(pass.notice ? { notice: pass.notice } : {}) });
+      return json(res, 200, { model: pass.model, costUsd: pass.costUsd, apps: pass.apps, added: deps.store.recordPass(botId, pass) });
     }
     if (suggestionId && action === "reject" && method === "POST") {
       const rejected = deps.store.reject(botId, suggestionId);

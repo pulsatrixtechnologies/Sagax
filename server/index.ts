@@ -215,6 +215,7 @@ import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { BriefStore } from "./background-brief.ts";
+import { listBriefApps, readBriefTool } from "./background-brief-apps.ts";
 import { createBackgroundBriefRoutes } from "./routes/background-brief.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { companyTextForBots } from "./memory-company.ts";
@@ -30217,6 +30218,24 @@ ROUTES.push(createBackgroundBriefRoutes({
   },
   fastModel: (botId) => store.bot(botId)?.modelSelection.fast?.model ?? null,
   keep: (botId, line) => { updateMemory(botId, { action: "append", text: line }, { source: "background brief", readers: { kind: "person" } }); },
+  connected: (botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return [];
+    return Object.keys(customMcpServers(cfg, bot.mcpServers));
+  },
+  reads: async (botId) => {
+    const bot = store.bot(botId);
+    const servers = bot ? customMcpServers(cfg, bot.mcpServers) : {};
+    const signal = AbortSignal.timeout(12_000);
+    const apps = await listBriefApps(servers, mcpDisabledTools(cfg), signal);
+    return {
+      apps: () => apps,
+      read: (app, tool) => {
+        const server = servers[app];
+        return server ? readBriefTool(server, tool, signal) : Promise.resolve(null);
+      },
+    };
+  },
 }));
 ROUTES.push(createCustomRuleRoutes({
   store: customRules,

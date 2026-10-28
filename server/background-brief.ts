@@ -110,6 +110,55 @@ function cited(text: string, sources: readonly BriefPiece[]): boolean {
   return numbers.every((number) => sources.some((source) => source.text.includes(number)));
 }
 
+const DATE_IN_TEXT = /\b(\d{4}-\d{2}-\d{2})\b/;
+
+/** A read's text becomes a piece only when it carries a real day. A number
+ * with no dated piece is not a piece. */
+export function datedBriefPiece(app: string, tool: string, text: string): BriefPiece | null {
+  const body = text.replace(/\s+/g, " ").trim();
+  const asOf = body.match(DATE_IN_TEXT)?.[1];
+  if (!asOf || !app.trim() || !tool.trim() || !body) return null;
+  return { piece: `${app.trim()} / ${tool.trim()}`.slice(0, 200), asOf, text: body.slice(0, 2_000) };
+}
+
+export interface BriefApp {
+  name: string;
+  tools: readonly string[];
+}
+
+export interface BriefAppCall {
+  /** Apps already connected. Empty: nothing to read. */
+  apps(): readonly BriefApp[];
+  /** One read. Null when the app did not answer. The caller must not send. */
+  read(app: string, tool: string): Promise<string | null>;
+}
+
+/** Read tools only. A send, a change and the browser are not called. */
+export function briefReadTools(tools: readonly string[]): string[] {
+  return tools.filter((tool) => briefToolAllowed(tool)).slice(0, 2);
+}
+
+/** Reads the connected apps. No app: an empty queue. A number without a
+ * dated piece is left out. */
+export async function readConnectedBrief(call: BriefAppCall, input: { costUsd: number; fastModel?: string | null }, rejected: readonly string[] = []): Promise<BriefPassResult & { apps: number; notice?: "no_apps" }> {
+  const apps = call.apps();
+  if (!apps.length) return { ok: true, model: input.fastModel?.trim() ?? "", costUsd: 0, suggestions: [], apps: 0, notice: "no_apps" };
+  const pieces: BriefPiece[] = [];
+  const tools: string[] = [];
+  for (const app of apps) {
+    for (const tool of briefReadTools(app.tools)) {
+      const text = await call.read(app.name, tool);
+      const piece = text ? datedBriefPiece(app.name, tool, text) : null;
+      if (!piece) continue;
+      tools.push(tool);
+      pieces.push(piece);
+    }
+  }
+  if (!pieces.length) return { ok: true, model: input.fastModel?.trim() ?? "", costUsd: 0, suggestions: [], apps: apps.length };
+  const pass = runBriefPass({ tools, pieces, costUsd: input.costUsd, fastModel: input.fastModel }, rejected);
+  return pass.ok ? { ...pass, apps: apps.length } : { ...pass, apps: apps.length };
+}
+
 /** One read-only pass. Writes, sends and the browser refuse the whole pass.
  * A suggestion whose numbers are not in a dated piece is dropped. A text
  * the person already rejected is not returned. */
