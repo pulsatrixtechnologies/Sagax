@@ -14,6 +14,19 @@ type Line = Pick<Message, "id" | "role" | "text" | "peerAsk">;
 /** A user-role line the person wrote, not one another bot delivered. */
 const fromPerson = (message: Line) => message.role === "user" && !peerLine(message);
 
+/** How many messages in this loaded conversation are still unread, or null
+ * when the loaded lines do not show a boundary. A dot stays in that case:
+ * a number would be a guess. */
+export function unreadMessageCount(messages: readonly Line[], lastReadMessageId?: string): number | null {
+  if (messages.length === 0) return null;
+  const id = firstUnreadMessageId(messages, lastReadMessageId);
+  if (!id) return null;
+  const at = messages.findIndex((message) => message.id === id);
+  if (at < 0) return null;
+  const count = messages.length - at;
+  return count > 0 ? count : null;
+}
+
 /** The first unread message of a conversation opened unread, or null. A
  * read cursor that is not among these messages (another branch, or older
  * than what is loaded) leaves only the person's own line to go by. */

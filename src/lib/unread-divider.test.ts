@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { firstUnreadMessageId, threadOpensUnread, unreadMessageIds } from "./unread-divider";
+import { firstUnreadMessageId, threadOpensUnread, unreadMessageCount, unreadMessageIds } from "./unread-divider";
 import { initialState, reducer, type AppState, type Bot, type Group, type Message } from "@/state/store";
 
 const line = (id: string, role: Message["role"], fields: Partial<Message> = {}): Message =>
   ({ id, role, kind: "text", text: id, at: Number(id.replace(/\D/g, "")) || 1, ...fields });
+
+describe("unreadMessageCount", () => {
+  it("counts the lines after the last one the person saw", () => {
+    const rows = [line("u1", "user"), line("b2", "bot"), line("b3", "bot")];
+    expect(unreadMessageCount(rows, "u1")).toBe(2);
+    expect(unreadMessageCount(rows, "b3")).toBeNull();
+    expect(unreadMessageCount([], "u1")).toBeNull();
+  });
+});
 
 describe("firstUnreadMessageId", () => {
   it("is the first line after the person's newest one", () => {
