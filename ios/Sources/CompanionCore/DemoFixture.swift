@@ -67,6 +67,12 @@ struct DemoFixture {
                 "Three things, in order:\n\n- **Ship the iOS beta** to internal testers (Scout is waiting on your approval).\n- **Finish the onboarding screens** with Pixel.\n- **Keep the release build green**: Forge is running the checks now.\n\nI'll send you a summary on Friday.",
                 "Trois choses, dans l'ordre :\n\n- **Livrer la bêta iOS** aux testeurs internes (Scout attend ton approbation).\n- **Terminer les écrans d'accueil** avec Pixel.\n- **Garder le build de version au vert** : Forge lance les vérifications en ce moment.\n\nJe t'envoie un résumé vendredi."
             ), parent: "atlas-1"),
+            text("atlas-3", "user", 12, t("Turn the plan into a page I can share with the team.", "Fais du plan une page que je peux partager avec l'équipe."), parent: "atlas-2"),
+            [
+                "id": "atlas-4", "role": "bot", "kind": "text", "at": ago(11), "parentId": "atlas-3",
+                "text": t("Page proposed: Weekly plan", "Page proposée : Plan de la semaine"),
+                "pagePublish": ["pageId": DemoServer.pageID, "version": 1, "title": t("Weekly plan", "Plan de la semaine")],
+            ],
         ])
         let scout = bot("scout", "Scout", t("Researcher", "Recherchiste"), t("Finds the facts and brings back sources.", "Trouve les faits et rapporte ses sources."), color: "cyan", section: launch, extra: ["unread": true, "activity": "waiting-on-you"], task: t("Release notes", "Notes de version"), messages: [
             text("scout-1", "user", 30, t("Compare the release notes with the checklist, then publish version 2.4.", "Compare les notes de version avec la liste de contrôle, puis publie la version 2.4.")),

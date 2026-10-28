@@ -409,10 +409,18 @@ public struct OrgDirectoryPerson: Codable, Hashable, Sendable, Identifiable {
 public struct OrgDirectoryTeam: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var name: String
-    public init(id: String, name: String) {
+    /// Principal ids, when the directory gives them (a group's size).
+    public var members: [String]?
+    public var managers: [String]?
+    public init(id: String, name: String, members: [String]? = nil, managers: [String]? = nil) {
         self.id = id
         self.name = name
+        self.members = members
+        self.managers = managers
     }
+
+    /// How many people the team holds, members and managers once each.
+    public var size: Int { Set((members ?? []) + (managers ?? [])).count }
 }
 
 public struct OrgDirectory: Decodable, Hashable, Sendable {

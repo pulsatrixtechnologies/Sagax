@@ -23,6 +23,11 @@ struct BotPanelFiles: View {
 
     @StateObject private var library = BotLibraryModel()
     @State private var opened: BotArtifact?
+    /// A page of this bot (2026-10-28): open, Share, Delete (asked first).
+    @State private var openedPage: PublishedPageSummary?
+    @State private var sharingPage: PublishedPageSummary?
+    @State private var deletingPage: PublishedPageSummary?
+    @State private var pagesPolicy = PagesPolicy.default
     @State private var previewing: IdentifiedURL?
     @State private var sharing: IdentifiedURL?
     @State private var working: String?
@@ -65,6 +70,26 @@ struct BotPanelFiles: View {
         .sheet(item: $previewing) { item in ProfileQuickLook(url: item.url).ignoresSafeArea() }
         .sheet(item: $sharing) { item in ProfileShareSheet(items: [item.url]) }
         .sheet(item: $opened) { artifact in BotArtifactSheet(artifact: artifact) }
+        .fullScreenCover(item: $openedPage) { page in
+            PageFullScreen(pageId: page.id, title: page.title) { library.replace($0) }
+                .environmentObject(session)
+        }
+        .sheet(item: $sharingPage) { page in
+            if let version = PageViewRules.versionToShow(page: page, asked: nil) {
+                PageShareSheet(page: page, version: version, policy: pagesPolicy) { library.replace($0) }
+                    .environmentObject(session)
+            }
+        }
+        .confirmationDialog(
+            String(localized: "Delete this page and all its versions?"),
+            isPresented: Binding(get: { deletingPage != nil }, set: { if !$0 { deletingPage = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Delete"), role: .destructive) {
+                if let page = deletingPage { Task { await deletePage(page) } }
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desktop-panel-files")
     }
@@ -199,10 +224,16 @@ struct BotPanelFiles: View {
         return HStack(spacing: 6) {
             Button { open(entry) } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: ThreadFilesView.symbol(entry))
-                        .font(.system(size: 14))
-                        .foregroundStyle(theme.inkSecondary)
-                        .frame(width: 24, height: 24)
+                    Group {
+                        if case .page = entry {
+                            PageGlyph(size: 18)
+                        } else {
+                            Image(systemName: ThreadFilesView.symbol(entry))
+                                .font(.system(size: 14))
+                                .foregroundStyle(theme.inkSecondary)
+                        }
+                    }
+                    .frame(width: 24, height: 24)
                     Text(verbatim: name)
                         .font(theme.font(13))
                         .foregroundStyle(theme.ink)
@@ -228,6 +259,10 @@ struct BotPanelFiles: View {
         HStack(spacing: 2) {
             actionButton(entry.pinned ? "pin.fill" : "pin", label: entry.pinned ? "Unpin" : "Pin", tint: entry.pinned ? theme.accent : nil) {
                 Task { await setPinned(entry, !entry.pinned) }
+            }
+            if case let .page(page) = entry {
+                actionButton("square.and.arrow.up", label: "Share…") { sharingPage = page }
+                actionButton("trash", label: "Delete…") { deletingPage = page }
             }
             if case let .file(file) = entry {
                 actionButton("bubble.left", label: "Show in chat") { jump(file) }
@@ -265,6 +300,7 @@ struct BotPanelFiles: View {
     private func load() async {
         guard let client = session.profileClient else { library.failed = true; return }
         await library.load(client: client, threadId: threadId, botId: bot.id, withArtifacts: session.surfaceGate.allows(.botArtifacts))
+        pagesPolicy = await client.pagesPolicy()
     }
 
     /// The pin shows at once and the server keeps it; a refusal puts it back.
@@ -272,6 +308,16 @@ struct BotPanelFiles: View {
         guard let client = session.profileClient else { return }
         do {
             try await library.setPinned(entry, pinned, client: client, threadId: threadId)
+        } catch {
+            session.actionError = error.localizedDescription
+        }
+    }
+
+    private func deletePage(_ page: PublishedPageSummary) async {
+        deletingPage = nil
+        guard let client = session.profileClient else { return }
+        do {
+            try await library.delete(page, client: client)
         } catch {
             session.actionError = error.localizedDescription
         }
@@ -299,6 +345,8 @@ struct BotPanelFiles: View {
             Task { await fetch(file, share: false) }
         case let .artifact(artifact):
             opened = artifact
+        case let .page(page):
+            openedPage = page
         }
     }
 

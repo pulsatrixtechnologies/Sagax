@@ -247,8 +247,8 @@ struct MessageRow: View {
         if message.ownerWait != nil {
             OwnerWaitView(message: message)
         } else if let ref = message.pagePublish, ref.isDrawable, message.role == .bot {
-            // a bot's page proposal: its approval card (PublishedPages.tsx)
-            PagePublishCardView(ref: ref, accent: Theme.readable(MausPalette.color(chat.color))) {
+            // a bot's page: its live card; a tap opens it (PublishedPages.tsx)
+            PagePublishCardView(ref: ref, botId: message.from?.botId ?? chat.id, threadId: chat.threadId) {
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         } else if let outbound = message.outbound, outbound.isDrawable, message.role == .bot {

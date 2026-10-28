@@ -1,6 +1,7 @@
-// Published pages (C10): the desktop's Settings > Pages. Share is who can
-// see the page, revoke takes the link down, delete removes it. The title
-// is the one the bot proposed: the server has no rename.
+// Published pages (C10): the desktop's Settings > Pages. Share (the same
+// sheet as the open page, 2026-10-28) is who can see the page, revoke takes
+// the link down, delete removes it. Open shows the whole page, where its
+// title pill renames it.
 import CompanionCore
 import SwiftUI
 
@@ -13,6 +14,8 @@ struct PublishedPagesPage: View {
     @State private var deleting: PublishedPageSummary?
     @State private var copied: String?
     @State private var snapshot: PublishedPageSummary?
+    @State private var sharing: PublishedPageSummary?
+    @State private var policy = PagesPolicy.default
 
     var body: some View {
         SettingsPage(title: "Published pages") {
@@ -54,9 +57,16 @@ struct PublishedPagesPage: View {
         } message: {
             Text(String(localized: "Link copied."))
         }
-        .sheet(item: $snapshot) { page in
+        .fullScreenCover(item: $snapshot) { page in
             if let version = page.versions.map(\.n).max() {
-                PagePreviewSheet(pageID: page.id, version: version)
+                PagePreviewSheet(pageID: page.id, version: version, title: page.title) { replace($0) }
+                    .environmentObject(session)
+            }
+        }
+        .sheet(item: $sharing) { page in
+            if let version = page.versions.map(\.n).max() {
+                PageShareSheet(page: page, version: version, policy: policy) { replace($0) }
+                    .environmentObject(session)
             }
         }
     }
@@ -65,6 +75,7 @@ struct PublishedPagesPage: View {
     private func row(_ page: PublishedPageSummary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
+                PageGlyph(size: 22)
                 Text(verbatim: page.title.isEmpty ? String(localized: "Page") : page.title)
                     .font(Theme.Font.rowTitle)
                     .foregroundStyle(Theme.textPrimary)
@@ -103,7 +114,12 @@ struct PublishedPagesPage: View {
                     .accessibilityIdentifier("published-page-revoke.\(page.id)")
             }
             if page.versions.map(\.n).max() != nil {
-                Button(String(localized: "Snapshot")) { snapshot = page }
+                Button(String(localized: "Share…")) { sharing = page }
+                    .disabled(busy != nil)
+                    .buttonStyle(.borderless)
+                    .font(.footnote)
+                    .accessibilityIdentifier("published-page-share.\(page.id)")
+                Button(String(localized: "Open")) { snapshot = page }
                     .disabled(busy != nil)
                     .buttonStyle(.borderless)
                     .font(.footnote)
@@ -129,6 +145,7 @@ struct PublishedPagesPage: View {
 
     private func load() async {
         guard let client = session.settingsClient else { pages = []; return }
+        policy = await client.pagesPolicy()
         do {
             pages = try await client.publishedPages()
             error = nil

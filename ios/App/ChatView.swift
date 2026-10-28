@@ -153,6 +153,11 @@ struct ChatView: View {
     @AppStorage(RunCardPreference.key) var showRunCard = true
     @ObservedObject var runCardDismissals = RunCardDismissals.shared
     @ObservedObject var sidebarPrefs = SidebarPrefsModel.shared
+    /// The page open over this conversation (2026-10-28, the page view):
+    /// the conversation stays under it, its composer floats over the page.
+    /// Its title and version follow what the page shows, so a message sent
+    /// now names the page as it is (`dataContext.page`).
+    @State var openPage: OpenPageRef?
 
     init(chat: Chat) {
         self.chat = chat
@@ -499,6 +504,7 @@ struct ChatView: View {
                 session.freshTopics[bot.id] = openedChat.threadId
             }
             if ProcessInfo.processInfo.arguments.contains("-open-profile") { openProfile() }
+            await pageDebugLaunch()
             if let screen = ParityLaunch.current?.screen {
                 if screen.opensComputer { showingComputer = true }
                 if screen.opensProfile {
@@ -748,6 +754,7 @@ struct ChatView: View {
                     .environment(\.citeIntoComposer, citeIntoComposer)
                     .environment(\.youtubeSendToBot, youtubeSendToBot)
                     .environment(\.conversationGallery, conversationGallery)
+                    .environment(\.openPagePanel, openPagePanelAction)
                     .background(BottomFollowProbe(model: follow))
                 }
                 // The transcript starts under the top bar and scrolls
@@ -887,7 +894,20 @@ struct ChatView: View {
             }
             .id(threadId)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // an open page covers the conversation, which stays mounted (and
+            // scrolled where it was) under it
+            .opacity(openPage == nil ? 1 : 0)
+            .allowsHitTesting(openPage == nil)
+            .accessibilityHidden(openPage != nil)
 
+            // The bot's one line over the floating composer while a page is
+            // open: working, then its newest answer (PageComposerParts.tsx).
+            if let openPage, let status = PageViewRules.statusLine(messages: messages, busy: current.busy, openedAt: openPage.openedAt) {
+                PageBotStatusBubble(status: status, chat: current)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 4)
+                    .transition(.opacity)
+            }
             // The matching band above the composer: whatever is typed here
             // stays in a confidential thread.
             if ConfidentialBanner.shows(for: current) {
@@ -896,6 +916,7 @@ struct ChatView: View {
             composerSlot
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .background { openPageLayer }
         // The composer sits 30 pt above the screen's bottom edge, inside the
         // home-indicator area, as in the reference; the keyboard still
         // pushes it up.

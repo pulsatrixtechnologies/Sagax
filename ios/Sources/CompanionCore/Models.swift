@@ -601,6 +601,10 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     /// A page the bot proposed (`propose_page`, shared/wire.ts
     /// `pagePublish`): drawn as the card the person publishes it from.
     public var pagePublish: PagePublishRef? = nil
+    /// User messages: the Data result or the page (`page`, 2026-10-28) the
+    /// person was viewing when they sent it. The page draws as a chip over
+    /// the words; the text stays exactly what they typed.
+    public var dataContext: MessageDataContext? = nil
 
     public var date: Date { Date(timeIntervalSince1970: at / 1000) }
 

@@ -5,7 +5,9 @@
 // person pinned sits on top under "Pinned"; the rest is grouped "This week"
 // and "Older", each group in a card, one line per item: the icon and the
 // name, with the pin and a menu. A file opens in Quick Look and an artifact
-// in the widget sandbox. A pin is kept on the server. The bot's links
+// in the widget sandbox. The bot's pages (2026-10-28) are in the same list
+// with their icon; a page opens whole, and its menu has Open, Share…,
+// Pin/Unpin and Delete… (asked first). A pin is kept on the server. The bot's links
 // (GET /api/bots/:id/links) stay one more chip, Links, when there are some.
 // It draws inside the panel's scroll view.
 import CompanionCore
@@ -27,6 +29,10 @@ struct ThreadFilesView: View {
     @State private var previewing: IdentifiedURL?
     @State private var sharing: IdentifiedURL?
     @State private var opened: BotArtifact?
+    @State private var openedPage: PublishedPageSummary?
+    @State private var sharingPage: PublishedPageSummary?
+    @State private var deletingPage: PublishedPageSummary?
+    @State private var pagesPolicy = PagesPolicy.default
     @State private var working: String?
     @State private var status: String?
 
@@ -73,6 +79,26 @@ struct ThreadFilesView: View {
         .sheet(item: $previewing) { item in ProfileQuickLook(url: item.url).ignoresSafeArea() }
         .sheet(item: $sharing) { item in ProfileShareSheet(items: [item.url]) }
         .sheet(item: $opened) { artifact in BotArtifactSheet(artifact: artifact) }
+        .fullScreenCover(item: $openedPage) { page in
+            PageFullScreen(pageId: page.id, title: page.title) { library.replace($0) }
+                .environmentObject(session)
+        }
+        .sheet(item: $sharingPage) { page in
+            if let version = PageViewRules.versionToShow(page: page, asked: nil) {
+                PageShareSheet(page: page, version: version, policy: pagesPolicy) { library.replace($0) }
+                    .environmentObject(session)
+            }
+        }
+        .confirmationDialog(
+            String(localized: "Delete this page and all its versions?"),
+            isPresented: Binding(get: { deletingPage != nil }, set: { if !$0 { deletingPage = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Delete"), role: .destructive) {
+                if let page = deletingPage { Task { await deletePage(page) } }
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        }
     }
 
     // MARK: Chips
@@ -179,10 +205,16 @@ struct ThreadFilesView: View {
         return HStack(spacing: 0) {
             Button { open(entry) } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: Self.symbol(entry))
-                        .font(.system(size: 15))
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(width: Theme.Profile.iconColumn, alignment: .center)
+                    Group {
+                        if case .page = entry {
+                            PageGlyph(size: 20)
+                        } else {
+                            Image(systemName: Self.symbol(entry))
+                                .font(.system(size: 15))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                    .frame(width: Theme.Profile.iconColumn, alignment: .center)
                     Text(verbatim: name)
                         .font(Theme.Font.body)
                         .foregroundStyle(Theme.textPrimary)
@@ -248,6 +280,13 @@ struct ThreadFilesView: View {
             }
         case let .artifact(artifact):
             Button(String(localized: "Open"), systemImage: "macwindow") { opened = artifact }
+        case let .page(page):
+            Button(String(localized: "Open"), systemImage: "doc.richtext") { openedPage = page }
+                .accessibilityIdentifier("library-page-open")
+            Button(String(localized: "Share…"), systemImage: "square.and.arrow.up") { sharingPage = page }
+                .accessibilityIdentifier("library-page-share")
+            Button(String(localized: "Delete…"), systemImage: "trash", role: .destructive) { deletingPage = page }
+                .accessibilityIdentifier("library-page-delete")
         }
     }
 
@@ -255,6 +294,7 @@ struct ThreadFilesView: View {
         switch entry {
         case let .file(file): file.name
         case let .artifact(artifact): artifact.title
+        case let .page(page): page.title.isEmpty ? String(localized: "Untitled page") : page.title
         }
     }
 
@@ -267,6 +307,7 @@ struct ThreadFilesView: View {
         switch entry {
         case let .file(file): ThreadFileThumbnail.symbol(ThreadFileRules.kind(of: file))
         case .artifact: "macwindow"
+        case .page: "chart.bar.doc.horizontal"
         }
     }
 
@@ -274,6 +315,7 @@ struct ThreadFilesView: View {
         switch entry {
         case let .file(file): "thread-file.\(file.name)"
         case let .artifact(artifact): "library-artifact.\(artifact.id)"
+        case let .page(page): "library-page.\(page.id)"
         }
     }
 
@@ -282,6 +324,17 @@ struct ThreadFilesView: View {
     private func load() async {
         guard let client = session.profileClient else { return }
         await library.load(client: client, threadId: threadId, botId: bot.id, withArtifacts: session.surfaceGate.allows(.botArtifacts))
+        pagesPolicy = await client.pagesPolicy()
+    }
+
+    private func deletePage(_ page: PublishedPageSummary) async {
+        deletingPage = nil
+        guard let client = session.profileClient else { return }
+        do {
+            try await library.delete(page, client: client)
+        } catch {
+            session.actionError = error.localizedDescription
+        }
     }
 
     private func pin(_ entry: LibraryEntry, _ pinned: Bool) async {
@@ -300,6 +353,8 @@ struct ThreadFilesView: View {
             Task { await fetch(file, share: false) }
         case let .artifact(artifact):
             opened = artifact
+        case let .page(page):
+            openedPage = page
         }
     }
 

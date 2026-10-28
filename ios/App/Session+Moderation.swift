@@ -17,6 +17,10 @@ extension Session {
         if let people = try? await client.blockedPeople(), connection?.id == connectionID {
             blockedPeople = people
         }
+#if DEBUG
+        // screenshot harness: the demo without its one-time terms sheet
+        if isDemo, ProcessInfo.processInfo.arguments.contains("-demo-terms-accepted") { return }
+#endif
         // an older server (404), a pairing that is nobody in particular
         // (403) or no network: nothing to ask now
         guard let terms = try? await client.terms(), connection?.id == connectionID else { return }

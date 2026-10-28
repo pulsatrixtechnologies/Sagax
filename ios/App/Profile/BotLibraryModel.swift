@@ -1,6 +1,7 @@
-// The Library tab's data on the phone and the iPad: the conversation's files
-// and the bot's artifacts, and the pin on either. A pin shows at once; the
-// server keeps it, and a refusal puts it back.
+// The Library tab's data on the phone and the iPad: the conversation's files,
+// the bot's artifacts and the pages it made (2026-10-28), and the pin on any
+// of them. A pin shows at once; the server keeps it, and a refusal puts it
+// back.
 import CompanionCore
 import SwiftUI
 
@@ -9,6 +10,8 @@ final class BotLibraryModel: ObservableObject {
     /// nil until the first load answers.
     @Published var files: [ThreadFile]?
     @Published var artifacts: [BotArtifact] = []
+    /// This bot's pages (GET /api/pages, filtered by bot).
+    @Published var pages: [PublishedPageSummary] = []
     @Published var failed = false
 
     func load(client: CompanionClient, threadId: String, botId: String, withArtifacts: Bool) async {
@@ -20,10 +23,23 @@ final class BotLibraryModel: ObservableObject {
         }
         // Artifacts are a bonus: a server that does not list them shows files only.
         if withArtifacts { artifacts = (try? await client.botArtifacts(botId: botId)) ?? artifacts }
+        // Pages too: a server without them shows the rest.
+        if let all = try? await client.publishedPages() { pages = PageLibraryRules.pages(all, botId: botId) }
     }
 
     func groups(now: Date = Date()) -> LibraryGroups {
-        LibraryRules.groups(files: files ?? [], artifacts: artifacts, now: now.timeIntervalSince1970 * 1000)
+        LibraryRules.groups(files: files ?? [], artifacts: artifacts, pages: pages, now: now.timeIntervalSince1970 * 1000)
+    }
+
+    /// A page changed elsewhere (Share, a rename): the list follows.
+    func replace(_ page: PublishedPageSummary) {
+        if let index = pages.firstIndex(where: { $0.id == page.id }) { pages[index] = page }
+    }
+
+    /// `DELETE /api/pages/:id`, after the person confirmed.
+    func delete(_ page: PublishedPageSummary, client: CompanionClient) async throws {
+        try await client.deletePublishedPage(id: page.id)
+        pages.removeAll { $0.id == page.id }
     }
 
     func setPinned(_ entry: LibraryEntry, _ pinned: Bool, client: CompanionClient, threadId: String) async throws {
@@ -44,6 +60,15 @@ final class BotLibraryModel: ObservableObject {
                 try await client.setBotArtifactPin(botId: artifact.botId, artifactId: artifact.id, pinned: pinned)
             } catch {
                 if let back = artifacts.firstIndex(where: { $0.id == artifact.id }) { artifacts[back].favorite = !pinned }
+                throw error
+            }
+        case let .page(page):
+            guard let index = pages.firstIndex(where: { $0.id == page.id }) else { return }
+            pages[index].pinned = pinned
+            do {
+                replace(try await client.setPagePinned(id: page.id, pinned: pinned))
+            } catch {
+                if let back = pages.firstIndex(where: { $0.id == page.id }) { pages[back].pinned = !pinned }
                 throw error
             }
         }

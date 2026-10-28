@@ -10,11 +10,16 @@ public struct SendOptions: Hashable, Sendable {
     public var busyMode: BusySendMode?
     /// Rooms only: "goal" runs the line as a bounded room goal (`/goal`).
     public var goal: Bool
+    /// Bots only: the page open over the conversation (`dataContext.page`,
+    /// shared/data-context.ts withPageContext). The server keeps it only for
+    /// the sender's own page of that bot.
+    public var page: PageContextRef?
 
-    public init(replyToId: String? = nil, busyMode: BusySendMode? = nil, goal: Bool = false) {
+    public init(replyToId: String? = nil, busyMode: BusySendMode? = nil, goal: Bool = false, page: PageContextRef? = nil) {
         self.replyToId = replyToId
         self.busyMode = busyMode
         self.goal = goal
+        self.page = page
     }
 
     /// Adds the fields the destination's route reads, and nothing else:
@@ -27,6 +32,7 @@ public struct SendOptions: Hashable, Sendable {
             // joins the running turn, where an unknown busyMode would be a 400
             if busyMode == .auto { body["routeWhileBusy"] = true }
             else if let busyMode { body["busyMode"] = busyMode.rawValue }
+            if let page, page.isDrawable { body["dataContext"] = ["page": page.body] }
         case .room:
             if goal { body["mode"] = "goal" }
         }

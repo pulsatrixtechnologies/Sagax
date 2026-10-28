@@ -59,7 +59,13 @@ extension ChatView {
         attachmentError = nil
         power.commandMenuForced = false
         showingPlus = false
-        let options = SendOptions(replyToId: replyAtSend?.id, busyMode: busyMode, goal: goal)
+        // A page open over this bot's conversation: the message is about it
+        // (`dataContext.page`, shared/data-context.ts withPageContext).
+        let pageAtSend = PageViewRules.pageContext(
+            text: words, page: openPage, title: openPage?.title ?? "", version: openPage?.version,
+            botId: chatAtSend.isBot ? chatAtSend.id : nil
+        )
+        let options = SendOptions(replyToId: replyAtSend?.id, busyMode: busyMode, goal: goal, page: pageAtSend)
         Task {
             let sent = await session.send(
                 text: requestText,
