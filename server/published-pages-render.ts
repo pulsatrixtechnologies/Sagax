@@ -11,7 +11,7 @@
 // with a permanent banner (no script, nothing to dismiss) that embeds the
 // page in a frame sandboxed to scripts only, whose navigation the wrapper's
 // `frame-src` limits to the page's own frame path.
-import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_LIMITS, pageCsp, pageFrameSandbox, type PageKind, type ReaderComment } from "../shared/published-pages.ts";
+import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
 
 /** Server side, before every HTML version is served: no element that can
  * reach the network outside CSP. `<link>` (hints such as prerender, which
@@ -106,6 +106,20 @@ D.addEventListener("click",function(e){var el=e.target;if(!el||el.nodeType!==1)r
 window.top.postMessage({type:"${PAGE_ANNOTATION_MESSAGE}",v:1,n:n,tag:el.localName,text:line(el.innerText||el.textContent,160),path:line(path(el),240)},"*")},true);
 ["submit","auxclick","dblclick"].forEach(function(k){D.addEventListener(k,function(e){e.preventDefault();e.stopPropagation()},true)});
 })();`;
+
+/** The app's own preview keeps its place (2026-10-28): after the page
+ * loads it scrolls to `y` (the place the app last heard), and while the
+ * person scrolls it posts how far down it is to the app's window
+ * (window.top: the preview wrapper is framed by the app only). No network,
+ * only a number. `y` is a whole number the server checked. Pure. */
+export function keepScrollSource(y: number): string {
+  const start = Number.isSafeInteger(y) && y > 0 && y <= PAGE_SCROLL_MAX ? y : 0;
+  return `(function(){"use strict";var y=${start},t=0;`
+    + "function go(){if(y>0)window.scrollTo(0,y)}"
+    + "if(document.readyState===\"complete\")go();else window.addEventListener(\"load\",go);"
+    + `window.addEventListener("scroll",function(){clearTimeout(t);t=setTimeout(function(){try{window.top.postMessage({type:"${PAGE_SCROLL_MESSAGE}",v:1,y:Math.max(0,Math.round(window.scrollY))},"*")}catch(e){}},120)},{passive:true});`
+    + "})();";
+}
 
 /** Slides of a presentation: Markdown separated by a line of three dashes
  * or more; empty slides at the end are dropped. Pure. */
@@ -249,28 +263,43 @@ const MARKDOWN_STYLE = "body{font:16px/1.6 system-ui,-apple-system,Segoe UI,sans
   + "blockquote{margin:0;padding-left:1rem;border-left:3px solid #d0d7de;color:#57606a}.url{color:#57606a;word-break:break-all}"
   + "@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}.url{color:#9198a1}}";
 
+/** Our own Markdown and slide styles in one theme: the dark rules always
+ * (dark) or never (light), instead of the reader's system setting. Pure. */
+export function themedStyle(style: string, theme: PageTheme | undefined): string {
+  if (!theme) return style;
+  const at = style.indexOf("@media (prefers-color-scheme:dark){");
+  if (at < 0) return style;
+  const inner = style.slice(at + "@media (prefers-color-scheme:dark){".length, -1);
+  return theme === "dark" ? `${style.slice(0, at)}${inner}:root{color-scheme:dark}` : style.slice(0, at);
+}
+
 /** The full document a version is read as. `meta` adds the CSP as a meta tag
  * (the app's sandboxed preview, which has no response headers). Pure. */
-export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string } = {}): string {
+export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string; keepScroll?: number; nonce?: string; theme?: PageTheme } = {}): string {
   const meta = options.meta ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(pageCsp(input.kind, { meta: true }))}">` : "";
-  // The annotation script (the app's preview only): by its nonce on a page
-  // that otherwise runs no script, inline after the prelude on an HTML page.
-  const annotate = options.annotateNonce === undefined ? ""
-    : input.kind === "html" ? `<script>${ANNOTATE_SOURCE}</script>` : `<script nonce="${escapeHtml(options.annotateNonce)}">${ANNOTATE_SOURCE}</script>`;
+  // The app's own scripts (its preview only: annotation, keeping the place):
+  // by their nonce on a page that otherwise runs no script, inline after the
+  // prelude on an HTML page. Without a nonce a Markdown page runs none.
+  const nonce = options.annotateNonce ?? options.nonce;
+  const own = (source: string) => input.kind === "html" ? `<script>${source}</script>`
+    : nonce !== undefined ? `<script nonce="${escapeHtml(nonce)}">${source}</script>` : "";
+  const annotate = options.annotateNonce === undefined ? "" : own(ANNOTATE_SOURCE);
+  const keep = options.keepScroll === undefined ? "" : own(keepScrollSource(options.keepScroll));
+  const scheme = options.theme ? `<meta name="color-scheme" content="${options.theme}">` : "";
   if (input.kind === "markdown" || input.kind === "presentation") {
     const presentation = input.kind === "presentation";
-    return `<!doctype html><html lang="${escapeHtml(input.lang ?? "fr")}"><head><meta charset="utf-8">${meta}`
+    return `<!doctype html><html lang="${escapeHtml(input.lang ?? "fr")}"><head><meta charset="utf-8">${meta}${scheme}`
       + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>`
-      + `<style>${presentation ? PRESENTATION_STYLE : MARKDOWN_STYLE}</style></head>`
-      + `<body>${presentation ? presentationToHtml(input.content) : markdownToHtml(input.content)}${annotate}</body></html>`;
+      + `<style>${themedStyle(presentation ? PRESENTATION_STYLE : MARKDOWN_STYLE, options.theme)}</style></head>`
+      + `<body>${presentation ? presentationToHtml(input.content) : markdownToHtml(input.content)}${annotate}${keep}</body></html>`;
   }
-  const head = `${meta}${FRAME_PRELUDE}`;
+  const head = `${meta}${scheme}${FRAME_PRELUDE}`;
   const content = neuterPageHtml(input.content);
   const doctype = /^\s*<!doctype[^>]*>/i.exec(content);
   const page = doctype
     ? `${doctype[0]}${head}${content.slice(doctype[0].length)}`
     : `${head}${content}`;
-  return `${page}${annotate}`;
+  return `${page}${annotate}${keep}`;
 }
 
 export interface WrapperInput {
@@ -286,6 +315,12 @@ export interface WrapperInput {
   preview?: boolean;
   /** The preview's annotation mode: the frame runs the annotation script. */
   annotate?: boolean;
+  /** The app's own preview drawn inside the app (2026-10-28): no banner. */
+  bare?: boolean;
+  /** The app's theme, for the wrapper and the frame it draws. */
+  theme?: PageTheme;
+  /** The frame runs the place-keeping script (keepScrollSource). */
+  keep?: boolean;
   /** Reader comments (a reading link with them on): the approved ones and
    * the form's action. A plain form, no script; the wrapper's CSP pins
    * form-action to that path. */
@@ -309,15 +344,22 @@ export function wrapperBanner(input: Pick<WrapperInput, "botName" | "personName"
 /** The reader's document: banner, then the page in its sandboxed frame. No
  * script of its own. Pure. */
 export function wrapperDocument(input: WrapperInput): string {
-  const sandbox = pageFrameSandbox(input.kind, { annotate: input.annotate === true });
+  // the app's own scripts (annotation, keeping the place) need scripts on a
+  // Markdown page too: by their nonce only (pageCsp)
+  const sandbox = pageFrameSandbox(input.kind, { annotate: input.annotate === true || input.keep === true });
+  // a page that sets no background of its own shows the theme's, not white
+  const background = input.theme === "dark" ? "#0d1117" : "#fff";
+  const bare = input.bare === true && input.preview === true;
   return `<!doctype html><html lang="${input.lang}"><head><meta charset="utf-8">`
+    + (input.theme ? `<meta name="color-scheme" content="${input.theme}">` : "")
     + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>`
     + "<style>html,body{margin:0;height:100%}body{display:flex;flex-direction:column;font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}"
+    + (input.theme ? `:root{color-scheme:${input.theme}}body{background:${background}}` : "")
     + ".sagax-banner{flex:none;padding:8px 14px;background:#fff4ce;color:#3d2e00;border-bottom:2px solid #d4a600;font-weight:600}"
-    + "iframe{flex:1;border:0;width:100%;background:#fff}"
+    + `iframe{flex:1;border:0;width:100%;background:${input.theme ? "transparent" : "#fff"}${input.theme ? `;color-scheme:${input.theme}` : ""}}`
     + (input.comments ? COMMENTS_STYLE : "")
     + "</style></head><body>"
-    + `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`
+    + (bare ? "" : `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`)
     + `<iframe src="${escapeHtml(input.frameUrl)}" sandbox="${sandbox}" referrerpolicy="no-referrer" allow="" title="${escapeHtml(input.title)}"></iframe>`
     + (input.comments ? commentsSection(input.comments, input.lang, input.personName) : "")
     + "</body></html>";

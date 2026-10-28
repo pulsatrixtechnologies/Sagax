@@ -574,6 +574,69 @@ describe("the app's preview (review of #646, round 2)", () => {
   });
 });
 
+describe("the app's own look of its preview (2026-10-28, the page view)", () => {
+  const alice: PageViewer = { principalId: "pr_alice", computerOwner: false };
+
+  it("inside the app: no banner, the app's theme, and the place kept by a small script that only reports a number", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_alice");
+    const wrapper = await hit(options(pages, alice), `/pages/preview/${page.id}/1?bare=1&theme=dark&y=640`);
+    expect(wrapper.status).toBe(200);
+    expect(wrapper.body).not.toContain("sagax-banner\" role");
+    expect(wrapper.body).toContain('<meta name="color-scheme" content="dark">');
+    expect(wrapper.body).not.toContain("<script");
+    const src = frameSrc(wrapper.body);
+    expect(src).toMatch(/&k=640(&|$)/);
+    expect(src).toMatch(/&c=dark(&|$)/);
+    const frame = await hit(options(pages, alice), src, { "sec-fetch-dest": "iframe" });
+    expect(frame.status).toBe(200);
+    expect(frame.body).toContain(`"sagax-page-scroll"`);
+    expect(frame.body).toContain("var y=640");
+    expect(frame.body).toContain('<meta name="color-scheme" content="dark">');
+    // still no network for the page
+    expect(String(frame.headers["content-security-policy"])).toContain("connect-src 'none'");
+  });
+
+  it("a Markdown page keeps its place by nonce only, and its own style follows the app's theme", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_alice", { content: "# Bilan\n\nTexte" });
+    pages.edit(page.id, { kind: "markdown", content: "# Bilan\n\nTexte", by: "pr_alice" });
+    const wrapper = await hit(options(pages, alice), `/pages/preview/${page.id}/2?bare=1&theme=light&y=10`);
+    expect(wrapper.body).toContain('sandbox="allow-scripts"');
+    const frame = await hit(options(pages, alice), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" });
+    const csp = String(frame.headers["content-security-policy"]);
+    const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
+    expect(nonce).toBeTruthy();
+    expect(frame.body).toContain(`<script nonce="${nonce}">`);
+    expect(frame.body).not.toContain("prefers-color-scheme");
+    // no annotation script unless annotation mode was asked
+    expect(frame.body).not.toContain("sagax-page-annotation");
+  });
+
+  it("a reading link never takes the app's look: the banner stays, no script is added", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", "pr_alice");
+    const wrapper = await hit(options(pages, null), `${path}?bare=1&theme=dark&y=640`);
+    expect(wrapper.status).toBe(200);
+    expect(wrapper.body).toContain("sagax-banner");
+    const src = frameSrc(wrapper.body);
+    expect(src).not.toContain("&k=");
+    const frame = await hit(options(pages, null), `${src}&k=640&c=dark`, { "sec-fetch-dest": "iframe" });
+    expect(frame.body).not.toContain("sagax-page-scroll");
+    expect(frame.body).not.toContain('content="dark"');
+  });
+
+  it("a place that is not a whole number is ignored", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_alice");
+    const wrapper = await hit(options(pages, alice), `/pages/preview/${page.id}/1?y=-5&theme=blue`);
+    const src = frameSrc(wrapper.body);
+    expect(src).not.toContain("&k=");
+    expect(src).not.toContain("&c=");
+    expect(wrapper.body).toContain("sagax-banner");
+  });
+});
+
 describe("the frame checks its reader again (review of #646, round 2)", () => {
   it("on the app's origin: the live session, not only the ticket", async () => {
     const { pages } = store();

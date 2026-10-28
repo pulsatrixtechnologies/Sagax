@@ -120,6 +120,8 @@ import { MessageBoundary, UnknownMessageCard, isUnknownMessageKind } from "./Mes
 import { WidgetMessage } from "./widget/WidgetMessage";
 import { AppMessage } from "./AppMessage";
 import { PagePublishCard } from "./PublishedPages";
+import { PageSurface } from "./PageViewer";
+import { closePagePanel, latestPageVersionIn, openPageFor, useOpenPage } from "@/lib/open-page";
 import { OutboundCard } from "./OutboundCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
@@ -2206,6 +2208,13 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     : null, [canWrite, currentLink, bot.id, bot.threadId, dispatch]);
 
 
+  // A page open over this conversation (src/lib/open-page.ts): the panel
+  // covers the header and the transcript, which stay mounted under it (the
+  // same place on close); the composer floats over the page.
+  const openPageAny = useOpenPage();
+  const openPage = side ? null : openPageFor(openPageAny, bot.id, undefined);
+  const latestPageVersion = useMemo(() => (openPage ? latestPageVersionIn(messages, openPage.pageId) : undefined), [openPage, messages]);
+
   const Root = side ? "section" : "main";
   return (
     <ThreadLinkContext value={threadLink}>
@@ -2452,7 +2461,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       <DevPods bot={bot} messages={messages} composerHeight={composerDock.height + runCardHeight} computerStart={state.computerStarts[bot.id]} dispatch={dispatch} />
 
       {/* Reading scrollback — one tap back to the end, streaming or not */}
-      {!following && (
+      {!following && !openPage && (
         <button
           onClick={jumpToLatest}
           aria-label={t("chat.jumpToLatestAria")}
@@ -2496,7 +2505,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           request can restore the old task without spilling into the newly
           selected one. ArrowUp-to-edit stays gated on busy because editing
           rewinds the thread, which a live turn forbids (the server 409s it). */}
-      <div ref={composerDockRef} data-composer-dock="" className="pointer-events-none absolute inset-x-0 bottom-0 z-[2]">
+      <div ref={composerDockRef} data-composer-dock="" data-over-page={openPage ? "" : undefined} className={cn("pointer-events-none absolute inset-x-0 bottom-0", openPage ? "z-[7]" : "z-[2]")}>
       {confidential && <ConfidentialBanner position="bottom" className="mb-1" />}
       {canWrite === false ? (
         <NewConversationInstead onNew={() => dispatch({ type: "newTask", botId: bot.id })} />
@@ -2524,6 +2533,18 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       </div>
       </div>
 
+      {openPage && (
+        <div data-page-panel={openPage.pageId} className="absolute inset-0 z-[6] flex">
+          <PageSurface
+            key={openPage.pageId}
+            pageId={openPage.pageId}
+            {...(openPage.version !== undefined ? { version: openPage.version } : {})}
+            initialTitle={openPage.title}
+            {...(latestPageVersion !== undefined ? { latestVersion: latestPageVersion } : {})}
+            onClose={() => closePagePanel(openPage.pageId)}
+          />
+        </div>
+      )}
     </Root>
     </ExchangeColumnProvider>
     </ThreadLinkContext>

@@ -1,25 +1,41 @@
-// The full-page viewer of a published page (Grok Bot parity, lot R8, chat
-// rows 31 to 34): « Ouvrir en pleine page », rename, versions, the person's
-// own edit, comments, the annotation mode (« Annoter la page ») that sends
-// numbered notes to the bot, sharing (who can see it, the public link,
-// Unpublish) and Present (a presentation, or any page, full screen).
+// A published page, open (2026-10-28, the reference design's page view):
+// over its conversation as a full panel (ChatView), in its own desktop
+// window, or over Settings. One surface for all three, so they show the same
+// page and offer the same actions:
+//   - top left, a round × that closes it (back to the conversation, at the
+//     same place: the conversation stays mounted under the panel);
+//   - top centre, the title pill: a click turns it into a field (pencil),
+//     Enter renames, Escape cancels;
+//   - top right, « ⋯ » (versions, annotate, present, edit, comments,
+//     decline a proposed version) and Share;
+//   - the page itself, whole and interactive, in the app's theme.
+// Earlier lots (Grok Bot parity R8, chat rows 31 to 34) are all still here:
+// rename, versions, the person's own edit, comments, the annotation mode
+// that sends numbered notes to the bot, sharing and Present.
 //
-// The page is always the server's preview wrapper (banner, no script) and its
-// sandboxed frame (shared/published-pages.ts): never a srcdoc. In annotation
-// mode the frame runs the server's annotation script, which only posts to
-// this window; a message counts only when it comes from that very frame, and
-// its fields are plain text (parseAnnotationMessage). Nothing reaches a bot
-// until the person presses Send.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Highlighter, Loader2, MessageSquare, Pencil, Play, Save, Send, Share2, Trash2, X, XCircle } from "lucide-react";
+// The page is always the server's preview wrapper and its sandboxed frame
+// (shared/published-pages.ts): never a srcdoc. Inside the app the wrapper
+// draws no banner (the app's own frame names the page) and keeps the page's
+// place: its frame reports how far down it is (a number, only from that very
+// frame), and a redraw (the bot's new version) starts there again. In
+// annotation mode the frame runs the server's annotation script, which only
+// posts to this window; a message counts only when it comes from that very
+// frame, and its fields are plain text (parseAnnotationMessage). Nothing
+// reaches a bot until the person presses Send.
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { BarChart3, Check, Ellipsis, Highlighter, History, Loader2, MessageSquare, Pencil, Play, Save, Send, Share, Trash2, X, XCircle } from "lucide-react";
 
+import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { pagePlace, rememberPagePlace } from "@/lib/open-page";
 import { api, useStore } from "@/state/store";
 import {
   annotationPrompt,
   PAGE_KINDS,
   PAGE_LIMITS,
   parseAnnotationMessage,
+  parseScrollMessage,
   type PageAccess,
   type PageAnchor,
   type PageComment,
@@ -29,12 +45,13 @@ import {
 } from "../../shared/published-pages";
 import { AccessPicker, ACCESS_LABEL, ExpirySelect, expiryFromHours, LinkRow, needsLinkConfirm, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
 import { SwitchRow } from "./SettingsPrimitives";
+import { useWidgetTheme } from "./WidgetFrame";
+import { MenuItem, PopoverMenu } from "./bot-settings/FilesSection";
 
 export { needsLinkConfirm, pageErrorText };
 
 /** The viewer keeps at most this many annotations (and sends no more). */
 export const MAX_ANNOTATIONS = PAGE_LIMITS.annotations;
-import { ViewerDialog } from "./ViewerDialog";
 
 export interface Annotation {
   n: number;
@@ -52,10 +69,38 @@ export function acceptAnnotation(list: Annotation[], event: { source: unknown; d
   return [...list, { n, anchor, note: "" }];
 }
 
+/** A scroll report from the preview: kept only when it comes from the frame
+ * inside this viewer's wrapper. Pure. */
+export function acceptScroll(event: { source: unknown; data: unknown }, frame: Window | null): number | null {
+  if (!frame || event.source !== frame) return null;
+  return parseScrollMessage(event.data);
+}
+
 /** Publish a version the person just saved with the page's own access, and
  * its expiry while still ahead. Pure. */
 export function republishBody(page: Pick<PublishedPageSummary, "access" | "expiresAt">, version: number, now = Date.now()) {
   return { version, access: page.access, expiresAt: page.expiresAt !== null && page.expiresAt > now ? page.expiresAt : null };
+}
+
+/** The version a page opens on: the one asked for, else the newest the bot
+ * or the person made (the page as it is now), else none. Pure. */
+export function pageVersionToShow(page: Pick<PublishedPageSummary, "versions" | "currentVersion"> | null, asked?: number | null): number | null {
+  if (!page) return asked ?? null;
+  if (asked && page.versions.some((entry) => entry.n === asked)) return asked;
+  return page.versions.at(-1)?.n ?? page.currentVersion ?? null;
+}
+
+/** A newer version than the one on screen, when the conversation names one
+ * (the bot changed the open page): the page is drawn again with it. Pure. */
+export function newerVersion(shown: number | null, latest: number | undefined): number | null {
+  return latest !== undefined && (shown === null || latest > shown) ? latest : null;
+}
+
+/** The title a rename sends: one line, trimmed; null for nothing to send
+ * (empty, or the same title). Pure. */
+export function renameTitle(draft: string, current: string): string | null {
+  const title = draft.replace(/\s+/g, " ").trim().slice(0, PAGE_LIMITS.title);
+  return title && title !== current ? title : null;
 }
 
 const KIND_LABEL: Record<PageKind, "pages.kind.html" | "pages.kind.markdown" | "pages.kind.presentation"> = {
@@ -64,21 +109,79 @@ const KIND_LABEL: Record<PageKind, "pages.kind.html" | "pages.kind.markdown" | "
   presentation: "pages.kind.presentation",
 };
 
-type Panel = "edit" | "comments" | "share" | "annotate" | null;
+type Panel = "edit" | "comments" | "share" | "annotate" | "versions" | null;
 
 const BUTTON = "inline-flex items-center gap-1.5 rounded-lg border border-hairline/60 px-2.5 py-1 text-[12.5px] text-ink hover:bg-raised disabled:opacity-40";
 const PRIMARY = "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white disabled:opacity-40";
+const ROUND = "flex size-9 shrink-0 items-center justify-center rounded-full border border-hairline/50 bg-raised text-ink shadow-sm hover:bg-raised-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+const PILL = "inline-flex h-9 items-center gap-1.5 rounded-full border border-hairline/50 bg-raised px-3.5 text-[13px] font-medium text-ink shadow-sm hover:bg-raised-hover disabled:opacity-40";
 
 const errorText = pageErrorText;
 
-export function PageViewerDialog({ pageId, version: initialVersion, onClose, returnFocus, onChange }: {
+/** The page's icon: a small coloured chart, the same on the card, the
+ * panel's title pill, the Library and a message about the page. */
+export function PageGlyph({ size = 20, className }: { size?: number; className?: string }) {
+  return (
+    <span aria-hidden="true" data-page-glyph
+      className={cn("inline-flex shrink-0 items-center justify-center rounded-[6px] bg-gradient-to-br from-sky-500 to-indigo-500 text-white", className)}
+      style={{ width: size, height: size }}>
+      <BarChart3 size={Math.round(size * 0.62)} strokeWidth={2.4} />
+    </span>
+  );
+}
+
+/** The title pill: a click turns it into a field; Enter saves, Escape or
+ * leaving it without a change cancels. */
+export function PageTitlePill({ title, busy, onRename }: { title: string; busy?: boolean; onRename(title: string): Promise<boolean> | boolean }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const save = async () => {
+    const next = draft === null ? null : renameTitle(draft, title);
+    if (next === null) return setDraft(null);
+    if (await onRename(next)) setDraft(null);
+  };
+  if (draft === null) {
+    return (
+      <button type="button" data-page-title aria-label={t("pages.rename")} title={t("pages.rename")} onClick={() => setDraft(title)}
+        className="flex h-9 min-w-0 max-w-full items-center gap-2 rounded-full border border-hairline/50 bg-raised px-3 text-[13px] font-medium text-ink shadow-sm hover:bg-raised-hover">
+        <PageGlyph size={18} />
+        <span className="min-w-0 truncate">{title || t("pages.untitled")}</span>
+      </button>
+    );
+  }
+  return (
+    <form data-page-title-edit className="flex h-9 min-w-0 max-w-full items-center gap-2 rounded-full border border-accent/60 bg-raised px-3 shadow-sm"
+      onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <PageGlyph size={18} />
+      <input autoFocus aria-label={t("pages.rename")} value={draft} maxLength={PAGE_LIMITS.title} disabled={busy}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDraft(null); } }}
+        onBlur={() => { if (renameTitle(draft, title) === null) setDraft(null); }}
+        onFocus={(event) => event.currentTarget.select()}
+        className="w-[min(40vw,320px)] min-w-0 bg-transparent text-[13px] font-medium text-ink outline-none" />
+      <Pencil size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+    </form>
+  );
+}
+
+export interface PageSurfaceProps {
   pageId: string;
-  /** The version to show first; else the published one, else the latest. */
+  /** The version to show first; else the newest. */
   version?: number;
+  /** The title the card knew, shown until the page answers. */
+  initialTitle?: string;
+  /** The newest version the conversation names for this page: when the bot
+   * proposes a new one, the page is drawn again with it, at the same place. */
+  latestVersion?: number;
   onClose(): void;
-  returnFocus: HTMLElement | null;
   onChange?(page: PublishedPageSummary): void;
-}) {
+  /** Extra entries of « ⋯ » (Open in a window). */
+  moreItems?(close: () => void): ReactNode;
+  /** Drawn over the page, at the bottom (the conversation's composer). */
+  footer?: ReactNode;
+  className?: string;
+}
+
+export function PageSurface({ pageId, version: initialVersion, initialTitle = "", latestVersion, onClose, onChange, moreItems, footer, className }: PageSurfaceProps) {
   const { dispatch } = useStore();
   const policy = usePagesPolicy();
   const [page, setPage] = useState<PublishedPageSummary | null>(null);
@@ -87,54 +190,70 @@ export function PageViewerDialog({ pageId, version: initialVersion, onClose, ret
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [renaming, setRenaming] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [sent, setSent] = useState(false);
+  const [reloads, setReloads] = useState(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const theme = useWidgetTheme(rootRef).scheme;
 
+  // the caller's handler may change on every render: read it from a ref, so
+  // loading the page never runs again because of it
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   const update = useCallback((next: PublishedPageSummary) => {
     setPage(next);
-    onChange?.(next);
-  }, [onChange]);
+    onChangeRef.current?.(next);
+  }, []);
 
-  useEffect(() => {
+  const load = useCallback((asked?: number | null) => {
     let live = true;
     api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(pageId)}`)
       .then((answer) => {
         if (!live) return;
-        setPage(answer.page);
-        setVersion((current) => current ?? answer.page.currentVersion ?? answer.page.versions.at(-1)?.n ?? null);
+        update(answer.page);
+        setVersion((current) => pageVersionToShow(answer.page, asked ?? current));
       })
       .catch((cause) => { if (live) setError(errorText(cause)); });
     return () => { live = false; };
-  }, [pageId]);
+  }, [pageId, update]);
+  useEffect(() => load(initialVersion ?? null), [load, initialVersion]);
+
+  // the bot changed this page: show its new version, at the same place
+  const newer = newerVersion(version, latestVersion);
+  useEffect(() => {
+    if (newer === null || !page) return;
+    return load(newer);
+  }, [newer, page === null, load]);
 
   useEffect(() => {
     if (version === null) return;
     let live = true;
-    setPreviewPath(null);
     api<{ version: { previewPath: string } }>(`/api/pages/${encodeURIComponent(pageId)}/versions/${version}`)
       .then((answer) => { if (live) setPreviewPath(answer.version.previewPath); })
       .catch((cause) => { if (live) setError(errorText(cause)); });
     return () => { live = false; };
-  }, [pageId, version]);
+  }, [pageId, version, reloads]);
 
   const annotating = panel === "annotate";
+  const innerFrame = () => {
+    // the page's own frame, inside this viewer's wrapper, and nothing else
+    try {
+      return frameRef.current?.contentWindow?.frames[0] ?? null;
+    } catch {
+      return null;
+    }
+  };
   useEffect(() => {
-    if (!annotating) return;
     const listen = (event: MessageEvent) => {
-      // the page's own frame, inside this viewer's wrapper, and nothing else
-      let frame: Window | null = null;
-      try {
-        frame = frameRef.current?.contentWindow?.frames[0] ?? null;
-      } catch {
-        frame = null;
-      }
-      setAnnotations((list) => acceptAnnotation(list, event, frame));
+      const frame = innerFrame();
+      const y = acceptScroll(event, frame);
+      if (y !== null) rememberPagePlace(pageId, y);
+      else if (annotating) setAnnotations((list) => acceptAnnotation(list, event, frame));
     };
     window.addEventListener("message", listen);
     return () => window.removeEventListener("message", listen);
-  }, [annotating]);
+  }, [annotating, pageId]);
 
   const call = async <T,>(path: string, init: RequestInit): Promise<T | null> => {
     setBusy(true);
@@ -149,14 +268,10 @@ export function PageViewerDialog({ pageId, version: initialVersion, onClose, ret
     }
   };
 
-  const rename = async () => {
-    const title = renaming?.trim();
-    if (!title) return setRenaming(null);
+  const rename = async (title: string) => {
     const answer = await call<{ page: PublishedPageSummary }>("", { method: "PATCH", body: JSON.stringify({ title }) });
-    if (answer) {
-      update(answer.page);
-      setRenaming(null);
-    }
+    if (answer) update(answer.page);
+    return Boolean(answer);
   };
 
   const present = () => {
@@ -170,85 +285,164 @@ export function PageViewerDialog({ pageId, version: initialVersion, onClose, ret
     if (next !== "annotate") setAnnotations([]);
   };
 
-  const shown = page?.versions.find((entry) => entry.n === version);
-  const src = previewPath ? previewSrc(previewPath, { annotate: annotating }) : null;
-  const title = page?.title ?? "";
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input,textarea,select,[role=menu],dialog")) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-  const actions = page && (
-    <>
-      {renaming === null ? (
-        <button type="button" className="table-action" aria-label={t("pages.rename")} title={t("pages.rename")} onClick={() => setRenaming(title)}><Pencil size={15} /></button>
-      ) : (
-        <form className="flex items-center gap-1" onSubmit={(event) => { event.preventDefault(); void rename(); }}>
-          <input autoFocus aria-label={t("pages.rename")} value={renaming} maxLength={120} onChange={(event) => setRenaming(event.target.value)}
-            className="w-48 rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]" />
-          <button type="submit" disabled={busy} className={BUTTON}>{t("pages.renameSave")}</button>
-          <button type="button" className="table-action" aria-label={t("pages.cancel")} onClick={() => setRenaming(null)}><X size={14} /></button>
-        </form>
-      )}
-      {page.versions.length > 1 && (
-        <select aria-label={t("pages.versionPick")} value={version ?? ""} onChange={(event) => { setVersion(Number(event.target.value)); setAnnotations([]); }}
-          className="rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]">
-          {page.versions.slice().reverse().map((entry) => (
-            <option key={entry.n} value={entry.n}>
-              {t("pages.versionN", { n: String(entry.n) })}{page.currentVersion === entry.n ? ` · ${t("pages.status.published")}` : ""}
-            </option>
-          ))}
-        </select>
-      )}
-      <button type="button" data-page-annotate aria-pressed={annotating} className={BUTTON} onClick={() => toggle("annotate")}>
-        <Highlighter size={13} />{annotating ? t("pages.annotate.exit") : t("pages.annotate.start")}
-      </button>
-      <button type="button" data-page-present className={BUTTON} onClick={present}><Play size={13} />{t("pages.present")}</button>
-      <button type="button" aria-pressed={panel === "edit"} className={BUTTON} onClick={() => toggle("edit")}><Pencil size={13} />{t("pages.edit")}</button>
-      <button type="button" aria-pressed={panel === "comments"} className={BUTTON} onClick={() => toggle("comments")}>
-        <MessageSquare size={13} />{t("pages.comments.title")}{page.comments ? ` (${page.comments})` : ""}
-      </button>
-      <button type="button" aria-pressed={panel === "share"} className={BUTTON} onClick={() => toggle("share")}><Share2 size={13} />{t("pages.share")}</button>
-    </>
+  const shown = page?.versions.find((entry) => entry.n === version);
+  // the place is read once per drawing: scrolling never reloads the frame
+  const src = useMemo(
+    () => (previewPath ? previewSrc(previewPath, { annotate: annotating, bare: true, theme, y: pagePlace(pageId) }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [previewPath, annotating, theme, pageId, reloads],
   );
+  const title = page?.title ?? initialTitle;
+  const proposed = page && shown && shown.state === "proposed" && page.currentVersion !== shown.n;
 
   return (
-    <ViewerDialog title={title || t("pages.untitled")} onClose={onClose} returnFocus={returnFocus} actions={actions} bodyClassName="flex min-h-0">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {annotating && <p role="status" className="border-b border-hairline/30 bg-accent/10 px-3 py-1.5 text-[12px] text-ink">{t("pages.annotate.hint")}</p>}
-        {error && <p role="alert" className="px-3 py-1.5 text-[12px] text-danger">{error}</p>}
-        {src ? (
-          // a new address on mode change reloads the frame with or without the script
-          <iframe key={src} ref={frameRef} data-page-viewer-frame title={t("pages.previewTitle", { title })} src={src}
-            referrerPolicy="no-referrer" allow="" className="min-h-0 w-full flex-1 border-0 bg-white" />
-        ) : (
-          <div className="flex flex-1 items-center justify-center"><Loader2 size={16} className="animate-spin text-ink-secondary" /></div>
+    <div ref={rootRef} data-page-surface={pageId} className={cn("relative flex h-full min-h-0 w-full min-w-0 flex-col bg-app text-ink", className)}>
+      {/* floats over the page, as the reference design draws it: the page
+          runs to the top edge; only the round buttons and the pill catch
+          the pointer */}
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-[2] flex h-14 items-center gap-2 px-3 [&>*]:pointer-events-auto">
+        <button type="button" data-page-close aria-label={t("pages.close")} title={t("pages.close")} onClick={onClose} className={ROUND}>
+          <X size={17} />
+        </button>
+        <div className="!pointer-events-none absolute inset-x-28 flex justify-center">
+          <div className="pointer-events-auto min-w-0 max-w-full">
+            <PageTitlePill title={title} busy={busy} onRename={rename} />
+          </div>
+        </div>
+        <div className="ms-auto flex items-center gap-2">
+          {page && (
+            <PopoverMenu label={t("pages.more")} menuLabel={t("pages.more")} icon={<Ellipsis size={17} />} buttonClass={ROUND} data-page-more="">
+              {(close) => (
+                <>
+                  {page.versions.length > 1 && <MenuItem icon={<History size={14} />} label={t("pages.versions", { count: String(page.versions.length) })} onClick={() => { close(); toggle("versions"); }} />}
+                  <MenuItem icon={<Highlighter size={14} />} label={annotating ? t("pages.annotate.exit") : t("pages.annotate.start")} onClick={() => { close(); toggle("annotate"); }} />
+                  <MenuItem icon={<Play size={14} />} label={t("pages.present")} onClick={() => { close(); present(); }} />
+                  <MenuItem icon={<Pencil size={14} />} label={t("pages.edit")} onClick={() => { close(); toggle("edit"); }} />
+                  <MenuItem icon={<MessageSquare size={14} />} label={`${t("pages.comments.title")}${page.comments ? ` (${page.comments})` : ""}`} onClick={() => { close(); toggle("comments"); }} />
+                  {proposed && (
+                    <MenuItem icon={<XCircle size={14} />} label={t("pages.decline")} onClick={() => {
+                      close();
+                      void call<{ page: PublishedPageSummary }>("/decline", { method: "POST", body: JSON.stringify({ version: shown.n }) }).then((answer) => { if (answer) update(answer.page); });
+                    }} />
+                  )}
+                  {moreItems?.(close)}
+                </>
+              )}
+            </PopoverMenu>
+          )}
+          <button type="button" data-page-share aria-pressed={panel === "share"} disabled={!page} className={PILL} onClick={() => toggle("share")}>
+            <Share size={14} />{t("pages.share")}
+          </button>
+        </div>
+      </header>
+      <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {(annotating || error) && (
+            <div className="mt-14">
+              {annotating && <p role="status" className="border-y border-hairline/30 bg-accent/10 px-3 py-1.5 text-[12px] text-ink">{t("pages.annotate.hint")}</p>}
+              {error && <p role="alert" className="px-3 py-1.5 text-[12px] text-danger">{error}</p>}
+            </div>
+          )}
+          {src ? (
+            // a new address (mode, theme, a new version) draws the frame again
+            <iframe key={src} ref={frameRef} data-page-viewer-frame title={t("pages.previewTitle", { title })} src={src}
+              referrerPolicy="no-referrer" allow="" className="min-h-0 w-full flex-1 border-0 bg-transparent" style={{ colorScheme: theme }} />
+          ) : (
+            <div className="flex flex-1 items-center justify-center"><Loader2 size={16} className="animate-spin text-ink-secondary" /></div>
+          )}
+          {footer}
+        </div>
+        {page && panel && (
+          <aside data-page-side={panel} className="flex w-[min(380px,40vw)] shrink-0 flex-col gap-3 overflow-y-auto border-l border-hairline/40 bg-panel p-3 pt-16 text-[12.5px]">
+            {panel === "annotate" && (
+              <AnnotationPanel annotations={annotations} setAnnotations={setAnnotations} sent={sent} busy={busy}
+                message={annotationPrompt({ title, version: version ?? 0, items: annotations, lang: document.documentElement.lang.startsWith("en") ? "en" : "fr" })}
+                onSend={() => {
+                  const text = annotationPrompt({ title, version: version ?? 0, items: annotations, lang: document.documentElement.lang.startsWith("en") ? "en" : "fr" });
+                  dispatch({ type: "send", botId: page.botId, threadId: page.threadId, text });
+                  setSent(true);
+                  setAnnotations([]);
+                }}
+                onComment={async (item) => {
+                  const answer = await call<{ comment: PageComment }>("/comments", { method: "POST", body: JSON.stringify({ text: item.note || item.anchor.text || item.anchor.tag, version, anchor: item.anchor }) });
+                  if (answer) update({ ...page, comments: (page.comments ?? 0) + 1 });
+                  return Boolean(answer);
+                }} />
+            )}
+            {panel === "versions" && (
+              <VersionsPanel page={page} version={version} onPick={(n) => { setVersion(n); setAnnotations([]); }} />
+            )}
+            {panel === "edit" && shown && (
+              <PageEditor pageId={pageId} version={shown.n} page={page} busy={busy} call={call}
+                onSaved={(next, n) => { update(next); setVersion(n); setReloads((count) => count + 1); }} />
+            )}
+            {panel === "comments" && <CommentsPanel pageId={pageId} version={version} call={call} onCount={(count) => update({ ...page, comments: count })} />}
+            {panel === "share" && version !== null && (
+              <SharePanel page={page} version={version} busy={busy} linkOff={!policy.linkSharing} call={call} onChange={update} />
+            )}
+          </aside>
         )}
       </div>
-      {page && panel && (
-        <aside className="flex w-[min(380px,40vw)] shrink-0 flex-col gap-3 overflow-y-auto border-l border-hairline/40 p-3 text-[12.5px]">
-          {panel === "annotate" && (
-            <AnnotationPanel annotations={annotations} setAnnotations={setAnnotations} sent={sent} busy={busy}
-              message={annotationPrompt({ title, version: version ?? 0, items: annotations, lang: document.documentElement.lang.startsWith("en") ? "en" : "fr" })}
-              onSend={() => {
-                const text = annotationPrompt({ title, version: version ?? 0, items: annotations, lang: document.documentElement.lang.startsWith("en") ? "en" : "fr" });
-                dispatch({ type: "send", botId: page.botId, threadId: page.threadId, text });
-                setSent(true);
-                setAnnotations([]);
-              }}
-              onComment={async (item) => {
-                const answer = await call<{ comment: PageComment }>("/comments", { method: "POST", body: JSON.stringify({ text: item.note || item.anchor.text || item.anchor.tag, version, anchor: item.anchor }) });
-                if (answer) update({ ...page, comments: (page.comments ?? 0) + 1 });
-                return Boolean(answer);
-              }} />
-          )}
-          {panel === "edit" && shown && (
-            <PageEditor pageId={pageId} version={shown.n} page={page} busy={busy} call={call}
-              onSaved={(next, n) => { update(next); setVersion(n); }} />
-          )}
-          {panel === "comments" && <CommentsPanel pageId={pageId} version={version} call={call} onCount={(count) => update({ ...page, comments: count })} />}
-          {panel === "share" && version !== null && (
-            <SharePanel page={page} version={version} busy={busy} linkOff={!policy.linkSharing} call={call} onChange={update} />
-          )}
-        </aside>
-      )}
-    </ViewerDialog>
+    </div>
+  );
+}
+
+function VersionsPanel({ page, version, onPick }: { page: PublishedPageSummary; version: number | null; onPick(n: number): void }) {
+  return (
+    <section aria-label={t("pages.versionPick")} className="flex flex-col gap-1">
+      <h3 className="mb-1 text-[13px] font-medium text-ink">{t("pages.versions", { count: String(page.versions.length) })}</h3>
+      {page.versions.slice().reverse().map((entry) => (
+        <button key={entry.n} type="button" aria-pressed={entry.n === version} onClick={() => onPick(entry.n)}
+          className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover", entry.n === version && "bg-raised")}>
+          <Check size={13} aria-hidden="true" className={entry.n === version ? "text-ink" : "invisible"} />
+          <span className="flex-1 text-ink">{t("pages.versionN", { n: String(entry.n) })}</span>
+          <span className="text-ink-tertiary">{when(entry.createdAt)}</span>
+          {page.currentVersion === entry.n && <span className="text-success">{t("pages.status.published")}</span>}
+          {entry.state === "declined" && <span className="text-ink-tertiary">{t("pages.status.declined")}</span>}
+        </button>
+      ))}
+    </section>
+  );
+}
+
+/** The page over anything else (Settings, the web app's Library): the same
+ * surface in a native modal dialog, the whole window. */
+export function PageViewerDialog({ pageId, version, onClose, returnFocus, onChange }: {
+  pageId: string;
+  version?: number;
+  onClose(): void;
+  returnFocus: HTMLElement | null;
+  onChange?(page: PublishedPageSummary): void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (typeof dialog.showModal === "function" && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog.open && typeof dialog.close === "function") dialog.close();
+      if (returnFocus?.isConnected) returnFocus.focus();
+    };
+  }, [returnFocus]);
+  return createPortal(
+    <dialog ref={ref} data-page-dialog={pageId} aria-label={t("pages.openFull")}
+      onCancel={(event) => { event.preventDefault(); onClose(); }}
+      onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}
+      className="m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden bg-app p-0 text-ink backdrop:bg-black/60">
+      <PageSurface pageId={pageId} {...(version !== undefined ? { version } : {})} onClose={onClose} {...(onChange ? { onChange } : {})} />
+    </dialog>,
+    document.body,
   );
 }
 

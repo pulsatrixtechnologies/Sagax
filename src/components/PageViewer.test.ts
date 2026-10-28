@@ -8,7 +8,7 @@ import { annotationPrompt, parseAnnotationMessage, PAGE_ANNOTATION_MESSAGE } fro
 import { previewSrc } from "./page-controls";
 import { ApiError } from "@/state/store";
 import { t } from "@/lib/i18n";
-import { acceptAnnotation, needsLinkConfirm, pageErrorText, republishBody, MAX_ANNOTATIONS } from "./PageViewer";
+import { acceptAnnotation, acceptScroll, needsLinkConfirm, newerVersion, pageErrorText, pageVersionToShow, renameTitle, republishBody, MAX_ANNOTATIONS } from "./PageViewer";
 
 const message = (extra: Record<string, unknown> = {}) => ({ type: PAGE_ANNOTATION_MESSAGE, v: 1, n: 1, tag: "H1", text: " Rapport \n mensuel ", path: "body > h1", ...extra });
 
@@ -83,5 +83,36 @@ describe("review of #952", () => {
   it("a refusal because public links are off proposes My organization", () => {
     expect(pageErrorText(new ApiError("x", 403, { code: "link_sharing_off" }))).toBe(t("pages.linkOffError"));
     expect(pageErrorText(new Error("autre"))).toBe("autre");
+  });
+});
+
+describe("the open page's pure rules (2026-10-28)", () => {
+  it("frames the preview with the app's own look only", () => {
+    expect(previewSrc("/pages/preview/abcdefgh12345678/2", { bare: true, theme: "dark", y: 40 })).toBe("/pages/preview/abcdefgh12345678/2?bare=1&theme=dark&y=40");
+    expect(previewSrc("/pages/preview/abcdefgh12345678/2", { y: -1 })).toBe("/pages/preview/abcdefgh12345678/2");
+  });
+
+  it("takes a scroll report only from the page's own frame, as a whole number", () => {
+    const frame = {} as Window;
+    expect(acceptScroll({ source: frame, data: { type: "sagax-page-scroll", v: 1, y: 120 } }, frame)).toBe(120);
+    expect(acceptScroll({ source: {} as Window, data: { type: "sagax-page-scroll", v: 1, y: 120 } }, frame)).toBeNull();
+    expect(acceptScroll({ source: frame, data: { type: "sagax-page-scroll", v: 1, y: "120" } }, frame)).toBeNull();
+    expect(acceptScroll({ source: frame, data: { type: "sagax-page-scroll", v: 1, y: 1.5 } }, frame)).toBeNull();
+  });
+
+  it("renames to one trimmed line, and sends nothing for an empty or unchanged title", () => {
+    expect(renameTitle("  Bilan \n du mois ", "Bilan")).toBe("Bilan du mois");
+    expect(renameTitle("   ", "Bilan")).toBeNull();
+    expect(renameTitle("Bilan", "Bilan")).toBeNull();
+  });
+
+  it("opens on the newest version unless one is asked, and follows a newer one", () => {
+    const page = { currentVersion: 1, versions: [{ n: 1 }, { n: 2 }] } as never;
+    expect(pageVersionToShow(page)).toBe(2);
+    expect(pageVersionToShow(page, 1)).toBe(1);
+    expect(pageVersionToShow(page, 7)).toBe(2);
+    expect(newerVersion(2, 3)).toBe(3);
+    expect(newerVersion(3, 3)).toBeNull();
+    expect(newerVersion(3, undefined)).toBeNull();
   });
 });
