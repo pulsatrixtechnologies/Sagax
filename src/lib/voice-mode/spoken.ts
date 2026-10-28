@@ -59,3 +59,19 @@ export function speakableSentence(piece: string): string {
   text = text.replace(/\s+/g, " ").replace(/\s+([.,!?;:])/g, "$1").replace(/^[\s,;:]+/, "").trim();
   return /[\p{L}\p{N}]/u.test(text) ? text : "";
 }
+
+/** A bot's answer as the call's transcript shows it: the spoken part only
+ * (the written follow-up stays in the chat), without markdown, one
+ * sentence per former line or bullet, never `**bold**` or `- ` shown raw.
+ * `limit` (the answer budget's cut, answer-budget.ts) keeps what was said;
+ * a cut answer ends with an ellipsis, the rest being in the chat. */
+export function transcriptText(text: string, cut?: { text: string; cut: string | null }): string {
+  const source = cut ? cut.text : spokenPart(text);
+  const lines = source
+    .split(/\n+/)
+    .map((line) => speakableSentence(line))
+    .filter(Boolean)
+    .map((line) => (/[.!?…:;,]$/.test(line) ? line : `${line}.`));
+  const joined = lines.join(" ");
+  return cut?.cut === "length" && joined ? `${joined.replace(/[.!?…:;,]$/, "")}…` : joined;
+}

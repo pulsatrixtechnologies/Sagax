@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { openSpeechStream, openTranscriptionStream, SPEECH_PING_MS, type HeaderWebSocket } from "./grok.ts";
+import { grokVoiceFailure, handshakeStatus, openSpeechStream, openTranscriptionStream, SPEECH_PING_MS, type HeaderWebSocket } from "./grok.ts";
 
 class FakeSocket {
   static last: FakeSocket | null = null;
@@ -86,6 +86,43 @@ describe("openTranscriptionStream", () => {
     stream.close();
     await vi.advanceTimersByTimeAsync(SPEECH_PING_MS);
     expect(socket.pings).toBe(1);
+  });
+});
+
+/** xAI refuses the socket's handshake with this status (`ws` reports it as
+ * an error event "Unexpected server response: <status>"), or the network
+ * fails (status null). */
+function refusingSocket(status: number | null) {
+  return class {
+    readyState = 0;
+    binaryType = "arraybuffer";
+    addEventListener(type: string, cb: (event: unknown) => void) {
+      if (type !== "error") return;
+      queueMicrotask(() => cb({ type: "error", message: status === null ? "getaddrinfo ENOTFOUND api.x.ai" : `Unexpected server response: ${status}` }));
+    }
+    send() {}
+    close() {}
+  } as unknown as HeaderWebSocket;
+}
+
+describe("a refused xAI socket says why", () => {
+  it("reads the handshake status, not a vague network error", async () => {
+    expect(handshakeStatus({ message: "Unexpected server response: 401" })).toBe(401);
+    expect(handshakeStatus({ error: { message: "Unexpected server response: 429" } })).toBe(429);
+    expect(handshakeStatus({ message: "read ECONNRESET" })).toBeNull();
+    const cases: Array<[number | null, string]> = [[401, "key"], [403, "key"], [402, "quota"], [429, "busy"], [503, "down"], [null, "down"]];
+    for (const [status, kind] of cases) {
+      const errors: string[] = [];
+      openTranscriptionStream("fixture-voice-key", {}, { onTranscript() {}, onError: (message) => errors.push(message), onClose() {} }, refusingSocket(status));
+      openSpeechStream("fixture-voice-key", {}, { onAudio() {}, onDone() {}, onCleared() {}, onError: (message) => errors.push(message), onClose() {} }, refusingSocket(status));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(errors).toHaveLength(2);
+      for (const message of errors) {
+        expect(grokVoiceFailure(message)).toBe(kind);
+        expect(message).not.toContain("fixture-voice-key");
+      }
+    }
   });
 });
 

@@ -99,6 +99,8 @@ export interface SpeechSessionDeps {
 export interface SpeechSession {
   /** true once xAI's socket first opened, false when it did not */
   ready: Promise<boolean>;
+  /** xAI's last error on this session (this side's own words, never a key) */
+  readonly lastError: string | undefined;
   /** a text frame from the page */
   message(text: string): void;
   /** the page left (or the route gives up): close everything */
@@ -137,6 +139,7 @@ export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
   let upstream: SpeechStream | null = null;
   let open = false;
   let failures = 0;
+  let lastError: string | undefined;
   let openedAt = 0;
   let reopens: number[] = [];
   let closed = false;
@@ -337,9 +340,12 @@ export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
         if (!mine()) return;
         finish();
       },
-      onError: () => {
+      onError: (message) => {
         // xAI may close after an error, or not: either way this socket is done
-        if (mine()) socket?.close();
+        if (!mine()) return;
+        lastError = message;
+        deps.log(`[voice-speech] xAI streaming speech error: ${message}`);
+        socket?.close();
       },
       onClose: () => {
         if (socket) lost(socket);
@@ -404,6 +410,9 @@ export function createSpeechSession(deps: SpeechSessionDeps): SpeechSession {
 
   return {
     ready,
+    get lastError() {
+      return lastError;
+    },
     message(text) {
       if (closed) return;
       let parsed: unknown;

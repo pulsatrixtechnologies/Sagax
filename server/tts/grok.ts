@@ -14,6 +14,37 @@ const voicesSchema = z.object({
 
 const sttSchema = z.object({ text: z.string(), language: z.string().optional() });
 
+/** What kind of failure a Grok voice message is, for the page: `key`
+ * (rejected key or permissions), `quota` (no credits), `busy` (rate
+ * limited), `down` (xAI unreachable or failing), `voice` (unknown voice),
+ * `other`. The messages below are this file's own, never xAI's words. */
+export type GrokVoiceFailure = "key" | "quota" | "busy" | "down" | "voice" | "other";
+
+export function grokVoiceFailure(message: string): GrokVoiceFailure {
+  if (/rejected the key/.test(message)) return "key";
+  if (/needs credits/.test(message)) return "quota";
+  if (/rate-limiting/.test(message)) return "busy";
+  if (/could not find that voice/.test(message)) return "voice";
+  if (/Could not reach Grok voice|timed out|Grok voice failed \(HTTP 5\d\d\)|not reachable/.test(message)) return "down";
+  return "other";
+}
+
+/** The HTTP status `ws` reports when xAI refuses a socket's handshake
+ * ("Unexpected server response: 401"), or null for a network error. */
+export function handshakeStatus(event: unknown): number | null {
+  const record = event as { message?: unknown; error?: { message?: unknown } } | null;
+  const text = [record?.message, record?.error?.message].find((value): value is string => typeof value === "string") ?? "";
+  const match = /Unexpected server response: (\d{3})/.exec(text);
+  return match ? Number(match[1]) : null;
+}
+
+/** A socket error as a Grok voice message: a refused handshake says why
+ * (key, credits, rate limit), anything else is the network. */
+function socketFailure(event: unknown): string {
+  const status = handshakeStatus(event);
+  return status === null ? "Could not reach Grok voice. Check your connection." : refusal(status);
+}
+
 function refusal(status: number): string {
   if (status === 401 || status === 403) return "xAI rejected the key or its TTS permissions. Check the xAI key in Settings.";
   if (status === 402) return "The xAI account needs credits to generate speech.";
@@ -304,7 +335,7 @@ export function openTranscriptionStream(
       fail("Grok speech to text reported an error. Try again.");
     }
   });
-  socket.addEventListener("error", () => fail("Could not reach Grok voice. Check your connection."));
+  socket.addEventListener("error", (event) => fail(socketFailure(event)));
   socket.addEventListener("close", () => {
     stopPing();
     if (closed) return;
@@ -438,9 +469,9 @@ export function openSpeechStream(
     // xAI's message may echo request details; never pass it on verbatim
     else if (frame.type === "error") handlers.onError("Grok text to speech reported an error.");
   });
-  socket.addEventListener("error", () => {
+  socket.addEventListener("error", (event) => {
     if (closed) return;
-    handlers.onError("Could not reach Grok voice. Check your connection.");
+    handlers.onError(socketFailure(event));
     end();
   });
   socket.addEventListener("close", end);

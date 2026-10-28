@@ -3,13 +3,17 @@
 // ends, the same endpointing as the desktop; this file only turns that turn's
 // frames into words, with partials as they come.
 //
+//   Voice mode available (the person's xAI key, else the organization's):
+//     the turn goes to the server's xAI speech to text (POST
+//     /voice/transcribe), the same provider as the desktop. Apple's
+//     recognizers below are only the fallback when no voice provider is
+//     set up (a group call, the demo, a server without voice mode).
 //   iOS 26 and later: SpeechAnalyzer + SpeechTranscriber, on device, when the
 //     language's model is installed (it is downloaded in the background the
 //     first time, and the call uses the older recognizer meanwhile).
 //   Otherwise: SFSpeechRecognizer, on device whenever the language allows.
 //   No recognizer at all, with voice mode available: the turn is uploaded
-//     whole to the server's xAI speech to text (POST /voice/transcribe), the
-//     desktop's own fallback.
+//     whole to the server's xAI speech to text (POST /voice/transcribe).
 //
 // Vocabulary: the call's start brings back the server's keyterms (the bot's
 // name, the person's, the thread's proper nouns, the organization's terms).
@@ -57,8 +61,13 @@ final class CallRecognizer: CallTranscribing {
     /// Pick the best recognizer for these languages. False: nothing can hear.
     /// `onDeviceOnly` (the demo): only a recognizer that runs on this phone,
     /// and no model download, so the call never reaches a network.
-    func prepare(locales: [Locale], upload: (([Float]) async throws -> String)?, onDeviceOnly: Bool = false) async -> Bool {
+    func prepare(locales: [Locale], upload: (([Float]) async throws -> String)?, onDeviceOnly: Bool = false, preferServer: Bool = false) async -> Bool {
         self.upload = onDeviceOnly ? nil : upload
+        // xAI through the server: the person's provider, never Apple's
+        if preferServer, self.upload != nil {
+            engine = .server
+            return true
+        }
         let authorized = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
         }

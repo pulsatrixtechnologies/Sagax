@@ -112,3 +112,26 @@ extension SpokenText {
         return (String(spoken), nil)
     }
 }
+
+extension SpokenText {
+    /// A bot's answer as the call's transcript shows it (spoken.ts
+    /// transcriptText): the part the call says, no markdown, one sentence
+    /// per former line or bullet; an answer cut at the sentence cap ends
+    /// with an ellipsis, the rest being in the chat.
+    public static func transcriptText(_ text: String) -> String {
+        let said = spokenAnswer(text)
+        let lines = said.text
+            .split(whereSeparator: \.isNewline)
+            .map { speakableSentence(String($0)) }
+            .filter { !$0.isEmpty }
+            .map { line -> String in
+                guard let last = line.last, ".!?…:;,".contains(last) else { return line + "." }
+                return line
+            }
+        let joined = lines.joined(separator: " ")
+        guard said.cut == .length, !joined.isEmpty else { return joined }
+        var trimmed = joined
+        if let last = trimmed.last, ".!?…:;,".contains(last) { trimmed.removeLast() }
+        return trimmed + "…"
+    }
+}

@@ -896,9 +896,43 @@ final class VoiceModeWireTests: XCTestCase {
     func testTheVoiceIsTheOneTheDesktopWouldUse() throws {
         let xai = VoiceModeStatus(available: true)
         let eleven = try JSONDecoder().decode(ConfigStatus.self, from: Data(#"{"tts":{"configured":true,"provider":"elevenlabs","voice":"w"}}"#.utf8))
-        XCTAssertEqual(CallVoiceSource.route(voiceMode: xai, config: eleven, agentVoice: "v1", phoneKey: false), [.xai, .server(voiceId: "v1"), .device])
-        XCTAssertEqual(CallVoiceSource.route(voiceMode: VoiceModeStatus(available: false), config: eleven, agentVoice: nil, phoneKey: true), [.server(voiceId: nil), .phoneElevenLabs(voiceId: nil), .device])
+        // a voice provider set up: never Apple's voice in silence after it
+        XCTAssertEqual(CallVoiceSource.route(voiceMode: xai, config: eleven, agentVoice: "v1", phoneKey: false), [.xai, .server(voiceId: "v1")])
+        XCTAssertEqual(CallVoiceSource.route(voiceMode: xai, config: nil, agentVoice: nil, phoneKey: false), [.xai])
+        XCTAssertEqual(CallVoiceSource.route(voiceMode: VoiceModeStatus(available: false), config: eleven, agentVoice: nil, phoneKey: true), [.server(voiceId: nil), .phoneElevenLabs(voiceId: nil)])
+        // none set up: Apple, the explicit fallback
         XCTAssertEqual(CallVoiceSource.route(voiceMode: nil, config: nil, agentVoice: "v", phoneKey: false), [.device])
+        XCTAssertEqual(CallVoiceSource.route(voiceMode: VoiceModeStatus(available: false), config: nil, agentVoice: nil, phoneKey: false), [.device])
+    }
+
+    func testACallUsesXaiWithThePersonsKeyAndAppleOnlyWithoutAProvider() {
+        // the person's own xAI key (or the organization's): xAI hears and speaks, on the server
+        let own = CallProvider.choose(voiceMode: VoiceModeStatus(available: true, organization: true, via: "speaker-key"), room: false, demo: false)
+        XCTAssertEqual(own, .xai(via: "speaker-key"))
+        XCTAssertTrue(own.recognizesOnServer)
+        XCTAssertEqual(CallProvider.choose(voiceMode: VoiceModeStatus(available: true, via: "org-key"), room: false, demo: false), .xai(via: "org-key"))
+        // no provider for this person, a group call, the demo, or no answer: Apple on the phone
+        XCTAssertEqual(CallProvider.choose(voiceMode: VoiceModeStatus(available: false), room: false, demo: false), .apple)
+        XCTAssertEqual(CallProvider.choose(voiceMode: nil, room: false, demo: false), .apple)
+        XCTAssertEqual(CallProvider.choose(voiceMode: VoiceModeStatus(available: true), room: true, demo: false), .apple)
+        XCTAssertEqual(CallProvider.choose(voiceMode: VoiceModeStatus(available: true), room: false, demo: true), .apple)
+        XCTAssertFalse(CallProvider.apple.recognizesOnServer)
+    }
+
+    func testABusyOrFailingVoiceIsTriedAgainButARefusedKeyIsNot() {
+        XCTAssertTrue(transientVoiceFailure(APIError.status(code: 502, message: "xAI is rate-limiting speech. Wait a moment and try again.")))
+        XCTAssertTrue(transientVoiceFailure(APIError.status(code: 429, message: nil)))
+        XCTAssertTrue(transientVoiceFailure(APIError.transport("offline")))
+        XCTAssertFalse(transientVoiceFailure(APIError.status(code: 403, message: "xAI rejected the key or its TTS permissions. Check the xAI key in Settings.")))
+        XCTAssertFalse(transientVoiceFailure(CancellationError()))
+    }
+
+    func testTheCallTranscriptShowsSpokenTextNotMarkdown() {
+        let answer = "**DKIM 1024 bits** est faible.\n- SPF : ok\n- DMARC : `p=none`"
+        let shown = SpokenText.transcriptText(answer)
+        XCTAssertFalse(shown.contains("**"))
+        XCTAssertFalse(shown.contains("- "))
+        XCTAssertTrue(shown.hasPrefix("DKIM 1024 bits est faible."))
     }
 
     func testACutTurnCarriesItsUtteranceAndWhatWasHeard() {

@@ -34,6 +34,7 @@ export function mascotCallSnapshot(live: LiveCallData, panel: MascotCallPanel, s
     line,
     transcript: live.transcript.map((entry) => ({ id: entry.id, who: entry.who, text: entry.text, ...(entry.interrupted ? { interrupted: true } : {}) })),
     note: live.note,
+    ...(live.noteRetry === false ? { noteRetry: false } : {}),
     notice: live.notice,
     settings,
     callSettings,

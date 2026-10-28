@@ -15485,7 +15485,13 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "voiceMode.speechFailed": "8c444ab54aab38450ffa354e6bd16031a1a68e4acec4f685c48e97a248c35114",
+      "voiceMode.provider.key": "55045c79bb2ae22ca9ecbeb766cca1772fcd8ed8dc05866b2e9ed52611e19356",
+      "voiceMode.provider.quota": "ec2a6944109b61fa4eb6d091be07c7b964bdab204e2283140cf4669b6426d64d",
+      "voiceMode.provider.busy": "9a5d3db591c83a0ec2cb8d10553db5b14a6a48b5e83273b32ecdb353b271f474",
+      "voiceMode.provider.down": "08d48ec174798a7cf1834528a0a348e2ebd162ede940919f3320a4e0c974356c",
+      "voiceMode.provider.voice": "d5e98a87a227afe88bc17e27df2b6307748534ff93107412ba05017a80a6957d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

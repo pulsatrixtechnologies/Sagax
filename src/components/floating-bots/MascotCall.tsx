@@ -210,7 +210,7 @@ export function MascotCallCardView({ call, name, card, onEvent, hover, style }: 
         {alert && (
           <div className={cn("my-1 flex items-center justify-between gap-2 rounded-xl px-3 py-1.5 text-[12.5px]", call.note ? "bg-warning/10 text-warning" : "bg-raised/60 text-ink-secondary")} role={call.note ? "alert" : "status"}>
             <span>{call.note ?? call.notice}</span>
-            {call.note && (
+            {call.note && call.noteRetry !== false && (
               <button type="button" onClick={() => act(onEvent, "retry")} className="shrink-0 rounded-full border border-warning/40 px-2.5 py-0.5 text-[12px] hover:bg-warning/10">
                 {t("voiceMode.retry")}
               </button>

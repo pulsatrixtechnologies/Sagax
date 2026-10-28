@@ -18,6 +18,7 @@ import { useStore, useStreaming, visibleMessages, type Bot } from "@/state/store
 import { currentCall, endCall } from "@/lib/call";
 import { useVoiceCallMark } from "@/lib/voice-mode/call-mark";
 import { spokenAnswer } from "@/lib/voice-mode/answer-budget";
+import { transcriptText } from "@/lib/voice-mode/spoken";
 import { spokenDecision } from "@/lib/voice-mode/answers";
 import { callTimers } from "@/lib/voice-mode/call-alive";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
@@ -41,7 +42,8 @@ import { noteVoiceCallEnded, noteVoiceCallRunning } from "@/lib/voice-call-clock
 import { callBarLines } from "@/lib/voice-call-transcript";
 import { activeLocale, t, tIn } from "@/lib/i18n";
 import { CallProgress, progressLocale, progressText, turnTools } from "@/lib/voice-mode/progress";
-import { CallFailure, callFailureKey } from "@/lib/voice-mode/failure";
+import { CallFailure, callFailureKey, voiceErrorNote } from "@/lib/voice-mode/failure";
+import { voiceFailureKind } from "@/lib/voice-mode/api";
 import { looksFrench } from "@/lib/voice-mode/turns";
 import { announceTopic, callHasBackgroundWork, howToSpeakTopicResult, sourceUserId, topicLabel } from "@/lib/voice-mode/voice-topics";
 import { nextSpeakSlot, type SpeakItem, type SpeakPriority } from "@/lib/voice-mode/voice-speak-queue";
@@ -85,6 +87,10 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   const [heard, setHeard] = useState("");
   const [caption, setCaption] = useState("");
   const [note, setNote] = useState<string | null>(null);
+  /** the note's "Try again" opens the microphone again: only for its errors */
+  const [noteRetry, setNoteRetry] = useState(false);
+  /** the note is about the voice or the speech to text: gone once the voice is heard */
+  const noteClearsOnVoice = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<CallMetrics>({});
   const [interrupted, setInterrupted] = useState<Set<string>>(() => new Set());
@@ -198,12 +204,24 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
     const offs = [
       live.on("state", (next) => setState(next)),
       live.on("partial", (text) => setHeard(text)),
-      live.on("caption", (text) => setCaption(text)),
+      live.on("caption", (text) => {
+        setCaption(text);
+        // the voice is heard again: a voice failure is over
+        if (noteClearsOnVoice.current) {
+          noteClearsOnVoice.current = false;
+          setNote(null);
+        }
+      }),
       live.on("rejected", (reason) => {
         if (reason === "other-voice") setNotice(t("voiceMode.otherVoice"));
       }),
-      live.on("error", (reason) => {
-        setNote(reason === "mic-denied" ? t("voiceMode.micDenied") : reason === "mic-unavailable" ? t("voiceMode.micUnavailable") : t("voiceMode.transcribeFailed"));
+      live.on("error", (reason, cause) => {
+        // what failed, said plainly: a rejected key, no credits, xAI busy
+        // or down, never a vague "didn't come through" (failure.ts)
+        const shown = voiceErrorNote(reason, voiceFailureKind(cause));
+        noteClearsOnVoice.current = shown.clearsOnVoice;
+        setNoteRetry(shown.retry);
+        setNote(t(shown.key));
         // words that could not be heard: said aloud too, never a silent drop
         if (reason === "transcribe-failed") void live.say(t("voiceMode.sendFailed"));
       }),
@@ -535,7 +553,9 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
     () => lines.map((m) => ({
       id: m.id,
       who: m.role === "user" ? ("you" as const) : ("bot" as const),
-      text: m.text!.trim(),
+      // the bot's words as they are said: no raw markdown, only the part
+      // the call speaks (spoken.ts); the full answer stays in the chat
+      text: m.role === "user" ? m.text!.trim() : transcriptText(m.text!, spokenAnswer(m.text!)) || m.text!.trim(),
       interrupted: interrupted.has(m.id),
       // the cut answer's words the person never heard, marked
       ...(unheard.has(m.id) ? { unheard: unheard.get(m.id) } : {}),
@@ -554,6 +574,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
             heard,
             caption,
             note,
+            noteRetry,
             notice,
             transcript,
             metrics,
@@ -563,7 +584,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
             },
           }
         : null,
-    [bot.id, call, state, startedAt, heard, caption, note, notice, transcript, metrics],
+    [bot.id, call, state, startedAt, heard, caption, note, noteRetry, notice, transcript, metrics],
   );
   useEffect(() => {
     noteVoiceCallRunning({ botId: bot.id, callId, startedAt });
@@ -628,6 +649,7 @@ export function LiveCall({ bot }: { bot: Bot }) {
       heard={data.heard}
       caption={data.caption}
       note={data.note}
+      noteRetry={data.noteRetry}
       notice={data.notice}
       refusal={refusal}
       transcript={data.transcript}

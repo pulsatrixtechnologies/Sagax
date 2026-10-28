@@ -62,6 +62,8 @@ export interface ListenSessionDeps {
 export interface ListenSession {
   /** true once xAI's socket first opened, false when it did not */
   ready: Promise<boolean>;
+  /** xAI's last error on this session (scrubbed, never a key) */
+  readonly lastError: string | undefined;
   /** PCM from the page */
   audio(pcm: Uint8Array): void;
   /** the page ended a turn */
@@ -85,6 +87,7 @@ export function createListenSession(deps: ListenSessionDeps): ListenSession {
   let held: Array<Uint8Array | "finalize"> = [];
   let heldBytes = 0;
   let failures = 0;
+  let lastError: string | undefined;
   let openedAt = 0;
   let reopens: number[] = [];
   let lastActivity = now();
@@ -121,7 +124,8 @@ export function createListenSession(deps: ListenSessionDeps): ListenSession {
       onError: (message) => {
         if (upstream !== mine || closed) return;
         // a drop is reopened; the page hears about it only if that fails
-        deps.log(`[voice-listen] xAI speech to text error: ${deps.scrub ? deps.scrub(message) : message}`);
+        lastError = deps.scrub ? deps.scrub(message) : message;
+        deps.log(`[voice-listen] xAI speech to text error: ${lastError}`);
       },
       onClose: () => {
         deps.onUpstreamClosed?.();
@@ -207,6 +211,9 @@ export function createListenSession(deps: ListenSessionDeps): ListenSession {
 
   return {
     ready,
+    get lastError() {
+      return lastError;
+    },
     audio(pcm) {
       if (closed) return;
       lastActivity = now();

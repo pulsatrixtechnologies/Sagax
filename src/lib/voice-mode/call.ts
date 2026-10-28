@@ -157,7 +157,9 @@ export interface VoiceCallEvents {
   rejected(reason: "other-voice" | "empty"): void;
   /** the sentence now audible */
   caption(text: string): void;
-  error(reason: "mic-denied" | "mic-unavailable" | "speech-failed" | "transcribe-failed"): void;
+  /** `cause`: the request's error for speech and transcription (its kind
+   * says what to tell the person: voiceFailureKind in api.ts) */
+  error(reason: "mic-denied" | "mic-unavailable" | "speech-failed" | "transcribe-failed", cause?: unknown): void;
   metrics(turn: TurnMetrics | null, bargeIn: BargeInMetrics | null): void;
 }
 
@@ -364,7 +366,7 @@ export class VoiceCall {
         this.speechWaiters = [];
         for (const resolve of waiters) resolve(true);
       },
-      onError: () => this.emit("error", "speech-failed"),
+      onError: (error) => this.emit("error", "speech-failed", error),
     };
     this.transcriber.onPartial((text) => {
       // A probe may have punctuated a sentence the person has not finished.
@@ -1396,7 +1398,7 @@ export class VoiceCall {
     // told, never left waiting on a turn that silently went nowhere
     if (heard.failed) {
       this.continuing = false;
-      this.emit("error", "transcribe-failed");
+      this.emit("error", "transcribe-failed", this.transcriber.uploadError);
       this.dispatch({ type: "utterance-rejected", reason: "empty" });
       return;
     }
