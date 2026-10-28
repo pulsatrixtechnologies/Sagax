@@ -86,6 +86,7 @@ import {
   hasNativeAutoReview,
   modelSwitchNeedsAsk,
   isEmergencyApprovalDowngrade,
+  liveApprovalChange,
   isApprovalMode,
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
@@ -9010,7 +9011,7 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
   }
   const emergencyDowngrade = existing.busy && isEmergencyApprovalDowngrade(currentMode, mode);
   const clearsPendingElevation = mode === "ask" && existing.approvalGrant !== undefined;
-  if (existing.busy && !emergencyDowngrade && !clearsPendingElevation) {
+  if (existing.busy && !emergencyDowngrade && !clearsPendingElevation && !liveApprovalChange(currentMode, mode)) {
     respond({ ok: false, error: "Stop this bot's turn before changing its approval level" });
     return true;
   }
@@ -46294,7 +46295,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (approvalChangeRequested && (requestedApprovalMode === "full" || requestedApprovalMode === "custom") && existingBot && memberOwnedInOrg(existingBot)) {
         return json(res, 409, MEMBER_BOT_FULL_ACCESS);
       }
-      if (existingBot?.busy && approvalChangeRequested && requestedApprovalMode !== currentApprovalMode && !primaryAskedReplay()) {
+      if (existingBot?.busy && approvalChangeRequested && requestedApprovalMode !== currentApprovalMode && !primaryAskedReplay()
+        && !liveApprovalChange(currentApprovalMode, requestedApprovalMode)) {
         return json(res, 409, {
           error: "stop this bot's turn before changing its approval level",
         });
@@ -48465,7 +48467,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!supportsApprovalMode(patch.modelSelection ?? current.modelSelection, mode)) {
           return json(res, 400, { error: "This provider does not support the selected approval level" });
         }
-        if (threadBusy(current.id, current.threadId) && !primaryAskedReplay()) return json(res, 409, { error: "stop this thread before changing its approval mode" });
+        if (threadBusy(current.id, current.threadId) && !primaryAskedReplay() && !liveApprovalChange(approvalModeFor(current), mode)) return json(res, 409, { error: "stop this thread before changing its approval mode" });
         if (current.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
         if (mode === "auto" && approvalModeFor(current) !== "auto" && auth.kind === "loopback" && !DESKTOP_MANAGED && !req.headers.origin && store.bots.some((bot) => bot.busy)) {
           return json(res, 409, { error: "Change approval mode from the app or a paired device while bots are working." });

@@ -7436,15 +7436,16 @@ describe("harness HTTP API", () => {
         return state.bots.find((candidate: { id: string }) => candidate.id === bot.id)?.busy;
       }, { timeout: 5_000 }).toBe(true);
 
-      const blocked = await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "auto" });
-      expect(blocked.status).toBe(409);
-      expect(blocked.body.error).toMatch(/stop this bot's turn before changing its approval level/i);
+      const changed = await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "auto" });
+      expect(changed.status).toBe(200);
       const stored = (await api("GET", "/api/bots?messages=0")).body.bots.find(
         (candidate: { id: string }) => candidate.id === bot.id,
       );
       expect(stored.busy).toBe(true);
-      expect(stored.approvalMode).toBe(bot.approvalMode);
-      expect(stored.autoApprove).toBe(bot.autoApprove);
+      expect(stored.approvalMode).toBe("auto");
+      const blocked = await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "full" });
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.error).toMatch(/stop this bot's turn before changing its approval level|does not support|trusted desktop/i);
     } finally {
       await api("POST", `/api/bots/${bot.id}/interrupt`, {}).catch(() => undefined);
       await expect.poll(async () => {
