@@ -1,0 +1,35 @@
+# Defaults render with helm template. They do not install anything.
+# Set image.tag to the release you intend to run, and domain to your host,
+# before you apply this chart yourself. This repository never applies it.
+
+nameOverride: ""
+
+image:
+  repository: ghcr.io/pulsatrixtechnologies/sagax
+  # Placeholder so a lint render is valid. Replace it with a real release tag.
+  tag: set-the-release-tag
+  pullPolicy: IfNotPresent
+
+domain: chat.example.invalid
+
+service:
+  type: ClusterIP
+  httpPort: 80
+  httpsPort: 443
+
+data:
+  size: 20Gi
+  storageClass: ""
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    memory: 8Gi
+
+# The server process keeps binding 127.0.0.1. The edge proxy in the same
+# pod reaches it there, the same way the compose file does. No host network.
+edge:
+  image: caddy:2
+  shmSize: 512Mi
