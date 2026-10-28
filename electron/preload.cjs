@@ -47,6 +47,9 @@ ipcRenderer.on("app:open-settings", (_event, section) => {
 // helpers here. Main enforces the same rule on the sensitive channels.
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
+// windowControls stays on every remote page: a Windows window with a hidden
+// title bar draws its own caption buttons, including when the page is not
+// this app's bundled UI (electron/window-controls-remote.node-test.mjs).
 const REMOTE_SAFE = new Set(["platform", "windowControls", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "nudgeWindow", "notify", "withdrawNotification", "onNotificationClick", "systemIdle", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
 // An organization server's page drawn from THIS app's bundle
 // (electron/bundled-ui.cjs) is the desktop's own UI on that server, so it
@@ -81,7 +84,9 @@ if (!isLocalPage) {
 // Only main can request a fresh snapshot; there is no renderer-callable method.
 const COMPANY_BACKUP_CLIENT_KEYS = [
   "omb-drafts", "omb-draft-attachments", "omb-draft-send-ids", "omb-draft-channel-modes",
-  "omb-skin", "omb-skin-mode", "omb-skin-variants", "omb-show-threads", "omb-show-run-card", "omb-show-unready-providers", "omb-send-key", "openmausbot.sidebarDensity",
+  "omb-skin", "omb-skin-mode", "omb-skin-tint", "omb-skin-depth", "omb-skin-texture",
+  "omb-skin-variants", "omb-show-threads", "omb-show-run-card", "omb-show-unready-providers", "omb-send-key",
+  "openmausbot.sidebarDensity",
   "openmausbot.sidebarCollapsedSections.v1", "openmausbot.sidebarSectionOrder.v1",
   "omb-analytics-opt-out", "openmausbot.remote-voice.v1",
 ];

@@ -23,7 +23,6 @@ test("only the reviewed exceptions pass", () => {
   const allowed = [
     'const HOST_BUNDLE_ID = "com.openmausbot.app";',
     'var BLOCKED_DOMAINS = Object.freeze([\n  "openmausbot.com",\n  "openmausbot.ai",\n  "openmausbot.app",\n  "openmausbot.dev",\n  "posthog.com"\n]);\nvar BLOCKED_GITHUB_OWNERS = Object.freeze(["milind-soni"]);',
-    '{ slug: "posthog", label: "PostHog", blurb: "Analytics, feature flags, experiments", domain: "posthog.com", logo: null }',
   ].join("\n");
   assert.deepEqual(scanText(allowed, "fixture.js"), []);
   assert.equal(scanText('const x = "openmausbot.com";', "fixture.js").length, 1);

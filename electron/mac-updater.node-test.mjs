@@ -9,7 +9,7 @@ import Module, { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createUpdaterCoordinator } from "./updater-coordinator.mjs";
+import { createUpdaterCoordinator, NATIVE_PREPARE_TIMEOUT_MS } from "./updater-coordinator.mjs";
 import { patchMacUpdater } from "../scripts/patch-mac-updater.mjs";
 
 function deferred() {
@@ -96,7 +96,7 @@ function harness(t, { fetchZip = true } = {}) {
   const timers = new Map();
   const originalTimeout = globalThis.setTimeout;
   t.mock.method(globalThis, "setTimeout", (callback, delay, ...args) => {
-    if (delay !== 120_000 && delay !== 300_000) return originalTimeout(callback, delay, ...args);
+    if (delay !== 120_000 && delay !== NATIVE_PREPARE_TIMEOUT_MS) return originalTimeout(callback, delay, ...args);
     const timer = { unref() {} };
     timers.set(delay, { callback, timer });
     return timer;
@@ -145,7 +145,7 @@ test("real Mac ZIP transfer stays preparing until native ready; restart is singl
   assert.equal(h.state().status, "downloaded");
   assert.equal(h.updater.squirrelDownloadedUpdate, true);
   assert.equal(h.native.listenerCount("update-downloaded"), 1, "temporary staging listener was removed");
-  assert.equal(h.timers.has(300_000), false);
+  assert.equal(h.timers.has(NATIVE_PREPARE_TIMEOUT_MS), false);
   h.coordinator.install({ confirmed: true });
   h.timers.get(120_000).callback();
   assert.equal(h.state().status, "installing");
@@ -163,11 +163,11 @@ test("a native staging deadline fails visibly without retrying or reviving on la
   await h.found();
   await h.nativeCalled.promise;
   assert.equal(h.state().status, "preparing");
-  h.timers.get(300_000).callback();
+  h.timers.get(NATIVE_PREPARE_TIMEOUT_MS).callback();
   assert.equal(h.state().status, "error");
   assert.equal(h.state().retryable, false);
   assert.match(h.state().message, /took too long.*Quit and reopen/);
-  assert.ok(h.warnings.some((message) => /preparation exceeded/.test(message)));
+  assert.ok(h.warnings.some((message) => /went quiet past the .* deadline/.test(message)));
   const failed = h.state();
   await h.coordinator.check(true);
   h.coordinator.install({ confirmed: true });
@@ -193,7 +193,7 @@ test("native validation errors after ZIP transfer remain visible and clean up st
   assert.equal(h.states.filter((s) => s.status === "error").length, 1);
   assert.equal(h.native.listenerCount("error"), 1);
   assert.equal(h.native.listenerCount("update-downloaded"), 1);
-  assert.equal(h.timers.has(300_000), false);
+  assert.equal(h.timers.has(NATIVE_PREPARE_TIMEOUT_MS), false);
   const failed = h.state();
   await h.coordinator.check(true);
   h.coordinator.install({ confirmed: true });
