@@ -18,6 +18,7 @@ import {
   readMemoryLog,
   readMemoryOnlyFromRegularFiles,
   readMemoryTopic,
+  readMemoryTopicAsync,
   searchMemoryFiles,
   workspaceDir,
   WORKSPACES_DIR,
@@ -47,18 +48,20 @@ beforeEach(() => {
 });
 
 describe("memory read through a link", () => {
-  it("reads as it always did outside a Cloud home", () => {
+  it("reads as it always did outside a Cloud home", async () => {
     expect(loadMemory(BOT)?.text).toContain(INJECTED);
     expect(readMemoryTopic(BOT, "mac.md")).toContain(INJECTED);
+    expect(await readMemoryTopicAsync(BOT, "mac.md")).toContain(INJECTED);
     expect(readMemoryLog(BOT, "2026-09-30.md")).toContain(INJECTED);
     expect(searchMemoryFiles(BOT, "quoting", 5).length).toBeGreaterThan(0);
   });
 
-  it("is never read on a Cloud home: MEMORY.md, topics, their index, daily logs, search", () => {
+  it("is never read on a Cloud home: MEMORY.md, topics, their index, daily logs, search", async () => {
     readMemoryOnlyFromRegularFiles();
     expect(loadMemory(BOT)).toBeNull();
     expect(listMemoryTopics(BOT)).toEqual([]);
     expect(readMemoryTopic(BOT, "mac.md")).toBeNull();
+    expect(await readMemoryTopicAsync(BOT, "mac.md")).toBeNull();
     expect(memoryTopicIndex(BOT)).not.toContain(INJECTED);
     expect(listMemoryLogs(BOT)).toEqual([]);
     expect(readMemoryLog(BOT, "2026-09-30.md")).toBeNull();
