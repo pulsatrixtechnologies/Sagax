@@ -56,6 +56,7 @@ import type { WireBotGrant } from "../shared/wire.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { nextOpenThread } from "../shared/wire.ts";
 import { namesEngine } from "./bot-engine.ts";
+import { introTaskCard } from "./intro-tour.ts";
 import { newBotGreeting } from "./new-bot-greeting.ts";
 // Re-exported under their historical names so server-side importers keep working.
 export type {
@@ -2257,11 +2258,14 @@ export class Store {
     this.emit({ type: "bot", botId: bot.id });
     // Keep the greeting valid for configured bots and every engine.
     if (opts.seedMessages !== false) {
+      const language = this.greetingLanguage(bot.ownerUserId);
       this.appendMessage(bot.threadId, {
         role: "bot",
         kind: "text",
-        text: newBotGreeting(name, this.greetingLanguage(bot.ownerUserId)),
+        text: newBotGreeting(name, language),
       });
+      // The first real question, not only the greeting line.
+      this.appendMessage(bot.threadId, introTaskCard(language));
     }
     return bot;
   }

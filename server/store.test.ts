@@ -590,12 +590,13 @@ describe("Store", () => {
     const bot = store.createBot();
 
     const messages = store.messagesFor(bot.threadId);
-    expect(messages).toHaveLength(1);
+    expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({
       role: "bot",
       kind: "text",
       text: `Hi, I'm ${bot.name}. What would you like me to do?`,
     });
+    expect(messages[1]).toMatchObject({ role: "bot", kind: "options", card: { title: "What should we start with?" } });
     expect(bot.modelSelection).toEqual(selection());
   });
 
@@ -722,6 +723,8 @@ describe("Store", () => {
   it("dismisses an open options card when the user talks, and leaves live asks", () => {
     const store = new Store(selection);
     const bot = store.createBot();
+    // The seeded intro card is dismissed by the first thing the person says.
+    store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "past the intro" });
     const quiz = store.appendMessage(bot.threadId, {
       role: "bot",
       kind: "options",
