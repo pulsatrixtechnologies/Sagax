@@ -26,7 +26,7 @@ vi.mock("./DesktopCapabilities", async (importOriginal) => ({
 vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 vi.mock("@/lib/thread-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/thread-preferences")>(),
-  useShowThreads: () => true,
+  useShowThreads: () => true, useThreadsMode: () => "header" as "one" | "header" | "sidebar",
 }));
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: vi.fn() }));
 vi.mock("./SidebarPopoverMenu", async (importOriginal) => ({

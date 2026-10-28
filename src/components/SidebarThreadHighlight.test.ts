@@ -34,6 +34,7 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }))
 vi.mock("@/lib/thread-preferences", async (original) => ({ ...await original<typeof import("@/lib/thread-preferences")>(),
   useShowThreads: () => true,
   useThreadsLocationChoice: () => "sidebar" as const,
+  useThreadsMode: () => "sidebar" as "one" | "header" | "sidebar",
 }));
 vi.mock("@/lib/live-call-media", async (original) => {
   const actual = await original<typeof import("@/lib/live-call-media")>();
@@ -57,18 +58,17 @@ function render(candidate = bot) {
 beforeEach(() => { fixture.slots = []; fixture.state.revealThread = null; });
 
 // Owner (2026-10-12): bot row + its selected thread made two stacked rounded
-// blocks. Since the reference design's rows (2026-10-15) the thread list no longer
-// unfolds under the bot, even in the sidebar location: the selected bot row
-// carries the one highlight.
+// blocks. In the sidebar mode the bot folds open on its threads: the thread
+// on screen carries the one highlight, never the bot row as well.
 describe("sidebar threads: one highlight for the selected conversation", () => {
-  it("draws the selected fill on the bot row only, with no thread rows under it", () => {
+  it("draws the selected fill on the thread on screen only, under the unfolded bot", () => {
     const multiple = { ...bot, tasks: [...bot.tasks!, { threadId: "older", title: "Earlier", createdAt: 0 }] };
     fixture.state.revealThread = { threadId: "current", nonce: 1 };
     render(multiple);
     for (const effect of fixture.effects) effect();
     const markup = render(multiple);
-    expect(markup).not.toContain("data-sidebar-thread-row");
+    expect(markup).toContain('data-sidebar-thread-row="current"');
     expect(markup.match(/bg-sidebar-selected/g)).toHaveLength(1);
-    expect(markup).toMatch(/data-sidebar-bot-row="atlas"[^>]*class="[^"]*bg-sidebar-selected/);
+    expect(markup).not.toMatch(/data-sidebar-bot-row="atlas"[^>]*class="[^"]*bg-sidebar-selected/);
   });
 });

@@ -84,4 +84,15 @@ public enum FreshTopic {
     public static func isSegment(_ task: BotTask) -> Bool {
         task.routineRunId == nil && task.routineResults != true && task.hidden != true && task.confidential != true && task.openedBy == nil && task.parallelOf == nil
     }
+
+    /// Threads hidden (one conversation per bot): whether a thread of the
+    /// bot on screen opens over that conversation (a sheet) instead of in
+    /// its place. A thread outside the stream (a parallel task's detail, a
+    /// bot's job, a run) while the conversation shown is the stream; the
+    /// conversation stays underneath, where it was (store.tsx
+    /// `opensBesideStream`).
+    public static func opensBeside(_ task: BotTask, shown: BotTask?, showThreads: Bool) -> Bool {
+        guard !showThreads, task.threadId != shown?.threadId, !isSegment(task) else { return false }
+        return shown.map(isSegment) ?? true
+    }
 }

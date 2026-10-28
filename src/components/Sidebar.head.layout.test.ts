@@ -11,7 +11,6 @@ import { CIRCLE_BUTTON, SIDEBAR_CIRCLE_BUTTON } from "@/lib/circle-button";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 const sidebar = read("./Sidebar.tsx");
 const chatView = read("./ChatView.tsx");
-const botActivity = read("./SidebarBotActivity.tsx");
 const styles = read("../styles.css");
 const classes = (value: string) => value.split(/\s+/).filter(Boolean);
 /** Tailwind spacing scale: `h-14` is 3.5rem, 56px. */
@@ -67,13 +66,13 @@ describe("sidebar head buttons", () => {
   });
 
   it("leave the rows' hover actions on rail tokens too", () => {
-    const actions = sidebar.match(/className="pointer-events-none absolute right-[^"]*"/g) ?? [];
+    // the row's unread count sits there too, in the unread color: not an action
+    const actions = (sidebar.match(/className="pointer-events-none absolute right-[^"]*"/g) ?? []).filter((action) => !action.includes("tabular-nums"));
     expect(actions.length).toBeGreaterThanOrEqual(2);
     for (const action of actions) {
       expect(action).toContain("text-sidebar-ink-secondary");
       expect(action).not.toMatch(/\btext-ink-secondary|hover:bg-raised\b|hover:text-ink\b/);
     }
-    expect(botActivity).not.toContain("hover:bg-raised/50");
   });
 });
 

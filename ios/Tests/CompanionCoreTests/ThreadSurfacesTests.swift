@@ -44,7 +44,11 @@ final class ThreadSurfacesTests: XCTestCase {
         XCTAssertFalse(sidebar.allows(.headerPicker))
         XCTAssertFalse(sidebar.nameMenuThreads(isBot: true))
         XCTAssertEqual(sidebar.rowThreadCount(4), 4)
-        for surface in [ThreadSurface.headerButton, .roomThreads, .newThread, .threadList, .transcriptReceipts, .search] {
+        // In the sidebar: no thread icon in the chat header (the desktop's
+        // Conversation threads contract), only the tree under the bot.
+        XCTAssertFalse(sidebar.allows(.headerButton))
+        XCTAssertNil(sidebar.headerButtonCount(threadCount: 3))
+        for surface in [ThreadSurface.roomThreads, .newThread, .threadList, .transcriptReceipts, .search] {
             XCTAssertTrue(sidebar.allows(surface), "\(surface)")
         }
     }

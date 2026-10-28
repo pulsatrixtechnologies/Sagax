@@ -55,6 +55,8 @@ struct ChatView: View {
     /// The row the "New" line sits above, set when an unread chat opens.
     @State var newDividerBefore: String?
     @State var showingTasks = false
+    /// Threads hidden: a thread shown over the conversation (ChatLinks).
+    @State var besideThread: BesideThread?
     /// A bot-to-bot conversation opened read only (BB1).
     @State var openBotConversation: BotConversation?
     @State var earlierConversationsOpen = false
@@ -261,6 +263,9 @@ struct ChatView: View {
             if case let .bot(bot) = current {
                 BotConversationPage(row: row, selfBot: bot).environmentObject(session)
             }
+        }
+        .sheet(item: $besideThread) { beside in
+            BesideThreadSheet(beside: beside).environmentObject(session)
         }
         .sheet(isPresented: $showingTasks) {
             if current.supportsTasks, threadPrefs.threads.allows(.threadList) {
@@ -1076,5 +1081,40 @@ private struct OpenBotAccent: ViewModifier {
                 if let color { ThemeStore.shared.setOpenBot(nil, leaving: color) }
                 RetroOpenBot.shared.clear(name)
             }
+    }
+}
+
+/// Threads hidden: a thread opened over the one conversation (ChatLinks).
+struct BesideThread: Identifiable, Hashable {
+    let botId: String
+    let threadId: String
+    var id: String { "\(botId):\(threadId)" }
+}
+
+/// That thread's own chat in a sheet. Done or a swipe down returns to the
+/// conversation underneath, which never moved.
+struct BesideThreadSheet: View {
+    @EnvironmentObject private var session: Session
+    @Environment(\.dismiss) private var dismiss
+    let beside: BesideThread
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let bot = session.state.bot(beside.botId)?.projected(forThread: beside.threadId) {
+                    ChatView(chat: .bot(bot))
+                } else {
+                    Text("That thread is no longer on your computer.")
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .accessibilityIdentifier("beside-thread-done")
+                }
+            }
+        }
+        .accessibilityIdentifier("beside-thread.\(beside.threadId)")
     }
 }

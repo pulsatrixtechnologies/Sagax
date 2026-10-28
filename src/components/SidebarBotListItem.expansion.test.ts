@@ -34,6 +34,7 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }))
 vi.mock("@/lib/thread-preferences", async (original) => ({ ...await original<typeof import("@/lib/thread-preferences")>(),
   useShowThreads: () => true,
   useThreadsLocationChoice: () => "header" as const,
+  useThreadsMode: () => "header" as "one" | "header" | "sidebar",
 }));
 vi.mock("@/lib/live-call-media", async (original) => {
   const actual = await original<typeof import("@/lib/live-call-media")>();

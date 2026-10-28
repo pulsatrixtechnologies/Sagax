@@ -49,7 +49,8 @@ public enum ThreadSurface: String, CaseIterable, Hashable, Sendable {
     /// and New thread, the iPad header's thread picker.
     case headerPicker
     /// The iPhone chat header's "All threads" button (a bot with two
-    /// threads or more), whatever the location.
+    /// threads or more), in the chat header location only: the sidebar
+    /// location has nothing about threads in the header.
     case headerButton
     /// A room's thread entries: the name capsule, the "+" menu, Room info.
     case roomThreads
@@ -85,8 +86,8 @@ public struct ThreadSurfaces: Hashable, Sendable {
         guard shown else { return false }
         switch surface {
         case .sidebarTree: return placement.inSidebar
-        case .headerPicker: return placement.inHeader
-        case .headerButton, .roomThreads, .newThread, .threadList, .transcriptReceipts, .search: return true
+        case .headerPicker, .headerButton: return placement.inHeader
+        case .roomThreads, .newThread, .threadList, .transcriptReceipts, .search: return true
         }
     }
 

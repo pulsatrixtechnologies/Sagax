@@ -83,3 +83,11 @@ public func crossBotAttentionThreads(_ bots: [Bot], exceptBotId: String? = nil) 
         }
         .map(\.element)
 }
+
+/// The roster's Inbox. Threads hidden (one conversation per bot): no thread
+/// is ever a line of its own, so an unread reply stays the bot row's dot and
+/// only what waits on the person is listed, as the standard density does.
+public func rosterAttentionThreads(_ bots: [Bot], showThreads: Bool) -> [AttentionThread] {
+    let all = crossBotAttentionThreads(bots)
+    return showThreads ? all : all.filter { $0.task.activity == "waiting-on-you" }
+}

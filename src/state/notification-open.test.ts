@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 // A notification's click, a bot's own row and a search hit open a thread as
 // the sidebar shows threads at that moment. With threads hidden a bot is one
-// conversation, and a sibling is reached only through its activity row while
-// it is unread: opening another thread must not pass the reply in the thread
-// the bot was left on as read, neither by selecting the bot first nor while
-// the switch is under way: the server announces a switch on the live stream
-// before it answers it (store.switchTask emits), so that frame reaches the
-// window while the bot is still on the thread it leaves. With threads shown
-// the bot is selected first, as it always was. The real provider, its live
-// stream, the real display preference, and a fake server answering in the
-// real one's order.
+// conversation and no other thread is ever a destination: a thread outside
+// it (a job, a parallel task) opens in the side column beside it, and the
+// conversation on screen reads every topic of it, the one the bot was left
+// on too (no thread has a sidebar row to clear it later). With threads
+// shown the bot is selected first, as it always was, and a reply in the
+// thread it leaves stays unread until that thread is opened: the server
+// announces a switch on the live stream before it answers it
+// (store.switchTask emits). The real provider, its live stream, the real
+// display preference, and a fake server answering in the real one's order.
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -64,7 +64,7 @@ let dispatch: (action: Action) => void;
 
 const { StoreProvider, useStore, openBot } = await import("./store");
 const { landOnSearchHit } = await import("@/lib/focus-message");
-const { threadsWhenTreeHidden } = await import("@/components/SidebarBotActivity");
+const { closeSideThread, currentSideThread } = await import("@/lib/side-thread");
 const { setAdvancedMode } = await import("@/lib/interface-mode");
 const { setShowThreads } = await import("@/lib/thread-preferences");
 
@@ -141,7 +141,7 @@ beforeEach(async () => {
   requests.length = 0;
   FixtureNotification.shown.length = 0;
 });
-afterEach(() => flushSync(() => root.unmount()));
+afterEach(() => { flushSync(() => root.unmount()); closeSideThread(); });
 
 const threadsShown = async (shown: boolean) => {
   flushSync(() => { setAdvancedMode(true); setShowThreads(shown); });
@@ -164,17 +164,16 @@ async function followNotification() {
 }
 
 describe("following a notification", () => {
-  it("opens its thread by the switch alone while threads are hidden, leaving the reply the bot was left on unread", async () => {
+  it("opens a thread outside the one conversation beside it while threads are hidden, never in its place", async () => {
     await threadsShown(false);
     await followNotification();
-    expect(sent().filter((request) => request.startsWith("/api/bots/scout/tasks/finished"))).toHaveLength(1);
-    // The switch's own announcement reads the thread it opens, not the one
-    // left, and the snapshot that lands after it does not put its dot back.
-    expect(reads()).toEqual(["finished"]);
-    expect(scoutNow().threadId).toBe("finished");
-    expect(unread("finished")).toBe(false);
-    expect(unread("left-behind")).toBe(true);
-    expect(server.tasks!.find((task) => task.threadId === "left-behind")!.unread).toBe(true);
+    // no switch to the job: the conversation stays the one on screen
+    expect(sent().filter((request) => request.startsWith("/api/bots/scout/tasks/finished"))).toHaveLength(0);
+    expect(scoutNow().threadId).toBe("main-chat");
+    expect(currentSideThread()).toEqual({ botId: "scout", threadId: "finished" });
+    // the conversation reads its earlier topic with it
+    expect(reads()).toContain("left-behind");
+    expect(unread("left-behind")).toBe(false);
   });
 
   it("selects the bot first while threads are shown, as it always has", async () => {
@@ -186,32 +185,27 @@ describe("following a notification", () => {
     expect(unread("finished")).toBe(false);
   });
 
-  it("leaves the thread a failed switch stayed on as the one on screen", async () => {
-    await threadsShown(false);
+  it("leaves the thread a failed switch stayed on as the one on screen while threads are shown", async () => {
+    await threadsShown(true);
     // Deleted on the server a moment ago; this window has not heard yet.
     server = { ...server, tasks: server.tasks!.filter((task) => task.threadId !== "finished") };
     await followNotification();
     expect(scoutNow().threadId).toBe("left-behind");
-    expect(reads()).toEqual([]);
-    // Scout is on screen at the thread it stayed on: news there is read.
-    stream().send({ kind: "bot", bot: structuredClone(server) });
-    await settle();
-    expect(reads()).toEqual(["left-behind"]);
   });
 });
 
 describe("opening a bot with threads hidden", () => {
-  it("opens its main thread from its row and leaves the thread it was left on unread, with an activity row", async () => {
+  it("opens the one conversation from its row and reads the topic it was left on with it", async () => {
     await threadsShown(false);
     flushSync(() => openBot(dispatch, scoutNow(), false));
     await settle();
     expect(sent().filter((request) => request.startsWith("/api/bots/scout/tasks/main-chat"))).toHaveLength(1);
-    expect(reads()).toEqual([]);
     expect(scoutNow().threadId).toBe("main-chat");
-    expect(unread("left-behind")).toBe(true);
-    // Its row stands for the thread on screen; the reply keeps a row of its own.
-    expect(threadsWhenTreeHidden(scoutNow(), {}).map((task) => task.threadId).filter((id) => id !== scoutNow().threadId))
-      .toEqual(expect.arrayContaining(["left-behind", "finished"]));
+    // "left-behind" is an earlier topic of the conversation on screen
+    expect(reads()).toEqual(["left-behind"]);
+    expect(unread("left-behind")).toBe(false);
+    // a job the bot opened is not part of it: still unread, on the bot's badge
+    expect(unread("finished")).toBe(true);
   });
 
   it("lands on a search hit in another thread by the switch alone, with the whole thread", async () => {
@@ -264,16 +258,15 @@ describe("launching the app on a bot", () => {
     await launch();
   }
 
-  it("opens its main thread while threads are hidden, leaving the reply the bot was left on unread", async () => {
+  it("opens the one conversation while threads are hidden, reading the topic it was left on with it", async () => {
     await relaunch(false);
     expect(state.selectedId).toBe("scout");
     const switches = sent().filter((request) => request.startsWith("/api/bots/scout/tasks/"));
     expect(switches).toHaveLength(1);
     expect(switches[0]).toMatch(/^\/api\/bots\/scout\/tasks\/main-chat\b/);
-    expect(reads()).toEqual([]);
     expect(scoutNow().threadId).toBe("main-chat");
-    expect(unread("left-behind")).toBe(true);
-    expect(threadsWhenTreeHidden(scoutNow(), {}).map((task) => task.threadId)).toContain("left-behind");
+    expect(reads()).toEqual(["left-behind"]);
+    expect(unread("left-behind")).toBe(false);
   });
 
   it("keeps the bot where it was while threads are shown, as it always has", async () => {

@@ -141,3 +141,26 @@ export function setThreadsLocation(location: ThreadsLocation): void {
 export function useThreadsLocationChoice(): ThreadsLocation {
   return useSyncExternalStore(subscribeLocation, threadsLocation, () => THREADS_LOCATION_DEFAULT);
 }
+
+/** Settings > Conversations > Conversation threads, as one value: the one
+ * place every surface reads (a single choice, a single reader).
+ * - "one": one conversation per bot. No thread is a sidebar line, a header
+ *   control or a destination; another thread opens beside it.
+ * - "header": threads are chosen in the chat header only; the sidebar has
+ *   one line per bot, no sub-rows and no chevron.
+ * - "sidebar": each bot folds open on its threads in the sidebar; nothing
+ *   about threads in the chat header. */
+export type ThreadsMode = "one" | "header" | "sidebar";
+
+export function threadsModeOf(showThreads: boolean, location: ThreadsLocation): ThreadsMode {
+  return !showThreads ? "one" : location;
+}
+
+/** The current mode, outside React (the store's actions). */
+export function threadsMode(): ThreadsMode {
+  return threadsModeOf(showThreads(), threadsLocation());
+}
+
+export function useThreadsMode(): ThreadsMode {
+  return threadsModeOf(useShowThreadsChoice(), useThreadsLocationChoice());
+}

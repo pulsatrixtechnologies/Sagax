@@ -46,7 +46,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
   useStore: () => ({ state: { appSettingsSection: fixture.section, instances: [] }, dispatch: fixture.dispatch }),
 }));
 vi.mock("@/lib/thread-preferences", () => ({
-  useShowThreads: () => fixture.showThreads,
+  useShowThreads: () => fixture.showThreads, useThreadsMode: () => ((fixture.showThreads) ? "header" : "one") as "one" | "header" | "sidebar",
   useShowThreadsChoice: () => fixture.showThreads,
   setShowThreads: fixture.setShowThreads,
   useThreadsLocationChoice: () => "header",

@@ -2,12 +2,51 @@ import { useEffect, useState, type SetStateAction } from "react";
 
 /** The open state each sidebar row was left in outside a search. Kept here
  * rather than in the row, because a row that does not match a search leaves
- * the list and would come back closed. Per window, for this session. */
-const chosen = new Map<string, boolean>();
+ * the list and would come back closed, and remembered on this device
+ * (sidebar mode, Settings > Conversation threads): a bot folded open or
+ * shut stays so across a reload, a list refresh and another bot's
+ * selection. */
+export const SIDEBAR_DISCLOSURE_KEY = "sagax.sidebar.threadsOpen.v1";
+const chosen = new Map<string, boolean>(readStored());
+
+function storage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readStored(): Array<[string, boolean]> {
+  try {
+    const raw = storage()?.getItem(SIDEBAR_DISCLOSURE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object") return [];
+    return Object.entries(parsed as Record<string, unknown>).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean");
+  } catch {
+    return [];
+  }
+}
+
+function remember(key: string, open: boolean): void {
+  chosen.set(key, open);
+  try {
+    storage()?.setItem(SIDEBAR_DISCLOSURE_KEY, JSON.stringify(Object.fromEntries(chosen)));
+  } catch {
+    // the choice still holds for this session when storage is unavailable
+  }
+}
 
 /** Tests start each case with no remembered rows. */
 export function forgetSearchDisclosuresForTests(): void {
   chosen.clear();
+  try { storage()?.removeItem(SIDEBAR_DISCLOSURE_KEY); } catch { /* nothing stored */ }
+}
+
+/** A fresh window reads what the last one left (tests). */
+export function reloadSearchDisclosuresForTests(): void {
+  chosen.clear();
+  for (const [key, open] of readStored()) chosen.set(key, open);
 }
 
 /** A sidebar row's thread list open state while a search may be active
@@ -33,7 +72,7 @@ export function useSearchDisclosure(
       setDuring(value);
       return;
     }
-    chosen.set(key, value);
+    remember(key, value);
     setOwn(value);
   };
   return [open, set];

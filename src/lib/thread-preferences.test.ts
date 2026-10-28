@@ -187,3 +187,15 @@ describe("threads in Simple mode", () => {
     vi.doUnmock("./interface-mode");
   });
 });
+
+// One choice, one reader: Settings > Conversation threads as a single mode
+// every surface asks (the sidebar rows, the chat header, the store).
+describe("conversation threads mode", () => {
+  it("maps the stored switch and place onto the three modes", async () => {
+    const { threadsModeOf } = await import("./thread-preferences");
+    expect(threadsModeOf(false, "header")).toBe("one");
+    expect(threadsModeOf(false, "sidebar")).toBe("one");
+    expect(threadsModeOf(true, "header")).toBe("header");
+    expect(threadsModeOf(true, "sidebar")).toBe("sidebar");
+  });
+});

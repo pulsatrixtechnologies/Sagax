@@ -75,7 +75,8 @@ import { hiddenKeySet, readSidebarHidden, useSidebarHidden } from "@/lib/sidebar
 import { readLastBotSection, rememberBotSection } from "@/lib/last-bot-section";
 import { approvalWithdrawKey, showNotification, withdrawNotification, type NotificationTarget } from "@/lib/notify";
 import { singleStreamTurnField, useShowThreads } from "@/lib/thread-preferences";
-import { isEarlierSegment, isStreamSegment, streamHomeThread } from "@/lib/single-stream";
+import { isEarlierSegment, isStreamSegment, streamHomeThread, streamUnreadReadWith } from "@/lib/single-stream";
+import { openSideThread } from "@/lib/side-thread";
 import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreenBot } from "@/lib/fresh-topic";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
@@ -1875,8 +1876,26 @@ export function openNotificationTarget(
   // the bot opens at its newest segment and the stream scrolls back to it.
   // A notification always opens the topic it is about, never a fresh one.
   if (known && target.threadId && !threadsShown && isEarlierSegment(bot.tasks, target.threadId, bot.threadId)) openBot(dispatch, bot, threadsShown, { landing: false });
+  // Threads hidden: the one conversation never gives way to another thread
+  // (a parallel task's detail, a bot's job, a run). It stays where it is,
+  // scrolled where it was, and that thread opens in the side column beside
+  // it (SideThreadPanel); Close or Escape is the way back.
+  else if (known && target.threadId && !threadsShown && opensBesideStream(bot, target.threadId)) {
+    openBot(dispatch, bot, threadsShown, { landing: false });
+    openSideThread({ botId: bot.id, threadId: target.threadId });
+  }
   else if (known && target.threadId) openBotThread(dispatch, bot, target.threadId, threadsShown);
   else openBot(dispatch, bot, threadsShown, { landing: false });
+}
+
+/** Threads hidden: whether `threadId` opens beside the one conversation
+ * instead of in its place. A thread of the bot that is not part of its
+ * stream (shared/single-stream.ts) while the bot has a stream to stay on,
+ * and not the thread the bot already shows. */
+export function opensBesideStream(bot: Pick<NotificationThreadOwner, "threadId" | "tasks">, threadId: string): boolean {
+  if (threadId === bot.threadId || !streamHomeThread(bot.tasks, bot.threadId)) return false;
+  const task = bot.tasks?.find((candidate) => candidate.threadId === threadId);
+  return Boolean(task && typeof task.createdAt === "number" && !isStreamSegment({ ...task, createdAt: task.createdAt }));
 }
 
 /** The fresh topic drafts without the one of the bot that owns `threadId`. */
@@ -2066,6 +2085,22 @@ function bumpTranscriptGeneration(state: AppState, threadId: string | undefined 
       [threadId]: (state.transcriptGeneration[threadId] ?? 0) + 1,
     },
   };
+}
+
+/** The threads read when `shownThreadId` is on screen: that one, and with
+ * threads hidden every unread thread the one conversation holds besides it
+ * (streamUnreadReadWith). The person reads the bot's conversation, not one
+ * segment of it: none of them has a sidebar row to clear it later. */
+export function threadsReadOnScreen(bot: Pick<Bot, "tasks">, shownThreadId: string): string[] {
+  return [shownThreadId, ...(singleStreamTurnField().singleStream ? streamUnreadReadWith(bot.tasks, shownThreadId) : [])];
+}
+
+/** `bot` once what is on screen at `shownThreadId` is read. */
+function readOnScreen(bot: Bot, shownThreadId: string): Bot {
+  const read = new Set(threadsReadOnScreen(bot, shownThreadId));
+  return { ...bot,
+    unread: Boolean(bot.tasks?.some((task) => !read.has(task.threadId) && task.unread)),
+    tasks: bot.tasks?.map((task) => read.has(task.threadId) ? { ...task, unread: false } : task) };
 }
 
 function updateBot(state: AppState, botId: string, fn: (b: Bot) => Bot): AppState {
@@ -2534,7 +2569,7 @@ export function reducer(state: AppState, action: Action): AppState {
           "switch",
         ),
         action.id,
-        (b) => ({ ...b, unread: Boolean(b.tasks?.some((task) => task.threadId !== b.threadId && task.unread)), tasks: b.tasks?.map((task) => task.threadId === b.threadId ? { ...task, unread: false } : task) }),
+        (b) => readOnScreen(b, b.threadId),
       ));
     }
     // optimistic card settle; the server's message.patch confirms it later
@@ -3454,9 +3489,7 @@ export function reducer(state: AppState, action: Action): AppState {
         // …and on screen it is read, as `select` reads the thread it opens. The
         // snapshot predates the switch's own announcement, which told the
         // server so (the "bot" frame), and must not put the dot back.
-        if (switched.activeView === "chat") switched = updateBot(switched, opened.id, (bot) => ({ ...bot,
-          unread: Boolean(bot.tasks?.some((task) => task.threadId !== bot.threadId && task.unread)),
-          tasks: bot.tasks?.map((task) => task.threadId === bot.threadId ? { ...task, unread: false } : task) }));
+        if (switched.activeView === "chat") switched = updateBot(switched, opened.id, (bot) => readOnScreen(bot, bot.threadId));
       }
       return clearThreadReturnIfHome(reconcileModelVariantSessions(reconcileSnapshotQueues(switched, [action.bot])));
     }
@@ -4838,6 +4871,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const group = stateRef.current.groups.find((g) => g.id === id);
           if (bot?.unread) {
             api(`/api/bots/${id}/read`, { method: "POST", body: JSON.stringify({ threadId: bot.threadId }) }).catch(() => {});
+            // threads hidden: the one conversation's other unread threads too
+            for (const threadId of threadsReadOnScreen(bot, bot.threadId).slice(1)) {
+              api(`/api/bots/${id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
+            }
           } else if (group?.peopleDm) {
             // per thread: the one open, or the whole conversation when only
             // the conversation itself was marked unread
@@ -5480,13 +5517,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // Under a fresh topic the thread is not on screen: its answer stays
           // unread, so the topic gives way and shows it (ChatView).
           const covered = stateRef.current.freshTopic[bot.id]?.threadId === shown;
+          const readWith = shown && !covered ? threadsReadOnScreen(bot as Pick<Bot, "tasks">, shown).slice(1) : [];
           if (!covered && bot.id === stateRef.current.selectedId && stateRef.current.activeView === "chat" &&
-              (selectedTask?.unread || (!bot.tasks && bot.unread))) {
+              (selectedTask?.unread || (!bot.tasks && bot.unread) || readWith.length > 0)) {
+            const wasUnread = Boolean(selectedTask?.unread || (!bot.tasks && bot.unread));
             if (selectedTask) selectedTask.unread = false;
+            // Threads hidden: a reply landing in another thread of the one
+            // conversation on screen is read with it (threadsReadOnScreen).
+            for (const task of bot.tasks ?? []) if (readWith.includes(task.threadId)) task.unread = false;
             // Hidden routine runs must not put the dot back on the next frame.
             // No task list: the bot flag is the unread signal.
             bot.unread = botShowsUnread(bot);
-            fetch(`/api/bots/${bot.id}/read`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ threadId: shown }) }).catch(() => {});
+            for (const threadId of [...(wasUnread ? [shown] : []), ...readWith]) {
+              fetch(`/api/bots/${bot.id}/read`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ threadId }) }).catch(() => {});
+            }
           }
           rawDispatch({
             type: "botPatched",

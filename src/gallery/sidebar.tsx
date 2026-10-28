@@ -1,7 +1,9 @@
 /** Isolated gallery for Playwright screenshots of the whole desktop sidebar
  * (bot rows, Primary Bot, sections, foot) beside the reference design's. Not shipped in
  * the app. It answers /api itself with a made-up team, so nothing reaches a
- * server. ?skin=<id>&lang=<code>&threads=header|sidebar&width=<px, 368>
+ * server. ?skin=<id>&lang=<code>&threads=one|header|sidebar&width=<px, 368>
+ * &density=comfortable|compact&rooms=1 (a room and a person's conversation
+ * beside the bots, for the row alignment check)
  * &sharing=1: an organization with bots shared by Ada and Bob (their faces on
  * the avatar), the viewer's own bot, working bots and two people with their
  * presence (the capture script serves /api/people/<id>/avatar). */
@@ -12,6 +14,7 @@ import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, useStore, type Bot, type Message, type Task } from "../state/store";
 import { applyPresenceList } from "../lib/presence";
 import { Sidebar } from "../components/Sidebar";
+import { TaskPicker } from "../components/TaskPicker";
 import { MASCOT_CHARACTERS, type MascotLook } from "../../shared/mascot-look";
 import "../styles.css";
 
@@ -25,6 +28,9 @@ try {
   localStorage.setItem("omb-sidebar-width-v2", params.get("width") ?? "368");
   if (params.get("rail") === "1") localStorage.setItem("openmausbot.sidebarDensity", "icons");
   localStorage.setItem("omb-threads-location", params.get("threads") === "sidebar" ? "sidebar" : "header");
+  // Settings > Conversation threads: "one" is threads off
+  localStorage.setItem("omb-show-threads", params.get("threads") === "one" ? "0" : "1");
+  if (params.get("density") === "compact" || params.get("density") === "comfortable") localStorage.setItem("openmausbot.sidebarDensity", params.get("density")!);
 } catch {
   // the gallery still renders with the defaults
 }
@@ -89,6 +95,13 @@ const dmGroups = sharing ? [
   { id: "dm-ada", threadId: "dm-ada-t", name: "Ada", memberIds: [], peopleDm: true, humanIds: ["pr_me", "pr_ada"], defaultResponder: { kind: "mentions" }, bulletin: "", unread: false, createdAt: minutes(500), messages: [message("dm1", "On se parle demain.", minutes(20))] },
   { id: "dm-bob", threadId: "dm-bob-t", name: "Bob", memberIds: [], peopleDm: true, humanIds: ["pr_me", "pr_bob"], defaultResponder: { kind: "mentions" }, bulletin: "", unread: false, createdAt: minutes(600), messages: [message("dm2", "Merci!", minutes(90))] },
 ] : [];
+if (params.get("rooms") === "1") dmGroups.push(
+  { id: "room-ops", threadId: "room-ops-t", name: "Ops", memberIds: ["atlas", "iris"], defaultResponder: { kind: "mentions" }, bulletin: "", unread: false, createdAt: minutes(700),
+    messages: [message("r1", "Le plan de la semaine est prêt.", minutes(15))],
+    tasks: [task("room-ops-t", "Général", minutes(15)), task("room-ops-2", "Suivi des billets", minutes(60))] } as never,
+  { id: "dm-sam", threadId: "dm-sam-t", name: "Sam", memberIds: [], peopleDm: true, humanIds: ["pr_me", "pr_sam"], defaultResponder: { kind: "mentions" }, bulletin: "", unread: false, createdAt: minutes(800),
+    messages: [message("dm3", "Parfait, merci.", minutes(35))] } as never,
+);
 
 // ?character=<id> dresses the whole team as that mascot (shape, frog...)
 const characterParam = params.get("character");
@@ -152,12 +165,25 @@ function SelectAtlas() {
   return null;
 }
 
+function HeaderThreads() {
+  const { state } = useStore();
+  const atlas = state.bots.find((candidate) => candidate.id === "atlas");
+  return atlas ? <TaskPicker bot={atlas} /> : null;
+}
+
 function Gallery() {
   return (
     <StoreProvider>
       <SelectAtlas />
-      <div data-gallery className={`flex h-[1015px] ${params.get("rail") === "1" ? "w-[80px]" : "w-[368px]"} overflow-hidden bg-app text-ink`}>
-        <Sidebar open onClose={() => {}} />
+      <div className="flex">
+        <div data-gallery className={`flex h-[1015px] ${params.get("rail") === "1" ? "w-[80px]" : "w-[368px]"} overflow-hidden bg-app text-ink`}>
+          <Sidebar open onClose={() => {}} />
+        </div>
+        {/* the chat header's thread control, for the mode captures */}
+        <div data-gallery-header className="flex h-[52px] w-[360px] items-center gap-2 border-b border-hairline/40 bg-app px-4 text-ink">
+          <span className="text-[13px] font-medium">Atlas</span>
+          <HeaderThreads />
+        </div>
       </div>
     </StoreProvider>
   );

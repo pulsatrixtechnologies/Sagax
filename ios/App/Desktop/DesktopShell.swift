@@ -132,8 +132,13 @@ final class DesktopShellModel: ObservableObject {
     /// The desktop popover open over the shell (a row's Actions, the
     /// account menu, New), anchored in the shell's coordinates.
     @Published var menu: DesktopMenuRequest?
-    /// Bots whose thread list is open (Show threads on).
-    @Published var openThreadLists = Set<String>()
+    /// Bots whose thread list is open (Show threads on, in the sidebar),
+    /// remembered on this device: a relaunch, a refresh or another bot's
+    /// selection never folds one shut.
+    @Published var openThreadLists = Set(UserDefaults.standard.stringArray(forKey: DesktopShellModel.openThreadListsKey) ?? []) {
+        didSet { UserDefaults.standard.set(Array(openThreadLists).sorted(), forKey: DesktopShellModel.openThreadListsKey) }
+    }
+    static let openThreadListsKey = "sagax.sidebar.threadsOpen.v1"
     /// Folders folded in those lists, by "botId:folderId".
     @Published var foldedFolders = Set<String>()
     /// The section a dragged row or section hovers (DD1).
