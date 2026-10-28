@@ -6,7 +6,7 @@
 // The fake CLI is a shebang script Windows cannot exec directly; spawnCli
 // resolves it to `node <script>`, so these run everywhere.
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,8 @@ import { sagaxInternalSelfAnswers } from "../sagax-internal-tools.ts";
 import {
   applyPiLocalCatalog,
   markSharedPrompt,
+  piSessionDirName,
+  writePiSession,
   buildMcpServers,
   piGatedMcpInput,
   piGatedMcpTool,
@@ -1666,5 +1668,24 @@ describe("markSharedPrompt (#1276)", () => {
   it("leaves a turn without the prompt, or without a split, unchanged", () => {
     expect(markSharedPrompt("just the question", halves, sections)).toBe("just the question");
     expect(markSharedPrompt("x", { stable: null, volatile: "" }, undefined)).toBe("x");
+  });
+});
+
+describe("a pi started ahead for the next new conversation (#1276)", () => {
+  it("names the session folder as pi does", () => {
+    expect(piSessionDirName("/Users/a/work/b")).toBe("--Users-a-work-b--");
+  });
+  it("writes a header-only session in the conversation's folder, which pi then opens", () => {
+    const root = mkdtempSync(join(tmpdir(), "omb-pi-sessions-"));
+    try {
+      const file = writePiSession(root, "/Users/a/work/b");
+      expect(file.startsWith(join(root, "--Users-a-work-b--"))).toBe(true);
+      const header = JSON.parse(readFileSync(file, "utf8"));
+      expect(header).toMatchObject({ type: "session", version: 3, cwd: "/Users/a/work/b" });
+      expect(file).toContain(header.id);
+      expect(writePiSession(root, "/Users/a/work/b")).not.toBe(file);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
