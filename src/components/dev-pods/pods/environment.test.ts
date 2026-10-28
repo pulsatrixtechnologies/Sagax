@@ -7,7 +7,9 @@ import type { Bot, Message } from "@/state/store";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const api = vi.fn(async (_path: string): Promise<{ items: Array<{ threadId: string; code?: { repo?: string; repoUrl?: string; branch?: string } }> }> => ({ items: [] }));
+const api = vi.fn(async (path: string): Promise<{ items?: unknown; sessions?: unknown[] }> => (
+  String(path).includes("remote-sessions") ? { sessions: [] } : { items: [] }
+));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: (path: string) => api(path),
@@ -40,13 +42,13 @@ afterEach(async () => {
   container.remove();
 });
 
-function render(data: { folder: string | null; branch: string | null }) {
+function render(data: { folder: string | null; branch: string | null }, extra: Partial<typeof ctx> = {}) {
   return act(async () => {
     const { devPodDefinitions } = await import("../registry");
     const pod = devPodDefinitions().find((entry) => entry.id === "environment")!;
     root.render(createElement(pod.Body, {
       data: { place: "local", placeLabel: "This computer", computer: true, state: null, ...data },
-      ctx,
+      ctx: { ...ctx, ...extra },
     }));
   });
 }
@@ -71,7 +73,11 @@ describe("environment work", () => {
 
 describe("environment folder menu", () => {
   it("offers the folder actions and shows the repository the server named", async () => {
-    api.mockResolvedValueOnce({ items: [{ threadId: "thread-1", code: { repo: "acme/portal", branch: "fix/sso" } }] });
+    api.mockImplementation(async (path: string) => (
+      String(path).includes("remote-sessions")
+        ? { sessions: [] }
+        : { items: [{ threadId: "thread-1", code: { repo: "acme/portal", branch: "fix/sso" } }] }
+    ));
     await render({ folder: "/Users/me/acme/portal", branch: null });
     await act(async () => { await Promise.resolve(); });
     expect(container.querySelector("[data-env-repo]")!.textContent).toContain("acme/portal");
@@ -94,5 +100,28 @@ describe("environment folder menu", () => {
     await act(async () => { menu.click(); });
     const items = [...container.querySelectorAll("[role='menuitem']")].map((node) => node.textContent);
     expect(items).toEqual([t("devPods.environment.copyPath"), t("devPods.environment.addFolder")]);
+  });
+
+  it("saves this computer or the cloud computer on the bot's own setting", async () => {
+    const dispatch = vi.fn();
+    await render({ folder: "/Users/me/acme/portal", branch: null }, { dispatch });
+    const cloud = container.querySelector<HTMLButtonElement>('[data-env-place="cloud"]')!;
+    await act(async () => { cloud.click(); });
+    expect(dispatch).toHaveBeenCalledWith({ type: "updateBot", botId: "dev", patch: { computer: "cloud" } });
+  });
+
+  it("shows a Tailcat socket instead of hiding the row, and does not copy the address", async () => {
+    const address = "tc" + "a".repeat(30);
+    await render({ folder: null, branch: null }, {
+      messages: [{
+        id: "m2", role: "bot", kind: "text", text: `socket ${address}`,
+        terminalEmbed: { sessionId: "s", resourceId: "r", provider: "tailcat", hostLabel: "BQDHS7", label: "Remote", status: "live" },
+      }] as never,
+    });
+    const row = container.querySelector("[data-env-remote]")!;
+    expect(row.getAttribute("data-env-remote-socket")).toBe("1");
+    expect(row.textContent).not.toContain(address);
+    expect(container.querySelector("[data-env-remote-copy]")).not.toBeNull();
+    expect(container.querySelector("[data-env-remote-toggle]")).toBeNull();
   });
 });

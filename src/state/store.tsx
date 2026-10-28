@@ -592,8 +592,15 @@ export interface TaskUsage {
   turns: number;
   /** the most recent settled turn on its own */
   lastTurn?: { input: number; output: number; cachedInput?: number; costUsd: number | null };
-  /** what filled the model's window on the last model call, and the window's size when known */
-  context?: { tokens: number; window?: number };
+  /** what filled the model's window on the last model call, and the window's size when known.
+   * promptBytes is the assembled system prompt, in bytes, when that turn measured it.
+   * buckets are the sizes that turn could measure (a message count, and bytes). */
+  context?: {
+    tokens: number;
+    window?: number;
+    promptBytes?: number;
+    buckets?: Partial<Record<"messages" | "tools" | "memory" | "skills" | "agents" | "prompt", number>>;
+  };
 }
 
 export interface Bot {

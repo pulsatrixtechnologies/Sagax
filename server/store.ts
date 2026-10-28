@@ -24,6 +24,7 @@ import { ThreadCache, type ThreadState } from "./thread-cache.ts";
 import { forgetBotMemoryJournal, journalFile } from "./memory-journal.ts";
 import { forgetLogMemory } from "./content-at-rest.ts";
 import { forgetWorkspaceUsage } from "./workspace-usage.ts";
+import { nextContext } from "./context-reading.ts";
 import { runCommand, type Command } from "./commands.ts";
 import { workspaceDir } from "./workspace.ts";
 import { autoOnlyDestination, type Destination } from "./surface.ts";
@@ -3001,7 +3002,10 @@ export class Store {
   addTaskUsage(
     botId: string,
     threadId: string,
-    turn: { input?: number; output?: number; cachedInput?: number; costUsd: number | null; context?: { tokens?: number; window?: number } },
+    turn: {
+      input?: number; output?: number; cachedInput?: number; costUsd: number | null;
+      context?: { tokens?: number; window?: number; promptBytes?: number; buckets?: NonNullable<TaskUsage["context"]>["buckets"] };
+    },
   ): TaskUsage | null {
     const task = this.taskByThread(botId, threadId);
     if (!task) return null;
@@ -3018,8 +3022,7 @@ export class Store {
     const turnInput = clean(turn.input);
     const nextCachedInput = Math.min(clean(prev.cachedInput), prevInput)
       + Math.min(clean(turn.cachedInput), turnInput);
-    const contextTokens = clean(turn.context?.tokens);
-    const contextWindow = clean(turn.context?.window);
+    const context = nextContext(prev.context, turn.context ?? {});
     task.usage = {
       input: prevInput + turnInput,
       output: prev.output + clean(turn.output),
@@ -3032,10 +3035,9 @@ export class Store {
         costUsd: cost,
       },
       // a turn that reported no context keeps the previous reading rather
-      // than pretending the window emptied
-      ...(contextTokens > 0
-        ? { context: { tokens: contextTokens, ...(contextWindow > 0 ? { window: contextWindow } : {}) } }
-        : prev.context ? { context: prev.context } : {}),
+      // than pretending the window emptied. The prompt size, when this turn
+      // measured one, rides on that reading.
+      ...(context ? { context } : {}),
     };
     saveBotsFor("the thread's usage", () => this.saveBots());
     this.emit({ type: "bot", botId });
@@ -3365,9 +3367,9 @@ export class Store {
     return this.patchTask(botId, threadId, { link: url, linkAuto: true });
   }
 
-  /** Workspace is always Auto (2026-10-18): a Works on that fixed a
-   * place (Cloud, Local VM, This computer, Browser) goes back to Auto, and
-   * every conversation pin goes, whoever set it. Off stays: it withholds
+  /** A Local VM or the browser on Works on goes back to Auto, and every
+   * conversation pin goes, whoever set it. This computer and the cloud
+   * computer stay. Off stays: it withholds
    * every screen, and lifting it would widen what the bot may reach.
    * Levels are never touched (#1098, 2026-10-27): the one-time move of
    * 2026-10-18 that put a bot or a conversation kept off this computer back

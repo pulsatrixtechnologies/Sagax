@@ -216,6 +216,19 @@ public struct TaskUsage: Codable, Hashable, Sendable {
     public struct Context: Codable, Hashable, Sendable {
         public var tokens: Int
         public var window: Int?
+        /// Bytes of the assembled system prompt, when the server measured it.
+        public var promptBytes: Int? = nil
+        /// Measured buckets. A missing key was not measured.
+        public var buckets: Buckets? = nil
+
+        public struct Buckets: Codable, Hashable, Sendable {
+            public var messages: Int?
+            public var tools: Int?
+            public var memory: Int?
+            public var skills: Int?
+            public var agents: Int?
+            public var prompt: Int?
+        }
     }
 
     public var input: Int

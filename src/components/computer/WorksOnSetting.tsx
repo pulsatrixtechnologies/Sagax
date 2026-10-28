@@ -1,9 +1,8 @@
 // The bot's Works on, once, as the editor's Workspace page on a solo server
-// and on an organization server. Workspace is always Auto (2026-10-18):
-// the bot picks where each task runs among every place it may use (the
-// cloud, a Local VM, this computer, the browser), so no place is offered
-// here. Off stays: it is the restriction that gives the bot no computer and
-// no browser at all, and lifting it would widen what the bot may reach.
+// and on an organization server. This computer and the cloud computer are
+// saved on the bot (`computer`). A Local VM or the browser is still Auto:
+// the bot picks those per task. Off stays: it gives the bot no computer and
+// no browser at all.
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
@@ -13,18 +12,22 @@ import type { Bot } from "@/state/store";
 
 import { useBotSettingsDerived } from "../bot-settings/useBotSettingsDerived";
 
-/** null is Auto. A place an older build saved reads as Auto (the server
- * moves it back to Auto at start). */
-export type WorksOnMode = "off" | null;
-export const WORKS_ON_MODES: readonly WorksOnMode[] = [null, "off"];
+/** null is Auto. This computer and the cloud computer are kept. A Local VM
+ * or the browser still reads as Auto. */
+export type WorksOnMode = "off" | "local" | "cloud" | null;
+export const WORKS_ON_MODES: readonly WorksOnMode[] = [null, "local", "cloud", "off"];
 
-/** What the bot's stored Works on means now: Off, else Auto. */
+/** What the bot's stored Works on means now. */
 export function worksOnMode(computer: Bot["computer"] | null | undefined): WorksOnMode {
-  return computer === "off" ? "off" : null;
+  if (computer === "off" || computer === "local" || computer === "cloud") return computer;
+  return null;
 }
 
-const MEANS: Record<"auto" | "off", LocaleKey> = {
-  auto: "worksOn.tip.autoOnly", off: "computer.dest.offDesc",
+const MEANS: Record<"auto" | "local" | "cloud" | "off", LocaleKey> = {
+  auto: "worksOn.tip.autoOnly",
+  local: "worksOn.tip.local",
+  cloud: "worksOn.tip.cloud",
+  off: "computer.dest.offDesc",
 };
 
 /** The tooltip of one choice: what it means. */

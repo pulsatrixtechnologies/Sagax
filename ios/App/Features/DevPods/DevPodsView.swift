@@ -282,6 +282,16 @@ struct DevPodsView: View {
 
     // MARK: Context
 
+    @ViewBuilder
+    private func contextBucket(_ id: String, _ text: String?) -> some View {
+        if let text {
+            Text(verbatim: text)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("dev-pods.context.\(id)")
+        }
+    }
+
     private func contextSection(_ share: DevContextShare) -> some View {
         let tint: Color = share.tone == .quiet ? .secondary : .orange
         let tokens = BotUsageTotal.formatTokens(share.tokens)
@@ -301,6 +311,14 @@ struct DevPodsView: View {
                 Text(verbatim: detail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                if let buckets = share.buckets {
+                    contextBucket("messages", buckets.messages.map { String(localized: "devPods.context.messages", defaultValue: "Messages: {count}").replacingOccurrences(of: "{count}", with: "\($0)") })
+                    contextBucket("tools", buckets.tools.map { String(localized: "devPods.context.tools", defaultValue: "Tools: {bytes} bytes").replacingOccurrences(of: "{bytes}", with: "\($0)") })
+                    contextBucket("memory", buckets.memory.map { String(localized: "devPods.context.memory", defaultValue: "Memory: {bytes} bytes").replacingOccurrences(of: "{bytes}", with: "\($0)") })
+                    contextBucket("skills", buckets.skills.map { String(localized: "devPods.context.skills", defaultValue: "Skills: {bytes} bytes").replacingOccurrences(of: "{bytes}", with: "\($0)") })
+                    contextBucket("agents", buckets.agents.map { String(localized: "devPods.context.agents", defaultValue: "Agents: {bytes} bytes").replacingOccurrences(of: "{bytes}", with: "\($0)") })
+                    contextBucket("prompt", buckets.prompt.map { String(localized: "devPods.context.prompt", defaultValue: "Prompt: {bytes} bytes").replacingOccurrences(of: "{bytes}", with: "\($0)") })
+                }
             }
             .padding(.vertical, 4)
             .accessibilityIdentifier("dev-pods.context")

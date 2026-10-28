@@ -15,6 +15,7 @@ import { dirname, isAbsolute, join } from "node:path";
 
 import { parseUnifiedDiff } from "../shared/code-runs.ts";
 import type { BotBranchChange, BotBranchPull, BotBranchState } from "../shared/bot-code-branches.ts";
+import { failedActionRuns, parsePullView, type PullView } from "./pull-view.ts";
 
 export interface GitResult {
   code: number;
@@ -484,6 +485,78 @@ export class BranchPulls {
     const url = /https:\/\/\S+\/pull\/(\d+)/.exec(result.stdout);
     if (!url) throw new BranchActionError("GitHub did not return the pull request's address.", "pr_failed", 502);
     return { number: Number(url[1]), url: url[0], state: "open" };
+  }
+
+  /** The forge's own counts and state for a pull request this conversation
+   * already opened. `gh pr view`, the same CLI the bot uses. */
+  async view(number: number): Promise<PullView | undefined> {
+    const result = await this.gh(["pr", "view", String(number), "--json", "number,additions,deletions,state,isDraft,url,autoMergeRequest,headRefName"]);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
+    return parsePullView(result.stdout, number);
+  }
+
+  /** `gh pr ready --undo`: back to a draft. The same verb the bot uses. */
+  async toDraft(number: number): Promise<void> {
+    const result = await this.gh(["pr", "ready", String(number), "--undo"]);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
+  }
+
+  /** `gh pr close`: the same verb the bot uses to close a pull request. */
+  async close(number: number): Promise<void> {
+    const result = await this.gh(["pr", "close", String(number)]);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
+  }
+
+  /** `gh pr merge --auto` or `--disable-auto`: merge when ready. Squash is
+   * the method this app uses; a repository that refuses it answers as gh said. */
+  async mergeWhenReady(number: number, on: boolean): Promise<void> {
+    const args = on ? ["pr", "merge", String(number), "--squash", "--auto"] : ["pr", "merge", String(number), "--disable-auto"];
+    const result = await this.gh(args);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
+  }
+
+  /** Restart the failed GitHub Actions runs on this pull request
+   * (`gh run rerun --failed`). A check that is not an Actions run is skipped.
+   * Nothing failed: the call says so, it does not pretend to have fixed it. */
+  async autoFix(number: number): Promise<number> {
+    const result = await this.gh(["pr", "view", String(number), "--json", "statusCheckRollup"]);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
+    const runs = failedActionRuns(result.stdout);
+    if (!runs.length) throw new BranchActionError("Nothing on that pull request is a failed GitHub Actions run.", "nothing_failing", 409);
+    for (const id of runs) {
+      const rerun = await this.gh(["run", "rerun", id, "--failed"]);
+      if (rerun.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+      if (rerun.code !== 0) throw ghError(rerun.stderr);
+    }
+    return runs.length;
+  }
+
+  /** Delete the head branch once the pull request is merged or closed
+   * (`gh api` DELETE of that ref). While it is still open, schedule the
+   * same thing: merge when ready and delete the branch after
+   * (`gh pr merge --auto --delete-branch`). The default branch is never deleted. */
+  async autoArchive(number: number): Promise<"deleted" | "scheduled"> {
+    const pull = await this.view(number);
+    if (!pull) throw new BranchActionError("GitHub did not return that pull request.", "pr_failed", 502);
+    if (pull.state === "open") {
+      const result = await this.gh(["pr", "merge", String(number), "--squash", "--auto", "--delete-branch"]);
+      if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+      if (result.code !== 0) throw ghError(result.stderr);
+      return "scheduled";
+    }
+    if (!pull.head || !validBranchName(pull.head) || PROTECTED_BRANCHES.has(pull.head)) {
+      throw new BranchActionError("That branch is not deleted from here.", "default_branch", 400);
+    }
+    const encoded = pull.head.split("/").map((part) => encodeURIComponent(part)).join("/");
+    const result = await this.gh(["api", "--method", "DELETE", `repos/${this.repo}/git/refs/heads/${encoded}`], false);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
+    return "deleted";
   }
 }
 
