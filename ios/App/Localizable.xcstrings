@@ -337,6 +337,461 @@
         "pt-BR": { "stringUnit": { "state": "translated", "value": "até" } }
       }
     },
+    "Only when something changes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Only when something changes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Seulement quand quelque chose change" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Only when something changes" } }
+      }
+    },
+    "On each due time, Sagax checks without any model turn and starts the run only on a change. At most one check every %lld min.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On each due time, Sagax checks without any model turn and starts the run only on a change. At most one check every %lld min." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "À chaque échéance, Sagax vérifie sans aucun tour de modèle et ne lance l'exécution que s'il y a un changement. Au plus une vérification aux %lld min." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "On each due time, Sagax checks without any model turn and starts the run only on a change. At most one check every %lld min." } }
+      }
+    },
+    "What to watch": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What to watch" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quoi surveiller" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "What to watch" } }
+      }
+    },
+    "A file or folder of the bot's folder: names, sizes, dates": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A file or folder of the bot's folder: names, sizes, dates" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un fichier ou un dossier du dossier du bot : noms, tailles, dates" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A file or folder of the bot's folder: names, sizes, dates" } }
+      }
+    },
+    "Its output, run where the bot works": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Its output, run where the bot works" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sa sortie, exécutée là où le bot travaille" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Its output, run where the bot works" } }
+      }
+    },
+    "A read tool of a connection, fixed arguments": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A read tool of a connection, fixed arguments" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un outil de lecture d'une connexion, arguments fixes" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A read tool of a connection, fixed arguments" } }
+      }
+    },
+    "File or folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "File or folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fichier ou dossier" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "File or folder" } }
+      }
+    },
+    "reports (empty: the bot's folder)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "reports (empty: the bot's folder)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "rapports (vide : le dossier du bot)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "reports (empty: the bot's folder)" } }
+      }
+    },
+    "Include subfolders (up to %lld levels)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Include subfolders (up to %lld levels)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Inclure les sous-dossiers (jusqu'à %lld niveaux)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Include subfolders (up to %lld levels)" } }
+      }
+    },
+    "Tool (server__tool)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tool (server__tool)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Outil (serveur__outil)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Tool (server__tool)" } }
+      }
+    },
+    "Arguments (JSON, fixed)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Arguments (JSON, fixed)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Arguments (JSON, fixes)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Arguments (JSON, fixed)" } }
+      }
+    },
+    "Read where the bot works; .git and node_modules are skipped, at most %lld entries.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read where the bot works; .git and node_modules are skipped, at most %lld entries." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lu là où le bot travaille ; .git et node_modules sont ignorés, au plus %lld entrées." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Read where the bot works; .git and node_modules are skipped, at most %lld entries." } }
+      }
+    },
+    "Runs in the bot's folder, where the bot works, with the same access as the routine. At most %lld s and %lld KB of output.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Runs in the bot's folder, where the bot works, with the same access as the routine. At most %lld s and %lld KB of output." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "S'exécute dans le dossier du bot, là où il travaille, avec les mêmes accès que la routine. Au plus %1$lld s et %2$lld Ko de sortie." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Runs in the bot's folder, where the bot works, with the same access as the routine. At most %1$lld s and %2$lld KB of output." } }
+      }
+    },
+    "Read tools only (search, list, get, query...): a tool that changes or sends something is refused. As the person the routine runs as. At most %lld s and %lld KB.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read tools only (search, list, get, query...): a tool that changes or sends something is refused. As the person the routine runs as. At most %lld s and %lld KB." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Outils de lecture seulement (chercher, lister, lire, interroger...) : un outil qui modifie ou envoie quelque chose est refusé. Au nom de la personne pour qui la routine s'exécute. Au plus %1$lld s et %2$lld Ko." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Read tools only (search, list, get, query...): a tool that changes or sends something is refused. As the person the routine runs as. At most %1$lld s and %2$lld KB." } }
+      }
+    },
+    "Condition": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Condition" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Condition" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Condition" } }
+      }
+    },
+    "None: any change": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "None: any change" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune : tout changement" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "None: any change" } }
+      }
+    },
+    "A value of the JSON result": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A value of the JSON result" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une valeur du résultat JSON" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A value of the JSON result" } }
+      }
+    },
+    "exists, count or bytes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "exists, count or bytes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "exists, count ou bytes" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "exists, count or bytes" } }
+      }
+    },
+    "The text contains": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The text contains" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le texte contient" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "The text contains" } }
+      }
+    },
+    "The exit code": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The exit code" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le code de sortie" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "The exit code" } }
+      }
+    },
+    "Path in the result": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Path in the result" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chemin dans le résultat" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Path in the result" } }
+      }
+    },
+    "Comparison": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Comparison" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Comparaison" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Comparison" } }
+      }
+    },
+    "Value": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Value" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Valeur" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Value" } }
+      }
+    },
+    "equals": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "equals" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "égal à" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "equals" } }
+      }
+    },
+    "differs from": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "differs from" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "différent de" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "differs from" } }
+      }
+    },
+    "greater than": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "greater than" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "plus grand que" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "greater than" } }
+      }
+    },
+    "at least": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "at least" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "au moins" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "at least" } }
+      }
+    },
+    "less than": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "less than" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "plus petit que" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "less than" } }
+      }
+    },
+    "at most": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "at most" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "au plus" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "at most" } }
+      }
+    },
+    "contains": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "contains" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "contient" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "contains" } }
+      }
+    },
+    "exists": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "exists" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "existe" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "exists" } }
+      }
+    },
+    "Contains or not": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Contains or not" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Contient ou non" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Contains or not" } }
+      }
+    },
+    "does not contain": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "does not contain" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "ne contient pas" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "does not contain" } }
+      }
+    },
+    "Text": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Text" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Texte" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Text" } }
+      }
+    },
+    "is not": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "is not" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "n'est pas" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "is not" } }
+      }
+    },
+    "is": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "is" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "est" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "is" } }
+      }
+    },
+    "When it changes and the condition holds": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "When it changes and the condition holds" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quand ça change et que la condition est vraie" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "When it changes and the condition holds" } }
+      }
+    },
+    "On every check where the condition holds": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On every check where the condition holds" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "À chaque vérification où la condition est vraie" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "On every check where the condition holds" } }
+      }
+    },
+    "Compare only some items and fields": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Compare only some items and fields" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Comparer seulement certains éléments et champs" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Compare only some items and fields" } }
+      }
+    },
+    "For a JSON result: the list to compare, the field that names each item, and the fields that count. The run then says what is new, changed or gone.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "For a JSON result: the list to compare, the field that names each item, and the fields that count. The run then says what is new, changed or gone." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pour un résultat JSON : la liste à comparer, le champ qui nomme chaque élément et les champs qui comptent. L'exécution dit alors ce qui est nouveau, modifié ou parti." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "For a JSON result: the list to compare, the field that names each item, and the fields that count. The run then says what is new, changed or gone." } }
+      }
+    },
+    "list: $.items": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "list: $.items" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "liste : $.items" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "list: $.items" } }
+      }
+    },
+    "Key field": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Key field" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Champ clé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Key field" } }
+      }
+    },
+    "key: id": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "key: id" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "clé : id" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "key: id" } }
+      }
+    },
+    "Fields": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Fields" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Champs" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fields" } }
+      }
+    },
+    "fields: status, priority": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "fields: status, priority" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "champs : status, priority" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "fields: status, priority" } }
+      }
+    },
+    "First check": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "First check" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Première vérification" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "First check" } }
+      }
+    },
+    "Starting point, no run": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Starting point, no run" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Point de départ, sans exécution" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Starting point, no run" } }
+      }
+    },
+    "Run once with the whole result": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Run once with the whole result" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lancer une fois avec tout le résultat" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Run once with the whole result" } }
+      }
+    },
+    "If the cloud computer is asleep": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "If the cloud computer is asleep" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Si l'ordinateur infonuagique dort" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "If the cloud computer is asleep" } }
+      }
+    },
+    "Check only while it is awake": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Check only while it is awake" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vérifier seulement quand il est éveillé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Check only while it is awake" } }
+      }
+    },
+    "Wake it to check": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Wake it to check" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le réveiller pour vérifier" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Wake it to check" } }
+      }
+    },
+    "Waking it keeps the cloud computer on: it may start for every check (several minutes when it was stopped) and costs its running time.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waking it keeps the cloud computer on: it may start for every check (several minutes when it was stopped) and costs its running time." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le réveiller garde l'ordinateur infonuagique allumé : il peut démarrer à chaque vérification (plusieurs minutes s'il était arrêté) et coûte son temps d'exécution." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Waking it keeps the cloud computer on: it may start for every check (several minutes when it was stopped) and costs its running time." } }
+      }
+    },
+    "Check now": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Check now" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vérifier maintenant" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Check now" } }
+      }
+    },
+    "Checking...": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Checking..." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vérification..." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Checking..." } }
+      }
+    },
+    "%@ · %lld ms, no model": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ · %lld ms, no model" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$lld ms, sans modèle" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%1$@ · %2$lld ms, no model" } }
+      }
+    },
+    "The condition holds (%@)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The condition holds (%@)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La condition est vraie (%@)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "The condition holds (%@)" } }
+      }
+    },
+    "The condition does not hold (%@)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The condition does not hold (%@)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La condition n'est pas vraie (%@)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "The condition does not hold (%@)" } }
+      }
+    },
+    "Choose a path inside the bot's folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose a path inside the bot's folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisissez un chemin dans le dossier du bot" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Choose a path inside the bot's folder" } }
+      }
+    },
+    "Write the command to run": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Write the command to run" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrivez la commande à exécuter" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Write the command to run" } }
+      }
+    },
+    "Name the tool to call": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Name the tool to call" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nommez l'outil à appeler" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Name the tool to call" } }
+      }
+    },
+    "The arguments must be a JSON object": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The arguments must be a JSON object" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les arguments doivent être un objet JSON" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "The arguments must be a JSON object" } }
+      }
+    },
+    "Choose the path to test": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose the path to test" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisissez le chemin à tester" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Choose the path to test" } }
+      }
+    },
+    "Write the text to look for": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Write the text to look for" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrivez le texte à chercher" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Write the text to look for" } }
+      }
+    },
+    "Runs on change": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Runs on change" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Selon les changements" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Runs on change" } }
+      }
+    },
+    "routineWatch.run": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Run" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lancer" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Run" } }
+      }
+    },
     "Approvals" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Approvals" } },

@@ -2084,6 +2084,10 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var postResults: Bool? = nil
     /// Skipped runs to report once the person is back.
     public var awaySkips: RoutineAwaySkips? = nil
+    /// The pre-check run before each scheduled turn, kept as sent: a watch
+    /// ("Only when something changes", RoutineWatch.swift) or a condition
+    /// set elsewhere. An edit sends it only when the person changed it.
+    public var precheck: WidgetJSON? = nil
 }
 
 public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
@@ -2171,6 +2175,8 @@ public struct RoutineInput: Encodable, Sendable {
     /// Failed runs in a row that pause it (0 never). Nil leaves the stored
     /// value alone on an edit and keeps the default (5) on a create.
     public var autoPauseAfter: Int? = nil
+    /// "Only when something changes": keep (nothing sent), set or remove.
+    public var watch: RoutineWatchEdit = .keep
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",

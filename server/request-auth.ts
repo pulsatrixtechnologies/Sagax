@@ -743,6 +743,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/routines$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/routines\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/routines\/[\w-]+\/run$/ },
+  // "Check now" of "Only when something changes" (#1202): one reading, no
+  // model, nothing kept; the handler applies the same rights as saving a
+  // routine of that bot, so a member checks their own watch without an admin
+  { methods: ["POST"], path: /^\/api\/routines\/watch-check$/ },
   // "Only when I'm here" (routes/routine-away.ts): the page's beat, the
   // person's own state, and dismissing their report (the route checks whose)
   // "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):

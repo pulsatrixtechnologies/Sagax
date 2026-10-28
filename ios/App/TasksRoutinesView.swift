@@ -702,6 +702,16 @@ private struct RoutineRow: View {
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("routines-row-run-as.\(routine.name)")
                 }
+                // #1202: runs only when something changes (shared/routine-watch.ts)
+                if routine.runsOnChange {
+                    Text("Runs on change")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Theme.inset, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .accessibilityIdentifier("routines-row-watch.\(routine.name)")
+                }
                 // 2026-10-26: paused by itself after failures in a row; the
                 // schedule above stays, Resume turns it back on
                 if RoutineAutoPause.isAutoPaused(routine), let failures = routine.autoPaused?.failures {

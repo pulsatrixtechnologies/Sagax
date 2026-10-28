@@ -936,8 +936,13 @@ changes. Doc: `docs/routine-schedules.md` ("Only when something changes").
   speaking bot's own level, like any wider "runs without asking"), and
   `propose_routine` / `propose_routine_action` (`watch`, null removes it).
   Editing the watch moves `runAs` to the editor like the instructions.
-- iOS keeps a watch intact (an edit sends only changed fields) and has no
-  editor for it yet.
+- iOS: the routine editor's section of the same name
+  (`ios/App/Features/Routines/RoutineWatchSection.swift`, draft and rules in
+  `ios/Sources/CompanionCore/RoutineWatch.swift`) with every source and
+  option, Check now, and "Runs on change" in the routine lists. An edit
+  sends the watch only when it changed (`RoutineWatchEdit`, `RoutinePatch`);
+  a condition pre-check is never touched. Check now is a member's own
+  (`CLIENT_ALLOW`) and a paired phone's (`companion/src/routes.ts`).
 - Cost: `pnpm bench:routine-watch` (numbers in the doc).
 - Tests: `server/routine-watch.test.ts`, `server/routine-precheck.test.ts`,
   `server/routines.test.ts` ("routine watch"), `server/routine-requests.test.ts`,
