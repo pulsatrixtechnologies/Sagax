@@ -7153,9 +7153,14 @@ and `server/browser-teach.test.ts`:
   written. The editor's list lives in the window; the raw recording is
   downloaded only when the person ticks "keep the raw recording".
 - Saving builds a SKILL.md from the step fields (page words quoted, bounded,
-  cleaned) and installs it through `POST /api/bots/:id/skill-upload`, so it
-  arrives turned off, with the upload route's rights and audit row. The bot
-  replays it with its browser tools and its usual approvals.
+  cleaned) and installs it through `POST /api/bots/:id/shown-path`, so it
+  arrives turned off, with the skills routes' rights and an audit row. The
+  person re-reads the steps first. Closing without saving, or mode `refuse`,
+  writes nothing. A skill of the same name is replaced only when they send
+  `replace: true`. Uploaded skills stay on `skill-upload`, which still
+  refuses a name the bot already has. The bot replays the saved skill with
+  its browser or computer tools and its usual approvals. The phone has the
+  same review in Skills (one step per line).
 - Not done: recording the desktop screen (only the bot's browser).
 
 ## Artifacts: saved widgets that refresh without a turn (2026-10-16)

@@ -9287,6 +9287,8 @@
   "teach.titleRequired": "Donnez d'abord un nom à la compétence.",
   "teach.noSteps": "Il n'y a aucune étape à enregistrer.",
   "teach.exists": "Ce bot a déjà une compétence nommée {name}. Choisissez un autre nom.",
+  "teach.replaceAsk": "Ce bot a déjà une compétence nommée {name}. La remplacer? Les autres compétences restent.",
+  "teach.replace": "Remplacer cette compétence",
   "teach.saveFailed": "La compétence n'a pas pu être enregistrée : {detail}",
   "teach.introScreen": "Modifiez, réordonnez ou retirez des étapes, puis enregistrez-les comme compétence de {bot}. Elle est ajoutée désactivée : activez-la dans Compétences après l'avoir lue. {bot} la rejoue sur son ordinateur avec des captures, des clics et de la saisie, et ses approbations habituelles.",
   "teach.field.screen": "À l'écran",

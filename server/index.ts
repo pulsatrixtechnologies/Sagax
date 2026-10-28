@@ -1102,6 +1102,7 @@ import { setSharedHost } from "./host-kind.ts";
 import { createBotWorkspaceRoutes } from "./routes/bot-workspace.ts";
 import { createBotRulesRoutes } from "./routes/bot-rules.ts";
 import { createBotSkillUploadRoutes } from "./routes/bot-skill-upload.ts";
+import { createShownPathRoutes } from "./routes/shown-path.ts";
 import { docsIndexPrompt, readWorkspaceText, rulesSystemPrompt, WorkspacePathError } from "./workspace-files.ts";
 import { updateDoc, updateRules } from "./workspace-tools.ts";
 import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
@@ -29847,6 +29848,30 @@ ROUTES.push(createBotSkillUploadRoutes({
       target: { kind: "bot", id: row.botId, ...(store.bot(row.botId)?.name ? { name: store.bot(row.botId)!.name } : {}) },
       changed: row.names.map((name) => `skills.${name}`),
       after: { skills: row.names, files: row.files, enabled: false },
+      actor: adminActorFor(auth, req),
+    });
+  },
+}));
+// A path shown once (server/routes/shown-path.ts): preview, save disabled, or refuse.
+// Replacing a skill of the same name needs replace: true. Uploaded skills stay.
+ROUTES.push(createShownPathRoutes({
+  bot: (id) => store.bot(id),
+  refusal: (auth, botId) => botSkillsRefusal(auth, botId, true),
+  existingNames: (botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return [];
+    return [...new Set([...listSkills(botId).map((skill) => skill.name), ...(bot.assignedSkills ?? [])])];
+  },
+  install: (botId, source, files) => installSkill(botId, source, files),
+  remove: (botId, name) => removeSkill(botId, name),
+  audit: (auth, req, row) => {
+    if (DESKTOP_MANAGED || !adminActivityRecording()) return;
+    appendAdminAction(DATA_DIR, {
+      category: "bot",
+      action: "bot.shown-path",
+      target: { kind: "bot", id: row.botId, ...(store.bot(row.botId)?.name ? { name: store.bot(row.botId)!.name } : {}) },
+      changed: [`skills.${row.name}`],
+      after: { skill: row.name, replaced: row.replaced, enabled: false },
       actor: adminActorFor(auth, req),
     });
   },

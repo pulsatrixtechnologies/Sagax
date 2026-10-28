@@ -9,8 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Globe, MessageSquareText, Plus, Trash2, X } from "lucide-react";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { api, ApiError } from "@/state/store";
-import { buildTeachSkill, TEACH_TEXT_MAX, type TeachStep } from "../../shared/teach-recording";
+import { api } from "@/state/store";
+import { TEACH_TEXT_MAX, type TeachStep } from "../../shared/teach-recording";
 
 const input = "min-w-0 flex-1 rounded-md bg-inset px-2 py-1 text-[12px] outline-none focus:ring-1 focus:ring-accent";
 const iconButton = "rounded-md p-1 text-ink-secondary hover:bg-inset hover:text-ink disabled:opacity-30";
@@ -19,13 +19,6 @@ const KIND_LABEL: Record<TeachStep["kind"], LocaleKey> = {
   open: "teach.step.open", click: "teach.step.click", type: "teach.step.type", press: "teach.step.press",
   back: "teach.step.back", forward: "teach.step.forward", reload: "teach.step.reload", tab: "teach.step.tab", note: "teach.step.note",
 };
-
-function utf8Base64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-  return btoa(binary);
-}
 
 function download(name: string, text: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -94,6 +87,7 @@ export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, 
   const [phase, setPhase] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState("");
   const [savedName, setSavedName] = useState("");
+  const [confirmReplace, setConfirmReplace] = useState(false);
   useEffect(() => { dialog.current?.showModal(); }, []);
 
   const move = (index: number, by: number) => setSteps((list) => {
@@ -102,27 +96,39 @@ export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, 
     next.splice(index + by, 0, step!);
     return next;
   });
-  const save = async () => {
+  const save = async (replace = false) => {
     setError("");
     if (!title.trim()) { setError(t("teach.titleRequired")); return; }
     if (!steps.length) { setError(t("teach.noSteps")); return; }
     setPhase("saving");
-    const { name, markdown } = buildTeachSkill({ title, description, steps, recordedAt });
     try {
-      await api(`/api/bots/${encodeURIComponent(botId)}/skill-upload`, {
+      const result = await api(`/api/bots/${encodeURIComponent(botId)}/shown-path`, {
         method: "POST",
-        body: JSON.stringify({ mode: "install", files: [{ name: `${name}.md`, data: utf8Base64(markdown) }] }),
-      });
+        body: JSON.stringify({ mode: "save", title, description, steps, recordedAt, replace }),
+      }) as { ok?: boolean; code?: string; name?: string; installed?: string };
+      if (result.code === "exists") {
+        setPhase("idle");
+        setConfirmReplace(true);
+        setSavedName(result.name ?? "");
+        return;
+      }
+      const name = result.installed || result.name || "";
       // the raw recording leaves this window only when the person asked
       if (keepRaw) download(`${name}-recording.json`, JSON.stringify({ recordedAt, steps }, null, 2));
       setSavedName(name);
+      setConfirmReplace(false);
       setPhase("saved");
     } catch (cause) {
       setPhase("idle");
-      const body = cause instanceof ApiError ? cause.body : undefined;
-      const exists = Array.isArray(body?.items) && JSON.stringify(body.items).includes('"exists"');
-      setError(exists ? t("teach.exists", { name }) : t("teach.saveFailed", { detail: cause instanceof Error ? cause.message : String(cause) }));
+      setError(t("teach.saveFailed", { detail: cause instanceof Error ? cause.message : String(cause) }));
     }
+  };
+  const refuse = () => {
+    void api(`/api/bots/${encodeURIComponent(botId)}/shown-path`, {
+      method: "POST",
+      body: JSON.stringify({ mode: "refuse", title, description, steps, recordedAt }),
+    }).catch(() => undefined);
+    dialog.current?.close();
   };
 
   return <dialog ref={dialog} data-teach-steps="" onClose={onClose} onCancel={(e) => { if (phase === "saving") e.preventDefault(); }}
@@ -160,10 +166,12 @@ export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, 
         </label>
         <p className="text-[11px] leading-relaxed text-ink-secondary">{t("teach.privacy")}</p>
       </div>
+      {confirmReplace && <p role="status" className="px-5 pb-2 text-[12px] text-ink-secondary">{t("teach.replaceAsk", { name: savedName })}</p>}
       {error && <p role="alert" className="px-5 pb-2 text-[12px] text-danger">{error}</p>}
       <div className="flex justify-end gap-2 border-t border-hairline/40 px-5 py-3">
-        <button type="button" className="rounded-lg px-4 py-2 text-[12px] hover:bg-inset" disabled={phase === "saving"} onClick={() => dialog.current?.close()}>{t("teach.discard")}</button>
-        <button type="button" data-teach-save="" className="rounded-lg bg-accent px-4 py-2 text-[12px] font-medium text-accent-ink disabled:opacity-50" disabled={phase === "saving"} onClick={() => void save()}>
+        <button type="button" className="rounded-lg px-4 py-2 text-[12px] hover:bg-inset" disabled={phase === "saving"} onClick={refuse}>{t("teach.discard")}</button>
+        {confirmReplace && <button type="button" data-teach-replace="" className="rounded-lg px-4 py-2 text-[12px] font-medium hover:bg-inset" disabled={phase === "saving"} onClick={() => void save(true)}>{t("teach.replace")}</button>}
+        <button type="button" data-teach-save="" className="rounded-lg bg-accent px-4 py-2 text-[12px] font-medium text-accent-ink disabled:opacity-50" disabled={phase === "saving"} onClick={() => void save(false)}>
           {phase === "saving" ? t("teach.saving") : t("teach.save")}
         </button>
       </div>
