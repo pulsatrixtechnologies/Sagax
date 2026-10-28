@@ -863,6 +863,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "POST"], path: /^\/api\/me\/memory-sync-token$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/github\/(?:device|token)$/, feature: "orgDirectory" },
   { methods: ["DELETE"], path: /^\/api\/me\/github$/, feature: "orgDirectory" },
+  // the one list of GitHub credentials (server/routes/github-credentials.ts):
+  // the person's own, no admin; the organization's need an admin (handler)
+  { methods: ["GET", "POST"], path: /^\/api\/me\/github\/credentials$/, feature: "orgDirectory" },
   // the installation's MCP servers, read only: a person who does not manage
   // them gets each name, kind and state for their own bot's MCP choice
   // (the handler strips commands, URLs and every key name)
@@ -884,6 +887,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/plugins$/, feature: "orgDirectory" },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/update)?)?$/, feature: "orgDirectory" },
   { methods: ["PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, feature: "orgDirectory" },
+  // the credential of the one list a marketplace picks on this bot (owner or manager)
+  { methods: ["PUT"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/credential$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/plugins\/install$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:@|%40)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, feature: "orgDirectory" },
   // a plugin's configuration values (server/plugin-config.ts)

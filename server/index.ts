@@ -1086,12 +1086,14 @@ import { chooseHookTarget, commandWithFiles, dispatchLifecycleHooks, lifecycleEv
 import { spawnPcHook } from "./lifecycle-hook-exec.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
 import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
-import { OrgGithubTokens } from "./org-github-tokens.ts";
+import { OrgGithubTokens, OrgGithubTokensError } from "./org-github-tokens.ts";
+import { GithubCredentials, GithubCredentialsError, LOCAL_OWNER, ORG_OWNER, WORKSPACE_SCOPE } from "./github-credentials.ts";
 import { OrgBotSecrets } from "./org-bot-secrets.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalMcpInputFromAgent, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
+import { createGithubCredentialRoutes } from "./routes/github-credentials.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
 import { testStdioMcpCommand, testStdioMcpStream } from "./mcp-stdio-test.ts";
 import { roomMentionNotification, roomMentionReadPatch } from "./room-mentions.ts";
@@ -7857,31 +7859,99 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
   const parsed = marketplacePolicySchema.safeParse(cfg.organization?.pluginMarketplaces);
   return parsed.success ? parsed.data : undefined;
 }
-/** The organization's GitHub tokens (Settings > Organization > Plugins and
- * GitHub, server/org-github-tokens.ts). */
-const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
+/** The former files of GitHub tokens (the organization's, and one per
+ * marketplace), read once to move them into the one credential list. */
+const legacyOrgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
 const orgBotSecrets = new OrgBotSecrets(DATA_DIR, vaultKeySource);
-/** A token per bot and plugin marketplace (server/marketplace-tokens.ts). */
-const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
-/** Who reads a private GitHub repository for `actor`: their own GitHub
- * connection, then the organization's tokens (organization server). The
- * bot's token for the marketplace comes first (server/bot-plugins.ts). */
-function githubCredentialsFor(actor: string | null | undefined): GithubCredential[] {
+const legacyMarketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
+/** One list of GitHub credentials (Connect apps > Sources > GitHub,
+ * server/github-credentials.ts): each person's own, the organization's, and
+ * the credential each marketplace picks. */
+const githubCredentials = new GithubCredentials(DATA_DIR, vaultKeySource);
+/** Whose list a person's credentials are in: their principal id on an
+ * organization server, `local` on a solo one. */
+function credentialOwner(principalId: string | null | undefined): string | undefined {
+  if (IDENTITY.kind !== "perspicax") return LOCAL_OWNER;
+  const id = principalId?.trim().toLowerCase();
+  return id || undefined;
+}
+let githubCredentialsMigrated = false;
+/** Move the former files in (once; again at the next call if the vault key
+ * was not there yet). Never logs a token. */
+function migrateGithubCredentials(): void {
+  if (githubCredentialsMigrated) return;
+  try {
+    const { imported } = githubCredentials.migrate({
+      orgTokens: legacyOrgGithubTokens,
+      marketplaceTokens: legacyMarketplaceTokens,
+      workspaceOwner: IDENTITY.kind === "perspicax" ? ORG_OWNER : LOCAL_OWNER,
+      ownerOfBot: (botId) => store.bot(botId)?.ownerUserId?.trim().toLowerCase() || undefined,
+      botName: (botId) => store.bot(botId)?.name,
+      fallbackOwner: IDENTITY.kind === "perspicax" ? ORG_OWNER : LOCAL_OWNER,
+      personOwner: (principalId) => credentialOwner(principalId) ?? principalId,
+    });
+    githubCredentialsMigrated = true;
+    if (imported) console.log(`[github-credentials] moved ${imported} saved credential(s) into the one list`);
+  } catch (error) {
+    console.warn(`[github-credentials] migration deferred: ${(error as { code?: string })?.code ?? "unreadable"}`);
+  }
+}
+/** A credential `actor` may pick: their own, or the organization's. */
+function usableCredential(id: string, actor: string | null | undefined): { id: string; label: string; token: string } | undefined {
+  migrateGithubCredentials();
+  const owner = githubCredentials.ownerOf(id);
+  const mine = credentialOwner(actor);
+  if (!owner || !(owner === mine || (owner === ORG_OWNER && IDENTITY.kind === "perspicax"))) return undefined;
+  const token = githubCredentials.tokenFor(id);
+  const label = githubCredentials.list(owner, { org: false }).find((entry) => entry.id === id)?.label ?? "";
+  return token ? { id, label, token } : undefined;
+}
+/** Automatic for `actor`: their own GitHub connection, their other
+ * credentials, then the organization's (organization server). A credential
+ * whose label or login names the repository's owner is tried first. A
+ * credential kept for one marketplace only is never tried here. */
+function githubCredentialsFor(actor: string | null | undefined, repoOwner?: string): GithubCredential[] {
+  migrateGithubCredentials();
   const connection = usablePersonGithub(actor);
   const person = connection?.token;
   const credentials: GithubCredential[] = person ? [{ token: person, via: "person", ...(connection.login ? { login: connection.login } : {}) }] : [];
-  if (IDENTITY.kind === "perspicax" && !personIntegrationsOff(actor)) {
+  if (!personIntegrationsOff(actor)) {
+    const owner = credentialOwner(actor);
     try {
-      for (const entry of orgGithubTokens.list()) {
-        const token = orgGithubTokens.tokenFor(entry.id);
-        if (token) credentials.push({ token, via: "organization", label: entry.label });
+      if (owner) for (const entry of githubCredentials.automatic(owner)) credentials.push({ token: entry.token, via: "own", label: entry.label, id: entry.id });
+      if (IDENTITY.kind === "perspicax") {
+        for (const entry of githubCredentials.automatic(ORG_OWNER)) credentials.push({ token: entry.token, via: "organization", label: entry.label, id: entry.id });
       }
     } catch {
-      // an unreadable token file leaves the person's own access
+      // an unreadable list leaves the person's own connection
     }
   }
-  return credentials;
+  const wanted = repoOwner?.trim().toLowerCase();
+  if (!wanted) return credentials;
+  const names = (entry: GithubCredential) => `${entry.label ?? ""} ${entry.login ?? ""}`.toLowerCase();
+  return [...credentials.filter((entry) => names(entry).includes(wanted)), ...credentials.filter((entry) => !names(entry).includes(wanted))];
 }
+/** The marketplaces' side of the list for server/bot-plugins.ts: a former
+ * token field (a bot's `act`, an older client) becomes a credential of the
+ * person who saves it, kept for that marketplace only. */
+const marketplaceCredentials = {
+  get: (scope: string, source: string) => { migrateGithubCredentials(); return githubCredentials.get(scope, source); },
+  chosen: (scope: string, source: string) => { migrateGithubCredentials(); return githubCredentials.chosenSecret(scope, source); },
+  choose: (scope: string, source: string, credential: string | null) => githubCredentials.choose(scope, source, credential),
+  usable: (credential: string, actor: string | undefined) => usableCredential(credential, actor),
+  noteUsed: (scope: string, source: string, used: { via: "person" | "credential" | "none"; credential?: string; login?: string }) => githubCredentials.noteUsed(scope, source, used),
+  describe: (scope: string, source: string, viewer: string | undefined) => githubCredentials.describe(scope, source, credentialOwner(viewer) ?? ""),
+  set: (scope: string, source: string, token: string, addedBy?: string) => {
+    migrateGithubCredentials();
+    const owner = scope === WORKSPACE_SCOPE ? (IDENTITY.kind === "perspicax" ? ORG_OWNER : LOCAL_OWNER)
+      : credentialOwner(addedBy) ?? store.bot(scope)?.ownerUserId?.trim().toLowerCase() ?? (IDENTITY.kind === "perspicax" ? ORG_OWNER : LOCAL_OWNER);
+    const bot = scope === WORKSPACE_SCOPE ? undefined : store.bot(scope)?.name ?? scope;
+    githubCredentials.setMarketplaceToken(scope, source, token, owner, bot ? `${source} (${bot})` : source);
+  },
+  remove: (scope: string, source: string) => { migrateGithubCredentials(); return githubCredentials.removeMarketplaceToken(scope, source); },
+  sourcesFor: (scope: string) => { migrateGithubCredentials(); return githubCredentials.sourcesFor(scope); },
+  forgetBot: (scope: string) => githubCredentials.forgetScope(scope),
+};
 // The installation's one marketplace list (server/plugin-marketplaces.ts):
 // Connect apps installs a plugin from it for everyone (MCP servers and
 // skills) or for one bot (the whole plugin, server/bot-plugins.ts). Added
@@ -7899,8 +7969,8 @@ const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
   marketplaces: pluginMarketplaces,
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
-  credentials: ({ actor }) => githubCredentialsFor(actor),
-  tokens: marketplaceTokens,
+  credentials: ({ actor, source }) => githubCredentialsFor(actor, source.github?.owner),
+  tokens: marketplaceCredentials,
   policy: pluginMarketplacePolicy,
 });
 // Pulsatrix Flow for every member of the organization
@@ -8260,6 +8330,21 @@ async function addPersonalMcpServer(principalId: string, body: unknown): Promise
     await manager.probe(name, personalRemoteSpec(server), AbortSignal.timeout(10_000)).catch(() => undefined);
   }
 }
+// Connect apps > Sources > GitHub: the one list of credentials. A person's
+// own with no admin; the organization's with an organization admin.
+ROUTES.push(createGithubCredentialRoutes({
+  store: githubCredentials,
+  owner: (auth) => credentialOwner(IDENTITY.kind === "perspicax" ? sessionPrincipal(auth) : localPrincipalId()) ?? null,
+  organization: () => IDENTITY.kind === "perspicax",
+  canManageOrg: (auth) => orgAdminCaller(auth) || callerCan(auth, "server.settings"),
+  deviceFlow: () => Boolean(githubClientId()),
+  managedByAdmin: integrationsLocked,
+  ready: migrateGithubCredentials,
+  auditOrg: (auth, row) => orgAudit({
+    category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["githubTokens"],
+    after: { op: row.op, count: row.count, ...(row.id ? { id: row.id } : {}), ...(row.label ? { label: row.label } : {}) }, actor: orgAuditActor(auth),
+  }),
+}));
 ROUTES.push(createPersonConnectionRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   managedByAdmin: integrationsLocked,
@@ -36789,10 +36874,17 @@ if (IDENTITY.kind === "perspicax") {
       teamBot: (id) => Boolean(store.bot(id)),
     },
     githubTokens: {
-      list: () => orgGithubTokens.list(),
+      list: () => { migrateGithubCredentials(); return githubCredentials.listOrg(); },
       change: (change, auth) => {
-        const before = orgGithubTokens.list();
-        const next = orgGithubTokens.change(change);
+        migrateGithubCredentials();
+        const before = githubCredentials.listOrg();
+        try {
+          githubCredentials.change(ORG_OWNER, change);
+        } catch (error) {
+          if (error instanceof GithubCredentialsError) throw new OrgGithubTokensError(error.message, error.code, error.status);
+          throw error;
+        }
+        const next = githubCredentials.listOrg();
         const touched = next.find((entry) => !before.some((previous) => previous.id === entry.id))
           ?? (change.op === "add" ? undefined : next.find((entry) => entry.id === change.id));
         orgAudit({
@@ -38242,7 +38334,7 @@ const botZipHost: BotZipHost = {
     remove: (id) => webhooks.remove(id),
   }),
   plugins: botPlugins,
-  marketplaceTokenSources: (botId) => marketplaceTokens.sourcesFor(botId),
+  marketplaceTokenSources: (botId) => marketplaceCredentials.sourcesFor(botId),
   emailOf: (principalId) => principals.byId(principalId)?.email ?? undefined,
   principalByEmail: (email) => principals.byEmail(email)?.id ?? undefined,
   mcpServer: mcpServerSummary,

@@ -48,6 +48,9 @@ export function excludedWorkspaceAuthPath(path: string): boolean {
   if (/^mcp-oauth\.(?:enc|key)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // Organization GitHub access tokens (server/org-github-tokens.ts).
   if (/^org-github-tokens\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  // The one list of GitHub credentials and each marketplace's pick
+  // (server/github-credentials.ts), and the former per-marketplace file.
+  if (/^(?:github-credentials|marketplace-tokens)\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // Team secrets of the organization (server/org-bot-secrets.ts).
   if (/^org-bot-secrets\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // File-backed provider keys (server/engine-api-keys.ts), solo and per person.

@@ -8,6 +8,8 @@
 //   POST   /api/bots/:id/plugins/marketplaces/:name/update
 //   PUT    /api/bots/:id/plugins/marketplaces/:name/token { token }   save or replace this bot's token
 //   DELETE /api/bots/:id/plugins/marketplaces/:name/token             forget it
+//   PUT    /api/bots/:id/plugins/marketplaces/:name/credential { credential: id | null }
+//          pick a credential of the one list (the caller's own or the organization's), or Automatic
 //   DELETE /api/bots/:id/plugins/marketplaces/:name                  this bot's plugins from it (and its token); the
 //          marketplace too when the caller may remove it (an admin, or who added it) and nothing uses it
 //   POST   /api/bots/:id/plugins/install { marketplace, plugin }     install or update
@@ -53,13 +55,20 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   changed?: (bot: B, action: string, detail: Record<string, unknown>, auth: RequestAuth) => void;
 }
 
-const ROUTE = /^\/api\/bots\/([\w-]+)\/plugins(?:\/(marketplaces|install)(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\/(update|token))?)?|\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63})(\/config)?)?$/;
+const ROUTE = /^\/api\/bots\/([\w-]+)\/plugins(?:\/(marketplaces|install)(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\/(update|token|credential))?)?|\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63})(\/config)?)?$/;
 const TOKEN = /^[\x21-\x7e]{8,4096}$/;
 
 function tokenField(value: unknown): string | null | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (typeof value !== "string" || !TOKEN.test(value.trim())) return null;
   return value.trim();
+}
+
+const CREDENTIAL = /^gt_[0-9a-f]{16}$/;
+/** undefined: none sent; null: not a credential id. */
+function credentialField(value: unknown): string | null | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return typeof value === "string" && CREDENTIAL.test(value) ? value : null;
 }
 
 function isPluginError(error: unknown): error is BotPluginError {
@@ -112,12 +121,25 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
         if (visibility === "org" && deps.mayShareOrgWide && !deps.mayShareOrgWide(auth)) {
           return json(res, 403, { error: "Only an administrator can share a marketplace with the whole organization.", code: "marketplace_org_admin_only" });
         }
-        const added = await deps.plugins.addMarketplace(bot.id, { source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), ...(visibility ? { visibility } : {}) }, actor);
+        const credential = credentialField(body?.credential);
+        if (credential === null) return json(res, 400, { error: "credential must be the id of one of your credentials.", code: "invalid_credential" });
+        const added = await deps.plugins.addMarketplace(bot.id, { source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), ...(credential ? { credential } : {}), ...(visibility ? { visibility } : {}) }, actor);
         deps.changed?.(bot, "plugin.marketplace_add", { marketplace: added.name, source: added.source }, auth);
         return json(res, 201, { marketplace: added, ...listing() });
       }
       if (section === "marketplaces" && name && marketplaceUnreachable(name)) {
         return json(res, 404, { error: "No marketplace with that name.", code: "not_found" });
+      }
+      if (section === "marketplaces" && name && update === "credential") {
+        if (method !== "PUT") return json(res, 405, { error: "PUT" });
+        const sent = body?.credential;
+        const credential = sent === null ? null : credentialField(sent);
+        if (credential === undefined || (credential === null && sent !== null)) {
+          return json(res, 400, { error: "send { credential: id } or { credential: null } for Automatic", code: "invalid_credential" });
+        }
+        const market = deps.plugins.chooseMarketplaceCredential(bot.id, name, credential, actor);
+        deps.changed?.(bot, "plugin.marketplace_credential", { marketplace: name, credential: credential ?? "automatic" }, auth);
+        return json(res, 200, { marketplace: market, ...listing() });
       }
       if (section === "marketplaces" && name && update === "token") {
         if (method === "DELETE") {
@@ -177,7 +199,7 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
     } catch (error) {
       if (isPluginError(error)) return json(res, error.status, { error: error.message, code: error.code, ...(error.fix ? { fix: error.fix } : {}) });
       const tokenStatus = (error as { status?: unknown; code?: unknown })?.status;
-      if (error instanceof Error && error.name === "MarketplaceTokenError" && typeof tokenStatus === "number") {
+      if (error instanceof Error && (error.name === "MarketplaceTokenError" || error.name === "GithubCredentialsError") && typeof tokenStatus === "number") {
         return json(res, tokenStatus, { error: error.message, code: (error as { code?: string }).code });
       }
       throw error;

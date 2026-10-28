@@ -4664,18 +4664,51 @@ gallery `connect-apps.html?view=manage|org-settings`).
   its service; the person's own MCP servers (`MyMcpServers`, organization
   server); Claude Code on this computer (solo); the published pages (All
   only). The "What your engines reach" panel is gone.
-- Sources (`SourcesView`): every GitHub setting. The person's own GitHub
-  connection (`MyGithubConnection`: Connect GitHub or a fine-grained token,
-  organization server), the marketplaces with their token per marketplace,
-  then for an organization admin only the organization's sources and access
-  (`OrgSourcesAccess`: allowed marketplaces, GitHub access tokens, GitHub
-  OAuth App). Settings > Organization shows one link there
+- Sources (`SourcesView`): every GitHub setting in one GitHub section
+  (`GithubSourcesSection`, 2026-10-28, see below), the marketplaces, each
+  picking a credential of that list or Automatic, then for an organization
+  admin only the allowed marketplaces (`OrgSourcesAccess`). The GitHub OAuth
+  App's client id is in Settings > Organization (`OrgGithubApp`). Settings > Organization shows one link there
   (`togglePlugins` page `sources`, also an old link to `organization.plugins`).
   Same routes and storage as before; no right changed.
 - "N connected" (`connectedTab`) opens Installed, or My accounts when only
   engine connectors are connected (#1194).
 - Every empty section is hidden. iOS has the same tabs (segmented) and
   pills (All, Claude, Slack, My MCP servers); its GitHub card is in Sources.
+
+## Sources > GitHub: one list of credentials (2026-10-28)
+
+Owner: GitHub was in three places on Connect apps > Sources ("100%
+confusion"); one option, one place. One section `GithubSourcesSection`:
+
+- Connection (organization server): `MyGithubConnection bare`, one Connect
+  GitHub (device flow when the OAuth App is set, else a token); without the
+  app, "An admin can turn on Connect GitHub" (a link to Settings >
+  Organization `organization.githubApp` for an admin).
+- One list (`server/github-credentials.ts`, `github-credentials.enc`, vault
+  key, AAD `sagax github-credentials v1`, out of workspace backups): labeled
+  credentials owned by a person (principal id, `local` solo) or by the
+  organization (`org`, marked Organization). `GET/POST
+  /api/me/github/credentials` (`server/routes/github-credentials.ts`, member
+  scope): a person adds, renames, replaces and removes their own with no
+  admin; the organization's need an organization admin (`PATCH
+  /api/org/settings githubTokens` still works on the same list). No answer
+  carries a token (label, last 4).
+- Each marketplace picks one (`PUT /api/bots/:id/plugins/marketplaces/:name/credential`,
+  owner or manager; `PUT /api/marketplaces/:name/credential`, the workspace's
+  managers; `credential` on add) or Automatic: the person's connection, their
+  credentials, the organization's, a label or login naming the repository's
+  owner first. The listing carries `credential: { chosen?, used? }` (what read
+  it last). The former token routes still work: a token becomes a credential
+  of whoever saves it, `onlyWhereChosen`, picked by that marketplace.
+- Migration at first use (`migrateGithubCredentials`): `org-github-tokens.enc`
+  (ids and labels kept) and `marketplace-tokens.enc` (each token becomes an
+  `onlyWhereChosen` credential of the person who added it, else the bot's
+  owner; the workspace's become the organization's) move in; each
+  marketplace keeps the same effective credential; idempotent; the old files
+  are removed after the new one is written. Tests:
+  `server/github-credentials.test.ts`, `server/routes/github-credentials.test.ts`,
+  `server/bot-plugins.test.ts`, `src/components/plugins/GithubSourcesSection.test.ts`.
 
 ## Reserved MCP server names (2026-10-17)
 

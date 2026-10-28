@@ -268,7 +268,7 @@ describe("My accounts and Sources: a click on a service pill, GitHub in Sources"
 
   it("Sources: the person's GitHub first, the marketplaces, then the organization's part marked for admins", () => {
     const html = renderToStaticMarkup(createElement(SourcesView, { github: "GH", marketplaces: "MARKETS", organization: "ORG" }));
-    expect(html).toMatch(/data-plugins-sources-github[\s\S]*GH[\s\S]*MARKETS[\s\S]*data-plugins-sources-admin[\s\S]*Organization sources and access[\s\S]*Admins only[\s\S]*ORG/);
+    expect(html).toMatch(/data-plugins-sources[\s\S]*GH[\s\S]*MARKETS[\s\S]*data-plugins-sources-admin[\s\S]*Organization sources and access[\s\S]*Admins only[\s\S]*ORG/);
     const member = renderToStaticMarkup(createElement(SourcesView, { github: "GH", marketplaces: "MARKETS" }));
     expect(member).not.toContain("data-plugins-sources-admin");
     expect(member).not.toMatch(/admin/i);

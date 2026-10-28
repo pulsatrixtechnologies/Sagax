@@ -49,8 +49,6 @@ import {
   loadBotPlugins,
   MARKETPLACE_ACCESS_CODES,
   removeMarketplace as removeBotMarketplace,
-  removeMarketplaceToken as removeBotMarketplaceToken,
-  setMarketplaceToken as setBotMarketplaceToken,
   setPluginConfig as setBotPluginConfig,
   setPluginEnabled as setBotPluginEnabled,
   uninstallPlugin as uninstallBotPlugin,
@@ -58,7 +56,9 @@ import {
   type BotPluginsView,
   type MarketplaceVisibility,
 } from "@/lib/my-connections";
-import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot, workspaceMarketplaceTokens, type PluginScope } from "@/lib/plugin-scope";
+import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot, marketplaceCredentialControls, type PluginScope } from "@/lib/plugin-scope";
+import { openSettings } from "@/lib/settings-link";
+import { GithubSourcesSection } from "./plugins/GithubSourcesSection";
 import {
   ClaudeMcpSwitch,
   McpAuthLine,
@@ -483,12 +483,12 @@ export function PluginsPanel() {
     setBotView(view);
     if (workspaceMarkets) await loadMarketplaces();
   };
-  const addMarketplace = (source: string, ref: string, visibility: MarketplaceVisibility, token?: string) => marketAction("add", async () => {
+  const addMarketplace = (source: string, ref: string, visibility: MarketplaceVisibility, credential?: string) => marketAction("add", async () => {
     if (marketRoute === "bot" && scopeBotId) {
-      await afterBotMarket(await addBotMarketplace(scopeBotId, source, { ...(ref ? { ref } : {}), ...(token ? { token } : {}), visibility }));
+      await afterBotMarket(await addBotMarketplace(scopeBotId, source, { ...(ref ? { ref } : {}), ...(credential ? { credential } : {}), visibility }));
       return;
     }
-    const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), visibility }) });
+    const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}), ...(credential ? { credential } : {}), visibility }) });
     setMarketplaces(result.marketplaces ?? []);
     void loadBotView();
   });
@@ -525,25 +525,14 @@ export function PluginsPanel() {
       if (filter === `source:${name}`) setFilter("all");
     });
   };
-  /** That bot's token for a marketplace (server/marketplace-tokens.ts):
-   * saved, then the marketplace is fetched again with it. In the Everyone
-   * scope, an admin keeps one token per marketplace for the whole
-   * installation (never shown back), so a private marketplace works for
-   * everyone. */
-  const marketTokens = marketRoute === "bot" && scopeBotId ? {
-    scope: "bot" as const,
-    onSave: (name: string, token: string) => marketAction(`refresh:${name}`, async () => {
-      await setBotMarketplaceToken(scopeBotId, name, token);
-      await afterBotMarket(await updateBotMarketplace(scopeBotId, name));
-    }),
-    onRemove: (name: string) => marketAction(`token:${name}`, async () => {
-      await afterBotMarket(await removeBotMarketplaceToken(scopeBotId, name));
-    }),
-  } : marketRoute === "workspace" && ownerOrAdmin === true ? workspaceMarketplaceTokens<MarketplaceListing>({
-    api,
-    run: marketAction,
-    loaded: (list) => { setMarketplaces(list); void loadBotView(); },
-  }) : undefined;
+  /** Each marketplace picks a credential of the one list in Sources >
+   * GitHub, or Automatic (2026-10-28): that bot's pick, or the
+   * installation's for the workspace's managers; then it is fetched again. */
+  const marketCredentials = marketRoute === "bot" && scopeBotId
+    ? marketplaceCredentialControls<MarketplaceListing>({ route: "bot", botId: scopeBotId, api, run: marketAction, botLoaded: afterBotMarket })
+    : marketRoute === "workspace"
+      ? marketplaceCredentialControls<MarketplaceListing>({ route: "workspace", api, run: marketAction, loaded: (list) => { setMarketplaces(list); void loadBotView(); } })
+      : undefined;
   const marketSummaries = marketRoute === "bot" && botView
     ? botScopeMarketplaces(botView)
     : marketRoute === "workspace" ? marketplaces : null;
@@ -937,7 +926,9 @@ export function PluginsPanel() {
     content = <BotCatalogPane onClose={close} backRef={botsBack} trail={trail} />;
   } else {
     const isOrgAdmin = perspicaxOrg?.viewerRole === "admin";
-    const githubHere = organization && scope === "workspace";
+    // the GitHub section (connection on an organization server, the one
+    // credential list everywhere) in both scopes
+    const githubHere = organization || marketRoute !== null;
     const orgHere = isOrgAdmin && scope === "workspace" && perspicaxOrg !== null;
     const tabs: ConnectAppsTab[] = ["installed", "discover", "accounts",
       ...(marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || githubHere || orgHere ? ["sources" as const] : [])];
@@ -1025,7 +1016,11 @@ export function PluginsPanel() {
         )}
         sources={(
           <SourcesView
-            github={githubHere ? <MyGithubConnection /> : undefined}
+            github={githubHere ? (
+              <GithubSourcesSection connection={organization ? (
+                <MyGithubConnection bare onEnableApp={isOrgAdmin ? () => { close(); openSettings(dispatch, "organization", "organization.githubApp"); } : undefined} />
+              ) : undefined} />
+            ) : undefined}
             marketplaces={marketRoute !== null || (marketSummaries?.length ?? 0) > 0 ? (
               <MarketplacesSection
                 marketplaces={marketSummaries}
@@ -1038,8 +1033,8 @@ export function PluginsPanel() {
                 canChooseVisibility={marketRoute !== null}
                 disabled={marketRoute === null}
                 removeKeepsInstalls={marketRoute === "bot"}
-                tokens={marketTokens}
-                needsToken={marketTokens ? marketNeedsToken : null}
+                credentials={marketCredentials}
+                needsToken={marketCredentials ? marketNeedsToken : null}
               />
             ) : undefined}
             organization={orgHere ? <OrgSourcesAccess initial={perspicaxOrg.settings} flat /> : undefined}

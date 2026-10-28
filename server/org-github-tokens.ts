@@ -1,3 +1,6 @@
+// LEGACY since 2026-10-28: read once at start and moved into the one
+// credential list (server/github-credentials.ts), then the file is removed.
+//
 // The organization's GitHub access tokens (personal access tokens or
 // repository credentials), one list for Settings > Organization > Plugins
 // and GitHub. Not the OAuth App client id (that stays on organization.githubClientId).
@@ -141,6 +144,15 @@ export class OrgGithubTokens {
   /** The stored secret, for the server's own use. Never send this to a client. */
   tokenFor(id: string): string | undefined {
     return this.read().tokens.find((entry) => entry.id === id)?.token;
+  }
+
+  /** The old file goes once its tokens are in the credential list
+   * (server/github-credentials.ts). */
+  discard(): void {
+    rmSync(this.file, { force: true });
+    this.cached = { version: 1, tokens: [] };
+    this.loaded = true;
+    this.unreadable = null;
   }
 
   /** Apply one change and return the redacted list. Other entries stay. */

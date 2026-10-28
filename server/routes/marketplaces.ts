@@ -7,6 +7,7 @@
 //   DELETE /api/marketplaces/:name                         (no plugin installed)
 //   PUT    /api/marketplaces/:name/token { token }         the installation's token
 //   DELETE /api/marketplaces/:name/token
+//   PUT    /api/marketplaces/:name/credential { credential: id | null }   pick one of the list, or Automatic
 //   POST   /api/marketplaces/:name/plugins/:plugin         install: MCP servers + skills
 //   POST   /api/marketplaces/:name/plugins/:plugin/update  update them in place
 //   DELETE /api/marketplaces/:name/plugins/:plugin         uninstall them
@@ -25,6 +26,7 @@ import type { IncomingMessage } from "node:http";
 
 import { MarketplaceError, type MarketplaceView, type MarketplaceViewer, type MarketplaceVisibility, type PluginMarketplaces } from "../plugin-marketplaces.ts";
 import type { RequestAuth } from "../request-auth.ts";
+import type { MarketplaceCredentialView } from "../../shared/github-credentials.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export interface MarketplaceRouteDeps {
@@ -48,9 +50,12 @@ export interface MarketplaceRouteDeps {
   audit: (auth: RequestAuth, row: { action: string; target: { kind: string; id: string; name: string }; before?: Record<string, unknown>; after?: Record<string, unknown> }) => void;
   /** The installation's token per marketplace (server/bot-plugins.ts). */
   workspace?: {
-    addWorkspaceMarketplace(input: { source: string; ref?: string; token?: string; visibility?: MarketplaceVisibility }, actor: string | undefined): Promise<MarketplaceView>;
+    addWorkspaceMarketplace(input: { source: string; ref?: string; token?: string; credential?: string; visibility?: MarketplaceVisibility }, actor: string | undefined): Promise<MarketplaceView>;
     refreshWorkspaceMarketplace(name: string, actor: string | undefined): Promise<unknown>;
     setWorkspaceMarketplaceToken(name: string, token: string | null, actor: string | undefined): void;
+    /** pick a credential of the one list for everyone, or (null) Automatic */
+    chooseWorkspaceMarketplaceCredential?(name: string, credential: string | null, actor: string | undefined): void;
+    workspaceCredential?(source: string, viewer: string | undefined): MarketplaceCredentialView | undefined;
     removeWorkspaceMarketplace(name: string): Promise<void>;
     workspaceTokenSources(): Set<string>;
   };
@@ -72,7 +77,8 @@ function visibilityField(value: unknown): MarketplaceVisibility | null | undefin
 }
 
 const NAME = "[A-Za-z0-9][A-Za-z0-9._-]{0,63}";
-const MARKET = new RegExp(`^/api/marketplaces/(${NAME})(?:/(refresh|token|visibility))?$`);
+const MARKET = new RegExp(`^/api/marketplaces/(${NAME})(?:/(refresh|token|visibility|credential))?$`);
+const CREDENTIAL = /^gt_[0-9a-f]{16}$/;
 const PLUGIN = new RegExp(`^/api/marketplaces/(${NAME})/plugins/(${NAME})$`);
 const UPDATE = new RegExp(`^/api/marketplaces/(${NAME})/plugins/(${NAME})/update$`);
 
@@ -82,12 +88,21 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandle
     res.setHeader("cache-control", "private, no-store");
     const fail = (error: unknown) => {
       if (error instanceof MarketplaceError) return json(res, error.status, { error: error.message, code: error.code });
+      if (error instanceof Error && error.name === "GithubCredentialsError") {
+        const known = error as Error & { status: number; code: string };
+        return json(res, known.status, { error: known.message, code: known.code });
+      }
       throw error;
     };
     const viewer = deps.viewer?.(auth) ?? { seesAll: true };
     const views = () => {
       const sources = deps.workspace?.workspaceTokenSources() ?? new Set<string>();
-      return deps.store.list(viewer).map((market) => (deps.workspace ? { ...market, hasToken: sources.has(market.source) } : market));
+      const who = deps.actor(auth);
+      return deps.store.list(viewer).map((market) => {
+        if (!deps.workspace) return market;
+        const credential = deps.workspace.workspaceCredential?.(market.source, who);
+        return { ...market, hasToken: sources.has(market.source), ...(credential ? { credential } : {}) };
+      });
     };
     const list = () => json(res, 200, { marketplaces: views() });
     /** A private marketplace that is not this viewer's does not exist to them. */
@@ -114,9 +129,13 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandle
         if (visibility === "org" && deps.mayShareOrgWide && !deps.mayShareOrgWide(auth)) {
           return json(res, 403, { error: "Only an administrator can share a marketplace with the whole organization.", code: "marketplace_org_admin_only" });
         }
+        const credential = typeof body?.credential === "string" && CREDENTIAL.test(body.credential) ? body.credential : undefined;
+        if (body?.credential !== undefined && body?.credential !== null && body?.credential !== "" && !credential) {
+          return json(res, 400, { error: "credential must be the id of a credential.", code: "invalid_credential" });
+        }
         const actor = deps.actor(auth);
         const added: MarketplaceView = deps.workspace
-          ? await deps.workspace.addWorkspaceMarketplace({ source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), ...(visibility ? { visibility } : {}) }, actor)
+          ? await deps.workspace.addWorkspaceMarketplace({ source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), ...(credential ? { credential } : {}), ...(visibility ? { visibility } : {}) }, actor)
           : await deps.store.add({ source, ...(ref ? { ref } : {}) }, actor, { viewer, ...(visibility ? { visibility } : {}) });
         if (token) deps.audit(auth, { action: "marketplace.token_set", target: { kind: "marketplace", id: added.name, name: added.name }, after: { scope: "workspace", source: added.source } });
         const marketplaces = views();
@@ -184,6 +203,18 @@ export function createMarketplaceRoutes(deps: MarketplaceRouteDeps): RouteHandle
             ...(before ? { before: { visibility: before.visibility ?? "private" } } : {}),
             after: { visibility: changed.visibility },
           });
+          return list();
+        }
+        if (action === "credential") {
+          if (!deps.workspace?.chooseWorkspaceMarketplaceCredential) return json(res, 404, { error: "not found" });
+          if (method !== "PUT") return json(res, 405, { error: "PUT" });
+          const body = await readBody(req) as Record<string, unknown> | null;
+          const sent = body?.credential;
+          if (sent !== null && (typeof sent !== "string" || !CREDENTIAL.test(sent))) {
+            return json(res, 400, { error: "send { credential: id } or { credential: null } for Automatic", code: "invalid_credential" });
+          }
+          deps.workspace.chooseWorkspaceMarketplaceCredential(name!, sent, deps.actor(auth));
+          deps.audit(auth, { action: "marketplace.credential", target: { kind: "marketplace", id: name!, name: name! }, after: { scope: "workspace", credential: sent ?? "automatic" } });
           return list();
         }
         if (action === "token") {

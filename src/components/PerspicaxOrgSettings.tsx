@@ -30,6 +30,7 @@ import { InterimPeople } from "./settings/InterimPeople";
 import { OrgVaultExportPolicy } from "./settings/OrgVaultExportPolicy";
 import { OrgConfidentialThreadsDefault } from "./settings/OrgConfidentialThreadsDefault";
 import { OrgTeamSecrets } from "./settings/OrgTeamSecrets";
+import { OrgGithubApp } from "./settings/OrgGithubApp";
 import { OrganizationPages } from "./PublishedPages";
 
 interface PendingAdminApproval {
@@ -183,18 +184,21 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
         {admin && <OrgTeamSecrets />}
         {botRows}
       </SettingsGroup>
-      {/* 2026-10-27 (owner: one place per subject): where plugins come from,
-          the organization's GitHub tokens and its OAuth App are managed in
-          Connect apps > Sources, in its admin part. Here, one link. */}
+      {/* 2026-10-27 (owner: one place per subject): where plugins come from
+          is managed in Connect apps > Sources, in its admin part, and the
+          organization's GitHub credentials in Sources > GitHub. Here, one
+          link, and (2026-10-28) the GitHub OAuth App's client id: a server
+          setting, behind Connect GitHub for everyone. */}
       {admin && (
         <SettingsGroup title={t("connectApps.orgAccess.title")} groupId="organizationPlugins">
           <div data-settings-card="organization.plugins" data-org-sources-moved>
-            <DescribedRow label={t("connectApps.orgAccess.title")} description={t("organization.plugins.moved")}>
+            <DescribedRow label={t("connectApps.orgAccess.title")} description={t("sources.orgAccess.moved")}>
               <button type="button" className={PILL} onClick={() => dispatch({ type: "togglePlugins", open: true, page: "sources" })}>
                 {t("organization.plugins.open")}
               </button>
             </DescribedRow>
           </div>
+          <OrgGithubApp initial={org.settings} />
         </SettingsGroup>
       )}
       {admin && <OrganizationPages />}

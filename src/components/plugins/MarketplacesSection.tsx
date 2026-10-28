@@ -4,18 +4,18 @@
 // remove it. One list for both install scopes: each marketplace becomes a
 // chip and a section of Connect apps, for everyone and for each bot.
 //
-// With `tokens`, each marketplace has a token field (server/marketplace-
-// tokens.ts): in the bot scope for that bot (kept per bot and source), in
-// the "Everyone" scope for the whole installation (kept under `workspace`,
-// an admin only, so a private marketplace works for everyone). A private
-// repository is read with that token first, then the person's GitHub
-// connection, then the organization's GitHub tokens. When the git host
+// With `credentials` (2026-10-28), each marketplace picks a credential of
+// the one list in Sources > GitHub (server/github-credentials.ts), or
+// Automatic, and says which one read it last; it has no token field of its
+// own any more. In the bot scope the pick is that bot's (its owner or a
+// manager), in the "Everyone" scope the installation's. When the git host
 // refuses an add or a refresh, the parent says so (`needsToken`) and the
-// field opens there.
+// pick opens there.
 import { useEffect, useState, type ReactNode } from "react";
-import { KeyRound, Loader2, Lock, Plus, RefreshCw, Store, Trash2, Users } from "lucide-react";
+import { Loader2, Lock, Plus, RefreshCw, Store, Trash2, Users } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { credentialOptions, useGithubCredentials, type MarketplaceCredentialView } from "@/lib/github-credentials";
 import { t } from "@/lib/i18n";
 
 export type MarketplaceVisibility = "private" | "org";
@@ -28,8 +28,10 @@ export interface MarketplaceSummary {
   plugins: Array<{ name: string; installed: boolean }>;
   /** bots with a plugin of this marketplace installed */
   bots?: number;
-  /** the bot scope's bot keeps a token for it (never the token) */
+  /** the scope picks a credential for it (never the token) */
   hasToken?: boolean;
+  /** the credential it picks (absent: Automatic) and the one that read it last */
+  credential?: MarketplaceCredentialView;
   /** "private" (the person who added it) or "org" (shared with everyone) */
   visibility?: MarketplaceVisibility;
   /** this viewer added it, so may change its visibility */
@@ -84,23 +86,56 @@ function VisibilityBadge({ visibility, onToggle, disabled }: { visibility: Marke
   );
 }
 
-/** The token per marketplace: this bot's (bot scope) or everyone's (an
- * admin in the "Everyone" scope). */
-export interface MarketplaceTokenControls {
-  /** whose token it is: the hint says so (default "bot") */
+/** Each marketplace's pick of a credential: this bot's (bot scope) or
+ * everyone's (the "Everyone" scope). */
+export interface MarketplaceCredentialControls {
+  /** whose pick it is: the hint says so (default "bot") */
   scope?: "bot" | "workspace";
-  /** save (or replace) the token, then fetch the marketplace again */
-  onSave: (name: string, token: string) => Promise<boolean>;
-  onRemove: (name: string) => Promise<boolean>;
+  /** pick a credential (null: Automatic), then fetch the marketplace again */
+  onChoose: (name: string, credential: string | null) => Promise<boolean>;
 }
 
-export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefresh, onRemove, onSetVisibility, canChooseVisibility, disabled, removeKeepsInstalls, tokens, needsToken }: {
+/** Which credential read a marketplace last, in words. */
+export function credentialUsedText(view: MarketplaceCredentialView | undefined): string | null {
+  const used = view?.used;
+  if (!used) return null;
+  if (used.via === "person") return used.login ? t("sources.market.usedPerson", { login: used.login }) : t("sources.market.usedPersonPlain");
+  if (used.via === "credential") return used.label ? t("sources.market.usedCredential", { label: used.label }) : t("sources.market.usedCredentialPlain");
+  return t("sources.market.usedNone");
+}
+
+/** Automatic, or one credential of the list. */
+function CredentialSelect({ value, chosen, onChange, disabled, label, id }: {
+  value: string | null;
+  chosen?: MarketplaceCredentialView["chosen"];
+  onChange: (credential: string | null) => void;
+  disabled?: boolean;
+  label: string;
+  id: string;
+}) {
+  const { view } = useGithubCredentials();
+  const options = credentialOptions(view, chosen);
+  const ownerText = (owner: "mine" | "org" | "other") => (owner === "org" ? ` · ${t("sources.github.orgBadge")}` : owner === "other" ? ` · ${t("sources.market.otherPerson")}` : "");
+  return (
+    <select value={value ?? ""} disabled={disabled} aria-label={label} data-marketplace-credential={id}
+      onChange={(event) => onChange(event.target.value || null)}
+      className="max-w-[220px] min-w-0 truncate rounded-lg border border-border bg-raised px-2 py-1 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-40">
+      <option value="">{t("sources.market.automatic")}</option>
+      {options.map((option) => (
+        <option key={option.id} value={option.id} disabled={option.owner === "other"}>{option.label}{ownerText(option.owner)}</option>
+      ))}
+    </select>
+  );
+}
+
+export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefresh, onRemove, onSetVisibility, canChooseVisibility, disabled, removeKeepsInstalls, credentials, needsToken }: {
   marketplaces: MarketplaceSummary[] | null;
   /** "add", or the name being refreshed or removed */
   busy: string | null;
   error: string | null;
-  /** `visibility`: who sees it (default private); `token`: tried first and kept */
-  onAdd: (source: string, ref: string, visibility: MarketplaceVisibility, token?: string) => Promise<boolean>;
+  /** `visibility`: who sees it (default private); `credential`: a credential
+   * of the list, tried first and picked once the clone works */
+  onAdd: (source: string, ref: string, visibility: MarketplaceVisibility, credential?: string) => Promise<boolean>;
   onRefresh: (name: string) => void;
   onRemove: (name: string) => void;
   /** change a marketplace's visibility (shown on rows the viewer owns) */
@@ -110,33 +145,24 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
   disabled?: boolean;
   /** removing from one bot takes its plugins with it: installs never block */
   removeKeepsInstalls?: boolean;
-  /** a token field per marketplace, kept for that bot or for everyone */
-  tokens?: MarketplaceTokenControls;
-  /** the git host refused: "add" offers a token for the source being
-   * added, a name opens that marketplace's token field */
+  /** each marketplace picks a credential of the list, for that bot or for everyone */
+  credentials?: MarketplaceCredentialControls;
+  /** the git host refused: "add" offers a credential for the source being
+   * added, a name points at that marketplace's pick */
   needsToken?: string | null;
 }) {
   const [source, setSource] = useState("");
   const [ref, setRef] = useState("");
   const [visibility, setVisibility] = useState<MarketplaceVisibility>("private");
-  const [token, setToken] = useState("");
-  /** the marketplace whose token field is open, or "add" */
-  const [tokenFor, setTokenFor] = useState<string | null>(tokens && needsToken ? needsToken : null);
+  /** the credential picked for an add the git host refused */
+  const [addCredential, setAddCredential] = useState<string | null>(null);
+  /** "add", or the marketplace whose pick the git host asked for */
+  const [needs, setNeeds] = useState<string | null>(credentials && needsToken ? needsToken : null);
   useEffect(() => {
-    if (tokens && needsToken) {
-      setToken("");
-      setTokenFor(needsToken);
-    }
-  }, [tokens, needsToken]);
-  const forEveryone = tokens?.scope === "workspace";
-  const tokenHint = forEveryone ? t("plugins.tokenHintWorkspace") : t("plugins.tokenHint");
-  const tokenForm = (label: string, id: string, onSubmit: (value: string) => void) => (
-    <form className="flex flex-wrap items-center gap-2" data-marketplace-token-form={id} onSubmit={(event) => { event.preventDefault(); if (token.trim().length >= 8) onSubmit(token.trim()); }}>
-      <input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} placeholder={t("plugins.tokenPlaceholder")} aria-label={label}
-        className="min-w-0 flex-[1_1_220px] rounded-lg border border-border bg-raised px-3 py-2 font-mono text-[12px] text-ink outline-none placeholder:text-ink-secondary focus:border-accent" />
-      <button type="submit" disabled={disabled || busy !== null || token.trim().length < 8} className="rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-accent-ink disabled:opacity-40">{label}</button>
-    </form>
-  );
+    if (credentials && needsToken) setNeeds(needsToken);
+  }, [credentials, needsToken]);
+  const forEveryone = credentials?.scope === "workspace";
+  const pickHint = forEveryone ? t("sources.market.pickHintWorkspace") : t("sources.market.pickHint");
   return (
     <section className="mt-6" data-plugins-marketplaces>
       <h3 className="mb-1 text-[13px] font-semibold text-ink">{t("connectApps.market.title")}</h3>
@@ -157,7 +183,7 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
       >
         <input
           value={source}
-          onChange={(event) => { setSource(event.target.value); if (tokenFor === "add") setTokenFor(null); }}
+          onChange={(event) => { setSource(event.target.value); if (needs === "add") setNeeds(null); }}
           placeholder={t("connectApps.market.sourcePlaceholder")}
           aria-label={t("connectApps.market.sourceAria")}
           spellCheck={false}
@@ -182,21 +208,25 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
           <span className="text-[11.5px] text-ink-secondary">{visibility === "org" ? t("connectApps.market.visibility.orgHint") : t("connectApps.market.visibility.privateHint")}</span>
         </div>
       )}
-      {tokens && tokenFor === "add" && source.trim() && (
+      {credentials && needs === "add" && source.trim() && (
         <div className="mt-2 flex flex-col gap-1.5 rounded-lg bg-inset px-3 py-2" data-marketplace-add-token="">
-          <p className="text-[12px] text-ink-secondary">{forEveryone ? t("plugins.tokenOfferWorkspace") : t("plugins.tokenOffer")}</p>
-          {tokenForm(t("plugins.addWithToken"), "add", (value) => {
-            void onAdd(source.trim(), ref.trim(), visibility, value).then((ok) => {
-              if (ok) {
-                setSource("");
-                setRef("");
-                setVisibility("private");
-                setToken("");
-                setTokenFor(null);
-              }
-            });
-          })}
-          <p className="text-[11.5px] text-ink-secondary">{tokenHint}</p>
+          <p className="text-[12px] text-ink-secondary">{t("sources.market.addOffer")}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <CredentialSelect id="add" value={addCredential} onChange={setAddCredential} disabled={disabled || busy !== null} label={t("sources.market.pickAria", { name: source.trim() })} />
+            <button type="button" disabled={disabled || busy !== null || !addCredential} className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink disabled:opacity-40"
+              onClick={() => void onAdd(source.trim(), ref.trim(), visibility, addCredential ?? undefined).then((ok) => {
+                if (ok) {
+                  setSource("");
+                  setRef("");
+                  setVisibility("private");
+                  setAddCredential(null);
+                  setNeeds(null);
+                }
+              })}>
+              {t("sources.market.addWith")}
+            </button>
+          </div>
+          <p className="text-[11.5px] text-ink-secondary">{pickHint}</p>
         </div>
       )}
       {error && <p role="alert" className="mt-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</p>}
@@ -219,6 +249,9 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
                       <span className="font-mono">{market.source}{market.ref ? `#${market.ref}` : ""}</span>
                       {" · "}{t("connectApps.market.pluginCount", { count: market.plugins.length, installed })}
                     </div>
+                    {credentials && credentialUsedText(market.credential) && (
+                      <div className="truncate text-[11.5px] text-ink-secondary" data-marketplace-credential-used={market.credential?.used?.via}>{credentialUsedText(market.credential)}</div>
+                    )}
                   </div>
                   {market.visibility && (
                     <VisibilityBadge
@@ -227,13 +260,11 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
                       {...(onSetVisibility && market.mine ? { onToggle: () => onSetVisibility(market.name, market.visibility === "org" ? "private" : "org") } : {})}
                     />
                   )}
-                  {tokens && market.hasToken && <span className="rounded-full bg-hover px-2 py-0.5 text-[11px] text-ink-secondary" data-marketplace-has-token="">{t("plugins.tokenSaved")}</span>}
-                  {tokens && (
-                    <button type="button" disabled={disabled || busy !== null} data-marketplace-token-open={market.name}
-                      onClick={() => { setToken(""); setTokenFor(tokenFor === market.name ? null : market.name); }}
-                      className="ui-icon-button disabled:opacity-40" aria-label={`${t("plugins.token")}: ${market.name}`} title={t("plugins.token")}>
-                      <KeyRound size={14} />
-                    </button>
+                  {credentials && (
+                    <CredentialSelect id={market.name} value={market.credential?.chosen?.id ?? null} chosen={market.credential?.chosen}
+                      disabled={disabled || busy !== null}
+                      label={t("sources.market.pickAria", { name: market.name })}
+                      onChange={(credential) => void credentials.onChoose(market.name, credential).then((ok) => { if (ok && needs === market.name) setNeeds(null); })} />
                   )}
                   <button type="button" disabled={disabled || busy !== null} onClick={() => onRefresh(market.name)} className="ui-icon-button disabled:opacity-40"
                     aria-label={t("connectApps.market.refreshAria", { name: market.name })} title={t("connectApps.market.refreshAria", { name: market.name })}>
@@ -247,24 +278,8 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
                     <Trash2 size={14} />
                   </button>
                 </div>
-                {tokens && tokenFor === market.name && (
-                  <div className="mt-2 flex flex-col gap-1.5 border-t border-hairline/60 pt-2" data-marketplace-token={market.name}>
-                    <p className="text-[11.5px] text-ink-secondary">{tokenHint}</p>
-                    {tokenForm(market.hasToken ? t("plugins.tokenReplace") : t("plugins.tokenSave"), market.name, (value) => {
-                      void tokens.onSave(market.name, value).then((ok) => {
-                        if (ok) {
-                          setToken("");
-                          setTokenFor(null);
-                        }
-                      });
-                    })}
-                    {market.hasToken && (
-                      <button type="button" className="self-start text-[12px] text-ink-secondary underline disabled:opacity-40" disabled={disabled || busy !== null}
-                        onClick={() => void tokens.onRemove(market.name).then((ok) => { if (ok) setTokenFor(null); })}>
-                        {t("plugins.tokenRemove")}
-                      </button>
-                    )}
-                  </div>
+                {credentials && needs === market.name && (
+                  <p className="mt-2 border-t border-hairline/60 pt-2 text-[11.5px] text-ink-secondary" data-marketplace-token={market.name}>{t("sources.market.needsPick")} {pickHint}</p>
                 )}
               </li>
             );

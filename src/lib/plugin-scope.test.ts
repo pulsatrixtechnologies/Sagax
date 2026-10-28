@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BotPluginsView } from "./my-connections";
-import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot, workspaceMarketplaceTokens } from "./plugin-scope";
+import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot, marketplaceCredentialControls } from "./plugin-scope";
 
 const view: BotPluginsView = {
   marketplaces: [{
@@ -73,28 +73,45 @@ describe("plugin scope", () => {
   });
 });
 
-describe("everyone's marketplace token (an admin, Everyone scope)", () => {
-  it("saves it then fetches the marketplace again, removes it, and keeps the listing the server sends", async () => {
+describe("a marketplace's credential (Sources > GitHub, 2026-10-28)", () => {
+  it("everyone's: picks one of the list, then fetches the marketplace again and keeps the listing the server sends", async () => {
     const calls: string[] = [];
     const lists: unknown[][] = [];
-    const controls = workspaceMarketplaceTokens<{ name: string; hasToken?: boolean }>({
+    const controls = marketplaceCredentialControls<{ name: string }>({
+      route: "workspace",
       api: async (path, init) => {
         calls.push(`${init.method} ${path} ${init.body ?? ""}`);
-        return { marketplaces: [{ name: "acme-private", hasToken: init.method !== "DELETE" }] };
+        return { marketplaces: [{ name: "acme-private" }] };
       },
       run: async (busy, work) => { calls.push(`busy ${busy}`); await work(); return true; },
       loaded: (list) => { lists.push(list); },
     });
     expect(controls.scope).toBe("workspace");
-    expect(await controls.onSave("acme private", "good-token-123")).toBe(true);
-    expect(await controls.onRemove("acme private")).toBe(true);
+    expect(await controls.onChoose("acme private", "gt_0000000000000001")).toBe(true);
+    expect(await controls.onChoose("acme private", null)).toBe(true);
     expect(calls).toEqual([
       "busy refresh:acme private",
-      "PUT /api/marketplaces/acme%20private/token {\"token\":\"good-token-123\"}",
+      "PUT /api/marketplaces/acme%20private/credential {\"credential\":\"gt_0000000000000001\"}",
       "POST /api/marketplaces/acme%20private/refresh {}",
-      "busy token:acme private",
-      "DELETE /api/marketplaces/acme%20private/token ",
+      "busy refresh:acme private",
+      "PUT /api/marketplaces/acme%20private/credential {\"credential\":null}",
+      "POST /api/marketplaces/acme%20private/refresh {}",
     ]);
-    expect(lists).toEqual([[{ name: "acme-private", hasToken: true }], [{ name: "acme-private", hasToken: false }]]);
+    expect(lists).toHaveLength(2);
+  });
+
+  it("a bot's: its own route, then Update on that bot", async () => {
+    const calls: string[] = [];
+    const views: unknown[] = [];
+    const controls = marketplaceCredentialControls<{ name: string }>({
+      route: "bot", botId: "bot-a",
+      api: async (path, init) => { calls.push(`${init.method} ${path}`); return { marketplaces: [] }; },
+      run: async (_busy, work) => { await work(); return true; },
+      botLoaded: (view) => { views.push(view); },
+    });
+    expect(controls.scope).toBe("bot");
+    await controls.onChoose("team", "gt_0000000000000002");
+    expect(calls).toEqual(["PUT /api/bots/bot-a/plugins/marketplaces/team/credential", "POST /api/bots/bot-a/plugins/marketplaces/team/update"]);
+    expect(views).toHaveLength(1);
   });
 });

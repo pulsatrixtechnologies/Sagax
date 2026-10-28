@@ -368,3 +368,71 @@ describe("migrateBotMarketplaces", () => {
     expect(plugins.pluginDirs("bot-1")).toHaveLength(1);
   });
 });
+
+describe("a marketplace's credential from the one list (2026-10-28)", () => {
+  const PICKED = "fake-picked-token-1111";
+  const PERSON = "fake-person-token-2222";
+  async function setup() {
+    const { GithubCredentials } = await import("./github-credentials.ts");
+    const dir = temp();
+    const store = new GithubCredentials(dir, () => ({ kind: "key", key: Buffer.alloc(32, 3) }));
+    store.change("pr_owner", { op: "add", label: "Acme organization", token: PICKED });
+    const [credential] = store.list("pr_owner", { org: false });
+    const probes: string[][] = [];
+    const plugins = botPluginsWithMarketplaces({
+      dataDir: dir,
+      git: fakeGit({ "https://github.com/acme/tools.git": marketplaceRepo() }, []),
+      gitEnvironment: () => ({}),
+      policy: () => undefined,
+      credentials: () => [{ token: PERSON, via: "person", login: "owner-login" }],
+      probe: async (_repo, list) => {
+        probes.push(list.map((entry) => entry.token));
+        return { ok: true, credential: list[0] ?? null };
+      },
+      tokens: {
+        get: (scope, source) => store.get(scope, source),
+        chosen: (scope, source) => store.chosenSecret(scope, source),
+        choose: (scope, source, id) => store.choose(scope, source, id),
+        usable: (id, actor) => (store.ownerOf(id) === actor ? { id, label: "", token: store.tokenFor(id)! } : undefined),
+        noteUsed: (scope, source, used) => store.noteUsed(scope, source, used),
+        describe: (scope, source, viewer) => store.describe(scope, source, viewer ?? ""),
+        set: () => undefined,
+        remove: (scope, source) => store.removeMarketplaceToken(scope, source),
+        sourcesFor: (scope) => store.sourcesFor(scope),
+        forgetBot: (scope) => store.forgetScope(scope),
+      },
+    });
+    return { store, plugins, probes, credential: credential! };
+  }
+
+  it("Automatic tries the person's connection and says it read the marketplace", async () => {
+    const { plugins, probes } = await setup();
+    await plugins.addMarketplace("bot-1", { source: "acme/tools" }, "pr_owner");
+    expect(probes[0]).toEqual([PERSON]);
+    const [listing] = plugins.listMarketplaces("bot-1", { principal: "pr_owner" });
+    expect(listing!.credential).toMatchObject({ used: { via: "person", login: "owner-login" } });
+    expect(listing!.credential?.chosen).toBeUndefined();
+  });
+
+  it("a picked credential is tried first, shown by label, and Automatic again drops it", async () => {
+    const { plugins, probes, credential } = await setup();
+    await plugins.addMarketplace("bot-1", { source: "acme/tools", credential: credential.id }, "pr_owner");
+    expect(probes[0]![0]).toBe(PICKED);
+    let [listing] = plugins.listMarketplaces("bot-1", { principal: "pr_owner" });
+    expect(listing!.hasToken).toBe(true);
+    expect(listing!.credential).toMatchObject({ chosen: { id: credential.id, label: "Acme organization", owner: "mine" }, used: { via: "credential", label: "Acme organization" } });
+    expect(JSON.stringify(listing)).not.toContain(PICKED);
+    await plugins.updateMarketplace("bot-1", "acme-tools", "pr_owner");
+    expect(probes[1]![0]).toBe(PICKED);
+    listing = plugins.chooseMarketplaceCredential("bot-1", "acme-tools", null, "pr_owner");
+    expect(listing.credential?.chosen).toBeUndefined();
+    await plugins.updateMarketplace("bot-1", "acme-tools", "pr_owner");
+    expect(probes[2]).toEqual([PERSON]);
+  });
+
+  it("refuses a credential the actor may not use", async () => {
+    const { plugins, credential } = await setup();
+    await plugins.addMarketplace("bot-1", { source: "acme/tools" }, "pr_owner");
+    expect(() => plugins.chooseMarketplaceCredential("bot-1", "acme-tools", credential.id, "someone-else")).toThrow(/No credential/);
+  });
+});

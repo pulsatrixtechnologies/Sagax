@@ -102,6 +102,11 @@ const MANAGE_API: Record<string, unknown> = {
     { id: "bot-b", name: "Atlas", instanceId: "grok-main", model: "default", ownerUserId: "p-1", mcpServers: ["twilio-docs"], threads: [], messages: [] },
   ], groups: [], sections: [] },
   "/api/org": ORG,
+  // Sources > GitHub: one list of credentials (2026-10-28)
+  "/api/me/github/credentials": { canManageOrg: admin, deviceFlow: true, credentials: [
+    { id: "gt_0000000000000011", label: "Second GitHub organization", hint: "9c1d", owner: "mine", chosenBy: 1 },
+    { id: "gt_0000000000000001", label: "Private repositories", hint: "4f2a", owner: "org", chosenBy: 0 },
+  ] },
   "/api/me/connections": { github: { state: "none", deviceFlow: true }, servers: [
     { name: "notes", kind: "remote", type: "http", url: "https://mcp.notion.com/mcp", domain: "mcp.notion.com", auth: "oauth", tokenConfigured: false, enabled: true, addedAt: 1, authState: "connected" },
   ], sandbox: true },
@@ -118,7 +123,7 @@ const MANAGE_API: Record<string, unknown> = {
       { name: "pdf-tools", description: "Read and fill PDF forms", installed: false, servers: [], skills: ["pdf"], category: "productivity" },
       { name: "sentry", description: "Errors and releases", installed: false, servers: ["sentry"], skills: [], category: "monitoring" },
     ] },
-    { name: "example-ops", source: "example-org/ops-marketplace", visibility: "org", mine: true, plugins: [
+    { name: "example-ops", source: "example-org/ops-marketplace", visibility: "org", mine: true, hasToken: true, credential: { chosen: { id: "gt_0000000000000011", label: "Second GitHub organization", owner: "mine" }, used: { via: "credential", label: "Second GitHub organization", at: 1 } }, plugins: [
       { name: "ops-flow", description: "Service desk routines", installed: true, servers: [], skills: ["triage", "dispatch", "time-review"], category: "productivity" },
       { name: "ops-flow-tenant", description: "This organization's boards and rules", installed: true, servers: [], skills: ["tenant-rules"], category: "productivity" },
     ] },

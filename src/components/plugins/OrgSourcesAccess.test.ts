@@ -1,8 +1,8 @@
 // Organization sources and access: since 2026-10-27 in Connect apps >
-// Sources, its admin part (owner: one place per subject, every GitHub setting
-// together); Settings > Organization keeps one link there. An organization
-// admin only, as before. A saved token is a label and a hint; the secret
-// field is empty until the person types one.
+// Sources, its admin part; Settings > Organization keeps one link there. An
+// organization admin only, as before. Since 2026-10-28 the organization's
+// GitHub tokens are in the one list of Sources > GitHub, and the GitHub
+// OAuth App's client id in Settings > Organization.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { openSettings } from "@/lib/settings-link";
-import { MAX_ORG_GITHUB_TOKENS, type OrgGithubTokenPublic } from "../../../shared/org-github-tokens";
+import type { OrgGithubTokenPublic } from "../../../shared/org-github-tokens";
 import { PerspicaxOrgSettings } from "../PerspicaxOrgSettings";
 import { marketplacePolicyBody, OrgSourcesAccess } from "./OrgSourcesAccess";
 
@@ -41,7 +41,7 @@ const org = (viewerRole: "admin" | "member"): PerspicaxOrg => ({
 });
 
 describe("Organization sources and access", () => {
-  it("is no longer in Settings > Organization: an admin finds one link to Connect apps > Sources, a member nothing", () => {
+  it("Settings > Organization: an admin finds one link to Connect apps > Sources and the GitHub OAuth App's client id, a member nothing", () => {
     const admin = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: org("admin"), onChanged: () => {} }));
     expect(admin).toContain('data-settings-card="organization.plugins"');
     expect(admin).toContain("data-org-sources-moved");
@@ -49,56 +49,30 @@ describe("Organization sources and access", () => {
     expect(admin).toContain("Open Sources");
     expect(admin).not.toContain("data-org-plugin-policy");
     expect(admin).not.toContain("data-github-token-add");
-    expect(admin).not.toContain("Ov23li");
+    // the client id is a server setting: here, for admins (2026-10-28)
+    expect(admin).toContain('data-settings-card="organization.githubApp"');
+    expect(admin).toContain("GitHub OAuth App (Connect GitHub)");
     const member = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: org("member"), onChanged: () => {} }));
     expect(member).not.toContain("Allowed marketplaces");
     expect(member).not.toContain('data-settings-card="organization.plugins"');
+    expect(member).not.toContain("organization.githubApp");
   });
 
-  it("keeps the three settings and offers an add form when nothing is saved", () => {
-    const html = page();
+  it("keeps the allowed marketplaces only: the tokens are in Sources > GitHub, the OAuth App in Settings", () => {
+    const html = page({ githubTokens: [entry(1)] });
     expect(html).toContain("data-plugins-org-access");
-    expect(html).toContain("Organization sources and access");
     expect(html).toContain("Allowed marketplaces");
-    expect(html).toContain("GitHub OAuth App (Connect GitHub)");
-    expect(html).toContain('data-github-tokens="empty"');
-    expect(html).toContain("No access token yet.");
-    expect(html).toContain("data-github-token-add");
-    expect(html).toContain('type="password"');
-    expect(html).toContain("Add token");
-    expect(html).not.toContain("data-github-token=");
-  });
-
-  it("lists the label and the hint, with edit, replace and remove, and never a token", () => {
-    const html = page({ githubTokens: [entry(1, "1111"), { id: "gt_0000000000000002", label: "Depot interne", hint: "saved" }] });
-    expect(html).toContain('data-github-token="gt_0000000000000001"');
-    expect(html).toContain("Group 1");
-    expect(html).toContain(">1111<");
-    expect(html).toContain(">saved<");
-    expect(html).toContain("Edit label");
-    expect(html).toContain("Replace secret");
-    expect(html).toContain("Remove");
-    expect(html).not.toMatch(/type="password"[^>]*value="[^"]+"/);
+    expect(html).not.toContain("GitHub OAuth App (Connect GitHub)");
+    expect(html).not.toContain("data-github-token");
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain("Group 1");
   });
 
   it("says it in French", () => {
     setLocale("fr");
-    const html = page({ githubTokens: [{ id: "gt_0000000000000002", label: "Depot interne", hint: "saved" }] });
-    const shown = (text: string) => html.includes(text) || html.includes(text.replaceAll("'", "&#x27;"));
-    expect(shown("Sources et accès de l'organisation")).toBe(true);
-    expect(shown("Jetons d'accès GitHub")).toBe(true);
-    expect(html).toContain("enregistré");
-    expect(html).toContain("Ajouter un jeton");
+    const html = page();
     expect(html).toContain("Marketplaces autorisés");
-  });
-
-  it("hides the add form at the limit and when the list cannot be read", () => {
-    const full = page({ githubTokens: Array.from({ length: MAX_ORG_GITHUB_TOKENS }, (_, index) => entry(index)) });
-    expect(full).toContain('data-github-tokens="limit"');
-    expect(full).not.toContain("data-github-token-add");
-    const unread = page({ githubTokens: [], githubTokensUnavailable: true });
-    expect(unread).toContain("data-github-tokens-unavailable");
-    expect(unread).not.toContain("data-github-token-add");
+    expect(html).toContain("dans GitHub, plus haut");
   });
 
   it("sends the marketplace list the route accepts", () => {

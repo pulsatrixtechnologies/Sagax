@@ -1,13 +1,14 @@
 // Connect apps > Sources (2026-10-27): where plugins and private
 // repositories come from, and every GitHub setting in one place.
 //
-//   - Your GitHub connection (organization server): Connect GitHub (the
-//     organization's OAuth App) or a fine-grained token, as the person.
-//   - Marketplaces: add, fetch again, remove, and a token per marketplace.
+//   - GitHub (2026-10-28, GithubSourcesSection): one section for every
+//     GitHub setting: the person's connection, one list of credentials
+//     (theirs, and the organization's marked so).
+//   - Marketplaces: add, fetch again, remove; each picks a credential of
+//     that list, or Automatic.
 //   - Organization (admins only, the same right as before): allowed
-//     marketplaces, the organization's GitHub access tokens and its GitHub
-//     OAuth App. They were in Settings > Organization, which now only links
-//     here.
+//     marketplaces. The GitHub OAuth App's client id is in Settings >
+//     Organization.
 //
 // A part with nothing to show is left out.
 import type { ReactNode } from "react";
@@ -24,11 +25,7 @@ export interface SourcesViewProps {
 export function SourcesView({ github, marketplaces, organization }: SourcesViewProps) {
   return (
     <div data-plugins-sources>
-      {github && (
-        <section className="mb-6" data-plugins-sources-github>
-          {github}
-        </section>
-      )}
+      {github}
       {marketplaces}
       {organization && (
         <section className="mt-8 rounded-2xl border border-border bg-card px-4 py-4 sm:px-5" data-plugins-sources-admin>
