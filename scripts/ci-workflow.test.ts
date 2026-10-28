@@ -264,4 +264,22 @@ describe("public server image (install.sh, docs/install.md)", () => {
     expect(steps).toContain("type=raw,value=latest,enable=${{ needs.prepare.outputs.image_latest == 'true' }}");
     expect(steps).not.toMatch(/secrets\.(?!GITHUB_TOKEN|TRIVYIGNORE_PRIVATE)/);
   });
+
+  it("attaches one Android APK and does not invent signing material", () => {
+    const apk = release.jobs["android-apk"];
+    expect(release.jobs.assemble.needs).toContain("android-apk");
+    expect(apk.needs).toBe("prepare");
+    expect(apk.if).toBe("needs.prepare.outputs.should_release == 'true'");
+    const text = JSON.stringify(apk);
+    for (const name of ["SAGAX_KEYSTORE_FILE", "SAGAX_KEYSTORE_PASSWORD", "SAGAX_KEY_ALIAS", "SAGAX_KEY_PASSWORD"]) {
+      expect(text).toContain(name);
+    }
+    expect(text).toContain("Sagax.apk");
+    expect(text).toContain("Sagax-unsigned.apk");
+    expect(text).toContain("No password was invented.");
+    expect(text).not.toMatch(/storePassword["']?\s*[:=]\s*["'][^"']+["']/);
+    const assemble = JSON.stringify(release.jobs.assemble);
+    expect(assemble).toContain("Sagax-unsigned.apk");
+    expect(assemble).toContain("Sagax.apk");
+  });
 });

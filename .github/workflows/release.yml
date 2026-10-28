@@ -537,6 +537,75 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  android-apk:
+    name: Android APK
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Sign only when the named keystore is a real file
+        env:
+          # These names are already read by android/app/build.gradle.kts.
+          # SAGAX_KEYSTORE_FILE is a path. No secret in this repo holds the keystore bytes.
+          SAGAX_KEYSTORE_FILE: ${{ secrets.SAGAX_KEYSTORE_FILE }}
+          SAGAX_KEYSTORE_PASSWORD: ${{ secrets.SAGAX_KEYSTORE_PASSWORD }}
+          SAGAX_KEY_ALIAS: ${{ secrets.SAGAX_KEY_ALIAS }}
+          SAGAX_KEY_PASSWORD: ${{ secrets.SAGAX_KEY_PASSWORD }}
+        run: |
+          missing=""
+          if [ -z "${SAGAX_KEYSTORE_FILE}" ] || [ ! -f "${SAGAX_KEYSTORE_FILE}" ]; then missing="${missing} SAGAX_KEYSTORE_FILE"; fi
+          if [ -z "${SAGAX_KEYSTORE_PASSWORD}" ]; then missing="${missing} SAGAX_KEYSTORE_PASSWORD"; fi
+          if [ -z "${SAGAX_KEY_ALIAS}" ]; then missing="${missing} SAGAX_KEY_ALIAS"; fi
+          if [ -n "${missing}" ]; then
+            echo "Android release will not be signed. Missing:${missing}"
+            echo "SAGAX_KEY_PASSWORD is optional. No password was invented."
+            echo "SIGN=no" >> "$GITHUB_ENV"
+          else
+            echo "SIGN=yes" >> "$GITHUB_ENV"
+          fi
+      - name: Build the release APK
+        env:
+          SAGAX_KEYSTORE_FILE: ${{ secrets.SAGAX_KEYSTORE_FILE }}
+          SAGAX_KEYSTORE_PASSWORD: ${{ secrets.SAGAX_KEYSTORE_PASSWORD }}
+          SAGAX_KEY_ALIAS: ${{ secrets.SAGAX_KEY_ALIAS }}
+          SAGAX_KEY_PASSWORD: ${{ secrets.SAGAX_KEY_PASSWORD }}
+        run: |
+          if [ "$SIGN" != "yes" ]; then
+            unset SAGAX_KEYSTORE_FILE SAGAX_KEYSTORE_PASSWORD SAGAX_KEY_ALIAS SAGAX_KEY_PASSWORD
+            unset OPENMAUSBOT_KEYSTORE_FILE OPENMAUSBOT_KEYSTORE_PASSWORD OPENMAUSBOT_KEY_ALIAS OPENMAUSBOT_KEY_PASSWORD
+          fi
+          cd android
+          ./gradlew --no-daemon :app:assembleRelease
+          mkdir -p "$GITHUB_WORKSPACE/release-apk"
+          if [ "$SIGN" = "yes" ]; then
+            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/release-apk/Sagax.apk"
+          else
+            cp app/build/outputs/apk/release/app-release-unsigned.apk "$GITHUB_WORKSPACE/release-apk/Sagax-unsigned.apk"
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.SIGN == 'yes'
+        with:
+          name: android-apk
+          path: release-apk/Sagax.apk
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.SIGN != 'yes'
+        with:
+          name: android-apk
+          path: release-apk/Sagax-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
+
   voice-acceptance:
     name: Real voice acceptance
     needs: prepare
@@ -548,7 +617,7 @@ jobs:
 
   assemble:
     name: Assemble the draft and verify every feed
-    needs: [prepare, ci, mac, windows, linux, voice-acceptance]
+    needs: [prepare, ci, mac, windows, linux, android-apk, voice-acceptance]
     if: needs.prepare.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -588,7 +657,12 @@ jobs:
           for file in "${required[@]}"; do
             test -s "assets/$file" || { echo "::error::missing or empty release asset: $file"; exit 1; }
           done
-          test "$(find assets -maxdepth 1 -type f | wc -l | tr -d ' ')" = "${#required[@]}" || {
+          apk=0
+          for file in Sagax.apk Sagax-unsigned.apk; do
+            if [ -s "assets/$file" ]; then apk=$((apk + 1)); fi
+          done
+          test "$apk" = 1 || { echo "::error::the release needs Sagax.apk when the named keystore is present, otherwise Sagax-unsigned.apk, and not both"; exit 1; }
+          test "$(find assets -maxdepth 1 -type f | wc -l | tr -d ' ')" = "$(( ${#required[@]} + 1 ))" || {
             echo "::error::unexpected release asset set"; find assets -maxdepth 1 -type f -print; exit 1; }
       - name: Verify every feed hash against the actual bytes
         run: |
