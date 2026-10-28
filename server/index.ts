@@ -8,6 +8,7 @@ import { grantRemoteExecApproval, noteRemoteExecRequest, remoteSessionToolCall }
 import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 import { healthzBody } from "./healthz.ts";
+import { citeAppFigures, noteAppRead, type AppPiece } from "./app-figure.ts";
 import { harnessMcpHttpKind, serveHarnessMcpHttp } from "./harness-mcp-http.ts";
 // Then the upstream/analytics network block (network-guard.ts).
 import "./network-guard.ts";
@@ -13033,6 +13034,8 @@ function requestBehavior(value: unknown): "allow" | "deny" | "answer" | null {
 // the last settled assistant text per thread, so a "finished" notification
 // can carry what the bot actually said
 const lastReply = new Map<string, string>();
+/** Dated reads from a connected app during the current turn. */
+const appPiecesByThread = new Map<string, AppPiece[]>();
 /** Why a settled turn failed, for the person's incident and the bot's work
  * log: the turn's own last error as TurnStops holds it ("This Claude account
  * has reached its weekly limit, which resets …"), else the provider's stop
@@ -15220,7 +15223,7 @@ bus.subscribe((event: RuntimeEvent) => {
       pushStoppedTurn(turnId);
       return;
     }
-    spoken.text = dashFreeReply(spoken.text, event.threadId, bot);
+    spoken.text = citeAppFigures(dashFreeReply(spoken.text, event.threadId, bot), appPiecesByThread.get(event.threadId) ?? []);
     // "👍" written after reacting 👍 says the same thing twice: the
     // reaction stands alone and no bubble is written.
     const reactor = bot?.id ?? speaker?.botId;
@@ -15310,6 +15313,12 @@ bus.subscribe((event: RuntimeEvent) => {
           toolMessageByItem.delete(itemKey);
           // a "Connect Microsoft Teams" card's proof: whose turn made this call, on which bot
           connectorSetupProofs.record({ threadId: event.threadId, botId: bot?.id, principalId: connectorSetupSpeaker(event.threadId), name: toolName, input: existing?.input, ok: event.ok === true, at: Date.now() });
+          const appPiece = event.resultText ? noteAppRead(toolName, event.resultText) : null;
+          if (appPiece) {
+            const kept = appPiecesByThread.get(event.threadId) ?? [];
+            kept.push(appPiece);
+            appPiecesByThread.set(event.threadId, kept.slice(-8));
+          }
         }
         for (const videoMsg of event.output ? videoMessagesFromTool(toolName, event.output, event.threadId, latestPersonText(event.threadId)) : []) {
           pushMessage(videoMsg);
@@ -16353,6 +16362,7 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       break;
     case "turn.completed": {
+      appPiecesByThread.delete(event.threadId);
       settleWaitingOnPersonChips(event.threadId);
       // A peer-started turn settles as coordination, not as news. What keeps
       // that classification from outliving its turn is the rewrite at
