@@ -1,7 +1,7 @@
 // Shared by bot settings and the bot's side panel. The list keeps one action
 // (New schedule); a row opens the routine's page, which holds Run now, Pause
 // or Resume, Edit, the run logs and Delete.
-import { CalendarClock, ChevronLeft, FileText, MoreHorizontal, PanelRight, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, FileText, MoreHorizontal, PanelRight, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useServerFeature } from "@/lib/server-features";
 import { useStore, type Bot } from "@/state/store";
@@ -12,6 +12,7 @@ import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useCaptionChrome, useMacInsetChrome } from "../DesktopCapabilities";
 import { RoutineEditor } from "../RoutinesPage";
 import { canSortRoutinesByPrefix, RoutineFolderList, type RoutineFolderControl } from "../routines/RoutineFolders";
+import { ACTION_LABEL, ActionBar, ActionButton, actionButtonClass } from "../ActionBar";
 import { RunNowButton } from "../routines/RunNowButton";
 
 // The routine page covers the whole panel, so it draws its own top bar the way
@@ -62,13 +63,13 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
         <div className="text-[13px] font-medium text-ink">{t("botPanel.routines.instruction")}</div>
         <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{detail.prompt}</p>
       </div>
-      <div className="flex items-center gap-2 border-t border-hairline/40 px-3 py-3">
-        <RunNowButton routine={detail} bot={bot} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised disabled:opacity-50" />
-        <button type="button" onClick={() => toggle(detail)} className="flex-1 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised">{detail.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")}</button>
-        <button type="button" onClick={() => setEditing(detail)} className="flex-1 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised">{t("botPanel.routines.edit")}</button>
-        <button type="button" data-routine-logs aria-label={t("routines.logs")} title={t("routines.logs")} onClick={() => dispatch({ type: "showRoutines", section: "logs", botId: bot.id })} className="flex size-10 items-center justify-center rounded-lg border border-hairline/50 text-ink-secondary hover:bg-raised hover:text-ink"><FileText size={16} /></button>
-        <button type="button" aria-label={t("common.delete")} onClick={() => { dispatch({ type: "deleteRoutine", routineId: detail.id }); setDetailId(null); }} className="flex size-10 items-center justify-center rounded-lg border border-hairline/50 text-ink-secondary hover:bg-raised hover:text-danger"><Trash2 size={16} /></button>
-      </div>
+      <ActionBar data-routine-detail-actions="">
+        <RunNowButton routine={detail} bot={bot} className={actionButtonClass("primary")} labelClassName={ACTION_LABEL} />
+        <ActionButton icon={detail.enabled ? <Pause size={15} /> : <Play size={15} />} label={detail.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")} onClick={() => toggle(detail)} data-routine-toggle="" />
+        <ActionButton icon={<Pencil size={15} />} label={t("botPanel.routines.edit")} onClick={() => setEditing(detail)} data-routine-edit="" />
+        <ActionButton icon={<FileText size={15} />} label={t("routines.logs")} wide={false} onClick={() => dispatch({ type: "showRoutines", section: "logs", botId: bot.id })} data-routine-logs="" />
+        <ActionButton icon={<Trash2 size={15} />} label={t("common.delete")} wide={false} danger onClick={() => { dispatch({ type: "deleteRoutine", routineId: detail.id }); setDetailId(null); }} data-routine-delete="" />
+      </ActionBar>
       {editing && editing !== "new" && <RoutineEditor key={detail.id} routine={detail} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} onClose={() => setEditing(null)} />}
     </div>;
   }
