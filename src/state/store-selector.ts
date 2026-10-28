@@ -54,14 +54,14 @@ export function useStoreSelector<T>(selector: (state: AppState) => T, isEqual?: 
   // A tree has a source or it does not for the life of the component, so the
   // hooks called below stay the same from one render to the next.
   if (!source) return selector(useStore().state);
-  return useSourceSelector(source, selector, isEqual);
+  return useSourceSelector(source as StoreSource<AppState, unknown>, selector, isEqual);
 }
 
 /** The store's dispatch, without subscribing to the state. */
 export function useStoreDispatch(): Dispatch<Action> {
   const source = useContext(StoreSourceContext);
   if (!source) return useStore().dispatch;
-  return source.dispatch;
+  return source.dispatch as Dispatch<Action>;
 }
 
 /** The latest state, read when called (an event handler, an effect), without
@@ -72,5 +72,5 @@ export function useStoreGetter(): () => AppState {
     const state = useStore().state;
     return () => state;
   }
-  return source.getState;
+  return source.getState as () => AppState;
 }
