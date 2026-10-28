@@ -789,6 +789,10 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       const denials: string[] = [];
       const seenCalls = new Set<string>();
       let nudged = false;
+      // Asides spliced into the request that is in flight. Cleared once the
+      // model answers that request. Still set when the turn ends means the
+      // model never read them.
+      let unread: string[] = [];
       try {
         const parsed = parseToolScope(turn.toolScope);
         if (!parsed.ok) throw new Error(parsed.error);
@@ -818,8 +822,12 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
           // request: the previous round's tool results are complete, so a
           // user message lands on a consistent array (never inside a tool
           // batch) and the provider sees it as the newest input.
-          const parked = turnEntry.asides.splice(0);
-          if (parked.length) messages.push({ role: "user", content: parked.join("\n\n") });
+          unread = turnEntry.asides.splice(0);
+          if (unread.length) messages.push({ role: "user", content: unread.join("\n\n") });
+          // The last step cannot take another round. Refuse a steer now so
+          // the harness queues it as the next turn instead of losing it
+          // under "Stopped after N steps".
+          turnEntry.ending = round === MAX_CHAT_ROUNDS - 1;
           native("out", options.nativeLog.outgoing(turn, messages, model, tools.definitions));
           let attempt = 0;
           let resized = false;
@@ -912,6 +920,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
             }
           }
           native("in", options.nativeLog.incoming(completion));
+          unread = [];
           if (completion.usage) {
             usage.input += completion.usage.input;
             usage.output += completion.usage.output;
@@ -1081,6 +1090,12 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
           failure = "Tool processes could not be stopped; their execution state is uncertain.";
         }
         if (abort.signal.aborted) { ok = false; stopReason = "interrupted"; }
+        if (!ok && (unread.length || turnEntry.asides.length)) {
+          emit({
+            ...base(turn.threadId, turnId), type: "runtime.notice",
+            message: "This turn ended before the model read a message sent while it ran. Send that message again.",
+          });
+        }
         if (failure && (!abort.signal.aborted || cleanupFailed)) {
           // "upstream" (an OpenAI-compatible URL) names no provider, and the Cloud trial credit reads its raw line.
           const message = options.httpErrorLabel === "upstream" ? failure : outOfCreditsMessage(options.httpErrorLabel, failure);
