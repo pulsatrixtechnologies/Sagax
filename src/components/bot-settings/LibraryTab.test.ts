@@ -158,3 +158,21 @@ describe("an artifact's refresh state on its row", () => {
     expect(artifactStatus(paused, now).text).toBe("Rafraîchissement en pause après 3 échecs. Rafraîchissez maintenant ou demandez au bot.");
   });
 });
+
+describe("Library tab: the bot's pages (2026-10-28)", () => {
+  const page = (id: string, title: string, pinned: boolean, daysAgo: number) => ({
+    id, title, status: "draft", access: "private", expiresAt: null, currentVersion: null, botId: "bot1", threadId: "t1",
+    createdAt: now - daysAgo * DAY, updatedAt: now - daysAgo * DAY, expired: false, versions: [{ n: 1, kind: "html", title, createdAt: 1, state: "proposed", bytes: 1, botId: "bot1" }], pinned,
+  });
+
+  it("lists pages with their page icon in Pinned and This week, with Open, Share…, Unpin and Delete… in the menu", () => {
+    const html = render([], list([]), { pages: [page("pageAAAA1111", "Quarterly overview", true, 1), page("pageBBBB2222", "Weekly report", false, 2)], openMenus: true });
+    const pinned = html.indexOf('data-library-group="pinned"');
+    const week = html.indexOf('data-library-group="thisWeek"');
+    expect(pinned).toBeGreaterThan(-1);
+    expect(html.slice(pinned, week)).toContain('data-library-page="pageAAAA1111"');
+    expect(html.slice(week)).toContain('data-library-page="pageBBBB2222"');
+    expect(html).toContain("data-page-glyph");
+    for (const label of ["Open", "Share…", "Unpin", "Pin", "Delete…"]) expect(html).toContain(`>${label}<`);
+  });
+});

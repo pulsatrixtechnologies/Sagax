@@ -1,7 +1,8 @@
 // A published page, open (2026-10-28, the reference design's page view):
-// over its conversation as a full panel (ChatView), in its own desktop
-// window, or over Settings. One surface for all three, so they show the same
-// page and offer the same actions:
+// over its conversation as a full panel (ChatView), or in a system window of
+// its own (src/lib/page-windows.ts: the Library, Settings, « Open in a
+// window »). Never a window drawn inside Sagax. One surface for both, so they
+// show the same page and offer the same actions:
 //   - top left, a round × that closes it (back to the conversation, at the
 //     same place: the conversation stays mounted under the panel);
 //   - top centre, the title pill: a click turns it into a field (pencil),
@@ -24,7 +25,6 @@
 // frame, and its fields are plain text (parseAnnotationMessage). Nothing
 // reaches a bot until the person presses Send.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 import { BarChart3, Check, Ellipsis, Highlighter, History, Loader2, MessageSquare, Pencil, Play, Save, Send, Share, Trash2, X, XCircle } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -179,10 +179,15 @@ export interface PageSurfaceProps {
   moreItems?(close: () => void): ReactNode;
   /** Drawn over the page, at the bottom (the conversation's composer). */
   footer?: ReactNode;
+  /** A window of its own, with no conversation beside it: the page is asked
+   * again now and then, so a new version from the bot is drawn in place. */
+  follow?: boolean;
   className?: string;
 }
 
-export function PageSurface({ pageId, version: initialVersion, initialTitle = "", latestVersion, onClose, onChange, moreItems, footer, className }: PageSurfaceProps) {
+export const PAGE_FOLLOW_MS = 5_000;
+
+export function PageSurface({ pageId, version: initialVersion, initialTitle = "", latestVersion, onClose, onChange, moreItems, footer, follow = false, className }: PageSurfaceProps) {
   const { dispatch } = useStore();
   const policy = usePagesPolicy();
   const [page, setPage] = useState<PublishedPageSummary | null>(null);
@@ -221,8 +226,23 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   }, [pageId, update]);
   useEffect(() => load(initialVersion ?? null), [load, initialVersion]);
 
+  // in a window of its own: the newest version, asked now and then
+  const [followed, setFollowed] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!follow) return;
+    let live = true;
+    const ask = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(pageId)}`)
+        .then((answer) => { if (live) setFollowed(answer.page.versions.at(-1)?.n); })
+        .catch(() => { /* the next ask tries again */ });
+    };
+    const timer = setInterval(ask, PAGE_FOLLOW_MS);
+    return () => { live = false; clearInterval(timer); };
+  }, [follow, pageId]);
+
   // the bot changed this page: show its new version, at the same place
-  const newer = newerVersion(version, latestVersion);
+  const newer = newerVersion(version, latestVersion ?? followed);
   useEffect(() => {
     if (newer === null || !page) return;
     return load(newer);
@@ -416,36 +436,6 @@ function VersionsPanel({ page, version, onPick }: { page: PublishedPageSummary; 
         </button>
       ))}
     </section>
-  );
-}
-
-/** The page over anything else (Settings, the web app's Library): the same
- * surface in a native modal dialog, the whole window. */
-export function PageViewerDialog({ pageId, version, onClose, returnFocus, onChange }: {
-  pageId: string;
-  version?: number;
-  onClose(): void;
-  returnFocus: HTMLElement | null;
-  onChange?(page: PublishedPageSummary): void;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (typeof dialog.showModal === "function" && !dialog.open) dialog.showModal();
-    return () => {
-      if (dialog.open && typeof dialog.close === "function") dialog.close();
-      if (returnFocus?.isConnected) returnFocus.focus();
-    };
-  }, [returnFocus]);
-  return createPortal(
-    <dialog ref={ref} data-page-dialog={pageId} aria-label={t("pages.openFull")}
-      onCancel={(event) => { event.preventDefault(); onClose(); }}
-      onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}
-      className="m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden bg-app p-0 text-ink backdrop:bg-black/60">
-      <PageSurface pageId={pageId} {...(version !== undefined ? { version } : {})} onClose={onClose} {...(onChange ? { onChange } : {})} />
-    </dialog>,
-    document.body,
   );
 }
 

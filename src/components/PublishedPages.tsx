@@ -20,7 +20,8 @@ import {
   type PublishedPageSummary,
 } from "../../shared/published-pages";
 import { ACCESS_LABEL, expiryFromHours, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
-import { PageGlyph, PageViewerDialog } from "./PageViewer";
+import { PageGlyph } from "./PageViewer";
+import { openPageInOwnWindow } from "@/lib/page-windows";
 import { PageSharePopover } from "./PageShare";
 import { useWidgetTheme } from "./WidgetFrame";
 import { openPagePanel } from "@/lib/open-page";
@@ -196,8 +197,6 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
   const [previewing, setPreviewing] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [viewing, setViewing] = useState(false);
-  const openButton = useRef<HTMLButtonElement>(null);
   const call = async (path: string, init: RequestInit) => {
     setBusy(true);
     setError("");
@@ -223,12 +222,11 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
           <Pin size={12} />{page.pinned ? t("pages.unpin") : t("pages.pin")}
         </button>
         <span className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-ink-secondary">{status}</span>
-        <button ref={openButton} type="button" data-page-open aria-label={t("pages.openFull")} title={t("pages.openFull")} onClick={() => setViewing(true)}
+        <button type="button" data-page-open aria-label={t("pages.openWindow")} title={t("pages.openWindow")} onClick={() => void openPageInOwnWindow(page)}
           className="rounded p-1 text-ink-secondary hover:bg-hover hover:text-ink">
           <Maximize2 size={13} />
         </button>
       </div>
-      {viewing && <PageViewerDialog pageId={page.id} returnFocus={openButton.current} onClose={() => setViewing(false)} onChange={onChange} />}
       <PageAudienceRow page={page} busy={busy} onShare={(body) => void call("/share", { method: "POST", body: JSON.stringify(body) })} />
       <p className="text-[12px] text-ink-secondary">{t("pages.coedit")}</p>
       <SwitchRow label={t("pages.keepUpdated")} description={t("pages.keepUpdatedHint")} checked={page.keepUpdated === true} disabled={busy}

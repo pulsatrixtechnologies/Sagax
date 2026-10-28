@@ -1,13 +1,13 @@
-// Bot panel > Library: the conversation's files and the bot's artifacts in one
-// list. What the person pinned sits on top under "Pinned"; the rest is grouped
+// Bot panel > Library: the conversation's files, the bot's artifacts and the
+// pages it made for this person in one list. What the person pinned sits on top under "Pinned"; the rest is grouped
 // by period ("This week", "Older"), each group in a rounded card, one line per
 // item: the type's icon and the name. A file's pin is kept on the server per
 // conversation; an artifact's pin is its favorite flag, also on the server, so
 // both follow the person to iOS. Skills live on the Personas page and the
 // bot's Claude Code plugins in Connect apps, in that bot's scope.
 // (docs/superpowers/specs/2026-10-16-artifacts-design.md)
-import { useState, type ReactNode } from "react";
-import { AppWindow, Copy, Download, FolderOpen, LoaderCircle, MessageSquare, MoreHorizontal, Pin, PinOff, RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { AppWindow, Copy, Download, FolderOpen, LoaderCircle, MessageSquare, MoreHorizontal, Pin, PinOff, RefreshCw, RotateCcw, Share, Trash2, X } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
@@ -19,6 +19,12 @@ import { classifyFile, threadFileUrl, type ThreadFile } from "@/lib/chat-files";
 import { groupLibraryItems, libraryItems, type LibraryItem } from "@/lib/library-items";
 import { AttachmentPreviewDialog, canonicalDownloadFilename } from "../AttachmentPreview";
 import type { ArtifactSummary } from "../../../shared/artifacts";
+import { ConfirmDialog } from "../ConfirmDialog";
+import { PageGlyph } from "../PageViewer";
+import { PageSharePopover } from "../PageShare";
+import { usePagesPolicy } from "../page-controls";
+import { openPageInOwnWindow } from "@/lib/page-windows";
+import type { PublishedPageSummary } from "../../../shared/published-pages";
 import { ArtifactDialogs, artifactStatus, useArtifactActions, type ArtifactActions } from "../artifacts/ArtifactsSection";
 import { canOpenArtifactInOwnWindow } from "../artifacts/artifact-windows";
 import { copyablePath, downloadThreadFile, FileHover, KIND_ICON, MediaPreviewDialog, MenuItem, PopoverMenu, useThreadFiles } from "./FilesSection";
@@ -28,8 +34,29 @@ export function openBotPlugins(dispatch: ReturnType<typeof useStore>["dispatch"]
   dispatch({ type: "togglePlugins", open: true, botId });
 }
 
+/** The pages this bot made for this person (GET /api/pages: the person's
+ * own pages only), kept current while the tab is open. */
+export function useBotPages(botId: string): { pages: PublishedPageSummary[] | null; patch(page: PublishedPageSummary): void; drop(id: string): void } {
+  const [pages, setPages] = useState<PublishedPageSummary[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => api<{ pages: PublishedPageSummary[] }>("/api/pages")
+      .then((answer) => { if (live) setPages(answer.pages.filter((page) => page.botId === botId)); })
+      .catch(() => { if (live) setPages((current) => current ?? []); });
+    void load();
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") void load(); }, 15_000);
+    return () => { live = false; clearInterval(timer); };
+  }, [botId]);
+  return {
+    pages,
+    patch: (page) => setPages((current) => (current ?? []).map((entry) => (entry.id === page.id ? page : entry))),
+    drop: (id) => setPages((current) => (current ?? []).filter((entry) => entry.id !== id)),
+  };
+}
+
 export function LibraryTab({ bot }: { bot: Bot }) {
   const list = useBotArtifacts(bot.id);
+  const pages = useBotPages(bot.id);
   const files = useThreadFiles(bot);
   const advanced = useAdvancedMode();
   const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -54,6 +81,9 @@ export function LibraryTab({ bot }: { bot: Bot }) {
       onJump={files.jump}
       onPinFile={setPinned}
       list={list}
+      pages={pages.pages}
+      onPageChange={pages.patch}
+      onPageRemoved={pages.drop}
       advanced={advanced}
       status={status}
     />
@@ -61,7 +91,7 @@ export function LibraryTab({ bot }: { bot: Bot }) {
 }
 
 /** Everything the tab shows, given the loaded lists (tests render it). */
-export function LibraryBody({ threadId, files, filesError = false, onRetryFiles = () => {}, onJump = () => {}, onPinFile = () => {}, list, advanced = false, now, status = null, openMenus = false }: {
+export function LibraryBody({ threadId, files, filesError = false, onRetryFiles = () => {}, onJump = () => {}, onPinFile = () => {}, list, pages = null, onPageChange = () => {}, onPageRemoved = () => {}, advanced = false, now, status = null, openMenus = false }: {
   threadId: string;
   /** null while the first load is in flight. */
   files: ThreadFile[] | null;
@@ -70,6 +100,10 @@ export function LibraryBody({ threadId, files, filesError = false, onRetryFiles 
   onJump?: (file: ThreadFile) => void;
   onPinFile?: (file: ThreadFile, pinned: boolean) => void;
   list: ArtifactList;
+  /** The bot's pages for this person; null while loading. */
+  pages?: PublishedPageSummary[] | null;
+  onPageChange?: (page: PublishedPageSummary) => void;
+  onPageRemoved?: (id: string) => void;
   /** Advanced mode: a file's menu also offers Copy path. */
   advanced?: boolean;
   now?: number;
@@ -85,7 +119,15 @@ export function LibraryBody({ threadId, files, filesError = false, onRetryFiles 
 
   const loading = (files === null && !filesError) || (list.artifacts === null && !list.error);
   const failed = (files === null && filesError) && (list.artifacts === null && list.error);
-  const items = libraryItems(files, list.artifacts);
+  const items = libraryItems(files, list.artifacts, pages);
+  const policy = usePagesPolicy();
+  const [deletingPage, setDeletingPage] = useState<PublishedPageSummary | null>(null);
+  const [pageBusy, setPageBusy] = useState(false);
+  const patchPage = (page: PublishedPageSummary, body: Record<string, unknown>) => {
+    void api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(page.id)}`, { method: "PATCH", body: JSON.stringify(body) })
+      .then((answer) => onPageChange(answer.page))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+  };
   const groups = groupLibraryItems(items, now ?? Date.now());
   const shownNote = note ?? status;
   // Pictures open in one viewer that steps through them, newest first.
@@ -118,7 +160,10 @@ export function LibraryBody({ threadId, files, filesError = false, onRetryFiles 
 
   const row = (item: LibraryItem): ReactNode => item.kind === "file"
     ? <FileRow key={item.key} threadId={threadId} file={item.file} advanced={advanced} openMenus={openMenus} onOpen={open} onJump={onJump} onDownload={download} onCopyPath={copyPath} onPin={onPinFile} />
-    : <ArtifactLibraryRow key={item.key} artifact={item.artifact} actions={actions} now={now} openMenus={openMenus} />;
+    : item.kind === "page"
+      ? <PageLibraryRow key={item.key} page={item.page} linkOff={!policy.linkSharing} openMenus={openMenus} onChange={onPageChange}
+          onPin={(page) => patchPage(page, { pinned: page.pinned !== true })} onDelete={setDeletingPage} />
+      : <ArtifactLibraryRow key={item.key} artifact={item.artifact} actions={actions} now={now} openMenus={openMenus} />;
   const card = (id: string, title: string, rows: LibraryItem[]) => (
     <section key={id} data-library-group={id} className="flex flex-col gap-1.5">
       <h3 className="px-0.5 text-[12px] font-medium text-ink-secondary">{title}</h3>
@@ -157,6 +202,25 @@ export function LibraryBody({ threadId, files, filesError = false, onRetryFiles 
       {imageIndex >= 0 && <AttachmentPreviewDialog image={previews[imageIndex]!} images={previews} initialIndex={imageIndex} onClose={() => setImageId(null)} />}
       {media && <MediaPreviewDialog threadId={threadId} file={media.file} kind={media.kind} onClose={() => setMedia(null)} />}
       <ArtifactDialogs state={actions} />
+      <ConfirmDialog
+        open={deletingPage !== null}
+        title={t("pages.deleteTitle")}
+        body={t("pages.deleteBody", { title: deletingPage?.title ?? "" })}
+        confirmLabel={t("pages.delete")}
+        tone="danger"
+        icon={<Trash2 size={16} />}
+        pending={pageBusy}
+        onCancel={() => setDeletingPage(null)}
+        onConfirm={() => {
+          const page = deletingPage;
+          if (!page) return;
+          setPageBusy(true);
+          void api(`/api/pages/${encodeURIComponent(page.id)}`, { method: "DELETE" })
+            .then(() => { onPageRemoved(page.id); setDeletingPage(null); })
+            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+            .finally(() => setPageBusy(false));
+        }}
+      />
     </div>
   );
 }
@@ -295,6 +359,55 @@ function ArtifactLibraryRow({ artifact, actions, now, openMenus }: { artifact: A
     >
       {(content) => (
         <button type="button" onClick={() => actions.open(artifact)} aria-label={t("artifacts.openAria", { title: artifact.title })} className={OPEN_BUTTON}>
+          {content}
+        </button>
+      )}
+    </LibraryRow>
+  );
+}
+
+/** A page the bot made (2026-10-28): its icon and title; a click opens it in
+ * its own system window (src/lib/page-windows.ts); « … » Open, Share…,
+ * Pin or Unpin, Delete…. Share is the same popover as the open page's. */
+function PageLibraryRow({ page, linkOff, openMenus, onChange, onPin, onDelete }: {
+  page: PublishedPageSummary;
+  linkOff: boolean;
+  openMenus: boolean;
+  onChange: (page: PublishedPageSummary) => void;
+  onPin: (page: PublishedPageSummary) => void;
+  onDelete: (page: PublishedPageSummary) => void;
+}) {
+  const [sharing, setSharing] = useState(false);
+  const pinned = page.pinned === true;
+  const pinLabel = pinned ? t("botPanel.library.unpin") : t("botPanel.library.pin");
+  const open = () => void openPageInOwnWindow(page);
+  return (
+    <LibraryRow
+      attr={{ "data-library-page": page.id }}
+      icon={<PageGlyph size={18} />}
+      name={page.title || t("pages.untitled")}
+      trail={sharing ? (
+        <span className="relative">
+          <PageSharePopover page={page} version={page.currentVersion ?? page.versions.at(-1)?.n ?? 1} linkOff={linkOff} onChange={onChange} onClose={() => setSharing(false)}
+            className="absolute right-0 top-5 z-[5]" />
+        </span>
+      ) : null}
+      pinned={pinned}
+      pinLabel={pinLabel}
+      onTogglePin={() => onPin(page)}
+      menuLabel={t("pages.moreAria", { title: page.title })}
+      openMenus={openMenus}
+      menu={(close) => (
+        <>
+          <MenuItem icon={<AppWindow size={14} />} label={t("pages.open")} onClick={() => { close(); open(); }} />
+          <MenuItem icon={<Share size={14} />} label={t("pages.shareMenu")} onClick={() => { close(); setSharing(true); }} />
+          <MenuItem icon={pinned ? <PinOff size={14} /> : <Pin size={14} />} label={pinLabel} onClick={() => { close(); onPin(page); }} />
+          <MenuItem icon={<Trash2 size={14} />} label={t("pages.deleteMenu")} onClick={() => { close(); onDelete(page); }} />
+        </>
+      )}
+    >
+      {(content) => (
+        <button type="button" data-page-open onClick={open} aria-label={t("pages.cardOpen", { title: page.title })} className={OPEN_BUTTON}>
           {content}
         </button>
       )}

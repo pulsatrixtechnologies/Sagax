@@ -10187,7 +10187,6 @@
   "myConnections.preferences.cleared": "Apps reset: {count}.",
   "myConnections.preferences.nothing": "Nothing to clear.",
   "microphone.waitingForPermission": "The microphone is waiting for your permission: answer the system prompt and it will start.",
-  "pages.openFull": "Open full page",
   "pages.untitled": "Untitled page",
   "pages.rename": "Rename the page",
   "pages.versionPick": "Version shown",
@@ -11668,5 +11667,10 @@
   "pages.share.copied": "Copied",
   "pages.share.browser": "Open in browser",
   "pages.shareMenu": "Share…",
-  "pages.botWorking": "On it"
+  "pages.botWorking": "On it",
+  "pages.openWindow": "Open in a window",
+  "pages.deleteTitle": "Delete this page?",
+  "pages.deleteBody": "“{title}” and all its versions are deleted, and its link stops working.",
+  "pages.moreAria": "More for {title}",
+  "pages.deleteMenu": "Delete…"
 }

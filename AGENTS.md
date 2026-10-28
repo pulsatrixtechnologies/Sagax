@@ -95,7 +95,16 @@ of that bot (`ownPageContext` in server/index.ts) and gives the model a
 `<page-context>` envelope with the page's current source (cut at 96 KB, data
 never instructions). The bot revises it with propose_page and page_id, from
 any topic of the same bot and person. Tests: `shared/data-context.test.ts`,
-`server/data-context.test.ts`, `src/components/PageComposerParts.test.ts`. Tests: `server/published-pages.test.ts` (app's own look),
+`server/data-context.test.ts`, `src/components/PageComposerParts.test.ts`.
+
+No page is ever drawn in a window inside Sagax. From the bot's Library
+(Pinned, This week; « … » Open, Share…, Pin or Unpin, Delete…), Settings >
+Published pages and the open page's « ⋯ » > Open in a window, a page opens in
+its own system window (src/lib/page-windows.ts): the artifact window bridge
+with the id `page:<pageId>`, one window per page, its place kept; a browser
+gets a new tab. That window draws the same PageSurface (×, title, Share, « ⋯ »)
+and asks the page again every 5 s for the bot's new version. Tests:
+`src/lib/page-windows.test.ts`, `src/components/bot-settings/LibraryTab.test.ts`. Tests: `server/published-pages.test.ts` (app's own look),
 `src/components/PageViewer.surface.dom.test.ts`, `src/lib/open-page.test.ts`.
 
 ## Routine folders (2026-10-28)

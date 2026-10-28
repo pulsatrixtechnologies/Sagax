@@ -15,6 +15,8 @@ import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference"
 import { setLocale, t } from "@/lib/i18n";
 import { refreshArtifact, useArtifact, useArtifactWatch } from "@/lib/artifacts";
 import { ArtifactFrame } from "./ArtifactFrame";
+import { PageSurface } from "../PageViewer";
+import { pageIdOfWindow } from "@/lib/page-windows";
 import { ArtifactStatusLine } from "./ArtifactsSection";
 import { dockArtifactWindow, type ArtifactWindowData } from "./artifact-windows";
 
@@ -113,6 +115,16 @@ function ArtifactStandaloneBody() {
     return (
       <main className="flex h-dvh items-center justify-center bg-panel px-6 text-center text-[13px] text-ink-secondary" role="status">
         {target ? t("artifacts.loading") : t("artifacts.error")}
+      </main>
+    );
+  }
+  // a page's window (src/lib/page-windows.ts): the same surface as the page
+  // open over its conversation; × closes the window
+  const pageId = pageIdOfWindow(target.artifactId);
+  if (pageId) {
+    return (
+      <main data-page-standalone={pageId} className="flex h-dvh min-h-0 flex-col bg-app text-ink">
+        <PageSurface pageId={pageId} follow onClose={() => window.close()} onChange={(page) => { if (page.title) document.title = page.title; }} />
       </main>
     );
   }
