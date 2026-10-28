@@ -184,6 +184,8 @@ describe("topic files the bot keeps", () => {
     expect(topicFileName("Food & Drink")).toBe("food-drink.md");
     expect(topicFileName("asha.md")).toBe("asha.md");
     expect(topicFileName("archive")).toBeNull();
+    expect(topicFileName("company")).toBeNull();
+    expect(topicFileName("procedures")).toBeNull();
     expect(topicFileName("../etc")).toBe("etc.md");
     expect(topicFileName(42)).toBeNull();
   });
