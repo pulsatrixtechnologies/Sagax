@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { removeTempDir } from "../testing/cleanup.ts";
+import { STABLE_CWD_NOTE, stableCwdTurn } from "./pi-mcp-extension.ts";
 import { startFakeHttpMcp } from "../testing/fake-http-mcp-server.ts";
 import { whopLikeCatalog } from "../testing/whop-like-catalog.ts";
 import { buildMcpServers } from "./pi.ts";
@@ -605,5 +606,22 @@ describe("Pi MCP extension registration", () => {
       tools[0].execute("call-1", {}, undefined, undefined, { ui: { confirm: async () => true } }),
     ).rejects.toThrow("remote failure");
     await handlers.get("session_shutdown")?.();
+  });
+});
+
+describe("stableCwdTurn (#1276)", () => {
+  it("names a fixed text in pi's cwd section and hands the real folder to the turn", () => {
+    const options: { cwd?: unknown } = { cwd: "/work/bot/thread-a" };
+    expect(stableCwdTurn(options)).toEqual({ customType: "sagax-cwd", content: "Current working directory: /work/bot/thread-a", display: false });
+    expect(options.cwd).toBe(STABLE_CWD_NOTE);
+    // the same text for every conversation
+    const other: { cwd?: unknown } = { cwd: "/work/bot/thread-b" };
+    stableCwdTurn(other);
+    expect(other.cwd).toBe(options.cwd);
+  });
+
+  it("leaves an already fixed or missing cwd alone", () => {
+    expect(stableCwdTurn({ cwd: STABLE_CWD_NOTE })).toBeUndefined();
+    expect(stableCwdTurn({})).toBeUndefined();
   });
 });

@@ -30,6 +30,7 @@ import { applyEngineCommandVariables } from "../credential-command-env.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { augmentedPath } from "../env-path.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
+import { searchedToolCall } from "../../shared/searched-tool-call.ts";
 import { engineStartGate } from "../engine-start-gate.ts";
 import {
   deletePromptSplitReceipt,
@@ -159,7 +160,13 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
       ...(local.scope ? { scope: local.scope } : {}),
     };
   }
-  if (turn.integrations?.agents) servers.agents = { ...turn.integrations.agents };
+  if (turn.integrations?.agents) {
+    // #1276: a compact prompt (a local model) lists the heart of a chat turn
+    // and the bot's own most used Sagax tools; the rest are searched.
+    servers.agents = turn.compactPrompt
+      ? { ...turn.integrations.agents, env: { ...turn.integrations.agents.env, SAGAX_COMPACT_TOOLS: JSON.stringify({ core: turn.compactPrompt.agents.core, pinned: [...new Set(turn.compactPrompt.agents.pinned)].sort() }) } }
+      : { ...turn.integrations.agents };
+  }
   if (turn.integrations?.phone) servers.phone = { ...turn.integrations.phone };
   if (turn.integrations?.messages) servers.messages = { ...turn.integrations.messages };
   if (turn.integrations?.dweb) {
@@ -182,7 +189,11 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
     // Pi registers every tool it is given and has no tool search of its own,
     // so a URL server's big catalog is searched instead (mcp-directory.ts).
     const directory = remoteMcpSpec(server) !== undefined;
-    const gated = gateServer({ name, server, toolScope: parsed.scope, threadId: turn.threadId, nodeEnv: NODE_ENV_FLAG, directory, ...customServerGate(name, name in (turn.integrations?.custom ?? {}), turn.integrations?.customResultBudgets) });
+    // #1276: in a compact prompt the gate searches the bot's own big catalogs,
+    // listing whole only the tools the person's bots use.
+    const botOwned = name in (turn.integrations?.custom ?? {});
+    const search = turn.compactPrompt && botOwned && !directory ? { pinned: turn.compactPrompt.pinned[name] ?? [] } : undefined;
+    const gated = gateServer({ name, server, toolScope: parsed.scope, threadId: turn.threadId, nodeEnv: NODE_ENV_FLAG, directory, ...(search ? { search } : {}), ...customServerGate(name, botOwned, turn.integrations?.customResultBudgets) });
     const stdio = gated ?? mcpStdioServer(server, { nodeEnv: NODE_ENV_FLAG, ...(directory ? { directory: { name } } : {}) });
     if (!stdio) throw new Error("Pi MCP server configuration is invalid");
     const original = server as { scope?: string };
@@ -218,6 +229,18 @@ export function piGatedMcpInput(message: unknown, mcpTool: string): string {
   const tool = mcpTool.slice(cut + 2);
   if (message === `Run ${server}:${tool}`) return "{}";
   return message || "(arguments not shown)";
+}
+
+/** #1276: a gated confirm for `call_tool` on a searched server reads as the
+ * tool it runs, so the person's rules and Always allow apply by that tool's
+ * name. Arguments cut by pi-mcp-extension (300 characters) do not parse: the
+ * card stays the call_tool card it was, never an unnamed pass. */
+export function piSearchedCall(mcpTool: string, input: string): { mcpTool: string; input: string } {
+  const cut = mcpTool.indexOf("__");
+  if (cut <= 0 || mcpTool.slice(cut + 2) !== "call_tool") return { mcpTool, input };
+  const runs = searchedToolCall(`mcp__${mcpTool}`, (() => { try { return JSON.parse(input); } catch { return null; } })(), new Set([mcpTool.slice(0, cut)]));
+  if (!runs.searched) return { mcpTool, input };
+  return { mcpTool: runs.name.slice("mcp__".length), input: JSON.stringify(runs.input) };
 }
 
 /** A pi `get_available_models` response payload, parsed at its I/O boundary. */
@@ -850,7 +873,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         mcpTempDir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
         if (toolScope !== undefined) scopeReadyPath = join(mcpTempDir, "scope-ready.json");
         try {
-          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ mcpServers: mcpServers ?? {}, toolScope, scopeReadyPath, approvalMode: turn.approvalMode }), { mode: 0o600 });
+          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ mcpServers: mcpServers ?? {}, toolScope, scopeReadyPath, approvalMode: turn.approvalMode, ...(turn.compactPrompt ? { stableCwd: true } : {}) }), { mode: 0o600 });
         } catch (err) {
           // A failed write must not leave the temp dir behind — a partial file
           // could still hold the boat token / comms token.
@@ -1126,8 +1149,11 @@ export const PiDriver: ProviderDriver<PiConfig> = {
               const selectOptions: string[] = isSelect && Array.isArray(evt.options)
                 ? evt.options.filter((option): option is string => typeof option === "string") : [];
               const summary = String(evt.title ?? (isQuestion ? "pi has a question" : "pi wants confirmation")).slice(0, 200);
-              const mcpTool = isQuestion ? undefined : piGatedMcpTool(evt.title, mcpServers);
-              const mcpInput = mcpTool ? piGatedMcpInput(evt.message, mcpTool) : undefined;
+              const gatedTool = isQuestion ? undefined : piGatedMcpTool(evt.title, mcpServers);
+              const gatedInput = gatedTool ? piGatedMcpInput(evt.message, gatedTool) : undefined;
+              const searchedCall = gatedTool && gatedInput !== undefined ? piSearchedCall(gatedTool, gatedInput) : undefined;
+              const mcpTool = searchedCall?.mcpTool ?? gatedTool;
+              const mcpInput = searchedCall?.input ?? gatedInput;
               // A select is a question with named options; the structured
               // card renders from it while the flat choices keep older
               // clients answering. An input has nothing to pick from and

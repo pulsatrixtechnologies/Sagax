@@ -36,6 +36,7 @@ import { constants, copyFileSync, lstatSync, mkdirSync, readdirSync } from "node
 import { join, resolve } from "node:path";
 
 import type { CompactPromptInput } from "./contracts.ts";
+import { isPiLocalModel } from "./pi-local-model.ts";
 
 export type LocalPromptMode = "compact" | "full";
 
@@ -77,6 +78,8 @@ export function usesCompactPrompt(input: {
   bot?: LocalPromptMode;
   engine?: LocalPromptMode;
 }): boolean {
+  // #1276: pi too, on a model of a local host only (a cloud model keeps its list).
+  if (input.driverKind === "piAgent") return isPiLocalModel(input.driverKind, input.model) && usesStablePrompt(input);
   if (input.driverKind !== "claudeAgent") return false;
   return usesStablePrompt(input);
 }

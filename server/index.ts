@@ -22059,7 +22059,10 @@ async function startTurn(
         sessionReset: dispatchContext.sessionReset,
         ...(dispatchContext.recoveryText !== undefined && !engineCommand ? { recoveryText: dispatchContext.recoveryText } : {}),
         transcript,
-        system: prompt.text,
+        // #1276: a compact prompt sends the stable half first and what differs
+        // between conversations last, for an engine that takes the prompt
+        // whole (pi without a session); same sections, nothing dropped.
+        system: compactPrompt ? prompt.stable + prompt.volatile : prompt.text,
         systemStable: prompt.stable,
         systemVolatile: prompt.volatile,
         systemVolatileSections: prompt.volatileSections,
