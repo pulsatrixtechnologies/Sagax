@@ -89,6 +89,14 @@ describe("botmail in the typed trigger catalog", () => {
 });
 
 describe("parseInboundMail and botmailEvent", () => {
+  it("names a plus tag and still does not attach the files", () => {
+    const event = botmailEvent(parseInboundMail(mail({ to: "bot+reports@example.org" }))!);
+    expect(event.text).toContain("Mail tag: reports");
+    expect(event.text).toContain("To: bot+reports@example.org");
+    expect(event.text).toContain("listed only, not attached");
+    expect(event.text).not.toMatch(/[A-Za-z0-9+/]{40,}/);
+  });
+
   it("accepts the contract body and normalizes it", () => {
     const parsed = parseInboundMail(mail());
     expect(parsed).not.toBeNull();
@@ -107,6 +115,8 @@ describe("parseInboundMail and botmailEvent", () => {
     expect(event.text).not.toContain("Ana Tremblay <ana@example.com>");
     expect(event.text).toContain("SPF: pass");
     expect(event.text).toContain("DKIM: pass");
+    expect(event.text).toContain("Attachments (listed only, not attached):");
+    expect(event.text).not.toContain("Mail tag:");
     expect(event.text).toContain("Verified: yes");
     expect(event.text).toContain("facture.pdf (application/pdf, 48213 bytes, accepted)");
     expect(event.text).toContain("setup.exe (application/x-msdownload, 90000 bytes, refused)");

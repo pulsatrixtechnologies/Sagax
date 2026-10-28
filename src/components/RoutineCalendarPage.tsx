@@ -405,6 +405,7 @@ function EventEditor({
   // Post results in the conversation (2026-10-22): the routine's own
   // choice, else the installation default. Off keeps a run in the background.
   const [postResults, setPostResults] = useState(existingRoutine?.postResults ?? routinesInConversationEnabled(state.config));
+  const [mailAlias, setMailAlias] = useState(existingRoutine?.mailAlias ?? "");
   const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt));
   const initialTiming = readTiming(schedule);
   const [timingMode, setTimingMode] = useState<"exact" | "flexible">(initialTiming.mode);
@@ -604,6 +605,7 @@ function EventEditor({
           continuity: routineTarget === "bot" && recurrence !== "none" && continuity,
           onlyWhenPresent,
           postResults: routineTarget === "bot" ? postResults : undefined,
+          mailAlias: routineTarget === "bot" ? (mailAlias.trim() || null) : null,
           // Sent when on, or to remove a watch the routine had.
           ...(watchAllowed && watchBuilt.watch ? { precheck: watchBuilt.watch } : existingWatch ? { precheck: null } : {}),
           attachments: routineTarget === "room-goal" ? [] : attachments as RoutineContextAttachment[],
@@ -1008,6 +1010,22 @@ function EventEditor({
                 <span className="block text-[12.5px] font-medium text-ink">{t("routines.away.onlyLabel")}</span>
                 <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.away.onlyHelp")}</span>
               </span>
+            </label>
+          )}
+          {kind === "routine" && !isRoomGoal && (
+            <label data-routine-mail-alias className="ml-8 flex flex-col gap-1 rounded-xl border border-hairline/40 bg-inset/40 px-3.5 py-3">
+              <span className="text-[12.5px] font-medium text-ink">{t("routines.mailAlias.label")}</span>
+              <input
+                value={mailAlias}
+                maxLength={32}
+                spellCheck={false}
+                autoCapitalize="none"
+                aria-label={t("routines.mailAlias.label")}
+                placeholder={t("routines.mailAlias.placeholder")}
+                onChange={(event) => setMailAlias(event.target.value.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 32))}
+                className="w-full max-w-[240px] rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink"
+              />
+              <span className="text-[11px] leading-relaxed text-ink-secondary">{t("routines.mailAlias.help")}</span>
             </label>
           )}
           {kind === "routine" && !isRoomGoal && (

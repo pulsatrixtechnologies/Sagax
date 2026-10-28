@@ -34,6 +34,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
+import { plusTag } from "../shared/routine-mail-alias.ts";
 import { isRelaySource, isTriggerSourceType, type NormalizedTriggerEvent, type TriggerSourceConfig } from "../shared/trigger-sources.ts";
 import type { ConsoleAssertion, ConsoleAssertionActor } from "./oidc-rp.ts";
 import { AssertionReplayCache } from "./org-admin-routes.ts";
@@ -109,12 +110,16 @@ export function botmailEvent(mail: InboundMail): NormalizedTriggerEvent {
   // v2 (F5): the bare address is the sender; a display name is anyone's to
   // choose, so it stands on its own line, marked unverified.
   const name = mail.from.name?.trim();
+  const tag = plusTag(mail.to);
   const attachments = mail.attachments.map((item) =>
     `${item.name} (${item.type}, ${item.size} bytes, ${item.accepted ? "accepted" : "refused"})`);
   const header = [
     `sender: ${mail.from.address}`,
     ...(name ? [`Display name (unverified): ${name}`] : []),
     `To: ${mail.to}`,
+    // The relay lists attachment names and does not send the bytes, so they
+    // stay listed. A plus tag on the bot address marks which routine it is for.
+    ...(tag ? [`Mail tag: ${tag}`] : []),
     `SPF: ${mail.auth.spf}, DKIM: ${mail.auth.dkim}, Verified: ${mail.auth.verified ? "yes" : "no"}`,
     ...(attachments.length ? [`Attachments (listed only, not attached): ${attachments.join("; ")}`] : []),
     ...(mail.truncated ? ["[Text truncated by Perspicax]"] : []),

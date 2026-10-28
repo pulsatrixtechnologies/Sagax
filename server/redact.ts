@@ -26,12 +26,19 @@ export function isSecretName(name: string): boolean {
   return /(^|[_.-])keys?$/.test(lower);
 }
 
-import { mask, redactSecretsInText } from "../shared/redact.ts";
+import { mask, redactSecretsInText as redactSecretPatterns } from "../shared/redact.ts";
+import { redactFilledSecrets } from "./filled-secret-guard.ts";
 
-// Text-shaped secret redaction lives in shared/redact.ts now, so the client
-// (task timeline) and the server scrub identically without the client
-// bundling server code; re-exported here so existing importers keep working.
-export { mask, redactSecretsInText } from "../shared/redact.ts";
+// Text-shaped secret redaction lives in shared/redact.ts so the client (task
+// timeline) and the server scrub the same shapes without the client bundling
+// server code. The server pass also removes a vault value that was used to
+// fill a page: that value is not key-shaped, and it must not reach a prompt
+// or a journal. `mask` stays the shared one.
+export { mask };
+
+export function redactSecretsInText(text: string): string {
+  return redactFilledSecrets(redactSecretPatterns(text));
+}
 
 // ── content-shaped secrets ────────────────────────────────────────────
 // What a bot's own reply, a tool title, or a permission card can carry —

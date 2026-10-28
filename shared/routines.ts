@@ -166,6 +166,9 @@ export interface Routine {
    * routine inherits the installation default (features.routinesInConversation);
    * existing routines were migrated to true so nothing went silent. */
   postResults?: boolean;
+  /** Tag after + on the bot's mail address. Inbound mail with that tag is
+   * marked for this routine. Sends still leave from the connector. */
+  mailAlias?: string;
   /** Occurrences skipped while the person was away; `reportedAt` once they
    * are back. Cleared by POST /api/routines/:id/away-seen. */
   awaySkips?: { count: number; firstAt: number; lastAt: number; reportedAt?: number };
@@ -272,6 +275,8 @@ export interface RoutineInput {
   /** 2026-10-22: post this routine's results in the conversation. `null`
    * clears it back to the installation default; omission preserves it. */
   postResults?: boolean | null;
+  /** Tag after + on the bot's mail address. Null clears it. */
+  mailAlias?: string | null;
   /** 2026-10-26: failed runs in a row that pause the routine (0 never);
    * `null` goes back to the default, omission preserves it. */
   autoPauseAfter?: number | null;
