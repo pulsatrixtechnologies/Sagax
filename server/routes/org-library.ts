@@ -19,7 +19,6 @@ import type { RequestAuth } from "../request-auth.ts";
 import type { BotRecord, GroupRecord } from "../store.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
-const PACKAGE_PATH = /^\/api\/org-library\/packages\/([a-f0-9-]{36})$/;
 const PACKAGE_ID = /^[a-f0-9-]{36}$/;
 const NOT_LISTED = "This package is not in your organization's library.";
 
@@ -47,8 +46,9 @@ export function createOrgLibraryRoutes(deps: OrgLibraryRouteDeps): RouteHandler 
     if (method === "GET" && path === "/api/org-library") {
       return json(res, 200, deps.library()?.list() ?? { organization: null, packages: [] });
     }
-    const preview = path.match(PACKAGE_PATH);
-    if (preview && method === "GET") {
+    // Method guard and pattern share a line so scripts/tool-policy/route-inventory.ts reads GET.
+    const preview = method === "GET" ? path.match(/^\/api\/org-library\/packages\/([a-f0-9-]{36})$/) : null;
+    if (preview) {
       const outcome = deps.library()?.preview(preview[1]!);
       if (!outcome) return json(res, 404, { error: NOT_LISTED, code: "not_listed" });
       return outcome.ok ? json(res, 200, outcome.value) : json(res, outcome.status, { error: outcome.error, code: outcome.code });

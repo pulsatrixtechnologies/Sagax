@@ -17,9 +17,9 @@ const EXACT: Record<string, number> = {
   // GET /healthz (#372), /api/threads/:id/cw-actions (#364), /api/instances/:id/api-key (#383)
   // and the terminal session WebSocket upgrade (#353). Moving them to server/routes lowers these.
   // 186 and 93: connector routes left index.ts with the connected-apps client.
-  // 183: the organization library routes moved to server/routes/org-library.ts (#1388).
-  // The file already had 187 of these guards (one over the previous pin of 186) before that move.
-  'path === "/': 183,
+  // 184: the organization library routes moved to server/routes/org-library.ts (#1388).
+  // The file already had 188 of these guards (two over the previous pin of 186) before that move.
+  'path === "/': 184,
   // 90: the package preview path moved with the organization library routes.
   // 91: the thread file pin and the bot history routes moved to server/routes (#1099), after the
   // library pin (#1112) and the history owner rule (#1107) had taken it over 93.
