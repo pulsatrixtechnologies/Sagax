@@ -24,6 +24,11 @@ import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
 import { parseAskQuestions, questionAnswersByQuestion, type AskQuestion } from "../shared/ask-question.ts";
 import { allowsTool, parseToolScope } from "../shared/tool-scope.ts";
+import { searchedServersFromEnv, searchedToolCall } from "../shared/searched-tool-call.ts";
+
+// #1276: the servers whose catalog is searched; a call_tool there is asked
+// about as the tool it runs (shared/searched-tool-call.ts).
+const SEARCHED = searchedServersFromEnv(process.env.SAGAX_PERMISSION_SEARCHED);
 
 const selection = parseToolScope(process.env.SAGAX_PERMISSION_TOOL_SCOPE === undefined
   ? undefined : (() => { try { return JSON.parse(process.env.SAGAX_PERMISSION_TOOL_SCOPE); } catch { return null; } })());
@@ -231,10 +236,14 @@ async function handle(msg: any) {
       : Array.isArray(args.suggestions)
         ? args.suggestions
         : null;
+    // A call_tool on a searched server is asked about as the tool it runs,
+    // so its card, its rules and Always allow are that tool's. Claude's own
+    // suggested rule would allow every call_tool of the server: never handed back.
+    const runs = isQuestion || typeof args.tool_name !== "string" ? null : searchedToolCall(args.tool_name, args.input, SEARCHED);
     const answer: any = await askBroker(
       isQuestion
         ? { t: "ask", id: askId, kind: "question", tool: "ask_user", input: { question: args.question, choices: args.choices, ...(picksSeveral ? { questions: picksSeveral } : {}) } }
-        : { t: "ask", id: askId, tool: args.tool_name, input: args.input },
+        : { t: "ask", id: askId, tool: runs?.searched ? runs.name : args.tool_name, input: runs?.searched ? runs.input : args.input },
     );
     let text = answer.message || "No answer was given — use your best judgment.";
     // The card answers in its Q:/A: form; hand back just the picks, the way
@@ -245,7 +254,7 @@ async function handle(msg: any) {
     if (!isQuestion) {
       if (answer.behavior === "allow") {
         const result: AllowPermissionResult = { behavior: "allow", updatedInput: args.input ?? {} };
-        if (answer.always && suggestions) result.updatedPermissions = suggestions;
+        if (answer.always && suggestions && !runs?.searched) result.updatedPermissions = suggestions;
         text = JSON.stringify(result);
       } else {
         text = JSON.stringify({ behavior: "deny", message: answer.message || "Denied from Sagax" });

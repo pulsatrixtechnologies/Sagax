@@ -575,6 +575,14 @@ export class ToolDirectory {
     return this.index.has(name);
   }
 
+  /** The definitions of `names` that this catalog holds, in catalog order:
+   * the tools a searched server still lists whole (#1276, the tools this bot
+   * actually uses), callable by their own names as before. */
+  pinned(names: Iterable<string>): CatalogTool[] {
+    const wanted = new Set(names);
+    return this.tools.filter((tool) => wanted.has(tool.name) && !isDirectoryTool(tool.name));
+  }
+
   /** search_tools, describe_tool and call_tool, described for this server. */
   listed(context: DirectoryContext): Json[] {
     const who = `the "${context.server}" MCP server${context.title && context.title !== context.server ? ` (${oneLine(context.title, 80)})` : ""}`;

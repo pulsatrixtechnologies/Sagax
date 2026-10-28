@@ -102,7 +102,9 @@ export async function probeLoopbackModels(base, fetchImpl = globalThis.fetch, ap
   return probed && (probed.status === "answered" || probed.status === "empty") ? probed.models : null;
 }
 
-const ANTHROPIC_FRESH_MS = 5000;
+// A definite "no" holds for a minute (it was 5 s: with the 15 s tick that
+// was one POST every tick against a server that does not speak it).
+const ANTHROPIC_FRESH_MS = 60_000;
 // A "yes" stays fresh for 10 minutes: the probe is a request the server
 // queues like any other, and a one-slot server (DwarfStar, llama-server)
 // would otherwise get one every 15 s while it works on a real turn.
@@ -110,16 +112,33 @@ const ANTHROPIC_YES_FRESH_MS = 10 * 60_000;
 const ANTHROPIC_PROBE_TIMEOUT_MS = 8000;
 const anthropicCache = new Map();
 
+/** A 404 that comes from the /v1/messages route itself, refusing the model
+ * it was asked for ("Model 'x' not found"), not a server without the route:
+ * the server speaks the protocol. A route 404 reads "Not Found" and names no
+ * model (2026-10-27: oMLX answered the old "probe" model with such a 404,
+ * read as "does not speak it", and was asked again every 15 s). */
+async function modelRefusal404(response) {
+  let text = "";
+  try { text = (await response.text()).slice(0, 2048); } catch { return false; }
+  let body;
+  try { body = JSON.parse(text); } catch { return false; }
+  if (!body || typeof body !== "object") return false;
+  const parts = [body.detail, body.message, body.error, body.error?.message, body.error?.type];
+  return parts.some(part => typeof part === "string" && /\bmodel\b/i.test(part));
+}
+
 /**
  * Does this loopback server answer the Anthropic protocol at /v1/messages?
- * One tiny request that no server runs a model for (no messages): a server
- * that speaks it answers 200 or 4xx, one that does not answers 404, 405 or
- * 501. A "no" is cached for 5 s and a "yes" for 10 minutes. A probe that
- * gets no answer (timeout, the server busy with a long generation) or a 5xx
- * is not an answer: it keeps the last definite one, so a busy server is not
- * reported as one that does not speak the protocol (2026-10-18).
+ * One tiny request that no server runs a model for (no messages), naming a
+ * model the server listed on /v1/models when there is one: a server that
+ * speaks it answers 200 or 4xx (a 404 that refuses the model included), one
+ * that does not answers 404, 405 or 501. A "no" is cached for a minute and a
+ * "yes" for 10 minutes. A probe that gets no answer (timeout, the server
+ * busy with a long generation) or a 5xx is not an answer: it keeps the last
+ * definite one, so a busy server is not reported as one that does not speak
+ * the protocol (2026-10-18).
  */
-export async function probeAnthropicMessages(base, fetchImpl = globalThis.fetch, now = Date.now, apiKey) {
+export async function probeAnthropicMessages(base, fetchImpl = globalThis.fetch, now = Date.now, apiKey, model) {
   const normalized = normalizeLoopbackBase(base);
   if (!normalized) return false;
   const hit = anthropicCache.get(normalized);
@@ -130,14 +149,18 @@ export async function probeAnthropicMessages(base, fetchImpl = globalThis.fetch,
       method: "POST",
       redirect: "error",
       headers: { Authorization: `Bearer ${token}`, "x-api-key": token, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: "probe", max_tokens: 1, messages: [] }),
+      body: JSON.stringify({ model: typeof model === "string" && model ? model : "probe", max_tokens: 1, messages: [] }),
       // DwarfStar runs a one-token generation for it: 0.3 s idle, past 1.2 s
       // on a loaded Mac (2026-10-18), which read as "does not speak it".
       signal: AbortSignal.timeout(ANTHROPIC_PROBE_TIMEOUT_MS),
     });
-    await response.body?.cancel?.().catch(() => {});
-    if (response.status >= 500 && response.status !== 501) return keepLast(normalized, hit, now);
-    const ok = response.status !== 404 && response.status !== 405 && response.status !== 501;
+    if (response.status >= 500 && response.status !== 501) {
+      await response.body?.cancel?.().catch(() => {});
+      return keepLast(normalized, hit, now);
+    }
+    let ok = response.status !== 404 && response.status !== 405 && response.status !== 501;
+    if (response.status === 404) ok = await modelRefusal404(response);
+    else await response.body?.cancel?.().catch(() => {});
     anthropicCache.set(normalized, { ok, at: now() });
     return ok;
   } catch {
@@ -199,7 +222,7 @@ export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch, a
     return {
       models,
       details: modelDetailsFromPayload(payload),
-      anthropic: models.length ? await probeAnthropicMessages(normalized, fetchImpl, undefined, apiKey) : false,
+      anthropic: models.length ? await probeAnthropicMessages(normalized, fetchImpl, undefined, apiKey, models[0]) : false,
       status: models.length ? "answered" : "empty",
     };
   } catch {

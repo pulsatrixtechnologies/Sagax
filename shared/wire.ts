@@ -460,6 +460,9 @@ export interface WireBot {
   managedSections?: string[];
   /** Pause for human approval before this bot talks to a peer. */
   approvePeerComms?: boolean;
+  /** #1276: on a local model, "full" sends the whole prompt as before;
+   * absent or "compact" sends the compact, stable prompt. */
+  localPrompt?: "compact" | "full";
   /** Bot ids this bot is allowed to contact. */
   peers?: string[];
   /** 2026-10-21 (parité 1C): who this bot writes to without a card:

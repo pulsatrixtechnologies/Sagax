@@ -377,6 +377,7 @@ import {
   type RequestOutcome,
   type RuntimeEvent,
   type SendTurnInput,
+  type CompactPromptInput,
   type SteerOutcome,
   newId,
 } from "./contracts.ts";
@@ -565,6 +566,7 @@ import { TurnResources, type TurnOwner } from "./turn-resources.ts";
 import {
   ensureWorkspace,
   ensureTaskWorkspace,
+  workspaceCwdPrompt,
   workspaceLocationsPrompt,
   supportsWorkspaceFiles,
   updateMemory,
@@ -722,6 +724,7 @@ import { teamMemoryReviewRefusal } from "./team-memory-review.ts";
 import { teamMemoryCardSettled, teamMemoryLateAnswer } from "./team-memory-cards.ts";
 import { isTeamMemorySharing, storedTeamMemorySharing, teamMemoryCardReachesMember, teamMemorySharingOf } from "../shared/team-memory-sharing.ts";
 import { readBotActivity, readToolRuns } from "./activity.ts";
+import { COMPACT_VOLATILE_SECTIONS, KNOWN_USE_CALLS, compactVolatileOrder, compactMemoryDir, compactPins, parseLocalPromptMode, toolUsage, usesCompactPrompt, type ToolUse } from "./compact-prompt.ts";
 import { buildJournal, journalWire, replayable, testRuleOnJournal, type JournalRow } from "./action-journal.ts";
 import { JOURNAL_SELF, RULE_TEST_DAYS, type JournalPayload, type RuleTestDraft, type RuleTestResult } from "../shared/action-journal.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
@@ -21025,7 +21028,14 @@ async function startTurn(
       const streamPart = !onCall && streamTurn(bot, threadId, { person: commsDepth === 0 && !coordinationNode && !opts?.automationSource && !opts?.unattended && !warmOnly && !userMessage.peerAsk })
         ? streamDigestPrompt(bot, threadId) : null;
       if (streamPart?.text) refreshStreamDigests(bot.id, threadId);
-      const prompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
+      // #1276: a turn on a local model sends a compact, stable prompt.
+      const compactPrompt = usesCompactPrompt({
+        driverKind: instance.driverKind,
+        model,
+        bot: parseLocalPromptMode((liveBot ?? bot).localPrompt),
+        engine: parseLocalPromptMode(process.env.SAGAX_LOCAL_PROMPT),
+      }) ? compactPromptFor(liveBot ?? bot, typeof turnPrincipal === "string" && turnPrincipal ? turnPrincipal : effectiveBotOwner(bot)) : undefined;
+      const builtPrompt = buildSystemPrompt(persona, liveBot?.soul ?? bot.soul ?? "", [
         { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
         { id: "ai-client", label: "AI client", text: aiClientThreadPerson(bot, threadId, commsDepth, userMessage) },
         { id: "model", label: "Model", text: onCall ? "" : modelPrompt({ engine: engineDisplayName(instance), model: String(model ?? ""), actual: modelFallbackByThread.get(threadId)?.requested === model ? modelFallbackByThread.get(threadId)?.actual : modelFallbackByPayer.get(modelFallbackPayerKey(threadId, instance.instanceId, String(model ?? ""))) }) },
@@ -21033,7 +21043,9 @@ async function startTurn(
         // to a turn whose engine actually mounted them (setupMode is already
         // false when they are not — see agentsMounted above)
         { id: "setup", label: "Setup", text: setupSystemPrompt(setupMode, { skills: skillAuthoring, cwd: liveBot?.cwd ?? bot.cwd }) },
-        { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, confidential: store.isConfidentialThread(threadId), relativePaths: instance.driverKind === "claudeAgent" }) : "" },
+        { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, confidential: store.isConfidentialThread(threadId), relativePaths: instance.driverKind === "claudeAgent", ...(compactPrompt ? { cwdElsewhere: true } : {}) }) : "" },
+        // #1276: in a compact prompt only the conversation's own folder changes per conversation
+        { id: "files-cwd", label: "Current working folder", text: compactPrompt && worksInWorkspace ? workspaceCwdPrompt(cwd) : "" },
         { id: "shell", label: "Long-running commands", text: worksInWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
         { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
         { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
@@ -21089,7 +21101,10 @@ async function startTurn(
         { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => uniquePeerName(b, sectionPeers) ? peerName(b.name) : `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed (a unique name works as its bot_ids entry), with relay=true when the user only wants one teammate's own answer passed back; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
         // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
         { id: "voice-call", label: "Phone call", text: voiceCallText },
-      ], instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
+      ], instance.driverKind === "claudeAgent"
+        ? (compactPrompt ? new Set([...CLAUDE_REUSE_VOLATILE_SECTIONS, ...COMPACT_VOLATILE_SECTIONS]) : CLAUDE_REUSE_VOLATILE_SECTIONS)
+        : undefined);
+      const prompt = compactPrompt ? compactVolatileOrder(builtPrompt) : builtPrompt;
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
       if (!warmOnly) turnTrace(threadId, "prompt-built");
       // the Files list's "last used": what this turn's prompt carried
@@ -21197,6 +21212,7 @@ async function startTurn(
         return instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
+        ...(compactPrompt ? { compactPrompt } : {}),
         // the per-turn latency line's queue stage (drivers/acp/turn-latency.ts)
         ...(!warmOnly && typeof userMessage.at === "number" ? { receivedAt: userMessage.at } : {}),
         ...(turnAccess ? { access: turnAccess } : {}),
@@ -32108,6 +32124,54 @@ function creatingBotOwnerId(auth: RequestAuth): string {
 function recordedBotOwner(bot: { ownerUserId?: unknown }): string | undefined {
   return typeof bot.ownerUserId === "string" && bot.ownerUserId.trim() ? bot.ownerUserId.trim().toLowerCase() : undefined;
 }
+/** #1276: how many of a bot's most recent conversations its tool use is read from. */
+const COMPACT_USAGE_THREADS = 40;
+/** What a compact turn lists whole, read once a day per bot: the list rides
+ * the prompt, so it stays byte-identical across that day's conversations and
+ * a local model's prefix cache serves every new one. */
+const compactPinsByBot = new Map<string, { day: string; value: Pick<CompactPromptInput, "agents" | "pinned"> }>();
+
+function recentToolUses(botId: string): ToolUse[] {
+  const tasks = [...store.tasks(botId)].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, COMPACT_USAGE_THREADS);
+  const uses: ToolUse[] = [];
+  for (const task of tasks) {
+    try {
+      for (const run of readToolRuns(EVENTS_DIR, task.threadId)) uses.push({ name: run.tool });
+    } catch {
+      /* an unreadable log adds nothing */
+    }
+  }
+  return uses;
+}
+
+/** #1276: the compact prompt of one turn. The agents core follows the bot's
+ * own use; an MCP server's tools listed whole follow the use of every bot of
+ * the same owner, so a new bot lists what its owner's bots really call
+ * instead of searching for it. */
+function compactPromptFor(bot: BotRecord, person: string): CompactPromptInput {
+  const day = new Date().toISOString().slice(0, 10);
+  let cached = compactPinsByBot.get(bot.id);
+  if (!cached || cached.day !== day) {
+    const owner = effectiveBotOwner(bot);
+    const own = recentToolUses(bot.id);
+    const siblings = store.bots.filter((other) => other.id !== bot.id && effectiveBotOwner(other) === owner).flatMap((other) => recentToolUses(other.id));
+    const ownUsage = toolUsage(own);
+    const all = toolUsage([...own, ...siblings]);
+    // A bot with little recorded use of its own Sagax tools takes its
+    // owner's bots' use, never a guess.
+    const ownAgentsCalls = [...(ownUsage.get("agents")?.values() ?? [])].reduce((sum, count) => sum + count, 0);
+    cached = {
+      day,
+      value: {
+        agents: compactPins(ownAgentsCalls >= KNOWN_USE_CALLS ? ownUsage : all, []).agents,
+        pinned: compactPins(all, [...all.keys()].filter((server) => server !== "agents")).pinned,
+      },
+    };
+    compactPinsByBot.set(bot.id, cached);
+  }
+  return { ...cached.value, memoryDir: compactMemoryDir(DATA_DIR, bot.id, person) };
+}
+
 function effectiveBotOwner(bot: { ownerUserId?: unknown }): string {
   return ownerUserIdForPlacement({
     recordedOwnerUserId: recordedBotOwner(bot),

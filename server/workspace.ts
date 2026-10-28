@@ -122,10 +122,22 @@ function memoryEntryStat(path: string) {
   return regularMemoryFilesOnly ? lstatSync(path) : statSync(path);
 }
 
+/** What currentWorkingFolder reads in a compact prompt (#1276). */
+const CWD_ELSEWHERE = "this conversation's own folder, given as \"Current working folder\" at the start of the conversation";
+
+/** #1276: the one line of the file locations that differs per conversation. */
+export function workspaceCwdPrompt(cwd: string | undefined): string {
+  return cwd ? `\n\nCurrent working folder (currentWorkingFolder) of this conversation, absolute path: ${cwd}` : "";
+}
+
 /** File locations, not file contents or wider tool permissions. Threads keep
  * independent working directories; the same bot can find its earlier output
  * without assuming that a file absent from the current directory was lost. */
-export function workspaceLocationsPrompt(botId: string, cwd: string | undefined, botCwd?: string, opts: { attachFile?: boolean; confidential?: boolean; relativePaths?: boolean } = {}): string {
+export function workspaceLocationsPrompt(botId: string, cwd: string | undefined, botCwd?: string, opts: { attachFile?: boolean; confidential?: boolean; relativePaths?: boolean; cwdElsewhere?: boolean } = {}): string {
+  // #1276 (a compact prompt): the conversation's own folder rides its first
+  // message (workspaceCwdPrompt), so this text is the same in every
+  // conversation of the bot and stays in the cached system prompt.
+  if (opts.cwdElsewhere) cwd = CWD_ELSEWHERE;
   // A confidential thread (server/confidential-threads.ts) keeps its work in
   // its own folder: no shared or project folder to write to, no other
   // thread's files to reach for.

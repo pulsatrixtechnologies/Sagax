@@ -8,6 +8,7 @@ import { parseToolScope, type ToolScope } from "../shared/tool-scope.ts";
 
 import { DATA_DIR } from "./config.ts";
 import { DEFAULT_RESULT_BUDGET, QUERY_TOOL_NAME } from "./mcp-trim.ts";
+import { gateSearchEnv } from "./mcp-gate-search.ts";
 import { REMOTE_MCP_CONFIG_ENV, remoteMcpSpec } from "./mcp-http.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 
@@ -211,6 +212,9 @@ export function gateServer(input: {
   /** Gate a URL server even without a selection: the person set a result
    * limit for this server (hasOwnResultBudget), so it must hold. */
   gateRemote?: boolean;
+  /** #1276: the gate searches a big catalog itself (mcp-gate-search.ts) and
+   * lists whole only `pinned`. Mounts the gate always, stdio or URL. */
+  search?: { pinned?: readonly string[]; maxTools?: number; maxChars?: number };
 }): { command: string; args: string[]; env: Record<string, string> } | null {
   const { name, server, budget } = input;
   const parsed = parseToolScope(input.toolScope);
@@ -219,11 +223,13 @@ export function gateServer(input: {
   const aliased = input.toolNames === "grok";
   const approval = input.approval;
   if (approval && (!approval.socket || !approval.token)) throw new Error("An approval gate needs its socket and token.");
-  if (budget <= 0 && !scoped && !aliased && !approval) return null;
-  if (!scoped && !aliased && !approval && input.gateRemote !== true && remoteMcpSpec(server)) return null;
+  const search = input.search && !aliased ? gateSearchEnv(input.search) : undefined;
+  if (budget <= 0 && !scoped && !aliased && !approval && !search) return null;
+  if (!scoped && !aliased && !approval && !search && input.gateRemote !== true && remoteMcpSpec(server)) return null;
   // The directory is the remote proxy's; it sits inside the gate, which
   // knows to look through call_tool at the tool underneath.
-  const directory = input.directory === true && remoteMcpSpec(server) !== undefined;
+  // The gate's own search replaces the remote proxy's directory.
+  const directory = input.directory === true && !search && remoteMcpSpec(server) !== undefined;
   const spec = mcpStdioServer(server, {
     nodeEnv: input.nodeEnv,
     execPath: input.execPath,
@@ -249,6 +255,7 @@ export function gateServer(input: {
       SAGAX_GATE_READ_ONLY: JSON.stringify([...new Set(approval.readOnly)].sort()),
     } : {}),
     SAGAX_GATE_MISUSE_MODE: process.env.SAGAX_MISUSE_GUARDRAILS?.trim() || "shadow",
+    ...(search ? { SAGAX_GATE_SEARCH: search } : {}),
   };
   if (input.configEnvName && (!scoped || !/^SAGAX_GATE_CONFIG_[a-f0-9]{64}$/.test(input.configEnvName))) {
     throw new Error("Invalid private MCP gate configuration.");

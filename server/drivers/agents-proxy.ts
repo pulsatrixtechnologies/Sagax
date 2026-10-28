@@ -21,7 +21,8 @@
 // other three into it, so a packaged build still ships one agents-proxy.js.
 import readline from "node:readline";
 
-import { availableTools, catalogProfileFromEnv, withDeferredRareTools } from "./agents-catalog.ts";
+import { availableTools, catalogProfileFromEnv, compactListed, compactToolsFromEnv, withDeferredRareTools } from "./agents-catalog.ts";
+import { CALL_TOOL, DESCRIBE_TOOL, SEARCH_TOOL, ToolDirectory, isDirectoryTool, type CatalogTool } from "../mcp-directory.ts";
 import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
 import { harnessClientFromEnv, type Json } from "./agents-client.ts";
 import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, permissionModeFromEnv, principalFromEnv, scopeOwnersFromEnv } from "../mcp-permissions.ts";
@@ -29,7 +30,21 @@ import { auditSampleFromEnv, deniedResourcesFromEnv, guardToolCall, permissionMo
 const PROFILE = catalogProfileFromEnv(process.env);
 const AVAILABLE_TOOLS = availableTools(PROFILE);
 // Claude Code only (SAGAX_DEFER_RARE_TOOLS=1): rare tools wait for tool search.
-const LISTED_TOOLS = process.env.SAGAX_DEFER_RARE_TOOLS === "1" ? withDeferredRareTools(AVAILABLE_TOOLS, PROFILE) : AVAILABLE_TOOLS;
+// #1276, a compact prompt (a local model, SAGAX_COMPACT_TOOLS): the core of a
+// chat turn and the bot's own most used tools are listed whole; every other
+// tool is found with search_tools and run with call_tool, through the same
+// call path, checks and approvals as a listed one. The list is the same for
+// every conversation of the bot, so a local model's prefix cache serves it.
+const COMPACT = compactToolsFromEnv(process.env);
+const SEARCHED = COMPACT
+  ? new ToolDirectory(AVAILABLE_TOOLS.filter((tool) => !compactListed(tool.name, { ...COMPACT, coordinating: PROFILE.coordinating })) as unknown as CatalogTool[])
+  : undefined;
+const LISTED_TOOLS = COMPACT
+  ? [
+    ...AVAILABLE_TOOLS.filter((tool) => compactListed(tool.name, { ...COMPACT, coordinating: PROFILE.coordinating })),
+    ...(SEARCHED!.tools.length ? SEARCHED!.listed({ server: "agents", title: "Sagax", instructions: "Sagax's own tools: teammates, rooms, routines, settings, artifacts, transcripts, cloud agents, skills and the person's phone." }) : []),
+  ]
+  : process.env.SAGAX_DEFER_RARE_TOOLS === "1" ? withDeferredRareTools(AVAILABLE_TOOLS, PROFILE) : AVAILABLE_TOOLS;
 // A warm engine keeps this process across its turns; the harness keeps
 // every per-turn limit, so nothing here counts.
 const CONTEXT = toolCallContextFromEnv(process.env);
@@ -84,10 +99,21 @@ async function handle(msg: Json) {
       ok(id, { tools: LISTED_TOOLS });
       return;
     case "tools/call": {
-      const name = params.name as string;
+      let name = params.name as string;
+      let args = (params.arguments ?? {}) as Json;
+      if (SEARCHED && SEARCHED.tools.length && isDirectoryTool(name)) {
+        if (name === SEARCH_TOOL) return ok(id, await SEARCHED.search(args));
+        if (name === DESCRIBE_TOOL) return ok(id, SEARCHED.describe(args));
+        if (name === CALL_TOOL) {
+          const call = SEARCHED.call(args);
+          if ("answer" in call) return ok(id, call.answer);
+          name = call.name;
+          args = call.arguments as Json;
+        }
+      }
       if (!AVAILABLE_TOOLS.some((t) => t.name === name)) return rpcErr(id, -32602, `Unknown tool: ${name}`);
       try {
-        const { text, isError, passthrough } = await guardToolCall(GUARD, name, (params.arguments ?? {}) as Json, () => callTool(name, (params.arguments ?? {}) as Json, CONTEXT)) as Awaited<ReturnType<typeof callTool>>;
+        const { text, isError, passthrough } = await guardToolCall(GUARD, name, args, () => callTool(name, args, CONTEXT)) as Awaited<ReturnType<typeof callTool>>;
         if (passthrough) ok(id, passthrough);
         else textResult(id, name === "tool_result_read" ? text : await capResult(text, CONTEXT), isError);
       } catch (e) {
