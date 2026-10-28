@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GateAsk } from "./mcp-gate-approval.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
@@ -212,8 +212,8 @@ describe("mcp-gate approval", () => {
     start();
     policy = () => "hang";
     send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "flow_action", arguments: {} } });
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(asks).toHaveLength(1);
+    // wait for the gate to reach the broker (it spawns a process); a fixed delay raced its start-up
+    await vi.waitFor(() => expect(asks).toHaveLength(1), { timeout: 15_000, interval: 10 });
     for (const conn of conns) conn.write(JSON.stringify({ t: "answer", id: asks[0].id, behavior: "yes please" }) + "\n");
     const reply = await next();
     expect(reply.result.isError).toBe(true);

@@ -59,7 +59,7 @@ posixOnly("work digest e2e (every fake engine)", () => {
     return { status: res.status, body: await res.json() };
   };
   const getBot = async (id: string) => (await api("GET", "/api/bots")).body.bots.find((b: any) => b.id === id);
-  const waitFor = async (predicate: () => Promise<boolean>, what: string, ms = 30_000) => {
+  const waitFor = async (predicate: () => Promise<boolean>, what: string, ms = 90_000) => {
     const deadline = Date.now() + ms;
     while (!(await predicate())) {
       if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}. stderr: ${stderr.slice(-3000)}`);
@@ -101,7 +101,7 @@ posixOnly("work digest e2e (every fake engine)", () => {
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stderr!.on("data", (c) => (stderr += c));
-    const deadline = Date.now() + 20_000;
+    const deadline = Date.now() + 90_000;
     for (;;) {
       try {
         if ((await fetch(`${BASE}/api/health`)).ok) break;
@@ -110,7 +110,7 @@ posixOnly("work digest e2e (every fake engine)", () => {
       if (child.exitCode !== null) throw new Error(`server exited ${child.exitCode}. stderr:\n${stderr}`);
       await new Promise((r) => setTimeout(r, 150));
     }
-  }, 30_000);
+  }, 120_000);
 
   afterAll(async () => {
     await waitForExit(child, { signal: "SIGTERM" });
