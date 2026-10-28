@@ -11413,5 +11413,7 @@
   "openAtLogin.accept": "Open at sign-in",
   "openAtLogin.notNow": "Not now",
   "openAtLogin.setting": "Open when I sign in",
-  "openAtLogin.settingHelp": "Your choice on this Mac. Sagax does not start at sign-in until you turn this on."
+  "openAtLogin.settingHelp": "Your choice on this Mac. Sagax does not start at sign-in until you turn this on.",
+  "chat.voiceSummary": "Read a short summary",
+  "chat.voiceSummaryTitle": "The full reply stays in the chat. This only reads a short summary aloud."
 }
