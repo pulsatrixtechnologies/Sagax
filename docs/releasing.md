@@ -1,5 +1,9 @@
 # Releasing
 
+Every version note in `docs/releases/` has two sections, in this order, in French and in English: the changes, then **Avant de mettre à jour** / **Before updating**. The second section says what a person should do before replacing the app or the server image. If nothing is required, say so. Do not leave the section out.
+
+
+
 > **Sagax updater:** installed apps update only from
 > `pulsatrixtechnologies/sagax` releases tagged `pulsa-vX.Y.Z`
 > (`electron/update-feed.mjs`). By default they look at the latest **full**
