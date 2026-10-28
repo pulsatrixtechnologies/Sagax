@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import { pageFrameSandbox } from "../../shared/published-pages";
-import { expiryFromHours, previewSrc, publishBody } from "./PublishedPages";
+import { expiryFromHours, pageCardState, previewSrc, publishBody } from "./PublishedPages";
 
 describe("published page card", () => {
   it("publishBody carries the version, the access the person picked and the expiry", () => {
@@ -24,5 +24,18 @@ describe("published page card", () => {
     for (const bad of ["https://evil.example/pages/preview/abcdefgh12345678/2", "//evil.example/x", "javascript:alert(1)", "/pages/preview/../api/config", "/pages/frame/x.y", ""]) {
       expect(previewSrc(bad)).toBeNull();
     }
+  });
+});
+
+describe("the page card's line (2026-10-28)", () => {
+  const v = (n: number, state = "proposed") => ({ n, state });
+  it("says where this version stands", () => {
+    expect(pageCardState(null, 1)).toBeNull();
+    expect(pageCardState({ status: "draft", currentVersion: null, versions: [v(1)] } as never, 1)).toBe("draft");
+    expect(pageCardState({ status: "published", currentVersion: 1, versions: [v(1, "published")] } as never, 1)).toBe("published");
+    expect(pageCardState({ status: "published", currentVersion: 1, versions: [v(1, "published"), v(2)] } as never, 2)).toBe("proposed");
+    expect(pageCardState({ status: "draft", currentVersion: null, versions: [v(1), v(2)] } as never, 1)).toBe("superseded");
+    expect(pageCardState({ status: "draft", currentVersion: null, versions: [v(1, "declined")] } as never, 1)).toBe("declined");
+    expect(pageCardState({ status: "revoked", currentVersion: null, versions: [v(1)] } as never, 1)).toBe("revoked");
   });
 });

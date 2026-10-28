@@ -79,6 +79,10 @@ export default defineConfig({
         ws: true,
         target: `http://127.0.0.1:${process.env.SAGAX_PORT || process.env.OGB_PORT || 8799}`,
       },
+      // published pages: the app frames its own preview of a page (2026-10-28)
+      "/pages": {
+        target: `http://127.0.0.1:${process.env.SAGAX_PORT || process.env.OGB_PORT || 8799}`,
+      },
       "/.well-known/openmausbot/environment": {
         target: `http://127.0.0.1:${process.env.SAGAX_PORT || process.env.OGB_PORT || 8799}`,
       },

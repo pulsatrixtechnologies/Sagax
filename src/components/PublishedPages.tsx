@@ -1,13 +1,13 @@
 // Published pages (shared/published-pages.ts, server/routes/published-pages.ts).
 //
-// PagePublishCard is the approval card under a bot's propose_page row: the
-// person previews the page in a sandboxed frame (opaque origin, no network)
-// and only their Publish, with who can see it and until when, puts it
-// online. PublishedPagesSettings is Settings > Pages publiées: every page of
+// PagePublishCard is the page's card under a bot's propose_page row: a live
+// drawing of the page (a sandboxed frame, opaque origin, no network); a
+// click opens the page over the conversation, where only the person's Share
+// (who can see it and until when) puts it online. PublishedPagesSettings is Settings > Pages publiées: every page of
 // the person, its link, who can see it, its expiry, its versions, Revoke
 // and Delete.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, FileText, Loader2, Maximize2, Pin, Trash2, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { FileText, Loader2, Maximize2, Pin, Trash2, XCircle } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -20,8 +20,10 @@ import {
   type PagesPolicy,
   type PublishedPageSummary,
 } from "../../shared/published-pages";
-import { AccessPicker, ACCESS_LABEL, ExpirySelect, expiryFromHours, LinkRow, needsLinkConfirm, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
-import { PageViewerDialog } from "./PageViewer";
+import { ACCESS_LABEL, ExpirySelect, expiryFromHours, LinkRow, needsLinkConfirm, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
+import { PageGlyph, PageViewerDialog } from "./PageViewer";
+import { useWidgetTheme } from "./WidgetFrame";
+import { openPagePanel } from "@/lib/open-page";
 
 export { expiryFromHours, previewSrc };
 
@@ -64,113 +66,76 @@ export function PagePreviewFrame({ pageId, version, title }: { pageId: string; v
   );
 }
 
-/** The approval card of a bot's proposal (message field `pagePublish`). */
+/** The card's one line under the title: "Page" and where this version
+ * stands. Pure. */
+export function pageCardState(page: Pick<PublishedPageSummary, "status" | "currentVersion" | "versions"> | null, version: number): "proposed" | "published" | "declined" | "superseded" | "revoked" | "draft" | null {
+  const entry = page?.versions.find((item) => item.n === version);
+  if (!page || !entry) return null;
+  if (page.status === "published" && page.currentVersion === version) return "published";
+  if (entry.state === "declined") return "declined";
+  if (page.currentVersion && page.currentVersion > version) return "superseded";
+  if (page.versions.some((item) => item.n > version)) return "superseded";
+  if (page.status === "revoked") return "revoked";
+  return page.status === "published" ? "proposed" : "draft";
+}
+
+/** A page in the conversation (message field `pagePublish`, 2026-10-28, the
+ * reference design's page card): a live, scaled-down drawing of the top of
+ * the page fading out at the bottom, then its icon, its title and "Page".
+ * A click anywhere opens it over the conversation (src/lib/open-page.ts),
+ * where Share puts it online. The drawing is the same sandboxed preview as
+ * the open page, inert here (no pointer, no focus). */
 export function PagePublishCard({ message }: { message: Message }) {
   const ref = message.pagePublish!;
   const [page, setPage] = useState<PublishedPageSummary | null>(null);
   const [missing, setMissing] = useState(false);
-  const [preview, setPreview] = useState(false);
-  const [access, setAccess] = useState<PageAccess>("private");
-  const [hours, setHours] = useState(0);
-  const [confirmLink, setConfirmLink] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [viewing, setViewing] = useState(false);
-  const openButton = useRef<HTMLButtonElement>(null);
-  const policy = usePagesPolicy();
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const cardRef = useRef<HTMLElement>(null);
+  const theme = useWidgetTheme(cardRef).scheme;
 
-  const load = useCallback(async () => {
-    try {
-      const answer = await api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(ref.pageId)}`);
-      setPage(answer.page);
-    } catch {
-      setMissing(true);
-    }
-  }, [ref.pageId]);
-  useEffect(() => { void load(); }, [load]);
-
-  const version = page?.versions.find((entry) => entry.n === ref.version);
-  const act = async (path: string, body: unknown) => {
-    setBusy(true);
-    setError("");
-    try {
-      const answer = await api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(ref.pageId)}/${path}`, { method: "POST", body: JSON.stringify(body) });
-      setPage(answer.page);
-      setConfirmLink(false);
-    } catch (cause) {
-      setError(pageErrorText(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const publish = () => {
-    if (access === "link" && !confirmLink) {
-      setConfirmLink(true);
-      return;
-    }
-    void act("publish", publishBody(ref.version, access, hours));
-  };
+  useEffect(() => {
+    let live = true;
+    api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(ref.pageId)}`)
+      .then((answer) => { if (live) setPage(answer.page); })
+      .catch(() => { if (live) setMissing(true); });
+    api<{ version: { previewPath: string } }>(`/api/pages/${encodeURIComponent(ref.pageId)}/versions/${ref.version}`)
+      .then((answer) => { if (live) setPreviewPath(answer.version.previewPath); })
+      .catch(() => { /* the line below still says what it is */ });
+    return () => { live = false; };
+  }, [ref.pageId, ref.version]);
 
   if (missing) {
     return <div className="chat-text w-fit max-w-[min(80%,560px)] rounded-[18px] bg-card px-3 py-[7px] text-[13px] text-ink">{message.text}</div>;
   }
-  const live = page?.status === "published" && page.currentVersion === ref.version;
-  const state = !version ? null : live ? "published" : version.state === "declined" ? "declined" : page?.currentVersion && page.currentVersion > ref.version ? "superseded" : "proposed";
+  const title = page?.title || ref.title;
+  const status = pageCardState(page, ref.version);
+  const src = previewPath ? previewSrc(previewPath, { bare: true, theme }) : null;
+  // the page names its own bot and conversation
+  const open = () => { if (page) openPagePanel({ pageId: ref.pageId, botId: page.botId, threadId: page.threadId, title, version: ref.version }); };
   return (
-    <article data-page-card={ref.pageId} aria-label={t("pages.cardAria", { title: ref.title })}
-      className="my-2 w-full max-w-[640px] overflow-hidden rounded-xl border border-hairline/40 bg-panel shadow-sm">
-      <header className="flex items-center gap-2 border-b border-hairline/30 bg-raised/30 px-3 py-2 text-[12px] text-ink-secondary">
-        <FileText size={14} aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate font-medium text-ink">{page?.title || ref.title}</span>
-        <span>{t("pages.versionN", { n: String(ref.version) })}</span>
-        {page && (
-          <button ref={openButton} type="button" data-page-open aria-label={t("pages.openFull")} title={t("pages.openFull")} onClick={() => setViewing(true)}
-            className="rounded p-1 text-ink-secondary hover:bg-hover hover:text-ink">
-            <Maximize2 size={13} />
-          </button>
+    <article ref={cardRef} data-page-card={ref.pageId} aria-label={t("pages.cardAria", { title })}
+      className="group relative my-2 w-full max-w-[420px] overflow-hidden rounded-2xl border border-hairline/50 bg-card shadow-sm transition-shadow hover:shadow-md">
+      <div data-page-thumb aria-hidden="true" className="relative h-[200px] overflow-hidden bg-app">
+        {src ? (
+          <iframe title="" tabIndex={-1} src={src} loading="lazy" referrerPolicy="no-referrer" allow=""
+            className="pointer-events-none absolute left-0 top-0 h-[400px] w-[200%] origin-top-left scale-50 border-0 bg-transparent"
+            style={{ colorScheme: theme }} />
+        ) : (
+          <div className="flex h-full items-center justify-center"><Loader2 size={14} className="animate-spin text-ink-secondary" /></div>
         )}
-      </header>
-      {viewing && <PageViewerDialog pageId={ref.pageId} version={ref.version} returnFocus={openButton.current} onClose={() => setViewing(false)} onChange={setPage} />}
-      <div className="space-y-3 px-3 py-3">
-        {!page && <Loader2 size={14} className="animate-spin text-ink-secondary" />}
-        {page && (
-          <>
-            <button type="button" onClick={() => setPreview((value) => !value)}
-              className="flex items-center gap-1.5 text-[12.5px] text-accent hover:underline">
-              {preview ? <EyeOff size={13} /> : <Eye size={13} />}{preview ? t("pages.hidePreview") : t("pages.preview")}
-            </button>
-            {preview && <PagePreviewFrame pageId={ref.pageId} version={ref.version} title={ref.title} />}
-            {state === "proposed" && (
-              <>
-                <p className="text-[12px] text-ink-secondary">{t("pages.reviewIntro")}</p>
-                <AccessPicker value={access} onChange={(next) => { setAccess(next); setConfirmLink(false); }} name={`page-access-${message.id}`} disabled={busy} linkOff={!policy.linkSharing} />
-                <ExpirySelect value={hours} onChange={setHours} disabled={busy} />
-                {confirmLink && <p role="alert" className="text-[12px] text-warning">{t("pages.confirmLink")}</p>}
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" data-page-publish disabled={busy} onClick={publish}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white disabled:opacity-40">
-                    {busy && <Loader2 size={13} className="animate-spin" />}{confirmLink ? t("pages.publishConfirm") : t("pages.publish")}
-                  </button>
-                  <button type="button" data-page-decline disabled={busy} onClick={() => void act("decline", { version: ref.version })}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/60 px-3 py-1.5 text-[12.5px] text-ink hover:bg-raised disabled:opacity-40">
-                    <XCircle size={13} />{t("pages.decline")}
-                  </button>
-                </div>
-              </>
-            )}
-            {state === "published" && (
-              <>
-                <p className="text-[12px] text-success">{t("pages.publishedAs", { access: t(ACCESS_LABEL[page.access]) })}</p>
-                <LinkRow page={page} />
-              </>
-            )}
-            {state === "declined" && <p className="text-[12px] text-ink-secondary">{t("pages.declined")}</p>}
-            {state === "superseded" && <p className="text-[12px] text-ink-secondary">{t("pages.superseded")}</p>}
-            {page.status === "revoked" && state !== "declined" && <p className="text-[12px] text-ink-secondary">{t("pages.revokedNote")}</p>}
-          </>
-        )}
-        {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-b from-transparent to-card" />
       </div>
+      <footer className="flex items-center gap-2.5 px-3 pb-3 pt-1">
+        <PageGlyph size={28} className="rounded-lg" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13.5px] font-medium text-ink">{title}</span>
+          <span data-page-card-state={status ?? ""} className="block truncate text-[12px] text-ink-secondary">
+            {t("pages.label")}{status && status !== "draft" ? ` · ${status === "published" && page ? t("pages.card.published", { access: t(ACCESS_LABEL[page.access]) }) : t(`pages.card.${status}`, { n: String(ref.version) })}` : ""}
+          </span>
+        </span>
+      </footer>
+      <button type="button" data-page-open aria-label={t("pages.cardOpen", { title })} disabled={!page} onClick={open}
+        className="absolute inset-0 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" />
     </article>
   );
 }

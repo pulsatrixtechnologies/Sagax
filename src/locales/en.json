@@ -11647,5 +11647,15 @@
   "sources.market.addWith": "Add with it",
   "sources.market.needsPick": "The git host refused: pick a credential that can read it.",
   "sources.orgAccess.intro": "For the whole organization, admins only: where plugins may come from. The organization's GitHub credentials are in GitHub above, the GitHub OAuth App in Settings > Organization.",
-  "sources.orgAccess.moved": "Allowed marketplaces are managed in Connect Apps > Sources, and the organization's GitHub credentials in Sources > GitHub."
+  "sources.orgAccess.moved": "Allowed marketplaces are managed in Connect Apps > Sources, and the organization's GitHub credentials in Sources > GitHub.",
+  "pages.close": "Close",
+  "pages.more": "More",
+  "pages.label": "Page",
+  "pages.cardOpen": "Open the page {title}",
+  "pages.card.proposed": "Version {n} to review",
+  "pages.card.published": "Shared · {access}",
+  "pages.card.declined": "Version {n} declined",
+  "pages.card.superseded": "Version {n}, replaced by a newer one",
+  "pages.card.revoked": "No longer shared",
+  "pages.card.draft": "Only you"
 }

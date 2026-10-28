@@ -59,6 +59,23 @@ tool selection, and `false` everywhere else (`grokCloudConnectorEnv`). A
 gateway call is a `use_tool` call to a server Sagax did not mount, so it
 keeps its card below Full access (connector-ask.ts).
 
+## Page view (2026-10-28)
+
+A page a bot proposes shows in the conversation as a card with a live,
+scaled-down drawing of its top and its icon, title and "Page"
+(`PagePublishCard`). A click opens it over the conversation as a full panel
+(`PageSurface` in src/components/PageViewer.tsx, src/lib/open-page.ts): round
+× top left, the title pill (click to rename, Enter saves), « ⋯ » and Share
+top right. The conversation stays mounted under the panel, so closing it
+returns to the same place. Every earlier tool (versions, annotate, present,
+edit, comments, decline) is in « ⋯ ». The app's own preview takes `bare=1`
+(no banner inside the app), `theme=light|dark` and `y=<n>`: its frame runs a
+small script that scrolls to `y` and posts `sagax-page-scroll` with a number
+to the app, so a new version the bot proposes is drawn in place at the same
+place. A reading link never takes these. Sandbox, CSP and isolation are
+unchanged. Tests: `server/published-pages.test.ts` (app's own look),
+`src/components/PageViewer.surface.dom.test.ts`, `src/lib/open-page.test.ts`.
+
 ## Routine folders (2026-10-28)
 
 A routine may sit in one folder of its bot (`folder`), and each bot keeps an

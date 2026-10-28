@@ -107,6 +107,28 @@ export interface PageComment {
 
 /** The message the annotation script posts to the app's window. */
 export const PAGE_ANNOTATION_MESSAGE = "sagax-page-annotation";
+/** The message the app's own preview posts to the app's window when its
+ * reader scrolls (2026-10-28): how far down the page is, so a page the bot
+ * changes is drawn again at the same place. Only a number. */
+export const PAGE_SCROLL_MESSAGE = "sagax-page-scroll";
+/** The farthest scroll position the app asks a preview to restore. */
+export const PAGE_SCROLL_MAX = 10_000_000;
+
+/** A scroll position the preview frame posted, or null. Pure. Like an
+ * annotation, the page's own scripts can post the same message: it is only
+ * ever a whole number of pixels, used to place the next preview. */
+export function parseScrollMessage(data: unknown): number | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const record = data as Record<string, unknown>;
+  if (record.type !== PAGE_SCROLL_MESSAGE || record.v !== 1) return null;
+  const y = record.y;
+  return typeof y === "number" && Number.isSafeInteger(y) && y >= 0 && y <= PAGE_SCROLL_MAX ? y : null;
+}
+
+/** The look of the app's own preview (2026-10-28): the page drawn in the
+ * app's theme and, inside the app, without the reader's banner (the app's
+ * own frame names the page and its bot). A reading link always keeps it. */
+export type PageTheme = "light" | "dark";
 
 const ANCHOR_LIMITS = { tag: 32, text: 160, path: 240 } as const;
 
@@ -194,9 +216,10 @@ export function pageFrameSandbox(kind: PageKind, options: { annotate?: boolean }
  * (server/published-pages-render.ts). A Markdown page runs no script. `frameAncestors`
  * names who may frame it: the wrapper's origin. */
 export function pageCsp(kind: PageKind, options: { meta?: boolean; frameAncestors?: string; annotateNonce?: string } = {}): string {
-  // The annotation mode of the app's preview (its person only) adds one
-  // script: an HTML page already runs inline scripts; a Markdown page or a
-  // presentation runs that one only, by its nonce.
+  // The app's preview (its person only) adds its own scripts: annotation
+  // mode, and keeping the place across a redraw (2026-10-28). An HTML page
+  // already runs inline scripts; a Markdown page or a presentation runs
+  // those only, by their nonce.
   const nonce = kind !== "html" && options.annotateNonce ? options.annotateNonce : null;
   const directives = [
     "default-src 'none'",

@@ -51,10 +51,16 @@ export function openPage(url: string) {
 }
 
 /** Only this server's own preview wrapper path is ever framed, with the
- * annotation flag at most. Pure. */
-export function previewSrc(path: string, options: { annotate?: boolean } = {}): string | null {
+ * annotation flag and the app's own look at most (2026-10-28: no banner
+ * inside the app, the app's theme, the place to keep). Pure. */
+export function previewSrc(path: string, options: { annotate?: boolean; bare?: boolean; theme?: "light" | "dark"; y?: number } = {}): string | null {
   if (!/^\/pages\/preview\/[A-Za-z0-9_-]{8,40}\/\d{1,4}$/.test(path)) return null;
-  return options.annotate ? `${path}?annotate=1` : path;
+  const query: string[] = [];
+  if (options.annotate) query.push("annotate=1");
+  if (options.bare) query.push("bare=1");
+  if (options.theme === "light" || options.theme === "dark") query.push(`theme=${options.theme}`);
+  if (options.y !== undefined && Number.isSafeInteger(options.y) && options.y >= 0 && options.y <= 10_000_000) query.push(`y=${options.y}`);
+  return query.length ? `${path}?${query.join("&")}` : path;
 }
 
 /** Switching a page to "anyone with the link" asks the same second press as

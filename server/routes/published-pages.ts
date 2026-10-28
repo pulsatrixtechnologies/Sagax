@@ -62,6 +62,7 @@ import {
   PAGE_LIMITS,
   PAGE_PREVIEW_FRAME_PREFIX,
   PAGE_PREVIEW_PREFIX,
+  PAGE_SCROLL_MAX,
   PAGE_VIEW_PREFIX,
   pageCsp,
   parsePageAnchor,
@@ -70,6 +71,7 @@ import {
   type PageAccess,
   type PageKind,
   type PagesPolicy,
+  type PageTheme,
 } from "../../shared/published-pages.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -188,7 +190,7 @@ function previewTarget(options: PublicPageOptions, rest: string): { page: PageRe
 /** The wrapper: banner, then the page in its sandboxed frame. `preview` is
  * the app's own preview of a version (its person only; framed by the app). */
 function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, method: string,
-  input: { page: PageRecord; version: PageVersionRecord; framePath: string; ticket: string; preview: boolean; annotate?: boolean; commentPath?: string }): true {
+  input: { page: PageRecord; version: PageVersionRecord; framePath: string; ticket: string; preview: boolean; annotate?: boolean; commentPath?: string; look?: PreviewLook }): true {
   const separate = options.separate ?? null;
   const host = hostOf(req);
   // A host-source with a path: the frame may load this page's frame path and
@@ -218,10 +220,15 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
     kind: input.version.kind,
     botName: names.botName,
     personName: names.personName,
-    frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${input.framePath}?t=${encodeURIComponent(input.ticket)}${input.annotate ? "&a=1" : ""}`,
+    frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${input.framePath}?t=${encodeURIComponent(input.ticket)}${input.annotate ? "&a=1" : ""}`
+      + (input.preview && input.look?.keep !== undefined ? `&k=${input.look.keep}` : "")
+      + (input.preview && input.look?.theme ? `&c=${input.look.theme}` : ""),
     lang: language(req),
     preview: input.preview,
     annotate: input.annotate === true,
+    ...(input.preview && input.look?.bare ? { bare: true } : {}),
+    ...(input.preview && input.look?.theme ? { theme: input.look.theme } : {}),
+    ...(input.preview && input.look?.keep !== undefined ? { keep: true } : {}),
     ...(input.commentPath ? { comments: { action: input.commentPath, approved: (input.page.readerNotes ?? []).filter((entry) => entry.status === "approved") } } : {}),
   }));
   return true;
@@ -245,7 +252,24 @@ function servePreviewWrapper(options: PublicPageOptions, req: IncomingMessage, r
   const subject = `preview:${target.page.id}:${target.version.n}`;
   // annotation mode: the page's person only, on their preview, never a reader's link
   const annotate = query(req, "annotate") === "1";
-  return sendWrapper(options, req, res, method, { ...target, framePath: `${PAGE_PREVIEW_FRAME_PREFIX}${rest}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: true, annotate });
+  return sendWrapper(options, req, res, method, { ...target, framePath: `${PAGE_PREVIEW_FRAME_PREFIX}${rest}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: true, annotate, look: previewLook(req) });
+}
+
+/** How the app draws its own preview (2026-10-28), from the wrapper's query:
+ * `bare=1` no banner (inside the app, which names the page itself),
+ * `theme=light|dark` the app's theme, `y=<n>` keep the place (the frame runs
+ * the small script that scrolls there and reports the place back). The
+ * page's person only: a reading link never takes them. */
+export interface PreviewLook { bare?: boolean; theme?: PageTheme; keep?: number }
+export function previewLook(req: IncomingMessage): PreviewLook {
+  const theme = query(req, "theme");
+  const y = query(req, "y");
+  const keep = /^\d{1,8}$/.test(y) ? Number(y) : undefined;
+  return {
+    ...(query(req, "bare") === "1" ? { bare: true } : {}),
+    ...(theme === "light" || theme === "dark" ? { theme } : {}),
+    ...(keep !== undefined && keep <= PAGE_SCROLL_MAX ? { keep } : {}),
+  };
 }
 
 /** Whether a published page takes and shows reader comments: its person
@@ -359,10 +383,20 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
   const content = allowed ? pages.content(target.page.id, target.version.n) : null;
   if (content === null) return notFound(req, res, method);
   const ancestors = options.separate ? options.separate.appOrigin.origin : "'self'";
-  // the annotation script: the preview only (its person), never a reading link
-  const annotateNonce = preview && query(req, "a") === "1" ? randomBytes(16).toString("base64url") : undefined;
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors, ...(annotateNonce ? { annotateNonce } : {}) }) });
-  res.end(method === "HEAD" ? undefined : pageDocument({ kind: target.version.kind, title: target.page.title ?? target.version.title, content, lang: language(req) }, annotateNonce ? { annotateNonce } : {}));
+  // the app's own scripts (annotation, keeping the place) and its theme: the
+  // preview only (its person), never a reading link
+  const annotating = preview && query(req, "a") === "1";
+  const keepRaw = preview ? query(req, "k") : "";
+  const keepScroll = /^\d{1,8}$/.test(keepRaw) && Number(keepRaw) <= PAGE_SCROLL_MAX ? Number(keepRaw) : undefined;
+  const themeRaw = preview ? query(req, "c") : "";
+  const theme: PageTheme | undefined = themeRaw === "light" || themeRaw === "dark" ? themeRaw : undefined;
+  const nonce = annotating || keepScroll !== undefined ? randomBytes(16).toString("base64url") : undefined;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors, ...(nonce ? { annotateNonce: nonce } : {}) }) });
+  res.end(method === "HEAD" ? undefined : pageDocument({ kind: target.version.kind, title: target.page.title ?? target.version.title, content, lang: language(req) }, {
+    ...(annotating ? { annotateNonce: nonce } : {}),
+    ...(keepScroll !== undefined ? { keepScroll, nonce: nonce! } : {}),
+    ...(theme ? { theme } : {}),
+  }));
   return true;
 }
 

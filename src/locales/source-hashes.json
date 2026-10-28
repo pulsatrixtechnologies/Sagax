@@ -15346,7 +15346,17 @@
       "connectApps.accounts.notice.notSignedIn": "dcf6c0716de62fb00745ccf58d51c22a4b4205c6bf21c8e8b5d237113f8575ea",
       "connectApps.accounts.notice.notOperator": "9d10b93fe425d1cf7357717bf3416303d24cd5404ca4225480eb8882f7973798",
       "connectApps.accounts.notice.key": "16e873d1b9155a5e27ee8f64da66559dc29063f6e2d3cb7102c3e6229c1397ec",
-      "connectApps.accounts.notice.unknown": "57f626d3012b37feeda79bd39d099f5b29b55f5d84f3d78e881207f351eaec7e"
+      "connectApps.accounts.notice.unknown": "57f626d3012b37feeda79bd39d099f5b29b55f5d84f3d78e881207f351eaec7e",
+      "pages.close": "7d9eb7acb13e24625c404401d8e88b2350e32162455885f18276cf802f7701ed",
+      "pages.more": "d47d7cb0e4f8fd2be5ee07826694c18917d83ca77d0a01698582d05f432db996",
+      "pages.label": "0a30a815d67d7dd2018fe18f4e995a26f3b753369cd4327e9b6034b50a2cd153",
+      "pages.cardOpen": "9193f835af3a6f2d8ac10c4bc9537ac300f4e15b1635ed70d77d4e9d57a92e54",
+      "pages.card.proposed": "693e1fdc7310fae048b2216b75b47ae60433a89c7af57cf56a5ce0b1deda1228",
+      "pages.card.published": "99898508736ccdcd3ca1a654d3be22b8137eea072da12f05e8f0890d783ac0e8",
+      "pages.card.declined": "e2cd7f47b4ac7a1054a894879a895c8470122629eb24bccd0d35551628e1e2c3",
+      "pages.card.superseded": "52f7a6ac534be17d0ca908d0cb100c565212a0332a658a857dccace7047aba78",
+      "pages.card.revoked": "794a77b32c77e8ca86f531538b8320292b1fbd8eab061eb938cfee33bd967c78",
+      "pages.card.draft": "c080649df65782fc6bd7940a523aaea2823a58e19ae6d84cf47939ba306d29e5"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
