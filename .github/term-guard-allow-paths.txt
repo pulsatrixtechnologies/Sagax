@@ -2,3 +2,35 @@
 # Read from the base branch: a pull request cannot allowlist its own files.
 # Lists of common given names: a name can coincide with a term.
 src/data/given-names/*.json
+# Security guard: remote access apps that never get an "Always allow" rule
+# (issue 1220). The list must name them to refuse them.
+shared/computer-app.ts
+shared/computer-app.test.ts
+# Service desk widgets: code identifiers (files, types, the widget key).
+# The displayed brand comes from the server, never from these files.
+shared/cw-widgets/*
+src/components/cw/*
+ios/App/Features/Chat/CwWidgetCard.swift
+src/gallery/html-widgets.tsx
+src/gallery/html-widgets.html
+# Platform integrations shipped as features, not tools of a trade (issue 1220):
+# the engines' office suite and chat connectors,
+shared/engine-connectors.ts
+shared/engine-connectors.test.ts
+# the mail providers,
+src/components/MailSettings.tsx
+src/components/MailSettings.test.ts
+# and the private network of the companion and of sharing.
+companion/*
+server/tailscale.ts
+server/tailscale.test.ts
+src/components/CompanionSection.tsx
+src/components/CompanionSection.test.ts
+src/components/PhoneSetupFlow.tsx
+src/lib/companion-pairing.ts
+src/lib/companion-pairing.test.ts
+src/lib/phone-setup.ts
+src/lib/phone-setup.test.ts
+ios/App/PairingView.swift
+ios/ShareExtension/ShareViewModel.swift
+docs/verification/tailscale.md
