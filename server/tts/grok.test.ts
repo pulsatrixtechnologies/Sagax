@@ -7,6 +7,8 @@ let status = 200;
 let contentType = "audio/mpeg";
 let audio = Buffer.from([0xff, 0xfb, 0x90, 0x00]);
 let voices: unknown = { voices: [{ voice_id: "ara", name: "Ara", description: "Warm" }] };
+/** the error body a refusal answers (xAI's own shape) */
+let errorBody: unknown = { error: "fixture-xai-key private text" };
 const seen: Array<{ url: string; authorization?: string; body: string }> = [];
 // Since 2026-10-14 Grok voice runs on the xAI key, the one bots on Grok use.
 const config: AppConfig = { xai: { key: "fixture-voice-key" }, tts: { provider: "xai", voice: "ara" } };
@@ -20,7 +22,7 @@ beforeAll(async () => {
       seen.push({ url: req.url ?? "", authorization: req.headers.authorization, body });
       if (status !== 200) {
         res.writeHead(status, { "content-type": "application/json" });
-        res.end(JSON.stringify({ error: "fixture-xai-key private text" }));
+        res.end(JSON.stringify(errorBody));
       } else if (req.url === "/v1/stt") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ text: "bonjour", language: "fr", duration: 1 }));
@@ -48,6 +50,7 @@ beforeEach(() => {
   audio = Buffer.from([0xff, 0xfb, 0x90, 0x00]);
   voices = { voices: [{ voice_id: "ara", name: "Ara", description: "Warm" }] };
   seen.length = 0;
+  errorBody = { error: "fixture-xai-key private text" };
 });
 
 describe("Grok voice", () => {
@@ -217,5 +220,50 @@ describe("Grok voice", () => {
     const auto = seen[1]?.body ?? "";
     expect(auto).toContain('name="filler_words"');
     expect(auto).not.toContain('name="format"');
+  });
+});
+
+describe("xAI refusals say why (checked live 2026-10-28: an invalid key is a 400)", () => {
+  const invalidKey = { code: "Client specified an invalid argument", error: "Incorrect API key provided. You can obtain an API key from https://console.x.ai." };
+
+  it("a REST 400 for the key is a rejected key, not a vague failure", async () => {
+    const grok = await import("./grok.ts");
+    status = 400;
+    errorBody = invalidKey;
+    const error = await grok.transcribe(new Uint8Array([1, 2]), "audio/wav", "fixture-voice-key").then(() => new Error("no refusal"), (caught: Error) => caught);
+    expect(error.message).toBe("xAI rejected the key or its TTS permissions. Check the xAI key in Settings.");
+    expect(grok.grokVoiceFailure(error.message)).toBe("key");
+    const spoken = await grok.synthesizeStream("Bonjour.", undefined, "fixture-voice-key").then(() => new Error("no refusal"), (caught: Error) => caught);
+    expect(grok.grokVoiceFailure((spoken as Error).message)).toBe("key");
+  });
+
+  it("sorts credits and rate limits from the body, and keeps only xAI's category for another 400", async () => {
+    const grok = await import("./grok.ts");
+    expect(grok.grokVoiceFailure(grok.refusal(403, { error: "Your team has either used all available credits or reached its monthly spending limit." }))).toBe("quota");
+    expect(grok.grokVoiceFailure(grok.refusal(429, {}))).toBe("busy");
+    const other = grok.refusal(400, { code: "Client specified an invalid argument", error: "keyterm Marie is too long" });
+    expect(other).toBe("Grok voice failed (HTTP 400: Client specified an invalid argument). Try again later.");
+    expect(other).not.toContain("Marie");
+    expect(grok.grokVoiceFailure(grok.refusal(503, { code: "Service Unavailable" }))).toBe("down");
+    status = 400;
+    errorBody = { error: "fixture-voice-key echoed" };
+    const echoed = await grok.transcribe(new Uint8Array([1, 2]), "audio/wav", "fixture-voice-key").then(() => new Error("no refusal"), (caught: Error) => caught);
+    expect(echoed.message).not.toContain("fixture-voice-key");
+  });
+
+  it("a refused socket handshake reads the body too (the real ws library)", async () => {
+    const grok = await import("./grok.ts");
+    status = 400;
+    errorBody = invalidKey;
+    const errors: string[] = [];
+    await new Promise<void>((resolve) => {
+      grok.openTranscriptionStream("fixture-voice-key", { language: "fr" }, { onTranscript() {}, onError: (message) => errors.push(message), onClose: () => resolve() });
+    });
+    expect(errors[0]).toBe("xAI rejected the key or its TTS permissions. Check the xAI key in Settings.");
+    const speech: string[] = [];
+    await new Promise<void>((resolve) => {
+      grok.openSpeechStream("fixture-voice-key", {}, { onAudio() {}, onDone() {}, onCleared() {}, onError: (message) => speech.push(message), onClose: () => resolve() });
+    });
+    expect(grok.grokVoiceFailure(speech[0]!)).toBe("key");
   });
 });

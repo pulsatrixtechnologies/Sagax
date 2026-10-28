@@ -730,7 +730,12 @@ xAI's refusal is never hidden behind "didn't come through" (2026-10-28):
 - `server/tts/grok.ts` reads the status of a refused socket handshake (`ws`
   says "Unexpected server response: 429") and words it like an HTTP refusal:
   key or permissions (401, 403), credits (402), rate limit (429), xAI failing
-  (5xx); a real network error stays "Could not reach Grok voice".
+  (5xx); a real network error stays "Could not reach Grok voice". xAI answers
+  an invalid key with **400** "Incorrect API key provided" (checked
+  2026-10-28), so the refusal's body is read too (REST, and the socket's
+  `unexpected-response`), up to 2 KB, only to sort it: key, credits, rate
+  limit. Another 400 keeps xAI's category ("Client specified an invalid
+  argument"), never its message.
 - Every 502 of a voice route answers `{ error, code: "voice_provider",
   failure }`, `failure` being `key`, `quota`, `busy`, `down`, `voice` or
   `other` (`grokVoiceFailure`), and the server log says which request failed
