@@ -95,11 +95,11 @@ import { ApprovalCard, approvalCardStaysInChat } from "./ApprovalCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
-import { useOrgDirectory } from "./GroupPeoplePicker";
+import { GroupPeoplePicker, useOrgDirectory } from "./GroupPeoplePicker";
+import { GroupBotPicker } from "./GroupBotPicker";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { groupHumanLabel } from "@/lib/private-threads";
-import { ManageMembersPanel, type RosterFocus } from "./ManageMembersPanel";
-import { rosterBotChoices } from "@/lib/room-members";
+import { addableRosterBots } from "@/lib/room-members";
 import { GroupAvatarStack, GroupPanel, PanelSection } from "./GroupPanel";
 import { NudgeLine } from "./NudgeLine";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
@@ -1187,8 +1187,8 @@ export function GroupView({ group: stored }: { group: Group }) {
   const composerDock = useComposerDockPad(composerDockRef);
   const [bulletinOpen, setBulletinOpen] = useState(false);
   const [bulletinDraft, setBulletinDraft] = useState(group.bulletin);
-  // The roster dialog, open on the section that opened it (#1240, #1260).
-  const [membersOpen, setMembersOpen] = useState<RosterFocus | null>(null);
+  // Inline roster pickers (#1240, #1260): People, Bots, or both under Manage members.
+  const [rosterPick, setRosterPick] = useState<null | "people" | "bots" | "both">(null);
   // The group panel shares the bot panel's slot: one open flag in the store.
   const panelOpen = state.settingsOpen && !group.dm;
   // Organization server: a group's people come from the Perspicax directory
@@ -1201,7 +1201,9 @@ export function GroupView({ group: stored }: { group: Group }) {
     `group:${group.id}:${group.threadId}`,
     group.messages,
   );
-  const closeMembers = useCallback(() => setMembersOpen(null), []);
+  const toggleRoster = (next: "people" | "bots" | "both") => {
+    setRosterPick((current) => (current === next ? null : next));
+  };
   useEffect(() => setFindOpen(false), [group.threadId]);
   useEffect(() => {
     const onFind = (event: KeyboardEvent) => {
@@ -1276,11 +1278,30 @@ export function GroupView({ group: stored }: { group: Group }) {
   // Your own bots: a member who does not own the room still brings them in
   // and takes them out (server/group-ownership.ts).
   const ownBotIds = new Set(state.bots.filter((bot) => actorId !== "" && (bot.ownerUserId ?? "").trim().toLowerCase() === actorId).map((bot) => bot.id));
-  // "+ Add" under Bots opens the roster on its bots (#1240): shown while one
-  // this person may tick is not in the room yet.
-  const canAddRosterBot = rosterBotChoices(state.bots, { memberIds: group.memberIds, ownsRoom, actorId }).some((bot) => !group.memberIds.includes(bot.id));
+  // "+ Add" under Bots: bots this person may add that are not in the room yet.
+  // A member sees only their own; the owner sees every bot they may add.
+  const addableBots = useMemo(
+    () => addableRosterBots(state.bots, { memberIds: group.memberIds, ownsRoom, actorId }).map((bot) => ({
+      ...botPublicProfile(bot),
+      name: botLabel(bot.name, bot.id),
+    })),
+    [state.bots, group.memberIds, ownsRoom, actorId],
+  );
+  const canAddRosterBot = addableBots.length > 0;
   // "Manage members": anyone who can change something in the roster.
   const canManageRoster = ownsRoom || roster.canAddHuman || ownBotIds.size > 0;
+  const addHuman = (principalId: string) => {
+    const id = principalId.trim().toLowerCase();
+    if (!id) return;
+    const humanIds = [...new Set([...(group.humanIds ?? []).map((entry) => entry.trim().toLowerCase()), id])];
+    dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+  };
+  const addRoomBot = (id: string) => {
+    if (!id || group.memberIds.includes(id)) return;
+    dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: [...group.memberIds, id] } });
+  };
+  const peoplePickerOpen = rosterPick === "people" || rosterPick === "both";
+  const botsPickerOpen = rosterPick === "bots" || rosterPick === "both";
   const speaker = members.find((b) => b.id === group.busyBotId);
 
   // Mascot stays while a member works; the finished reply pops in above it.
@@ -1368,7 +1389,7 @@ export function GroupView({ group: stored }: { group: Group }) {
   const unreadDivider = useUnreadDivider({ threadId: group.threadId, messages: group.messages, following });
 
   useEffect(() => setBulletinDraft(group.bulletin), [group.id, group.bulletin]);
-  useEffect(() => setMembersOpen(null), [group.id]);
+  useEffect(() => setRosterPick(null), [group.id]);
   // The room's panel, when it was already open as the room opened (it follows
   // the selection from the previous conversation), is drawn in place on the
   // first frame; only a panel the person opens here slides in.
@@ -1426,19 +1447,7 @@ export function GroupView({ group: stored }: { group: Group }) {
       <ExchangeColumnProvider node={exchangeColumnNode}>
       <div ref={exchangeColumnRef} className="relative isolate flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
-      {membersOpen && !group.dm && (
-        <ManageMembersPanel
-          group={group}
-          onClose={closeMembers}
-          focus={membersOpen}
-          ownsRoom={ownsRoom}
-          canAddHuman={roster.canAddHuman}
-          actorId={actorId}
-          people={channelHumans}
-          directory={orgDirectory}
-          organization={perspicaxOrg !== null}
-        />
-      )}
+
       {(macInset || browser) && <div className="content-topbar-strip" />}
       {/* Header: laid out like a bot chat's. The centered chip (stacked
           member faces + name) opens the group panel; the right-hand
@@ -1762,7 +1771,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                   bots={[]}
                   onOpenHuman={perspicaxOrg ? (id) => dispatch({ type: "openPersonPanel", personId: id.replace(/^user:/, "") }) : undefined}
                   {...roster}
-                  onAddHuman={() => setMembersOpen("people")}
+                  onAddHuman={() => toggleRoster("people")}
                   onRemoveHuman={(id) => {
                     dispatch({
                       type: "patchGroup",
@@ -1771,6 +1780,17 @@ export function GroupView({ group: stored }: { group: Group }) {
                     });
                   }}
                 />
+                {peoplePickerOpen && roster.canAddHuman && (
+                  <GroupPeoplePicker
+                    directory={orgDirectory}
+                    taken={[viewerId, ...(group.humanIds ?? [])]}
+                    organization={perspicaxOrg !== null}
+                    showDone={rosterPick !== "both"}
+                    autoFocus={rosterPick === "people" || rosterPick === "both"}
+                    onAdd={addHuman}
+                    onDone={() => setRosterPick(null)}
+                  />
+                )}
               </PanelSection>
               <PanelSection title={t("sidebar.section.bots")}>
                 <ChannelMembers
@@ -1788,16 +1808,32 @@ export function GroupView({ group: stored }: { group: Group }) {
                     dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
                   }}
                   canAddBot={canAddRosterBot}
-                  onAddBot={() => setMembersOpen("bots")}
+                  onAddBot={() => toggleRoster("bots")}
                 />
+                {botsPickerOpen && (
+                  <GroupBotPicker
+                    bots={addableBots}
+                    emptyHint={t(ownsRoom ? "manageMembers.empty" : "manageMembers.emptyOwn")}
+                    showDone={rosterPick !== "both"}
+                    autoFocus={rosterPick === "bots"}
+                    onAdd={addRoomBot}
+                    onDone={() => setRosterPick(null)}
+                  />
+                )}
+                {botsPickerOpen && !ownsRoom && <p className="px-1 text-[12px] text-ink-secondary">{t("manageMembers.ownOnly")}</p>}
+                {rosterPick === "both" && (
+                  <button type="button" data-roster-done="" onClick={() => setRosterPick(null)} className="self-end rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-control hover:text-ink">
+                    {t("room.people.done")}
+                  </button>
+                )}
                 {canManageRoster && (
                   <button
                     type="button"
                     data-manage-members-open=""
-                    onClick={() => setMembersOpen("people")}
+                    onClick={() => toggleRoster(roster.canAddHuman ? "both" : "bots")}
                     className="mt-2 rounded-lg bg-raised px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
                   >
-                    {t("room.members.manage")}
+                    {t(roster.canAddHuman ? "room.members.manage" : "room.members.manageBots")}
                   </button>
                 )}
               </PanelSection>

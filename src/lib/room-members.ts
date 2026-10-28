@@ -35,3 +35,15 @@ export function rosterBotChoices<T extends { id: string; hidden?: boolean; owner
     return input.ownsRoom || (actor !== "" && norm(bot.ownerUserId ?? "") === actor);
   });
 }
+
+// Bots the room panel may still offer to add (#1240): the same set as
+// rosterBotChoices, minus whoever is already in the room. A member therefore
+// sees only their own bots that are not in yet; the owner sees every bot
+// they may add that is not in yet.
+export function addableRosterBots<T extends { id: string; hidden?: boolean; ownerUserId?: string }>(
+  bots: readonly T[],
+  input: { memberIds: readonly string[]; ownsRoom: boolean; actorId: string },
+): T[] {
+  const inRoom = new Set(input.memberIds);
+  return rosterBotChoices(bots, input).filter((bot) => !inRoom.has(bot.id));
+}

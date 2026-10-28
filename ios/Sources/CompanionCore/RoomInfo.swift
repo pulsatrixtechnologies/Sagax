@@ -1,6 +1,6 @@
 // Rooms (feature parity matrix WP11: RM6-RM8, RM11, RM13-RM19): what the
 // desktop's group panel (src/components/GroupPanel.tsx, GroupView.tsx,
-// GroupMemoryTab.tsx, ManageMembersPanel.tsx, ChannelMembers.tsx) and its
+// GroupMemoryTab.tsx, GroupPeoplePicker.tsx, GroupBotPicker.tsx, ChannelMembers.tsx) and its
 // sidebar room menu (Sidebar.tsx RoomContextMenu) decide, as pure logic the
 // phone's Room info sheet and room row menu draw from.
 //

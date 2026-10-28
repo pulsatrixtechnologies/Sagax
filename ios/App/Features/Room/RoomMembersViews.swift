@@ -1,9 +1,10 @@
 // A room's people and bots (matrix RM6, RM18; ChannelMembers.tsx,
-// ManageMembersPanel.tsx): who is in it, and for the pairings that manage
-// rooms, adding and removing them. Both "+ Add" rows and "Manage members"
-// open the one roster sheet, on the section they name (#1240, #1260). The
-// owner removes anyone and edits the roster; a member brings their own
-// bots in and takes them out (server/group-ownership.ts).
+// GroupPeoplePicker.tsx, GroupBotPicker.tsx): who is in it, and for the
+// pairings that manage rooms, adding and removing them. Desktop "+ Add"
+// opens an inline picker; this sheet still opens on the section named by
+// "+ Add" or "Manage members" (#1240, #1260). The owner removes anyone and
+// edits the roster; a member brings their own bots in and takes them out
+// (server/group-ownership.ts).
 import CompanionCore
 import SwiftUI
 
@@ -158,7 +159,7 @@ enum RoomRosterFocus: String, Identifiable {
     var id: String { rawValue }
 }
 
-/// The roster editor (ManageMembersPanel): the room's people and its bots,
+/// The roster editor: the room's people and its bots,
 /// ticked for who is in, saved together. The owner edits everything;
 /// anyone else ticks only their own bots. Archived bots stay listed while
 /// they are still members.
