@@ -18,10 +18,13 @@ final class ShapeVolumeTests: XCTestCase {
             let slices: [String]
             let face, eyes, eyesClip: String
         }
+        struct Motion3: Decodable { let x, y, rot, sx, sy: Double }
         struct Warp: Decodable {
             let shape, expression, pose, style: String
             let open: Double
+            let motion: Motion3
             let body, eyes, flatEyes: String
+            let stem: String?
         }
         struct Ink: Decodable { let hex, fill, eyes: String; let edge: String? }
         struct Step: Decodable { let t: Double; let pose: Pose }
@@ -95,7 +98,12 @@ final class ShapeVolumeTests: XCTestCase {
             let eyes = frame.eyes.compactMap { ShapeOutline(points: $0) }
             let name = "\(entry.shape) \(entry.expression) \(entry.pose) \(entry.style)"
             assertPath(ShapeVolume.warp(body, pose).d, entry.body, "\(name) body")
-            assertPath(ShapeVolume.d(ShapeVolume.styledEyes(eyes.map { ShapeVolume.warp($0, pose) }, style)), entry.eyes, tolerance: 0.06, "\(name) eyes")
+            let m = entry.motion
+            assertPath(ShapeVolume.d(ShapeVolume.eyesOnPose(frame, pose, style: style, motion: (m.x, m.y, m.rot, m.sx, m.sy))), entry.eyes, tolerance: 0.06, "\(name) eyes")
+            XCTAssertEqual(frame.stem == nil, entry.stem == nil, "\(name) stem")
+            if let stem = frame.stem, let wanted = entry.stem, let outline = ShapeOutline(points: stem.points) {
+                assertPath(ShapeVolume.warp(outline, pose).d, wanted, "\(name) stem")
+            }
             assertPath(ShapeVolume.d(ShapeVolume.styledEyes(eyes, style)), entry.flatEyes, tolerance: 0.06, "\(name) flat eyes")
         }
     }
@@ -188,14 +196,15 @@ final class ShapeVolumeDepthTests: XCTestCase {
         return spread / (thinnest(frame) * pose.scale)
     }
 
-    func testFullDepthAtRestAndThinWithABodyShrunkToADotOrABar() {
+    func testFullDepthForAThickBodyThinnerForAThinOneAndThinWithABodyShrunkToADotOrABar() {
         for shape in MascotShape.allCases {
-            XCTAssertEqual(ShapeFrames.still(shape, .neutral).depth, 1, shape.rawValue)
+            let thinnest = ShapeEngineData.radii[shape]!.min()!
+            XCTAssertEqual(ShapeFrames.still(shape, .neutral).depth, min(1, thinnest / ShapeEngineData.depthFull), accuracy: 1e-12, shape.rawValue)
             XCTAssertLessThan(midMove(shape, .thinking).depth, 0.35, shape.rawValue)
             XCTAssertGreaterThan(midMove(shape, .egg).depth, 0.6, shape.rawValue)
         }
-        XCTAssertEqual(ShapeFrames.bodyDepth([0.5, 0.5], [1, 1]), 0.5)
-        XCTAssertEqual(ShapeFrames.bodyDepth([2, 2], [1, 1]), 1)
+        XCTAssertEqual(ShapeFrames.bodyDepth([ShapeEngineData.depthFull / 2, ShapeEngineData.depthFull / 2]), 0.5)
+        XCTAssertEqual(ShapeFrames.bodyDepth([2, 2]), 1)
     }
 
     func testTheRestingShapesDrawAsOneBody() {

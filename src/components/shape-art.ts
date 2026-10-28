@@ -1,15 +1,16 @@
-// The Shapes geometry (clean room, 2026-10-08). Every body is one closed
-// outline drawn from 64 radii around its middle, smoothed into cubic curves,
-// so any two bodies morph by blending their radii. The radius unit R is the
-// circle's radius; the drawing box is 0..100 with the middle at BODY.center
-// and one R worth BODY.unit box units.
+// The Shapes geometry. Every body is one closed outline drawn from 64 radii
+// around its middle, smoothed into cubic curves, so any two bodies morph by
+// blending their radii. The radius unit R is the circle's radius; the drawing
+// box is 0..100 with the middle at BODY.center and one R worth BODY.unit box
+// units.
 //
-// Each table comes from our own geometry: a figure described as "is this
-// point inside?" (a superellipse, a stadium, a triangle or hexagon grown by a
-// radius, a union of five circles, the hull of two circles) and a ray cast
-// from the middle at each of the 64 angles. Nothing here is copied from
-// another drawing: change a number below and the tables follow.
+// The bodies (2026-10-28) are the bloub network's tables (shape-tables.ts,
+// MIT, see NOTICE), plus our pumpkin, built here from its own figure. The
+// bodies some moves turn into (MOVE_RADII) are still our own geometry: a
+// figure described as "is this point inside?" and a ray cast from the middle
+// at each of the 64 angles.
 import type { MascotShape } from "../../shared/mascot-look";
+import { SHAPE_TABLES } from "./shape-tables";
 
 type Point = [number, number];
 
@@ -159,63 +160,78 @@ function regular(sides: number, radius: number, turn = 0, cx = 0, cy = 0): Point
   });
 }
 
-/** The convex hull of two circles (a big belly and a small tip): a drop. */
-function circleHull(a: { x: number; y: number; r: number }, b: { x: number; y: number; r: number }): Inside {
-  const d = Math.hypot(b.x - a.x, b.y - a.y);
-  const ux = (b.x - a.x) / d;
-  const uy = (b.y - a.y) / d;
-  // the outer tangents touch both circles at the same angle from the axis
-  const beta = Math.acos((a.r - b.r) / d);
-  const turn = (s: number): Point => [ux * Math.cos(s) - uy * Math.sin(s), ux * Math.sin(s) + uy * Math.cos(s)];
-  const [p, q] = [turn(beta), turn(-beta)];
-  const quad: Point[] = [
-    [a.x + p[0] * a.r, a.y + p[1] * a.r],
-    [b.x + p[0] * b.r, b.y + p[1] * b.r],
-    [b.x + q[0] * b.r, b.y + q[1] * b.r],
-    [a.x + q[0] * a.r, a.y + q[1] * a.r],
-  ];
-  return (x, y) => Math.hypot(x - a.x, y - a.y) <= a.r || Math.hypot(x - b.x, y - b.y) <= b.r || inConvex(quad, x, y);
-}
-
 const circle = (r: number): number[] => Array.from({ length: RADII_COUNT }, () => r);
-
-/** A soft, chubby heart (2026-10-18): two equal round lobes, each joined to
- *  one small round point at the bottom by its tangents (the hull of two
- *  circles), so the sides run straight and smooth into a blunt, centred point.
- *  Symmetric by construction. Stored id `bean` (older builds called it a pebble). */
-function heart(): number[] {
-  // plump: bigger lobes set closer, so they melt into each other, and a rounder point
-  const point = { x: 0, y: 0.7, r: 0.3 };
-  const left = { x: -0.38, y: -0.11, r: 0.56 };
-  const right = { x: 0.38, y: -0.11, r: 0.56 };
-  const sides = [circleHull(left, point), circleHull(right, point)];
-  return radiiOf((x, y) => sides.some((inside) => inside(x, y)));
-}
-
-/** A rounded square: the superellipse |x|^4 + |y|^4 = s^4. */
-const squircle = () => radiiOf((x, y) => (Math.abs(x) / 0.93) ** 4 + (Math.abs(y) / 0.93) ** 4 <= 1);
-
-/** A capsule lying down: every point within 0.6 of a short horizontal segment. */
-const capsule = () => radiiOf((x, y) => toSegment(x, y, -0.44, 0, 0.44, 0) <= 0.6);
-
-/** A triangle standing on its base, its three corners rounded. */
-const triangle = () => radiiOf(grownPolygon(regular(3, 0.9, 0, 0, 0.12), 0.27));
 
 /** A hexagon with its flat sides up and down, corners rounded. */
 const hexagon = (turn = 30) => radiiOf(grownPolygon(regular(6, 0.85, turn), 0.23));
 
-/** Five round puffs: a wide one low in the middle, two on the sides, two on top. */
-const CLOUD_PUFFS = [
-  { x: 0, y: 0.18, r: 0.6 },
-  { x: -0.6, y: 0.24, r: 0.42 },
-  { x: 0.6, y: 0.24, r: 0.42 },
-  { x: -0.27, y: -0.3, r: 0.47 },
-  { x: 0.3, y: -0.26, r: 0.52 },
-];
-const cloud = () => radiiOf((x, y) => CLOUD_PUFFS.some((puff) => Math.hypot(x - puff.x, y - puff.y) <= puff.r));
+/** A triangle standing on its base, its three corners rounded. */
+const triangle = () => radiiOf(grownPolygon(regular(3, 0.9, 0, 0, 0.12), 0.27));
 
-/** A teardrop: a round belly low, a soft rounded tip on top (2026-10-18: round, never pointed). Stored id `drop`. */
-const droplet = () => radiiOf(circleHull({ x: 0, y: 0.22, r: 0.74 }, { x: 0, y: -0.82, r: 0.2 }));
+/**
+ * The pumpkin (2026-10-28): a round body a little wider than tall, made of
+ * three overlapping lobes (a middle one and one on each side), so its outline
+ * dips softly where two lobes meet, like a pumpkin's ribs seen from the front.
+ */
+export const PUMPKIN_LOBES = [
+  { x: 0, y: 0.02, rx: 0.6, ry: 0.84 },
+  { x: -0.42, y: 0.06, rx: 0.6, ry: 0.76 },
+  { x: 0.42, y: 0.06, rx: 0.6, ry: 0.76 },
+] as const;
+
+const pumpkin = () => radiiOf((x, y) => PUMPKIN_LOBES.some((lobe) => ((x - lobe.x) / lobe.rx) ** 2 + ((y - lobe.y) / lobe.ry) ** 2 <= 1));
+
+/**
+ * The pumpkin's stem: a short dark stalk standing in the dip on top, leaning
+ * a little to the left (box units). Its foot sinks into the body (the body is
+ * drawn over it), and it rides on the body's top radius, so it follows the
+ * outline while it breathes, morphs or squashes.
+ */
+export const STEM = {
+  /** Where the foot sits (R, from the top of the body) and where the tip ends, relative to the foot. */
+  foot: { x: -0.1, sink: 0.16 },
+  tip: { x: -0.15, y: -0.38 },
+  /** How far the stalk bows to the right, R. */
+  bow: 0.06,
+  /** Half its width at the foot and at the tip, R. */
+  width: { foot: 0.1, tip: 0.07 },
+} as const;
+
+export function stemPath(radii: Radii): string {
+  const top = radiusAt(radii, 0);
+  const foot: Point = [STEM.foot.x, -top + STEM.foot.sink];
+  const tip: Point = [foot[0] + STEM.tip.x, foot[1] + STEM.tip.y];
+  const control: Point = [(foot[0] + tip[0]) / 2 + STEM.bow, (foot[1] + tip[1]) / 2];
+  const at = (t: number): Point => [
+    (1 - t) ** 2 * foot[0] + 2 * (1 - t) * t * control[0] + t * t * tip[0],
+    (1 - t) ** 2 * foot[1] + 2 * (1 - t) * t * control[1] + t * t * tip[1],
+  ];
+  const steps = [0, 0.35, 0.7, 1];
+  const side = (sign: number) =>
+    steps.map((t) => {
+      const [x, y] = at(t);
+      const [x2, y2] = at(Math.min(1, t + 0.01));
+      const [x1, y1] = at(Math.max(0, t - 0.01));
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const half = STEM.width.foot + (STEM.width.tip - STEM.width.foot) * t;
+      return [x + (-dy / len) * half * sign, y + (dx / len) * half * sign] as Point;
+    });
+  const left = side(1);
+  const right = side(-1).reverse();
+  const [tx, ty] = at(1);
+  const [px, py] = at(0.97);
+  const len = Math.hypot(tx - px, ty - py) || 1;
+  // a round cap a little past the tip
+  const cap: Point = [tx + ((tx - px) / len) * STEM.width.tip * 0.8, ty + ((ty - py) / len) * STEM.width.tip * 0.8];
+  return smoothClosed([...left, cap, ...right].map(toBox));
+}
+
+/** The default color of a pumpkin where the skin takes the bot's color. */
+export const PUMPKIN_HEX = "#e78531";
+/** The stem's ink: a dark wood brown. */
+export const STEM_INK = "#3b2a1c";
 
 /** An egg: an ellipse, narrower at the top. */
 const egg = () => radiiOf((x, y) => (x / (0.8 * (1 + 0.13 * y))) ** 2 + ((y - 0.02) / 1.04) ** 2 <= 1);
@@ -223,16 +239,10 @@ const egg = () => radiiOf((x, y) => (x / (0.8 * (1 + 0.13 * y))) ** 2 + ((y - 0.
 /** An exclamation mark's stroke: a tall capsule standing on the middle. */
 const bar = () => radiiOf((x, y) => toSegment(x, y, 0, -0.82, 0, 0.18) <= 0.15);
 
-/** The eight bodies, in R units. Stored ids bean/pick/drop are heart, triangle, teardrop. */
+/** Every body, in R units: the bloub tables and the pumpkin. */
 export const SHAPE_RADII: Readonly<Record<MascotShape, Radii>> = {
-  circle: circle(1),
-  bean: heart(),
-  squircle: squircle(),
-  pill: capsule(),
-  pick: triangle(),
-  hexagon: hexagon(),
-  cloud: cloud(),
-  drop: droplet(),
+  ...SHAPE_TABLES,
+  pumpkin: pumpkin(),
 };
 
 /** The bodies some moves turn into. */

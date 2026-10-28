@@ -123,7 +123,7 @@ public enum ShapeVolume {
     // MARK: Ground
 
     /// Every shape stands on the same ground: its lowest point sits where the
-    /// heart's does. Box units (`groundLift`).
+    /// pebble's does (stored id bean). Box units (`groundLift`).
     public static func groundLift(_ shape: MascotShape) -> Double {
         func down(_ s: MascotShape) -> Double {
             ShapeMath.radiusAt(ShapeEngineData.radii[s] ?? [], Double.pi) * (ShapeVolumeData.fit[s] ?? 1)
@@ -214,6 +214,91 @@ public enum ShapeVolume {
 
     public static func warp(_ outline: ShapeOutline, _ pose: ShapePose) -> ShapeOutline {
         outline.mapped { warp($0, pose) }
+    }
+
+    // MARK: Eyes on the posed body
+
+    /// The face's matrix (the slice the eyes sit on), as `faceNumbers`.
+    public static func face(_ pose: ShapePose, depth: Double = 1) -> CGAffineTransform {
+        let k = min(1, max(0, depth.isFinite ? depth : 1))
+        return slice(front * k, sliceScale(front), pose)
+    }
+
+    /// The body's motion (box units: shift, turn about the middle, scale about the middle), as `motionNumbers`.
+    public static func motion(_ m: (x: Double, y: Double, rot: Double, sx: Double, sy: Double)) -> CGAffineTransform {
+        let r = m.rot * rad
+        let a = cos(r) * m.sx, b = sin(r) * m.sx, c = -sin(r) * m.sy, d = cos(r) * m.sy
+        return CGAffineTransform(a: a, b: b, c: c, d: d, tx: m.x + 50 - (a * 50 + c * 50), ty: m.y + 50 - (b * 50 + d * 50))
+    }
+
+    /// The face's matrix in the drawing's own space: the face, then the body's motion (`faceInDrawing`).
+    public static func faceInDrawing(_ m: (x: Double, y: Double, rot: Double, sx: Double, sy: Double), _ pose: ShapePose, depth: Double = 1) -> CGAffineTransform {
+        face(pose, depth: depth).concatenating(motion(m))
+    }
+
+    private static func inside(_ poly: [CGPoint], _ p: CGPoint) -> Bool {
+        var hit = false
+        var j = poly.count - 1
+        for i in poly.indices {
+            let a = poly[i], b = poly[j]
+            if (a.y > p.y) != (b.y > p.y), p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x { hit.toggle() }
+            j = i
+        }
+        return hit
+    }
+
+    /// The eyes on the posed body, in the drawing's own space (`posedEyes`,
+    /// 2026-10-28): only each eye's middle follows the body (the bend, the
+    /// face, the motion); its shape is the engine's upright capsule at one
+    /// even scale, the two eyes one level pair, gathered and shrunk until both
+    /// sit inside the outline the drawing shows.
+    public static func posedEyes(_ frame: ShapeFrame, _ pose: ShapePose, motion m: (x: Double, y: Double, rot: Double, sx: Double, sy: Double)? = nil, bend: Bool = true) -> [ShapeEyeBox] {
+        let eyes = frame.eyeShapes
+        guard !eyes.isEmpty else { return [] }
+        let t = faceInDrawing(m ?? frame.motion, pose, depth: frame.depth)
+        let scale = abs(Double(t.a * t.d - t.b * t.c)).squareRoot()
+        func onDrawing(_ p: CGPoint) -> CGPoint { (bend ? warp(p, pose) : p).applying(t) }
+        var placed = eyes.map { e -> ShapeEyeBox in
+            let c = onDrawing(CGPoint(x: e.x, y: e.y))
+            return ShapeEyeBox(x: Double(c.x), y: Double(c.y), w: e.w * scale, h: e.h * scale, tilt: e.tilt)
+        }
+        if placed.count == 2 {
+            let midX = (placed[0].x + placed[1].x) / 2, midY = (placed[0].y + placed[1].y) / 2
+            let half = hypot(placed[1].x - placed[0].x, placed[1].y - placed[0].y) / 2
+            let side: Double = placed[0].x <= placed[1].x ? 1 : -1
+            placed[0].x = midX - half * side
+            placed[1].x = midX + half * side
+            placed[0].y = midY
+            placed[1].y = midY
+        }
+        // the outline the drawing shows, from the points the desktop writes (two decimals)
+        let r2 = { (v: CGFloat) in CGFloat(ShapeMath.round2(Double(v))) }
+        var ring = frame.body.map { CGPoint(x: r2($0.x), y: r2($0.y)) }
+        if let first = ring.first { ring.append(first) }
+        let body = ring.map(onDrawing)
+        guard body.count > 2 else { return placed }
+        let centre = onDrawing(CGPoint(x: 50, y: 50))
+        func fits(_ pair: [ShapeEyeBox]) -> Bool {
+            pair.allSatisfy { e in ShapeGaze.eyeOutline(e.x, e.y, e.w * 1.1, e.h * 1.06, e.tilt).allSatisfy { inside(body, $0) } }
+        }
+        var i = 0
+        while i < 24, !fits(placed) {
+            let pull = i < 12 ? 0.1 : 0
+            let shrink = i < 12 ? 1 : 0.92
+            let midX = placed.reduce(0) { $0 + $1.x } / Double(placed.count)
+            let midY = placed.reduce(0) { $0 + $1.y } / Double(placed.count)
+            let nx = midX + (Double(centre.x) - midX) * pull
+            let ny = midY + (Double(centre.y) - midY) * pull
+            placed = placed.map { e in ShapeEyeBox(x: nx + (e.x - midX) * shrink, y: ny, w: e.w * shrink, h: e.h * shrink, tilt: e.tilt) }
+            i += 1
+        }
+        return placed
+    }
+
+    /// The posed eyes in a style, as the drawing shows them (`eyesOnPose`).
+    public static func eyesOnPose(_ frame: ShapeFrame, _ pose: ShapePose, style: ShapeEyeStyle, motion m: (x: Double, y: Double, rot: Double, sx: Double, sy: Double)? = nil, bend: Bool = true) -> [ShapeStyledEye] {
+        let outlines = posedEyes(frame, pose, motion: m, bend: bend).compactMap { e in ShapeOutline(points: ShapeGaze.eyeOutline(e.x, e.y, e.w, e.h, e.tilt)) }
+        return styledEyes(outlines, style)
     }
 
     // MARK: Eyes

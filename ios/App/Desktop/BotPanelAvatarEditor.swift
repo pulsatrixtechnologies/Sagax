@@ -180,6 +180,7 @@ struct BotAvatarEditor: View {
                              selected: draft.complete.shape == shape, height: 56, locked: false) {
                             var next = draft
                             var look = next.complete
+                            if let color = MascotShape.pickedColor(shape, from: look.shape, skin: look.shapeSkin) { next.color = color }
                             look.shape = shape
                             next.look = look.stored
                             save(next)

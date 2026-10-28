@@ -7,8 +7,7 @@
  * - owl: the Sagax owl; its color is the bot's color and its skin the bot's
  *   mascotSkin (shared/mascot-skins.ts). A stored `style` of `3d` still
  *   validates. The desktop always draws the flat owl.
- * - shape: one of the eight shapes (a clay body with two eyes cut
- *   through it), in the bot's color, with a shape skin (plain is clay).
+ * - shape: one of the shapes (a clay body with two eyes on it), in the bot's color, with a shape skin (plain is clay).
  * - trombi: the Hibou 98 paperclip, with a Trombi skin.
  * - bunbu: Bunbu, our own collectible-vinyl little monster (long upright
  *   ears, plush body, a toothy grin), in the bot's color, with a Bunbu skin.
@@ -39,17 +38,52 @@ export const MASCOT_CHARACTERS = ["owl", "crab", "shape", "trombi", "bunbu", "sh
 export type MascotCharacter = (typeof MASCOT_CHARACTERS)[number];
 
 /**
- * The eight shapes, in the picker's order (clean-room set of 2026-10-08):
- * Circle, Heart, Squircle, Capsule, Triangle, Hexagon, Cloud, Teardrop. The
- * stored ids are the ones older builds and the server already know (bean is
- * the heart, pill the capsule, pick the triangle, drop the teardrop).
+ * The shapes, in the picker's order (2026-10-28): the bloub network's bodies
+ * (src/components/shape-tables.ts, MIT, see NOTICE) and our pumpkin. The
+ * first eight keep the ids older builds and the server already know (bean is
+ * the pebble, pill the capsule, pick the triangle, drop the teardrop), so a
+ * stored look keeps its place; the others are new ids.
  */
-export const MASCOT_SHAPES = ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"] as const;
+export const MASCOT_SHAPES = [
+  "circle",
+  "bean",
+  "squircle",
+  "pill",
+  "pick",
+  "hexagon",
+  "cloud",
+  "drop",
+  "pumpkin",
+  "egg",
+  "gem",
+  "wedge",
+  "diamond",
+  "star",
+  "clover",
+  "flower",
+  "blossom",
+  "cat",
+  "ghost",
+  "jellyfish",
+  "axolotl",
+  "puff",
+  "pin",
+  "marker",
+  "sprite",
+  "flask",
+  "tube",
+  "potion",
+  "chomp",
+  "nibble",
+  "shield",
+  "bubble",
+] as const;
 export type MascotShape = (typeof MASCOT_SHAPES)[number];
 
 /**
- * Shapes from earlier sets, and the shapes' display names: a stored look
- * keeps working, on the nearest of the eight.
+ * Shapes from earlier sets: a stored look keeps working, on the nearest
+ * shape of the set. Clover, flower and star are shapes of their own again
+ * (2026-10-28), so a look stored with them gets them back.
  */
 export const LEGACY_SHAPES: Readonly<Record<string, MascotShape>> = {
   blob: "bean",
@@ -58,11 +92,14 @@ export const LEGACY_SHAPES: Readonly<Record<string, MascotShape>> = {
   capsule: "pill",
   droplet: "drop",
   sparkle: "squircle",
-  clover: "cloud",
-  flower: "cloud",
   house: "hexagon",
-  star: "hexagon",
 };
+
+/** The color a pumpkin takes when it is picked, where its skin paints the bot's color. */
+export const PUMPKIN_COLOR = "orange";
+
+/** The shape skins whose body is the bot's color (the others paint their own material). */
+export const SHAPE_SKINS_IN_BOT_COLOR: ReadonlySet<string> = new Set(["plain", "pastel", "glossy", "outline", "crystal"]);
 
 /**
  * Skins for the shapes; every one renders on every shape. The first four are

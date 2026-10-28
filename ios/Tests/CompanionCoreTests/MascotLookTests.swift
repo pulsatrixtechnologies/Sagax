@@ -92,8 +92,11 @@ final class MascotLookTests: XCTestCase {
 
     func testThePickerOrdersMatchTheDesktop() {
         XCTAssertEqual(MascotCharacter.allCases.map(\.rawValue), ["owl", "crab", "shape", "trombi", "bunbu", "shiba", "grump", "ogre", "frog"])
-        // #187: the desktop's stored ids (MASCOT_SHAPES)
-        XCTAssertEqual(MascotShape.allCases.map(\.rawValue), ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"])
+        // the desktop's stored ids (MASCOT_SHAPES, 2026-10-28): the first eight keep their ids
+        XCTAssertEqual(MascotShape.allCases.map(\.rawValue), [
+            "circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop", "pumpkin", "egg", "gem", "wedge", "diamond", "star", "clover", "flower",
+            "blossom", "cat", "ghost", "jellyfish", "axolotl", "puff", "pin", "marker", "sprite", "flask", "tube", "potion", "chomp", "nibble", "shield", "bubble",
+        ])
         // the rest of the lists are checked against the desktop's own in MascotLookFixtureTests
         XCTAssertEqual(ShapeSkin.allCases.first, .plain)
         XCTAssertEqual(TrombiSkin.allCases.first, .classic)
@@ -108,7 +111,9 @@ final class MascotLookTests: XCTestCase {
         XCTAssertEqual(try look(#"{"character":"shape","shape":"bean"}"#).shape, .blob)
         XCTAssertEqual(try look(#"{"character":"shape","shape":"pick"}"#).shape, .triangle)
         XCTAssertEqual(try look(#"{"character":"shape","shape":"blob"}"#).shape, .blob, "the phone's old id")
-        XCTAssertEqual(try look(#"{"character":"shape","shape":"star"}"#).shape, .hexagon, "a retired shape")
+        XCTAssertEqual(try look(#"{"character":"shape","shape":"star"}"#).shape, .star, "a shape of its own again")
+        XCTAssertEqual(try look(#"{"character":"shape","shape":"house"}"#).shape, .hexagon, "a retired shape")
+        XCTAssertEqual(try look(#"{"character":"shape","shape":"pumpkin"}"#).shape, .pumpkin)
         let gold = try look(#"{"character":"shape","shape":"cloud","skins":{"shape":"gold"}}"#)
         XCTAssertEqual(gold.character, .shape)
         XCTAssertEqual(gold.shape, .cloud)
@@ -269,7 +274,8 @@ final class MascotLookTests: XCTestCase {
     // MARK: shapes
 
     func testEveryShapeHasArtThatParses() {
-        for shape in MascotShape.allCases {
+        // the hand-drawn outlines of the first eight (the engine's radii draw every shape: ShapeEngineTests)
+        for shape in MascotShape.allCases.prefix(8) {
             let art = ShapeArt.art[shape]
             XCTAssertNotNil(art, shape.rawValue)
             XCTAssertTrue(art?.d.hasPrefix("M") == true)

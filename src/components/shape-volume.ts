@@ -11,9 +11,9 @@
 // - Every shape stands on the same ground (groundLift) at a size of its own
 //   (SHAPE_FIT), so a list of bots rests on one line.
 // ShapeMascot.tsx draws it and shape-motion.ts moves it.
-import { mixHex } from "./shape-engine";
-import { radiusAt, SHAPE_RADII } from "./shape-art";
-import type { MascotShape } from "../../shared/mascot-look";
+import { eyeOutline, mixHex } from "./shape-engine";
+import { radiusAt, SHAPE_RADII, smoothClosed } from "./shape-art";
+import { MASCOT_SHAPES, type MascotShape } from "../../shared/mascot-look";
 
 /**
  * The resting pose: `yaw` degrees to the right, `pitch` degrees up, `roll`
@@ -56,7 +56,7 @@ export interface Pose {
 
 /**
  * Every shape stands on the same ground: its lowest point sits where the
- * heart's does (the shape the rest pose was measured on), so a sidebar of bots
+ * pebble's does (stored id bean, the shape the rest pose was measured on), so a sidebar of bots
  * rests on one line instead of each floating at its own height. Box units.
  */
 export function groundLift(shape: MascotShape): number {
@@ -64,21 +64,24 @@ export function groundLift(shape: MascotShape): number {
   return POSE.scale * 40 * (down("bean") - down(shape));
 }
 
+/** The size every shape is drawn at, as if it were a circle of this many R. */
+export const FIT = { circle: 0.9, min: 0.78, max: 1.04, reach: 1.08 } as const;
+
 /**
- * Each shape's size in the frame, set by eye (the heart sets
- * the pose's scale): rounder and squarer bodies fill more of the box than a
- * heart, so they are drawn a little smaller to look the same size.
+ * Each shape's size in the frame (2026-10-28, measured, no longer set by eye
+ * per shape): a body is drawn at the size of a circle of the same area, so a
+ * narrow tube and a wide cloud look alike in a list, never reaching past
+ * FIT.reach R from the middle.
  */
-export const SHAPE_FIT: Readonly<Record<MascotShape, number>> = {
-  circle: 0.9,
-  bean: 1,
-  squircle: 0.88,
-  pill: 0.92,
-  pick: 0.98,
-  hexagon: 0.86,
-  cloud: 0.94,
-  drop: 1,
-};
+export function shapeFit(shape: MascotShape): number {
+  const radii = SHAPE_RADII[shape];
+  const area = radii.reduce((sum, r) => sum + r * r, 0) * (Math.PI / radii.length);
+  const reach = radii.reduce((most, r) => Math.max(most, r), 0);
+  const fit = FIT.circle * Math.sqrt(Math.PI / area);
+  return Math.round(Math.min(FIT.max, FIT.reach / reach, Math.max(FIT.min, fit)) * 1000) / 1000;
+}
+
+export const SHAPE_FIT: Readonly<Record<MascotShape, number>> = Object.fromEntries(MASCOT_SHAPES.map((shape) => [shape, shapeFit(shape)])) as Record<MascotShape, number>;
 
 /** The resting pose. */
 export const REST_POSE: Pose = { yaw: POSE.yaw, pitch: POSE.pitch, roll: POSE.roll, scale: POSE.scale, lift: POSE.lift };
@@ -107,6 +110,14 @@ export const TURN_SQUASH = 0;
  * slice is the same clean shape and the silhouette stays the shape itself.
  */
 function sliceMatrix(z: number, s: number, pose: Pose, _R?: M3): string {
+  const [a, b, c, d, e, f] = sliceNumbers(z, s, pose);
+  return `matrix(${round4(a)} ${round4(b)} ${round4(c)} ${round4(d)} ${round4(e)} ${round4(f)})`;
+}
+
+/** An SVG matrix as its six numbers (a b c d e f). */
+export type Affine = [number, number, number, number, number, number];
+
+function sliceNumbers(z: number, s: number, pose: Pose): Affine {
   const k = pose.scale;
   const yaw = pose.yaw * RAD;
   const pitch = pose.pitch * RAD;
@@ -126,7 +137,7 @@ function sliceMatrix(z: number, s: number, pose: Pose, _R?: M3): string {
   const ty = sr * dx + cr * dy;
   const e = 50 + tx - (a * 50 + c * 50);
   const f = 50 + pose.lift + ty - (b * 50 + d * 50);
-  return `matrix(${round4(a)} ${round4(b)} ${round4(c)} ${round4(d)} ${round4(e)} ${round4(f)})`;
+  return [a, b, c, d, e, f];
 }
 
 const sliceScale = (z: number) => BODY_3D.core + (1 - BODY_3D.core) * Math.sqrt(Math.max(0, 1 - (z / BODY_3D.depth) ** 2));
@@ -184,7 +195,7 @@ export const viewTransform = (pose: Pose = REST_POSE): string => poseMatrices("s
 export const OUT_OF_PLANE = { perspective: 0.34, narrow: 0.3 } as const;
 
 /** One point of the outline (box units) under the pose's out-of-plane turn. */
-function warpPoint(x: number, y: number, sy: number, cy: number, sp: number, cp: number): [number, number] {
+export function warpPoint(x: number, y: number, sy: number, cy: number, sp: number, cp: number): [number, number] {
   const u = (x - 50) / 40;
   const v = (y - 50) / 40;
   const across = 1 - OUT_OF_PLANE.narrow * (1 - cy);
@@ -225,6 +236,130 @@ export function warpPath(d: string, pose: Pose): string {
 }
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
+
+/** The face's matrix as numbers (the slice the eyes sit on). */
+export function faceNumbers(pose: Pose, depth = 1): Affine {
+  const k = Math.min(1, Math.max(0, Number.isFinite(depth) ? depth : 1));
+  return sliceNumbers(FRONT * k, sliceScale(FRONT), pose);
+}
+
+/** The body's motion (ShapeFrame.motion: shift, turn about the middle, scale about the middle) as numbers. */
+export function motionNumbers(motion: { x: number; y: number; rot: number; sx: number; sy: number }): Affine {
+  const r = motion.rot * RAD;
+  const cos = Math.cos(r);
+  const sin = Math.sin(r);
+  // translate(x y) rotate(rot 50 50) translate(50 50) scale(sx sy) translate(-50 -50)
+  const a = cos * motion.sx;
+  const b = sin * motion.sx;
+  const c = -sin * motion.sy;
+  const d = cos * motion.sy;
+  // the middle (50, 50) stays put under the scale and the turn, then the shift
+  const e = motion.x + 50 - (a * 50 + c * 50);
+  const f = motion.y + 50 - (b * 50 + d * 50);
+  return [a, b, c, d, e, f];
+}
+
+const apply = (m: Affine, x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+const compose = (p: Affine, q: Affine): Affine => [
+  p[0] * q[0] + p[2] * q[1],
+  p[1] * q[0] + p[3] * q[1],
+  p[0] * q[2] + p[2] * q[3],
+  p[1] * q[2] + p[3] * q[3],
+  p[0] * q[4] + p[2] * q[5] + p[4],
+  p[1] * q[4] + p[3] * q[5] + p[5],
+];
+
+/** The face's matrix in the drawing's own space: the body's motion, then the face (where the posed eyes are measured). */
+export function faceInDrawing(motion: { x: number; y: number; rot: number; sx: number; sy: number }, pose: Pose, depth = 1): Affine {
+  return compose(motionNumbers(motion), faceNumbers(pose, depth));
+}
+
+/** One eye placed on the drawing: its middle, its size and the face's tilt (drawing units). */
+export interface PosedEye {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  tilt: number;
+}
+
+/**
+ * The eyes on the posed body, in the drawing's own space (2026-10-28). Only
+ * each eye's middle follows the body (the bend, the face's turn, the body's
+ * motion); its shape is the engine's upright capsule at one even scale, so no
+ * roll, squash or perspective of the body ever bends, tilts or splits the
+ * eyes, and the two eyes stay one level pair of the same size.
+ */
+export function posedEyes(frame: { body?: string; eyeShapes: readonly { x: number; y: number; w: number; h: number; tilt: number }[]; motion: { x: number; y: number; rot: number; sx: number; sy: number }; depth?: number }, pose: Pose, bend = true): PosedEye[] {
+  const eyes = frame.eyeShapes;
+  if (!eyes.length) return [];
+  const m = faceInDrawing(frame.motion, pose, frame.depth ?? 1);
+  const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+  const sy = Math.sin(pose.yaw * RAD);
+  const cy = Math.cos(pose.yaw * RAD);
+  const sp = Math.sin(pose.pitch * RAD);
+  const cp = Math.cos(pose.pitch * RAD);
+  const centers = eyes.map((eye) => {
+    const [wx, wy] = bend ? warpPoint(eye.x, eye.y, sy, cy, sp, cp) : [eye.x, eye.y];
+    return apply(m, wx, wy);
+  });
+  let placed = eyes.map((eye, i) => ({ x: centers[i][0], y: centers[i][1], w: eye.w * scale, h: eye.h * scale, tilt: eye.tilt }));
+  if (placed.length === 2) {
+    // one level pair: same middle and the same distance apart as the turned body gives them
+    const midX = (placed[0].x + placed[1].x) / 2;
+    const midY = (placed[0].y + placed[1].y) / 2;
+    const half = Math.hypot(placed[1].x - placed[0].x, placed[1].y - placed[0].y) / 2;
+    const side = placed[0].x <= placed[1].x ? 1 : -1;
+    placed[0] = { ...placed[0], x: midX - half * side, y: midY };
+    placed[1] = { ...placed[1], x: midX + half * side, y: midY };
+  }
+  // the engine fits the eyes in the resting outline; a hard turn or squash can move the
+  // outline under them: gather the pair toward the body's middle, then shrink it, until
+  // both sit inside the outline the drawing shows
+  const onDrawing = (x: number, y: number) => {
+    const [wx, wy] = bend ? warpPoint(x, y, sy, cy, sp, cp) : [x, y];
+    return apply(m, wx, wy);
+  };
+  const body = outlinePoints(frame.body ?? "").map(([x, y]) => onDrawing(x, y));
+  if (body.length > 2) {
+    const [bx, by] = onDrawing(50, 50);
+    const fits = (pair: PosedEye[]) => pair.every((eye) => eyeOutline(eye.x, eye.y, eye.w * 1.1, eye.h * 1.06, eye.tilt).every(([x, y]) => insidePolygon(body, x, y)));
+    for (let i = 0; i < 24 && !fits(placed); i += 1) {
+      const pull = i < 12 ? 0.1 : 0;
+      const shrink = i < 12 ? 1 : 0.92;
+      const midX = placed.reduce((sum, eye) => sum + eye.x, 0) / placed.length;
+      const midY = placed.reduce((sum, eye) => sum + eye.y, 0) / placed.length;
+      const nx = midX + (bx - midX) * pull;
+      const ny = midY + (by - midY) * pull;
+      placed = placed.map((eye) => ({ ...eye, x: nx + (eye.x - midX) * shrink, y: ny, w: eye.w * shrink, h: eye.h * shrink }));
+    }
+  }
+  return placed;
+}
+
+/** The on-curve points of a path the engine wrote (M, then C's end points). */
+function outlinePoints(d: string): [number, number][] {
+  if (!d) return [];
+  const n = d.match(/-?\d*\.?\d+(?:e-?\d+)?/g)?.map(Number) ?? [];
+  const pts: [number, number][] = [[n[0], n[1]]];
+  for (let i = 2; i + 5 < n.length; i += 6) pts.push([n[i + 4], n[i + 5]]);
+  return pts;
+}
+
+function insidePolygon(poly: readonly [number, number][], x: number, y: number): boolean {
+  let hit = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+/** The posed eyes as one path (closed capsules). */
+export function posedEyesPath(eyes: readonly PosedEye[]): string {
+  return eyes.map((eye) => smoothClosed(eyeOutline(eye.x, eye.y, eye.w, eye.h, eye.tilt))).join("");
+}
 
 /** How a mood draws the eyes: the capsules, wide ovals (busy), or arcs (pleased, ^ ^). */
 export type EyeStyle = "capsule" | "oval" | "arc";
@@ -289,8 +424,36 @@ export function styledEyes(eyes: string, style: EyeStyle): string {
 /** What writePose last wrote on each drawing (it skips unchanged outlines and eyes). */
 const written = new WeakMap<object, { key: string; body: string; eyesKey: string; eyes: string }>();
 
-/** Write a pose onto a drawing of ShapeFrameSvg: the turned outline, the eyes, and the slices, the face and the eyes' matrices. */
-export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: VolumeDetail, pose: Pose, frame?: { body: string; eyes: string; depth?: number }, style: EyeStyle = "capsule", bend = true): void {
+/**
+ * Forget what writePose wrote on a drawing: React drew it again (its own
+ * outline and eyes), so the next writePose writes everything, never trusting
+ * a memo of a drawing React has since replaced.
+ */
+export function forgetPose(svg: object): void {
+  written.delete(svg);
+}
+
+/** The frame writePose draws: the outline, the eyes as capsules, the body's motion and thickness. */
+export interface PoseFrame {
+  body: string;
+  stem?: { d: string; opacity: number } | null;
+  eyeShapes: readonly { x: number; y: number; w: number; h: number; tilt: number }[];
+  motion: { x: number; y: number; rot: number; sx: number; sy: number };
+  depth?: number;
+}
+
+/** The eyes of a frame on a pose, in a style, as the drawing shows them. */
+export function eyesOnPose(frame: PoseFrame, pose: Pose, style: EyeStyle, bend: boolean): string {
+  return styledEyes(posedEyesPath(posedEyes(frame, pose, bend)), style);
+}
+
+/**
+ * Write a pose onto a drawing of ShapeFrameSvg: the turned outline, the eyes
+ * on it, and the slices' and the face's matrices. The only writer of the
+ * outline and the eyes between two React draws (writeShapeFrame leaves them).
+ */
+export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: VolumeDetail, pose: Pose, frame?: PoseFrame, style: EyeStyle = "capsule", bend = true): void {
+  const depth = frame?.depth ?? 1;
   if (frame) {
     // at rest the turn holds still: the bent outline is kept and only rewritten when it changes
     const memo = written.get(svg) ?? { key: "", body: "", eyesKey: "", eyes: "" };
@@ -300,23 +463,30 @@ export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: 
       memo.body = bend ? warpPath(frame.body, pose) : frame.body;
       svg.querySelectorAll("[data-shape-outline]").forEach((node) => node.setAttribute("d", memo.body));
     }
-    const eyesKey = key + style + frame.eyes;
+    if (frame.stem) {
+      const stem = bend ? warpPath(frame.stem.d, pose) : frame.stem.d;
+      const opacity = String(frame.stem.opacity);
+      svg.querySelectorAll("[data-shape-stem]").forEach((node) => {
+        node.setAttribute("d", stem);
+        node.setAttribute("opacity", opacity);
+      });
+    }
+    const m = frame.motion;
+    const eyesKey = `${key}${pose.roll.toFixed(2)}|${pose.scale.toFixed(4)}|${pose.lift.toFixed(3)}|${depth.toFixed(3)}|${m.x.toFixed(3)} ${m.y.toFixed(3)} ${m.rot.toFixed(2)} ${m.sx.toFixed(4)} ${m.sy.toFixed(4)}|${style}|${JSON.stringify(frame.eyeShapes)}`;
     if (memo.eyesKey !== eyesKey) {
       memo.eyesKey = eyesKey;
-      memo.eyes = styledEyes(bend ? warpPath(frame.eyes, pose) : frame.eyes, style);
+      memo.eyes = eyesOnPose(frame, pose, style, bend);
       svg.querySelectorAll("[data-shape-eyes]").forEach((node) => node.setAttribute("d", memo.eyes));
     }
     written.set(svg, memo);
   }
-  const m = poseMatrices(detail, pose, frame?.depth ?? 1);
+  const m = poseMatrices(detail, pose, depth);
   svg.querySelectorAll("[data-pose-slice]").forEach((node) => {
     const i = Number(node.getAttribute("data-pose-slice"));
     const t = i < 0 ? m.face : m.slices[i];
     if (t) node.setAttribute("transform", t);
   });
   svg.querySelectorAll("[data-pose-face]").forEach((node) => node.setAttribute("transform", m.face));
-  svg.querySelectorAll("[data-pose-eyes]").forEach((node) => node.setAttribute("transform", m.eyes));
-  svg.querySelectorAll("[data-pose-eyes-clip]").forEach((node) => node.setAttribute("transform", m.eyesClip));
 }
 
 const relativeLuminance = (hex: string): number => {

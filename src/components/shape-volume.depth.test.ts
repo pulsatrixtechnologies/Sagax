@@ -9,8 +9,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { MASCOT_SHAPES, type MascotShape } from "../../shared/mascot-look";
 import { ShapeFrameSvg, shapeSkinPaint } from "./ShapeMascot";
-import { SHAPE_ART } from "./shape-art";
-import { bodyDepth, ShapeEngine, stillFrame, type ShapeFrame } from "./shape-engine";
+import { SHAPE_ART, SHAPE_RADII } from "./shape-art";
+import { bodyDepth, DEPTH_FULL, ShapeEngine, stillFrame, type ShapeFrame } from "./shape-engine";
 import { MOVE_TIMING, SHAPE_MOVES, type ShapeMove } from "./shape-moves";
 import { shapeSkinLayers } from "./skin-fx/shape-skins";
 import { poseMatrices, REST_POSE, writePose, type Pose } from "./shape-volume";
@@ -64,14 +64,16 @@ function midMove(shape: MascotShape, move: ShapeMove): ShapeFrame {
 }
 
 describe("a shape's body keeps together at every size", () => {
-  it("is full depth at rest and thins with a body shrunk to a dot or a bar", () => {
+  it("is full depth for a thick body, thinner for a thin one, and thins with a body shrunk to a dot or a bar", () => {
     for (const shape of MASCOT_SHAPES) {
-      expect(stillFrame({ shape, expression: "neutral", color: "#F4F4F4" }).depth).toBe(1);
+      const rest = stillFrame({ shape, expression: "neutral", color: "#F4F4F4" }).depth;
+      const thinnest = Math.min(...SHAPE_RADII[shape]);
+      expect(rest, shape).toBe(thinnest >= DEPTH_FULL ? 1 : thinnest / DEPTH_FULL);
       expect(midMove(shape, "thinking").depth).toBeLessThan(0.35);
       expect(midMove(shape, "egg").depth).toBeGreaterThan(0.6);
     }
-    expect(bodyDepth([0.5, 0.5], [1, 1])).toBe(0.5);
-    expect(bodyDepth([2, 2], [1, 1])).toBe(1);
+    expect(bodyDepth([DEPTH_FULL / 2, DEPTH_FULL / 2])).toBe(0.5);
+    expect(bodyDepth([2, 2])).toBe(1);
   });
 
   it("draws the resting shapes as one body", () => {
