@@ -44,8 +44,24 @@ const BRIDGE = catalogBridgeOn(process.env);
 const SEARCHED = COMPACT && !BRIDGE
   ? new ToolDirectory(AVAILABLE_TOOLS.filter((tool) => !compactListed(tool.name, { ...COMPACT, coordinating: PROFILE.coordinating })) as unknown as CatalogTool[])
   : undefined;
+// #1276: with the bridge, the heart of a chat turn and the bot's own most
+// used tools stay listed whole and are called by their own names: reaching
+// them through find_tool then use_tool cost two model round trips per call
+// (a local model took a minute where one call does). The rest of the
+// catalog stays behind find_tool and use_tool. The list is sorted and the
+// same in every conversation of the bot, so a prefix cache serves it.
+const BRIDGE_LISTED = BRIDGE
+  ? AVAILABLE_TOOLS
+    .filter((tool) => compactListed(tool.name, { core: "used", pinned: COMPACT?.pinned ?? new Set(), coordinating: PROFILE.coordinating }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  : [];
 const LISTED_TOOLS = BRIDGE
-  ? catalogBridgeDefinitions()
+  ? [
+    ...BRIDGE_LISTED,
+    ...catalogBridgeDefinitions().map((tool) => tool.name === "find_tool" && BRIDGE_LISTED.length
+      ? { ...tool, description: `Find a Sagax tool that is not listed here by its own name (call a listed one directly). ${tool.description}` }
+      : tool),
+  ]
   : COMPACT
   ? [
     ...AVAILABLE_TOOLS.filter((tool) => compactListed(tool.name, { ...COMPACT, coordinating: PROFILE.coordinating })),
