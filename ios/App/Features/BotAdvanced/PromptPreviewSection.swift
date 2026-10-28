@@ -18,7 +18,7 @@ struct PromptPreviewSection: View {
                 ForEach(data.sections) { part in
                     DisclosureGroup {
                         Text(verbatim: part.text)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(Theme.mono(12))
                             .foregroundStyle(Theme.textPrimary)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)

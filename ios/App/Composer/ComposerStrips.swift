@@ -192,7 +192,7 @@ struct PastedTextChip: View {
                 .accessibilityLabel("Remove pasted text")
             }
             Text(verbatim: String(paste.text.prefix(400)))
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(Theme.mono(10.5))
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(4)
                 .frame(maxWidth: .infinity, alignment: .leading)

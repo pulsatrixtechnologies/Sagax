@@ -395,7 +395,7 @@ struct ApprovalReceiptRow: View {
             } else if let shown = ApprovalHeading.detail(card) {
                 ScrollView(.vertical) {
                     Text(verbatim: shown)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(Theme.mono(12))
                         .foregroundStyle(ink.ink)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)

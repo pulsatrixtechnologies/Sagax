@@ -182,7 +182,7 @@ struct ComposerCommandMenuView: View {
                             .frame(minHeight: 21)
                         if let hint = item.argumentHint {
                             Text(verbatim: hint)
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(Theme.mono(11))
                                 .foregroundStyle(desktop.inkTertiary)
                         }
                     }
@@ -229,7 +229,7 @@ struct ComposerCommandMenuView: View {
                             .lineLimit(1)
                         if let hint = item.argumentHint {
                             Text(verbatim: hint)
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(Theme.mono(11))
                                 .foregroundStyle(Theme.textTertiary)
                                 .lineLimit(1)
                         }

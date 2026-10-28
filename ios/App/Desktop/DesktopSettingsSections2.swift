@@ -519,7 +519,7 @@ struct DesktopServerPairingCard: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: offer.code)
-                        .font(.system(size: 18, design: .monospaced))
+                        .font(Theme.mono(18))
                         .tracking(2.5)
                         .foregroundStyle(theme.ink)
                         .textSelection(.enabled)
@@ -527,7 +527,7 @@ struct DesktopServerPairingCard: View {
                     DesktopText(Text("Expires in \(offer.minutesLeft(now: now)) min"), size: 12.5, color: \.inkSecondary)
                     if let url = offer.url {
                         HStack(spacing: 8) {
-                            Text(verbatim: url).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.inkSecondary)
+                            Text(verbatim: url).font(Theme.mono(12)).foregroundStyle(theme.inkSecondary)
                                 .lineLimit(2)
                             Button("Copy link") { UIPasteboard.general.string = url }
                                 .buttonStyle(DesktopButtonStyle(kind: .outline, height: 30))
@@ -941,7 +941,7 @@ struct DesktopEngineSetup: View {
             if let command = engine.manualCommand {
                 DisclosureGroup {
                     Text(verbatim: command)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(Theme.mono(12))
                         .textSelection(.enabled)
                         .foregroundStyle(theme.inkSecondary)
                     Button("Copy command") { UIPasteboard.general.string = command }
@@ -967,7 +967,7 @@ struct DesktopEngineSetup: View {
                 DesktopText("Enter this code on the sign-in page", color: \.inkSecondary)
                 HStack(spacing: 8) {
                     Text(verbatim: code)
-                        .font(.system(size: 18, design: .monospaced))
+                        .font(Theme.mono(18))
                         .tracking(2)
                         .textSelection(.enabled)
                         .foregroundStyle(theme.ink)

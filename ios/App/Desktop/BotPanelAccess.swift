@@ -229,7 +229,7 @@ struct BotPanelAccess: View {
                             HStack(spacing: 12) {
                                 VStack(alignment: .leading, spacing: 0) {
                                     Text(verbatim: server.name)
-                                        .font(.system(size: 12.5, design: .monospaced))
+                                        .font(Theme.mono(12.5))
                                         .foregroundStyle(theme.ink)
                                         .lineLimit(1)
                                         .frame(height: 18.75)
@@ -359,7 +359,7 @@ struct BotPanelAccess: View {
                 VStack(spacing: 0) {
                     ForEach(Array(always.enumerated()), id: \.element) { index, entry in
                         HStack(spacing: 12) {
-                            Text(verbatim: entry).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(theme.ink).lineLimit(1)
+                            Text(verbatim: entry).font(Theme.mono(12.5)).foregroundStyle(theme.ink).lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             if edits("alwaysAllow") {
                                 Button { access(BotAccessPatch(alwaysAllow: always.filter { $0 != entry })) } label: {

@@ -227,7 +227,7 @@ struct McpServersSection: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                     Text(verbatim: MCPServerRules.detailLine(server))
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(Theme.mono(11))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)

@@ -124,7 +124,7 @@ struct CardView: View {
                                     .font(.system(size: 12, weight: .semibold))
                                 Spacer()
                                 Text("sha256 \(String(sha256.prefix(8)))")
-                                    .font(.system(size: 10, design: .monospaced))
+                                    .font(Theme.mono(10))
                                     .foregroundStyle(Theme.attentionSecondary)
                             }
                             Text(skill.source.map { LocalizedStringKey("Source: \($0)") } ?? "Source: unknown")
@@ -133,7 +133,7 @@ struct CardView: View {
                                 .textSelection(.enabled)
                             ScrollView(.vertical) {
                                 Text(preview)
-                                    .font(.system(size: 12, design: .monospaced))
+                                    .font(Theme.mono(12))
                                     .foregroundStyle(Theme.attentionText)
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -2,13 +2,18 @@
 /* Gallery Vite uses a different root; keep these trees in the scan either way. */
 @source "./components";
 @source "./gallery";
-/* Geist (OFL-1.1, @fontsource-variable/geist 5.3.0), the Perspicax v3
-   interface face. Vite bundles the woff2 files with the app, so nothing is
-   fetched from a third party. Only the two Pulsatrix skins name it (see their
-   --font-sans below); a browser downloads a face only when text uses it, so the
-   other skins never load these files. Licence: third_party/geist/OFL.txt. */
+/* Geist (OFL-1.1, @fontsource-variable/geist 5.3.0), the interface face of
+   every skin that does not impose its own (Retro editions keep theirs). Vite
+   bundles the woff2 files with the app, so nothing is fetched from a third
+   party and the desktop works offline. A browser downloads a face only when
+   text uses it. Licence: third_party/geist/OFL.txt. */
 @import "@fontsource-variable/geist/wght.css";
 @import "@fontsource-variable/geist/wght-italic.css";
+/* Geist Mono (OFL-1.1, @fontsource-variable/geist-mono 5.3.0): code, the
+   monospace blocks and the numeric chips (--font-mono, below). Bundled the
+   same way; licence: third_party/geist/OFL-Mono.txt. */
+@import "@fontsource-variable/geist-mono/wght.css";
+@import "@fontsource-variable/geist-mono/wght-italic.css";
 /* The richer variants over the colour tints (2026-10-19): full-surface colours,
    duo-tone gradients, themed moods and ground textures, each in its own file. */
 @import "./styles/skin-depth.css";
@@ -332,8 +337,11 @@
   /* Top-of-window light wash (see Pulsatrix, below). "none" everywhere else. */
   --app-glow: none;
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
+  /* Code and monospace blocks, every skin (a skin may still set its own). */
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
   /* Add a rounded transition class.
      For situations where multiple transition-properties need to be set simultaneously,
@@ -728,7 +736,7 @@
   --color-maus-line: #f5f5f5;
   --app-glow: none;
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
@@ -796,7 +804,7 @@
   --app-glow: none;
 
   /* System faces rather than Inter: paper reads as the platform's own. */
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
   --radius-lg: 6px;
   --radius-xl: 10px;
@@ -866,7 +874,7 @@
   --color-maus-line: #b0a696;
   --app-glow: none;
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 4px;
   --radius-xl: 8px;
@@ -945,7 +953,7 @@
   --color-maus-line: #4d5c5b;
   --app-glow: none;
 
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
   --radius-lg: 8px;
   --radius-xl: 14px;
@@ -1003,7 +1011,7 @@
   --color-maus-line: #b3b8c2;
   --app-glow: none;
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 6px;
   --radius-xl: 10px;
@@ -1062,7 +1070,7 @@
   --color-maus-line: #59616c;
   --app-glow: none;
 
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
   --radius-lg: 8px;
   --radius-xl: 12px;
@@ -1119,7 +1127,7 @@
   --color-maus-line: #b9afbd;
   --app-glow: none;
 
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+  --font-sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 8px;
   --radius-xl: 12px;
@@ -1194,7 +1202,7 @@
   --color-maus-line: #5f5f5f;
   --app-glow: none;
 
-  --font-sans: "Inter", -apple-system, blinkmacsystemfont, "SF Pro Text",
+  --font-sans: "Geist Variable", -apple-system, blinkmacsystemfont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 8px;
   --radius-xl: 14px;
@@ -1320,7 +1328,7 @@
   --color-scrollbar: #c3cdc6;
   --color-maus-line: #5a675f;
 
-  --font-sans: "Inter", -apple-system, blinkmacsystemfont, "SF Pro Text",
+  --font-sans: "Geist Variable", -apple-system, blinkmacsystemfont, "SF Pro Text",
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 10px;
   --radius-xl: 16px;

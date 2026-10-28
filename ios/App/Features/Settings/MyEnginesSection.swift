@@ -232,7 +232,7 @@ struct MyEnginesSection: View {
         VStack(alignment: .leading, spacing: 8) {
             if let code = login.userCode {
                 Text("Code: \(code)")
-                    .font(.system(size: 14, design: .monospaced))
+                    .font(Theme.mono(14))
                     .foregroundStyle(ink)
                     .textSelection(.enabled)
             }

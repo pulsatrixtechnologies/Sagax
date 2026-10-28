@@ -161,7 +161,7 @@ struct DesktopInspectorPanel: View {
             ForEach(messages, id: \.id) { message in
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: "\(message.role.rawValue) · \(message.kind.rawValue)")
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(Theme.mono(11))
                         .foregroundStyle(theme.ink)
                     Text(message.date, format: .dateTime.hour().minute().second())
                         .font(theme.font(11))
@@ -180,7 +180,7 @@ struct DesktopInspectorPanel: View {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let text = (try? encoder.encode(messages)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
         return Text(verbatim: text)
-            .font(.system(size: 10.5, design: .monospaced))
+            .font(Theme.mono(10.5))
             .foregroundStyle(theme.inkSecondary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)

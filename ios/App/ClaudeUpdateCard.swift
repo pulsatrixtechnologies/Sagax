@@ -111,7 +111,7 @@ struct ClaudeUpdateCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Text(Self.updateCommand)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(Theme.mono(13))
                     .foregroundStyle(Theme.textPrimary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -326,7 +326,7 @@ struct RawMarkdownView: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12.5, design: .monospaced))
+            .font(Theme.mono(12.5))
             .lineSpacing(3)
             .foregroundStyle(Theme.textPrimary)
             .textSelection(.enabled)

@@ -96,6 +96,8 @@ extraResources:
     to: licenses/98css-LICENSE.txt
   - from: third_party/geist/OFL.txt
     to: licenses/Geist-OFL.txt
+  - from: third_party/geist/OFL-Mono.txt
+    to: licenses/Geist-Mono-OFL.txt
   - from: third_party/nerd-fonts-symbols/LICENSE
     to: licenses/nerd-fonts-symbols-LICENSE.txt
   - from: third_party/nerd-fonts-symbols/README.md

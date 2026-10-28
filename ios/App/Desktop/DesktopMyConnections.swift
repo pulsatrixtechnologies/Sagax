@@ -183,7 +183,7 @@ private struct MyConnectionsGitHubCard: View {
                 DesktopText(Text("Type this code at GitHub to connect your account:"), color: \.inkSecondary)
                 HStack(spacing: 12) {
                     Text(verbatim: github.userCode ?? "")
-                        .font(.system(size: 18, design: .monospaced))
+                        .font(Theme.mono(18))
                         .tracking(3)
                         .foregroundStyle(theme.ink)
                         .textSelection(.enabled)
@@ -339,7 +339,7 @@ private struct MyConnectionsServersCard: View {
         let place = server.isRemote ? (server.domain ?? "") : String(format: AppStrings.localized("%@ in your server environment"), server.command ?? "")
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: server.name).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(theme.ink).lineLimit(1)
+                Text(verbatim: server.name).font(Theme.mono(12.5)).foregroundStyle(theme.ink).lineLimit(1)
                 Text(verbatim: "\(place) · \(stateLabel(server))").font(theme.font(11.5)).foregroundStyle(theme.inkSecondary).lineLimit(1)
                 if let error = server.authError {
                     Text(verbatim: error).font(theme.font(11.5)).foregroundStyle(theme.danger)

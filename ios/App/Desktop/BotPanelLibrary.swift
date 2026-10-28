@@ -263,7 +263,7 @@ struct BotPanelPlugins: View {
                 (Text(verbatim: plugin.name).foregroundColor(theme.ink)
                  + Text(verbatim: "@\(plugin.marketplace)").foregroundColor(theme.inkSecondary)
                  + Text(verbatim: plugin.version.map { " \($0)" } ?? "").foregroundColor(theme.inkSecondary))
-                    .font(.system(size: 12.5, design: .monospaced))
+                    .font(Theme.mono(12.5))
                     .lineLimit(1)
                 if let description = plugin.description, !description.isEmpty {
                     Text(verbatim: description).font(theme.font(11.5)).foregroundStyle(theme.inkSecondary).lineLimit(2)
@@ -351,7 +351,7 @@ struct BotPanelPlugins: View {
                     VStack(alignment: .leading, spacing: 1) {
                         (Text(verbatim: plugin.name).foregroundColor(theme.ink)
                          + Text(verbatim: plugin.version.map { " \($0)" } ?? "").foregroundColor(theme.inkSecondary))
-                            .font(.system(size: 12.5, design: .monospaced))
+                            .font(Theme.mono(12.5))
                             .lineLimit(1)
                         if let description = plugin.description, !description.isEmpty {
                             Text(verbatim: description).font(theme.font(11.5)).foregroundStyle(theme.inkSecondary).lineLimit(2)

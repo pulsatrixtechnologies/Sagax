@@ -24,7 +24,7 @@ struct BotAccessSection: View {
     var body: some View {
         Section {
             Text(verbatim: current.cwd?.isEmpty == false ? current.cwd! : String(localized: "Private bot folder"))
-                .font(.system(size: 13, design: .monospaced))
+                .font(Theme.mono(13))
                 .foregroundStyle(current.cwd?.isEmpty == false ? Theme.textPrimary : Theme.textSecondary)
                 .lineLimit(2)
                 .truncationMode(.middle)
@@ -45,7 +45,7 @@ struct BotAccessSection: View {
                 ForEach(servers) { server in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: server.name).font(.system(size: 13, design: .monospaced)).foregroundStyle(Theme.textPrimary)
+                            Text(verbatim: server.name).font(Theme.mono(13)).foregroundStyle(Theme.textPrimary)
                             if server.enabled == false {
                                 Text(String(localized: "Switched off under Plugins. Test it and turn it on there first."))
                                     .font(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
@@ -106,7 +106,7 @@ struct BotAccessSection: View {
             }
             ForEach(always, id: \.self) { entry in
                 HStack {
-                    Text(verbatim: entry).font(.system(size: 13, design: .monospaced)).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                    Text(verbatim: entry).font(Theme.mono(13)).foregroundStyle(Theme.textPrimary).lineLimit(1)
                     Spacer(minLength: 8)
                     if editsAlwaysAllow {
                         Button(String(localized: "Remove")) { save(BotAccessPatch(alwaysAllow: always.filter { $0 != entry })) }

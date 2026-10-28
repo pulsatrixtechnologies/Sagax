@@ -136,7 +136,7 @@ struct RoomMemoryView: View {
                     )
                 } else {
                     Text(view.text.isEmpty ? String(localized: "Nothing yet.") : view.text)
-                        .font(.system(size: 13, design: .monospaced))
+                        .font(Theme.mono(13))
                         .foregroundStyle(view.text.isEmpty ? Theme.textSecondary : Theme.textPrimary)
                         .textSelection(.enabled)
                         .accessibilityIdentifier("room-memory-text")

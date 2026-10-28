@@ -144,7 +144,7 @@ struct YourConnectionsSection: View {
             if github.state == "pending" {
                 HStack(spacing: 12) {
                     Text(verbatim: github.userCode ?? "")
-                        .font(.system(size: 18, design: .monospaced))
+                        .font(Theme.mono(18))
                         .tracking(3)
                         .textSelection(.enabled)
                         .foregroundStyle(Theme.textPrimary)

@@ -228,7 +228,7 @@ struct BotMemorySection: View {
             .accessibilityIdentifier("memory-enabled")
             if let path = model.overview?.workspacePath, !path.isEmpty {
                 Text(verbatim: path)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(Theme.mono(12))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -250,7 +250,7 @@ struct BotMemorySection: View {
                 if !review.changed.isEmpty {
                     Text(String(localized: "Changed:")).font(.footnote).foregroundStyle(Theme.textSecondary)
                     ForEach(review.changed, id: \.self) { file in
-                        Text(verbatim: file).font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.textPrimary)
+                        Text(verbatim: file).font(Theme.mono(12)).foregroundStyle(Theme.textPrimary)
                     }
                 }
                 if session.surfaceGate.scope == .serverAdmin {
@@ -393,7 +393,7 @@ struct BotMemorySection: View {
             HStack(spacing: 8) {
                 Image(systemName: "doc.text").foregroundStyle(Theme.textSecondary)
                 Text(verbatim: name)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(Theme.mono(13))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 8)
@@ -435,7 +435,7 @@ struct BotMemorySection: View {
             if !row.diff.isEmpty {
                 DisclosureGroup(String(localized: "+\(row.added) −\(row.removed) · show what changed")) {
                     Text(verbatim: row.diff)
-                        .font(.system(size: 11.5, design: .monospaced))
+                        .font(Theme.mono(11.5))
                         .foregroundStyle(Theme.textPrimary)
                         .textSelection(.enabled)
                 }
@@ -554,7 +554,7 @@ struct BotMemoryEditor: View {
                 Section {
                     if editing.readOnly {
                         Text(verbatim: editing.text)
-                            .font(.system(size: 12.5, design: .monospaced))
+                            .font(Theme.mono(12.5))
                             .foregroundStyle(Theme.textPrimary)
                             .textSelection(.enabled)
                     } else {
@@ -585,7 +585,7 @@ struct BotMemoryEditor: View {
                 if let draft = model.savedDraft {
                     Section {
                         Text(verbatim: draft)
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(Theme.mono(12))
                             .foregroundStyle(Theme.textPrimary)
                             .textSelection(.enabled)
                         Button(String(localized: "Dismiss draft")) { model.savedDraft = nil }

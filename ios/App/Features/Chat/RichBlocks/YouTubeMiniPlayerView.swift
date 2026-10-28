@@ -133,7 +133,7 @@ struct YouTubeMiniPlayerView: View {
                             } label: {
                                 HStack(alignment: .top, spacing: 8) {
                                     Text(formatCueTime(cue.startMs))
-                                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                        .font(Theme.mono(12, .medium))
                                         .foregroundStyle(Theme.accent)
                                         .frame(width: 44, alignment: .leading)
                                     Text(cue.text)
