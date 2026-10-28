@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type ConfigStatus } from "@/state/store";
+import { noteRoutinesListing } from "@/lib/server-features";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import { viewerCan } from "@/lib/viewer";
 import { readRoutineScopePrefs, writeRoutineScopePrefs, type RoutineScopePrefs } from "@/lib/routine-scope-prefs";
@@ -72,6 +73,7 @@ export function useRoutineScope({ config, routines, runs, ignoreStatus = false }
     const asked = latest.current;
     try {
       const body = await api(`/api/routines?${asked}`);
+      noteRoutinesListing(body);
       if (latest.current !== asked) return;
       setListing({
         search: asked,

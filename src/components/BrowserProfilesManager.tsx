@@ -6,6 +6,8 @@ import { isOwnerOrAdmin, readSessionState } from "@/lib/session";
 import { t } from "@/lib/i18n";
 import { MY_CHROME_PROFILE, myChromeCall } from "@/lib/my-chrome";
 import { canEditConfig } from "@/lib/viewer";
+import { useServerFeature } from "@/lib/server-features";
+import { featureMissingOnServer } from "@/lib/server-route";
 
 /** Browser-panel and workspace settings share one editor. The server owns
  * session routing and erasure; this UI never handles cookies or partitions. */
@@ -19,6 +21,9 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
   // (/api/me/experimental) beside the server's shared ones, which only
   // someone who edits the installation manages.
   const allProfiles = state.config?.browserProfiles ?? [];
+  // An older server refuses a member's own settings (shared/server-features.ts):
+  // the shared list shows, read only, with the neutral line.
+  const personalServed = useServerFeature("memberPersonSettings") !== "no";
   const personalMode = state.config?.personalSettings === true && !canEditConfig(state.config);
   const profiles = allProfiles.filter((profile) => (personalMode ? profile.personal : !profile.personal));
   const bots = state.bots ?? [];
@@ -29,7 +34,7 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState("");
   const fieldId = useId();
-  const locked = busy || disabled || canManage !== true;
+  const locked = busy || disabled || canManage !== true || (personalMode && !personalServed);
 
   useEffect(() => {
     let alive = true;
@@ -50,6 +55,7 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
   }, [hasBot]);
 
   const failed = async (cause: unknown) => {
+    if (featureMissingOnServer("memberPersonSettings", cause)) { setError(""); return; }
     setError(cause instanceof Error ? cause.message : t("settings.profiles.saveError"));
     if (cause instanceof ApiError && cause.status === 409) {
       // Preserve typed names and the error. Refresh the base list, then let
@@ -222,6 +228,7 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
           </div>
         </div>
       </details>
+      {personalMode && !personalServed && <p role="note" data-needs-server-update="" className="text-[12px] text-ink-secondary">{t("serverRoute.needsUpdate")}</p>}
       {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
     </div>
   );

@@ -46,6 +46,10 @@ struct TasksRoutinesView: View {
     /// 2026-10-28: each bot's folder order (RoutineFolders) and the folder
     /// header / row prompts.
     @State private var folders: [String: [String]] = [:]
+    /// An older server has no routine folders (2026-10-28): the folder
+    /// actions stay, disabled, with "Available after the server update."
+    @State private var foldersListed = true
+    private var foldersSupported: Bool { foldersListed && !session.routineFoldersMissing }
     @StateObject private var folderController = RoutineFolderController()
 
     enum RoutinesSection: Hashable { case routines, logs }
@@ -204,7 +208,9 @@ struct TasksRoutinesView: View {
                         Button(String(localized: "New folder…"), systemImage: "folder.badge.plus") {
                             folderController.askNewFolder(botId: botId)
                         }
+                        .disabled(!foldersSupported)
                         .accessibilityIdentifier("routines-new-folder")
+                        if !foldersSupported { Text("Available after the server update.") }
                     }
                     if seenAllowed {
                         Button("Mark all as read", systemImage: "checkmark.circle") {
@@ -411,7 +417,7 @@ struct TasksRoutinesView: View {
         .swipeActions(edge: .trailing) {
             if routine.mayEdit { Button("Delete", role: .destructive) { deleting = routine } }
             if routine.mayRun { Button("Run now") { Task { await runNow(routine) } }.tint(Theme.accent) }
-            if routine.mayEdit {
+            if routine.mayEdit && foldersSupported {
                 Button(String(localized: "Folder"), systemImage: "folder") { folderController.moving = routine }
                     .tint(Theme.textSecondary)
             }
@@ -430,7 +436,7 @@ struct TasksRoutinesView: View {
             }
             if routine.mayEdit { Button("Edit", systemImage: "pencil") { editor = .edit(routine) } }
             if routine.mayEdit {
-                RoutineFolderMoveMenu(routine: routine, folders: folderOrder(of: routine.botId), controller: folderController) { folder in
+                RoutineFolderMoveMenu(routine: routine, folders: folderOrder(of: routine.botId), controller: folderController, supported: foldersSupported) { folder in
                     Task { await folderController.perform(.move(botId: routine.botId, routineIds: [routine.id], folder: folder), session: session) { await reload() } }
                 }
             }
@@ -571,6 +577,7 @@ struct TasksRoutinesView: View {
             routines = loaded.routines.sorted(by: Routine.listOrder)
             runs = loaded.runs
             folders = loaded.folders
+            foldersListed = loaded.foldersSupported
             allowedScopes = loaded.allowed
             scopeFacets = loaded.facets
             // the server answered another scope (a permission taken back)
@@ -580,6 +587,7 @@ struct TasksRoutinesView: View {
             routines = loaded.routines.sorted(by: Routine.listOrder)
             runs = loaded.runs
             folders = loaded.folders
+            foldersListed = loaded.foldersSupported
         }
         let triggersLoaded = await session.loadTriggers()
         triggers = triggersLoaded.hooks

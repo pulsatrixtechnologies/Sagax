@@ -2,11 +2,14 @@
  * (2026-10-28, shared/routine-folders.ts), beside a sidebar section header
  * so the alignment can be compared. Neutral made-up routines; it answers
  * /api itself, so nothing reaches a server. Not shipped in the app.
- * ?skin=<id>&lang=<code>&state=prefixed|filed|collapsed */
+ * ?skin=<id>&lang=<code>&state=prefixed|filed|collapsed
+ * &server=0.8.7 answers as that release does (2026-10-28): no feature list,
+ * no `folders` in the listing, and 404 "no route" for the folder route. */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { RoutinesSection } from "../components/bot-settings/RoutinesSection";
 import { SidebarSectionHeader } from "../components/SidebarSectionHeader";
+import { ChatErrorBanner } from "../components/ChatErrorBanner";
 import { setLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, useStore, type Bot } from "../state/store";
@@ -18,6 +21,7 @@ const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
 setLocale(params.get("lang") ?? "en");
 const state = params.get("state") ?? "prefixed";
+const oldServer = params.get("server") === "0.8.7";
 try {
   localStorage.removeItem("sagax.routineFolders.collapsed.v1");
   localStorage.removeItem("sagax.routineFolders.prefixOffer.v1");
@@ -47,7 +51,7 @@ const rows: Array<[string, string, Record<string, unknown>, boolean?]> = [
   ["", "Water filter replacement", { type: "daily", time: "07:48", weekdays: [1, 2, 3, 4, 5], timing: "flexible", windowEarlyMinutes: 15, windowLateMinutes: 15 }],
   ["", "Renew the parking permit", { type: "once", at: Date.now() + 72 * H }],
 ];
-const filed = state !== "prefixed";
+const filed = state !== "prefixed" && !oldServer;
 const routines = rows.map(([folder, name, schedule, enabled = true], index) => ({
   id: `r${index + 1}`,
   name: !filed && folder ? `[${folder}] ${name}` : name,
@@ -70,6 +74,11 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const path = new URL(url, location.href).pathname;
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  if (oldServer) {
+    if (path === "/.well-known/sagax/environment") return json({ environmentId: "00000000-0000-4000-8000-000000000000", label: "server", platform: "linux", version: "0.1.107", capabilities: { remoteSessions: true, selfUpdate: "operator", emailSignIn: false, signInPreview: true } });
+    if (path === "/api/routines") return json({ routines, runs: [], scope: "mine" });
+    if (path === "/api/routines/folders") return new Response(JSON.stringify({ error: `no route: ${init?.method ?? "GET"} ${path}` }), { status: 404, headers: { "content-type": "application/json" } });
+  }
   if (path === "/api/routines") return json({ routines, runs: [], folders });
   if (path === "/api/bots") return json({ bots: [bot], groups: [], sections: [], computerControl: {} });
   return realFetch(input, init);
@@ -77,8 +86,14 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 
 function Ready({ children }: { children: React.ReactNode }) {
   const { dispatch } = useStore();
-  useEffect(() => { dispatch({ type: "routinesHydrated", routines, runs: [], folders } as never); }, [dispatch]);
+  useEffect(() => { dispatch({ type: "routinesHydrated", routines, runs: [], ...(oldServer ? {} : { folders }) } as never); }, [dispatch]);
   return <>{children}</>;
+}
+
+/** The app's error banner, as the chat shows it above the panel. */
+function Banner() {
+  const { state: app, dispatch } = useStore();
+  return <ChatErrorBanner message={app.error} onDismiss={() => dispatch({ type: "error", message: null })} />;
 }
 
 const sidebarRow = (name: string) => <div className="flex h-9 items-center gap-2.5 rounded-lg px-2 text-[13px] text-sidebar-ink"><span className="size-6 rounded-full bg-accent/30" />{name}</div>;
@@ -93,6 +108,7 @@ createRoot(document.getElementById("root")!).render(
           <div className="pt-2.5"><SidebarSectionHeader name="Unassigned" collapsed reorderable={false} dragging={false} onToggle={() => {}} /></div>
         </aside>
         <aside data-gallery-panel="" className="w-[380px] border-r border-hairline/40 bg-panel px-4 py-4 text-ink">
+          <div className="-mx-5"><Banner /></div>
           <section data-bot-settings-section="routines" className="flex flex-col gap-2">
             <RoutinesSection bot={bot} routines={routines} runs={[]} grouped />
           </section>

@@ -81,6 +81,8 @@ import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreen
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
 import { t, activeLocale } from "@/lib/i18n";
+import { isNoRouteText, neutralNoRoute } from "@/lib/no-route";
+import { loadServerFeatures, noteRoutinesListing } from "@/lib/server-features";
 import { teamMemorySettled } from "@/lib/team-memory-settled";
 import { forgetStepUp, recentStepUp, stepUp, stepUpApprovals } from "@/lib/step-up-client";
 import type { StepUpTarget } from "../../shared/step-up";
@@ -2932,7 +2934,9 @@ export function reducer(state: AppState, action: Action): AppState {
         ...(action.message && state.selectedId
           ? withMascotMotion(state, state.selectedId, "alert")
           : state),
-        error: action.message,
+        // The banner's safety net: an older server's "no route" text, from
+        // whatever path it came, reads as the neutral line.
+        error: action.message ? neutralNoRoute(action.message) : action.message,
       };
     // bot settings, the computer panel, and app settings share the right slot
     case "openPersonPanel": {
@@ -3761,6 +3765,10 @@ export async function api<T = any>(path: string, init?: RequestInit & { timeoutM
       return api<T>(path, { ...init, body: JSON.stringify({ ...original, stepUp: id }), stepUpTry: reuse ? "recent" : "fresh" });
     }
     const error = body?.error;
+    // An older server's "no route: METHOD /path" is never shown: the
+    // neutral, translated line takes its place (src/lib/no-route.ts). The
+    // server's words stay in `body` for routeMissingOnServer.
+    if (res.status === 404 && isNoRouteText(error)) throw new ApiError(t("serverRoute.needsUpdate"), res.status, body);
     const message = permissionMissingMessage(body)
       ?? teamSetupErrorMessage(body)
       ?? engineErrorMessage(body)
@@ -5284,7 +5292,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ── initial load + SSE fold ──────────────────────────────────────────
   useEffect(() => {
     let alive = true;
-    type PeripheralKey = "instances" | "config" | "routines" | "webhooks";
+    type PeripheralKey = "instances" | "config" | "routines" | "serverFeatures" | "webhooks";
     type PeripheralPart = {
       key: PeripheralKey;
       request: () => Promise<() => void>;
@@ -5322,8 +5330,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       {
         key: "routines",
         request: async () => {
-          const { routines, runs, folders } = await api("/api/routines");
+          const listing = await api("/api/routines");
+          const { routines, runs, folders } = listing;
+          // A server from before routine folders sends no `folders`.
+          noteRoutinesListing(listing);
           return () => rawDispatch({ type: "routinesHydrated", routines, runs, ...(folders && typeof folders === "object" ? { folders } : {}) });
+        },
+      },
+      {
+        // What this server serves (its descriptor's feature list), so a
+        // newer app hides what an older server lacks (2026-10-28).
+        key: "serverFeatures",
+        request: async () => {
+          await loadServerFeatures();
+          return () => {};
         },
       },
       ...(window.ogb?.remoteClient?.active ? [] : [{

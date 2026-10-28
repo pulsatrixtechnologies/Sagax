@@ -9,6 +9,11 @@
 // from folder. Rows can also be dragged onto a folder. When titles start
 // with "[X]", one quiet line offers to sort them into folders, once per bot,
 // and the change can be undone. Nothing is filed without that click.
+//
+// An older server has no folders (shared/server-features.ts): the row menu
+// keeps "Move to folder" with its items disabled and the neutral "Available
+// after the server update.", the prefix offer and dragging stay away, and a
+// call that still meets "no route" says the same line, never a red error.
 import { ArrowDown, ArrowUp, Check, ChevronRight, FolderInput, FolderMinus, FolderPlus, MoreHorizontal, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -18,6 +23,8 @@ import type { Routine, RoutineRun } from "@/lib/routines";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { flipRoutine } from "@/lib/routine-toggle";
+import { useServerFeature } from "@/lib/server-features";
+import { featureMissingOnServer } from "@/lib/server-route";
 import {
   answerRoutinePrefixOffer,
   collapsedRoutineFolders,
@@ -64,6 +71,10 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
   const groups = useMemo(() => groupRoutinesByFolder(routines, order), [routines, order]);
   const folders = groups.flatMap((group) => group.folder ? [group.folder] : []);
   const editable = routines.length === 0 || routines.some((routine) => routine.canEdit !== false);
+  // "unknown" (a server from before the feature list, not yet seen) offers
+  // folders; the first answer settles it.
+  const supported = useServerFeature("routineFolders") !== "no";
+  const [serverNote, setServerNote] = useState(false);
   const [collapsed, setCollapsed] = useState(() => collapsedRoutineFolders(bot.id));
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -77,7 +88,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
 
   const prefixPlan = useMemo(() => routinePrefixPlan(routines), [routines]);
   const prefixFolders = new Set(prefixPlan.map((step) => routineFolderKey(step.folder))).size;
-  const showOffer = editable && !offerAnswered && !notice && prefixPlan.length > 0;
+  const showOffer = editable && supported && !offerAnswered && !notice && prefixPlan.length > 0;
 
   const act = async (body: RoutineFolderAction): Promise<FolderAnswer | null> => {
     setBusy(true);
@@ -87,6 +98,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
       dispatch({ type: "routineFoldersPatched", botId: bot.id, folders: answer.folders });
       return answer;
     } catch (failure) {
+      if (featureMissingOnServer("routineFolders", failure)) { setServerNote(true); return null; }
       dispatch({ type: "error", message: failure instanceof Error && failure.message ? failure.message : t("routineFolders.failed") });
       return null;
     } finally {
@@ -181,7 +193,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
     onOpen={onOpen}
     onToggle={(routine) => void flipRoutine(routine, pending.current, api, dispatch)}
     onRowMenu={editable ? (routine, at, trigger) => setMenu({ kind: "row", routine, x: at.x, y: at.y, trigger }) : undefined}
-    draggableRows={editable && folders.length > 0}
+    draggableRows={editable && supported && folders.length > 0}
   />;
 
   const loose = groups[0]!;
@@ -193,6 +205,11 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
       <span className="min-w-0 flex-1">{t("routineFolders.offer", { count: prefixPlan.length, folders: prefixFolders })}</span>
       <button type="button" data-routine-prefix-sort="" disabled={busy} onClick={() => void sortByPrefix()} className="shrink-0 rounded-md px-1.5 py-0.5 font-medium text-accent hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50">{t("routineFolders.offerSort")}</button>
       <button type="button" aria-label={t("routineFolders.offerDismiss")} title={t("routineFolders.offerDismiss")} onClick={() => { answerRoutinePrefixOffer(bot.id); setOfferAnswered(true); }} className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-tertiary hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"><X size={13} /></button>
+    </div>}
+    {serverNote && <div data-routine-folder-server-note="" role="status" className="mb-1 flex items-center gap-2 rounded-lg bg-inset px-3 py-2 text-[12px] leading-4 text-ink-secondary">
+      <FolderInput size={14} className="shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1">{t("serverRoute.needsUpdate")}</span>
+      <button type="button" aria-label={t("common.close")} title={t("common.close")} onClick={() => setServerNote(false)} className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-tertiary hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"><X size={13} /></button>
     </div>}
     {notice && <div data-routine-folder-notice="" role="status" className="mb-1 flex items-center gap-2 rounded-lg bg-inset px-3 py-2 text-[12px] leading-4 text-ink-secondary">
       <Check size={14} className="shrink-0 text-success" aria-hidden="true" />
@@ -213,7 +230,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
           onOpen={onOpen}
           onToggle={(routine) => void flipRoutine(routine, pending.current, api, dispatch)}
           onRowMenu={editable ? (routine, at, trigger) => setMenu({ kind: "row", routine, x: at.x, y: at.y, trigger }) : undefined}
-          draggableRows={editable && folders.length > 0}
+          draggableRows={editable && supported && folders.length > 0}
         />
       </div>
     ) : dragging && (
@@ -240,7 +257,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
             count={group.routines.length}
             paused={group.routines.length > 0 && !anyOn}
             collapsed={isCollapsed}
-            editable={editable}
+            editable={editable && supported}
             onToggle={() => toggleFolder(folder)}
             onMove={(direction) => reorder(folder, direction)}
             onMenu={(at, trigger) => setMenu({ kind: "folder", folder, x: at.x, y: at.y, trigger })}
@@ -265,7 +282,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
         }}>
         {menu.kind === "row" ? (menu.naming
           ? <FolderNameInput label={t("routineFolders.newFolderLabel")} onCancel={() => closeMenu()} onSave={async (name) => { closeMenu(); await move([menu.routine.id], name); }} />
-          : <RowMenuItems routine={menu.routine} folders={folders}
+          : <RowMenuItems routine={menu.routine} folders={folders} unavailable={!supported}
             onMove={(folder) => { closeMenu(); void move([menu.routine.id], folder); }}
             onNewFolder={() => setMenu({ ...menu, naming: true })} />)
           : <FolderMenuItems
@@ -328,8 +345,16 @@ export function RoutineFolderHeader({ name, count, paused, collapsed, editable, 
   </div>;
 }
 
-function RowMenuItems({ routine, folders, onMove, onNewFolder }: { routine: Routine; folders: string[]; onMove: (folder: string | null) => void; onNewFolder: () => void }) {
+function RowMenuItems({ routine, folders, unavailable, onMove, onNewFolder }: { routine: Routine; folders: string[]; unavailable?: boolean; onMove: (folder: string | null) => void; onNewFolder: () => void }) {
   const current = routine.folder ? routineFolderKey(routine.folder) : null;
+  // An older server: the same items, disabled, under the neutral line.
+  if (unavailable) return <>
+    <div role="presentation" className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-ink-tertiary">{t("routineFolders.moveTo")}</div>
+    <button type="button" role="menuitem" aria-disabled="true" autoFocus data-routine-new-folder="" className={cn(MENU_ITEM, "cursor-default opacity-50 hover:bg-transparent")} onClick={(event) => event.preventDefault()}>
+      <FolderPlus size={14} aria-hidden="true" />{t("routineFolders.newFolder")}
+    </button>
+    <p data-routine-folder-unavailable="" role="note" className="px-2 pb-1 pt-0.5 text-[12px] leading-4 text-ink-secondary">{t("serverRoute.needsUpdate")}</p>
+  </>;
   return <>
     <div role="presentation" className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-ink-tertiary">{t("routineFolders.moveTo")}</div>
     {folders.map((folder, index) => {
