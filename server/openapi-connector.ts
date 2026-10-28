@@ -1,12 +1,19 @@
 // The person's own API, from a spec they pasted. One file per person on an
 // organization server, one file on a solo installation. Other members do
 // not receive the tools and cannot read the headers. No admin switch.
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 
-import { isPublicDomainAddress } from "./custom-domain.ts";
 import { writeFileAtomic } from "./atomic.ts";
+import { addressClass } from "./browser/egress/policy.ts";
+import { resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import { parseOpenApiSpec, type OpenApiOperation } from "./openapi-tools.ts";
+
+const AAD = Buffer.from("sagax openapi v1");
+const FILE = "openapi.enc";
+const LEGACY = "openapi.json";
+const SEAL_UNAVAILABLE = "The API document could not be saved. Try again.";
 
 const PRINCIPAL = /^[a-z0-9][a-z0-9_.:-]{0,80}$/;
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$/;
@@ -33,10 +40,41 @@ export function openApiScope(organization: boolean, principalId: string | null |
   return PRINCIPAL.test(id) && !id.includes("..") ? { organization: true, principalId: id } : null;
 }
 
-function fileFor(dataDir: string, scope: OpenApiScope): string {
+function fileFor(dataDir: string, scope: OpenApiScope, name = FILE): string {
   return scope.organization
-    ? join(dataDir, "principals", scope.principalId, "openapi.json")
-    : join(dataDir, "openapi.json");
+    ? join(dataDir, "principals", scope.principalId, name)
+    : join(dataDir, name);
+}
+
+function vaultKey(source: () => VaultKeySource): Buffer | null {
+  const got = source();
+  return got.kind === "key" ? got.key : null;
+}
+
+function sealRecord(record: OpenApiRecord, key: Buffer): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  cipher.setAAD(AAD);
+  const data = Buffer.concat([cipher.update(JSON.stringify({ version: 1, record }), "utf8"), cipher.final()]);
+  return JSON.stringify({ v: 1, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") });
+}
+
+function recordOf(value: unknown): OpenApiRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const parsed = value as OpenApiRecord;
+  if (typeof parsed.baseUrl !== "string" || !parsed.headers || typeof parsed.headers !== "object" || Array.isArray(parsed.headers) || !Array.isArray(parsed.operations)) return null;
+  return parsed;
+}
+
+function openRecord(raw: string, key: Buffer): OpenApiRecord | null {
+  const envelope = JSON.parse(raw) as { v?: unknown; iv?: unknown; tag?: unknown; data?: unknown };
+  if (envelope.v !== 1 || typeof envelope.iv !== "string" || typeof envelope.tag !== "string" || typeof envelope.data !== "string") return null;
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(envelope.iv, "base64"));
+  decipher.setAAD(AAD);
+  decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
+  const plain = Buffer.concat([decipher.update(Buffer.from(envelope.data, "base64")), decipher.final()]).toString("utf8");
+  const parsed = JSON.parse(plain) as { version?: unknown; record?: unknown };
+  return parsed.version === 1 ? recordOf(parsed.record) : null;
 }
 
 function refuseLink(path: string): void {
@@ -62,19 +100,33 @@ function cleanHeaders(value: unknown): Record<string, string> | string {
 
 export class OpenApiStore {
   private readonly dataDir: string;
-  constructor(dataDir: string) { this.dataDir = dataDir; }
+  private readonly keys: () => VaultKeySource;
+  constructor(dataDir: string, keys?: () => VaultKeySource) {
+    this.dataDir = dataDir;
+    this.keys = keys ?? (() => resolveVaultKey(dataDir));
+  }
 
   read(scope: OpenApiScope): OpenApiRecord | null {
     const path = fileFor(this.dataDir, scope);
     refuseLink(path);
+    const key = vaultKey(this.keys);
+    if (!key) return null;
     try {
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as OpenApiRecord;
-      if (!parsed || typeof parsed.baseUrl !== "string" || !Array.isArray(parsed.operations)) return null;
-      return parsed;
+      return openRecord(readFileSync(path, "utf8"), key);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
     }
+    const legacy = fileFor(this.dataDir, scope, LEGACY);
+    refuseLink(legacy);
+    let plain: string;
+    try { plain = readFileSync(legacy, "utf8"); } catch { return null; }
+    let record: OpenApiRecord | null;
+    try { record = recordOf(JSON.parse(plain) as unknown); } catch { return null; }
+    if (!record) return null;
+    mkdirSync(join(path, ".."), { recursive: true, mode: 0o700 });
+    writeFileAtomic(path, `${sealRecord(record, key)}\n`, { mode: 0o600 });
+    rmSync(legacy, { force: true });
+    return record;
   }
 
   view(scope: OpenApiScope): OpenApiView {
@@ -101,15 +153,19 @@ export class OpenApiStore {
     const url = (baseUrl?.trim() || parsed.baseUrl).trim();
     if (!/^https?:\/\//i.test(url)) return "The document needs a server address, or pass baseUrl.";
     const record: OpenApiRecord = { title: parsed.title, baseUrl: url, headers: cleaned, operations: parsed.operations };
+    const key = vaultKey(this.keys);
+    if (!key) return SEAL_UNAVAILABLE;
     const path = fileFor(this.dataDir, scope);
     refuseLink(path);
     mkdirSync(join(path, ".."), { recursive: true, mode: 0o700 });
-    writeFileAtomic(path, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+    writeFileAtomic(path, `${sealRecord(record, key)}\n`, { mode: 0o600 });
+    rmSync(fileFor(this.dataDir, scope, LEGACY), { force: true });
     return this.view(scope);
   }
 
   forget(scope: OpenApiScope): void {
     rmSync(fileFor(this.dataDir, scope), { force: true });
+    rmSync(fileFor(this.dataDir, scope, LEGACY), { force: true });
   }
 }
 
@@ -122,7 +178,9 @@ export function openApiUrlRefusal(url: string, addresses: readonly string[], org
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "The address must be http or https.";
   const host = parsed.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
   const localName = host === "localhost" || host.endsWith(".localhost") || host === "metadata.google.internal";
-  if (organization && (localName || addresses.length === 0 || addresses.some((address) => !isPublicDomainAddress(address)))) {
+  const kinds = addresses.map((address) => addressClass(address));
+  if (kinds.some((kind) => kind === "metadata" || kind === "link-local" || kind === "reserved")) return "This address is not one Sagax will call.";
+  if (organization && (localName || addresses.length === 0 || kinds.some((kind) => kind !== "public"))) {
     return "On an organization server this API must be on the public internet.";
   }
   return null;

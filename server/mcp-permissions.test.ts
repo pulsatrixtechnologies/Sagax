@@ -85,6 +85,8 @@ describe("decide", () => {
 
   it("denies an unknown tool and an unknown role", () => {
     expect(decide(who("admin"), "no_such_tool").reason).toBe("unknown_tool");
+    expect(decide(who("member"), "openapi_createnote")).toMatchObject({ allowed: true, permission: "openapi:call", reason: "ok" });
+    expect(decide(who("viewer"), "openapi_createnote").reason).toBe("not_granted");
     expect(decide(who("root"), "list_bots").reason).toBe("unknown_role");
   });
 

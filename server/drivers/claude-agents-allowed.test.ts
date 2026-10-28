@@ -10,6 +10,18 @@ describe("agents MCP pre-allow", () => {
     expect(agentsAllowedTools(undefined)).toEqual(["mcp__agents"]);
   });
 
+  it("does not pre-allow a write to the person's API", () => {
+    const tools = JSON.stringify([
+      { name: "getnote", method: "get", path: "/notes/{id}", summary: "Read", params: [], body: false },
+      { name: "createnote", method: "post", path: "/notes", summary: "Create", params: [], body: true },
+    ]);
+    const allowed = agentsAllowedTools({ SAGAX_BOT_ID: "b1", SAGAX_OPENAPI_TOOLS: tools });
+    expect(allowed).not.toContain("mcp__agents");
+    expect(allowed).toContain("mcp__agents__openapi_getnote");
+    expect(allowed).not.toContain("mcp__agents__openapi_createnote");
+    expect(allowed).toContain("mcp__agents__list_bots");
+  });
+
   it("names each tool but shared_computer while it is on", () => {
     const allowed = agentsAllowedTools({ SAGAX_BOT_ID: "b1", SAGAX_SHARED_COMPUTERS_ENABLED: "1" });
     expect(allowed).not.toContain("mcp__agents");

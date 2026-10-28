@@ -57,6 +57,9 @@ export function excludedWorkspaceAuthPath(path: string): boolean {
   if (/^(?:principals\/[^/]+\/)?web-search\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // The private key of the bot's visit signature (server/web-bot-auth.ts).
   if (/^(?:principals\/[^/]+\/)?web-bot-auth-key\.json(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  // The person's OpenAPI document, headers included (server/openapi-connector.ts).
+  // The sealed file and a leftover plaintext copy.
+  if (/^(?:principals\/[^/]+\/)?openapi\.(?:enc|json)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // Hermes reads `.env` itself. A verification server's home is the data
   // directory, and a turn's private home lives under engine-policies.
   if (/(?:^|\/)\.hermes\/\.env$/.test(path)) return true;
