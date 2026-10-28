@@ -216,6 +216,8 @@ public struct TaskUsage: Codable, Hashable, Sendable {
     public struct Context: Codable, Hashable, Sendable {
         public var tokens: Int
         public var window: Int?
+        /// Bytes of the assembled system prompt, when the server measured it.
+        public var promptBytes: Int? = nil
     }
 
     public var input: Int

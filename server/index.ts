@@ -1118,6 +1118,7 @@ import { updateDoc, updateRules } from "./workspace-tools.ts";
 import { markWorkspaceUse, promptSectionPaths } from "./workspace-usage.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { createBotCodeBranchRoutes, type BranchCredentials } from "./routes/bot-code-branches.ts";
+import { createDevPullRoutes } from "./routes/dev-pull.ts";
 import { BranchArchive } from "./code-branches.ts";
 import { CloudAgentStore } from "./cloud-agents/store.ts";
 import { CloudAgentCredentialStore } from "./cloud-agents/credentials.ts";
@@ -16881,12 +16882,18 @@ bus.subscribe((event: RuntimeEvent) => {
         // the context figure: what the last model call's prompt held, with
         // the window from the driver or, failing that, the model's family
         const contextModel = store.taskByThread(bot.id, event.threadId)?.modelSelection?.model ?? bot.modelSelection.model;
+        const promptBytes = turnPromptBytes.get(event.threadId);
+        const promptSize = promptBytes ? promptBytes.stable + promptBytes.volatile : 0;
         store.addTaskUsage(bot.id, event.threadId, {
           input: tokens?.input,
           output: tokens?.output,
           cachedInput: tokens?.cachedInput,
           costUsd: event.cost ?? null,
-          context: { tokens: lastContext?.tokens, window: lastContext?.window ?? modelContextWindow(contextModel) },
+          context: {
+            tokens: lastContext?.tokens,
+            window: lastContext?.window ?? modelContextWindow(contextModel),
+            ...(promptSize > 0 ? { promptBytes: promptSize } : {}),
+          },
         });
         // and write the same figures to the month's ledger, which outlives
         // the task and answers "what did we spend, by whom" for a period
@@ -16897,7 +16904,6 @@ bus.subscribe((event: RuntimeEvent) => {
         const measuredSelection = directTurnBots.get(event.threadId)?.modelSelection ?? selection;
         store.patchTask(bot.id, event.threadId, { lastContextModel: Number.isFinite(lastContext?.tokens) && (lastContext?.tokens ?? 0) > 0
           ? `${measuredSelection.instanceId}:${measuredSelection.model}` : undefined });
-        const promptBytes = turnPromptBytes.get(event.threadId);
         turnPromptBytes.delete(event.threadId);
         bookTurnUsage({
           botId: bot.id,
@@ -31399,6 +31405,24 @@ ROUTES.push(createBotCodeBranchRoutes({
     action,
     target: { kind: "bot", id: target.botId, name: `${target.repo ? `${target.repo} ` : ""}${target.branch}`.slice(0, 200) },
     ...(after ? { after } : {}),
+    actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+  }),
+}));
+// A pull request the conversation already opened: counts from gh, and draft
+// or close through the same verbs and the same person's connection.
+ROUTES.push(createDevPullRoutes({
+  viewerId: (auth) => channelFilterViewerId(auth),
+  threadWritable: (botId, threadId, viewerId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && botThreadReadable(bot!, threadId, viewerId, "thread.post");
+  },
+  messages: (threadId, limit) => ({ messages: store.messagesTail(threadId, limit).messages }),
+  credentials: codeBranchCredentials,
+  organization: () => IDENTITY.kind === "perspicax",
+  audit: (auth, action, target) => appendAdminAction(DATA_DIR, {
+    category: "bot",
+    action,
+    target: { kind: "bot", id: target.botId, name: `${target.repo ? `${target.repo} ` : ""}${target.branch}`.slice(0, 200) },
     actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
   }),
 }));

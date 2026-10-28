@@ -15,6 +15,7 @@ import { dirname, isAbsolute, join } from "node:path";
 
 import { parseUnifiedDiff } from "../shared/code-runs.ts";
 import type { BotBranchChange, BotBranchPull, BotBranchState } from "../shared/bot-code-branches.ts";
+import { parsePullView, type PullView } from "./pull-view.ts";
 
 export interface GitResult {
   code: number;
@@ -484,6 +485,29 @@ export class BranchPulls {
     const url = /https:\/\/\S+\/pull\/(\d+)/.exec(result.stdout);
     if (!url) throw new BranchActionError("GitHub did not return the pull request's address.", "pr_failed", 502);
     return { number: Number(url[1]), url: url[0], state: "open" };
+  }
+
+  /** The forge's own counts and state for a pull request this conversation
+   * already opened. `gh pr view`, the same CLI the bot uses. */
+  async view(number: number): Promise<PullView | undefined> {
+    const result = await this.gh(["pr", "view", String(number), "--json", "number,additions,deletions,state,isDraft,url"]);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
+    return parsePullView(result.stdout, number);
+  }
+
+  /** `gh pr ready --undo`: back to a draft. The same verb the bot uses. */
+  async toDraft(number: number): Promise<void> {
+    const result = await this.gh(["pr", "ready", String(number), "--undo"]);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
+  }
+
+  /** `gh pr close`: the same verb the bot uses to close a pull request. */
+  async close(number: number): Promise<void> {
+    const result = await this.gh(["pr", "close", String(number)]);
+    if (result.code === 127) throw new BranchActionError("The GitHub CLI (gh) is not installed where this repository is.", "no_gh", 501);
+    if (result.code !== 0) throw ghError(result.stderr);
   }
 }
 

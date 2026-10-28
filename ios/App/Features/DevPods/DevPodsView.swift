@@ -301,6 +301,14 @@ struct DevPodsView: View {
                 Text(verbatim: detail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                if let bytes = share.promptBytes {
+                    Text(verbatim: String(localized: "devPods.context.systemPrompt", defaultValue: "System prompt: {bytes} bytes").replacingOccurrences(of: "{bytes}", with: "\(bytes)"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Text(verbatim: String(localized: "devPods.context.notSplit", defaultValue: "Not split"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
             .padding(.vertical, 4)
             .accessibilityIdentifier("dev-pods.context")
