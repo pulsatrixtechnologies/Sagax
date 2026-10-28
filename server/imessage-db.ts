@@ -114,7 +114,7 @@ function str(value: unknown): string {
 function attachmentName(row: Record<string, unknown>): string {
   const transfer = str(row.transfer_name).trim();
   const file = str(row.filename).trim();
-  const base = basename(transfer || file).replace(/[\u0000]/g, "");
+  const base = [...basename(transfer || file)].filter((char) => char.charCodeAt(0) > 0).join("");
   return (base && base !== "." && base !== ".." ? base : "attachment").slice(0, 200);
 }
 
