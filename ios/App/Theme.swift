@@ -129,10 +129,17 @@ enum Theme {
     /// skin's or the bot's accent elsewhere) and a neutral off, each at the
     /// lightness that holds 3:1 with the white knob and the surfaces
     /// (CompanionCore/SwitchContrast.swift), with an edge when needed.
-    static var toggleOn: Color { palette.switchColors.on.color }
-    static var toggleOff: Color { palette.switchColors.off.color }
-    static var toggleOnEdge: Color? { palette.switchColors.onEdge?.color }
-    static var toggleOffEdge: Color? { palette.switchColors.offEdge?.color }
+    ///
+    /// In a bot's panel (a bot chat on screen and what it opens) the on
+    /// track is the bot's colour, with the setting off as well as on.
+    private static var switches: SwitchColors {
+        let bot = ThemeStore.shared.openBotColor.flatMap { MausColors.hex(for: $0) }.flatMap { SkinColor(css: $0) }
+        return palette.switchColors(bot: bot)
+    }
+    static var toggleOn: Color { switches.on.color }
+    static var toggleOff: Color { switches.off.color }
+    static var toggleOnEdge: Color? { switches.onEdge?.color }
+    static var toggleOffEdge: Color? { switches.offEdge?.color }
     /// White in both states, never dark on a coloured track.
     static var toggleKnob: Color { SwitchContrast.knob.color }
     /// Links and action text ("Upload", "Add routine", action rows): #2D6DE7
@@ -701,6 +708,8 @@ struct CardRow: View {
 struct ParityToggleStyle: ToggleStyle {
     @Environment(\.themePalette) var themePalette
     @Environment(\.isEnabled) private var isEnabled
+    /// Re-reads the colours when a bot's chat opens or closes.
+    @ObservedObject private var themeStore = ThemeStore.shared
     var width: CGFloat = 60.33
     var height: CGFloat = 26.67
 

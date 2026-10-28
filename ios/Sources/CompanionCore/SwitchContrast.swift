@@ -138,4 +138,13 @@ public extension SkinPalette {
     var switchColors: SwitchColors {
         SwitchContrast.colors(accent: toggleOn, ink: textPrimary, surfaces: switchSurfaces, dark: isDark)
     }
+
+    /// Inside a bot's panel (a bot chat on screen and the screens it opens)
+    /// the on track is the bot's colour, whatever "Use bot color as accent"
+    /// says, at the same 3:1 as any accent (the desktop's botSwitchVars). With
+    /// no bot colour, or when the accent already is the bot's, the skin's own.
+    func switchColors(bot: SkinColor?) -> SwitchColors {
+        guard let bot, botAccent == nil else { return switchColors }
+        return SwitchContrast.colors(accent: bot, ink: textPrimary, surfaces: switchSurfaces, dark: isDark)
+    }
 }

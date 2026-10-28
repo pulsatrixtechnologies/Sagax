@@ -70,4 +70,32 @@ final class SwitchContrastTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(c.onGround, 3)
         XCTAssertGreaterThanOrEqual(c.knobOn, 3)
     }
+
+    /// In a bot's panel the on track is derived from the bot's colour, for
+    /// every colour a bot can have, on every look: 3:1, same hue.
+    func testBotPanelTrackFollowsTheBotAtThreeToOne() {
+        var problems: [String] = []
+        for look in looks() {
+            let palette = look.palette
+            for (name, hex) in MausColors.hex {
+                guard let bot = SkinColor(css: hex) else { continue }
+                let colors = palette.switchColors(bot: bot)
+                let c = SwitchContrast.contrasts(colors, surfaces: palette.switchSurfaces)
+                for (pair, value) in [("knobOn", c.knobOn), ("onGround", c.onGround)] where value < SwitchContrast.minimum {
+                    problems.append("\(look.skin.rawValue) bot \(name): \(pair) \(String(format: "%.2f", value))")
+                }
+            }
+        }
+        XCTAssertEqual(problems, [])
+    }
+
+    func testBotColourKeepsItsHueAndOutsideAPanelNothingChanges() {
+        let palette = SkinLook(skin: .midnight).palette
+        guard let red = SkinColor(css: MausColors.hex["red"]!) else { return XCTFail("red") }
+        let inPanel = palette.switchColors(bot: red)
+        XCTAssertGreaterThan(inPanel.on.red, inPanel.on.green)
+        XCTAssertGreaterThan(inPanel.on.red, inPanel.on.blue)
+        // no bot open: the skin's own track, exactly
+        XCTAssertEqual(palette.switchColors(bot: nil), palette.switchColors)
+    }
 }

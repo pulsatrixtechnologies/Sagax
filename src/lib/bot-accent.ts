@@ -11,6 +11,7 @@
 // text drawn on it is white or near black, whichever reads (WCAG AA).
 import { useEffect, useSyncExternalStore } from "react";
 import { prefersReducedMotion } from "./motion";
+import { BOT_SWITCH_VARS, botSwitchVars } from "./switch-colors";
 
 export const BOT_ACCENT_KEY = "sagax.botAccent.v1";
 
@@ -189,5 +190,40 @@ export function useBotAccent(color: string | null | undefined): void {
     if (typeof document === "undefined") return;
     for (const name of BOT_ACCENT_VARS) document.body.style.removeProperty(name);
     document.body.style.transition = "";
+  }, []);
+}
+
+// ---- the switches in a bot's panel ----
+
+/** The screens of the open bot: its chat, its routines and its tasks. The
+ * team map, approvals, remote sessions and achievements belong to the app. */
+const BOT_VIEWS = new Set(["chat", "routines", "code"]);
+
+/** Whether the on track of a switch takes the bot's colour: inside a bot's
+ * panel and screens (chat, routines, tasks, the bot's settings), whatever the
+ * "Use bot color as accent" setting says; anywhere else only when that
+ * setting is on (the accent is then the bot's colour everywhere). */
+export function botSwitchActive(input: { hasBot: boolean; activeView: string; appSettingsOpen: boolean; pluginsOpen: boolean; accentEnabled: boolean }): boolean {
+  if (!input.hasBot) return false;
+  if (input.accentEnabled) return true;
+  return BOT_VIEWS.has(input.activeView) && !input.appSettingsOpen && !input.pluginsOpen;
+}
+
+/** Put the bot's colour on the switches while `active` (body[data-bot-switch]). */
+export function useBotSwitch(color: string | null | undefined, active: boolean): void {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    const vars = active ? botSwitchVars(normalizeHex(color)) : {};
+    for (const name of BOT_SWITCH_VARS) body.style.removeProperty(name);
+    if (Object.keys(vars).length) {
+      for (const [name, value] of Object.entries(vars)) body.style.setProperty(name, value);
+      body.dataset.botSwitch = "";
+    } else delete body.dataset.botSwitch;
+  }, [color, active]);
+  useEffect(() => () => {
+    if (typeof document === "undefined") return;
+    for (const name of BOT_SWITCH_VARS) document.body.style.removeProperty(name);
+    delete document.body.dataset.botSwitch;
   }, []);
 }
