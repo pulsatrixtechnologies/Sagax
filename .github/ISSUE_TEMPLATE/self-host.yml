@@ -1,0 +1,45 @@
+name: Self-hosting
+description: A problem running the Sagax server you installed yourself
+labels: [bug, self-host]
+body:
+  - type: checkboxes
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I removed keys, tokens and mailbox addresses from everything I paste
+          required: true
+  - type: dropdown
+    attributes:
+      label: How the server is installed
+      options:
+        - One-line installer
+        - Docker Compose
+        - Helm chart rendered from this repo (not applied by the project)
+        - From source
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Version
+      description: The release tag or the output of the version command. No account name.
+      placeholder: 0.8.5
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Before the update
+      description: If this started after an update, what you did before replacing the image or the binary.
+  - type: textarea
+    attributes:
+      label: Logs
+      description: Server logs only. Remove anything that looks like a key or a token.
+      render: text
