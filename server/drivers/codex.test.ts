@@ -606,6 +606,10 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     }
     expect(seen.calls.find((call) => call.method === "thread/start")?.params.environments).toEqual([]);
     expect(seen.calls.find((call) => call.method === "turn/start")?.params.environments).toEqual([]);
+    // 2026-10-28: a guest's turn keeps web search, from the cached index only
+    expect(seen.argv[seen.argv.indexOf('web_search="cached"') - 1]).toBe("-c");
+    expect(seen.argv).not.toContain('web_search="disabled"');
+    expect(seen.argv).not.toContain('web_search="live"');
     // The owner's turn keeps its tools.
     await instance.adapter.sendTurn({ threadId: "t-owner", text: "ls", system: "You are Testy.", model: "gpt-5.6-sol", approvalMode: "ask" });
     await recorder.until((e) => e.type === "turn.completed" && e.threadId === "t-owner");

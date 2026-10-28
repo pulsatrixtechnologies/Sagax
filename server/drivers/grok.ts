@@ -2,6 +2,7 @@
 // adds the shared transient-failure retry policy.
 import type { ProviderDriver } from "../contracts.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
+import { imageTransportAllowed } from "./chat-images.ts";
 import { currentEnvName, readEnvName } from "../../electron/legacy-names.mjs";
 
 const DRIVER_KIND = "grok";
@@ -15,6 +16,13 @@ const MODELS = {
     { id: "grok-3-mini", label: "Grok 3 Mini" },
   ],
 };
+
+/** 2026-10-28: the xAI models that read images (Grok 4 and later, and any
+ * vision model). The others keep the browser and computer tools, whose page
+ * reads and snapshots are text, and never receive a screenshot. */
+export function grokSeesImages(model: string): boolean {
+  return /^grok-(?:[4-9]|\d{2,})/i.test(model) || /vision/i.test(model);
+}
 
 export interface GrokConfig {
   tools?: boolean;
@@ -48,6 +56,9 @@ export const GrokDriver: ProviderDriver<GrokConfig> = {
       apiKey,
       apiUrl: config.url,
       tools: config.tools,
+      // 2026-10-28: the browser and the computer through the same tool bridge
+      // as the other chat engines, when the endpoint can carry them
+      computerUse: imageTransportAllowed(config.url), imageInput: grokSeesImages,
       models: () => MODELS,
       requestBody: (model, messages, stream) => ({ model, messages, stream }),
       httpErrorLabel: "xAI",

@@ -20,6 +20,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { availableTools, catalogProfileFromEnv, PERSPICAX_TOOLS } from "./agents-catalog.ts";
+import { GUEST_CONFINED_CODEX_ARGS } from "./codex.ts";
+import { engineHasNativeWebSearch } from "../web-search/native.ts";
 import { chiefOfStaffSystemPrompt } from "../chief-of-staff.ts";
 import { engineConnectorsPrompt } from "../harness-connectors.ts";
 import { incidentText } from "../incidents.ts";
@@ -71,6 +73,16 @@ const INFORMATIONAL: ReadonlyArray<[tool: string, mentions: string]> = [
 function mentionedTools(text: string): string[] {
   return [...new Set([...text.matchAll(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g)].map((match) => match[0]).filter((name) => CATALOG_NAMES.has(name)))];
 }
+
+describe("reachability guard: an engine's own web search (2026-10-28)", () => {
+  // native.ts says Codex searches by itself, so a turn never gets
+  // sagax_web_search on Codex: its guest turn must then keep its own search.
+  it("never turns off the search of an engine native.ts counts on, in a guest's turn", () => {
+    expect(engineHasNativeWebSearch("codex", true)).toBe(true);
+    expect(GUEST_CONFINED_CODEX_ARGS).not.toContain('web_search="disabled"');
+    expect(GUEST_CONFINED_CODEX_ARGS).toContain('web_search="cached"');
+  });
+});
 
 describe("reachability guard: the turns a person really has", () => {
   it("offers propose_page in a person's direct chat and routines, for every role, never in a room", () => {

@@ -374,9 +374,12 @@ function mcpAppApprovalForm(params: unknown): McpApprovalForm | null {
 }
 
 /** What a guest-driven turn's app-server starts with: the shell, unified
- * exec and image reads off (codex-cli 0.159.0 `features`), web search too. */
+ * exec and image reads off (codex-cli 0.159.0 `features`). 2026-10-28: web
+ * search stays, from OpenAI's cached index (`web_search="cached"`): it runs
+ * on OpenAI's side, never on this machine, and opens no live page a guest's
+ * words could point at another site. */
 export const GUEST_CONFINED_CODEX_ARGS = [
-  "-c", "features.shell_tool=false", "-c", "features.unified_exec=false", "-c", "features.view_image=false", "-c", 'web_search="disabled"',
+  "-c", "features.shell_tool=false", "-c", "features.unified_exec=false", "-c", "features.view_image=false", "-c", 'web_search="cached"',
 ] as const;
 
 /** Whether the effective config (config/read) shows the shell turned off. */

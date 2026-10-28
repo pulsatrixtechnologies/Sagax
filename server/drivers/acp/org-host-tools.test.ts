@@ -193,6 +193,33 @@ describe("organization server: each admitted ACP engine withholds its own tools"
     expect(acpHostToolRequest({ kind: "read", title: "notes__read" })).toBe(true);
   });
 
+  // 2026-10-28 (reachability audit, point 9): does an ACP engine label its
+  // MCP calls `execute`, which a withheld turn declines? Checked in each
+  // engine's own source; none does for an MCP call, so the rule stands:
+  // - Gemini CLI 0.66 DiscoveredMCPTool: Kind.Other ("other");
+  // - Qwen Code 0.26 MCP tool: "read" with readOnlyHint, else "other";
+  // - OpenCode ACP toToolKind: only its shell is "execute", MCP is "other";
+  // - Grok Build: use_tool asks with kind "other" and _meta["x.ai/tool"]
+  //   (docs/grok-approval-gate.md);
+  // - Kimi CLI: its permission ToolCallUpdate carries no kind;
+  // - Hermes: "execute" only on its dangerous-command and untrusted-server
+  //   prompts; Sagax mounts its servers with the default full trust, so an
+  //   MCP call never asks.
+  it("lets every ACP engine's real MCP call shape through on a withheld turn", () => {
+    const shapes = [
+      { engine: "gemini", call: { kind: "other", title: "list_bots (agents MCP Server)" } },
+      { engine: "qwen", call: { kind: "read", title: "mcp__agents__list_bots" } },
+      { engine: "qwen", call: { kind: "other", title: "mcp__agents__memory_update" } },
+      { engine: "opencode", call: { kind: "other", title: "agents_memory_update" } },
+      { engine: "grok", call: { kind: "other", title: "agents__list_bots", _meta: { "x.ai/tool": { name: "use_tool", kind: "use_tool" } } } },
+      { engine: "kimi", call: { title: "agents__list_bots" } },
+    ];
+    for (const { engine, call } of shapes) expect(acpHostToolRequest(call), engine).toBe(false);
+    // the shapes that are a command stay declined
+    expect(acpHostToolRequest({ kind: "execute", title: "run tests: npm test" }), "hermes command").toBe(true);
+    expect(acpHostToolRequest({ kind: "execute", title: "bash" }), "opencode shell").toBe(true);
+  });
+
   it("names exactly the MCP servers Sagax passes a turn", () => {
     expect(sagaxMcpServerNames(undefined)).toEqual([]);
     expect(sagaxMcpServerNames({ agents: {}, browser: {}, custom: { notes: {}, agents: {} } })).toEqual(["agents", "browser", "notes"]);

@@ -19,6 +19,17 @@ export function chatImageBudget() {
   };
 }
 
+/** Whether an endpoint may carry images and computer tools: HTTPS, or HTTP
+ * on loopback (assertImageTransport). An address that does not parse may not. */
+export function imageTransportAllowed(url: string): boolean {
+  try {
+    assertImageTransport(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function assertImageTransport(url: string) {
   const endpoint = new URL(url);
   const loopback = endpoint.hostname === "localhost" || endpoint.hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(endpoint.hostname);
