@@ -28,6 +28,7 @@ import {
 } from "../../shared/approvals-inbox.ts";
 import type { OptionCardData } from "../../shared/wire.ts";
 import { journalDays, type JournalPayload, type RuleTestDraft, type RuleTestResult } from "../../shared/action-journal.ts";
+import { sealJournal } from "../action-journal.ts";
 import { isCustomRuleBehavior, isRiskClass, MAX_RULE_TEXT } from "../../shared/custom-rules.ts";
 import { liveDecisionRefusal } from "../../shared/live-approval.ts";
 import { approvalTypeOf } from "../approval-type.ts";
@@ -120,7 +121,9 @@ export function createApprovalsInboxRoutes(deps: ApprovalsInboxDeps): RouteHandl
       const viewer = deps.viewer(auth);
       if (!viewer || !deps.journal) return json(res, 403, { error: "Sign in to see your bots' journal.", code: "no_person" });
       res.setHeader("cache-control", "no-store");
-      return json(res, 200, deps.journal(auth, viewer, journalDays(url.searchParams.get("days"))));
+      const payload = deps.journal(auth, viewer, journalDays(url.searchParams.get("days")));
+      if (url.searchParams.get("export") === "1") return json(res, 200, sealJournal(payload.entries));
+      return json(res, 200, payload);
     }
     if (method === "POST" && path === "/api/approvals/journal/test") {
       const viewer = deps.viewer(auth);

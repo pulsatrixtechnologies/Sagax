@@ -14,6 +14,8 @@
 //
 // Pure: the server passes what the person may read (their bots, their
 // confidential threads) and how to name things; this never reads a file.
+import { createHash } from "node:crypto";
+
 import type { AdminActionRow } from "./admin-activity.ts";
 import type { ActivityRow } from "./activity.ts";
 import type { DecisionActor, DecisionCall, DecisionKind, DecisionRow } from "./decision-log.ts";
@@ -316,6 +318,82 @@ export function testRuleOnJournal(rows: readonly JournalRow[], draftId: string, 
 
 /** Whether a past action is one a rule reads: a tool call, never a
  * question or a proposal card. */
+/** The link before the first row. A chain that does not start here is not this journal. */
+export const JOURNAL_GENESIS = "0".repeat(64);
+
+/** One link of the export. No summary, no rule words, no reason: those can
+ * carry a message or a secret. The hash covers only the fields below. */
+export interface JournalChainLink {
+  at: string;
+  botId: string;
+  tool: string;
+  outcome: string;
+  decider: string;
+  source: string;
+  ran: string;
+  prev: string;
+  hash: string;
+}
+
+export interface JournalChain {
+  version: 1;
+  genesis: string;
+  entries: JournalChainLink[];
+}
+
+function journalChainBody(entry: { at: string; botId: string; tool: string; outcome: string; decider: string; source?: string; ran?: string }, prev: string): string {
+  return JSON.stringify({
+    prev,
+    at: entry.at,
+    botId: entry.botId,
+    tool: entry.tool,
+    outcome: entry.outcome,
+    decider: entry.decider,
+    source: entry.source ?? "",
+    ran: entry.ran ?? "",
+  });
+}
+
+export function hashJournalLink(entry: { at: string; botId: string; tool: string; outcome: string; decider: string; source?: string; ran?: string }, prev: string): string {
+  return createHash("sha256").update(journalChainBody(entry, prev)).digest("hex");
+}
+
+/** Oldest first. Each hash is SHA-256 of the previous hash and this row's
+ * decision fields. */
+export function sealJournal(entries: readonly JournalEntry[]): JournalChain {
+  const ordered = [...entries].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.key.localeCompare(b.key)));
+  let prev = JOURNAL_GENESIS;
+  const links = ordered.map((entry) => {
+    const hash = hashJournalLink(entry, prev);
+    const link: JournalChainLink = {
+      at: entry.at,
+      botId: entry.botId,
+      tool: entry.tool,
+      outcome: entry.outcome,
+      decider: entry.decider,
+      source: entry.source ?? "",
+      ran: entry.ran ?? "",
+      prev,
+      hash,
+    };
+    prev = hash;
+    return link;
+  });
+  return { version: 1, genesis: JOURNAL_GENESIS, entries: links };
+}
+
+/** Recompute every link. The first broken index, or ok. */
+export function verifyJournal(chain: JournalChain): { ok: true } | { ok: false; index: number } {
+  if (chain.version !== 1 || chain.genesis !== JOURNAL_GENESIS) return { ok: false, index: 0 };
+  let prev = JOURNAL_GENESIS;
+  for (let index = 0; index < chain.entries.length; index += 1) {
+    const entry = chain.entries[index]!;
+    if (entry.prev !== prev || hashJournalLink(entry, prev) !== entry.hash) return { ok: false, index };
+    prev = entry.hash;
+  }
+  return { ok: true };
+}
+
 export function replayable(row: JournalRow): boolean {
   if (row.source === "question" || row.askedSource === "question") return false;
   if (["proposal", "routine", "skill", "profile", "model"].includes(row.tool)) return false;

@@ -6,9 +6,9 @@ import { describe, expect, it } from "vitest";
 import type { ActivityRow } from "./activity.ts";
 import type { AdminActionRow } from "./admin-activity.ts";
 import type { DecisionRow } from "./decision-log.ts";
-import { buildJournal, deciderOf, journalWire, replayable, testRuleOnJournal, type JournalInput, type JournalRow } from "./action-journal.ts";
+import { buildJournal, deciderOf, journalWire, replayable, sealJournal, testRuleOnJournal, verifyJournal, type JournalInput, type JournalRow } from "./action-journal.ts";
 import { reviewCustomRules } from "./custom-rules-review.ts";
-import { JOURNAL_SELF } from "../shared/action-journal.ts";
+import { JOURNAL_SELF, type JournalEntry } from "../shared/action-journal.ts";
 import type { CustomRule } from "../shared/custom-rules.ts";
 
 const at = (minute: number, second = 0) => new Date(Date.UTC(2026, 9, 26, 12, minute, second)).toISOString();
@@ -147,5 +147,25 @@ describe("Tester cette règle: the real matcher on the last days", () => {
   it("a phrase the matcher cannot read matches nothing", () => {
     const result = testRuleOnJournal(rows, "rule-test-draft", () => null, 7, true);
     expect(result).toMatchObject({ unreadable: true, matched: 0, hits: [] });
+  });
+});
+
+describe("journal hash chain", () => {
+  const entry = (key: string, atIso: string, summary: string): JournalEntry => ({
+    key, at: atIso, botId: "bot-nova", botName: "Nova", threadId: "thr-a", tool: "Bash", outcome: "allowed", decider: "person", summary,
+  });
+
+  it("links SHA-256 hashes, verifies, and leaves out the summary", () => {
+    const chain = sealJournal([
+      entry("b", "2026-10-26T12:02:00.000Z", "the message said hello and the token is secret-value"),
+      entry("a", "2026-10-26T12:01:00.000Z", "earlier words"),
+    ]);
+    expect(chain.entries.map((link) => link.at)).toEqual(["2026-10-26T12:01:00.000Z", "2026-10-26T12:02:00.000Z"]);
+    expect(chain.entries[1]!.prev).toBe(chain.entries[0]!.hash);
+    expect(verifyJournal(chain)).toEqual({ ok: true });
+    expect(JSON.stringify(chain)).not.toContain("secret-value");
+    expect(JSON.stringify(chain)).not.toContain("hello");
+    const broken = { ...chain, entries: chain.entries.map((link, index) => index === 1 ? { ...link, tool: "Write" } : link) };
+    expect(verifyJournal(broken)).toEqual({ ok: false, index: 1 });
   });
 });
