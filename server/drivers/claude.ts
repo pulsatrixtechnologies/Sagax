@@ -8,6 +8,7 @@
 //   - every computer (this Mac, a Local VM, a VPS, or a Boat cloud
 //     computer through server/harness-mcp-proxy.ts computer) as the one
 //     stdio `computer` server in turn.integrations.localComputer
+import { adoptLegacyAutoMemory, legacyClaudeAutoMemoryDir } from "../compact-prompt.ts";
 import { CLAUDE_UNUSED_COMMANDS, claudeDisallowedTools, claudeOrgTools } from "./host-tools.ts";
 import { readAtRestSync } from "../content-at-rest.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
@@ -2303,7 +2304,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // per bot and person, so its path (in the system prompt) is the same in
       // every conversation, and turns Claude Code's own tool search off: the
       // tools listed are exactly the ones Sagax lists, the same every time.
-      if (turn.compactPrompt?.memoryDir) settings.autoMemoryDirectory = turn.compactPrompt.memoryDir;
+      if (turn.compactPrompt?.memoryDir) {
+        const configDir = env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), ".claude");
+        adoptLegacyAutoMemory(turn.compactPrompt.memoryDir, legacyClaudeAutoMemoryDir(configDir, turn.cwd ?? homedir()));
+        settings.autoMemoryDirectory = turn.compactPrompt.memoryDir;
+      }
       if (turn.compactPrompt) env.ENABLE_TOOL_SEARCH = "false";
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;

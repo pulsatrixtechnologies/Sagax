@@ -1,12 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   COMPACT_VOLATILE_LAST,
   COMPACT_VOLATILE_SECTIONS,
   KNOWN_USE_CALLS,
+  adoptLegacyAutoMemory,
+  claudeProjectKey,
   compactMemoryDir,
   compactPins,
   compactVolatileOrder,
+  legacyClaudeAutoMemoryDir,
   parseLocalPromptMode,
   toolUsage,
   usesCompactPrompt,
@@ -16,6 +23,9 @@ import { availableTools, catalogProfileFromEnv, compactListed, compactToolsFromE
 import { parseGateSearch, searchedCatalog } from "./mcp-gate-search.ts";
 import { searchedToolCall } from "../shared/searched-tool-call.ts";
 import { workspaceCwdPrompt, workspaceLocationsPrompt } from "./workspace.ts";
+
+const dirs: string[] = [];
+afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
 describe("usesCompactPrompt (#1276)", () => {
   it("compacts Claude Code on every model, and keeps the full tool list elsewhere", () => {
@@ -73,6 +83,26 @@ describe("compact pins", () => {
     expect(compactMemoryDir("/data", "bot-1", "Alice@Example.test")).toBe(compactMemoryDir("/data", "bot-1", "alice@example.test"));
     expect(compactMemoryDir("/data", "bot-1", "alice@example.test")).not.toBe(compactMemoryDir("/data", "bot-1", "bob@example.test"));
     expect(compactMemoryDir("/data", "bot-1", "alice@example.test")).not.toBe(compactMemoryDir("/data", "bot-2", "alice@example.test"));
+  });
+
+  it("copies the auto memory a thread already had into the compact folder", () => {
+    const root = mkdtempSync(join(tmpdir(), "sagax-compact-memory-"));
+    dirs.push(root);
+    const cwd = "/Users/a/bot_work";
+    expect(claudeProjectKey(cwd)).toBe("-Users-a-bot-work");
+    const legacy = legacyClaudeAutoMemoryDir(join(root, "claude"), cwd);
+    mkdirSync(legacy, { recursive: true });
+    writeFileSync(join(legacy, "MEMORY.md"), "the old note\n");
+    writeFileSync(join(legacy, "topic.md"), "kept\n");
+    symlinkSync(join(legacy, "MEMORY.md"), join(legacy, "link.md"));
+    const compact = compactMemoryDir(root, "bot-1", "ada@example.test");
+    expect(adoptLegacyAutoMemory(compact, legacy).sort()).toEqual(["MEMORY.md", "topic.md"]);
+    expect(readFileSync(join(compact, "MEMORY.md"), "utf8")).toBe("the old note\n");
+    writeFileSync(join(compact, "MEMORY.md"), "the compact note\n");
+    writeFileSync(join(legacy, "later.md"), "added\n");
+    expect(adoptLegacyAutoMemory(compact, legacy).sort()).toEqual(["later.md"]);
+    expect(readFileSync(join(compact, "MEMORY.md"), "utf8")).toBe("the compact note\n");
+    expect(readFileSync(join(compact, "later.md"), "utf8")).toBe("added\n");
   });
 });
 
