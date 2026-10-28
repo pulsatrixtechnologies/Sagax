@@ -10,7 +10,7 @@
 // does) are listed under it. Permissions (with the Perspicax
 // profiles under it), Voice, Usage and Changes are entries of their own
 // (2026-10-15). Memory and its files are one page, the Bot folder.
-import type { BotSettingsSection } from "@/state/store";
+import type { BotSettingsSection } from "@/state/settings-section";
 
 /** Every page the editor can show, in the order they appear. */
 export const PERSONA_CATEGORIES = [
