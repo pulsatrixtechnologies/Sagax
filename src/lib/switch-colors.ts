@@ -229,3 +229,31 @@ export function brandSwitchVars(accent: string | undefined): Record<string, stri
   }
   return out;
 }
+
+/**
+ * A bot's colour as the switch track inside its own panel (2026-10-28).
+ * Some skins have a neutral accent (Studio), so an on switch read grey; in a
+ * bot's panel and its screens (routines, the bot's settings, tasks) the on
+ * track takes the bot's colour instead, whatever the "Use bot color as
+ * accent" setting says. Same rule as the brand accent: the lightness moves
+ * until the track holds 3:1 with the white thumb and with the extremes of
+ * every skin's surfaces, the hue stays, an edge is added when none does.
+ * App.tsx puts these on <body> with `data-bot-switch`; the generated
+ * stylesheet picks the scheme's pair (skin-switch.css).
+ */
+/** The brand's extremes, widened to Hibou 98's silver (#c0c0c0): the bot's track is also derived for that skin. */
+export const BOT_SURFACES: Record<Scheme, string[]> = { light: ["#ffffff", "#c0c0c0"], dark: BRAND_SURFACES.dark };
+
+export const BOT_SWITCH_VARS = ["--bot-switch-on-light", "--bot-switch-on-edge-light", "--bot-switch-on-dark", "--bot-switch-on-edge-dark"] as const;
+
+/** The bot's on track per scheme, as custom properties (empty for a colour that is not `#rrggbb`). */
+export function botSwitchVars(color: string | null | undefined): Record<string, string> {
+  if (!color || !parseHex(color)) return {};
+  const out: Record<string, string> = {};
+  for (const scheme of ["light", "dark"] as const) {
+    const colors = switchColors({ accent: color, ink: scheme === "light" ? "#000000" : "#ffffff", surfaces: BOT_SURFACES[scheme], scheme });
+    out[`--bot-switch-on-${scheme}`] = colors.on;
+    out[`--bot-switch-on-edge-${scheme}`] = colors.onEdge;
+  }
+  return out;
+}

@@ -68,7 +68,7 @@ import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
 import { navigate } from "@/lib/view-transitions";
 import { useScreenCaptureToBot } from "@/hooks/use-screen-capture-to-bot";
 import { MAUS_COLORS } from "@/lib/mascot";
-import { useBotAccent } from "@/lib/bot-accent";
+import { botSwitchActive, useBotAccent, useBotAccentEnabled, useBotSwitch } from "@/lib/bot-accent";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -634,7 +634,14 @@ function Shell() {
 function BotAccentSync() {
   const { state } = useStore();
   const bot = state.bots.find((candidate) => candidate.id === state.selectedId);
-  useBotAccent(bot ? MAUS_COLORS[bot.color] : null);
+  const color = bot ? MAUS_COLORS[bot.color] : null;
+  useBotAccent(color);
+  const accentEnabled = useBotAccentEnabled();
+  // The switches in the bot's own panel and screens take its colour, setting or not.
+  useBotSwitch(
+    color,
+    botSwitchActive({ hasBot: Boolean(bot), activeView: state.activeView, appSettingsOpen: state.appSettingsOpen, pluginsOpen: state.pluginsOpen, accentEnabled }),
+  );
   return null;
 }
 
