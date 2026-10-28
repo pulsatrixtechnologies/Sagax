@@ -25,7 +25,7 @@ export function grokVoiceFailure(message: string): GrokVoiceFailure {
   if (/needs credits/.test(message)) return "quota";
   if (/rate-limiting/.test(message)) return "busy";
   if (/could not find that voice/.test(message)) return "voice";
-  if (/Could not reach Grok voice|timed out|Grok voice failed \(HTTP 5\d\d\)|not reachable/.test(message)) return "down";
+  if (/Could not reach Grok voice|timed out|Grok voice failed \(HTTP 5\d\d[):]|not reachable/.test(message)) return "down";
   return "other";
 }
 
@@ -45,12 +45,93 @@ function socketFailure(event: unknown): string {
   return status === null ? "Could not reach Grok voice. Check your connection." : refusal(status);
 }
 
-function refusal(status: number): string {
-  if (status === 401 || status === 403) return "xAI rejected the key or its TTS permissions. Check the xAI key in Settings.";
-  if (status === 402) return "The xAI account needs credits to generate speech.";
-  if (status === 429) return "xAI is rate-limiting speech. Wait a moment and try again.";
+/** The most of an xAI error body read to sort a refusal. */
+const REFUSAL_BODY_MAX = 2_048;
+
+/** xAI's own reason in an error body (`{"code": ..., "error": ...}`), read
+ * only to sort the refusal: an invalid key answers 400 "Incorrect API key
+ * provided" (checked 2026-10-28), not 401. Never passed on verbatim: the
+ * page and the log get this file's own words, plus xAI's `code` category
+ * for a 400 that is none of the known kinds. */
+export function refusalDetail(body: string): { code?: string; error?: string } {
+  try {
+    const parsed = JSON.parse(body.slice(0, REFUSAL_BODY_MAX)) as Record<string, unknown>;
+    return {
+      ...(typeof parsed.code === "string" ? { code: parsed.code } : {}),
+      ...(typeof parsed.error === "string" ? { error: parsed.error } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+export function refusal(status: number, detail: { code?: string; error?: string } = {}): string {
+  const said = `${detail.code ?? ""} ${detail.error ?? ""}`;
+  if (status === 401 || status === 403 || /incorrect api key|invalid api key|api key (?:is )?(?:invalid|disabled|blocked|revoked)|unauthenticated|permission/i.test(said)) {
+    if (/credit|spending limit|billing|exhausted/i.test(said)) return "The xAI account needs credits to generate speech.";
+    return "xAI rejected the key or its TTS permissions. Check the xAI key in Settings.";
+  }
+  if (status === 402 || /credit|spending limit|billing/i.test(said)) return "The xAI account needs credits to generate speech.";
+  if (status === 429 || /rate limit|too many requests/i.test(said)) return "xAI is rate-limiting speech. Wait a moment and try again.";
   if (status === 404) return "xAI could not find that voice. Refresh the voice list and select a voice again.";
-  return `Grok voice failed (HTTP ${status}). Try again later.`;
+  // xAI's category only ("Client specified an invalid argument"), never its message
+  const category = detail.code && /^[\w .,:'()-]{1,100}$/.test(detail.code) ? `: ${detail.code}` : "";
+  return `Grok voice failed (HTTP ${status}${category}). Try again later.`;
+}
+
+/** A refused handshake (`ws` "unexpected-response"): its status and body,
+ * read up to REFUSAL_BODY_MAX, as a Grok voice message. */
+function readRefusal(res: { statusCode?: number; on(event: string, cb: (chunk?: unknown) => void): unknown; destroy?(): void }): Promise<string> {
+  return new Promise((resolve) => {
+    let body = "";
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve(refusal(res.statusCode ?? 0, refusalDetail(body)));
+    };
+    res.on("data", (chunk) => {
+      if (body.length < REFUSAL_BODY_MAX) body += String(chunk);
+      else res.destroy?.();
+    });
+    res.on("end", done);
+    res.on("close", done);
+    res.on("error", done);
+    setTimeout(done, 2_000).unref?.();
+  });
+}
+
+/** Listen for a refused handshake on a `ws` socket (a test's fake has no
+ * `on`: the error event's status is used then). */
+function onRefused(socket: WebSocket, failWith: (message: string) => void): void {
+  const node = socket as unknown as { on?: (event: string, cb: (req: unknown, res: Parameters<typeof readRefusal>[0]) => void) => void; terminate?: () => void };
+  if (typeof node.on !== "function") return;
+  // with this listener `ws` leaves the refused request to us: read why, then end it
+  node.on("unexpected-response", (_req, res) => {
+    void readRefusal(res).then((message) => {
+      failWith(message);
+      try { node.terminate?.(); } catch { /* already gone */ }
+    });
+  });
+}
+
+async function readLimitedText(response: Response, max: number): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    while (text.length < max) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+  } catch {
+    /* what came is enough */
+  } finally {
+    void reader.cancel().catch(() => {});
+  }
+  return text.slice(0, max);
 }
 
 async function request(path: string, init: RequestInit): Promise<Response> {
@@ -64,9 +145,10 @@ async function request(path: string, init: RequestInit): Promise<Response> {
     throw new Error("Could not reach Grok voice. Check your connection.");
   }
   if (!response.ok) {
-    await response.body?.cancel();
-    // Remote error bodies can echo credentials or request text.
-    throw new Error(refusal(response.status));
+    // read only to sort the refusal (an invalid key is a 400); remote error
+    // bodies can echo credentials or request text, so none of it is passed on
+    const body = await readLimitedText(response, REFUSAL_BODY_MAX);
+    throw new Error(refusal(response.status, refusalDetail(body)));
   }
   return response;
 }
@@ -308,6 +390,7 @@ export function openTranscriptionStream(
     return { ready, send() {}, finalize() {}, close() {} };
   }
   socket.binaryType = "arraybuffer";
+  onRefused(socket, fail);
   socket.addEventListener("open", () => {
     if (closed || ping) return;
     ping = setInterval(() => {
@@ -449,6 +532,11 @@ export function openSpeechStream(
     return { ready, speak() {}, delta() {}, done() {}, clear() {}, close() {} };
   }
   socket.binaryType = "arraybuffer";
+  onRefused(socket, (message) => {
+    if (closed) return;
+    handlers.onError(message);
+    end();
+  });
   socket.addEventListener("open", () => {
     resolveReady();
     if (closed || ping) return;
