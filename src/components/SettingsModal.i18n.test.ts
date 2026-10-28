@@ -63,7 +63,8 @@ describe("Settings → General", () => {
     setLocale("en");
     const en = await renderSettings();
     expect(en).toContain("Settings");
-    expect(en).toContain("Models and voice");
+    expect(en).toContain(">Models</button>");
+    expect(en).toContain(">Voice</button>");
     expect(en).toContain(">Account</h3>");
   });
 

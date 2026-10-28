@@ -1,0 +1,298 @@
+// @vitest-environment happy-dom
+// Settings split (2026-10-28, the owner): Account kept only the account;
+// Security (security keys, approval rules, tool access) and Vault (the
+// vault and the one-time card) are pages of their own, and Models and voice
+// became Models and Voice. Nothing was removed: every moved setting is on its
+// new page, the rules list is paged like the usage traces, old links and
+// anchors open the new page, and the search finds each setting there.
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { AppSettingsSection } from "@/state/store";
+import { setLocale } from "@/lib/i18n";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const RULES = Array.from({ length: 23 }, (_, index) => ({
+  id: `rule-${String(index + 1).padStart(2, "0")}`,
+  botId: "bot-a",
+  botName: "Scout",
+  tool: "Bash",
+  scope: { command: `echo ${index + 1}` },
+  behavior: index % 3 === 0 ? "deny" : index % 3 === 1 ? "ask" : "allow",
+  description: `Rule ${String(index + 1).padStart(2, "0")}`,
+}));
+
+const fixture = vi.hoisted(() => ({
+  section: "account" as AppSettingsSection,
+  dispatch: vi.fn(),
+  config: undefined as Record<string, unknown> | undefined,
+  rules: [] as unknown[],
+}));
+
+const answers = (path: string): unknown => {
+  if (path === "/api/approval-rules") return { rules: fixture.rules };
+  if (path === "/api/security-keys") return { keys: [], classes: [], rpId: "localhost" };
+  if (path === "/api/me/tool-grants") return { grants: [], adminOnlyAreas: [] };
+  if (path === "/api/me/voice-keys") return { elevenlabs: { configured: false }, fish: { configured: false }, xai: { configured: false } };
+  if (path === "/api/me/credentials/list") return { items: [], onePassword: { available: false, reason: "absent" }, wallets: {} };
+  throw new Error(`no answer for ${path}`);
+};
+
+vi.mock("@/state/store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/state/store")>();
+  const state = () => ({ appSettingsSection: fixture.section, appSettingsSubPage: null, instances: [], bots: [{ id: "bot-a", name: "Scout" }], groups: [], config: fixture.config });
+  return {
+    ...actual,
+    api: vi.fn(async (path: string) => answers(path)),
+    useStore: () => ({ state: state(), dispatch: fixture.dispatch, refreshInstances: vi.fn() }),
+    useStoreOptional: () => ({ state: state(), dispatch: fixture.dispatch }),
+  };
+});
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
+vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
+
+const { SettingsModal } = await import("./SettingsModal");
+const { MyApprovalRules } = await import("./settings/MyApprovalRules");
+const { clampPageOffset } = await import("./SettingsPager");
+const { openSettings, currentSettingsSection, settingsSectionLabel } = await import("@/lib/settings-link");
+
+let host: HTMLDivElement;
+let root: Root;
+
+async function render(element: Parameters<Root["render"]>[0]) {
+  await act(async () => { root.render(element); });
+  // the cards load their data in an effect: let the answers land
+  for (let i = 0; i < 4; i += 1) await act(async () => { await Promise.resolve(); });
+}
+
+async function settings(section: AppSettingsSection): Promise<HTMLElement> {
+  fixture.section = section;
+  await render(createElement(SettingsModal));
+  return host;
+}
+
+const rail = () => host.querySelector("nav")!;
+const railLabels = (group: string) => [...rail().querySelectorAll(`[data-settings-nav-group="${group}"] button`)].map((node) => node.textContent?.trim());
+const pane = () => host.querySelector<HTMLElement>("[data-settings-pane]")!;
+const card = (id: string) => pane().querySelector(`[data-settings-card="${id}"]`);
+const group = (id: string) => pane().querySelector(`[data-settings-group="${id}"]`);
+
+beforeEach(() => {
+  setLocale("en");
+  fixture.section = "account";
+  fixture.dispatch = vi.fn();
+  fixture.config = { rooms: { turnTimeoutMinutes: 5 } };
+  fixture.rules = RULES;
+  // happy-dom has no layout: every node counts as visible
+  if (!("checkVisibility" in Element.prototype)) Object.defineProperty(Element.prototype, "checkVisibility", { configurable: true, value: () => true });
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+  setLocale("en");
+});
+
+describe("Settings split: navigation", () => {
+  it("lists Account, Security, Vault, Appearance, Notifications under Personal, and Models, Voice under AI", async () => {
+    await settings("account");
+    expect(railLabels("you")).toEqual(["Account", "Security", "Vault", "Appearance", "Notifications"]);
+    expect(railLabels("ai")).toEqual(["Models", "Voice"]);
+    expect(rail().textContent).not.toContain("Models and voice");
+  });
+
+  it("opens each new page from its entry", async () => {
+    await settings("account");
+    const button = [...rail().querySelectorAll("button")].find((node) => node.textContent?.trim() === "Vault")!;
+    act(() => button.click());
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "credentials" });
+  });
+
+  it("reads in French", async () => {
+    setLocale("fr");
+    await settings("account");
+    expect(railLabels("you")).toEqual(["Compte", "Sécurité", "Coffre", "Apparence", "Notifications"]);
+    expect(railLabels("ai")).toEqual(["Modèles", "Voix"]);
+  });
+});
+
+describe("Settings split: every moved setting at its new place", () => {
+  it("Account keeps the account only", async () => {
+    await settings("account");
+    expect(group("account")).not.toBeNull();
+    for (const id of ["security", "security.keys", "security.classes", "myApprovalRules", "myToolAccess", "credentials.items", "credentials.wallets"]) {
+      expect(card(id) ?? group(id), id).toBeNull();
+    }
+  });
+
+  it("Security holds the security keys, the approvals that need a key, the approval rules and My tool access", async () => {
+    await settings("security");
+    expect(pane().querySelector("h2")?.textContent).toBe("Security");
+    expect(pane().querySelector("[data-security-page]")).not.toBeNull();
+    expect(card("security")).not.toBeNull();
+    for (const id of ["security.keys", "security.classes", "myApprovalRules", "myToolAccess"]) expect(group(id), id).not.toBeNull();
+    expect(pane().textContent).toContain("Your approval rules");
+    expect(pane().textContent).toContain("My tool access");
+    expect(card("credentials.items")).toBeNull();
+  });
+
+  it("Vault holds Your vault (Import, Export, Add an item) and the One-time card", async () => {
+    await settings("credentials");
+    expect(pane().querySelector("h2")?.textContent).toBe("Vault");
+    expect(card("credentials.items")).not.toBeNull();
+    expect(pane().textContent).toContain("Your vault");
+    for (const action of ["data-credentials-import", "data-credentials-export", "data-credentials-add"]) expect(pane().querySelector(`[${action}]`), action).not.toBeNull();
+    expect(group("credentials.wallets")).not.toBeNull();
+    expect(pane().textContent).toContain("One-time card");
+    expect(card("credentials.onePassword")).not.toBeNull();
+    expect(card("security")).toBeNull();
+  });
+
+  it("Voice holds the microphone, the voice engine and Live calls; Models keeps the engines and every key", async () => {
+    await settings("voice");
+    expect(pane().querySelector("h2")?.textContent).toBe("Voice");
+    for (const id of ["connections.audio", "connections.voice", "voice.advanced"]) expect(card(id), id).not.toBeNull();
+    expect(pane().querySelector("[data-keys-section]")).toBeNull();
+    await settings("engines");
+    expect(pane().querySelector("h2")?.textContent).toBe("Models");
+    for (const id of ["engines.list", "engines.keys", "connections.image"]) expect(card(id), id).not.toBeNull();
+    for (const id of ["connections.audio", "connections.voice", "voice.advanced"]) expect(card(id), id).toBeNull();
+  });
+
+  it("Voice's Add in Keys opens Models, where every key is managed", async () => {
+    fixture.config = { rooms: { turnTimeoutMinutes: 5 }, tts: { configured: false, ready: false, voice: "", provider: "elevenlabs", keys: { elevenlabs: false, fish: false } }, live: { enabled: true, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 } };
+    await settings("voice");
+    const add = pane().querySelector<HTMLButtonElement>('[data-add-in-keys="elevenlabs"]')!;
+    expect(add).not.toBeNull();
+    act(() => add.click());
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "engines" });
+  });
+
+  it("keeps the person's own voice keys on an organization member's Voice page", async () => {
+    fixture.config = { rooms: { turnTimeoutMinutes: 5 }, viewer: { operator: false, role: "member" } };
+    await settings("voice");
+    expect(card("connections.voiceKeys")).not.toBeNull();
+    // a member does not manage the installation: no voice engine, as before
+    expect(card("connections.voice")).toBeNull();
+  });
+});
+
+describe("Settings split: the approval rules are paged like the usage traces", () => {
+  const rows = () => [...host.querySelectorAll("[data-my-rule-row]")].map((node) => node.textContent ?? "");
+  const pager = () => host.querySelector<HTMLElement>("[data-settings-pager]")!;
+  const next = () => pager().querySelector<HTMLButtonElement>("[data-settings-pager-next]")!;
+  const prev = () => pager().querySelector<HTMLButtonElement>("[data-settings-pager-prev]")!;
+
+  it("shows ten rules a page with the Usage pager, then the next pages", async () => {
+    await render(createElement(MyApprovalRules));
+    expect(host.querySelector("[data-my-rules]")?.getAttribute("data-my-rules")).toBe("23");
+    expect(rows()).toHaveLength(10);
+    expect(rows()[0]).toContain("Rule 01");
+    expect(pager().textContent).toContain("1-10 of 23");
+    expect(prev().disabled).toBe(true);
+    await act(async () => next().click());
+    expect(rows()[0]).toContain("Rule 11");
+    expect(pager().textContent).toContain("11-20 of 23");
+    await act(async () => next().click());
+    expect(rows()).toHaveLength(3);
+    expect(pager().textContent).toContain("21-23 of 23");
+    expect(next().disabled).toBe(true);
+    await act(async () => prev().click());
+    expect(pager().textContent).toContain("11-20 of 23");
+  });
+
+  it("offers the same page sizes as the usage traces", async () => {
+    await render(createElement(MyApprovalRules, { initialPageSize: 25 }));
+    expect(rows()).toHaveLength(23);
+    expect(pager().textContent).toContain("1-23 of 23");
+    expect(pager().querySelector('[aria-label="Per page"]')).not.toBeNull();
+  });
+
+  it("draws no pager when there is no rule", async () => {
+    fixture.rules = [];
+    await render(createElement(MyApprovalRules));
+    expect(host.querySelector("[data-settings-pager]")).toBeNull();
+    expect(host.textContent).toContain("No rules yet");
+  });
+
+  it("never leaves an empty page after a removal", () => {
+    expect(clampPageOffset(20, 20, 10)).toBe(10);
+    expect(clampPageOffset(20, 23, 10)).toBe(20);
+    expect(clampPageOffset(10, 0, 10)).toBe(0);
+  });
+});
+
+describe("Settings split: old links and anchors open the new page", () => {
+  const opened = (section: AppSettingsSection, cardId?: string) => {
+    const sent: Array<{ section?: string }> = [];
+    openSettings((action) => sent.push(action as { section?: string }), section, cardId);
+    return sent[0]?.section;
+  };
+
+  it("sends Account's old security and vault anchors to Security and Vault", () => {
+    expect(opened("account", "security")).toBe("security");
+    expect(opened("account", "myApprovalRules")).toBe("security");
+    expect(opened("account", "myToolAccess")).toBe("security");
+    expect(opened("account", "credentials.items")).toBe("credentials");
+    expect(opened("account", "credentials.wallets")).toBe("credentials");
+    expect(opened("security")).toBe("security");
+    expect(opened("credentials")).toBe("credentials");
+  });
+
+  it("sends Models and voice's voice anchors to Voice and keeps the keys in Models", () => {
+    expect(opened("engines", "connections.voice")).toBe("voice");
+    expect(opened("engines", "voice.advanced")).toBe("voice");
+    expect(opened("connections", "connections.audio")).toBe("voice");
+    expect(opened("engines", "voice.microphone")).toBe("voice");
+    expect(opened("engines", "connections.voiceKeys")).toBe("voice");
+    expect(opened("engines", "engines.keys")).toBe("engines");
+    expect(opened("connections", "connections.image")).toBe("engines");
+  });
+
+  it("names the new page in a sentence's link", () => {
+    expect(settingsSectionLabel(currentSettingsSection("engines", "voice.advanced"))).toBe("Voice");
+    expect(settingsSectionLabel(currentSettingsSection("account", "credentials.items"))).toBe("Vault");
+    expect(settingsSectionLabel(currentSettingsSection("account", "security"))).toBe("Security");
+  });
+
+  it("the store opens the page an old section names", async () => {
+    const { currentSettingsSection: fromStore } = await import("@/lib/settings-sections");
+    expect(fromStore("security")).toBe("security");
+    expect(fromStore("credentials")).toBe("credentials");
+    expect(fromStore("voice")).toBe("voice");
+  });
+
+});
+
+describe("Settings split: the search finds each setting at its new place", () => {
+  async function search(query: string): Promise<string[]> {
+    await settings("account");
+    const input = host.querySelector<HTMLInputElement>("[data-settings-search]")!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, query);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return [...rail().querySelectorAll("[data-settings-nav-group] button[aria-current], [data-settings-nav-group] > div > button")].map((node) => node.textContent?.trim() ?? "");
+  }
+
+  it.each([
+    ["yubikey", "Security"],
+    ["always deny", "Security"],
+    ["demander d'abord", "Security"],
+    ["my tool access", "Security"],
+    ["one-time card", "Vault"],
+    ["1password", "Vault"],
+    ["coffre", "Vault"],
+    ["microphone", "Voice"],
+    ["live calls", "Voice"],
+    ["openrouter", "Models"],
+  ])("%s lands on %s only", async (query, page) => {
+    const pages = await search(query);
+    expect(pages).toEqual([page]);
+  });
+});

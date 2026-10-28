@@ -1,5 +1,7 @@
 // Settings > Models and voice (2026-10-14): one page instead of Integrations
-// and Models and accounts. One list of keys, model, voice and image alike,
+// and Models and accounts. 2026-10-28: split in two pages, Models (engines,
+// every key, web search, images) and Voice (voice engine, Live calls,
+// microphone, the person's voice keys). One list of keys, model, voice and image alike,
 // with the rare ones folded under More providers unless saved, the only place
 // a key is managed (2026-10-15); the voice engine and image generation use
 // their key from that list (Grok the xAI key) and link to it when it is
@@ -33,7 +35,8 @@ const baseConfig = (over: Record<string, unknown> = {}) => ({
   ...over,
 }) as unknown as ConfigStatus;
 
-async function page(): Promise<string> {
+async function page(section?: string): Promise<string> {
+  if (section) fixture.section = section;
   const { SettingsModal } = await import("./SettingsModal");
   return renderToStaticMarkup(createElement(SettingsModal));
 }
@@ -61,34 +64,49 @@ afterEach(() => {
 });
 
 describe("Settings > Models and voice", () => {
-  it.each(["router", "OpenRouter", "base URL", "API key", "OpenAI", "Anthropic", "Groq", "ElevenLabs", "voice", "integrations", "Intégrations"])("is found by searching for %s", async (typed) => {
+  it.each(["router", "OpenRouter", "base URL", "API key", "OpenAI", "Anthropic", "Groq", "ElevenLabs", "integrations", "Intégrations"])("is found by searching for %s", async (typed) => {
     const { SECTIONS, sectionMatches } = await import("./SettingsModal");
     const page = SECTIONS.find((entry) => entry.id === "engines")!;
     // the modal lowercases and trims what was typed before matching
     expect(sectionMatches(page, typed.trim().toLowerCase())).toBe(true);
   });
 
+  it.each(["voice", "voix", "ElevenLabs", "microphone", "live calls", "appels en direct", "moteur de voix"])("finds Voice by searching for %s", async (typed) => {
+    const { SECTIONS, sectionMatches } = await import("./SettingsModal");
+    const page = SECTIONS.find((entry) => entry.id === "voice")!;
+    expect(sectionMatches(page, typed.trim().toLowerCase())).toBe(true);
+  });
+
   // 0.5.6: the search index follows the regrouped rows.
-  it("finds the regrouped rows of Models and voice and of Usage, and opens the folded ones", async () => {
+  it("finds the regrouped rows of Models, Voice and Usage, and opens the folded ones", async () => {
     const { SECTIONS, sectionMatches, cardsMatching } = await import("./SettingsModal");
     const models = SECTIONS.find((entry) => entry.id === "engines")!;
+    const voice = SECTIONS.find((entry) => entry.id === "voice")!;
     const usage = SECTIONS.find((entry) => entry.id === "usage")!;
-    for (const typed of ["modèle auto", "à configurer", "moteur de voix", "appels en direct", "fournisseur d'images"]) expect(sectionMatches(models, typed), typed).toBe(true);
+    for (const typed of ["modèle auto", "à configurer", "fournisseur d'images", "recherche web"]) expect(sectionMatches(models, typed), typed).toBe(true);
+    for (const typed of ["moteur de voix", "appels en direct", "micro"]) {
+      expect(sectionMatches(voice, typed), typed).toBe(true);
+      expect(sectionMatches(models, typed), typed).toBe(false);
+    }
     for (const typed of ["par bot", "30 derniers jours", "renouvelle", "sagax business"]) expect(sectionMatches(usage, typed), typed).toBe(true);
     expect(cardsMatching("par bot")).toContain("usage.breakdown");
     expect(cardsMatching("cloud coding")).toContain("connections.cloudAgents");
   });
 
-  it("is one menu entry: no Integrations, no Models and accounts", async () => {
+  it("is two menu entries, Models and Voice: no Integrations, no Models and accounts", async () => {
     const { SECTIONS } = await import("./SettingsModal");
     expect(SECTIONS.map((entry) => entry.id)).not.toContain("connections");
     const html = await page();
-    expect(html.match(/>Models and voice</g)?.length).toBeGreaterThanOrEqual(1);
+    expect(html).toContain(">Models</button>");
+    expect(html).toContain(">Voice</button>");
+    expect(html).not.toContain("Models and voice");
     expect(html).not.toContain(">Integrations<");
     expect(html).not.toContain("Models and accounts");
     setLocale("fr");
     const fr = await page();
-    expect(fr).toContain(">Modèles et voix<");
+    expect(fr).toContain(">Modèles</button>");
+    expect(fr).toContain(">Voix</button>");
+    expect(fr).not.toContain("Modèles et voix");
     expect(fr).not.toContain(">Intégrations<");
     expect(fr).not.toContain("Modèles et comptes");
   });
@@ -110,8 +128,8 @@ describe("Settings > Models and voice", () => {
   };
 
   // 0.5.6: the reference design's layout, grey headings outside rounded cards: Engines
-  // (Auto first), Keys, Voice, Image generation.
-  it("orders Engines (Auto first), Keys, Voice, Image generation on one page", async () => {
+  // (Auto first), Keys, Image generation; Voice on its own page (2026-10-28).
+  it("orders Engines (Auto first), Keys, Image generation on Models; Voice on its own page", async () => {
     fixture.instances = [kimiToSetUp];
     const html = await page();
     const at = (marker: string) => html.indexOf(marker);
@@ -119,9 +137,14 @@ describe("Settings > Models and voice", () => {
     expect(at('data-settings-card="engines.list"')).toBeLessThan(at("data-auto-model-explainer"));
     expect(at("data-auto-model-explainer")).toBeLessThan(at('data-settings-card="engines.setup"'));
     expect(at('data-settings-card="engines.setup"')).toBeLessThan(at("data-keys-section"));
-    expect(at("data-keys-section")).toBeLessThan(at("data-voice-section"));
-    expect(at("data-voice-section")).toBeLessThan(at('data-settings-card="connections.image"'));
-    for (const group of ["engines", "keys", "voice", "image"]) expect(html, group).toContain(`data-settings-group="${group}"`);
+    expect(at("data-keys-section")).toBeLessThan(at('data-settings-card="connections.image"'));
+    for (const group of ["engines", "keys", "image"]) expect(html, group).toContain(`data-settings-group="${group}"`);
+    for (const gone of ["data-voice-section", 'data-settings-card="connections.audio"', 'data-settings-card="voice.advanced"']) expect(html, gone).not.toContain(gone);
+    const voice = await page("voice");
+    expect(voice).toContain("data-voice-page");
+    expect(voice.indexOf('data-settings-card="connections.audio"')).toBeLessThan(voice.indexOf("data-voice-section"));
+    for (const group of ["audio", "voice"]) expect(voice, group).toContain(`data-settings-group="${group}"`);
+    for (const gone of ["data-keys-section", "data-engines-list", 'data-settings-card="connections.image"']) expect(voice, gone).not.toContain(gone);
     // none ready: Needs setup opens by default, to set one up
     expect(part(html, 'data-settings-card="engines.setup"', "data-keys-section")).toMatch(/^data-settings-card="engines.setup" data-open="true"/);
   });
@@ -131,10 +154,13 @@ describe("Settings > Models and voice", () => {
     const html = await page();
     const main = part(html, "data-models-voice");
     expect(main).not.toContain("<select");
-    expect(main).toContain('aria-label="Voice engine"');
-    expect(main).toContain('aria-label="Fish Audio model"');
     expect(main).toContain('aria-label="Image provider"');
     expect(main).toContain("data-pill-select");
+    const voice = part(await page("voice"), "data-voice-page");
+    expect(voice).not.toContain("<select");
+    expect(voice).toContain('aria-label="Voice engine"');
+    expect(voice).toContain('aria-label="Fish Audio model"');
+    expect(voice).not.toContain("Who turns text into speech for every bot.");
     // the old one-line subtitles are gone
     expect(main).not.toContain("Who turns text into speech for every bot.");
     expect(main).not.toContain("The provider bots use to draw avatars and images.");
@@ -160,12 +186,12 @@ describe("Settings > Models and voice", () => {
   // 2026-10-15: every key is managed in Keys, the voice and image keys too.
   it("lists every key once in Keys, none in Voice or Image generation, with no key field on the page", async () => {
     const html = await page();
-    const keys = part(html, "data-keys-section", "data-voice-section");
+    const keys = part(html, "data-keys-section", 'data-settings-card="connections.image"');
     for (const id of ["anthropic", "openai", "xai", "openrouter", "mistral", "openaiCompat", "opencodeGo", "elevenlabs", "fishAudio", "openaiImage", "customImage"]) {
       expect(html.match(new RegExp(`data-provider-key="${id}"`, "g")), id).toHaveLength(1);
       expect(keys, id).toContain(`data-provider-key="${id}"`);
     }
-    const voice = part(html, "data-voice-section", 'data-settings-card="connections.image"');
+    const voice = part(await page("voice"), "data-voice-section");
     expect(voice).toContain("ElevenLabs key missing");
     expect(voice).toContain('data-add-in-keys="elevenlabs"');
     expect(voice).not.toContain("Add a key");
@@ -174,6 +200,7 @@ describe("Settings > Models and voice", () => {
     expect(image).not.toContain('type="password"');
     expect(image).toContain('data-add-in-keys="openaiImage"');
     expect(html.match(/data-keys-section/g)).toHaveLength(1);
+    expect(voice).not.toContain("data-keys-section");
     // keys are added in a dialog, never typed on the page
     expect(html).not.toContain('data-api-key-row="anthropic"');
     expect(html).not.toContain('aria-label="Grok key"');
@@ -182,7 +209,7 @@ describe("Settings > Models and voice", () => {
 
   it("folds the rare providers under More providers, but never hides a saved one", async () => {
     const html = await page();
-    const more = part(html, 'data-settings-card="engines.moreProviders"', "data-voice-section");
+    const more = part(html, 'data-settings-card="engines.moreProviders"', 'data-settings-card="connections.image"');
     expect(more).toContain('data-open="false"');
     expect(more).toContain("More providers");
     expect(more).toContain('data-provider-key="openrouter"');
@@ -191,7 +218,7 @@ describe("Settings > Models and voice", () => {
     const saved = await page();
     const main = part(saved, "data-keys-section", 'data-settings-card="engines.moreProviders"');
     expect(main).toMatch(/data-provider-key="openrouter" data-key-saved="true"/);
-    expect(part(saved, 'data-settings-card="engines.moreProviders"', "data-voice-section")).not.toContain('data-provider-key="openrouter"');
+    expect(part(saved, 'data-settings-card="engines.moreProviders"', 'data-settings-card="connections.image"')).not.toContain('data-provider-key="openrouter"');
   });
 
   it("puts a saved voice key in the main list, and Voice says it uses it", async () => {
@@ -199,9 +226,10 @@ describe("Settings > Models and voice", () => {
     const html = await page();
     const main = part(html, "data-keys-section", 'data-settings-card="engines.moreProviders"');
     expect(main).toMatch(/data-provider-key="elevenlabs" data-key-saved="true"/);
-    expect(part(html, 'data-settings-card="engines.moreProviders"', "data-voice-section")).toContain('data-provider-key="fishAudio"');
-    expect(html).toMatch(/data-voice-key="elevenlabs" data-voice-key-saved="true"/);
-    expect(html).toContain("Uses the ElevenLabs key from Keys.");
+    expect(part(html, 'data-settings-card="engines.moreProviders"', 'data-settings-card="connections.image"')).toContain('data-provider-key="fishAudio"');
+    const voice = await page("voice");
+    expect(voice).toMatch(/data-voice-key="elevenlabs" data-voice-key-saved="true"/);
+    expect(voice).toContain("Uses the ElevenLabs key from Keys.");
   });
 
   // A key saved from the Voice section of an older build (tts.key, tts.fishKey)
@@ -237,19 +265,21 @@ describe("Settings > Models and voice", () => {
   it("has one OpenAI key on the page: Live calls use the list's", async () => {
     const html = await page();
     expect(html.match(/data-provider-key="openai"/g)).toHaveLength(1);
-    const advanced = part(html, 'data-settings-card="voice.advanced"');
+    const voicePage = await page("voice");
+    expect(voicePage).not.toContain('data-provider-key="openai"');
+    const advanced = part(voicePage, 'data-settings-card="voice.advanced"');
     expect(advanced).toContain('data-live-key="none"');
     expect(advanced).not.toContain("Change key");
     fixture.config = baseConfig({ live: { enabled: true, configured: true, separateKey: true, voice: "", readTypedReplies: true, idleMinutes: 5 } });
-    const older = part(await page(), 'data-settings-card="voice.advanced"');
+    const older = part(await page("voice"), 'data-settings-card="voice.advanced"');
     expect(older).toContain('data-live-key="separate"');
     expect(older).toContain("Remove key");
   });
 
   it("chooses the voice engine only; Grok voice uses the xAI row; Live calls under a folded Advanced", async () => {
     fixture.config = baseConfig({ xai: { configured: true }, tts: { configured: true, ready: false, voice: "", provider: "xai", keys: { elevenlabs: false, fish: false } } });
-    const html = await page();
-    const voice = part(html, "data-voice-section", 'data-settings-card="connections.image"');
+    const html = await page("voice");
+    const voice = part(html, "data-voice-section");
     expect(voice).toContain('aria-label="Voice engine"');
     expect(voice).toContain("Uses the xAI key from Keys.");
     expect(voice).not.toContain("data-add-in-keys");
@@ -263,11 +293,11 @@ describe("Settings > Models and voice", () => {
 
   it("translates the Live calls settings in French", async () => {
     setLocale("fr");
-    const html = await page();
+    const html = await page("voice");
     expect(html).toContain("Lire les réponses aux messages tapés");
     expect(html).not.toContain("Read replies to typed messages");
     expect(html).toContain(">Appels en direct (OpenAI)<");
-    expect(html).toContain("Plus de fournisseurs");
+    expect(await page("engines")).toContain("Plus de fournisseurs");
   });
 
   // 2026-10-14: Decision model is a card of this page while its experiment

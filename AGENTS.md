@@ -107,6 +107,22 @@ and asks the page again every 5 s for the bot's new version. Tests:
 `src/lib/page-windows.test.ts`, `src/components/bot-settings/LibraryTab.test.ts`. Tests: `server/published-pages.test.ts` (app's own look),
 `src/components/PageViewer.surface.dom.test.ts`, `src/lib/open-page.test.ts`.
 
+## Settings split: Account, Security, Vault, Models, Voice (2026-10-28)
+
+Account keeps the account (who is signed in, name, photo, About me,
+language, time zone) and what General held (server, default bot, tours,
+Advanced). Security (`security`) holds the security keys, the approvals that
+need a key, the person's approval rules (`MyApprovalRules`, paged with
+`SettingsPager`, the Usage traces' pager) and My tool access. Vault
+(`credentials`, label Vault) holds the vault, the one-time card, purchases and
+1Password. Models (`engines`) keeps engines, every key, web search and
+images; Voice (`voice`) holds the person's voice keys, the microphone, the
+voice engine and Live calls. Nothing was removed and no right changed.
+`CARD_HOME` (`src/lib/settings-sections.ts`) sends an old link's card to its
+new page; the self-knowledge builder reads it too. Tests:
+`src/components/SettingsModal.splitPages.dom.test.ts`. Captures:
+`scripts/capture-settings-pages.mjs`.
+
 ## Routine folders (2026-10-28)
 
 A routine may sit in one folder of its bot (`folder`), and each bot keeps an

@@ -15,19 +15,22 @@ const SECTION_LABEL = {
   organization: "settings.section.organization",
   appearance: "settings.section.appearance",
   experimental: "settings.section.experimental",
-  // Integrations, Connected apps and Decision model are in Models and voice
-  // (2026-10-14); Privacy and Memory are cards of Notifications and
+  // Integrations, Connected apps and Decision model are in Models
+  // (2026-10-14, "Models and voice" until 2026-10-28, when Voice became a
+  // page of its own); Privacy and Memory are cards of Notifications and
   // Organization. A pointer names the page that shows them.
-  connections: "settings.section.modelsVoice",
-  connectedApps: "settings.section.modelsVoice",
-  decisionModel: "settings.section.modelsVoice",
-  engines: "settings.section.modelsVoice",
+  connections: "settings.section.models",
+  connectedApps: "settings.section.models",
+  decisionModel: "settings.section.models",
+  engines: "settings.section.models",
+  voice: "settings.section.voice",
   // Pair devices, Activity and Email are hidden (2026-10-14), People and
   // Installations too (2026-10-15): a pointer names the page an old link opens.
   companion: "settings.section.account",
   computer: "settings.section.computer",
   usage: "settings.section.usage",
-  credentials: "settings.section.account",
+  // 2026-10-28: Security and Vault are pages again.
+  credentials: "settings.section.vault",
   people: "settings.section.account",
   mail: "settings.section.account",
   activity: "settings.section.account",
@@ -38,7 +41,7 @@ const SECTION_LABEL = {
   notifications: "settings.section.notifications",
   memory: "settings.section.organization",
   updates: "settings.updates.title",
-  security: "settings.section.account",
+  security: "settings.section.security",
   // Published pages are a section of Connect apps > Manage (2026-10-26).
   pages: "connectApps.title",
 } as const satisfies Record<AppSettingsSection, LocaleKey>;
@@ -72,7 +75,7 @@ export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSec
   if (card) requestSettingsCard(card);
 }
 
-/** Settings > Models and voice, at the list of keys: where a model that
+/** Settings > Models, at the list of keys: where a model that
  * cannot run gets its key (New bot's "no model works" line, 2026-10-14). */
 export function openModelKeysSettings(dispatch: SettingsDispatch): void {
   openSettings(dispatch, "engines", "engines.keys");

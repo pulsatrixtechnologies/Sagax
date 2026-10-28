@@ -15,6 +15,8 @@ const HIDDEN_SETTINGS: ReadonlySet<AppSettingsSection> = new Set([
   "connectedApps",
   "decisionModel",
   "engines",
+  // Voice was part of Models and voice until 2026-10-28: Simple hides it as before.
+  "voice",
   "computer",
   "mail",
   "activity",

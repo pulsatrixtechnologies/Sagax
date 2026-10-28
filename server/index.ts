@@ -30108,7 +30108,7 @@ const meetingService: MeetingService = createMeetingService({
     try { assertWithinBudget(cfg, DATA_DIR); } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
     if (!key.ok) {
       return { error: key.cause === "no_credentials"
-        ? "Meeting notes need speech to text: add an xAI key in Settings > Models and voice."
+        ? "Meeting notes need speech to text: add an xAI key in Settings > Models."
         : `Speech to text is not available for you right now (${key.cause}).` };
     }
     const target = { botId, botName: bot.name, threadId };

@@ -47,8 +47,8 @@ describe("Settings nav groups", () => {
     expect(at.every((value) => value >= 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
     expect(SECTIONS.map((entry) => entry.id)).toEqual([
-      "account", "appearance", "notifications",
-      "engines",
+      "account", "security", "credentials", "appearance", "notifications",
+      "engines", "voice",
       "organization", "computer", "usage", "backups", "import",
       "updates", "experimental",
     ]);
@@ -60,7 +60,10 @@ describe("Settings nav groups", () => {
     expect(headings).toEqual(["you", "ai", "workspace", "app"]);
     for (const label of ["Personal", "AI", "Installation", "App"]) expect(rail, label).toContain(`>${label}</div>`);
     const ai = rail.slice(rail.indexOf('data-settings-nav-group="ai"'), rail.indexOf('data-settings-nav-group="workspace"'));
-    expect(ai).toContain(">Models and voice</button>");
+    expect(ai).toContain(">Models</button>");
+    expect(ai.indexOf(">Models</button>")).toBeLessThan(ai.indexOf(">Voice</button>"));
+    const you = rail.slice(rail.indexOf('data-settings-nav-group="you"'), rail.indexOf('data-settings-nav-group="ai"'));
+    for (const page of ["Account", "Security", "Vault", "Appearance", "Notifications"]) expect(you, page).toContain(`>${page}</button>`);
     expect(rail).not.toContain("data-settings-automations");
     const app = rail.slice(rail.indexOf('data-settings-nav-group="app"'));
     expect(app.indexOf(">Updates</button>")).toBeLessThan(app.indexOf(">Experimental</button>"));
@@ -68,24 +71,27 @@ describe("Settings nav groups", () => {
     expect(rail).toMatch(/role="group" aria-labelledby="app-settings-nav-you"/);
   });
 
-  // 2026-10-26: General is out of the navigation, Security keys and the
-  // vault are under Account, Published pages are in Connect apps.
-  it("leaves General out of the rail and the menu; Account is first, with no page of its own for the moved ones", () => {
+  // 2026-10-26: General is out of the navigation, Published pages are in
+  // Connect apps. 2026-10-28: Security and Vault are pages of their own.
+  it("leaves General out of the rail and the menu; Account first, then Security and Vault", () => {
     const html = render();
     const rail = nav(html);
     expect(rail).not.toContain(">General</button>");
     expect(html).not.toContain('<option value="general"');
-    expect(rail.indexOf(">Account</button>")).toBeGreaterThan(-1);
-    expect(rail.indexOf(">Account</button>")).toBeLessThan(rail.indexOf(">Appearance</button>"));
-    for (const gone of ["Security", "Credentials", "Published pages"]) expect(rail, gone).not.toContain(`>${gone}</button>`);
-    for (const id of ["security", "credentials", "pages"]) expect(html, id).not.toContain(`<option value="${id}"`);
-  });
-
-  it("Account holds the account row, then Security keys, then the vault", () => {
-    const html = render();
-    const at = ['data-settings-group="account"', 'data-settings-card="security"', 'Loading your vault'].map((text) => html.indexOf(text));
+    const at = [">Account</button>", ">Security</button>", ">Vault</button>", ">Appearance</button>"].map((label) => rail.indexOf(label));
     expect(at.every((value) => value >= 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
+    for (const gone of ["Credentials", "Published pages", "Models and voice"]) expect(rail, gone).not.toContain(`>${gone}</button>`);
+    for (const id of ["security", "credentials"]) expect(html, id).toContain(`<option value="${id}"`);
+    expect(html).not.toContain('<option value="pages"');
+  });
+
+  it("Account keeps the account only: no security key, rule, tool access or vault there", () => {
+    const html = render();
+    expect(html).toContain('data-settings-group="account"');
+    for (const gone of ['data-settings-card="security"', "Loading your vault", 'data-settings-card="credentials.items"', "data-security-page", "data-vault-page"]) {
+      expect(html, gone).not.toContain(gone);
+    }
   });
 
   it("a search for pages finds Published pages in Connect apps, and the moved sections where they are now", async () => {
@@ -94,15 +100,28 @@ describe("Settings nav groups", () => {
     expect(publishedPagesMatch("vault")).toBe(false);
     expect(publishedPagesMatch("")).toBe(false);
     const account = SECTIONS.find((entry) => entry.id === "account")!;
-    for (const query of ["security key", "clé de sécurité", "passkey", "yubikey", "vault", "coffre", "identifiants", "1password"]) {
-      expect(sectionMatches(account, query), query).toBe(true);
+    const security = SECTIONS.find((entry) => entry.id === "security")!;
+    const vault = SECTIONS.find((entry) => entry.id === "credentials")!;
+    // 2026-10-28: security keys, rules and tool access on Security; the vault on Vault
+    for (const query of ["security key", "clé de sécurité", "passkey", "yubikey", "always allow", "toujours refuser", "demander d'abord", "règles d'approbation", "my tool access", "mon accès aux outils"]) {
+      expect(sectionMatches(security, query), query).toBe(true);
+      expect(sectionMatches(account, query), query).toBe(false);
     }
-    // what General held is found on Account; the microphone on Models and voice
-    for (const query of ["language", "langue", "time zone", "fuseau", "server", "serveur", "tour", "diagnostic", "tool access"]) {
+    // "tool access" also names People's tool access, an admin card of
+    // Account > Advanced: a search finds both, each in its own place
+    expect(sectionMatches(security, "tool access")).toBe(true);
+    expect(sectionMatches(account, "people's tool access")).toBe(true);
+    for (const query of ["vault", "coffre", "identifiants", "1password", "one-time card", "carte à usage unique", "mot de passe"]) {
+      expect(sectionMatches(vault, query), query).toBe(true);
+      expect(sectionMatches(account, query), query).toBe(false);
+    }
+    // what General held is found on Account; the microphone on Voice
+    for (const query of ["language", "langue", "time zone", "fuseau", "server", "serveur", "tour", "diagnostic", "avatar"]) {
       expect(sectionMatches(account, query), query).toBe(true);
     }
     expect(sectionMatches(account, "microphone")).toBe(false);
-    expect(sectionMatches(SECTIONS.find((entry) => entry.id === "engines")!, "microphone")).toBe(true);
+    expect(sectionMatches(SECTIONS.find((entry) => entry.id === "engines")!, "microphone")).toBe(false);
+    expect(sectionMatches(SECTIONS.find((entry) => entry.id === "voice")!, "microphone")).toBe(true);
     expect(SECTIONS.some((entry) => entry.id === ("general" as string))).toBe(false);
   });
 

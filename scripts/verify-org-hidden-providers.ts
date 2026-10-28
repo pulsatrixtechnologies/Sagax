@@ -159,7 +159,7 @@ try {
     await grokOffered("model window");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
-    // 4. Settings > Models and voice, through the command palette
+    // 4. Settings > Models, through the command palette
     await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
     await page.waitForTimeout(400);
     await page.keyboard.type("Modèles");
@@ -169,10 +169,10 @@ try {
       await page.waitForSelector("[data-models-voice]", { timeout: 10_000 });
       await shot("settings-models");
       const cards = await page.locator("[data-models-voice]").innerText();
-      if (phase === "after" && /\bGrok\b(?! voice| Voice| images)/.test(cards.replace(/Grok (voix|images)/gi, ""))) fail("Settings > Models and voice still lists Grok");
+      if (phase === "after" && /\bGrok\b(?! voice| Voice| images)/.test(cards.replace(/Grok (voix|images)/gi, ""))) fail("Settings > Models still lists Grok");
     } catch {
       await shot("settings-models-failed");
-      console.log("[verify] note: Settings > Models and voice did not open from the palette");
+      console.log("[verify] note: Settings > Models did not open from the palette");
     }
     await page.keyboard.press("Escape");
     await context.close();

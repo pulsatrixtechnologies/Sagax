@@ -413,14 +413,31 @@ export function keysShown(input: { member: boolean; remote: boolean; organizatio
   return viewer.operator || viewerIsOrgAdmin(input.config) || viewerCan(input.config, "engines.manage");
 }
 
-/** Settings > Models and voice (2026-10-14), laid out as the reference design's settings
+/** Who sees what on Models and Voice: a member's view of the engines, the
+ * Keys list, and the installation's own settings (the voice engine, image
+ * generation, online computers). Shared by both pages (2026-10-28), so the
+ * split changes no right. */
+function useModelsVoiceAccess() {
+  const { state } = useStore();
+  const member = viewerIsOrgMember(state.config) && !viewerCan(state.config, "engines.manage");
+  const org = usePerspicaxOrg();
+  const remote = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
+  const keys = keysShown({ member, remote, organization: org !== null || viewerIsOrgMember(state.config), config: state.config });
+  // The voice engine, image generation and online computers write the
+  // installation too: shown to whoever may change it.
+  const installation = !member && canEditConfig(state.config);
+  const personalVoiceKeys = org !== null || viewerIsOrgMember(state.config);
+  return { member, org, keys, installation, personalVoiceKeys };
+}
+
+/** Settings > Models (2026-10-14 as "Models and voice"; Voice is a page of
+ * its own since 2026-10-28), laid out as the reference design's settings
  * pages since 0.5.6: grey headings outside rounded cards, compact rows.
  * Engines first (Auto, the ready engines in view, the others folded under
  * "Needs setup" with their count), then every key (model, voice and image)
  * in one group, the rare ones folded under More providers, the only place a
- * key is managed (2026-10-15); then the voice engine (its key from the list,
- * Live calls folded), image generation and, when their experiments are on,
- * the online computers. */
+ * key is managed (2026-10-15); then web search, image generation and, when
+ * their experiments are on, the online computers. */
 export function EnginesSettings() {
   const { state } = useStore();
   // every KNOWN-driver instance has cliDefault; unknown-driver shadows have
@@ -433,7 +450,7 @@ export function EnginesSettings() {
   // only way back to a mistyped key) vanishes (MOCA-292).
   // 2026-10-09: a member whose profile includes engines.manage manages the
   // server's engines as an admin does (the server sends them the full rows).
-  const member = viewerIsOrgMember(state.config) && !viewerCan(state.config, "engines.manage");
+  const { member, org, keys, installation } = useModelsVoiceAccess();
   // an engine the organization does not offer is not listed
   // (src/lib/offered-instances.ts; the server leaves it out too)
   const offered = useOfferedInstances("settings");
@@ -441,19 +458,13 @@ export function EnginesSettings() {
   // On an organization server each person signs in their own subscription
   // here, on each engine's row (it was a separate "My subscriptions and
   // keys" card until 2026-10-02), never the server's.
-  const org = usePerspicaxOrg();
   const myEngines = useMyEngines();
   const mineOf = (instance: InstanceInfo) => (org ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined);
   const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
   const isReady = (instance: InstanceInfo) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); };
 
-  const remote = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
-  const keys = keysShown({ member, remote, organization: org !== null || viewerIsOrgMember(state.config), config: state.config });
-  // The voice engine, image generation and online computers write the
-  // installation too: shown to whoever may change it.
-  const installation = !member && canEditConfig(state.config);
   return (
-    <div className="flex min-w-0 flex-col gap-6 pb-2" data-models-voice="">
+    <div className="flex min-w-0 flex-col gap-6 pb-2" data-models-voice="" data-models-page="">
       <EnginesSection
         engines={shown}
         isReady={isReady}
@@ -466,17 +477,6 @@ export function EnginesSettings() {
       {keys && <KeysSection issuer={org?.org.identity.issuer} />}
       {/* the person's own web search provider and key: theirs, no admin right */}
       <WebSearchSettings />
-      {/* #1098: the person's own voice keys on an organization server (their
-          own speech and voice notes); the shared keys stay engines.manage */}
-      {(org !== null || viewerIsOrgMember(state.config)) && <PersonalVoiceKeys />}
-      {/* this computer's microphone: everyone's, whoever edits the installation */}
-      <div data-settings-card="connections.audio">
-        <SettingsGroup title={t("settings.audio.title")} groupId="audio">
-          <MicrophonePermissionRow />
-          <MicrophoneSettings />
-        </SettingsGroup>
-      </div>
-      {installation && <VoiceSection keysLink={keys} />}
       {installation && (
         <div data-settings-card="connections.image">
           <SettingsGroup title={t("imageGen.title")} groupId="image">
@@ -495,6 +495,30 @@ export function EnginesSettings() {
         </div>
       )}
       {(keys || installation) && <ProviderKeyDialog />}
+    </div>
+  );
+}
+
+/** Settings > Voice (2026-10-28, out of Models and voice): the person's own
+ * voice keys on an organization server, this computer's microphone, then the
+ * voice engine with Live calls folded. Same rows and same rights as on
+ * Models and voice; the voice engine's key stays in Models > Keys and its
+ * "Add in Keys" opens it there. */
+export function VoiceSettingsPage() {
+  const { keys, installation, personalVoiceKeys } = useModelsVoiceAccess();
+  return (
+    <div className="flex min-w-0 flex-col gap-6 pb-2" data-voice-page="">
+      {/* #1098: the person's own voice keys on an organization server (their
+          own speech and voice notes); the shared keys stay engines.manage */}
+      {personalVoiceKeys && <PersonalVoiceKeys />}
+      {/* this computer's microphone: everyone's, whoever edits the installation */}
+      <div data-settings-card="connections.audio">
+        <SettingsGroup title={t("settings.audio.title")} groupId="audio">
+          <MicrophonePermissionRow />
+          <MicrophoneSettings />
+        </SettingsGroup>
+      </div>
+      {installation && <VoiceSection keysLink={keys} />}
     </div>
   );
 }

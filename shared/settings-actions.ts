@@ -466,7 +466,7 @@ add({
   classes: always("rule-change"),
 });
 add({
-  key: "rules.ownerDelete", family: "rules", target: "rule", value: "boolean", label: "Delete an owner rule (true)", where: "Settings > Approvals > My rules",
+  key: "rules.ownerDelete", family: "rules", target: "rule", value: "boolean", label: "Delete an owner rule (true)", where: "Settings > Security > Your approval rules",
   write: (ids, v) => v === true ? { method: "DELETE", path: `/api/approval-rules/${enc(ids.target!)}` } : "value is true.",
   classes: always("delete", "rule-change"),
 });
@@ -478,15 +478,15 @@ add({
 
 // ── account (the person) ───────────────────────────────────────────────
 add({
-  key: "account.label", family: "account", target: "self", value: "string", label: "How people see your name", where: "Settings > General > Account",
+  key: "account.label", family: "account", target: "self", value: "string", label: "How people see your name", where: "Settings > Account",
   write: (ids, v) => ({ method: "PUT", path: `/api/people/${enc(ids.target!)}/label`, body: { label: v } }),
 });
 add({
-  key: "account.avatar", family: "account", target: "none", value: "string?", label: "Your photo (a data URL, null removes)", where: "Settings > General > Account",
+  key: "account.avatar", family: "account", target: "none", value: "string?", label: "Your photo (a data URL, null removes)", where: "Settings > Account",
   write: (_ids, v) => v === null ? { method: "DELETE", path: "/api/me/avatar" } : { method: "PUT", path: "/api/me/avatar", body: { avatarUrl: v } },
 });
 add({
-  key: "account.aboutMe", family: "account", target: "none", value: "text", label: "About me", where: "Settings > General > About me",
+  key: "account.aboutMe", family: "account", target: "none", value: "text", label: "About me", where: "Settings > Account > About me",
   // the server's profile: on an organization server it is the operator's
   classes: serverWide,
   read: () => ({ path: "/api/config", field: "profile.aboutMe" }),
@@ -535,12 +535,12 @@ add({
   classes: (value, ctx) => carriesSecret(value) ? ["secret"] : serverWide(value, { ...ctx, organization: false }),
 });
 add({
-  key: "account.timeZone", family: "account", target: "none", value: "string", label: "Your time zone (an IANA zone such as America/Toronto; turns automatic detection off)", where: "Settings > General > Appearance > Time zone",
+  key: "account.timeZone", family: "account", target: "none", value: "string", label: "Your time zone (an IANA zone such as America/Toronto; turns automatic detection off)", where: "Settings > Account > Time zone",
   read: () => ({ path: "/api/settings/bot", field: "settings.timeZone" }),
   write: (_ids, v) => ({ method: "PUT", path: "/api/settings/bot", body: { timeZone: v, timeZoneAuto: false } }),
 });
 add({
-  key: "account.timeZoneAuto", family: "account", target: "none", value: "boolean", label: "Detect your time zone automatically (the app then follows this computer's zone)", where: "Settings > General > Appearance > Time zone",
+  key: "account.timeZoneAuto", family: "account", target: "none", value: "boolean", label: "Detect your time zone automatically (the app then follows this computer's zone)", where: "Settings > Account > Time zone",
   read: () => ({ path: "/api/settings/bot", field: "settings.timeZoneAuto" }),
   write: (_ids, v) => ({ method: "PUT", path: "/api/settings/bot", body: { timeZoneAuto: v } }),
 });
@@ -592,7 +592,7 @@ pref("notifications.nudgeShake", "notifications", "omb-nudge-shake", "boolean", 
 pref("notifications.readReceipts", "notifications", "sagax.readReceipts.v1", "boolean", "Read receipts", "Settings > Notifications > Privacy");
 pref("notifications.presence", "notifications", "sagax.presenceVisible.v1", "boolean", "Show when online", "Settings > Notifications > Privacy");
 pref("notifications.analyticsOptOut", "notifications", "omb-analytics-opt-out", "boolean", "Analytics opt-out", "Settings > Privacy");
-pref("models.voiceMode", "models", "omb.voiceMode.v1", "object", "Voice mode (voice, speed, language)", "Settings > Models and voice > Voice mode");
+pref("models.voiceMode", "models", "omb.voiceMode.v1", "object", "Voice mode (voice, speed, language)", "Settings > Voice > Voice mode");
 // where bots run for the person (their own computer, routines, network): a
 // widening of where work goes, the person's Allow
 pref("computer.botWorkplace", "computer", "sagax.botWorkplace.v1", "object", "Where bots work for you", "Settings > Computer > Bot workplace", always("rule-change"));
@@ -648,13 +648,13 @@ config("server.routinesInConversation", "server", "features.routinesInConversati
 config("server.roomTurnTimeout", "server", "rooms.turnTimeoutMinutes", "number", "Room turn limit", "Settings > Organization > Rooms");
 config("server.mcpCallTimeout", "server", "mcp.callTimeoutMinutes", "number", "MCP call time limit", "Settings > Organization");
 config("server.localVm", "computer", "localVm", "object", "Local VM ({mode, maxInstances, idleTimeoutMinutes})", "Settings > Computer");
-config("models.voiceProvider", "models", "tts.provider", "string", "Voice engine", "Settings > Models and voice > Voice");
-config("models.fishModel", "models", "tts.fishModel", "string", "Fish Audio model", "Settings > Models and voice > Voice");
-config("models.imageGen", "models", "imageGen", "object", "Image generation", "Settings > Models and voice > Images", secretWhenKeyed);
-config("models.decider", "models", "decider", "object", "Decision model", "Settings > Models and voice > Decision model", secretWhenKeyed);
-config("models.everyClaudeBot", "models", "anthropic.everyClaudeBot", "boolean", "Anthropic key for every Claude bot", "Settings > Models and voice > Keys");
+config("models.voiceProvider", "models", "tts.provider", "string", "Voice engine", "Settings > Voice");
+config("models.fishModel", "models", "tts.fishModel", "string", "Fish Audio model", "Settings > Voice");
+config("models.imageGen", "models", "imageGen", "object", "Image generation", "Settings > Models > Images", secretWhenKeyed);
+config("models.decider", "models", "decider", "object", "Decision model", "Settings > Models > Decision model", secretWhenKeyed);
+config("models.everyClaudeBot", "models", "anthropic.everyClaudeBot", "boolean", "Anthropic key for every Claude bot", "Settings > Models > Keys");
 add({
-  key: "models.providerKey", family: "credentials", target: "none", value: "object", label: "A provider key ({<provider>: {key}})", where: "Settings > Models and voice > Keys",
+  key: "models.providerKey", family: "credentials", target: "none", value: "object", label: "A provider key ({<provider>: {key}})", where: "Settings > Models > Keys",
   // known providers, each holding its key only: nothing else rides along
   write: (_ids, v) => {
     const entries = Object.entries(v as Record<string, unknown>);
@@ -669,7 +669,7 @@ add({
   classes: (_v, ctx) => ctx.organization ? ["secret", "org"] : ["secret"],
 });
 add({
-  key: "models.liveCalls", family: "models", target: "none", value: "object", label: "Live call settings", where: "Settings > Models and voice > Live calls",
+  key: "models.liveCalls", family: "models", target: "none", value: "object", label: "Live call settings", where: "Settings > Voice > Live calls",
   read: () => ({ path: "/api/live/settings" }),
   write: (_ids, v) => ({ method: "PATCH", path: "/api/live/settings", body: v }), classes: secretWhenKeyed,
 });
@@ -728,7 +728,7 @@ add({
   write: (_ids, v) => v === true ? { method: "DELETE", path: "/api/me/github" } : "value is true.", classes: always("delete", "secret"),
 });
 add({
-  key: "connections.cloudAgentKey", family: "credentials", target: "none", value: "object", label: "Cloud coding agent key ({provider: cursor|claude|codex, token}, token null removes)", where: "Settings > Models and voice > Cloud coding agents",
+  key: "connections.cloudAgentKey", family: "credentials", target: "none", value: "object", label: "Cloud coding agent key ({provider: cursor|claude|codex, token}, token null removes)", where: "Settings > Models > Cloud coding agents",
   write: (_ids, v) => {
     const k = v as { provider?: unknown; token?: unknown } | null;
     if (!k || typeof k.provider !== "string") return "value is {provider, token}.";
@@ -742,13 +742,13 @@ add({
 add({
   key: "connections.webSearch", family: "connections", target: "none", value: "object",
   label: "Your web search provider ({provider: brave|exa|parallel|firecrawl|searxng, baseUrl}; null forgets it). The key is pasted in Settings only: the answer says whether one is saved, never the key",
-  where: "Settings > Models and voice > Web search",
+  where: "Settings > Models > Web search",
   read: () => ({ path: "/api/me/web-search" }),
   write: (_ids, v) => {
     if (v === null) return { method: "DELETE", path: "/api/me/web-search" };
     const w = v as { provider?: unknown; baseUrl?: unknown; key?: unknown } | null;
     if (!w || typeof w !== "object" || typeof w.provider !== "string") return "value is {provider, baseUrl}, or null.";
-    if ("key" in w) return "The key is pasted by the person in Settings > Models and voice > Web search, never through a bot.";
+    if ("key" in w) return "The key is pasted by the person in Settings > Models > Web search, never through a bot.";
     return { method: "PUT", path: "/api/me/web-search", body: { provider: w.provider, ...(typeof w.baseUrl === "string" ? { baseUrl: w.baseUrl } : {}) } };
   },
 });
@@ -756,14 +756,14 @@ add({
 // ── credentials (the person's vault; export and import stay theirs) ───
 add({
   key: "credentials.item", family: "credentials", target: "credential", value: "object",
-  label: "A vault item ({name, username, password, apiKey, notes, domains}); no target creates one", where: "Settings > Credentials",
+  label: "A vault item ({name, username, password, apiKey, notes, domains}); no target creates one", where: "Settings > Vault",
   write: (ids, v) => ids.target
     ? { method: "PATCH", path: `/api/me/credentials/${enc(ids.target)}`, body: v }
     : { method: "POST", path: "/api/me/credentials", body: v },
   classes: always("secret"),
 });
 add({
-  key: "credentials.botAccess", family: "credentials", target: "credential", value: "object", label: "Let a bot use an item ({botId, allow: true|false})", where: "Settings > Credentials > item",
+  key: "credentials.botAccess", family: "credentials", target: "credential", value: "object", label: "Let a bot use an item ({botId, allow: true|false})", where: "Settings > Vault > item",
   write: (ids, v) => {
     const g = v as { botId?: unknown; allow?: unknown } | null;
     if (!ids.target) return "target is the vault item's id.";
@@ -775,7 +775,7 @@ add({
   classes: always("secret"),
 });
 add({
-  key: "credentials.delete", family: "credentials", target: "credential", value: "boolean", label: "Delete a vault item (true)", where: "Settings > Credentials",
+  key: "credentials.delete", family: "credentials", target: "credential", value: "boolean", label: "Delete a vault item (true)", where: "Settings > Vault",
   write: (ids, v) => !ids.target ? "target is the vault item's id." : v === true ? { method: "DELETE", path: `/api/me/credentials/${enc(ids.target)}` } : "value is true.",
   classes: always("delete", "secret"),
 });

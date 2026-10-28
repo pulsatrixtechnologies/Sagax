@@ -5,9 +5,10 @@ import { setLocale } from "@/lib/i18n";
 describe("settings links", () => {
   it("names a section with the label Settings shows", () => {
     setLocale("en");
-    expect(settingsSectionLabel("engines")).toBe("Models and voice");
+    expect(settingsSectionLabel("engines")).toBe("Models");
+    expect(settingsSectionLabel("voice")).toBe("Voice");
     // a former page names the page that holds its card now
-    expect(settingsSectionLabel("connectedApps")).toBe("Models and voice");
+    expect(settingsSectionLabel("connectedApps")).toBe("Models");
     // Pair devices and Activity are hidden (2026-10-14), People, Installations
     // and Email (a card of People) too (2026-10-15): their old links open Account (General is out of the navigation, 2026-10-26)
     expect(settingsSectionLabel("mail")).toBe("Account");
@@ -15,13 +16,16 @@ describe("settings links", () => {
     expect(settingsSectionLabel("workspaces")).toBe("Account");
     expect(settingsSectionLabel("companion")).toBe("Account");
     expect(settingsSectionLabel("activity")).toBe("Account");
-    // Security keys and the vault are cards of Account; Published pages are in Connect apps
-    expect(settingsSectionLabel("security")).toBe("Account");
-    expect(settingsSectionLabel("credentials")).toBe("Account");
+    // Security and Vault are pages again (2026-10-28); Published pages are in Connect apps
+    expect(settingsSectionLabel("security")).toBe("Security");
+    expect(settingsSectionLabel("credentials")).toBe("Vault");
     expect(settingsSectionLabel("pages")).toBe("Connect Apps");
     expect(settingsSectionLabel("experimental")).toBe("Experimental");
     setLocale("fr");
-    expect(settingsSectionLabel("engines")).toBe("Modèles et voix");
+    expect(settingsSectionLabel("engines")).toBe("Modèles");
+    expect(settingsSectionLabel("voice")).toBe("Voix");
+    expect(settingsSectionLabel("security")).toBe("Sécurité");
+    expect(settingsSectionLabel("credentials")).toBe("Coffre");
     expect(settingsSectionLabel("privacy")).toBe("Notifications");
     expect(settingsSectionLabel("memory")).toBe("Organisation");
     setLocale("en");
@@ -32,7 +36,8 @@ describe("settings links", () => {
   // cards of that page. Connected apps stays its own section.
   it("redirects an old section link to the page and card that hold it now", () => {
     expect(currentSettingsSection("connections")).toBe("engines");
-    expect(currentSettingsSection("connections", "connections.voice")).toBe("engines");
+    // 2026-10-28: the voice card is on the Voice page
+    expect(currentSettingsSection("connections", "connections.voice")).toBe("voice");
     expect(currentSettingsSection("connections", "connections.apps")).toBe("engines");
     expect(currentSettingsSection("connectedApps")).toBe("connectedApps");
     expect(currentSettingsSection("decisionModel")).toBe("engines");
@@ -43,11 +48,12 @@ describe("settings links", () => {
     expect(currentSettingsSection("workspaces")).toBe("account");
     expect(currentSettingsSection("companion")).toBe("account");
     expect(currentSettingsSection("activity")).toBe("account");
-    expect(currentSettingsSection("security")).toBe("account");
-    expect(currentSettingsSection("credentials")).toBe("account");
+    // 2026-10-28: Security and Vault are pages again
+    expect(currentSettingsSection("security")).toBe("security");
+    expect(currentSettingsSection("credentials")).toBe("credentials");
     expect(currentSettingsSection("general")).toBe("account");
-    expect(mergedSettingsCard("security")).toBe("security");
-    expect(mergedSettingsCard("credentials")).toBe("credentials.items");
+    expect(mergedSettingsCard("security")).toBeUndefined();
+    expect(mergedSettingsCard("credentials")).toBeUndefined();
     expect(currentSettingsSection("usage")).toBe("usage");
     expect(mergedSettingsCard("connectedApps")).toBeUndefined();
     expect(mergedSettingsCard("decisionModel")).toBe("engines.decisionModel");
@@ -55,14 +61,14 @@ describe("settings links", () => {
     expect(mergedSettingsCard("memory")).toBe("organization.memory");
     expect(mergedSettingsCard("mail")).toBeUndefined();
     expect(mergedSettingsCard("general")).toBeUndefined();
-    // deep links to the moved pages: Account's cards, and Published pages in Connect apps
+    // deep links to the moved pages: Security and Vault, and Published pages in Connect apps
     const moved: unknown[] = [];
     openSettings((action) => moved.push(action), "security");
     openSettings((action) => moved.push(action), "credentials");
     openSettings((action) => moved.push(action), "pages");
     expect(moved).toEqual([
-      { type: "toggleAppSettings", open: true, section: "account" },
-      { type: "toggleAppSettings", open: true, section: "account" },
+      { type: "toggleAppSettings", open: true, section: "security" },
+      { type: "toggleAppSettings", open: true, section: "credentials" },
       { type: "togglePlugins", open: true, page: "pages" },
     ]);
     const sent: unknown[] = [];
@@ -75,7 +81,7 @@ describe("settings links", () => {
   });
 
   // New bot's "no model works" button opens the list of keys (PR #478).
-  it("opens Models and voice at its keys for a model that needs one", () => {
+  it("opens Models at its keys for a model that needs one", () => {
     const sent: unknown[] = [];
     openModelKeysSettings((action) => sent.push(action));
     expect(sent).toEqual([{ type: "toggleAppSettings", open: true, section: "engines" }]);

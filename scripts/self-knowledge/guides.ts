@@ -20,7 +20,11 @@ export interface Guide {
 
 /** One line more on a Settings page (setting:<id>): what it holds or who sees it. */
 export const SETTING_NOTES: Record<string, { text?: string; access?: string }> = {
-  engines: { text: "Engines and model providers with their sign-in or API keys, the voice engine (xAI, ElevenLabs, Fish Audio) and live calls, the image provider, Cloud coding agents (Cursor, Claude, Codex keys), and the Decision model card." },
+  account: { text: "Who is signed in (name, photo, label, Sign out), Open at login, About me, language and time zone; then the server, default bot, guided tours and Advanced." },
+  security: { text: "The person's own security: security keys and passkeys and the approvals that need one, every approval rule they saved (Always allow, Always deny, Ask first; paged, each revocable) and their own tool access.", access: "everyone, for their own keys, rules and tool access" },
+  credentials: { text: "Vault: logins, API keys and notes bots use without seeing them (Import, Export, Add an item, which bot may use each), the one-time card (Shop Pay, Link), purchases waiting for an answer and 1Password.", access: "everyone, for their own vault" },
+  engines: { text: "Models: engines and model providers with their sign-in, every API key (model, voice and image keys alike), web search, the image provider, Cloud coding agents (Cursor, Claude, Codex keys), online computers and the Decision model card." },
+  voice: { text: "Voice: the person's own voice keys (organization server), this computer's microphone, the voice engine (xAI, ElevenLabs, Fish Audio; its key from Models > Keys) and Live calls." },
   experimental: { text: "Early features, each off until switched on: Connected apps, Meeting notetaker (Google Meet), skill authoring, browser profiles, data window.", access: "on an organization server, only people who may edit the configuration (admins)" },
   backups: { text: "Export full backup (bots, conversations, settings; no secret), import and restore.", access: "solo: the person; organization: permission backup.workspace (off for members by default), restore stays with admins" },
   computer: { text: "Where bots work: this computer, Local VM, cloud computers, self-hosted VPS, isolation, safety and storage.", access: "solo: the person; organization: admins, and each member for their own server environment" },
@@ -53,16 +57,16 @@ export const GUIDES: Guide[] = [
     where: "Perspicax console > Access > Bot rights (Accès > Droits sur les bots), tab Who has what (Qui a quoi), /sagax/permissions?tab=assign",
     access: "Perspicax admins only; a bot cannot do it",
     keywords: "voix vocal mode voix voice mode xai equipe team teams donner assigner moteur engine membres",
-    text: "An admin does it in the Perspicax console: Access > Bot rights, tab Who has what; pick the teams or people, then give the engine Voice mode (xAI) (Mode voix (xAI)). A person's rights are the union of their own and their teams'. One person can also get it on their sheet. On the Sagax organization server the organization's xAI key then serves voice to admins and to the people given that engine. The xAI key itself is in Settings > Models and voice. In solo mode each person sets their own voice engine in Settings > Models and voice.",
+    text: "An admin does it in the Perspicax console: Access > Bot rights, tab Who has what; pick the teams or people, then give the engine Voice mode (xAI) (Mode voix (xAI)). A person's rights are the union of their own and their teams'. One person can also get it on their sheet. On the Sagax organization server the organization's xAI key then serves voice to admins and to the people given that engine. The xAI key itself is in Settings > Models. In solo mode each person sets their own voice engine in Settings > Voice.",
     refs: ["px:console:/sagax/permissions", "setting:engines", "file:server/org-xai-media.ts", "file:docs/voice-mode-xai.md"],
   },
   {
     id: "cloud-agents",
     title: "Launch a cloud coding agent",
-    where: "bot tool launch_cloud_agent; keys in Settings > Models and voice > Cloud coding agents (Agents de codage cloud)",
+    where: "bot tool launch_cloud_agent; keys in Settings > Models > Cloud coding agents (Agents de codage cloud)",
     access: "organization: a member's call waits for an admin",
     keywords: "agent cloud agents nuage lancer launch cursor codex claude coding code pr pull request",
-    text: "Yes, with launch_cloud_agent, then follow it with get_cloud_agent, cloud_agent_follow_up, cloud_agent_transcript, cancel_cloud_agent. Providers: perspicax (organization server linked to Perspicax, uses the person's sign-in, no key), cursor, claude and codex (the person's own key in Settings > Models and voice > Cloud coding agents). Without a sign-in or key the launch is refused with the reason. On an organization server the tool is host-level: a member's call waits for an admin.",
+    text: "Yes, with launch_cloud_agent, then follow it with get_cloud_agent, cloud_agent_follow_up, cloud_agent_transcript, cancel_cloud_agent. Providers: perspicax (organization server linked to Perspicax, uses the person's sign-in, no key), cursor, claude and codex (the person's own key in Settings > Models > Cloud coding agents). Without a sign-in or key the launch is refused with the reason. On an organization server the tool is host-level: a member's call waits for an admin.",
     refs: ["tool:launch_cloud_agent", "tool:get_cloud_agent", "tool:cloud_agent_follow_up", "setting:engines", "file:server/cloud-agents"],
   },
   {
@@ -115,7 +119,7 @@ export const GUIDES: Guide[] = [
   {
     id: "voice-note",
     title: "Send a voice note",
-    where: "voice engine in Settings > Models and voice; the bot's voice in Edit bot > Model and tools > Voice & alerts",
+    where: "voice engine in Settings > Voice; the bot's voice in Edit bot > Model and tools > Voice & alerts",
     keywords: "note vocale voice note audio message vocal voix parler speak",
     text: "Yes with send_voice_note, but only when a voice is configured: a voice engine with its key and a voice for the bot or the app, and the bot's voice notes not turned off. Otherwise the tool is not offered. On an organization server using the organization's xAI key, only for people given Voice mode (xAI).",
     refs: ["tool:send_voice_note", "setting:engines", "bot-setting:voice"],

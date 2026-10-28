@@ -699,7 +699,7 @@ export class CredentialVault {
     }
     if (!item) return { ok: false, code: "unknown_item", message: "No saved API key has this handle. Call request_login with the API's host so the person can allow one." };
     if (item.kind !== "apiKey" || !item.injection) {
-      return { ok: false, code: "not_injectable", message: `${botName(item)} is not an API key Sagax sends on requests. The person turns that on in Settings > Credentials (How Sagax sends it).` };
+      return { ok: false, code: "not_injectable", message: `${botName(item)} is not an API key Sagax sends on requests. The person turns that on in Settings > Vault (How Sagax sends it).` };
     }
     if (!this.granted(principalId, item.id, request.botId, request.threadId)) {
       return { ok: false, code: "not_granted", message: `You are not allowed to use ${botName(item)} here. Call request_login with the API's host so the person can allow it.` };

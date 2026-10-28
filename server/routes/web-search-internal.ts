@@ -31,7 +31,7 @@ export function createWebSearchInternalRoutes(deps: WebSearchInternalDeps): Inte
     if (!query) return json(res, 400, { error: "query: what to search for." });
     const config = deps.config(capability);
     if (!config || !readyConfig(config)) {
-      return json(res, 404, { error: "No web search provider is set up for this person. They can add one in Settings > Models and voice > Web search." });
+      return json(res, 404, { error: "No web search provider is set up for this person. They can add one in Settings > Models > Web search." });
     }
     if (config.baseUrl && deps.refuseAddress) {
       const refusal = await deps.refuseAddress(config.baseUrl);

@@ -15,9 +15,37 @@ const MERGED: Partial<Record<AppSettingsSection, { section: AppSettingsSection; 
   decisionModel: { section: "engines", cardId: "engines.decisionModel" },
   privacy: { section: "notifications", cardId: "notifications.privacy" },
   memory: { section: "organization", cardId: "organization.memory" },
-  // 2026-10-26: Security keys and the vault are cards of Account.
-  security: { section: "account", cardId: "security" },
-  credentials: { section: "account", cardId: "credentials.items" },
+  // 2026-10-26 to 2026-10-28 Security keys and the vault were cards of
+  // Account; since 2026-10-28 Security ("security") and Vault
+  // ("credentials") are pages again (CARD_HOME below sends the old links).
+};
+
+/** Cards that moved to another page on 2026-10-28, by the page that holds
+ * them now. A link names a page and, often, a card: the card wins, so an old
+ * link (Account > Security keys, Models and voice > Voice) opens the page
+ * where the card is today.
+ * - Security: security keys, the approval rules and the person's tool access
+ *   (they were under Account).
+ * - Vault: the vault, the one-time card, purchases and 1Password (they were
+ *   under Account).
+ * - Voice: the voice engine, Live calls, the microphone and the person's own
+ *   voice keys (they were in Models and voice). The Keys list stays in
+ *   Models, the only place a key is managed. */
+export const CARD_HOME: Readonly<Record<string, AppSettingsSection>> = {
+  security: "security",
+  "security.keys": "security",
+  "security.classes": "security",
+  myApprovalRules: "security",
+  myToolAccess: "security",
+  "credentials.items": "credentials",
+  "credentials.wallets": "credentials",
+  "credentials.purchases": "credentials",
+  "credentials.onePassword": "credentials",
+  "connections.voice": "voice",
+  "voice.advanced": "voice",
+  "voice.microphone": "voice",
+  "connections.audio": "voice",
+  "connections.voiceKeys": "voice",
 };
 
 /** Sections hidden from the app since 2026-10-14 (managing several
@@ -64,6 +92,8 @@ export function isMovedOrganizationCard(cardId: string | null | undefined): bool
 export function currentSettingsSection(section: AppSettingsSection, cardId?: string): AppSettingsSection {
   // A link to a card moved to Organization opens Organization.
   if (cardId && isMovedOrganizationCard(cardId)) return "organization";
+  // A card that has a page of its own since 2026-10-28 opens that page.
+  if (cardId && Object.hasOwn(CARD_HOME, cardId)) return CARD_HOME[cardId]!;
   return MERGED[section]?.section ?? HIDDEN[section] ?? section;
 }
 

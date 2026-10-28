@@ -213,7 +213,7 @@ describe("control-omb ui drives the real renderer", () => {
     // Settings is its own chunk (src/components/lazy-screens.tsx): opened before
     // the idle prefetch has fetched it, it paints once the chunk arrives.
     await expect.poll(() => evaluate(`(() => {
-      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Models and voice');
+      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Models');
       tab?.click();
       return Boolean(tab);
     })()`), { timeout: 10_000 }).toBe(true);

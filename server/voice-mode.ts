@@ -191,7 +191,7 @@ export async function resolveVoiceKey(deps: Pick<VoiceModeDeps, "organization" |
 }
 
 const REFUSAL_TEXT: Record<VoiceModeRefusalCause, string> = {
-  no_credentials: "Voice mode needs an xAI key. Add one in Settings > Models and voice.",
+  no_credentials: "Voice mode needs an xAI key. Add one in Settings > Models.",
   server_engine_not_allowed: "Your organization has not given you its xAI voice. Add your own xAI key, or ask an admin.",
   payer_disabled: "Your access is turned off in your organization.",
   perspicax_unreachable: "Perspicax could not be reached to read your xAI key. Try again in a moment.",
