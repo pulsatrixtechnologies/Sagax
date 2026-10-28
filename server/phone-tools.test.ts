@@ -186,7 +186,7 @@ describe("phone tool broker", () => {
 });
 
 describe("phoneToolTurn", () => {
-  const base = { ownsThread: true, inRoom: false, depth: 0, speakerOrigin: "person" as const, speakerPrincipal: "Ann", ownerPrincipal: "ann", ownTurn: true, tainted: false };
+  const base = { ownsThread: true, inRoom: false, depth: 0, speakerOrigin: "person" as const, speakerPrincipal: "Ann", ownTurn: true, tainted: false };
   it("is the owner's own 1:1 turn", () => {
     expect(phoneToolTurn(base)).toEqual({ person: "ann" });
     expect(phoneToolTurn({ ...base, speakerOrigin: "operator" })).toEqual({ person: "ann" });
@@ -196,9 +196,12 @@ describe("phoneToolTurn", () => {
     expect(phoneToolTurn({ ...base, depth: 1 })).toHaveProperty("error");
     expect(phoneToolTurn({ ...base, speakerOrigin: "owner-routine" })).toHaveProperty("error");
     expect(phoneToolTurn({ ...base, speakerOrigin: "peer" })).toHaveProperty("error");
-    expect(phoneToolTurn({ ...base, speakerPrincipal: "bob" })).toHaveProperty("error");
     expect(phoneToolTurn({ ...base, speakerPrincipal: "" })).toHaveProperty("error");
     expect(phoneToolTurn({ ...base, ownsThread: false })).toHaveProperty("error");
+  });
+  // 2026-10-28: a conversation uses the credentials of who speaks
+  it("uses the phone of the person speaking on a bot shared with them, never the owner's", () => {
+    expect(phoneToolTurn({ ...base, speakerPrincipal: "Bob" })).toEqual({ person: "bob" });
   });
   it("refuses a turn another bot's words joined, or one that is not the owner's own (review of #960)", () => {
     // an aside from another bot (a webhook-fed routine, say) folded into the owner's live turn

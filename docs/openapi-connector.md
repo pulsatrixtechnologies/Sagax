@@ -15,8 +15,11 @@ DELETE /api/me/openapi
 `headers` are sealed with the vault key (AES-256-GCM, mode 0600) in
 `openapi.enc`, or under `principals/<id>/` on an organization server.
 They are never listed back and they are not part of a workspace backup.
-A room does not receive the tools. A shared bot does not offer them to
-someone who is not its owner.
+A room does not receive the tools. Since 2026-10-28 a bot shared with a
+person offers that person their own operations, never its owner's: a
+conversation uses the credentials of who speaks, and a routine those of
+its owner. Someone with no document gets no tool, and a stale call is
+refused with a sentence that says they have none.
 
 The document must be OpenAPI 3 with the operations written inline.
 References are not expanded. At most 40 operations. The host is resolved

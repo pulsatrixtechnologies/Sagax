@@ -32,7 +32,7 @@ export function createOpenApiInternalRoutes(deps: OpenApiInternalDeps): Internal
     if (!isOpenApiTool(name)) return json(res, 400, { error: "name must be one of this person's operations." });
     const record = deps.record(capability);
     const operation = record?.operations.find((item) => `openapi_${item.name}` === name);
-    if (!record || !operation) return json(res, 404, { error: "No API document is set up for this person." });
+    if (!record || !operation) return json(res, 404, { error: "The person speaking has no API document with this operation (their own, in Settings, never the bot owner's). Ask them to add it there." });
     const args = body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments) ? body.arguments as Record<string, unknown> : {};
     const request = buildOpenApiRequest({ operation, baseUrl: record.baseUrl, headers: record.headers, args });
     if (typeof request === "string") return json(res, 400, { error: request });

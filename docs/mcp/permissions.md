@@ -14,6 +14,9 @@ One permission per action, named `resource:verb` (`memory:save`,
    call is allowed only when the role's grant is at least as wide. Exception
    (2026-10-26): a bot or room the speaking person owns (`SAGAX_MCP_OWN_BOTS`,
    `SAGAX_MCP_OWN_ROOMS`, `scopeOwnersFromEnv`) is `self`, not `team`.
+   Since 2026-10-28, `ask_bot` and `delegate_bot` to a bot someone else
+   shares with the person at `run` or above (`SAGAX_MCP_RUN_BOTS`) are
+   `self` too; any other call naming that bot stays `team`.
 3. **Audit.** One record per audited call: time, principal, role, tool,
    permission, scope, decision, reason, and whether the denial was enforced.
    It never holds arguments, message text or results. It goes to the server's

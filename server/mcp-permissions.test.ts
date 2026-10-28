@@ -405,6 +405,27 @@ describe("false denials in shadow (#1098)", () => {
     expect(records.map((r) => [r.permission, r.decision])).toEqual([["mcp:external", "allowed"]]);
   });
 
+  // 2026-10-28: a bot shared with the member at run takes their ask_bot and
+  // delegate_bot in enforce mode; nothing else about it is theirs
+  it("lets a member ask or delegate to a bot shared with them at run, nothing more", async () => {
+    const env = mcpIdentityEnv({ botId: "b", principalId: "pr_alice", runBotIds: ["shared1", "bad id!"] });
+    expect(env).toMatchObject({ SAGAX_MCP_RUN_BOTS: "shared1" });
+    expect(mcpIdentityEnv({ botId: "b", runBotIds: ["shared1"] })).not.toHaveProperty("SAGAX_MCP_RUN_BOTS");
+    const owners = scopeOwnersFromEnv(env, "pr_alice");
+    for (const tool of ["ask_bot", "delegate_bot"]) {
+      expect(scopeForCall({ bot_id: "shared1" }, "b", owners, tool), tool).toBe("self");
+      const records: McpAuditRecord[] = [];
+      const options = { principal: as("member"), owners, mode: "enforce" as const, ownBotId: "b", audit: (r: McpAuditRecord) => records.push(r) };
+      expect(await guardToolCall(options, tool, { bot_id: "shared1", message: "hi" }, async () => ({ text: "ok" }))).toEqual({ text: "ok" });
+      // a bot not shared with them at run stays the team scope, refused
+      expect(await guardToolCall(options, tool, { bot_id: "other9", message: "hi" }, async () => ({ text: "ok" }))).toMatchObject({ isError: true });
+    }
+    // archiving or changing the shared bot is not dispatch: still team
+    expect(scopeForCall({ bot_id: "shared1" }, "b", owners, "archive_bot")).toBe("team");
+    expect(scopeForCall({ for_bot_id: "shared1" }, "b", owners, "propose_profile")).toBe("team");
+    expect(scopeForCall({ bot_id: "shared1" }, "b", owners)).toBe("team");
+  });
+
   it("counts a bot the person created in this process as theirs", () => {
     const owners = scopeOwnersFromEnv({ SAGAX_MCP_OWN_BOTS: "b2" }, "pr_alice");
     expect(scopeForCall({ bot_id: "b9" }, "b", owners)).toBe("team");
