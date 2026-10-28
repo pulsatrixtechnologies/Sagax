@@ -12,11 +12,18 @@ const everything: CatalogProfile = {
 /** Every tool the agents catalog can show, across the profiles that change it. */
 function catalogNames(): string[] {
   const names = new Set<string>();
+  // every switch that adds a tool (2026-10-28: several were missing, so their
+  // tools were never checked and waited for an admin unclassified)
+  const widest: CatalogProfile = {
+    ...everything, meetings: true, singleStream: true, routeMessages: true, githubConnect: true, createBots: true,
+    agentApi: true, perspicax: true, phoneTools: ["location"], webSearch: true, vaultHttp: true,
+  };
   for (const profile of [
     everything,
-    { ...everything, coordinating: true },
+    widest,
+    { ...widest, coordinating: true },
     { ...everything, externalRuntime: true },
-    { ...everything, voiceCall: true },
+    { ...widest, voiceCall: true },
   ]) {
     for (const tool of availableTools(profile)) names.add(tool.name);
   }
@@ -58,9 +65,18 @@ describe("member tool scope on an organization server", () => {
     expect(HOST_LEVEL_AGENT_TOOLS.has("act")).toBe(false);
   });
 
+  it("lets the member's own tasks, search, key, phone, GitHub, agents, cloud agents and OpenAPI operations run without an admin", () => {
+    for (const name of ["task_list", "make_video", "sagax_web_search", "vault_http_request", "phone_tool", "connect_github", "send_prompt", "create_agent", "delete_agent",
+      "launch_cloud_agent", "cloud_agent_follow_up", "cancel_cloud_agent", "archive_cloud_agent", "openapi_getnote"]) {
+      expect(memberOwnScopeTool(`mcp__agents__${name}`), name).not.toBeNull();
+    }
+    expect(memberOwnScopeTool("agents__openapi_")).toBeNull();
+    expect(memberOwnScopeTool("notes__openapi_getnote")).toBeNull();
+  });
+
   it("keeps the host-level agents tools, other servers and look-alikes behind the admin gate", () => {
     for (const name of [
-      "notes__act", "notes__manage_pairing", "agents__add_mcp_server", "agents__attach_file", "agents__vm_exec", "agents__shared_computer",
+      "notes__act", "notes__manage_pairing", "agents__add_mcp_server", "agents__attach_file", "agents__vm_exec", "agents__shared_computer", "agents__api_reload", "agents__review_write",
       "agents__unknown_tool", "notes__list_bots", "mcp__computer__click", "list_bots", "other", "shell",
       "agents__list_bots ", " agents__list_bots", "agents__list_bots; rm -rf /", "AGENTS__LIST_BOTS", "",
     ]) {

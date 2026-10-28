@@ -32,6 +32,18 @@ describe("Sagax's own person-scoped tools", () => {
     }
   });
 
+  // 2026-10-28: the person's own key, device or account: no admin, but their
+  // own card at their own level, never answered by Sagax itself
+  it("leaves the own-account tools to the person's own card, never an admin's", () => {
+    for (const name of ["agents__vault_http_request", "agents__phone_tool", "agents__connect_github", "agents__send_prompt", "agents__launch_cloud_agent", "agents__openapi_getnote"]) {
+      expect(sagaxInternalTool(name), name).toBeNull();
+      expect(memberBotAdminApproval({ tool: name, workspaceRoot: "/nowhere" }), name).toBe(false);
+    }
+    expect(sagaxInternalTool("agents__task_list")).toBe("agents");
+    expect(sagaxInternalTool("agents__make_video")).toBe("agents");
+    expect(sagaxInternalTool("agents__sagax_web_search")).toBe("agents");
+  });
+
   it("never sends a member's Data call to an admin", () => {
     expect(memberBotAdminApproval({ tool: "data__data_load", workspaceRoot: "/nowhere" })).toBe(false);
     expect(memberBotAdminApproval({ tool: "mcp__data__data_sql", workspaceRoot: "/nowhere" })).toBe(false);
