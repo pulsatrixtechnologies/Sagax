@@ -76,13 +76,22 @@ public extension CompanionClient {
 
     /// The authenticated request for one file's bytes. `preview` asks for an
     /// inline image (the server refuses it for anything else).
-    func threadFileRequest(threadId: String, fileId: String, preview: Bool) throws -> URLRequest {
+    func threadFileRequest(threadId: String, fileId: String, preview: Bool, thumb: Bool = false) throws -> URLRequest {
         guard Self.validRouteID(threadId), Self.validThreadFileID(fileId) else { throw APIError.badURL }
+        // `thumb=1`: the server's small square PNG for a Library row (never the picture).
         return try makeRequest(
             "GET",
             "/api/threads/\(threadId)/files/\(fileId)",
-            query: preview ? [URLQueryItem(name: "preview", value: "1")] : []
+            query: thumb ? [URLQueryItem(name: "thumb", value: "1")] : preview ? [URLQueryItem(name: "preview", value: "1")] : []
         )
+    }
+
+    /// A Library row's thumbnail: a 96 px square PNG the server draws under
+    /// the file's own grant, so the full picture is never downloaded for it.
+    func threadFileThumbData(threadId: String, fileId: String) async throws -> Data {
+        let (data, response) = try await perform(threadFileRequest(threadId: threadId, fileId: fileId, preview: false, thumb: true))
+        try Self.check(response, data)
+        return data
     }
 
     /// A thumbnail's or a file's bytes.

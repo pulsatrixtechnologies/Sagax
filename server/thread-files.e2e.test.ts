@@ -3,10 +3,32 @@
 // a file of that conversation, and served by id and through the message
 // route, while another conversation of the same bot does not list it.
 import { mkdirSync, writeFileSync } from "node:fs";
+import { deflateSync } from "node:zlib";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { launchVerificationServer, type VerificationServer } from "../scripts/control-omb.ts";
+
+/** A solid-color RGB PNG, width x height. */
+function solidPng(width: number, height: number): Buffer {
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (buf: Buffer) => { let c = 0xffffffff; for (const byte of buf) c = crcTable[(c ^ byte) & 0xff]! ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(width * 3, 0x7a)]);
+  const raw = Buffer.concat(Array.from({ length: height }, () => row));
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+}
 
 type Listed = { id: string; messageId: string; source: string; path: string; name: string; size: number | null; available: boolean; mime?: string; localPath?: string };
 
@@ -27,6 +49,7 @@ describe("conversation files through the harness", () => {
       FAKE_CLAUDE_TOOL_CALLS: JSON.stringify([
         { name: "Write", input: { file_path: "report.md", content: "# Findings" }, output: "File written" },
         { name: "Write", input: { file_path: "remote-only/never-here.png", content: "" }, output: "File written" },
+        { name: "Write", input: { file_path: "chart.png", content: "" }, output: "File written" },
         { name: "Write", input: { file_path: "refused.md", content: "" }, ok: false, output: "denied" },
       ]),
       FAKE_CLAUDE_REPLIES: JSON.stringify(["Wrote the report."]),
@@ -46,13 +69,15 @@ describe("conversation files through the harness", () => {
     const workspace = join(session.info.dataDir, "task-workspaces", bot.id, bot.threadId);
     mkdirSync(workspace, { recursive: true });
     writeFileSync(join(workspace, "report.md"), "# Findings");
+    const picture = solidPng(640, 480);
+    writeFileSync(join(workspace, "chart.png"), picture);
 
     expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Write the report" })).status).toBe(202);
     let files: Listed[] = [];
     await expect.poll(async () => {
       files = (await api("GET", `/api/threads/${bot.threadId}/files`)).body.files;
       return files.map((file) => file.name).sort();
-    }, { timeout: 20_000 }).toEqual(["never-here.png", "report.md"]);
+    }, { timeout: 20_000 }).toEqual(["chart.png", "never-here.png", "report.md"]);
 
     const report = files.find((file) => file.name === "report.md")!;
     expect(report).toMatchObject({ source: "written", size: 10, available: true, mime: "text/markdown; charset=utf-8" });
@@ -73,6 +98,19 @@ describe("conversation files through the harness", () => {
     // Only images stream inline.
     expect((await fetch(`${session.info.url}/api/threads/${bot.threadId}/files/${report.id}?preview=1`)).status).toBe(415);
     expect((await fetch(`${session.info.url}/api/threads/${bot.threadId}/files/${"0".repeat(24)}`)).status).toBe(404);
+
+    // The Library row's thumbnail: a small square PNG, not the picture.
+    const chart = files.find((file) => file.name === "chart.png")!;
+    const thumb = await fetch(`${session.info.url}/api/threads/${bot.threadId}/files/${chart.id}?thumb=1`);
+    expect(thumb.status).toBe(200);
+    expect(thumb.headers.get("content-type")).toBe("image/png");
+    const thumbBytes = Buffer.from(await thumb.arrayBuffer());
+    expect(thumbBytes.readUInt32BE(16)).toBe(96);
+    expect(thumbBytes.readUInt32BE(20)).toBe(96);
+    expect(thumbBytes.length).toBeLessThan(picture.length);
+    // Same grant as the download: no listing entry, no thumbnail; only pictures have one.
+    expect((await fetch(`${session.info.url}/api/threads/${bot.threadId}/files/${"0".repeat(24)}?thumb=1`)).status).toBe(404);
+    expect((await fetch(`${session.info.url}/api/threads/${bot.threadId}/files/${report.id}?thumb=1`)).status).toBe(415);
 
     const viaMessage = await fetch(`${session.info.url}/api/threads/${bot.threadId}/messages/${report.messageId}/file`, {
       method: "POST",

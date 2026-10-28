@@ -29,6 +29,8 @@ struct BotPanelFiles: View {
     @State private var deletingPage: PublishedPageSummary?
     @State private var pagesPolicy = PagesPolicy.default
     @State private var previewing: IdentifiedURL?
+    /// Older shows five rows until "Show more".
+    @State private var olderExpanded = false
     @State private var sharing: IdentifiedURL?
     @State private var working: String?
     @State private var status: String?
@@ -186,15 +188,17 @@ struct BotPanelFiles: View {
             let groups = library.groups()
             VStack(alignment: .leading, spacing: 16) {
                 group("pinned", title: "Pinned", entries: groups.pinned)
+                group("today", title: "Today", entries: groups.today)
                 group("this-week", title: "This week", entries: groups.thisWeek)
-                group("older", title: "Older", entries: groups.older)
+                group("older", title: "Older", entries: LibraryOlder.shown(groups.older, expanded: olderExpanded),
+                      more: LibraryOlder.hidesRows(groups.older, expanded: olderExpanded))
             }
         }
     }
 
     /// One titled card; nothing when the group is empty.
     @ViewBuilder
-    private func group(_ id: String, title: LocalizedStringKey, entries: [LibraryEntry]) -> some View {
+    private func group(_ id: String, title: LocalizedStringKey, entries: [LibraryEntry], more: Bool = false) -> some View {
         if !entries.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
@@ -212,6 +216,18 @@ struct BotPanelFiles: View {
                 .padding(.horizontal, 10)
                 .background(theme.elevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
+                if more {
+                    Button { olderExpanded = true } label: {
+                        Text("Show more")
+                            .font(theme.font(12))
+                            .foregroundStyle(theme.inkSecondary)
+                            .padding(.horizontal, 2)
+                            .frame(minHeight: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("desktop-library-show-more")
+                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("desktop-library-group.\(id)")
@@ -224,16 +240,7 @@ struct BotPanelFiles: View {
         return HStack(spacing: 6) {
             Button { open(entry) } label: {
                 HStack(spacing: 8) {
-                    Group {
-                        if case .page = entry {
-                            PageGlyph(size: 18)
-                        } else {
-                            Image(systemName: ThreadFilesView.symbol(entry))
-                                .font(.system(size: 14))
-                                .foregroundStyle(theme.inkSecondary)
-                        }
-                    }
-                    .frame(width: 24, height: 24)
+                    LibraryEntryGlyph(threadId: threadId, entry: entry, size: 24, secondary: theme.inkSecondary)
                     Text(verbatim: name)
                         .font(theme.font(13))
                         .foregroundStyle(theme.ink)

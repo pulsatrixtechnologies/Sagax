@@ -112,24 +112,79 @@ public enum LibraryEntry: Identifiable, Hashable, Sendable {
 
 public struct LibraryGroups: Equatable, Sendable {
     public var pinned: [LibraryEntry]
+    /// This calendar day (2026-10-28).
+    public var today: [LibraryEntry]
+    /// The rest of the last seven days.
     public var thisWeek: [LibraryEntry]
     public var older: [LibraryEntry]
 
-    public var isEmpty: Bool { pinned.isEmpty && thisWeek.isEmpty && older.isEmpty }
+    public var isEmpty: Bool { pinned.isEmpty && today.isEmpty && thisWeek.isEmpty && older.isEmpty }
+}
+
+/// The picture at the start of a Library row (`src/lib/library-glyph.ts`):
+/// an image is its own small thumbnail; a page, an artifact or an .html file
+/// the colored chart mark; Markdown and text a document; a zip an archive;
+/// a PDF its own mark; the rest by kind.
+public enum LibraryGlyph: String, Equatable, Sendable {
+    case thumbnail, page, pdf, document, archive, video, audio, code, image, other
+}
+
+public extension ThreadFileRules {
+    /// Pictures the server can draw as a thumbnail (`server/thumbnail.ts`).
+    static func hasThumbnail(_ file: ThreadFile) -> Bool {
+        guard file.available, kind(of: file) == .image else { return false }
+        let mime = file.mime?.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        if let mime, mime != "application/octet-stream" {
+            return ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"].contains(mime)
+        }
+        return ["png", "jpg", "jpeg", "gif", "webp", "svg"].contains(fileExtension(file.name))
+    }
+
+    static func glyph(of file: ThreadFile) -> LibraryGlyph {
+        if hasThumbnail(file) { return .thumbnail }
+        let ext = fileExtension(file.name)
+        let mime = file.mime?.split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        if ext == "html" || ext == "htm" || mime == "text/html" { return .page }
+        if ext == "pdf" || mime == "application/pdf" { return .pdf }
+        switch kind(of: file) {
+        case .document: return .document
+        case .archive: return .archive
+        case .video: return .video
+        case .audio: return .audio
+        case .code: return .code
+        case .image: return .image
+        case .other: return .other
+        }
+    }
+}
+
+public extension LibraryEntry {
+    var glyph: LibraryGlyph {
+        switch self {
+        case let .file(file): ThreadFileRules.glyph(of: file)
+        case .artifact, .page: .page
+        }
+    }
 }
 
 public enum LibraryRules {
-    /// Pinned on top whatever the age; the rest in the last seven days, or
-    /// older. Each part is newest first. `now` and the times are milliseconds.
-    public static func groups(files: [ThreadFile], artifacts: [BotArtifact], pages: [PublishedPageSummary] = [], now: Double) -> LibraryGroups {
+    /// Older shows this many rows first; "Show more" opens the rest.
+    public static let olderPreview = 5
+
+    /// Pinned on top whatever the age; the rest today (the calendar day in
+    /// the person's time zone), the rest of the last seven days, or older.
+    /// Each part is newest first. `now` and the times are milliseconds.
+    public static func groups(files: [ThreadFile], artifacts: [BotArtifact], pages: [PublishedPageSummary] = [], now: Double, calendar: Calendar = .current) -> LibraryGroups {
         let week = 7.0 * 24 * 3_600_000
+        let startOfToday = calendar.startOfDay(for: Date(timeIntervalSince1970: now / 1000)).timeIntervalSince1970 * 1000
         let entries = (files.map(LibraryEntry.file) + artifacts.map(LibraryEntry.artifact) + pages.map(LibraryEntry.page))
             .sorted { $0.at != $1.at ? $0.at > $1.at : $0.id < $1.id }
         let rest = entries.filter { !$0.pinned }
         return LibraryGroups(
             pinned: entries.filter(\.pinned),
-            thisWeek: rest.filter { now - $0.at < week },
-            older: rest.filter { now - $0.at >= week }
+            today: rest.filter { $0.at >= startOfToday },
+            thisWeek: rest.filter { $0.at < startOfToday && now - $0.at < week },
+            older: rest.filter { $0.at < startOfToday && now - $0.at >= week }
         )
     }
 }

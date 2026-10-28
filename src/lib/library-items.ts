@@ -13,7 +13,7 @@ export type LibraryItem =
   /** A page the bot made for this person (2026-10-28): its pin is the page's. */
   | { kind: "page"; key: string; at: number; pinned: boolean; page: PublishedPageSummary };
 
-export const LIBRARY_PERIODS = ["thisWeek", "older"] as const;
+export const LIBRARY_PERIODS = ["today", "thisWeek", "older"] as const;
 export type LibraryPeriod = (typeof LIBRARY_PERIODS)[number];
 
 export interface LibraryGroups {
@@ -32,18 +32,27 @@ export function libraryItems(files: readonly ThreadFile[] | null, artifacts: rea
   ];
 }
 
-/** Pinned items on top; the rest by period (the last 7 days, then older),
- * each newest first. */
+/** Older shows this many rows first; "Show more" reveals the rest. */
+export const OLDER_PREVIEW = 5;
+
+/** Pinned items on top; the rest by period (today, the last 7 days, then
+ * older), each newest first. Today is the calendar day in the person's time
+ * zone; "this week" is the rest of the last 7 days. */
+
 export function groupLibraryItems(items: readonly LibraryItem[], now: number): LibraryGroups {
   const newest = (a: LibraryItem, b: LibraryItem) => b.at - a.at || a.key.localeCompare(b.key);
   const sorted = [...items].sort(newest);
   const pinned = sorted.filter((item) => item.pinned);
   const rest = sorted.filter((item) => !item.pinned);
-  const thisWeek = rest.filter((item) => now - item.at < WEEK_MS);
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const today = rest.filter((item) => item.at >= startOfToday.getTime());
+  const thisWeek = rest.filter((item) => item.at < startOfToday.getTime() && now - item.at < WEEK_MS);
   const older = rest.filter((item) => now - item.at >= WEEK_MS);
   return {
     pinned,
     periods: [
+      ...(today.length ? [{ id: "today" as const, items: today }] : []),
       ...(thisWeek.length ? [{ id: "thisWeek" as const, items: thisWeek }] : []),
       ...(older.length ? [{ id: "older" as const, items: older }] : []),
     ],

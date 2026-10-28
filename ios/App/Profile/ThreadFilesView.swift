@@ -27,6 +27,8 @@ struct ThreadFilesView: View {
     @State private var showingLinks = false
     @StateObject private var links = LibraryLoader<BotLink>()
     @State private var previewing: IdentifiedURL?
+    /// Older shows five rows until "Show more".
+    @State private var olderExpanded = false
     @State private var sharing: IdentifiedURL?
     @State private var opened: BotArtifact?
     @State private var openedPage: PublishedPageSummary?
@@ -174,15 +176,17 @@ struct ThreadFilesView: View {
         } else {
             VStack(alignment: .leading, spacing: 16) {
                 group("pinned", title: "Pinned", entries: groups.pinned)
+                group("today", title: "Today", entries: groups.today)
                 group("this-week", title: "This week", entries: groups.thisWeek)
-                group("older", title: "Older", entries: groups.older)
+                group("older", title: "Older", entries: LibraryOlder.shown(groups.older, expanded: olderExpanded),
+                      more: LibraryOlder.hidesRows(groups.older, expanded: olderExpanded))
             }
         }
     }
 
     /// One titled card; nothing when the group is empty.
     @ViewBuilder
-    private func group(_ id: String, title: LocalizedStringKey, entries: [LibraryEntry]) -> some View {
+    private func group(_ id: String, title: LocalizedStringKey, entries: [LibraryEntry], more: Bool = false) -> some View {
         if !entries.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 ProfileSectionLabel(text: title)
@@ -191,6 +195,21 @@ struct ThreadFilesView: View {
                         if index > 0 { ProfileDivider() }
                         row(entry)
                     }
+                }
+                if more {
+                    Button {
+                        Haptics.selection()
+                        olderExpanded = true
+                    } label: {
+                        Text("Show more")
+                            .font(Theme.Profile.labelFont)
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, 4)
+                            .frame(minHeight: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("library-show-more")
                 }
             }
             .accessibilityElement(children: .contain)
@@ -205,16 +224,8 @@ struct ThreadFilesView: View {
         return HStack(spacing: 0) {
             Button { open(entry) } label: {
                 HStack(spacing: 10) {
-                    Group {
-                        if case .page = entry {
-                            PageGlyph(size: 20)
-                        } else {
-                            Image(systemName: Self.symbol(entry))
-                                .font(.system(size: 15))
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                    }
-                    .frame(width: Theme.Profile.iconColumn, alignment: .center)
+                    LibraryEntryGlyph(threadId: threadId, entry: entry, size: 28)
+                        .frame(width: Theme.Profile.iconColumn, alignment: .center)
                     Text(verbatim: name)
                         .font(Theme.Font.body)
                         .foregroundStyle(Theme.textPrimary)

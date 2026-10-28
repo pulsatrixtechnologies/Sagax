@@ -16,18 +16,18 @@ import { t } from "@/lib/i18n";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { useBotArtifacts, type ArtifactList } from "@/lib/artifacts";
 import { classifyFile, threadFileUrl, type ThreadFile } from "@/lib/chat-files";
-import { groupLibraryItems, libraryItems, type LibraryItem } from "@/lib/library-items";
+import { groupLibraryItems, libraryItems, OLDER_PREVIEW, type LibraryItem } from "@/lib/library-items";
 import { AttachmentPreviewDialog, canonicalDownloadFilename } from "../AttachmentPreview";
 import type { ArtifactSummary } from "../../../shared/artifacts";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { PageGlyph } from "../PageViewer";
+import { FileGlyph, PageRowGlyph } from "./LibraryGlyph";
 import { PageSharePopover } from "../PageShare";
 import { usePagesPolicy } from "../page-controls";
 import { openPageInOwnWindow } from "@/lib/page-windows";
 import type { PublishedPageSummary } from "../../../shared/published-pages";
 import { ArtifactDialogs, artifactStatus, useArtifactActions, type ArtifactActions } from "../artifacts/ArtifactsSection";
 import { canOpenArtifactInOwnWindow } from "../artifacts/artifact-windows";
-import { copyablePath, downloadThreadFile, FileHover, KIND_ICON, MediaPreviewDialog, MenuItem, PopoverMenu, useThreadFiles } from "./FilesSection";
+import { copyablePath, downloadThreadFile, FileHover, MediaPreviewDialog, MenuItem, PopoverMenu, useThreadFiles } from "./FilesSection";
 
 /** Opens Connect apps in this bot's install scope. */
 export function openBotPlugins(dispatch: ReturnType<typeof useStore>["dispatch"], botId: string): void {
@@ -164,12 +164,23 @@ export function LibraryBody({ threadId, files, filesError = false, onRetryFiles 
       ? <PageLibraryRow key={item.key} page={item.page} linkOff={!policy.linkSharing} openMenus={openMenus} onChange={onPageChange}
           onPin={(page) => patchPage(page, { pinned: page.pinned !== true })} onDelete={setDeletingPage} />
       : <ArtifactLibraryRow key={item.key} artifact={item.artifact} actions={actions} now={now} openMenus={openMenus} />;
-  const card = (id: string, title: string, rows: LibraryItem[]) => (
-    <section key={id} data-library-group={id} className="flex flex-col gap-1.5">
-      <h3 className="px-0.5 text-[12px] font-medium text-ink-secondary">{title}</h3>
-      <ul className="flex flex-col overflow-hidden rounded-2xl border border-hairline-weak bg-elevated">{rows.map(row)}</ul>
-    </section>
-  );
+  const [olderOpen, setOlderOpen] = useState(false);
+  const card = (id: string, title: string, rows: LibraryItem[]) => {
+    // Older starts at a few rows; "Show more" opens the rest.
+    const capped = id === "older" && !olderOpen && rows.length > OLDER_PREVIEW;
+    return (
+      <section key={id} data-library-group={id} className="flex flex-col gap-1.5">
+        <h3 className="px-0.5 text-[12px] font-medium text-ink-secondary">{title}</h3>
+        <ul className="flex flex-col overflow-hidden rounded-2xl border border-hairline-weak bg-elevated">{(capped ? rows.slice(0, OLDER_PREVIEW) : rows).map(row)}</ul>
+        {capped && (
+          <button type="button" data-library-show-more="" onClick={() => setOlderOpen(true)}
+            className="self-start rounded-md px-0.5 text-[12px] text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60">
+            {t("botPanel.library.showMore")}
+          </button>
+        )}
+      </section>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-4 px-4 pb-6 pt-2" data-library="">
@@ -248,7 +259,7 @@ function LibraryRow({ attr, icon, name, trail, pinned, pinLabel, onTogglePin, me
     <li {...attr} className="group flex min-w-0 items-center gap-1 border-b border-hairline-weak px-2.5 py-1.5 last:border-b-0">
       {children(
         <>
-          <span className="flex size-6 shrink-0 items-center justify-center text-ink-secondary">{icon}</span>
+          <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden text-ink-secondary">{icon}</span>
           <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={name}>{name}</span>
           {trail}
         </>,
@@ -284,14 +295,13 @@ function FileRow({ threadId, file, advanced, openMenus, onOpen, onJump, onDownlo
   onCopyPath: (path: string) => void;
   onPin: (file: ThreadFile, pinned: boolean) => void;
 }) {
-  const Icon = KIND_ICON[classifyFile(file)];
   const pinned = file.pinned === true;
   const path = advanced && file.available ? copyablePath(file.localPath ?? file.path) : null;
   const pinLabel = pinned ? t("botPanel.library.unpin") : t("botPanel.library.pin");
   return (
     <LibraryRow
       attr={{ "data-library-file": file.id }}
-      icon={<Icon size={16} aria-hidden="true" />}
+      icon={<FileGlyph threadId={threadId} file={file} />}
       name={file.name}
       pinned={pinned}
       pinLabel={pinLabel}
@@ -333,7 +343,7 @@ function ArtifactLibraryRow({ artifact, actions, now, openMenus }: { artifact: A
   return (
     <LibraryRow
       attr={{ "data-artifact-row": artifact.id }}
-      icon={<AppWindow size={16} aria-hidden="true" />}
+      icon={<PageRowGlyph />}
       name={artifact.title}
       trail={status.tone === "muted" ? null : (
         <span data-artifact-status={artifact.refresh.state} title={status.detail ? `${status.text} ${status.detail}` : status.text} className={cn("size-1.5 shrink-0 rounded-full", status.tone === "danger" ? "bg-danger" : "bg-warning")} />
@@ -384,7 +394,7 @@ function PageLibraryRow({ page, linkOff, openMenus, onChange, onPin, onDelete }:
   return (
     <LibraryRow
       attr={{ "data-library-page": page.id }}
-      icon={<PageGlyph size={18} />}
+      icon={<PageRowGlyph />}
       name={page.title || t("pages.untitled")}
       trail={sharing ? (
         <span className="relative">

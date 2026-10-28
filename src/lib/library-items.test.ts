@@ -47,3 +47,25 @@ describe("library grouping", () => {
     expect(groups.periods.map((period) => [period.id, period.items.length])).toEqual([["thisWeek", 1], ["older", 1]]);
   });
 });
+
+describe("Library groups with Today (2026-10-28)", () => {
+  const now = Date.parse("2026-10-28T15:00:00");
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  const item = (key: string, at: number, pinned = false) => ({ kind: "file" as const, key, at, pinned, file: {} as never });
+
+  it("puts this calendar day under Today, the rest of 7 days under This week, then Older; pinned on top", () => {
+    const groups = groupLibraryItems([
+      item("a", now - 60_000),
+      item("b", day.getTime() - 1),
+      item("c", now - 8 * 24 * 3_600_000),
+      item("d", now - 2 * 24 * 3_600_000, true),
+    ], now);
+    expect(groups.pinned.map((i) => i.key)).toEqual(["d"]);
+    expect(groups.periods.map((p) => [p.id, p.items.map((i) => i.key)])).toEqual([["today", ["a"]], ["thisWeek", ["b"]], ["older", ["c"]]]);
+  });
+
+  it("omits the periods that are empty", () => {
+    expect(groupLibraryItems([item("a", now - 1000)], now).periods.map((p) => p.id)).toEqual(["today"]);
+  });
+});

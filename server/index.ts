@@ -596,6 +596,7 @@ import { ReplayBuffer } from "./sse-replay.ts";
 import { Handoffs, handedStateUsable, isContextMessage, recordHanded, renderUnseen, sessionStart, unseenMessages, withUnseenMessages, type ContextMessage } from "./delta-context.ts";
 import { extractTurnImages } from "./turn-images.ts";
 import { fitTurnImagesForModel, modelImageCopyPath } from "./model-image.ts";
+import { THUMB_MAX_SOURCE_BYTES, thumbnailFor, thumbnailable } from "./thumbnail.ts";
 import { callTitleExcerpt, threadTitlePrompt, titleConversationExcerpt, type ThreadTitleSource } from "./thread-title.ts";
 import { stallLimitMs, TurnWatchdog } from "./turn-watchdog.ts";
 import { TurnResources, type TurnOwner } from "./turn-resources.ts";
@@ -45719,7 +45720,36 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const ref = threadFileRefsFor(threadId).find((candidate) => candidate.id === m![2]);
       if (!ref) return json(res, 404, { error: "no such file in this conversation" });
       const preview = url.searchParams.get("preview") === "1";
+      const thumb = url.searchParams.get("thumb") === "1";
       const file = await openMessageFile(ref.path, threadFileRoots(threadId, ref));
+      if (thumb) {
+        // Library row: a small square PNG, never the picture itself. Same
+        // grant as the download (the listing entry and the roots above).
+        try {
+          if (!thumbnailable(file.mime) || file.bytes > THUMB_MAX_SOURCE_BYTES) {
+            return json(res, 415, { error: "no thumbnail for this file" });
+          }
+          const stamp = (await file.handle.stat()).mtimeMs;
+          const png = await thumbnailFor(`${threadId}:${ref.id}:${file.bytes}:${stamp}`, () => file.read(), file.mime);
+          if (!png) return json(res, 415, { error: "no thumbnail for this file" });
+          res.writeHead(200, {
+            "content-type": "image/png",
+            "content-length": String(png.length),
+            "content-disposition": "inline",
+            "cache-control": "private, no-store",
+            "cdn-cache-control": "no-store",
+            "cloudflare-cdn-cache-control": "no-store",
+            pragma: "no-cache",
+            vary: "Authorization",
+            "x-content-type-options": "nosniff",
+            "cross-origin-resource-policy": "same-origin",
+            "referrer-policy": "no-referrer",
+          });
+          return res.end(png);
+        } finally {
+          await file.handle.close().catch(() => undefined);
+        }
+      }
       if (preview && !file.mime.startsWith("image/")) {
         await file.handle.close();
         return json(res, 415, { error: "only images can be previewed here" });
