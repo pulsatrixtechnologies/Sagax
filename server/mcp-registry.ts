@@ -368,6 +368,8 @@ function parseStdio(raw: unknown, mutation: boolean, existing?: StoredMcpServer)
   }
   const env = resolveSecrets(incoming, existing && !isRemoteMcpServer(existing) ? existing.env : undefined);
   if (!env.ok) return env;
+  const refused = commandLaunchError(parsed.data.command);
+  if (refused) return { ok: false, error: refused };
   // Judged after resolving, so a kept write-only value counts as what would run.
   const invalidEnv = Object.entries(env.values).map(([name, value]) => environmentEntryError(name, value)).find((error) => error !== null);
   if (invalidEnv) return { ok: false, error: invalidEnv };
@@ -535,15 +537,19 @@ function pickEntry(record: Record<string, unknown>, keys: readonly string[]): Re
   return out;
 }
 
-/**
- * Turn a pasted config block into servers this registry can store. Accepts
- * the {"mcpServers": {...}} shape Claude Code, Cursor and Claude Desktop
- * write, a bare {name: entry} map, or a single {name, command|url, ...} entry.
- * Names are slugged into the registry's format; every entry goes through the
- * same rules as the form and lands disabled until explicitly enabled.
- */
 const MCP_SHELLS = new Set(["sh", "bash", "zsh", "fish", "dash", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"]);
 const MCP_LAUNCHERS = new Set(["npx", "npm", "pnpm", "node", "python", "python3", "uvx", "uv", "deno", "bun"]);
+
+/** A program Sagax may launch: not a shell, and not an address. An address
+ * is a remote server, stored with a url, never as the command of a process. */
+function commandLaunchError(command: string): string | null {
+  if (command.includes("://")) {
+    return "An address is not a program. Paste the https address on its own line, or a JSON block with a url.";
+  }
+  const base = command.split(/[/\\]/).pop()?.toLowerCase() ?? "";
+  if (MCP_SHELLS.has(base)) return "A shell is not a server command. Paste the program itself, for example npx.";
+  return null;
+}
 
 /** Split one command line into a program and arguments. Not a shell: no
  * pipes, redirects or substitutions, and the program is a path or a known
@@ -574,14 +580,29 @@ export function parseMcpCommandLine(line: string): { ok: true; command: string; 
   if (tokens.length === 0 || tokens.length > 65) return { ok: false, error: "Paste one program and at most 64 arguments." };
   const [command, ...args] = tokens;
   if (!command || command.includes("=")) return { ok: false, error: "Set environment variables in the form, not in front of the command." };
+  const refused = commandLaunchError(command);
+  if (refused) return { ok: false, error: refused };
   const base = command.split(/[/\\]/).pop()?.toLowerCase() ?? "";
-  if (MCP_SHELLS.has(base)) return { ok: false, error: "A shell is not a server command. Paste the program itself, for example npx." };
   const pathLike = command.includes("/") || command.includes("\\");
   if (!pathLike && !MCP_LAUNCHERS.has(base)) {
     return { ok: false, error: "That is not valid JSON, and it is not a server command. Paste a JSON block, or one line that starts with npx, node, or a path." };
   }
   if (command.length > 1_024 || args.some((arg) => arg.length > 4_096)) return { ok: false, error: "That command is too long." };
   return { ok: true, command, args };
+}
+
+/** A pasted https address becomes a remote server, switched off, never a
+ * command. The name comes from the host, so a path of /mcp is not the
+ * reserved name mcp. */
+function importPastedUrl(text: string): { ok: true; servers: Record<string, StoredMcpServer> } | { ok: false; error: string } {
+  const bad = urlError(text);
+  if (bad) return { ok: false, error: bad };
+  const url = new URL(text);
+  const name = slugMcpName(url.hostname.replace(/^www\./i, ""));
+  if (!name) return { ok: false, error: "That address needs a host name. Paste a JSON block and give the server a name." };
+  const result = parseMcpServerMutation(name, { type: "http", url: text });
+  if (!result.ok) return { ok: false, error: result.error };
+  return { ok: true, servers: { [name]: result.server } };
 }
 
 function mcpCommandServerName(command: string, args: string[]): string {
@@ -591,11 +612,21 @@ function mcpCommandServerName(command: string, args: string[]): string {
   return slugMcpName(leaf);
 }
 
+/**
+ * Turn a pasted config block into servers this registry can store. Accepts
+ * the {"mcpServers": {...}} shape Claude Code, Cursor and Claude Desktop
+ * write, a bare {name: entry} map, a single {name, command|url, ...} entry,
+ * or one https address. A command line is a program and its arguments, already
+ * checked, never a shell and never an address. Names are slugged into the
+ * registry's format; every entry goes through the same rules as the form and
+ * lands disabled until explicitly enabled.
+ */
 export function parseMcpServersImport(
   text: string,
 ): { ok: true; servers: Record<string, StoredMcpServer> } | { ok: false; error: string } {
   const trimmed = text.trim();
   if (trimmed && !trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    if (/^https?:\/\//i.test(trimmed)) return importPastedUrl(trimmed);
     const command = parseMcpCommandLine(trimmed);
     if (!command.ok) return command;
     const name = mcpCommandServerName(command.command, command.args);

@@ -289,6 +289,18 @@ describe("parseMcpServersImport", () => {
       servers: { server: { command: "/opt/tools/server", args: ["--flag"], enabled: false } },
     });
     expect(parseMcpServersImport("[]")).toMatchObject({ ok: false });
+    expect(parseMcpServersImport("https://mcp.example.com/mcp")).toEqual({
+      ok: true,
+      servers: { "mcp-example-com": { type: "http", url: "https://mcp.example.com/mcp", headers: {}, enabled: false } },
+    });
+    expect(parseMcpServersImport("https://h/x/foo")).toEqual({
+      ok: true,
+      servers: { h: { type: "http", url: "https://h/x/foo", headers: {}, enabled: false } },
+    });
+    expect(parseMcpServersImport("https://h/x?a=1&b=2").ok).toBe(true);
+    expect(parseMcpServersImport("https://user:pw@h/mcp")).toMatchObject({ ok: false, error: expect.stringMatching(/header/i) });
+    expect(parseMcpServersImport(JSON.stringify({ planted: { command: "https://h/x/foo" } }))).toMatchObject({ ok: false, error: expect.stringMatching(/not a program/i) });
+    expect(parseMcpServersImport(JSON.stringify({ planted: { command: "bash", args: ["-c", "id"] } }))).toMatchObject({ ok: false, error: expect.stringMatching(/shell/i) });
   });
 });
 
