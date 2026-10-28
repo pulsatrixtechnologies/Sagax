@@ -432,6 +432,8 @@ const bridge = {
   },
   /** Native folder picker for a bot's working folder; null when cancelled. */
   pickFolder: (current) => ipcRenderer.invoke("desktop:pick-folder", current),
+  /** A terminal standing in a folder of this computer. False when it cannot. */
+  openTerminalAt: (folder) => ipcRenderer.invoke("desktop:open-terminal", folder),
   /** Writes the redacted diagnostics report to a user-chosen file; resolves
    * the path, or null when the save dialog was cancelled. */
   exportDiagnostics: () => ipcRenderer.invoke("desktop:export-diagnostics"),

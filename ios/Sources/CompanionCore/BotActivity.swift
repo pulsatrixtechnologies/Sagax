@@ -75,12 +75,15 @@ public struct BotActivityItem: Codable, Hashable, Identifiable, Sendable {
     public var canStop: Bool?
     public var parentId: String?
     public var parallel: Bool?
+    /// The conversation's repository work (`BotCodeWork`), when it is coding.
+    public var code: BotCodeWork?
 
     public init(
         id: String, kind: BotActivityKind = .session, botId: String, botName: String? = nil, title: String,
         status: BotActivityStatus, startedAt: Double, endedAt: Double? = nil, updatedAt: Double? = nil,
         threadId: String? = nil, startedBy: BotActivityActor? = nil, childCount: Int? = nil, coding: Bool? = nil,
-        currentStep: String? = nil, canStop: Bool? = nil, parentId: String? = nil, parallel: Bool? = nil
+        currentStep: String? = nil, canStop: Bool? = nil, parentId: String? = nil, parallel: Bool? = nil,
+        code: BotCodeWork? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -99,11 +102,12 @@ public struct BotActivityItem: Codable, Hashable, Identifiable, Sendable {
         self.canStop = canStop
         self.parentId = parentId
         self.parallel = parallel
+        self.code = code
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, botId, botName, title, status, startedAt, endedAt, updatedAt, threadId, startedBy
-        case childCount, coding, currentStep, canStop, parentId, parallel
+        case childCount, coding, currentStep, canStop, parentId, parallel, code
     }
 
     public init(from decoder: Decoder) throws {
@@ -125,11 +129,22 @@ public struct BotActivityItem: Codable, Hashable, Identifiable, Sendable {
         canStop = try values.decodeIfPresent(Bool.self, forKey: .canStop)
         parentId = try values.decodeIfPresent(String.self, forKey: .parentId)
         parallel = try values.decodeIfPresent(Bool.self, forKey: .parallel)
+        code = try? values.decodeIfPresent(BotCodeWork.self, forKey: .code)
     }
 
     /// The card's Stop: a live entry the viewer may stop, on a thread they
     /// may open (ActivityCard.tsx `stoppable`).
     public var stoppable: Bool { canStop == true && threadId != nil && status.isActive }
+}
+
+/// The repository work of a coding conversation (`BotCodeWork`). Only the
+/// fields the Environment pod shows are read; the rest of the payload is
+/// ignored.
+public struct BotCodeWork: Codable, Hashable, Sendable {
+    /// owner/name of the folder's origin remote.
+    public var repo: String?
+    /// The branch checked out in that folder now.
+    public var branch: String?
 }
 
 /// A pull request tied to a launched agent's failed run.

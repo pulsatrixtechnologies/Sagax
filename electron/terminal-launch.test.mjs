@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
 
-import { openBlankTerminal } from "./terminal-launch.mjs";
+import { openBlankTerminal, openTerminalAt } from "./terminal-launch.mjs";
 
 function launcher(outcomes) {
   const calls = [];
@@ -66,5 +66,29 @@ describe("blank terminal launcher", () => {
       throw new Error("launch failed");
     };
     await expect(openBlankTerminal("darwin", run)).resolves.toBe(false);
+  });
+});
+
+describe("terminal in a folder", () => {
+  it("opens Terminal standing in the folder on macOS, the folder quoted", async () => {
+    const fake = launcher(["spawn"]);
+    await expect(openTerminalAt("/Users/me/work", "darwin", fake.run)).resolves.toBe(true);
+    expect(fake.calls[0].executable).toBe("osascript");
+    expect(fake.calls[0].args.join(" ")).toContain('cd "/Users/me/work"');
+  });
+
+  it("refuses a folder that is not a plain absolute path", async () => {
+    const fake = launcher(["spawn"]);
+    for (const folder of ["relative/work", "/Users/me/work; rm -rf /", "/Users/me/\"work\"", "/Users/me/work\\bin", ""]) {
+      await expect(openTerminalAt(folder, "darwin", fake.run)).resolves.toBe(false);
+    }
+    expect(fake.calls).toEqual([]);
+  });
+
+  it("hands Windows the folder as data, not as part of the command", async () => {
+    const fake = launcher(["spawn"]);
+    await expect(openTerminalAt("D:\\Work", "win32", fake.run)).resolves.toBe(true);
+    expect(fake.calls[0].args.at(-1)).toBe("D:\\Work");
+    expect(fake.calls[0].args[3]).not.toContain("D:\\Work");
   });
 });

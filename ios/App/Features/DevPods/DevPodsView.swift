@@ -28,6 +28,10 @@ enum DevPodsStrings {
     static var changes: String { String(localized: "devPods.changes.title", defaultValue: "Changes") }
     static var ownFolder: String { String(localized: "devPods.environment.ownFolder", defaultValue: "Its own folder") }
     static var branch: String { String(localized: "devPods.environment.branch", defaultValue: "Branch") }
+    static var repository: String { String(localized: "devPods.environment.repository", defaultValue: "Repository") }
+    static var copyPath: String { String(localized: "devPods.environment.copyPath", defaultValue: "Copy path") }
+    static var copyBranch: String { String(localized: "devPods.environment.copyBranch", defaultValue: "Copy branch name") }
+    static var folderActions: String { String(localized: "devPods.environment.folderMenu", defaultValue: "Folder actions") }
     static var computerSettings: String { String(localized: "devPods.environment.settings", defaultValue: "Computer settings") }
     static var showInConversation: String { String(localized: "devPods.changes.show", defaultValue: "Show in conversation") }
     static var copyCommit: String { String(localized: "devPods.changes.copySha", defaultValue: "Copy commit ID") }
@@ -80,6 +84,9 @@ struct DevPodsView: View {
     @State private var servers: [MCPServerListing]?
     @State private var serversFailed = false
     @State private var allConnectors = false
+    /// owner/name of the folder's repository, from the bot's activity. Nil
+    /// until it loads, and when the server has none.
+    @State private var repo: String?
 
     static let connectorsShown = 3
 
@@ -119,6 +126,7 @@ struct DevPodsView: View {
         }
         .accessibilityIdentifier("dev-pods")
         .task(id: session.connection?.id) { await loadServers() }
+        .task(id: "\(input.bot.id)|\(input.task?.threadId ?? "")") { await loadRepo() }
     }
 
     // MARK: Environment
@@ -154,18 +162,45 @@ struct DevPodsView: View {
                 }
                 .accessibilityIdentifier("dev-pods.environment.computer")
             }
-            Label {
-                if let folder = data.folder {
-                    Text(verbatim: DevPodSources.folderLabel(folder))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } else {
-                    Text(verbatim: DevPodsStrings.ownFolder).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Label {
+                    if let folder = data.folder {
+                        Text(verbatim: DevPodSources.folderLabel(folder))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } else {
+                        Text(verbatim: DevPodsStrings.ownFolder).foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "folder")
                 }
-            } icon: {
-                Image(systemName: "folder")
+                if let folder = data.folder {
+                    Spacer(minLength: 8)
+                    Menu {
+                        Button { UIPasteboard.general.string = folder } label: {
+                            Label(DevPodsStrings.copyPath, systemImage: "doc.on.doc")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(Text(verbatim: DevPodsStrings.folderActions))
+                }
             }
             .accessibilityIdentifier("dev-pods.environment.folder")
+            if let repo {
+                Label {
+                    Text(verbatim: repo)
+                        .font(.system(.callout, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } icon: {
+                    Image(systemName: "square.stack.3d.up")
+                }
+                .accessibilityLabel(Text(verbatim: "\(DevPodsStrings.repository), \(repo)"))
+                .accessibilityIdentifier("dev-pods.environment.repo")
+            }
             if let branch = data.branch {
                 Label {
                     Text(verbatim: branch)
@@ -177,6 +212,17 @@ struct DevPodsView: View {
                 }
                 .accessibilityLabel(Text(verbatim: "\(DevPodsStrings.branch), \(branch)"))
                 .accessibilityIdentifier("dev-pods.environment.branch")
+                Spacer(minLength: 8)
+                Menu {
+                    Button { UIPasteboard.general.string = branch } label: {
+                        Label(DevPodsStrings.copyBranch, systemImage: "doc.on.doc")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(Text(verbatim: DevPodsStrings.copyBranch))
             }
         } header: {
             Text(verbatim: DevPodsStrings.environment)
@@ -258,6 +304,16 @@ struct DevPodsView: View {
                 Text(verbatim: DevPodsStrings.connectors)
             }
         }
+    }
+
+    /// The repository of this conversation, from the bot's coding activity.
+    /// Nothing shows when the server has none.
+    private func loadRepo() async {
+        guard let client = session.profileClient, let threadId = input.task?.threadId else { return }
+        guard let list = try? await client.botActivity(botId: input.bot.id, filter: .coding) else { return }
+        let code = list.items.first { $0.threadId == threadId }?.code
+        let name = code?.repo?.trimmingCharacters(in: .whitespacesAndNewlines)
+        repo = (name?.isEmpty == false) ? name : nil
     }
 
     private func loadServers() async {
