@@ -4199,6 +4199,15 @@ not open a shared machine. Keep these rules, each covered by `server/user-sandbo
   Tests: `server/user-sandbox-desktop.test.ts`, `server/sandboxd.test.ts`;
   Docker: `scripts/smoke-sandbox-desktop.ts`.
 
+## 1:1 bubble color (iOS)
+
+Settings > Appearance > "Color 1:1 messages with the bot color"
+(`sagax.botBubble.v1`, off by default, `ios/Sources/CompanionCore/BotBubble.swift`).
+On a 1:1 bot chat the assistant bubble and its question cards use that
+bot's colour, held to contrast. The person's own bubbles stay the skin's.
+A room does not set an open bot colour, so it is unchanged. Notification
+sounds stay the existing choice in `NotificationSounds.swift`.
+
 ## Messages and lifecycle hooks (2026-10-21)
 
 Messages (iMessage and SMS) run only in the solo Sagax process on the Mac

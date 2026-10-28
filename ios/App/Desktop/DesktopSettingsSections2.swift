@@ -202,6 +202,11 @@ struct DesktopAppearanceSettings: View {
                     prefs.setBotAccent(session, !prefs.botAccent)
                 }
             }
+            DesktopSettingRow(title: Text("Color 1:1 messages with the bot color"), subtitle: Text("Assistant bubbles and cards in a one-to-one chat use the bot's color. Off leaves them in the skin's color.")) {
+                DesktopSwitch(isOn: prefs.botBubble, label: Text("Color 1:1 messages with the bot color"), identifier: "desktop-settings.bot-bubble") {
+                    prefs.setBotBubble(session, !prefs.botBubble)
+                }
+            }
             DesktopSettingRow(title: Text("Show suggestions"), subtitle: Text("Show the Suggestions card in the bot panel")) {
                 DesktopSwitch(isOn: prefs.showSuggestions, label: Text("Show suggestions"), identifier: "desktop-settings.show-suggestions") {
                     prefs.setShowSuggestions(session, !prefs.showSuggestions)

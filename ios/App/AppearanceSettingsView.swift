@@ -95,6 +95,13 @@ struct AppearanceSettingsView: View {
                 )
                 CardHairline(leadingInset: SettingsMetrics.rowInset)
                 SettingsRow(
+                    title: "Color 1:1 messages with the bot color",
+                    subtitle: "Assistant bubbles and cards in a one-to-one chat use the bot's color. Off leaves them in the skin's color.",
+                    accessory: .toggle(Binding(get: { prefs.botBubble }, set: { prefs.setBotBubble(session, $0) })),
+                    identifier: "settings.botBubble"
+                )
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(
                     title: "Show suggestions",
                     subtitle: "Show the Suggestions card in the bot panel",
                     accessory: .toggle(Binding(get: { prefs.showSuggestions }, set: { prefs.setShowSuggestions(session, $0) })),

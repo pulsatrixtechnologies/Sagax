@@ -22,6 +22,9 @@ struct TextBubble: View {
     @Environment(\.desktopWideCap) private var wideCap
     @Environment(\.desktopMessageActions) private var hoverActions
     @State private var hovering = false
+    /// So a bubble repaints when the person flips the bot-colour switch.
+    @ObservedObject private var bubblePrefs = SidebarPrefsModel.shared
+    @ObservedObject private var openBot = ThemeStore.shared
 
     private var attachedContent: AttachedMessageContent {
         AttachedMessageContent.parse(message.text ?? "")
@@ -251,6 +254,9 @@ struct TextBubble: View {
     }
 
     private func bubbleFill(mine: Bool) -> Color {
+        _ = bubblePrefs.botBubble
+        _ = openBot.openBotColor
+        if !mine, let paint = BotBubblePaint.current { return paint.fill }
         if let desktop { return mine ? desktop.bubbleUser : desktop.card }
         return mine ? BubbleColor.mine : BubbleColor.theirs
     }
