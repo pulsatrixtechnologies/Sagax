@@ -58,6 +58,20 @@ final class CallController: ObservableObject {
     @Published private(set) var voicesError: String?
     @Published private(set) var previewing: String?
     @Published private(set) var recognizerName = ""
+    /// Who hears and speaks on this call (xAI with whose key, or Apple on
+    /// this phone when no voice provider is set up), shown on the call.
+    @Published private(set) var provider: CallProvider = .apple
+    /// The provider line the call shows.
+    var providerLabel: String {
+        switch provider {
+        case let .xai(via) where via == "speaker-key": String(localized: "Voice: xAI, with your key")
+        case let .xai(via) where via == "org-key": String(localized: "Voice: xAI, with the organization's key")
+        case .xai: String(localized: "Voice: xAI")
+        case .apple: String(localized: "Voice: Apple on this iPhone (no voice provider set up)")
+        }
+    }
+    /// The notice a voice failure put up: cleared once the voice is heard again.
+    private var voiceNotice: String?
 
     @Published var voiceSettings: VoiceModeSettings {
         didSet {
@@ -181,6 +195,7 @@ final class CallController: ObservableObject {
             return
         }
         voiceModeAvailable = status?.available == true
+        provider = CallProvider.choose(voiceMode: status, room: isRoom, demo: demo)
         let config = demo ? nil : await session.configStatus()
         if organization { await seedVoiceSettings(client) }
 
@@ -238,7 +253,7 @@ final class CallController: ObservableObject {
             self.notice = String(localized: "That did not get through. Could you say it again?")
             Task { await self.engine?.say(String(localized: "That did not get through. Could you say it again?")) }
         }
-        let ready = await recognizer.prepare(locales: callVoiceSettings.recognitionLocales(), upload: upload, onDeviceOnly: demo)
+        let ready = await recognizer.prepare(locales: callVoiceSettings.recognitionLocales(), upload: upload, onDeviceOnly: demo, preferServer: provider.recognizesOnServer)
             guard target?.id == chat.id else { return }
             if !ready, demo, !recognizer.speechAuthorized {
                 note = String(localized: "Allow Speech Recognition for Sagax in Settings to talk. Meanwhile, type your message: \(chat.name) answers out loud.")
@@ -292,8 +307,23 @@ final class CallController: ObservableObject {
             engine?.playerIdle()
             self?.speakingMemberId = nil
         }
-        player.onError = { [weak self] _ in
-            self?.notice = String(localized: "The voice didn't come through. The answer is in the chat.")
+        player.onError = { [weak self] error in
+            guard let self else { return }
+            // the server's reason when it gave one (xAI refused the key...)
+            if case let APIError.status(_, message) = error, let message, !message.isEmpty {
+                self.notice = message
+            } else {
+                self.notice = String(localized: "The voice didn't come through. The answer is in the chat.")
+            }
+            self.voiceNotice = self.notice
+        }
+        // the voice is heard again: a voice failure line is over
+        let started = player.onSentenceStart
+        player.onSentenceStart = { [weak self] text, speaker in
+            started(text, speaker)
+            guard let self, let shown = self.voiceNotice else { return }
+            if self.notice == shown { self.notice = nil }
+            self.voiceNotice = nil
         }
         io.onFrame = { [weak engine] frame in engine?.frame(frame) }
         self.io = io
@@ -380,6 +410,15 @@ final class CallController: ObservableObject {
                 return settings
             }
         )
+        // a voice that failed says why (xAI refused the key, no credits,
+        // busy): the server's own words, never a secret
+        routed.onFailure = { [weak self] error in
+            guard let self, self.target != nil else { return }
+            if case let APIError.status(_, message) = error, let message, !message.isEmpty {
+                self.notice = message
+                self.voiceNotice = message
+            }
+        }
         return routed
     }
 

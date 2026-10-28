@@ -723,13 +723,43 @@ the call ends. An exchange refused for now is retried once. A call turn
 whose MCP set changed is logged (`[voice-call]`), and so are the servers
 added or removed when the Claude CLI relaunches.
 
+## When xAI fails a request
+
+xAI's refusal is never hidden behind "didn't come through" (2026-10-28):
+
+- `server/tts/grok.ts` reads the status of a refused socket handshake (`ws`
+  says "Unexpected server response: 429") and words it like an HTTP refusal:
+  key or permissions (401, 403), credits (402), rate limit (429), xAI failing
+  (5xx); a real network error stays "Could not reach Grok voice".
+- Every 502 of a voice route answers `{ error, code: "voice_provider",
+  failure }`, `failure` being `key`, `quota`, `busy`, `down`, `voice` or
+  `other` (`grokVoiceFailure`), and the server log says which request failed
+  and with which kind of key (`[voice-mode] xAI stream failed (speaker-key):
+  ...`), never the key.
+- The page tries a sentence once more after a busy or failing xAI or a
+  stall (`streamVoiceModeSpeech`, 400 ms), then says the reason in the bar
+  (`voiceMode.provider.<failure>`). That line goes away as soon as the voice
+  is heard again; "Try again" is offered only for the microphone, the one
+  thing it reopens (`voiceErrorNote` in `src/lib/voice-mode/failure.ts`).
+- The bar's transcript shows the bot's words as they are said: the spoken
+  part, without markdown (`transcriptText` in `src/lib/voice-mode/spoken.ts`,
+  `SpokenText.transcriptText` on iOS).
+- iOS (`CallProvider.choose`): with voice mode available, the call hears
+  through xAI on the server (POST /voice/transcribe) and speaks with xAI, the
+  desktop's provider for that person; Apple's recognizer and voice are only
+  the fallback when no voice provider is set up (a group call, the demo, a
+  server without voice mode). The call's transcript header says which one
+  ("Voice: xAI, with your key").
+
 ## Who pays, and the key
 
 The key never reaches the client. Order for the person who speaks
 (`server/voice-mode.ts` `resolveVoiceKey`):
 
-- Organization server: their own xAI key in Perspicax (provider `xai`), else
-  the organization's xAI key (Settings > Models and voice, `config.xai.key`
+- Organization server: the xAI key they saved in Sagax for their own voice
+  (Settings > Models and voice > My voice keys, `server/person-voice-keys.ts`,
+  2026-10-28; it needs no grant of the organization's voice), else their own
+  xAI key in Perspicax (provider `xai`), else the organization's xAI key (Settings > Models and voice, `config.xai.key`
   or `XAI_API_KEY`), else refused with an access card shown in their bar only,
   under the audience rule of every access card (`accessCardAudience`: the
   person it is about; the organization's key hint only for an admin).

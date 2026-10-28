@@ -13,6 +13,30 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Aperçu indisponible" } }
       }
     },
+    "Voice: xAI, with your key": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Voice: xAI, with your key" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voix : xAI, avec ta clé" } }
+      }
+    },
+    "Voice: xAI, with the organization's key": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Voice: xAI, with the organization's key" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voix : xAI, avec la clé de l'organisation" } }
+      }
+    },
+    "Voice: xAI": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Voice: xAI" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voix : xAI" } }
+      }
+    },
+    "Voice: Apple on this iPhone (no voice provider set up)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Voice: Apple on this iPhone (no voice provider set up)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voix : Apple sur cet iPhone (aucun fournisseur vocal configuré)" } }
+      }
+    },
     "Sort by prefix": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Sort by prefix" } },

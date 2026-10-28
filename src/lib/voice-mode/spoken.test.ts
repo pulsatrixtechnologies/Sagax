@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { speakableSentence, spokenPart } from "./spoken";
+import { spokenAnswer } from "./answer-budget";
+import { speakableSentence, spokenPart, transcriptText } from "./spoken";
 
 describe("what a call reads aloud", () => {
   it("never reads an identifier aloud", () => {
@@ -36,5 +37,18 @@ describe("what a call reads aloud", () => {
     expect(spokenPart("Bye.\n***\nmore")).toBe("Bye.\n");
     expect(spokenPart("No rule -- here, a - b")).toBe("No rule -- here, a - b");
     expect(spokenPart("Typing --")).toBe("Typing --");
+  });
+});
+
+describe("the call's transcript shows spoken text", () => {
+  it("never shows raw markdown: bold, bullets, code, the written follow-up", () => {
+    const answer = "**DKIM 1024 bits** est faible.\n- SPF : ok\n- DMARC : `p=none`\n\n---\nDétails : https://example.com";
+    const shown = transcriptText(answer, spokenAnswer(answer));
+    expect(shown).toBe("DKIM 1024 bits est faible. SPF: ok. DMARC: p=none.");
+  });
+
+  it("shows what the call said of a long answer, the rest left to the chat", () => {
+    const answer = "Un. Deux. Trois. Quatre. Cinq. Six.";
+    expect(transcriptText(answer, spokenAnswer(answer))).toBe("Un. Deux. Trois. Quatre…");
   });
 });

@@ -7,6 +7,7 @@
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { VoiceCall, callAudioConstraints, continuedTurn, isNoiseFragment, REPLY_END_GRACE_MS, resampler, stablePartial, THINKING_CUE_MS, type BargeInMetrics, type TurnMetrics, type VoiceCallOptions } from "./call";
+import { VoiceProviderError, voiceFailureKind } from "./api";
 import { cleanCallSettings, DEFAULT_CALL_SETTINGS, type CallSettings } from "./call-settings";
 import { DUCK_LEVEL, DUCK_SOFT, FADE_MS, type PcmPlayer, type Sentence } from "./player";
 import type { SpeakerEmbedder } from "./speaker-id";
@@ -511,6 +512,36 @@ describe("VoiceCall", () => {
     await t.feed(0.02, 0.001, 25);
     await t.settle();
     expect(t.utterances.map((u) => [u.text, u.interrupted])).toEqual([["wait, stop", true], ["and another thing", false]]);
+  });
+
+  it("a voice failure, an interrupt and words sent while the bot works never break the call", async () => {
+    const t = await setup({ transcripts: ["attends, autre chose", "et aussi ceci"] });
+    const errors: Array<[string, unknown]> = [];
+    t.call.on("error", (reason, cause) => errors.push([reason, cause]));
+    void t.call.say("Voici une longue réponse qui dure un moment.");
+    // xAI failed that sentence: the error carries why (busy), the call goes on
+    t.player.events.onError?.(new VoiceProviderError("xAI is rate-limiting speech. Wait a moment and try again.", "busy", 502));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]![0]).toBe("speech-failed");
+    expect(voiceFailureKind(errors[0]![1])).toBe("busy");
+    // the person cuts the bot, then talks again while its turn still runs (steering)
+    t.call.interrupt();
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    t.call.setBotBusy(true);
+    await t.feed(0.02, 0.001, 50);
+    await t.feed(0.95, 0.06, 20);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(t.utterances.map((u) => [u.text, u.interrupted])).toEqual([["attends, autre chose", true], ["et aussi ceci", false]]);
+    expect(t.call.current.phase).not.toBe("ended");
+    // the next answer is spoken as usual
+    t.call.setBotBusy(false);
+    const before = t.speech.mock.calls.length;
+    void t.call.say("Voilà.");
+    expect(t.speech.mock.calls.length).toBeGreaterThan(before);
+    expect(errors).toHaveLength(1);
   });
 
   it("the interrupt button marks the next turn interrupted", async () => {

@@ -10,7 +10,7 @@ import ptBr from "../../locales/pt-br.json";
 import uk from "../../locales/uk.json";
 import zh from "../../locales/zh.json";
 import zhTw from "../../locales/zh-tw.json";
-import { CALL_FAILURE_GRACE_MS, CallFailure, callFailureKey, callFailureKind, failedRowKind, type FailureRow } from "./failure";
+import { CALL_FAILURE_GRACE_MS, CallFailure, callFailureKey, callFailureKind, failedRowKind, voiceErrorNote, type FailureRow } from "./failure";
 
 const said = (id: string, text = "Is the backup done?"): FailureRow => ({ id, role: "user", kind: "text", text });
 const failed = (id: string, cause: string, setup = false): FailureRow => ({ id, role: "bot", kind: "activity", tool: { name: `error: ${cause}`, ...(setup ? { setup } : {}) } });
@@ -132,5 +132,22 @@ describe("a failed turn on a call", () => {
         expect(line).not.toMatch(/\d{3}|error|erreur|https?:/i);
       }
     }
+  });
+});
+
+describe("what the bar says when the voice or the speech to text fails", () => {
+  it("says the provider's reason, never a vague line, and offers Try again only for the microphone", () => {
+    for (const kind of ["key", "quota", "busy", "down", "voice"] as const) {
+      const note = voiceErrorNote("speech-failed", kind);
+      expect(note).toEqual({ key: `voiceMode.provider.${kind}`, retry: false, clearsOnVoice: true });
+      expect((en as Record<string, string>)[note.key]).toBeTruthy();
+      expect((fr as Record<string, string>)[note.key]).toBeTruthy();
+      expect(voiceErrorNote("transcribe-failed", kind).key).toBe(`voiceMode.provider.${kind}`);
+    }
+    expect(voiceErrorNote("speech-failed", null)).toEqual({ key: "voiceMode.speechFailed", retry: false, clearsOnVoice: true });
+    expect(voiceErrorNote("speech-failed", "other").key).toBe("voiceMode.speechFailed");
+    expect(voiceErrorNote("transcribe-failed", null).key).toBe("voiceMode.transcribeFailed");
+    expect(voiceErrorNote("mic-denied", null)).toEqual({ key: "voiceMode.micDenied", retry: true, clearsOnVoice: false });
+    expect(voiceErrorNote("mic-unavailable", "busy").retry).toBe(true);
   });
 });

@@ -24,15 +24,64 @@ export class VoiceModeRefused extends Error {
   }
 }
 
+/** Why xAI failed a voice request, as the server sorted it
+ * (server/tts/grok.ts grokVoiceFailure): the key was rejected (`key`), no
+ * credits (`quota`), rate limited (`busy`), unreachable or failing
+ * (`down`), an unknown voice (`voice`), anything else (`other`). */
+export type VoiceProviderFailure = "key" | "quota" | "busy" | "down" | "voice" | "other";
+const PROVIDER_FAILURES = new Set<VoiceProviderFailure>(["key", "quota", "busy", "down", "voice", "other"]);
+
+/** xAI (through the server) failed this request; `failure` says how. */
+export class VoiceProviderError extends Error {
+  readonly failure: VoiceProviderFailure;
+  readonly status: number;
+
+  constructor(message: string, failure: VoiceProviderFailure, status: number) {
+    super(message);
+    this.failure = failure;
+    this.status = status;
+  }
+}
+
+/** The kind of a voice error: a provider failure as the server sorted it,
+ * this server's own rate limit or spend limit, a dropped connection or a
+ * stall (`down`), or null (a refusal card, a cancellation, anything else). */
+export function voiceFailureKind(error: unknown): VoiceProviderFailure | null {
+  if (error instanceof VoiceProviderError) return error.failure;
+  if (error instanceof VoiceModeRefused) return null;
+  if (error instanceof DOMException && error.name === "AbortError") return null;
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (/the voice service stalled|did not answer|failed to fetch|network|load failed/i.test(message)) return "down";
+  return null;
+}
+
+/** A failure the provider may not repeat a moment later: worth one more try. */
+export function transientVoiceFailure(error: unknown): boolean {
+  const kind = voiceFailureKind(error);
+  return kind === "busy" || kind === "down";
+}
+
 const base = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/voice`;
 
 async function failure(res: Response): Promise<Error> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; cause?: VoiceModeRefusalCause; card?: { keysUrl?: string; admin?: boolean } };
+  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; cause?: VoiceModeRefusalCause; failure?: string; card?: { keysUrl?: string; admin?: boolean } };
   if (res.status === 403 && body.code === "voice_no_access" && body.cause) {
     return new VoiceModeRefused(body.error ?? "Voice mode is not available.", body.cause, body.card?.keysUrl, body.card?.admin === true);
   }
+  if (body.code === "voice_provider") {
+    const kind = PROVIDER_FAILURES.has(body.failure as VoiceProviderFailure) ? (body.failure as VoiceProviderFailure) : "other";
+    return new VoiceProviderError(body.error ?? `the voice service returned ${res.status}`, kind, res.status);
+  }
+  // this server's own limits: too many requests (busy), the spend limit (quota)
+  if (res.status === 429) return new VoiceProviderError(body.error ?? "Too many voice requests.", "busy", 429);
+  if (res.status === 409 && body.code === "spend_cap") return new VoiceProviderError(body.error ?? "The spend limit is reached.", "quota", 409);
+  // an older server: a 502 is xAI failing, a 5xx the server's own
+  if (res.status >= 500) return new VoiceProviderError(body.error ?? `the voice service returned ${res.status}`, "down", res.status);
   return new Error(body.error ?? `the voice service returned ${res.status}`);
 }
+
+/** How long a sentence waits before its one retry after a transient failure. */
+export const SPEECH_RETRY_MS = 400;
 
 /** What the server answered about voice mode for this bot and person. */
 export type VoiceModeCheck =
@@ -109,6 +158,27 @@ export async function streamVoiceModeSpeech(
   threadId?: string,
   signal?: AbortSignal,
   stallMs = SPEECH_STALL_MS,
+  retryMs = SPEECH_RETRY_MS,
+): Promise<{ body: ReadableStream<Uint8Array>; sampleRate: number } | null> {
+  // xAI busy or a dropped connection before any audio: one more try, so a
+  // blip is never a sentence lost nor a "try again" for the person
+  try {
+    return await streamVoiceModeSpeechOnce(botId, text, settings, threadId, signal, stallMs);
+  } catch (error) {
+    if (signal?.aborted || !transientVoiceFailure(error)) throw error;
+    await new Promise<void>((resolve) => setTimeout(resolve, retryMs));
+    if (signal?.aborted) throw error;
+    return streamVoiceModeSpeechOnce(botId, text, settings, threadId, signal, stallMs);
+  }
+}
+
+async function streamVoiceModeSpeechOnce(
+  botId: string,
+  text: string,
+  settings: VoiceModeSettings,
+  threadId: string | undefined,
+  signal: AbortSignal | undefined,
+  stallMs: number,
 ): Promise<{ body: ReadableStream<Uint8Array>; sampleRate: number } | null> {
   const controller = new AbortController();
   const forward = () => controller.abort(signal?.reason);

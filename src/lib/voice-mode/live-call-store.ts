@@ -38,6 +38,8 @@ export interface LiveCallData {
   heard: string;
   caption: string;
   note: string | null;
+  /** the note's "Try again" means something (the microphone); absent: shown */
+  noteRetry?: boolean;
   notice: string | null;
   transcript: LiveCallTranscriptLine[];
   metrics: LiveCallMetrics;

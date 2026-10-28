@@ -89,6 +89,8 @@ export interface FloatingCall {
   line: string;
   transcript: { id: string; who: "you" | "bot"; text: string; interrupted?: boolean }[];
   note: string | null;
+  /** "Try again" means something for this note (the microphone); absent: shown */
+  noteRetry?: boolean;
   notice: string | null;
   settings: VoiceModeSettings;
   callSettings: CallSettings;

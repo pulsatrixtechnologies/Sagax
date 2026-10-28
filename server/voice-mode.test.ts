@@ -10,6 +10,7 @@ import { audioMime, createVoiceModeRoutes, listenTranscriptFrame, resolveVoiceKe
 // Fake keys only. Long and distinct so a fragment would be caught too.
 const ORG_KEY = "xai-ORGfake7Lm2Pq9Wz4Rt6Yb";
 const OWN_KEY = "xai-OWNfake3Kd8Hs1Vn5Xc0Je";
+const MINE_KEY = "xai-MINEfake9Qa2Ws4Ed6Rf8";
 
 const ada: RequestAuth = {
   kind: "session", via: "cookie", scopes: ["client"],
@@ -86,7 +87,7 @@ function harness(options: Options = {}) {
 
 function leaks(value: unknown): boolean {
   const text = JSON.stringify(value ?? "");
-  for (const key of [ORG_KEY, OWN_KEY]) {
+  for (const key of [ORG_KEY, OWN_KEY, MINE_KEY]) {
     for (let i = 4; i + 6 <= key.length; i++) if (text.includes(key.slice(i, i + 6))) return true;
   }
   return false;
@@ -128,6 +129,57 @@ describe("voice mode key order", () => {
 
   it("uses the server's key on a solo server", async () => {
     expect(await resolveVoiceKey({ ...base, organization: false }, { principalId: "" })).toEqual({ ok: true, key: ORG_KEY, via: "server" });
+  });
+});
+
+describe("voice mode with the person's own voice key (My voice keys)", () => {
+  const base = { organization: true, serverKey: () => ORG_KEY, hasOwnKey: () => true, resolveOwnKey: async () => ({ ok: true as const, key: OWN_KEY, fingerprint: "fp" }) };
+
+  it("uses the xAI key the person saved in Sagax before Perspicax's and the organization's", async () => {
+    const out = await resolveVoiceKey({ ...base, personalKey: (speaker) => (speaker.principalId === "p-ada" ? ` ${MINE_KEY} ` : undefined) }, { principalId: "p-ada", sub: "sub-ada" });
+    expect(out).toEqual({ ok: true, key: MINE_KEY, via: "speaker-key", payerPrincipalId: "p-ada" });
+    // another person's call never takes it
+    const bob = await resolveVoiceKey({ ...base, personalKey: (speaker) => (speaker.principalId === "p-ada" ? MINE_KEY : undefined) }, { principalId: "p-bob", sub: "sub-bob" });
+    expect(bob).toEqual({ ok: true, key: OWN_KEY, via: "speaker-key", payerPrincipalId: "p-bob" });
+  });
+
+  it("needs no grant of the organization's voice for it, and a disabled person is still refused", async () => {
+    const refused = () => false;
+    const own = await resolveVoiceKey({ ...base, hasOwnKey: () => false, serverKeyAllowed: refused, personalKey: () => MINE_KEY }, { principalId: "p-ada" });
+    expect(own).toEqual({ ok: true, key: MINE_KEY, via: "speaker-key", payerPrincipalId: "p-ada" });
+    expect(await resolveVoiceKey({ ...base, personalKey: () => MINE_KEY }, { principalId: "p-ada", disabled: true })).toEqual({ ok: false, cause: "payer_disabled" });
+  });
+
+  it("speaks a live call's sentence with it", async () => {
+    const { call, xai, usage } = harness({ personalKey: () => MINE_KEY });
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/stream", body: { text: "Bonjour." } });
+    expect(out.status).toBe(200);
+    expect(xai.synthesizeStream.mock.calls[0]![2]).toBe(MINE_KEY);
+    expect(usage[0]).toMatchObject({ via: "speaker-key", payerPrincipalId: "p-ada", model: "grok-tts" });
+  });
+});
+
+describe("voice mode when xAI fails", () => {
+  it("answers the reason and its kind, logs it without the key, and never says it vaguely", async () => {
+    const lines: string[] = [];
+    const { call } = harness({
+      log: (line) => lines.push(line),
+      xai: {
+        listVoices: async () => [],
+        synthesize: async () => { throw new Error("xAI rejected the key or its TTS permissions. Check the xAI key in Settings."); },
+        synthesizeStream: async () => { throw new Error("xAI is rate-limiting speech. Wait a moment and try again."); },
+        transcribe: async () => { throw new Error("The xAI account needs credits to generate speech."); },
+      },
+    });
+    const stream = await call({ method: "POST", path: "/api/bots/b-quasar/voice/stream", body: { text: "Bonjour." } });
+    expect(stream.status).toBe(502);
+    expect(stream.body).toEqual({ error: "xAI is rate-limiting speech. Wait a moment and try again.", code: "voice_provider", failure: "busy" });
+    const speak = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Bonjour." } });
+    expect(speak.body).toMatchObject({ code: "voice_provider", failure: "key" });
+    const heard = await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe", raw: WAV, contentType: "audio/wav" });
+    expect(heard.body).toMatchObject({ code: "voice_provider", failure: "quota" });
+    expect(lines.some((line) => line.includes("xAI stream failed (org-key)"))).toBe(true);
+    expect(leaks(lines)).toBe(false);
   });
 });
 

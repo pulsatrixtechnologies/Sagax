@@ -68,6 +68,8 @@ export interface VoiceModeBarProps {
   /** the bot's sentence now audible */
   caption?: string;
   note: string | null;
+  /** show "Try again" with the note (default true): only the microphone's can be retried */
+  noteRetry?: boolean;
   /** a passing notice ("another voice was ignored") */
   notice?: string | null;
   /** an access card: no xAI key serves this person */
@@ -173,7 +175,7 @@ const ICON = 18;
 type Panel = "settings" | "transcript" | null;
 
 export function VoiceModeBar(props: VoiceModeBarProps) {
-  const { bot, call, state, heard, caption, note, notice, refusal, transcript, metrics, onRetry, onEnd, defaultPanel, startedAt } = props;
+  const { bot, call, state, heard, caption, note, noteRetry = true, notice, refusal, transcript, metrics, onRetry, onEnd, defaultPanel, startedAt } = props;
   const { dispatch } = useStore();
   const settings = useVoiceModeSettings();
   const callSettings = useCallSettings();
@@ -538,7 +540,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
               {(note || notice) && !refusal && (
                 <div className={cn("my-1 flex items-center justify-between gap-2 rounded-xl px-3 py-1.5 text-[12.5px]", note ? "bg-warning/10 text-warning" : "bg-raised/60 text-ink-secondary")} role={note ? "alert" : "status"}>
                   <span>{note ?? notice}</span>
-                  {note && (
+                  {note && noteRetry && (
                     <button type="button" onClick={onRetry} className="shrink-0 rounded-full border border-warning/40 px-2.5 py-0.5 text-[12px] hover:bg-warning/10">
                       {t("voiceMode.retry")}
                     </button>

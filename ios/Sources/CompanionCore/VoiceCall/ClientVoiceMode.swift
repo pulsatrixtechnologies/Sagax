@@ -113,6 +113,10 @@ public enum CallVoiceSource: Equatable, Sendable {
     /// the phone's best installed voice
     case device
 
+    /// The phone's own voice (Apple) is only the explicit fallback when no
+    /// voice provider is set up: with voice mode (xAI, the person's key or
+    /// the organization's) a failed sentence is retried on xAI and the
+    /// answer stays in the chat, never read by another voice in silence.
     public static func route(voiceMode: VoiceModeStatus?, config: ConfigStatus?, agentVoice: String?, phoneKey: Bool) -> [CallVoiceSource] {
         var out: [CallVoiceSource] = []
         if voiceMode?.available == true { out.append(.xai) }
@@ -121,9 +125,41 @@ public enum CallVoiceSource: Equatable, Sendable {
             out.append(.server(voiceId: voice?.isEmpty == false ? voice : nil))
         }
         if phoneKey { out.append(.phoneElevenLabs(voiceId: config?.walkieAgentVoice(agentVoice))) }
-        out.append(.device)
+        if out.isEmpty { out.append(.device) }
         return out
     }
+}
+
+/// Who hears and speaks on a call, as the call shows it: xAI through the
+/// server (voice mode, the same as the desktop: the person's own xAI key,
+/// else the organization's), or Apple on this phone when no voice provider
+/// is set up (a group call, the demo, a server without voice mode).
+public enum CallProvider: Equatable, Sendable {
+    /// `via`: whose key pays (`speaker-key`, `org-key`, `server`)
+    case xai(via: String?)
+    case apple
+
+    /// The desktop's choice for the same person: voice mode when the server
+    /// says it is available for this bot, Apple only otherwise.
+    public static func choose(voiceMode: VoiceModeStatus?, room: Bool, demo: Bool) -> CallProvider {
+        guard !demo, !room, voiceMode?.available == true else { return .apple }
+        return .xai(via: voiceMode?.via)
+    }
+
+    /// The person's words go to xAI's speech to text (the server), not to
+    /// the phone's recognizer.
+    public var recognizesOnServer: Bool {
+        if case .xai = self { return true }
+        return false
+    }
+}
+
+/// A failure of the voice that may not happen again a moment later: xAI
+/// rate limited or failing (429, 5xx), or the network.
+public func transientVoiceFailure(_ error: Error) -> Bool {
+    if case let APIError.status(code, _) = error { return code == 429 || code >= 500 }
+    if case APIError.transport = error { return true }
+    return error is URLError
 }
 
 extension CompanionClient {

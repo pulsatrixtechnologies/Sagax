@@ -965,7 +965,13 @@ struct CallTranscriptPanel: View {
         session.state.visibleTranscript(forThread: call.threadId)
             .filter { $0.kind == .text && !($0.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .suffix(8)
-            .map { Entry(id: $0.id, you: $0.role == .user, text: ($0.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines), interrupted: call.interrupted.contains($0.id), unheard: call.unheard[$0.id]) }
+            .map { message -> Entry in
+                let raw = (message.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                // the bot's words as they are said: no raw markdown, the
+                // full answer stays in the chat
+                let spoken = message.role == .user ? raw : SpokenText.transcriptText(raw)
+                return Entry(id: message.id, you: message.role == .user, text: spoken.isEmpty ? raw : spoken, interrupted: call.interrupted.contains(message.id), unheard: call.unheard[message.id])
+            }
     }
 
     var body: some View {
@@ -981,6 +987,12 @@ struct CallTranscriptPanel: View {
             }
             .font(.system(size: 11.5 * scale))
             .foregroundStyle(CallTheme.inkTertiary)
+            // who hears and speaks on this call: xAI (whose key) or Apple
+            Text(verbatim: call.providerLabel)
+                .font(.system(size: 11 * scale))
+                .foregroundStyle(CallTheme.inkTertiary)
+                .lineLimit(2)
+                .accessibilityIdentifier("call-provider")
             let entries = entries
             if entries.isEmpty && line.isEmpty {
                 Text(String(localized: "Nothing said yet.")).font(.system(size: 13 * scale)).foregroundStyle(CallTheme.inkTertiary)

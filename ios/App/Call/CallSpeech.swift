@@ -43,6 +43,9 @@ final class RoutedSpeechSource: CallSpeechSourcing {
     private var disabled: Set<String> = []
     /// Said once when the call falls back to another voice.
     var onFallback: ((String) -> Void)?
+    /// A voice failed a sentence (the reason the server gave, e.g. xAI
+    /// refused the key): the call shows it.
+    var onFailure: ((Error) -> Void)?
 
     init(client: CompanionClient?, botId: String?, threadId: @escaping () -> String?, routes: @escaping (CallSpeaker?) -> [CallVoiceSource], settings: @escaping () -> VoiceModeSettings) {
         self.client = client
@@ -70,7 +73,15 @@ final class RoutedSpeechSource: CallSpeechSourcing {
                 var lastError: Error?
                 for source in sources {
                     do {
-                        try await self.produce(source, text: text, speaker: speaker, settings: settings, threadId: thread, into: continuation)
+                        do {
+                            try await self.produce(source, text: text, speaker: speaker, settings: settings, threadId: thread, into: continuation)
+                        } catch let APIError.status(code, message) where source == .xai && !Task.isCancelled && transientVoiceFailure(APIError.status(code: code, message: message)) {
+                            // xAI busy or failing, answered before any audio
+                            // (so nothing is said twice): one more try, like
+                            // the desktop
+                            try await Task.sleep(nanoseconds: 400_000_000)
+                            try await self.produce(source, text: text, speaker: speaker, settings: settings, threadId: thread, into: continuation)
+                        }
                         continuation.finish()
                         return
                     } catch {
@@ -78,6 +89,7 @@ final class RoutedSpeechSource: CallSpeechSourcing {
                         lastError = error
                         if Self.permanent(error) { self.disabled.insert(Self.key(source)) }
                         if source != .device { self.onFallback?(error.localizedDescription) }
+                        self.onFailure?(error)
                     }
                 }
                 continuation.finish(throwing: lastError ?? CancellationError())

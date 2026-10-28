@@ -37366,6 +37366,13 @@ const voiceModeDeps: VoiceModeDeps = {
   },
   serverKey: () => cfg.xai?.key,
   hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
+  // the person's own xAI voice key (My voice keys, #1454): the live call
+  // uses it like their speech and voice notes do (voiceFor)
+  personalKey: (speaker) => {
+    if (IDENTITY.kind !== "perspicax") return undefined;
+    const owner = personVoiceKeysPrincipal(speaker.principalId);
+    return owner ? personVoiceKeys.keys(owner).xai : undefined;
+  },
   // 2026-10-16 the organization's xAI key gives voice only to the
   // people Perspicax lists it for (an admin always).
   serverKeyAllowed: (speaker) => serverEngineAllowedFor(speaker.principalId, VOICE_SERVER_ENGINE),

@@ -21,6 +21,7 @@
 
 import { isClientCancellation, isStoppedTurnName } from "../../../shared/client-cancel";
 import { failedTurnCause } from "../../../shared/failed-turn";
+import type { VoiceProviderFailure } from "./api";
 
 /** How long a failed row waits (bot idle) before the call says it: past
  * the harness's retry 2.5 s after the turn settles, its warm-up and its
@@ -127,4 +128,34 @@ export class CallFailure {
     this.saidFor.add(words);
     return failedRowKind(newest);
   }
+}
+
+export type VoiceErrorNoteKey =
+  | "voiceMode.micDenied"
+  | "voiceMode.micUnavailable"
+  | "voiceMode.speechFailed"
+  | "voiceMode.transcribeFailed"
+  | `voiceMode.provider.${Exclude<VoiceProviderFailure, "other">}`;
+
+/** What the call's bar says when the microphone, the speech to text or the
+ * voice fails, and whether its "Try again" button means anything.
+ *
+ * - The microphone: its own line, and "Try again" opens it again.
+ * - The voice or the speech to text failed at xAI: the reason the server
+ *   gave (the key was rejected, no credits, rate limited, xAI down, an
+ *   unknown voice), never a vague "didn't come through". No button: the
+ *   call goes on, each sentence is tried again by itself
+ *   (streamVoiceModeSpeech), and the line goes away when the voice is heard
+ *   again (`clearsOnVoice`).
+ * - Anything else: the voice line says the answer is in the chat, the
+ *   transcription line asks to say it again. */
+export function voiceErrorNote(
+  reason: "mic-denied" | "mic-unavailable" | "speech-failed" | "transcribe-failed",
+  kind: VoiceProviderFailure | null,
+): { key: VoiceErrorNoteKey; retry: boolean; clearsOnVoice: boolean } {
+  if (reason === "mic-denied") return { key: "voiceMode.micDenied", retry: true, clearsOnVoice: false };
+  if (reason === "mic-unavailable") return { key: "voiceMode.micUnavailable", retry: true, clearsOnVoice: false };
+  if (kind && kind !== "other") return { key: `voiceMode.provider.${kind}` as const, retry: false, clearsOnVoice: true };
+  if (reason === "speech-failed") return { key: "voiceMode.speechFailed", retry: false, clearsOnVoice: true };
+  return { key: "voiceMode.transcribeFailed", retry: false, clearsOnVoice: true };
 }

@@ -190,6 +190,11 @@ describe("the mascot's call pill", () => {
     expect(settings).not.toContain("data-voice-call-settings");
     const noted = renderToStaticMarkup(createElement(MascotCallCardView, { call: { ...CALL, note: "The microphone is busy" }, name: "Sagax", card: null, onEvent: () => undefined, hover: () => undefined }));
     expect(noted).toContain("The microphone is busy");
+    expect(noted).toContain("Try again");
+    // a voice failure: its reason, no button that would do nothing
+    const voice = renderToStaticMarkup(createElement(MascotCallCardView, { call: { ...CALL, note: "xAI voice is busy right now.", noteRetry: false }, name: "Sagax", card: null, onEvent: () => undefined, hover: () => undefined }));
+    expect(voice).toContain("xAI voice is busy right now.");
+    expect(voice).not.toContain("Try again");
   });
 
   it("stands under the mascot, which takes its call pose; the balloon offers the call", () => {
