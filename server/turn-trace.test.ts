@@ -42,6 +42,27 @@ describe("turn trace (SAGAX_TURN_TRACE)", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("measures each turn from its own message, not from the conversation's first one", () => {
+    // 2026-10-28: a second turn kept the first turn's queued time, so its
+    // "wait before send" grew with the conversation's age (421 900 ms seen
+    // on a turn that started at once).
+    let now = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const thread = "thread-two-turns";
+    turnTrace(thread, "start", true);
+    noteTurnQueued(thread, 1_000);
+    now = 1_030;
+    turnTrace(thread, "send");
+    expect(turnCounters(thread).queueMs).toBe(30);
+    // seven minutes later the person writes again; the turn starts at once
+    now = 422_900;
+    turnTrace(thread, "start", true);
+    noteTurnQueued(thread, 422_880);
+    now = 422_920;
+    turnTrace(thread, "send");
+    expect(turnCounters(thread).queueMs).toBe(40);
+  });
+
   it("writes the numbers for the conversation and keeps no words", () => {
     const seen: Array<{ threadId: string; timing: { queueMs?: number; firstResponseMs?: number } }> = [];
     setTurnTimingWriter((threadId, timing) => seen.push({ threadId, timing }));
