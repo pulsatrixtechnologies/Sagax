@@ -1691,6 +1691,8 @@ export type Action =
       /** while the conversation works: join, run in parallel or wait
        * (shared/parallel-tasks.ts); absent = join (the server default) */
       busyMode?: BusySendRequest;
+      /** A 1:1 /goal. The team path uses sendGroup. */
+      mode?: "chat" | "goal";
       /** The Data result the person is viewing, for the model only; never part of the text. */
       dataContext?: import("../../shared/data-context").DataContext;
       onError?: () => void;
@@ -4609,7 +4611,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               }
               return api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
-                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(busyMode === "auto" ? { routeWhileBusy: true } : busyMode ? { busyMode } : {}), ...(action.dataContext ? { dataContext: action.dataContext } : {}), ...devPodsTurnField(), ...singleStreamTurnField() }),
+                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(action.mode === "goal" ? { mode: "goal" } : {}), ...(voiceCall ? { voiceCall } : {}), ...(busyMode === "auto" ? { routeWhileBusy: true } : busyMode ? { busyMode } : {}), ...(action.dataContext ? { dataContext: action.dataContext } : {}), ...devPodsTurnField(), ...singleStreamTurnField() }),
               });
             })
             .then((body) => {
