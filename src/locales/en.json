@@ -10536,6 +10536,7 @@
   "serverError.safetyBlocked": "This request is refused by the safety review.",
   "routineCalendar.findBot": "Find a bot",
   "routineCalendar.endAfterFirstRun": "Choose an end date after the first run.",
+  "routineCalendar.saveAnswerLost": "The server did not answer. Check the calendar before you try again.",
   "routineCalendar.validSchedule": "Choose a valid schedule.",
   "routineCalendar.supportedCallSchedule": "Choose a supported call schedule.",
   "routineCalendar.editEventAria": "Edit calendar event",

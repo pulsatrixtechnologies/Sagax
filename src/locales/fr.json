@@ -10536,6 +10536,7 @@
   "serverError.safetyBlocked": "Cette demande est refusée par la revue de sécurité.",
   "routineCalendar.findBot": "Trouver un bot",
   "routineCalendar.endAfterFirstRun": "Choisissez une date de fin après la première exécution.",
+  "routineCalendar.saveAnswerLost": "Le serveur n'a pas répondu. Vérifiez le calendrier avant de réessayer.",
   "routineCalendar.validSchedule": "Choisissez un horaire valide.",
   "routineCalendar.supportedCallSchedule": "Choisissez un horaire d'appel pris en charge.",
   "routineCalendar.editEventAria": "Modifier l'événement du calendrier",
