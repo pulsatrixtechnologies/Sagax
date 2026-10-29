@@ -1,6 +1,9 @@
 // Auto model (docs/plans/2026-10-08-auto-model.md): a bot set to Auto runs
-// its own turns on a default orchestration model and gives every piece of
-// work it hands out the model that fits that work.
+// each of its own turns on the model that fits that turn (2026-10-29: a
+// quick question on the fast tier, an image on a model that reads images,
+// a long document on the largest context, anything hard on the strongest
+// model) and gives every piece of work it hands out the model that fits
+// that work. A person's pin always wins: Auto never runs on a pinned bot.
 //
 // Pure: the engines the payer can use, their model lists and the catalogue
 // facts are passed in as data. Nothing here reads the registry, the network
@@ -23,6 +26,21 @@ export const CLASS_TIER: Readonly<Record<TaskClass, Tier>> = {
   automation: "coding",
   quick: "fast",
   general: "coding",
+};
+
+/** The person's own turn (2026-10-29): what the words ask for decides the
+ * tier. Hard, general, coding and tool-heavy work keeps the strongest model
+ * (the conversation is where the person's judgment matters most); only the
+ * three classes a cheaper or more fitting model serves better leave it. */
+export const ORCHESTRATION_TIER: Readonly<Record<TaskClass, Tier>> = {
+  vision: "vision",
+  "large-context": "long",
+  "long-reading": "long",
+  coding: "top",
+  reasoning: "top",
+  automation: "top",
+  quick: "fast",
+  general: "top",
 };
 
 /** When a tier has no model on any engine, the next tier to try. */
@@ -569,15 +587,22 @@ function pickFast(request: AutoRequest, role: AutoPick["role"], tier: Tier, task
   };
 }
 
-/** The bot's own turns: the strongest general model the payer can use,
- * on the bot's own engine when it can. With a fast model set, a quick turn
- * (a short message with nothing heavier in it) runs on that model. */
+/** The bot's own turns: the tier the words ask for (ORCHESTRATION_TIER), on
+ * the bot's own engine when it can. A quick turn (a short message with
+ * nothing heavier in it) runs on the fast model set for the bot when it has
+ * one, else on the engine's own fast tier; an image on a model that reads
+ * images; a long document or a big paste on the largest context; everything
+ * else on the strongest general model. Without the words (the preview of
+ * the next turn), the strongest general model. A refusal climbs the chain
+ * toward the strongest model, never the other way. */
 export function pickOrchestrationModel(request: AutoRequest, task?: TaskInput): AutoPick {
-  if (task && request.base.fast && classifyTask(task).taskClass === "quick") {
-    const fast = pickFast(request, "orchestration", "top");
+  if (!task) return pickTier(request, "top", "orchestration");
+  const { taskClass } = classifyTask(task);
+  if (taskClass === "quick") {
+    const fast = pickFast(request, "orchestration", "top", "quick");
     if (fast) return fast;
   }
-  return pickTier(request, "top", "orchestration");
+  return pickTier(request, ORCHESTRATION_TIER[taskClass], "orchestration", taskClass);
 }
 
 /** Work the bot hands out: classify it, then the tier's model; the fast
@@ -664,6 +689,17 @@ export function explainPick(pick: AutoPick): string {
   if (pick.role === "worker") {
     const cls = pick.taskClass ? CLASS_LABEL[pick.taskClass] : "general";
     return `Auto: worker ${pick.engineLabel} · ${pick.modelLabel} (${cls}), the ${pick.tier} tier ${payer}${pick.reason === "tier-fallback" ? ", no closer tier was available" : ""}.`;
+  }
+  // The person's own turn, when the words moved it off the strongest tier
+  // (2026-10-29): say what in the message decided it.
+  if (pick.reason !== "fast" && pick.reason !== "base" && pick.tier === "fast" && pick.taskClass === "quick") {
+    return `Auto: ${pick.modelLabel} for this quick question, the fast model ${payer} on ${pick.engineLabel}; a harder question runs on the strongest model.`;
+  }
+  if (pick.reason !== "base" && pick.tier === "vision" && pick.taskClass === "vision") {
+    return `Auto: ${pick.modelLabel} for this image, a model that reads images ${payer} on ${pick.engineLabel}.`;
+  }
+  if (pick.reason !== "base" && pick.tier === "long" && (pick.taskClass === "long-reading" || pick.taskClass === "large-context")) {
+    return `Auto: ${pick.modelLabel} for this long reading, the largest context ${payer} on ${pick.engineLabel}.`;
   }
   switch (pick.reason) {
     case "fast":

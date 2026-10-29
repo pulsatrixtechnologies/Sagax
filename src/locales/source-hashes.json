@@ -15606,7 +15606,10 @@
       "teach.replay.background": "a6f3b94d2f7261abe57126bc0b01db0e158990d0f5d70ab07a6b804fbc603d58",
       "teach.replay.backgroundHint": "9cb40f5bd1201f2c0e3731a97547aedb0183032a780d8f19a0192c26858f9291",
       "teach.replay.myChrome": "0a26b661e8269687ba51d588013a83a7f492f37357d9c6e51c82de2256d81b0e",
-      "teach.replay.myChromeHint": "22411461b18be00446ff41b2f8b1ea4d4af7a3842ddadcecbb9af91f7cf55eed"
+      "teach.replay.myChromeHint": "22411461b18be00446ff41b2f8b1ea4d4af7a3842ddadcecbb9af91f7cf55eed",
+      "model.auto.why.quickTier": "d0348780d3652712b717ae81017ba74615fa81bd3db37ed62d5ccfbbb97aac72",
+      "model.auto.why.vision": "f16c51e8c83d122fe47fcf2ffd0e8ddd7d311c83d1843fb8b5fb4302951d2a9e",
+      "model.auto.why.long": "8c9e2edfb82e4471d744f719bb6a13dbba22fa39a8a5a051a037981181d17cec"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -11801,5 +11801,8 @@
   "teach.replay.background": "In the background",
   "teach.replay.backgroundHint": "In its own browser, with no window on your screen. Sign-ins come from the vault, or it asks you.",
   "teach.replay.myChrome": "In my Chrome (my signed-in session)",
-  "teach.replay.myChromeHint": "It says so in the conversation before it starts, and the banner with Stop shows for the whole replay. Your usual approvals apply."
+  "teach.replay.myChromeHint": "It says so in the conversation before it starts, and the banner with Stop shows for the whole replay. Your usual approvals apply.",
+  "model.auto.why.quickTier": "Auto: {model} for this quick question, the fast model {payer} on {engine}; a harder question runs on the strongest model.",
+  "model.auto.why.vision": "Auto: {model} for this image, a model that reads images {payer} on {engine}.",
+  "model.auto.why.long": "Auto: {model} for this long reading, the largest context {payer} on {engine}."
 }

@@ -415,6 +415,68 @@ describe("the fast model (#1209)", () => {
   });
 });
 
+describe("the person's own turn runs on the tier its words ask for (2026-10-29)", () => {
+  const request = { base: claudeBase, engines: [claude, codex, grok], catalog };
+  const scenarios: Array<[string, string, Parameters<typeof pickOrchestrationModel>[1], AutoEngine["models"]["options"][number]["id"], string]> = [
+    // name, expected tier, the words, expected model, what the sentence says
+    ["a greeting", "fast", { text: "hello there" }, "claude-haiku-4-5", "quick question"],
+    ["a lookup", "fast", { text: "Translate this line to Spanish." }, "claude-haiku-4-5", "quick question"],
+    // The family's vision row (TIER_TABLE) names Sonnet first, as for a worker.
+    ["an image", "vision", { text: 'What is wrong here? <attached-image path="/a/shot.png" name="shot.png" />' }, "claude-sonnet-5-5", "this image"],
+    ["a long document", "long", { text: "Summarize the quarterly report and list the three risks it names for the board." }, "claude-sonnet-5-5", "long reading"],
+    ["a huge paste", "long", { text: "x ".repeat(40_000) }, "claude-sonnet-5-5", "long reading"],
+    ["a hard question", "top", { text: "Design the architecture for the new billing flow and weigh the trade-offs of each option before we decide." }, "claude-fable-5-1", "strongest general model"],
+    ["coding", "top", { text: "Refactor the session store so the tests stop flaking, then fix the bug in server/store.ts." }, "claude-fable-5-1", "strongest general model"],
+    ["tool-heavy work", "top", { text: "Sync the tickets from the service desk, export them, then upload the backup to the shared drive." }, "claude-fable-5-1", "strongest general model"],
+    ["a letter", "top", { text: "Write a letter to the landlord about the broken heater." }, "claude-fable-5-1", "strongest general model"],
+  ];
+  it.each(scenarios)("%s runs on the %s tier", (_name, tier, task, model, says) => {
+    const pick = pickOrchestrationModel(request, task);
+    expect(pick.role).toBe("orchestration");
+    expect(pick.tier).toBe(tier);
+    expect(pick.selection).toMatchObject({ instanceId: "claude", model });
+    expect(pick.taskClass).toBeDefined();
+    expect(explainPick(pick)).toContain(says);
+  });
+  it("keeps the strongest model for the preview, with no words to read", () => {
+    expect(pickOrchestrationModel(request).selection.model).toBe("claude-fable-5-1");
+  });
+  it("keeps the base effort on the bot's own engine whatever the tier", () => {
+    expect(pickOrchestrationModel(request, { text: "hello there" }).selection.effort).toBe("high");
+  });
+  it("climbs from the fast tier toward the strongest model, never down", () => {
+    const pick = pickOrchestrationModel(request, { text: "hello there" });
+    expect(pick.chain[0]).toEqual({ instanceId: "claude", model: "claude-haiku-4-5" });
+    const next = nextInChain(pick, pick.chain[0]!);
+    expect(next).not.toBeNull();
+    expect(tierOfModel("claudeAgent", next!.model)).not.toBe("fast");
+  });
+  it("leaves a model that cannot read images out of an image turn", () => {
+    const pick = pickOrchestrationModel({ base: codexBase, engines: [codex], catalog }, { text: 'Look at this <attached-image path="/a/shot.png" name="shot.png" />' });
+    expect(pick.tier).toBe("vision");
+    expect(pick.selection.model).not.toBe("gpt-5.5-codex");
+    expect(FACTS[bareModelId(pick.selection.model)]!.vision).toBe(true);
+  });
+  it("still prefers the fast model set for the bot on a quick turn", () => {
+    const fastLocal: AutoEngine = { ...local, fast: { id: "local-small", label: "Local Small" } };
+    const pick = pickOrchestrationModel({ base: { ...claudeBase, fast: { instanceId: "ollama", model: "local-small" } }, engines: [claude, fastLocal], catalog }, { text: "hello there" });
+    expect(pick.reason).toBe("fast");
+    expect(pick.taskClass).toBe("quick");
+    expect(pick.selection).toEqual({ instanceId: "ollama", model: "local-small" });
+  });
+  it("falls back to the closest tier when no engine has the one asked", () => {
+    const noHaiku: AutoEngine = { ...claude, models: { ...claude.models, options: claude.models.options.filter((option) => !/haiku/.test(option.id)) } };
+    const pick = pickOrchestrationModel({ base: claudeBase, engines: [noHaiku], catalog }, { text: "hello there" });
+    // Sonnet is the second fast pattern of the family: still the fast tier.
+    expect(pick.tier).toBe("fast");
+    expect(pick.selection.model).toBe("claude-sonnet-5-5");
+    const onlyTop: AutoEngine = { ...claude, models: { ...claude.models, options: [{ id: "claude-fable-5-1", label: "Claude Fable 5.1" }] } };
+    const climbed = pickOrchestrationModel({ base: claudeBase, engines: [onlyTop], catalog }, { text: "hello there" });
+    expect(climbed.reason).toBe("tier-fallback");
+    expect(climbed.selection.model).toBe("claude-fable-5-1");
+  });
+});
+
 describe("#1154: the same tier on another engine", () => {
   it("reads the tier a model stands for", () => {
     expect(tierOfModel("grokAgent", "grok-4.7")).toBe("top");
