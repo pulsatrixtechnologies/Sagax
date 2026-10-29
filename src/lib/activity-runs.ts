@@ -128,7 +128,10 @@ export function isHiddenStatusActivity(message: Message): boolean {
   if (message.kind !== "activity") return false;
   if (message.dataResult) return false;
   const name = message.tool?.name;
-  return isQuietWorkspaceLine(name) || isTechnicalNoticeName(name);
+  // A usage-limit switch and the return after it are transparent (2026-10-29):
+  // rows stored before as `recovery:` lines are left out too; a wait stays.
+  const limit = message.tool?.limitFailover?.kind;
+  return isQuietWorkspaceLine(name) || isTechnicalNoticeName(name) || limit === "switched" || limit === "back";
 }
 
 /** Recovery changes this conversation's engine and must remain visible. */
