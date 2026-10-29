@@ -43,3 +43,71 @@ export function withGithubToken<T extends Record<string, McpServerSpec>>(servers
   }
   return out as T;
 }
+
+// A GitHub server acts as the person of the turn (2026-10-28). On an
+// organization server a server-wide GitHub MCP server (one an admin added,
+// signed in to, or gave a fixed Authorization header) reached every
+// member's turn with that one sign-in, so a member's bot acted on GitHub as
+// the admin. Now, on an organization server, every GitHub server of a turn
+// carries the GitHub connection of the person the turn runs for (Connect
+// apps > Providers > GitHub), whatever sign-in or header it was saved with;
+// a person without a connection gets no GitHub server at all, and the bot
+// tells them to connect GitHub.
+
+const GITHUB_HOSTS = ["github.com", "githubcopilot.com", "ghe.com"];
+
+/** A GitHub MCP server: it reads the GitHub connection, or its address is
+ * on GitHub (api.githubcopilot.com, api.github.com, a GitHub Enterprise
+ * Cloud host). Pure. */
+export function isGithubMcpServer(spec: McpServerSpec): boolean {
+  if (readsGithubToken(spec)) return true;
+  if (!("url" in spec)) return false;
+  let host: string;
+  try {
+    host = new URL(spec.url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return GITHUB_HOSTS.some((root) => host === root || host.endsWith(`.${root}`));
+}
+
+/** Organization server: each GitHub server of a turn as the person of the
+ * turn. With `token` (that person's GitHub connection) its placeholder or
+ * its Authorization header is that token, never the saved one; without, the
+ * server is left out and named in `withheld`. Every other server goes as it
+ * is. Never mutates its argument. Pure. */
+export function githubServersAsPerson<T extends Record<string, McpServerSpec>>(servers: T, token: string | undefined): { servers: T; withheld: string[] } {
+  const out: Record<string, McpServerSpec> = {};
+  const withheld: string[] = [];
+  for (const [name, spec] of Object.entries(servers)) {
+    if (!isGithubMcpServer(spec)) {
+      out[name] = spec;
+      continue;
+    }
+    if (!token) {
+      withheld.push(name);
+      continue;
+    }
+    if (readsGithubToken(spec)) {
+      out[name] = withGithubToken({ [name]: spec }, token)[name]!;
+      continue;
+    }
+    if (!("url" in spec)) {
+      // unreachable: a command is a GitHub server only through its placeholder
+      withheld.push(name);
+      continue;
+    }
+    const headers: Record<string, string> = {};
+    for (const [key, value] of Object.entries(spec.headers ?? {})) if (key.toLowerCase() !== "authorization") headers[key] = value;
+    headers.Authorization = `Bearer ${token}`;
+    out[name] = { ...spec, headers };
+  }
+  return { servers: out as T, withheld };
+}
+
+/** The one line a turn's prompt carries when a GitHub server was left out:
+ * the bot says the person has no GitHub connection, never borrows one. */
+export function githubWithheldPrompt(withheld: readonly string[]): string {
+  if (!withheld.length) return "";
+  return ` GitHub: the person you work for has no GitHub connection of their own, so ${withheld.map((name) => `"${name}"`).join(", ")} is not available in this conversation. For anything on GitHub, tell them to click "Connect GitHub" in Connect apps > Providers > GitHub; never use anyone else's GitHub access.`;
+}
