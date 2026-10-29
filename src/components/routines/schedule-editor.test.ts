@@ -53,7 +53,8 @@ describe("human schedule editor", () => {
 
   it("says why a schedule cannot be saved", () => {
     const draft = { model: defaultScheduleModel({ times: ["08:15", "12:30"] }), timeZone: "America/Toronto" };
-    expect(scheduleEditorValue(draft, after)).toMatchObject({ schedule: null, error: "Times on the same day share their minutes, for example 8:30 and 12:30." });
+    // 2026-10-29: each time keeps its own minutes.
+    expect(scheduleEditorValue(draft, after)).toMatchObject({ error: "", schedule: { expression: "15 8 * * *; 30 12 * * *" }, sentence: "At 8:15 AM and 12:30 PM (Toronto time)" });
     expect(scheduleEditorValue({ ...draft, model: defaultScheduleModel(), timeZone: "Not/AZone" }, after).error).toBe("Choose a time zone from the list.");
     expect(scheduleEditorValue({ ...draft, model: defaultScheduleModel({ frequency: "yearly", monthDay: 31, month: 2 }) }, after).error).toBe("This schedule has no upcoming runs. Choose a date that exists.");
   });

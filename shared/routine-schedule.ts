@@ -2,24 +2,37 @@ import { Cron } from "croner";
 
 export interface RoutineCronSchedule {
   type: "cron";
+  /** One five-field expression, or several joined by "; " (2026-10-29: each
+   * time of a day keeps its own minutes, e.g. "15 8 * * 1-5; 30 12 * * 1-5").
+   * The routine runs at every instant any of them names, once per instant. */
   expression: string;
   /** Explicit IANA timezone; independent of the server or viewer's timezone. */
   timeZone: string;
 }
 
-const MAX_EXPRESSION_LENGTH = 256;
+const MAX_EXPRESSION_LENGTH = 1024;
+/** Expressions one schedule may join (one per distinct minute of a day). */
+export const MAX_CRON_EXPRESSIONS = 24;
+export const CRON_EXPRESSION_SEPARATOR = "; ";
+
+/** The expressions of a schedule: one, or several joined by ";". */
+export function cronExpressions(expression: string): string[] {
+  return expression.split(";").map((part) => part.trim().replace(/\s+/g, " ")).filter(Boolean);
+}
 const MAX_PREVIEW_RUNS = 1000;
 
-function cronCalculator(value: unknown): { schedule: RoutineCronSchedule; cron: Cron } {
+function cronCalculator(value: unknown): { schedule: RoutineCronSchedule; crons: Cron[] } {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Choose a valid cron schedule");
   const input = value as Partial<RoutineCronSchedule>;
   if (input.type !== "cron" || typeof input.expression !== "string") throw new Error("Choose a valid cron schedule");
   if (Object.keys(input).some(key => !["type", "expression", "timeZone", "timing", "windowEarlyMinutes", "windowLateMinutes"].includes(key))) {
     throw new Error("Cron schedules accept only type, expression and timeZone; start/end dates and other restrictions are not supported");
   }
-  const expression = input.expression.trim().replace(/\s+/g, " ");
-  if (expression.length > MAX_EXPRESSION_LENGTH || expression.split(" ").length !== 5 || expression.includes("@")) {
-    throw new Error("Cron must have five fields: minute hour day-of-month month weekday (no seconds, year, or macros)");
+  const parts = [...new Set(cronExpressions(input.expression))];
+  const expression = parts.join(CRON_EXPRESSION_SEPARATOR);
+  if (!parts.length || parts.length > MAX_CRON_EXPRESSIONS || expression.length > MAX_EXPRESSION_LENGTH
+    || parts.some((part) => part.split(" ").length !== 5 || part.includes("@"))) {
+    throw new Error("Cron must have five fields: minute hour day-of-month month weekday (no seconds, year, or macros); join several with \";\"");
   }
   const timeZone = typeof input.timeZone === "string" ? input.timeZone.trim() : "";
   // Intl also accepts numeric offsets in newer runtimes. Require a named zone
@@ -33,8 +46,8 @@ function cronCalculator(value: unknown): { schedule: RoutineCronSchedule; cron: 
     // Date calculator only: no callback, name, or timer. RoutineManager owns
     // dispatch, persistence, catch-up and cancellation. Croner bounds its
     // five-field search at year 3000, including impossible calendar dates.
-    const cron = new Cron(expression, { timezone: timeZone, mode: "5-part", paused: true });
-    return { schedule: { type: "cron", expression, timeZone }, cron };
+    const crons = parts.map((part) => new Cron(part, { timezone: timeZone, mode: "5-part", paused: true }));
+    return { schedule: { type: "cron", expression, timeZone }, crons };
   } catch (error) {
     throw new Error(`Invalid cron expression: ${(error as Error).message}`);
   }
@@ -46,7 +59,15 @@ function calculationDate(after: number): Date {
   return date;
 }
 
-function futureRuns(cron: Cron, after: number, count: number): number[] {
+/** Every expression's runs, merged in order; an instant two of them name
+ * runs once. */
+function futureRuns(crons: Cron[], after: number, count: number): number[] {
+  if (crons.length === 1) return singleFutureRuns(crons[0]!, after, count);
+  const merged = [...new Set(crons.flatMap((cron) => singleFutureRuns(cron, after, count)))].sort((a, b) => a - b);
+  return merged.slice(0, count);
+}
+
+function singleFutureRuns(cron: Cron, after: number, count: number): number[] {
   const from = calculationDate(after);
   // Croner resolves an ambiguous wall-clock time to its first occurrence.
   // If the cursor is already in the second occurrence, its first candidate
@@ -73,8 +94,8 @@ function futureRuns(cron: Cron, after: number, count: number): number[] {
 
 /** Normalize once at the trust boundary, rejecting impossible schedules. */
 export function normalizeCronSchedule(value: unknown, after = Date.now()): RoutineCronSchedule {
-  const { schedule, cron } = cronCalculator(value);
-  if (!futureRuns(cron, after, 1).length) throw new Error("This cron expression has no future runs. Choose dates that exist.");
+  const { schedule, crons } = cronCalculator(value);
+  if (!futureRuns(crons, after, 1).length) throw new Error("This cron expression has no future runs. Choose dates that exist.");
   return schedule;
 }
 
@@ -83,6 +104,6 @@ export function normalizeCronSchedule(value: unknown, after = Date.now()): Routi
  * the gap, and repeated clock times use their first occurrence only. */
 export function nextCronRuns(schedule: RoutineCronSchedule, after: number, count: number): number[] {
   if (!Number.isInteger(count) || count < 1 || count > MAX_PREVIEW_RUNS) throw new Error("Choose between 1 and 1000 cron preview runs");
-  const { cron } = cronCalculator(schedule);
-  return futureRuns(cron, after, count);
+  const { crons } = cronCalculator(schedule);
+  return futureRuns(crons, after, count);
 }

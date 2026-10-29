@@ -404,6 +404,9 @@ function shortenForSpring(slots: number[], wall: number, timeZone: string, parts
  * expressions can still be cut off after 2,500 steps.
  */
 function restrictedCronCycleMs(expression: string): number {
+  // Several expressions (one per minute of a day): the longest cycle of them.
+  const parts = expression.split(";").map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 1) return Math.max(...parts.map(restrictedCronCycleMs));
   const fields = expression.trim().split(/\s+/);
   if (fields.length !== 5) return 366 * DAY_MS;
   const dayField = fields[2]!;

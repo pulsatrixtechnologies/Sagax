@@ -62,7 +62,7 @@ const scheduleSchema = z.discriminatedUnion("type", [
     window: z.object({ start: clock, end: clock }).strict().nullable().optional(),
     endsAt: timestamp.nullable().optional(),
   }).strict(),
-  z.object({ type: z.literal("cron"), expression: z.string().max(256), timeZone: z.string().max(128) }).strict(),
+  z.object({ type: z.literal("cron"), expression: z.string().max(1024), timeZone: z.string().max(128) }).strict(),
 ]).superRefine((value, ctx) => {
   if (value.type === "cron") {
     try { normalizeCronSchedule(value); }

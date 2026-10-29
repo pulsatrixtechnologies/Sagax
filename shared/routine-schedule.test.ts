@@ -97,3 +97,20 @@ describe("cron date calculator", () => {
     expect(() => nextCronRuns(value, NaN, 3)).toThrow(/preview date/);
   });
 });
+
+describe("several expressions in one schedule (2026-10-29)", () => {
+  const after = Date.parse("2026-10-29T00:00:00Z");
+  it("merges their runs in order and runs a shared instant once", () => {
+    const schedule = normalizeCronSchedule({ type: "cron", expression: "30 12 * * *;15 8 * * *; 30 12 * * *", timeZone: "UTC" }, after);
+    expect(schedule.expression).toBe("30 12 * * *; 15 8 * * *");
+    expect(nextCronRuns(schedule, after, 4).map((at) => new Date(at).toISOString())).toEqual([
+      "2026-10-29T08:15:00.000Z", "2026-10-29T12:30:00.000Z", "2026-10-30T08:15:00.000Z", "2026-10-30T12:30:00.000Z",
+    ]);
+  });
+
+  it("validates every expression and caps how many", () => {
+    expect(() => normalizeCronSchedule({ type: "cron", expression: "15 8 * * *; nope", timeZone: "UTC" }, after)).toThrow();
+    const many = Array.from({ length: 25 }, (_, minute) => `${minute} 8 * * *`).join("; ");
+    expect(() => normalizeCronSchedule({ type: "cron", expression: many, timeZone: "UTC" }, after)).toThrow();
+  });
+});

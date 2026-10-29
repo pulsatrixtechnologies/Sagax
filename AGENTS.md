@@ -61,8 +61,12 @@ day, Weekdays, Certain days, Every month, Every year and Every few minutes
 or hours (the interval's fields, minutes or hours); a trigger routine keeps
 its trigger. `shared/schedule-model.ts` turns a model (frequency, times,
 days, day of month, month) into the five-field expression the scheduler
-runs and back (`cronToScheduleModel`, null when no model fits); several
-times in a day share their minutes. `HumanScheduleFields` draws the times
+runs and back (`cronToScheduleModel`, null when no model fits). Each
+time keeps its own minutes: times with other minutes are one expression
+each, joined by "; " in the same `expression` ("15 8 * * 1-5; 30 12 * * 1-5");
+the calculator (`shared/routine-schedule.ts`) merges their runs in order
+and runs a shared instant once, and `describeCronList` says them in one
+sentence. A routine of one expression is unchanged. `HumanScheduleFields` draws the times
 (native time picker), the days, the zone by its city, the live sentence
 (the list's own `cronScheduleWords`, then "(Toronto time)") and the next
 three runs. A saved cron no model fits opens under Advanced, said in words,

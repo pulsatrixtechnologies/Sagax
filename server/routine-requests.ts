@@ -76,7 +76,7 @@ const toolTimingFields = {
 };
 
 const routineToolScheduleSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("cron"), expression: z.string().max(256), timeZone: z.string().max(128), ...toolTimingFields }).strict(),
+  z.object({ type: z.literal("cron"), expression: z.string().max(1024), timeZone: z.string().max(128), ...toolTimingFields }).strict(),
   z.object({ type: z.literal("once"), at: z.string().max(64) }).strict(),
   z.object({
     type: z.literal("weekly"),
@@ -177,7 +177,7 @@ const storedTimingFields = {
 };
 const storedCronScheduleSchema = z.object({
   type: z.literal("cron"),
-  expression: z.string().max(256),
+  expression: z.string().max(1024),
   timeZone: z.string().max(128),
   ...storedTimingFields,
 }).strict().superRefine((schedule, context) => {
