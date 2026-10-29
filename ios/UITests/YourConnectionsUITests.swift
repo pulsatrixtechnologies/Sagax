@@ -87,7 +87,7 @@ final class YourConnectionsUITests: XCTestCase {
         app.launch()
         let manage = element("connect-apps-manage", in: app)
         XCTAssertTrue(manage.waitForExistence(timeout: 20))
-        app.buttons["Providers"].firstMatch.tap()
+        app.buttons["Installed"].firstMatch.tap()
 
         let row = element("your-connections-server.\(server)", in: app)
         for _ in 0..<8 where !(row.exists && row.isHittable) { app.swipeUp() }

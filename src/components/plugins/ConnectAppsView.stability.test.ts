@@ -31,7 +31,7 @@ const items = buildPluginItems({
   marketplaces: [{ name: "claude-plugins-official", plugins: [{ name: "github", installed: true, servers: ["github-github"], skills: [] }] }],
 });
 const noop = () => {};
-const TABS: ConnectAppsTab[] = ["installed", "discover", "providers", "pages", "sources"];
+const TABS: ConnectAppsTab[] = ["installed", "discover", "pages", "sources"];
 
 let host: HTMLDivElement;
 let root: Root;
@@ -49,18 +49,18 @@ afterEach(() => {
 const view = (tab: ConnectAppsTab, extra: Record<string, unknown> = {}) => renderToStaticMarkup(createElement(ConnectAppsView, {
   tab, onTab: noop, refreshing: false, onRefresh: noop,
   scope: createElement("div", { "data-test-scope": "" }, "SCOPE"),
-  installed: "I", discover: "D", providers: "A", pages: "G", sources: "S", ...extra,
+  installed: "I", discover: "D", pages: "G", sources: "S", ...extra,
 }));
 
 describe("the scope bar on every tab", () => {
-  it("draws the scope above the tabs on each tab, Providers included", () => {
+  it("draws the scope above the tabs on each tab", () => {
     for (const tab of TABS) {
       const html = view(tab);
       expect(html, tab).toMatch(/data-plugins-scope-slot[\s\S]*?data-test-scope[\s\S]*?role="tablist"/);
     }
   });
 
-  it("on Providers the toggle is shown turned off, with the line that says why", () => {
+  it("on Pages the toggle is shown turned off, with the line that says why", () => {
     flushSync(() => root.render(createElement(ScopeToggle, { scope: "bot", botName: "Rocket", onScope: noop, disabled: true, describedBy: "why" })));
     const group = host.querySelector('[role="radiogroup"]')!;
     expect(group.getAttribute("aria-disabled")).toBe("true");
@@ -74,11 +74,11 @@ describe("the scope bar on every tab", () => {
 });
 
 describe("the header and the tab row", () => {
-  it("Discover first, then Installed, Providers, Pages and Sources; no N connected button", () => {
-    expect(CONNECT_APPS_TABS).toEqual(["discover", "bots", "installed", "providers", "pages", "sources"]);
+  it("Discover first, then Installed (Providers inside), Pages and Sources; no N connected button", () => {
+    expect(CONNECT_APPS_TABS).toEqual(["discover", "bots", "installed", "pages", "sources"]);
     const html = view("discover", { counts: { installed: 6 } });
     expect(html).not.toContain("data-plugins-connected");
-    expect(html).toMatch(/<header[^>]*><h2 id="plugins-title"[^>]*>Connect Apps<\/h2><div class="mt-3" data-plugins-scope-slot/);
+    expect(html).toMatch(/<header[^>]*><h2 id="plugins-title"[^>]*>Connect Apps<\/h2><div class="[^"]*" data-plugins-scope-row><div class="shrink-0" data-plugins-scope-slot/);
   });
 
   it("a click on a tab with a counter opens that tab", () => {

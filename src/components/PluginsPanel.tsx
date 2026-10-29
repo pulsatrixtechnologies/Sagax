@@ -84,7 +84,7 @@ import {
 } from "./McpServersPanel";
 import { IntegrationsManagedNotice, MyGithubConnection, MyGithubSummary, MyMcpServers } from "./settings/MyConnectionsSettings";
 import { useServerMode } from "./ServerModeSettings";
-import { ConnectAppsView, connectAppsTabLabel, connectedCounts, normalizeConnectAppsTab, type ConnectAppsTab } from "./plugins/ConnectAppsView";
+import { ConnectAppsView, connectAppsTabLabel, connectedCounts, isProvidersLink, normalizeConnectAppsTab, type ConnectAppsTab } from "./plugins/ConnectAppsView";
 import type { Crumb } from "./Breadcrumb";
 import { CATEGORY_MODAL, cardActionClass } from "./category-modal";
 import { BotCatalogPane } from "./lazy-screens";
@@ -355,11 +355,14 @@ export function PluginsPanel() {
   const requestedTab = normalizeConnectAppsTab(state.pluginsPage);
   const botCatalogTarget = state.botCatalogTarget;
   useEffect(() => {
-    if (requestedTab !== "pages" && requestedTab !== "providers" && requestedTab !== "sources" && requestedTab !== "bots") return;
+    const providersLink = isProvidersLink(state.pluginsPage);
+    if (requestedTab === null || (requestedTab !== "pages" && !providersLink && requestedTab !== "sources" && requestedTab !== "bots")) return;
     if (requestedTab !== "bots") setScopeChoice("workspace");
     setStack([{ page: "main" }]);
     setSearch("");
     setTab(requestedTab);
+    // the old Providers tab: Installed, on its Providers section
+    if (providersLink) revealLater("[data-plugins-providers]");
   }, [requestedTab, botCatalogTarget]);
   const skillsLibraryOn = skillsLibraryEnabled(state.config);
   const back = useCallback(() => setStack((current) => current.length > 1 ? current.slice(0, -1) : current), []);
@@ -763,10 +766,14 @@ export function PluginsPanel() {
   // Pages are the person's own too: the same turned-off scope
   // Bots too (2026-10-29): bots and templates are the same in both scopes
   const botsTab = tab === "bots" && page.page === "main" && search.trim() === "";
-  const accountsTab = ((tab === "providers" || tab === "pages") && page.page === "main") || botsTab;
-  const scopeControl = scopeBot ? (
+  const accountsTab = (tab === "pages" && page.page === "main") || botsTab;
+  const scopeToggle = scopeBot ? (
     <div data-plugins-scope-bar data-plugins-scope-tab={botsTab ? "bots" : accountsTab ? "accounts" : "plugins"}>
       <ScopeToggle scope={scope} botName={scopeBot.name} onScope={setScopeChoice} disabled={accountsTab} describedBy={accountsTab ? "plugins-scope-note" : undefined} />
+    </div>
+  ) : null;
+  const scopeControl = scopeBot ? (
+    <div data-plugins-scope-notes>
       <p id="plugins-scope-note" className="mt-2 min-h-[36px] text-[12px] leading-[18px] text-ink-secondary" data-plugins-scope-note={botsTab ? "bots" : accountsTab ? "accounts" : scope}>
         {botsTab ? t("connectApps.scope.botsNote") : accountsTab ? t("connectApps.scope.accountsNote") : scope === "bot" ? (
           <>
@@ -1067,7 +1074,7 @@ export function PluginsPanel() {
   const isOrgAdmin = perspicaxOrg?.viewerRole === "admin";
   const orgHere = isOrgAdmin && scope === "workspace" && perspicaxOrg !== null;
   // Sources: the GitHub connection row and the marketplaces (2026-10-29)
-  const tabs: ConnectAppsTab[] = ["discover", "bots", "installed", "providers", "pages",
+  const tabs: ConnectAppsTab[] = ["discover", "bots", "installed", "pages",
     ...(githubHere || marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || orgHere ? ["sources" as const] : [])];
   const groups = connectorGroups({
     claude: harness.answer?.claude ? { available: harness.answer.claude.available, reason: harness.answer.claude.reason, connectors: harness.answer.claude.connectors ?? [], manageUrl: harness.answer.manageUrl } : null,
@@ -1085,7 +1092,8 @@ export function PluginsPanel() {
       // the person's connected entries on Installed, the engine accounts'
       // connectors on Providers (a bot's scope counts its plugins only)
       counts={connectedCounts({ entries, engineConnected: scope === "bot" ? 0 : claudeConnectors })}
-      scope={scopeControl}
+      scope={scopeToggle}
+      scopeNote={scopeControl}
       search={searchField}
       results={searchResults}
       notices={notices}
@@ -1105,6 +1113,23 @@ export function PluginsPanel() {
           addDisabled={mcp.busy !== null}
           onNewSkill={scope === "workspace" && skillsOn && (ownerOrAdmin !== false || libraryEditor) ? () => push({ page: "skill" }) : undefined}
           onDiscover={() => setTab("discover")}
+          providers={(
+        <AccountsView
+          groups={groups}
+          service={accountService}
+          onService={setAccountService}
+          refreshing={harness.loading}
+          onRefresh={() => void harness.load(true)}
+          servers={organization ? <MyMcpServers /> : undefined}
+          claudeCode={!organization && canEditConfig(state.config) ? <ClaudeMcpSwitch /> : undefined}
+          // a section with no account offers to connect it (2026-10-28):
+          // Settings > Models and voice, where each engine signs in
+          onSetUp={() => {
+            close();
+            openSettings(dispatch, "engines");
+          }}
+        />
+      )}
           forms={scope === "workspace" ? (
             <>
               {mcp.restricted && mcp.policy && <p role="status" className="mb-3 text-[12.5px] leading-relaxed text-ink-secondary">{t("policy.mcpRestricted", { organization: mcp.policy.organizationName })}</p>}
@@ -1127,27 +1152,9 @@ export function PluginsPanel() {
           sourceLabel={pluginSourceLabel}
           extraSources={(shownMarketplaces ?? []).map((market) => market.name)}
           focus={state.pluginsFocusApps ?? undefined}
-          onBrowseBots={() => chooseTab("bots")}
           onOpenItem={openItem}
           renderAction={renderAction}
           renderBelow={renderBelow}
-        />
-      )}
-      providers={(
-        <AccountsView
-          groups={groups}
-          service={accountService}
-          onService={setAccountService}
-          refreshing={harness.loading}
-          onRefresh={() => void harness.load(true)}
-          servers={organization ? <MyMcpServers /> : undefined}
-          claudeCode={!organization && canEditConfig(state.config) ? <ClaudeMcpSwitch /> : undefined}
-          // a section with no account offers to connect it (2026-10-28):
-          // Settings > Models and voice, where each engine signs in
-          onSetUp={() => {
-            close();
-            openSettings(dispatch, "engines");
-          }}
         />
       )}
       // Browse Bots (2026-10-29): its home, View all, a bot's page and the

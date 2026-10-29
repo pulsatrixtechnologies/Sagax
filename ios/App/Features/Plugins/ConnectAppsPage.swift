@@ -3,17 +3,18 @@
 // (`ConnectApps` in CompanionCore, a port of plugins-model.ts):
 //
 // - Connect apps (2026-10-27, the desktop's one page): "N connected >" and
-//   the tabs Discover, Bots, Installed, Providers, Sources, Discover open.
+//   the tabs Discover, Bots, Installed, Sources, Discover open (Providers
+//   is no tab since 2026-10-29: its rows are a section of Installed).
 //   One search over every tab (2026-10-29, CompanionCore
 //   ConnectAppsSearch): plugins, skills, MCP servers, bots, templates and
 //   marketplaces, grouped by kind, each opening its page, its card or its
 //   tab; an empty field shows the tab's own content. Discover: one filter
 //   button (the reference iOS app's marketplace) whose menu holds All, the
 //   desktop's categories in its order and the type filter, a section per
-//   category with View all, one row per app with Add or Connect, Browse
-//   Bots (to the Bots tab). Bots: Browse Bots' whole catalogue
+//   category with View all, one row per app with Add or Connect (no Browse
+//   Bots button: the Bots tab is its place). Bots: Browse Bots' whole catalogue
 //   (BrowseBotsContent), its cards pushed on this stack. Installed: one line per thing, deduplicated, with a "..." menu;
-//   the private skills when there are some. Providers: a pill per
+//   the private skills when there are some, then the Providers: a pill per
 //   service (All, Claude, Slack, My MCP servers), the engines' connectors,
 //   the person's own MCP servers. Sources: the person's GitHub connection
 //   and the marketplaces. Empty sections are hidden. There is no "Manage
@@ -400,7 +401,7 @@ struct ConnectAppsMain: View {
     @ObservedObject var model: ConnectAppsModel
     /// Browse Bots' catalogue: the Bots tab and the search's bots.
     @ObservedObject var bots: BrowseBotsModel
-    /// The Bots tab and Discover's Browse Bots (BotTemplatesEntry).
+    /// The Bots tab (BotTemplatesEntry).
     let botsShown: Bool
     /// A bot opened from Bots: Connect apps closes, its chat opens.
     let openBot: (Bot) -> Void
@@ -419,11 +420,11 @@ struct ConnectAppsMain: View {
         _tab = State(initialValue: initialTab ?? ConnectAppsTab.launch)
     }
 
-    /// Discover, Bots, Installed, Providers, Sources. Bots shows where Browse
-    /// Bots did; Sources when the marketplaces can be read or changed from
+    /// Discover, Bots, Installed (Providers inside), Sources. Bots shows where
+    /// Browse Bots did; Sources when the marketplaces can be read or changed from
     /// this pairing, or the person has a GitHub connection to manage.
     private var shownTabs: [ConnectAppsTab] {
-        [.discover] + (botsShown ? [.bots] : []) + [.installed, .accounts]
+        [.discover] + (botsShown ? [.bots] : []) + [.installed]
             + (session.canAdminister || !model.marketplaces.isEmpty || session.surfaceGate.allows(.myConnections) ? [.sources] : [])
     }
 
@@ -594,28 +595,6 @@ struct ConnectAppsMain: View {
     private var discover: some View {
         Section {
             filterBar
-            if botsShown {
-                // the desktop's button beside the search field, now the
-                // Bots tab: Connect apps stays open
-                Button {
-                    Haptics.selection()
-                    tab = .bots
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "square.grid.2x2")
-                            .foregroundStyle(Theme.textSecondary)
-                        Text(String(localized: "Browse Bots"))
-                            .foregroundStyle(Theme.textPrimary)
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("connect-apps-bot-templates")
-            }
         }
         if model.loading && model.items.isEmpty {
             Section { HStack { Spacer(); ProgressView(); Spacer() } }
@@ -652,12 +631,12 @@ struct ConnectAppsMain: View {
         }
     }
 
-    /// "N connected >" with up to four icons: Installed, or Providers when
-    /// only the Claude account's connectors are connected (#1194).
+    /// "N connected >" with up to four icons: Installed, where the Claude
+    /// account's connectors are listed too (Providers, #1194).
     private var connectedLink: some View {
         let summary = model.summary
         return Button {
-            tab = model.claudeConnectors > 0 && summary.count == model.claudeConnectors ? .accounts : .installed
+            tab = .installed
         } label: {
             HStack(spacing: 8) {
                 HStack(spacing: -8) {
@@ -749,7 +728,7 @@ struct ConnectAppsMain: View {
 
 /// The tabs of Connect apps, as the desktop names them.
 enum ConnectAppsTab: Hashable, Identifiable {
-    case installed, discover, bots, accounts, sources
+    case installed, discover, bots, sources
 
     var id: Self { self }
 
@@ -758,7 +737,6 @@ enum ConnectAppsTab: Hashable, Identifiable {
         case .installed: String(localized: "Installed")
         case .discover: String(localized: "Discover")
         case .bots: String(localized: "Bots")
-        case .accounts: String(localized: "Providers")
         case .sources: String(localized: "Sources")
         }
     }
@@ -768,9 +746,8 @@ enum ConnectAppsTab: Hashable, Identifiable {
     static var launch: ConnectAppsTab {
         #if DEBUG
         switch UserDefaults.standard.string(forKey: "parityConnectAppsTab") {
-        case "installed": return .installed
         case "bots": return .bots
-        case "accounts", "providers": return .accounts
+        case "installed", "accounts", "providers": return .installed
         case "sources": return .sources
         default: return .discover
         }
@@ -794,7 +771,7 @@ enum ConnectAccountsService: Hashable {
     }
 }
 
-/// Installed, Providers and Sources: the sections each tab adds to the
+/// Installed (Providers inside) and Sources: the sections each tab adds to the
 /// Connect apps list (Discover and Bots are the main view's own).
 struct ConnectAppsManage: View {
     @Environment(\.themePalette) var themePalette
@@ -813,7 +790,6 @@ struct ConnectAppsManage: View {
         Group {
             switch tab {
             case .installed: installed
-            case .accounts: accounts
             case .sources: sources
             case .discover, .bots: EmptyView()
             }
@@ -905,6 +881,9 @@ struct ConnectAppsManage: View {
                 Text(String(localized: "Private skills"))
             }
         }
+        // Providers (2026-10-29): once a tab of their own, now the last
+        // section of Installed. A provider listed is already installed.
+        accounts
     }
 
     /// The entry's mark: the plugin's puzzle tile, or its neutral monogram when
@@ -929,7 +908,7 @@ struct ConnectAppsManage: View {
         return counts.isEmpty ? String(localized: "1 connector") : counts.joined(separator: " · ")
     }
 
-    // MARK: Providers: the engines' connectors, then the person's own
+    // MARK: Providers (in Installed): the engines' connectors, then the person's own
 
     /// All, Claude, Slack (when a bot has a Slack link), and the person's
     /// own MCP servers on an organization server (#218); fewer than two
@@ -941,6 +920,10 @@ struct ConnectAppsManage: View {
 
     @ViewBuilder
     private var accounts: some View {
+        Section {} header: {
+            Text(String(localized: "Providers"))
+        }
+        .accessibilityIdentifier("connect-apps-providers")
         if !services.isEmpty {
             Section {
                 ScrollView(.horizontal, showsIndicators: false) {
