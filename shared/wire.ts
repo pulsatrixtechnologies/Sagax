@@ -579,7 +579,7 @@ export interface WireAccessCard {
    * paused, its person out or without `run` (`engine` is then ""). Since
    * 2026-10-08 never for lack of a delegation; an older card with a
    * delegation reason renders nothing. */
-  reason: "engine_missing" | "no_access" | "key_refused" | "routine_delegation";
+  reason: "engine_missing" | "no_access" | "key_refused" | "routine_delegation" | "sign_in";
   /** The engine's display name, e.g. Claude. */
   engine: string;
   botId: string;
@@ -610,6 +610,10 @@ export interface WireAccessCard {
   /** #1137: replies are paid by the person who writes, and the bot is not
    * theirs: the card offers to choose a model they can pay for. */
   speakerPays?: true;
+  /** #1545, `sign_in`: the engine or account a bot asks the person to sign
+   * in to (sagax_settings models.engineSignIn); the person signs in from
+   * Settings > Models, the bot never sees it. */
+  instanceId?: string;
   /** The engine takes a personal subscription sign-in (Claude, Codex):
    * the card offers Settings > Organization > My engines. */
   subscriptionSignIn?: true;

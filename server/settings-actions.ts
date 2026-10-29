@@ -13,7 +13,7 @@ import type { TurnFacts } from "../shared/bot-act.ts";
 import { acceptablePath, actorForTurn } from "../shared/bot-act.ts";
 import { checkPersonQuote, messageNamesCard, normalizeWords, personWrote } from "../shared/primary-request.ts";
 import { decideSettingEffect, HOLD_TEXT, type SettingClass } from "../shared/settings-actions-policy.ts";
-import { pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
+import { decodePreference, isAppearancePreference, pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
 import { STEP_UP_CLASSES, botActClasses, type StepUpClass } from "../shared/step-up.ts";
 import { valueDigest, type ActRuleCandidate, type BotActResult, type BotActService } from "./bot-act.ts";
 
@@ -41,6 +41,9 @@ export type SettingsActionDeps = {
   audit: (row: { key: string; target?: string; value: unknown; secret: boolean; how: "run" | "allowed" | "rule"; botId: string; actor: string | null; primary?: { botName: string; messageId: string } }) => void;
   /** A screen command to the person's open app (a device preference). */
   screen: (facts: TurnFacts, command: string, input: Record<string, unknown>) => BotActResult;
+  /** #1545: post a card in this conversation for a step the person takes
+   * themselves (an engine's sign-in): the bot never takes that step. */
+  card?: (input: SettingsActionInput, card: { kind: "engineSignIn"; instanceId: string; name: string }) => BotActResult;
   /** `quote` (2026-10-20): the person asked their own Primary Bot for this
    * change in this turn's message; true, or why not. */
   personAsked?: (input: SettingsActionInput, quote: unknown) => { message: string; quote?: string; primary?: { botId: string; botName: string; messageId: string } } | string;
@@ -369,6 +372,26 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     if (action === "get") {
       if (!spec.read) return text(400, `${spec.key} has no read; see it at ${spec.where}.`);
       const read = spec.read(ids);
+      // #1545: a preference kept for the person: their synced preferences on
+      // an organization server, this computer's look on a personal server;
+      // anything else lives only in the person's open app
+      if (read.preference) {
+        const organization = deps.organization();
+        if (!organization && !isAppearancePreference(read.preference)) {
+          return text(200, JSON.stringify({ key: spec.key, value: null, note: `Kept only in the person's open Sagax app on this computer; ask them, or set it (set works). They see it at ${spec.where}.` }));
+        }
+        let stored: unknown;
+        try {
+          stored = await readValue(facts, input, organization ? "/api/me/preferences" : "/api/me/appearance", undefined, undefined, undefined, undefined);
+        } catch (error) {
+          const status = (error as { status?: number }).status ?? 502;
+          return text(status, error instanceof Error ? error.message : "The setting could not be read.");
+        }
+        const raw = (stored as { preferences?: Record<string, unknown> } | null)?.preferences?.[read.preference];
+        const decoded = raw === undefined ? undefined : decodePreference(raw);
+        const shaped = read.shape ? read.shape(decoded) : decoded;
+        return text(200, JSON.stringify({ key: spec.key, value: shaped === undefined ? null : shaped, ...(raw === undefined ? { note: "Not set: the app's default applies." } : {}) }).slice(0, 8000));
+      }
       if (!acceptablePath(read.path)) return text(400, `${spec.key}: that target cannot name a record.`);
       let value: unknown;
       try {
@@ -391,7 +414,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
           }));
         }
       }
-      return text(200, JSON.stringify({ key: spec.key, value: value === undefined ? null : value }).slice(0, 8000));
+      const shaped = read.shape && value !== undefined ? read.shape(value) : value;
+      return text(200, JSON.stringify({ key: spec.key, value: shaped === undefined ? null : shaped }).slice(0, 8000));
     }
 
     if (action !== "set") return text(400, "action is list, get or set.");
@@ -421,6 +445,35 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     const where = ids.target ? deps.targetName?.(spec.target, ids.target, ids.botId) : undefined;
     const othersInvolved = othersInvolvedFor(spec, ids, speaker);
     const reach = othersInvolved === undefined ? {} : { othersInvolved };
+
+    if ("card" in built) {
+      // #1545: the person's own step (an engine's sign-in): the bot posts the
+      // card, the person signs in. The engine is one this person sees in
+      // Settings > Models (their own rights, read with their session); the
+      // sign-in route checks the rest when they click.
+      if (!deps.card) return text(400, `${spec.key} is not available here.`);
+      // on an organization server a person signs in with their own
+      // subscription (/api/me/engines); elsewhere the engine itself
+      const mine = deps.organization();
+      let engines: unknown;
+      try {
+        engines = mine
+          ? await readValue(facts, input, "/api/me/engines", undefined, "engines", built.input.instanceId, undefined, "instanceId")
+          : await readValue(facts, input, "/api/instances", undefined, "instances", built.input.instanceId, undefined, "instanceId");
+      } catch (error) {
+        const status = (error as { status?: number }).status ?? 502;
+        return text(status, error instanceof Error ? error.message : "The engines could not be read.");
+      }
+      const engine = engines && typeof engines === "object" ? engines as { displayName?: unknown; readOnly?: unknown; snapshot?: { authenticated?: unknown }; subscription?: { supported?: unknown; signedIn?: unknown } } : null;
+      if (!engine) return text(404, `No such engine for this person (${mine ? "models.myEngines" : "models.engines"} lists them).`);
+      if (engine.readOnly) return text(400, "This engine is managed elsewhere (read only): its sign-in is not done here.");
+      if (mine && engine.subscription?.supported !== true) return text(400, "This engine takes no personal sign-in here.");
+      const name = typeof engine.displayName === "string" && engine.displayName ? engine.displayName : built.input.instanceId;
+      if ((mine ? engine.subscription?.signedIn : engine.snapshot?.authenticated) === true) return text(200, `${name} is already signed in. Continue the task.`);
+      const posted = deps.card(input, { kind: "engineSignIn", instanceId: built.input.instanceId, name });
+      if (posted.status >= 400) return posted;
+      return text(200, `A sign-in card for ${name} is in the conversation. The person signs in themselves (never ask for a code or a password in chat). End this turn; continue once they say it is done.`);
+    }
 
     if ("ui" in built) {
       // a preference on the person's device: at Approve for me or Full for

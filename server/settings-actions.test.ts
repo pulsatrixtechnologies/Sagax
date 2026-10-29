@@ -7,7 +7,7 @@ import { createSettingsActions, settingStepUpClasses, type SettingsActionDeps } 
 
 const PERSON: TurnFacts = { automation: false, guest: false, requestUsable: true, senderUnproven: false, provenPerson: "pr_owner", sharedServer: true };
 
-function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "full"; facts?: TurnFacts; routeStatus?: number; answer?: unknown } = {}) {
+function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "full"; facts?: TurnFacts; routeStatus?: number | ((method: string, path: string) => number); answer?: unknown } = {}) {
   const planned: Array<{ effect: string; path: string; method: string; body?: unknown; stepUpClasses: readonly string[]; primary?: unknown; rule?: { scope: Record<string, string> }; noRule?: boolean }> = [];
   const audits: unknown[] = [];
   const screens: unknown[] = [];
@@ -15,9 +15,13 @@ function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "
     async handlePlanned(input: Parameters<BotActService["handlePlanned"]>[0]) {
       const target = input.target.kind === "route" ? input.target : { method: "UI", path: `ui:${input.target.command}`, body: input.target.input };
       planned.push({ effect: input.plan.effect, path: target.path, method: target.method, body: target.body, stepUpClasses: input.plan.stepUpClasses, ...(input.plan.primary ? { primary: input.plan.primary } : {}), ...(input.plan.rule ? { rule: input.plan.rule } : {}), ...(input.plan.noRule ? { noRule: true } : {}) });
-      if (target.method === "GET") return { status: 200, body: { text: JSON.stringify(over.answer ?? {}) } };
+      const routeStatus = typeof over.routeStatus === "function" ? over.routeStatus(target.method, target.path) : over.routeStatus ?? 200;
+      if (target.method === "GET") {
+        if (routeStatus >= 400) return { status: routeStatus, body: { error: "forbidden: not yours" } };
+        return { status: 200, body: { text: JSON.stringify(typeof over.answer === "function" ? (over.answer as (path: string) => unknown)(target.path) : over.answer ?? {}) } };
+      }
       if (input.plan.effect === "hold") return { status: 200, body: { held: true, text: "Approval needed." } };
-      const status = over.routeStatus ?? 200;
+      const status = routeStatus;
       if (status < 400) input.plan.onDone?.("run");
       return status < 400 ? { status, body: { text: "{}" } } : { status, body: { error: "forbidden: not yours" } };
     },
@@ -317,5 +321,118 @@ describe("askedBotChange (the Primary Bot changes the person's bots on their wor
     expect(askedBotChange({ key: "bot.persona", family: "bot", value: "x", quote: "can you change your tone", names: ["Quasar"], speakingBot: true, speakingName: "Quasar" })).toMatch(/itself/);
     // the speaking bot itself: "toi" or its name
     expect(askedBotChange({ key: "bot.effort", family: "bot", value: "high", quote: "mets-toi en effort high", names: ["Quasar"], speakingBot: true, speakingName: "Quasar" })).toBe(true);
+  });
+});
+
+// #1545: every setting the person can manage, gated by the bot's level only
+describe("sagax_settings engines and preferences (#1545)", () => {
+  const ENGINES = { instances: [
+    { instanceId: "claude", displayName: "Claude", driverKind: "claudeAgent", snapshot: { state: "available", authenticated: true, account: { email: "a@example.com" } }, models: { default: "opus" } },
+    { instanceId: "claude-2", displayName: "Work account", driverKind: "claudeAgent", snapshot: { state: "available", authenticated: false }, claudeAccount: { isDefault: false } },
+    { instanceId: "company.x", displayName: "Company", driverKind: "claudeAgent", readOnly: true, snapshot: { state: "available" } },
+  ] };
+
+  it("reads the bot workplace from the person's own preferences, the default when unset, and says where it lives on a personal computer", async () => {
+    const set = harness({ organization: () => true, answer: { preferences: { "sagax.botWorkplace.v1": "{\"place\":\"server\",\"routines\":true}" } } });
+    const read = await set.call({ action: "get", key: "computer.botWorkplace" });
+    expect(JSON.parse(String(read.body.text))).toEqual({ key: "computer.botWorkplace", value: { place: "server", routines: true, network: "all" } });
+    expect(set.planned).toMatchObject([{ method: "GET", path: "/api/me/preferences" }]);
+    const unset = await harness({ organization: () => true, answer: { preferences: {} } }).call({ action: "get", key: "computer.botWorkplace" });
+    expect(JSON.parse(String(unset.body.text))).toMatchObject({ value: { place: "computer", routines: false, network: "all" }, note: expect.stringMatching(/default/) });
+    const solo = harness({ organization: () => false });
+    const local = await solo.call({ action: "get", key: "computer.botWorkplace" });
+    expect(local.status).toBe(200);
+    expect(JSON.parse(String(local.body.text))).toMatchObject({ value: null, note: expect.stringMatching(/open Sagax app/) });
+    expect(solo.planned).toEqual([]);
+    // the look of a personal computer is kept by its server
+    const skin = harness({ organization: () => false, answer: { preferences: { "omb-skin": "midnight" } } });
+    expect(JSON.parse(String((await skin.call({ action: "get", key: "appearance.skin" })).body.text))).toMatchObject({ value: "midnight" });
+    expect(skin.planned).toMatchObject([{ method: "GET", path: "/api/me/appearance" }]);
+  });
+
+  it("lists the engines and accounts the person sees, and one engine by its id", async () => {
+    const h = harness({ answer: ENGINES });
+    const list = JSON.parse(String((await h.call({ action: "get", key: "models.engines" })).body.text));
+    expect(list.value).toEqual([
+      { instanceId: "claude", name: "Claude", driver: "claudeAgent", state: "available", signedIn: true, account: "a@example.com", defaultModel: "opus" },
+      { instanceId: "claude-2", name: "Work account", driver: "claudeAgent", state: "available", signedIn: false, claudeAccount: true },
+      { instanceId: "company.x", name: "Company", driver: "claudeAgent", state: "available", signedIn: null, readOnly: true },
+    ]);
+    const one = JSON.parse(String((await h.call({ action: "get", key: "models.engine", target: "claude-2" })).body.text));
+    expect(one.value).toMatchObject({ instanceId: "claude-2", signedIn: false });
+    expect((await h.call({ action: "get", key: "models.engine" })).body.error).toMatch(/engine's id/);
+  });
+
+  it("adds a Claude account by the screen's route, then posts its sign-in card; never one already signed in or managed elsewhere", async () => {
+    const cards: unknown[] = [];
+    const h = harness({ answer: ENGINES, card: (_input, card) => { cards.push(card); return { status: 201, body: { text: "posted" } }; } });
+    const added = await h.call({ action: "set", key: "models.claudeAccount", value: { name: " Work account " } });
+    expect(added.body.text).toMatch(/^Done/);
+    expect(h.planned.at(-1)).toMatchObject({ effect: "run", method: "POST", path: "/api/instances/claude-accounts", body: { displayName: "Work account" } });
+    const signIn = await h.call({ action: "set", key: "models.engineSignIn", target: "claude-2", value: true });
+    expect(signIn.body.text).toMatch(/sign-in card for Work account/);
+    expect(cards).toEqual([{ kind: "engineSignIn", instanceId: "claude-2", name: "Work account" }]);
+    expect((await h.call({ action: "set", key: "models.engineSignIn", target: "claude", value: true })).body.text).toMatch(/already signed in/);
+    expect((await h.call({ action: "set", key: "models.engineSignIn", target: "company.x", value: true })).body.error).toMatch(/read only/);
+    expect((await h.call({ action: "set", key: "models.engineSignIn", target: "nope", value: true })).status).toBe(404);
+    expect(cards).toHaveLength(1);
+    // the card is posted with the person's rights: an engine they cannot read gets none
+    const refused = harness({ routeStatus: 403, card: (_input, card) => { cards.push(card); return { status: 201, body: {} }; } });
+    expect((await refused.call({ action: "set", key: "models.engineSignIn", target: "claude-2", value: true })).status).toBe(403);
+    expect(cards).toHaveLength(1);
+    expect((await h.call({ action: "set", key: "models.claudeAccount", value: { configDir: "/x" } })).body.error).toMatch(/name/);
+  });
+
+  // criteria 3 to 5: capability is the person's rights (the route's answer),
+  // permission is the bot's level; organization settings keep their card
+  it("matrix: admin and member, Ask, Approve for me and Full, personal and organization server", async () => {
+    const adminOnly = (method: string, path: string) => method !== "GET" && path.startsWith("/api/instances") ? 403 : 200;
+    const keys: Array<{ key: string; value: unknown; target?: string }> = [
+      { key: "models.claudeAccount", value: { name: "Work" } },
+      { key: "models.chatgptAccount", value: { name: "Work" } },
+      { key: "models.engine", target: "claude-2", value: { displayName: "Main" } },
+      { key: "models.engineSignOut", target: "claude-2", value: true },
+      { key: "models.engineRemove", target: "claude-2", value: true },
+    ];
+    for (const organization of [false, true]) {
+      for (const role of ["admin", "member"] as const) {
+        for (const mode of ["ask", "auto", "full"] as const) {
+          for (const { key, value, target } of keys) {
+            const h = harness({ mode, organization: () => organization, ...(role === "member" ? { routeStatus: adminOnly } : {}) });
+            const result = await h.call({ action: "set", key, value, ...(target ? { target } : {}) });
+            // a removal of the person's own engine on their own computer follows the level (2026-10-26)
+            const sensitive = organization;
+            const expected = mode === "ask" || sensitive ? "hold" : "run";
+            // never refused as UI only: the change runs, or waits on the person's card
+            expect(result.body.error ?? "", `${key} ${role} ${mode}`).not.toMatch(/no read|not available|see it at/);
+            expect(h.planned.at(-1)?.effect, `${key} ${role} ${mode} org=${organization}`).toBe(expected);
+            // a member's change the route refuses comes back as the route's refusal
+            if (role === "member" && expected === "run") expect(result.status, key).toBe(403);
+            if (role === "admin" && expected === "run") expect(result.body.text, key).toMatch(/^Done/);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("sagax_settings engine sign-in on an organization server (#1545)", () => {
+  it("checks the person's own subscription, not the server's sign-in", async () => {
+    const cards: unknown[] = [];
+    const answer = (path: string) => path === "/api/me/engines" ? { engines: [
+      { instanceId: "claude", displayName: "Claude", subscription: { supported: true, signedIn: false } },
+      { instanceId: "codex", displayName: "Codex", subscription: { supported: true, signedIn: true } },
+      { instanceId: "grok", displayName: "Grok API", subscription: { supported: false, signedIn: false } },
+    ] } : {};
+    const h = harness({ organization: () => true, answer, card: (_input, card) => { cards.push(card); return { status: 201, body: {} }; } });
+    expect((await h.call({ action: "set", key: "models.engineSignIn", target: "claude", value: true })).body.text).toMatch(/sign-in card for Claude/);
+    expect((await h.call({ action: "set", key: "models.engineSignIn", target: "codex", value: true })).body.text).toMatch(/already signed in/);
+    expect((await h.call({ action: "set", key: "models.engineSignIn", target: "grok", value: true })).body.error).toMatch(/no personal sign-in/);
+    expect(cards).toEqual([{ kind: "engineSignIn", instanceId: "claude", name: "Claude" }]);
+    expect(h.planned.every((row) => row.path === "/api/me/engines")).toBe(true);
+    // the person's own subscription is theirs: signing it out follows the level
+    const out = harness({ organization: () => true, mode: "auto" });
+    await out.call({ action: "set", key: "models.mySignOut", target: "claude", value: true });
+    expect(out.planned.at(-1)).toMatchObject({ effect: "run", method: "POST", path: "/api/me/engines/claude/login/sign-out" });
   });
 });

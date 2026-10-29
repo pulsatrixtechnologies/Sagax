@@ -579,6 +579,20 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
   points to `sagax_settings`. Security keys, vault export and import, and
   the desktop-only Full of a personal server stay the person's (listed in
   the doc).
+- #1545 (2026-10-28): capability is the person's rights, permission the
+  bot's level. A preference kept for the person reads back from
+  `/api/me/preferences` (organization server) or `/api/me/appearance` (a
+  personal computer's look; `SettingRead.preference`, `decodePreference`);
+  `computer.botWorkplace` reads `{place, routines, network}`. Engines:
+  `models.engines` and `models.engine` read Settings > Models,
+  `models.claudeAccount` / `models.chatgptAccount` add an account,
+  `models.engine` / `engineSignOut` / `engineRemove` / `engineInstall` /
+  `engineRefresh` / `claudeUpdate` change one, `models.myEngines` and
+  `models.mySignOut` are an organization member's own subscriptions, and
+  `models.engineSignIn` posts a sign-in card (organization server: checked
+  against the person's own subscription) (`SettingCard`, access card
+  `reason: "sign_in"`, for the speaker only): the person signs in, the bot
+  never sees it. Test matrix: `server/settings-actions.test.ts` (#1545).
 - Tests: `shared/settings-actions*.test.ts`, `server/settings-actions.test.ts`,
   `server/settings-actions.e2e.test.ts`.
 

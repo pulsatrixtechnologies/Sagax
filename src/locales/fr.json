@@ -20,6 +20,7 @@
   "access.routineDelegation.reason.person_out": "Perspicax a déconnecté cette personne.",
   "access.routinePaused": "La routine « {routine} » est en pause. {reason}",
   "access.signIn": "Me connecter avec mon abonnement",
+  "access.signInRequested": "{bot} vous demande de vous connecter à {engine}. Vous vous connectez vous-même ; le bot ne voit jamais votre connexion.",
   "access.signInExpired": "Votre connexion {engine} a expiré : {bot} n'a pas pu répondre. Reconnectez {engine} pour continuer.",
   "achievements.card.view": "Voir les succès",
   "achievements.categories": "Catégories",

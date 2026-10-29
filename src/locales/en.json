@@ -20,6 +20,7 @@
   "access.routineDelegation.reason.person_out": "Perspicax signed this person out.",
   "access.routinePaused": "The routine \"{routine}\" is paused. {reason}",
   "access.signIn": "Sign in with my subscription",
+  "access.signInRequested": "{bot} asks you to sign in to {engine}. You sign in yourself; the bot never sees your sign-in.",
   "access.signInExpired": "Your {engine} sign-in has expired, so {bot} could not answer. Reconnect {engine} to continue.",
   "access.worksOn": "Where {name} works: {short}",
   "achievements.card.view": "View achievements",

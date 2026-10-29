@@ -12,7 +12,10 @@
 // Perspicax console part, which lives in Perspicax): keep them together.
 // shared/settings-actions.test.ts fails when an entry has no doc row.
 
+import { parseBotWorkplace } from "./bot-workplace.ts";
+import { DESKTOP_APPEARANCE_KEYS } from "./desktop-appearance.ts";
 import type { SettingClass } from "./settings-actions-policy.ts";
+import { USER_PREFERENCE_KEYS } from "./user-preferences.ts";
 
 /** `self`: the change targets the bot that is speaking. */
 export type SettingClassContext = { organization: boolean; self?: boolean };
@@ -26,7 +29,7 @@ export type SettingFamily = (typeof SETTING_FAMILIES)[number];
 /** What a setting belongs to: the id `target` names (bot, thread, routine,
  * group, a team name for a section, a rule id), the speaker (self), or
  * nothing. */
-export type SettingTarget = "bot" | "thread" | "routine" | "group" | "section" | "rule" | "credential" | "self" | "none";
+export type SettingTarget = "bot" | "thread" | "routine" | "group" | "section" | "rule" | "credential" | "engine" | "self" | "none";
 
 /** `enum:a|b|c`, `string` (short), `text` (long), `boolean`, `number`,
  * `object`, `array`, `string?` (a string or null), `any`. */
@@ -38,6 +41,10 @@ export type SettingRoute = {
   query?: Record<string, string>;
   body?: unknown;
 };
+
+/** #1545: a card the bot posts in the conversation for a step the person
+ * takes themselves (an OAuth sign-in), never the step itself. */
+export type SettingCard = { card: "engineSignIn"; input: { instanceId: string } };
 
 /** The ids a change resolved: the bot of a thread or routine included. */
 export type SettingIds = { target?: string; botId?: string };
@@ -52,6 +59,15 @@ export type SettingRead = {
   match?: string;
   /** The value inside the item (dot path); none: the whole item. */
   field?: string;
+  /** #1545: a preference kept for the person (`path` is then ignored): read
+   * from their own synced preferences on an organization server
+   * (/api/me/preferences), from this computer's look on a personal server
+   * when it is one of the look's keys (/api/me/appearance). Its stored
+   * string is decoded (JSON when it is JSON). */
+  preference?: string;
+  /** Shapes the value read for the bot (a default filled in, a list made
+   * short). */
+  shape?: (value: unknown) => unknown;
 };
 
 export interface SettingSpec {
@@ -64,8 +80,10 @@ export interface SettingSpec {
   value: SettingValue;
   read?: (ids: SettingIds) => SettingRead;
   /** The route the screen calls, or the screen command for a preference
-   * kept on the person's device. A string is a refusal to relay. */
-  write: (ids: SettingIds, value: unknown) => SettingRoute | { ui: string; input: Record<string, unknown> } | string;
+   * kept on the person's device, or a card the bot posts for a step only the
+   * person takes (#1545: an engine's sign-in). A string is a refusal to
+   * relay. */
+  write: (ids: SettingIds, value: unknown) => SettingRoute | { ui: string; input: Record<string, unknown> } | SettingCard | string;
   /** What makes the change more than a simple application. Default: own. */
   classes?: (value: unknown, ctx: SettingClassContext) => SettingClass[];
   /** The approval level a change sets, for "up to the bot's own level". */
@@ -547,10 +565,14 @@ add({
 
 // ── preferences kept on the person's device (and per person on an
 // organization server): the screen command writes them in the app ─────
-function pref(key: string, family: SettingFamily, storage: string, value: SettingValue, label: string, where: string, classes?: SettingSpec["classes"]): void {
+/** The preferences a server keeps for the person (organization server), or
+ * this computer's look (personal server): a bot reads them back (#1545). */
+const SYNCED_PREFERENCES: ReadonlySet<string> = new Set<string>([...USER_PREFERENCE_KEYS, ...DESKTOP_APPEARANCE_KEYS]);
+function pref(key: string, family: SettingFamily, storage: string, value: SettingValue, label: string, where: string, classes?: SettingSpec["classes"], shape?: (value: unknown) => unknown): void {
   add({
     key, family, target: "none", label, where, value,
     ...(classes ? { classes } : {}),
+    ...(SYNCED_PREFERENCES.has(storage) ? { read: () => ({ path: "/api/me/preferences", preference: storage, ...(shape ? { shape } : {}) }) } : {}),
     write: (_ids, v) => ({ ui: "setPreference", input: { key: storage, value: typeof v === "string" ? v : JSON.stringify(v) } }),
   });
 }
@@ -595,7 +617,9 @@ pref("notifications.analyticsOptOut", "notifications", "omb-analytics-opt-out", 
 pref("models.voiceMode", "models", "omb.voiceMode.v1", "object", "Voice mode (voice, speed, language)", "Settings > Voice > Voice mode");
 // where bots run for the person (their own computer, routines, network): a
 // widening of where work goes, the person's Allow
-pref("computer.botWorkplace", "computer", "sagax.botWorkplace.v1", "object", "Where bots work for you", "Settings > Computer > Bot workplace", always("rule-change"));
+// #1545: read back as {place, routines, network}, the default filled in
+pref("computer.botWorkplace", "computer", "sagax.botWorkplace.v1", "object", "Where bots work for you ({place: computer|server, routines: boolean, network: all|lan}; organization server)", "Settings > Computer > Bot workplace", always("rule-change"),
+  (value) => parseBotWorkplace(value === undefined || value === null ? null : typeof value === "string" ? value : JSON.stringify(value)));
 // the person's other computers (organization server; server/desktop-bridge.ts):
 // named by the computer's name or id, never offline-only for a rename
 add({
@@ -672,6 +696,113 @@ add({
   key: "models.liveCalls", family: "models", target: "none", value: "object", label: "Live call settings", where: "Settings > Voice > Live calls",
   read: () => ({ path: "/api/live/settings" }),
   write: (_ids, v) => ({ method: "PATCH", path: "/api/live/settings", body: v }), classes: secretWhenKeyed,
+});
+
+// ── engines (Settings > Models; #1545) ──────────────────────────────────
+// The engines of this server and their accounts, as Settings > Models lists
+// them: GET /api/instances answers each person what they may see (an admin
+// or a person who manages engines, every detail; a member, their copy).
+type EngineRow = { instanceId?: unknown; displayName?: unknown; driverKind?: unknown; readOnly?: unknown; access?: unknown; snapshot?: { state?: unknown; authenticated?: unknown; account?: { email?: unknown; method?: unknown }; version?: unknown }; authentication?: { method?: unknown; signOut?: unknown }; claudeAccount?: { isDefault?: unknown }; models?: { default?: unknown } };
+const engineRow = (row: EngineRow) => ({
+  instanceId: row.instanceId, name: row.displayName, driver: row.driverKind,
+  ...(row.access ? { access: row.access } : {}),
+  state: row.snapshot?.state, signedIn: row.snapshot?.authenticated ?? null,
+  ...(row.snapshot?.account?.email ? { account: row.snapshot.account.email } : {}),
+  ...(row.snapshot?.version ? { version: row.snapshot.version } : {}),
+  ...(row.authentication?.method ? { signIn: row.authentication.method } : {}),
+  ...(row.claudeAccount ? { claudeAccount: true } : {}),
+  ...(row.models?.default ? { defaultModel: row.models.default } : {}),
+  ...(row.readOnly ? { readOnly: true } : {}),
+});
+add({
+  key: "models.engines", family: "models", target: "none", value: "object",
+  label: "Engines and their accounts (read only: instanceId, name, driver, signedIn, account)", where: "Settings > Models > Engines",
+  read: () => ({ path: "/api/instances", field: "instances", shape: (rows) => Array.isArray(rows) ? rows.map((row) => engineRow((row ?? {}) as EngineRow)) : rows }),
+  write: () => "models.engines is read only: add an account with models.claudeAccount or models.chatgptAccount, change one with models.engine.",
+});
+add({
+  key: "models.engine", family: "models", target: "engine", value: "object",
+  label: "An engine's settings ({displayName, configDir: a Claude account's folder, cli: the program's path, '' for the default, tools})", where: "Settings > Models > Engines > engine",
+  read: () => ({ path: "/api/instances", list: "instances", match: "instanceId", shape: (row) => engineRow((row ?? {}) as EngineRow) }),
+  write: (ids, v) => ({ method: "PATCH", path: `/api/instances/${enc(ids.target!)}`, body: v }),
+  classes: serverWide,
+});
+add({
+  key: "models.claudeAccount", family: "models", target: "none", value: "object",
+  label: "Add a Claude account ({name, configDir?}); then models.engineSignIn posts its sign-in card", where: "Settings > Models > Claude > Add account",
+  write: (_ids, v) => {
+    const { name, configDir } = (v ?? {}) as { name?: unknown; configDir?: unknown };
+    if (typeof name !== "string" || !name.trim()) return "value is {name, configDir?}.";
+    return { method: "POST", path: "/api/instances/claude-accounts", body: { displayName: name.trim(), ...(typeof configDir === "string" && configDir.trim() ? { configDir: configDir.trim() } : {}) } };
+  },
+  classes: serverWide,
+});
+add({
+  key: "models.chatgptAccount", family: "models", target: "none", value: "object",
+  label: "Add a ChatGPT account for Codex ({name}); then models.engineSignIn posts its sign-in card", where: "Settings > Models > Codex > Add account",
+  write: (_ids, v) => {
+    const { name } = (v ?? {}) as { name?: unknown };
+    if (typeof name !== "string" || !name.trim()) return "value is {name}.";
+    return { method: "POST", path: "/api/instances/chatgpt-accounts", body: { displayName: name.trim() } };
+  },
+  classes: serverWide,
+});
+add({
+  key: "models.engineSignIn", family: "models", target: "engine", value: "boolean",
+  label: "Post the sign-in card of an engine or account (value true): the person signs in themselves, the bot never sees the sign-in", where: "Settings > Models > engine > Sign in",
+  write: (ids, v) => v === true ? { card: "engineSignIn", input: { instanceId: ids.target! } } : "value is true.",
+});
+add({
+  key: "models.engineSignOut", family: "models", target: "engine", value: "boolean",
+  label: "Sign an engine or account out (value true)", where: "Settings > Models > engine > Sign out",
+  write: (ids, v) => v === true ? { method: "POST", path: `/api/instances/${enc(ids.target!)}/auth/sign-out`, body: {} } : "value is true.",
+  classes: (v, ctx) => [...serverWide(v, ctx), "delete"],
+});
+add({
+  key: "models.engineRemove", family: "models", target: "engine", value: "boolean",
+  label: "Remove an added account (value true)", where: "Settings > Models > account > Remove",
+  write: (ids, v) => v === true ? { method: "DELETE", path: `/api/instances/${enc(ids.target!)}` } : "value is true.",
+  classes: (v, ctx) => [...serverWide(v, ctx), "delete"],
+});
+add({
+  key: "models.engineKeySaved", family: "models", target: "engine", value: "boolean",
+  label: "Whether an engine's access key is saved (read only; the key itself is pasted by the person in Settings)", where: "Settings > Models > engine > Access key",
+  read: (ids) => ({ path: `/api/instances/${enc(ids.target!)}/api-key`, field: "configured" }),
+  write: () => "The key is the person's to paste: ask them to open Settings > Models > the engine > Access key.",
+});
+// engine actions the screen offers (install, check again, update Claude Code)
+function engineAction(key: string, action: string, label: string, where: string): void {
+  add({
+    key, family: "models", target: "engine", value: "boolean", label: `${label} (value true)`, where,
+    write: (ids, v) => v === true ? { method: "POST", path: `/api/instances/${enc(ids.target!)}/${action}`, body: {} } : "value is true.",
+    classes: serverWide,
+  });
+}
+engineAction("models.engineInstall", "install", "Install an engine", "Settings > Models > engine > Install");
+engineAction("models.engineRefresh", "refresh-models", "Check an engine again (its models)", "Settings > Models > Check again");
+engineAction("models.claudeUpdate", "claude-update", "Update Claude Code", "Settings > Models > Claude > Advanced > Update");
+add({
+  key: "models.antigravityAccount", family: "models", target: "none", value: "object",
+  label: "Add an Antigravity account ({name, source: the Antigravity engine's instanceId}); then models.engineSignIn", where: "Settings > Models > Antigravity > Add account",
+  write: (_ids, v) => {
+    const { name, source } = (v ?? {}) as { name?: unknown; source?: unknown };
+    if (typeof name !== "string" || !name.trim() || typeof source !== "string" || !source) return "value is {name, source}.";
+    return { method: "POST", path: "/api/instances/antigravity-accounts", body: { displayName: name.trim(), sourceInstanceId: source } };
+  },
+  classes: serverWide,
+});
+// an organization member's own subscriptions (Settings > Models, organization server)
+add({
+  key: "models.myEngines", family: "models", target: "none", value: "object",
+  label: "The person's own engine access (organization server: subscription signed in, own key, organization key; read only)", where: "Settings > Models > My engines",
+  read: () => ({ path: "/api/me/engines", field: "engines" }),
+  write: () => "models.myEngines is read only: models.engineSignIn posts a sign-in card, models.mySignOut signs the person's own subscription out.",
+});
+add({
+  key: "models.mySignOut", family: "models", target: "engine", value: "boolean",
+  label: "Sign the person's own subscription out of an engine (organization server; value true)", where: "Settings > Models > My engines > Disconnect",
+  write: (ids, v) => v === true ? { method: "POST", path: `/api/me/engines/${enc(ids.target!)}/login/sign-out`, body: {} } : "value is true.",
+  classes: always("delete"),
 });
 
 // ── organization (organization server: PATCH /api/org/settings) ───────
@@ -817,6 +948,25 @@ export function pickValue(value: unknown, path: string | undefined): unknown {
     current = (current as Record<string, unknown>)[part];
   }
   return current;
+}
+
+/** A preference's stored string as a bot reads it: an object, a list or a
+ * boolean decoded, any other string as stored ("1", "0", "dark"). */
+export function decodePreference(raw: unknown): unknown {
+  if (typeof raw !== "string") return raw;
+  const text = raw.trim();
+  if (!/^[[{]|^(?:true|false)$/.test(text)) return raw;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return raw;
+  }
+}
+
+/** Whether a preference is one of this computer's look keys, kept by a
+ * personal server (/api/me/appearance). */
+export function isAppearancePreference(storage: string): boolean {
+  return (DESKTOP_APPEARANCE_KEYS as readonly string[]).includes(storage);
 }
 
 /** The storage keys a bot may set on the person's device (setPreference). */
