@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { liveCardKind, liveDecisionRefusal } from "../../shared/live-approval.ts";
+import { liveCardKind, liveDecisionRefusal, liveProposal } from "../../shared/live-approval.ts";
 import type { OptionCardData } from "../../shared/wire.ts";
 import { MEETING_MAX_CONCURRENT, createMeetingService, type MeetingServiceDeps } from "./meeting-requests.ts";
 import type { MeetingOutcome } from "./meeting-session.ts";
@@ -57,7 +57,7 @@ afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("meeting requests", () => {
-  it("posts a consent card that a Live call cannot answer", () => {
+  it("posts a consent card that a Live call decides through its own resolver (#1098)", () => {
     const t = setup(); cleanups.push(t.cleanup);
     const result = t.service.submit({ botId: "bot-1", threadId: "t1", url: "https://meet.google.com/abc-defg-hij", reason: "Weekly sync" });
     expect(result).toMatchObject({ supported: true, provider: "google-meet" });
@@ -65,8 +65,10 @@ describe("meeting requests", () => {
     expect(card.tool).toBe("join_meeting");
     expect(card.meetingRequest).toMatchObject({ status: "pending", displayName: "Ada (transcription)", supported: true, reason: "Weekly sync" });
     expect(card.options).toEqual(["Rejoindre et prendre des notes", "Pas cette fois"]);
-    expect(liveCardKind(card)).toBe("review");
-    expect(liveDecisionRefusal(card)).toBe("This request is reviewed on screen.");
+    // #1286: a meeting proposal is decided by voice through its own resolver, never handed to the engine
+    expect(liveProposal(card)).toBe(true);
+    expect(liveCardKind(card)).toBe("approval");
+    expect(liveDecisionRefusal(card)).toBeNull();
   });
 
   it("says Zoom and Teams are not supported yet, and never joins them", async () => {

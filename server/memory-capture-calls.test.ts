@@ -193,7 +193,8 @@ describe("capture calls", () => {
     expect(organizes).toBe(1);
     expect(captures[0]!.prompt).toContain("6 separate conversations");
     for (let i = 1; i <= 6; i += 1) expect(captures[0]!.prompt).toContain(`Conversation ${i}:\nPerson: ${note(i)}\nScout: ${ACK}`);
-    expect(memory(LEAD.id)).toContain('from chat "t3" (noticed) · The person keeps bees on the roof');
+    // #1313: every captured line is stamped with who may read it (readers person)
+    expect(memory(LEAD.id)).toContain('from chat "t3" (noticed) · readers person · The person keeps bees on the roof');
   });
 
   it("gives two bots a call each, one after the other, never two at once", async () => {
@@ -274,9 +275,9 @@ describe("capture calls", () => {
     upkeep.flushThread("t2");
     await upkeep.idle();
     expect(captures).toHaveLength(1);
-    expect(memory(LEAD.id)).toContain('from chat "t1" (noticed) · The person is vegetarian');
-    expect(memory(LEAD.id)).toContain('from chat "t2" (noticed) · The launch moved to Friday');
-    expect(readMemoryTopic(LEAD.id, "launch.md")).toContain('from chat "t2" (noticed) · Asha owns the press kit');
+    expect(memory(LEAD.id)).toContain('from chat "t1" (noticed) · readers person · The person is vegetarian');
+    expect(memory(LEAD.id)).toContain('from chat "t2" (noticed) · readers person · The launch moved to Friday');
+    expect(readMemoryTopic(LEAD.id, "launch.md")).toContain('from chat "t2" (noticed) · readers person · Asha owns the press kit');
     await flushMemoryJournal(LEAD.id);
     const rows = readMemoryJournal(LEAD.id, 10).filter((row) => row.via === "capture" && row.path !== "memory/archive.md").map((row) => `${row.path} ${row.threadId}`);
     expect(rows.sort()).toEqual(["MEMORY.md t1", "MEMORY.md t2", "memory/launch.md t2"]);
@@ -298,7 +299,7 @@ describe("capture calls", () => {
     expect(captures).toHaveLength(2);
     expect(captures.some((call) => call.prompt.includes("I'm vegetarian") && call.prompt.includes("allergic to peanuts, by the way"))).toBe(false);
     expect(aboutMe).toEqual(["The person is vegetarian"]);
-    expect(memory(LEAD.id)).toContain('from chat "theirs" (noticed) · The person is allergic to peanuts');
+    expect(memory(LEAD.id)).toContain('from chat "theirs" (noticed) · readers person · The person is allergic to peanuts');
   });
 
   it("without a valid from, files an item under the conversation with the most said", async () => {
@@ -312,8 +313,8 @@ describe("capture calls", () => {
     upkeep.flushThread("short");
     upkeep.flushThread("long");
     await upkeep.idle();
-    expect(memory(LEAD.id)).toContain('from chat "long" (noticed) · The person lives in Lyon');
-    expect(memory(LEAD.id)).toContain('from chat "long" (noticed) · The person has a dog named Biscuit');
+    expect(memory(LEAD.id)).toContain('from chat "long" (noticed) · readers person · The person lives in Lyon');
+    expect(memory(LEAD.id)).toContain('from chat "long" (noticed) · readers person · The person has a dog named Biscuit');
     expect(memory(LEAD.id)).not.toContain('chat "short"');
 
     answer = () => JSON.stringify([{ text: "The person plays the cello", kind: "fact", aboutUser: true }]);
@@ -322,7 +323,7 @@ describe("capture calls", () => {
     upkeep.flushThread("a");
     upkeep.flushThread("b");
     await upkeep.idle();
-    expect(memory(LEAD.id)).toContain('from chat "b" (noticed) · The person plays the cello');
+    expect(memory(LEAD.id)).toContain('from chat "b" (noticed) · readers person · The person plays the cello');
     expect(aboutMe).toEqual(["The person plays the cello"]);
   });
 
@@ -344,7 +345,7 @@ describe("capture calls", () => {
     // the whole answer goes; "chat" is read again on its own
     expect(captures).toHaveLength(2);
     expect(captures[1]!.prompt).not.toContain("Kestrel");
-    expect(memory(LEAD.id)).toContain('from chat "chat" (noticed) · The person keeps bees');
+    expect(memory(LEAD.id)).toContain('from chat "chat" (noticed) · readers person · The person keeps bees');
     expect(memory(LEAD.id)).not.toContain("Kestrel");
     expect(memory(LEAD.id)).not.toContain("unsure");
   });
@@ -385,8 +386,8 @@ describe("capture calls", () => {
     upkeep.resume();
     await upkeep.idle();
     expect(captures).toHaveLength(1);
-    expect(memory(LEAD.id)).toContain('from chat "t1" (noticed) · The person likes jazz');
-    expect(memory(LEAD.id)).toContain('from chat "t2" (noticed) · The person keeps bees');
+    expect(memory(LEAD.id)).toContain('from chat "t1" (noticed) · readers person · The person likes jazz');
+    expect(memory(LEAD.id)).toContain('from chat "t2" (noticed) · readers person · The person keeps bees');
   });
 
   it("puts a call that answers during a backup back in the queue and asks again after it", async () => {
@@ -447,8 +448,8 @@ describe("capture calls", () => {
     second.flushThread("t3");
     await second.idle();
     expect(captures).toHaveLength(2);
-    expect(memory(LEAD.id)).toContain('from chat "t2" (noticed) · Fact two');
-    expect(memory(LEAD.id)).toContain('from chat "t3" (noticed) · Fact three');
+    expect(memory(LEAD.id)).toContain('from chat "t2" (noticed) · readers person · Fact two');
+    expect(memory(LEAD.id)).toContain('from chat "t3" (noticed) · readers person · Fact three');
     second.stop();
     expect(existsSync(pending)).toBe(false);
   });
