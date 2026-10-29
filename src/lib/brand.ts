@@ -2,7 +2,7 @@
 // by GET /api/brand from a brand.json on the server and applied once before
 // the first paint. The default name is Sagax.
 // Pure helpers live here so they can be unit-tested without a DOM.
-import { BRAND_BUBBLE_VARS, brandBubbleVars } from "./bubble-colors";
+import { BRAND_BUBBLE_VARS, accentInk, brandBubbleVars } from "./bubble-colors";
 import { BRAND_SWITCH_VARS, brandSwitchVars } from "./switch-colors";
 
 export interface Brand {
@@ -48,13 +48,11 @@ export function luminance(hex: string): number {
 }
 
 /** Text colour that meets WCAG AA on the given accent: white on dark accents,
- * near-black on light ones. The skin contrast check cannot see a runtime
- * accent, so this is where a customer's colour is kept readable. */
-export function accentInk(accent: string): string {
-  // contrast vs white = 1.05 / (L + 0.05); vs black = (L + 0.05) / 0.05
-  const l = luminance(accent);
-  return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05 ? "#ffffff" : "#111111";
-}
+ * near-black on light ones (black on a mid tone neither reaches 4.5:1 on).
+ * The skin contrast check cannot see a runtime accent, so this is where a
+ * customer's colour is kept readable. The rule lives with the bubbles
+ * (bubble-colors.ts), so a button and the person's bubble share their ink. */
+export { accentInk };
 
 /** CSS custom properties a brand overrides on the root element. */
 export function brandVars(b: Brand): Record<string, string> {

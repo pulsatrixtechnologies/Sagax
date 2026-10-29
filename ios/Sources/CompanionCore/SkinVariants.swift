@@ -192,10 +192,10 @@ public extension DesktopSkins {
             return SkinColor(css: value) ?? SkinColor(0xFF00FF)
         }
         guard raw["app"] != nil else { return nil }
-        // the bubbles come from the accent and the page (BubbleColors), not from
-        // the skin blocks' own bubble tokens
+        // the bubbles come from the accent, its button ink and the page
+        // (BubbleColors), not from the skin blocks' own bubble tokens
         let dark = raw["code-scheme"] == "dark"
-        let user = BubbleColors.user(accent: c("accent"))
+        let user = BubbleColors.user(accent: c("accent"), buttonInk: c("accent-ink"))
         return DesktopSkinTokens(
             app: c("app"), panel: c("panel"), raised: c("raised"), raisedHover: c("raised-hover"),
             card: c("card"), menu: c("menu"), inset: c("inset"), control: c("control"), hairline: c("hairline"),

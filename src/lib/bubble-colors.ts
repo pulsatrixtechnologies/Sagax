@@ -1,23 +1,29 @@
-// The colours of the conversation bubbles (2026-10-28). The person's own
-// message is a bubble filled with the accent, so the skin, colour, duo-tone or
-// mood they chose shows in the thread; a bot's reply (and another person's
-// message in a room) is a quiet grey bubble, a little off the page.
+// The colours of the conversation bubbles (2026-10-28, exact accent
+// 2026-10-29). The person's own message is a bubble filled with the accent,
+// so the skin, colour, duo-tone or mood they chose shows in the thread; a
+// bot's reply (and another person's message in a room) is a quiet grey
+// bubble, a little off the page.
 //
-//   - the text on the accent bubble is white, and reaches 4.5:1 (WCAG 1.4.3,
-//     normal text). When the accent cannot carry it, its lightness moves (the
-//     hue stays) to the nearest one that does; an accent too pale to carry
-//     white without a large shift takes dark text instead, at the same 4.5:1;
+//   - the person's bubble is the accent itself, exactly the value an accent
+//     button is filled with: no lightness moves, so an orange stays the
+//     bright orange of the button next to it;
+//   - the text on it is the accent button's ink (accentInk): white on a dark
+//     accent, near black on a light or bright one, black where neither
+//     reaches 4.5:1 (WCAG 1.4.3, normal text). A skin keeps its own button
+//     ink when that ink reads at 4.5:1 on the accent, so bubble and button
+//     match there too;
 //   - the grey is neutral in every skin, lighter than a dark page and darker
 //     than a light one, and the page's own text reads on it.
 //
 // Pure: the stylesheet generator (scripts/gen-bubble-tokens.mjs), the brand
-// accent (brand.ts) and the tests call it; nothing here touches the DOM.
+// accent (brand.ts), the bot accent (bot-accent.ts) and the tests call it;
+// nothing here touches the DOM.
 import { contrastHex, fromHsl, parseHex, toHex, toHsl, type Scheme } from "./switch-colors.ts";
 
 export interface BubbleColors {
-  /** The person's own bubble: the accent at a lightness that carries its text. */
+  /** The person's own bubble: the accent, exactly. */
   user: string;
-  /** The text on that bubble. */
+  /** The text on that bubble: the accent button's ink. */
   userInk: string;
   /** The bot's bubble: a neutral grey. */
   bot: string;
@@ -25,13 +31,9 @@ export interface BubbleColors {
 
 /** WCAG 1.4.3, normal text. */
 export const BUBBLE_MIN_CONTRAST = 4.5;
-/** What the derivation aims at, a little over the minimum so rounding a
- * channel to 8 bits never drops a pair below it. */
-const TARGET = 4.6;
 const LIGHT_INK = "#ffffff";
 const DARK_INK = "#111111";
-/** How far (in HSL lightness) an accent may move to carry white before dark text is used. */
-const MAX_SHIFT = 0.28;
+const BLACK_INK = "#000000";
 
 type Rgb = [number, number, number];
 
@@ -39,31 +41,31 @@ function round(c: Rgb): Rgb {
   return c.map((v) => Math.round(Math.min(255, Math.max(0, v)))) as Rgb;
 }
 
-/** The lightness of the accent's hue nearest to its own where `ink` reaches the target, else null. */
-function fit(accent: Rgb, ink: string): { rgb: Rgb; shift: number } | null {
-  if (contrastHex(toHex(accent), ink) >= TARGET) return { rgb: accent, shift: 0 };
-  const [h, s, l0] = toHsl(accent);
-  let best: { rgb: Rgb; shift: number } | null = null;
-  for (let i = 0; i <= 400; i++) {
-    const l = i / 400;
-    const rgb = round(fromHsl(h, s, l));
-    if (contrastHex(toHex(rgb), ink) < TARGET) continue;
-    const shift = Math.abs(l - l0);
-    if (!best || shift < best.shift) best = { rgb, shift };
-  }
-  return best;
+/**
+ * The text drawn on an accent fill (a button, the person's bubble): white or
+ * near black, whichever contrasts more; black when the winner still falls
+ * under 4.5:1 (a mid tone, where black always reaches it). One rule for the
+ * brand's button, a bot's accent and the bubbles.
+ */
+export function accentInk(accent: string): string {
+  if (!parseHex(accent)) return LIGHT_INK;
+  const light = contrastHex(accent, LIGHT_INK);
+  const dark = contrastHex(accent, DARK_INK);
+  const best = light >= dark ? LIGHT_INK : DARK_INK;
+  return Math.max(light, dark) >= BUBBLE_MIN_CONTRAST ? best : BLACK_INK;
 }
 
-/** The person's bubble and its text, for an accent (`#rrggbb`). */
-export function userBubble(accent: string): { user: string; userInk: string } {
-  const rgb = parseHex(accent) ?? [128, 128, 128];
-  const light = fit(rgb, LIGHT_INK);
-  const dark = fit(rgb, DARK_INK);
-  const useLight = light && (light.shift <= MAX_SHIFT || !dark || light.shift <= dark.shift);
-  const pick = useLight ? light : dark;
-  return useLight
-    ? { user: toHex(pick?.rgb ?? rgb), userInk: LIGHT_INK }
-    : { user: toHex(pick?.rgb ?? rgb), userInk: DARK_INK };
+/**
+ * The person's bubble and its text, for an accent (`#rrggbb`): the accent
+ * itself and the accent button's ink. `buttonInk` is the ink a skin already
+ * draws on its accent buttons; it is kept when it reads at 4.5:1 on the
+ * accent, so the bubble and the button look the same.
+ */
+export function userBubble(accent: string, buttonInk?: string): { user: string; userInk: string } {
+  const rgb = parseHex(accent) ?? ([128, 128, 128] as Rgb);
+  const user = toHex(rgb);
+  const keep = buttonInk && parseHex(buttonInk) && contrastHex(user, buttonInk) >= BUBBLE_MIN_CONTRAST;
+  return { user, userInk: keep ? toHex(parseHex(buttonInk)!) : accentInk(user) };
 }
 
 /** The bot's grey: the page's lightness, neutral, a step lighter (dark) or darker (light). */
@@ -77,11 +79,12 @@ export function botBubble(app: string, scheme: Scheme): string {
 /**
  * The bubbles' colours for an accent on a skin.
  *
- * @param accent the accent (`#rrggbb`); the person's bubble keeps its hue
- * @param app    the page colour the bot's grey is cut from
+ * @param accent    the accent (`#rrggbb`); the person's bubble is this colour
+ * @param app       the page colour the bot's grey is cut from
+ * @param buttonInk the skin's accent button ink, kept when it reads at 4.5:1
  */
-export function bubbleColors({ accent, app, scheme }: { accent: string; app: string; scheme: Scheme }): BubbleColors {
-  return { ...userBubble(accent), bot: botBubble(app, scheme) };
+export function bubbleColors({ accent, app, scheme, buttonInk }: { accent: string; app: string; scheme: Scheme; buttonInk?: string }): BubbleColors {
+  return { ...userBubble(accent, buttonInk), bot: botBubble(app, scheme) };
 }
 
 /** The custom properties a bubble reads, from its colours. */
@@ -116,8 +119,8 @@ export const SCOPED_BUBBLE_VARS = ["--color-bubble-user", "--color-bubble-user-i
  * neutral accent (Midnight's is #f5f5f5) left the bubble white; in a
  * conversation with a bot it takes the bot's colour instead, whatever the
  * "Use bot color as accent" setting says, like the switches in its panel.
- * Same derivation as the skin's bubble (the lightness moves, the hue stays,
- * the text reaches 4.5:1), which does not depend on the scheme, so one pair
+ * Same rule as the skin's bubble (the bot's colour exactly, the accent
+ * button's ink on it), which does not depend on the scheme, so one pair
  * serves light and dark. Set inline on the conversation's root (ChatView,
  * RunView, the floating bot), it outweighs the skin's and the brand's pair
  * inherited from <html>; the bot's own bubble stays grey. Empty for a colour
@@ -148,6 +151,6 @@ export function isNeutralAccent(accent: string): boolean {
  * (the deployment's, else Pulsatrix's of the same scheme) keeps the bubble a
  * colour. The generated stylesheet writes that rule per skin.
  */
-export function roomBubbleColors({ accent, brand }: { accent: string; brand: string }): { user: string; userInk: string } {
-  return userBubble(isNeutralAccent(accent) ? brand : accent);
+export function roomBubbleColors({ accent, brand, buttonInk, brandInk }: { accent: string; brand: string; buttonInk?: string; brandInk?: string }): { user: string; userInk: string } {
+  return isNeutralAccent(accent) ? userBubble(brand, brandInk) : userBubble(accent, buttonInk);
 }

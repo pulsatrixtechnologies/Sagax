@@ -8,9 +8,10 @@
 // follow too. A bot colour is chosen for a mascot, not for text: before it
 // becomes the accent it is darkened (light skins) or lifted (dark skins)
 // until it holds 3:1 as a fill and 4.5:1 as text on the skin's panel, and the
-// text drawn on it is white or near black, whichever reads (WCAG AA).
+// text drawn on it is the accent button's ink (bubble-colors.ts, accentInk).
 import { useEffect, useSyncExternalStore } from "react";
 import { prefersReducedMotion } from "./motion";
+import { accentInk } from "./bubble-colors";
 import { BOT_SWITCH_VARS, botSwitchVars } from "./switch-colors";
 
 export const BOT_ACCENT_KEY = "sagax.botAccent.v1";
@@ -68,10 +69,12 @@ export function holdContrast(color: string, surface: string, ratio: number): str
   return toHex(target);
 }
 
-/** White or black, whichever reads on `fill`: one of the two always holds
- * 4.5:1 (near black, as the brand accent uses, falls short on mid tones). */
+/** The text on `fill`: the accent button's ink (bubble-colors.ts,
+ * accentInk), white or near black, black on a mid tone where near black
+ * falls short of 4.5:1. The same rule as the brand's button and the
+ * person's bubble, so the two always match. */
 export function inkOn(fill: string): string {
-  return contrast("#ffffff", fill) >= contrast("#000000", fill) ? "#ffffff" : "#000000";
+  return accentInk(fill);
 }
 
 /** The accent variables for a bot colour on a skin whose panel is `surface`;
