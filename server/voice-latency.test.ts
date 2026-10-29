@@ -41,4 +41,18 @@ describe("VoiceLatencyLog", () => {
     log.mark("t-1", "firstToken");
     expect(lines).toHaveLength(1);
   });
+
+  it("puts the turn in the thread's Events lens with the page's stages first", () => {
+    let clock = 0;
+    const notices: Array<[string, string]> = [];
+    const log = new VoiceLatencyLog(() => clock, () => {}, (threadId, message) => notices.push([threadId, message]));
+    log.received("t-9", "utt-00000009", { endpointMs: 560, sttMs: 180, dispatchMs: 20 });
+    clock += 1_891;
+    log.mark("t-9", "dispatch");
+    clock += 95;
+    log.mark("t-9", "engine", { warm: false });
+    clock += 3_824;
+    log.mark("t-9", "firstToken");
+    expect(notices).toEqual([["t-9", "Voice turn: end of speech 560 ms, speech to text 180 ms, send 20 ms, turn setup 1.9 s, engine 95 ms (cold start), first words 3.8 s; 6.6 s from the end of speech to the first words"]]);
+  });
 });

@@ -36,6 +36,20 @@ describe("unansweredCallMessage", () => {
     expect(unansweredCallMessage([words], { stoppedAt: 4_000, retried: new Set() })).toBe(words);
   });
 
+  it("answers a newer utterance that reached the turn before the interrupt aimed at an older one", () => {
+    // 2026-10-29: a sentence sent early on its partial ("tell me if I have
+    // any ongoing"), then again with its final words; the final words were
+    // steered into the turn, then the interrupt for the partial stopped it.
+    // Those words were not cut on purpose: the watchdog answers them.
+    const finalWords = msg({ text: "tell me if I have any ongoing tasks", at: 39_800, voiceCall: { callId: "call-0123456789", utteranceId: "utt-newer", continues: true } });
+    expect(unansweredCallMessage([finalWords], { stoppedAt: 41_500, stoppedUtteranceId: "utt-older", retried: new Set() })).toBe(finalWords);
+    // the utterance the stop named stays cut
+    const cut = msg({ text: "tell me if I have any ongoing", at: 37_000, voiceCall: { callId: "call-0123456789", utteranceId: "utt-older" } });
+    expect(unansweredCallMessage([cut], { stoppedAt: 41_500, stoppedUtteranceId: "utt-older", retried: new Set() })).toBeNull();
+    // a stop that named no utterance (the Stop button) still cuts everything before it
+    expect(unansweredCallMessage([finalWords], { stoppedAt: 41_500, retried: new Set() })).toBeNull();
+  });
+
   it("retries with a note before the words", () => {
     expect(voiceCallRecoveryPrompt("draw a llama")).toBe(`${VOICE_CALL_RECOVERY_NOTE}\n\ndraw a llama`);
   });

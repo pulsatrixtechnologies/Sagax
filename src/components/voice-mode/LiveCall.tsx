@@ -32,7 +32,7 @@ import {
   streamText,
   type SpeechFence,
 } from "@/lib/voice-mode/speech-fence";
-import { stageDurations } from "@/lib/voice-mode/latency";
+import { clientTurnTiming, stageDurations } from "@/lib/voice-mode/latency";
 import { acceptVoiceOpener, VOICE_OPENER_EVENT, type VoiceOpenerOwner } from "@/lib/voice-mode/voice-opener";
 import { decideBotHangup, VOICE_CALL_ENDED_EVENT, type VoiceCallEndedDetail } from "@/lib/voice-mode/call-end";
 import type { CallState } from "@/lib/voice-mode/call-machine";
@@ -326,7 +326,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
 
   // ── what the person said ───────────────────────────────────────────────
   const onUtterance = useCallback(
-    (said: string, interrupted = false, cut?: { heard: string; unheard: string }, continues = false, spokenId?: string, speculative = false) => {
+    (said: string, interrupted = false, cut?: { heard: string; unheard: string }, continues = false, spokenId?: string, speculative = false, metrics?: TurnMetrics) => {
       const current = botRef.current;
       if (!call || currentCall() !== current.id) return;
       setHeard("");
@@ -405,6 +405,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
           ...(language && language !== "auto" ? { language } : {}),
           ...(readCallSettings().fullDuplex ? { duplex: true } : {}),
           ...(speculative ? { speculative: true } : {}),
+          // where this turn's seconds went on the page (Events lens)
+          ...(metrics ? { timing: clientTurnTiming(metrics, performance.now()) } : {}),
         },
       });
       send();
@@ -414,7 +416,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
 
   useEffect(() => {
     if (!call) return;
-    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut, turn.continues === true, turn.utteranceId, turn.speculative === true));
+    return call.on("utterance", (text, metrics, turn) => onUtterance(text, turn.interrupted, turn.cut, turn.continues === true, turn.utteranceId, turn.speculative === true, metrics ?? undefined));
   }, [call, onUtterance]);
 
   useEffect(() => {

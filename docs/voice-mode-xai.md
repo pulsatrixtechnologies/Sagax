@@ -781,8 +781,15 @@ xAI's refusal is never hidden behind "didn't come through" (2026-10-28):
   `/voice/prepare` and `/voice/speak`), then the computer's engine, then
   the phone's voice with the reason under the composer.
 - Composer dictation (the grey mic, `src/lib/composer-dictation.ts`) hears
-  through xAI (POST /voice/transcribe) whenever a key serves the person, on
-  every platform alike; the Mac's own recognizer is the fallback only when
+  through xAI whenever a key serves the person, on every platform alike.
+  On the desktop and the web (2026-10-29) the audio streams over the
+  call's listen socket (GET /voice/listen, `LiveTranscriber`) while the
+  person speaks: the words appear in the field as they are recognized and
+  the stop only waits for xAI's answer to the finalize (a few hundred ms,
+  at most `DICTATION_FINAL_TIMEOUT_MS`), where the whole clip used to be
+  uploaded after the stop (POST /voice/transcribe), now only the fallback
+  when the socket cannot open. iOS still uploads the clip. The Mac's own
+  recognizer is the fallback only when
   none does, and the mic's label says so ("Start dictation (this Mac's own,
   no xAI key)", `composer.dictation.startApple`). A failed transcription
   names the key and what to do (`voiceErrorNote`).
@@ -791,6 +798,25 @@ xAI's refusal is never hidden behind "didn't come through" (2026-10-28):
   the person's Voice, Speed and Language and the same key order
   (`src/lib/tts/index.ts` `organizationVoiceMode`), instead of the
   installation's engine; a solo server keeps the engine picked in Settings.
+
+## Timings in the Events lens (2026-10-29)
+
+Where the seconds of a spoken turn went shows in the thread's Events lens
+as `runtime.notice` rows (`server/voice-timing.ts`), numbers only, never
+the words: each call turn ("Voice turn: end of speech, speech to text,
+send" from the page's `voiceCall.timing`, then "turn setup, engine (warm
+or cold start), first words" from `server/voice-latency.ts`), each
+streamed transcript (the final words after the page's finalize) and each
+whole-recording upload (how long xAI took for how many seconds of audio).
+
+A call turn sent early on its partial and sent again with its final words
+(`reissue`, `call.ts`) interrupts the first one and sends the second:
+the two requests race, and the final words can reach the running turn
+just before the interrupt stops it. The interrupt names the utterance it
+cancels (`expectedUtteranceId`); the call watchdog answers words of a
+newer utterance stopped that way (`unansweredCallMessage`
+`stoppedUtteranceId`), where they used to wait for the person's next
+message (2026-10-29: 44 s, until they typed the question).
 
 ## Who pays, and the key
 

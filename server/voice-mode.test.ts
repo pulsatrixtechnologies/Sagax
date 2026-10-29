@@ -304,6 +304,16 @@ describe("voice mode routes", () => {
     expect(usage[0]).toMatchObject({ model: "grok-stt", input: WAV.byteLength });
   });
 
+  it("puts how long speech to text took in the thread's Events lens, never the words", async () => {
+    const notices: Array<[string, string]> = [];
+    const { call } = harness({ notice: (threadId, message) => notices.push([threadId, message]) });
+    await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe?threadId=t-ada", raw: WAV, contentType: "audio/wav" });
+    expect(notices).toHaveLength(1);
+    expect(notices[0]![0]).toBe("t-ada");
+    expect(notices[0]![1]).toMatch(/^Voice: speech to text \(whole recording\) took \d+ ms for /);
+    expect(notices[0]![1]).not.toContain("hello");
+  });
+
   it("biases speech to text with the call's keyterms, and survives a failing source", async () => {
     const keyterms = vi.fn((target: { botName: string }, speaker: { principalId: string }) => [target.botName, speaker.principalId]);
     const { call, xai } = harness({ keyterms });

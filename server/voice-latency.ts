@@ -11,6 +11,8 @@
 // warm process, or a cold start); first-token: the first streamed text of the
 // answer. Ids and milliseconds only: never the words.
 
+import { callTurnNotice, type VoiceClientTiming } from "./voice-timing.ts";
+
 export type VoiceLatencyStage = "dispatch" | "engine" | "firstToken";
 
 interface Timeline {
@@ -19,6 +21,8 @@ interface Timeline {
   marks: Partial<Record<VoiceLatencyStage, number>>;
   /** the engine reused a running process */
   warm?: boolean;
+  /** the page's own stages of the turn (voiceCall.timing) */
+  client?: VoiceClientTiming;
 }
 
 /** A turn that never streams is forgotten after this long. */
@@ -28,16 +32,18 @@ export class VoiceLatencyLog {
   private readonly turns = new Map<string, Timeline>();
   private readonly now: () => number;
   private readonly log: (line: string) => void;
+  private readonly notice: ((threadId: string, message: string) => void) | undefined;
 
-  constructor(now: () => number = () => performance.now(), log: (line: string) => void = (line) => console.log(line)) {
+  constructor(now: () => number = () => performance.now(), log: (line: string) => void = (line) => console.log(line), notice?: (threadId: string, message: string) => void) {
     this.now = now;
     this.log = log;
+    this.notice = notice;
   }
 
   /** A call utterance reached the send route for this thread. */
-  received(threadId: string, utteranceId: string): void {
+  received(threadId: string, utteranceId: string, client?: VoiceClientTiming): void {
     this.prune();
-    this.turns.set(threadId, { utteranceId, receivedAt: this.now(), marks: {} });
+    this.turns.set(threadId, { utteranceId, receivedAt: this.now(), marks: {}, ...(client ? { client } : {}) });
   }
 
   /** A stage of the thread's current call turn (the first time only). */
@@ -48,6 +54,16 @@ export class VoiceLatencyLog {
     if (detail?.warm !== undefined) turn.warm = detail.warm;
     if (stage === "firstToken") {
       this.log(voiceLatencyLine(turn));
+      // the same turn in the thread's Events lens, the page's stages first
+      const { dispatch, engine, firstToken } = turn.marks;
+      const span = (from: number | undefined, to: number | undefined) => (from === undefined || to === undefined ? undefined : Math.max(0, to - from));
+      this.notice?.(threadId, callTurnNotice({
+        ...(turn.client ? { client: turn.client } : {}),
+        dispatchMs: span(turn.receivedAt, dispatch),
+        engineMs: span(dispatch, engine),
+        firstTokenMs: span(engine ?? dispatch ?? turn.receivedAt, firstToken),
+        ...(turn.warm !== undefined ? { warm: turn.warm } : {}),
+      }));
       this.turns.delete(threadId);
     }
   }

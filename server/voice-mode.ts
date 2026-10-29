@@ -72,6 +72,7 @@ import { speakableDelta } from "./tts/speech-text.ts";
 import { createListenSession } from "./voice-listen-session.ts";
 import { grokVoiceFailure, type GrokVoiceFailure, type SpeechStream, type SpeechStreamHandlers, type SynthesizeOptions, type TranscriptionHandlers, type TranscriptionStream } from "./tts/grok.ts";
 import { createSpeechSession } from "./voice-speech-session.ts";
+import { streamedTranscriptNotice, uploadedTranscriptNotice } from "./voice-timing.ts";
 import {
   describeVoiceKey,
   keyLast4,
@@ -185,6 +186,10 @@ export interface VoiceModeDeps {
   assertWithinBudget?(): void;
   /** A line for the server log (a call's speech falling back to POST). */
   log?(line: string): void;
+  /** A timing note for the thread's Events lens (runtime.notice): how long
+   * speech to text took, numbers only, never the words
+   * (server/voice-timing.ts). */
+  notice?(threadId: string, message: string): void;
   /** The thread is on a live call (server/voice-call-session.ts): every
    * send to it while the call lasts is a call turn. */
   callSession?: {
@@ -444,7 +449,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
    * activity detector decides when) and `{"type":"finalize"}` when they
    * stop; xAI's transcripts come back as they are made. A key refused for
    * credits or for itself gives way to the next one. The keys stay here. */
-  async function listen(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, keys: VoiceKeyCandidate[], refusals: VoiceKeyRefusals, who: string, usageFor: UsageFor, keyterms: readonly string[]): Promise<void> {
+  async function listen(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, keys: VoiceKeyCandidate[], refusals: VoiceKeyRefusals, who: string, usageFor: UsageFor, keyterms: readonly string[], threadId: string): Promise<void> {
     const upgrade = deps.upgrade?.(req);
     if (!upgrade || !deps.xai.openTranscription) { json(res, 426, { error: "WebSocket upgrade required" }); return; }
     const shake = handshake(req);
@@ -455,6 +460,8 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     let session: ReturnType<typeof webSocketSession> | null = null;
     let heard = 0;
     let total = 0;
+    /** when the page last said the person stopped (finalize) */
+    let finalizedAt: number | null = null;
     const openTranscription = deps.xai.openTranscription;
     // "auto" on a French computer is French with formatting (sttRequest)
     const stt = sttRequest(language, url.searchParams.get("locale") ?? undefined);
@@ -477,7 +484,16 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
         // the page's own detector ends turns (and sends finalize); xAI's
         // endpointing is only a backstop for a very long pause
         open: (handlers) => openTranscription(key, { ...stt, endpointingMs: 1500, keyterms }, handlers),
-        sendText: (frame) => session?.sendText(JSON.stringify(frame)),
+        sendText: (frame) => {
+          // the end of speech (the page's finalize) to xAI's final words:
+          // the person's wait for their text, in the Events lens
+          if (frame.type === "transcript" && frame.speechFinal && finalizedAt !== null) {
+            const waited = now() - finalizedAt;
+            finalizedAt = null;
+            deps.notice?.(threadId, streamedTranscriptNotice(waited));
+          }
+          session?.sendText(JSON.stringify(frame));
+        },
         closePage: (code) => session?.close(code),
         log: (line) => (deps.log ?? console.warn)(line),
         onUpstreamClosed: book,
@@ -522,6 +538,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
           // socket. It is never forwarded to xAI.
           if (message?.type === "keepalive") return;
           if (message?.type === "finalize") {
+            finalizedAt = now();
             ears.finalize();
             book();
             // the answer's first sentence goes to xAI's speech a second or
@@ -668,7 +685,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     const keyterms = (): string[] => {
       try { return deps.keyterms?.(target, speaker) ?? []; } catch { return []; }
     };
-    if (action === "listen") return listen(req, res, url, json, keys, refusals, who, usageFor, keyterms());
+    if (action === "listen") return listen(req, res, url, json, keys, refusals, who, usageFor, keyterms(), target.threadId);
     if (action === "speech") return speech(req, res, url, json, keys, refusals, who, usageFor);
 
     if (action === "speak" || action === "stream") {
@@ -745,7 +762,9 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     try {
       const stt = sttRequest(language, url.searchParams.get("locale") ?? undefined);
       const terms = keyterms();
+      const askedAt = now();
       const { value: heard, used, skipped } = await tryKeys(action, (candidate) => deps.xai.transcribe(new Uint8Array(audio), mime, candidate.key, stt.language, terms, { format: stt.format }));
+      deps.notice?.(target.threadId, uploadedTranscriptNotice({ bytes: audio.byteLength, mime, ms: now() - askedAt }));
       usageFor(used)("grok-stt", audio.byteLength);
       for (const [name, value] of Object.entries(keyHeaders(used, skipped))) res.setHeader(name, value);
       // xAI keeps fillers (filler_words); whoever reads this text does not need them

@@ -660,6 +660,10 @@ export interface VoiceCallMark {
   duplex?: boolean;
   /** STT partial sent before end-of-speech. Must not become a parallel task. */
   speculative?: boolean;
+  /** The page's stages of this turn in ms (end of speech, speech to text,
+   * send), for the Events lens (server/voice-timing.ts). Diagnostics only:
+   * the server never stores it on the message. */
+  timing?: { endpointMs?: number; sttMs?: number; dispatchMs?: number };
 }
 
 /** The header a client sends with a routine switched on or off while a

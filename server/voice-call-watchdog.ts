@@ -21,13 +21,19 @@ export const VOICE_CALL_RECOVERY_NOTE =
 
 /** The person's words on the call that got no answer, or null. `stoppedAt`:
  * when a person last stopped the thread's turn (a barge-in): words older
- * than that stop were cut on purpose. */
-export function unansweredCallMessage(path: readonly Message[], options: { stoppedAt?: number; retried: ReadonlySet<string> }): Message | null {
+ * than that stop were cut on purpose. `stoppedUtteranceId`: the utterance
+ * that stop was aimed at (a voice interrupt names it). Words of another,
+ * newer utterance (a sentence sent early on its partial, then again with
+ * its final words) that reached the dying turn before the interrupt did
+ * were not cut on purpose: they are still answered (2026-10-29, a call
+ * turn left 44 s without an answer until the person typed). */
+export function unansweredCallMessage(path: readonly Message[], options: { stoppedAt?: number; stoppedUtteranceId?: string; retried: ReadonlySet<string> }): Message | null {
   const index = path.findLastIndex((message) => message.role === "user" && message.kind === "text" && !message.peerAsk);
   if (index < 0) return null;
   const words = path[index]!;
   if (!words.voiceCall || options.retried.has(words.id)) return null;
-  if (options.stoppedAt !== undefined && words.at <= options.stoppedAt) return null;
+  const spared = options.stoppedUtteranceId !== undefined && words.voiceCall.utteranceId !== undefined && words.voiceCall.utteranceId !== options.stoppedUtteranceId;
+  if (options.stoppedAt !== undefined && words.at <= options.stoppedAt && !spared) return null;
   const after = path.slice(index + 1);
   // an answer (any written reply), or a question or approval still open
   if (after.some((message) => message.role === "bot" && message.kind === "text" && message.text?.trim())) return null;
