@@ -130,6 +130,9 @@ describe("scopes", () => {
       ["POST", "/api/routines/watch-check"], // #1202 Check now: the handler applies the routine save's rights
       ["POST", "/api/routines/folders"], // routine folders: the handler applies the routine edit rights
       ["POST", "/api/routine-runs/seen-all"], ["DELETE", "/api/routine-runs"],
+      // #1482: scheduled calls, the handler narrows them to the member's bots
+      ["GET", "/api/calendar-calls"], ["POST", "/api/calendar-calls"], ["PATCH", "/api/calendar-calls/c"],
+      ["DELETE", "/api/calendar-calls/c"], ["POST", "/api/calendar-calls/c/room"],
       // desktop remote-client parity: steer (bot and room) and the engines catalogue (redacted)
       ["POST", "/api/bots/x/queue/q/steer"], ["POST", "/api/groups/g/queue/q/steer"],
       ["GET", "/api/bots"], ["GET", "/api/groups"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],

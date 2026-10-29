@@ -808,6 +808,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/routine-runs\/[\w-]+\/(?:cancel|seen)$/ },
   { methods: ["POST"], path: /^\/api\/routine-runs\/seen-all$/ },
   { methods: ["DELETE"], path: /^\/api\/routine-runs$/ },
+  // Scheduled calls (#1482): the handler shows a member the calls of the bots
+  // they can see and lets them manage those of the bots they may run
+  { methods: ["GET", "POST"], path: /^\/api\/calendar-calls$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/calendar-calls\/[\w-]+$/ },
+  { methods: ["POST"], path: /^\/api\/calendar-calls\/[\w-]+\/room$/ },
   // Webhooks are a bot feature its owner uses: a webhook runs a task on the
   // bot's own computer (This computer or its cloud computer), never on the
   // shared organization server, so creating or managing one is client scope
