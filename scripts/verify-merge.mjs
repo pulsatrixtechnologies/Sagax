@@ -22,6 +22,12 @@
 //
 // Exit 1 on the first stage that fails; the summary names it. SAGAX_SKIP_HOOKS=1
 // skips the pre-push hook that runs this, never the gate itself.
+//
+// The result goes on the branch's pull request when there is one (a comment
+// "verify:merge" kept up to date, through `gh`): OK or the failed stage, with
+// the commit it ran on. A PR whose head commit has no OK comment was pushed
+// around the gate (`--no-verify`), and that shows. Nothing on GitHub blocks
+// a merge: no CI runs on a private PR. `--no-report` keeps it local.
 import { spawnSync, execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -59,12 +65,13 @@ const LIGHT_CHECKS = [
 ];
 
 function parseArgs(argv) {
-  const options = { base: "origin/main", list: false, ios: false };
+  const options = { base: "origin/main", list: false, ios: false, report: true };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--base") options.base = argv[++i];
     else if (arg === "--list") options.list = true;
     else if (arg === "--ios") options.ios = true;
+    else if (arg === "--no-report") options.report = false;
     else throw new Error(`unknown argument: ${arg}`);
   }
   return options;
@@ -126,6 +133,37 @@ function run(label, command, { cwd = ROOT } = {}) {
   return { label, ok, seconds };
 }
 
+const REPORT_MARK = "<!-- verify:merge -->";
+
+/** The open pull request of the current branch, through `gh`, or null. */
+function pullRequest() {
+  const result = spawnSync("gh", ["pr", "view", "--json", "number,headRefOid,url"], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  if (result.status !== 0) return null;
+  try { return JSON.parse(result.stdout); } catch { return null; }
+}
+
+/** Writes the result on the branch's pull request: one comment, updated in
+ * place. Never fails the gate: no gh, no PR or no network only prints why. */
+function report(outcome) {
+  const pr = pullRequest();
+  if (!pr) { console.log("verify:merge: no open pull request for this branch, nothing to report"); return; }
+  const head = git(["rev-parse", "--short", "HEAD"]);
+  const when = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  const body = `${REPORT_MARK}\n**verify:merge ${outcome.ok ? "OK" : "FAILED"}** on ${head} (${when}, ${outcome.seconds}s)`
+    + (outcome.ok ? `\n\n${outcome.stages.map((r) => `${r.label} ${r.seconds}s`).join(" · ")}` : `\n\nFailed at **${outcome.failed}**; the stages before it passed.`)
+    + "\n\nA head commit with no OK here was pushed around the local gate (`pnpm verify:merge`).";
+  const api = (method, path, data) => spawnSync("gh", ["api", "-X", method, path, ...(data ? ["-f", `body=${data}`] : [])], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const repo = spawnSync("gh", ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).stdout?.trim();
+  if (!repo) { console.log("verify:merge: gh cannot name the repository, nothing reported"); return; }
+  const listed = api("GET", `repos/${repo}/issues/${pr.number}/comments?per_page=100`);
+  let existing = null;
+  try { existing = (JSON.parse(listed.stdout || "[]")).find((c) => typeof c.body === "string" && c.body.startsWith(REPORT_MARK)) ?? null; } catch { existing = null; }
+  const written = existing
+    ? api("PATCH", `repos/${repo}/issues/comments/${existing.id}`, body)
+    : api("POST", `repos/${repo}/issues/${pr.number}/comments`, body);
+  console.log(written.status === 0 ? `verify:merge: result on ${pr.url}` : `verify:merge: could not write on ${pr.url} (${(written.stderr || "").trim().split("\n")[0]})`);
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const { changed, tests, electronTests, ios } = plan(options);
@@ -144,7 +182,9 @@ function main() {
   const stop = (result) => {
     results.push(result);
     if (!result.ok) {
-      console.log(`\nverify:merge FAILED at "${result.label}" after ${((Date.now() - started) / 1000).toFixed(0)}s`);
+      const seconds = ((Date.now() - started) / 1000).toFixed(0);
+      console.log(`\nverify:merge FAILED at "${result.label}" after ${seconds}s`);
+      if (options.report) report({ ok: false, failed: result.label, seconds, stages: results });
       process.exit(1);
     }
   };
@@ -163,7 +203,9 @@ function main() {
       console.log("\n== iOS build: skipped, xcodegen or xcodebuild is not installed (swift test ran)");
     }
   }
-  console.log(`\nverify:merge OK in ${((Date.now() - started) / 1000).toFixed(0)}s: ${results.map((r) => `${r.label} ${r.seconds}s`).join("; ")}`);
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  console.log(`\nverify:merge OK in ${seconds}s: ${results.map((r) => `${r.label} ${r.seconds}s`).join("; ")}`);
+  if (options.report) report({ ok: true, seconds, stages: results });
 }
 
 main();
