@@ -3863,5 +3863,13 @@
   "chat.step.tool.detail": "{detail} を使っています",
   "chat.step.lastOutput": "最後の出力は {age} 前",
   "chat.step.age.minutes": "{count} 分",
-  "chat.step.age.hours": "{count} 時間"
+  "chat.step.age.hours": "{count} 時間",
+  "task.sheet.waiting": "あなたの対応待ち",
+  "task.sheet.waiting.from": "サブエージェント {title} から",
+  "task.sheet.status.working": "作業中",
+  "task.sheet.status.waitingApproval": "あなたの承認待ち",
+  "task.sheet.status.waitingAnswer": "あなたの回答待ち",
+  "task.sheet.status.elapsed": "経過 {duration}",
+  "task.sheet.status.took": "{duration} で",
+  "task.sheet.details": "詳細"
 }

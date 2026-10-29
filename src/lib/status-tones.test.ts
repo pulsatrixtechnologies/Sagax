@@ -32,7 +32,10 @@ describe("semantic tones", () => {
 
   it("keeps the verdict tones for work that earns them", () => {
     expect(read("src/components/RoutineRunCard.tsx")).toContain("bg-warning/15 text-warning");
-    expect(read("src/components/bot-settings/ActivitySteps.tsx")).toContain('"bg-success" : "bg-danger"');
+    // a task's steps (2026-10-29): no dot per row; a failed group alone takes
+    // the danger tone, through the chat's own step row
+    expect(read("src/components/task/ActivityStepGroups.tsx")).not.toMatch(/bg-success|bg-danger/);
+    expect(read("src/components/StepRow.tsx")).toContain('phase === "failed" && "text-danger/90"');
     // a saved key folds into the ask card's settled line, checked in green
     expect(read("src/components/AskCard.tsx")).toContain('className="text-success/80"');
   });

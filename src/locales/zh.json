@@ -2715,5 +2715,13 @@
   "chat.step.tool.detail": "正在使用 {detail}",
   "chat.step.lastOutput": "上次输出于 {age} 前",
   "chat.step.age.minutes": "{count} 分钟",
-  "chat.step.age.hours": "{count} 小时"
+  "chat.step.age.hours": "{count} 小时",
+  "task.sheet.waiting": "等待你的处理",
+  "task.sheet.waiting.from": "来自子代理 {title}",
+  "task.sheet.status.working": "工作中",
+  "task.sheet.status.waitingApproval": "等待你的批准",
+  "task.sheet.status.waitingAnswer": "等待你的回答",
+  "task.sheet.status.elapsed": "已进行 {duration}",
+  "task.sheet.status.took": "用时 {duration}",
+  "task.sheet.details": "详细信息"
 }

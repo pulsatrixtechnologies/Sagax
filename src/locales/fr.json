@@ -11904,5 +11904,13 @@
   "connectApps.search.resultsAria": "Résultats de la recherche",
   "connectApps.search.empty": "Aucun résultat pour « {query} ».",
   "connectApps.search.group.plugins": "Plugins",
-  "connectApps.search.group.apps": "Applications"
+  "connectApps.search.group.apps": "Applications",
+  "task.sheet.waiting": "En attente de toi",
+  "task.sheet.waiting.from": "Du sous-agent {title}",
+  "task.sheet.status.working": "Au travail",
+  "task.sheet.status.waitingApproval": "Attend ton approbation",
+  "task.sheet.status.waitingAnswer": "Attend ta réponse",
+  "task.sheet.status.elapsed": "depuis {duration}",
+  "task.sheet.status.took": "en {duration}",
+  "task.sheet.details": "Détails"
 }

@@ -11904,5 +11904,13 @@
   "connectApps.search.resultsAria": "Search results",
   "connectApps.search.empty": "Nothing matches “{query}”.",
   "connectApps.search.group.plugins": "Plugins",
-  "connectApps.search.group.apps": "Apps"
+  "connectApps.search.group.apps": "Apps",
+  "task.sheet.waiting": "Waiting on you",
+  "task.sheet.waiting.from": "From the sub-agent {title}",
+  "task.sheet.status.working": "Working",
+  "task.sheet.status.waitingApproval": "Waiting for your approval",
+  "task.sheet.status.waitingAnswer": "Waiting for your answer",
+  "task.sheet.status.elapsed": "{duration} so far",
+  "task.sheet.status.took": "in {duration}",
+  "task.sheet.details": "Details"
 }

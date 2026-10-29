@@ -88,11 +88,14 @@ describe("activity detail steps", () => {
     const html = renderToStaticMarkup(createElement(ActivityDetailBody, {
       item: detail, detail, error: false, now: NOW, onStop: () => {}, onOpenThread: () => {}, onOpenChild: () => {}, onSteer: async () => {},
     }));
-    expect(html).toContain("Parallel task · ");
+    expect(html).toContain('data-activity-detail-status="running"');
+    expect(html).toContain("Parallel task");
     expect(html).toContain('data-activity-subagent="s2"');
     expect(html).toContain("Sub-agent: check the logs");
     expect(html).toContain("Read a file");
-    expect(html).toContain("Technical details");
+    // the raw id and arguments wait behind the row's chevron, one per group
+    expect(html).toContain('data-activity-step="mcp__sagax-environment__read_file"');
+    expect(html).toContain("data-step-row");
     // the running task takes a message
     expect(html).toContain("data-activity-steer");
     expect(html).toContain("Send a message to this task");

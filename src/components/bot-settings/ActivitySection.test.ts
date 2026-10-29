@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/state/store", () => ({
   api: vi.fn(),
-  useStore: () => ({ state: { instances: [], selectedId: "pepper" }, dispatch: vi.fn() }),
+  useStore: () => ({ state: { instances: [], bots: [], selectedId: "pepper" }, dispatch: vi.fn() }),
 }));
 
 import type { BotActivityDetail, BotActivityItem } from "../../../shared/bot-activity";
@@ -74,19 +74,25 @@ const body = (props: Partial<Parameters<typeof ActivityDetailBody>[0]>) => rende
 }));
 
 describe("activity detail modal", () => {
-  it("shows status, times, duration, who started it, engine and payer", () => {
+  it("heads with the state in plain words, the facts folded under Details", () => {
     const html = body({});
     expect(html).toContain("Refactor the parser");
-    expect(html).toContain("Running");
-    expect(html).toContain("Started");
-    expect(html).toContain("1m");
-    expect(html).toContain("Alice");
-    expect(html).toContain("Claude Code · claude-sonnet-5");
-    expect(html).toContain("Personal subscription");
+    expect(html).toContain('data-activity-detail-status="running"');
+    expect(html).toContain("Working");
+    expect(html).toContain("1m so far");
+    // closed: the two most useful facts on one line, the rest one click away
+    expect(html).toContain('data-task-facts="closed"');
+    expect(html).toContain("Alice · Claude Code · claude-sonnet-5");
+    expect(html).not.toContain("Personal subscription");
+    const open = body({ factsOpen: true });
+    expect(open).toContain("Started");
+    expect(open).toContain("Alice");
+    expect(open).toContain("Claude Code · claude-sonnet-5");
+    expect(open).toContain("Personal subscription");
   });
 
-  it("lists the steps with where each ran, the files touched and the sub-agents", () => {
-    const html = body({});
+  it("lists the steps grouped with where each ran, the files touched and the sub-agents", () => {
+    const html = body({ factsOpen: true });
     expect(html).toContain('data-activity-step="mcp__sagax-desktop__shell"');
     expect(html).toContain('data-activity-where="computer"');
     expect(html).toContain("Your computer");
@@ -95,6 +101,7 @@ describe("activity detail modal", () => {
     expect(html).toContain("src/lexer.ts");
     expect(html).toContain("Sub-agents");
     expect(html).toContain("Write the lexer tests");
+    expect(html).toContain('data-subagent="thread:c1"');
   });
 
   it("offers Stop only while it runs and the viewer may stop it, and Open thread when it is theirs", () => {
@@ -103,12 +110,13 @@ describe("activity detail modal", () => {
     expect(body({ detail: { ...detail, canStop: false } })).not.toContain(">Stop<");
     const done = { ...detail, status: "finished" as const, endedAt: NOW - 1_000 };
     expect(body({ item: { ...running, status: "finished" }, detail: done })).not.toContain(">Stop<");
-    expect(body({ item: { ...running, status: "finished" }, detail: done })).toContain("Ended");
+    expect(body({ item: { ...running, status: "finished" }, detail: done, factsOpen: true })).toContain("Ended");
+    expect(body({ item: { ...running, status: "finished" }, detail: done })).toContain("Finished");
   });
 
   it("shows a routine run seen without its thread as status only", () => {
     const run: BotActivityDetail = { ...finished, steps: [], stepsTruncated: false, files: [], children: [], canStop: false };
-    const html = body({ item: finished, detail: run });
+    const html = body({ item: finished, detail: run, factsOpen: true });
     expect(html).toContain("only its status is shown");
     expect(html).toContain("Routine hourly-dispatch-board-1-si");
     expect(html).not.toContain("Open thread");
@@ -149,14 +157,17 @@ describe("activity detail modal", () => {
     expect(settings).toContain(`className="${SETTINGS_WINDOW.frame}"`);
   });
 
-  it("puts the summary at the left and the steps at the right when wide", () => {
+  it("puts the actions in the head, the summary at the left and the steps at the right when wide", () => {
     const html = body({ renderConversation: () => "LIVE", onSteer: async () => {} });
     expect(html).toContain('data-activity-layout="columns"');
+    const head = html.slice(0, html.indexOf("data-activity-summary"));
+    expect(head).toContain("data-task-actions");
+    expect(head).toContain(">Stop<");
+    expect(head).toContain("Open thread");
     const left = html.slice(html.indexOf("data-activity-summary"), html.indexOf("data-activity-detail-right"));
-    expect(left).toContain("Started");
+    expect(left).toContain("Sub-agents");
     expect(left).toContain("Send a message to this task");
-    expect(left).toContain(">Stop<");
-    expect(left).toContain("Open thread");
+    expect(left).toContain('data-task-facts="closed"');
     expect(left).not.toContain("data-activity-step=");
     const right = html.slice(html.indexOf("data-activity-detail-right"));
     expect(right).toContain('data-activity-step="mcp__sagax-desktop__shell"');

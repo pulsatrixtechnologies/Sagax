@@ -2677,5 +2677,13 @@
   "chat.step.tool.detail": "Usando {detail}",
   "chat.step.lastOutput": "última saída há {age}",
   "chat.step.age.minutes": "{count} min",
-  "chat.step.age.hours": "{count} h"
+  "chat.step.age.hours": "{count} h",
+  "task.sheet.waiting": "Esperando por você",
+  "task.sheet.waiting.from": "Do subagente {title}",
+  "task.sheet.status.working": "Trabalhando",
+  "task.sheet.status.waitingApproval": "Aguardando sua aprovação",
+  "task.sheet.status.waitingAnswer": "Aguardando sua resposta",
+  "task.sheet.status.elapsed": "há {duration}",
+  "task.sheet.status.took": "em {duration}",
+  "task.sheet.details": "Detalhes"
 }
