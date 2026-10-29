@@ -1740,7 +1740,7 @@ describe("a warm before a new conversation's first message (#1276)", () => {
     }
   });
 
-  it("does nothing for a turn on another model", async () => {
+  it("does nothing for a turn on another model, or in a conversation under way", async () => {
     ensureDirs();
     chmodSync(FAKE_CLI, 0o755);
     const dir = mkdtempSync(join(tmpdir(), "omb-pi-warm-off-"));
@@ -1749,6 +1749,9 @@ describe("a warm before a new conversation's first message (#1276)", () => {
       warmed = await PiDriver.create({ instanceId: "pi-warm-off", displayName: "pi", enabled: true, config: { cli: FAKE_CLI }, environment: { FAKE_PI_DUMP: dump } });
       expect(warmed.adapter.capabilities.warmSession).toBe(true);
       await warmed.adapter.sendTurn({ threadId: "t-off", text: "", warmOnly: true, cwd: dir });
+      // nor for a conversation already under way: its standby pi stays its own
+      await warmed.adapter.sendTurn({ threadId: "t-on", text: "", warmOnly: true, cwd: dir, resumeCursor: join(dir, "s.jsonl"),
+        compactPrompt: { agents: { core: "used", pinned: [] }, pinned: {} }, integrations: { custom: { ops: { command: "node", args: ["ops"], env: {} } } } });
       const rows = (() => { try { return readFileSync(dump, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)); } catch { return []; } })();
       expect(rows.some((row) => row.prompt)).toBe(false);
     } finally {

@@ -1310,8 +1310,10 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       });
       // #1276: only a session of this turn's own pi home is ever resumed
       const resumeCursor = piResumableSession(turn.resumeCursor, turn.access?.engineHome);
-      if (turn.compactPrompt && !turn.sessionReset && resumeCursor) await settledPiStandby(threadId);
-      const standby = turn.compactPrompt && !turn.sessionReset && resumeCursor
+      // a warm leaves the thread's standby to its next turn (#1276)
+      const warming = turn.warmOnly === true;
+      if (!warming && turn.compactPrompt && !turn.sessionReset && resumeCursor) await settledPiStandby(threadId);
+      const standby = warming ? undefined : turn.compactPrompt && !turn.sessionReset && resumeCursor
         ? takePiStandby(threadId, standbyKey, resumeCursor)
         : (dropPiStandby(threadId), undefined);
       // #1276: a new conversation takes the pi started ahead for this bot's
@@ -1321,7 +1323,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         bot: turn.botId ?? null, cli: config.cli, args: standbyArgs,
         environment: input.environment ?? null, access: turn.access ?? null, command: turn.commandEnvironment ?? null,
       });
-      const ahead = !standby && turn.warmOnly !== true && turn.compactPrompt && typeof turn.resumeCursor !== "string" && turn.cwd && mounts ? takePiFresh(freshKey) : undefined;
+      const ahead = !standby && !warming && turn.compactPrompt && typeof turn.resumeCursor !== "string" && turn.cwd && mounts ? takePiFresh(freshKey) : undefined;
       if (standby) {
         mcpTempDir = standby.dir;
         scopeReadyPath = standby.scopeReadyPath;
