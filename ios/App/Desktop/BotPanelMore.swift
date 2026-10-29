@@ -512,6 +512,12 @@ private struct BotPanelSoul: View {
                 }
                 .padding(.top, 12)
             }
+            // #1329: the bot's "do not finish until" condition, under its instructions
+            if canEdit {
+                Rectangle().fill(theme.hairline40).frame(height: 1).padding(.top, 16)
+                FinishUntilEditor(bot: bot, ink: theme.ink, inkSecondary: theme.inkSecondary)
+                    .padding(.top, 16)
+            }
         }
         .task(id: bot.id) { await load() }
     }

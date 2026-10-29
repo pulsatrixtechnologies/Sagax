@@ -199,6 +199,72 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Lancer la dictée (Apple sur cet iPhone, sans clé xAI)" } }
       }
     },
+    "Do not finish until": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Do not finish until" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ne pas terminer tant que" } }
+      }
+    },
+    "One sentence that must be true before this bot finishes. While it is not, Sagax relaunches the bot on its own in the same conversation. Each relaunch is a normal turn. Stop ends the relaunches.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "One sentence that must be true before this bot finishes. While it is not, Sagax relaunches the bot on its own in the same conversation. Each relaunch is a normal turn. Stop ends the relaunches." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une phrase qui doit être vraie avant que ce bot termine. Tant qu'elle ne l'est pas, Sagax relance le bot de lui-même dans la même conversation. Chaque relance est un tour normal. Arrêter met fin aux relances." } }
+      }
+    },
+    "For example: the tests pass and the branch is pushed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "For example: the tests pass and the branch is pushed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Par exemple : les tests passent et la branche est poussée" } }
+      }
+    },
+    "Relaunches at most: %lld": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Relaunches at most: %lld" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Relances au maximum : %lld" } }
+      }
+    },
+    "Off. The bot finishes when it decides it is done.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Off. The bot finishes when it decides it is done." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Désactivé. Le bot termine quand il juge avoir fini." } }
+      }
+    },
+    "On. Sagax relaunches the bot up to %lld times while the condition is not met.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On. Sagax relaunches the bot up to %lld times while the condition is not met." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Activé. Sagax relance le bot jusqu'à %lld fois tant que la condition n'est pas remplie." } }
+      }
+    },
+    "Relaunch %lld/%lld: not finished until %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Relaunch %lld/%lld: not finished until %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Relance %1$lld/%2$lld : pas terminé tant que %3$@" } }
+      }
+    },
+    "Condition met: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Condition met: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Condition remplie : %@" } }
+      }
+    },
+    "Waiting for you before the condition is met: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting for you before the condition is met: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente de vous avant que la condition soit remplie : %@" } }
+      }
+    },
+    "Stopped after %lld relaunches, the condition is not met yet: %@. Send a message to continue.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stopped after %lld relaunches, the condition is not met yet: %@. Send a message to continue." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Arrêté après %1$lld relances, la condition n'est pas encore remplie : %2$@. Envoyez un message pour continuer." } }
+      }
+    },
+    "Relaunches stopped: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Relaunches stopped: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Relances arrêtées : %@" } }
+      }
+    },
     "From the xAI Bot Marketplace": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "From the xAI Bot Marketplace" } },

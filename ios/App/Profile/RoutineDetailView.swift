@@ -400,6 +400,12 @@ struct InstructionView: View {
                 BotWorkspaceShortcuts(bot: bot)
                     .padding(.horizontal, Theme.Profile.routineMargin)
                     .padding(.top, 12)
+                // #1329: the bot's "do not finish until" condition
+                ProfileCard(margin: Theme.Profile.routineMargin) {
+                    FinishUntilEditor(bot: session.state.bots.first { $0.id == bot.id } ?? bot)
+                        .padding(14)
+                }
+                .padding(.top, 12)
             } else if let problem {
                 TextCardBody(text: problem)
             } else {

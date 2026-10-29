@@ -48,6 +48,7 @@ export const botDefaultsProfileSchema = profilePatchSchema.extend({
   parkDirectMessages: z.boolean().optional(),
   // The profile patch also accepts null to clear. A new bot stores the sentence or nothing.
   finishUntil: z.string().max(400).optional(),
+  finishUntilMaxRounds: z.number().int().min(1).max(50).optional(),
   // Per bot since 2026-10-15 (server/bot-runtime-settings.ts).
   ...botRuntimeSettingsShape,
 }).strict();

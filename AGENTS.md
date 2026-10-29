@@ -172,6 +172,33 @@ question, ..."); the chip and the picker's Auto row say it on the first turn
 `server/model-auto.test.ts` ("the person's own turn runs on the tier its
 words ask for").
 
+## Do not finish until, checked after each turn (#1329, 2026-10-29)
+
+A bot's "do not finish until" sentence (`finishUntil`) is no longer only a
+line in its prompt. The prompt asks the bot to end a reply with
+`<sagax-finish>{"status":"met"|"blocked","detail":"..."}</sagax-finish>`
+when the condition is true or it needs the person (server/finish-until.ts).
+A marker, not a second judging call: it costs nothing and the bot is the
+one that ran the checks the condition names. After each 1:1 turn
+(`scheduleFinishUntilRound`, beside `scheduleSoloGoalRound`), no marker
+means not met: Sagax writes a "relaunch x/N" row and starts the next turn on
+its own in the same conversation (`cardContinuation`, the words reach the
+model only; the turn costs and shows like any other). It ends at a met or
+blocked marker, a failed turn, Stop (one "stopped" row; Stop between two
+relaunches counts too), or the bound `finishUntilMaxRounds` (1 to 50,
+default 5), where one row says the condition is not met yet. A message from
+the person starts the count over. A working 1:1 `/goal` drives its own
+turns and the check waits for it. Rooms keep the sentence in the prompt
+only. The marker is taken out of every reply. Rows are activity rows with
+`tool.finishUntil` (shared/finish-until-line.ts), drawn in the reader's
+language (src/lib/activity-runs.ts, iOS `FinishUntilRow`). The owner sets
+the sentence and the bound under the bot's instructions (desktop
+`FinishUntilSettings` in the Soul section, iOS `FinishUntilEditor` in
+Instructions on the phone and the iPad panel), through the profile PATCH;
+null clears the bound. Tests: `server/finish-until.test.ts`,
+`server/finish-until.e2e.test.ts`, iOS `FinishUntilTests`. Captures:
+`node scripts/capture-finish-until.mjs`.
+
 ## Leave a group chat (#1480, 2026-10-28)
 
 On an organization server a person listed in a group in their own name

@@ -295,6 +295,9 @@ struct MessageRow: View {
                 CwWidgetCard(widget: widget, threadId: chat.threadId, botId: message.from?.botId, brand: message.tool?.product) { action in
                     Task { await session.requestCwAction(action, threadId: chat.threadId, botId: message.from?.botId) }
                 }
+            } else if let line = message.tool?.finishUntil {
+                // #1329: relaunch x/N, met, bound (FinishUntilEditor.swift)
+                FinishUntilRow(line: line)
             } else if let ref = message.parallelTask, ref.isCard {
                 ParallelTaskCardView(chat: chat, message: message, ref: ref, openThread: openThread)
             } else {

@@ -21,6 +21,7 @@ import { isTechnicalNoticeName } from "../../shared/chat-notices";
 import type { SelectedComputer } from "../../shared/execution-target";
 import type { LocaleKey } from "@/locales";
 import type { SoloGoalLine, SoloGoalLineStatus } from "../../shared/solo-goal-line";
+import type { FinishUntilLine, FinishUntilLineStatus } from "../../shared/finish-until-line";
 
 export type ActivityTranscriptItem =
   | { kind: "message"; message: Message }
@@ -51,6 +52,9 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   // #1372: a 1:1 goal's status (server/solo-goal.ts), in the reader's language.
   const goal = message.kind === "activity" ? message.tool?.soloGoal : undefined;
   if (goal) return { kind: "notice", text: soloGoalLineLocalized(goal) };
+  // #1329: a "do not finish until" check (relaunch x/N, met, bound), in the reader's language.
+  const finish = message.kind === "activity" ? message.tool?.finishUntil : undefined;
+  if (finish) return { kind: "notice", text: finishUntilLineLocalized(finish) };
   if (name?.startsWith("recovery:")) return { kind: "recovery", text: name.slice("recovery:".length).trim() };
   // The Kubernetes cluster of the server environments is starting
   // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.
@@ -81,6 +85,19 @@ const SOLO_GOAL_KEYS: Record<SoloGoalLineStatus, LocaleKey> = {
 export function soloGoalLineLocalized(line: SoloGoalLine): string {
   const text = t(SOLO_GOAL_KEYS[line.status] ?? "chat.soloGoal.stopped", { goal: line.goal ?? "", rounds: String(line.rounds ?? 0) });
   return line.detail && (line.status === "completed" || line.status === "blocked") ? `${text} (${line.detail})` : text;
+}
+
+const FINISH_UNTIL_KEYS: Record<FinishUntilLineStatus, LocaleKey> = {
+  relaunch: "chat.finishUntil.relaunch", met: "chat.finishUntil.met", blocked: "chat.finishUntil.blocked",
+  limit: "chat.finishUntil.limit", stopped: "chat.finishUntil.stopped",
+};
+
+/** A "do not finish until" row in the reader's language (shared/finish-until-line.ts). */
+export function finishUntilLineLocalized(line: FinishUntilLine): string {
+  const text = t(FINISH_UNTIL_KEYS[line.status] ?? "chat.finishUntil.stopped", {
+    condition: line.condition, round: String(line.round ?? 0), max: String(line.max ?? 0),
+  });
+  return line.detail && (line.status === "met" || line.status === "blocked") ? `${text} (${line.detail})` : text;
 }
 
 const WORKSPACE_ON: Record<SelectedComputer, LocaleKey> = {

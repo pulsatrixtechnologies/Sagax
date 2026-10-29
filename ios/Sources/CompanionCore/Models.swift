@@ -269,6 +269,9 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     /// 2026-10-28: what answered the call's ask with no card; the row's
     /// details only, never its line.
     public var autoApproval: ToolAutoApproval? = nil
+    /// #1329: a "do not finish until" check (relaunch x/N, met, bound);
+    /// the chat draws it in the reader's language.
+    public var finishUntil: FinishUntilLine? = nil
 
     public init(name: String, ok: Bool? = nil, spoken: String? = nil, setup: Bool? = nil, claudeUpdate: Bool? = nil, output: String? = nil, summary: String? = nil, widget: CwWidget? = nil) {
         self.name = name
@@ -282,7 +285,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId, autoApproval
+        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId, autoApproval, finishUntil
     }
 
     public init(from decoder: Decoder) throws {
@@ -298,6 +301,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         durationMs = try? box.decodeIfPresent(Double.self, forKey: .durationMs)
         product = try? box.decodeIfPresent(String.self, forKey: .product)
         productId = try? box.decodeIfPresent(String.self, forKey: .productId)
+        finishUntil = try? box.decodeIfPresent(FinishUntilLine.self, forKey: .finishUntil)
         autoApproval = try? box.decodeIfPresent(ToolAutoApproval.self, forKey: .autoApproval)
         do {
             widget = try box.decodeIfPresent(CwWidget.self, forKey: .widget)
@@ -967,6 +971,11 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// server, which has no interactive desktop to offer a phone.
     public var cloudBackend: String?
     public var speakReplies: Bool?
+    /// #1329: the person's "do not finish until" sentence. Absent = off.
+    public var finishUntil: String? = nil
+    /// #1329: relaunches Sagax starts on its own while `finishUntil` is not
+    /// met. Absent = `FinishUntilLine.defaultRounds`.
+    public var finishUntilMaxRounds: Int? = nil
     public var voice: String?
     /// The server's mirror of the active task's pinned message. Read
     /// `pinnedMessageIdForShownThread`, which prefers the task's own pin.
@@ -1818,6 +1827,10 @@ public struct BotProfilePatch: Encodable, Sendable {
     public var mascotBody: String?
     public var voice: String?
     public var speakReplies: Bool?
+    /// #1329: one sentence; an empty string clears it.
+    public var finishUntil: String?
+    /// #1329: the relaunch bound; `.clear` goes back to the default.
+    public var finishUntilMaxRounds: Rounds?
     /// One of the twelve `MausColors` names.
     public var color: String?
     public var mascotSkin: MascotSkin?
@@ -1833,6 +1846,12 @@ public struct BotProfilePatch: Encodable, Sendable {
     /// makes call sites easy to get wrong (`nil` is ambiguous at a glance).
     public enum AvatarURL: Equatable, Sendable {
         case set(String)
+        case clear
+    }
+
+    /// Same three wire states as `avatarUrl`: omitted, a number, or null.
+    public enum Rounds: Equatable, Sendable {
+        case set(Int)
         case clear
     }
 
@@ -1852,7 +1871,9 @@ public struct BotProfilePatch: Encodable, Sendable {
         mascotExpression: String? = nil,
         avatarZoom: Double? = nil,
         avatarFocusX: Double? = nil,
-        avatarFocusY: Double? = nil
+        avatarFocusY: Double? = nil,
+        finishUntil: String? = nil,
+        finishUntilMaxRounds: Rounds? = nil
     ) {
         self.name = name
         self.title = title
@@ -1870,11 +1891,14 @@ public struct BotProfilePatch: Encodable, Sendable {
         self.avatarZoom = avatarZoom
         self.avatarFocusX = avatarFocusX
         self.avatarFocusY = avatarFocusY
+        self.finishUntil = finishUntil
+        self.finishUntilMaxRounds = finishUntilMaxRounds
     }
 
     private enum CodingKeys: String, CodingKey {
         case name, title, description, notifications, avatarUrl, avatarCrop, mascotBody, voice, speakReplies
         case color, mascotSkin, mascotLook, mascotExpression, avatarZoom, avatarFocusX, avatarFocusY
+        case finishUntil, finishUntilMaxRounds
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1900,6 +1924,13 @@ public struct BotProfilePatch: Encodable, Sendable {
         try values.encodeIfPresent(avatarZoom, forKey: .avatarZoom)
         try values.encodeIfPresent(avatarFocusX, forKey: .avatarFocusX)
         try values.encodeIfPresent(avatarFocusY, forKey: .avatarFocusY)
+        try values.encodeIfPresent(finishUntil, forKey: .finishUntil)
+        if let finishUntilMaxRounds {
+            switch finishUntilMaxRounds {
+            case let .set(rounds): try values.encode(rounds, forKey: .finishUntilMaxRounds)
+            case .clear: try values.encodeNil(forKey: .finishUntilMaxRounds)
+            }
+        }
     }
 }
 

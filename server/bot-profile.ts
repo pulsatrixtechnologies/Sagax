@@ -14,6 +14,7 @@ import { MASCOT_CHARACTERS, mascotLookSchema } from "../shared/mascot-look.ts";
 import type { WireBot } from "../shared/wire.ts";
 
 import { FINISH_UNTIL_MAX, finishUntilText } from "./finish-until.ts";
+import { FINISH_UNTIL_MAX_ROUNDS } from "../shared/finish-until-line.ts";
 
 // Shared with the package format, which checks the same rule on names it
 // carries; re-exported under its historical path.
@@ -36,6 +37,7 @@ export const BOT_PROFILE_PATCH_FIELDS = [
   "voice",
   "speakReplies",
   "finishUntil",
+  "finishUntilMaxRounds",
 ] as const;
 
 export const profilePatchSchema = z.object({
@@ -85,6 +87,13 @@ export const profilePatchSchema = z.object({
     z.literal(""),
     z.null(),
   ]).optional(),
+  finishUntilMaxRounds: z.union([
+    z.number({ error: `finishUntilMaxRounds must be a whole number from 1 to ${FINISH_UNTIL_MAX_ROUNDS}` })
+      .int({ error: `finishUntilMaxRounds must be a whole number from 1 to ${FINISH_UNTIL_MAX_ROUNDS}` })
+      .min(1, { error: `finishUntilMaxRounds must be a whole number from 1 to ${FINISH_UNTIL_MAX_ROUNDS}` })
+      .max(FINISH_UNTIL_MAX_ROUNDS, { error: `finishUntilMaxRounds must be a whole number from 1 to ${FINISH_UNTIL_MAX_ROUNDS}` }),
+    z.null(),
+  ]).optional(),
 });
 
 export type BotProfilePatchInput = z.input<typeof profilePatchSchema>;
@@ -112,6 +121,7 @@ export type BotProfilePatch = Partial<
       | "voice"
       | "speakReplies"
       | "finishUntil"
+      | "finishUntilMaxRounds"
     >,
     "avatarUrl"
   > & { avatarUrl?: string }
@@ -158,8 +168,10 @@ export function parseBotProfilePatch(input: BotProfilePatchInput, strict = false
     return { ok: false, error: issue?.message ?? "invalid profile patch" };
   }
 
-  const { avatarUrl, finishUntil, ...fields } = parsed.data;
+  const { avatarUrl, finishUntil, finishUntilMaxRounds, ...fields } = parsed.data;
   const patch: BotProfilePatch = fields;
+  // null clears the bound back to the default (absent on the record).
+  if (finishUntilMaxRounds !== undefined) patch.finishUntilMaxRounds = finishUntilMaxRounds ?? undefined;
   if (avatarUrl !== undefined) patch.avatarUrl = avatarUrl || undefined;
   if (finishUntil !== undefined) {
     const text = finishUntilText(finishUntil);
