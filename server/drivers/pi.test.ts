@@ -1706,7 +1706,7 @@ describe("a warm before a new conversation's first message (#1276)", () => {
     const sessions = join(dir, "sessions");
     try {
       warmed = await PiDriver.create({
-        instanceId: "pi-warm", displayName: "pi", enabled: true, config: { cli: FAKE_CLI },
+        instanceId: "pi-warm", displayName: "pi", enabled: true, config: { cli: FAKE_CLI, fullAuto: false },
         environment: { FAKE_PI_DUMP: dump, FAKE_PI_SESSIONS: sessions },
       });
       const recorder = recordEvents(warmed.adapter);
@@ -1746,7 +1746,7 @@ describe("a warm before a new conversation's first message (#1276)", () => {
     const dir = mkdtempSync(join(tmpdir(), "omb-pi-warm-off-"));
     const dump = join(dir, "rpc.jsonl");
     try {
-      warmed = await PiDriver.create({ instanceId: "pi-warm-off", displayName: "pi", enabled: true, config: { cli: FAKE_CLI }, environment: { FAKE_PI_DUMP: dump } });
+      warmed = await PiDriver.create({ instanceId: "pi-warm-off", displayName: "pi", enabled: true, config: { cli: FAKE_CLI, fullAuto: false }, environment: { FAKE_PI_DUMP: dump } });
       expect(warmed.adapter.capabilities.warmSession).toBe(true);
       await warmed.adapter.sendTurn({ threadId: "t-off", text: "", warmOnly: true, cwd: dir });
       // nor for a conversation already under way: its standby pi stays its own
