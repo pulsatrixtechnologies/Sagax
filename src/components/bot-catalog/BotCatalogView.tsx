@@ -134,6 +134,12 @@ export interface BotCatalogViewProps {
   /** Shown inside another window (Connect apps): the pages above, for the
    * breadcrumb. Absent: its own window, the title alone on the home view. */
   trail?: readonly Crumb[];
+  /** Connect Apps' Bots tab (2026-10-29): laid out as a tab, its home view
+   * without a back row or a search (Connect Apps' one search looks here) */
+  inTab?: boolean;
+  /** The name of the home view in the back row of View all: the tab's name
+   * in Connect Apps (Bots), else Browse Bots */
+  rootLabel?: string;
   organization: boolean;
   categories: string[];
   category: string;
@@ -225,9 +231,12 @@ export function BotCatalogView(props: BotCatalogViewProps) {
   const featured = sections.find((section) => section.id === "featured");
   const listed = sections.filter((section) => section.id !== "featured" && (!expanded || section.id === expanded));
   const nothing = sections.every((section) => section.items.length === 0);
-  // The pages above: the host window's, then Browse Bots itself under View all.
-  const crumbs: Crumb[] = [...(props.trail ?? []), ...(expanded ? [{ label: t("botCatalog.title"), onSelect: () => onExpand(null) }] : [])];
-  const inside = (props.trail?.length ?? 0) > 0;
+  // The pages above: the host window's, then Browse Bots itself (the Bots
+  // tab in Connect Apps) under View all.
+  const crumbs: Crumb[] = [...(props.trail ?? []), ...(expanded ? [{ label: props.rootLabel ?? t("botCatalog.title"), onSelect: () => onExpand(null) }] : [])];
+  const inside = props.inTab === true || (props.trail?.length ?? 0) > 0;
+  // the Bots tab: Connect Apps' one search above is its search (2026-10-29)
+  const searchable = props.inTab !== true;
   const current = expanded ? t(SECTION_LABEL[expanded]) : t("botCatalog.title");
   const onBack = expanded ? () => onExpand(null) : () => crumbs[crumbs.length - 1]?.onSelect();
   const searchBox = (
@@ -251,10 +260,11 @@ export function BotCatalogView(props: BotCatalogViewProps) {
         // plugin's or a skill's page. Connect Apps' title, scope and tabs stay
         // above; here only the back row, never a second big title.
         <div className="shrink-0 px-4 pt-3 sm:px-8" data-plugins-page-bar="" data-catalog-page-bar="">
-          <Breadcrumb trail={crumbs} current={current} onBack={onBack} backData={{ "data-catalog-back": "" }} />
+          {/* the Bots tab's home has no page above it: no back row */}
+          {crumbs.length > 0 && <Breadcrumb trail={crumbs} current={current} onBack={onBack} backData={{ "data-catalog-back": "" }} />}
           <h2 id="bot-catalog-title" className="sr-only">{current}</h2>
           {!expanded && (
-            <p className="mt-1 text-[12.5px] leading-[18px] text-ink-secondary" data-catalog-subtitle="">{organization ? t("botCatalog.subtitle") : t("botCatalog.subtitleSolo")}</p>
+            <p className={cn("text-[12.5px] leading-[18px] text-ink-secondary", crumbs.length > 0 && "mt-1")} data-catalog-subtitle="">{organization ? t("botCatalog.subtitle") : t("botCatalog.subtitleSolo")}</p>
           )}
         </div>
       ) : (
@@ -271,8 +281,8 @@ export function BotCatalogView(props: BotCatalogViewProps) {
 
       <div className={cn(CATEGORY_MODAL.toolbar, inside && "pt-3")}>
         {/* Inside Connect Apps: the search, then the chips, as its Discover tab */}
-        {inside && <div className="flex items-center gap-2">{searchBox}</div>}
-        <div className={cn(CATEGORY_MODAL.chips, inside && "mt-3")} role="toolbar" aria-label={t("botCatalog.categoriesAria")} data-catalog-chips="">
+        {inside && searchable && <div className="flex items-center gap-2">{searchBox}</div>}
+        <div className={cn(CATEGORY_MODAL.chips, inside && searchable && "mt-3")} role="toolbar" aria-label={t("botCatalog.categoriesAria")} data-catalog-chips="">
           {categories.map((chip) => (
             <button
               key={chip}
@@ -286,7 +296,7 @@ export function BotCatalogView(props: BotCatalogViewProps) {
             </button>
           ))}
         </div>
-        {!inside && <div className="mt-3 flex">{searchBox}</div>}
+        {!inside && searchable && <div className="mt-3 flex">{searchBox}</div>}
         {expanded === "templates" && props.templateApps && props.templateApps.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5" role="toolbar" aria-label={t("botCatalog.template.appsAria")} data-catalog-app-chips="">
             <span className="mr-1 text-[12px] text-ink-tertiary">{t("botCatalog.template.uses")}</span>

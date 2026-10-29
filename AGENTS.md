@@ -290,6 +290,33 @@ member assertion. The turn still runs as the person. Tests:
 (M1, M6, M7), `src/components/BotConversations.sheet.test.ts`, iOS
 `BotConversationsTests`.
 
+## Connect Apps: a Bots tab and one search (2026-10-29)
+
+Browse Bots is Connect Apps' Bots tab, right after Discover (Discover · Bots
+· Installed · Providers · Pages · Sources, `CONNECT_APPS_TABS`). The tab is
+`BotCatalogPane` with `tabLabel` (its pages' back row says Bots; its home has
+no back row and no search). Everything stays: categories, Featured, Shared
+with me, My Bots, Organization, Templates and their tools, the xAI Bot
+Marketplace, View all, a bot's page, Open. Discover's Browse Bots link opens
+the tab. Every link to Browse Bots (`openBotCatalog`, New bot's and the
+wizard's Browse templates, an install link) opens Connect apps on that tab
+(`pluginsPage: "bots"`, Templates through `botCatalogTarget`); the
+standalone window (`BotCatalogModal`, `botCatalogOpen`) keeps its content.
+Browse Bots' lists are read once by Connect Apps
+(`useBotCatalogSources`) for the tab and the search.
+
+One search sits under the title and the scope, on every tab
+(`ConnectAppsSearch.tsx`, model `src/lib/connect-apps-search.ts`). It looks
+at plugins, apps, skills, MCP servers, bots (mine, shared, organization),
+templates (xAI Bot Marketplace too), published pages and sources, groups the
+matches by kind, and replaces Discover's and Browse Bots' own fields (one
+option, one place). With text, the results take the tab's place; empty, every
+tab shows its list. A result opens its page or its tab and empties the field.
+Keyboard: arrows, Enter, Escape empties (then Escape steps back or closes as
+before). The tabs' own filters (category pills) stay in their tab. Tests:
+`src/lib/connect-apps-search.test.ts`, `src/components/PluginsPanel.gestures.test.ts`,
+captures `scripts/capture-bots-tab.mjs`.
+
 ## Leave a group chat (#1480, 2026-10-28)
 
 On an organization server a person listed in a group in their own name

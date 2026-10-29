@@ -1513,7 +1513,6 @@
   "connectors.aliasAriaAnother": "另一個 {service} 帳戶的標籤",
   "connectors.aliasAriaNew": "新 {service} 帳戶的標籤",
   "connectors.noAppsFound": "找不到應用程式",
-  "connectors.tryDifferentSearch": "請換個關鍵字搜尋。",
   "mcp.env.useKeyValue": "「{line}」請使用 KEY=value 格式。",
   "mcp.env.invalidName": "「{key}」不是有效的環境變數。",
   "mcp.env.duplicate": "「{key}」重複出現多次。",

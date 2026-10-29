@@ -118,18 +118,22 @@ export interface BotCatalogDetailViewProps {
   /** Inside another window (Connect apps): the pages above Browse Bots, for
    * the breadcrumb. Absent: its own window, the plain back button. */
   trail?: readonly Crumb[];
+  /** The name of the page it was opened from: Connect Apps' Bots tab
+   * (2026-10-29); absent: Browse Bots */
+  rootLabel?: string;
 }
 
-export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBack, creatorAvatar, actions, below, preview, trail }: BotCatalogDetailViewProps) {
+export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBack, creatorAvatar, actions, below, preview, trail, rootLabel }: BotCatalogDetailViewProps) {
+  const inside = (trail?.length ?? 0) > 0 || rootLabel !== undefined;
   const name = itemName(item);
   const template = item.kind === "template" ? item.template : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-bot-catalog-detail={item.key}>
       {/* inside Connect Apps, the back row sits where a plugin's page has it (2026-10-28) */}
-      <div className={trail && trail.length > 0 ? "shrink-0 px-4 pt-3 sm:px-8" : "shrink-0 px-6 pr-14 pt-5 sm:px-8"} data-catalog-header="">
-        {trail && trail.length > 0 ? (
+      <div className={inside ? "shrink-0 px-4 pt-3 sm:px-8" : "shrink-0 px-6 pr-14 pt-5 sm:px-8"} data-catalog-header="">
+        {inside ? (
           <Breadcrumb
-            trail={[...trail, { label: t("botCatalog.title"), onSelect: onBack }]}
+            trail={[...(trail ?? []), { label: rootLabel ?? t("botCatalog.title"), onSelect: onBack }]}
             current={name}
             onBack={onBack}
             backData={{ "data-catalog-back": "" }}

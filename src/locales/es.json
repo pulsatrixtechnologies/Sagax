@@ -1129,7 +1129,6 @@
   "connectors.aliasAriaAnother": "Etiqueta para otra cuenta de {service}",
   "connectors.aliasAriaNew": "Etiqueta para la nueva cuenta de {service}",
   "connectors.noAppsFound": "No se encontraron apps",
-  "connectors.tryDifferentSearch": "Prueba otra búsqueda.",
   "mcp.env.useKeyValue": "Usa CLAVE=valor en “{line}”.",
   "mcp.env.invalidName": "“{key}” no es una variable de entorno válida.",
   "mcp.env.duplicate": "“{key}” aparece más de una vez.",

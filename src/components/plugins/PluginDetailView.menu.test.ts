@@ -38,7 +38,7 @@ afterEach(() => {
 
 const click = (element: Element | null) => flushSync(() => (element as HTMLElement).click());
 const discover = (overrides: Partial<DiscoverViewProps>): DiscoverViewProps => ({
-  items, search: "", onSearch: noop, filter: "all", onFilter: noop, type: "any", onType: noop,
+  items, filter: "all", onFilter: noop, type: "any", onType: noop,
   sourceLabel: (source) => source, onOpenItem: noop, renderAction: () => null, ...overrides,
 });
 

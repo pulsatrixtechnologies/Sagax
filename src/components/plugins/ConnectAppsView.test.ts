@@ -72,7 +72,7 @@ describe("Connect apps tabs", () => {
     const html = shell("installed");
     expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps</);
     const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*><span data-plugins-tab-label="[^"]*">([^<]+)</g)].map((match) => [match[1], match[2]]);
-    expect(tabs).toEqual([["discover", "Discover"], ["installed", "Installed"], ["providers", "Providers"], ["pages", "Pages"], ["sources", "Sources"]]);
+    expect(tabs).toEqual([["discover", "Discover"], ["bots", "Bots"], ["installed", "Installed"], ["providers", "Providers"], ["pages", "Pages"], ["sources", "Sources"]]);
     expect(html).not.toContain("data-plugins-advanced");
     expect(html).not.toContain("Advanced");
   });
@@ -154,7 +154,7 @@ describe("the \"...\" menu of an entry", () => {
     click(host.querySelector("[data-entry-menu]"));
     expect([...host.querySelectorAll("[data-entry-action]")].map((node) => node.textContent)).toEqual(["Mettre à jour", "Pour quels bots", "Retirer"]);
     flushSync(() => root.render(createElement(ConnectAppsView, { tab: "installed", onTab: noop, counts: { installed: 2 }, refreshing: false, onRefresh: noop })));
-    expect([...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent)).toEqual(["Découvrir", "Installés2", "Fournisseurs", "Pages", "Sources"]);
+    expect([...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent)).toEqual(["Découvrir", "Bots", "Installés2", "Fournisseurs", "Pages", "Sources"]);
     expect(host.querySelector('[data-plugins-tab="installed"]')?.getAttribute("aria-label")).toBe("Installés, 2 connectés");
   });
 });
@@ -316,7 +316,7 @@ describe("Providers and Sources: a click on a service pill, GitHub in Providers"
 
 describe("Providers (once My accounts) and Pages: names and old links", () => {
   it("the tab is named for the providers, Pages has its own tab", () => {
-    expect(CONNECT_APPS_TABS).toEqual(["discover", "installed", "providers", "pages", "sources"]);
+    expect(CONNECT_APPS_TABS).toEqual(["discover", "bots", "installed", "providers", "pages", "sources"]);
     expect(connectAppsTabLabel("providers")).toBe("Providers");
     expect(connectAppsTabLabel("pages")).toBe("Pages");
     setLocale("fr");

@@ -1131,7 +1131,6 @@
   "connectors.aliasAriaAnother": "別の {service} アカウントのラベル",
   "connectors.aliasAriaNew": "新しい {service} アカウントのラベル",
   "connectors.noAppsFound": "アプリが見つかりません",
-  "connectors.tryDifferentSearch": "別のキーワードで検索してください。",
   "mcp.env.useKeyValue": "「{line}」は KEY=value の形式で入力してください。",
   "mcp.env.invalidName": "「{key}」は有効な環境変数ではありません。",
   "mcp.env.duplicate": "「{key}」が複数回指定されています。",

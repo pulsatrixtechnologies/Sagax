@@ -2757,7 +2757,6 @@
   "connectApps.scope.botNote": "Plugins installed here go to {name} only, with their agents, commands and skills. Hooks and the plugin's own MCP servers are left out.",
   "connectApps.scope.noMarketplaces": "No marketplace yet. Add one in Manage > Advanced > Marketplaces.",
   "connectApps.scope.workspace": "Everyone",
-  "connectApps.searchPlaceholder": "Search across apps and skills",
   "connectApps.section.mcp": "Your MCP servers",
   "connectApps.section.other": "Other",
   "connectApps.section.recommended": "Recommended for you",
@@ -2851,7 +2850,6 @@
   "connectors.selfHostOnly": "Self-host only",
   "connectors.stale": "Showing what was connected last time: this Mac's credential store could not be opened just now, so these could not be re-checked. Your apps are still connected; restarting Sagax usually clears this.",
   "connectors.tab.mcp": "MCP servers",
-  "connectors.tryDifferentSearch": "Try a different search.",
   "decider.error.http": "Jev returned an unexpected error (HTTP {status}).",
   "decider.error.malformed": "Jev sent an answer Sagax could not read.",
   "decider.error.misconfigured": "The decision model address is not allowed. It must use https.",
@@ -11899,5 +11897,13 @@
   "chat.step.tool.detail": "Using {detail}",
   "chat.step.lastOutput": "last output {age} ago",
   "chat.step.age.minutes": "{count} min",
-  "chat.step.age.hours": "{count} h"
+  "chat.step.age.hours": "{count} h",
+  "connectApps.manage.tab.bots": "Bots",
+  "connectApps.scope.botsNote": "Bots and templates are the same for every bot: the install scope applies to plugins, not to Bots.",
+  "connectApps.search.placeholder": "Search plugins, skills, MCP servers, bots, templates, pages and sources",
+  "connectApps.search.clear": "Clear search",
+  "connectApps.search.resultsAria": "Search results",
+  "connectApps.search.empty": "Nothing matches “{query}”.",
+  "connectApps.search.group.plugins": "Plugins",
+  "connectApps.search.group.apps": "Apps"
 }

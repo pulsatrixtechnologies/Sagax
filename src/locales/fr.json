@@ -2214,7 +2214,6 @@
   "connectApps.scope.botNote": "Les plugins installés ici vont à {name} seulement, avec leurs agents, commandes et compétences. Les hooks et les serveurs MCP du plugin sont laissés de côté.",
   "connectApps.scope.noMarketplaces": "Aucune marketplace pour l'instant. Ajoutez-en une dans Gérer > Avancé > Marketplaces.",
   "connectApps.scope.workspace": "Tout le monde",
-  "connectApps.searchPlaceholder": "Rechercher dans les applications et les compétences",
   "connectApps.section.mcp": "Vos serveurs MCP",
   "connectApps.section.other": "Autres",
   "connectApps.section.recommended": "Recommandés pour vous",
@@ -2302,7 +2301,6 @@
   "connectors.refreshTitle": "Actualiser l'état des connexions",
   "connectors.selfHostOnly": "Auto-hébergé uniquement",
   "connectors.tab.mcp": "Serveurs MCP",
-  "connectors.tryDifferentSearch": "Essayez une autre recherche.",
   "engineConnect.connect": "Connecter {name}",
   "engineConnect.connected": "Connecté",
   "engineConnect.signInExpired": "Reconnexion requise",
@@ -11899,5 +11897,13 @@
   "chat.step.tool.detail": "Utilise {detail}",
   "chat.step.lastOutput": "dernière sortie il y a {age}",
   "chat.step.age.minutes": "{count} min",
-  "chat.step.age.hours": "{count} h"
+  "chat.step.age.hours": "{count} h",
+  "connectApps.manage.tab.bots": "Bots",
+  "connectApps.scope.botsNote": "Les bots et les modèles sont les mêmes pour chaque bot : la portée d'installation s'applique aux plugins, pas aux Bots.",
+  "connectApps.search.placeholder": "Rechercher plugins, compétences, serveurs MCP, bots, modèles, pages et sources",
+  "connectApps.search.clear": "Effacer la recherche",
+  "connectApps.search.resultsAria": "Résultats de la recherche",
+  "connectApps.search.empty": "Aucun résultat pour « {query} ».",
+  "connectApps.search.group.plugins": "Plugins",
+  "connectApps.search.group.apps": "Applications"
 }

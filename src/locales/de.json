@@ -1138,7 +1138,6 @@
   "connectors.aliasAriaAnother": "Label für ein weiteres {service}-Konto",
   "connectors.aliasAriaNew": "Label für das neue {service}-Konto",
   "connectors.noAppsFound": "Keine Apps gefunden",
-  "connectors.tryDifferentSearch": "Versuch eine andere Suche.",
   "mcp.env.useKeyValue": "Nutz KEY=value für „{line}“.",
   "mcp.env.invalidName": "„{key}“ ist keine gültige Umgebungsvariable.",
   "mcp.env.duplicate": "„{key}“ ist mehr als einmal aufgeführt.",

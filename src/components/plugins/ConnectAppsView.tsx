@@ -1,7 +1,8 @@
 // Connect Apps: one page (2026-10-27, the owner: one place per subject). The
-// title, the install scope, then four tabs: Discover (the catalog, its
-// search and Browse Bots; the view a person lands on, first since
-// 2026-10-28), Installed, Providers (the engine accounts: Claude, Codex,
+// title, the install scope, the one search (2026-10-29: it looks everywhere,
+// ConnectAppsSearch.tsx), then the tabs: Discover (the catalog; the view a
+// person lands on, first since 2026-10-28), Bots (Browse Bots, a tab of its
+// own right after Discover since 2026-10-29), Installed, Providers (the engine accounts: Claude, Codex,
 // Grok, GitHub, 2026-10-28, once "My accounts"), Pages (the published
 // pages, which used to sit under My accounts) and Sources (with the organization's
 // part for an admin). The "N connected" button is gone (2026-10-28): its
@@ -94,21 +95,24 @@ export function sectionTitle(section: Pick<PluginSection, "id">, sourceLabel?: (
   return t(SECTION_KEY[section.id] ?? "connectApps.section.other");
 }
 
-export type ConnectAppsTab = "installed" | "discover" | "providers" | "pages" | "sources";
+export type ConnectAppsTab = "installed" | "discover" | "bots" | "providers" | "pages" | "sources";
 
 /** The tab an older name or link points at: "accounts" (My accounts, now
- * Providers) leads to "providers"; anything unknown is not a tab. */
+ * Providers) leads to "providers", Browse Bots' names to "bots"; anything
+ * unknown is not a tab. */
 export function normalizeConnectAppsTab(value: string | null | undefined): ConnectAppsTab | null {
   if (value === "accounts") return "providers";
-  return value === "installed" || value === "discover" || value === "providers" || value === "pages" || value === "sources" ? value : null;
+  if (value === "browseBots" || value === "browse-bots" || value === "botCatalog" || value === "templates") return "bots";
+  return value === "installed" || value === "discover" || value === "bots" || value === "providers" || value === "pages" || value === "sources" ? value : null;
 }
 /** Discover first (2026-10-28, the owner): it is where Connect Apps opens,
- * unless a link asks for another tab. */
-export const CONNECT_APPS_TABS: readonly ConnectAppsTab[] = ["discover", "installed", "providers", "pages", "sources"];
+ * unless a link asks for another tab. Bots right after it (2026-10-29). */
+export const CONNECT_APPS_TABS: readonly ConnectAppsTab[] = ["discover", "bots", "installed", "providers", "pages", "sources"];
 
 const TAB_KEY = {
   installed: "connectApps.manage.tab.installed",
   discover: "connectApps.manage.tab.discover",
+  bots: "connectApps.manage.tab.bots",
   providers: "connectApps.manage.tab.providers",
   pages: "connectApps.manage.tab.pages",
   sources: "connectApps.manage.tab.sources",
@@ -147,26 +151,38 @@ export interface ConnectAppsViewProps {
   /** a page opened from the open tab (a plugin's detail, a skill): shown in
    * the tab's panel, the title, scope and tabs kept above it */
   page?: ReactNode;
+  /** the one search (ConnectAppsSearch), under the scope on every tab */
+  search?: ReactNode;
+  /** what the search found: shown in place of the open tab's list while
+   * the search has text (a page opened from a result stays on top) */
+  results?: ReactNode;
   /** notices between the tabs and the panel */
   notices?: ReactNode;
   refreshing: boolean;
   onRefresh: () => void;
   installed?: ReactNode;
   discover?: ReactNode;
+  /** Browse Bots (2026-10-29): a pane with its own pages and scroll */
+  bots?: ReactNode;
   providers?: ReactNode;
   pages?: ReactNode;
   sources?: ReactNode;
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
-  const { tab, onTab, tabs = CONNECT_APPS_TABS, counts = {}, scope, page, notices, refreshing, onRefresh } = props;
+  const { tab, onTab, tabs = CONNECT_APPS_TABS, counts = {}, scope, search, results, page, notices, refreshing, onRefresh } = props;
   const shown = tabs.includes(tab) ? tab : tabs.includes("discover") ? "discover" : tabs[0] ?? "discover";
+  // Bots is a pane of its own (its list scrolls, its pages have a back row),
+  // laid out as a page opened from a tab
+  const pane = !results && (page !== undefined || shown === "bots");
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-plugins-main={shown}>
       <header className={CATEGORY_MODAL.titleBar}>
         <h2 id="plugins-title" className={CATEGORY_MODAL.title}>{t("connectApps.title")}</h2>
         {/* on every tab, so nothing below it moves (Providers and Pages turn it off) */}
         {scope && <div className="mt-3" data-plugins-scope-slot>{scope}</div>}
+        {/* one search for every tab (2026-10-29), under the title and the scope */}
+        {search && <div className={scope ? "mt-1" : "mt-3"} data-plugins-search-slot>{search}</div>}
       </header>
       <div className="flex shrink-0 items-end gap-2 border-b border-hairline-weak px-4 sm:px-8" data-plugins-manage-bar>
         <div role="tablist" aria-label={t("connectApps.tabsAria")} className="flex min-w-0 flex-1 gap-5 overflow-x-auto" data-plugins-manage-tabs>
@@ -210,15 +226,17 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
         id={`plugins-tabpanel-${shown}`}
         aria-labelledby={`plugins-tab-${shown}`}
         tabIndex={-1}
-        className={page ? "flex min-h-0 flex-1 flex-col outline-none" : `${CATEGORY_MODAL.pane} ${CATEGORY_MODAL.list} outline-none`}
-        data-plugins-list={page ? undefined : ""}
+        className={pane ? "flex min-h-0 flex-1 flex-col outline-none" : `${CATEGORY_MODAL.pane} ${CATEGORY_MODAL.list} outline-none`}
+        data-plugins-list={pane ? undefined : ""}
         data-plugins-manage={shown}
-        data-plugins-subpage={page ? "" : undefined}
+        data-plugins-subpage={page && !results ? "" : undefined}
+        data-plugins-results={results ? "" : undefined}
       >
-        {page ?? (
+        {results ?? page ?? (
           <>
             {shown === "installed" && props.installed}
             {shown === "discover" && props.discover}
+            {shown === "bots" && props.bots}
             {shown === "providers" && props.providers}
             {shown === "pages" && props.pages}
             {shown === "sources" && props.sources}

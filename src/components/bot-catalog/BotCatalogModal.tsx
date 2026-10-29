@@ -1,4 +1,6 @@
-// Browse Bots: the organisation bot catalogue, on the shared category modal
+// Browse Bots: the organisation bot catalogue, Connect apps' Bots tab since
+// 2026-10-29 (every link to it opens that tab: the store's openBotCatalog).
+// Its own window below keeps its content, on the shared category modal
 // shell (src/components/category-modal.ts, as Achievements and the persona
 // editor: same backdrop, frame, close button, title and keyboard; Escape
 // steps back, then closes). Opened by the store's openBotCatalog() from the
@@ -27,12 +29,12 @@ import { Check, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { track } from "@/lib/analytics";
-import { orgCardAction, orgPackagePreview, type OrgLibraryListing, type OrgLibraryPackage } from "@/lib/org-library";
+import { orgCardAction, orgPackagePreview, type OrgLibraryPackage } from "@/lib/org-library";
 import { teamImportPreview, type PendingTeamImport } from "@/lib/team-import";
 import type { Routine } from "@/lib/routines";
 import type { PackageDocument } from "../../../shared/package-format";
 import { api, closeBotCatalog, useStore, type ApiError, type Bot, type Group } from "@/state/store";
-import { XAI_MARKETPLACE_LABEL, xaiMarketplaceToPackage, type XaiMarketplaceBotAnswer, type XaiMarketplaceList } from "../../../shared/xai-marketplace";
+import { XAI_MARKETPLACE_LABEL, xaiMarketplaceToPackage, type XaiMarketplaceBotAnswer } from "../../../shared/xai-marketplace";
 import { GrokImportError, type GrokLeftOut } from "../../../shared/grok-import";
 import { AgentImportSummary, packageFile } from "../AgentImport";
 import { BotZipImportPanel } from "../BotZipImport";
@@ -43,19 +45,15 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { viewerBotsReadOnly, viewerCan, viewerCanCreateBots } from "@/lib/viewer";
 import { botsReadOnlyText } from "@/lib/permissions";
 import { hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
-import type { BotPreset } from "@/lib/bot-presets";
 import {
   ACTION_LABEL,
   cardActionLabel,
   catalogActions,
   catalogCategories,
   catalogSections,
-  catalogTemplates,
   itemName,
   templateApps,
-  type CommunityCatalog,
   type BotCatalogDetail,
-  type BotCatalogResponse,
   type CatalogAction,
   type CatalogItem,
   type CatalogSectionId,
@@ -72,6 +70,7 @@ import { CATEGORY_MODAL, cardActionClass, useCategoryModalKeyboard } from "../ca
 import { BotCatalogView } from "./BotCatalogView";
 import { BotCatalogDetailView, templateDetail, type CatalogDetailContent, type CatalogTab } from "./BotCatalogDetailView";
 import { TeamImportDetails, type TeamImportResult } from "./TeamImportDetails";
+import { useBotCatalogSources, type BotCatalogSources } from "./use-bot-catalog-sources";
 import { openExternal, TeamImportPreview, TemplateTools, type TemplateTool } from "./TemplateTools";
 
 /** The feedback line after a team, a backup or a package was added. */
@@ -209,20 +208,25 @@ export interface BotCatalogPaneProps {
   /** Shown inside another window (Connect apps): the pages above it, for the
    * breadcrumb. Absent: its own window, the title alone. */
   trail?: readonly Crumb[];
+  /** Connect Apps' Bots tab (2026-10-29): the tab's name heads the back row
+   * of the pane's own pages (View all, a bot, a tool); its home view has no
+   * back row and no search (Connect Apps' one search looks here too). */
+  tabLabel?: string;
+  /** What it lists, read by the window it is in (Connect Apps); absent: read here. */
+  sources?: BotCatalogSources;
+  /** Open one item's page (a result of Connect Apps' search): its key, and
+   * a number that changes on every request. */
+  focus?: { key: string; nonce: number } | null;
 }
 
 /** Browse Bots' content, in its own window (BotCatalogModal) or in Connect
- * apps' (src/components/PluginsPanel.tsx, under a breadcrumb). */
-export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps) {
+ * apps' (src/components/PluginsPanel.tsx, its Bots tab). */
+export function BotCatalogPane({ onClose, backRef, trail, tabLabel, sources, focus }: BotCatalogPaneProps) {
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const people = useOrgPeople();
   const hiddenPrefs = useSidebarHidden();
 
-  const [data, setData] = useState<BotCatalogResponse | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [presets, setPresets] = useState<BotPreset[]>([]);
-  const [reload, setReload] = useState(0);
   const [category, setCategory] = useState("all");
   const [query, setQuery] = useState("");
   // Opened on Templates: the section alone from the first frame.
@@ -235,21 +239,19 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
   const [publishing, setPublishing] = useState(false);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
-  const [community, setCommunity] = useState<CommunityCatalog | null>(null);
-  const [orgListing, setOrgListing] = useState<OrgLibraryListing | null>(null);
   const [templateApp, setTemplateApp] = useState<string | null>(null);
   const [tool, setTool] = useState<TemplateTool | null>(state.botCatalogTarget?.installUrl ? "import" : null);
   const [installUrl, setInstallUrl] = useState<string | undefined>(state.botCatalogTarget?.installUrl);
   const [teamPreview, setTeamPreview] = useState<TeamPreview | null>(null);
   const [xaiPreview, setXaiPreview] = useState<XaiPreview | null>(null);
-  const [xai, setXai] = useState<XaiMarketplaceList | null>(null);
-  const [xaiError, setXaiError] = useState("");
-  const [xaiLoading, setXaiLoading] = useState(true);
-  const [xaiRefresh, setXaiRefresh] = useState(0);
   const toolsBack = useRef<(() => boolean) | null>(null);
   // The old library was a desktop feature: files, folders and the team
   // sources stay off on a remote client (it keeps My Bots and the roles).
   const remoteClient = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
+  // What it lists: given by Connect Apps (its Bots tab), else read here
+  const own = useBotCatalogSources({ enabled: !sources, remoteClient });
+  const { data, loadFailed, community, xai, xaiError, xaiLoading, templates } = sources ?? own;
+  const reloadSources = (sources ?? own).reload;
 
   const close = onClose;
 
@@ -266,61 +268,6 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
       setTool("import");
     } else setTool(null);
   }, [target, remoteClient]);
-
-  useEffect(() => {
-    let alive = true;
-    setLoadFailed(false);
-    api<BotCatalogResponse>("/api/bot-catalog")
-      .then((result) => { if (alive) setData(result); })
-      .catch(() => { if (alive) setLoadFailed(true); });
-    return () => { alive = false; };
-  }, [reload]);
-
-  // The community teams and the organization's packages: no source is the
-  // same as an empty one (offline, no organization, a remote client).
-  useEffect(() => {
-    if (remoteClient) return;
-    let alive = true;
-    api<CommunityCatalog>("/api/team-library/catalog")
-      .then((result) => { if (alive) setCommunity(result); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [remoteClient]);
-
-  useEffect(() => {
-    if (remoteClient) return;
-    let alive = true;
-    api<OrgLibraryListing>("/api/org-library")
-      .then((result) => { if (alive) setOrgListing(result); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [remoteClient, reload]);
-
-  // The xAI Bot Marketplace: kept a few hours on the server; Refresh reads
-  // x.ai again. A failure is a clear line in its section, never the raw error.
-  useEffect(() => {
-    let alive = true;
-    setXaiLoading(true);
-    setXaiError("");
-    api<XaiMarketplaceList>(`/api/team-library/xai${xaiRefresh ? "?refresh=1" : ""}`)
-      .then((result) => {
-        if (!alive) return;
-        setXai(result);
-        if (result.stale) setXaiError([xaiErrorText(result.stale.code), t("botCatalog.xai.staleNote")].join(" "));
-      })
-      .catch((error) => { if (alive) setXaiError(xaiErrorText(apiCode(error))); })
-      .finally(() => { if (alive) setXaiLoading(false); });
-    return () => { alive = false; };
-  }, [xaiRefresh]);
-
-  useEffect(() => {
-    let alive = true;
-    // New bot's presets are an admin read; a member keeps the built-in roles.
-    api<{ presets: BotPreset[] }>("/api/bot-presets")
-      .then((result) => { if (alive) setPresets(result.presets); })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, []);
 
   // The detail of the chosen bot, from the server; a template's is its own.
   useEffect(() => {
@@ -379,16 +326,27 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
   const organization = data?.organization ?? false;
   const admin = data?.viewer.admin ?? false;
   const canCreate = data ? data.viewer.canCreate : viewerCanCreateBots(state.config) && !viewerBotsReadOnly(state.config);
-  const templates = useMemo(
-    () => catalogTemplates(presets, undefined, { community: community?.teams ?? [], orgPackages: orgListing?.organization ? orgListing.packages : [], xai: xai?.bots ?? [] }),
-    [presets, community, orgListing, xai],
-  );
   const apps = useMemo(() => templateApps(templates), [templates]);
   const sections = useMemo(
     () => catalogSections(data ?? { organization: false, entries: [] }, templates, { category, query, showArchived, app: templateApp }),
     [data, templates, category, query, showArchived, templateApp],
   );
   const categories = useMemo(() => catalogCategories(sections.flatMap((section) => section.items)), [sections]);
+  // A result of Connect Apps' search (2026-10-29): that item's page, once
+  // per request, whatever the chips and View all showed.
+  const focused = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focus || focused.current === focus.nonce) return;
+    const all = catalogSections(data ?? { organization: false, entries: [] }, templates, { category: "all", query: "", showArchived: true, app: null }).flatMap((section) => section.items);
+    const item = all.find((candidate) => candidate.key === focus.key);
+    if (!item) return;
+    focused.current = focus.nonce;
+    setTool(null);
+    setInstallUrl(undefined);
+    setFeedback(null);
+    setExpanded(null);
+    setSelected(item);
+  }, [focus, data, templates]);
   const hidden = useMemo(() => hiddenKeySet(hiddenPrefs), [hiddenPrefs]);
   const ctx = { organization, admin, canCreate, feature: viewerCan(state.config, "bots.catalogFeature"), inSidebar: (botId: string) => !hidden.has(hiddenKey("bot", botId)) };
   const creatorAvatar = (item: CatalogItem) => item.kind === "bot" ? personAvatarSrc(people.get(item.entry.owner.principalId)?.avatarUrl) : undefined;
@@ -418,7 +376,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
       await api<{ catalog: BotCatalogListing | null }>(`/api/bot-catalog/${encodeURIComponent(item.entry.id)}/listing`, { method: "PUT", body: JSON.stringify(listing) });
       setPublishing(false);
       setFeedback({ error: false, text: done });
-      setReload((value) => value + 1);
+      reloadSources();
     } catch (error) {
       fail(error);
     } finally {
@@ -432,7 +390,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
     setTool(null);
     setInstallUrl(undefined);
     setFeedback({ error: false, text: teamImportedText(result) });
-    setReload((value) => value + 1);
+    reloadSources();
   };
 
   /** An organization package: one click adds it, no confirmation (as the
@@ -458,10 +416,10 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
       }
       setSelected(null);
       if (!response.alreadyAdded) setFeedback({ error: false, text: t("orgLibrary.addedSkills", { name: entry.name }) });
-      setReload((value) => value + 1);
+      reloadSources();
     } catch (error) {
       fail(error);
-      setReload((value) => value + 1);
+      reloadSources();
     } finally {
       setPending(false);
     }
@@ -469,7 +427,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
 
   const importItem = async (item: CatalogItem) => {
     const name = itemName(item);
-    const done = () => { setFeedback({ error: false, text: t("botCatalog.feedback.imported", { name }) }); setReload((value) => value + 1); };
+    const done = () => { setFeedback({ error: false, text: t("botCatalog.feedback.imported", { name }) }); reloadSources(); };
     setFeedback(null);
     if (item.kind === "template" && item.template.orgPackage) { await addOrgPackage(item.template.orgPackage); return; }
     // A community team, or a marketplace bot, previews what it adds first: its detail view.
@@ -578,7 +536,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
       {loadFailed && (
         <p role="alert" className="mx-6 mt-3 flex items-center gap-2 rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-danger sm:mx-8">
           {t("botCatalog.loadError")}
-          <button type="button" onClick={() => setReload((value) => value + 1)} className="underline">{t("botCatalog.retry")}</button>
+          <button type="button" onClick={() => reloadSources()} className="underline">{t("botCatalog.retry")}</button>
         </p>
       )}
       {!canCreate && data && organization && viewerBotsReadOnly(state.config) && (
@@ -634,6 +592,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
           actions={renderDetailActions(selected)}
           preview={templatePreview(selected)}
           trail={trail}
+          rootLabel={tabLabel}
           below={
             <>
               {publishing && selected.kind === "bot" && (
@@ -651,20 +610,22 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
       ) : tool && templateToolsOn ? (
         <div className="flex min-h-0 flex-1 flex-col" data-catalog-tools="">
           {/* inside Connect Apps: its back row only, under its title and tabs (2026-10-28) */}
-          <header className={trail && trail.length > 0 ? "shrink-0 px-4 pt-3 sm:px-8" : CATEGORY_MODAL.titleBar}>
+          <header className={(trail && trail.length > 0) || tabLabel ? "shrink-0 px-4 pt-3 sm:px-8" : CATEGORY_MODAL.titleBar}>
             <Breadcrumb
-              trail={[...(trail ?? []), { label: t("botCatalog.title"), onSelect: () => { setTool(null); setInstallUrl(undefined); } }]}
+              trail={[...(trail ?? []), { label: tabLabel ?? t("botCatalog.title"), onSelect: () => { setTool(null); setInstallUrl(undefined); } }]}
               current={t("botCatalog.section.templates")}
               onBack={() => { if (!toolsBack.current?.()) { setTool(null); setInstallUrl(undefined); } }}
               backData={{ "data-catalog-back": "" }}
             />
-            <h2 id="bot-catalog-title" className={trail && trail.length > 0 ? "sr-only" : CATEGORY_MODAL.title}>{t("botCatalog.section.templates")}</h2>
+            <h2 id="bot-catalog-title" className={(trail && trail.length > 0) || tabLabel ? "sr-only" : CATEGORY_MODAL.title}>{t("botCatalog.section.templates")}</h2>
           </header>
           <TemplateTools tool={tool} onTool={setTool} installUrl={installUrl} onImported={teamImported} backRef={toolsBack} />
         </div>
       ) : (
         <BotCatalogView
           trail={trail}
+          rootLabel={tabLabel}
+          inTab={tabLabel !== undefined}
           organization={organization}
           categories={categories}
           category={category}
@@ -692,7 +653,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
             loading: xaiLoading,
             error: xaiError,
             url: xai?.url,
-            onRefresh: () => setXaiRefresh((value) => value + 1),
+            onRefresh: (sources ?? own).refreshXai,
             onOpenSource: (url) => void openExternal(url),
           }}
         />

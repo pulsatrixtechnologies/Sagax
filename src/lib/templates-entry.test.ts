@@ -37,19 +37,22 @@ describe("the templates entry points", () => {
     expect(templatesEntryActions("installLink", "https://github.com/acme/team")).toEqual([{ ...templates, installUrl: "https://github.com/acme/team" }]);
   });
 
-  it("leave the store with the catalogue open on Templates, and New bot or Connect apps closed", () => {
+  it("leave the store with Connect apps open on its Bots tab, on Templates, and New bot closed", () => {
     const busy = { ...initialState, newBotOpen: true, pluginsOpen: true };
     for (const entry of ["connectApps", "newBot"] as const) {
       const after = templatesEntryActions(entry).reduce(reducer, busy);
-      expect(after.botCatalogOpen).toBe(true);
+      // Browse Bots is Connect apps' Bots tab (2026-10-29)
+      expect(after.botCatalogOpen).toBe(false);
+      expect(after.pluginsOpen).toBe(true);
+      expect(after.pluginsPage).toBe("bots");
       expect(after.botCatalogTarget).toEqual({ section: "templates" });
       if (entry === "newBot") expect(after.newBotOpen).toBe(false);
-      if (entry === "connectApps") expect(after.pluginsOpen).toBe(false);
     }
     const linked = templatesEntryActions("installLink", "openmaus://install?u=x").reduce(reducer, initialState);
+    expect(linked.pluginsPage).toBe("bots");
     expect(linked.botCatalogTarget).toEqual({ section: "templates", installUrl: "openmaus://install?u=x" });
-    // The catalogue's home view (the mascot menu, To:) forgets the target.
-    expect(reducer(linked, { type: "closeBotCatalog" }).botCatalogTarget).toBeNull();
+    // Closing Connect apps forgets the target.
+    expect(reducer(linked, { type: "togglePlugins", open: false }).botCatalogTarget).toBeNull();
   });
 
   it("New bot's Browse templates button dispatches them (not in the defaults editor)", () => {

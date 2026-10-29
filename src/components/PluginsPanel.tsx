@@ -2,8 +2,11 @@
 // desktop assistants.
 //
 //   - Connect apps (2026-10-27, the owner: one place per subject): one page with
-//     "N connected" in its title row and five tabs. Discover (where a person
-//     lands: the catalog, its search, the category pills and Browse Bots),
+//     its title, the scope, one search that looks everywhere (2026-10-29,
+//     ConnectAppsSearch.tsx) and six tabs. Discover (where a person lands:
+//     the catalog, the category pills and a link to Bots), Bots (Browse
+//     Bots, a tab of its own since 2026-10-29: every link to Browse Bots
+//     opens it),
 //     Installed (one line per thing, deduplicated, with a "..." menu:
 //     Update, For which bots, Remove; the private skills), Providers (the
 //     connectors of their engine accounts and their own MCP servers, with a
@@ -28,7 +31,7 @@
 // This panel is the only place that adds, removes, configures or lists
 // plugins, servers, apps, skills and marketplaces. Other screens link here
 // or choose among them for one bot; keys stay in Settings > API keys.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, Loader2, X } from "lucide-react";
 
 import { api, ApiError, useStore } from "@/state/store";
@@ -85,6 +88,11 @@ import { ConnectAppsView, connectAppsTabLabel, connectedCounts, normalizeConnect
 import type { Crumb } from "./Breadcrumb";
 import { CATEGORY_MODAL, cardActionClass } from "./category-modal";
 import { BotCatalogPane } from "./lazy-screens";
+import { useBotCatalogSources } from "./bot-catalog/use-bot-catalog-sources";
+import { catalogSections, type CatalogItem } from "@/lib/bot-catalog";
+import { searchConnectApps, visibleResults, type SearchGroupId, type SearchPage, type SearchResult, type SearchSource } from "@/lib/connect-apps-search";
+import { ConnectAppsSearchField, ConnectAppsSearchResults } from "./plugins/ConnectAppsSearch";
+import type { PublishedPageSummary } from "../../shared/published-pages";
 import { isBackShortcut, pageKeyAction } from "@/lib/back-shortcut";
 import { InstalledView, type EntryActions } from "./plugins/InstalledView";
 import { DiscoverView } from "./plugins/DiscoverView";
@@ -138,8 +146,6 @@ type Page =
   | { page: "detail"; key: string }
   /** a private skill's page; no name: a new skill */
   | { page: "skill"; name?: string }
-  /** Browse Bots, in this same window (2026-10-16) */
-  | { page: "bots" }
   /** the GitHub connection, when no marketplace has the GitHub plugin */
   | { page: "github" };
 
@@ -247,14 +253,7 @@ export function PluginsPanel() {
   const [stack, setStack] = useState<Page[]>([{ page: "main" }]);
   const page = stack[stack.length - 1]!;
   /** Open a page above the current one. */
-  // Connect apps' list scroll, kept while a page opened from it covers it
-  // (Browse Bots) and put back when the breadcrumb returns (2026-10-26).
-  const listScroll = useRef(0);
-  const push = useCallback((next: Page) => {
-    const list = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-list]");
-    if (list) listScroll.current = list.scrollTop;
-    setStack((current) => [...current, next]);
-  }, []);
+  const push = useCallback((next: Page) => setStack((current) => [...current, next]), []);
   /** Back to the page at this depth (0: Connect apps). */
   const popTo = useCallback((depth: number) => setStack((current) => current.slice(0, Math.max(1, depth + 1))), []);
   /** A detail page after an install: in place of the detail it came from
@@ -264,7 +263,15 @@ export function PluginsPanel() {
     return [...rest, { page: "detail", key }];
   }), []);
   const botsBack = useRef<(() => boolean) | null>(null);
+  // Browse Bots' lists, read once for the Bots tab and the search
+  const botSources = useBotCatalogSources({ remoteClient });
+  /** a bot or a template the search opened in the Bots tab */
+  const [botFocus, setBotFocus] = useState<{ key: string; nonce: number } | null>(null);
+  // The one search (2026-10-29): what it found, the groups opened past
+  // their first rows, the row the keyboard lit
   const [search, setSearch] = useState("");
+  const [openedGroups, setOpenedGroups] = useState<ReadonlySet<SearchGroupId>>(() => new Set());
+  const [activeResult, setActiveResult] = useState(-1);
   const [filter, setFilter] = useState<PluginFilter>("all");
   const [type, setType] = useState<PluginTypeFilter>("any");
   // Discover is where a person lands; the MCP surface (a bot's connectors,
@@ -342,31 +349,29 @@ export function PluginsPanel() {
   const close = useCallback(() => dispatch({ type: "togglePlugins", open: false }), [dispatch]);
   // A link to one tab of Connect apps: Pages (the published pages, moved
   // here from Settings 2026-10-26, a tab of their own since 2026-10-28),
-  // Providers (once My accounts) or Sources (the organization's sources and
-  // access, Settings > Organization, 2026-10-27).
+  // Providers (once My accounts), Sources (the organization's sources and
+  // access, Settings > Organization, 2026-10-27) or Bots (every link to
+  // Browse Bots, 2026-10-29; a link to its Templates opens them there).
   const requestedTab = normalizeConnectAppsTab(state.pluginsPage);
+  const botCatalogTarget = state.botCatalogTarget;
   useEffect(() => {
-    if (requestedTab !== "pages" && requestedTab !== "providers" && requestedTab !== "sources") return;
-    setScopeChoice("workspace");
+    if (requestedTab !== "pages" && requestedTab !== "providers" && requestedTab !== "sources" && requestedTab !== "bots") return;
+    if (requestedTab !== "bots") setScopeChoice("workspace");
     setStack([{ page: "main" }]);
+    setSearch("");
     setTab(requestedTab);
-  }, [requestedTab]);
+  }, [requestedTab, botCatalogTarget]);
   const skillsLibraryOn = skillsLibraryEnabled(state.config);
   const back = useCallback(() => setStack((current) => current.length > 1 ? current.slice(0, -1) : current), []);
-  const lastPage = useRef(page.page);
-  useLayoutEffect(() => {
-    const from = lastPage.current;
-    lastPage.current = page.page;
-    if (from !== "bots" || page.page === "bots") return;
-    const list = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-list]");
-    if (list) list.scrollTop = listScroll.current;
-  }, [page.page]);
   useEffect(() => { void BotCatalogPane.preload().catch(() => undefined); }, []);
 
-  // Focus and keys: Escape steps back one page (Browse Bots' own steps
-  // first), then closes; Cmd+[ steps back and never closes.
+  // Focus and keys: Escape steps back one page (the Bots tab's own steps
+  // first), then closes; Cmd+[ steps back and never closes. A search with
+  // text takes Escape first: it empties (ConnectAppsSearch).
   const pageRef = useRef(page);
   pageRef.current = page;
+  const botsTabRef = useRef(false);
+  botsTabRef.current = tab === "bots" && page.page === "main" && search.trim() === "";
   const depthRef = useRef(stack.length - 1);
   depthRef.current = stack.length - 1;
   useEffect(() => {
@@ -382,7 +387,7 @@ export function PluginsPanel() {
         const nested = dialog?.querySelector<HTMLElement>('[role="dialog"], [role="alertdialog"]');
         if (event.defaultPrevented || (nested && nested.getClientRects().length > 0)) return;
         event.preventDefault();
-        const action = pageKeyAction(event, { depth: depthRef.current, innerBack: pageRef.current.page === "bots" ? () => botsBack.current?.() ?? false : undefined });
+        const action = pageKeyAction(event, { depth: depthRef.current, innerBack: botsTabRef.current ? () => botsBack.current?.() ?? false : undefined });
         if (action === "back") back();
         else if (action === "close") close();
         return;
@@ -756,12 +761,14 @@ export function PluginsPanel() {
   // note's place. Every line keeps its room on every tab (a bot-only notice
   // is kept invisible on Providers), so the tabs never move.
   // Pages are the person's own too: the same turned-off scope
-  const accountsTab = (tab === "providers" || tab === "pages") && page.page === "main";
+  // Bots too (2026-10-29): bots and templates are the same in both scopes
+  const botsTab = tab === "bots" && page.page === "main" && search.trim() === "";
+  const accountsTab = ((tab === "providers" || tab === "pages") && page.page === "main") || botsTab;
   const scopeControl = scopeBot ? (
-    <div data-plugins-scope-bar data-plugins-scope-tab={accountsTab ? "accounts" : "plugins"}>
+    <div data-plugins-scope-bar data-plugins-scope-tab={botsTab ? "bots" : accountsTab ? "accounts" : "plugins"}>
       <ScopeToggle scope={scope} botName={scopeBot.name} onScope={setScopeChoice} disabled={accountsTab} describedBy={accountsTab ? "plugins-scope-note" : undefined} />
-      <p id="plugins-scope-note" className="mt-2 min-h-[36px] text-[12px] leading-[18px] text-ink-secondary" data-plugins-scope-note={accountsTab ? "accounts" : scope}>
-        {accountsTab ? t("connectApps.scope.accountsNote") : scope === "bot" ? (
+      <p id="plugins-scope-note" className="mt-2 min-h-[36px] text-[12px] leading-[18px] text-ink-secondary" data-plugins-scope-note={botsTab ? "bots" : accountsTab ? "accounts" : scope}>
+        {botsTab ? t("connectApps.scope.botsNote") : accountsTab ? t("connectApps.scope.accountsNote") : scope === "bot" ? (
           <>
             {t("connectApps.scope.botNote", { name: scopeBot.name })}
             {botView && !botView.canChange && !botView.managedByAdmin && <> {t("plugins.readOnly")}</>}
@@ -846,7 +853,6 @@ export function PluginsPanel() {
         return item ? detailIdentity(item, entries).name : t("connectApps.back");
       }
       case "skill": return entry.name ?? t("connectApps.skill.new");
-      case "bots": return t("botCatalog.title");
       case "github": return t("myConnections.github.title");
     }
   };
@@ -879,12 +885,9 @@ export function PluginsPanel() {
   };
 
   // A page opened from a tab (2026-10-28): inside that tab's panel, under
-  // the title, scope and tabs. Browse Bots too (2026-10-28): it opens from
-  // Discover and used to fill the window with its own title, which jumped.
+  // the title, scope and tabs. Browse Bots is the Bots tab (2026-10-29).
   let subpage: ReactNode = null;
-  if (page.page === "bots") {
-    subpage = <BotCatalogPane onClose={close} backRef={botsBack} trail={trail} />;
-  } else if (page.page === "skill" && (pageSkill || !page.name)) {
+  if (page.page === "skill" && (pageSkill || !page.name)) {
     subpage = (
       <SkillPage
         key={page.name ?? "new"}
@@ -949,10 +952,122 @@ export function PluginsPanel() {
     setTab(next);
   };
 
+  // The one search (2026-10-29): every plugin, app, skill and server of the
+  // scope, Browse Bots' bots and templates, the published pages and the
+  // sources. The pages are read the first time the search has text.
+  const searching = search.trim() !== "";
+  const [searchPages, setSearchPages] = useState<SearchPage[] | null>(null);
+  useEffect(() => {
+    if (!searching || searchPages !== null) return;
+    let alive = true;
+    api<{ pages: PublishedPageSummary[] }>("/api/pages")
+      .then((answer) => {
+        if (!alive) return;
+        setSearchPages(answer.pages.map((entry) => ({
+          id: entry.id,
+          title: entry.title,
+          status: entry.status === "published" ? (entry.expired ? t("pages.status.expired") : t("pages.status.published")) : entry.status === "revoked" ? t("pages.status.revoked") : t("pages.status.draft"),
+        })));
+      })
+      .catch(() => { if (alive) setSearchPages([]); });
+    return () => { alive = false; };
+  }, [searching, searchPages]);
+  const catalogItems = useMemo<CatalogItem[]>(
+    () => catalogSections(botSources.data ?? { organization: false, entries: [] }, botSources.templates, { category: "all", query: "", showArchived: true, app: null }).flatMap((section) => section.items),
+    [botSources.data, botSources.templates],
+  );
+  const searchSources: SearchSource[] = [
+    ...(githubHere ? [{ id: "github", name: t("myConnections.github.title") }] : []),
+    ...(marketSummaries ?? []).map((market) => ({ id: `market:${market.name}`, name: market.name, detail: market.source })),
+  ];
+  const searchGroups = searching ? searchConnectApps({ query: search, items: scopedItems, catalog: catalogItems, pages: searchPages ?? [], sources: searchSources }) : [];
+  const searchLoading = searching && (searchPages === null || mcp.servers === null || (!botSources.data && !botSources.loadFailed));
+  const changeSearch = (value: string) => {
+    setSearch(value);
+    setActiveResult(-1);
+    setOpenedGroups(new Set());
+  };
+  /** Bring a row of the tab just opened into view, its first control
+   * focused, once it is drawn (a list may still be reading). */
+  const revealLater = (selector: string) => {
+    let tries = 0;
+    const look = () => {
+      const row = dialogRef.current?.querySelector<HTMLElement>(selector);
+      if (row) {
+        row.scrollIntoView?.({ block: "center" });
+        const control = row.querySelector<HTMLElement>("button:not([disabled]), a[href], input:not([disabled])");
+        (control ?? row).focus?.({ preventScroll: true });
+        return;
+      }
+      tries += 1;
+      if (tries < 40) window.setTimeout(look, 100);
+    };
+    window.setTimeout(look, 0);
+  };
+  /** A result: its page, or its tab with it in view. The search empties. */
+  const openResult = (result: SearchResult) => {
+    changeSearch("");
+    if (result.kind === "item") {
+      const item = result.item;
+      if (item.installed || item.kind === "plugin" || item.kind === "skill") {
+        chooseTab(item.installed ? "installed" : "discover");
+        openItem(item);
+        return;
+      }
+      // not added yet: Discover, on its category, the row in view
+      chooseTab("discover");
+      setFilter(item.category);
+      setType("any");
+      revealLater(`[data-plugin-row="${CSS.escape(item.key)}"]`);
+      return;
+    }
+    if (result.kind === "catalog") {
+      chooseTab("bots");
+      setBotFocus({ key: result.item.key, nonce: Date.now() });
+      return;
+    }
+    if (result.kind === "page") {
+      chooseTab("pages");
+      revealLater(`[data-published-page="${CSS.escape(result.page.id)}"]`);
+      return;
+    }
+    if (result.source.id === "github") {
+      setTab("sources");
+      openGithub();
+      return;
+    }
+    chooseTab("sources");
+    revealLater(`[data-marketplace="${CSS.escape(result.source.name)}"]`);
+  };
+  const searchRows = visibleResults(searchGroups, openedGroups);
+  const searchField = (
+    <ConnectAppsSearchField
+      query={search}
+      onQuery={changeSearch}
+      groups={searchGroups}
+      opened={openedGroups}
+      active={activeResult < searchRows.length ? activeResult : -1}
+      onActive={setActiveResult}
+      onOpen={openResult}
+    />
+  );
+  const searchResults = searching ? (
+    <ConnectAppsSearchResults
+        query={search}
+        groups={searchGroups}
+        opened={openedGroups}
+        onOpenGroup={(id) => setOpenedGroups((current) => new Set([...current, id]))}
+        active={activeResult < searchRows.length ? activeResult : -1}
+        onActive={setActiveResult}
+        onOpen={openResult}
+        loading={searchLoading}
+      />
+  ) : undefined;
+
   const isOrgAdmin = perspicaxOrg?.viewerRole === "admin";
   const orgHere = isOrgAdmin && scope === "workspace" && perspicaxOrg !== null;
   // Sources: the GitHub connection row and the marketplaces (2026-10-29)
-  const tabs: ConnectAppsTab[] = ["discover", "installed", "providers", "pages",
+  const tabs: ConnectAppsTab[] = ["discover", "bots", "installed", "providers", "pages",
     ...(githubHere || marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || orgHere ? ["sources" as const] : [])];
   const groups = connectorGroups({
     claude: harness.answer?.claude ? { available: harness.answer.claude.available, reason: harness.answer.claude.reason, connectors: harness.answer.claude.connectors ?? [], manageUrl: harness.answer.manageUrl } : null,
@@ -971,6 +1086,8 @@ export function PluginsPanel() {
       // connectors on Providers (a bot's scope counts its plugins only)
       counts={connectedCounts({ entries, engineConnected: scope === "bot" ? 0 : claudeConnectors })}
       scope={scopeControl}
+      search={searchField}
+      results={searchResults}
       notices={notices}
       refreshing={refreshing}
       onRefresh={refreshAll}
@@ -1003,8 +1120,6 @@ export function PluginsPanel() {
         <DiscoverView
           items={discoverItems(scopedItems, state.pluginsFocusApps ?? undefined)}
           loading={mcp.servers === null || (scope === "bot" && botView === null)}
-          search={search}
-          onSearch={setSearch}
           filter={filter}
           onFilter={setFilter}
           type={type}
@@ -1012,7 +1127,7 @@ export function PluginsPanel() {
           sourceLabel={pluginSourceLabel}
           extraSources={(shownMarketplaces ?? []).map((market) => market.name)}
           focus={state.pluginsFocusApps ?? undefined}
-          onBrowseBots={remoteClient ? undefined : () => push({ page: "bots" })}
+          onBrowseBots={() => chooseTab("bots")}
           onOpenItem={openItem}
           renderAction={renderAction}
           renderBelow={renderBelow}
@@ -1035,6 +1150,9 @@ export function PluginsPanel() {
           }}
         />
       )}
+      // Browse Bots (2026-10-29): its home, View all, a bot's page and the
+      // templates' tools, under the tab's name
+      bots={<BotCatalogPane onClose={close} backRef={botsBack} tabLabel={connectAppsTabLabel("bots")} sources={botSources} focus={botFocus} />}
       pages={<PublishedPagesSettings personal />}
       sources={(
         <SourcesView
