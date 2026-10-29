@@ -1,6 +1,6 @@
 // Settings > Organization > GitHub OAuth App (admins, 2026-10-28). The
 // client id of the organization's GitHub OAuth App, whose device flow lets
-// each person "Connect GitHub" in Connect apps > Providers > GitHub
+// each person "Connect GitHub" on the GitHub plugin's page (Connect apps > Sources > GitHub connection)
 // (server/github-connect.ts). It is a server setting, so it is not in
 // Connect apps, which keeps one sentence when it is missing. A client id is
 // public; it saves through PATCH /api/org/settings { githubClientId }. Set

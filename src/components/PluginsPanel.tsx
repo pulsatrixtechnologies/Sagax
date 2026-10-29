@@ -5,16 +5,20 @@
 //     "N connected" in its title row and five tabs. Discover (where a person
 //     lands: the catalog, its search, the category pills and Browse Bots),
 //     Installed (one line per thing, deduplicated, with a "..." menu:
-//     Update, For which bots, Remove; the private skills), Providers (their
-//     GitHub account, the one GitHub connection of every use, with the other
-//     credentials beside it; the connectors of their engine accounts and
-//     their own MCP servers, with a pill per service), Pages (their
-//     published pages) and Sources (the
-//     marketplaces only, and for an organization admin the allowed
-//     marketplaces). "N connected" opens Installed, or Providers when only
-//     engine connectors are connected (#1194).
+//     Update, For which bots, Remove; the private skills), Providers (the
+//     connectors of their engine accounts and their own MCP servers, with a
+//     pill per service), Pages (their published pages) and Sources (a
+//     GitHub connection row, the marketplaces, and for an organization
+//     admin the allowed marketplaces). "N connected" opens Installed, or
+//     Providers when only engine connectors are connected (#1194).
 //   - Detail: one plugin's accounts, tools (a switch per MCP tool, applied to
 //     every bot) and details, with Uninstall.
+//   - GitHub (owner, 2026-10-29: "Why is GitHub listed as a provider?"):
+//     the person's GitHub account, the one GitHub connection of every use,
+//     with the other credentials beside it, is on the GitHub plugin's page
+//     (its detail page, installed or listed in Discover). With no GitHub
+//     plugin in any marketplace, a page of its own with that one section.
+//     Every link to it goes through `openGithub`.
 //
 // Two install scopes on one marketplace list (src/lib/plugin-scope.ts):
 // everyone (a marketplace plugin's MCP servers and skills) or, when a bot is
@@ -91,7 +95,7 @@ import { connectorGroups, type ClaudeUnavailable, type HarnessConnectorStatus } 
 import { BotsForView, botServersAfter, botUsesServers } from "./plugins/BotsForView";
 import { PublishedPagesSettings } from "./PublishedPages";
 import { MarketplacesSection } from "./plugins/MarketplacesSection";
-import { PluginStatusLabel } from "./plugins/PluginParts";
+import { PluginPageHeader, PluginStatusLabel } from "./plugins/PluginParts";
 import { pluginShareLink } from "@/lib/plugin-link";
 import { DataCenterDialog, type DataCenter } from "./plugins/DataCenterDialog";
 import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type DetailInstallState, type PluginDetailProps } from "./plugins/PluginDetailView";
@@ -135,7 +139,22 @@ type Page =
   /** a private skill's page; no name: a new skill */
   | { page: "skill"; name?: string }
   /** Browse Bots, in this same window (2026-10-16) */
-  | { page: "bots" };
+  | { page: "bots" }
+  /** the GitHub connection, when no marketplace has the GitHub plugin */
+  | { page: "github" };
+
+/** The GitHub plugin's page (2026-10-29), where the GitHub connection is:
+ * the marketplace plugin named github, else one whose MCP server reads the
+ * person's GitHub account; an installed one first. None: null. */
+export function githubPluginKey(items: readonly PluginItem[]): string | null {
+  const named = (item: PluginItem) => item.id.slice(0, item.id.lastIndexOf("@")) === "github";
+  const reads = (item: PluginItem) => items.some((child) => child.parent === item.key && Boolean(child.githubAccount));
+  const rank = (item: PluginItem) => (item.installed ? 0 : 2) + (named(item) ? 0 : 1);
+  const found = items
+    .filter((item) => item.kind === "plugin" && (named(item) || reads(item)))
+    .sort((a, b) => rank(a) - rank(b));
+  return found[0]?.key ?? null;
+}
 
 interface HarnessAnswer {
   manageUrl?: string;
@@ -251,7 +270,7 @@ export function PluginsPanel() {
   // Discover is where a person lands; the MCP surface (a bot's connectors,
   // the retro assistant) opens Installed, where the servers are.
   const [tab, setTab] = useState<ConnectAppsTab>(state.pluginsSurface === "mcp" ? "installed" : "discover");
-  /** the pill Providers shows (a link to GitHub opens that one) */
+  /** the pill Providers shows */
   const [accountService, setAccountService] = useState<AccountService>("all");
   const harness = useHarnessConnectors();
   const claudeConnectors = harness.connected;
@@ -521,17 +540,17 @@ export function PluginsPanel() {
       if (filter === `source:${name}`) setFilter("all");
     });
   };
-  // Providers > GitHub: the person's GitHub account (organization server)
-  // and the one credential list, in both scopes
+  // The GitHub connection: the person's GitHub account (organization
+  // server) and the one credential list, in both scopes, on the GitHub
+  // plugin's page (2026-10-29)
   const githubHere = organization || marketRoute !== null;
-  /** Providers, on its GitHub pill: where the GitHub connection is. */
-  const openGithub = () => {
-    setStack([{ page: "main" }]);
-    setTab("providers");
-    setAccountService("github");
-  };
-  /** Each marketplace picks a credential of the one list in Providers >
-   * GitHub, or Automatic (2026-10-28): that bot's pick, or the
+  const githubKey = githubPluginKey(items);
+  const githubSection = githubHere ? <GithubAccountSection connection={organization ? <MyGithubConnection /> : undefined} /> : null;
+  /** The GitHub plugin's page, in the current tab: where the GitHub
+   * connection is (a page of its own when no marketplace has the plugin). */
+  const openGithub = () => setStack([{ page: "main" }, githubKey ? { page: "detail", key: githubKey } : { page: "github" }]);
+  /** Each marketplace picks a credential of the one list on the GitHub
+   * plugin's page, or Automatic (2026-10-28): that bot's pick, or the
    * installation's for the workspace's managers; then it is fetched again. */
   const marketCredentials = marketRoute === "bot" && scopeBotId
     ? marketplaceCredentialControls<MarketplaceListing>({ route: "bot", botId: scopeBotId, api, run: marketAction, botLoaded: afterBotMarket })
@@ -828,6 +847,7 @@ export function PluginsPanel() {
       }
       case "skill": return entry.name ?? t("connectApps.skill.new");
       case "bots": return t("botCatalog.title");
+      case "github": return t("myConnections.github.title");
     }
   };
   const trail: Crumb[] = stack.slice(0, -1).map((entry, depth) => ({ label: pageLabel(entry), onSelect: () => popTo(depth) }));
@@ -840,6 +860,13 @@ export function PluginsPanel() {
   useEffect(() => {
     if (detailMissing || skillMissing || botsForMissing) back();
   }, [detailMissing, skillMissing, botsForMissing, back]);
+  // The GitHub page opened before the marketplaces answered: the GitHub
+  // plugin's page, once it is known.
+  const githubLate = page.page === "github" && githubKey !== null;
+  useEffect(() => {
+    if (!githubLate || !githubKey) return;
+    setStack((current) => current[current.length - 1]?.page === "github" ? [...current.slice(0, -1), { page: "detail", key: githubKey }] : current);
+  }, [githubLate, githubKey]);
 
   const skillsOn = skills !== null && skillsLibraryOn;
   const pageSkill = page.page === "skill" && page.name ? skills?.find((entry) => entry.name === page.name) : undefined;
@@ -885,11 +912,20 @@ export function PluginsPanel() {
         trail={trail}
       />
     );
+  } else if (page.page === "github") {
+    subpage = (
+      <>
+        <PluginPageHeader title={t("myConnections.github.title")} trail={trail} onBack={back} />
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-7 pt-3 sm:px-8" data-plugins-github-page>
+          {githubSection ?? <p className="rounded-xl bg-inset px-4 py-3 text-[12.5px] text-ink-secondary">{t("connectApps.manage.accountsEmpty")}</p>}
+        </div>
+      </>
+    );
   } else if (page.page === "detail" && detailItem) {
     const identity = detailIdentity(detailItem, entries);
     subpage = (
       <PluginDetailView
-        {...detailProps(detailItem, { mcp, mcpAccountDraft, setMcpAccountDraft, openGithub,
+        {...detailProps(detailItem, { mcp, mcpAccountDraft, setMcpAccountDraft, openGithub, githubKey, githubSection,
           items, marketplaces: shownMarketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item), updatePlugin: (item) => void updatePlugin(item),
           scope, botCard: botCard(detailItem) })}
         {...detailHead(detailItem)}
@@ -915,9 +951,9 @@ export function PluginsPanel() {
 
   const isOrgAdmin = perspicaxOrg?.viewerRole === "admin";
   const orgHere = isOrgAdmin && scope === "workspace" && perspicaxOrg !== null;
-  // Sources: the marketplaces only (2026-10-28)
+  // Sources: the GitHub connection row and the marketplaces (2026-10-29)
   const tabs: ConnectAppsTab[] = ["discover", "installed", "providers", "pages",
-    ...(marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || orgHere ? ["sources" as const] : [])];
+    ...(githubHere || marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || orgHere ? ["sources" as const] : [])];
   const groups = connectorGroups({
     claude: harness.answer?.claude ? { available: harness.answer.claude.available, reason: harness.answer.claude.reason, connectors: harness.answer.claude.connectors ?? [], manageUrl: harness.answer.manageUrl } : null,
     claudeLoading: harness.loading && !harness.answer,
@@ -987,10 +1023,6 @@ export function PluginsPanel() {
           groups={groups}
           service={accountService}
           onService={setAccountService}
-          github={githubHere ? (
-            <GithubAccountSection connection={organization ? <MyGithubConnection /> : undefined} />
-          ) : undefined}
-          githubSummary={githubHere && organization ? <MyGithubSummary /> : undefined}
           refreshing={harness.loading}
           onRefresh={() => void harness.load(true)}
           servers={organization ? <MyMcpServers /> : undefined}
@@ -1006,6 +1038,8 @@ export function PluginsPanel() {
       pages={<PublishedPagesSettings personal />}
       sources={(
         <SourcesView
+          onOpenGithub={githubHere ? openGithub : undefined}
+          githubSummary={githubHere && organization ? <MyGithubSummary /> : undefined}
           marketplaces={marketRoute !== null || (marketSummaries?.length ?? 0) > 0 ? (
             <MarketplacesSection
               marketplaces={marketSummaries}
@@ -1079,8 +1113,12 @@ export function PluginsPanel() {
 
 interface DetailContext {
   mcp: ReturnType<typeof useMcpServers>;
-  /** Providers > GitHub, for a server that reads the GitHub account */
+  /** the GitHub plugin's page, for a server that reads the GitHub account */
   openGithub: () => void;
+  /** the GitHub plugin's key: its page shows the GitHub connection */
+  githubKey: string | null;
+  /** the GitHub connection (GithubAccountSection), where it is in reach */
+  githubSection: ReactNode;
   /** "+ Add another account" on an MCP server: the name being typed */
   mcpAccountDraft: { server: string; label: string } | null;
   setMcpAccountDraft: (value: { server: string; label: string } | null) => void;
@@ -1137,7 +1175,7 @@ function mcpDetail(item: PluginItem, { mcp, mcpAccountDraft, setMcpAccountDraft,
   let accountAction: ReactNode = null;
   if (server.github) {
     // the GitHub plugin's server reads the person's GitHub account: its
-    // account is that one, connected in Providers > GitHub
+    // account is that one, connected on the GitHub plugin's page
     account = {
       id: "github", label: t("connectApps.detail.githubAccount"),
       detail: server.github === "connected" ? t("connectApps.detail.githubConnected") : t("connectApps.detail.githubMissing"),
@@ -1277,11 +1315,13 @@ function mcpDetail(item: PluginItem, { mcp, mcpAccountDraft, setMcpAccountDraft,
 }
 
 /** A marketplace plugin: what it brought, each one a link to its own page. */
-function pluginDetail(item: PluginItem, { items, marketplaces, installing, openItem, uninstallPlugin, updatePlugin, scope, botCard, openGithub }: DetailContext): DetailBase {
+function pluginDetail(item: PluginItem, { items, marketplaces, installing, openItem, uninstallPlugin, updatePlugin, scope, botCard, openGithub, githubKey, githubSection }: DetailContext): DetailBase {
   const [plugin, marketplace] = item.id.split("@") as [string, string];
   const market = marketplaces?.find((entry) => entry.name === marketplace);
   const entry = market?.plugins.find((candidate) => candidate.name === plugin);
   const children = items.filter((candidate) => candidate.parent === item.key);
+  // the GitHub plugin's page holds the GitHub connection, first (2026-10-29)
+  const github = item.key === githubKey && githubSection ? githubSection : null;
   const installedVersion = item.installedVersion ?? item.version;
   const subtitle = `${market?.source ?? marketplace}${installedVersion ? ` · ${installedVersion}` : ""}`;
   const versionDetails = [
@@ -1312,6 +1352,7 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
       children: (
         <>
           {item.description && <p className="px-1 text-[12.5px] leading-relaxed text-ink-secondary">{item.description}</p>}
+          {github}
           {botCard}
         </>
       ),
@@ -1332,6 +1373,7 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
     ],
     children: (
       <>
+        {github}
         {botCard}
         <section className="rounded-2xl border border-border bg-card px-4 py-3.5 sm:px-5">
           <h3 className="mb-1 text-[13px] font-semibold text-ink">{t("connectApps.plugin.brings")}</h3>
@@ -1353,7 +1395,7 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
               ))}
             </ul>
           )}
-          {children.some((child) => child.githubAccount) && (
+          {!github && children.some((child) => child.githubAccount) && (
             <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-inset px-3 py-2" data-plugin-github-account={children.some((child) => child.githubAccount === "missing") ? "missing" : "connected"}>
               <span className="min-w-0 flex-1 text-[12px] text-ink-secondary">
                 {children.some((child) => child.githubAccount === "missing") ? t("connectApps.detail.githubMissing") : t("connectApps.detail.githubConnected")}

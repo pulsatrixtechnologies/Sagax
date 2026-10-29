@@ -5,7 +5,7 @@
 // chip and a section of Connect apps, for everyone and for each bot.
 //
 // With `credentials` (2026-10-28), a marketplace reads with the person's
-// GitHub account (Providers > GitHub) by default ("Automatic") and says
+// GitHub account (the GitHub plugin's page) by default ("Automatic") and says
 // which credential read it last. Only when the person has other credentials
 // beside that account (server/github-credentials.ts) does each row offer a
 // small selector to pick one; there is no token field here. In the bot scope
@@ -161,7 +161,7 @@ export function MarketplacesSection({ marketplaces, busy, error, onAdd, onRefres
   /** the git host refused: "add" offers a credential for the source being
    * added, a name points at that marketplace's pick */
   needsToken?: string | null;
-  /** Providers > GitHub: the GitHub account and the other credentials */
+  /** the GitHub plugin's page: the GitHub account and the other credentials */
   onOpenGithub?: () => void;
 }) {
   const [source, setSource] = useState("");

@@ -20,7 +20,7 @@
 //     plugin for everyone); a person's private marketplace serves their
 //     own bots whatever the list says.
 //   - A private marketplace is read with, in order: the credential this
-//     bot picks for it (Connect apps > Providers > GitHub, one list,
+//     bot picks for it (the GitHub plugin's page in Connect apps, one list,
 //     server/github-credentials.ts), else the one the installation picks
 //     (Everyone), then Automatic: the acting person's own GitHub connection
 //     (server/github-connect.ts), their other credentials, then the
@@ -451,7 +451,7 @@ export const runGit: GitRunner = (args, options) => new Promise((resolvePromise,
     if (!error) return resolvePromise();
     const detail = String(stderr ?? "");
     if (/Authentication failed|could not read Username|terminal prompts disabled|Repository not found|403/i.test(detail)) {
-      reject(new BotPluginError("The git host did not let Sagax read this repository. If it is private, connect GitHub in Connect apps > Providers > GitHub, or add a credential there and pick it for this marketplace.", "repository_unreadable", 422, "connect_or_token"));
+      reject(new BotPluginError("The git host did not let Sagax read this repository. If it is private, connect GitHub on the GitHub plugin's page (Connect apps > Sources > GitHub connection), or add a credential there and pick it for this marketplace.", "repository_unreadable", 422, "connect_or_token"));
       return;
     }
     if (/Could not resolve host|unable to access|timed out|Connection refused/i.test(detail) || (error as { killed?: boolean }).killed) {

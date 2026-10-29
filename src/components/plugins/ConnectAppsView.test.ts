@@ -276,7 +276,7 @@ describe("Providers and Sources: a click on a service pill, GitHub in Providers"
     expect(host.querySelector("[data-servers]")).not.toBeNull();
   });
 
-  it("Sources: the marketplaces only, then the organization's part marked for admins; no GitHub section", () => {
+  it("Sources: the marketplaces, then the organization's part marked for admins; no GitHub section", () => {
     const html = renderToStaticMarkup(createElement(SourcesView, { marketplaces: "MARKETS", organization: "ORG" }));
     expect(html).toMatch(/data-plugins-sources[\s\S]*MARKETS[\s\S]*data-plugins-sources-admin[\s\S]*Organization sources and access[\s\S]*Admins only[\s\S]*ORG/);
     expect(html).not.toContain("GitHub");
@@ -286,34 +286,30 @@ describe("Providers and Sources: a click on a service pill, GitHub in Providers"
     expect(member).not.toMatch(/admin/i);
   });
 
-  it("Providers: GitHub is a service of its own, first; in All one card, opened on its pill with the account and the other credentials", () => {
-    const groups = connectorGroups({ claude: { available: true, connectors: [{ name: "Gmail", status: "connected" }] } });
-    flushSync(() => root.render(createElement(AccountsView, { groups, github: createElement("div", { "data-github-here": "" }), githubSummary: "Connected as @octo", servers: createElement("div", { "data-servers": "" }) })));
-    const pills = [...host.querySelectorAll("[data-accounts-service-pill]")].map((pill) => pill.getAttribute("data-accounts-service-pill"));
-    expect(pills).toEqual(["all", "github", "claude", "grok", "servers"]);
-    // All: the card only (its name, the account, Open), not the section
-    expect(host.querySelector("[data-github-here]")).toBeNull();
-    const card = host.querySelector("[data-plugins-github-card]")!;
-    expect(card.textContent).toContain("GitHub");
-    expect(card.textContent).toContain("Connected as @octo");
-    expect(card.textContent).toContain("Open GitHub");
-    expect(host.querySelector('[data-harness-group="claude"]')).not.toBeNull();
-    // Open GitHub: the pill, its whole content, nothing else
-    flushSync(() => (host.querySelector("[data-plugins-github-open]") as HTMLElement).click());
-    expect(host.querySelector("[data-accounts-service]")?.getAttribute("data-accounts-service")).toBe("github");
-    expect(host.querySelector("[data-github-here]")).not.toBeNull();
-    expect(host.querySelector("[data-plugins-github-card]")).toBeNull();
-    expect(host.querySelector('[data-harness-group="claude"]')).toBeNull();
-    expect(host.querySelector("[data-servers]")).toBeNull();
-    flushSync(() => (host.querySelector('[data-accounts-service-pill="all"]') as HTMLElement).click());
-    expect(host.querySelector("[data-github-here]")).toBeNull();
-    expect(host.querySelector("[data-plugins-github-card]")).not.toBeNull();
+  it("Sources: one GitHub connection row first, a link to the GitHub plugin's page, never the section itself", () => {
+    const opened = vi.fn();
+    flushSync(() => root.render(createElement(SourcesView, { onOpenGithub: opened, githubSummary: "Connected as @octo", marketplaces: "MARKETS" })));
+    const row = host.querySelector("[data-plugins-sources-github]")!;
+    expect(row.textContent).toContain("GitHub connection");
+    expect(row.textContent).toContain("Connected as @octo");
+    expect(host.textContent!.indexOf("GitHub connection")).toBeLessThan(host.textContent!.indexOf("MARKETS"));
+    expect(host.querySelector("[data-accounts-github]")).toBeNull();
+    const open = host.querySelector<HTMLElement>("[data-plugins-sources-github-open]")!;
+    expect(open.textContent).toBe("Open the GitHub plugin");
+    flushSync(() => open.click());
+    expect(opened).toHaveBeenCalledTimes(1);
   });
 
-  it("Providers: a link to GitHub (the parent's service) opens its card", () => {
-    flushSync(() => root.render(createElement(AccountsView, { groups: connectorGroups({}), github: createElement("div", { "data-github-here": "" }), service: "github", onService: () => {} })));
-    expect(host.querySelector("[data-github-here]")).not.toBeNull();
+  it("Providers: the engines and the person's servers only, no GitHub (2026-10-29)", () => {
+    const groups = connectorGroups({ claude: { available: true, connectors: [{ name: "Gmail", status: "connected" }] } });
+    flushSync(() => root.render(createElement(AccountsView, { groups, servers: createElement("div", { "data-servers": "" }) })));
+    const pills = [...host.querySelectorAll("[data-accounts-service-pill]")].map((pill) => pill.getAttribute("data-accounts-service-pill"));
+    expect(pills).toEqual(["all", "claude", "grok", "servers"]);
     expect(host.querySelector("[data-plugins-github-card]")).toBeNull();
+    expect(host.querySelector("[data-plugins-github]")).toBeNull();
+    expect(host.textContent).not.toContain("GitHub");
+    expect(host.querySelector('[data-harness-group="claude"]')).not.toBeNull();
+    expect(host.querySelector("[data-servers]")).not.toBeNull();
   });
 
 });
@@ -342,6 +338,6 @@ describe("Providers (once My accounts) and Pages: names and old links", () => {
   it("Providers no longer draws the pages", () => {
     const html = renderToStaticMarkup(createElement(AccountsView, { groups: [] }));
     expect(html).not.toContain("data-plugins-pages");
-    expect(accountServices([], false, false)).toEqual([]);
+    expect(accountServices([], false)).toEqual([]);
   });
 });

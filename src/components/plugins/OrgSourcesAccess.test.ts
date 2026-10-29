@@ -1,7 +1,7 @@
 // Organization sources and access: since 2026-10-27 in Connect apps >
 // Sources, its admin part; Settings > Organization keeps one link there. An
 // organization admin only, as before. Since 2026-10-28 the organization's
-// GitHub tokens are in the one list of My accounts > GitHub, and the GitHub
+// GitHub tokens are in the one list of the GitHub plugin's page, and the GitHub
 // OAuth App's client id in Settings > Organization.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -53,7 +53,7 @@ describe("Organization sources and access", () => {
     expect(member).not.toContain("organization.githubApp");
   });
 
-  it("keeps the allowed marketplaces only: the tokens are in My accounts > GitHub, the OAuth App in Settings", () => {
+  it("keeps the allowed marketplaces only: the tokens are on the GitHub plugin's page, the OAuth App in Settings", () => {
     const html = page();
     expect(html).toContain("data-plugins-org-access");
     expect(html).toContain("Allowed marketplaces");
@@ -67,7 +67,7 @@ describe("Organization sources and access", () => {
     setLocale("fr");
     const html = page();
     expect(html).toContain("Marketplaces autorisés");
-    expect(html).toContain("dans Fournisseurs &gt; GitHub");
+    expect(html).toContain("sur la page du plugin GitHub");
   });
 
   it("sends the marketplace list the route accepts", () => {

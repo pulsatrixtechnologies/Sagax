@@ -3,7 +3,7 @@
 // 2026-10-27 it is the admin part of Sources; Settings > Organization keeps
 // one link): "Allowed marketplaces". Since 2026-10-28 (owner: one option,
 // one place) the organization's GitHub access tokens are in the one
-// credential list of Providers > GitHub (marked Organization), and the GitHub
+// credential list of the GitHub plugin's page (marked Organization), and the GitHub
 // OAuth App's client id, a server setting, is in Settings > Organization
 // (OrgGithubApp).
 //
