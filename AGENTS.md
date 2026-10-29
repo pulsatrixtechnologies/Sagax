@@ -229,7 +229,14 @@ thread. Suggested edits (Markdown and presentation pages, not live
 co-editing): an annotation may carry the words that replace its quote;
 only the page's person accepts it (`/threads/:tid/accept`: a new version,
 published with the same access if the page is) or declines it; words no
-longer found once in the source are refused (409). Captures:
+longer found once in the source are refused (409). Shared state (#1544,
+shared/page-state.ts): an HTML page's script keeps small JSON values for
+every reader through `window.sagax.page` (ready, get, entry, all,
+canWrite, set, subscribe); the wrapper reads `GET /pages/state/<token>`
+(anyone who may read it) and writes `PUT /api/pages/:id/state` (anyone
+signed in who may annotate it; a reader not signed in reads only); names,
+never ids; capped (200 keys, 4 KB a value, 64 KB a page, 60 writes a
+minute per person); erased on revoke. Captures:
 `scripts/capture-page-reader.ts`.
 
 ## xAI Bot Marketplace in Browse Bots (2026-10-28)

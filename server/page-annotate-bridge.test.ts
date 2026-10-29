@@ -6,7 +6,7 @@
 import { Window } from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ANNOTATE_BRIDGE_SOURCE } from "./published-pages-render.ts";
+import { ANNOTATE_BRIDGE_SOURCE, STATE_BRIDGE_SOURCE } from "./published-pages-render.ts";
 
 let posted: unknown[] = [];
 let win: Window;
@@ -83,5 +83,48 @@ describe("the frame's side of Annotate", () => {
 
   it("uses no network", () => {
     for (const word of ["fetch", "XMLHttpRequest", "sendBeacon", "WebSocket", "location", "open("]) expect(ANNOTATE_BRIDGE_SOURCE).not.toContain(word);
+  });
+});
+
+describe("the frame's shared state (#1544)", () => {
+  function loadState() {
+    load("<p>x</p>");
+    new Function("window", "document", STATE_BRIDGE_SOURCE)(win, document);
+    return (win as unknown as { sagax: { page: { ready: Promise<void>; get(k: string): unknown; entry(k: string): unknown; all(): unknown; canWrite(): boolean; set(k: string, v: unknown): Promise<boolean>; subscribe(f: (s: unknown) => void): () => void } } }).sagax.page;
+  }
+
+  it("asks its parent for the state, and hears only its parent", async () => {
+    const page = loadState();
+    expect(posted).toEqual([{ type: "sagax-state-ask", v: 1 }]);
+    const seen: unknown[] = [];
+    page.subscribe((state) => seen.push(state));
+    fromParent({ type: "sagax-state", v: 1, entries: { k: { value: 1, name: "Evil", at: 1 } } }, win);
+    expect(page.get("k")).toBeUndefined();
+    fromParent({ type: "sagax-state", v: 1, canWrite: true, entries: { "ticket:1": { value: { taken: true }, name: "Reader", at: 5 } } });
+    await page.ready;
+    expect(page.get("ticket:1")).toEqual({ taken: true });
+    expect(page.entry("ticket:1")).toEqual({ value: { taken: true }, name: "Reader", at: 5 });
+    expect(page.canWrite()).toBe(true);
+    expect(seen).toHaveLength(1);
+    // a copy: the page cannot change what the next reader sees by mutating it
+    (page.get("ticket:1") as { taken: boolean }).taken = false;
+    expect(page.get("ticket:1")).toEqual({ taken: true });
+  });
+
+  it("a set goes to its parent and resolves with its answer", async () => {
+    const page = loadState();
+    const done = page.set("ticket:1", { taken: true });
+    expect(posted.at(-1)).toEqual({ type: "sagax-state-set", v: 1, id: 1, key: "ticket:1", value: { taken: true } });
+    fromParent({ type: "sagax-state-result", v: 1, id: 1, ok: true });
+    await expect(done).resolves.toBe(true);
+    const refused = page.set("ticket:2", 1);
+    fromParent({ type: "sagax-state-result", v: 1, id: 2, ok: false, error: "Sign in to change this page." });
+    await expect(refused).rejects.toThrow("Sign in to change this page.");
+  });
+
+  it("cannot be replaced by the page, and uses no network", () => {
+    loadState();
+    expect(() => { (win as unknown as { sagax: unknown }).sagax = {}; }).toThrow();
+    for (const word of ["fetch", "XMLHttpRequest", "sendBeacon", "WebSocket", "location"]) expect(STATE_BRIDGE_SOURCE).not.toContain(word);
   });
 });

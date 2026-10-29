@@ -14,7 +14,7 @@ import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
 import { PageLive } from "./page-live.ts";
-import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, REPORT_SIZE_SOURCE, SLIDE_PRINT_MM, wrapperBanner, ANNOTATE_BRIDGE_SOURCE } from "./published-pages-render.ts";
+import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, REPORT_SIZE_SOURCE, SLIDE_PRINT_MM, STATE_BRIDGE_SOURCE, wrapperBanner, ANNOTATE_BRIDGE_SOURCE } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import {
   createPublishedPageRoutes,
@@ -1255,5 +1255,82 @@ describe("a reader who is not signed in (#1486)", () => {
     expect((await hit(signIn(pages, { principalId: "pr_stranger", computerOwner: false }), path)).body).not.toContain("/auth/oidc/start");
     // a one-person server has no web sign-in to offer
     expect((await hit(options(pages, null), path)).body).not.toContain("/auth/oidc/start");
+  });
+});
+
+describe("a page's shared state (#1544)", () => {
+  const OWNER_ID = "pr_owner";
+  function stateRoutes(pages: PublishedPages, live?: PageLive) {
+    return createPublishedPageRoutes({
+      pages,
+      owner: (auth) => auth.kind === "session" ? auth.session.principalId : undefined,
+      isPerson: (auth) => auth.kind === "session" && Boolean(auth.session.principalId),
+      origin: () => "https://sagax.example.com",
+      reachable: () => true,
+      now: () => now,
+      reader: (auth) => auth.kind === "session" && auth.session.principalId ? { principalId: auth.session.principalId, computerOwner: false } : null,
+      names: (ids) => Object.fromEntries(ids.map((id) => [id, id === "pr_reader" ? "Reader" : "Someone"])),
+      ...(live ? { live } : {}),
+    });
+  }
+  const readState = async (pages: PublishedPages, path: string, viewer: PageViewer) => {
+    const answer = await hit({ ...options(pages, viewer), personName: (id) => (id === "pr_reader" ? "Reader" : "Someone") }, path.replace("/pages/view/", "/pages/state/"));
+    return { status: answer.status, body: JSON.parse(answer.body) };
+  };
+
+  it("a signed-in reader takes a ticket; it stays, and every reader sees it with the name, never the id", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "link", OWNER_ID);
+    const live = new PageLive();
+    const frames: string[] = [];
+    live.join(id, { id: OWNER_ID, name: "O" }, { write: (frame: string) => { frames.push(frame); return true; }, end: () => undefined } as never);
+    const handler = stateRoutes(pages, live);
+    const set = await call(handler, session("pr_reader"), "PUT", `/api/pages/${id}/state`, { key: "ticket:4242", value: { taken: true } });
+    expect(set.status).toBe(200);
+    expect(set.body!.entries["ticket:4242"]).toMatchObject({ value: { taken: true }, name: "Reader", at: now });
+    expect(frames.at(-1)).toBe("event: state\ndata: {}\n\n");
+    // a reader who is not signed in reads it (refresh, another person)
+    const anon = await readState(pages, path, null);
+    expect(anon.status).toBe(200);
+    expect(anon.body.entries["ticket:4242"]).toEqual({ value: { taken: true }, name: "Reader", at: now });
+    expect(JSON.stringify(anon.body)).not.toContain("pr_reader");
+    // null clears
+    await call(handler, session("pr_reader"), "PUT", `/api/pages/${id}/state`, { key: "ticket:4242", value: null });
+    expect((await readState(pages, path, null)).body.entries).toEqual({});
+  });
+
+  it("only who may annotate writes; who may not read gets the 404", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "private", OWNER_ID);
+    const handler = stateRoutes(pages);
+    expect((await call(handler, session("pr_stranger"), "PUT", `/api/pages/${id}/state`, { key: "k", value: 1 })).status).toBe(404);
+    expect((await readState(pages, path, null)).status).toBe(404);
+    expect((await readState(pages, path, { principalId: OWNER_ID, computerOwner: false })).status).toBe(200);
+  });
+
+  it("keys, sizes and rate are capped; revoking erases it", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "org", OWNER_ID);
+    const handler = stateRoutes(pages);
+    expect((await call(handler, session("pr_a"), "PUT", `/api/pages/${id}/state`, { key: "<x>", value: 1 })).status).toBe(400);
+    expect((await call(handler, session("pr_a"), "PUT", `/api/pages/${id}/state`, { key: "k", value: "x".repeat(5000) })).status).toBe(400);
+    for (let i = 0; i < 60; i += 1) expect((await call(handler, session("pr_a"), "PUT", `/api/pages/${id}/state`, { key: `k${i % 3}`, value: i })).status).toBe(200);
+    expect((await call(handler, session("pr_a"), "PUT", `/api/pages/${id}/state`, { key: "k", value: 1 })).body).toMatchObject({ code: "too_many_writes" });
+    expect((await call(handler, session("pr_b"), "PUT", `/api/pages/${id}/state`, { key: "k", value: 1 })).status).toBe(200);
+    pages.revoke(id);
+    expect(pages.state(id)).toEqual({});
+  });
+
+  it("the reading frame has window.sagax.page before the page's own scripts; the preview has none", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", OWNER_ID);
+    const { frame } = await read(pages, path, null);
+    const bridge = frame!.body.indexOf(STATE_BRIDGE_SOURCE);
+    expect(bridge).toBeGreaterThan(0);
+    expect(bridge).toBeLessThan(frame!.body.indexOf("<h1>Rapport</h1>"));
+    const { page } = proposed(pages, OWNER_ID);
+    const preview = await hit(options(pages, { principalId: OWNER_ID, computerOwner: false }), `/pages/preview/${page.id}/1`);
+    const previewFrame = await hit(options(pages, { principalId: OWNER_ID, computerOwner: false }), frameSrc(preview.body), { "sec-fetch-dest": "iframe" });
+    expect(previewFrame.body).not.toContain("sagax-state-ask");
   });
 });

@@ -37,6 +37,8 @@ export function usePageLive(pageId: string | undefined): { people: LivePerson[];
       } catch { /* a bad frame changes nothing */ }
     });
     source.addEventListener("threads", () => setChanges((n) => n + 1));
+    // the page's shared state changed (#1544): src/page-reader/state.ts reads it again
+    source.addEventListener("state", () => window.dispatchEvent(new Event("sagax-live-state")));
     return () => source.close();
   }, [pageId]);
   return { people, changes };

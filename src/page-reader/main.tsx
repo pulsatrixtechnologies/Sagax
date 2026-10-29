@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { parseReaderBoot, READER_ACTIONS_ID, READER_BOOT_ID } from "../../shared/page-reader";
 import { ReaderActions } from "./ReaderActions";
 import { watchPageSize } from "./print";
+import { watchPageState } from "./state";
 import "./reader.css";
 
 function boot() {
@@ -22,6 +23,8 @@ function boot() {
 watchPageSize(document.querySelector("iframe"));
 
 const config = boot();
+// the page's shared state (#1544), for every reader
+watchPageState(document.querySelector("iframe"), config);
 const mount = document.getElementById(READER_ACTIONS_ID);
 if (config && mount) {
   createRoot(mount).render(<StrictMode><ReaderActions boot={config} /></StrictMode>);

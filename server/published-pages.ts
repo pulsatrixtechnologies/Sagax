@@ -34,6 +34,7 @@ import { join } from "node:path";
 import { writeFileAtomic } from "./atomic.ts";
 import { threadOwner } from "./thread-privacy.ts";
 import { pageAudienceOf, samePageAudience, type PageAudience } from "../shared/page-audience.ts";
+import { STATE_LIMITS, stateValueJson, type PageStateEntry } from "../shared/page-state.ts";
 import { THREAD_LIMITS, type PageQuote, type PageSuggestion, type PageThread, type PageThreadReply } from "../shared/page-threads.ts";
 import {
   DEFAULT_PAGES_POLICY,
@@ -122,6 +123,9 @@ export interface PageRecord {
   /** When the page's bot last read its annotations (page context or
    * page_comments): what came after is new to it. */
   botReadAt?: number;
+  /** The page's shared state (#1544, shared/page-state.ts): what its
+   * script set through window.sagax.page, by key. Erased on revoke. */
+  state?: Record<string, PageStateEntry>;
 }
 
 export type PageError = { ok: false; status: 400 | 404 | 409; error: string; code: string };
@@ -146,6 +150,8 @@ export class PublishedPages {
   private cached: { mtimeMs: number; size: number; pages: PageRecord[]; policy: PagesPolicy } | null = null;
   private readonly contents = new Map<string, string>();
   private contentBytes = 0;
+  /** Shared-state writes per page and person, for the rate limit. */
+  private readonly stateWrites = new Map<string, number[]>();
   /** Reader comment posts per source address, for the rate limit. */
   private readonly readerPosts = new Map<string, number[]>();
 
@@ -523,6 +529,39 @@ export class PublishedPages {
     return "ok" in result ? result : { ok: true, thread: found! };
   }
 
+  /** The page's shared state (#1544). */
+  state(id: string): Record<string, PageStateEntry> {
+    return this.get(id)?.state ?? {};
+  }
+
+  /** Set one key of the page's shared state (`null` clears it), within the
+   * keys, size and rate limits. Never moves the page in its person's list. */
+  setState(id: string, input: { key: string; value: unknown; by: string }): { ok: true; state: Record<string, PageStateEntry> } | PageError {
+    const json = stateValueJson(input.value);
+    if (json === null) return refuse(400, "bad_value", `value: plain JSON data, at most ${STATE_LIMITS.valueBytes / 1024} KB.`);
+    const now = this.clock();
+    const rate = `${id}:${input.by.toLowerCase()}`;
+    const recent = (this.stateWrites.get(rate) ?? []).filter((at) => at > now - 60_000);
+    if (recent.length >= STATE_LIMITS.writesPerMinute) return refuse(409, "too_many_writes", "Too many changes to this page's state; wait a minute.");
+    let kept: Record<string, PageStateEntry> = {};
+    const result = this.mutate(id, (page, at) => {
+      const state = { ...page.state };
+      if (input.value === null) delete state[input.key];
+      else {
+        if (!(input.key in state) && Object.keys(state).length >= STATE_LIMITS.keys) return refuse(409, "too_many_keys", `A page keeps at most ${STATE_LIMITS.keys} values.`);
+        state[input.key] = { value: JSON.parse(json), by: input.by, at };
+      }
+      if (new TextEncoder().encode(JSON.stringify(state)).length > STATE_LIMITS.totalBytes) return refuse(409, "state_full", `A page keeps at most ${STATE_LIMITS.totalBytes / 1024} KB of state.`);
+      page.state = state;
+      kept = state;
+      return page;
+    }, false);
+    if ("ok" in result) return result;
+    recent.push(now);
+    this.stateWrites.set(rate, recent);
+    return { ok: true, state: kept };
+  }
+
   /** The page's bot read its annotations now. */
   markBotRead(id: string): void {
     this.mutate(id, (page, now) => {
@@ -730,6 +769,8 @@ export class PublishedPages {
     return this.mutate(id, (page, now) => {
       page.status = "revoked";
       delete page.linkId;
+      // its shared state goes with the link (#1544)
+      delete page.state;
       page.currentVersion = null;
       for (const entry of page.versions) if (entry.state === "published") entry.state = "proposed";
       page.history.push({ at: now, action: "revoke", ...(by ? { by } : {}) });

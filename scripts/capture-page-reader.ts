@@ -51,7 +51,21 @@ const KIND = process.env.CAPTURE_KIND === "markdown" || process.env.CAPTURE_KIND
 const MARKDOWN = KIND === "presentation"
   ? "# Bilan du trimestre\n\nTrois chiffres à retenir.\n\n---\n\n## Demandes\n\n- 128 traitées\n- 96 % à temps\n\n---\n\n## Prochaines étapes\n\n1. Renouveler les postes\n2. Documenter l'accueil"
   : "# Rapport mensuel\n\nRésumé des activités du mois d'octobre.\n\n## Faits saillants\n\n| Catégorie | Demandes |\n|---|---|\n| Postes | 54 |\n| Réseau | 31 |\n\n" + "Notes de suivi détaillées pour l'équipe.\n\n".repeat(30);
-const made = pages.propose({ ownerId: OWNER, botId: "bot_capture", threadId: "t_capture", title: "Rapport mensuel", kind: KIND, content: KIND === "html" ? HTML : MARKDOWN });
+// CAPTURE_STATE=1 (#1544): a queue whose rows a signed-in reader takes,
+// kept by window.sagax.page for every reader of the link
+const QUEUE = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>File À traiter</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:44rem;margin:2rem auto;padding:0 1rem}li{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #d0d7de}
+li span{flex:1}button{font:inherit;padding:4px 12px;border-radius:999px;border:1px solid #888;background:transparent;color:inherit;cursor:pointer}small{color:#57606a}</style></head>
+<body><h1>File « À traiter »</h1><ul id="q"></ul><script>
+var rows=["Imprimante du 2e étage","Accès VPN d'un nouvel employé","Poste lent à la réception"];
+function draw(){var q=document.getElementById("q");q.innerHTML="";rows.forEach(function(r,i){var e=window.sagax.page.entry("ticket:"+i);var li=document.createElement("li");
+var t=document.createElement("span");t.textContent=r;li.appendChild(t);
+if(e&&e.value&&e.value.taken){var s=document.createElement("small");s.textContent="Pris par "+e.name;li.appendChild(s)}
+else if(window.sagax.page.canWrite()){var b=document.createElement("button");b.textContent="Prendre";b.setAttribute("data-take",String(i));b.onclick=function(){window.sagax.page.set("ticket:"+i,{taken:true})};li.appendChild(b)}
+q.appendChild(li)})}
+window.sagax.page.subscribe(draw);window.sagax.page.ready.then(draw);
+</script></body></html>`;
+const made = pages.propose({ ownerId: OWNER, botId: "bot_capture", threadId: "t_capture", title: process.env.CAPTURE_STATE === "1" ? "File À traiter" : "Rapport mensuel", kind: KIND, content: KIND === "html" ? (process.env.CAPTURE_STATE === "1" ? QUEUE : HTML) : MARKDOWN });
 if (!made.ok) throw new Error(made.error);
 // CAPTURE_ACCESS=org: a page a reader who is not signed in cannot open (#1486)
 pages.publish(made.page.id, { version: 1, access: process.env.CAPTURE_ACCESS === "org" ? "org" : "link", expiresAt: null, by: OWNER });
@@ -86,6 +100,7 @@ const options: PublicPageOptions = {
   viewer: viewerOf,
   names: () => ({ botName: "Scout", personName: "Page owner" }),
   teamsOf: () => [],
+  personName: (id: string) => (id === OWNER ? "Page owner" : id === READER ? "Invited reader" : "Colleague"),
   signInPath: (path: string) => `/auth/oidc/start?client=web&return=${encodeURIComponent(path)}`,
   ...(typeof (routesModule as Record<string, unknown>).readerAssetsFrom === "function"
     ? { readerAssets: () => (routesModule as unknown as { readerAssetsFrom(dir: string): unknown }).readerAssetsFrom(staticDir) } : {}),
@@ -164,6 +179,15 @@ try {
         await page.pdf({ path: join(outDir, `${prefix}-${person}-${scheme}.pdf`), format: "A4", preferCSSPageSize: true });
         console.log(join(outDir, `${prefix}-${person}-${scheme}.pdf`));
       }
+      if (process.env.CAPTURE_STATE === "1" && person === "reader") {
+        // take a ticket, refresh: it stays taken, with the name
+        await page.frames()[1]!.locator("[data-take='0']").click();
+        await page.frames()[1]!.waitForSelector("text=Pris par");
+        await page.reload();
+        await page.waitForTimeout(800);
+        await shot(page, `${person}-${scheme}-taken`);
+      }
+      if (process.env.CAPTURE_STATE === "1" && person === "owner") await shot(page, `${person}-${scheme}-sees-taken`);
       if (KIND === "markdown" && person === "reader" && await page.locator("[data-reader-annotate]").count()) {
         // a suggested edit (2026-10-28): select words, Suggest an edit, the new words
         await page.locator("[data-reader-annotate]").click();
@@ -193,7 +217,7 @@ try {
         await page.waitForTimeout(600);
         await shot(page, `${person}-${scheme}-accepted`);
       }
-      if (KIND === "html" && person === "reader" && await page.locator("[data-reader-annotate]").count()) {
+      if (KIND === "html" && process.env.CAPTURE_STATE !== "1" && person === "reader" && await page.locator("[data-reader-annotate]").count()) {
         await page.locator("[data-reader-annotate]").click();
         await page.waitForSelector("[data-reader-panel] [data-thread]");
         await shot(page, `${person}-${scheme}-annotate`);
@@ -211,7 +235,7 @@ try {
         await page.locator("[data-reader-draft] textarea").fill("Préciser l'échéancier.");
         await shot(page, `${person}-${scheme}-draft`);
       }
-      if (person === "owner" && KIND === "html") {
+      if (person === "owner" && KIND === "html" && process.env.CAPTURE_STATE !== "1") {
         // live: an invited reader has the page open and comments; the
         // owner's bar shows them and the panel takes the comment at once
         const other = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, locale: "fr-CA", extraHTTPHeaders: { "accept-language": "fr-CA" } });
