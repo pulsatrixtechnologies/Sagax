@@ -602,7 +602,12 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
   server, tests, profile, learned facts, usage meter, spend limit, tool
   access, blocked people, experiments, phone calls, custom domain, team
   secrets' names, where a bot runs and its email address. A test fails when
-  a setting has no get and is not an action.
+  a setting has no get and is not an action. Lot 3: the actions Settings
+  offers, by the screen's own route and body: the bot computer (status,
+  update, reset, power), this computer's Local VMs, computer care, cloud and
+  VPS computers, Antigravity's leftovers, people's tool access, reports,
+  people from before, invitations, taking a page down, library skills and
+  a bot's versions.
 - Tests: `shared/settings-actions*.test.ts`, `server/settings-actions.test.ts`,
   `server/settings-actions.e2e.test.ts`.
 

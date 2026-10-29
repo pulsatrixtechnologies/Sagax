@@ -171,6 +171,9 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Where the bot runs (null: this server; {kind: machine, deviceId}; workers list the machines) | Bot editor > Behaviour > Runs on | `sagax_settings` get, set `bot.host` | simple |
 | Machines a bot may run on (read only) | Bot editor > Behaviour > Runs on | `sagax_settings` get, set `bot.workers` | simple |
 | The bot's email address (its local part) | Bot panel > Overview > Email address | `sagax_settings` get, set `bot.inboundMail` | simple |
+| Delete this bot's own Local VM (value true) | Bot panel > Computer > Delete | `sagax_settings` set `bot.localVmRemove` | suppression |
+| Skills from the library this bot uses (their names) | Bot editor > Skills > Library | `sagax_settings` get, set `bot.librarySkills` | simple (élargit les droits pour le bot qui parle lui-même) |
+| The bot's versions (get lists them; set {id, expectedRevision} restores one) | Bot editor > Changes | `sagax_settings` get, set `bot.history` | simple |
 
 ### Conversations
 
@@ -348,6 +351,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Custom voice server address (the voice engine's own server) | Settings > Voice > Voice engine | `sagax_settings` get, set `models.ttsServer` | simple; organisation : organisation |
 | Custom voice server model | Settings > Voice > Voice engine | `sagax_settings` get, set `models.ttsModel` | simple; organisation : organisation |
 | Test the decision model (value true) | Settings > Models > Decision model > Test | `sagax_settings` set `models.deciderTest` | simple |
+| Free up space: delete Antigravity's leftover files (get lists them; value true deletes) | Settings > Models > Antigravity > Free up space | `sagax_settings` get, set `models.antigravityLeftovers` | simple + suppression; organisation : organisation + suppression |
 
 ### Connexions
 
@@ -385,6 +389,10 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | MCP call time limit | Settings > Organization | `sagax_settings` get, set `server.mcpCallTimeout` | simple; organisation : organisation |
 | VPS computer SSH alias | Settings > Models > Integrations > VPS | `sagax_settings` get, set `server.vpsAlias` | simple; organisation : organisation |
 | Custom domain (null removes) | Settings > Organization > Servers > Custom domain | `sagax_settings` get, set `server.customDomain` | simple + suppression; organisation : organisation + suppression |
+| Scheduled computer update ({enabled, days, hour, windowHours, timeZone}) | Settings > Computer > Computer care | `sagax_settings` get, set `server.maintenance` | simple; organisation : organisation |
+| Disk saver ({categories: [ids from get], confirmUserFiles?}; get lists what it frees) | Settings > Computer > Computer care > Disk saver | `sagax_settings` get, set `server.diskSaver` | simple + suppression; organisation : organisation + suppression |
+| Cloud computers ({sleep: id} or {delete: id}; get lists them) | Settings > Computer > Cloud computers | `sagax_settings` get, set `server.boxes` | simple; organisation : organisation |
+| VPS computers (get lists them; set with a name removes it) | Settings > Computer > VPS computers | `sagax_settings` get, set `server.vpsComputers` | simple + suppression; organisation : organisation + suppression |
 
 ### Organisation
 
@@ -401,6 +409,11 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Reader comments on published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesReaderComments` | organisation |
 | Phone calls ({enabled, callbackNumber, addDoNotCall, removeDoNotCall}) | Settings > Experimental > Phone calls | `sagax_settings` get, set `org.phoneCalls` | organisation |
 | Organization bot secrets (read only: their names; a secret is entered by the person) | Settings > Organization > Bots > Team secrets | `sagax_settings` get, set `org.botSecrets` | simple |
+| People's tool access (get lists it; set with a grant's id revokes it) | Settings > Account > Advanced > People's tool access | `sagax_settings` get, set `org.toolGrants` | autrui + suppression |
+| Reports (get lists them; set with a report's id resolves it) | Settings > Notifications > Privacy > Reports | `sagax_settings` get, set `org.reports` | autrui |
+| Attach a person from before to a member ({interimPrincipalId, principalId}) | Settings > Organization > People from before | `sagax_settings` set `org.interimAttach` | autrui + organisation |
+| Invitations ({invite: email} or {revoke: token}; get lists them) | Settings > Organization > Servers > Invitations | `sagax_settings` get, set `org.invites` | autrui |
+| Take down a published page of the organization (its id) | Settings > Pages > Organization pages | `sagax_settings` set `org.pageRevoke` | autrui + suppression |
 
 ### Ordinateur
 
@@ -413,6 +426,12 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Local VM ({mode, maxInstances, idleTimeoutMinutes}) | Settings > Computer | `sagax_settings` get, set `server.localVm` | simple; organisation : organisation |
 | The person's computers and where bots work (read only: connected, desktops, workplace) | Settings > Computer > Other computers | `sagax_settings` get, set `computer.computers` | simple |
 | This Mac's models for the person's bots ({expose, share, endpoints}) | Settings > Computer > Mac models | `sagax_settings` get, set `computer.localModels` | simple |
+| The bot computer's state (read only: kind, state, disk, version) | Settings > Computer > Bot's computer | `sagax_settings` get, set `computer.status` | simple |
+| Update the bot computer from the current image (the workspace is kept) (value true) | Settings > Computer > Bot's computer > Update | `sagax_settings` set `computer.update` | simple |
+| Reset the bot computer (erased, created again; the workspace folder on a personal computer is kept) (value true) | Settings > Computer > Bot's computer > Reset | `sagax_settings` set `computer.reset` | suppression |
+| Start or stop your server computer (organization server) | Settings > Computer > Server environment | `sagax_settings` set `computer.power` | simple |
+| This computer's Local VMs (read only: status and instances) | Settings > Computer > Bot's computer | `sagax_settings` get, set `computer.localVm` | simple |
+| A Local VM step (pull: prepare, run: create, start, stop, remove, ensure: set it up) | Settings > Computer > Bot's computer | `sagax_settings` set `computer.localVmAction` | simple; organisation : organisation |
 
 ## Hors de sagax_settings
 
