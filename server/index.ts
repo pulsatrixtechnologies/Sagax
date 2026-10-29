@@ -55,7 +55,8 @@ import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntime
 import { z } from "zod";
 import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES, type CompactionRecord, type ReplayEntry } from "./context-rebuild.ts";
 import { deterministicSummary, draftSummary, foldPoint } from "./compaction-summary.ts";
-import { finishUntilPrompt, remindAfterCompaction } from "./finish-until.ts";
+import { FinishUntilRuns, finishUntilPrompt, remindAfterCompaction, withoutFinishUntilMarker } from "./finish-until.ts";
+import { finishUntilLineText, finishUntilRounds, type FinishUntilLine } from "../shared/finish-until-line.ts";
 import { staleSessionReason, type StaleSessionReason } from "./stale-session.ts";
 import { isSmallTalk, SMALL_TALK_CLOUD_REFUSAL, SMALL_TALK_TURN_NOTE } from "./small-talk.ts";
 import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
@@ -5035,6 +5036,14 @@ async function stopDirectThread(botId: string, threadId: string): Promise<void> 
 /** A person stops a thread's turn: what they sent into it is withdrawn,
  * and words sent while it stops wait for the next turn. */
 async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
+  // #1329: Stop between two relaunches (no turn running) ends the run
+  // here; a running turn ends it when it settles as stopped.
+  if (!threadBusy(botId, threadId)) {
+    const spent = finishUntilRuns.rounds(threadId);
+    const bot = store.bot(botId);
+    finishUntilRuns.reset(threadId);
+    if (spent > 0 && bot?.finishUntil) appendFinishUntilRow(threadId, { status: "stopped", condition: bot.finishUntil, round: spent, max: finishUntilRounds(bot.finishUntilMaxRounds) });
+  }
   await stopDirectThread(botId, threadId);
 }
 
@@ -16183,6 +16192,14 @@ const soloGoals = new SoloGoals();
 function appendSoloGoalRow(threadId: string, line: SoloGoalLine, turnId?: string): Message {
   return store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: soloGoalLineText(line), ok: true, soloGoal: line }, ...(turnId ? { turnId } : {}) });
 }
+/** #1329: "do not finish until" relaunches per conversation (server/finish-until.ts). */
+const finishUntilRuns = new FinishUntilRuns();
+/** #1329: a condition check's row (relaunch x/N, met, blocked, bound,
+ * stopped), in English for any client, drawn in the reader's language by
+ * the apps (tool.finishUntil). Not a "notice:" row: the person needs it. */
+function appendFinishUntilRow(threadId: string, line: FinishUntilLine, turnId?: string): Message {
+  return store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: finishUntilLineText(line), ok: line.status !== "limit", finishUntil: line }, ...(turnId ? { turnId } : {}) });
+}
 /** #1372: /goal status and /goal stop answered once per sendId, so a retry
  * of the same send gets the same row instead of a second one. */
 const soloGoalReceipts = new Map<string, Message>();
@@ -16340,6 +16357,9 @@ bus.subscribe((event: RuntimeEvent) => {
     const goalSettled = bot ? soloGoals.noteReply(event.threadId, spoken.text) : null;
     spoken.text = withoutSoloGoalMarker(spoken.text);
     if (goalSettled) appendSoloGoalRow(event.threadId, soloGoalLine(goalSettled), turnId);
+    // #1329: the condition's marker is read, then taken out of what is shown.
+    if (bot) finishUntilRuns.noteReply(event.threadId, spoken.text);
+    spoken.text = withoutFinishUntilMarker(spoken.text);
     if (!spoken.text.trim()) return;
     spoken.text = citeAppFigures(dashFreeReply(spoken.text, event.threadId, bot), appPiecesByThread.get(event.threadId) ?? []);
     // "👍" written after reacting 👍 says the same thing twice: the
@@ -17676,6 +17696,7 @@ bus.subscribe((event: RuntimeEvent) => {
           clearThreadStopping(event.threadId);
           scheduleVoiceCallWatchdog(bot.id, event.threadId);
           scheduleSoloGoalRound(bot.id, event.threadId, { ok: event.ok, stopped: clientStopped });
+          scheduleFinishUntilRound(bot.id, event.threadId, { ok: event.ok, stopped: clientStopped });
           if (store.taskByThread(bot.id, event.threadId)?.activity !== "dead") {
             store.setTaskActivity(bot.id, event.threadId, resourceOwner?.computerParkedOn !== undefined ? "parked.computer" : "idle");
           }
@@ -19495,6 +19516,57 @@ function scheduleSoloGoalRound(botId: string, threadId: string, outcome: { ok: b
   timer.unref?.();
 }
 const SOLO_GOAL_ROUND_DELAY_MS = 500;
+
+/** #1329: a bot with a "do not finish until" condition is checked after each
+ * 1:1 turn (server/finish-until.ts). When the reply did not say the
+ * condition is met, Sagax writes "relaunch x/N" in the conversation and, a
+ * moment later, starts the next turn on its own: no message from the
+ * person, the words reach the model only (cardContinuation), and the turn
+ * costs and shows like any other. It ends at a met or blocked marker, a stop
+ * by the person (Stop ends the run, one row says so), a failed turn, or the
+ * bot's bound (finishUntilMaxRounds, default 5), where one row says the
+ * condition is not met yet. A working 1:1 /goal drives its own turns, so the
+ * check waits for it. */
+function scheduleFinishUntilRound(botId: string, threadId: string, outcome: { ok: boolean; stopped: boolean }): void {
+  const bot = store.bot(botId);
+  if (!bot) return;
+  const goal = soloGoals.get(threadId);
+  if (goal?.status === "working") {
+    finishUntilRuns.reset(threadId);
+    return;
+  }
+  const step = finishUntilRuns.settle(threadId, { condition: bot.finishUntil, maxRounds: bot.finishUntilMaxRounds, ...outcome });
+  if (step.kind === "none") return;
+  appendFinishUntilRow(threadId, step.line);
+  if (step.kind !== "relaunch") return;
+  const timer = setTimeout(() => {
+    try {
+      // The person wrote, stopped or changed the condition in the meantime:
+      // their own turn or setting leads, this relaunch is dropped.
+      if (finishUntilRuns.rounds(threadId) !== step.line.round) return;
+      if (!store.bot(botId)?.finishUntil) {
+        finishUntilRuns.reset(threadId);
+        return;
+      }
+      if (threadBusy(botId, threadId) || hasQueuedSteeredMessages(botId, threadId) || stoppingThreads.has(threadId)) return;
+      if (voiceCalls.active(threadId) || activeGroupTurnForBot(botId) || botAtThreadCapacity(botId)) return;
+      if (!store.projectBotForTask(botId, threadId) || !store.taskByThread(botId, threadId)) return;
+      try {
+        assertWithinBudget(cfg, DATA_DIR);
+      } catch {
+        finishUntilRuns.reset(threadId);
+        return;
+      }
+      const speaker = turnSpeakers.get(threadId);
+      void startTurn(botId, step.prompt, { threadId, cardContinuation: true, ...(speaker ? { speaker } : {}) })
+        .catch((error) => console.warn(`[finish-until] thread ${threadId}: the relaunch could not start: ${error instanceof Error ? error.message : String(error)}`));
+    } catch (error) {
+      console.warn("[finish-until] relaunch failed", error);
+    }
+  }, FINISH_UNTIL_RELAUNCH_DELAY_MS);
+  timer.unref?.();
+}
+const FINISH_UNTIL_RELAUNCH_DELAY_MS = 500;
 
 /** A moment after a direct turn settles on a thread on a live call: words
  * said on the call with no answer after them run once more
@@ -49873,6 +49945,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const goalBefore = soloGoals.get(threadId);
       if (solo.kind === "start") soloGoals.start(threadId, solo.goal);
       else if (!pressed && !voiceCall && !guarded) soloGoals.resume(threadId);
+      // #1329: the person wrote: the relaunch count starts over.
+      finishUntilRuns.reset(threadId);
       const restoreGoal = () => { if (solo.kind === "start") soloGoals.restore(threadId, goalBefore); };
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,

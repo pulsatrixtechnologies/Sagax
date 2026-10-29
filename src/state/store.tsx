@@ -297,7 +297,7 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
    * narration of the same chip ("reading a file"), used by call mode. */
   /** `setup` marks an error fixed by installing something, not by retrying.
    * `summary` is the call's input on one redacted line (the shell command). */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; /** The product the server declared for the tool, and the id its tool names start with (shared/wire.ts). */ product?: string; productId?: string; itemId?: string; outputPath?: string; fullResult?: boolean; /** Files the call wrote (shared/wire.ts). */ files?: string[]; widget?: import("../../shared/cw-widgets/types").CwWidget; ruleNotice?: import("../../shared/custom-rules").CustomRuleNotice; /** What answered the call's ask with no card (shared/wire.ts). */ autoApproval?: { source: string; rule?: string }; engineMove?: import("../../shared/offered-engines").OrgEngineMove; limitFailover?: import("../../shared/limit-failover").LimitFailoverLine; connectorSwitch?: { engine: string; connector: string }; soloGoal?: import("../../shared/solo-goal-line").SoloGoalLine };
+  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; durationMs?: number; /** The product the server declared for the tool, and the id its tool names start with (shared/wire.ts). */ product?: string; productId?: string; itemId?: string; outputPath?: string; fullResult?: boolean; /** Files the call wrote (shared/wire.ts). */ files?: string[]; widget?: import("../../shared/cw-widgets/types").CwWidget; ruleNotice?: import("../../shared/custom-rules").CustomRuleNotice; /** What answered the call's ask with no card (shared/wire.ts). */ autoApproval?: { source: string; rule?: string }; engineMove?: import("../../shared/offered-engines").OrgEngineMove; limitFailover?: import("../../shared/limit-failover").LimitFailoverLine; connectorSwitch?: { engine: string; connector: string }; soloGoal?: import("../../shared/solo-goal-line").SoloGoalLine; finishUntil?: import("../../shared/finish-until-line").FinishUntilLine };
   /** user messages sent into a running turn — the model saw it mid-turn */
   steered?: boolean;
   /** a user message that did not come from typing here: through the
@@ -698,6 +698,10 @@ export interface Bot {
   alwaysAllow?: string[];
   /** speak this bot's replies aloud as they settle */
   speakReplies?: boolean;
+  /** #1329: the person's "do not finish until" sentence; absent = off */
+  finishUntil?: string;
+  /** #1329: relaunches Sagax starts on its own while it is not met; absent = 5 */
+  finishUntilMaxRounds?: number;
   /** this bot's own voice id (falls back to the app-wide one) */
   voice?: string;
   /** whether this bot may send voice notes (on unless switched off) */

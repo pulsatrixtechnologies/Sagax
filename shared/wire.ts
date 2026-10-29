@@ -10,6 +10,7 @@
  * as server-private. */
 import type { LimitFailoverLine } from "./limit-failover.ts";
 import type { SoloGoalLine } from "./solo-goal-line.ts";
+import type { FinishUntilLine } from "./finish-until-line.ts";
 import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { DataBroadcast } from "./data-surface.ts";
@@ -422,6 +423,10 @@ export interface WireBot {
   speakReplies?: boolean;
   /** The person's own "do not finish until" sentence. Absent means off. Not a task list. */
   finishUntil?: string;
+  /** #1329: how many turns Sagax starts on its own while `finishUntil` is
+   * not met, before it waits for the person. Absent = 5
+   * (shared/finish-until-line.ts). */
+  finishUntilMaxRounds?: number;
   /** This bot's own voice id, so a room of bots doesn't sound like one person. */
   voice?: string;
   /** Whether this bot may send voice notes. Absent/true = allowed; false
@@ -800,6 +805,10 @@ export interface WireMessage {
     /** #1372: a 1:1 goal's status (server/solo-goal.ts); drawn in the
      * reader's language. */
     soloGoal?: SoloGoalLine;
+    /** #1329: a "do not finish until" check (server/finish-until.ts):
+     * relaunch x/N, met, blocked, bound reached or stopped; drawn in the
+     * reader's language. */
+    finishUntil?: FinishUntilLine;
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's
