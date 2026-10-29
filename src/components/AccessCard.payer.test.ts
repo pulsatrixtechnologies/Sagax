@@ -74,3 +74,16 @@ describe("the access card: who pays (#1137)", () => {
     expect(accessCardLines({ ...refused, cause: "payer_disabled" as const }, { principalId: BOB, admin: false })).toEqual({ text: "Scout's owner pays for its replies, and their account is disabled." });
   });
 });
+
+// #1545: a bot asks the person to sign in to an engine it set up for them
+describe("the access card: a bot's sign-in request (#1545)", () => {
+  it("names the bot and the account, and offers the sign-in button", () => {
+    const signIn = { reason: "sign_in" as const, engine: "Work account", instanceId: "claude-2", botId: "bot-1", botName: "Scout", ownerPrincipalId: OWNER, payerPrincipalId: OWNER };
+    expect(accessCardLines(signIn, { principalId: OWNER, admin: false })).toEqual({
+      text: "Scout asks you to sign in to Work account. You sign in yourself; the bot never sees your sign-in.",
+      signIn: true,
+    });
+    const html = renderToStaticMarkup(createElement(AccessCard, { access: signIn, viewer: { principalId: OWNER, admin: false }, onSignIn: () => {} }));
+    expect(html).toContain("data-access-sign-in");
+  });
+});

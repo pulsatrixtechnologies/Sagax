@@ -33203,6 +33203,23 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       broadcast({ kind: "bot-act", audience, action: command, input });
       return { status: 200, body: { text: "Done." } };
     },
+    // #1545: an engine's sign-in card, like request_credential's: the person
+    // signs in from Settings > Models; only they see the card
+    card: (input, card) => {
+      const actor = actorForTurn(actTurnFacts(input.threadId, input.generation));
+      const person = actor.kind === "person" ? actor.personKey : actor.kind === "operator" ? localPrincipalId() : null;
+      if (!person) return { status: 403, body: { error: "This turn is not tied to a signed-in person: nobody to sign in." } };
+      const owner = connectorThread(input.botId, input.threadId);
+      if (!owner) return { status: 403, body: { error: "source conversation does not belong to sender" } };
+      store.appendMessage(input.threadId, {
+        role: "bot",
+        kind: "access",
+        text: `${owner.bot.name} asks you to sign in to ${card.name}. Open Settings > Models to sign in.`,
+        ...(owner.group ? { from: { botId: owner.bot.id, name: owner.bot.name, color: owner.bot.color } } : {}),
+        access: { reason: "sign_in", engine: card.name, instanceId: card.instanceId, botId: owner.bot.id, botName: owner.bot.name, ownerPrincipalId: person, payerPrincipalId: person },
+      });
+      return { status: 201, body: { text: "posted" } };
+    },
   });
   return settingsActionService;
 }

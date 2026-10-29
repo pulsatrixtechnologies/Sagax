@@ -66,6 +66,10 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
       plain: true,
     };
   }
+  // #1545: a bot asks the person to sign in to an engine or account
+  if (access.reason === "sign_in") {
+    return { text: t("access.signInRequested", { bot: access.botName?.trim() || t("access.thisBot"), engine: access.engine }), signIn: true };
+  }
   if (access.reason === "engine_missing") {
     return { text: t("access.engineMissing", { engine: access.engine }), ...(owner && !viewer.admin ? { hint: permissionMissingText("engines.manage") } : {}) };
   }
