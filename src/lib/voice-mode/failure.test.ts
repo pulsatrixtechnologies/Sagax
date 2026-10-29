@@ -10,7 +10,8 @@ import ptBr from "../../locales/pt-br.json";
 import uk from "../../locales/uk.json";
 import zh from "../../locales/zh.json";
 import zhTw from "../../locales/zh-tw.json";
-import { CALL_FAILURE_GRACE_MS, CallFailure, callFailureKey, callFailureKind, failedRowKind, voiceErrorNote, type FailureRow } from "./failure";
+import { VoiceProviderError } from "./api";
+import { CALL_FAILURE_GRACE_MS, CallFailure, callFailureKey, callFailureKind, failedRowKind, voiceErrorNote, voiceKeyActionKey, voiceKeyFallbackNote, voiceKeyLabelKey, type FailureRow, type Translate } from "./failure";
 
 const said = (id: string, text = "Is the backup done?"): FailureRow => ({ id, role: "user", kind: "text", text });
 const failed = (id: string, cause: string, setup = false): FailureRow => ({ id, role: "bot", kind: "activity", tool: { name: `error: ${cause}`, ...(setup ? { setup } : {}) } });
@@ -149,5 +150,44 @@ describe("what the bar says when the voice or the speech to text fails", () => {
     expect(voiceErrorNote("transcribe-failed", null).key).toBe("voiceMode.transcribeFailed");
     expect(voiceErrorNote("mic-denied", null)).toEqual({ key: "voiceMode.micDenied", retry: true, clearsOnVoice: false });
     expect(voiceErrorNote("mic-unavailable", "busy").retry).toBe(true);
+  });
+});
+
+describe("the key a voice failure is about (2026-10-28)", () => {
+  const t = (key: string, params: Record<string, string | number> = {}) => (en as Record<string, string>)[key]!.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? `{${name}}`));
+  const translate = t as unknown as Translate;
+
+  it("names the key by its source and last four, and says what to do about it", () => {
+    const quota = new VoiceProviderError("needs credits", "quota", 502, { key: { source: "voice-key", last4: "Wez8" } });
+    const shown = voiceErrorNote("speech-failed", "quota", quota, translate);
+    expect(shown).toMatchObject({ key: "voiceMode.provider.quota.named", retry: false, clearsOnVoice: true });
+    expect(t(shown.key, shown.params)).toBe("xAI has no credits left for your voice key ···Wez8. Add credits to that xAI account, or change the key in Settings > Models and voice > My voice keys. The answers stay in the chat.");
+    const rejected = new VoiceProviderError("rejected", "key", 502, { key: { source: "perspicax-key", last4: "c0Je" } });
+    expect(t(voiceErrorNote("transcribe-failed", "key", rejected, translate).key, voiceErrorNote("transcribe-failed", "key", rejected, translate).params))
+      .toBe("xAI rejected your xAI key in Perspicax ···c0Je: invalid, revoked, or without voice permission. Add credits to that xAI account, or change the key in Perspicax (Providers > Grok). The answers stay in the chat.");
+    const org = new VoiceProviderError("busy", "busy", 502, { key: { source: "org-key", last4: null } });
+    const busy = voiceErrorNote("speech-failed", "busy", org, translate);
+    expect(t(busy.key, busy.params)).toBe("xAI is rate-limiting the organization's xAI key. It comes back by itself; the answers stay in the chat.");
+    // the key says nothing about xAI being down or a missing voice: the plain line
+    const down = new VoiceProviderError("down", "down", 502, { key: { source: "org-key", last4: null } });
+    expect(voiceErrorNote("speech-failed", "down", down, translate)).toEqual({ key: "voiceMode.provider.down", retry: false, clearsOnVoice: true });
+    // an older server names no key: the plain line too
+    expect(voiceErrorNote("speech-failed", "quota", new VoiceProviderError("x", "quota", 502), translate).key).toBe("voiceMode.provider.quota");
+  });
+
+  it("says once that the voice went on over another key", () => {
+    expect(voiceKeyFallbackNote({ used: { source: "perspicax-key", last4: "c0Je" }, skipped: [{ source: "voice-key", last4: "Wez8", failure: "quota" }] }, translate))
+      .toBe("your voice key ···Wez8 was refused (no credits). The voice now runs on your xAI key in Perspicax ···c0Je.");
+    expect(voiceKeyFallbackNote({ used: { source: "org-key", last4: null }, skipped: [{ source: "voice-key", last4: "Wez8", failure: "quota" }, { source: "perspicax-key", last4: "c0Je", failure: "key" }] }, translate))
+      .toBe("your xAI key in Perspicax ···c0Je was refused (key rejected). The voice now runs on the organization's xAI key.");
+  });
+
+  it("every key line exists in every language pack that has the family", () => {
+    for (const source of ["voice-key", "perspicax-key", "org-key", "server"] as const) {
+      expect(en).toHaveProperty(voiceKeyLabelKey(source));
+      expect(fr).toHaveProperty(voiceKeyLabelKey(source));
+      expect(en).toHaveProperty(voiceKeyActionKey(source));
+      expect(fr).toHaveProperty(voiceKeyActionKey(source));
+    }
   });
 });

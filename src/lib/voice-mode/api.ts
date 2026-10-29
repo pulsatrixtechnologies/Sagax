@@ -2,7 +2,7 @@
 // session cookie: the xAI key stays on the server and never reaches here.
 import { useEffect, useState } from "react";
 
-import type { VoiceModeRefusalCause, VoiceModeSettings, VoiceModeStatus } from "../../../shared/voice-mode";
+import type { VoiceKeyInfo, VoiceModeRefusalCause, VoiceModeSettings, VoiceModeStatus, VoiceProviderFailure } from "../../../shared/voice-mode";
 
 export interface VoiceOption {
   id: string;
@@ -28,19 +28,96 @@ export class VoiceModeRefused extends Error {
  * (server/tts/grok.ts grokVoiceFailure): the key was rejected (`key`), no
  * credits (`quota`), rate limited (`busy`), unreachable or failing
  * (`down`), an unknown voice (`voice`), anything else (`other`). */
-export type VoiceProviderFailure = "key" | "quota" | "busy" | "down" | "voice" | "other";
+export type { VoiceProviderFailure };
 const PROVIDER_FAILURES = new Set<VoiceProviderFailure>(["key", "quota", "busy", "down", "voice", "other"]);
+const KEY_SOURCES = new Set<VoiceKeyInfo["source"]>(["voice-key", "perspicax-key", "org-key", "server"]);
 
-/** xAI (through the server) failed this request; `failure` says how. */
+/** One key xAI refused on the way (server/voice-keys.ts). */
+export interface VoiceKeyRefusal extends VoiceKeyInfo {
+  failure: VoiceProviderFailure;
+}
+
+function cleanKeyInfo(value: unknown): VoiceKeyInfo | undefined {
+  const record = value as { source?: unknown; last4?: unknown } | null | undefined;
+  if (!record || !KEY_SOURCES.has(record.source as VoiceKeyInfo["source"])) return undefined;
+  return { source: record.source as VoiceKeyInfo["source"], last4: typeof record.last4 === "string" && /^[\w.-]{1,4}$/.test(record.last4) ? record.last4 : null };
+}
+
+function cleanRefusals(value: unknown): VoiceKeyRefusal[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const key = cleanKeyInfo(entry);
+    const failure = (entry as { failure?: unknown } | null)?.failure;
+    return key && PROVIDER_FAILURES.has(failure as VoiceProviderFailure) ? [{ ...key, failure: failure as VoiceProviderFailure }] : [];
+  });
+}
+
+/** xAI (through the server) failed this request; `failure` says how, `key`
+ * which key it is about (its source and last four, never more), `tried`
+ * every key refused on the way when more than one was. */
 export class VoiceProviderError extends Error {
   readonly failure: VoiceProviderFailure;
   readonly status: number;
+  readonly key?: VoiceKeyInfo;
+  readonly tried?: VoiceKeyRefusal[];
 
-  constructor(message: string, failure: VoiceProviderFailure, status: number) {
+  constructor(message: string, failure: VoiceProviderFailure, status: number, keys: { key?: VoiceKeyInfo; tried?: VoiceKeyRefusal[] } = {}) {
     super(message);
     this.failure = failure;
     this.status = status;
+    if (keys.key) this.key = keys.key;
+    if (keys.tried?.length) this.tried = keys.tried;
   }
+}
+
+/** The key a request ended up on, after the ones xAI refused: said once
+ * to the person (LiveCall), so a voice that goes on over another key is
+ * never a silent switch. */
+export interface VoiceKeyEvent {
+  used: VoiceKeyInfo;
+  skipped: VoiceKeyRefusal[];
+}
+
+const keyListeners = new Set<(event: VoiceKeyEvent) => void>();
+
+export function onVoiceKeyEvent(listener: (event: VoiceKeyEvent) => void): () => void {
+  keyListeners.add(listener);
+  return () => { keyListeners.delete(listener); };
+}
+
+function emitVoiceKey(event: VoiceKeyEvent): void {
+  for (const listener of Array.from(keyListeners)) listener(event);
+}
+
+/** `source:last4` as the server writes a key in a header. */
+export function parseVoiceKeyHeader(value: string | null): VoiceKeyInfo | undefined {
+  if (!value) return undefined;
+  const [source, last4 = ""] = value.split(":");
+  return cleanKeyInfo({ source, last4: last4 || null });
+}
+
+/** The keys an HTTP answer names (`x-voice-key`, `x-voice-key-skipped`):
+ * told to the listeners when a key was skipped. */
+export function noteVoiceKeyHeaders(headers: Pick<Headers, "get">): VoiceKeyEvent | null {
+  const used = parseVoiceKeyHeader(headers.get("x-voice-key"));
+  if (!used) return null;
+  const skipped = (headers.get("x-voice-key-skipped") ?? "").split(",").flatMap((entry) => {
+    const parts = entry.split(":");
+    const key = parts.length === 3 ? cleanKeyInfo({ source: parts[0], last4: parts[1] || null }) : undefined;
+    return key && PROVIDER_FAILURES.has(parts[2] as VoiceProviderFailure) ? [{ ...key, failure: parts[2] as VoiceProviderFailure }] : [];
+  });
+  const event = { used, skipped };
+  if (skipped.length) emitVoiceKey(event);
+  return event;
+}
+
+/** The keys a socket's `ready` frame names. */
+export function noteVoiceKeyFrame(frame: { key?: unknown; skipped?: unknown }): VoiceKeyEvent | null {
+  const used = cleanKeyInfo(frame.key);
+  if (!used) return null;
+  const event = { used, skipped: cleanRefusals(frame.skipped) };
+  if (event.skipped.length) emitVoiceKey(event);
+  return event;
 }
 
 /** The kind of a voice error: a provider failure as the server sorted it,
@@ -64,13 +141,14 @@ export function transientVoiceFailure(error: unknown): boolean {
 const base = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/voice`;
 
 async function failure(res: Response): Promise<Error> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; cause?: VoiceModeRefusalCause; failure?: string; card?: { keysUrl?: string; admin?: boolean } };
+  const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; cause?: VoiceModeRefusalCause; failure?: string; key?: unknown; tried?: unknown; card?: { keysUrl?: string; admin?: boolean } };
   if (res.status === 403 && body.code === "voice_no_access" && body.cause) {
     return new VoiceModeRefused(body.error ?? "Voice mode is not available.", body.cause, body.card?.keysUrl, body.card?.admin === true);
   }
   if (body.code === "voice_provider") {
     const kind = PROVIDER_FAILURES.has(body.failure as VoiceProviderFailure) ? (body.failure as VoiceProviderFailure) : "other";
-    return new VoiceProviderError(body.error ?? `the voice service returned ${res.status}`, kind, res.status);
+    const key = cleanKeyInfo(body.key);
+    return new VoiceProviderError(body.error ?? `the voice service returned ${res.status}`, kind, res.status, { ...(key ? { key } : {}), tried: cleanRefusals(body.tried) });
   }
   // this server's own limits: too many requests (busy), the spend limit (quota)
   if (res.status === 429) return new VoiceProviderError(body.error ?? "Too many voice requests.", "busy", 429);
@@ -110,6 +188,7 @@ export async function checkVoiceMode(botId: string, signal?: AbortSignal): Promi
 export async function fetchVoiceModeVoices(botId: string, signal?: AbortSignal): Promise<VoiceOption[]> {
   const res = await fetch(`${base(botId)}/voices`, { signal });
   if (!res.ok) throw await failure(res);
+  noteVoiceKeyHeaders(res.headers);
   const body = (await res.json()) as { voices?: VoiceOption[] };
   return Array.isArray(body.voices) ? body.voices.filter((voice) => typeof voice?.id === "string" && typeof voice?.label === "string") : [];
 }
@@ -140,6 +219,7 @@ export async function speakVoiceMode(
     signal,
   });
   if (!res.ok) throw await failure(res);
+  noteVoiceKeyHeaders(res.headers);
   return res.blob();
 }
 
@@ -204,6 +284,7 @@ async function streamVoiceModeSpeechOnce(
   if (res.status === 204 || !res.ok || !res.body) done();
   if (res.status === 204) return null;
   if (!res.ok) throw await failure(res);
+  noteVoiceKeyHeaders(res.headers);
   if (!res.body) throw new Error("the voice service returned no audio");
   const reader = res.body.getReader();
   const body = new ReadableStream<Uint8Array>({
@@ -305,6 +386,7 @@ export async function transcribeVoiceMode(
       signal: controller.signal,
     });
     if (!res.ok) throw await failure(res);
+    noteVoiceKeyHeaders(res.headers);
     const body = (await res.json()) as { text?: string };
     return typeof body.text === "string" ? body.text : "";
   } finally {

@@ -1,12 +1,15 @@
 // Composer dictation (the grey mic beside the Voice button): the words heard
-// are written into the message field, never sent on their own. Two engines,
-// the first one this place has:
+// are written into the message field, never sent on their own. Two engines:
 //
-//   - "native": the macOS dictation helper (window.ogb.speechStart), whose
-//     partial transcripts stream into the field as they come;
 //   - "xai": voice mode's speech to text (POST /api/bots/:id/voice/transcribe,
 //     the xAI key of the person or the organization): the recording is sent
-//     once when it stops and its text joins the field.
+//     once when it stops and its text joins the field. First whenever an
+//     xAI key serves this person (2026-10-28): the same ears as the call,
+//     with the call's keyterms and formatting, on every platform alike.
+//   - "native": the macOS dictation helper (window.ogb.speechStart), whose
+//     partial transcripts stream into the field as they come. Only when no
+//     xAI key serves, and the mic's label says so (an announced fallback,
+//     never a silent one).
 //
 // With neither, the mic opens the Keys card (the xAI key carries both voice
 // and dictation) instead of failing in silence.
@@ -16,8 +19,8 @@ export type DictationEngine = "native" | "xai";
 
 /** Which engine a composer dictates with; null opens the Keys card. */
 export function dictationEngine(input: { native: boolean; xai: boolean }): DictationEngine | null {
-  if (input.native) return "native";
   if (input.xai) return "xai";
+  if (input.native) return "native";
   return null;
 }
 

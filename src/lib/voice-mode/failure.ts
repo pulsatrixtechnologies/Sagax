@@ -21,7 +21,12 @@
 
 import { isClientCancellation, isStoppedTurnName } from "../../../shared/client-cancel";
 import { failedTurnCause } from "../../../shared/failed-turn";
-import type { VoiceProviderFailure } from "./api";
+import type { VoiceKeyInfo, VoiceKeySource } from "../../../shared/voice-mode";
+import type { LocaleKey } from "@/locales";
+import { VoiceProviderError, type VoiceKeyEvent, type VoiceProviderFailure } from "./api";
+
+/** The app's `t` (lib/i18n), or a test's. */
+export type Translate = (key: LocaleKey, params?: Record<string, string | number>) => string;
 
 /** How long a failed row waits (bot idle) before the call says it: past
  * the harness's retry 2.5 s after the turn settles, its warm-up and its
@@ -135,7 +140,34 @@ export type VoiceErrorNoteKey =
   | "voiceMode.micUnavailable"
   | "voiceMode.speechFailed"
   | "voiceMode.transcribeFailed"
-  | `voiceMode.provider.${Exclude<VoiceProviderFailure, "other">}`;
+  | `voiceMode.provider.${Exclude<VoiceProviderFailure, "other">}`
+  | `voiceMode.provider.${Exclude<VoiceProviderFailure, "other" | "down" | "voice">}.named`;
+
+/** The locale key naming a key by its source: "your voice key ···Wez8",
+ * "your xAI key in Perspicax ···c0Je", "the organization's key". */
+export function voiceKeyLabelKey(source: VoiceKeySource): `voiceMode.key.${"voiceKey" | "perspicaxKey" | "orgKey" | "serverKey"}` {
+  return source === "voice-key" ? "voiceMode.key.voiceKey" : source === "perspicax-key" ? "voiceMode.key.perspicaxKey" : source === "org-key" ? "voiceMode.key.orgKey" : "voiceMode.key.serverKey";
+}
+
+/** The locale key of what to do about a key of that source: add credits
+ * or change it where it lives. */
+export function voiceKeyActionKey(source: VoiceKeySource): `voiceMode.keyAction.${"voiceKey" | "perspicaxKey" | "orgKey" | "serverKey"}` {
+  return source === "voice-key" ? "voiceMode.keyAction.voiceKey" : source === "perspicax-key" ? "voiceMode.keyAction.perspicaxKey" : source === "org-key" ? "voiceMode.keyAction.orgKey" : "voiceMode.keyAction.serverKey";
+}
+
+/** A key as the person reads it, through `t`: its source and its last four
+ * characters when known (`tail`: " ···Wez8" or nothing). */
+export function voiceKeyLabel(key: VoiceKeyInfo, t: Translate): string {
+  return t(voiceKeyLabelKey(key.source), { tail: key.last4 ? ` ···${key.last4}` : "" });
+}
+
+export interface VoiceErrorNote {
+  key: VoiceErrorNoteKey;
+  /** the sentence's placeholders (`key`, `action`), when it names a key */
+  params?: Record<string, string>;
+  retry: boolean;
+  clearsOnVoice: boolean;
+}
 
 /** What the call's bar says when the microphone, the speech to text or the
  * voice fails, and whether its "Try again" button means anything.
@@ -143,19 +175,42 @@ export type VoiceErrorNoteKey =
  * - The microphone: its own line, and "Try again" opens it again.
  * - The voice or the speech to text failed at xAI: the reason the server
  *   gave (the key was rejected, no credits, rate limited, xAI down, an
- *   unknown voice), never a vague "didn't come through". No button: the
- *   call goes on, each sentence is tried again by itself
- *   (streamVoiceModeSpeech), and the line goes away when the voice is heard
- *   again (`clearsOnVoice`).
+ *   unknown voice), never a vague "didn't come through", and, when the
+ *   server named the key, which key it was (its source and last four)
+ *   and what to do about it. No button: the call goes on, each sentence
+ *   is tried again by itself (streamVoiceModeSpeech), and the line goes
+ *   away when the voice is heard again (`clearsOnVoice`).
  * - Anything else: the voice line says the answer is in the chat, the
  *   transcription line asks to say it again. */
 export function voiceErrorNote(
   reason: "mic-denied" | "mic-unavailable" | "speech-failed" | "transcribe-failed",
   kind: VoiceProviderFailure | null,
-): { key: VoiceErrorNoteKey; retry: boolean; clearsOnVoice: boolean } {
+  cause?: unknown,
+  t: Translate = (key) => key,
+): VoiceErrorNote {
   if (reason === "mic-denied") return { key: "voiceMode.micDenied", retry: true, clearsOnVoice: false };
   if (reason === "mic-unavailable") return { key: "voiceMode.micUnavailable", retry: true, clearsOnVoice: false };
+  const key = cause instanceof VoiceProviderError ? cause.key : undefined;
+  if (key && (kind === "quota" || kind === "key" || kind === "busy")) {
+    return {
+      key: `voiceMode.provider.${kind}.named` as const,
+      params: { key: voiceKeyLabel(key, t), action: t(voiceKeyActionKey(key.source)) },
+      retry: false,
+      clearsOnVoice: true,
+    };
+  }
   if (kind && kind !== "other") return { key: `voiceMode.provider.${kind}` as const, retry: false, clearsOnVoice: true };
   if (reason === "speech-failed") return { key: "voiceMode.speechFailed", retry: false, clearsOnVoice: true };
   return { key: "voiceMode.transcribeFailed", retry: false, clearsOnVoice: true };
+}
+
+/** What the bar says once when the voice went on over another key: the
+ * key refused and why, the key that serves now. */
+export function voiceKeyFallbackNote(event: VoiceKeyEvent, t: Translate): string {
+  const refused = event.skipped[event.skipped.length - 1]!;
+  return t("voiceMode.keyFallback", {
+    refused: voiceKeyLabel(refused, t),
+    reason: t(refused.failure === "quota" ? "voiceMode.keyRefused.quota" : "voiceMode.keyRefused.key"),
+    used: voiceKeyLabel(event.used, t),
+  });
 }

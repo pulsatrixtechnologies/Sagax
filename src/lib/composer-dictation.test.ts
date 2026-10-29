@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { DICTATION_BARS, DICTATION_HOLD_MS, dictationEngine, isDictationHold, dictationLevels, formatDictationTime, joinDictated } from "./composer-dictation";
 
 describe("composer dictation", () => {
-  it("prefers the Mac's own dictation, then voice mode's speech to text, else none", () => {
-    expect(dictationEngine({ native: true, xai: true })).toBe("native");
+  it("dictates with xAI whenever a key serves, the Mac's own only as a fallback, else none (2026-10-28)", () => {
+    expect(dictationEngine({ native: true, xai: true })).toBe("xai");
     expect(dictationEngine({ native: false, xai: true })).toBe("xai");
+    expect(dictationEngine({ native: true, xai: false })).toBe("native");
     expect(dictationEngine({ native: false, xai: false })).toBeNull();
   });
 

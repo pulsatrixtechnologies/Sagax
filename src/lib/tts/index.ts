@@ -15,7 +15,8 @@
 // server-computed approval key.
 
 import { localSystemVoiceActive, remoteSystemVoice, resolveLocalSystemVoice } from "@/lib/local-voice";
-import { prepareVoiceModeText, speakVoiceMode } from "@/lib/voice-mode/api";
+import { prepareVoiceModeText, refreshVoiceMode, speakVoiceMode, voiceModeCheckNow } from "@/lib/voice-mode/api";
+import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
 export type SpeechStatus = "idle" | "preparing" | "speaking";
@@ -46,6 +47,19 @@ type TtsErrorBody = { error?: string };
 const IDLE: SpeechSnapshot = { status: "idle" };
 /** How many utterances are rendered ahead of the one that is audible. */
 const PREFETCH_WINDOW = 3;
+
+/** On an organization server voice mode's xAI voice is the voice (the
+ * person's own key, their Perspicax key or the organization's,
+ * server/voice-mode.ts): reading a reply aloud goes through it too, with
+ * the person's Voice, Speed and Language, instead of the installation's
+ * engine (2026-10-28). A solo server keeps the engine picked in Settings.
+ * The server's answer is asked once a minute (voice-mode/api.ts). */
+async function organizationVoiceMode(botId: string): Promise<{ settings: VoiceModeSettings; botId: string; threadId?: string } | null> {
+  let check = voiceModeCheckNow(botId);
+  if (check.state === "loading") check = await refreshVoiceMode(botId).catch(() => ({ state: "error" as const, error: "", missing: true }));
+  if (check.state !== "ready" || !check.status.organization || !check.status.available) return null;
+  return { settings: readVoiceModeSettings(), botId };
+}
 
 export class Speaker {
   private snapshot: SpeechSnapshot = IDLE;
@@ -147,7 +161,10 @@ export class Speaker {
     const live = () => this.token === mine && !controller.signal.aborted;
 
     this.set({ status: "preparing", botId: opts.botId, messageId: opts.messageId });
-    const voiceMode = opts.voiceMode && opts.botId ? { ...opts.voiceMode, botId: opts.botId } : null;
+    const voiceMode = opts.voiceMode && opts.botId
+      ? { ...opts.voiceMode, botId: opts.botId }
+      : opts.botId ? await organizationVoiceMode(opts.botId) : null;
+    if (!live()) return;
     if (!voiceMode && localSystemVoiceActive()) {
       await this.speakWithLocalSystem(text, opts, live);
       if (this.request === controller) this.request = null;

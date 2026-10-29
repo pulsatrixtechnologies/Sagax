@@ -42,8 +42,8 @@ import { noteVoiceCallEnded, noteVoiceCallRunning } from "@/lib/voice-call-clock
 import { callBarLines } from "@/lib/voice-call-transcript";
 import { activeLocale, t, tIn } from "@/lib/i18n";
 import { CallProgress, progressLocale, progressText, turnTools } from "@/lib/voice-mode/progress";
-import { CallFailure, callFailureKey, voiceErrorNote } from "@/lib/voice-mode/failure";
-import { voiceFailureKind } from "@/lib/voice-mode/api";
+import { CallFailure, callFailureKey, voiceErrorNote, voiceKeyFallbackNote } from "@/lib/voice-mode/failure";
+import { onVoiceKeyEvent, VoiceModeRefused, voiceFailureKind } from "@/lib/voice-mode/api";
 import { looksFrench } from "@/lib/voice-mode/turns";
 import { announceTopic, callHasBackgroundWork, howToSpeakTopicResult, sourceUserId, topicLabel } from "@/lib/voice-mode/voice-topics";
 import { nextSpeakSlot, type SpeakItem, type SpeakPriority } from "@/lib/voice-mode/voice-speak-queue";
@@ -92,6 +92,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   /** the note is about the voice or the speech to text: gone once the voice is heard */
   const noteClearsOnVoice = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
+  /** no key serves this person any more: the access card, as before the call */
+  const [refusal, setRefusal] = useState<VoiceAccessCard | null>(null);
   const [metrics, setMetrics] = useState<CallMetrics>({});
   const [interrupted, setInterrupted] = useState<Set<string>>(() => new Set());
   /** the cut answers' words the person never heard, by reply id (transcript) */
@@ -221,13 +223,26 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       live.on("rejected", (reason) => {
         if (reason === "other-voice") setNotice(t("voiceMode.otherVoice"));
       }),
+      // the voice went on over another key (one was refused for credits or
+      // for itself): said once, never a silent switch
+      onVoiceKeyEvent((event) => {
+        setRefusal(null);
+        setNotice(voiceKeyFallbackNote(event, t));
+      }),
       live.on("error", (reason, cause) => {
+        // no key serves this person any more (a key removed mid-call): the
+        // access card, as before the call
+        if (cause instanceof VoiceModeRefused) {
+          setRefusal({ cause: cause.cause, admin: cause.admin, ...(cause.keysUrl ? { keysUrl: cause.keysUrl } : {}) });
+          return;
+        }
         // what failed, said plainly: a rejected key, no credits, xAI busy
-        // or down, never a vague "didn't come through" (failure.ts)
-        const shown = voiceErrorNote(reason, voiceFailureKind(cause));
+        // or down, which key it was, never a vague "didn't come through"
+        // (failure.ts)
+        const shown = voiceErrorNote(reason, voiceFailureKind(cause), cause, t);
         noteClearsOnVoice.current = shown.clearsOnVoice;
         setNoteRetry(shown.retry);
-        setNote(t(shown.key));
+        setNote(t(shown.key, shown.params));
         // words that could not be heard: said aloud too, never a silent drop
         if (reason === "transcribe-failed") void live.say(t("voiceMode.sendFailed"));
       }),
@@ -582,6 +597,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
             note,
             noteRetry,
             notice,
+            refusal,
             transcript,
             metrics,
             retry: () => {
@@ -590,7 +606,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
             },
           }
         : null,
-    [bot.id, call, state, startedAt, heard, caption, note, noteRetry, notice, transcript, metrics],
+    [bot.id, call, state, startedAt, heard, caption, note, noteRetry, notice, refusal, transcript, metrics],
   );
   useEffect(() => {
     noteVoiceCallRunning({ botId: bot.id, callId, startedAt });
@@ -646,7 +662,6 @@ export function LiveCall({ bot }: { bot: Bot }) {
   }, [bot.id, call]);
 
   if (!data) return null;
-  const refusal: VoiceAccessCard | null = null;
   return (
     <VoiceModeBar
       bot={bot}
@@ -657,7 +672,7 @@ export function LiveCall({ bot }: { bot: Bot }) {
       note={data.note}
       noteRetry={data.noteRetry}
       notice={data.notice}
-      refusal={refusal}
+      refusal={data.refusal ?? null}
       transcript={data.transcript}
       metrics={data.metrics}
       startedAt={data.startedAt}

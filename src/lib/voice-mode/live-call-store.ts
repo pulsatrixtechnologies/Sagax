@@ -41,6 +41,8 @@ export interface LiveCallData {
   /** the note's "Try again" means something (the microphone); absent: shown */
   noteRetry?: boolean;
   notice: string | null;
+  /** no key serves this person any more: the access card, as before the call */
+  refusal?: { cause: import("../../../shared/voice-mode").VoiceModeRefusalCause; admin: boolean; keysUrl?: string } | null;
   transcript: LiveCallTranscriptLine[];
   metrics: LiveCallMetrics;
   retry(): void;

@@ -240,7 +240,7 @@ export function ComposerModelRow({ chip, onOpen }: {
 export const ATTACH_ICON = <Paperclip size={16} aria-hidden="true" />;
 
 /** The grey mic: dictation into the field. Without an engine it says so and opens the Keys card. */
-export function ComposerMicButton({ onClick, onPress, onRelease, hidden = false, needsSetup = false, shortcut }: {
+export function ComposerMicButton({ onClick, onPress, onRelease, hidden = false, needsSetup = false, engine = null, shortcut }: {
   onClick: () => void;
   /** Pointer down / up: hold to dictate (the composer decides tap or hold). */
   onPress?: () => void;
@@ -248,10 +248,15 @@ export function ComposerMicButton({ onClick, onPress, onRelease, hidden = false,
   /** Folded away (width 0) while the dictation pill shows. */
   hidden?: boolean;
   needsSetup?: boolean;
+  /** which ears dictate: the Mac's own only when no xAI key serves, and
+   * the button says so (lib/composer-dictation) */
+  engine?: "native" | "xai" | null;
   /** "⌘D" or "Ctrl+D". */
   shortcut: string;
 }) {
-  const label = needsSetup ? t("composer.dictation.needsKey") : t("composer.dictation.start");
+  const label = needsSetup ? t("composer.dictation.needsKey") : engine === "native" ? t("composer.dictation.startApple") : t("composer.dictation.start");
+  const holdHint = t("composer.dictation.holdHint", { shortcut });
+  const hint = engine === "native" ? [holdHint, t("composer.dictation.appleFallback")].join(" · ") : holdHint;
   return (
     // The slot's width snaps (an animated width would re-wrap the draft on
     // every frame); the button itself fades and scales in, compositor only.
@@ -263,8 +268,8 @@ export function ComposerMicButton({ onClick, onPress, onRelease, hidden = false,
         onPointerUp={onRelease}
         onPointerCancel={onRelease}
         aria-label={label}
-        title={needsSetup ? label : t("composer.dictation.holdHint", { shortcut })}
-        data-composer-mic={needsSetup ? "setup" : ""}
+        title={needsSetup ? label : hint}
+        data-composer-mic={needsSetup ? "setup" : engine ?? ""}
         tabIndex={hidden ? -1 : undefined}
         aria-hidden={hidden || undefined}
         className={cn(SECONDARY_CIRCLE, "transition-[color,background-color,opacity,scale] duration-moderate ease-out-quint motion-reduce:transition-none", hidden && "invisible scale-50 opacity-0")}

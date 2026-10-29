@@ -176,6 +176,29 @@ export const VOICE_SERVER_ENGINE = "xaiVoice";
  * server's key. */
 export type VoiceModeVia = "speaker-key" | "org-key" | "server";
 
+/** Where a key comes from (server/voice-keys.ts, 2026-10-28): the person's
+ * own voice key saved in Sagax (My voice keys), their own xAI key in
+ * Perspicax, the organization's key, or a solo server's key. */
+export type VoiceKeySource = "voice-key" | "perspicax-key" | "org-key" | "server";
+
+/** Why xAI failed a voice request, as the server sorted it
+ * (server/tts/grok.ts grokVoiceFailure): the key was rejected (`key`), no
+ * credits (`quota`), rate limited (`busy`), unreachable or failing
+ * (`down`), an unknown voice (`voice`), anything else (`other`). */
+export type VoiceProviderFailure = "key" | "quota" | "busy" | "down" | "voice" | "other";
+
+/** A key as the page may know it: its source and its last four characters
+ * (as My voice keys shows them), never more. */
+export interface VoiceKeyInfo {
+  source: VoiceKeySource;
+  last4: string | null;
+}
+
+/** One key of the person's, with what xAI refused it for lately, if anything. */
+export interface VoiceKeyState extends VoiceKeyInfo {
+  refused?: VoiceProviderFailure;
+}
+
 export interface VoiceModeStatus {
   provider: "xai";
   available: boolean;
@@ -184,6 +207,11 @@ export interface VoiceModeStatus {
    * on the legacy call gate. */
   organization?: boolean;
   via?: VoiceModeVia;
+  /** the key the next request starts with */
+  key?: VoiceKeyInfo;
+  /** every key that may serve this person, in order, with the refusals
+   * xAI gave lately (a refused key is tried last) */
+  keys?: VoiceKeyState[];
   /** For the speaker only (the access card's audience); `admin` adds the
    * organization's key hint, as on every access card. */
   refusal?: { cause: VoiceModeRefusalCause; admin?: true; keysUrl?: string };

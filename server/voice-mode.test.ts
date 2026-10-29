@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteContext } from "./routes/table.ts";
 import type { SessionRecord } from "./sessions.ts";
-import { audioMime, createVoiceModeRoutes, listenTranscriptFrame, resolveVoiceKey, VOICE_MODE_RATE, type VoiceModeDeps, type VoiceSpeaker, type VoiceUsage } from "./voice-mode.ts";
+import { VOICE_KEY_REFUSAL_TTL_MS } from "./voice-keys.ts";
+import { audioMime, createVoiceModeRoutes, listenTranscriptFrame, resolveVoiceKey, resolveVoiceKeys, VOICE_MODE_RATE, type VoiceModeDeps, type VoiceSpeaker, type VoiceUsage } from "./voice-mode.ts";
 
 // Fake keys only. Long and distinct so a fragment would be caught too.
 const ORG_KEY = "xai-ORGfake7Lm2Pq9Wz4Rt6Yb";
@@ -173,12 +174,12 @@ describe("voice mode when xAI fails", () => {
     });
     const stream = await call({ method: "POST", path: "/api/bots/b-quasar/voice/stream", body: { text: "Bonjour." } });
     expect(stream.status).toBe(502);
-    expect(stream.body).toEqual({ error: "xAI is rate-limiting speech. Wait a moment and try again.", code: "voice_provider", failure: "busy" });
+    expect(stream.body).toEqual({ error: "xAI is rate-limiting speech. Wait a moment and try again.", code: "voice_provider", failure: "busy", key: { source: "org-key", last4: "t6Yb" } });
     const speak = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Bonjour." } });
     expect(speak.body).toMatchObject({ code: "voice_provider", failure: "key" });
     const heard = await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe", raw: WAV, contentType: "audio/wav" });
     expect(heard.body).toMatchObject({ code: "voice_provider", failure: "quota" });
-    expect(lines.some((line) => line.includes("xAI stream failed (org-key)"))).toBe(true);
+    expect(lines.some((line) => line.includes("xAI stream failed (org-key, organization's key ···t6Yb)"))).toBe(true);
     expect(leaks(lines)).toBe(false);
   });
 });
@@ -218,7 +219,11 @@ describe("voice mode routes", () => {
   it("reports who pays without the key", async () => {
     const { call } = harness({ ownKeys: { "sub-ada": OWN_KEY } });
     const out = await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" });
-    expect(out.body).toEqual({ provider: "xai", available: true, organization: true, via: "speaker-key" });
+    expect(out.body).toEqual({
+      provider: "xai", available: true, organization: true, via: "speaker-key",
+      key: { source: "perspicax-key", last4: "c0Je" },
+      keys: [{ source: "perspicax-key", last4: "c0Je" }, { source: "org-key", last4: "t6Yb" }],
+    });
     expect(leaks(out.body)).toBe(false);
   });
 
@@ -294,7 +299,7 @@ describe("voice mode routes", () => {
   it("transcribes a recorded turn with the language hint", async () => {
     const { call, xai, usage } = harness();
     const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe?language=pt-BR&threadId=t-ada", raw: WAV, contentType: "audio/wav" });
-    expect(out.body).toEqual({ text: "hello bot" });
+    expect(out.body).toEqual({ text: "hello bot", key: { source: "org-key", last4: "t6Yb" } });
     expect(xai.transcribe).toHaveBeenCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, "pt", [], { format: false });
     expect(usage[0]).toMatchObject({ model: "grok-stt", input: WAV.byteLength });
   });
@@ -342,7 +347,7 @@ describe("voice mode routes", () => {
     const { call, xai } = harness();
     xai.transcribe.mockResolvedValueOnce({ text: "Euh, peux-tu regarder le billet euh de CONTOSO?" });
     const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe?language=auto&locale=fr-CA", raw: WAV, contentType: "audio/wav" });
-    expect(out.body).toEqual({ text: "Peux-tu regarder le billet de CONTOSO?" });
+    expect(out.body).toEqual({ text: "Peux-tu regarder le billet de CONTOSO?", key: { source: "org-key", last4: "t6Yb" } });
     expect(xai.transcribe).toHaveBeenLastCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, "fr", [], { format: true });
     await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe?language=auto&locale=fr%3Bx", raw: WAV, contentType: "audio/wav" });
     expect(xai.transcribe).toHaveBeenLastCalledWith(expect.any(Uint8Array), "audio/wav", ORG_KEY, undefined, [], { format: false });
@@ -382,7 +387,7 @@ describe("voice mode routes", () => {
   it("lists voices with labels only", async () => {
     const { call } = harness();
     const out = await call({ method: "GET", path: "/api/bots/b-quasar/voice/voices" });
-    expect(out.body).toEqual({ voices: [{ id: "ara", label: "Ara" }, { id: "eve", label: "Eve" }] });
+    expect(out.body).toEqual({ voices: [{ id: "ara", label: "Ara" }, { id: "eve", label: "Eve" }], key: { source: "org-key", last4: "t6Yb" } });
   });
 
   it("rate limits each person", async () => {
@@ -405,5 +410,110 @@ describe("audioMime", () => {
     expect(audioMime(new Uint8Array([0x4f, 0x67, 0x67, 0x53]), "audio/ogg")).toBe("audio/ogg");
     expect(audioMime(new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]), "audio/webm")).toBe("audio/webm");
     expect(audioMime(new Uint8Array([0, 1, 2, 3]), "audio/wav")).toBeNull();
+  });
+});
+
+describe("voice mode uses the key that has funds (2026-10-28)", () => {
+  const CREDITS = "The xAI account needs credits to generate speech.";
+  const REJECTED = "xAI rejected the key or its TTS permissions. Check the xAI key in Settings.";
+
+  it("lists every key in order, the person's voice key first", async () => {
+    const out = await resolveVoiceKeys({
+      organization: true, serverKey: () => ORG_KEY, hasOwnKey: () => true,
+      resolveOwnKey: async () => ({ ok: true, key: OWN_KEY, fingerprint: "fp" }), personalKey: () => MINE_KEY,
+    }, { principalId: "p-ada", sub: "sub-ada" });
+    expect(out).toEqual({ ok: true, keys: [
+      { key: MINE_KEY, via: "speaker-key", source: "voice-key", last4: "6Rf8", payerPrincipalId: "p-ada" },
+      { key: OWN_KEY, via: "speaker-key", source: "perspicax-key", last4: "c0Je", payerPrincipalId: "p-ada" },
+      { key: ORG_KEY, via: "org-key", source: "org-key", last4: "t6Yb" },
+    ] });
+  });
+
+  it("still serves with the person's voice key when Perspicax cannot be reached", async () => {
+    const deps = { organization: true, serverKey: () => undefined, hasOwnKey: () => true, resolveOwnKey: async () => ({ ok: false as const, error: "unreachable" as const }) };
+    expect(await resolveVoiceKeys({ ...deps, personalKey: () => MINE_KEY }, { principalId: "p-ada", sub: "sub-ada" })).toMatchObject({ ok: true, keys: [{ source: "voice-key" }] });
+    expect(await resolveVoiceKeys(deps, { principalId: "p-ada", sub: "sub-ada" })).toEqual({ ok: false, cause: "perspicax_unreachable" });
+  });
+
+  it("speaks on the next key when the first has no credits, names both, and remembers it for the next sentences", async () => {
+    const lines: string[] = [];
+    const { call, xai, usage, advance } = harness({
+      log: (line) => lines.push(line),
+      ownKeys: { "sub-ada": OWN_KEY },
+      personalKey: () => MINE_KEY,
+    });
+    xai.synthesizeStream.mockImplementation(async (_text, _voice, key) => {
+      if (key === MINE_KEY) throw new Error(CREDITS);
+      return { body: new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array([1])); controller.close(); } }), sampleRate: 24_000 };
+    });
+    const first = await call({ method: "POST", path: "/api/bots/b-quasar/voice/stream", body: { text: "Bonjour." } });
+    expect(first.status).toBe(200);
+    expect(first.headers).toMatchObject({ "x-voice-key": "perspicax-key:c0Je", "x-voice-key-skipped": "voice-key:6Rf8:quota" });
+    expect(xai.synthesizeStream.mock.calls.map((args) => args[2])).toEqual([MINE_KEY, OWN_KEY]);
+    expect(usage[0]).toMatchObject({ via: "speaker-key", payerPrincipalId: "p-ada", model: "grok-tts" });
+    expect(lines).toContain("[voice-mode] xAI stream refused the person's voice key ···6Rf8 (quota): trying the person's Perspicax key ···c0Je");
+    expect(leaks(lines)).toBe(false);
+    // the next sentence goes straight to the key that works: no 402 round trip
+    const second = await call({ method: "POST", path: "/api/bots/b-quasar/voice/stream", body: { text: "Encore." } });
+    expect(second.status).toBe(200);
+    expect(xai.synthesizeStream.mock.calls.map((args) => args[2])).toEqual([MINE_KEY, OWN_KEY, OWN_KEY]);
+    // the status says which key serves now and why the first is set aside
+    const status = await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" });
+    expect(status.body).toMatchObject({
+      available: true, via: "speaker-key", key: { source: "perspicax-key", last4: "c0Je" },
+      keys: [{ source: "perspicax-key", last4: "c0Je" }, { source: "org-key", last4: "t6Yb" }, { source: "voice-key", last4: "6Rf8", refused: "quota" }],
+    });
+    // once the refusal is forgotten (credits may be back) the voice key is tried first again
+    advance(VOICE_KEY_REFUSAL_TTL_MS);
+    xai.synthesizeStream.mockClear();
+    xai.synthesizeStream.mockResolvedValue({ body: new ReadableStream<Uint8Array>({ start(controller) { controller.close(); } }), sampleRate: 24_000 });
+    await call({ method: "POST", path: "/api/bots/b-quasar/voice/stream", body: { text: "Refait." } });
+    expect(xai.synthesizeStream.mock.calls[0]![2]).toBe(MINE_KEY);
+  });
+
+  it("transcribes on the organization's key when both of the person's keys are refused, and the answer names them", async () => {
+    const { call, xai } = harness({ ownKeys: { "sub-ada": OWN_KEY }, personalKey: () => MINE_KEY });
+    xai.transcribe.mockImplementation(async (_audio, _mime, key) => {
+      if (key === MINE_KEY) throw new Error(CREDITS);
+      if (key === OWN_KEY) throw new Error(REJECTED);
+      return { text: "allo" };
+    });
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe", raw: WAV, contentType: "audio/wav" });
+    expect(out.status).toBe(200);
+    expect(out.body).toEqual({ text: "allo", key: { source: "org-key", last4: "t6Yb" }, skipped: [
+      { source: "voice-key", last4: "6Rf8", failure: "quota" }, { source: "perspicax-key", last4: "c0Je", failure: "key" },
+    ] });
+    expect(leaks(out.body)).toBe(false);
+  });
+
+  it("answers the last refusal with every key tried when none has funds", async () => {
+    const lines: string[] = [];
+    const { call, xai } = harness({ log: (line) => lines.push(line), ownKeys: { "sub-ada": OWN_KEY } });
+    xai.synthesize.mockRejectedValue(new Error(CREDITS));
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Bonjour." } });
+    expect(out.status).toBe(502);
+    expect(out.body).toEqual({
+      error: CREDITS, code: "voice_provider", failure: "quota", key: { source: "org-key", last4: "t6Yb" },
+      tried: [{ source: "perspicax-key", last4: "c0Je", failure: "quota" }, { source: "org-key", last4: "t6Yb", failure: "quota" }],
+    });
+    expect(xai.synthesize).toHaveBeenCalledTimes(2);
+    expect(lines.some((line) => line.includes("xAI speak failed (org-key, organization's key ···t6Yb)"))).toBe(true);
+    expect(leaks(out.body) || leaks(lines)).toBe(false);
+  });
+
+  it("stays on the key that is rate limited or down: another key would not help", async () => {
+    const { call, xai } = harness({ ownKeys: { "sub-ada": OWN_KEY } });
+    xai.synthesize.mockRejectedValue(new Error("xAI is rate-limiting speech. Wait a moment and try again."));
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Bonjour." } });
+    expect(out.status).toBe(502);
+    expect(out.body).toMatchObject({ failure: "busy", key: { source: "perspicax-key", last4: "c0Je" } });
+    expect(out.body.tried).toBeUndefined();
+    expect(xai.synthesize).toHaveBeenCalledTimes(1);
+  });
+
+  it("only ever has one key on a solo server, named as the server's", async () => {
+    const { call } = harness({ organization: false, speaker: () => ({ principalId: "" }) });
+    const out = await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" });
+    expect(out.body).toEqual({ provider: "xai", available: true, via: "server", key: { source: "server", last4: "t6Yb" }, keys: [{ source: "server", last4: "t6Yb" }] });
   });
 });
