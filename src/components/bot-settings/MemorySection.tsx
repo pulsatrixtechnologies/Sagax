@@ -29,6 +29,8 @@ import {
   revertMemoryChange,
   saveMemoryDoc,
   fetchUpkeepStatus,
+  fetchSemanticRecallStatus,
+  type SemanticRecallStatus,
   tidyMemoryNow,
   tidySummary,
   noticedCount,
@@ -43,7 +45,8 @@ import {
 } from "@/lib/memory";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { teamMemorySharingOf } from "../../../shared/team-memory-sharing";
-import { ApiError, useStore, type Bot } from "@/state/store";
+import { ApiError, api, useStore, type Bot, type ConfigStatus } from "@/state/store";
+import { canEditConfig } from "@/lib/viewer";
 import { HelpTip, PILL, PillSelect, SettingRow, SwitchRow } from "../SettingsPrimitives";
 import { AdvancedFold } from "./AdvancedFold";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
@@ -312,6 +315,7 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
   const [reverting, setReverting] = useState<string | null>(null);
   const [newTopic, setNewTopic] = useState("");
   const [upkeep, setUpkeep] = useState<UpkeepStatus | null>(null);
+  const [semantic, setSemantic] = useState<SemanticRecallStatus | null>(null);
   const [tidying, setTidying] = useState(false);
   // OMB Cloud home: memory changed where the owner did not write.
   const [lendingReview, setLendingReview] = useState<LendingReview | null>(null);
@@ -320,15 +324,18 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
   const { state, dispatch } = useStore();
 
   const refresh = async (openPath?: string) => {
-    const [nextOverview, nextJournal, nextUpkeep] = await Promise.all([
+    const [nextOverview, nextJournal, nextUpkeep, nextSemantic] = await Promise.all([
       fetchMemoryOverview(bot.id),
       fetchMemoryJournal(bot.id),
       fetchUpkeepStatus(bot.id).catch(() => null),
+      // an older server has no semantic recall: no card
+      fetchSemanticRecallStatus(bot.id).catch(() => null),
     ]);
     setOverview(nextOverview);
     setLendingReview(nextOverview.lendingReview ?? null);
     setJournal(nextJournal);
     setUpkeep(nextUpkeep);
+    setSemantic(nextSemantic);
     if (openPath) {
       const doc = await fetchMemoryDoc(bot.id, openPath);
       setEditing({ path: doc.path, text: doc.text, hash: doc.hash, dirty: false, readOnly: openPath.startsWith("memory/log/") });
@@ -575,6 +582,16 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
           onToggle={toggleUpkeep}
           onTidy={() => void tidyNow()}
         />}
+        {bot.memoryEnabled !== false && semantic && <SemanticRecallCard
+          status={semantic}
+          config={state.config?.memory}
+          editable={canEditConfig(state.config)}
+          onSave={async (patch) => {
+            const config = await api<ConfigStatus>("/api/config", { method: "PATCH", body: JSON.stringify({ memory: patch }) });
+            dispatch({ type: "configStatus", config });
+            setSemantic(await fetchSemanticRecallStatus(bot.id).catch(() => null));
+          }}
+        />}
         {overview && overview.logs.length > 0 && (
           <PaneSection title={t("botPanel.memory.logs")} help={t("botPanel.memory.logsHint")}>
             <MemoryFileRows
@@ -660,6 +677,91 @@ export function MemoryUpkeepCard({
           </span>
         </div>
       )}
+    </PaneSection>
+  );
+}
+
+/** Recall by meaning: the switch (the installation's), what it uses, how
+ * much of this bot is indexed, and the embedding endpoint the person may
+ * already run. Someone who may not change the installation's settings sees
+ * the state only. */
+export function SemanticRecallCard({
+  status,
+  config,
+  editable,
+  onSave,
+}: {
+  status: SemanticRecallStatus;
+  config: ConfigStatus["memory"];
+  editable: boolean;
+  onSave: (patch: { semanticRecall?: boolean; embeddingsUrl?: string; embeddingsModel?: string }) => Promise<void>;
+}) {
+  const [url, setUrl] = useState(config?.embeddingsUrl ?? "");
+  const [model, setModel] = useState(config?.embeddingsModel ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setUrl(config?.embeddingsUrl ?? "");
+    setModel(config?.embeddingsModel ?? "");
+  }, [config?.embeddingsUrl, config?.embeddingsModel]);
+  const save = async (patch: Parameters<typeof onSave>[0]) => {
+    setBusy(true);
+    setError("");
+    try {
+      await onSave(patch);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const counts = t("botPanel.memory.semanticCounts", { notes: String(status.memoryPassages), chats: String(status.conversationPassages) });
+  const encoder = status.encoder === "endpoint"
+    ? status.endpointOk === false
+      ? t("botPanel.memory.semanticEndpointDown", { model: status.model ?? "" })
+      : t("botPanel.memory.semanticEndpoint", { model: status.model ?? "" })
+    : t("botPanel.memory.semanticBuiltIn");
+  const dirty = url.trim() !== (config?.embeddingsUrl ?? "") || model.trim() !== (config?.embeddingsModel ?? "");
+  return (
+    <PaneSection title={t("botPanel.memory.semantic")}>
+      <SwitchRow
+        label={t("botPanel.memory.semanticSwitch")}
+        help={t("botPanel.memory.semanticHelp")}
+        checked={status.enabled}
+        disabled={!editable || busy}
+        onChange={() => void save({ semanticRecall: !status.enabled })}
+      />
+      {status.enabled && (
+        <p className="mt-2 text-[12.5px] text-ink-secondary" data-semantic-status="">{encoder} · {counts}</p>
+      )}
+      {status.enabled && editable && (
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[12.5px] text-ink-secondary">
+            <span>{t("botPanel.memory.semanticModel")}</span>
+            <HelpTip label={t("botPanel.memory.semanticModel")}>{t("botPanel.memory.semanticModelHelp")}</HelpTip>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input
+              className={cn(inputCls, "min-w-0 flex-[2]")}
+              value={url}
+              placeholder="http://127.0.0.1:11434/v1"
+              aria-label={t("botPanel.memory.semanticUrl")}
+              onChange={(event) => setUrl(event.target.value)}
+            />
+            <input
+              className={cn(inputCls, "min-w-0 flex-1")}
+              value={model}
+              placeholder="nomic-embed-text"
+              aria-label={t("botPanel.memory.semanticModelName")}
+              onChange={(event) => setModel(event.target.value)}
+            />
+            <button type="button" className={cn(buttonCls, "shrink-0")} disabled={busy || !dirty} onClick={() => void save({ embeddingsUrl: url.trim(), embeddingsModel: model.trim() })}>
+              {t("common.save")}
+            </button>
+          </div>
+        </div>
+      )}
+      {error && <div role="alert" className="mt-2 text-[12.5px] text-danger">{error}</div>}
     </PaneSection>
   );
 }

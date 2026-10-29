@@ -41,6 +41,9 @@ export interface BotMemoryRouteDeps {
   /** The task a thread belongs to; its title names the chat in a journal row. */
   taskByThread(botId: string, threadId: string): { title?: string } | undefined;
   upkeep: Pick<MemoryUpkeep, "status" | "tidy">;
+  /** Recall by meaning for this bot (server/semantic-index.ts): the
+   * encoder and how many passages are indexed. Absent: not offered. */
+  semantic?(botId: string): unknown;
   aboutMe(): string;
   saveAboutMe(text: string): void;
   /** On an OMB Cloud home (server/lending-memory.ts), absent elsewhere:
@@ -212,6 +215,11 @@ export function createBotMemoryRoutes(deps: BotMemoryRouteDeps): RouteHandler {
       const bot = deps.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
       return json(res, 200, { enabled: upkeepEnabled(bot), ...deps.upkeep.status(bot.id) });
+    }
+    m = path.match(/^\/api\/bots\/([\w-]+)\/memory\/semantic$/);
+    if (m && method === "GET") {
+      if (!deps.bot(m[1]) || !deps.semantic) return json(res, 404, { error: "no such bot" });
+      return json(res, 200, deps.semantic(m[1]));
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/memory\/tidy$/);
     if (m && method === "POST") {

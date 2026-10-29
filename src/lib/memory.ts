@@ -155,6 +155,21 @@ export function fetchUpkeepStatus(botId: string): Promise<UpkeepStatus> {
   return api(`/api/bots/${botId}/memory/upkeep`);
 }
 
+/** Recall by meaning for one bot (server/semantic-index.ts). */
+export interface SemanticRecallStatus {
+  enabled: boolean;
+  encoder: "built-in" | "endpoint";
+  model?: string;
+  /** whether the endpoint answered its last call; absent before any call */
+  endpointOk?: boolean;
+  memoryPassages: number;
+  conversationPassages: number;
+}
+
+export function fetchSemanticRecallStatus(botId: string): Promise<SemanticRecallStatus> {
+  return api(`/api/bots/${botId}/memory/semantic`);
+}
+
 /** The owner accepts this bot's memory as it is now (OMB Cloud home only). */
 export interface LendingReview {
   token: string;

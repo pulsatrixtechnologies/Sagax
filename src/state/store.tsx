@@ -939,6 +939,9 @@ export interface ConfigStatus {
   openai?: { configured: boolean };
   openrouter?: { configured: boolean };
   openaiCompat?: { configured: boolean; url?: string };
+  /** recall by meaning (server/semantic-index.ts): on unless switched off;
+   * an embeddings endpoint the person runs, or empty for the built-in vectors */
+  memory?: { semanticRecall?: boolean; embeddingsUrl?: string; embeddingsModel?: string };
   /** what this server is entitled to; Settings shows only what works here.
    * `license` reaches admins only, and only while the key is inside its
    * warning window or grace period. */

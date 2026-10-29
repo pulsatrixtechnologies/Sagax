@@ -697,6 +697,15 @@ const appConfigSchema = z.object({
     captureQuietMs: z.number().int().min(1_000).max(24 * 60 * 60_000).optional(),
     /** Local hour (0-23) after which the nightly tidy-up runs. */
     tidyHour: z.number().int().min(0).max(23).optional(),
+    /** Recall by meaning beside FTS5 (server/semantic-index.ts). On unless
+     * false, or SAGAX_SEMANTIC_RECALL=0. */
+    semanticRecall: z.boolean().optional(),
+    /** An OpenAI-compatible embeddings endpoint the person runs (Ollama,
+     * LM Studio, a local MLX server): `http://127.0.0.1:11434/v1`. Empty:
+     * the built-in vectors only. */
+    embeddingsUrl: z.string().max(2_000).refine((value) => value === "" || /^https?:\/\/[^\s]+$/i.test(value), "an http(s) address").optional(),
+    /** The embedding model that endpoint serves, e.g. `nomic-embed-text`. */
+    embeddingsModel: z.string().max(200).optional(),
   }).strict().optional(),
   /** Routines a bot creates through the approval flow. */
   routines: z.object({
@@ -827,7 +836,7 @@ export interface AppConfig {
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; autoCompactOffBots?: string[]; staleSessionHours?: number; staleSessionBytes?: number; staleSessionColdMinutes?: number };
   loopDetector?: LoopDetectorConfig;
-  memory?: { captureQuietMs?: number; tidyHour?: number };
+  memory?: { captureQuietMs?: number; tidyHour?: number; semanticRecall?: boolean; embeddingsUrl?: string; embeddingsModel?: string };
   routines?: { newPaused?: boolean };
   /** Shared preserves the historical singleton. Per-bot gives every bot a
    * separate container, durable workspace, viewer and lease. Pool runs N
@@ -1106,6 +1115,20 @@ export function skillAuthoringEnabled(cfg: AppConfig): boolean {
 /** Automatic recall is read-only, so it is on unless switched off. */
 export function autoRecallEnabled(cfg: AppConfig): boolean {
   return cfg.features?.autoRecall !== false;
+}
+
+/** Recall by meaning (server/semantic-index.ts): on unless the config says
+ * false or the process was started with SAGAX_SEMANTIC_RECALL=0. */
+export function semanticRecallEnabled(cfg: AppConfig, env: NodeJS.ProcessEnv = process.env): boolean {
+  if (/^(0|off|false|no)$/i.test(env.SAGAX_SEMANTIC_RECALL?.trim() ?? "")) return false;
+  return cfg.memory?.semanticRecall !== false;
+}
+
+/** The person's embeddings endpoint, or null for the built-in vectors. */
+export function semanticEmbeddingEndpoint(cfg: AppConfig): { url: string; model: string } | null {
+  const url = cfg.memory?.embeddingsUrl?.trim() ?? "";
+  const model = cfg.memory?.embeddingsModel?.trim() ?? "";
+  return url && model ? { url, model } : null;
 }
 
 export const DEFAULT_CAPTURE_QUIET_MS = 2 * 60_000;

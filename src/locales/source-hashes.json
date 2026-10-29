@@ -15656,7 +15656,18 @@
       "vault.card.allowedTurnOnly": "a3f3d413ace0ca6207849dc3206ca2b38470355be2205349c43fd4104e1892ec",
       "vault.settings.showPassword": "6aeaa6a53d09dcad071fdda6280b1e7c42aa164cd0514304ff162e7da440ffaa",
       "vault.settings.showKey": "9a663fdd41daac8517c4eb7665e10d8f2a64a78add2969ce8ed60131e5160d8b",
-      "vault.settings.hideSecret": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d"
+      "vault.settings.hideSecret": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d",
+      "botPanel.memory.semantic": "6d7d0e8a490067a48251cf22a65de6b46acb8e7e2d9fcff3dbf94675f7beb224",
+      "botPanel.memory.semanticSwitch": "b60418dfd0957872cd1dd7e00046691d3a8f01e272c67f775c9c4a90ae1601af",
+      "botPanel.memory.semanticHelp": "a600ec8e44f931046a26c8a9a33e33700b41f4579f8cd9c0d607897fdf2467d7",
+      "botPanel.memory.semanticBuiltIn": "885f434735b0ce9f82f6fa3d99506bd917c27e3db829af533fffbec8fa854300",
+      "botPanel.memory.semanticEndpoint": "38b1aed8389409e6c7947463c36b15752052eb289ace045df0e2f1ba097dc742",
+      "botPanel.memory.semanticEndpointDown": "49dfa33e5b0135dcbeef2525faafb9c9486a3128bdce0fc40803e9e582107caf",
+      "botPanel.memory.semanticCounts": "517ada6cfa066f24f552aa2673420d42d787878f477b6e45ae4838fefe71e410",
+      "botPanel.memory.semanticModel": "b91782fd87b1faaa0bddff1837df82327baa696179cc809f63a04fbf96eb3942",
+      "botPanel.memory.semanticModelHelp": "5766391aa3ff19423b455fa42a945dc217db61a4f11a1881985713f81b85e199",
+      "botPanel.memory.semanticUrl": "b164640fe403ac16fcd28da88cadb216cc7f708bf677400a2a0a7989171451b0",
+      "botPanel.memory.semanticModelName": "94a92f5dc6b4f372427a11d097aabe69cd76c4c38bf438453fcb497a31a7d2bd"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
