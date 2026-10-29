@@ -96,6 +96,8 @@ posixOnly("conversation branching e2e (fake ACP fleet)", () => {
       HOME: home,
       USERPROFILE: home,
       SAGAX_PORT: String(PORT),
+      // the replay test reads the native log raw (docs/content-encryption.md)
+      SAGAX_CONTENT_ENCRYPTION: "off",
     };
     if (process.env.PATH) env.PATH = process.env.PATH;
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
@@ -205,9 +207,10 @@ posixOnly("conversation branching e2e (fake ACP fleet)", () => {
       expect(backendChange.body.error).toContain("stop the active turn");
       expect((await getBot(created.id)).cloudBackend).toBe(backendBefore);
 
-      // a second send while busy queues (steer-queue) — never a parallel
-      // turn: the words land in the transcript, the live turn keeps running
-      const parallel = await api("POST", `/api/bots/${created.id}/messages`, { text: "sneaky second" });
+      // a second send that waits for the running turn ("after"; a plain send
+      // would pause it at a safe step, #1489) queues (steer-queue), never a
+      // parallel turn: the words wait, the live turn keeps running
+      const parallel = await api("POST", `/api/bots/${created.id}/messages`, { text: "sneaky second", busyMode: "after" });
       expect(parallel.status).toBe(202);
       expect(parallel.body.queued).toBe(true);
       expect((await getBot(created.id)).busy).toBe(true);

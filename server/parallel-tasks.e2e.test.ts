@@ -247,7 +247,8 @@ posixOnly("parallel tasks e2e", () => {
 
   it("a parallel task's approval is its own: asked in its thread, named on its card, answered without touching the main turn", async () => {
     const bot = (await api("POST", "/api/bots")).body.bot;
-    await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "askFirst", model: "default" } });
+    // a new bot starts on Approve for me; the cards under test need Ask
+    await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "askFirst", model: "default" }, approvalMode: "ask" });
     const openCard = async (threadId: string) => (await messages(bot.id, threadId)).find((m) => m.kind === "options" && m.card?.requestId && !m.card.answered);
     expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "main work", threadId: bot.threadId })).status).toBe(202);
     await waitFor(async () => Boolean(await openCard(bot.threadId)), "the main turn's approval");

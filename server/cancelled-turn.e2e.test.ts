@@ -100,7 +100,8 @@ it("keeps a client abort a quiet stop and retries the room request it stopped", 
     // The text before the stop stays in the transcript, but it is not the
     // turn's reply: neither the digest nor the finished notification reads it.
     expect(direct.some((message) => message.kind === "text" && message.text === PARTIAL)).toBe(true);
-    expect(direct.some((message) => message.card)).toBe(false);
+    // no live card (a requestId); the new bot's intro card is not one
+    expect(direct.some((message) => message.card?.requestId)).toBe(false);
     expect(JSON.stringify(digest.digest)).not.toContain(PARTIAL);
     // "finished" with nothing said stays quiet (server/notify.ts).
     const notices = stream.frames.filter((candidate) => candidate.kind === "notify" && candidate.notification?.botId === bot.id);

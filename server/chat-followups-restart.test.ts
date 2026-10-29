@@ -109,7 +109,11 @@ it("survives a real server crash: queued sends keep receipts, cancellation and u
     pairedToken = paired.token;
     const bot = (await api("POST", "/api/bots", { name: "Durable follow-ups" }, 201)).bot;
     const uncertain = (await api("POST", "/api/bots", { name: "Uncertain follow-up" }, 201)).bot;
-    const later = (await api("POST", `/api/bots/${uncertain.id}/tasks`, { title: "In-flight receipt" }, 201)).task;
+    // The newest open thread is the bot's conversation (shared/single-stream.ts),
+    // the one chat that never waits for a capacity slot: it holds the slot,
+    // and the queued receipt lives on the earlier thread.
+    const later = { threadId: uncertain.threadId as string };
+    const holder = (await api("POST", `/api/bots/${uncertain.id}/tasks`, { title: "Holds the slot" }, 201)).task;
     const worker = (await api("POST", "/api/bots", { name: "Channel worker" }, 201)).bot;
     const channel = (await api("POST", "/api/groups", {
       name: "Durable channel", memberIds: [worker.id],
@@ -124,29 +128,33 @@ it("survives a real server crash: queued sends keep receipts, cancellation and u
     const image = join(attachments, "123e4567-e89b-42d3-a456-426614174000.png");
     writeFileSync(image, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j7f8AAAAASUVORK5CYII=", "base64"));
     const text = `Inspect screenshot after the first task\n\n<attached-image path="${image}" name="fixture.png" />`;
-    const body = { text, threadId: bot.threadId, replyToId, sendId: "durable_bot_send_123456" };
+    // "After this one": the words wait for the running turn instead of
+    // joining it or pausing it at a safe step (shared/parallel-tasks.ts), so
+    // the receipt is still pending when the server dies.
+    const body = { text, threadId: bot.threadId, replyToId, sendId: "durable_bot_send_123456", busyMode: "after" };
     const queued = await asPairedPerson(`/api/bots/${bot.id}/messages`, body);
     expect(queued).toMatchObject({ queued: true, queueId: expect.any(String) });
     const cancelledBody = { ...body, text: `${text}\n\nCancelled task`, sendId: "cancelled_bot_send_123456" };
     const cancelled = await api("POST", `/api/bots/${bot.id}/messages`, cancelledBody, 202);
     await api("DELETE", `/api/bots/${bot.id}/queue/${cancelled.queueId}`, { threadId: bot.threadId });
 
-    await api("POST", `/api/bots/${uncertain.id}/messages`, { threadId: uncertain.threadId, text: "Hold capacity" }, 202);
+    await api("POST", `/api/bots/${uncertain.id}/messages`, { threadId: holder.threadId, text: "Hold capacity" }, 202);
     const uncertainBody = { threadId: later.threadId, text: "A possibly executed action", sendId: "uncertain_bot_send_123456" };
     const claimed = await api("POST", `/api/bots/${uncertain.id}/messages`, uncertainBody, 202);
     expect(claimed).toMatchObject({ queued: true, reason: "capacity" });
-    writeFileSync(join(dataDir, `${uncertain.threadId}.gate`), "finish first task only");
+    writeFileSync(join(dataDir, `${holder.threadId}.gate`), "finish first task only");
     await expect.poll(() => prompts(later.threadId).length, { timeout: 15_000 }).toBe(1);
 
     // Stop revokes provider credentials before the provider reports completion;
     // it must still retire the already-dispatched queue receipt exactly once.
     const stopped = (await api("POST", "/api/bots", { name: "Stopped follow-up" }, 201)).bot;
-    const stoppedTask = (await api("POST", `/api/bots/${stopped.id}/tasks`, { title: "Stop this follow-up" }, 201)).task;
-    await api("POST", `/api/bots/${stopped.id}/messages`, { threadId: stopped.threadId, text: "Hold capacity before Stop" }, 202);
+    const stoppedTask = { threadId: stopped.threadId as string };
+    const stoppedHolder = (await api("POST", `/api/bots/${stopped.id}/tasks`, { title: "Holds the slot before Stop" }, 201)).task;
+    await api("POST", `/api/bots/${stopped.id}/messages`, { threadId: stoppedHolder.threadId, text: "Hold capacity before Stop" }, 202);
     const stoppedBody = { threadId: stoppedTask.threadId, text: "Stop this dispatched follow-up", sendId: "stopped_bot_send_123456" };
     const stoppedReceipt = await api("POST", `/api/bots/${stopped.id}/messages`, stoppedBody, 202);
     expect(stoppedReceipt).toMatchObject({ queued: true, reason: "capacity" });
-    writeFileSync(join(dataDir, `${stopped.threadId}.gate`), "release capacity for the stopped follow-up");
+    writeFileSync(join(dataDir, `${stoppedHolder.threadId}.gate`), "release capacity for the stopped follow-up");
     await expect.poll(() => prompts(stoppedTask.threadId).length, { timeout: 15_000 }).toBe(1);
     expect(journal()).toContainEqual({ id: stoppedReceipt.queueId, status: "dispatching" });
     await api("POST", `/api/bots/${stopped.id}/interrupt`, { threadId: stoppedTask.threadId });

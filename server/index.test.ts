@@ -28,7 +28,7 @@ import { startFakeHttpMcp } from "./testing/fake-http-mcp-server.ts";
 import { startFakeOAuthMcp } from "./testing/fake-oauth-mcp-server.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { openSse } from "./testing/sse.ts";
-import { FILE_MAX_BYTES, IMAGE_MAX_BYTES } from "./attachments.ts";
+import { fileMaxBytes, imageMaxBytes } from "./attachments.ts";
 import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { computerPrompt, RUN_YOURSELF_PROMPT, SIGN_IN_PROMPT, VERIFY_FIRST_PROMPT } from "./system-prompt.ts";
 import {
@@ -3642,7 +3642,7 @@ describe("harness HTTP API", () => {
       managedBoatRows = [];
       managedBoatCreatedIds.clear();
       rmSync(fakeClaudeDump, { force: true });
-      expect((await api("POST", `/api/bots/${botIds[0]}/messages`, { text: "do not create a replacement" })).status).toBe(202);
+      expect((await api("POST", `/api/bots/${botIds[0]}/messages`, { text: "do not create a replacement", threadId: firstThread })).status).toBe(202);
       await expect.poll(async () => JSON.stringify((await api("GET", "/api/bots?messages=30")).body.bots.find(
         (bot: { id: string }) => bot.id === botIds[0],
       )), { timeout: 5_000 }).toMatch(/team's cloud computer is missing/);
@@ -5044,7 +5044,9 @@ describe("harness HTTP API", () => {
     const tooBig = await fetch(`${BASE}/api/attachments`, {
       method: "POST",
       headers: { "content-type": "image/png" },
-      body: Buffer.alloc(IMAGE_MAX_BYTES + 1),
+      // the ceiling a solo server applies (raised there, #1281); this
+      // process never ran setSharedHost, so the answer is asked explicitly
+      body: Buffer.alloc(imageMaxBytes(false) + 1),
     });
     expect(tooBig.status).toBe(413);
 
@@ -5247,7 +5249,7 @@ describe("harness HTTP API", () => {
     const tooBig = await fetch(`${BASE}/api/files?name=large.pdf`, {
       method: "POST",
       headers: { "content-type": "application/pdf" },
-      body: Buffer.alloc(FILE_MAX_BYTES + 1),
+      body: Buffer.alloc(fileMaxBytes(false) + 1),
     });
     expect(tooBig.status).toBe(413);
 
@@ -6653,11 +6655,11 @@ describe("harness HTTP API", () => {
       expect((await isolatedApi(
         "POST",
         `/api/bots/${direct.id}/messages`,
-        { text: "request a private key" },
+        { text: "request a private key", threadId: directOriginalThread },
       )).status).toBe(202);
       await readJsonFileWhenReady(isolatedDump);
       const directRequest = await requestCredential(direct.id, directOriginalThread);
-      expect((await isolatedApi("POST", `/api/bots/${direct.id}/interrupt`, {})).status).toBe(200);
+      expect((await isolatedApi("POST", `/api/bots/${direct.id}/interrupt`, { threadId: directOriginalThread })).status).toBe(200);
       await expect.poll(async () => {
         const state = (await isolatedApi("GET", "/api/bots?messages=0")).body;
         return state.bots.find((bot: { id: string }) => bot.id === direct.id)?.busy;
@@ -6782,10 +6784,10 @@ describe("harness HTTP API", () => {
         expect(response.body.error).toMatch(/securely saving a credential/i);
       };
       await expectLocked(isolatedApi("POST", `/api/bots/${direct.id}/messages/${directUser.id}/edit`, {
-        text: "rewind under the save",
+        text: "rewind under the save", threadId: directOriginalThread,
       }));
       await expectLocked(isolatedApi("POST", `/api/bots/${direct.id}/active-branch`, {
-        messageId: directRequest.messageId,
+        messageId: directRequest.messageId, threadId: directOriginalThread,
       }));
       await expectLocked(isolatedApi("POST", `/api/bots/${direct.id}/tasks`, { title: "Race" }));
       await expectLocked(isolatedApi(
@@ -7550,13 +7552,18 @@ describe("harness HTTP API", () => {
     expect(stopped).toEqual({ status: 200, body: { ok: true } });
   });
 
-  it("a new bot opens with one greeting and no quiz card", async () => {
+  it("a new bot opens with one greeting and its intro card, never a live question", async () => {
     const bot = (await api("POST", "/api/bots", { name: "Fresh" })).body.bot;
     try {
-      expect(bot.messages).toHaveLength(1);
+      // the greeting, then the intro tour's first scripted card
+      // (server/intro-tour.ts): a pick advances the tour, any other text
+      // dismisses it; it carries no requestId, so nothing waits on it
+      expect(bot.messages).toHaveLength(2);
       expect(bot.messages[0]).toMatchObject({ role: "bot", kind: "text" });
       expect(bot.messages[0].text).toBe("Hi, I'm Fresh. What would you like me to do?");
-      expect(bot.messages.some((m: { kind: string }) => m.kind === "options")).toBe(false);
+      expect(bot.messages[1]).toMatchObject({ role: "bot", kind: "options", card: { title: "What should we start with?" } });
+      expect(bot.messages[1].card.requestId).toBeUndefined();
+      expect(bot.messages.some((m: { card?: { requestId?: string } }) => m.card?.requestId)).toBe(false);
     } finally {
       await api("DELETE", `/api/bots/${bot.id}`);
     }
@@ -10438,6 +10445,11 @@ describe("harness HTTP API", () => {
       const sibling = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Unrelated selected thread" });
       expect(sibling.status).toBe(201);
       expect((await api("POST", `/api/bots/${bot.id}/read`, { threadId: bot.threadId })).status).toBe(200);
+      // The run's card lands in the bot's conversation (shared/single-stream.ts:
+      // the newest open thread, here the sibling), not in the selected thread.
+      const home = sibling.body.task.threadId as string;
+      expect((await api("GET", "/api/bots?messages=0")).body.bots
+        .find((candidate: { id: string }) => candidate.id === bot.id).mainThreadId).toBe(home);
 
       const routineEvents = await openSse(`${BASE}/api/events`);
       try {
@@ -10450,10 +10462,10 @@ describe("harness HTTP API", () => {
             frame.notification?.botId === bot.id,
           5_000,
         );
-        expect(failedNotice.notification.threadId).toBe(bot.threadId);
+        expect(failedNotice.notification.threadId).toBe(home);
 
         await expect.poll(async () => {
-          const source = (await api("GET", `/api/threads/${bot.threadId}/messages`)).body;
+          const source = (await api("GET", `/api/threads/${home}/messages`)).body;
           return source.messages.filter(
             (message: { kind?: string; routineRun?: { runId?: string } }) =>
               message.kind === "routine.run" && message.routineRun?.runId === queued.body.run.id,
@@ -10461,9 +10473,9 @@ describe("harness HTTP API", () => {
         }, { timeout: 5_000 }).toHaveLength(1);
         const current = (await api("GET", "/api/bots")).body.bots
           .find((candidate: { id: string }) => candidate.id === bot.id);
-        expect(current.tasks.find((task: { threadId: string }) => task.threadId === bot.threadId)?.unread).toBe(true);
-        expect(current.tasks.find((task: { threadId: string }) => task.threadId === sibling.body.task.threadId)?.unread).toBeFalsy();
-        const runCards = (await api("GET", `/api/threads/${bot.threadId}/messages`)).body.messages.filter(
+        expect(current.tasks.find((task: { threadId: string }) => task.threadId === home)?.unread).toBe(true);
+        expect(current.tasks.find((task: { threadId: string }) => task.threadId === bot.threadId)?.unread).toBeFalsy();
+        const runCards = (await api("GET", `/api/threads/${home}/messages`)).body.messages.filter(
           (message: { kind?: string; routineRun?: { runId?: string } }) =>
             message.kind === "routine.run" && message.routineRun?.runId === queued.body.run.id,
         );
@@ -10474,12 +10486,12 @@ describe("harness HTTP API", () => {
           routineName: "Weekday brief",
           status: "failed",
         });
-        expect(runCards[0].routineRun.executionThreadId).not.toBe(bot.threadId);
+        expect(runCards[0].routineRun.executionThreadId).not.toBe(home);
 
         // Reading the source and then marking the failure seen in Routines
         // must not make the original conversation unread again. markSeen
         // re-emits the receipt without changing its lifecycle status.
-        expect((await api("POST", `/api/bots/${bot.id}/read`, { threadId: bot.threadId })).status).toBe(200);
+        expect((await api("POST", `/api/bots/${bot.id}/read`, { threadId: home })).status).toBe(200);
         expect((await api("POST", `/api/routine-runs/${queued.body.run.id}/seen`)).status).toBe(200);
         const afterSeen = (await api("GET", "/api/bots?messages=0")).body.bots
           .find((candidate: { id: string }) => candidate.id === bot.id);

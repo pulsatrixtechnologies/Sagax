@@ -1223,8 +1223,10 @@ it("does not offer a message again that the person steered out of the queue into
     await f.wait();
     await f.send("Start on the report.");
     await expect.poll(() => existsSync(f.gate("slow-ready")), { timeout: 15_000 }).toBe(true);
-    // The engine refuses the live steer, so the words wait in the queue.
-    const queued = await f.send("QUEUED_STEER also cover costs");
+    // The engine refuses the live steer, so the words wait in the queue
+    // ("after": they wait for the turn instead of pausing it at a safe
+    // step, #1489, so Steer below finds them still queued).
+    const queued = await f.api(`/api/bots/${f.chief.id}/messages`, { text: "QUEUED_STEER also cover costs", threadId: f.thread, busyMode: "after" });
     expect(queued.queued).toBe(true);
     rmSync(refuseLiveSteers, { force: true });
     // A refused steer restores the queue untouched, so the endpoint can be
@@ -1260,11 +1262,15 @@ it("offers the results again when the provider reports an API error instead of a
 
 it("does not hand the model a queued follow-up that a restart recovered with an unknown outcome", () => fixture(async (f) => {
   await f.api("/api/config", { threads: { maxConcurrentPerBot: 1 } }, "PATCH");
-  const other = (await f.api(`/api/bots/${f.chief.id}/tasks`, { title: "Second conversation" })).task.threadId;
+  // The newest thread is the bot's conversation (shared/single-stream.ts),
+  // the one chat that never waits for a slot: it holds the slot, and the
+  // follow-up waits on the earlier thread.
+  const holder = (await f.api(`/api/bots/${f.chief.id}/tasks`, { title: "Second conversation" })).task.threadId;
+  const other = f.thread;
   f.plan[f.chief.id] = { turns: [{ reply: "Noted." }, { readyFile: f.gate("hold-ready"), reply: "Held", gateFile: f.gate("hold") }, { reply: "never", gateFile: f.gate("never") }] };
   await f.send("Warm up.", other);
   await f.wait(other);
-  await f.send("Hold the only slot.");
+  await f.send("Hold the only slot.", holder);
   await expect.poll(() => existsSync(f.gate("hold-ready")), { timeout: 15_000 }).toBe(true);
   expect((await f.send("RECOVERED_FOLLOWUP deploy it", other)).queued).toBe(true);
   f.open(f.gate("hold"));
@@ -1512,7 +1518,10 @@ it("gives a delegate_bot source today's fresh session and replay when its soul c
   await expect.poll(() => f.turns().length, { timeout: 30_000 }).toBe(3);
 
   const [, first, third] = f.turns();
-  const late = count(f.prompt(first), "QA_SOUL_TOKEN") ? "OPS_SOUL_TOKEN" : "QA_SOUL_TOKEN";
+  // The late reply is the teammate report the first wake did not carry.
+  // A teammate's fixture reply names its bot ("Result from <id>"), not the
+  // delegated words, so the report is found by its header.
+  const late = count(f.prompt(first), "@QA replied to the delegated task") ? "@Ops replied to the delegated task" : "@QA replied to the delegated task";
   expect(third.system).toContain("PEER_SOUL_MARK");
   // The fresh launch is recorded asynchronously once the third turn starts;
   // poll for it so a slow launch is not mistaken for a wrong resume.

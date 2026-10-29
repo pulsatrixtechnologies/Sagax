@@ -182,7 +182,9 @@ posixOnly("usage attribution e2e", () => {
     await waitFor(async () => (await getBot(bot.id)).busy === true, "the owner's turn to start");
     await waitFor(() => acpPrompts() > prompts, "the owner's prompt to reach the engine");
     const asPaired = await asPerson();
-    const queued = await asPaired("POST", `/api/bots/${bot.id}/messages`, { text: "person's follow-up" });
+    // "after": the words wait for the running turn (a plain send would pause
+    // it at a safe step, #1489); the booking under test needs the wait
+    const queued = await asPaired("POST", `/api/bots/${bot.id}/messages`, { text: "person's follow-up", busyMode: "after" });
     expect(queued.body.queued).toBe(true);
 
     await api("POST", `/api/bots/${bot.id}/interrupt`);
@@ -236,9 +238,11 @@ posixOnly("usage attribution e2e", () => {
     const model = (await api("GET", "/api/instances")).body.instances.find((i: any) => i.instanceId === "codexRace").models.default;
     const bot = await newBot("codexRace", model);
     expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "owner's codex turn" })).status).toBe(202);
-    await waitFor(async () => (await getBot(bot.id)).messages.some((m: any) => m.card), "the question card");
+    // a live card (requestId): the new bot's intro card is not one
+    await waitFor(async () => (await getBot(bot.id)).messages.some((m: any) => m.card?.requestId && !m.card.answered), "the question card");
     const asPaired = await asPerson();
-    const queued = await asPaired("POST", `/api/bots/${bot.id}/messages`, { text: "steer these words" });
+    // "after" keeps the words in the queue (#1489) until Steer is pressed
+    const queued = await asPaired("POST", `/api/bots/${bot.id}/messages`, { text: "steer these words", busyMode: "after" });
     expect(queued.body.queued).toBe(true);
     rmSync(codexSteerGate, { force: true });
     const steered = await asPaired("POST", `/api/bots/${bot.id}/queue/${queued.body.queueId}/steer`, { threadId: bot.threadId });

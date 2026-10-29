@@ -115,7 +115,8 @@ posixOnly("a replayed respond for a settled card", () => {
     const created = await api("POST", "/api/bots", { name: "Replayed" });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const bot = created.body.bot as { id: string; threadId: string };
-    const patched = await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "grok", model: "fake-model" } });
+    // a new bot starts on Approve for me; the card under test needs Ask
+    const patched = await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "grok", model: "fake-model" }, approvalMode: "ask" });
     expect(patched.status).toBe(200);
 
     const sent = await api("POST", `/api/bots/${bot.id}/messages`, { text: "run it", threadId: bot.threadId });
