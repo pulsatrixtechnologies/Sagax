@@ -93,7 +93,10 @@ export type DecisionSource =
   /** a member bot's command would run on the shared organization server, which
    * only an admin may use: it runs on the bot's own computer instead, or is
    * refused when it has none (server/exec-target.ts, 2026-10-22) */
-  | "exec-target";
+  | "exec-target"
+  /** a Sagax tool that does not exist (a name the model made up): refused at
+   * once, never a card (#1426) */
+  | "unknown-tool";
 
 /** Who answered a card, for `source: "user"` rows: a signed-in session (its
  * id, device label, and account email or id when it has one; a portal

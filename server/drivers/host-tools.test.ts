@@ -3,7 +3,7 @@
 // requests declined.
 import { describe, expect, it } from "vitest";
 
-import { CLAUDE_HOST_TOOLS, CLAUDE_ORG_TOOLS, CLAUDE_UNUSED_COMMANDS, CLAUDE_UNUSED_TOOLS, CODEX_WITHHELD_APPROVAL, GROK_MCP_TOOLS, GROK_VIDEO_TOOLS, OPENCODE_HOST_PERMISSIONS, PI_HOST_TOOLS, claudeDisallowedTools, claudeOrgTools, codexHostToolArgs, codexHostToolRequest, grokHostToolArgs, grokOrgAgentProfile, opencodeOrgPermission, piHostToolArgs } from "./host-tools.ts";
+import { CLAUDE_HOST_TOOLS, CLAUDE_ORG_TOOLS, CLAUDE_UNUSED_COMMANDS, CLAUDE_UNUSED_TOOLS, CODEX_WITHHELD_APPROVAL, GROK_IMAGE_TOOLS, GROK_MCP_TOOLS, GROK_VIDEO_TOOLS, OPENCODE_HOST_PERMISSIONS, PI_HOST_TOOLS, claudeDisallowedTools, claudeOrgTools, codexHostToolArgs, codexHostToolRequest, grokHostToolArgs, grokOrgAgentProfile, opencodeOrgPermission, piHostToolArgs } from "./host-tools.ts";
 
 describe("Claude Code host tools", () => {
   it("denies shell, file and fetch built-ins, keeping configured denials", () => {
@@ -80,15 +80,16 @@ describe("Codex host tools", () => {
 });
 
 describe("Grok host tools", () => {
-  it("keeps the MCP tools and video in the ACP profile, and not the shell", () => {
+  it("keeps the MCP tools, video and images in the ACP profile, and not the shell", () => {
     const profile = grokOrgAgentProfile(undefined, true);
     expect(profile.injectDefaultTools).toBe(false);
-    expect(profile.tools).toEqual([...GROK_MCP_TOOLS, ...GROK_VIDEO_TOOLS]);
-    for (const name of ["run_terminal_command", "read_file", "write", "grep", "web_search", "web_fetch", "spawn_subagent", "bash", "image_gen", "image_edit"]) {
+    expect(profile.tools).toEqual([...GROK_MCP_TOOLS, ...GROK_VIDEO_TOOLS, ...GROK_IMAGE_TOOLS]);
+    for (const name of ["run_terminal_command", "read_file", "write", "grep", "web_search", "web_fetch", "spawn_subagent", "bash"]) {
       expect(profile.disallowedTools).toContain(name);
       expect(profile.tools).not.toContain(name);
     }
-    for (const name of GROK_VIDEO_TOOLS) {
+    // #1426: a member's bot makes images with the Grok account its turn runs on
+    for (const name of [...GROK_VIDEO_TOOLS, ...GROK_IMAGE_TOOLS]) {
       expect(profile.tools).toContain(name);
       expect(profile.disallowedTools).not.toContain(name);
     }

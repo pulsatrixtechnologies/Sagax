@@ -205,6 +205,15 @@ export function builtinAgentToolName(name: string | undefined): string | null {
   return match ? match[1]! : null;
 }
 
+/** What the model reads when it called a Sagax tool that does not exist
+ * (#1426): nothing ran, nobody is asked, and for an image it uses the
+ * engine's own image tool when the turn has one. Pure. */
+export function unknownAgentToolRefusal(tool: string): string {
+  const image = /image|imagine|picture|photo|draw|paint/i.test(tool);
+  return `Sagax has no tool named "${tool}": nothing ran and no approval was asked. Use only the tools listed for this turn.`
+    + (image ? " To make an image, use your engine's own image tool (image_gen on Grok) when this turn offers it; otherwise tell the person that image generation is not available for this bot here." : "");
+}
+
 /** The family of an agents tool a member's bot may run without an admin,
  * or null: host-level, unknown, or not an agents tool at all. */
 export function memberOwnScopeTool(name: string | undefined): MemberToolFamily | null {
