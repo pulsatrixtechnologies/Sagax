@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Routine, RoutineRun } from "./routines";
 import {
+  addDays,
   atLocalTime,
   formatGmtOffset,
   intervalAnchorForSave,
@@ -199,8 +200,22 @@ describe("routine calendar projection", () => {
   it("bounds dense cron projections and refuses to silently drag-convert an expression", () => {
     const from = monthly.nextRunAt!;
     const dense: Routine = { ...monthly, schedule: { type: "cron", expression: "* * * * *", timeZone: "UTC" } };
-    expect(projectedRoutineItems([dense], [], startOfDay(from), startOfDay(from) + 86_400_000)).toHaveLength(12);
+    const day = startOfDay(from);
+    const items = projectedRoutineItems([dense], [], day, day + 86_400_000);
+    // One marker per 5-minute calendar slot, through the whole day.
+    expect(items).toHaveLength(Math.ceil((day + 86_400_000 - from) / 300_000));
+    expect(items.at(-1)!.at).toBeGreaterThanOrEqual(day + 86_400_000 - 300_000);
     expect(() => scheduleAt(monthly.schedule, from, from + 86_400_000)).toThrow("Edit this routine");
+  });
+
+  it("shows every hourly cron run on every day, not only the first 12 (#1483)", () => {
+    const today = new Date(2026, 9, 28, 14).getTime();
+    const hourly: Routine = { ...monthly, createdAt: today - 86_400_000, nextRunAt: today,
+      schedule: { type: "cron", expression: "0 * * * *", timeZone: "America/Toronto" } };
+    const tomorrow = addDays(startOfDay(today), 1);
+    const items = projectedRoutineItems([hourly], [], tomorrow, addDays(tomorrow, 1));
+    expect(items).toHaveLength(24);
+    expect(items.at(-1)!.at - tomorrow).toBeGreaterThanOrEqual(22 * 3_600_000);
   });
 
   it("keeps daily cron projections visible throughout a full month", () => {
