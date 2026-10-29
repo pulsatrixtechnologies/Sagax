@@ -162,7 +162,7 @@ describe("Coding branches: the card", () => {
   });
 
   it("words a refusal by its code, else the server's message", () => {
-    expect(branchErrorText(new ApiError("x", 403, { code: "github_not_connected" }))).toBe("Connect your own GitHub account (Connect apps, Personal)");
+    expect(branchErrorText(new ApiError("x", 403, { code: "github_not_connected" }))).toBe("Connect your own GitHub account (Connect apps > Providers > GitHub)");
     expect(branchErrorText(new ApiError("x", 409, { code: "rejected" }))).toContain("nothing is forced");
     expect(branchErrorText(new ApiError("Something else", 500, { code: "odd" }))).toBe("Something else");
   });

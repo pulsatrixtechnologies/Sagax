@@ -48,15 +48,15 @@ describe("Mes connexions", () => {
   });
 
   // 2026-10-28: one Connect GitHub whatever the server has; without its
-  // OAuth App it asks for a token, and one sentence says an admin can turn
-  // the sign-in on.
+  // OAuth App it asks for a token. No admin step (#1550): each person
+  // manages their own accounts.
   it("one Connect GitHub (a token) when the server has no GitHub OAuth App, in French", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, github: { state: "none", deviceFlow: false } } }));
     expect(html).toContain('data-github-connect="token"');
     expect(html).toContain("Connecter GitHub</button>");
     expect(html).not.toContain("Utiliser un jeton");
-    expect(html).toContain("L&#x27;admin peut activer Connecter GitHub");
+    expect(html).not.toContain("admin");
     expect(html).toContain("Ajouter un serveur MCP");
   });
 

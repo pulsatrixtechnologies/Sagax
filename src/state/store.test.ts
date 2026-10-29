@@ -36,6 +36,7 @@ import {
 } from "./store";
 import { LAST_CONVERSATION_KEY } from "@/lib/last-conversation";
 import { LAST_BOT_SECTION_KEY } from "@/lib/last-bot-section";
+import { setShowThreads } from "@/lib/thread-preferences";
 import { transcriptLookups } from "@/lib/transcript-derivations";
 import { openLiveEvents, type LiveEventSourceLike, type LiveEventsPlatform } from "../lib/live-events";
 import type { ModelVariantState, RuntimeEvent } from "../../shared/runtime-events";
@@ -215,9 +216,21 @@ describe("independent bot threads", () => {
     expect(patched.bots[0]?.threadId).toBe("first");
     expect(patched.bots[0]?.messages).toEqual(bot.messages);
     expect(patched.bots[0]?.activeLeafId).toBe("first-message");
-    const read = reducer(patched, { type: "select", id: bot.id });
-    expect(read.bots[0]?.unread).toBe(true);
-    expect(read.bots[0]?.tasks?.[1]?.unread).toBe(true);
+    // Threads shown (#1435): the other thread keeps its own row, so opening
+    // the bot reads only the thread on screen.
+    setShowThreads(true);
+    try {
+      const read = reducer(patched, { type: "select", id: bot.id });
+      expect(read.bots[0]?.unread).toBe(true);
+      expect(read.bots[0]?.tasks?.[1]?.unread).toBe(true);
+    } finally {
+      setShowThreads(false);
+    }
+    // One conversation (the default): the person reads the bot's whole
+    // conversation, its earlier topics with it (threadsReadOnScreen).
+    const one = reducer(patched, { type: "select", id: bot.id });
+    expect(one.bots[0]?.unread).toBe(false);
+    expect(one.bots[0]?.tasks?.[1]?.unread).toBe(false);
   });
 
   it("drops deleted-thread approvals before a slim deletion frame is followed by its transcript", () => {

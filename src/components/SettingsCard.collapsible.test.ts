@@ -23,8 +23,8 @@ beforeAll(() => {
 });
 
 vi.mock("@/lib/analytics", () => ({
-  analyticsEnabled: () => false,
-  setAnalyticsEnabled: () => {},
+  usageMeterEnabled: () => false,
+  setUsageMeterEnabled: () => Promise.resolve(false),
 }));
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -234,8 +234,10 @@ describe("Settings → Account and General, compact", () => {
     expect(html).toContain('data-settings-card="general.aboutMe" data-settings-subpage-row');
     expect(html).not.toContain('id="profile-about-me"');
     // every other card on the page is the collapsible kind; the account card
-    // (2026-10-15) is always open, never collapsed, and so is Security keys (2026-10-26)
+    // (2026-10-15) is always open, never collapsed. Security keys left for
+    // the Security page of their own (#1510, 2026-10-28).
     expect(html).not.toContain('data-settings-card="general.profile"');
-    expect(html.match(/data-settings-card="[^"]*"(?! data-open| data-settings-subpage-row)/g)).toEqual(['data-settings-card="general.account"', 'data-settings-card="security"']);
+    expect(html).not.toContain('data-settings-card="security"');
+    expect(html.match(/data-settings-card="[^"]*"(?! data-open| data-settings-subpage-row)/g)).toEqual(['data-settings-card="general.account"']);
   });
 });

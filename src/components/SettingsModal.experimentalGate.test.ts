@@ -33,7 +33,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
     dispatch: vi.fn(),
   }),
 }));
-vi.mock("@/lib/analytics", () => ({ analyticsEnabled: () => false, setAnalyticsEnabled: vi.fn() }));
+vi.mock("@/lib/analytics", () => ({ usageMeterEnabled: () => false, setUsageMeterEnabled: vi.fn(async () => false) }));
 vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => fixture.viewer?.role !== "member" }));
 vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/perspicax-org")>(),
@@ -96,12 +96,14 @@ describe("Settings > Experimental gated on server.experimental", () => {
     expect(html).toContain('data-experimental-feature="dataWindow"');
   });
 
-  it("hides the deeper browser controls from an experimental-only member (no config edit)", async () => {
+  it("hides the installation's browser profiles from an experimental-only member (no config edit), never their own Chrome", async () => {
     fixture.viewer = { role: "member", operator: false, permissions: ["server.experimental"] };
     const html = await render();
-    // the browser switch shows, but not the profiles manager nor the my-Chrome link
+    // the browser switch shows, and My Chrome is the person's own wherever
+    // the server offers the browser (#1294); the installation's profiles
+    // manager stays with a config editor
     expect(html).toContain('data-experimental-feature="browser"');
-    expect(html).not.toContain("MY_CHROME_MARKER");
+    expect(html).toContain("MY_CHROME_MARKER");
     expect(html).not.toContain('data-settings-card="experimental.browserProfiles"');
   });
 
