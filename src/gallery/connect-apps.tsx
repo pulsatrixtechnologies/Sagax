@@ -170,6 +170,10 @@ const MANAGE_API: Record<string, unknown> = {
   },
   "/api/routines": { routines: [], runs: [] },
   "/api/webhooks": { webhooks: [], attempts: [] },
+  // Browse Bots opened from Discover (2026-10-28): no bot of the person yet,
+  // the built-in templates, an empty marketplace list
+  "/api/bot-catalog": { organization: true, viewer: { principalId: "p-1", admin, canCreate: true }, entries: [] },
+  "/api/team-library/xai": { label: "xAI Bot Marketplace", url: "https://x.ai/bot/marketplace", fetchedAt: 1, bots: [] },
 };
 
 if (["manage", "org-settings", "settings-subpage"].includes(params.get("view") ?? "manage")) {
