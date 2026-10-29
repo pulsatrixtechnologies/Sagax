@@ -2,13 +2,17 @@
 // (src/lib/tts): one voice at a time, a new message stops the last, and the
 // same menu item turns into Stop while that message is the one speaking.
 //
-// Audio comes from the paired computer first, as on the desktop: it holds
-// the voice provider's key and the agent's voice (`POST /api/tts/prepare`
-// cuts the text into utterances, `POST /api/tts/speak` renders each one).
-// When the computer has no voice set up, or a request fails, the phone's
-// own voice (AVSpeechSynthesizer) reads it instead, so the action always
-// does something. The live call (ios/App/Call) keeps its own streaming
-// voice stack; a read-aloud is one clip at a time, so it plays here.
+// Audio comes from the paired computer first, as on the desktop: voice
+// mode's xAI voice whenever a key serves the person (2026-10-28: `POST
+// /voice/prepare` and `POST /voice/speak`, the person's Voice, Speed and
+// Language, the same key order as the call), else the computer's voice
+// provider with the agent's voice (`POST /api/tts/prepare` cuts the text
+// into utterances, `POST /api/tts/speak` renders each one). When neither
+// can, the phone's own voice (AVSpeechSynthesizer) reads it instead, and
+// `notice` says why (the reason and the key it is about), so the action
+// always does something and never switches voices in silence. The live
+// call (ios/App/Call) keeps its own streaming voice stack; a read-aloud is
+// one clip at a time, so it plays here.
 import AVFoundation
 import CompanionCore
 import SwiftUI
@@ -22,6 +26,17 @@ final class MessageSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
     @Published private(set) var status: Status = .idle
     /// The message being read, so its menu offers Stop.
     @Published private(set) var messageId: String?
+    /// Why the reply is read by another voice than xAI's (the reason, the
+    /// key it is about), or that a key gave way to another: shown under
+    /// the composer for a moment.
+    @Published var notice: String?
+
+    /// Voice mode's xAI voice for this bot (Session.readAloudVoice).
+    struct VoiceModeVoice {
+        let client: CompanionClient
+        let botId: String
+        let settings: VoiceModeSettings
+    }
 
     private let player = SpeechClipPlayer()
     private let synthesizer = AVSpeechSynthesizer()
@@ -38,7 +53,7 @@ final class MessageSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
     /// Speak `text` for `id`, stopping whatever was speaking. The menu
     /// decides between this and `stop()` from what it showed, so a tap on
     /// Stop never restarts a reply that finished a moment before.
-    func speak(_ text: String, messageId id: String, voiceId: String?, session: Session) {
+    func speak(_ text: String, messageId id: String, voiceId: String?, botId: String? = nil, session: Session) {
         stop()
         guard VoiceNoteCenter.shared.beginPlaybackSession() else { return }
         let audio = AVAudioSession.sharedInstance()
@@ -46,8 +61,9 @@ final class MessageSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
         try? audio.setActive(true)
         messageId = id
         status = .preparing
+        notice = nil
         task = Task { [weak self] in
-            await self?.read(text, voiceId: voiceId, session: session)
+            await self?.read(text, voiceId: voiceId, botId: botId, session: session)
             guard let self, !Task.isCancelled else { return }
             self.finish()
         }
@@ -70,14 +86,61 @@ final class MessageSpeaker: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
         VoiceNoteCenter.shared.endPlaybackSession()
     }
 
-    private func read(_ text: String, voiceId: String?, session: Session) async {
+    private func read(_ text: String, voiceId: String?, botId: String?, session: Session) async {
+        // voice mode's xAI voice: the person's own key, their Perspicax key
+        // or the organization's, as on the call
+        if let voice = await session.readAloudVoice(botId: botId) {
+            guard !Task.isCancelled else { return }
+            if await playVoiceMode(text, voice: voice) { return }
+            guard !Task.isCancelled else { return }
+        }
         if let prepared = await session.prepareSpeech(text: text, voiceId: voiceId),
            prepared.ready, !prepared.utterances.isEmpty {
             if await playComputerVoice(prepared.utterances, voiceId: voiceId, session: session) { return }
         }
         guard !Task.isCancelled else { return }
+        // Apple's voice is the announced fallback, never a silent one
+        if notice == nil { notice = String(localized: "Read with this iPhone's voice: no voice is set up on the computer for this bot.") }
         status = .speaking
         await deviceSpeak(Walkie.speakable(text, limit: 4_000))
+    }
+
+    /// True when xAI read every utterance; false hands the text to the
+    /// next voice, with the reason in `notice`.
+    private func playVoiceMode(_ text: String, voice: VoiceModeVoice) async -> Bool {
+        let parts: [String]
+        do { parts = try await voice.client.voiceModePrepare(botId: voice.botId, text: text) } catch { return failedVoiceMode(error) }
+        guard !parts.isEmpty else { return true }
+        let render = { (part: String) async throws -> Data in
+            let (data, key) = try await voice.client.voiceModeSpeak(botId: voice.botId, text: part, settings: voice.settings, threadId: nil)
+            if let line = key.fallbackLine { self.notice = line }
+            return data
+        }
+        var current: Data
+        do { current = try await render(parts[0]) } catch { return failedVoiceMode(error) }
+        for index in parts.indices {
+            guard !Task.isCancelled else { return true }
+            var next: Task<Data, Error>?
+            if index + 1 < parts.count {
+                let upcoming = parts[index + 1]
+                next = Task { try await render(upcoming) }
+            }
+            status = .speaking
+            do { try await player.play(current) } catch { next?.cancel(); return false }
+            guard let next else { return true }
+            guard !Task.isCancelled else { next.cancel(); return true }
+            do { current = try await next.value } catch { return Task.isCancelled || failedVoiceMode(error) }
+        }
+        return true
+    }
+
+    /// xAI could not read this: the reason and the key it is about
+    /// (VoiceWords), then the next voice reads it.
+    private func failedVoiceMode(_ error: Error) -> Bool {
+        if Task.isCancelled { return true }
+        if let failure = error as? VoiceFailure { notice = String(localized: "\(VoiceWords.line(failure)) Read with another voice.") }
+        else { notice = String(localized: "xAI could not read this reply (\(error.localizedDescription)). Read with another voice.") }
+        return false
     }
 
     /// True when every utterance played; false hands what is left to the

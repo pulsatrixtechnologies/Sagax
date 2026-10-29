@@ -1,14 +1,21 @@
-// On-device dictation for the composer.
+// Dictation for the composer. Two ears (2026-10-28, the desktop's
+// `dictationEngine` in src/lib/composer-dictation.ts):
 //
-// Same engine as the desktop helper (`electron/resources/speech-helper.swift`):
-// `SFSpeechRecognizer` on an `AVAudioEngine` tap, partials streamed into the
-// text field, press to stop. Composer mode, not call mode — there is no
-// silence endpointing. The phone is better at this than the Mac was: the
-// recognizer is in the same process as the field, so there is no helper
-// binary, no TCC bundle dance, and no `open -W`.
+// - xAI on the server (`.xai`), whenever a key serves the person
+//   (Session.dictationEars asks `GET /voice/status`): the microphone is
+//   recorded at 16 kHz and the clip is sent once it stops (`POST
+//   /voice/transcribe`, the same ears, keyterms and formatting as the
+//   call); the words join the field then ("processing" meanwhile). A
+//   failure says why and about which key (VoiceWords), never a raw line.
+// - Apple on this iPhone (`.apple`): `SFSpeechRecognizer` on an
+//   `AVAudioEngine` tap, partials streamed into the text field, press to
+//   stop, the same engine as the desktop helper. Only when no xAI key
+//   serves (or the server could not be asked), and `appleReason` says so
+//   under the composer: an announced fallback, never a silent one.
 //
-// On-device when the recognizer supports it, so talking to a bot does not
-// become talking to Apple's servers. Locales come from `Dictation.localeCandidates`
+// Composer mode, not call mode: there is no silence endpointing. On-device
+// when Apple's recognizer supports it, so talking to a bot does not become
+// talking to Apple's servers. Locales come from `Dictation.localeCandidates`
 // rather than a hardcoded en-US, for the same reason the desktop helper
 // stopped hardcoding one.
 //
@@ -28,11 +35,36 @@ final class SpeechDictation: ObservableObject {
         "kAFAssistantErrorDomain": [216],
     ]
 
+    /// xAI's ears on the server: a turn's samples (16 kHz) to its words.
+    struct ServerEars {
+        /// the key the status named (the provider line)
+        let key: VoiceKeyInfo?
+        let transcribe: ([Float]) async throws -> VoiceTranscription
+    }
+
+    /// Who hears this dictation (Session.dictationEars).
+    enum Ears {
+        case xai(ServerEars)
+        /// Apple on this iPhone; `reason` when xAI was wanted but could not
+        /// be used (said under the composer), nil when Apple is the plain choice
+        case apple(reason: String?)
+    }
+
+    enum Engine: Equatable { case apple, xai }
+
     @Published private(set) var isListening = false
     /// True from `start` until capture is running or the attempt fails.
     /// Publishing it keeps the frozen composer base protected while the
     /// system permission sheets are still in flight.
     @Published private(set) var isStarting = false
+    /// xAI is turning the clip into words (the field waits for them).
+    @Published private(set) var isProcessing = false
+    /// Who heard the last or current dictation.
+    @Published private(set) var engine: Engine = .apple
+    /// Why Apple hears although xAI was wanted (shown while listening).
+    @Published private(set) var appleReason: String?
+    /// A key refused on the way to the one that heard: said once.
+    @Published private(set) var keyNotice: String?
     @Published private(set) var transcript = ""
     @Published private(set) var error: LocalizedStringKey?
 
@@ -52,34 +84,163 @@ final class SpeechDictation: ObservableObject {
     /// the user already cancelled cannot open the mic.
     private var generation = 0
     private var startTask: Task<Void, Never>?
+    /// xAI: the samples recorded so far (16 kHz mono) and their converter.
+    private var samples: [Float] = []
+    private var captureConverter: AVAudioConverter?
+    private var serverEars: ServerEars?
+    private var processingTask: Task<Void, Never>?
+    private static let serverFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: CallAudio.sampleRate, channels: 1, interleaved: false)!
 
-    func toggle(capturing base: String) {
+    /// Tap: start or stop. `ears` says who hears, asked when it starts
+    /// (the server's answer is cached a minute by the session).
+    func toggle(capturing base: String, ears: @escaping () async -> Ears = { .apple(reason: nil) }) {
         if isListening || isStarting {
             stop()
+        } else if isProcessing {
+            // the words are on their way: a second tap waits for them
         } else {
-            start(base: base)
+            start(base: base, ears: ears)
         }
     }
 
-    private func start(base: String) {
+    private func start(base: String, ears: @escaping () async -> Ears) {
         guard !isListening, !isStarting else { return }
         error = nil
+        keyNotice = nil
         self.base = base.trimmingCharacters(in: .whitespacesAndNewlines)
         transcript = ""
         isStarting = true
         generation += 1
         let gen = generation
-        startTask = Task { await actuallyStart(generation: gen) }
+        startTask = Task {
+            let chosen = await ears()
+            guard gen == generation, !Task.isCancelled else { return }
+            switch chosen {
+            case let .xai(server):
+                engine = .xai
+                appleReason = nil
+                serverEars = server
+                await actuallyStartServer(generation: gen)
+            case let .apple(reason):
+                engine = .apple
+                appleReason = reason
+                serverEars = nil
+                await actuallyStart(generation: gen)
+            }
+        }
     }
 
+    /// Stop listening. With xAI's ears the clip goes to the server now and
+    /// the words come back into the field (`isProcessing` meanwhile).
     func stop() {
         startTask?.cancel()
         startTask = nil
         generation += 1
         isStarting = false
         stopping = true
+        let wasListening = isListening
         isListening = false
+        let recorded = samples
+        samples = []
         teardown()
+        if wasListening, engine == .xai, let serverEars, !recorded.isEmpty {
+            send(recorded, to: serverEars)
+        }
+    }
+
+    /// Stop and drop what was recorded (the chat closes, a call starts).
+    func cancel() {
+        processingTask?.cancel()
+        processingTask = nil
+        isProcessing = false
+        samples = []
+        stop()
+        samples = []
+    }
+
+    private func send(_ recorded: [Float], to ears: ServerEars) {
+        processingTask?.cancel()
+        isProcessing = true
+        processingTask = Task { [weak self] in
+            do {
+                let heard = try await ears.transcribe(recorded)
+                guard let self, !Task.isCancelled else { return }
+                if let line = heard.key.fallbackLine { keyNotice = line }
+                let words = heard.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !words.isEmpty { transcript = words }
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                if let failure = error as? VoiceFailure { self.error = LocalizedStringKey(VoiceWords.line(failure)) }
+                else { self.error = LocalizedStringKey(String(localized: "xAI could not hear that (\(error.localizedDescription)). Try again.")) }
+            }
+            self?.isProcessing = false
+            self?.processingTask = nil
+        }
+    }
+
+    // MARK: - xAI on the server
+
+    private func actuallyStartServer(generation gen: Int) async {
+        let mic = await MicrophonePermission.request()
+        guard gen == generation, !Task.isCancelled else { return }
+        guard mic else {
+            isStarting = false
+            error = Self.micDeniedMessage
+            return
+        }
+        do {
+            try beginServerCapture()
+            isStarting = false
+        } catch {
+            isStarting = false
+            self.error = "Couldn't start the microphone."
+            teardown()
+        }
+    }
+
+    /// The microphone to 16 kHz mono samples (the call's capture), kept
+    /// until the person stops.
+    private func beginServerCapture() throws {
+        VoiceNoteCenter.shared.beginInputOwnership(.dictation)
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.record, mode: .measurement)
+        try session.setActive(true, options: .notifyOthersOnDeactivation)
+        let engine = AVAudioEngine()
+        audioEngine = engine
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.channelCount > 0, format.sampleRate > 0 else { throw CaptureError.silentInput }
+        guard let converter = AVAudioConverter(from: format, to: Self.serverFormat) else { throw CaptureError.silentInput }
+        captureConverter = converter
+        samples = []
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self, let out = Self.resampled(buffer, with: converter) else { return }
+            Task { @MainActor in self.samples += out }
+        }
+        tapInstalled = true
+        engine.prepare()
+        try engine.start()
+        stopping = false
+        isListening = true
+    }
+
+    nonisolated private static func resampled(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) -> [Float]? {
+        let ratio = CallAudio.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 64)
+        guard let out = AVAudioPCMBuffer(pcmFormat: serverFormat, frameCapacity: capacity) else { return nil }
+        var fed = false
+        var error: NSError?
+        converter.convert(to: out, error: &error) { _, status in
+            if fed {
+                status.pointee = .noDataNow
+                return nil
+            }
+            fed = true
+            status.pointee = .haveData
+            return buffer
+        }
+        guard error == nil, let data = out.floatChannelData?[0] else { return nil }
+        return Array(UnsafeBufferPointer(start: data, count: Int(out.frameLength)))
     }
 
     // MARK: - Authorization
@@ -249,6 +410,7 @@ final class SpeechDictation: ObservableObject {
         recognitionRequest = nil
         audioEngine = nil
         recognizer = nil
+        captureConverter = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         VoiceNoteCenter.shared.endInputOwnership(.dictation)
     }

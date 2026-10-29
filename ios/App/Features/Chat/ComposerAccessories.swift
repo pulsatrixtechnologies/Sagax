@@ -7,6 +7,15 @@ import SwiftUI
 import CompanionCore
 
 extension ChatView {
+    /// What the composer says about the ears or the voice (ComposerAccessories).
+    var composerVoiceNotice: String? {
+        if dictation.isListening || dictation.isStarting, let reason = dictation.appleReason {
+            return String(localized: "\(reason) Dictation hears with Apple on this iPhone.")
+        }
+        if let line = dictation.keyNotice { return line }
+        return speaker.notice
+    }
+
     @ViewBuilder
     var composerAccessories: some View {
         runCard
@@ -89,6 +98,17 @@ extension ChatView {
                 .foregroundStyle(Theme.warning)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 4)
+        }
+        // Apple hears although xAI was wanted: said while listening, never
+        // a silent fallback; a key that gave way to another: said once;
+        // a reply read by another voice than xAI's: its reason
+        if let line = composerVoiceNotice {
+            Text(line)
+                .font(.system(size: 12.5))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+                .accessibilityIdentifier("composer-voice-notice")
         }
 
         let menuItems = desktopChat == nil ? slashMenuItems : []

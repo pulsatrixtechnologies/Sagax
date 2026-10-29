@@ -11,6 +11,44 @@ public struct VoiceModeRefusal: Decodable, Equatable, Sendable {
     public var keysUrl: String?
 }
 
+/// A key as the server names it (server/voice-keys.ts, 2026-10-28): where
+/// it comes from (`voice-key`: the person's own voice key saved in Sagax,
+/// `perspicax-key`: their xAI key in Perspicax, `org-key`: the
+/// organization's, `server`: a solo server's) and its last four
+/// characters, never more.
+public struct VoiceKeyInfo: Decodable, Equatable, Sendable {
+    public var source: String
+    public var last4: String?
+
+    public init(source: String, last4: String? = nil) {
+        self.source = source
+        self.last4 = last4
+    }
+}
+
+/// One key of the person's in the status, with what xAI refused it for
+/// lately (`quota`, `key`), if anything.
+public struct VoiceKeyState: Decodable, Equatable, Sendable {
+    public var source: String
+    public var last4: String?
+    public var refused: String?
+}
+
+/// One key xAI refused on the way to the one that served.
+public struct VoiceKeyRefusal: Decodable, Equatable, Sendable {
+    public var source: String
+    public var last4: String?
+    public var failure: String
+
+    public init(source: String, last4: String? = nil, failure: String) {
+        self.source = source
+        self.last4 = last4
+        self.failure = failure
+    }
+
+    public var info: VoiceKeyInfo { VoiceKeyInfo(source: source, last4: last4) }
+}
+
 /// `GET /api/bots/<id>/voice/status`.
 public struct VoiceModeStatus: Decodable, Equatable, Sendable {
     public var provider: String
@@ -18,14 +56,177 @@ public struct VoiceModeStatus: Decodable, Equatable, Sendable {
     /// An organization server: voice mode is the only call there.
     public var organization: Bool?
     public var via: String?
+    /// the key the next request starts with (an older server names none)
+    public var key: VoiceKeyInfo?
+    /// every key that may serve, in order, the refused ones last
+    public var keys: [VoiceKeyState]?
     public var refusal: VoiceModeRefusal?
 
-    public init(provider: String = "xai", available: Bool, organization: Bool? = nil, via: String? = nil, refusal: VoiceModeRefusal? = nil) {
+    public init(provider: String = "xai", available: Bool, organization: Bool? = nil, via: String? = nil, key: VoiceKeyInfo? = nil, keys: [VoiceKeyState]? = nil, refusal: VoiceModeRefusal? = nil) {
         self.provider = provider
         self.available = available
         self.organization = organization
         self.via = via
+        self.key = key
+        self.keys = keys
         self.refusal = refusal
+    }
+}
+
+/// A voice route said no (server/voice-mode.ts): a refusal (403
+/// `voice_no_access`, no key serves this person), xAI failing the request
+/// (502 `voice_provider`, with its kind and the key it is about), this
+/// server's own rate limit (429) or spend limit (409 `spend_cap`). Thrown
+/// by the voice calls below in place of a bare `APIError.status`, so the
+/// phone can say what is wrong and about which key, like the desktop's
+/// bar (src/lib/voice-mode/failure.ts). Never carries a key.
+public struct VoiceFailure: Error, Equatable, Sendable {
+    public var status: Int
+    /// the server's own sentence (English), for the log and as a last resort
+    public var message: String?
+    public var code: String?
+    /// a refusal's cause: `no_credentials`, `payer_disabled`, `perspicax_unreachable`, `server_engine_not_allowed`
+    public var cause: String?
+    /// xAI's failure as the server sorted it: `key`, `quota`, `busy`, `down`, `voice`, `other`
+    public var failure: String?
+    /// the key the failure is about
+    public var key: VoiceKeyInfo?
+    /// every key refused on the way (when more than one was)
+    public var tried: [VoiceKeyRefusal]?
+    public var keysUrl: String?
+    public var admin: Bool?
+
+    public init(status: Int, message: String? = nil, code: String? = nil, cause: String? = nil, failure: String? = nil, key: VoiceKeyInfo? = nil, tried: [VoiceKeyRefusal]? = nil, keysUrl: String? = nil, admin: Bool? = nil) {
+        self.status = status
+        self.message = message
+        self.code = code
+        self.cause = cause
+        self.failure = failure
+        self.key = key
+        self.tried = tried
+        self.keysUrl = keysUrl
+        self.admin = admin
+    }
+
+    private struct Body: Decodable {
+        var error: String?
+        var code: String?
+        var cause: String?
+        var failure: String?
+        var key: VoiceKeyInfo?
+        var tried: [VoiceKeyRefusal]?
+        var card: Card?
+        struct Card: Decodable {
+            var keysUrl: String?
+            var admin: Bool?
+        }
+    }
+
+    /// The failure a non-2xx voice answer carries, or nil when the body is
+    /// not one of the voice route's (an older server, a proxy's page).
+    public static func parse(status: Int, data: Data) -> VoiceFailure? {
+        guard let body = try? JSONDecoder().decode(Body.self, from: data) else { return nil }
+        let voice = body.code == "voice_no_access" || body.code == "voice_provider" || body.code == "spend_cap" || status == 429
+        guard voice else { return nil }
+        return VoiceFailure(status: status, message: body.error, code: body.code, cause: body.cause, failure: body.failure, key: body.key, tried: body.tried, keysUrl: body.card?.keysUrl, admin: body.card?.admin)
+    }
+
+    /// No key serves this person (403).
+    public var refused: Bool { code == "voice_no_access" }
+
+    /// xAI's kind, with this server's own limits sorted like the desktop
+    /// does (429: `busy`, spend limit: `quota`).
+    public var kind: String? {
+        if code == "voice_provider" { return failure ?? "other" }
+        if status == 429 { return "busy" }
+        if code == "spend_cap" { return "quota" }
+        return nil
+    }
+
+    /// A failure another moment may not repeat (xAI busy or failing).
+    public var transient: Bool { kind == "busy" || kind == "down" }
+
+    /// A refusal every later request would get too.
+    public var permanent: Bool { refused || kind == "key" || kind == "quota" || kind == "voice" }
+}
+
+/// What the phone says about a voice failure or a key, in the app's
+/// language: the desktop's `voiceErrorNote`, `voiceKeyLabel` and
+/// `voiceKeyFallbackNote` (src/lib/voice-mode/failure.ts). Never a raw
+/// server line when the server sorted the failure.
+public enum VoiceWords {
+    /// "your voice key ···Wez8", "the organization's xAI key".
+    public static func keyLabel(_ key: VoiceKeyInfo) -> String {
+        let tail = key.last4.map { " ···\($0)" } ?? ""
+        switch key.source {
+        case "voice-key": return String(localized: "your voice key\(tail)")
+        case "perspicax-key": return String(localized: "your xAI key in Perspicax\(tail)")
+        case "org-key": return String(localized: "the organization's xAI key\(tail)")
+        default: return String(localized: "this server's xAI key\(tail)")
+        }
+    }
+
+    /// What to do about a key of that source.
+    public static func keyAction(_ key: VoiceKeyInfo) -> String {
+        switch key.source {
+        case "voice-key": return String(localized: "Add credits to that xAI account, or change the key in Settings > Models and voice > My voice keys on the computer.")
+        case "perspicax-key": return String(localized: "Add credits to that xAI account, or change the key in Perspicax (Providers > Grok).")
+        case "org-key": return String(localized: "Ask an admin, or add your own xAI key in Settings > Models and voice > My voice keys on the computer.")
+        default: return String(localized: "Add credits to that xAI account, or change the key in Settings > Models and voice on the computer.")
+        }
+    }
+
+    /// The lines of a refusal (no key serves this person), as the call's
+    /// "Voice mode unavailable" alert and the bar say them.
+    public static func refusalLines(cause: String?, admin: Bool) -> [String] {
+        switch cause {
+        case "payer_disabled": return [String(localized: "Your account is disabled: voice mode can't run.")]
+        case "perspicax_unreachable": return [String(localized: "Perspicax could not be reached to read your xAI key. Try again in a moment.")]
+        case "server_engine_not_allowed":
+            return [String(localized: "Your organization has not given you its xAI voice. Add your own xAI key in Perspicax, or ask an admin.")]
+        default:
+            var lines = [String(localized: "You don't have xAI access for voice mode: add your xAI key in Perspicax.")]
+            if admin { lines.append(String(localized: "As an administrator, you can also add the organization's xAI key in Settings > Connections on the computer.")) }
+            return lines
+        }
+    }
+
+    /// One sentence for a failure: the reason, the key it is about and
+    /// what to do, or the plain line when the server named no key.
+    public static func line(_ failure: VoiceFailure) -> String {
+        if failure.refused { return refusalLines(cause: failure.cause, admin: failure.admin == true).joined(separator: " ") }
+        switch failure.kind {
+        case "quota":
+            if failure.code == "spend_cap" { return String(localized: "The spend limit is reached: the voice stops here. The answers stay in the chat.") }
+            if let key = failure.key { return String(localized: "xAI has no credits left for \(keyLabel(key)). \(keyAction(key)) The answers stay in the chat.") }
+            return String(localized: "The xAI account has no voice credits left, or the spend limit is reached. The answers stay in the chat.")
+        case "key":
+            if let key = failure.key { return String(localized: "xAI rejected \(keyLabel(key)): invalid, revoked, or without voice permission. \(keyAction(key)) The answers stay in the chat.") }
+            return String(localized: "xAI refused the voice key. Check your xAI key in Settings > Models and voice on the computer.")
+        case "busy":
+            if let key = failure.key, failure.code == "voice_provider" { return String(localized: "xAI is rate-limiting \(keyLabel(key)). It comes back by itself; the answers stay in the chat.") }
+            return String(localized: "xAI voice is busy right now. It comes back by itself; the answers stay in the chat.")
+        case "down": return String(localized: "xAI voice is not answering right now. The answers stay in the chat.")
+        case "voice": return String(localized: "xAI no longer has the chosen voice. Pick another one in the call settings.")
+        default: return failure.message ?? String(localized: "The voice didn't come through. The answer is in the chat.")
+        }
+    }
+
+    /// Said once when the voice went on over another key.
+    public static func fallback(used: VoiceKeyInfo, skipped: [VoiceKeyRefusal]) -> String? {
+        guard let refused = skipped.last else { return nil }
+        let reason = refused.failure == "quota" ? String(localized: "no credits") : String(localized: "key rejected")
+        return String(localized: "\(keyLabel(refused.info)) was refused (\(reason)). The voice now runs on \(keyLabel(used)).")
+    }
+
+    /// The call's provider line: which key the voice runs on.
+    public static func providerLine(key: VoiceKeyInfo?, via: String?) -> String {
+        if let key { return String(localized: "Voice: xAI with \(keyLabel(key))") }
+        switch via {
+        case "speaker-key": return String(localized: "Voice: xAI, with your key")
+        case "org-key": return String(localized: "Voice: xAI, with the organization's key")
+        default: return String(localized: "Voice: xAI")
+        }
     }
 }
 
@@ -99,6 +300,8 @@ public enum VoiceCallSessionState: String, Sendable { case start, alive, end }
 public struct VoiceStreamAudio: Sendable {
     public let sampleRate: Double
     public let chunks: AsyncThrowingStream<Data, Error>
+    /// the key that speaks, and the ones refused on the way
+    public var key: VoiceKeyOutcome = VoiceKeyOutcome()
 }
 
 /// Which voice reads the bot's answers on this call, in order of preference:
@@ -157,15 +360,97 @@ public enum CallProvider: Equatable, Sendable {
 /// A failure of the voice that may not happen again a moment later: xAI
 /// rate limited or failing (429, 5xx), or the network.
 public func transientVoiceFailure(_ error: Error) -> Bool {
+    if let failure = error as? VoiceFailure { return failure.transient || (failure.kind == nil && failure.status >= 500) }
     if case let APIError.status(code, _) = error { return code == 429 || code >= 500 }
     if case APIError.transport = error { return true }
     return error is URLError
+}
+
+/// A refusal every later voice request would get too (no key, no credit).
+public func permanentVoiceFailure(_ error: Error) -> Bool {
+    if let failure = error as? VoiceFailure { return failure.permanent }
+    if case let APIError.status(code, _) = error { return [401, 402, 403, 404, 409].contains(code) }
+    return false
+}
+
+/// `x-voice-key: source:last4` as the server writes a key in a header.
+public func parseVoiceKeyHeader(_ value: String?) -> VoiceKeyInfo? {
+    guard let value, !value.isEmpty else { return nil }
+    let parts = value.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+    guard let source = parts.first, !source.isEmpty else { return nil }
+    let last4 = parts.count > 1 && !parts[1].isEmpty ? parts[1] : nil
+    return VoiceKeyInfo(source: source, last4: last4)
+}
+
+/// `x-voice-key-skipped: source:last4:failure,...`.
+public func parseVoiceKeySkippedHeader(_ value: String?) -> [VoiceKeyRefusal] {
+    guard let value, !value.isEmpty else { return [] }
+    return value.split(separator: ",").compactMap { entry in
+        let parts = entry.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 3, !parts[0].isEmpty, !parts[2].isEmpty else { return nil }
+        return VoiceKeyRefusal(source: parts[0], last4: parts[1].isEmpty ? nil : parts[1], failure: parts[2])
+    }
+}
+
+/// What a voice answer said about the key that served (and the ones
+/// refused on the way): the headers of an HTTP answer, or a body's fields.
+public struct VoiceKeyOutcome: Equatable, Sendable {
+    public var used: VoiceKeyInfo?
+    public var skipped: [VoiceKeyRefusal]
+
+    public init(used: VoiceKeyInfo? = nil, skipped: [VoiceKeyRefusal] = []) {
+        self.used = used
+        self.skipped = skipped
+    }
+
+    public static func from(headers: [AnyHashable: Any]?) -> VoiceKeyOutcome {
+        let header = { (name: String) -> String? in
+            headers?.first { String(describing: $0.key).lowercased() == name }?.value as? String
+        }
+        return VoiceKeyOutcome(used: parseVoiceKeyHeader(header("x-voice-key")), skipped: parseVoiceKeySkippedHeader(header("x-voice-key-skipped")))
+    }
+
+    /// The voice went on over another key: what to say, once.
+    public var fallbackLine: String? {
+        guard let used, !skipped.isEmpty else { return nil }
+        return VoiceWords.fallback(used: used, skipped: skipped)
+    }
+}
+
+/// A turn's words with the key that heard them.
+public struct VoiceTranscription: Equatable, Sendable {
+    public var text: String
+    public var key: VoiceKeyOutcome
+
+    public init(text: String, key: VoiceKeyOutcome = VoiceKeyOutcome()) {
+        self.text = text
+        self.key = key
+    }
 }
 
 extension CompanionClient {
     private static func voiceBase(_ botId: String) throws -> String {
         guard validRouteID(botId) else { throw APIError.badURL }
         return "/api/bots/\(botId)/voice"
+    }
+
+    /// A voice route's non-2xx as a VoiceFailure (the reason, the kind and
+    /// the key it is about) when the body is the voice route's, else the
+    /// ordinary APIError.
+    static func checkVoice(_ response: URLResponse, _ data: Data) throws {
+        guard let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) else { return }
+        if let failure = VoiceFailure.parse(status: http.statusCode, data: data) { throw failure }
+        try check(response, data)
+    }
+
+    private func sendVoice<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> (T, VoiceKeyOutcome) {
+        let (data, response) = try await perform(request)
+        try Self.checkVoice(response, data)
+        do {
+            return (try JSONDecoder().decode(T.self, from: data), VoiceKeyOutcome.from(headers: (response as? HTTPURLResponse)?.allHeaderFields))
+        } catch {
+            throw APIError.transport("The computer sent something this app couldn't read.")
+        }
     }
 
     /// Can this person talk to this bot with voice mode, and who pays.
@@ -176,7 +461,26 @@ extension CompanionClient {
     /// xAI's voices (labels only).
     public func voiceModeVoices(botId: String) async throws -> [VoiceModeVoice] {
         struct Body: Decodable { var voices: [VoiceModeVoice]? }
-        return try await send(try makeRequest("GET", "\(Self.voiceBase(botId))/voices"), as: Body.self).voices ?? []
+        return try await sendVoice(try makeRequest("GET", "\(Self.voiceBase(botId))/voices"), as: Body.self).0.voices ?? []
+    }
+
+    /// A text cut into what the voice says (POST /voice/prepare), for a
+    /// reply read aloud with voice mode's xAI voice.
+    public func voiceModePrepare(botId: String, text: String) async throws -> [String] {
+        struct Body: Decodable { var utterances: [String]? }
+        return try await sendVoice(try makeRequest("POST", "\(Self.voiceBase(botId))/prepare", body: ["text": text]), as: Body.self).0.utterances ?? []
+    }
+
+    /// One utterance as an MP3 clip (POST /voice/speak), with the person's
+    /// Voice, Speed and Language: a reply read aloud.
+    public func voiceModeSpeak(botId: String, text: String, settings: VoiceModeSettings, threadId: String?) async throws -> (Data, VoiceKeyOutcome) {
+        var body: [String: Any] = ["text": String(text.prefix(500)), "voice": settings.voice, "speed": settings.speed, "language": settings.language]
+        if let threadId, Self.validRouteID(threadId) { body["threadId"] = threadId }
+        var request = try makeRequest("POST", "\(Self.voiceBase(botId))/speak", body: body)
+        request.timeoutInterval = 30
+        let (data, response) = try await perform(request)
+        try Self.checkVoice(response, data)
+        return (data, VoiceKeyOutcome.from(headers: (response as? HTTPURLResponse)?.allHeaderFields))
     }
 
     /// One sentence spoken as xAI makes it; nil when there is nothing to say.
@@ -199,9 +503,10 @@ extension CompanionClient {
                 data.append(byte)
                 if data.count > 16_384 { break }
             }
-            try Self.check(response, data)
+            try Self.checkVoice(response, data)
         }
         let rate = Double(http?.value(forHTTPHeaderField: "x-voice-sample-rate") ?? "") ?? 24_000
+        let key = VoiceKeyOutcome.from(headers: http?.allHeaderFields)
         let chunks = AsyncThrowingStream<Data, Error> { continuation in
             let task = Task {
                 var chunk = Data()
@@ -223,12 +528,12 @@ extension CompanionClient {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
-        return VoiceStreamAudio(sampleRate: rate, chunks: chunks)
+        return VoiceStreamAudio(sampleRate: rate, chunks: chunks, key: key)
     }
 
-    /// One whole turn uploaded (16 kHz mono WAV) when the phone cannot
-    /// recognize speech itself.
-    public func voiceModeTranscribe(botId: String, wav: Data, language: String, threadId: String?) async throws -> String {
+    /// One whole turn uploaded (16 kHz mono WAV): xAI's speech to text on
+    /// the server, the words and the key that heard them.
+    public func voiceModeTranscription(botId: String, wav: Data, language: String, threadId: String?) async throws -> VoiceTranscription {
         var query = [URLQueryItem(name: "language", value: VoiceModeSettings.isLanguage(language) ? language : "auto")]
         if let threadId, Self.validRouteID(threadId) { query.append(URLQueryItem(name: "threadId", value: threadId)) }
         var request = try makeRequest("POST", "\(Self.voiceBase(botId))/transcribe", query: query)
@@ -236,7 +541,13 @@ extension CompanionClient {
         request.httpBody = wav
         request.timeoutInterval = 30
         struct Body: Decodable { var text: String? }
-        return try await send(request, as: Body.self).text ?? ""
+        let (body, key) = try await sendVoice(request, as: Body.self)
+        return VoiceTranscription(text: body.text ?? "", key: key)
+    }
+
+    /// The words only (voiceModeTranscription).
+    public func voiceModeTranscribe(botId: String, wav: Data, language: String, threadId: String?) async throws -> String {
+        try await voiceModeTranscription(botId: botId, wav: wav, language: language, threadId: threadId).text
     }
 
     /// The computer's own voice provider (`POST /api/tts/speak`): audio bytes.

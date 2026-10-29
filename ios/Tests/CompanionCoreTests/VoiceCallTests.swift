@@ -1102,6 +1102,110 @@ final class VoiceModeClientTests: XCTestCase {
         let nothing = try await client.voiceModeStream(botId: "ara", text: "```x```", settings: .default, threadId: nil)
         XCTAssertNil(nothing)
     }
+
+    func testAVoiceRouteSaysNoAsAVoiceFailureWithTheKey() async throws {
+        VoiceStub.status = 502
+        VoiceStub.body = Data(#"{"error":"The xAI account needs credits to generate speech.","code":"voice_provider","failure":"quota","key":{"source":"voice-key","last4":"Wez8"}}"#.utf8)
+        do {
+            _ = try await client.voiceModeStream(botId: "ara", text: "Hi.", settings: .default, threadId: nil)
+            XCTFail("expected a failure")
+        } catch let failure as VoiceFailure {
+            XCTAssertEqual(failure.kind, "quota")
+            XCTAssertEqual(failure.key?.last4, "Wez8")
+        }
+        do {
+            _ = try await client.voiceModeTranscription(botId: "ara", wav: Data(repeating: 0, count: 64), language: "fr", threadId: nil)
+            XCTFail("expected a failure")
+        } catch let failure as VoiceFailure {
+            XCTAssertEqual(failure.status, 502)
+        }
+        // a body that is not the voice route's stays an ordinary APIError
+        VoiceStub.status = 500
+        VoiceStub.body = Data(#"{"error":"boom"}"#.utf8)
+        do {
+            _ = try await client.voiceModeSpeak(botId: "ara", text: "Hi.", settings: .default, threadId: nil)
+            XCTFail("expected a failure")
+        } catch let APIError.status(code, message) {
+            XCTAssertEqual(code, 500)
+            XCTAssertEqual(message, "boom")
+        }
+    }
+
+    func testTheWordsAndTheClipComeWithTheKeyThatServed() async throws {
+        VoiceStub.headers = ["Content-Type": "application/json", "x-voice-key": "perspicax-key:c0Je", "x-voice-key-skipped": "voice-key:Wez8:quota"]
+        VoiceStub.body = Data(#"{"text":"allo","key":{"source":"perspicax-key","last4":"c0Je"}}"#.utf8)
+        let heard = try await client.voiceModeTranscription(botId: "ara", wav: Data(repeating: 0, count: 64), language: "auto", threadId: "th-1")
+        XCTAssertEqual(heard.text, "allo")
+        XCTAssertEqual(heard.key.used?.source, "perspicax-key")
+        XCTAssertEqual(heard.key.skipped.first?.failure, "quota")
+        XCTAssertNotNil(heard.key.fallbackLine)
+        VoiceStub.headers = ["Content-Type": "audio/mpeg", "x-voice-key": "org-key:t6Yb"]
+        VoiceStub.body = Data(repeating: 7, count: 300)
+        let (clip, key) = try await client.voiceModeSpeak(botId: "ara", text: "Bonjour.", settings: VoiceModeSettings(voice: "eve", speed: 1, language: "fr"), threadId: nil)
+        XCTAssertEqual(clip.count, 300)
+        XCTAssertEqual(key.used, VoiceKeyInfo(source: "org-key", last4: "t6Yb"))
+        XCTAssertEqual(VoiceStub.requests.last?.0.url?.path, "/api/bots/ara/voice/speak")
+        VoiceStub.headers = ["Content-Type": "application/json"]
+        VoiceStub.body = Data(#"{"ready":true,"utterances":["Bonjour.","Ça va?"]}"#.utf8)
+        let parts = try await client.voiceModePrepare(botId: "ara", text: "Bonjour. Ça va?")
+        XCTAssertEqual(parts, ["Bonjour.", "Ça va?"])
+    }
+}
+
+final class VoiceKeyWordsTests: XCTestCase {
+    func testTheStatusNamesTheKeyAndEveryKeyInOrder() throws {
+        let data = Data(#"{"provider":"xai","available":true,"organization":true,"via":"speaker-key","key":{"source":"perspicax-key","last4":"c0Je"},"keys":[{"source":"perspicax-key","last4":"c0Je"},{"source":"org-key","last4":"t6Yb"},{"source":"voice-key","last4":"Wez8","refused":"quota"}]}"#.utf8)
+        let status = try JSONDecoder().decode(VoiceModeStatus.self, from: data)
+        XCTAssertEqual(status.key, VoiceKeyInfo(source: "perspicax-key", last4: "c0Je"))
+        XCTAssertEqual(status.keys?.count, 3)
+        XCTAssertEqual(status.keys?.last?.refused, "quota")
+        // an older server names no key: the via still tells
+        let old = try JSONDecoder().decode(VoiceModeStatus.self, from: Data(#"{"provider":"xai","available":true,"via":"org-key"}"#.utf8))
+        XCTAssertNil(old.key)
+        XCTAssertEqual(VoiceWords.providerLine(key: old.key, via: old.via), "Voice: xAI, with the organization's key")
+        XCTAssertEqual(VoiceWords.providerLine(key: status.key, via: status.via), "Voice: xAI with your xAI key in Perspicax ···c0Je")
+    }
+
+    func testAVoiceFailureCarriesTheReasonTheKindAndTheKey() throws {
+        let body = Data(#"{"error":"The xAI account needs credits to generate speech.","code":"voice_provider","failure":"quota","key":{"source":"voice-key","last4":"Wez8"},"tried":[{"source":"voice-key","last4":"Wez8","failure":"quota"},{"source":"org-key","last4":"t6Yb","failure":"quota"}]}"#.utf8)
+        let failure = try XCTUnwrap(VoiceFailure.parse(status: 502, data: body))
+        XCTAssertEqual(failure.kind, "quota")
+        XCTAssertEqual(failure.key, VoiceKeyInfo(source: "voice-key", last4: "Wez8"))
+        XCTAssertEqual(failure.tried?.count, 2)
+        XCTAssertTrue(failure.permanent)
+        XCTAssertFalse(failure.transient)
+        XCTAssertTrue(permanentVoiceFailure(failure))
+        XCTAssertFalse(transientVoiceFailure(failure))
+        XCTAssertEqual(VoiceWords.line(failure), "xAI has no credits left for your voice key ···Wez8. Add credits to that xAI account, or change the key in Settings > Models and voice > My voice keys on the computer. The answers stay in the chat.")
+        // a refusal: no key serves this person
+        let refused = try XCTUnwrap(VoiceFailure.parse(status: 403, data: Data(#"{"code":"voice_no_access","cause":"server_engine_not_allowed","error":"no","card":{"keysUrl":"https://p/keys"}}"#.utf8)))
+        XCTAssertTrue(refused.refused)
+        XCTAssertEqual(refused.keysUrl, "https://p/keys")
+        XCTAssertEqual(VoiceWords.line(refused), "Your organization has not given you its xAI voice. Add your own xAI key in Perspicax, or ask an admin.")
+        // this server's own limits, as the desktop sorts them
+        XCTAssertEqual(VoiceFailure.parse(status: 429, data: Data(#"{"error":"Too many voice requests. Wait a moment."}"#.utf8))?.kind, "busy")
+        XCTAssertTrue(transientVoiceFailure(VoiceFailure(status: 429)))
+        XCTAssertEqual(VoiceFailure.parse(status: 409, data: Data(#"{"error":"Spend limit reached.","code":"spend_cap"}"#.utf8))?.kind, "quota")
+        // busy with the key named, down and an unknown voice: the plain lines
+        XCTAssertEqual(VoiceWords.line(VoiceFailure(status: 502, code: "voice_provider", failure: "busy", key: VoiceKeyInfo(source: "org-key"))), "xAI is rate-limiting the organization's xAI key. It comes back by itself; the answers stay in the chat.")
+        XCTAssertEqual(VoiceWords.line(VoiceFailure(status: 502, code: "voice_provider", failure: "down", key: VoiceKeyInfo(source: "org-key"))), "xAI voice is not answering right now. The answers stay in the chat.")
+        // not the voice route's body: no VoiceFailure
+        XCTAssertNil(VoiceFailure.parse(status: 500, data: Data(#"{"error":"boom"}"#.utf8)))
+        XCTAssertNil(VoiceFailure.parse(status: 502, data: Data("<html>".utf8)))
+    }
+
+    func testTheKeyThatServedComesFromTheHeadersAndAFallbackIsSaidOnce() {
+        let outcome = VoiceKeyOutcome.from(headers: ["X-Voice-Key": "perspicax-key:c0Je", "x-voice-key-skipped": "voice-key:Wez8:quota"])
+        XCTAssertEqual(outcome.used, VoiceKeyInfo(source: "perspicax-key", last4: "c0Je"))
+        XCTAssertEqual(outcome.skipped, [VoiceKeyRefusal(source: "voice-key", last4: "Wez8", failure: "quota")])
+        XCTAssertEqual(outcome.fallbackLine, "your voice key ···Wez8 was refused (no credits). The voice now runs on your xAI key in Perspicax ···c0Je.")
+        XCTAssertNil(VoiceKeyOutcome.from(headers: ["x-voice-key": "org-key:"]).fallbackLine)
+        XCTAssertEqual(parseVoiceKeyHeader("server:"), VoiceKeyInfo(source: "server", last4: nil))
+        XCTAssertNil(parseVoiceKeyHeader(""))
+        XCTAssertEqual(parseVoiceKeySkippedHeader("voice-key:Wez8:quota,perspicax-key:c0Je:key").count, 2)
+        XCTAssertEqual(parseVoiceKeySkippedHeader("nope").count, 0)
+        XCTAssertEqual(VoiceWords.fallback(used: VoiceKeyInfo(source: "org-key"), skipped: [VoiceKeyRefusal(source: "perspicax-key", last4: "c0Je", failure: "key")]), "your xAI key in Perspicax ···c0Je was refused (key rejected). The voice now runs on the organization's xAI key.")
+    }
 }
 
 final class CallQuietTests: XCTestCase {

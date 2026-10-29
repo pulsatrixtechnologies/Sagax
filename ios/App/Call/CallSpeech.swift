@@ -46,6 +46,8 @@ final class RoutedSpeechSource: CallSpeechSourcing {
     /// A voice failed a sentence (the reason the server gave, e.g. xAI
     /// refused the key): the call shows it.
     var onFailure: ((Error) -> Void)?
+    /// Which key spoke a sentence, and the ones refused on the way.
+    var onKeyOutcome: ((VoiceKeyOutcome) -> Void)?
 
     init(client: CompanionClient?, botId: String?, threadId: @escaping () -> String?, routes: @escaping (CallSpeaker?) -> [CallVoiceSource], settings: @escaping () -> VoiceModeSettings) {
         self.client = client
@@ -75,7 +77,7 @@ final class RoutedSpeechSource: CallSpeechSourcing {
                     do {
                         do {
                             try await self.produce(source, text: text, speaker: speaker, settings: settings, threadId: thread, into: continuation)
-                        } catch let APIError.status(code, message) where source == .xai && !Task.isCancelled && transientVoiceFailure(APIError.status(code: code, message: message)) {
+                        } catch let error where source == .xai && !Task.isCancelled && transientVoiceFailure(error) && !(error is CancellationError) {
                             // xAI busy or failing, answered before any audio
                             // (so nothing is said twice): one more try, like
                             // the desktop
@@ -100,7 +102,7 @@ final class RoutedSpeechSource: CallSpeechSourcing {
 
     /// A refusal every later sentence would get too.
     private static func permanent(_ error: Error) -> Bool {
-        if case let APIError.status(code, _) = error { return [401, 402, 403, 404, 409].contains(code) }
+        if permanentVoiceFailure(error) { return true }
         if let failure = error as? ElevenLabs.Failure, let status = failure.status { return [401, 402, 403].contains(status) }
         return false
     }
@@ -110,6 +112,7 @@ final class RoutedSpeechSource: CallSpeechSourcing {
         case .xai:
             guard let client, let botId else { throw APIError.transport("no voice mode") }
             guard let audio = try await client.voiceModeStream(botId: botId, text: text, settings: settings, threadId: threadId) else { return }
+            if audio.key.used != nil { self.onKeyOutcome?(audio.key) }
             var carry = Data()
             for try await chunk in audio.chunks {
                 try Task.checkCancellation()

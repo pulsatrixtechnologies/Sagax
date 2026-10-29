@@ -211,7 +211,7 @@ struct MessageRow: View {
                 set.speaking = speaking
                 set.speak = speaking
                     ? { speaker.stop() }
-                    : { speaker.speak(text, messageId: message.id, voiceId: bot.voice, session: session) }
+                    : { speaker.speak(text, messageId: message.id, voiceId: bot.voice, botId: bot.id, session: session) }
             }
         }
         if case let .bot(bot) = chat, gate.allows(.regenerate), context.regenerableMessageId == message.id {

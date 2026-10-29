@@ -180,6 +180,10 @@ final class Session: ObservableObject {
     }
 
     private var client: CompanionClient?
+    /// `GET /voice/status` per bot, kept a minute (voiceModeStatus).
+    private var voiceStatusCache: [String: (status: VoiceModeStatus, at: Date)] = [:]
+    /// Why the last voice status could not be read (voiceModeStatus).
+    private(set) var voiceStatusError: String?
     /// The live client, for the Settings sheet's own reads and writes
     /// (SettingsModel); nil while nothing is paired.
     var settingsClient: CompanionClient? { client }
@@ -3034,13 +3038,60 @@ final class Session: ObservableObject {
         return file.data
     }
 
+    /// The server's answer about voice mode for one bot, kept a minute
+    /// (the desktop's `useVoiceModeCheck`): dictation, voice notes and a
+    /// reply read aloud ask it before choosing xAI's ears or voice. Nil
+    /// when the server could not be asked (`voiceStatusError` says why).
+    func voiceModeStatus(botId: String) async -> VoiceModeStatus? {
+        guard let client, !isDemo else { return nil }
+        if let cached = voiceStatusCache[botId], Date().timeIntervalSince(cached.at) < 60 { return cached.status }
+        do {
+            let status = try await client.voiceModeStatus(botId: botId)
+            voiceStatusCache[botId] = (status, Date())
+            voiceStatusError = nil
+            return status
+        } catch {
+            voiceStatusError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// The status is asked again at the next need (a key just added works at once).
+    func forgetVoiceModeStatus() { voiceStatusCache = [:] }
+
+    /// Who hears the composer's dictation for this bot (SpeechDictation):
+    /// xAI on the server whenever a key serves the person, else Apple on
+    /// this iPhone with the reason (nil when Apple is the plain choice: a
+    /// demo, a room, no computer paired).
+    func dictationEars(for chat: Chat) async -> SpeechDictation.Ears {
+        guard let client, !isDemo, case let .bot(bot) = chat else { return .apple(reason: nil) }
+        guard let status = await voiceModeStatus(botId: bot.id) else {
+            return .apple(reason: String(localized: "The server could not say whether xAI voice is available\(voiceStatusError.map { " (\($0))" } ?? "")."))
+        }
+        guard status.available else {
+            return .apple(reason: VoiceWords.refusalLines(cause: status.refusal?.cause ?? "no_credentials", admin: status.refusal?.admin == true).joined(separator: " "))
+        }
+        let threadId = chat.threadId
+        return .xai(SpeechDictation.ServerEars(key: status.key) { samples in
+            try await client.voiceModeTranscription(botId: bot.id, wav: CallWav.encode(samples), language: VoiceModeSettings.decode(UserDefaults.standard.string(forKey: VoiceModeSettings.storageKey)).language, threadId: threadId)
+        })
+    }
+
+    /// Voice mode's xAI voice for a reply read aloud (MessageSpeaker): the
+    /// person's Voice, Speed and Language and the same key order as the
+    /// call, whenever a key serves them.
+    func readAloudVoice(botId: String?) async -> MessageSpeaker.VoiceModeVoice? {
+        guard let client, !isDemo, let botId, let status = await voiceModeStatus(botId: botId), status.available else { return nil }
+        return MessageSpeaker.VoiceModeVoice(client: client, botId: botId, settings: VoiceModeSettings.decode(UserDefaults.standard.string(forKey: VoiceModeSettings.storageKey)))
+    }
+
     /// The words of a recorded voice note, through the same speech to text
     /// as the desktop's voice notes (`/voice/transcribe`, in clips under the
     /// route's limit). Nil when this bot has no speech to text (no xAI
     /// voice); "" when it has but the words could not be read.
     func transcribeVoiceNote(pcm: Data, sampleRate: Int, botId: String, threadId: String?) async -> String? {
         guard let client else { return nil }
-        guard let status = try? await client.voiceModeStatus(botId: botId), status.available else { return nil }
+        guard let status = await voiceModeStatus(botId: botId), status.available else { return nil }
         var parts: [String] = []
         for clip in VoiceNoteRecording.transcriptionClips(pcm: pcm, sampleRate: sampleRate) {
             guard !Task.isCancelled else { return "" }
