@@ -20,7 +20,9 @@ let claudeInventory: Array<{ name: string; status: string }> | null = null;
 let claudeReads = 0;
 let clock = 1_000;
 let proofs: ConnectorSetupProofs;
-let grokReach: Record<string, { connectors: string[]; at: number }> = {};
+let grokReach: Record<string, { connectors: string[]; at: number; elsewhere?: { engine: string; connectors: string[] } }> = {};
+let signInCards: string[] = [];
+let signInEngine: string | null = null;
 
 beforeEach(async () => {
   rows = [];
@@ -32,6 +34,8 @@ beforeEach(async () => {
   clock = 1_000;
   proofs = createConnectorSetupProofs();
   grokReach = {};
+  signInCards = [];
+  signInEngine = null;
   let seq = 0;
   const shared = {
     cards: (threadId: string) => threadId === "t1"
@@ -52,6 +56,7 @@ beforeEach(async () => {
     principal: () => speaker,
     context: () => context,
     post: ({ view, text }) => { rows.push({ id: `m${++seq}`, kind: "text", at: clock, text, connectorSetup: view }); },
+    signIn: (_botId, _threadId, principalId) => { if (!signInEngine) return null; signInCards.push(principalId); return { engine: signInEngine }; },
     newId: () => `cs_${String(++seq).padStart(18, "0")}`,
   });
   const routes = createConnectorSetupRoutes({
@@ -224,5 +229,34 @@ describe("the card's check (person route)", () => {
     expect(owner).toMatch(/^[a-f0-9]{16}$/);
     expect(owner).not.toContain("person");
     expect(connectorSetupOwner(" PR_Person ")).toBe(owner);
+  });
+});
+
+describe("2026-10-29: no account of their own, and the other Grok account", () => {
+  it("posts the Connect Claude card when Claude takes a sign-in here, instead of refusing", async () => {
+    context = { engine: "claude", account: "none" };
+    signInEngine = "Claude";
+    const out = await open({ connector: "Microsoft Teams" });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ ok: true, route: "claude", card: "sign-in" });
+    expect(String((out.body as { note: string }).note)).toContain("Connect Claude");
+    expect(signInCards).toEqual(["pr_a"]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("still refuses in words when no engine takes a sign-in", async () => {
+    context = { engine: "other", account: "none" };
+    const out = await open({ connector: "Microsoft Teams" });
+    expect(out.status).toBe(409);
+    expect(signInCards).toEqual([]);
+  });
+
+  it("a connector on the person's other Grok account: no card, the bot hands that part there", async () => {
+    grokReach = { pr_a: { connectors: [], at: 500, elsewhere: { engine: "Grok (personal account)", connectors: ["microsoft-teams"] } } };
+    const out = await open({ connector: "Teams" });
+    expect(out.status).toBe(200);
+    expect(out.body).toMatchObject({ ok: true, route: "grok", status: "connected", card: "none" });
+    expect(String((out.body as { note: string }).note)).toContain('run_with_engine with engine "Grok (personal account)"');
+    expect(rows).toHaveLength(0);
   });
 });

@@ -75,11 +75,15 @@ export function ManageMyKeysLink({ issuer }: { issuer: string }) {
 
 /** One engine's own subscription sign-in for the signed-in person (Claude,
  * Codex, Grok Build, Kimi Code): sign in, paste the code or follow the link, sign out. */
-export function MyEngineAccess({ engine, label, onChanged = () => { void reloadMyEngines(); } }: {
+export function MyEngineAccess({ engine, label, onChanged = () => { void reloadMyEngines(); }, account, signedIn: signedInOverride }: {
   engine: MyEngine;
   /** The sign-in button's text ("Connect Grok"). */
   label?: string;
   onChanged?: () => void;
+  /** 2026-10-29: the person's second sign-in on this engine (`?account=second`). */
+  account?: "second";
+  /** That sign-in's own state, when it is not the engine's first one. */
+  signedIn?: boolean;
 }) {
   const [login, setLogin] = useState<LoginState | null>(null);
   const [code, setCode] = useState("");
@@ -87,6 +91,8 @@ export function MyEngineAccess({ engine, label, onChanged = () => { void reloadM
   const [error, setError] = useState("");
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
   const id = engine.instanceId;
+  const accountQuery = account ? `account=${account}` : "";
+  const signedIn = signedInOverride ?? engine.subscription.signedIn;
 
   const stopPolling = () => {
     if (poll.current) clearInterval(poll.current);
@@ -96,7 +102,7 @@ export function MyEngineAccess({ engine, label, onChanged = () => { void reloadM
   const watch = (flowId: string) => {
     stopPolling();
     poll.current = setInterval(() => {
-      void api<{ auth: LoginState }>(`/api/me/engines/${id}/login/status?flowId=${encodeURIComponent(flowId)}`)
+      void api<{ auth: LoginState }>(`/api/me/engines/${id}/login/status?flowId=${encodeURIComponent(flowId)}${accountQuery ? `&${accountQuery}` : ""}`)
         .then(({ auth }) => {
           if (auth.phase === "waiting") return;
           stopPolling();
@@ -114,7 +120,7 @@ export function MyEngineAccess({ engine, label, onChanged = () => { void reloadM
     }, 1500);
   };
   const post = (action: string, body: unknown = {}) =>
-    api<{ auth?: LoginState }>(`/api/me/engines/${id}/login/${action}`, { method: "POST", body: JSON.stringify(body) });
+    api<{ auth?: LoginState }>(`/api/me/engines/${id}/login/${action}${accountQuery ? `?${accountQuery}` : ""}`, { method: "POST", body: JSON.stringify(body) });
 
   const signIn = async () => {
     setBusy(true);
@@ -172,10 +178,10 @@ export function MyEngineAccess({ engine, label, onChanged = () => { void reloadM
   // the image deliberately does not carry (engineUnavailable) withholds it.
   if (engineUnavailable(engine) || !engine.subscription.supported) return null;
   return (
-    <div className="flex min-w-0 flex-col gap-2 text-[13px]" data-my-engine={id}>
+    <div className="flex min-w-0 flex-col gap-2 text-[13px]" data-my-engine={account ? `${id}#${account}` : id}>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <span className="text-[12px] text-ink-secondary">{engine.subscription.signedIn ? t("myEngines.signedIn") : null}</span>
-        {engine.subscription.signedIn ? (
+        <span className="text-[12px] text-ink-secondary">{signedIn ? t("myEngines.signedIn") : null}</span>
+        {signedIn ? (
           <button type="button" className="ui-button" disabled={busy} onClick={() => void signOut()}>{t("myEngines.signOut")}</button>
         ) : (
           <button type="button" className="ui-button flex items-center gap-1.5" disabled={busy || login !== null} onClick={() => void signIn()}>

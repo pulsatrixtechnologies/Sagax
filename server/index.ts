@@ -671,7 +671,7 @@ import { introAdvance } from "./intro-tour.ts";
 import { SoloGoals, soloGoalCommand, soloGoalContinuePrompt, soloGoalLine, soloGoalSystemPrompt, withoutSoloGoalMarker } from "./solo-goal.ts";
 import { soloGoalLineText, type SoloGoalLine } from "../shared/solo-goal-line.ts";
 import { handoffModel } from "../shared/handoff-model.ts";
-import { chooseRelayEngine, relayOpening, relayResultText, relayThreadLevel } from "./run-with-engine.ts";
+import { chooseRelayEngine, relayAccountLabel, relayOpening, relayResultText, relayThreadLevel } from "./run-with-engine.ts";
 import { approvalLevelPrompt } from "./approval-level-prompt.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
@@ -883,7 +883,8 @@ import { createDeviceSettingRoutes } from "./routes/device-settings.ts";
 import { DEVICE_SETTINGS_FRAME, deviceSettingsFrameAllowed } from "../shared/device-settings.ts";
 import { DEVICE_REQUEST_KEYS, isSyncedPreference } from "../shared/settings-actions.ts";
 import { installResourceUsage } from "./resource-usage/install.ts";
-import { grokAccountReach } from "./drivers/acp/grok-tool-catalog.ts";
+import { grokAccountReach, grokReachConnectorNames } from "./drivers/acp/grok-tool-catalog.ts";
+import { GROK_CLOUD_CONNECTORS } from "../shared/grok-cloud-connectors.ts";
 import { createConnectorSetupInternalRoutes, createConnectorSetupProofs, createConnectorSetupRoutes, type ConnectorSetupContext } from "./routes/connector-setup.ts";
 import type { ConnectorSetupView } from "../shared/connector-setup.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
@@ -929,8 +930,8 @@ import { VoiceLatencyLog } from "./voice-latency.ts";
 import { noteFirstResponse, noteTurnQueued, setTurnTimingWriter, turnTrace } from "./turn-trace.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
-import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput } from "./harness-connectors.ts";
-import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch } from "./connector-switch.ts";
+import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput, type ConnectorElsewhere } from "./harness-connectors.ts";
+import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch, type SwitchEngine } from "./connector-switch.ts";
 import { connectorNeed } from "../shared/engine-connectors.ts";
 import { forgetTurnReach, noteTurnReach, reachContributions, reachSummaryPrompt, registerReachProvider } from "./turn-reach.ts";
 import { turnConnectorsRecord } from "./turn-connectors.ts";
@@ -973,7 +974,7 @@ import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, paidByPerson, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { configKeyPatch, engineKeyScope, engineKeyTarget, EngineKeyError, fileKeyConfigured, hermesProviderEnv, normalizeEngineKey, writeFileEngineKey } from "./engine-api-keys.ts";
-import { isLoginDriver, LOGIN_MARKER, loginCliFor, PrincipalEngineLogins } from "./principal-engine-logins.ts";
+import { isLoginDriver, LOGIN_MARKER, loginCliFor, loginSlotOf, PrincipalEngineLogins, secondLoginSupported, type LoginSlot } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
@@ -21176,7 +21177,7 @@ async function startTurn(
       && !opts?.automationSource && !opts?.peerAsk && !opts?.userMessage?.peerAsk && !(opts?.commsDepth ?? 0) && !opts?.coordination;
     connectorSwitch = personsRequest ? connectorSwitchForTurn(bot, threadId, switchSpeaker, personText) : null;
     if (connectorSwitch) {
-      bot = { ...bot, modelSelection: { instanceId: connectorSwitch.instanceId, model: connectorSwitch.model, ...(connectorSwitch.effort ? { effort: connectorSwitch.effort } : {}) } };
+      bot = { ...bot, modelSelection: { instanceId: connectorSwitch.instanceId, model: connectorSwitch.model, ...(connectorSwitch.effort ? { effort: connectorSwitch.effort } : {}), ...(connectorSwitch.account ? { account: connectorSwitch.account } : {}) } };
     }
   }
   // Routines and legacy peer delivery already have their own completion
@@ -29287,7 +29288,7 @@ function engineNameForPerson(instanceId: string, name: string, driver: string, p
 /** Slice 4 (D8, revised 2026-10-01): the facts engine-credentials.ts
  * decides a turn's access from. The payer is the person who speaks, or the
  * bot's owner for its routines. */
-function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): EngineCredentialInput {
+function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, slot: LoginSlot = turnSlotFor(bot, instance)): EngineCredentialInput {
   const ownerId = effectiveBotOwner(bot);
   const owner = principals.byId(ownerId);
   return {
@@ -29300,7 +29301,7 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
       const person = principals.byId(principalId);
       return person ? orgPersonFacts(person) : undefined;
     },
-    subscriptionSignedIn: (principalId, driver) => engineLogins?.signedIn(principalId, driver) ?? false,
+    subscriptionSignedIn: (principalId, driver) => engineLogins?.signedIn(principalId, driver, slot) ?? false,
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
     hasLocalKey: (principalId, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId }, driver),
@@ -29308,6 +29309,22 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     payerMode: speakerPayerMode(bot, speaker),
     orgEngineAllowed: consoleEngineAllowed(instance.instanceId),
   };
+}
+/** 2026-10-29: which of the payer's sign-ins on this engine a turn runs on
+ * (ModelSelection.account, set by the server on a part handed to the other
+ * Grok account or a request moved there): the second only when the turn's
+ * own selection says so for this very engine. */
+function turnSlotFor(bot: Pick<BotRecord, "modelSelection">, instance: { instanceId: string }): LoginSlot {
+  return bot.modelSelection.instanceId === instance.instanceId ? loginSlotOf(bot.modelSelection.account) : "primary";
+}
+/** The payer of a turn on this engine, as a principal id ("" unknown). */
+function turnPayerPrincipal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): string {
+  return turnPayer(orgEngineInput(bot, instance, speaker)).principalId.trim().toLowerCase();
+}
+/** What a person's Grok sign-in is (personal or team), or undefined. */
+function grokAccountKindFor(principalId: string, slot: LoginSlot): "personal" | "team" | undefined {
+  const kind = engineLogins?.grokAccountIdentity(principalId, slot)?.kind;
+  return kind === "personal" || kind === "team" ? kind : undefined;
 }
 /** #1137 (shared/turn-payer.ts): the default "who pays" of a bot with no
  * choice of its own: the owner when the bot runs on a local model of the
@@ -29694,21 +29711,39 @@ function relayEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = f
     if (orgEngineTurnRefusal(bot, instance, speaker)) continue;
     if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
     let via: AutoEngine["via"] = "server";
-    if (IDENTITY.kind === "perspicax") {
-      if (instance.adapter.capabilities.withholdsHostTools !== true) continue;
-      const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
-      if (!plan.ok) continue;
-      via = plan.via;
-    } else if (engineProbes.get(instance.instanceId)?.ready === false) continue;
     const options = instance.models.options.filter((option) => !hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id }));
-    engines.push({
+    const entry = (patch: Partial<AutoEngine> = {}): AutoEngine => ({
       instanceId: instance.instanceId,
       driverKind: instance.driverKind,
       displayName: engineDisplayName(instance),
       models: { default: instance.models.default, options },
       ...(instance.adapter.capabilities.effortLevels ? { effortLevels: instance.adapter.capabilities.effortLevels } : {}),
       via,
+      ...patch,
     });
+    if (IDENTITY.kind === "perspicax") {
+      if (instance.adapter.capabilities.withholdsHostTools !== true) continue;
+      // 2026-10-29: the payer's second sign-in on this engine (their other
+      // Grok account) is an engine of its own to run_with_engine, named by
+      // what it is ("Grok (personal account)"); each is reached on its own
+      // sign-in folder, never on the other's.
+      const payer = turnPayerPrincipal(bot, instance, speaker);
+      const second = secondLoginSupported(instance.driverKind) && payer && (engineLogins?.signedIn(payer, instance.driverKind, "second") ?? false)
+        ? resolveEngineAccess(orgEngineInput(bot, instance, speaker, "second"))
+        : null;
+      const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker, "primary"));
+      if (plan.ok) {
+        via = plan.via;
+        const kind = second?.ok ? grokAccountKindFor(payer, "primary") : undefined;
+        engines.push(entry(kind ? { accountKind: kind } : {}));
+      }
+      if (second?.ok && second.via === "subscription") {
+        const kind = grokAccountKindFor(payer, "second");
+        engines.push(entry({ via: "subscription", displayName: relayAccountLabel(engineDisplayName(instance), kind), account: "second", ...(kind ? { accountKind: kind } : {}) }));
+      }
+      continue;
+    } else if (engineProbes.get(instance.instanceId)?.ready === false) continue;
+    engines.push(entry());
   }
   return engines;
 }
@@ -29818,8 +29853,8 @@ class EngineAccessLost extends Error {
   }
 }
 /** A person's own engine login directory (their subscription). */
-function principalLoginDir(principalId: string, driver: SubscriptionDriver): string {
-  return engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, { claudeAgent: "claude", codex: "codex", grokAgent: "grok", kimiAgent: "kimi" }[driver]);
+function principalLoginDir(principalId: string, driver: SubscriptionDriver, slot: LoginSlot = "primary"): string {
+  return engineLogins?.loginDir(principalId, driver, slot) ?? join(DATA_DIR, "principals", principalId, { claudeAgent: "claude", codex: "codex", grokAgent: slot === "second" ? "grok-2" : "grok", kimiAgent: "kimi" }[driver]);
 }
 /** Slice 4: the credentials of one turn on an organization server, fetched
  * at dispatch; undefined in solo mode. Throws EngineAccessLost. */
@@ -29834,7 +29869,8 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
     dataDir: DATA_DIR,
     resolveKey: (sub, provider) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, provider) : Promise.resolve({ ok: false as const, error: "link" as const }),
     invalidate: (sub, provider) => perspicaxDirectory?.invalidate(sub, provider),
-    loginDir: principalLoginDir,
+    // the turn's own sign-in on this engine (a second Grok account runs in its own folder)
+    loginDir: (principalId, driver) => principalLoginDir(principalId, driver, turnSlotFor(bot, instance)),
   });
   if (!outcome.ok) throw new EngineAccessLost(outcome.plan ? orgRefusalOf(outcome.plan, speaker) : { reason: outcome.reason }, outcome.detail);
   const { plan } = outcome;
@@ -29957,11 +29993,11 @@ function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; d
 }
 /** The turn's account and whose it is (review of #943, point 5): engine
  * connectors only on the sign-in of the person the turn is for. */
-function accountConnectorInput(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): ClaudeAiTurnInput {
+function accountConnectorInput(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"], slot: LoginSlot = turnSlotFor(bot, instance)): ClaudeAiTurnInput {
   let planned = via;
   let payerPrincipalId: string | undefined;
   if (IDENTITY.kind === "perspicax" && (instance.driverKind === "claudeAgent" || instance.driverKind === "grokAgent" || instance.driverKind === "grok")) {
-    const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+    const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker, slot));
     if (plan.ok) {
       planned ??= plan.via;
       payerPrincipalId = plan.payerPrincipalId ?? "";
@@ -29982,8 +30018,8 @@ function accountConnectorInput(bot: BotRecord, instance: { instanceId: string; d
  * own sign-in only (accountConnectorsForTurn). Claude's from the cached
  * claude.ai inventory (connected ones; read again in the background, never
  * waited on), Grok's from the xAI catalog on an organization turn. */
-function engineReachFor(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): Array<{ connector: string }> | null {
-  const input = accountConnectorInput(bot, instance, speaker, via);
+function engineReachFor(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker, via?: TurnAccess["via"], slot: LoginSlot = turnSlotFor(bot, instance)): Array<{ connector: string }> | null {
+  const input = accountConnectorInput(bot, instance, speaker, via, slot);
   if (claudeAiConnectorsForTurn(input)) {
     const account = claudeAccountForPrincipal(connectorPrincipalFor(input));
     if ("unavailable" in account) return [];
@@ -29993,9 +30029,19 @@ function engineReachFor(bot: BotRecord, instance: Parameters<typeof withholdHost
     if (inventory.auth !== "subscription") return [];
     return inventory.connectors.filter((connector) => connector.status === "connected").map((connector) => ({ connector: connector.name }));
   }
-  // Grok's cloud connectors are a catalog: which ones this person connected
-  // on grok.com is never known here, so a Grok engine's reach is unknown.
-  if (grokCloudConnectorsForTurn(input) && withholdHostToolsFor(instance) && bot.toolScope === undefined) return null;
+  // Grok's grok.com connectors: what this sign-in's own catalog carried on
+  // its last turn or its reach probe (grok-tool-catalog.ts); unknown until
+  // then (never a reason to switch, either way).
+  if (grokCloudConnectorsForTurn(input) && withholdHostToolsFor(instance) && bot.toolScope === undefined) {
+    const principal = connectorPrincipalFor(input);
+    if (!principal || !isPrincipalId(principal)) return null;
+    const reach = grokAccountReach(principalLoginDir(principal, "grokAgent", slot));
+    if (!reach) {
+      engineLogins?.warmReach(principal, instance.instanceId, slot);
+      return null;
+    }
+    return grokReachConnectorNames(reach).map((connector) => ({ connector }));
+  }
   return [];
 }
 /** A model's catalogue price (input + output), when known. */
@@ -30014,19 +30060,50 @@ function connectorSwitchForTurn(bot: BotRecord, threadId: string, speaker: TurnS
   if (!need) return null;
   const base = registry.get(bot.modelSelection.instanceId);
   if (!base) return null;
-  const current = { instanceId: base.instanceId, engineLabel: engineDisplayName(base), models: [], reach: engineReachFor(bot, base, speaker) };
-  const candidates = autoEnginesFor(bot, speaker, cloudGuestDriven(threadId) || botmailConfined(threadId)).flatMap((engine) => {
+  const baseSlot = turnSlotFor(bot, base);
+  const basePayer = IDENTITY.kind === "perspicax" ? turnPayerPrincipal(bot, base, speaker) : "";
+  const current: SwitchEngine = {
+    instanceId: base.instanceId, engineLabel: engineDisplayName(base), models: [], reach: engineReachFor(bot, base, speaker),
+    ...(baseSlot === "second" ? { account: "second" as const } : {}),
+    ...(basePayer && secondLoginSupported(base.driverKind) ? ((kind) => kind ? { accountKind: kind } : {})(grokAccountKindFor(basePayer, baseSlot)) : {}),
+  };
+  const priced = (engine: AutoEngine) => engine.models.options.map((option) => ({ id: option.id, ...((price) => price === undefined ? {} : { price })(catalogPrice(engine.driverKind, option.id)) }));
+  const confined = cloudGuestDriven(threadId) || botmailConfined(threadId);
+  const candidates: SwitchEngine[] = autoEnginesFor(bot, speaker, confined).flatMap((engine) => {
     const live = engine.instanceId === base.instanceId ? undefined : registry.get(engine.instanceId);
     if (!live) return [];
     return [{
       instanceId: engine.instanceId,
       engineLabel: engine.displayName,
-      models: engine.models.options.map((option) => ({ id: option.id, ...((price) => price === undefined ? {} : { price })(catalogPrice(engine.driverKind, option.id)) })),
+      models: priced(engine),
       ...(engine.models.default ? { defaultModel: engine.models.default } : {}),
       ...(engine.effortLevels ? { effortLevels: engine.effortLevels } : {}),
       reach: engineReachFor(bot, live, speaker, engine.via as TurnAccess["via"]),
     }];
   });
+  // 2026-10-29: the person's other Grok sign-in (relayEnginesFor), on this
+  // very engine too: a personal connector asked of the team account moves
+  // to the personal one when that one is known to have it.
+  if (IDENTITY.kind === "perspicax") {
+    for (const engine of relayEnginesFor(bot, speaker, confined)) {
+      const live = registry.get(engine.instanceId);
+      if (!live || !secondLoginSupported(engine.driverKind)) continue;
+      const slot: LoginSlot = engine.account === "second" ? "second" : "primary";
+      if (engine.instanceId === base.instanceId && slot === baseSlot) continue;
+      if (candidates.some((candidate) => candidate.instanceId === engine.instanceId && candidate.account === engine.account)) continue;
+      if (engine.instanceId !== base.instanceId && modelSwitchNeedsAsk(approvalModeFor(bot), base.driverKind, engine.driverKind)) continue;
+      candidates.push({
+        instanceId: engine.instanceId,
+        engineLabel: engine.displayName,
+        models: priced(engine),
+        ...(engine.models.default ? { defaultModel: engine.models.default } : {}),
+        ...(engine.effortLevels ? { effortLevels: engine.effortLevels } : {}),
+        reach: engineReachFor(bot, live, speaker, engine.via as TurnAccess["via"], slot),
+        ...(engine.account ? { account: engine.account } : {}),
+        ...(engine.accountKind ? { accountKind: engine.accountKind } : {}),
+      });
+    }
+  }
   const basePrice = catalogPrice(base.driverKind, bot.modelSelection.model);
   return pickConnectorSwitch({
     need, current, candidates,
@@ -30047,7 +30124,53 @@ function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof w
     // what Full and run_with_engine change in the connector rules (2026-10-28)
     full: turn.level === "full",
     relay: turn.relay === true,
+    ...(turn.relay ? { elsewhere: connectorsElsewhereFor(bot, instance, speaker) } : {}),
   });
+}
+/** 2026-10-29: the person's other engines and sign-ins a turn may hand a
+ * part to (run_with_engine), with the connectors known to be there: the
+ * cached claude.ai inventory of their own Claude sign-in, the reach of each
+ * of their Grok sign-ins (their catalog or the reach probe). Only their own
+ * accounts (accountConnectorsForTurn "own"), never someone else's; a reach
+ * not known yet is left out rather than guessed. */
+function connectorsElsewhereFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): ConnectorElsewhere[] {
+  if (IDENTITY.kind !== "perspicax") return [];
+  const out: ConnectorElsewhere[] = [];
+  const currentSlot = turnSlotFor(bot, instance);
+  for (const candidate of registry.instances()) {
+    if (!candidate.enabled || candidate.adapter.capabilities.withholdsHostTools !== true) continue;
+    if (candidate.driverKind === "claudeAgent") {
+      if (candidate.instanceId === instance.instanceId) continue;
+      const input = accountConnectorInput(bot, candidate, speaker);
+      if (!claudeAiConnectorsForTurn(input)) continue;
+      const account = claudeAccountForPrincipal(connectorPrincipalFor(input));
+      if ("unavailable" in account) continue;
+      const inventory = claudeAiInventory.peek(account.key, { cli: account.cli, env: account.env });
+      if (inventory?.auth !== "subscription") continue;
+      out.push({ engine: engineDisplayName(candidate), connectors: inventory.connectors.filter((connector) => connector.status === "connected").map((connector) => connector.name) });
+      continue;
+    }
+    if (!secondLoginSupported(candidate.driverKind)) continue;
+    const payer = turnPayerPrincipal(bot, candidate, speaker);
+    if (!payer || !isPrincipalId(payer)) continue;
+    const both = engineLogins?.signedIn(payer, candidate.driverKind, "second") ?? false;
+    for (const slot of ["primary", "second"] as const) {
+      if (candidate.instanceId === instance.instanceId && slot === currentSlot) continue;
+      if (slot === "second" && !both) continue;
+      const input = accountConnectorInput(bot, candidate, speaker, undefined, slot);
+      if (!grokCloudConnectorsForTurn(input) || !withholdHostToolsFor(candidate) || bot.toolScope !== undefined) continue;
+      const reach = grokAccountReach(principalLoginDir(payer, "grokAgent", slot));
+      if (!reach) {
+        engineLogins?.warmReach(payer, candidate.instanceId, slot);
+        continue;
+      }
+      const kind = grokAccountKindFor(payer, slot);
+      // the first sign-in keeps the engine's own name (run_with_engine "Grok"); the second is named by what it is
+      const engine = slot === "second" ? relayAccountLabel(engineDisplayName(candidate), kind) : engineDisplayName(candidate);
+      out.push({ engine, connectors: grokReachConnectorNames(reach), ...(kind ? { accountKind: kind } : {}) });
+    }
+  }
+  return out;
 }
 /** Where a person sets their model keys (Perspicax console, slice 4). */
 function perspicaxKeysUrl(): string | undefined {
@@ -30067,7 +30190,7 @@ function subscriptionExpiredCard(bot: BotRecord, instance: { driverKind: string;
     engine: engineNameForViewer(engineDisplayName(instance), driverDisplayName(instance.driverKind), payer ? personIsOrgAdmin(payer) : false),
     ...(ran?.routine ? { routine: true } : {}),
   });
-  if (card) engineLogins?.markExpired(card.payerPrincipalId, instance.driverKind);
+  if (card) engineLogins?.markExpired(card.payerPrincipalId, instance.driverKind, "instanceId" in instance && typeof instance.instanceId === "string" ? turnSlotFor(bot, { instanceId: instance.instanceId }) : "primary");
   return card;
 }
 /** The access card of a refused or lost turn: who has to act (the person
@@ -30894,6 +31017,25 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     post: ({ botId, threadId, view, text }) => {
       const bot = store.bot(botId);
       store.appendMessage(threadId, { role: "bot", kind: "text", text, ...(bot ? { from: { botId: bot.id, name: bot.name, color: bot.color } } : {}), connectorSetup: view });
+    },
+    // 2026-10-29: no account of the person's own to attach the connector to,
+    // and Claude takes a personal sign-in here: the same "Connect Claude"
+    // card as sagax_settings' sign-in (#1545), posted for that person only
+    signIn: (botId, threadId, principalId) => {
+      if (IDENTITY.kind !== "perspicax" || !engineLogins) return null;
+      const owner = connectorThread(botId, threadId);
+      if (!owner) return null;
+      const claude = registry.instances().find((candidate) => candidate.enabled && candidate.driverKind === "claudeAgent" && !keyOnlyInstance(candidate.instanceId) && engineInstalled(candidate.instanceId));
+      if (!claude || engineLogins.signedIn(principalId, "claudeAgent")) return null;
+      const name = engineDisplayName(claude);
+      store.appendMessage(threadId, {
+        role: "bot",
+        kind: "access",
+        text: `${owner.bot.name} asks you to sign in to ${name}. Open Settings > Models to sign in.`,
+        ...(owner.group ? { from: { botId: owner.bot.id, name: owner.bot.name, color: owner.bot.color } } : {}),
+        access: { reason: "sign_in", engine: name, instanceId: claude.instanceId, botId: owner.bot.id, botName: owner.bot.name, ownerPrincipalId: principalId, payerPrincipalId: principalId },
+      });
+      return { engine: name };
     },
   }),
   // save_artifact, update_artifact, list_artifacts, delete_artifact (server/routes/artifacts.ts)
@@ -36810,6 +36952,23 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
     },
     accountModels: (principalId, instanceId) => logins.accountModels(principalId, instanceId),
   }));
+  /** 2026-10-29: a person's Grok sign-ins for Providers: each slot, whether
+   * it is signed in, what it is (personal or team, from the CLI's own login
+   * record) and the grok.com connectors it brings (its reach, probed in the
+   * background when not known yet). Their own page only. */
+  const grokAccountsFor = (principalId: string, instanceId: string) => (["primary", "second"] as const).map((slot) => {
+    const signedIn = logins.signedIn(principalId, "grokAgent", slot);
+    if (signedIn) logins.warmReach(principalId, instanceId, slot);
+    const identity = signedIn ? logins.grokAccountIdentity(principalId, slot) : null;
+    const reach = signedIn ? grokAccountReach(logins.loginDir(principalId, "grokAgent", slot)) : undefined;
+    return {
+      slot,
+      signedIn,
+      ...(signedIn && logins.expired(principalId, "grokAgent", slot) ? { expired: true } : {}),
+      ...(identity ? { kind: identity.kind, ...(identity.email ? { email: identity.email } : {}) } : {}),
+      ...(reach ? { connectors: reach.groups.map((group) => ({ label: GROK_CLOUD_CONNECTORS.find((entry) => entry.id === group.id)?.name ?? group.label, tools: group.tools })) } : {}),
+    };
+  });
   ROUTES.push(async ({ req, res, url, path, method, auth, json, readBody }) => {
     if (path !== "/api/me/engines" && !path.startsWith("/api/me/engines/")) return PASS;
     res.setHeader("cache-control", "no-store");
@@ -36855,6 +37014,8 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
           ...(orgKeySet && !orgKey ? { orgKeyNotGiven: true } : {}),
           ...(orgNotAllowed ? { orgNotAllowed: true } : {}),
           myTurns,
+          // 2026-10-29: a person's two Grok sign-ins (personal and team), each with what it brings through grok.com
+          ...(supported && secondLoginSupported(driver) ? { accounts: grokAccountsFor(principalId, entry.instanceId) } : {}),
         };
       });
       return json(res, 200, { engines, ...(perspicaxKeysUrl() ? { keysUrl: perspicaxKeysUrl() } : {}) });
@@ -36866,10 +37027,13 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
     const entry = registry.entries().find((candidate) => candidate.instanceId === instanceId);
     const driver = entry?.shadow?.driverKind ?? entry?.live?.driverKind ?? "";
     if (!entry || !subscriptionDriver(driver)) return json(res, 404, { error: "This engine has no personal sign-in." });
+    // 2026-10-29: `?account=second` is the person's second sign-in on an engine that keeps one (Grok)
+    const slot = loginSlotOf(url.searchParams.get("account"));
+    if (slot === "second" && !secondLoginSupported(driver)) return json(res, 400, { error: "This engine keeps one sign-in per person." });
     const owner = auth.kind === "session" ? auth.session.id : "loopback";
     try {
       if (status && method === "GET") {
-        return json(res, 200, { auth: await logins.status(principalId, instanceId, owner, url.searchParams.get("flowId") ?? "") });
+        return json(res, 200, { auth: await logins.status(principalId, instanceId, owner, url.searchParams.get("flowId") ?? "", slot) });
       }
       if (!action || method !== "POST") return json(res, 405, { error: "method not allowed" });
       if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
@@ -36877,7 +37041,7 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
       }
       const verb = action[2];
       if (verb === "start") {
-        const started = await logins.start(principalId, instanceId, owner);
+        const started = await logins.start(principalId, instanceId, owner, slot);
         if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
           logins.revokeOwner(owner);
           return json(res, 401, { error: "Your session ended. Start a new sign-in." });
@@ -36885,7 +37049,7 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         return json(res, 200, { auth: started });
       }
       if (verb === "sign-out") {
-        await logins.signOut(principalId, instanceId, owner);
+        await logins.signOut(principalId, instanceId, owner, slot);
         return json(res, 200, { ok: true });
       }
       const body = await readBody(req, 4096);
@@ -36893,10 +37057,10 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
       if (verb === "complete") {
         const pasted = typeof body?.callbackUrl === "string" ? body.callbackUrl : typeof body?.code === "string" ? body.code : "";
         if (!flowId || !pasted) return json(res, 400, { error: "flowId and a code or callbackUrl are required" });
-        await logins.complete(principalId, instanceId, owner, flowId, pasted);
+        await logins.complete(principalId, instanceId, owner, flowId, pasted, slot);
         return json(res, 200, { ok: true });
       }
-      await logins.cancel(principalId, instanceId, owner, flowId);
+      await logins.cancel(principalId, instanceId, owner, flowId, slot);
       return json(res, 200, { ok: true });
     } catch (error) {
       const requested = error && typeof error === "object" ? (error as { status?: unknown }).status : undefined;
@@ -38120,7 +38284,16 @@ function connectorSetupStore() {
     botOf: (threadId: string) => store.botByThread(threadId)?.id,
     patch: (threadId: string, messageId: string, view: ConnectorSetupView) => { store.patchMessage(threadId, messageId, { connectorSetup: view }); },
     // the person's own Grok sign-in folder, as their turns run it (engine-credentials.ts)
-    grokReach: (principalId: string) => grokAccountReach(principalLoginDir(principalId, "grokAgent")),
+    grokReach: (principalId: string) => {
+      const reach = grokAccountReach(principalLoginDir(principalId, "grokAgent"));
+      // 2026-10-29: the person's second Grok sign-in, when that one has it
+      const second = engineLogins?.signedIn(principalId, "grokAgent", "second") ? grokAccountReach(principalLoginDir(principalId, "grokAgent", "second")) : undefined;
+      const elsewhere = second?.connectors.length
+        ? { engine: relayAccountLabel(driverDisplayName("grokAgent"), grokAccountKindFor(principalId, "second")), connectors: second.connectors }
+        : undefined;
+      if (!reach && !elsewhere) return undefined;
+      return { connectors: reach?.connectors ?? [], at: reach?.at ?? 0, ...(elsewhere ? { elsewhere } : {}) };
+    },
   };
 }
 /** The person a sign-in card is for: the one speaking, never a routine or a peer. */
@@ -44583,7 +44756,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           engine: engineAsked,
           ...(typeof body.model === "string" && body.model.trim() ? { model: body.model.trim() } : {}),
           engines,
-          current: { instanceId: current.instanceId, model: current.model },
+          current: { instanceId: current.instanceId, model: current.model, ...(current.account ? { account: current.account } : {}) },
         });
         if (!choice.ok) return json(res, 200, { error: choice.error });
         // a level the engine cannot run becomes Ask in that thread (parentThreadModel)
@@ -44594,7 +44767,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         });
         const rawTitle = typeof body.title === "string" ? body.title.replace(/\s+/g, " ").trim() : "";
         const title = (rawTitle || message.replace(/\s+/g, " ")).slice(0, 60).trim() || `On ${choice.engineLabel}`;
-        const selection: ModelSelection = { instanceId: choice.instanceId, model: choice.model };
+        // the part runs on the sign-in named (a second Grok account in its own folder)
+        const selection: ModelSelection = { instanceId: choice.instanceId, model: choice.model, ...(choice.account ? { account: choice.account } : {}) };
         const task = store.createTask(from.id, title, false, undefined, { botId: from.id, name: from.name, at: Date.now() },
           relayLevel, openedThreadOwner(from, fromThreadId, from), selection, false, undefined, false);
         if (!task) return json(res, 500, { error: "couldn't open a thread for that part" });

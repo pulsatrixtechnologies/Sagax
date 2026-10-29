@@ -30,4 +30,11 @@ export interface ModelSelection {
    * vision stay on the larger or cloud model Auto picks. Ignored without
    * Auto, or when the engine is not usable for the turn. */
   fast?: { instanceId: string; model: string };
+  /** Which of the person's own sign-ins on this engine the turn runs on
+   * (2026-10-29): a person may keep two Grok accounts on an organization
+   * server (a personal one and a team one, each with its own grok.com
+   * connectors). Absent: the first one. "second" only ever comes from the
+   * server (a part handed to the other account with run_with_engine, or a
+   * request moved there for its connector); the pickers never set it. */
+  account?: "second";
 }

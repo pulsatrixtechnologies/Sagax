@@ -253,6 +253,72 @@ you have NO tool", and a card never turned Connected.
   `grok-tool-catalog.test.ts`, `connector-setup.test.ts` (shared and route),
   `engine-connectors.test.ts`.
 
+## Two Grok accounts per person, and the connector of another engine (2026-10-29)
+
+A person may keep two grok.com sign-ins on an organization server: a
+personal account (`principal_type` User in the CLI's login record) and a
+team one (Team). Their grok.com connectors differ (Outlook and Teams on the
+personal one, say). A grok process carries ONE sign-in, and its ACP (1.0.70)
+has no way to call a gateway tool from outside the model (no `_x.ai/mcp/call`;
+only `mcp/list`, `session/*`), so a second process mounted as an MCP server
+would be a model prompt per tool call. Chosen instead: a second sign-in slot
+reached through the relay.
+- Slot: `principals/<id>/grok-2` (principal-engine-logins.ts `LoginSlot`
+  "second"; `loginDir`, `signedIn`, `expired`, `start`... take the slot;
+  routes `/api/me/engines/<id>/login/*?account=second`; `clearAll` clears
+  both). The first slot pays the person's turns as before; the second never
+  does on its own. `grokAccountIdentity` reads `principal_type` and `email`
+  from `<home>/.grok/auth.json`, nothing else, for that person's own
+  Providers page (`accounts` on GET /api/me/engines) and the labels.
+- Reach: `probeGrokReach` (grok.ts) is a standalone `grok agent stdio` on
+  the sign-in's home with the gateway on, initialize, authenticate
+  (cached_token), session/new, `_x.ai/mcp/list` until settled, no prompt;
+  about one second for 488 tools. `PrincipalEngineLogins.warmReach` runs it
+  on sign-in and when a turn or Providers finds the reach unknown; the
+  result is kept by folder (`noteGrokAccountReach`, now with `groups` and
+  tool counts), the same key a turn on that sign-in writes. So Providers
+  shows what each account brings, and `engineReachFor` knows a Grok sign-in's
+  reach (it was "never known" before).
+- Which sign-in a turn runs on: `ModelSelection.account` ("second"), set only
+  by the server: `turnSlotFor(bot, instance)` feeds `orgEngineInput`
+  (`subscriptionSignedIn` on that slot), `orgTurnAccess` (`loginDir` on that
+  slot, so `engineHome` is the other folder) and `accountConnectorInput`.
+- run_with_engine: `relayEnginesFor` adds the payer's second sign-in as an
+  engine of its own, `Grok (personal account)` / `Grok (team account)`
+  (`relayAccountLabel`), id `grok#second`; `chooseRelayEngine` takes the
+  label, "grok personal", "personal grok account" or the id; the family
+  alone ("grok") stays the first sign-in. The part's thread carries
+  `account`, so it runs on that folder with that account's gateway.
+- Connector switch (connector-switch.ts): candidates include the other
+  sign-in of the same engine (`account`, `accountKind`); for a personal
+  connector (Outlook, Teams, Gmail, calendar) the personal account wins,
+  even over the team account the turn is on when both have it; a connector
+  that is not personal stays put. The switched turn's selection carries
+  `account`.
+- Prompt: `engineConnectorsPrompt` `elsewhere` (harness-connectors.ts
+  `relayHint`, built by index.ts `connectorsElsewhereFor`): the person's
+  other engines and sign-ins with the connectors known to be there (the
+  cached claude.ai inventory, each Grok sign-in's reach), named as
+  run_with_engine takes them, with "prefer the personal account" when one
+  exists. A reach not known yet is left out, never guessed. So a Claude bot
+  hands a Teams request to the person's Grok, a Grok bot hands a Microsoft
+  365 request to the person's Claude, and a team-account turn hands Outlook
+  to the personal account, with nothing technical for the person.
+- open_connector_setup: a connector on the other Grok account answers "call
+  run_with_engine with engine ..." (no card); with no account of the
+  person's own at all and a Claude engine that takes a sign-in, the route
+  posts the "Connect Claude" card (the #1545 sign_in access card) and tells
+  the bot to say so in one sentence, instead of refusing in words.
+- UI: Providers > Grok on an organization server draws one row per account
+  (EngineConnect.tsx `GrokAccountRows`): what it is, its address,
+  Connected or Connect a second Grok account, "Through grok.com: Microsoft
+  Teams (36), Outlook (Exchange) (29)", Disconnect per row. MyEngineAccess
+  takes `account`.
+- Tests: principal-engine-logins, run-with-engine, connector-switch,
+  harness-connectors, grok-tool-catalog, routes/connector-setup,
+  EngineConnect. Verified on the real grok 1.0.70 with a copy of a personal
+  sign-in: 488 gateway tools, Teams 36, Outlook 29, `principal_type` User.
+
 ## Bot content has a default theme (2026-10-28)
 
 Pages and widgets bots make draw in the app's look, sober as Grok Bot's.

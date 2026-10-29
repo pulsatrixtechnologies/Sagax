@@ -343,6 +343,91 @@ export async function probeGrokModels(
   return models;
 }
 
+/** How long a reach probe waits for Grok's managed gateway to settle. */
+const REACH_PROBE_TIMEOUT_MS = 45_000;
+
+/** What a Grok sign-in brings through grok.com, read without a turn
+ * (2026-10-29): a standalone `grok agent stdio` on that sign-in's home with
+ * the managed gateway on (grokCloudConnectorEnv's own-account setting),
+ * initialize, authenticate on the cached token, session/new with no MCP
+ * server of Sagax's, then `_x.ai/mcp/list` until it settles
+ * (grokMcpSettled). Resolves to the list's result (noteGrokAccountReach
+ * reads it), or null. No prompt is sent; the process is killed after.
+ * Measured on grok 1.0.70: about one second for 488 gateway tools. */
+export async function probeGrokReach(cli: string, env: Record<string, string | undefined>): Promise<unknown> {
+  const probeEnv: Record<string, string | undefined> = { ...env, GROK_AGENT: "grok-build", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true", SAGAX_GROK_REACH_PROBE: "1" };
+  delete probeEnv.XAI_API_KEY;
+  delete probeEnv.GROK_MANAGED_MCPS_ENABLED;
+  const home = grokHome(probeEnv);
+  if (!existsSync(join(home, "auth.json"))) return null;
+  return engineStartGate.run("probe", `${cli} agent (reach)`, () => new Promise<unknown>((done) => {
+    let settled = false;
+    let child: ReturnType<typeof spawn>;
+    const finish = (value: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { child?.kill(); } catch { /* already gone */ }
+      done(value);
+    };
+    const timer = setTimeout(() => finish(null), REACH_PROBE_TIMEOUT_MS);
+    try {
+      const resolved = resolveCli(cli, ["agent", "--no-leader", "stdio"], probeEnv as NodeJS.ProcessEnv);
+      child = spawn(resolved.command, resolved.args, { env: probeEnv as NodeJS.ProcessEnv, cwd: dirname(home), stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+    } catch {
+      finish(null);
+      return;
+    }
+    child.on("error", () => finish(null));
+    child.on("exit", () => finish(null));
+    let nextId = 0;
+    const pending = new Map<number, (message: { result?: unknown; error?: unknown }) => void>();
+    const send = (method: string, params: unknown): Promise<{ result?: unknown; error?: unknown }> => new Promise((resolve) => {
+      const id = ++nextId;
+      pending.set(id, resolve);
+      child.stdin?.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+    let buffer = "";
+    child.stdout?.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString("utf8");
+      let newline: number;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        let message: { id?: unknown; method?: unknown; result?: unknown; error?: unknown };
+        try { message = JSON.parse(line); } catch { continue; }
+        if (typeof message.id === "number" && pending.has(message.id)) {
+          pending.get(message.id)!(message);
+          pending.delete(message.id);
+        } else if (typeof message.method === "string" && message.id !== undefined) {
+          // a request from the agent (a permission, a file): nothing is granted
+          child.stdin?.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: {} })}\n`);
+        }
+      }
+    });
+    child.stdin?.on("error", () => finish(null));
+    void (async () => {
+      const init = await send("initialize", { protocolVersion: 1, clientCapabilities: {} });
+      const methods = (init.result as { authMethods?: Array<{ id?: string }> } | undefined)?.authMethods ?? [];
+      if (init.error || !methods.some((method) => method.id === "cached_token")) return finish(null);
+      const auth = await send("authenticate", { methodId: "cached_token" });
+      if (auth.error) return finish(null);
+      const created = await send("session/new", { cwd: dirname(home), mcpServers: [] });
+      const sessionId = (created.result as { sessionId?: unknown } | undefined)?.sessionId;
+      if (created.error || typeof sessionId !== "string") return finish(null);
+      let last: unknown = null;
+      for (;;) {
+        if (settled) return;
+        const reply = await send("_x.ai/mcp/list", { sessionId, cache: true });
+        if (reply.error) return finish(last);
+        last = (reply.result as { result?: unknown } | undefined)?.result ?? null;
+        if (grokMcpSettled(last)) return finish(last);
+        await delay(150);
+      }
+    })().catch(() => finish(null));
+  }));
+}
+
 
 function unquote(raw: string): string {
   const value = raw.trim();
