@@ -3810,5 +3810,7 @@
   "mascot.shape.chomp": "パクッ",
   "mascot.shape.nibble": "カジッ",
   "mascot.shape.shield": "盾",
-  "mascot.shape.bubble": "あわ"
+  "mascot.shape.bubble": "あわ",
+  "chat.exchange.empty": "{name} とのメッセージはまだありません。",
+  "chat.exchange.loadError": "この会話を読み込めませんでした。"
 }

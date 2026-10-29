@@ -2626,5 +2626,7 @@
   "mascot.shape.chomp": "Mordida",
   "mascot.shape.nibble": "Beliscada",
   "mascot.shape.shield": "Escudo",
-  "mascot.shape.bubble": "Bolha"
+  "mascot.shape.bubble": "Bolha",
+  "chat.exchange.empty": "Ainda não há mensagens com {name}.",
+  "chat.exchange.loadError": "Não foi possível carregar esta conversa."
 }

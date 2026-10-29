@@ -1888,7 +1888,9 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -3759,7 +3761,9 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     },
     "fr": {
       "botPanel.turnLimits.title": "35696e37e777cad0dc06cfa324dc49ef445287e54d0eba6f80d6ba90e2611858",
@@ -15483,7 +15487,9 @@
       "voiceMode.provider.down": "08d48ec174798a7cf1834528a0a348e2ebd162ede940919f3320a4e0c974356c",
       "voiceMode.provider.voice": "d5e98a87a227afe88bc17e27df2b6307748534ff93107412ba05017a80a6957d",
       "connectApps.manage.tab.providers": "996c32b35f2182a9c83815395113f92344269ebb4ab3525017c4cafaa3d1a8fd",
-      "connectApps.manage.tab.pages": "9046da16aea909ba75a36cec13b56cb2144dc2ede45cde361e99a8d79802eabf"
+      "connectApps.manage.tab.pages": "9046da16aea909ba75a36cec13b56cb2144dc2ede45cde361e99a8d79802eabf",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -17344,7 +17350,9 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     },
     "ja": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -21158,7 +21166,9 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     },
     "pt-br": {
       "achievements.panel.all": "e2adb0c3b5f28a7c9d5bdac240382201b39376dd11671aedc93e8a73b6468f19",
@@ -23788,7 +23798,9 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -26170,7 +26182,9 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     },
     "zh-tw": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -29873,7 +29887,9 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     },
     "zh": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -32539,7 +32555,9 @@
       "mascot.shape.chomp": "75f24b6cae9a7f886751ad45025d71d6364b140a004be97f97950763e3116a26",
       "mascot.shape.nibble": "ecc2f19137087fbc64ed88f6623466437d29bf6acfede88662ac2ae278b49483",
       "mascot.shape.shield": "480d4be7d61fe52bc31768ffaaffea7ad5db66ba8b699d30623c4726704cc646",
-      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34"
+      "mascot.shape.bubble": "77d87b0061d4094d1c654a07a04a3d312076f385cb69f140de5073160a305c34",
+      "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
+      "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8"
     }
   }
 }

@@ -3699,5 +3699,7 @@
   "mascot.shape.chomp": "大嚼",
   "mascot.shape.nibble": "小啃",
   "mascot.shape.shield": "盾牌",
-  "mascot.shape.bubble": "泡泡"
+  "mascot.shape.bubble": "泡泡",
+  "chat.exchange.empty": "還沒有與 {name} 的訊息。",
+  "chat.exchange.loadError": "無法載入此對話。"
 }

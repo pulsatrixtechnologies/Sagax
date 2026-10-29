@@ -90,13 +90,16 @@ export function EarlierConversationList({ self, rows, bots, showToolCalls = fals
 
 export function BotConversationLine({ self, row, bots, showToolCalls = false, compact = false }: { self: Pick<Bot, "id" | "name" | "color">; row: BotConversationRow; bots: readonly Bot[]; showToolCalls?: boolean; compact?: boolean }) {
   const [run, setRun] = useState<ExchangeRun | null>(null);
+  // a failed read says so in the sheet, never a blank sheet (#1502)
+  const [loadError, setLoadError] = useState(false);
   const other = avatarBot({ id: row.otherBotId, name: row.otherName }, bots);
   const open = () => {
     void api<{ messages?: Message[] }>(`/api/threads/${row.threadId}/messages?limit=200`)
-      .then((page) => page.messages ?? [])
-      .catch(() => [] as Message[])
-      .then((messages) => {
+      .then((page) => ({ messages: page.messages ?? [], failed: false }))
+      .catch(() => ({ messages: [] as Message[], failed: true }))
+      .then(({ messages, failed }) => {
         const otherParty = { id: row.otherBotId, name: row.otherName, color: other.color };
+        setLoadError(failed);
         setRun({
           id: `conversation:${row.threadId}`,
           messages: creditedLines(messages, self, otherParty, row.direction),
@@ -116,7 +119,7 @@ export function BotConversationLine({ self, row, bots, showToolCalls = false, co
       compact={compact}
       onClick={open}
     >
-      {run && <ExchangeSheet run={run} bots={bots} showToolCalls={showToolCalls} onClose={() => setRun(null)} />}
+      {run && <ExchangeSheet run={run} bots={bots} showToolCalls={showToolCalls} loadError={loadError} onRetry={open} onClose={() => setRun(null)} />}
     </ConversationLink>
   );
 }

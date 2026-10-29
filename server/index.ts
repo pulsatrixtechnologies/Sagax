@@ -8749,7 +8749,7 @@ const wireBot = (bot: BotRecord): WireBot => {
   const waitingApprovals = allTasks ? interBotWaiting(bot.id, allTasks) : [];
   // Both ends of a bot-to-bot conversation show it (inter-bot-conversations.ts);
   // an organization viewer gets the readable ones only (botForViewer).
-  const botConversations = interBotConversations(bot.id, store.bots, undefined, (ownerId, threadId) => threadBusy(ownerId, threadId));
+  const botConversations = interBotConversations(bot.id, store.bots, undefined, (ownerId, threadId) => threadBusy(ownerId, threadId), threadHasMessages);
   const coordinated = threadsWithActiveCoordination();
   const level = approvalLevelOf(bot.id, bot.threadId);
   return { ...visible, waitingForTeammates: coordinated.has(bot.threadId) && !threadBusy(bot.id, bot.threadId),
@@ -8760,6 +8760,16 @@ const wireBot = (bot: BotRecord): WireBot => {
     ...(IDENTITY.kind === "perspicax" ? { turnPayerDefault: defaultTurnPayerFor(bot) } : {}),
     avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection, coordinated)) } : {}) };
 };
+
+/** A bot-to-bot conversation is listed once its thread holds a message
+ * (inter-bot-conversations.ts, #1502). One row read at most. */
+function threadHasMessages(_ownerId: string, threadId: string): boolean {
+  try {
+    return store.messagesTail(threadId, 1).messages.length > 0;
+  } catch {
+    return true;
+  }
+}
 
 function toolScopeForTurn(botId: string) {
   const bot = store.bot(botId);
@@ -35326,7 +35336,7 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
       && botThreadReadable(ownerRecord!, task.threadId, viewerId)
       && canOnBot(viewerFacts, "bot.use", botFacts(ownerRecord!))
       && canOnBot(viewerFacts, "bot.use", botFacts(otherRecord!));
-  }, (ownerId, threadId) => threadBusy(ownerId, threadId));
+  }, (ownerId, threadId) => threadBusy(ownerId, threadId), threadHasMessages);
   const narrowed: T = { ...narrowedBase };
   // the level the viewer's own conversation runs at, never another person's
   if (typeof narrowed.threadId === "string" && narrowed.threadId !== bot.threadId) {
