@@ -671,8 +671,8 @@ private struct PhoneBotPanelContent: View {
 
     private var folderOrder: [String] { RoutineFolders.ordered(routineFolders, routines: botRoutines) }
 
-    /// One routine of the card: opens its detail; the menu copies the cron,
-    /// files it in a folder, deletes it.
+    /// One routine of the card: opens its detail; the menu files it in a
+    /// folder, deletes it (the schedule is never shown as cron, 2026-10-29).
     @ViewBuilder
     private func routineCardRow(_ routine: Routine) -> some View {
         Button {
@@ -691,9 +691,6 @@ private struct PhoneBotPanelContent: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if let expression = routine.schedule.expression, routine.schedule.type == .cron {
-                Button(String(localized: "Copy cron expression"), systemImage: "doc.on.doc") { PlatformBridge.copyToPasteboard(expression) }
-            }
             if routine.mayEdit {
                 RoutineFolderMoveMenu(routine: routine, folders: folderOrder, controller: folderController,
                                       supported: routineFoldersListed && !session.routineFoldersMissing) { folder in

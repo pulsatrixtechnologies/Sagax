@@ -73,39 +73,6 @@ final class RoutineEditorTests: XCTestCase {
         }
     }
 
-    // MARK: Cron editor (cron-editor.ts)
-
-    func testPresetsReadAsMonthlyYearlyOrCustom() {
-        XCTAssertEqual(RoutineCronEditor.choice(for: .cron(expression: "0 9 1 * *", timeZone: "UTC")), .monthly)
-        XCTAssertEqual(RoutineCronEditor.choice(for: .cron(expression: "30 8 L * *", timeZone: "UTC")), .monthly)
-        XCTAssertEqual(RoutineCronEditor.choice(for: .cron(expression: "0 9 15 6 *", timeZone: "UTC")), .yearly)
-        XCTAssertEqual(RoutineCronEditor.choice(for: .cron(expression: "2 7 1-7 * 1", timeZone: "UTC")), .cron)
-        let draft = RoutineCronEditor.draft(for: .cron(expression: "5 7 L 3 *", timeZone: "Europe/Paris"), at: Date())
-        XCTAssertEqual(draft, RoutineCronDraft(expression: "5 7 L 3 *", timeZone: "Europe/Paris", day: "L", month: "3", time: "07:05"))
-    }
-
-    func testMonthlyAndYearlyBuildTheirExpression() {
-        var draft = RoutineCronDraft(expression: "", timeZone: "UTC", day: "15", month: "6", time: "08:30")
-        let after = iso("2026-10-03T12:00:00Z")
-        XCTAssertEqual(RoutineCronEditor.value(choice: .monthly, draft: draft, after: after).schedule,
-                       .cron(expression: "30 8 15 * *", timeZone: "UTC"))
-        let yearly = RoutineCronEditor.value(choice: .yearly, draft: draft, after: after)
-        XCTAssertEqual(yearly.schedule, .cron(expression: "30 8 15 6 *", timeZone: "UTC"))
-        XCTAssertEqual(isoList(yearly.runs), ["2027-06-15T08:30:00Z", "2028-06-15T08:30:00Z", "2029-06-15T08:30:00Z"])
-        draft.expression = "0 9 31 2 *"
-        XCTAssertEqual(RoutineCronEditor.value(choice: .cron, draft: draft, after: after).error,
-                       "This cron expression has no future runs. Choose dates that exist.")
-    }
-
-    func testAnUntouchedCronIsKeptByteForByte() {
-        let original = RoutineSchedule.cron(expression: "2  7 1-7 * 1", timeZone: "America/Toronto")
-        let value = RoutineCronEditor.value(
-            choice: .cron, draft: RoutineCronEditor.draft(for: original, at: Date()), after: Date(), unchanged: original
-        )
-        XCTAssertEqual(value.schedule, original)
-        XCTAssertEqual(value.runs.count, 3)
-    }
-
     // MARK: The schedule form
 
     func testRecurrenceIsReadFromTheSchedule() {
@@ -114,10 +81,13 @@ final class RoutineEditorTests: XCTestCase {
         XCTAssertEqual(RoutineScheduleForm.recurrence(for: nil, at: at, calendar: calendar), .none)
         XCTAssertEqual(RoutineScheduleForm.recurrence(for: .daily(time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6]), at: at, calendar: calendar), .daily)
         XCTAssertEqual(RoutineScheduleForm.recurrence(for: .daily(time: "09:00", weekdays: [1, 2, 3, 4, 5]), at: at, calendar: calendar), .weekdays)
-        XCTAssertEqual(RoutineScheduleForm.recurrence(for: .daily(time: "09:00", weekdays: [1]), at: at, calendar: calendar), .weekly)
-        XCTAssertEqual(RoutineScheduleForm.recurrence(for: .daily(time: "09:00", weekdays: [2]), at: at, calendar: calendar), .custom)
+        XCTAssertEqual(RoutineScheduleForm.recurrence(for: .daily(time: "09:00", weekdays: [1]), at: at, calendar: calendar), .days)
+        XCTAssertEqual(RoutineScheduleForm.recurrence(for: .daily(time: "09:00", weekdays: [2]), at: at, calendar: calendar), .days)
         XCTAssertEqual(RoutineScheduleForm.recurrence(for: .cron(expression: "0 9 1 * *", timeZone: "UTC"), at: at, calendar: calendar), .monthly)
         XCTAssertEqual(RoutineScheduleForm.recurrence(for: .cron(expression: "0 9 1 1 *", timeZone: "UTC"), at: at, calendar: calendar), .yearly)
+        XCTAssertEqual(RoutineScheduleForm.recurrence(for: .cron(expression: "30 * * * *", timeZone: "UTC"), at: at, calendar: calendar), .hourly)
+        XCTAssertEqual(RoutineScheduleForm.recurrence(for: .cron(expression: "*/15 * * * *", timeZone: "UTC"), at: at, calendar: calendar), .interval)
+        XCTAssertEqual(RoutineScheduleForm.recurrence(for: .cron(expression: "2 7 1-7 * 1", timeZone: "UTC"), at: at, calendar: calendar), .advanced)
         XCTAssertEqual(RoutineScheduleForm.recurrence(for: .interval(everyMinutes: 15, anchorAt: at), at: at, calendar: calendar), .interval)
     }
 
@@ -136,6 +106,9 @@ final class RoutineEditorTests: XCTestCase {
             .interval(everyMinutes: 15, anchorAt: iso("2026-10-01T13:00:00Z")),
             .cron(expression: "2 7 1-7 * 1", timeZone: "America/Toronto"),
             .cron(expression: "0 9 1 * *", timeZone: "UTC"),
+            .cron(expression: "30 8,12,16 * * MON-FRI", timeZone: "America/Toronto"),
+            .cron(expression: "*/15 * * * *", timeZone: "Europe/Paris"),
+            .cron(expression: "0 9 * * 1#2", timeZone: "UTC"),
         ]
         for schedule in schedules {
             let form = RoutineScheduleForm(schedule: schedule, seedAt: iso("2026-10-05T11:00:00Z"), now: now, calendar: montreal)
@@ -144,17 +117,88 @@ final class RoutineEditorTests: XCTestCase {
         }
     }
 
-    func testWeeklyUsesTheStartDay() throws {
+    func testCertainDaysSaveAsCronInTheZone() throws {
         var form = RoutineScheduleForm(schedule: nil, seedAt: iso("2026-10-07T13:00:00Z"), now: iso("2026-10-03T12:00:00Z"), calendar: montreal)
-        form.select(.weekly)
-        var weekly = RoutineSchedule.daily(time: "09:00", weekdays: [3])
-        weekly.timing = "exact" // a repeating save names its timing (withRoutineTiming)
-        XCTAssertEqual(try form.schedule(savedAt: Date()), weekly)
-        form.select(.custom)
-        form.toggleWeekday(3) // the last day stays
-        XCTAssertEqual(form.weekdays, [3])
-        form.toggleWeekday(5)
-        XCTAssertEqual(try form.schedule(savedAt: Date()).weekdays, [3, 5])
+        XCTAssertEqual(form.timeZone, "America/Toronto")
+        form.select(.days)
+        form.model.weekdays = [3]
+        var expected = RoutineSchedule.cron(expression: "0 9 * * 3", timeZone: "America/Toronto")
+        expected.timing = "exact" // a repeating save names its timing (withRoutineTiming)
+        XCTAssertEqual(try form.schedule(savedAt: Date()), expected)
+        form.toggleModelWeekday(3)
+        XCTAssertEqual(form.problem, .schedule(.noDays))
+        form.toggleModelWeekday(5)
+        form.toggleModelWeekday(1)
+        XCTAssertEqual(try form.schedule(savedAt: Date()).expression, "0 9 * * 1,5")
+    }
+
+    func testAnEditedDailyBecomesCronAndAnUntouchedOneStaysDaily() throws {
+        let now = iso("2026-10-03T12:00:00Z")
+        let daily = RoutineSchedule.daily(time: "07:30", weekdays: [1, 2, 3, 4, 5])
+        var form = RoutineScheduleForm(schedule: daily, seedAt: now, now: now, calendar: montreal)
+        XCTAssertEqual(form.recurrence, .weekdays)
+        XCTAssertEqual(form.model.times, ["07:30"])
+        XCTAssertFalse(form.scheduleChanged)
+        XCTAssertEqual(try form.schedule(savedAt: now).type, .daily)
+        XCTAssertEqual(form.preview?.runs.count, 3)
+        form.addTime()
+        XCTAssertEqual(form.model.times, ["07:30", "08:30"])
+        XCTAssertEqual(try form.schedule(savedAt: now).expression, "30 7,8 * * 1-5")
+        form.removeTime(at: 1)
+        form.timeZone = "Europe/Paris"
+        let saved = try form.schedule(savedAt: now)
+        XCTAssertEqual(saved.expression, "30 7 * * 1-5")
+        XCTAssertEqual(saved.timeZone, "Europe/Paris")
+    }
+
+    func testSeveralTimesMustShareTheirMinutes() {
+        var form = RoutineScheduleForm(schedule: nil, seedAt: iso("2026-10-07T13:00:00Z"), now: iso("2026-10-03T12:00:00Z"), calendar: montreal)
+        form.select(.daily)
+        form.model.times = ["08:15", "12:30"]
+        XCTAssertEqual(form.problem, .schedule(.sameMinute))
+        XCTAssertThrowsError(try form.schedule(savedAt: Date()))
+    }
+
+    func testAnAdvancedCronIsKeptUntilASimpleScheduleIsChosen() throws {
+        let now = iso("2026-10-03T12:00:00Z")
+        let original = RoutineSchedule.cron(expression: "2  7 1-7 * 1", timeZone: "America/Toronto")
+        var form = RoutineScheduleForm(schedule: original, seedAt: now, now: now, calendar: montreal)
+        XCTAssertEqual(form.recurrence, .advanced)
+        XCTAssertEqual(form.preview?.runs.count, 3)
+        XCTAssertEqual(try form.schedule(savedAt: now).expression, "2  7 1-7 * 1")
+        form.chooseSimpleSchedule()
+        XCTAssertEqual(form.recurrence, .daily)
+        // the next run (Sunday 4 October, 7:02 Toronto time) gives the time
+        XCTAssertEqual(form.model.times, ["07:02"])
+        XCTAssertEqual(try form.schedule(savedAt: now), {
+            var schedule = RoutineSchedule.cron(expression: "2 7 * * *", timeZone: "America/Toronto")
+            schedule.timing = "exact"
+            return schedule
+        }())
+    }
+
+    func testAnIntervalCronOpensInTheIntervalFieldsAndIsKeptUntouched() throws {
+        let now = iso("2026-10-03T12:00:00Z")
+        let original = RoutineSchedule.cron(expression: "0 */2 * * *", timeZone: "UTC")
+        var form = RoutineScheduleForm(schedule: original, seedAt: now, now: now, calendar: montreal)
+        XCTAssertEqual(form.recurrence, .interval)
+        XCTAssertEqual(form.intervalUnit, .hours)
+        XCTAssertEqual(form.intervalCount, 2)
+        XCTAssertEqual(try form.schedule(savedAt: now).expression, "0 */2 * * *")
+        form.setIntervalCount(3)
+        let saved = try form.schedule(savedAt: now)
+        XCTAssertEqual(saved.type, .interval)
+        XCTAssertEqual(saved.everyMinutes, 180)
+        form.selectIntervalUnit(.minutes)
+        XCTAssertEqual(form.intervalMinutes, 15)
+    }
+
+    func testANoFutureRunYearlyIsAProblem() {
+        var form = RoutineScheduleForm(schedule: nil, seedAt: iso("2026-10-07T13:00:00Z"), now: iso("2026-10-03T12:00:00Z"), calendar: montreal)
+        form.select(.yearly)
+        form.model.month = 2
+        form.model.monthDay = .day(30)
+        XCTAssertEqual(form.problem, .cron(CronExpression.Failure.noFutureRuns.errorDescription!))
     }
 
     func testIntervalValidationMatchesTheDesktop() {

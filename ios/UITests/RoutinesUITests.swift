@@ -307,14 +307,16 @@ final class RoutinesUITests: XCTestCase {
         }
     }
 
-    /// Repeat > Monthly, then Custom cron, save the cron schedules.
+    /// Repeats > Every month, then Weekdays at two times: both save as cron
+    /// under the hood, the editor never shows the expression (2026-10-29).
     @MainActor
-    func testMonthlyAndCustomCronSave() throws {
+    func testMonthlyAndWeekdaysAtTwoTimesSave() throws {
         let id = try scratchRoutine("Mensuel WP8")
         let app = openRoutines()
         openEditor("Mensuel WP8", in: app)
-        choose("Monthly", in: "routine-editor-repeat", app: app)
+        choose("Every month", in: "routine-editor-repeat", app: app)
         XCTAssertTrue(element("routine-editor-next-runs", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("routine-editor-summary", in: app).exists)
         save(app)
         try eventually("a monthly cron is saved") {
             let schedule = try self.routines().first { $0["id"] as? String == id }?["schedule"] as? [String: Any]
@@ -323,19 +325,16 @@ final class RoutinesUITests: XCTestCase {
         }
 
         openEditor("Mensuel WP8", in: app)
-        choose("Custom cron (advanced)", in: "routine-editor-repeat", app: app)
-        let field = element("routine-editor-cron", in: app)
-        scrollTo(field, in: app)
-        field.tap()
-        field.press(forDuration: 1.0)
-        if app.menuItems["Select All"].waitForExistence(timeout: 2) { app.menuItems["Select All"].tap() }
-        field.typeText(XCUIKeyboardKey.delete.rawValue)
-        field.typeText("15 8 * * 1")
-        XCTAssertTrue(element("routine-editor-next-runs", in: app).waitForExistence(timeout: 5))
+        choose("Weekdays", in: "routine-editor-repeat", app: app)
+        let add = element("routine-editor-add-time", in: app)
+        scrollTo(add, in: app)
+        add.tap()
+        XCTAssertTrue(element("routine-editor-time.1", in: app).waitForExistence(timeout: 5))
         save(app)
-        try eventually("the custom expression is saved") {
+        try eventually("weekdays at two times are saved") {
             let schedule = try self.routines().first { $0["id"] as? String == id }?["schedule"] as? [String: Any]
-            return schedule?["expression"] as? String == "15 8 * * 1"
+            let parts = (schedule?["expression"] as? String ?? "").split(separator: " ")
+            return parts.count == 5 && parts[1].contains(",") && parts[4] == "1-5"
         }
     }
 

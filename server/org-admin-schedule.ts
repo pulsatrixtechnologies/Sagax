@@ -1,6 +1,6 @@
 // A routine's schedule in words for the console (the label Sagax's own
 // calendar shows, server side and in the server's time zone): "Every hour",
-// "Every weekday at 09:00", "Cron 0 9 * * 1", "Once on 2026-10-09 14:00".
+// "Every weekday at 09:00", "Custom schedule", "Once on 2026-10-09 14:00".
 import { cronScheduleLabel } from "../shared/cron-label.ts";
 import type { RoutineSchedule } from "./routines.ts";
 

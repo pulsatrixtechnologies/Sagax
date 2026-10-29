@@ -354,7 +354,7 @@ struct IdentifiedURL: Identifiable {
 enum RoutineWording {
     /// The profile row's subtitle: a sentence ("Every Monday at 7:00 AM",
     /// "Weekdays at 8:11 AM", "Every 2 hours, from 7:13 AM to 9:13 PM"; a
-    /// cron a sentence cannot say stays the raw expression), then
+    /// cron a sentence cannot say reads "Custom schedule"), then
     /// " · Paused" when it is off.
     static func subtitle(_ routine: Routine) -> String {
         let base = schedule(routine.schedule)
@@ -391,19 +391,7 @@ enum RoutineWording {
     static func schedule(_ schedule: RoutineSchedule) -> String {
         switch schedule.type {
         case .cron:
-            // a simple cron says itself ("Weekdays at 8:11 AM"); the rest
-            // stays the raw expression
-            if let wording = schedule.cronWording {
-                let times = ListFormatter.localizedString(byJoining: wording.minutesOfDay.map { clockText(hour: $0 / 60, minute: $0 % 60) })
-                return sentence(wording.days, time: times) + zoneSuffix(wording.timeZone)
-            }
-            // lists, ranges and steps ("Weekdays, 8 AM to 6 PM, at :00, :17");
-            // only what cannot be said clearly stays the raw expression
-            if let expression = schedule.expression,
-               let text = CronDescribe.describe(expression, language: CronDescribe.currentLanguage) {
-                return text + zoneSuffix(schedule.timeZone)
-            }
-            return schedule.cronDisplay ?? String(localized: "Cron")
+            return words(schedule) + zoneSuffix(schedule.timeZone)
         case .once:
             guard let at = schedule.at else { return String(localized: "One time") }
             return Date(timeIntervalSince1970: at / 1_000).formatted(date: .abbreviated, time: .shortened)
@@ -426,6 +414,46 @@ enum RoutineWording {
             break
         }
         return sentence(schedule.dayPattern, time: timeText(schedule))
+    }
+
+    /// A cron schedule in words, without its zone: a simple one says itself
+    /// ("Weekdays at 8:11 AM"), lists, ranges and steps are described
+    /// ("Weekdays, 8 AM to 6 PM, at :00, :17"), and what no sentence can say
+    /// reads "Custom schedule" (2026-10-29: never the raw expression).
+    static func words(_ schedule: RoutineSchedule) -> String {
+        if let wording = schedule.cronWording {
+            return sentence(wording.days, time: times(wording.minutesOfDay))
+        }
+        guard let expression = schedule.expression else { return String(localized: "Custom schedule") }
+        if let minutes = lastDayOfMonth(expression) {
+            return String(localized: "On the last day of the month at \(times(minutes))")
+        }
+        return CronDescribe.describe(expression, language: CronDescribe.currentLanguage) ?? String(localized: "Custom schedule")
+    }
+
+    /// The editor's summary: the words, then the zone as a city ("Weekdays
+    /// at 8:30 AM (Toronto time)").
+    static func summary(_ schedule: RoutineSchedule) -> String {
+        let words = schedule.type == .cron ? words(schedule) : Self.schedule(schedule)
+        guard let zone = schedule.type == .cron ? schedule.timeZone : TimeZone.current.identifier, !zone.isEmpty else { return words }
+        return String(localized: "\(words) (\(RoutineScheduleModel.timeZoneCity(zone)) time)")
+    }
+
+    private static func times(_ minutesOfDay: [Int]) -> String {
+        ListFormatter.localizedString(byJoining: minutesOfDay.map { clockText(hour: $0 / 60, minute: $0 % 60) })
+    }
+
+    /// "M H1,H2 L * *": the minutes of day of a last-day-of-month schedule.
+    private static func lastDayOfMonth(_ expression: String) -> [Int]? {
+        let fields = expression.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        guard fields.count == 5, fields[2] == "L", fields[3] == "*", fields[4] == "*",
+              let minute = Int(fields[0]), (0..<60).contains(minute) else { return nil }
+        var hours: [Int] = []
+        for part in fields[1].split(separator: ",", omittingEmptySubsequences: false) {
+            guard let hour = Int(part), (0..<24).contains(hour) else { return nil }
+            hours.append(hour)
+        }
+        return Array(Set(hours)).sorted().map { $0 * 60 + minute }
     }
 
     /// Which days, then when: "Weekdays at 8:11 AM".

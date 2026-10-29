@@ -1,9 +1,10 @@
 // The routine editor (matrix AU11-AU14), with the desktop's fields:
-// routine type (bot task or team goal), every Repeat choice (once, every X
-// minutes with days, hours and an end date, daily, weekdays, weekly,
-// selected weekdays, monthly, yearly, custom cron), the run limit, overlap,
-// duration, the results thread and attachments. Desktop: EventEditor in
-// src/components/RoutineCalendarPage.tsx, routines/CronScheduleFields.tsx,
+// routine type (bot task or team goal), every Repeat choice (once, every
+// hour, day, weekday, certain days, month or year at one or more times in a
+// named zone, every N minutes or hours with days, hours and an end date; a
+// schedule none of these can say stays under Advanced), the run limit,
+// overlap, duration, the results thread and attachments. Desktop: EventEditor
+// in src/components/RoutineCalendarPage.tsx (shared/schedule-model.ts),
 // routines/ResultsDestination.tsx. The rules are RoutineScheduleForm and
 // RoutinePatch (CompanionCore): an edit sends only what changed, so a field
 // set elsewhere is never lost (S3).
@@ -111,6 +112,15 @@ struct RoutineEditorView: View {
         false
 #endif
     }
+    /// DEBUG captures only (`-parityRoutineScheduleFirst YES`): the schedule
+    /// on top, so a headless screenshot shows it without scrolling.
+    private var scheduleFirst: Bool {
+#if DEBUG
+        UserDefaults.standard.bool(forKey: "parityRoutineScheduleFirst")
+#else
+        false
+#endif
+    }
     private var watchEdit: Result<RoutineWatchEdit, RoutineWatchProblem> {
         RoutineWatchRules.edit(original: routine?.precheck, initial: initialWatch, draft: watchDraft, allowed: watchAllowed)
     }
@@ -123,12 +133,13 @@ struct RoutineEditorView: View {
         NavigationStack {
             ThemedForm {
                 if watchFirst && watchAllowed { watchSection }
+                if scheduleFirst { scheduleSection }
                 if advanced { typeSection }
                 workSection
                 if advanced && !isTeamGoal { resultsSection }
                 if RoutineRunAsField.shown(runAsOptions) { runAsSection }
                 runOnSection
-                scheduleSection
+                if !scheduleFirst { scheduleSection }
                 advancedSection
                 if watchAllowed && !watchFirst { watchSection }
                 if advanced && session.surfaceGate.allows(.routineAttachments) { attachmentsSection }
@@ -350,15 +361,15 @@ struct RoutineEditorView: View {
         Section {
             Picker("Repeats", selection: Binding(get: { form.recurrence }, set: selectRecurrence)) {
                 Text("Does not repeat").tag(RoutineRecurrence.none)
-                Text("Every X minutes").tag(RoutineRecurrence.interval)
-                Text("Daily").tag(RoutineRecurrence.daily)
-                Text("Every weekday (Monday to Friday)").tag(RoutineRecurrence.weekdays)
-                Text("Weekly on \(RoutineEditorWording.dayName(form.calendar.component(.weekday, from: form.at) - 1))").tag(RoutineRecurrence.weekly)
-                Text("Selected weekdays").tag(RoutineRecurrence.custom)
-                if advanced || form.recurrence.cronChoice != nil {
-                    Text("Monthly").tag(RoutineRecurrence.monthly)
-                    Text("Yearly").tag(RoutineRecurrence.yearly)
-                    Text("Custom cron (advanced)").tag(RoutineRecurrence.cron)
+                Text("Every hour").tag(RoutineRecurrence.hourly)
+                Text("Every day").tag(RoutineRecurrence.daily)
+                Text("Weekdays").tag(RoutineRecurrence.weekdays)
+                Text("Certain days").tag(RoutineRecurrence.days)
+                Text("Every month").tag(RoutineRecurrence.monthly)
+                Text("Every year").tag(RoutineRecurrence.yearly)
+                Text("Every N minutes or hours").tag(RoutineRecurrence.interval)
+                if form.recurrence == .advanced {
+                    Text("Advanced").tag(RoutineRecurrence.advanced)
                 }
             }
             .accessibilityIdentifier("routine-editor-repeat")
@@ -682,42 +693,146 @@ struct RoutineScheduleFields: View {
         case .none:
             DatePicker("Starts", selection: $form.at, in: Date()...)
                 .accessibilityIdentifier("routine-editor-starts")
-        case .weekly:
-            DatePicker("On", selection: $form.at)
-        case .daily, .weekdays:
-            DatePicker("Time", selection: $form.at, displayedComponents: .hourAndMinute)
-        case .custom:
-            DatePicker("Time", selection: $form.at, displayedComponents: .hourAndMinute)
-            RoutineDayChips(selected: form.weekdays, idPrefix: "routine-editor-day") { form.toggleWeekday($0) }
         case .interval:
             intervalFields
-        case .monthly, .yearly, .cron:
-            cronFields
+            if form.preview != nil { previewRows }
+        case .hourly:
+            Picker("At minute", selection: model(\.minute)) {
+                ForEach(0..<60, id: \.self) { minute in
+                    Text(verbatim: String(format: ":%02d", minute)).tag(minute)
+                }
+            }
+            .accessibilityIdentifier("routine-editor-minute")
+            zoneAndPreview
+        case .daily, .weekdays, .days, .monthly, .yearly:
+            if form.recurrence == .days {
+                RoutineDayChips(selected: form.model.weekdays, idPrefix: "routine-editor-day") { day in form.toggleModelWeekday(day) }
+            }
+            if form.recurrence == .yearly {
+                Picker("Month", selection: model(\.month)) {
+                    ForEach(1...12, id: \.self) { month in
+                        Text(verbatim: Calendar.current.standaloneMonthSymbols[month - 1].capitalized).tag(month)
+                    }
+                }
+                .accessibilityIdentifier("routine-editor-month")
+            }
+            if form.recurrence == .monthly || form.recurrence == .yearly {
+                Picker("Day of month", selection: monthDay) {
+                    ForEach(1...31, id: \.self) { day in Text(verbatim: String(day)).tag(RoutineMonthDay.day(day)) }
+                    if form.recurrence == .monthly { Text("Last day").tag(RoutineMonthDay.last) }
+                }
+                .accessibilityIdentifier("routine-editor-day-of-month")
+            }
+            timeRows
+            if form.recurrence == .monthly, case let .day(day) = form.model.monthDay, day > 28 {
+                Text("Months without this date are skipped. Choose Last day to always use the end of the month.")
+                    .font(.caption).foregroundStyle(Theme.textSecondary)
+            }
+            zoneAndPreview
+        case .advanced:
+            previewRows
+            Button("Choose a simple schedule") { form.chooseSimpleSchedule() }
+                .accessibilityIdentifier("routine-editor-simple-schedule")
+        }
+    }
+
+    /// One row per time ("+ Add a time", a remove button past the first).
+    @ViewBuilder
+    private var timeRows: some View {
+        ForEach(Array(form.model.times.enumerated()), id: \.offset) { index, _ in
+            HStack {
+                DatePicker(index == 0 ? "Time" : "And at", selection: time(index), displayedComponents: .hourAndMinute)
+                    .accessibilityIdentifier("routine-editor-time.\(index)")
+                if form.model.times.count > 1 {
+                    Button(role: .destructive) { form.removeTime(at: index) } label: {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Theme.danger)
+                    .accessibilityLabel(Text("Remove this time"))
+                    .accessibilityIdentifier("routine-editor-remove-time.\(index)")
+                }
+            }
+        }
+        Button { form.addTime() } label: {
+            Label("Add a time", systemImage: "plus")
+        }
+        .accessibilityIdentifier("routine-editor-add-time")
+    }
+
+    @ViewBuilder
+    private var zoneAndPreview: some View {
+        NavigationLink {
+            RoutineTimeZonePicker(selected: $form.timeZone)
+        } label: {
+            LabeledContent("Time zone") {
+                Text(verbatim: RoutineScheduleModel.timeZoneCity(form.timeZone))
+            }
+        }
+        .accessibilityIdentifier("routine-editor-time-zone")
+        previewRows
+    }
+
+    /// The schedule in words with its zone, then its next three runs.
+    @ViewBuilder
+    private var previewRows: some View {
+        if let value = form.preview, let expression = value.expression {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: RoutineWording.summary(.cron(expression: expression, timeZone: value.timeZone)))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .accessibilityIdentifier("routine-editor-summary")
+                if !value.runs.isEmpty {
+                    Text("Next runs").font(.caption.weight(.medium)).padding(.top, 4)
+                    ForEach(value.runs, id: \.self) { at in
+                        Text(verbatim: RoutineEditorWording.run(at, zone: value.timeZone)).font(.caption)
+                    }
+                    Text("Clock changes: skipped times shift forward; repeated times run once.").font(.caption2)
+                }
+            }
+            .foregroundStyle(Theme.textSecondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("routine-editor-next-runs")
         }
     }
 
     @ViewBuilder
     private var intervalFields: some View {
+        let presets = form.intervalUnit == .hours ? RoutineScheduleForm.intervalHourPresets : RoutineScheduleForm.intervalPresets
+        Picker("Unit", selection: Binding(get: { form.intervalUnit }, set: { form.selectIntervalUnit($0) })) {
+            Text("Minutes").tag(RoutineScheduleEveryUnit.minutes)
+            Text("Hours").tag(RoutineScheduleEveryUnit.hours)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("routine-editor-interval-unit")
         Picker("Runs every", selection: Binding(
-            get: { RoutineScheduleForm.intervalPresets.contains(form.intervalMinutes ?? -1) ? form.intervalMinutes ?? 0 : 0 },
-            set: { form.intervalMinutes = $0 == 0 ? nil : $0 }
+            get: { presets.contains(form.intervalCount ?? -1) ? form.intervalCount ?? 0 : 0 },
+            set: { form.setIntervalCount($0 == 0 ? nil : $0) }
         )) {
-            ForEach(RoutineScheduleForm.intervalPresets, id: \.self) { minutes in
-                Text("\(minutes) minutes").tag(minutes)
+            ForEach(presets, id: \.self) { count in
+                if form.intervalUnit == .hours && count == 1 {
+                    Text("1 hour").tag(count)
+                } else if form.intervalUnit == .hours {
+                    Text("\(count) hours").tag(count)
+                } else {
+                    Text("\(count) minutes").tag(count)
+                }
             }
             Text("Custom…").tag(0)
         }
         .accessibilityIdentifier("routine-editor-interval")
-        if !RoutineScheduleForm.intervalPresets.contains(form.intervalMinutes ?? -1) {
+        if !presets.contains(form.intervalCount ?? -1) {
             HStack {
                 Text("Set the interval to")
-                TextField("5–1,440", value: $form.intervalMinutes, format: .number)
+                TextField(form.intervalUnit == .hours ? "1–24" : "5–1,440", value: Binding(
+                    get: { form.intervalCount }, set: { form.setIntervalCount($0) }
+                ), format: .number)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
                     .frame(minWidth: 72)
-                    .accessibilityLabel("Custom interval in minutes")
+                    .accessibilityLabel(form.intervalUnit == .hours ? Text("Custom interval in hours") : Text("Custom interval in minutes"))
                     .accessibilityIdentifier("routine-editor-interval-custom")
-                Text("minutes").foregroundStyle(Theme.textSecondary)
+                (form.intervalUnit == .hours ? Text("hours") : Text("minutes")).foregroundStyle(Theme.textSecondary)
             }
         }
         Picker("On", selection: Binding(get: { form.intervalDays }, set: { form.selectIntervalDays($0) })) {
@@ -751,61 +866,30 @@ struct RoutineScheduleFields: View {
         }
     }
 
-    @ViewBuilder
-    private var cronFields: some View {
-        if form.recurrence == .cron {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Cron expression").font(.footnote).foregroundStyle(Theme.textSecondary)
-                TextField("0 9 1 * *", text: cron(\.expression))
-                    .font(.system(.body, design: .monospaced))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("routine-editor-cron")
-                Text("Minute · hour · day of month · month · day of week. For example, 0 9 1 * * runs at 9 am on the first of each month.")
-                    .font(.caption).foregroundStyle(Theme.textSecondary)
+    private func model<Value>(_ key: WritableKeyPath<RoutineScheduleModel, Value>) -> Binding<Value> {
+        Binding(get: { form.model[keyPath: key] }, set: { form.model[keyPath: key] = $0 })
+    }
+
+    private var monthDay: Binding<RoutineMonthDay> {
+        Binding(
+            get: {
+                if form.recurrence == .yearly, form.model.monthDay == .last { return .day(31) }
+                return form.model.monthDay
+            },
+            set: { form.model.monthDay = $0 }
+        )
+    }
+
+    /// A time row, read and written as "HH:MM" in the routine's zone (the
+    /// picker shows the clock as is, in the phone's 12 or 24 hour format).
+    private func time(_ index: Int) -> Binding<Date> {
+        Binding(
+            get: { Self.date(fromClock: form.model.times.indices.contains(index) ? form.model.times[index] : "09:00") },
+            set: { value in
+                guard form.model.times.indices.contains(index) else { return }
+                form.model.times[index] = Self.clock(value)
             }
-        } else {
-            if form.recurrence == .yearly {
-                Picker("Month", selection: cron(\.month)) {
-                    ForEach(1...12, id: \.self) { month in
-                        Text(verbatim: Calendar.current.standaloneMonthSymbols[month - 1].capitalized).tag(String(month))
-                    }
-                }
-                .accessibilityIdentifier("routine-editor-month")
-            }
-            Picker("Day of month", selection: cron(\.day)) {
-                ForEach(1...31, id: \.self) { day in Text(verbatim: String(day)).tag(String(day)) }
-                Text("Last day").tag("L")
-            }
-            .accessibilityIdentifier("routine-editor-day-of-month")
-            DatePicker("Time", selection: Binding(
-                get: { Self.date(fromClock: form.cronDraft.time) },
-                set: { value in form.updateCron { $0.time = Self.clock(value) } }
-            ), displayedComponents: .hourAndMinute)
-            if (Int(form.cronDraft.day) ?? 0) > 28 {
-                Text("Months without this date are skipped. Choose Last day to always use the end of the month.")
-                    .font(.caption).foregroundStyle(Theme.textSecondary)
-            }
-        }
-        LabeledContent("Time zone") {
-            TextField("America/New_York", text: cron(\.timeZone))
-                .multilineTextAlignment(.trailing)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .accessibilityIdentifier("routine-editor-time-zone")
-        }
-        if let value = form.cronValue, value.error.isEmpty, !value.runs.isEmpty {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Next runs · \(form.cronDraft.timeZone)").font(.caption.weight(.medium))
-                ForEach(value.runs, id: \.self) { at in
-                    Text(verbatim: RoutineEditorWording.cronRun(at, zone: form.cronDraft.timeZone)).font(.caption)
-                }
-                Text("Clock changes: skipped times shift forward; repeated times run once.").font(.caption2)
-            }
-            .foregroundStyle(Theme.textSecondary)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("routine-editor-next-runs")
-        }
+        )
     }
 
     private func clock(_ key: WritableKeyPath<RoutineScheduleForm, String>) -> Binding<Date> {
@@ -813,10 +897,6 @@ struct RoutineScheduleFields: View {
             get: { Self.date(fromClock: form[keyPath: key]) },
             set: { form[keyPath: key] = Self.clock($0) }
         )
-    }
-
-    private func cron(_ key: WritableKeyPath<RoutineCronDraft, String>) -> Binding<String> {
-        Binding(get: { form.cronDraft[keyPath: key] }, set: { value in form.updateCron { $0[keyPath: key] = value } })
     }
 
     static func date(fromClock text: String) -> Date {
@@ -850,6 +930,81 @@ struct RoutineDayChips: View {
     }
 }
 
+/// The zone a schedule's times are read in, as cities: the person's own
+/// first, then every zone, searchable by city or by its name ("Eastern
+/// Time"). The IANA identifier stays under the hood.
+struct RoutineTimeZonePicker: View {
+    @Environment(\.themePalette) var themePalette
+    @Environment(\.dismiss) private var dismiss
+    @Binding var selected: String
+    @State private var query = ""
+
+    private struct Zone: Identifiable {
+        let id: String
+        let city: String
+        let name: String
+    }
+
+    private static let zones: [Zone] = {
+        let identifiers = Set(TimeZone.knownTimeZoneIdentifiers + ["UTC"])
+        return identifiers
+            .filter { $0 == "UTC" || $0.contains("/") && !$0.hasPrefix("Etc/") }
+            .map { Zone(id: $0, city: RoutineScheduleModel.timeZoneCity($0), name: zoneName($0)) }
+            .sorted { ($0.city, $0.id) < ($1.city, $1.id) }
+    }()
+
+    private static func zoneName(_ identifier: String) -> String {
+        TimeZone(identifier: identifier)?.localizedName(for: .generic, locale: .current) ?? ""
+    }
+
+    private var rows: [Zone] {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return Self.zones }
+        return Self.zones.filter { $0.city.localizedCaseInsensitiveContains(text) || $0.name.localizedCaseInsensitiveContains(text) }
+    }
+
+    var body: some View {
+        let own = TimeZone.current.identifier
+        ThemedForm {
+            if query.isEmpty {
+                Section("Your time zone") { row(Zone(id: own, city: RoutineScheduleModel.timeZoneCity(own), name: Self.zoneName(own))) }
+            }
+            Section {
+                ForEach(rows) { row($0) }
+            } header: {
+                if query.isEmpty { Text("All time zones") } else { Text("Results") }
+            }
+        }
+        .navigationTitle(Text("Time zone"))
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $query, prompt: Text("Search a city"))
+    }
+
+    private func row(_ zone: Zone) -> some View {
+        Button {
+            selected = zone.id
+            dismiss()
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: zone.city).foregroundStyle(Theme.textPrimary)
+                    if !zone.name.isEmpty {
+                        Text(verbatim: zone.name).font(.footnote).foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                if zone.id == selected {
+                    Image(systemName: "checkmark").foregroundStyle(Theme.accentText)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(zone.id == selected ? .isSelected : [])
+        .accessibilityIdentifier("routine-time-zone.\(zone.id)")
+    }
+}
+
 enum RoutineEditorWording {
     static func dayName(_ day: Int) -> String {
         let symbols = Calendar.current.weekdaySymbols
@@ -861,7 +1016,7 @@ enum RoutineEditorWording {
         return (0..<symbols.count).contains(day) ? symbols[day] : ""
     }
 
-    static func cronRun(_ date: Date, zone: String) -> String {
+    static func run(_ date: Date, zone: String) -> String {
         var style = Date.FormatStyle.dateTime.weekday(.abbreviated).year().month(.abbreviated).day().hour().minute()
         if let timeZone = TimeZone(identifier: zone) { style.timeZone = timeZone }
         return date.formatted(style)
@@ -870,27 +1025,24 @@ enum RoutineEditorWording {
     static func problem(_ problem: RoutineScheduleForm.Problem) -> String {
         switch problem {
         case .intervalRange: String(localized: "Choose a whole number from 5 to 1,440 minutes.")
-        case .noDays: String(localized: "Choose at least one day.")
+        case .noDays, .schedule(.noDays): String(localized: "Choose at least one day.")
         case let .window(minutes): String(localized: "Choose a same-day window at least \(minutes) minutes long.")
         case .endDate: String(localized: "Choose an end date after the first run.")
+        case .schedule(.noTime): String(localized: "Add at least one time.")
+        case .schedule(.sameMinute): String(localized: "Times on the same day must share their minutes, such as 8:30, 12:30 and 4:30.")
+        case .schedule(.badTime): String(localized: "Choose a valid time.")
         case let .cron(message): cron(message)
         }
     }
 
-    /// The cron calculator's messages, in the person's language.
+    /// The cron calculator's messages, in the person's words (the zone
+    /// comes from a list and the expression from the fields, so only a date
+    /// that never exists can still go wrong).
     static func cron(_ message: String) -> String {
-        let prefix = "Invalid cron expression: "
-        if message.hasPrefix(prefix) {
-            return String(localized: "Invalid cron expression: \(String(message.dropFirst(prefix.count)))")
+        if message == CronExpression.Failure.noFutureRuns.errorDescription {
+            return String(localized: "This schedule never runs: choose a date that exists.")
         }
-        switch message {
-        case "Choose a time for this routine.": return String(localized: "Choose a time for this routine.")
-        case CronExpression.Failure.fields.errorDescription: return String(localized: "Cron must have five fields: minute hour day-of-month month weekday (no seconds, year, or macros)")
-        case CronExpression.Failure.zone.errorDescription: return String(localized: "Choose an IANA timezone such as America/New_York, Asia/Kolkata, or UTC")
-        case CronExpression.Failure.invalidZone.errorDescription: return String(localized: "Choose a valid IANA timezone such as America/New_York, Asia/Kolkata, or UTC")
-        case CronExpression.Failure.noFutureRuns.errorDescription: return String(localized: "This cron expression has no future runs. Choose dates that exist.")
-        default: return message
-        }
+        return String(localized: "Choose a valid schedule.")
     }
 }
 

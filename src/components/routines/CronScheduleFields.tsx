@@ -1,18 +1,22 @@
+// The next runs of a repeating schedule, in its own zone named by its city
+// ("Next runs · Toronto"). The schedule itself is edited in words by
+// HumanScheduleFields; the expression is never shown (2026-10-29).
 import { useMemo } from "react";
-import { cn } from "@/lib/cn";
 import { nextCronRuns, type RoutineCronSchedule } from "../../../shared/routine-schedule";
-import type { CronChoice, CronDraft } from "./cron-editor";
+import { timeZoneCity } from "../../../shared/schedule-model";
 
 import { activeLocale, t } from "@/lib/i18n";
-const fieldClass = "min-w-0 rounded-lg border border-hairline/50 bg-inset px-3 py-2 text-[12.5px] text-ink outline-none focus:border-accent [color-scheme:dark]";
-const monthNames = () => Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat(activeLocale(), { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2024, index, 1))));
-const TIME_ZONES = ["UTC", ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [])];
 
 export function CronRunDates({ runs, timeZone, paused = false }: { runs: number[]; timeZone: string; paused?: boolean }) {
   if (!runs.length) return null;
-  const format = new Intl.DateTimeFormat(activeLocale(), { timeZone, weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  let format: Intl.DateTimeFormat;
+  try {
+    format = new Intl.DateTimeFormat(activeLocale(), { timeZone, weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  } catch {
+    return null;
+  }
   return <div className="space-y-1 text-[11px] leading-relaxed text-ink-secondary" aria-label={paused ? t("cronPreview.pausedAria") : t("cronPreview.nextAria")}>
-    <div className="font-medium">{paused ? t("cronPreview.paused") : t("cronPreview.next")} · {timeZone}</div>
+    <div className="font-medium">{paused ? t("cronPreview.paused") : t("cronPreview.next")} · {timeZoneCity(timeZone)}</div>
     {runs.map((at) => <div key={at}><time dateTime={new Date(at).toISOString()}>{format.format(at)}</time></div>)}
     <div className="pt-1">{t("cronPreview.clock")}</div>
   </div>;
@@ -23,26 +27,4 @@ export function CronSchedulePreview({ schedule, paused = false }: { schedule: Ro
     try { return nextCronRuns(schedule, Date.now(), 3); } catch { return []; }
   }, [schedule]);
   return <CronRunDates runs={runs} timeZone={schedule.timeZone} paused={paused} />;
-}
-
-export function CronScheduleFields({ choice, value, onChange, runs, error }: {
-  choice: CronChoice; value: CronDraft; onChange: (draft: CronDraft) => void; runs: number[]; error: string;
-}) {
-  const update = (patch: Partial<CronDraft>) => onChange({ ...value, ...patch });
-  return <div className="space-y-3">
-    {choice === "cron" ? <label className="block space-y-1.5 text-[11.5px] text-ink-secondary">
-      <span>{t("cronFields.expression")}</span>
-      <input value={value.expression} onChange={(event) => update({ expression: event.target.value })} placeholder="0 9 1 * *" spellCheck={false} autoComplete="off" aria-invalid={Boolean(error)} aria-describedby="routine-cron-help routine-cron-error" className={cn(fieldClass, "w-full font-mono")} />
-      <span id="routine-cron-help" className="block text-[11px]">{t("cronFields.help")}</span>
-    </label> : <div className="flex flex-wrap items-end gap-2">
-      {choice === "yearly" && <label className="space-y-1.5 text-[11.5px] text-ink-secondary"><span className="block">{t("cronFields.month")}</span><select value={value.month} onChange={(event) => update({ month: event.target.value })} className={fieldClass}>{monthNames().map((month, index) => <option key={month} value={String(index + 1)}>{month}</option>)}</select></label>}
-      <label className="space-y-1.5 text-[11.5px] text-ink-secondary"><span className="block">{t("cronFields.dayOfMonth")}</span><select value={value.day} onChange={(event) => update({ day: event.target.value })} className={fieldClass}>{Array.from({ length: 31 }, (_, index) => <option key={index + 1} value={String(index + 1)}>{index + 1}</option>)}<option value="L">{t("cronFields.lastDay")}</option></select></label>
-      <label className="space-y-1.5 text-[11.5px] text-ink-secondary"><span className="block">{t("cw.time")}</span><input type="time" step={60} value={value.time} onChange={(event) => update({ time: event.target.value })} className={fieldClass} /></label>
-    </div>}
-    {choice !== "cron" && Number(value.day) > 28 && <p className="text-[11px] text-ink-secondary">{t("cronFields.skipHelp")}</p>}
-    <label className="block space-y-1.5 text-[11.5px] text-ink-secondary"><span>{t("settings.timeZone.title")}</span><input list="routine-time-zones" value={value.timeZone} onChange={(event) => update({ timeZone: event.target.value })} placeholder="America/New_York" spellCheck={false} autoComplete="off" aria-invalid={Boolean(error)} aria-describedby="routine-cron-error" className={cn(fieldClass, "block w-full")} /></label>
-    <datalist id="routine-time-zones">{TIME_ZONES.map(zone => <option key={zone} value={zone} />)}</datalist>
-    {error && <p id="routine-cron-error" role="alert" className="text-[11.5px] text-danger">{error}</p>}
-    {!error && <CronRunDates runs={runs} timeZone={value.timeZone.trim()} />}
-  </div>;
 }

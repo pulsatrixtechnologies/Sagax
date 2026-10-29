@@ -24,6 +24,25 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## A routine's schedule in words (2026-10-29)
+
+The routine editor never shows cron. Repeat lists Once, Every hour, Every
+day, Weekdays, Certain days, Every month, Every year and Every few minutes
+or hours (the interval's fields, minutes or hours); a trigger routine keeps
+its trigger. `shared/schedule-model.ts` turns a model (frequency, times,
+days, day of month, month) into the five-field expression the scheduler
+runs and back (`cronToScheduleModel`, null when no model fits); several
+times in a day share their minutes. `HumanScheduleFields` draws the times
+(native time picker), the days, the zone by its city, the live sentence
+(the list's own `cronScheduleWords`, then "(Toronto time)") and the next
+three runs. A saved cron no model fits opens under Advanced, said in words,
+kept exactly until the person picks a simple schedule. One time on chosen
+days in the person's zone still saves as a daily schedule (the calendar can
+move it). A sentence no wording fits reads "Custom schedule", never the
+expression: the list, the routine page, approval cards and iOS included.
+iOS mirrors it (`RoutineScheduleModel.swift`, `RoutineScheduleForm`).
+Captures `node scripts/capture-routine-schedule-editor.mjs`.
+
 ## A usage limit is transparent (2026-10-29)
 
 When a model or engine reaches its usage limit (or runs out of credits, or

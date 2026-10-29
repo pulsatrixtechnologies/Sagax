@@ -3,43 +3,53 @@
 //
 // One value type holds what the Repeat picker and its fields show; it
 // validates exactly as the desktop does and produces the schedule to save.
+// Since 2026-10-29 a repeating schedule is picked in words (every hour, day,
+// weekday, certain days, month or year, at one or more times, in a named
+// zone: RoutineScheduleModel) and saved as cron; a cron no choice can say
+// stays as it is under Advanced.
 // The phone's editor binds to it, so the rules live here, tested, and any
 // layout (iPhone sheet, a future iPad panel) shows the same thing.
 import Foundation
 
-/// The Repeat picker (`RecurrenceChoice`).
+/// The Repeats picker, in its order (2026-10-29: a schedule is picked in
+/// words, cron stays under the hood).
 public enum RoutineRecurrence: String, CaseIterable, Hashable, Sendable {
     /// "Does not repeat".
     case none
-    /// "Every X minutes".
-    case interval
-    /// "Daily": every day at a time.
+    case hourly
     case daily
-    /// "Every weekday (Monday to Friday)".
     case weekdays
-    /// "Weekly on <day of the start date>".
-    case weekly
-    /// "Selected weekdays".
-    case custom
+    /// Certain days of the week.
+    case days
     case monthly
     case yearly
-    /// "Custom cron (advanced)".
-    case cron
+    /// "Every N minutes or hours", with days, hours and an end date.
+    case interval
+    /// A cron schedule no choice above can say: kept as it is.
+    case advanced
 
-    public var cronChoice: RoutineCronChoice? {
+    /// The model frequency behind a choice, nil for once, interval and advanced.
+    public var frequency: RoutineScheduleFrequency? {
         switch self {
+        case .hourly: .hourly
+        case .daily: .daily
+        case .weekdays: .weekdays
+        case .days: .days
         case .monthly: .monthly
         case .yearly: .yearly
-        case .cron: .cron
-        default: nil
+        case .none, .interval, .advanced: nil
         }
     }
 
-    public init(_ choice: RoutineCronChoice) {
-        switch choice {
+    public init(_ frequency: RoutineScheduleFrequency) {
+        switch frequency {
+        case .hourly: self = .hourly
+        case .daily: self = .daily
+        case .weekdays: self = .weekdays
+        case .days: self = .days
         case .monthly: self = .monthly
         case .yearly: self = .yearly
-        case .cron: self = .cron
+        case .every: self = .interval
         }
     }
 }
@@ -63,15 +73,20 @@ public struct RoutineScheduleForm: Hashable, Sendable {
     public static let allDays = [0, 1, 2, 3, 4, 5, 6]
     public static let workWeek = [1, 2, 3, 4, 5]
     public static let intervalPresets = [5, 10, 15, 30, 60]
+    /// "Every N hours" presets of the interval.
+    public static let intervalHourPresets = [1, 2, 3, 4, 6, 8, 12]
 
     public var recurrence: RoutineRecurrence
-    /// The start: the date and time of a one-time run, the time of a daily
-    /// one, and for "Weekly" also the day.
+    /// The start: the date and time of a one-time run.
     public var at: Date
-    /// "Selected weekdays". Never empty: the last day cannot be removed.
-    public private(set) var weekdays: [Int]
+    /// What the frequency fields hold (hourly to yearly).
+    public var model: RoutineScheduleModel
+    /// The IANA zone the times are read in (the person's own by default).
+    public var timeZone: String
     /// Minutes between interval runs; nil while the custom field is empty.
     public var intervalMinutes: Int?
+    /// Whether the interval is said in minutes or in hours.
+    public var intervalUnit: RoutineScheduleEveryUnit
     public var intervalDays: RoutineIntervalDays
     /// The custom interval days; may be empty (then invalid).
     public var intervalWeekdays: [Int]
@@ -82,10 +97,6 @@ public struct RoutineScheduleForm: Hashable, Sendable {
     /// "Ends": on a date (the end of that local day), or never.
     public var endsOnDate: Bool
     public var endDate: Date
-    public var cronDraft: RoutineCronDraft
-    /// The person touched the cron fields; until then a cron schedule is
-    /// kept exactly as it was.
-    public var cronChanged: Bool
     /// "Timing": exact or flexible, for a repeating routine only.
     public var timing: RoutineTimingMode
     /// Flexible: minutes before the scheduled time (default 15).
@@ -100,6 +111,32 @@ public struct RoutineScheduleForm: Hashable, Sendable {
     public let original: RoutineSchedule?
     public let openedAt: Date
     public let calendar: Calendar
+    /// The schedule fields as they opened: until they differ, a daily or
+    /// cron schedule is kept exactly as it was.
+    private let opened: Snapshot
+
+    struct Snapshot: Hashable, Sendable {
+        var recurrence: RoutineRecurrence
+        var model: RoutineScheduleModel
+        var timeZone: String
+        var intervalMinutes: Int?
+        var intervalDays: RoutineIntervalDays
+        var intervalWeekdays: [Int]
+        var windowCustom: Bool
+        var windowStart: String
+        var windowEnd: String
+        var endsOnDate: Bool
+        var endDate: Date
+    }
+
+    private var snapshot: Snapshot {
+        Snapshot(recurrence: recurrence, model: model, timeZone: timeZone, intervalMinutes: intervalMinutes,
+                 intervalDays: intervalDays, intervalWeekdays: intervalWeekdays, windowCustom: windowCustom,
+                 windowStart: windowStart, windowEnd: windowEnd, endsOnDate: endsOnDate, endDate: endDate)
+    }
+
+    /// The person touched the schedule.
+    public var scheduleChanged: Bool { snapshot != opened }
 
     /// `seedAt`: when the routine would next run (or the next hour for a new one).
     public init(schedule: RoutineSchedule?, seedAt: Date, now: Date = Date(), calendar: Calendar = .current) {
@@ -114,11 +151,24 @@ public struct RoutineScheduleForm: Hashable, Sendable {
         default: initialAt = seedAt
         }
         at = initialAt
+        let zone = schedule?.type == .cron ? (schedule?.timeZone).flatMap { $0.isEmpty ? nil : $0 } : nil
+        timeZone = zone ?? calendar.timeZone.identifier
+        let read = Self.model(for: schedule)
+        var model = read ?? Self.defaultModel(at: initialAt, calendar: calendar)
         recurrence = Self.recurrence(for: schedule, at: initialAt, calendar: calendar)
-        let startDay = calendar.component(.weekday, from: initialAt) - 1
-        weekdays = schedule?.type == .daily ? (schedule?.weekdays ?? [startDay]) : [startDay]
+        // an interval cron ("*/15 * * * *") opens in the interval fields
+        let everyCron = read?.frequency == .every ? read : nil
+        if everyCron != nil { model = Self.defaultModel(at: initialAt, calendar: calendar) }
+        self.model = model
         let interval = schedule?.type == .interval ? schedule : nil
-        intervalMinutes = interval?.everyMinutes ?? 15
+        if let everyCron {
+            intervalMinutes = everyCron.every * (everyCron.unit == .hours ? 60 : 1)
+            intervalUnit = everyCron.unit
+        } else {
+            let minutes = interval?.everyMinutes ?? 15
+            intervalMinutes = minutes
+            intervalUnit = minutes >= 60 && minutes % 60 == 0 ? .hours : .minutes
+        }
         intervalDays = Self.intervalDayChoice(interval)
         intervalWeekdays = (interval?.weekdays).flatMap { $0.isEmpty ? nil : $0 } ?? Self.allDays
         windowCustom = interval?.window != nil
@@ -131,10 +181,6 @@ public struct RoutineScheduleForm: Hashable, Sendable {
             let start = calendar.startOfDay(for: max(now, initialAt))
             endDate = calendar.date(byAdding: .day, value: 7, to: start) ?? start
         }
-        cronDraft = RoutineCronEditor.draft(
-            for: schedule?.type == .cron ? schedule : nil, at: initialAt, localZone: calendar.timeZone
-        )
-        cronChanged = false
         // `readTiming`: a flexible repeating schedule keeps its window
         if let schedule, schedule.type != .once, schedule.timing == "flexible" {
             timing = .flexible
@@ -145,22 +191,39 @@ public struct RoutineScheduleForm: Hashable, Sendable {
             earlyMinutes = Self.defaultEarlyMinutes
             lateMinutes = Self.defaultLateMinutes
         }
+        opened = Snapshot(recurrence: recurrence, model: self.model, timeZone: timeZone, intervalMinutes: intervalMinutes,
+                          intervalDays: intervalDays, intervalWeekdays: intervalWeekdays, windowCustom: windowCustom,
+                          windowStart: windowStart, windowEnd: windowEnd, endsOnDate: endsOnDate, endDate: endDate)
     }
 
     // MARK: Reading a schedule
+
+    /// The model a daily or cron schedule is, nil for anything else.
+    public static func model(for schedule: RoutineSchedule?) -> RoutineScheduleModel? {
+        switch schedule?.type {
+        case .daily?: RoutineScheduleModel.from(time: schedule?.time ?? "", weekdays: schedule?.weekdays)
+        case .cron?: RoutineScheduleModel.from(cron: schedule?.expression ?? "")
+        default: nil
+        }
+    }
+
+    /// A new schedule's fields: the time of the start, its day and month.
+    static func defaultModel(at: Date, calendar: Calendar) -> RoutineScheduleModel {
+        let parts = calendar.dateComponents([.month, .day], from: at)
+        return RoutineScheduleModel(
+            times: [clock(at, calendar: calendar)],
+            monthDay: .day(parts.day ?? 1),
+            month: parts.month ?? 1
+        )
+    }
 
     public static func recurrence(for schedule: RoutineSchedule?, at: Date, calendar: Calendar = .current) -> RoutineRecurrence {
         guard let schedule else { return .none }
         switch schedule.type {
         case .once, .unknown: return .none
         case .interval: return .interval
-        case .cron: return RoutineRecurrence(RoutineCronEditor.choice(for: schedule))
-        case .daily:
-            let days = schedule.weekdays ?? []
-            if days.count == 7 { return .daily }
-            if days == workWeek { return .weekdays }
-            if days.count == 1, days[0] == calendar.component(.weekday, from: at) - 1 { return .weekly }
-            return .custom
+        case .daily: return RoutineRecurrence(model(for: schedule)?.frequency ?? .daily)
+        case .cron: return model(for: schedule).map { RoutineRecurrence($0.frequency) } ?? .advanced
         }
     }
 
@@ -174,22 +237,71 @@ public struct RoutineScheduleForm: Hashable, Sendable {
     /// What a recurrence change does beside switching (`selectRecurrence`).
     /// The interval's default 30-minute run limit is the editor's to apply.
     public mutating func select(_ choice: RoutineRecurrence) {
-        if let cronChoice = choice.cronChoice {
-            // Switching from a preset to Advanced starts with what was chosen.
-            if cronChoice == .cron, let schedule = cronValue?.schedule, let expression = schedule.expression {
-                cronDraft.expression = expression
-            }
-            cronChanged = true
+        if let frequency = choice.frequency {
+            model.frequency = frequency
+            if model.times.isEmpty { model.times = [Self.clock(at, calendar: calendar)] }
         }
         recurrence = choice
     }
 
-    public mutating func toggleWeekday(_ day: Int) {
-        if weekdays.contains(day) {
-            guard weekdays.count > 1 else { return }
-            weekdays.removeAll { $0 == day }
-        } else {
-            weekdays = (weekdays + [day]).sorted()
+    /// "Choose a simple schedule" under Advanced: every day, at the time
+    /// of the schedule's next run.
+    public mutating func chooseSimpleSchedule() {
+        var time = Self.clock(at, calendar: calendar)
+        if let next = preview?.runs.first {
+            var zoned = calendar
+            zoned.timeZone = TimeZone(identifier: timeZone) ?? calendar.timeZone
+            time = Self.clock(next, calendar: zoned)
+        }
+        model = RoutineScheduleModel(frequency: .daily, times: [time], monthDay: model.monthDay, month: model.month)
+        recurrence = .daily
+    }
+
+    /// "+ Add a time": the next free hour after the last one, at the same
+    /// minutes (several times a day share their minutes).
+    public mutating func addTime() {
+        let times = RoutineScheduleModel.normalizeTimes(model.times).compactMap(RoutineScheduleModel.parseClock)
+        guard let last = times.last else {
+            model.times = ["09:00"]
+            return
+        }
+        let used = Set(times.map(\.hour))
+        let free = ((last.hour + 1)..<24).first { !used.contains($0) } ?? (0..<last.hour).reversed().first { !used.contains($0) }
+        guard let hour = free else { return }
+        model.times = RoutineScheduleModel.normalizeTimes(model.times + [RoutineScheduleModel.clock(hour, last.minute)])
+    }
+
+    public mutating func removeTime(at index: Int) {
+        guard model.times.indices.contains(index), model.times.count > 1 else { return }
+        model.times.remove(at: index)
+    }
+
+    /// Certain days: a day on or off (none left is a problem to show).
+    public mutating func toggleModelWeekday(_ day: Int) {
+        if model.weekdays.contains(day) { model.weekdays.removeAll { $0 == day } }
+        else { model.weekdays = (model.weekdays + [day]).sorted() }
+    }
+
+    /// The interval in its unit (15 minutes, 2 hours).
+    public var intervalCount: Int? {
+        guard let minutes = intervalMinutes else { return nil }
+        return intervalUnit == .hours ? minutes / 60 : minutes
+    }
+
+    public mutating func setIntervalCount(_ count: Int?) {
+        intervalMinutes = count.map { intervalUnit == .hours ? $0 * 60 : $0 }
+    }
+
+    /// Minutes or hours: the count is kept when it still fits, else the
+    /// first sensible step of that unit.
+    public mutating func selectIntervalUnit(_ unit: RoutineScheduleEveryUnit) {
+        guard unit != intervalUnit else { return }
+        intervalUnit = unit
+        if unit == .hours {
+            let minutes = intervalMinutes ?? 0
+            intervalMinutes = minutes >= 60 && minutes % 60 == 0 ? minutes : 60
+        } else if (intervalMinutes ?? 0) > 60 {
+            intervalMinutes = 15
         }
     }
 
@@ -205,23 +317,25 @@ public struct RoutineScheduleForm: Hashable, Sendable {
         else { intervalWeekdays = (intervalWeekdays + [day]).sorted() }
     }
 
-    public mutating func updateCron(_ change: (inout RoutineCronDraft) -> Void) {
-        change(&cronDraft)
-        cronChanged = true
-    }
-
     // MARK: Validation (the desktop's messages)
 
+    /// The original, kept as it was while the schedule is untouched (a
+    /// daily or cron schedule; an interval is rebuilt with its phase).
+    var keptOriginal: RoutineSchedule? {
+        guard !scheduleChanged, let original, original.type == .daily || original.type == .cron else { return nil }
+        return original
+    }
+
     public var intervalInvalid: Bool {
-        recurrence == .interval && !(5...1_440).contains(intervalMinutes ?? 0)
+        keptOriginal == nil && recurrence == .interval && !(5...1_440).contains(intervalMinutes ?? 0)
     }
 
     public var intervalDaysInvalid: Bool {
-        recurrence == .interval && intervalDays == .custom && intervalWeekdays.isEmpty
+        keptOriginal == nil && recurrence == .interval && intervalDays == .custom && intervalWeekdays.isEmpty
     }
 
     public var windowInvalid: Bool {
-        guard recurrence == .interval, windowCustom else { return false }
+        guard keptOriginal == nil, recurrence == .interval, windowCustom else { return false }
         guard let start = Self.clockMinutes(windowStart), let end = Self.clockMinutes(windowEnd) else { return true }
         return end - start < max(intervalMinutes ?? 0, 0)
     }
@@ -248,14 +362,50 @@ public struct RoutineScheduleForm: Hashable, Sendable {
     }
 
     public var endInvalid: Bool {
-        guard recurrence == .interval, endsOnDate, let endsAt else { return false }
+        guard keptOriginal == nil, recurrence == .interval, endsOnDate, let endsAt else { return false }
         return Double(endsAt) < endMinimum.timeIntervalSince1970 * 1_000
     }
 
-    public var cronValue: RoutineCronEditor.Value? {
-        guard let choice = recurrence.cronChoice else { return nil }
-        let unchanged = !cronChanged && original?.type == .cron ? original : nil
-        return RoutineCronEditor.value(choice: choice, draft: cronDraft, after: openedAt, unchanged: unchanged)
+    /// A schedule said in cron (a model or Advanced): what to save, its
+    /// next three runs, or what is wrong.
+    public struct CronValue: Equatable, Sendable {
+        public var schedule: RoutineSchedule?
+        /// The expression the runs and the sentence are read from.
+        public var expression: String?
+        public var timeZone: String
+        public var runs: [Date]
+        public var problem: Problem?
+    }
+
+    /// Nil for once and for a changed interval.
+    public var preview: CronValue? {
+        if let kept = keptOriginal {
+            let expression: String?
+            let zone: String
+            if kept.type == .cron {
+                expression = kept.expression
+                zone = kept.timeZone ?? timeZone
+            } else {
+                expression = try? model.cron().get()
+                zone = calendar.timeZone.identifier
+            }
+            let runs = expression.flatMap { try? CronExpression(expression: $0, timeZone: zone) }?.nextRuns(after: openedAt, count: 3) ?? []
+            return CronValue(schedule: kept, expression: expression, timeZone: zone, runs: runs, problem: nil)
+        }
+        guard recurrence.frequency != nil else { return nil }
+        switch model.cron() {
+        case let .failure(problem):
+            return CronValue(schedule: nil, expression: nil, timeZone: timeZone, runs: [], problem: .schedule(problem))
+        case let .success(expression):
+            do {
+                let normalized = try CronExpression.normalized(.cron(expression: expression, timeZone: timeZone), after: openedAt)
+                let cron = try CronExpression(expression: normalized.expression ?? "", timeZone: normalized.timeZone ?? "")
+                return CronValue(schedule: normalized, expression: cron.expression, timeZone: cron.zoneName,
+                                 runs: cron.nextRuns(after: openedAt, count: 3), problem: nil)
+            } catch {
+                return CronValue(schedule: nil, expression: expression, timeZone: timeZone, runs: [], problem: .cron(error.localizedDescription))
+            }
+        }
     }
 
     /// What is wrong, in the desktop's order; nil when valid.
@@ -268,15 +418,20 @@ public struct RoutineScheduleForm: Hashable, Sendable {
         case window(minutes: Int)
         /// "Choose an end date after the first run."
         case endDate
-        /// The cron editor's message (`RoutineCronEditor.Value.error`).
+        /// The frequency fields cannot make a schedule.
+        case schedule(RoutineScheduleModel.Problem)
+        /// The cron calculator's message (`CronExpression.Failure`).
         case cron(String)
 
         public var message: String {
             switch self {
             case .intervalRange: "Choose a whole number from 5 to 1,440 minutes."
-            case .noDays: "Choose at least one day."
+            case .noDays, .schedule(.noDays): "Choose at least one day."
             case let .window(minutes): "Choose a same-day window at least \(minutes) minutes long."
             case .endDate: "Choose an end date after the first run."
+            case .schedule(.noTime): "Add at least one time."
+            case .schedule(.sameMinute): "Times on the same day must share their minutes, such as 8:30, 12:30 and 4:30."
+            case .schedule(.badTime): "Choose a valid time."
             case let .cron(message): message
             }
         }
@@ -287,7 +442,7 @@ public struct RoutineScheduleForm: Hashable, Sendable {
         if intervalDaysInvalid { return .noDays }
         if windowInvalid { return .window(minutes: (intervalMinutes ?? 0) == 0 ? 5 : intervalMinutes ?? 5) }
         if endInvalid { return .endDate }
-        if let cron = cronValue, !cron.error.isEmpty { return .cron(cron.error) }
+        if let problem = preview?.problem { return problem }
         return nil
     }
 
@@ -295,9 +450,10 @@ public struct RoutineScheduleForm: Hashable, Sendable {
 
     // MARK: Saving
 
-    /// The schedule to send (`makeRoutineSchedule` / the cron value), with
-    /// the interval's days, window and end date written out: nil there
-    /// means "clear it" (`RoutinePatch` sends null).
+    /// The schedule to send: a model or Advanced as cron in its zone, the
+    /// interval with its days, window and end date written out (nil there
+    /// means "clear it": `RoutinePatch` sends null). An untouched daily or
+    /// cron schedule is sent back exactly as it was.
     public func schedule(savedAt: Date) throws -> RoutineSchedule {
         Self.withTiming(try baseSchedule(savedAt: savedAt), mode: timing, early: earlyMinutes, late: lateMinutes)
     }
@@ -325,10 +481,8 @@ public struct RoutineScheduleForm: Hashable, Sendable {
 
     private func baseSchedule(savedAt: Date) throws -> RoutineSchedule {
         if let problem { throw RoutineScheduleError(problem.message) }
+        if recurrence != .none, let kept = keptOriginal { return kept }
         switch recurrence {
-        case .monthly, .yearly, .cron:
-            guard let schedule = cronValue?.schedule else { throw RoutineScheduleError("Choose a valid schedule.") }
-            return schedule
         case .interval:
             let minutes = intervalMinutes ?? 15
             if let endsAt, Double(endsAt) < Self.nextIntervalForSave(now: savedAt, everyMinutes: minutes, current: originalInterval).timeIntervalSince1970 * 1_000 {
@@ -346,15 +500,9 @@ public struct RoutineScheduleForm: Hashable, Sendable {
             return schedule
         case .none:
             return .init(type: .once, at: exactAt)
-        case .daily, .weekdays, .weekly, .custom:
-            let days: [Int]
-            switch recurrence {
-            case .daily: days = Self.allDays
-            case .weekdays: days = Self.workWeek
-            case .weekly: days = [calendar.component(.weekday, from: at) - 1]
-            default: days = weekdays
-            }
-            return .daily(time: Self.clock(at, calendar: calendar), weekdays: days.sorted())
+        case .hourly, .daily, .weekdays, .days, .monthly, .yearly, .advanced:
+            guard let schedule = preview?.schedule else { throw RoutineScheduleError("Choose a valid schedule.") }
+            return schedule
         }
     }
 

@@ -59,7 +59,9 @@ it("takes cron through the real routine tools, applying the bot's own routine at
     // The creator asked for it paused (new routines start live by default).
     expect(create.subtitle).toContain("Created paused; resume it when ready.");
     expect(create.subtitle).not.toContain("Next 3 runs");
-    expect(create.subtitle).toContain("Cron: 0 9 1 * *");
+    // In words, never the expression (2026-10-29).
+    expect(create.subtitle).toContain("Monthly on day 1 at 09:00 · America/New_York");
+    expect(create.subtitle).not.toContain("0 9 1 * *");
     const { resultId: routineId } = applied(create);
     const current = async () => (await api("GET", "/api/routines")).routines.find((routine: any) => routine.id === routineId);
     expect(await current()).toMatchObject({ schedule, enabled: false, nextRunAt: null, runOn: "maus", overlap: "queue" });
@@ -85,10 +87,11 @@ it("takes cron through the real routine tools, applying the bot's own routine at
       action: "update", routine_id: routineId, changes: { schedule: lastDay, overlap: "skip" },
     }, "Change that report to the last day of each month at the same time and zone.");
     const listed = providerEvidence().at(-1).evidence.find((entry: any) => entry.step?.tool === "list_routines").response.result.content[0].text;
-    expect(listed).toContain('"type": "cron"');
-    expect(listed).toContain('"timeZone": "America/New_York"');
-    expect(listed).toContain('"overlap": "queue"');
-    expect(listed).toContain('"failureStreak": 0');
+    // The compact listing (#1646): one JSON row per routine, a failure
+    // streak only when there is one.
+    expect(listed).toContain('"type":"cron"');
+    expect(listed).toContain('"timeZone":"America/New_York"');
+    expect(listed).not.toContain('"failureStreak"');
     applied(update);
     expect(update.routineRequest.undo.before).toMatchObject({ schedule, overlap: "queue" });
     expect((await current()).schedule).toEqual(lastDay);

@@ -1,17 +1,11 @@
 import { atLocalTime } from "@/lib/routine-calendar";
 import type { RoutineSchedule } from "@/lib/routines";
 import { activeLocale, t } from "@/lib/i18n";
-import { cronRawText, cronScheduleLabel } from "../../shared/cron-label";
+import { cronScheduleLabel } from "../../shared/cron-label";
 
 /** Cron wording follows the app language: French (Québec) or English. */
 export function cronLocale(): "fr" | "en" {
   return activeLocale().toLowerCase().startsWith("fr") ? "fr" : "en";
-}
-
-/** The exact expression (and zone) of a cron schedule, for a tooltip or
- * Copy; null for every other kind of schedule. */
-export function scheduleRawCron(schedule: RoutineSchedule | { type: string }): string | null {
-  return schedule.type === "cron" ? cronRawText(schedule as Extract<RoutineSchedule, { type: "cron" }>) : null;
 }
 
 /** Short weekday names (index 0 = Sunday) in the active language, read at
