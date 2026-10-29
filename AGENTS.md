@@ -92,6 +92,28 @@ you have NO tool", and a card never turned Connected.
   `grok-tool-catalog.test.ts`, `connector-setup.test.ts` (shared and route),
   `engine-connectors.test.ts`.
 
+## Bot content has a default theme (2026-10-28)
+
+Pages and widgets bots make draw in the app's look, sober as Grok Bot's.
+Every page the sandboxed frame route serves (`pageDocument`) starts with
+one inline stylesheet (src/lib/page-theme.ts): the skin's tokens (the app
+preview sends `theme=` and the person's skin as `skin=`, base64url JSON of
+known tokens with safe values only, `decodeSkinTokens`; a reading link gets
+light plus dark by the reader's system), Geist as a data: font
+(server/geist-face.ts), the widget kit's components and a centered reading
+column. It sits in `@layer sagax-theme`, so a page's own CSS always wins; a
+Markdown page or a presentation follows it entirely. Widgets keep their kit
+(src/lib/widget-kit.ts), now with plain content and the new components
+(`CONTENT_KIT_CSS`: .stat-card, .stat-delta, .bar-chart, svg.chart, .list,
+.lead). The phone draws the same kit (WidgetKit.generated.swift, from
+`node --experimental-strip-types scripts/gen-ios-widget-kit.ts`) in its
+skin's colors and sends `skin=` with its page previews. The prompt
+(`WIDGET_KIT_PROMPT`), propose_page and show_html tell bots to use the
+classes and variables. Same CSP and sandbox. Tests:
+`src/lib/page-theme.test.ts`, `server/published-pages.test.ts`,
+`ios/Tests/CompanionCoreTests/ContentThemeTests.swift`. Captures:
+`scripts/capture-bot-content-theme.ts`, docs/screenshots/bot-content-theme.
+
 ## Page view (2026-10-28)
 
 A page a bot proposes shows in the conversation as a card with a live,

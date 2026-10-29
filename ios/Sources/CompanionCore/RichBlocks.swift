@@ -330,23 +330,20 @@ extension RichBlocks {
         return bridge + html
     }
 
-    public static func artifactDocument(html: String, dataJSON: String?, dataAt: Double?, dark: Bool) -> String {
-        widgetDocument(artifactSource(html: html, dataJSON: dataJSON, dataAt: dataAt), dark: dark)
+    public static func artifactDocument(html: String, dataJSON: String?, dataAt: Double?, dark: Bool, tokens: [String: String] = [:], fontFace: String = "") -> String {
+        widgetDocument(artifactSource(html: html, dataJSON: dataJSON, dataAt: dataAt), dark: dark, tokens: tokens, fontFace: fontFace)
     }
 
     /// The document a widget runs in. The CSP meta comes before any widget
-    /// byte; the size reporter is ours and posts only a number.
-    public static func widgetDocument(_ source: String, dark: Bool) -> String {
-        let scheme = dark ? "dark" : "light"
-        let base = ":root{color-scheme:\(scheme);--omb-bg:\(dark ? "#1b1b1b" : "#ffffff");--omb-fg:\(dark ? "#f2f2f2" : "#161616");--omb-muted:\(dark ? "#a3a3a3" : "#5c5c5c");--omb-border:\(dark ? "#3a3a3a" : "#dedede");--omb-accent:\(dark ? "#3987e5" : "#2a78d6")}"
-            + "html,body{margin:0;padding:0}body{padding:12px;background:var(--omb-bg);color:var(--omb-fg);font:13px/20px Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;overflow-x:auto}"
-            + "button,input,select,textarea{font:inherit}*,*::before,*::after{box-sizing:border-box}"
-            + "label:has(>input[type=checkbox],>input[type=radio]){display:flex;flex-direction:row;align-items:flex-start;gap:8px;width:auto}"
-            + "label,button,input[type=range],input[type=checkbox],input[type=radio]{-webkit-user-select:none;user-select:none}"
-            + "@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}"
+    /// byte; the size reporter is ours and posts only a number. It carries
+    /// the desktop's kit (WidgetKit.generated.swift) themed from the skin's
+    /// `tokens` (`SkinPalette.contentTokens`; the fallback skin of the
+    /// scheme for any missing), and Geist when `fontFace` brings it.
+    public static func widgetDocument(_ source: String, dark: Bool, tokens: [String: String] = [:], fontFace: String = "") -> String {
+        let theme = ContentTheme.widgetThemeCSS(dark: dark, tokens: tokens)
         let reporter = "(function(){var last=0;function send(){var h=Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0));if(h!==last){last=h;parent.postMessage({type:\"\(widgetMessage)\",height:h},\"*\");}}"
             + "addEventListener('load',send);if(typeof ResizeObserver!=='undefined'){new ResizeObserver(send).observe(document.documentElement);}setTimeout(send,50);setTimeout(send,500);})();"
-        return "<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"\(widgetCSP)\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>\(base)</style><script>\(reporter)</script></head><body>\(source)</body></html>"
+        return "<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\" content=\"\(widgetCSP)\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style id=\"sagax-theme\">\(theme)</style><style id=\"sagax-kit\">\(fontFace)\(WidgetKitGenerated.css)</style><script>\(reporter)</script></head><body>\(source)</body></html>"
     }
 }
 

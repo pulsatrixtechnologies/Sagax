@@ -24,6 +24,7 @@ import {
   type PublicPageOptions,
 } from "./routes/published-pages.ts";
 import type { Message } from "./store.ts";
+import { encodeSkinTokens, PAGE_THEME_LAYER, PAGE_THEME_STYLE_ID } from "../src/lib/page-theme.ts";
 import { PAGE_LIMITS, pageCsp, pageFrameSandbox, parsePageProposal, validExpiry } from "../shared/published-pages.ts";
 import { parseReaderBoot, READER_BOOT_ID, readerNotice } from "../shared/page-reader.ts";
 
@@ -620,6 +621,33 @@ describe("the app's own look of its preview (2026-10-28, the page view)", () => 
     expect(String(frame.headers["content-security-policy"])).toContain("connect-src 'none'");
   });
 
+  it("serves every page with the default theme: the app's scheme, the person's skin, Geist, under the same CSP (2026-10-28)", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, "pr_alice");
+    const skin = encodeSkinTokens({ "--code-color-scheme": "dark", "--color-panel": "#060f20", "--color-ink": "#eef2fb" });
+    const wrapper = await hit(options(pages, alice), `/pages/preview/${page.id}/1?bare=1&theme=dark&skin=${skin}`);
+    const src = frameSrc(wrapper.body);
+    expect(src).toContain(`&s=${skin}`);
+    const frame = await hit(options(pages, alice), src, { "sec-fetch-dest": "iframe" });
+    expect(frame.body).toContain(`<style id="${PAGE_THEME_STYLE_ID}">`);
+    expect(frame.body).toContain(`@layer ${PAGE_THEME_LAYER}{`);
+    expect(frame.body).toContain("--background:#060f20");
+    expect(frame.body).toContain("--foreground:#eef2fb");
+    expect(frame.body).toContain(".stat-card{");
+    expect(frame.body).toContain("font-family:'Geist Variable'");
+    // the theme comes before the page's own markup, so the page can override it
+    expect(frame.body.indexOf(PAGE_THEME_STYLE_ID)).toBeLessThan(frame.body.indexOf("<body") >= 0 ? frame.body.indexOf("<body") : frame.body.length);
+    const csp = String(frame.headers["content-security-policy"]);
+    expect(csp).toContain("font-src data:");
+    expect(csp).toContain("connect-src 'none'");
+    expect(csp).toContain("default-src 'none'");
+    // a skin value that is not a color never reaches the style
+    const evil = encodeSkinTokens({ "--color-panel": "#000" }).length ? Buffer.from(JSON.stringify({ "--color-panel": "red}</style><script>x()</script>" })).toString("base64url") : "";
+    const bad = await hit(options(pages, alice), frameSrc((await hit(options(pages, alice), `/pages/preview/${page.id}/1?bare=1&theme=light&skin=${evil}`)).body), { "sec-fetch-dest": "iframe" });
+    expect(bad.body).not.toContain("x()");
+    expect(bad.body).toContain("color-scheme:light");
+  });
+
   it("a Markdown page keeps its place by nonce only, and its own style follows the app's theme", async () => {
     const { pages } = store();
     const { page } = proposed(pages, "pr_alice", { content: "# Bilan\n\nTexte" });
@@ -647,6 +675,9 @@ describe("the app's own look of its preview (2026-10-28, the page view)", () => 
     const frame = await hit(options(pages, null), `${src}&k=640&c=dark`, { "sec-fetch-dest": "iframe" });
     expect(frame.body).not.toContain("sagax-page-scroll");
     expect(frame.body).not.toContain('content="dark"');
+    // the reader's own system picks light or dark; the theme is there either way
+    expect(frame.body).toContain('<meta name="color-scheme" content="light dark">');
+    expect(frame.body).toContain("@media screen and (prefers-color-scheme:dark){:root{");
   });
 
   it("a place that is not a whole number is ignored", async () => {

@@ -6,7 +6,7 @@
 // (who can see it and until when) puts it online. PublishedPagesSettings is Settings > Pages publiées: every page of
 // the person, its link, who can see it, its expiry, its versions, Revoke
 // and Delete.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileText, Loader2, Maximize2, Pin, Share, Trash2, XCircle } from "lucide-react";
 
 import { t } from "@/lib/i18n";
@@ -24,6 +24,7 @@ import { PageGlyph } from "./PageViewer";
 import { openPageInOwnWindow } from "@/lib/page-windows";
 import { PageSharePopover } from "./PageShare";
 import { useWidgetTheme } from "./WidgetFrame";
+import { encodeSkinTokens } from "@/lib/page-theme";
 import { openPagePanel } from "@/lib/open-page";
 
 export { expiryFromHours, previewSrc };
@@ -96,7 +97,9 @@ export function PagePublishCard({ message }: { message: Message }) {
   // no preview to draw: a neutral line in its place, never a spinner forever
   const [noPreview, setNoPreview] = useState(false);
   const cardRef = useRef<HTMLElement>(null);
-  const theme = useWidgetTheme(cardRef).scheme;
+  const look = useWidgetTheme(cardRef);
+  const theme = look.scheme;
+  const skin = useMemo(() => encodeSkinTokens(look.tokens), [look]);
 
   useEffect(() => {
     let live = true;
@@ -116,7 +119,7 @@ export function PagePublishCard({ message }: { message: Message }) {
   const status = deleted ? "deleted" : pageCardState(page, ref.version);
   // the page's own preview address, and nothing else, is ever framed: any
   // other answer (an older server, a bad path) is "Preview unavailable"
-  const src = !deleted && previewPath ? previewSrc(previewPath, { bare: true, theme }) : null;
+  const src = !deleted && previewPath ? previewSrc(previewPath, { bare: true, theme, skin }) : null;
   const unavailable = deleted || noPreview || (previewPath !== null && src === null);
   // the page names its own bot and conversation
   const open = () => { if (page) openPagePanel({ pageId: ref.pageId, botId: page.botId, threadId: page.threadId, title, version: ref.version }); };

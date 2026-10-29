@@ -11,6 +11,8 @@
 // with a permanent banner (no script, nothing to dismiss) that embeds the
 // page in a frame sandboxed to scripts only, whose navigation the wrapper's
 // `frame-src` limits to the page's own frame path.
+import { pageThemeStyle } from "../src/lib/page-theme.ts";
+import type { WidgetThemeTokens } from "../src/lib/widget-kit.ts";
 import { READER_ACTIONS_ID, READER_BOOT_ID, readerNotice, type ReaderBoot } from "../shared/page-reader.ts";
 import { ANNOTATE_FOCUS_MESSAGE, ANNOTATE_FOUND_MESSAGE, ANNOTATE_MARKS_MESSAGE, ANNOTATE_MODE_MESSAGE, ANNOTATE_SELECT_MESSAGE, THREAD_LIMITS } from "../shared/page-threads.ts";
 import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_HEIGHT_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, PAGE_SIZE_ASK, PAGE_SIZE_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
@@ -218,16 +220,6 @@ export function presentationToHtml(markdown: string): string {
   }).join("\n");
 }
 
-const PRESENTATION_STYLE = "html{scroll-snap-type:y mandatory;scroll-behavior:smooth}body{margin:0;font:clamp(16px,2.4vw,30px)/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#1f2328;background:#fff}"
-  + ".slide{position:relative;box-sizing:border-box;height:100vh;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:center;padding:6vh 8vw;border-bottom:1px solid #eaeef2;overflow:hidden}"
-  + ".slide h1{font-size:2.2em;line-height:1.15;margin:0 0 .4em}.slide h2{font-size:1.6em;margin:0 0 .4em}.slide ul,.slide ol{margin:.3em 0}"
-  + "pre{background:#f6f8fa;padding:.6em;border-radius:6px;overflow:auto;font-size:.7em}code{font:.9em ui-monospace,Menlo,monospace}"
-  + "blockquote{margin:0;padding-left:1rem;border-left:3px solid #d0d7de;color:#57606a}.url{color:#57606a;word-break:break-all}"
-  + "footer{position:absolute;right:3vw;bottom:2.5vh;display:flex;align-items:center;gap:.6em;font-size:14px;color:#57606a}"
-  + ".nav{display:inline-block;min-width:32px;height:32px;border-radius:16px;text-align:center;line-height:30px;font-size:22px;text-decoration:none;color:inherit;border:1px solid #d0d7de}"
-  + `@media print{html{scroll-snap-type:none}.slide{height:${SLIDE_PRINT_MM}mm;border:0;break-after:page}.nav{display:none}}`
-  + "@media screen and (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}.slide{border-color:#21262d}pre{background:#161b22}.url,footer{color:#9198a1}.nav{border-color:#30363d}}";
-
 /** A name for the banner: one line, at most PAGE_BANNER_NAME_MAX characters. Pure. */
 export function bannerName(name: string): string {
   const line = name.replace(/\s+/g, " ").trim();
@@ -378,29 +370,14 @@ export function markdownToHtml(markdown: string): string {
   return out.join("\n");
 }
 
-const MARKDOWN_STYLE = "body{font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#1f2328;background:#fff}"
-  + "pre{background:#f6f8fa;padding:.75rem;border-radius:6px;overflow:auto}code{font:.9em ui-monospace,Menlo,monospace}"
-  + "blockquote{margin:0;padding-left:1rem;border-left:3px solid #d0d7de;color:#57606a}.url{color:#57606a;word-break:break-all}"
-  + ".table-wrap{overflow-x:auto;margin:1rem 0}table{border-collapse:collapse;min-width:100%}th,td{border:1px solid #d0d7de;padding:.4rem .75rem;text-align:left}th{background:#f6f8fa;font-weight:600}tbody tr:nth-child(even){background:#f6f8fa80}li.task{list-style:none;margin-left:-1.2rem}del{color:#57606a}"
-  + "@media screen and (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}pre{background:#161b22}.url{color:#9198a1}th,td{border-color:#30363d}th{background:#161b22}tbody tr:nth-child(even){background:#161b2280}del{color:#9198a1}}";
-
-/** Our own dark rules apply on screen only: Download PDF prints our
- * Markdown and slides on white, whatever the reader's theme. */
-const DARK_RULES = "@media screen and (prefers-color-scheme:dark){";
-
-/** Our own Markdown and slide styles in one theme: the dark rules always
- * (dark) or never (light), instead of the reader's system setting. Pure. */
-export function themedStyle(style: string, theme: PageTheme | undefined): string {
-  if (!theme) return style;
-  const at = style.indexOf(DARK_RULES);
-  if (at < 0) return style;
-  const inner = style.slice(at + DARK_RULES.length, -1);
-  return theme === "dark" ? `${style.slice(0, at)}${inner}:root{color-scheme:dark}` : style.slice(0, at);
-}
-
 /** The full document a version is read as. `meta` adds the CSP as a meta tag
- * (the app's sandboxed preview, which has no response headers). Pure. */
-export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string; keepScroll?: number; nonce?: string; theme?: PageTheme; reportSize?: boolean } = {}): string {
+ * (the app's sandboxed preview, which has no response headers). Every kind
+ * starts with the default theme (src/lib/page-theme.ts, 2026-10-28): the
+ * app's theme and the person's skin tokens when the app's preview sent them
+ * (`theme`, `skin`), light and dark by the reader's system otherwise, and
+ * the Geist face (`font`, an @font-face rule). An HTML page's own styles win
+ * over it; a Markdown page or a presentation follows it entirely. Pure. */
+export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string; keepScroll?: number; nonce?: string; theme?: PageTheme; skin?: WidgetThemeTokens; font?: string; reportSize?: boolean } = {}): string {
   const meta = options.meta ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(pageCsp(input.kind, { meta: true }))}">` : "";
   // The app's own scripts (its preview only: annotation, keeping the place):
   // by their nonce on a page that otherwise runs no script, inline after the
@@ -411,15 +388,19 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
   const annotate = options.annotateNonce === undefined ? "" : own(ANNOTATE_SOURCE);
   const keep = (options.keepScroll === undefined ? "" : own(keepScrollSource(options.keepScroll)))
     + (options.reportSize ? own(REPORT_SIZE_SOURCE) + own(ANNOTATE_BRIDGE_SOURCE) : "");
-  const scheme = options.theme ? `<meta name="color-scheme" content="${options.theme}">` : "";
+  const scheme = `<meta name="color-scheme" content="${options.theme ?? "light dark"}">`;
+  const theme = pageThemeStyle({ kind: input.kind, ...(options.theme ? { scheme: options.theme } : {}), ...(options.theme && options.skin ? { tokens: options.skin } : {}), font: options.font ?? "",
+    ...(input.kind === "presentation" ? { extra: `@media print{html{scroll-snap-type:none}.slide{height:${SLIDE_PRINT_MM}mm;border:0;break-after:page}.nav{display:none}}` } : {}) });
   if (input.kind === "markdown" || input.kind === "presentation") {
     const presentation = input.kind === "presentation";
     return `<!doctype html><html lang="${escapeHtml(input.lang ?? "fr")}"><head><meta charset="utf-8">${meta}${scheme}`
       + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>`
-      + `<style>${themedStyle(presentation ? PRESENTATION_STYLE : MARKDOWN_STYLE, options.theme)}</style></head>`
+      + `${theme}</head>`
       + `<body>${presentation ? presentationToHtml(input.content) : markdownToHtml(input.content)}${annotate}${keep}</body></html>`;
   }
-  const head = `${meta}${scheme}${FRAME_PRELUDE}`;
+  // the theme first, so the page's own <style> and <link> come after it
+  // (and win anyway: the theme sits in its cascade layer)
+  const head = `${meta}${FRAME_PRELUDE}${scheme}${theme}`;
   const content = neuterPageHtml(input.content);
   const doctype = /^\s*<!doctype[^>]*>/i.exec(content);
   const page = doctype
@@ -546,7 +527,7 @@ export function wrapperDocument(input: WrapperInput): string {
   // a Markdown page
   const sandbox = pageFrameSandbox(input.kind, { annotate: input.annotate === true || input.keep === true || (!input.preview && input.reader !== undefined) });
   // a page that sets no background of its own shows the theme's, not white
-  const background = input.theme === "dark" ? "#0d1117" : "#fff";
+  const background = input.theme === "dark" ? "#161616" : "#fff";
   const bare = input.bare === true && input.preview === true;
   // a reading link only: the app's preview keeps its banner (or none)
   const reader = input.preview ? undefined : input.reader;

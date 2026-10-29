@@ -158,20 +158,27 @@ public enum PageViewRules {
     /// The preview wrapper's query the app draws (`previewSrc`): no banner
     /// inside the app, its theme, the place to keep. Only this server's own
     /// wrapper path; nil for anything else.
-    public static func previewQuery(bare: Bool, theme: PageTheme?, y: Int?, annotate: Bool = false) -> [URLQueryItem] {
+    /// `skin` is the person's skin tokens (`ContentTheme.skinParam`), sent
+    /// with a theme only: the page's default theme takes the skin's colors.
+    public static func previewQuery(bare: Bool, theme: PageTheme?, y: Int?, annotate: Bool = false, skin: String? = nil) -> [URLQueryItem] {
         var items: [URLQueryItem] = []
         if annotate { items.append(URLQueryItem(name: "annotate", value: "1")) }
         if bare { items.append(URLQueryItem(name: "bare", value: "1")) }
-        if let theme { items.append(URLQueryItem(name: "theme", value: theme.rawValue)) }
+        if let theme {
+            items.append(URLQueryItem(name: "theme", value: theme.rawValue))
+            if let skin, skin.range(of: #"^[A-Za-z0-9_-]{1,4096}$"#, options: .regularExpression) != nil {
+                items.append(URLQueryItem(name: "skin", value: skin))
+            }
+        }
         if let y, (0...scrollMax).contains(y) { items.append(URLQueryItem(name: "y", value: String(y))) }
         return items
     }
 
     /// `previewSrc`: the path with its query, or nil when the path is not
     /// this server's preview wrapper.
-    public static func previewSrc(_ path: String, bare: Bool, theme: PageTheme?, y: Int?, annotate: Bool = false) -> String? {
+    public static func previewSrc(_ path: String, bare: Bool, theme: PageTheme?, y: Int?, annotate: Bool = false, skin: String? = nil) -> String? {
         guard let safe = PagePreview.src(path), safe == path else { return nil }
-        let query = previewQuery(bare: bare, theme: theme, y: y, annotate: annotate)
+        let query = previewQuery(bare: bare, theme: theme, y: y, annotate: annotate, skin: skin)
         guard !query.isEmpty else { return safe }
         return safe + "?" + query.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&")
     }
@@ -420,9 +427,9 @@ public extension CompanionClient {
     /// The authorized GET for the app's own drawing of a preview path
     /// `PagePreview.src` already accepted: no banner, the app's theme, the
     /// place to keep.
-    func pagePreviewRequest(path: String, bare: Bool, theme: PageTheme?, y: Int?) throws -> URLRequest {
+    func pagePreviewRequest(path: String, bare: Bool, theme: PageTheme?, y: Int?, skin: String? = nil) throws -> URLRequest {
         guard let safe = PagePreview.src(path) else { throw APIError.badURL }
-        return try makeRequest("GET", safe, query: PageViewRules.previewQuery(bare: bare, theme: theme, y: y))
+        return try makeRequest("GET", safe, query: PageViewRules.previewQuery(bare: bare, theme: theme, y: y, skin: skin))
     }
 
     /// One step of a Share gesture (or any page change) on the person's

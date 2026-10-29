@@ -53,7 +53,7 @@ struct WidgetFrameView: View {
                     escapes += 1
                     generation += 1
                 }
-                .id("\(generation):\(Theme.palette.isDark)")
+                .id("\(generation):\(Theme.palette.id.rawValue):\(Theme.palette.isDark)")
                 .frame(height: height)
                 .accessibilityIdentifier(identifier.map { "\($0)-frame" } ?? "widget-frame")
             }
@@ -129,13 +129,16 @@ struct SandboxedWidget: UIViewRepresentable {
     /// the widget in a srcdoc iframe sandboxed to scripts only, and a
     /// listener that forwards the iframe's size message and nothing else.
     static func host(_ source: String, dark: Bool) -> String {
-        let document = RichBlocks.widgetDocument(source, dark: dark)
+        // the desktop's kit in this skin's colors, and Geist from the bundle
+        let document = RichBlocks.widgetDocument(source, dark: dark, tokens: Theme.palette.contentTokens, fontFace: geistFace)
         let escaped = document
             .replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
-        let csp = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src about: data:; child-src about: data:"
+        // the srcdoc frame inherits this policy too: data: fonts and images
+        // (the kit's Geist and its icons) and nothing from the network
+        let csp = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; frame-src about: data:; child-src about: data:"
         return """
         <!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="\(csp)">\
         <meta name="viewport" content="width=device-width,initial-scale=1">\
@@ -147,6 +150,9 @@ struct SandboxedWidget: UIViewRepresentable {
         </body></html>
         """
     }
+
+    /// Geist's @font-face, read once from the app's own font file.
+    static let geistFace: String = ContentTheme.fontFace(ttf: Bundle.main.url(forResource: "Geist-Variable", withExtension: "ttf").flatMap { try? Data(contentsOf: $0) })
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var parent: SandboxedWidget
