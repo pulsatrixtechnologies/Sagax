@@ -2864,6 +2864,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // a turn that went on in a fresh session also spent what the full one did
         const carried = carriedCosts.get(t.turnId);
         carriedCosts.delete(t.turnId);
+        renewedTurns.delete(t.turnId);
         const cost = carried === undefined ? own : Number(((own ?? 0) + carried).toFixed(10));
         emit({ ...base(threadId, t.turnId), type: "turn.completed", ok, stopReason, cost, ...(usage ? { usage } : {}) });
         if (session.child.exitCode === null && !session.closing) armIdle(threadId);
@@ -3417,6 +3418,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                 await sendTurn({ ...turn, resumeCursor: undefined, sessionReset: false, recoveryText: undefined, harnessCommand: undefined, text }, turnId);
               } catch (e) {
                 renewedTurns.delete(turnId);
+                carriedCosts.delete(turnId);
                 if (active.get(threadId)?.turnId === turnId) active.delete(threadId);
                 retryState.delete(threadId);
                 emit({ ...base(threadId, turnId), type: "runtime.error", message: e instanceof Error ? e.message : String(e) });
