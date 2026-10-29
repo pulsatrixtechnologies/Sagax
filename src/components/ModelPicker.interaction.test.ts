@@ -488,7 +488,7 @@ describe("on an organization server", () => {
     expect(html).toContain('aria-modal="true"');
     // One status line and one button, no payer chain.
     expect(html).toContain('data-pays-with="org-key"');
-    expect(html).toContain("Pays with: the organization key");
+    expect(html).toContain("Pays with: the organization");
     expect(html).toContain("Connect Claude");
     expect(html).not.toContain("Who pays for your turns");
     expect(html).not.toContain("Checked in this order");
