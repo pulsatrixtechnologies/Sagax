@@ -366,7 +366,7 @@ import { createSettingsActionsInternalRoutes } from "./routes/settings-actions-i
 import { createPrimaryApprovalsInternalRoutes } from "./routes/primary-approvals-internal.ts";
 import { createPrimaryApprovals, primaryAnswerable, type PrimaryCard, type PrimaryDecision, type PrimaryTurn } from "./primary-approvals.ts";
 import { reviewedSkillSha256 } from "../shared/skill-request.ts";
-import { checkPersonQuote } from "../shared/primary-request.ts";
+import { checkPersonQuote, personWordsForTurn } from "../shared/primary-request.ts";
 import { sessionIdlePolicy } from "./drivers/session-idle.ts";
 import { serveStaticUi } from "./static-ui.ts";
 import { PageLive } from "./page-live.ts";
@@ -1207,6 +1207,8 @@ import { createGroupFolderRoutes } from "./routes/group-folders.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
 import { createRoutineAwayRoutes } from "./routes/routine-away.ts";
 import { createRoutineFolderRoutes } from "./routes/routine-folders.ts";
+import { pageRoutines } from "../shared/routine-listing.ts";
+import { createRoutineBulkRoutes } from "./routes/routine-bulk.ts";
 import { createMeetingRoutes } from "./routes/meetings.ts";
 import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
@@ -33887,7 +33889,25 @@ function primaryTurnGate(botId: string, threadId: string, generation: string, pu
     if (!picked) return { status: 403, code: "no_session", error: "The person's session is no longer valid." };
     performActor = { kind: "person", sessionId: picked.id, personKey: actor.personKey, scopes: picked.scopes.filter((scope): scope is "admin" | "client" => scope === "admin" || scope === "client") };
   }
-  return { botId: bot.id, botName: bot.name, person, message: { id: message.id, text: message.text, at: message.at }, actor: performActor };
+  // #1643 (2026-10-29): the option the person chose on the bot's question
+  // card is their decision, as if typed: it counts with their message
+  const text = personWordsForTurn(store.messagesFor(threadId), message.id, message.text, (by) => questionAnsweredBy(by, person));
+  return { botId: bot.id, botName: bot.name, person, message: { id: message.id, text, at: message.at }, actor: performActor };
+}
+
+/** #1643: whether a question card was answered by this person: never a bot
+ * (primary-bot), a rule (auto-review), a service, or another person. A card
+ * of the person's own conversation answered before its answerer is written
+ * is theirs (primaryTurnGate checked the conversation is). */
+function questionAnsweredBy(by: { kind: string; via?: string; name?: string; person?: string } | undefined, person: string): boolean {
+  if (!by) return true;
+  if (by.kind === "worker" || by.via === "primary-bot" || by.via === "auto-review") return false;
+  if (by.kind !== "session") return by.kind === "loopback";
+  if (by.person !== undefined) return by.person === person;
+  if (IDENTITY.kind !== "perspicax") return true;
+  const known = principals.byId(person);
+  const names = [known?.name?.trim(), known?.login?.trim()].filter(Boolean);
+  return names.length === 0 || names.includes(by.name?.trim());
 }
 
 /** The request auth the person's own screen would carry, for the listing. */
@@ -36441,6 +36461,73 @@ function searchHitVisibleNow(threadId: string, viewerId: string | undefined): bo
  * bot and room are gone is seen only by the person it runs as. Never the
  * legacy email-keyed VisibleSet alone: organization members carry no email,
  * so that set opens everything to them (slice 8 fix). */
+/** On a Cloud home a routine reports only where its writer may write: a
+ * guest's into a conversation the guest started, never the owner's. */
+function routineResultsRefusalFor(auth: RequestAuth, body: unknown): string | null {
+  const resultsThreadId = body && typeof body === "object" && typeof (body as { resultsThreadId?: unknown }).resultsThreadId === "string"
+    ? (body as { resultsThreadId: string }).resultsThreadId : null;
+  if (!resultsThreadId) return null;
+  // No routine comes from, or reports into, a confidential thread
+  // (server/confidential-threads.ts): its runs would work as the bot
+  // owner, in their environment.
+  if (store.isConfidentialThread(resultsThreadId)) return "No routine can be created from a confidential thread. Set it up from an ordinary thread.";
+  return cloudThreadRefusal(auth, resultsThreadId);
+}
+
+/** One routine's PATCH, also each row of a bulk change (2026-10-29,
+ * server/routes/routine-bulk.ts): the same checks and writer either way. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- a request body, as readBody gives it
+function patchRoutineAs(auth: RequestAuth, req: IncomingMessage, id: string, body: any): { status: number; body: unknown } {
+  const visible = visibleTo(viewerFor(auth, `/api/routines/${id}`));
+  const viewerId = channelFilterViewerId(auth);
+  const routineResultsRefusal = (value: unknown) => routineResultsRefusalFor(auth, value);
+  const hidden = hiddenRoutineTarget(body, visible);
+  if (hidden) return { status: 404, body: { error: hidden } };
+  if (routineNeedsRun(auth, routineBotId(id)) || routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return { status: 403, body: NEEDS_RUN };
+  const notYours = routineResultsRefusal(body);
+  if (notYours) return { status: 403, body: { error: notYours } };
+  const existingRoutine = routines!.listRoutines().find((candidate) => candidate.id === id);
+  const runAsChoice = routineRunAsChoice(auth, body, existingRoutine);
+  if ("refusal" in runAsChoice) return { status: runAsChoice.refusal.status, body: { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code, ...(runAsChoice.refusal.permission ? { permission: runAsChoice.refusal.permission } : {}) } };
+  const runAsBefore = existingRoutine ? effectiveRunAs(existingRoutine) : undefined;
+  const before = cloudRoutineAuthors ? routines!.listRoutines().find((candidate) => candidate.id === id) : undefined;
+  const wasOwners = Boolean(before && cloudRoutineAuthors?.authored(before.id, before));
+  const previous = cloudRoutineAuthors?.writer(id);
+  // Who this edit leaves as the routine's writer: the owner when the
+  // routine stays (or becomes) theirs (their fingerprint, or already
+  // theirs as its writer: a template, a restore), a guest when a guest
+  // edits it, else whoever wrote it before.
+  // An owner writer is proof only for a routine that never had the
+  // owner's fingerprint (a template, a restore, one the settlement named):
+  // a fingerprint that no longer matches means someone else changed what
+  // it runs, and only the owner rewriting its instructions renews it.
+  const ownerWriterOnly = CLOUD_OWNER_KEY !== null && previous === CLOUD_OWNER_KEY && !cloudRoutineAuthors?.recorded(id);
+  const ownerAuthors = cloudOwnerSession(auth) && (wasOwners || ownerWriterOnly ||
+    (body && typeof body === "object" && "prompt" in body));
+  const writer = ownerAuthors && CLOUD_OWNER_KEY ? CLOUD_OWNER_KEY
+    : auth.kind === "session" && !cloudOwnerSession(auth) ? actorKey(auth)
+      : previous && !cloudOwnerPerson(previous) ? previous : CLOUD_NOBODY_KEY;
+  const conversation = routineConversationOf(req, existingRoutine, viewerId);
+  const routine = withRoutineWriter(writer, () => routines!.update(id, body, undefined, { ...routineActor(auth), ...runAsChoice, ...(conversation ? { conversation } : {}) }));
+  if (routine) auditRoutineRunAs(auth, routine, runAsBefore);
+  // The owner's own edit keeps (or, when it rewrites the instructions,
+  // makes) the routine theirs. Anyone else's edit, of any field (its
+  // schedule, where its results go, whether it is on), makes it no longer
+  // the owner's: it stops lending until the owner rewrites it.
+  if (routine && cloudRoutineAuthors) {
+    if (!cloudOwnerSession(auth)) cloudRoutineAuthors.forget(routine.id);
+    else if (ownerAuthors) cloudRoutineAuthors.record(routine.id, routine);
+    cloudRoutineAuthors.wrote(routine.id, writer);
+  }
+  return routine ? { status: 200, body: { routine: routineOnWire(routine) } } : { status: 404, body: { error: "no such routine" } };
+}
+function deleteRoutineAs(auth: RequestAuth, id: string): { status: number; body: unknown } {
+  if (routineNeedsRun(auth, routineBotId(id))) return { status: 403, body: NEEDS_RUN };
+  const removed = routines!.remove(id);
+  if (removed) cloudRoutineAuthors?.remove(id);
+  return removed ? { status: 200, body: { ok: true } } : { status: 404, body: { error: "no such routine" } };
+}
+
 /** 2026-10-15: the conversation open in the app when the person switched a
  * routine on or off (header ROUTINE_CONVERSATION_HEADER), where the line
  * "Disabled · 1 routine" goes. Only the routine's own bot's thread (or its
@@ -37871,6 +37958,18 @@ ROUTES.push(createRoutineAwayRoutes<Routine>({
   },
   clear: (id) => routines?.clearAwaySkips(id) ?? null,
   onWire: (routine) => routineOnWire(routine),
+}));
+// Several routines of one bot on, off or deleted at once (2026-10-29,
+// server/routes/routine-bulk.ts): each one by its own PATCH or DELETE code.
+ROUTES.push(createRoutineBulkRoutes({
+  access: (auth, botId) => {
+    const visible = visibleTo(viewerFor(auth, "/api/routines/bulk"));
+    if (!store.bot(botId) || hiddenRoutineTarget({ botId }, visible)) return "hidden";
+    return routineNeedsRun(auth, botId) ? "needs_run" : "ok";
+  },
+  routines: () => routines?.listRoutines() ?? null,
+  patch: (auth, req, id, enabled) => patchRoutineAs(auth, req, id, { enabled }),
+  remove: (auth, id) => deleteRoutineAs(auth, id),
 }));
 // Routine folders (server/routes/routine-folders.ts): whoever may change a
 // bot's routines arranges their folders, no admin right.
@@ -43473,14 +43572,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         for (const run of routines!.listRuns()) {
           if (run.botId === from.id && !latestRuns.has(run.routineId)) latestRuns.set(run.routineId, run);
         }
-        return json(res, 200, {
-          now: new Date().toISOString(),
-          timeZone: routineTimeZone(),
-          routines: routines!.listRoutines()
-            .filter((routine) => routine.botId === from.id)
-            .slice(0, 100)
-            .map((routine) => agentRoutine(routine, latestRuns.get(routine.id))),
+        // 2026-10-29 (a bot read back 3 of its 23 routines): a page of short
+        // rows (shared/routine-listing.ts), or one routine in full by its id
+        const own = routines!.listRoutines().filter((routine) => routine.botId === from.id);
+        const routineId = url.searchParams.get("routineId");
+        if (routineId) {
+          const one = own.find((routine) => routine.id === routineId);
+          if (!one) return json(res, 404, { error: "This bot has no routine with that id. Call list_routines for the ids." });
+          return json(res, 200, { now: new Date().toISOString(), timeZone: routineTimeZone(), routine: agentRoutine(one, latestRuns.get(one.id)) });
+        }
+        const page = pageRoutines(own.map((routine) => agentRoutine(routine, latestRuns.get(routine.id))), {
+          offset: url.searchParams.get("offset") ?? undefined,
+          limit: url.searchParams.get("limit") ?? undefined,
+          folder: url.searchParams.get("folder") ?? undefined,
         });
+        return json(res, 200, { now: new Date().toISOString(), timeZone: routineTimeZone(), ...page });
       }
       // Internal route modules (claims, Perspicax gateway tools, MCP audit,
       // run_routine), behind the capability checked above.
@@ -45969,16 +46075,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     // On a Cloud home a routine reports only where its writer may write: a
     // guest's into a conversation the guest started, never the owner's.
-    const routineResultsRefusal = (body: unknown): string | null => {
-      const resultsThreadId = body && typeof body === "object" && typeof (body as { resultsThreadId?: unknown }).resultsThreadId === "string"
-        ? (body as { resultsThreadId: string }).resultsThreadId : null;
-      if (!resultsThreadId) return null;
-      // No routine comes from, or reports into, a confidential thread
-      // (server/confidential-threads.ts): its runs would work as the bot
-      // owner, in their environment.
-      if (store.isConfidentialThread(resultsThreadId)) return "No routine can be created from a confidential thread. Set it up from an ordinary thread.";
-      return cloudThreadRefusal(auth, resultsThreadId);
-    };
+    const routineResultsRefusal = (body: unknown): string | null => routineResultsRefusalFor(auth, body);
     if (path === "/api/routines" && method === "POST") {
       const body = await readBody(req);
       const hidden = hiddenRoutineTarget(body, visible);
@@ -46049,54 +46146,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     routineMatch = path.match(/^\/api\/routines\/([\w-]+)$/);
     if (routineMatch && method === "PATCH") {
-      const body = await readBody(req);
-      const hidden = hiddenRoutineTarget(body, visible);
-      if (hidden) return json(res, 404, { error: hidden });
-      if (routineNeedsRun(auth, routineBotId(routineMatch[1])) || routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
-      const notYours = routineResultsRefusal(body);
-      if (notYours) return json(res, 403, { error: notYours });
-      const existingRoutine = routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]);
-      const runAsChoice = routineRunAsChoice(auth, body, existingRoutine);
-      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code, ...(runAsChoice.refusal.permission ? { permission: runAsChoice.refusal.permission } : {}) });
-      const runAsBefore = existingRoutine ? effectiveRunAs(existingRoutine) : undefined;
-      const before = cloudRoutineAuthors ? routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]) : undefined;
-      const wasOwners = Boolean(before && cloudRoutineAuthors?.authored(before.id, before));
-      const previous = cloudRoutineAuthors?.writer(routineMatch[1]);
-      // Who this edit leaves as the routine's writer: the owner when the
-      // routine stays (or becomes) theirs (their fingerprint, or already
-      // theirs as its writer: a template, a restore), a guest when a guest
-      // edits it, else whoever wrote it before.
-      // An owner writer is proof only for a routine that never had the
-      // owner's fingerprint (a template, a restore, one the settlement named):
-      // a fingerprint that no longer matches means someone else changed what
-      // it runs, and only the owner rewriting its instructions renews it.
-      const ownerWriterOnly = CLOUD_OWNER_KEY !== null && previous === CLOUD_OWNER_KEY && !cloudRoutineAuthors?.recorded(routineMatch[1]);
-      const ownerAuthors = cloudOwnerSession(auth) && (wasOwners || ownerWriterOnly ||
-        (body && typeof body === "object" && "prompt" in body));
-      const writer = ownerAuthors && CLOUD_OWNER_KEY ? CLOUD_OWNER_KEY
-        : auth.kind === "session" && !cloudOwnerSession(auth) ? actorKey(auth)
-          : previous && !cloudOwnerPerson(previous) ? previous : CLOUD_NOBODY_KEY;
-      const conversation = routineConversationOf(req, existingRoutine, viewerId);
-      const routine = withRoutineWriter(writer, () => routines!.update(routineMatch![1], body, undefined, { ...routineActor(auth), ...runAsChoice, ...(conversation ? { conversation } : {}) }));
-      if (routine) auditRoutineRunAs(auth, routine, runAsBefore);
-      // The owner's own edit keeps (or, when it rewrites the instructions,
-      // makes) the routine theirs. Anyone else's edit, of any field (its
-      // schedule, where its results go, whether it is on), makes it no longer
-      // the owner's: it stops lending until the owner rewrites it.
-      if (routine && cloudRoutineAuthors) {
-        if (!cloudOwnerSession(auth)) cloudRoutineAuthors.forget(routine.id);
-        else if (ownerAuthors) cloudRoutineAuthors.record(routine.id, routine);
-        cloudRoutineAuthors.wrote(routine.id, writer);
-      }
-      return routine ? json(res, 200, { routine: routineOnWire(routine) }) : json(res, 404, { error: "no such routine" });
+      const done = patchRoutineAs(auth, req, routineMatch[1], await readBody(req));
+      return json(res, done.status, done.body);
     }
     if (routineMatch && method === "DELETE") {
-      if (routineNeedsRun(auth, routineBotId(routineMatch[1]))) return json(res, 403, NEEDS_RUN);
-      const removed = routines!.remove(routineMatch[1]);
-      if (removed) cloudRoutineAuthors?.remove(routineMatch[1]);
-      return removed
-        ? json(res, 200, { ok: true })
-        : json(res, 404, { error: "no such routine" });
+      const done = deleteRoutineAs(auth, routineMatch[1]);
+      return json(res, done.status, done.body);
     }
     if (path === "/api/routine-runs/seen-all" && method === "POST") {
       return json(res, 200, { runs: routines!.markAllSeen() });

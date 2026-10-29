@@ -1239,8 +1239,12 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "list_routines",
     description:
-      "List routines owned by this bot, including their ids, schedules, status, and next run. The result includes the computer's authoritative current time and timezone; use those when interpreting relative dates. Only call this when the user asks about routines or wants to change one.",
-    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+      "This bot's routines a page at a time, with the current time and timezone for relative dates. Read every page (offset) before counting; routine_id gives one in full. Only when asked about routines.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { offset: { type: "integer" }, routine_id: { type: "string", minLength: 1, description: "Routine id from list_routines." } },
+    },
   },
   {
     name: "run_routine",

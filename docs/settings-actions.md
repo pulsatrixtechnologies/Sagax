@@ -238,6 +238,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Run only when something changes ({kind: watch, source: {type: files, path} / {type: command, command} / {type: tool, tool, args}, condition?, wakeOn?, track?, firstRun?, whenAsleep?}; null: every due time) | Automations > routine > Only when something changes | `sagax_settings` get, set `routine.precheck` | simple |
 | New routine ({name, prompt, botId, schedule, ...}) | Automations > New routine | `sagax_settings` set `routine.create` | simple |
 | Run now (true) | Automations > routine > Run now | `sagax_settings` set `routine.run` | simple |
+| A bot's routines, a page at a time (get; value {offset?, limit?, folder?}; nextOffset gives the next page; routine.prompt reads one whole) | Bot panel > Details > Routines; Automations | `sagax_settings` get, set `routine.list` | simple |
+| Several routines of a bot at once ({ids: [routine ids] or "all", enabled: true/false} or {ids, delete: true}) | Bot panel > Details > Routines; Automations | `sagax_settings` get, set `routine.bulk` | en lot |
 | Delete the routine (true) | Bot panel > Details > Routines > Delete | `sagax_settings` set `routine.delete` | suppression |
 
 ### Groupes et salles

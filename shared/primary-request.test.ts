@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkPersonQuote, messageNamesCard, personWrote } from "./primary-request.ts";
+import { checkPersonQuote, chosenOptionWords, messageNamesCard, personWordsForTurn, personWrote } from "./primary-request.ts";
 
 const said = (message: string, quote: string, intent: Parameters<typeof checkPersonQuote>[0]["intent"]) => checkPersonQuote({ message, quote, intent });
 
@@ -75,5 +75,55 @@ describe("messageNamesCard and personWrote", () => {
     expect(messageNamesCard("approuve-la", ["Ottoline", "Quasar"])).toBe(false);
     expect(personWrote("Réponds-lui : le serveur B, pas le A.", "le serveur B")).toBe(true);
     expect(personWrote("Réponds-lui.", "rm -rf /")).toBe(false);
+  });
+});
+
+// #1643 (2026-10-29): the option chosen on the bot's question card is the
+// person's decision, as if typed
+describe("personWordsForTurn (#1643)", () => {
+  const card = (over: Record<string, unknown> = {}) => ({
+    requestType: "question",
+    questionRequest: { questions: [{ question: "Que faire des anciennes routines ?", options: [
+      { label: "A. Tout supprimer", description: "Supprimer les 41 anciennes routines sur tous les bots" },
+      { label: "B. Les garder", description: "Ne rien changer" },
+    ] }] },
+    answered: "answer", answeredText: "A. Tout supprimer",
+    ...over,
+  });
+  const anyone = () => true;
+
+  it("counts the chosen option, label and description, with the message that started the turn", () => {
+    const messages = [
+      { id: "m1", role: "user", text: "Fais le ménage dans mes routines" },
+      { id: "c1", role: "bot", card: card() },
+      { id: "m2", role: "user", text: "A. Tout supprimer", replyToId: "c1" },
+    ];
+    const words = personWordsForTurn(messages, "m2", "A. Tout supprimer", anyone);
+    expect(checkPersonQuote({ quote: "Supprimer les 41 anciennes routines sur tous les bots", message: words, intent: "setting" }).ok).toBe(true);
+    // the option not chosen never counts
+    expect(personWrote(words, "Ne rien changer")).toBe(false);
+  });
+
+  it("counts a card answered inside the turn (the engine's own question tool)", () => {
+    const messages = [
+      { id: "m1", role: "user", text: "Nettoie mes routines" },
+      { id: "c1", role: "bot", card: card() },
+    ];
+    expect(personWrote(personWordsForTurn(messages, "m1", "Nettoie mes routines", anyone), "Supprimer les 41 anciennes routines")).toBe(true);
+  });
+
+  it("keeps the refusal for a card someone else, a bot or a rule answered, an approval, a closed card, or one from an earlier request", () => {
+    expect(chosenOptionWords(card(), () => false)).toEqual([]);
+    expect(chosenOptionWords(card({ dismissed: true }), anyone)).toEqual([]);
+    expect(chosenOptionWords(card({ requestType: "permission", answered: "allow" }), anyone)).toEqual([]);
+    expect(chosenOptionWords(card({ answered: undefined }), anyone)).toEqual([]);
+    const earlier = [
+      { id: "c0", role: "bot", card: card() },
+      { id: "m1", role: "user", text: "Autre chose" },
+      { id: "m2", role: "user", text: "Et ensuite ?" },
+    ];
+    expect(personWordsForTurn(earlier, "m2", "Et ensuite ?", anyone)).toBe("Et ensuite ?");
+    // a card never shown to this person: nothing
+    expect(personWordsForTurn([{ id: "m1", role: "user", text: "Bonjour" }], "m1", "Bonjour", anyone)).toBe("Bonjour");
   });
 });
