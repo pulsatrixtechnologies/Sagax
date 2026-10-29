@@ -14,6 +14,7 @@
 import { pageThemeStyle } from "../src/lib/page-theme.ts";
 import type { WidgetThemeTokens } from "../src/lib/widget-kit.ts";
 import { READER_ACTIONS_ID, READER_BOOT_ID, readerNotice, type ReaderBoot } from "../shared/page-reader.ts";
+import { STATE_ASK_MESSAGE, STATE_MESSAGE, STATE_RESULT_MESSAGE, STATE_SET_MESSAGE } from "../shared/page-state.ts";
 import { ANNOTATE_FOCUS_MESSAGE, ANNOTATE_FOUND_MESSAGE, ANNOTATE_MARKS_MESSAGE, ANNOTATE_MODE_MESSAGE, ANNOTATE_SELECT_MESSAGE, THREAD_LIMITS } from "../shared/page-threads.ts";
 import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_HEIGHT_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, PAGE_SIZE_ASK, PAGE_SIZE_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
 
@@ -191,6 +192,30 @@ D.addEventListener("click",function(e){var id=hitAt(e);if(id){post({type:"${ANNO
 if(!on)return;var sel=W.getSelection();if(sel&&!sel.isCollapsed)return;var el=e.target;if(!el||el.nodeType!==1||el===D.documentElement)return;if(el===D.body)return;e.preventDefault();e.stopPropagation();
 post({type:"${ANNOTATE_SELECT_MESSAGE}",v:1,anchor:element(el)})},true);
 var redraw=0;W.addEventListener("resize",function(){clearTimeout(redraw);redraw=setTimeout(function(){if(marks.length)draw(null)},200)});
+})();`;
+
+/** A reading frame's shared state (#1544, shared/page-state.ts), run first
+ * after the prelude so the page's own scripts find it: window.sagax.page
+ * with ready (a promise), get(key), entry(key) ({ value, name, at }), all(),
+ * canWrite(), set(key, value) (a promise; null clears) and subscribe(fn)
+ * (called with every value whenever the state changes; returns the
+ * unsubscribe). It only ever posts to its parent, the wrapper, which reads
+ * and writes this server's store with the reader's own rights. No network. */
+export const STATE_BRIDGE_SOURCE = String.raw`(function(){"use strict";
+var W=window,P=W.parent,state={},can=false,subs=[],pending={},seq=0,done,ready=new Promise(function(r){done=r});
+function copy(v){return v===undefined?undefined:JSON.parse(JSON.stringify(v))}
+function all(){var o={};for(var k in state)if(Object.prototype.hasOwnProperty.call(state,k))o[k]={value:copy(state[k].value),name:String(state[k].name||""),at:Number(state[k].at)||0};return o}
+W.addEventListener("message",function(e){if(e.source!==P||!e.data||e.data.v!==1)return;var d=e.data;
+if(d.type==="${STATE_MESSAGE}"&&d.entries&&typeof d.entries==="object"){state=d.entries;can=d.canWrite===true;done();var s=all();subs.slice().forEach(function(f){try{f(s)}catch(x){}})}
+else if(d.type==="${STATE_RESULT_MESSAGE}"&&pending[d.id]){var p=pending[d.id];delete pending[d.id];if(d.ok)p.ok(true);else p.no(new Error(String(d.error||"refused")))}});
+var page={ready:ready,
+get:function(k){var e=state[k];return e?copy(e.value):undefined},
+entry:function(k){var e=state[k];return e?{value:copy(e.value),name:String(e.name||""),at:Number(e.at)||0}:undefined},
+all:all,canWrite:function(){return can},
+set:function(k,v){return new Promise(function(ok,no){var id=++seq;pending[id]={ok:ok,no:no};try{P.postMessage({type:"${STATE_SET_MESSAGE}",v:1,id:id,key:String(k),value:v===undefined?null:v},"*")}catch(x){delete pending[id];no(x)}})},
+subscribe:function(f){if(typeof f!=="function")return function(){};subs.push(f);return function(){subs=subs.filter(function(g){return g!==f})}}};
+try{Object.defineProperty(W,"sagax",{value:Object.freeze({page:Object.freeze(page)}),writable:false,configurable:false,enumerable:false})}catch(x){}
+try{P.postMessage({type:"${STATE_ASK_MESSAGE}",v:1},"*")}catch(x){}
 })();`;
 
 /** A presentation prints one slide per sheet: each slide is this tall in
@@ -400,7 +425,8 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
   }
   // the theme first, so the page's own <style> and <link> come after it
   // (and win anyway: the theme sits in its cascade layer)
-  const head = `${meta}${FRAME_PRELUDE}${scheme}${theme}`;
+  // a reading frame: its shared state is there before the page's own scripts run (#1544)
+  const head = `${meta}${FRAME_PRELUDE}${options.reportSize ? `<script>${STATE_BRIDGE_SOURCE}</script>` : ""}${scheme}${theme}`;
   const content = neuterPageHtml(input.content);
   const doctype = /^\s*<!doctype[^>]*>/i.exec(content);
   const page = doctype

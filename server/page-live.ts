@@ -4,6 +4,7 @@
 // people who may annotate the page only:
 //   event: presence  { people: [{ id, name }] }  who has the page open
 //   event: threads   {}                          the annotations changed: read them again
+//   event: state     {}                          the page's shared state changed (#1544)
 // The stream carries no comment: a bar reads the threads with its own rights
 // (GET /api/pages/:id/threads). Nothing is stored; a stream that closes
 // leaves at once. Comment lines every 25 s keep proxies from closing it.
@@ -76,6 +77,11 @@ export class PageLive {
   /** The page's annotations changed: every open bar reads them again. */
   changed(pageId: string): void {
     this.send(pageId, sseEvent("threads", {}));
+  }
+
+  /** The page's shared state changed: every open bar reads it again. */
+  stateChanged(pageId: string): void {
+    this.send(pageId, sseEvent("state", {}));
   }
 
   /** The page is gone or no longer readable: every stream closes. */
