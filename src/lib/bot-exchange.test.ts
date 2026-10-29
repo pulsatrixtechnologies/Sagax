@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  exchangeSide,
   chipParty,
   collapseBotExchanges,
   commIsBotDm,
@@ -239,5 +240,19 @@ describe("commIsBotDm", () => {
     expect(commIsBotDm({ groupId: "standup" }, groups)).toBe(false);
     expect(commIsBotDm({ groupId: "missing" }, groups)).toBe(false);
     expect(commIsBotDm(undefined, groups)).toBe(false);
+  });
+});
+
+describe("exchangeSide", () => {
+  const first = { id: "a", name: "Nova" };
+  it("puts the header's first bot at the start and every other bot at the end", () => {
+    expect(exchangeSide({ id: "a", name: "Nova" }, first)).toBe("start");
+    expect(exchangeSide({ id: "b", name: "Pixel" }, first)).toBe("end");
+    expect(exchangeSide({ id: "c", name: "Third" }, first)).toBe("end");
+  });
+  it("falls back to the name when an id is missing, and to the start with no header", () => {
+    expect(exchangeSide({ name: "Nova" }, first)).toBe("start");
+    expect(exchangeSide({ name: "Pixel" }, first)).toBe("end");
+    expect(exchangeSide({ id: "b", name: "Pixel" })).toBe("start");
   });
 });

@@ -1,18 +1,28 @@
 // A collapsed bot-to-bot run: one quiet chip in the transcript, the lines
 // themselves in a sheet that fills the chat column. The messages stay
 // stored; this only changes how they are drawn.
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeftRight } from "lucide-react";
 import { formatTime, type Bot } from "@/state/store";
 import { BotAvatar } from "./Avatar";
 import { ConversationLink } from "./ConversationLink";
 import { activeLocale, t } from "@/lib/i18n";
-import { mausInk, type MausColor } from "@/lib/mascot";
+import { MAUS_COLORS, mausInk, type MausColor } from "@/lib/mascot";
+import { botBubbleVars } from "@/lib/bubble-colors";
+import { CHAT_BUBBLE_WIDTH_CLASS, CHAT_COLUMN_CLASS, chatBubbleWidth } from "@/lib/chat-bubble-width";
+import { prefersWideBubble } from "@/lib/rich-blocks";
+import { runCorners } from "@/lib/room-authors";
+import { cn } from "@/lib/cn";
+import { ChatMarkdown } from "./ChatMarkdown";
+import { ClusterLabel } from "./ClusterLabel";
+import { MessageBoundary } from "./MessageBoundary";
 import { ToolActivity, botNames } from "./ToolActivity";
 import {
   exchangeBody,
+  exchangeKey,
   exchangeSheetRow,
+  exchangeSide,
   exchangeSpeaker,
   startsNewStretch,
   transcriptDateLabel,
@@ -106,7 +116,11 @@ export function ExchangeSheet({ run, bots, showToolCalls, onClose, loadError = f
           })}
         </div>
       </div>
-      <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col gap-4 overflow-y-auto px-6 py-6" onClick={(event) => event.stopPropagation()}>
+      {/* The same pane and column as a 1:1 chat (ChatView): the gutter, the
+          960px column, Geist at 13px, the Markdown renderer and the bubble
+          widths, so the lines use the room a wider window gives. */}
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-5" data-testid="bot-exchange-scroll">
+      <div className={cn(CHAT_COLUMN_CLASS, "py-6")} role="log" aria-live="off" onClick={(event) => event.stopPropagation()}>
         {loadError ? (
           <div role="alert" data-testid="bot-exchange-error" className="flex flex-col items-center gap-2 py-8 text-center text-[13px] text-ink-secondary">
             <p>{t("chat.exchange.loadError")}</p>
@@ -122,8 +136,10 @@ export function ExchangeSheet({ run, bots, showToolCalls, onClose, loadError = f
           </p>
         )}
         {rows.map(({ message, shape }, index) => {
-          const previous = rows[index - 1]?.message;
-          const stamp = startsNewStretch(previous?.at, message.at) && <TranscriptDate at={message.at} />;
+          const previous = rows[index - 1];
+          const next = rows[index + 1];
+          const newStretch = startsNewStretch(previous?.message.at, message.at);
+          const stamp = newStretch && <TranscriptDate at={message.at} />;
           if (shape === "tool") {
             return (
               <div key={message.id} className="contents">
@@ -136,26 +152,53 @@ export function ExchangeSheet({ run, bots, showToolCalls, onClose, loadError = f
           }
           const speaker = exchangeSpeaker(message, fallback);
           const bot = avatarBot(speaker, bots);
+          // The first bot of the header answers like a bot in a 1:1; the
+          // other takes the person's side, in its own colour (botBubbleVars).
+          const end = exchangeSide(speaker, fallback) === "end";
+          const sameAuthor = (row: typeof previous) =>
+            row?.shape === "line" && exchangeKey(exchangeSpeaker(row.message, fallback)) === exchangeKey(speaker);
+          const joinsAbove = !newStretch && sameAuthor(previous);
+          const joinsBelow = Boolean(next) && !startsNewStretch(message.at, next!.message.at) && sameAuthor(next);
+          const text = exchangeBody(message);
+          const width = CHAT_BUBBLE_WIDTH_CLASS[chatBubbleWidth({ terminal: false, wide: Boolean(text) && prefersWideBubble(text) })];
+          const time = (
+            <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100">
+              {formatTime(message.at)}
+            </span>
+          );
           return (
             <div key={message.id} className="contents">
               {stamp}
-              <div data-mid={message.id} className="group relative ps-4">
-                <div className="mb-1 text-[12px] font-medium" style={{ color: mausInk(bot.color) }}>{speaker.name}</div>
-                <div className="flex items-end gap-1.5">
-                  <div className="whitespace-pre-wrap rounded-[18px] bg-card px-3 py-2 text-[13px] leading-5 text-ink">
-                    {exchangeBody(message)}
+              {!joinsAbove && <ClusterLabel bot={bot as Bot} name={speaker.name} color={bot.color} end={end} />}
+              <div
+                data-mid={message.id}
+                data-side={end ? "end" : "start"}
+                className={cn("group flex w-full flex-col", end ? "items-end" : "items-start", joinsAbove && "-mt-2")}
+                style={end ? (botBubbleVars(MAUS_COLORS[bot.color]) as CSSProperties) : undefined}
+              >
+                <div className={cn("flex w-full items-end gap-1.5", end ? "justify-end" : "justify-start")}>
+                  {end && time}
+                  <div
+                    data-chat-bubble
+                    className={cn(
+                      "rounded-[18px] px-3 py-[7px] text-[13px] leading-5",
+                      width,
+                      end ? "bg-bubble-user" : "bg-bubble-bot text-ink",
+                      runCorners(end ? "end" : "start", joinsAbove, joinsBelow),
+                    )}
+                    title={new Date(message.at).toLocaleString(activeLocale())}
+                  >
+                    <MessageBoundary fallbackText={text}>
+                      <ChatMarkdown text={text} botId={speaker.id} />
+                    </MessageBoundary>
                   </div>
-                  <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100">
-                    {formatTime(message.at)}
-                  </span>
-                </div>
-                <div className="absolute bottom-0 start-0">
-                  <BotAvatar bot={bot} state="happy" size={18} animated={false} />
+                  {!end && time}
                 </div>
               </div>
             </div>
           );
         })}
+      </div>
       </div>
       <div className="flex justify-center pb-8" onClick={(event) => event.stopPropagation()}>
         <button

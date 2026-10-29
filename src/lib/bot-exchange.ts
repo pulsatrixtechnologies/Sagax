@@ -288,3 +288,17 @@ export function exchangeSpeaker(message: Message, fallback?: ExchangeParty): Exc
   if (fallback?.name) return fallback;
   return { name: "" };
 }
+
+/** One bot of the exchange, by id, else by name. */
+export function exchangeKey(party: ExchangeParty): string {
+  return party.id ?? party.name;
+}
+
+/** Where the open sheet puts a speaker's lines, as in a 1:1: the first bot
+ * of the header (`first`, run.ends[0]) on the start side like a bot's reply,
+ * every other bot on the end side, where the person's lines go. */
+export function exchangeSide(speaker: ExchangeParty, first?: ExchangeParty): "start" | "end" {
+  if (!first) return "start";
+  if (speaker.id && first.id) return speaker.id === first.id ? "start" : "end";
+  return speaker.name === first.name ? "start" : "end";
+}

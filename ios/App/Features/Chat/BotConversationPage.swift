@@ -26,26 +26,37 @@ struct BotConversationPage: View {
         VStack(spacing: 0) {
             header
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
                     if loaded, lines.isEmpty {
                         Text("Nothing was said yet.")
                             .font(.footnote).foregroundStyle(Theme.textSecondary)
                             .frame(maxWidth: .infinity)
                     }
-                    ForEach(lines) { line in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(line.speakerName)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Theme.textSecondary)
-                            HStack(alignment: .bottom, spacing: 6) {
-                                BotConversationAvatar(bot: bot(line.speakerId), name: line.speakerName, size: 20)
-                                Text(line.text)
-                                    .font(.system(size: 15))
-                                    .textSelection(.enabled)
-                                    .padding(.horizontal, 12).padding(.vertical, 8)
-                                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.secondary.opacity(0.15)))
+                    ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
+                        // The same look as a 1:1 chat: the header's first bot
+                        // answers like a bot (start side, grey), the other
+                        // takes the person's side in its own colour. Name and
+                        // mascot once per run, like a room (desktop ClusterLabel).
+                        let end = line.speakerId != selfBot.id
+                        let speaker = bot(line.speakerId)
+                        let joinsAbove = index > 0 && lines[index - 1].speakerId == line.speakerId
+                        VStack(alignment: end ? .trailing : .leading, spacing: 4) {
+                            if !joinsAbove {
+                                HStack(spacing: 6) {
+                                    BotConversationAvatar(bot: speaker, name: line.speakerName, size: 16)
+                                    Text(line.speakerName)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Theme.readable(MausPalette.color(speaker?.color ?? "")))
+                                }
+                                .padding(.top, 8)
+                            }
+                            HStack(alignment: .bottom, spacing: 0) {
+                                if end { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
+                                ExchangeBubble(text: line.text, paint: end ? BubbleColors.user(botColor: speaker?.color) : nil)
+                                if !end { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: end ? .trailing : .leading)
                         .accessibilityElement(children: .combine)
                     }
                 }
@@ -119,5 +130,25 @@ struct BotConversationPage: View {
         let owner = row.destinationBotId ?? selfBot.id
         await session.perform { try await $0.stopParallelTask(botId: owner, threadId: row.threadId) }
         stopped = true
+    }
+}
+
+/// One line of a bot-to-bot conversation, drawn like a chat bubble: Markdown
+/// in the bot's grey, or in the answering bot's colour on the person's side.
+private struct ExchangeBubble: View {
+    let text: String
+    let paint: (fill: SkinColor, ink: SkinColor)?
+
+    var body: some View {
+        MarkdownText(source: text)
+            .foregroundStyle(paint?.ink.color ?? BubbleColor.theirsText)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Theme.Chat.bubblePaddingH)
+            .padding(.vertical, Theme.Chat.bubblePaddingV)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Metric.bubbleRadius, style: .continuous)
+                    .fill(paint?.fill.color ?? BubbleColor.theirs)
+            )
     }
 }

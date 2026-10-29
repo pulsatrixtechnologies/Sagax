@@ -141,7 +141,7 @@ import { CallRecordRow } from "./CallRecordRow";
 import { AttachmentGallery, collectMessageFiles, replyAttachmentGroup, splitMessageAttachments } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
 import { prefersWideBubble } from "@/lib/rich-blocks";
-import { CHAT_BUBBLE_WIDTH_CLASS, chatBubbleWidth } from "@/lib/chat-bubble-width";
+import { CHAT_BUBBLE_WIDTH_CLASS, CHAT_COLUMN_CLASS, chatBubbleWidth } from "@/lib/chat-bubble-width";
 import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
@@ -2400,7 +2400,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           ref={transcriptRef}
           inert={preview ? true : undefined}
           aria-busy={preview ? true : undefined}
-          className="mx-auto flex w-full max-w-[960px] flex-col gap-3 pt-14"
+          className={cn(CHAT_COLUMN_CLASS, "pt-14")}
           style={{ paddingBottom: composerDock.pad }}
           role="log"
           // off: a polite log re-reads every tick and chip while the bot

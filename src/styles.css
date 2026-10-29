@@ -3015,6 +3015,8 @@ html[data-animations-paused] *::after {
   --color-ink-secondary: var(--color-bubble-user-ink);
   --color-ink-tertiary: var(--color-bubble-user-ink);
   --color-panel: color-mix(in srgb, var(--color-bubble-user-ink) 8%, var(--color-bubble-user));
+  /* a table's sticky header (RichTable) in a bot's line drawn on this side */
+  --color-card: color-mix(in srgb, var(--color-bubble-user-ink) 8%, var(--color-bubble-user));
   --color-inset: color-mix(in srgb, var(--color-bubble-user-ink) 12%, var(--color-bubble-user));
   --color-raised: color-mix(in srgb, var(--color-bubble-user-ink) 16%, var(--color-bubble-user));
   --color-raised-hover: color-mix(in srgb, var(--color-bubble-user-ink) 24%, var(--color-bubble-user));
