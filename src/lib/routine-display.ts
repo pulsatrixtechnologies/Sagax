@@ -152,3 +152,68 @@ export function routineWeekRunsText(weekRuns: { ok: number; total: number }): st
 export function scheduleRepeatsEventDate(schedule: { type: string; at?: number }, at: number): boolean {
   return schedule.type === "once" && schedule.at === at;
 }
+
+/** 2026-10-29: how long a run took, or has been going: "4 min", "1 h 12 min",
+ * "38 s". Absent before it started. */
+export function routineRunDuration(run: Pick<RoutineRun, "startedAt" | "finishedAt" | "status">, now = Date.now()): string | undefined {
+  if (!run.startedAt) return undefined;
+  const end = run.finishedAt ?? (["running", "waiting"].includes(run.status) ? now : undefined);
+  if (end === undefined) return undefined;
+  const seconds = Math.max(0, Math.round((end - run.startedAt) / 1000));
+  if (seconds < 60) return t("routineRun.seconds", { count: seconds });
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return t("routineRun.minutes", { count: minutes });
+  const rest = minutes % 60;
+  return rest === 0 ? t("routineRun.hours", { count: Math.floor(minutes / 60) }) : t("routineRun.hoursMinutes", { hours: Math.floor(minutes / 60), minutes: rest });
+}
+
+/** The first line of what a run has to say: what it waits on, its error, its
+ * report. A quiet run says it had nothing. */
+export function routineRunPreview(run: Pick<RoutineRun, "status" | "quiet" | "attention" | "error" | "output">): string {
+  if (run.status === "completed" && run.quiet) return t("routineRun.quiet");
+  const text = run.attention || routineRunError(run.error) || run.output || "";
+  const line = text.split("\n").map((part) => part.trim()).find((part) => part && !/^\|?\s*:?-{2,}/.test(part)) ?? "";
+  const plain = line.startsWith("|") ? line.split("|").map((cell) => cell.trim()).filter(Boolean).join(" · ") : line;
+  return plain.replace(/[*_`#>]+/g, "").trim();
+}
+
+/** A relative moment for the lists: "just now", "12 min ago", "yesterday", a
+ * date past a week. */
+export function routineRunAgo(at: number, now = Date.now()): string {
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 45) return t("task.updated.justNow");
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return t("task.updated.minutes", { count: minutes });
+  if (seconds < 86_400) return t("task.updated.hours", { count: Math.round(minutes / 60) });
+  const days = Math.round(seconds / 86_400);
+  if (days === 1) return t("task.updated.yesterday");
+  if (seconds < 7 * 86_400) return t("task.updated.days", { count: days });
+  return new Date(at).toLocaleDateString(activeLocale(), { month: "short", day: "numeric" });
+}
+
+export type RoutineStateTone = "active" | "paused" | "warning" | "info" | "neutral";
+
+/** 2026-10-29: the one word a routine's page and list say about it: Running
+ * (a run in flight), Paused after N failures, Paused: why (suspended),
+ * Paused, Finished (a consumed one-shot), Active. */
+export function routineState(routine: Routine, runs: readonly Pick<RoutineRun, "routineId" | "status">[] = []): { label: string; tone: RoutineStateTone } {
+  const live = ["running", "waiting", "queued"].find((status) => runs.some((run) => run.routineId === routine.id && run.status === status));
+  if (live) return { label: t(`routines.status.${live as "running" | "waiting" | "queued"}`), tone: "info" };
+  if (!routine.enabled && routine.autoPaused) return { label: routineAutoPausedText(routine.autoPaused.failures), tone: "warning" };
+  if (routine.suspended) return { label: t("routines.suspended", { reason: t(routine.suspended.reason === "person_out" ? "routines.suspendReason.person_out" : "routines.suspendReason.no_right") }), tone: "warning" };
+  const state = routineScheduleState(routine);
+  if (state === t("routines.finishedSchedule")) return { label: state, tone: "neutral" };
+  if (!routine.enabled) return { label: state, tone: "paused" };
+  if ((routine.failureStreak ?? 0) > 0) return { label: t("routines.scope.status.failing"), tone: "warning" };
+  return { label: state, tone: "active" };
+}
+
+/** The list's "Next" words: the next run in a person's words, or why there
+ * is none (paused, finished, waits for a change or a call). */
+export function routineNextText(routine: Routine, now = Date.now()): string {
+  if (routine.nextRunAt != null) return routineNextRunPhrase(routine.nextRunAt, now);
+  if (routine.schedule.type === "webhook") return t("routines.trigger.webhook");
+  if (routine.schedule.type === "event") return t("routineRun.onEvent");
+  if (!routine.enabled) return routineScheduleState(routine);
+  return t("routines.noNextRun");
+}

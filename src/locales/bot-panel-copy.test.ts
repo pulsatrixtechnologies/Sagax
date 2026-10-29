@@ -14,7 +14,6 @@ const translated = [
   "fullAccessWarning.body",
   "localAuto.title",
   "botPanel.skills.title",
-  "botPanel.routines.instruction",
   "botPanel.routines.hint",
   "botPanel.routines.hintAsk",
   "botPanel.avatar.generateAvatar",

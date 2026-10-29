@@ -57,6 +57,7 @@ const run: RoutineRun = {
   createdAt: 100, finishedAt: 200, status: "completed", manual: false,
 };
 
+const EXPANDED = new Set(["ConnectedRunActivity", "RoutineRunDetail", "RoutineDetail"]);
 type Button = { children?: ReactNode; onClick?: () => void };
 function textOf(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -71,6 +72,9 @@ function buttonsFrom(render: () => ReactNode): Map<string, Button> {
     Children.forEach(node, (child) => {
       if (!isValidElement<Button>(child)) return;
       if (child.type === "button") buttons.set(textOf(child.props.children), child.props);
+      // The run's and the routine's pages (2026-10-29) are components of
+      // their own: walk into what they draw.
+      if (typeof child.type === "function" && EXPANDED.has(child.type.name)) { visit((child.type as (props: unknown) => ReactNode)(child.props)); return; }
       visit(child.props.children);
     });
   }
@@ -151,18 +155,18 @@ describe("routine results navigation", () => {
       [{ type: "switchTask", botId: bot.id, threadId: "new-results" }],
     ]);
     fixture.dispatch.mockClear();
-    // Open thread, from a run whose bot is on its results thread: the run's
+    // Continue in the conversation, from a run whose bot is on its results thread: the run's
     // thread is not part of the conversation, so it opens beside it
     // (SideThreadPanel) and the conversation stays.
     fixture.state!.bots = [{ ...bot, threadId: "new-results" }];
-    details().buttons.get("Open thread")!.onClick!();
+    details().buttons.get("Continue in the conversation")!.onClick!();
     expect(navigationCalls()).toEqual([[{ type: "select", id: bot.id }]]);
     expect(currentSideThread()).toEqual({ botId: bot.id, threadId: "execution" });
     closeSideThread();
     // With threads shown, as before.
     fixture.showThreads = true;
     fixture.dispatch.mockClear();
-    details().buttons.get("Open thread")!.onClick!();
+    details().buttons.get("Continue in the conversation")!.onClick!();
     expect(navigationCalls()).toEqual([
       [{ type: "select", id: bot.id }],
       [{ type: "switchTask", botId: bot.id, threadId: "execution" }],

@@ -552,8 +552,6 @@ routines.drawer.bot
 routines.drawer.close
 routines.drawer.label
 routines.drawer.lead
-routines.drawer.noRuns
-routines.drawer.what
 routines.editor.customRepeat
 routines.editor.edit
 routines.editor.fewer
@@ -562,9 +560,7 @@ routines.editor.new
 routines.editor.titlePlaceholder
 routines.editor.when
 routines.editor.who
-routines.executionDetails
 routines.failureStreak
-routines.lastSkipped
 routines.latestRun
 routines.logsFor
 routines.neverRun
@@ -576,7 +572,6 @@ routines.repeat.weekly
 routines.results.back
 routines.results.dedicated
 routines.results.help
-routines.results.missing
 routines.results.new
 routines.results.showReport
 routines.scheduleNote.addCloud

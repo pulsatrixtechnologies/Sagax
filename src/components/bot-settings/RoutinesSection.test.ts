@@ -160,7 +160,7 @@ describe("RoutinesSection", () => {
     expect(markup).not.toContain("Next ");
     const source = readFileSync(new URL("./RoutinesSection.tsx", import.meta.url), "utf8");
     const detail = source.slice(source.indexOf("if (detail)"), source.indexOf("return <div className=\"flex flex-col gap-3\">"));
-    for (const needle of ["RunNowButton", "botPanel.routines.pause", "botPanel.routines.edit", "data-routine-logs", "section: \"logs\"", "deleteRoutine"]) expect(detail).toContain(needle);
+    for (const needle of ["RunNowButton", "botPanel.routines.pause", "botPanel.routines.edit", "data-routine-logs", "openLogs(detail.id)", "data-routine-duplicate", "deleteRoutine"]) expect(detail).toContain(needle);
   });
 
   it("does not print the viewer's name twice when they own the routine and it runs as them", () => {
