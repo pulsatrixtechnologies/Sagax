@@ -21,6 +21,30 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Headless tasks run for real: sagax task give / task wait (2026-10-29)
+
+`sagax team apply FILE`, `sagax task give --bot NAME --text TEXT` and
+`sagax task wait ID` (server/headless-cli.ts) only write files in the data
+folder; the Sagax server running on that folder now does the work
+(server/headless-task-runner.ts, wired in server/index.ts). About once a
+second it beats `headless-runner.json`, creates any bot of
+`headless-team.json` that does not exist yet (matched by name, any case;
+title kept, the server's default engine and new bot level), and takes each
+`queued` task of `headless-tasks.json`: state `running` with its boot id,
+so it is never taken twice, then a turn of that bot in a conversation of
+its own ("Task: ...", shown under the bot), spoken as the owner of this
+computer (`origin: "operator"`). The final reply settles it `done`; an
+unknown bot, an engine that cannot run or a failed turn settles it `failed`
+with the reason. One turn at a time per bot. A task a stopped server left
+`running` is queued again at the next start, and fails after 3 such stops.
+The CLI and the server change the queue under `headless-tasks.lock`.
+`task wait` waits up to an hour by default and exits 0 (done, with the
+reply and the thread), 1 (failed or unknown id), 2 (timeout) or 3 (no
+server beats on this data folder: it says to start one, the task stays
+queued). `SAGAX_HEADLESS_TASK_WAIT_MS` (1 h) bounds one task's turn. Tests:
+`server/headless-cli.test.ts`, `server/headless-task-runner.test.ts`,
+`server/headless-tasks.e2e.test.ts` (fake engine).
+
 ## Leave a group chat (#1480, 2026-10-28)
 
 On an organization server a person listed in a group in their own name
