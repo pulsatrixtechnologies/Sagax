@@ -190,6 +190,8 @@ async function furnish(auth: Auth, principal: string, label: string, marker: str
   take("customRule", rule.body.rule?.id, rule);
   const set = await api("POST", `/api/bots/${bot.id}/rules/sets`, auth, { name: `${label} rules`, text: `Never mention ${marker}.` });
   take("ruleSet", set.body.set?.id ?? set.body.ruleSet?.id ?? set.body.id, set);
+  const call = await api("POST", "/api/calendar-calls", auth, { name: `${label} ${NAME} call`, description: `About ${marker}.`, botIds: [bot.id], schedule: { type: "once", at: Date.now() + 86_400_000 }, durationMinutes: 30 });
+  take("calendarCall", call.body.call?.id, call);
   const search = await api("PUT", "/api/me/web-search", auth, { provider: "brave", key: `brave-${marker}` });
   if (search.status >= 300) missing.push(`web search key: ${search.status} ${search.text.slice(0, 160)}`);
   return { things, missing };
@@ -235,10 +237,12 @@ const BODIES: Record<string, BodyFor> = {
   "POST /api/groups": (actor, target) => ({ name: "with someone else's bot", memberIds: [target.bot], humanIds: [actor.principal] }),
   "POST /api/webhooks": (_actor, target) => ({ name: "on someone else's bot", prompt: "x", botId: target.bot, runOn: "maus" }),
   "POST /api/custom-rules": (_actor, target) => ({ when: "anything", behavior: "allow", botId: target.bot, riskScope: [] }),
+  "POST /api/calendar-calls": (_actor, target) => ({ name: "with someone else's bot", botIds: [target.bot], schedule: { type: "once", at: Date.now() + 86_400_000 } }),
+  "PATCH /api/calendar-calls/{calendarCall}": () => ({ name: "renamed by someone else" }),
 };
 
 /** Body-only probes that must be refused when aimed at B's things. */
-const BODY_AIMED = new Set(["POST /api/routines", "POST /api/groups", "POST /api/webhooks", "POST /api/custom-rules"]);
+const BODY_AIMED = new Set(["POST /api/routines", "POST /api/groups", "POST /api/webhooks", "POST /api/custom-rules", "POST /api/calendar-calls"]);
 
 /** A foreign probe answered neither 403 nor 404, and why that answer is expected.
  * Keyed `METHOD template`. Kept short: each line is a decision. */

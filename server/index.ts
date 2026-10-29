@@ -46060,7 +46060,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // #1482: a member sees the calls of the bots they can see and manages
     // those of the bots they may run, like a routine (server/calendar-call-access.ts).
     const callAccess: CalendarCallAccess = {
-      everything: visible.everything,
+      // an admin or this computer's owner; visible.everything is also a
+      // member's when no bot is restricted
+      everything: viewerFor(auth, path).kind === "all",
       botVisible: (botId) => visible.bot(botId),
       needsRun: (botId) => routineNeedsRun(auth, botId),
     };
