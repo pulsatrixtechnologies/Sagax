@@ -61,7 +61,13 @@ public struct BotActivityItem: Codable, Hashable, Identifiable, Sendable {
     /// The bot the work runs on (another bot's, for a sub-agent).
     public var botId: String
     public var botName: String?
+    /// A conversation's entry: the request its newest turn answers, once the
+    /// conversation had others (else the thread's title).
     public var title: String
+    /// The conversation's own title, when `title` is a later request.
+    public var threadTitle: String?
+    /// That request is the same words sent again (Regenerate, Retry).
+    public var retry: Bool?
     public var status: BotActivityStatus
     public var startedAt: Double
     public var endedAt: Double?
@@ -83,7 +89,7 @@ public struct BotActivityItem: Codable, Hashable, Identifiable, Sendable {
         status: BotActivityStatus, startedAt: Double, endedAt: Double? = nil, updatedAt: Double? = nil,
         threadId: String? = nil, startedBy: BotActivityActor? = nil, childCount: Int? = nil, coding: Bool? = nil,
         currentStep: String? = nil, canStop: Bool? = nil, parentId: String? = nil, parallel: Bool? = nil,
-        code: BotCodeWork? = nil
+        code: BotCodeWork? = nil, threadTitle: String? = nil, retry: Bool? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -103,11 +109,19 @@ public struct BotActivityItem: Codable, Hashable, Identifiable, Sendable {
         self.parentId = parentId
         self.parallel = parallel
         self.code = code
+        self.threadTitle = threadTitle
+        self.retry = retry
+    }
+
+    /// The title as shown: a retried request says so ("Retry · ...", the
+    /// desktop's `activityTitle`), with the word in the reader's language.
+    public func shownTitle(retryWord: String) -> String {
+        retry == true ? "\(retryWord) · \(title)" : title
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, botId, botName, title, status, startedAt, endedAt, updatedAt, threadId, startedBy
-        case childCount, coding, currentStep, canStop, parentId, parallel, code
+        case childCount, coding, currentStep, canStop, parentId, parallel, code, threadTitle, retry
     }
 
     public init(from decoder: Decoder) throws {
@@ -130,6 +144,8 @@ public struct BotActivityItem: Codable, Hashable, Identifiable, Sendable {
         parentId = try values.decodeIfPresent(String.self, forKey: .parentId)
         parallel = try values.decodeIfPresent(Bool.self, forKey: .parallel)
         code = try? values.decodeIfPresent(BotCodeWork.self, forKey: .code)
+        threadTitle = try values.decodeIfPresent(String.self, forKey: .threadTitle)
+        retry = try values.decodeIfPresent(Bool.self, forKey: .retry)
     }
 
     /// The card's Stop: a live entry the viewer may stop, on a thread they
@@ -372,7 +388,7 @@ public enum BotActivityRules {
                 case .failed: if item.status != .failed && item.status != .stopped { return false }
                 }
                 guard !words.isEmpty else { return true }
-                let text = [item.title, item.botName, item.startedBy?.name, item.currentStep]
+                let text = [item.title, item.threadTitle, item.botName, item.startedBy?.name, item.currentStep]
                     .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ").lowercased()
                 return words.allSatisfy { text.contains($0) }
             }

@@ -5,6 +5,11 @@ import CompanionCore
 import SwiftUI
 
 enum BotActivityWording {
+    /// An entry's title as shown: a retried request says so.
+    static func title(_ item: BotActivityItem) -> String {
+        item.shownTitle(retryWord: String(localized: "Retry"))
+    }
+
     static func launchedSubtitle(_ item: BotLaunchedAgentItem) -> String {
         if item.status == .failed, let pr = item.pullRequest {
             let prefix = String(localized: "Run failed")

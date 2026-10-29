@@ -21,7 +21,7 @@ function formatTime(at: number): string {
 }
 
 /** The facts in the order the card lists them. */
-export function taskFacts({ startedAt, endedAt, duration, startedBy, botName, engine, via }: {
+export function taskFacts({ startedAt, endedAt, duration, startedBy, botName, engine, via, conversation }: {
   startedAt: number;
   endedAt?: number;
   duration: string;
@@ -29,6 +29,8 @@ export function taskFacts({ startedAt, endedAt, duration, startedBy, botName, en
   botName?: string;
   engine?: string;
   via?: string;
+  /** The conversation's own title, when the task's is a later request. */
+  conversation?: string;
 }): TaskFact[] {
   const facts: TaskFact[] = [{ key: "started", label: t("botPanel.activity.started"), value: formatTime(startedAt) }];
   if (endedAt !== undefined) facts.push({ key: "ended", label: t("botPanel.activity.ended"), value: formatTime(endedAt) });
@@ -37,6 +39,7 @@ export function taskFacts({ startedAt, endedAt, duration, startedBy, botName, en
   if (botName) facts.push({ key: "bot", label: t("botPanel.activity.bot"), value: botName });
   if (engine) facts.push({ key: "engine", label: t("botPanel.activity.engine"), value: engine });
   if (via) facts.push({ key: "via", label: t("botPanel.activity.via"), value: via });
+  if (conversation) facts.push({ key: "conversation", label: t("activity.view.conversation"), value: conversation });
   return facts;
 }
 

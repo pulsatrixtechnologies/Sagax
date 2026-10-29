@@ -59,7 +59,7 @@ struct BotActivityRow: View {
                 .buttonStyle(.borderless)
                 .disabled(stopping)
                 .padding(.trailing, 10)
-                .accessibilityLabel(Text("Stop \(item.title)"))
+                .accessibilityLabel(Text("Stop \(BotActivityWording.title(item))"))
                 .accessibilityIdentifier("activity-stop.\(item.id)")
             } else if onOpen != nil {
                 ProfileChevronTrailing()
@@ -73,7 +73,7 @@ struct BotActivityRow: View {
             BotActivityStatusIcon(status: item.status)
                 .frame(width: Theme.Profile.iconColumn, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: item.title)
+                Text(verbatim: BotActivityWording.title(item))
                     .font(Theme.Font.body)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
@@ -498,7 +498,7 @@ struct BotActivityDetailView: View {
                             .accessibilityIdentifier("activity-open-thread")
                         }
                     }
-                    Text(verbatim: shown.title)
+                    Text(verbatim: BotActivityWording.title(shown))
                         .font(Theme.font(17, .semibold))
                         .foregroundStyle(Theme.textPrimary)
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -646,7 +646,7 @@ struct BotActivityDetailView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Theme.bg)
-        .navigationTitle(Text(verbatim: shown.title))
+        .navigationTitle(Text(verbatim: BotActivityWording.title(shown)))
         .navigationBarTitleDisplayMode(.inline)
         .task(id: item.id) {
             steerText = ""

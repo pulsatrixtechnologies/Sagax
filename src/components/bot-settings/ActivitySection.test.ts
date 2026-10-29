@@ -15,7 +15,7 @@ import type { BotLaunchedAgentItem } from "../../../shared/bot-launched-agents.t
 import { ActivityDetailBody, ActivityDetailModal, activityViews } from "./ActivityDetailModal";
 import { SETTINGS_WINDOW } from "../SettingsPrimitives";
 import { ActivityListModal } from "./ActivityListModal";
-import { activityLive, codingLive, codingWhere, codingWork, FINISHED_FADE_MS, FINISHED_LINGER_MS, formatActivityDuration, historyItems, isParallelWork, LiveActivity } from "@/lib/bot-activity";
+import { activityLive, activityTitle, codingLive, codingWhere, codingWork, FINISHED_FADE_MS, FINISHED_LINGER_MS, formatActivityDuration, historyItems, isParallelWork, LiveActivity } from "@/lib/bot-activity";
 import type { Bot } from "@/state/store";
 
 const NOW = 1_800_000_000_000;
@@ -379,9 +379,12 @@ describe("Coding, code work only", () => {
 
   it("gathers pull requests, branches and commits of coding jobs, newest first, each once", () => {
     const merged = codeJob("thread:merge", { code: { pullRequests: [{ ...pr, action: "merged", at: NOW - 60_000 }], branches: [{ name: "spike", pushed: false, at: NOW - 30_000 }], commits: [] } });
-    const notCoding = job("thread:chat", { code: { pullRequests: [{ ...pr, number: 7, url: undefined }], branches: [], commits: [] } });
-    const work = codingWork([shipped, merged, notCoding]);
-    expect(work.pullRequests).toEqual([{ ...pr, action: "merged", at: NOW - 60_000 }]);
+    // A conversation whose newest turn is not a coding job keeps the code
+    // work an earlier turn produced (the server sends `code` only for a
+    // thread that did coding work).
+    const earlierTurn = job("thread:chat", { code: { pullRequests: [{ ...pr, number: 7, url: undefined }], branches: [], commits: [] } });
+    const work = codingWork([shipped, merged, earlierTurn]);
+    expect(work.pullRequests).toEqual([{ ...pr, action: "merged", at: NOW - 60_000 }, { ...pr, number: 7, url: undefined }]);
     expect(work.branches.map((branch) => branch.name)).toEqual(["spike", "fix/lexer"]);
     expect(work.commits.map((commit) => commit.sha)).toEqual(["1a2b3c4d5e"]);
     expect(codingWork([job("thread:a"), codeJob("thread:b")])).toEqual({ pullRequests: [], branches: [], commits: [] });
@@ -647,5 +650,12 @@ describe("one place for ongoing work while the bot panel is open", () => {
     const chat = readFileSync(join(here, "../ChatView.tsx"), "utf8");
     expect(chat).not.toMatch(/TeammatesWorkingChip|data-teammates-working/);
     expect(existsSync(join(here, "../TeammatesWorkingChip.tsx"))).toBe(false);
+  });
+});
+
+describe("an entry's title", () => {
+  it("says a retried request is one, and leaves others as they are", () => {
+    expect(activityTitle({ title: "Hand the routine review to the team", retry: true })).toBe("Retry · Hand the routine review to the team");
+    expect(activityTitle({ title: "list my routines" })).toBe("list my routines");
   });
 });

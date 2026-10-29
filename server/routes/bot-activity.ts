@@ -4,10 +4,19 @@
 // Read-only; built from the bot's threads, the work bots hand each other
 // (room handoffs, delegations) and its routine runs.
 //
-// Each thread entry says whether it is coding work (`coding`,
+// Each thread entry is read for its newest turn: the turn the person's
+// newest line started (a Regenerate forks that line beside the first try).
+// It says whether that turn is coding work (`coding`,
 // server/activity-coding.ts: read off its tool calls and folder, never its
-// title), so the panel lists coding jobs under Coding and everything else
-// under Activity; a coding entry also carries its code work (`code`,
+// title; a conversation whose folder is a repository is a coding job as a
+// whole), so the panel lists coding jobs under Coding and everything else
+// under Activity. An ordinary conversation is never Coding for what an
+// earlier turn did (2026-10-29: a Retry in a bot's main chat, a routine
+// listing, showed under Coding with its old git work). Its title is that
+// turn's request once the conversation has more than one; its detail lists
+// that turn's steps, files and sub-agents only (older steps stay in the
+// conversation, older sub-agents in the list's `subagents`). An entry with
+// code work anywhere in its window also carries it (`code`,
 // server/activity-code-work.ts: repository, branch, and the pull requests,
 // branches and commits its calls produced). `?filter=coding|other` narrows
 // the list the same way, and the list also carries `subagents`: the
@@ -84,6 +93,9 @@ export interface ActivityMessage {
   tool?: { name: string; ok?: boolean; summary?: string; itemId?: string; files?: string[]; setup?: boolean; input?: unknown; output?: unknown; parentItemId?: string };
   digest?: { access?: { via: BotActivityDetail["via"] & string; payer: BotActivityDetail["payer"] & string } };
   sender?: { name?: string } | null;
+  /** The message it answers (null at the top); a Regenerate's fork shares
+   * its first try's. */
+  parentId?: string | null;
 }
 
 /** A sub-agent or hop this thread started: another bot's conversation. */
@@ -188,9 +200,74 @@ function settledStatus(messages: readonly ActivityMessage[]): BotActivityStatus 
   return "finished";
 }
 
+/** Where a thread's newest turn starts in a page of its messages: the
+ * person's newest line (a Regenerate appends its fork last). -1 when the
+ * page holds none (the turn is longer than the page, or no person wrote). */
+export function turnStartIndex(messages: readonly ActivityMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index--) if (messages[index]!.role === "user") return index;
+  return -1;
+}
+
+export interface TurnRequest {
+  /** The person's words, as sent. */
+  text: string;
+  at: number;
+  /** The same words sent again beside an earlier try (Regenerate, Retry). */
+  retry: boolean;
+  /** No earlier request of the conversation precedes it. */
+  first: boolean;
+}
+
+/** The request the newest turn answers, read off a page of messages. */
+export function newestRequest(messages: readonly ActivityMessage[]): TurnRequest | undefined {
+  const index = turnStartIndex(messages);
+  if (index < 0) return undefined;
+  const newest = messages[index]!;
+  const text = (newest.text ?? "").trim();
+  const known = newest.parentId !== undefined;
+  let retry = false;
+  let first = true;
+  for (let at = 0; at < index; at++) {
+    const message = messages[at]!;
+    if (message.role !== "user") continue;
+    const sibling = known && message.parentId !== undefined && (message.parentId ?? null) === (newest.parentId ?? null);
+    if (sibling) {
+      if ((message.text ?? "").trim() === text) retry = true;
+    } else first = false;
+  }
+  return { text, at: newest.at, retry, first };
+}
+
+const TITLE_CHARS = 120;
+
+/** A request as a one-line title: its first line, spaces collapsed, cut. */
+export function requestTitle(text: string): string {
+  const line = text.split(/\r?\n/).map((part) => part.trim()).find(Boolean) ?? "";
+  const flat = line.replace(/\s+/g, " ");
+  return flat.length > TITLE_CHARS ? `${flat.slice(0, TITLE_CHARS - 1).trimEnd()}…` : flat;
+}
+
 function stepWhere(name: string, organization: boolean): BotActivityStep["where"] {
   if (!organization) return undefined;
   return /sagax-desktop|shared_computer/.test(name) ? "computer" : "server";
+}
+
+interface ThreadScan {
+  /** The newest turn is coding work (or the thread is a repository's job). */
+  coding: boolean;
+  /** Some turn in the page did coding work. */
+  everCoding: boolean;
+  code?: BotCodeWork;
+  request?: TurnRequest;
+  /** When the newest turn started, when known. */
+  turnAt?: number;
+}
+
+/** The sub-agents of the newest turn: those it started, never a teammate an
+ * earlier turn handed work to (that one stays in the list's `subagents`,
+ * where it opens its own conversation). Unknown turn start: all of them. */
+export function turnChildren<T extends { startedAt: number }>(children: readonly T[], turnAt: number | undefined): T[] {
+  return turnAt === undefined ? [...children] : children.filter((child) => child.startedAt >= turnAt);
 }
 
 export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandler {
@@ -217,17 +294,27 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     const startedAt = activityStatusActive(status)
       ? task.turnStartedAt ?? run?.startedAt ?? task.createdAt
       : run?.startedAt ?? task.createdAt;
-    const children = deps.children(bot.id, task.threadId);
+    const scan = threadScan(task);
+    const children = turnChildren(deps.children(bot.id, task.threadId), scan.turnAt);
     const active = activityStatusActive(status);
     const current = active ? currentStep(task.threadId, run) : undefined;
-    const coding = codingThread(task);
     const selection = task.modelSelection ?? bot.modelSelection ?? undefined;
+    const kind: BotActivityItem["kind"] = run || task.routineRunId ? "routine" : task.openedBy && task.openedBy.botId !== bot.id ? "hop" : "session";
+    const threadTitle = task.title.trim() || run?.routineName || bot.name;
+    // A conversation's entry is its newest turn: the request that started
+    // it, once there were others before (the first one is the thread's own
+    // title). The thread's title rides along.
+    const request = kind === "session" ? scan.request : undefined;
+    const asked = request && !request.first ? requestTitle(request.text) : "";
+    const title = asked || threadTitle;
     return {
       id: `thread:${task.threadId}`,
-      kind: run || task.routineRunId ? "routine" : task.openedBy && task.openedBy.botId !== bot.id ? "hop" : "session",
+      kind,
       botId: bot.id,
       botName: bot.name,
-      title: task.title.trim() || run?.routineName || bot.name,
+      title,
+      ...(title !== threadTitle ? { threadTitle } : {}),
+      ...(request?.retry ? { retry: true } : {}),
       ...(selection ? { engine: { instanceId: selection.instanceId, model: selection.model } } : {}),
       status,
       startedAt,
@@ -236,34 +323,48 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       ...(deps.threadReadable(bot.id, task.threadId, viewerId) ? { threadId: task.threadId } : {}),
       ...(startedBy(task, run) ? { startedBy: startedBy(task, run) } : {}),
       ...(children.length ? { childCount: children.length } : {}),
-      ...(coding ? { coding: true, code: coding } : {}),
+      ...(scan.coding ? { coding: true } : {}),
+      ...(scan.code ? { code: scan.code } : {}),
       ...(current ? { currentStep: current } : {}),
       ...(active && deps.threadWritable(bot.id, task.threadId, viewerId) ? { canStop: true } : {}),
       ...(task.parallelOf ? { parallel: true } : {}),
     };
   }
 
-  /** Coding work is sticky: once a thread committed or edited code it stays
-   * coding. A settled thread is read once per change, a running one at most
-   * every CODING_RESCAN_MS. A coding thread also carries its code work
-   * (server/activity-code-work.ts): its repository folder and branch, and
-   * the pull requests, branches and commits its calls produced. */
-  const codingCache = new Map<string, { at: number; scannedAt: number; coding: boolean; code?: BotCodeWork }>();
-  function codingThread(task: ActivityTask): BotCodeWork | undefined {
+  /** One read of a thread's newest messages: whether its newest turn is
+   * coding work, its code work, and the request that turn answers.
+   *
+   * Coding is read off the newest turn's tool calls (from the person's
+   * newest line on), so an ordinary conversation is a coding job only while
+   * its turn does code work. A conversation whose folder is a repository on
+   * this server is a coding job as a whole: once it committed or edited
+   * code it stays coding. A settled thread is read once per change, a
+   * running one at most every CODING_RESCAN_MS. Code work (server/activity-code-work.ts:
+   * its repository folder and branch, and the pull requests, branches and
+   * commits its calls produced) is read off every turn of the page and
+   * carried whenever the thread did coding work, so the Coding section's
+   * code work keeps what earlier turns produced. */
+  const scanCache = new Map<string, { at: number; scannedAt: number; scan: ThreadScan }>();
+  function threadScan(task: ActivityTask): ThreadScan {
     const at = task.updatedAt ?? task.createdAt;
-    const cached = codingCache.get(task.threadId);
-    if (cached && cached.at === at && (!task.busy || now() - cached.scannedAt < CODING_RESCAN_MS)) return cached.code;
-    const signals: CodingSignals = { edits: 0, codeFiles: 0, vcs: false };
+    const cached = scanCache.get(task.threadId);
+    if (cached && cached.at === at && (!task.busy || now() - cached.scannedAt < CODING_RESCAN_MS)) return cached.scan;
+    const all: CodingSignals = { edits: 0, codeFiles: 0, vcs: false };
+    const turn: CodingSignals = { edits: 0, codeFiles: 0, vcs: false };
     const repository = task.cwd ? deps.repository?.(task.cwd) : undefined;
     const collector = new CodeWorkCollector(repository?.origin);
-    for (const message of deps.messages(task.threadId, CODING_SCAN).messages) {
-      if (!message.tool) continue;
-      addCodingSignal(signals, message.tool);
+    const messages = deps.messages(task.threadId, CODING_SCAN).messages;
+    const start = turnStartIndex(messages);
+    messages.forEach((message, index) => {
+      if (!message.tool) return;
+      addCodingSignal(all, message.tool);
+      if (index > start) addCodingSignal(turn, message.tool);
       collector.add(message.tool, message.at);
-    }
-    const inRepository = Boolean(task.cwd && signals.edits > 0 && deps.inRepository?.(task.cwd));
-    const coding = Boolean(cached?.coding) || isCodingWork(signals, inRepository);
-    const code: BotCodeWork | undefined = coding
+    });
+    const inRepository = Boolean(task.cwd && (all.edits > 0 || turn.edits > 0) && deps.inRepository?.(task.cwd));
+    const everCoding = Boolean(cached?.scan.everCoding) || isCodingWork(all, inRepository);
+    const coding = isCodingWork(turn, inRepository) || (inRepository && everCoding);
+    const code: BotCodeWork | undefined = everCoding
       ? {
         ...(repository ? { folder: repository.root } : {}),
         ...(repository?.branch ? { branch: repository.branch } : {}),
@@ -271,9 +372,17 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
         ...collector.result(),
       }
       : undefined;
-    if (codingCache.size > 2_000) codingCache.clear();
-    codingCache.set(task.threadId, { at, scannedAt: now(), coding, code });
-    return code;
+    const request = newestRequest(messages);
+    const scan: ThreadScan = {
+      coding,
+      everCoding,
+      ...(code ? { code } : {}),
+      ...(request ? { request } : {}),
+      ...(request ? { turnAt: request.at } : task.busy && task.turnStartedAt ? { turnAt: task.turnStartedAt } : {}),
+    };
+    if (scanCache.size > 2_000) scanCache.clear();
+    scanCache.set(task.threadId, { at, scannedAt: now(), scan });
+    return scan;
   }
 
   /** A running entry's current step: the tool call in flight, else the
@@ -422,7 +531,11 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     return deps.children(bot.id, threadId).map((child, index) => {
       const other = deps.bot(child.botId);
       const readable = child.threadId ? deps.threadReadable(child.botId, child.threadId, viewerId) : false;
-      const status: BotActivityStatus = child.status === "completed" ? "finished" : child.status === "cancelled" ? "stopped" : child.status;
+      const settled: BotActivityStatus = child.status === "completed" ? "finished" : child.status === "cancelled" ? "stopped" : child.status;
+      // Waiting on the person means a place to answer: the teammate's own
+      // conversation and its card. One this viewer cannot open is not their
+      // wait; it reads as work in progress.
+      const status: BotActivityStatus = settled === "waiting" && !readable ? "running" : settled;
       return {
         id: child.threadId ? `thread:${child.threadId}` : `child:${threadId}:${index}`,
         kind: "subagent",
@@ -451,10 +564,15 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     const files = new Set<string>();
     let access: NonNullable<ActivityMessage["digest"]>["access"];
     const stepByItem = new Map<string, string>();
-    for (const message of page.messages) {
+    // The newest turn's steps only: an earlier turn's (an earlier try, a
+    // limit error, another request) stay in the conversation, which the
+    // sheet links ("Older steps are in the conversation").
+    const start = turnStartIndex(page.messages);
+    page.messages.forEach((message, index) => {
       if (message.digest?.access) access = message.digest.access;
+      if (index <= start) return;
       const tool = message.tool;
-      if (!tool || tool.setup) continue;
+      if (!tool || tool.setup) return;
       for (const file of tool.files ?? []) files.add(file);
       const where = stepWhere(tool.name, organization);
       if (tool.itemId) stepByItem.set(tool.itemId, message.id);
@@ -473,7 +591,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
         ...(parentId ? { parentId } : {}),
         ...(subagent ? { subagent } : {}),
       });
-    }
+    });
     // the run asked for by id: its thread no longer names it once it ended
     const run = askedRun ?? (task.routineRunId ? runs.find((entry) => entry.id === task.routineRunId) : undefined);
     const selection = task.modelSelection ?? bot.modelSelection ?? undefined;
@@ -484,9 +602,9 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       ...(selection ? { engine: { instanceId: selection.instanceId, model: selection.model } } : {}),
       ...(access ? { via: access.via, payer: access.payer } : {}),
       steps,
-      stepsTruncated: page.hasMore,
+      stepsTruncated: page.hasMore || start > 0,
       files: [...files],
-      children: childItems(bot, task.threadId, viewerId),
+      children: turnChildren(childItems(bot, task.threadId, viewerId), threadScan(task).turnAt),
       ...(note ? { note } : {}),
       canStop: activityStatusActive(item.status) && deps.threadWritable(bot.id, task.threadId, viewerId),
       ...(card ? { access: card } : {}),

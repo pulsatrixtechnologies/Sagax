@@ -47,4 +47,15 @@ final class BotActivityStepGroupTests: XCTestCase {
         ]
         XCTAssertEqual(BotActivitySubagents.sorted(items).map(\.id), ["3", "2", "4", "1"])
     }
+
+    /// A conversation's entry is its newest turn (2026-10-29): a retried
+    /// request says so, and the thread's own title rides along.
+    func testARetriedRequestSaysSoAndKeepsTheThreadTitle() throws {
+        let json = #"{"id":"thread:t","kind":"session","botId":"b","title":"Hand the review to the team","threadTitle":"hello","retry":true,"status":"running","startedAt":1}"#
+        let item = try JSONDecoder().decode(BotActivityItem.self, from: Data(json.utf8))
+        XCTAssertEqual(item.threadTitle, "hello")
+        XCTAssertEqual(item.shownTitle(retryWord: "Retry"), "Retry · Hand the review to the team")
+        let plain = BotActivityItem(id: "x", botId: "b", title: "list my routines", status: .running, startedAt: 0)
+        XCTAssertEqual(plain.shownTitle(retryWord: "Retry"), "list my routines")
+    }
 }

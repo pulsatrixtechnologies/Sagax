@@ -328,7 +328,7 @@ private struct PanelActivityCard: View {
                 HStack(spacing: 12) {
                     icon.frame(width: 16, height: 16)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(verbatim: item.title)
+                        Text(verbatim: BotActivityWording.title(item))
                             .font(theme.font(13))
                             .foregroundStyle(theme.ink)
                             .lineLimit(1)
@@ -352,7 +352,7 @@ private struct PanelActivityCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("Open \(item.title)"))
+            .accessibilityLabel(Text("Open \(BotActivityWording.title(item))"))
             .accessibilityIdentifier("desktop-activity-card.\(item.id)")
             if item.stoppable {
                 Button { onStop(item) } label: {
@@ -371,7 +371,7 @@ private struct PanelActivityCard: View {
                 .disabled(stopping)
                 .hoverEffect(.highlight)
                 .padding(.trailing, 8)
-                .accessibilityLabel(Text("Stop \(item.title)"))
+                .accessibilityLabel(Text("Stop \(BotActivityWording.title(item))"))
             }
         }
         .background(theme.card, in: RoundedRectangle(cornerRadius: theme.radiusXl, style: .continuous))

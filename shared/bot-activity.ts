@@ -26,7 +26,13 @@ export interface BotActivityItem {
   /** The bot the work runs on (another bot's, for a sub-agent). */
   botId: string;
   botName?: string;
+  /** A conversation's entry: the request its newest turn answers, once the
+   * conversation had others (else the thread's title). */
   title: string;
+  /** The conversation's own title, when `title` is a later request. */
+  threadTitle?: string;
+  /** That request is the same words sent again (Regenerate, Retry). */
+  retry?: boolean;
   status: BotActivityStatus;
   startedAt: number;
   /** Absent while it runs. */
@@ -37,9 +43,11 @@ export interface BotActivityItem {
   startedBy?: BotActivityActor;
   /** Sub-agents and hops this one started, counted for the card. */
   childCount?: number;
-  /** Coding work (server/activity-coding.ts): it edited code, ran version
-   * control or changed files inside a repository. Read off its tool calls
-   * and folder, never its title. Absent for everything else. */
+  /** Coding work (server/activity-coding.ts): its newest turn edited code,
+   * ran version control or changed files inside a repository (a thread
+   * whose folder is a repository: any turn). Read off its tool calls and
+   * folder, never its title. Absent for everything else, an ordinary
+   * conversation's turn that did no code work included. */
   coding?: boolean;
   /** While it runs: the tool call in flight (or the newest), or what a
    * waiting run asks. */
@@ -51,10 +59,11 @@ export interface BotActivityItem {
   /** A parallel task of a conversation (shared/parallel-tasks.ts): the
    * person can steer it (send it a message) and stop it on its own. */
   parallel?: boolean;
-  /** A coding entry's code work (server/activity-code-work.ts): its
-   * repository folder and branch, and the pull requests, branches and
-   * commits its own git, gh and GitHub tool calls produced. Absent for
-   * everything else. */
+  /** The code work of an entry that did coding work in any turn read
+   * (server/activity-code-work.ts): its repository folder and branch, and
+   * the pull requests, branches and commits its own git, gh and GitHub tool
+   * calls produced. Present even when its newest turn is not coding, so the
+   * Coding section's code work keeps it. Absent for everything else. */
   code?: BotCodeWork;
   /** The engine and model this work runs on, when known. */
   engine?: { instanceId: string; model: string };
@@ -145,10 +154,14 @@ export interface BotActivityDetail extends BotActivityItem {
   /** Whose credentials the newest turn ran with (TurnDigest.access). */
   via?: "subscription" | "owner-key" | "speaker-key" | "server" | "org-key";
   payer?: "speaker" | "owner" | "organization";
+  /** The newest turn's tool calls (an earlier turn's stay in the
+   * conversation). */
   steps: BotActivityStep[];
-  /** Older steps exist beyond the ones listed. */
+  /** Older steps exist beyond the ones listed (an earlier turn, or past the
+   * page). */
   stepsTruncated: boolean;
   files: string[];
+  /** The sub-agents the newest turn started. */
   children: BotActivityItem[];
   /** A routine run's error or the question it waits on. */
   note?: string;

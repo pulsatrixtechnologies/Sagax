@@ -80,7 +80,7 @@ A requester waiting on a cut turn hears what the restart did in its next turn (`
 
 Three budgets per root, counted since the root's last durable progress (a settlement, a completed turn): `requests`, `executions`, `wakes`. Progress renews them; nothing else does. The owed follow-up turn of a node whose children all settled is never refused for budget.
 
-Three clocks and no others: a queue bound (`queueMs`, expired means `failed(expired)`, "never started"); a per-root stall window on durable progress (`stallMs`, fails the tree); a per-turn activity window (`turnStallMs`, on the monotonic clock, so a laptop sleep is not a stall; a tool visibly in flight counts as activity through `progress()`). Time spent parked on the person is charged to no window. A wait on the person is bounded by `inputWaitMs`; expiry is `failed(expired)`: not run, not refused, never reported as approved.
+Three clocks and no others: a queue bound (`queueMs`, expired means `failed(expired)`, "never started"); a per-root stall window on durable progress (`stallMs`, fails the tree); a per-turn activity window (`turnStallMs`, on the monotonic clock, so a laptop sleep is not a stall; a tool visibly in flight counts as activity through `progress()`). Time spent parked on the person is charged to no window. A wait on the person is bounded by `inputWaitMs`; expiry is `failed(expired)`: not run, not refused, never reported as approved. A delegation (a child outside a room) parked on the person is bounded sooner, by `delegationInputWaitMs` on the wall clock (4 h, a restart does not start it over), and a park whose conversation is gone (`parkedGone`) closes at once; both expire the same way, at the restart too instead of parking again (2026-10-29).
 
 ## 7. Invariants
 

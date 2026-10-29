@@ -298,6 +298,11 @@ export interface TurnRunner {
   /** Still parked after inputRemindMs (then daily): remind the person, the
    * same question in full. Optional: a host without it reminds nobody. */
   remind?(a: Assignment, question: string, waitedMs: number): void;
+  /** Whether a parked assignment has no place left to be answered: its
+   * conversation is gone, or the card that asked was settled without the
+   * answer reaching the runtime. Such a park is closed as expired, at the
+   * restart and on every tick. Optional: absent, nothing is closed early. */
+  parkedGone?(a: Assignment): boolean;
   /** A settled child, into its requester's conversation (a chip, a line), or
    * a root that ended alone, into its own. Called once per settlement. */
   report(a: Assignment, parent?: Assignment): void;
@@ -333,6 +338,13 @@ export interface Limits {
    * not run, not refused. 2026-10-19 (bot quality, cause B): a week. A
    * question is never cancelled because the person was away for an hour. */
   inputWaitMs: number;
+  /** A delegation (a child outside a room) parked on the person this long,
+   * on the wall clock (a restart does not start it over), is closed as
+   * expired: 2026-10-29, a bot handed work to teammates that each waited on
+   * a GO in their own conversation for hours, and every one stayed listed
+   * as waiting on the person under each new turn of the requester. A root's
+   * own question and a room's keep inputWaitMs. */
+  delegationInputWaitMs: number;
   /** A parked question is shown again (runner.remind) after this long, then
    * every day, until it is answered or expires. */
   inputRemindMs: number;
@@ -347,6 +359,7 @@ export const DEFAULT_LIMITS: Limits = {
   stallMs: 4 * 60 * 60_000,
   turnStallMs: 20 * 60_000,
   inputWaitMs: 7 * 24 * 60 * 60_000,
+  delegationInputWaitMs: 4 * 60 * 60_000,
   inputRemindMs: 30 * 60_000,
 };
 

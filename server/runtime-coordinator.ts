@@ -411,6 +411,7 @@ export class RuntimeCoordinator implements Coordinator {
       run: (a, input, signal) => this.run(a, input, signal),
       park: (a, question, restored) => host.park(this.project(a), question, restored),
       remind: (a, question, waitedMs) => host.remind?.(this.project(a), question, waitedMs),
+      parkedGone: a => host.parkedGone?.(this.project(a)) === true,
       report: (a, parent) => host.report(view(a, parent), parent && this.project(parent)),
       changed: rows => {
         const groups = new Set<string>();
