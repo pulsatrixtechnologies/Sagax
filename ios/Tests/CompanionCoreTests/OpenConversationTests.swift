@@ -39,7 +39,7 @@ final class OpenConversationTests: XCTestCase {
 
     func testClosingTheOpenDirectConversationLeavesIt() throws {
         let room = try dmWithGaby()
-        let closed = SidebarHidden.default.hiding(.person, "pr_gaby", at: 1)
+        let closed = SidebarHidden.default.hiding(.person, "pr_Greg", at: 1)
         XCTAssertTrue(OpenConversation.newlyHidden(.room(room), previous: .default, next: closed))
         // already closed (an explicit pick from search): another change keeps it
         let more = closed.hiding(.group, "other", at: 2)

@@ -234,7 +234,7 @@ final class TeamMapPeopleTests: XCTestCase {
         XCTAssertEqual(decoded.people.first?.role, "admin")
         XCTAssertEqual(decoded.people.first?.service, true)
         XCTAssertEqual(decoded.people.first?.teams, [.init(id: "t", manager: true)])
-        XCTAssertEqual(decoded.teams, [OrgDirectoryTeam(id: "t", name: "Team")])
+        XCTAssertEqual(decoded.teams, [OrgDirectoryTeam(id: "t", name: "Team", members: [], managers: [])])
     }
 
     // MARK: Requests

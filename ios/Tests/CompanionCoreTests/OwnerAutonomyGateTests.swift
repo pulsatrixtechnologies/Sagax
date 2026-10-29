@@ -72,10 +72,12 @@ final class OwnerAutonomyGateTests: XCTestCase {
 
     func testWhatTheServerKeepsStaysKeptOnTheOwnersBot() throws {
         let gate = member()
-        // the server's managed cloud computer and the working folder
-        for field in ["cloudBackend", "cwd"] {
-            XCTAssertFalse(gate.canEditBotField(try mine(), field), field)
-        }
+        // the server's managed cloud computer
+        XCTAssertFalse(gate.canEditBotField(try mine(), "cloudBackend"), "cloudBackend")
+        // the working folder is the owner's own since folders.botWorkingFolder
+        // became a key every member holds (shared/permissions.ts)
+        XCTAssertTrue(gate.canEditBotField(try mine(), "cwd"), "cwd")
+        XCTAssertFalse(gate.canEditBotField(try theirs(), "cwd"), "cwd of another's bot")
         // standing grants are the owner's own since #1138 (bots.approvalLevel)
         XCTAssertTrue(gate.canEditBotField(try mine(), "alwaysAllow"))
         XCTAssertFalse(gate.canEditBotField(try theirs(), "alwaysAllow"))
