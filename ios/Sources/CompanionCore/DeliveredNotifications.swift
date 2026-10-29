@@ -12,13 +12,25 @@ public enum DeliveredNotifications {
         public var botId: String?
         public var threadId: String?
         public var date: Date
+        /// The approval or question it asks, when it asks one.
+        public var requestId: String?
 
-        public init(id: String, botId: String?, threadId: String?, date: Date) {
+        public init(id: String, botId: String?, threadId: String?, date: Date, requestId: String? = nil) {
             self.id = id
             self.botId = botId
             self.threadId = threadId
             self.date = date
+            self.requestId = requestId.flatMap { $0.isEmpty ? nil : $0 }
         }
+    }
+
+    /// The banners of one approval or question, once it is settled: that
+    /// request's only, never the other asks of the same conversation.
+    public static func forRequest(_ delivered: [Delivered], threadId: String?, requestId: String?) -> [String] {
+        guard let requestId, !requestId.isEmpty else { return [] }
+        return delivered.filter { item in
+            item.requestId == requestId && (threadId == nil || item.threadId == nil || item.threadId == threadId)
+        }.map(\.id)
     }
 
     /// A banner younger than this is never withdrawn by a recount.
@@ -31,9 +43,13 @@ public enum DeliveredNotifications {
     }
 
     /// The banners whose bot conversation the person has settled.
-    public static func settled(_ delivered: [Delivered], bots: [Bot], now: Date = Date()) -> [String] {
+    /// An ask (a banner with a request) still open (`openRequestIds`, the
+    /// cards the app knows are pending) stays whatever its conversation's
+    /// read state: reading a conversation is not answering it.
+    public static func settled(_ delivered: [Delivered], bots: [Bot], openRequestIds: Set<String> = [], now: Date = Date()) -> [String] {
         let byId = Dictionary(bots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return delivered.compactMap { item in
+            if let requestId = item.requestId, openRequestIds.contains(requestId) { return nil }
             guard now.timeIntervalSince(item.date) >= grace,
                   let botId = item.botId, let threadId = item.threadId,
                   let task = byId[botId]?.tasks?.first(where: { $0.threadId == threadId })

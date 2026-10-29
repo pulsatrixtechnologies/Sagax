@@ -26,46 +26,21 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         registerCategories()
     }
 
-    /// Allow once and Deny. Unlock (Face ID or the passcode) is required
-    /// before iOS delivers either action. A key-protected Allow also opens
-    /// the app so the ceremony can run. "Always allow" is not an action.
+    /// Allow once and Deny, Reply, and the plain category, registered at
+    /// launch (NotificationCategories). A question's choices get their own
+    /// category when its banner is made. "Always allow" is not an action.
     private func registerCategories() {
-        let deny = UNNotificationAction(
-            identifier: NotificationApproval.denyAction,
-            title: String(localized: "Deny"),
-            options: [.authenticationRequired, .destructive]
+        center.setNotificationCategories(NotificationCategories.fixed(Self.titles))
+    }
+
+    static var titles: NotificationCategories.Titles {
+        NotificationCategories.Titles(
+            allowOnce: String(localized: "Allow once"),
+            deny: String(localized: "Deny"),
+            reply: String(localized: "Reply"),
+            send: String(localized: "Send"),
+            placeholder: String(localized: "Type your answer")
         )
-        let allow = UNNotificationAction(
-            identifier: NotificationApproval.allowAction,
-            title: String(localized: "Allow once"),
-            options: [.authenticationRequired]
-        )
-        let allowWithKey = UNNotificationAction(
-            identifier: NotificationApproval.allowAction,
-            title: String(localized: "Allow once"),
-            options: [.authenticationRequired, .foreground]
-        )
-        let plain = UNNotificationCategory(
-            identifier: NotificationApproval.category, actions: [allow, deny], intentIdentifiers: [], options: []
-        )
-        let keyed = UNNotificationCategory(
-            identifier: NotificationApproval.keyCategory, actions: [allowWithKey, deny], intentIdentifiers: [], options: []
-        )
-        let update = UNNotificationCategory(
-            identifier: NotificationApproval.updateCategory, actions: [], intentIdentifiers: [], options: []
-        )
-        // a question answered from the banner, without opening the app
-        let reply = UNTextInputNotificationAction(
-            identifier: NotificationApproval.replyAction,
-            title: String(localized: "Reply"),
-            options: [.authenticationRequired],
-            textInputButtonTitle: String(localized: "Send"),
-            textInputPlaceholder: String(localized: "Type your answer")
-        )
-        let question = UNNotificationCategory(
-            identifier: NotificationApproval.questionCategory, actions: [reply], intentIdentifiers: [], options: []
-        )
-        center.setNotificationCategories([plain, keyed, update, question])
     }
 
     func authorizationStatus() async -> UNAuthorizationStatus {
@@ -79,17 +54,20 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     @MainActor func deliver(_ notification: NotificationFrame, sequence: Int?, confidential: Bool = false) {
         // the conversation on a live call is heard, not buzzed
         if CallQuiet.shared.silences(threadId: notification.threadId) { return }
+        // an AI client's conversation over MCP never rings the phone or the watch
+        if notification.quietOnPhones == true { return }
         let content = UNMutableNotificationContent()
         // a confidential thread's banner never carries its words nor its
         // title (taken from its first message); the bot's name replaces
         // the title below when there is one
         content.title = confidential ? ConfidentialRedaction.placeholder : notification.title
-        content.body = ConfidentialRedaction.notificationBody(notification.body, confidential: confidential)
+        content.body = ConfidentialRedaction.notificationBody(notification.bannerBody, confidential: confidential)
         // Settings > Haptics > Notification sounds: off keeps the banner.
         content.sound = sound(for: notification.kind)
         let needsKey = notification.needsKey == true
+        let choices = confidential ? [] : (notification.choices ?? [])
         content.categoryIdentifier = NotificationApproval.category(
-            kind: notification.kind, requestId: notification.requestId, needsKey: needsKey
+            kind: notification.kind, requestId: notification.requestId, needsKey: needsKey, choices: choices
         )
         content.threadIdentifier = notification.threadId
         var info: [String: String] = [
@@ -101,6 +79,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         ]
         if let requestId = notification.requestId, !requestId.isEmpty { info["requestId"] = requestId }
         if needsKey { info["needsKey"] = "1" }
+        if notification.kind == "question", !choices.isEmpty {
+            info["choices"] = NotificationChoices.layout(choices, limit: 10).shown.joined(separator: "\u{1F}")
+        }
         if let routineRunId = notification.routineRunId, !routineRunId.isEmpty { info["routineRunId"] = routineRunId }
         if let routineName = notification.routineName, !routineName.isEmpty {
             info["routineName"] = routineName
@@ -114,13 +95,18 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // One conversation, one banner: a replayed frame, the next line of
         // the same conversation and the APNs push for it (whose
         // apns-collapse-id is this same identifier) replace it.
-        let identifier = PushCollapse.identifier(threadId: notification.threadId, kind: notification.kind)
+        let identifier = PushCollapse.identifier(threadId: notification.threadId, kind: notification.kind, requestId: notification.requestId)
+        let choicesCategory: UNNotificationCategory? = NotificationChoices.isChoicesCategory(content.categoryIdentifier)
+            ? NotificationCategories.choices(NotificationChoices.layout(choices), openTitle: String(localized: "Open"))
+            : nil
         // the bot's mascot as the banner's face, like a push (MascotAvatarRenderer)
         let botId = notification.botId.trimmingCharacters(in: .whitespacesAndNewlines)
         let bot = botId.isEmpty ? nil : botLookup?(botId)
         let previous = lastPost
         lastPost = Task { @MainActor [center] in
             await previous?.value
+            // the buttons first: a banner whose category is not registered has none
+            if let choicesCategory { await NotificationCategories.register(choicesCategory, in: center) }
             let sender = Self.sender(name: notification.botName, id: notification.botId, conversationId: notification.threadId, bot: bot)
             var imageData: Data?
             if let sender, sender.look != nil {
@@ -173,8 +159,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
 
     /// Banners for bot conversations the person has since read or answered,
     /// on this device or another, leave Notification Center.
-    func withdrawSettled(bots: [Bot]) async {
-        let ids = DeliveredNotifications.settled(await delivered(), bots: bots)
+    func withdrawSettled(bots: [Bot], openRequestIds: Set<String> = []) async {
+        let ids = DeliveredNotifications.settled(await delivered(), bots: bots, openRequestIds: openRequestIds)
         if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
     }
 
@@ -182,6 +168,14 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     func withdraw(threadId: String) async {
         let ids = DeliveredNotifications.forThread(await delivered(), threadId: threadId)
         if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+    }
+
+    /// An approval or question was answered or expired: its banner goes,
+    /// and only its own (`PushKind.settled`, or this phone's own answer).
+    func withdraw(threadId: String?, requestId: String) async {
+        var ids = DeliveredNotifications.forRequest(await delivered(), threadId: threadId, requestId: requestId)
+        ids.append(PushCollapse.identifier(threadId: threadId, kind: "approval", requestId: requestId))
+        center.removeDeliveredNotifications(withIdentifiers: Array(Set(ids)))
     }
 
     private func delivered() async -> [DeliveredNotifications.Delivered] {
@@ -193,7 +187,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             }
             return DeliveredNotifications.Delivered(
                 id: note.request.identifier, botId: string("botId") ?? string("groupId"),
-                threadId: string("threadId"), date: note.date
+                threadId: string("threadId"), date: note.date, requestId: string("requestId")
             )
         }
     }
@@ -248,15 +242,26 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             }
             let handler = approvalHandler
             let identifier = response.notification.request.identifier
+            let original = response.notification.request.content
             Task {
                 let outcome = await handler?(decision) ?? .failed
                 if outcome == .answered {
+                    // the ask leaves, and one quiet line says the answer went
                     self.center.removeDeliveredNotifications(withIdentifiers: [identifier])
+                    if case .confirmKey = decision {} else {
+                        self.postOutcome(AnswerFeedback.answered(decision), original: original, info: strings)
+                    }
                 } else if outcome == .needsForeground, case let .allow(threadId, requestId, _) = decision {
                     NotificationApprovalRunner.remember(threadId: threadId, requestId: requestId)
                     self.postKeyNeeded(threadId: threadId, botId: strings["botId"] ?? "", requestId: requestId, title: response.notification.request.content.title)
-                } else if outcome == .failed, let target = NotificationTarget(payload: strings) {
-                    self.responseHandler?(target)
+                } else if outcome == .failed {
+                    let active = await MainActor.run { UIApplication.shared.applicationState == .active }
+                    if active, let target = NotificationTarget(payload: strings) {
+                        self.responseHandler?(target)
+                    } else {
+                        // in the background nothing opens: a plain banner says it did not go
+                        self.postOutcome(.failed, original: original, info: strings)
+                    }
                 }
                 completionHandler()
             }
@@ -289,7 +294,32 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             "kind": "approval",
             "stepUp": NotificationApproval.stepUpPending,
         ]
-        let identifier = PushCollapse.identifier(threadId: threadId, kind: "approval")
+        let identifier = PushCollapse.identifier(threadId: threadId, kind: "approval", requestId: requestId)
+        center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+    }
+
+    /// The answer given from a banner or the watch: one quiet line in its
+    /// conversation's place ("Allowed", "Denied", "Answer sent: Yes"), or a
+    /// plain banner when it did not go through. The conversation's next line
+    /// replaces it, so it never contradicts what follows.
+    private func postOutcome(_ feedback: AnswerFeedback, original: UNNotificationContent, info: [String: String]) {
+        let threadId = info["threadId"] ?? ""
+        let content = UNMutableNotificationContent()
+        content.title = original.title.isEmpty ? "Sagax" : original.title
+        content.body = feedback.text(question: NotificationQuestion.first(line: original.body))
+        content.categoryIdentifier = NotificationApproval.updateCategory
+        content.threadIdentifier = threadId
+        var userInfo: [String: String] = ["threadId": threadId, "botId": info["botId"] ?? "", "kind": feedback == .failed ? "failed" : "answered"]
+        if let groupId = info["groupId"], !groupId.isEmpty { userInfo["groupId"] = groupId }
+        content.userInfo = userInfo
+        if feedback == .failed {
+            content.interruptionLevel = .active
+            content.sound = NotificationSounds.isEnabled ? NotificationSounds.platformSound : nil
+        } else {
+            // a receipt, not news: no sound, no lit screen
+            content.interruptionLevel = .passive
+        }
+        let identifier = PushCollapse.identifier(threadId: threadId, kind: "message")
         center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
     }
 
@@ -299,11 +329,31 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             guard let key = key as? String else { continue }
             if let value = value as? String, !value.isEmpty {
                 result[key] = value
+            } else if key == "choices" {
+                // a push carries its choices as a list; the decision reads them joined
+                let choices = NotificationChoices.choices(from: value)
+                if !choices.isEmpty { result[key] = choices.joined(separator: "\u{1F}") }
             } else if key == "needsKey" {
                 let on = (value as? Bool) == true || (value as? NSNumber)?.boolValue == true
                 if on { result[key] = "1" }
             }
         }
         return result
+    }
+}
+
+extension AnswerFeedback {
+    /// The receipt's line, in the app's language.
+    func text(question: String) -> String {
+        switch self {
+        case .allowed:
+            question.isEmpty ? String(localized: "Allowed.") : String(format: String(localized: "Allowed: %@"), question)
+        case .denied:
+            question.isEmpty ? String(localized: "Denied.") : String(format: String(localized: "Denied: %@"), question)
+        case let .answered(choice):
+            String(format: String(localized: "Answer sent: %@"), choice)
+        case .failed:
+            String(localized: "Your answer did not go through. Open Sagax to answer.")
+        }
     }
 }

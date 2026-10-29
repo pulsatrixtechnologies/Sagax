@@ -1,3 +1,4 @@
+import CompanionCore
 import UserNotifications
 
 /// APNs `mutable-content` entry point. The system gives this about 30
@@ -20,6 +21,22 @@ final class NotificationService: UNNotificationServiceExtension {
         }
         bestAttemptContent = content
         Task {
+            let center = UNUserNotificationCenter.current()
+            let payload = PushPayload(userInfo: content.userInfo)
+            // Answered elsewhere, or expired: the approval's banner leaves this
+            // phone and the watch, and this push shows nothing of its own.
+            if let payload, payload.kind == .settled {
+                await SettledNotifications.withdraw(payload, from: center)
+                finish(SettledNotifications.silent)
+                return
+            }
+            // A question's choices are its buttons: their category is made
+            // here and registered before the banner shows.
+            if let layout = payload?.questionChoicesLayout {
+                let category = NotificationCategories.choices(layout, openTitle: NotificationCategories.openTitle())
+                await NotificationCategories.register(category, in: center)
+                content.categoryIdentifier = category.identifier
+            }
             let updated = await CommunicationNotification.decorate(content)
             finish(updated)
         }
@@ -39,5 +56,26 @@ final class NotificationService: UNNotificationServiceExtension {
         handler(content)
         contentHandler = nil
         bestAttemptContent = nil
+    }
+}
+
+/// The banners a settled push takes down: that request's, wherever they
+/// came from (a push or a local banner), on this phone and its watch.
+enum SettledNotifications {
+    /// Nothing to show: the system shows no banner for empty content.
+    static var silent: UNNotificationContent { UNNotificationContent() }
+
+    static func withdraw(_ payload: PushPayload, from center: UNUserNotificationCenter) async {
+        let delivered = await center.deliveredNotifications().map { note in
+            let info = note.request.content.userInfo
+            return DeliveredNotifications.Delivered(
+                id: note.request.identifier, botId: info["botId"] as? String,
+                threadId: info["threadId"] as? String, date: note.date,
+                requestId: info["requestId"] as? String
+            )
+        }
+        let ids = DeliveredNotifications.forRequest(delivered, threadId: payload.threadId, requestId: payload.requestId)
+            + [payload.collapseIdentifier]
+        center.removeDeliveredNotifications(withIdentifiers: Array(Set(ids)))
     }
 }

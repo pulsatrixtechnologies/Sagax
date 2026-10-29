@@ -239,6 +239,12 @@ public struct CompanionState: Sendable {
 
     /// Every unanswered approval or question, newest first. This is the
     /// screen the whole companion exists for.
+    /// The request ids of the asks still open: their banners stay until
+    /// they are answered, whatever the conversation's read state.
+    public var openRequestIds: Set<String> {
+        Set(pendingApprovals.compactMap { $0.message.card?.requestId })
+    }
+
     public var pendingApprovals: [(threadId: String, message: Message)] {
         var out: [(threadId: String, message: Message)] = []
         let activeThreads = Set(bots.flatMap { [$0.threadId] + ($0.tasks ?? []).map(\.threadId) } + rooms.map(\.threadId))
@@ -514,6 +520,10 @@ public struct CompanionState: Sendable {
             if notifications.count > 100 {
                 notifications.removeFirst(notifications.count - 100)
             }
+
+        case .notifyWithdraw:
+            // the banner is the app's business (Session); nothing to fold
+            break
 
         case let .runtime(event):
             apply(runtime: event)

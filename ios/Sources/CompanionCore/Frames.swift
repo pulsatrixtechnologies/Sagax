@@ -25,6 +25,21 @@ public struct NotificationFrame: Codable, Hashable, Sendable {
     /// A finished routine, so the banner can name it.
     public var routineRunId: String? = nil
     public var routineName: String? = nil
+    /// An approval's question in plain words, shown first. Absent on older servers.
+    public var ask: String? = nil
+    /// A question's choices: the banner's buttons.
+    public var choices: [String]? = nil
+    /// A conversation an AI client holds over MCP: never on this phone or
+    /// the watch (shared/notification.ts `quietOnPhones`).
+    public var quietOnPhones: Bool? = nil
+
+    /// What the banner says under the bot's name: the question first, then
+    /// the detail, never the question twice.
+    public var bannerBody: String {
+        let ask = (self.ask ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard kind == "approval", !ask.isEmpty, ask != body else { return body }
+        return body.isEmpty ? ask : "\(ask)\n\(body)"
+    }
 
     /// A bot blocked on you, as opposed to one reporting in.
     public var isBlocking: Bool { kind == "approval" || kind == "question" }
@@ -57,6 +72,9 @@ public enum Frame: Sendable {
     case roomDeleted(groupId: String)
     /// Something worth interrupting for.
     case notify(NotificationFrame)
+    /// `notify-withdraw`: an approval or a question was answered (on any
+    /// device) or expired; its banner leaves this phone and the watch.
+    case notifyWithdraw(threadId: String, requestId: String)
     /// A live frame of a bot's computer (base64). Only sent to clients that
     /// did not pass `screens=off`.
     case screen(botId: String, png: String, mime: String)
@@ -105,6 +123,7 @@ extension Frame: Decodable {
         case preferences, updatedAt
         case participantId, read, reset
         case callId, by
+        case requestId
     }
 
     public init(from decoder: Decoder) throws {
@@ -160,6 +179,11 @@ extension Frame: Decodable {
             self = .roomDeleted(groupId: try container.decode(String.self, forKey: .roomId))
         case "notify":
             self = .notify(try container.decode(NotificationFrame.self, forKey: .notification))
+        case "notify-withdraw":
+            self = .notifyWithdraw(
+                threadId: try container.decodeIfPresent(String.self, forKey: .threadId) ?? "",
+                requestId: try container.decode(String.self, forKey: .requestId)
+            )
         case "screen":
             self = .screen(
                 botId: try container.decode(String.self, forKey: .botId),

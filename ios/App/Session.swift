@@ -1514,6 +1514,10 @@ final class Session: ObservableObject {
                         NotificationCoordinator.shared.deliver(notification, sequence: frame.seq,
                                                                confidential: state.isConfidentialThread(notification.threadId))
                     }
+                    // answered elsewhere: the ask's banner goes, here and on the watch
+                    if case let .notifyWithdraw(threadId, requestId) = frame.frame {
+                        Task { await NotificationCoordinator.shared.withdraw(threadId: threadId.isEmpty ? nil : threadId, requestId: requestId) }
+                    }
                     NotificationCoordinator.shared.setBadge(state.unreadCount)
                     withdrawSettledIfFewerUnread()
                     if streamed { foldQuietly { state.advance(to: frame.seq) } } else { state.advance(to: frame.seq) }
@@ -1579,7 +1583,8 @@ final class Session: ObservableObject {
             NotificationCoordinator.shared.setBadge(state.unreadCount)
             badgedUnread = state.unreadCount
             let bots = state.bots
-            Task { await NotificationCoordinator.shared.withdrawSettled(bots: bots) }
+            let open = state.openRequestIds
+            Task { await NotificationCoordinator.shared.withdrawSettled(bots: bots, openRequestIds: open) }
             return
         }
         throw APIError.status(code: 409, message: "Conversations changed while loading. Please try opening this notification again.")
@@ -3426,7 +3431,8 @@ final class Session: ObservableObject {
         defer { badgedUnread = count }
         guard let before = badgedUnread, count < before else { return }
         let bots = state.bots
-        Task { await NotificationCoordinator.shared.withdrawSettled(bots: bots) }
+        let open = state.openRequestIds
+        Task { await NotificationCoordinator.shared.withdrawSettled(bots: bots, openRequestIds: open) }
     }
 
     func refreshAfterPush() async -> Bool {

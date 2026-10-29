@@ -48,7 +48,8 @@ enum CommunicationNotification {
             // updating(from:) has dropped the category or requestId on some
             // iOS versions. Allow and Deny read both.
             guard let mutable = updated.mutableCopy() as? UNMutableNotificationContent else { return updated }
-            if mutable.categoryIdentifier.isEmpty {
+            // the category is what carries the buttons: always the one we chose
+            if !content.categoryIdentifier.isEmpty {
                 mutable.categoryIdentifier = content.categoryIdentifier
             }
             var info = mutable.userInfo

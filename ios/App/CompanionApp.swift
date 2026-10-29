@@ -366,6 +366,11 @@ final class SagaxAppDelegate: UIResponder, UIApplicationDelegate {
             if push.kind == .read, let threadId = push.threadId {
                 await NotificationCoordinator.shared.withdraw(threadId: threadId)
             }
+            // an ask answered elsewhere: its banner goes (the extension did it
+            // too; this covers a push that woke the app first)
+            if push.kind == .settled, let requestId = push.requestId {
+                await NotificationCoordinator.shared.withdraw(threadId: push.threadId, requestId: requestId)
+            }
             let refreshed = await PushRegistrar.shared.backgroundRefresh?() ?? false
             completionHandler(refreshed ? .newData : .noData)
         }

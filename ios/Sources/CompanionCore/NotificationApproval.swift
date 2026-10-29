@@ -54,8 +54,13 @@ public enum NotificationApproval {
 
     /// The category a local banner registers. Only an approval or a
     /// question that names its request gets actions: Allow and Deny, or Reply.
-    public static func category(kind: String, requestId: String?, needsKey: Bool) -> String {
-        if kind == "question" { return token(requestId) != nil ? questionCategory : updateCategory }
+    public static func category(kind: String, requestId: String?, needsKey: Bool, choices: [String] = []) -> String {
+        if kind == "question" {
+            guard token(requestId) != nil else { return updateCategory }
+            guard !choices.isEmpty else { return questionCategory }
+            let layout = NotificationChoices.layout(choices)
+            return NotificationChoices.categoryIdentifier(layout.shown, overflow: layout.overflow)
+        }
         guard kind == "approval", token(requestId) != nil else { return updateCategory }
         return needsKey ? keyCategory : category
     }
@@ -67,7 +72,15 @@ public enum NotificationApproval {
         let threadId = token(info["threadId"])
         let requestId = token(info["requestId"])
         let target = NotificationTarget(payload: info)
+        if let index = NotificationChoices.index(of: actionIdentifier) {
+            // a question's choice: the chosen words are the answer
+            let choices = NotificationChoices.choices(from: info["choices"])
+            guard let threadId, let requestId, choices.indices.contains(index) else { return target.map(Decision.open) }
+            return .reply(threadId: threadId, requestId: requestId, text: choices[index])
+        }
         switch actionIdentifier {
+        case NotificationChoices.openAction:
+            return target.map(Decision.open)
         case replyAction:
             let text = (replyText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard let threadId, let requestId, !text.isEmpty else { return target.map(Decision.open) }
@@ -99,5 +112,125 @@ public enum NotificationApproval {
                 || byte == 45 || byte == 95
         }
         return ok ? value : nil
+    }
+}
+
+/// How many answers a notification, the island or the watch can carry, and
+/// what goes past that. iOS shows four actions on a banner; past four, three
+/// answers and Open, so nothing is offered that cannot be pressed.
+public enum NotificationChoices {
+    /// The most actions iOS shows on a notification (and the watch mirrors).
+    public static let limit = 4
+
+    public struct Layout: Equatable, Sendable {
+        public var shown: [String]
+        /// More answers than fit: the last button opens the conversation.
+        public var overflow: Bool
+    }
+
+    public static func layout(_ options: [String], limit: Int = limit) -> Layout {
+        var clean: [String] = []
+        for option in options {
+            let value = option.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty, !clean.contains(value) { clean.append(value) }
+        }
+        guard clean.count > limit else { return Layout(shown: clean, overflow: false) }
+        return Layout(shown: Array(clean.prefix(max(limit - 1, 0))), overflow: true)
+    }
+
+    /// The action id of the choice at `index` (`sagax.question.choice.<n>`).
+    public static let actionPrefix = "sagax.question.choice."
+    /// Open the conversation, past the limit.
+    public static let openAction = "sagax.question.open"
+
+    public static func actionIdentifier(_ index: Int) -> String { "\(actionPrefix)\(index)" }
+
+    /// The index an action id names, or nil.
+    public static func index(of actionIdentifier: String) -> Int? {
+        guard actionIdentifier.hasPrefix(actionPrefix) else { return nil }
+        return Int(actionIdentifier.dropFirst(actionPrefix.count))
+    }
+
+    /// A category per set of choices: the same choices reuse it. Short and
+    /// stable (a hash), so the phone keeps a bounded few.
+    public static func categoryIdentifier(_ shown: [String], overflow: Bool) -> String {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in (shown.joined(separator: "\u{1F}") + (overflow ? "\u{1F}+" : "")).utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100000001b3
+        }
+        return "\(NotificationApproval.questionCategory).\(String(hash, radix: 16))"
+    }
+
+    /// Whether a category id is one of these per-choices categories.
+    public static func isChoicesCategory(_ identifier: String) -> Bool {
+        identifier.hasPrefix("\(NotificationApproval.questionCategory).")
+    }
+
+    /// The choices a push or a frame carries (`choices`), cleaned.
+    public static func choices(from value: Any?) -> [String] {
+        if let list = value as? [String] { return layout(list, limit: 10).shown }
+        if let list = value as? [Any] { return layout(list.compactMap { $0 as? String }, limit: 10).shown }
+        if let joined = value as? String, !joined.isEmpty {
+            return layout(joined.components(separatedBy: "\u{1F}"), limit: 10).shown
+        }
+        return []
+    }
+}
+
+/// What an ask says, question first: the card's plain question, then its
+/// detail. A card whose title is only a header ("Approval needed") asks
+/// with its subtitle.
+public struct NeedsYouText: Equatable, Sendable {
+    public var question: String
+    public var detail: String?
+
+    public init(question: String, detail: String?) {
+        self.question = question
+        self.detail = detail
+    }
+
+    public init(title: String?, subtitle: String?, line: String = "") {
+        let title = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let subtitle = (subtitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.hasSuffix("?"), !subtitle.isEmpty, subtitle != title {
+            question = title
+            detail = subtitle
+        } else {
+            question = !subtitle.isEmpty ? subtitle : !line.isEmpty ? line : title
+            detail = nil
+        }
+    }
+
+    public init(update: ChatUpdate) {
+        self.init(title: update.card?.title, subtitle: update.card?.subtitle, line: update.line)
+    }
+}
+
+/// What the phone says once an answer from a banner or the watch went
+/// (or did not): the words live in the app's catalog.
+public enum AnswerFeedback: Equatable, Sendable {
+    case allowed
+    case denied
+    case answered(String)
+    case failed
+
+    public static func answered(_ decision: NotificationApproval.Decision) -> AnswerFeedback {
+        switch decision {
+        case .allow, .confirmKey: .allowed
+        case .deny: .denied
+        case let .reply(_, _, text): .answered(text)
+        case .open: .failed
+        }
+    }
+}
+
+/// The question a banner asked: its first line (the body puts it first).
+public enum NotificationQuestion {
+    public static func first(line body: String) -> String {
+        let line = body.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.count > 90 ? String(trimmed.prefix(89)) + "…" : trimmed
     }
 }
