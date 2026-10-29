@@ -15,7 +15,7 @@ import { initAnalytics } from "@/lib/analytics";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
-import { SplitWorkspace } from "@/components/SplitWorkspace";
+import { SplitWorkspace, useBotPanelPlacement } from "@/components/SplitWorkspace";
 import { PersonPanel } from "@/components/PersonPanel";
 import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
@@ -363,6 +363,11 @@ function Shell() {
     }
     previousViewRef.current = state.activeView;
   }
+  // The bot panel is the main chat's, at the right, unless a split-view
+  // section's pill opened it (panelOwner): then it is that section's bot,
+  // at the window edge nearest the section. One panel at a time.
+  const { bot: panelBot, dock: panelDock } = useBotPanelPlacement(bot);
+  const botPanelOpen = !remoteClient && (state.settingsOpen || state.computerOpen) && panelBot !== undefined;
   const mainIsTeamMap = state.activeView === "team-map";
   const mainIsCode = state.activeView === "code";
   const mainIsApprovals = state.activeView === "approvals";
@@ -488,6 +493,11 @@ function Shell() {
           menuButtonRef.current?.focus();
         }}
       />
+      {/* A split-view section on the left opens its bot's panel here, at
+          the window's left edge past the sidebar. */}
+      {botPanelOpen && panelDock === "left" && panelBot && (
+        <BotSettingsDialog key={`panel:${panelBot.id}`} bot={panelBot} dock="left" onOpenVmWorkspace={openLocalVmWorkspace} />
+      )}
       <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col" data-sidebar-follower="">
       {/* nothing answers this person on an organization server: say so above
           the conversation, with the way back to the first-run step */}
@@ -572,10 +582,10 @@ function Shell() {
       {/* One tabbed bot panel (Details, Routines, Files, Computer, Advanced) on the
           desktop; its Computer tab is the store's computer view, so both
           flags render the same panel under one key. */}
-      {!remoteClient && (state.settingsOpen || state.computerOpen) && bot && (
-        <BotSettingsDialog key={`panel:${bot.id}`} bot={bot} onOpenVmWorkspace={openLocalVmWorkspace} />
+      {botPanelOpen && panelDock === "right" && panelBot && (
+        <BotSettingsDialog key={`panel:${panelBot.id}`} bot={panelBot} onOpenVmWorkspace={openLocalVmWorkspace} />
       )}
-      {remoteClient && state.settingsOpen && bot && <RemoteAgentSettingsPanel bot={bot} />}
+      {remoteClient && state.settingsOpen && panelBot && <RemoteAgentSettingsPanel bot={panelBot} />}
       {state.personPanelId && <PersonPanel key={`person:${state.personPanelId}`} personId={state.personPanelId} />}
       {remoteClient && state.computerOpen && bot && (
         <RemoteDesktopPanel key={`computer:${bot.id}`} bot={bot} />

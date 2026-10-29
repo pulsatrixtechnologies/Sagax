@@ -1321,6 +1321,12 @@ export interface AppState {
   /** Signed-in Microsoft connectors a typed trigger can subscribe through. */
   webhookGraphConnectors: GraphConnectorOption[];
   settingsOpen: boolean;
+  /** The bot panel (settings or computer) opened from a split-view
+   * section's pill: that section's bot, docked at the window edge nearest
+   * the section (src/lib/split-view.ts splitLeafPanelSide). null: the panel
+   * is the main chat's, at the right. One panel at a time; it clears when
+   * the panel closes. */
+  panelOwner: PanelOwner | null;
   /** The person whose details fill the right panel (principal id), or null.
    * Shares the right slot with bot settings, the computer and app settings. */
   personPanelId: string | null;
@@ -1770,7 +1776,7 @@ export type Action =
   | { type: "notice"; notice: AppState["notice"] }
   | { type: "revealThread"; threadId: string }
   | { type: "setThreadReturn"; threadReturn: AppState["threadReturn"] }
-  | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string }
+  | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string; owner?: PanelOwner | null }
   | { type: "openRoutine"; botId: string; routineId: string }
   | { type: "routineFocused" }
   | { type: "openPersonPanel"; personId: string | null }
@@ -2307,7 +2313,16 @@ export function closeBotCatalog(): Action {
   return { type: "closeBotCatalog" };
 }
 
+/** A split-view section's bot that owns the bot panel (AppState.panelOwner). */
+export type PanelOwner = { botId: string; leafId: string };
+
 export function reducer(state: AppState, action: Action): AppState {
+  const next = reduce(state, action);
+  // A section's panel lasts as long as the panel: closed, it is gone.
+  return next.panelOwner && !next.settingsOpen && !next.computerOpen ? { ...next, panelOwner: null } : next;
+}
+
+function reduce(state: AppState, action: Action): AppState {
   if (action.type === "messageAdded" || action.type === "messagePatched" || action.type === "threadActive" || action.type === "optimisticMessageRemoved") {
     const owner = state.bots.find((bot) => (bot.threadId !== action.threadId || bot.awaitingThreadSnapshot) && bot.tasks?.some((task) => task.threadId === action.threadId));
     if (owner) {
@@ -2981,15 +2996,23 @@ export function reducer(state: AppState, action: Action): AppState {
       // Only Details (and Routines) live in the bot panel. A deep link to any
       // other section opens the persona editor on that section's own page
       // over the panel.
+      // A split-view section's pill names its bot as the owner: the panel is
+      // that bot's and the main chat stays as it is. A link for another bot
+      // (or the main pill, owner null) gives the panel back to the main chat;
+      // one without a bot, from inside the panel, stays with its owner.
+      const owner = action.owner !== undefined
+        ? action.owner
+        : state.panelOwner && (action.botId === undefined || action.botId === state.panelOwner.botId) ? state.panelOwner : null;
       const category = action.open !== false && action.section !== undefined ? personaCategoryForSection(action.section) : null;
       if (category !== null) {
-        const targetId = action.botId ?? state.selectedId;
+        const targetId = action.botId ?? owner?.botId ?? state.selectedId;
         if (!targetId) return state;
-        const opened = reducer(state, { type: "toggleSettings", open: true, botId: action.botId });
+        const opened = reducer(state, { type: "toggleSettings", open: true, ...(owner ? { owner } : { botId: action.botId, owner: null }) });
         return reducer(opened, { type: "openPersonaEditor", botId: targetId, section: category });
       }
       if (action.botId !== undefined && !state.bots.some((bot) => bot.id === action.botId && !bot.hidden)) return state;
-      const selectedId = action.botId ?? state.selectedId;
+      if (owner && !state.bots.some((bot) => bot.id === owner.botId && !bot.hidden)) return state;
+      const selectedId = owner ? state.selectedId : action.botId ?? state.selectedId;
       // A targeted settings link opens that bot without navigating to chat
       // or marking its conversations read, even when another panel is open.
       const open = action.open ?? (action.botId !== undefined || !state.settingsOpen);
@@ -2999,6 +3022,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         selectedId,
         settingsOpen: open,
+        panelOwner: open ? owner : null,
         activityOpen: open ? false : state.activityOpen,
         // The pointer persists across bots and rooms (select) and across
         // switches to another bot's profile; a deep link names its target.
@@ -3650,6 +3674,7 @@ export const initialState: AppState = {
   webhookIngress: null,
   webhookGraphConnectors: [],
   settingsOpen: false,
+  panelOwner: null,
   personPanelId: null,
   pluginsOpen: false,
   pluginsSurface: "apps",

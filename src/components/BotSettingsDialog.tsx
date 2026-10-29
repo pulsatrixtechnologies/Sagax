@@ -6,7 +6,7 @@
 // The header holds the bot's one "..." menu (BotActionsMenu) and Close.
 import { useEffect, useRef, useState } from "react";
 import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
-import { PanelRight } from "lucide-react";
+import { PanelLeft, PanelRight } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
 import { useDataWindowItem } from "./DataWindowButton";
@@ -35,9 +35,12 @@ import { viewerBotsReadOnly } from "@/lib/viewer";
 import { useBotSectionAvailability, useBotSectionContent } from "./bot-settings/useBotSectionContent";
 import { botsReadOnlyText } from "@/lib/permissions";
 
-export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
+export function BotSettingsDialog({ bot, onOpenVmWorkspace, dock = "right" }: {
   bot: Bot;
   onOpenVmWorkspace?: (botId: string) => void;
+  /** The window edge it docks to: left for a split-view section on the
+   * left (AppState.panelOwner, splitLeafPanelSide). */
+  dock?: "left" | "right";
   /** Accepted for upstream callers; this panel is a resizable column. */
   overlay?: boolean;
 }) {
@@ -148,9 +151,14 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         aria-labelledby="bot-settings-title"
         tabIndex={-1}
         style={{ width: dockedPanel.width }}
-        className="app-docked-panel animate-panel-in relative flex h-full min-w-0 shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-app outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto"
+        data-panel-dock={dock}
+        data-panel-bot={bot.id}
+        className={cn(
+          "app-docked-panel relative flex h-full min-w-0 shrink-0 flex-col border-hairline-weak bg-app outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto",
+          dock === "left" ? "animate-panel-in-left border-r-[0.5px]" : "animate-panel-in border-l-[0.5px]",
+        )}
       >
-        <DockedPanelResizeHandle label="Resize settings" panel={dockedPanel} />
+        <DockedPanelResizeHandle label="Resize settings" panel={dockedPanel} dock={dock} />
         {(macInset || browser) && <div className="content-topbar-strip" />}
         {/* Top bar: only the controls, the way the reference design's panel opens. On
             Windows it drops below the caption buttons (padClass). */}
@@ -170,7 +178,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
               title={t("common.close")}
               className={CIRCLE_BUTTON}
             >
-              <PanelRight size={18} strokeWidth={1.75} />
+              {dock === "left" ? <PanelLeft size={18} strokeWidth={1.75} /> : <PanelRight size={18} strokeWidth={1.75} />}
             </button>
           </div>
         </div>

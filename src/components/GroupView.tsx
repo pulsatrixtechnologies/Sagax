@@ -1209,7 +1209,8 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
   // Inline roster pickers (#1240, #1260): People, Bots, or both under Manage members.
   const [rosterPick, setRosterPick] = useState<null | "people" | "bots" | "both">(null);
   // The group panel shares the bot panel's slot: one open flag in the store.
-  const panelOpen = !pane && state.settingsOpen && !group.dm;
+  // A split-view section's bot panel (panelOwner) holds the slot instead.
+  const panelOpen = !pane && state.settingsOpen && !state.panelOwner && !group.dm;
   // Organization server: a group's people come from the Perspicax directory
   // (by principal id) and read by their names.
   const perspicaxOrg = usePerspicaxOrg();
@@ -1470,7 +1471,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
       {/* Header: laid out like a bot chat's. The centered chip (stacked
           member faces + name) opens the group panel; the right-hand
           controls move into the panel's top bar while it is open. */}
-      {pane ? pane.header : <div
+      {pane ? (typeof pane.header === "function" ? pane.header(null) : pane.header) : <div
         {...headerDragProps}
         className={cn(
           "content-topbar",
@@ -1502,7 +1503,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
           ) : (
             <button
               type="button"
-              onClick={() => dispatch({ type: "toggleSettings", open: true })}
+              onClick={() => dispatch({ type: "toggleSettings", open: true, owner: null })}
               className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
               title={t("chat.openGroupPanel")}
               aria-label={t("chat.openPanelAria", { name: group.name })}
