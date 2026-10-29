@@ -192,19 +192,71 @@ describe("server-side scope check (audit M1)", () => {
   });
 });
 
-it("shared screen calls respect local turns, human takeover, lease expiry and release", async () => {
-  vi.useFakeTimers();
-  const resources = new TurnResources(); let held = false;
-  const control = new SharedComputerControl(resources, () => held);
-  const local = { threadId: "local", generation: "first" };
-  resources.claim("computer:host", local);
-  expect(() => control.acquire("remote")).toThrow(/in use locally/);
-  resources.release(local); control.acquire("remote");
-  expect(resources.claim("computer:host", local)).toBe(false);
-  held = true; expect(() => control.acquire("remote")).toThrow(/held by a person/);
-  held = false; control.acquire("remote");
-  await vi.advanceTimersByTimeAsync(40_001);
-  expect(resources.claim("computer:host", local)).toBe(true);
-  resources.release(local); control.acquire("remote"); control.close();
-  expect(resources.claim("computer:host", local)).toBe(true);
+describe("lent screen lock", () => {
+  const harness = () => {
+    const resources = new TurnResources();
+    const state = { personHolding: false, live: new Set<string>(), names: new Map<string, string>() };
+    const control = new SharedComputerControl(resources, {
+      personHolding: () => state.personHolding,
+      describe: (owner) => ({ name: state.names.get(owner.threadId), live: state.live.has(`${owner.threadId}/${owner.generation}`) }),
+    });
+    return { resources, state, control };
+  };
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("respects a running local turn, names it, and never calls it a person", () => {
+    const { resources, state, control } = harness();
+    const local = { threadId: "local", generation: "first" };
+    state.live.add("local/first"); state.names.set("local", "Researcher");
+    resources.claim("computer:host", local);
+    let refused: any;
+    try { control.acquire("remote"); } catch (error) { refused = error; }
+    expect(refused).toMatchObject({ status: 409, code: "screen_bot", holder: "Researcher" });
+    expect(refused.message).toContain("Researcher");
+    expect(refused.message).toContain("It is not a person");
+    resources.release(local); control.acquire("remote");
+    expect(resources.claim("computer:host", local)).toBe(false);
+    control.close();
+  });
+
+  it("frees a claim whose turn already ended (regression: the screen stayed busy)", () => {
+    const { resources, control } = harness();
+    const ended = { threadId: "local", generation: "gone" };
+    resources.claim("computer:host", ended);
+    expect(() => control.acquire("remote")).not.toThrow();
+    expect(resources.owns("computer:host", ended)).toBe(false);
+    control.close();
+  });
+
+  it("a newer lent call frees an older lent lease whose release never arrived (regression)", () => {
+    const { resources, control } = harness();
+    control.acquire("earlier");
+    expect(() => control.acquire("later")).not.toThrow();
+    expect(resources.owns("computer:host", { threadId: "shared:earlier", generation: "earlier" })).toBe(false);
+    expect(control.renew("earlier")).toBe(false);
+    control.close();
+  });
+
+  it("only a takeover of this screen counts as a person, and renewing never loses its own lease", () => {
+    const { state, control } = harness();
+    state.personHolding = true;
+    expect(() => control.acquire("remote")).toThrow(expect.objectContaining({ code: "screen_person" }));
+    state.personHolding = false;
+    control.acquire("remote");
+    state.personHolding = true;
+    expect(control.renew("remote")).toBe(true);
+    control.close();
+  });
+
+  it("expires a lease nobody renews and says so on renew", async () => {
+    vi.useFakeTimers();
+    const { resources, control } = harness();
+    const local = { threadId: "local", generation: "first" };
+    control.acquire("remote");
+    await vi.advanceTimersByTimeAsync(40_001);
+    expect(control.renew("remote")).toBe(false);
+    expect(resources.claim("computer:host", local)).toBe(true);
+    resources.release(local); control.acquire("remote"); control.close();
+    expect(resources.claim("computer:host", local)).toBe(true);
+  });
 });

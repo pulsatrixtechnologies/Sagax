@@ -294,7 +294,8 @@ export function createComputerSharing({ file, fetch: fetchImpl, environments, cu
             let result;
             try {
               await lease(); jobSignal.throwIfAborted();
-              if (grant.computer && ["computer_tools", "computer_call"].includes(job.operation.action)) {
+              // Listing the screen's tools touches no screen: only a call takes it.
+              if (grant.computer && job.operation.action === "computer_call") {
                 if (!hostControl) throw new Error("The local computer control gate is unavailable");
                 control = await hostControl(job.id, jobSignal);
                 jobSignal.throwIfAborted();
