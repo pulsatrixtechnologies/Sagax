@@ -538,6 +538,40 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       if (!current || typeof current !== "object") return text(404, "This bot's model could not be read.");
       built = { ...built, body: { modelSelection: { ...(current as Record<string, unknown>), effort: value } } };
     }
+    if (spec.key === "bot.mcpServer" && "method" in built) {
+      // 2026-10-29: one server attached or detached: the bot's list read now
+      // (none: every server of the person, as the editor shows it)
+      const asked = value as { name: string; attached: boolean };
+      const name = asked.name.trim();
+      let current: unknown;
+      try {
+        current = await readValue(facts, input, "/api/bots", { messages: "0" }, "bots", ids.target!, "mcpServers");
+        if (!Array.isArray(current)) {
+          if (asked.attached) return text(200, `${name} is already attached: this bot uses every MCP server. Continue the task.`);
+          const servers = await readValue(facts, input, "/api/mcp/servers", undefined, undefined, undefined, "servers");
+          current = Array.isArray(servers) ? servers.map((row) => (row as { name?: unknown }).name).filter((one): one is string => typeof one === "string") : [];
+        }
+      } catch (error) {
+        const status = (error as { status?: number }).status ?? 502;
+        return text(status, error instanceof Error ? error.message : "This bot's MCP servers could not be read.");
+      }
+      const list = (current as unknown[]).filter((one): one is string => typeof one === "string");
+      if (asked.attached === list.includes(name)) return text(200, `${name} is already ${asked.attached ? "attached" : "detached"}. Continue the task.`);
+      built = { ...built, body: { mcpServers: asked.attached ? [...list, name] : list.filter((one) => one !== name) } };
+    }
+    if (spec.key === "routine.webhook" && "method" in built) {
+      // 2026-10-29: the routine's own webhook, read with the person's rights
+      let hooks: unknown;
+      try {
+        hooks = await readValue(facts, input, "/api/webhooks", undefined, undefined, undefined, "webhooks");
+      } catch (error) {
+        const status = (error as { status?: number }).status ?? 502;
+        return text(status, error instanceof Error ? error.message : "The webhooks could not be read.");
+      }
+      const hook = Array.isArray(hooks) ? hooks.find((row) => (row as { routineId?: unknown } | null)?.routineId === ids.target) as { id?: unknown } | undefined : undefined;
+      if (!hook || typeof hook.id !== "string") return text(404, "This routine has no webhook: its schedule is not a webhook.");
+      built = { ...built, path: `/api/webhooks/${hook.id}/rotate` };
+    }
     const organization = deps.organization();
     const self = spec.target === "bot" && ids.target === input.botId;
     const shared = spec.target === "engine" && organization && ids.target ? deps.engineShared?.(ids.target, speaker) : undefined;
@@ -668,7 +702,11 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         on = device === "server" ? " (saved for the person: no app was open; their apps take it when they open)" : typeof device === "string" ? ` (in the person's open ${device === "ios" ? "iPhone" : device} app)` : "";
       } catch { /* the change is done; where is only a detail */ }
     }
-    return text(200, `Done: ${spec.label} changed${via}${on}.${nextTurn}`);
+    // 2026-10-29: the new key is the person's to copy, never the bot's
+    const after = spec.key === "routine.webhook"
+      ? " The new key waits for the person: they copy it once in the app (Bot panel > Webhooks > Show the token). Never ask them for it; the address stays the same (get routine.webhook)."
+      : "";
+    return text(200, `Done: ${spec.label} changed${via}${on}.${nextTurn}${after}`);
   }
 
   return { handle };

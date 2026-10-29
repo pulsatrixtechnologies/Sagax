@@ -1462,3 +1462,20 @@ describe("bearer token on every webhook", () => {
     });
   });
 });
+
+// 2026-10-29: a bot rotating a routine's key for the person (sagax_settings
+// routine.webhook): the key waits for the person, never returned
+describe("rotatePending", () => {
+  it("replaces the key, keeps the new one for the person to copy once, and returns no key", () => {
+    const h = harness();
+    const { id } = h.manager.createOwned({ routineId: "r1", name: "Hook", prompt: "Do it", botId: "bot-1", runOn: "maus", kind: "webhook", enabled: true });
+    expect(h.manager.revealForRoutine("r1")).not.toBeNull();
+    const rotated = h.manager.rotatePending(id);
+    expect(rotated?.webhook).toMatchObject({ id, tokenPending: true });
+    expect(JSON.stringify(rotated)).not.toMatch(/whsec_/);
+    const revealed = h.manager.revealForRoutine("r1");
+    expect(revealed?.secret).toMatch(/^whsec_/);
+    expect(h.manager.revealForRoutine("r1")).toBeNull();
+    expect(h.manager.rotatePending("nope")).toBeNull();
+  });
+});

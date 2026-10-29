@@ -46317,6 +46317,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const result = webhooks.test(webhookMatch[1], await readBody(req));
         return result ? json(res, 202, result) : json(res, 404, { error: "no such webhook" });
       }
+      // 2026-10-29: a bot rotating for the person (sagax_settings
+      // routine.webhook) never receives the key: it waits for the person to
+      // copy it once in the app (Show the token)
+      if (req.headers[BOT_ACT_ROUTE_HEADER] !== undefined || (auth.kind === "session" && isBotActSession(auth.session))) {
+        const kept = webhooks.rotatePending(webhookMatch[1]);
+        if (!kept) return json(res, 404, { error: "no such webhook" });
+        return json(res, 200, { webhook: kept.webhook, ingress: webhookIngressStatus(), tokenWaiting: true });
+      }
       const rotated = webhooks.rotateSecret(webhookMatch[1]);
       if (!rotated) return json(res, 404, { error: "no such webhook" });
       const ingress = webhookIngressStatus();

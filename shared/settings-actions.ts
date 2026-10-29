@@ -340,6 +340,61 @@ add({
     return source ? { method: "POST", path: `/api/bots/${enc(ids.target!)}/skills`, body: { source } } : "value is {repo: owner/repo, path?, ref?} or a GitHub link.";
   },
 });
+// 2026-10-29: plugins of a configured marketplace, as Connect apps installs
+// them: For <bot> (/api/bots/:id/plugins) or Everyone (/api/marketplaces)
+const PLUGIN_PART = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const PLUGIN_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+type PluginValue = { marketplace?: unknown; plugin?: unknown; key?: unknown; everyone?: unknown; enabled?: unknown; update?: unknown; uninstall?: unknown };
+add({
+  key: "bot.plugin", family: "bot", target: "bot", value: "object",
+  label: "A plugin of a configured marketplace ({marketplace, plugin} installs or updates it for this bot; everyone: true for every bot; {marketplace, plugin, everyone: true, update: true}; uninstall: true removes; {key: plugin@marketplace, enabled} turns this bot's on or off); get lists the marketplaces and this bot's plugins", where: "Connect apps > Plugins > For <bot> or Everyone",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/plugins`, shape: (v) => {
+    const r = (v ?? {}) as { marketplaces?: Array<Record<string, unknown>>; plugins?: Array<Record<string, unknown>> };
+    return {
+      marketplaces: (r.marketplaces ?? []).map((m) => ({ name: m.name, plugins: Array.isArray(m.plugins) ? (m.plugins as Array<Record<string, unknown>>).map((p) => p.name) : undefined })),
+      plugins: (r.plugins ?? []).map((p) => ({ key: p.key, enabled: p.enabled, ...(p.version ? { version: p.version } : {}) })),
+    };
+  } }),
+  write: (ids, v) => {
+    const r = (v ?? {}) as PluginValue;
+    const bot = `/api/bots/${enc(ids.target!)}/plugins`;
+    if (typeof r.key === "string") {
+      if (!PLUGIN_KEY_RE.test(r.key)) return "key is plugin@marketplace (get bot.plugin lists them).";
+      if (r.uninstall === true) return { method: "DELETE", path: `${bot}/${r.key}` };
+      if (typeof r.enabled === "boolean") return { method: "PATCH", path: `${bot}/${r.key}`, body: { enabled: r.enabled } };
+      return "value is {key, enabled} or {key, uninstall: true}.";
+    }
+    if (typeof r.marketplace !== "string" || !PLUGIN_PART.test(r.marketplace) || typeof r.plugin !== "string" || !PLUGIN_PART.test(r.plugin)) {
+      return "value is {marketplace, plugin} (get bot.plugin lists the marketplaces), or {key: plugin@marketplace, enabled}.";
+    }
+    if (r.everyone === true) {
+      const path = `/api/marketplaces/${r.marketplace}/plugins/${r.plugin}`;
+      if (r.uninstall === true) return { method: "DELETE", path };
+      return { method: "POST", path: r.update === true ? `${path}/update` : path, body: {} };
+    }
+    if (r.uninstall === true) return { method: "DELETE", path: `${bot}/${r.plugin}@${r.marketplace}` };
+    return { method: "POST", path: `${bot}/install`, body: { marketplace: r.marketplace, plugin: r.plugin } };
+  },
+  // for every bot: the organization's on an organization server
+  classes: (v, ctx) => {
+    const r = (v ?? {}) as PluginValue;
+    const out: SettingClass[] = r.everyone === true ? serverWide(v, ctx) : ["own"];
+    return r.uninstall === true ? [...out, "delete"] : out;
+  },
+});
+// 2026-10-29: attach or detach one MCP server on a bot (bot.mcpServers is the
+// whole list); the handler reads the current list (server/settings-actions.ts)
+add({
+  key: "bot.mcpServer", family: "bot", target: "bot", value: "object", label: "Attach or detach one MCP server on a bot ({name, attached: true|false}; connections.mcpServer lists the person's servers)", where: "Bot editor > Access > Tools",
+  read: botRead("mcpServers"),
+  write: (ids, v) => {
+    const r = (v ?? {}) as { name?: unknown; attached?: unknown };
+    if (typeof r.name !== "string" || !r.name.trim() || typeof r.attached !== "boolean") return "value is {name, attached: true|false}.";
+    // the list itself is filled in by the handler
+    return { method: "PATCH", path: `/api/bots/${enc(ids.target!)}`, body: { mcpServers: [] } };
+  },
+  classes: (v, ctx) => (v as { attached?: unknown } | null)?.attached === true ? selfReach(v, ctx) : ["own"],
+});
 add({
   key: "bot.share", family: "bot", target: "bot", value: "object", label: "Share with a person or team ({target: user:<id>|team:<name>, level}, level null removes)", where: "Bot editor > Visibility > Sharing",
   read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/grants` }),
@@ -479,6 +534,30 @@ add({
   label: "New routine ({name, prompt, botId, schedule, ...})", where: "Automations > New routine",
   write: (_ids, v) => ({ method: "POST", path: "/api/routines", body: v }),
   classes: (v) => (v as { runAs?: unknown } | null)?.runAs !== undefined ? ["others"] : watchCommandClasses((v as { precheck?: unknown } | null)?.precheck),
+});
+// 2026-10-29: a webhook routine's address, and a new key the person copies
+// once in the app (Show the token): the key never reaches the bot. The
+// address carries no key (the key goes in the Authorization header).
+add({
+  key: "routine.webhook", family: "routine", target: "routine", value: "enum:rotate",
+  label: "A webhook routine's address (get: its URL, never a key; set \"rotate\": a new key that waits for the person to copy it once, the old one stops)", where: "Bot panel > Webhooks; Routines > Webhooks",
+  read: (ids) => ({ path: "/api/webhooks", shape: (v) => {
+    const r = (v ?? {}) as { webhooks?: Array<Record<string, unknown>>; ingress?: { baseUrl?: unknown } };
+    const hook = (r.webhooks ?? []).find((row) => row.routineId === ids.target);
+    if (!hook) return { note: "This routine has no webhook: its schedule is not a webhook." };
+    const base = typeof r.ingress?.baseUrl === "string" ? r.ingress.baseUrl.replace(/\/$/, "") : "";
+    return {
+      webhookId: hook.id, enabled: hook.enabled,
+      url: base && typeof hook.endpointId === "string" ? `${base}/hooks/${hook.endpointId}` : null,
+      ...(base ? {} : { note: "No public address yet: the person turns webhooks on in Routines > Webhooks." }),
+      keyEndsWith: hook.tokenLast4 || undefined,
+      keyWaitingForThePerson: hook.tokenPending === true,
+      howToCall: "POST to the url with the header Authorization: Bearer <key>. The person copies the key in the app (Show the token); never ask them for it.",
+    };
+  } }),
+  // the webhook's own id is filled in by the handler (server/settings-actions.ts)
+  write: () => ({ method: "POST", path: "/api/webhooks/routine/rotate", body: {} }),
+  classes: always("secret"),
 });
 add({
   key: "routine.run", family: "routine", target: "routine", value: "boolean", label: "Run now (true)", where: "Automations > routine > Run now",
