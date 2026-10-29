@@ -1,6 +1,6 @@
 /** Isolated gallery for Playwright screenshots of Connect apps and Browse
  * bots in their window (no server). Not shipped in the app.
- * ?view=manage|org-settings|bots|bots-in-apps&skin=<id>&lang=<code>&role=member|admin
+ * ?view=manage|org-settings|bots|bots-in-apps&skin=<id>&lang=<code>&role=member|admin&app=none
  * manage: the real Connect apps panel (PluginsPanel) on a stand-in /api
  * shaped like an organization member's (2026-10-26): GitHub added by hand
  * and again by a marketplace plugin, five plugins, the person's Claude
@@ -81,12 +81,14 @@ function Bots({ inApps }: { inApps?: boolean }) {
 // ?view=manage: the stand-in /api an organization member's panel reads
 // (&role=admin: an organization admin's).
 const admin = params.get("role") === "admin";
+// &app=none: no GitHub OAuth App on the server (Connect GitHub takes a token)
+const deviceFlow = params.get("app") !== "none";
 const ORG: PerspicaxOrg = {
   org: { name: "Example Org", identity: { kind: "perspicax", issuer: "https://px.example.test" } },
   link: { state: "ok" }, viewerRole: admin ? "admin" : "member",
   settings: {
     pluginMarketplaces: { mode: "list", allow: ["example-org/*", "anthropics/claude-plugins-official"] },
-    github: { clientId: "Ov23liExample0001", fromEnvironment: false },
+    github: { clientId: deviceFlow ? "Ov23liExample0001" : null, fromEnvironment: false },
   },
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -102,11 +104,11 @@ const MANAGE_API: Record<string, unknown> = {
   ], groups: [], sections: [] },
   "/api/org": ORG,
   // Providers > GitHub: the account, and one list of other credentials (2026-10-28)
-  "/api/me/github/credentials": { canManageOrg: admin, deviceFlow: true, credentials: [
+  "/api/me/github/credentials": { canManageOrg: admin, deviceFlow, credentials: [
     { id: "gt_0000000000000011", label: "Second GitHub organization", hint: "9c1d", owner: "mine", chosenBy: 1 },
     { id: "gt_0000000000000001", label: "Private repositories", hint: "4f2a", owner: "org", chosenBy: 0 },
   ] },
-  "/api/me/connections": { github: { state: "none", deviceFlow: true }, servers: [
+  "/api/me/connections": { github: { state: "none", deviceFlow }, servers: [
     { name: "notes", kind: "remote", type: "http", url: "https://mcp.notion.com/mcp", domain: "mcp.notion.com", auth: "oauth", tokenConfigured: false, enabled: true, addedAt: 1, authState: "connected" },
   ], sandbox: true },
   "/api/mcp/servers": { servers: [

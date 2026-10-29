@@ -75,7 +75,7 @@ import {
   isRemoteMcpListing,
   useMcpServers,
 } from "./McpServersPanel";
-import { IntegrationsManagedNotice, MyGithubConnection, MyMcpServers } from "./settings/MyConnectionsSettings";
+import { IntegrationsManagedNotice, MyGithubConnection, MyGithubSummary, MyMcpServers } from "./settings/MyConnectionsSettings";
 import { useServerMode } from "./ServerModeSettings";
 import { ConnectAppsView, connectAppsTabLabel, connectedCounts, normalizeConnectAppsTab, type ConnectAppsTab } from "./plugins/ConnectAppsView";
 import type { Crumb } from "./Breadcrumb";
@@ -988,10 +988,9 @@ export function PluginsPanel() {
           service={accountService}
           onService={setAccountService}
           github={githubHere ? (
-            <GithubAccountSection connection={organization ? (
-              <MyGithubConnection onEnableApp={isOrgAdmin ? () => { close(); openSettings(dispatch, "organization", "organization.githubApp"); } : undefined} />
-            ) : undefined} />
+            <GithubAccountSection connection={organization ? <MyGithubConnection /> : undefined} />
           ) : undefined}
+          githubSummary={githubHere && organization ? <MyGithubSummary /> : undefined}
           refreshing={harness.loading}
           onRefresh={() => void harness.load(true)}
           servers={organization ? <MyMcpServers /> : undefined}

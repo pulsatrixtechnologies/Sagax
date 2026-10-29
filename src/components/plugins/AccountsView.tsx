@@ -5,7 +5,12 @@
 // 2026-10-28), each engine with connectors (Claude, Grok, ChatGPT when its
 // connectors are listed) and the person's own MCP servers. One click shows
 // only that service. The published pages have their own tab (Pages).
+// GitHub in All is one card, the model of Claude's and Grok's sections (its
+// mark, its name, the account, one button): its whole content (the
+// connection and the other credentials) is one level down, on its pill
+// (owner, 2026-10-28: "since it's moved, why is it still shown there").
 import { useState, type ReactNode } from "react";
+import { GitBranch } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { categoryChipClass } from "../category-modal";
@@ -32,8 +37,11 @@ export interface AccountsViewProps {
   groups: HarnessConnectorGroup[];
   refreshing?: boolean;
   onRefresh?: () => void;
-  /** the person's GitHub account and the other credentials beside it */
+  /** the person's GitHub account and the other credentials beside it,
+   * shown when the GitHub card is opened */
   github?: ReactNode;
+  /** the GitHub card's account line in All (connected as, or not) */
+  githubSummary?: ReactNode;
   /** the person's own MCP servers (organization server) */
   servers?: ReactNode;
   /** Claude Code on this computer (a solo installation): Claude's */
@@ -45,13 +53,15 @@ export interface AccountsViewProps {
   onService?: (service: AccountService) => void;
 }
 
-export function AccountsView({ groups, refreshing, onRefresh, github, servers, claudeCode, onSetUp, service: asked, onService }: AccountsViewProps) {
+export function AccountsView({ groups, refreshing, onRefresh, github, githubSummary, servers, claudeCode, onSetUp, service: asked, onService }: AccountsViewProps) {
   const [own, setOwn] = useState<AccountService>("all");
   const chosen = asked ?? own;
   const setChosen = onService ?? setOwn;
   const services = accountServices(groups, Boolean(servers), Boolean(github));
   const service = services.includes(chosen) ? chosen : "all";
   const shows = (id: AccountService) => service === "all" || service === id;
+  // GitHub opened: on its pill, or when there are no pills to open it with
+  const githubOpen = service === "github" || services.length === 0;
   const shownGroups = groups.filter((group) => shows(group.id));
   const empty = groups.length === 0 && !servers && !claudeCode && !github;
   return (
@@ -68,10 +78,29 @@ export function AccountsView({ groups, refreshing, onRefresh, github, servers, c
       {empty && (
         <div className="rounded-xl bg-inset px-4 py-3 text-[12.5px] text-ink-secondary" data-plugins-empty>{t("connectApps.manage.accountsEmpty")}</div>
       )}
-      {github && shows("github") && (
+      {github && githubOpen && (
         <div className="mb-6" data-plugins-github>
           {github}
         </div>
+      )}
+      {github && !githubOpen && service === "all" && (
+        <section className="mb-6" data-plugins-github-card>
+          <div className="flex items-center gap-2">
+            <span className="flex size-5 shrink-0 items-center justify-center"><GitBranch size={16} aria-hidden="true" className="text-ink" /></span>
+            <h3 className="min-w-0 truncate text-[13px] font-semibold text-ink">{t("myConnections.github.title")}</h3>
+            {githubSummary && <span className="min-w-0 truncate text-[11.5px] text-ink-secondary" data-github-summary>{githubSummary}</span>}
+            <span className="flex-1" />
+            <button
+              type="button"
+              data-plugins-github-open
+              onClick={() => setChosen("github")}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full bg-control px-2.5 py-1 text-[11.5px] font-medium text-ink hover:bg-raised-hover"
+            >
+              {t("connectApps.accounts.openService", { provider: t("myConnections.github.title") })}
+            </button>
+          </div>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-ink-tertiary">{t("sources.github.intro")}</p>
+        </section>
       )}
       <HarnessConnectorGroups groups={shownGroups} refreshing={refreshing} onRefresh={onRefresh} onSetUp={onSetUp} />
       {servers && shows("servers") && (

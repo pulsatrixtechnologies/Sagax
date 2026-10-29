@@ -286,17 +286,36 @@ describe("Providers and Sources: a click on a service pill, GitHub in Providers"
     expect(member).not.toMatch(/admin/i);
   });
 
-  it("Providers: GitHub is a service of its own, first, with the account and the other credentials", () => {
+  it("Providers: GitHub is a service of its own, first; in All one card, opened on its pill with the account and the other credentials", () => {
     const groups = connectorGroups({ claude: { available: true, connectors: [{ name: "Gmail", status: "connected" }] } });
-    flushSync(() => root.render(createElement(AccountsView, { groups, github: createElement("div", { "data-github-here": "" }), servers: createElement("div", { "data-servers": "" }) })));
+    flushSync(() => root.render(createElement(AccountsView, { groups, github: createElement("div", { "data-github-here": "" }), githubSummary: "Connected as @octo", servers: createElement("div", { "data-servers": "" }) })));
     const pills = [...host.querySelectorAll("[data-accounts-service-pill]")].map((pill) => pill.getAttribute("data-accounts-service-pill"));
     expect(pills).toEqual(["all", "github", "claude", "grok", "servers"]);
+    // All: the card only (its name, the account, Open), not the section
+    expect(host.querySelector("[data-github-here]")).toBeNull();
+    const card = host.querySelector("[data-plugins-github-card]")!;
+    expect(card.textContent).toContain("GitHub");
+    expect(card.textContent).toContain("Connected as @octo");
+    expect(card.textContent).toContain("Open GitHub");
+    expect(host.querySelector('[data-harness-group="claude"]')).not.toBeNull();
+    // Open GitHub: the pill, its whole content, nothing else
+    flushSync(() => (host.querySelector("[data-plugins-github-open]") as HTMLElement).click());
+    expect(host.querySelector("[data-accounts-service]")?.getAttribute("data-accounts-service")).toBe("github");
     expect(host.querySelector("[data-github-here]")).not.toBeNull();
-    flushSync(() => (host.querySelector('[data-accounts-service-pill="github"]') as HTMLElement).click());
-    expect(host.querySelector("[data-github-here]")).not.toBeNull();
+    expect(host.querySelector("[data-plugins-github-card]")).toBeNull();
     expect(host.querySelector('[data-harness-group="claude"]')).toBeNull();
     expect(host.querySelector("[data-servers]")).toBeNull();
+    flushSync(() => (host.querySelector('[data-accounts-service-pill="all"]') as HTMLElement).click());
+    expect(host.querySelector("[data-github-here]")).toBeNull();
+    expect(host.querySelector("[data-plugins-github-card]")).not.toBeNull();
   });
+
+  it("Providers: a link to GitHub (the parent's service) opens its card", () => {
+    flushSync(() => root.render(createElement(AccountsView, { groups: connectorGroups({}), github: createElement("div", { "data-github-here": "" }), service: "github", onService: () => {} })));
+    expect(host.querySelector("[data-github-here]")).not.toBeNull();
+    expect(host.querySelector("[data-plugins-github-card]")).toBeNull();
+  });
+
 });
 
 describe("Providers (once My accounts) and Pages: names and old links", () => {
