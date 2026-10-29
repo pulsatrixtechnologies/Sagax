@@ -37,7 +37,12 @@ export function followBottomGrowth(scroller: BottomFollowScroller, following: bo
 
 /**
  * Keep a pinned transcript at its true bottom when descendants mount or
- * resize after the parent's one-shot message scroll (for example TurnPresence).
+ * resize after the parent's one-shot message scroll (for example TurnPresence),
+ * and when the pane itself changes height: a banner above it (offline, an
+ * error, a routine that failed, the turn timing line, the voice dock) or a
+ * shorter window used to leave the bottom of the turn, the working line
+ * included, below the fold until the next row arrived (2026-10-29). A reader
+ * who scrolled up keeps the rows they read where they are on screen.
  */
 export function useBottomFollowResize(
   scrollRef: RefObject<HTMLElement | null>,
@@ -50,10 +55,19 @@ export function useBottomFollowResize(
     const transcript = transcriptRef.current;
     if (!scroller || !transcript || observeKey === null) return;
 
+    let paneTop = scroller.getBoundingClientRect().top;
     const observer = new ResizeObserver(() => {
-      followBottomGrowth(scroller, followingRef.current);
+      // the pane moved on screen by `shift` (a banner shown or gone above
+      // it): a reader who is not following is scrolled by as much
+      const top = scroller.getBoundingClientRect().top;
+      const shift = top - paneTop;
+      paneTop = top;
+      if (followBottomGrowth(scroller, followingRef.current)) return;
+      if (shift) scroller.scrollTop += shift;
     });
     observer.observe(transcript);
+    // the pane's own box: its height changes when something around it shows
+    observer.observe(scroller);
     return () => observer.disconnect();
   }, [followingRef, observeKey, scrollRef, transcriptRef]);
 }
