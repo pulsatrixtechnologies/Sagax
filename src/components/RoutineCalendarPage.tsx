@@ -117,6 +117,7 @@ import {
 } from "@/lib/routines";
 import { api, openBotThread, openNotificationTarget, useStore, type Bot, type Group } from "@/state/store";
 import { viewerCanCreateBots } from "@/lib/viewer";
+import { answerWasLost, isRawStatusText, routineCreatedBy } from "@/lib/routine-save-recovery";
 import { RoutineScheduleNote } from "./RoutineScheduleNote";
 import { readTiming, RoutineTimingFields, withRoutineTiming } from "./routines/RoutineTimingFields";
 import { BOT_CALENDAR_DRAG_TYPE } from "@/lib/bot-drag";
@@ -570,6 +571,9 @@ function EventEditor({
     if (attachmentPending) return;
     setSaving(true);
     setError("");
+    // #1522: what a create whose answer is lost is checked against.
+    const knownRoutineIds = new Set(state.routines.map((routine) => routine.id));
+    let creating: Pick<RoutineInput, "name" | "botId" | "target"> | null = null;
     try {
       if (kind === "routine" || routinesOnly) {
         const savedAt = Date.now();
@@ -615,6 +619,7 @@ function EventEditor({
           ...(runAs && runAs !== runAsOptions?.current?.principalId ? { runAs } : {}),
           ...(!existingRoutine && seed.folder ? { folder: seed.folder } : {}),
         };
+        if (!existingRoutine) creating = { name: input.name, botId: input.botId, target: input.target };
         const response = await editorRequest(existingRoutine ? `/api/routines/${existingRoutine.id}` : "/api/routines", {
           method: existingRoutine ? "PATCH" : "POST",
           body: JSON.stringify(input),
@@ -639,7 +644,21 @@ function EventEditor({
       }
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      const lost = answerWasLost(cause);
+      // The routine may exist although its answer never came back: read the
+      // routines again before saying it failed, so a retry never duplicates it.
+      if (lost && creating) {
+        const wanted = creating;
+        const listed = await editorRequest("/api/routines").catch(() => null) as { routines?: Routine[] } | null;
+        const created = listed?.routines ? routineCreatedBy(knownRoutineIds, listed.routines, wanted) : null;
+        if (created) {
+          dispatch({ type: "routinePatched", routine: created });
+          onClose();
+          return;
+        }
+      }
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setError(lost || isRawStatusText(message) ? t("routineCalendar.saveAnswerLost") : message);
     } finally {
       setSaving(false);
     }
