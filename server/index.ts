@@ -726,6 +726,7 @@ import { botReplyQuoteId } from "./reply-to-turn.ts";
 import { nextOccurrence, PREWARM_ENGINE_LEAD_MS, ROUTINE_RESTARTED, ROUTINE_RESUME_PROMPT, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
+import { calendarCallRefusal, visibleCalendarCalls, type CalendarCallAccess } from "./calendar-call-access.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserProfileChangeRefusal, browserRuntimeEnv } from "./browser-runtime.ts";
 import { browserEgress, sameOwnerBots as sameOwnerBrowserBots } from "./browser/egress/registry.ts";
@@ -45187,12 +45188,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // ── scheduled room sessions ────────────────────────────────────────
+    // #1482: a member sees the calls of the bots they can see and manages
+    // those of the bots they may run, like a routine (server/calendar-call-access.ts).
+    const callAccess: CalendarCallAccess = {
+      everything: visible.everything,
+      botVisible: (botId) => visible.bot(botId),
+      needsRun: (botId) => routineNeedsRun(auth, botId),
+    };
     if (path === "/api/calendar-calls" && method === "GET") {
-      return json(res, 200, { calls: calendarCalls!.list() });
+      return json(res, 200, { calls: visibleCalendarCalls(calendarCalls!.list(), callAccess) });
     }
     if (path === "/api/calendar-calls" && method === "POST") {
       try {
         const body = await readBody(req);
+        const refusal = calendarCallRefusal(callAccess, null, body);
+        if (refusal) return json(res, refusal.status, refusal.body);
         const conflict = calendarAudienceConflict(body);
         if (conflict) return json(res, 400, { error: conflict });
         return json(res, 201, { call: calendarCalls!.create(body) });
@@ -45204,6 +45214,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (calendarCallRoomMatch && method === "POST") {
       const call = calendarCalls!.get(calendarCallRoomMatch[1]);
       if (!call) return json(res, 404, { error: "no such scheduled call" });
+      const refusal = calendarCallRefusal(callAccess, call);
+      if (refusal) return json(res, refusal.status, refusal.body);
       if (call.botIds.length < 2) {
         return json(res, 400, { error: "single-bot events open that bot's chat directly" });
       }
@@ -45217,9 +45229,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     const calendarCallMatch = path.match(/^\/api\/calendar-calls\/([\w-]+)$/);
     if (calendarCallMatch && method === "PATCH") {
-      if (!calendarCalls!.get(calendarCallMatch[1])) return json(res, 404, { error: "no such scheduled call" });
+      const existing = calendarCalls!.get(calendarCallMatch[1]);
+      if (!existing) return json(res, 404, { error: "no such scheduled call" });
       try {
         const body = await readBody(req);
+        const refusal = calendarCallRefusal(callAccess, existing, body);
+        if (refusal) return json(res, refusal.status, refusal.body);
         const conflict = calendarAudienceConflict(body);
         if (conflict) return json(res, 400, { error: conflict });
         return json(res, 200, { call: calendarCalls!.update(calendarCallMatch[1], body) });
@@ -45228,6 +45243,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
     }
     if (calendarCallMatch && method === "DELETE") {
+      const existing = calendarCalls!.get(calendarCallMatch[1]);
+      const refusal = existing ? calendarCallRefusal(callAccess, existing) : null;
+      if (refusal) return json(res, refusal.status, refusal.body);
       return calendarCalls!.remove(calendarCallMatch[1])
         ? json(res, 200, { ok: true })
         : json(res, 404, { error: "no such scheduled call" });
