@@ -471,6 +471,10 @@
    must resolve them against ITS ink, not the document's. Declared before
    the skin blocks, so a skin can still set any of them outright. */
 [data-skin] {
+  /* #1507: native controls (a <select>'s list, date and time pickers,
+     scrollbars) follow the skin, not the OS: a dark skin on a light Windows
+     drew white option lists under the skin's pale ink. */
+  color-scheme: var(--code-color-scheme);
   /* the ring of the conversation's glyph field (GlyphRippleLayer.tsx): the
      skin's accent unless the skin names a tint of its own */
   --glyph-ripple-tint: var(--color-accent);
@@ -3031,8 +3035,20 @@ html[data-animations-paused] *::after {
 button:disabled.bg-accent,
 button:disabled.bg-danger {
   background-color: var(--color-raised-hover);
+  /* #1507: a gradient tint paints its accent as an image over the fill;
+     a disabled button drops it, or it keeps looking enabled. */
+  background-image: none;
   color: var(--color-ink-secondary);
   opacity: 1;
+}
+
+/* #1507: a native list draws its options with the select's ink; give them
+   the popover's ground so they stay readable whatever the OS draws. The
+   chosen option keeps the system's highlight. */
+select option:not(:checked),
+select optgroup {
+  background-color: var(--color-popover);
+  color: var(--color-popover-ink);
 }
 
 /* Tailwind v4 does not provide pointer cursors for buttons by default.
