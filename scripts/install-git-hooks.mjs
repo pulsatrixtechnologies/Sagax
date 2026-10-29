@@ -21,7 +21,7 @@ try {
 }
 try {
   execFileSync("git", ["config", "core.hooksPath", "scripts/git-hooks"], { cwd: root, stdio: "ignore" });
-  console.log("git hooks: core.hooksPath -> scripts/git-hooks (pre-push runs lint, typecheck, i18n:check, check:terms; SAGAX_SKIP_HOOKS=1 or --no-verify to skip)");
+  console.log("git hooks: core.hooksPath -> scripts/git-hooks (pre-push runs pnpm verify:merge; SAGAX_SKIP_HOOKS=1 or --no-verify to skip)");
 } catch {
   // a checkout we cannot configure: the hook is a convenience, not a gate
 }

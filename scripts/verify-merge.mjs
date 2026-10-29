@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+// The local gate before a merge: `pnpm verify:merge`. A few minutes, not the
+// 20-minute suite (that one runs once, at the version cut). Nothing runs in
+// CI for a private PR, so this is the only barrier between a branch and main.
+//
+//   pnpm verify:merge                 what the diff against origin/main needs
+//   pnpm verify:merge --base main     another base
+//   pnpm verify:merge --list          print the plan, run nothing
+//   pnpm verify:merge --ios           force the iOS stage
+//
+// Stages, in order:
+//   1. light checks, always: lint, typecheck, locale catalogs, source terms,
+//      skin contrast (about 30 s together)
+//   2. guard tests, always: the ratchets, goldens and source scans that break
+//      main silently when another PR lands (about 30 s)
+//   3. the tests of the diff: every changed test file, the tests beside a
+//      changed source (same folder, same stem: foo.test.ts, foo.*.test.ts,
+//      foo.e2e.test.ts), and the tests beside a changed route's module
+//   4. iOS, only when ios/ or shared/ changed: `swift test` and the Debug
+//      build of the Sagax scheme for the generic simulator (no device boots,
+//      no window)
+//
+// Exit 1 on the first stage that fails; the summary names it. SAGAX_SKIP_HOOKS=1
+// skips the pre-push hook that runs this, never the gate itself.
+import { spawnSync, execFileSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const VITEST = join(ROOT, "node_modules", "vitest", "vitest.mjs");
+
+/** Tests that hold main to a line: a key nothing reads, a route without a
+ * policy row, a golden or a budget. They fail for the PR that merged last,
+ * so every PR runs them. */
+const GUARD_TESTS = [
+  "scripts/testing/index-route-ratchet.test.ts",
+  "scripts/tool-policy/tool-policy-coverage.test.ts",
+  "scripts/self-knowledge/knowledge.test.ts",
+  "src/locales/unused-keys.test.ts",
+  "src/locales/data-keys.test.ts",
+  "src/lib/copy-text.guard.test.ts",
+  "src/lib/view-transitions.test.ts",
+  "src/lib/bundled-release-notes.test.ts",
+  "src/components/dialogs-close.test.ts",
+  "server/admission-golden.test.ts",
+  "server/drain-coalescing-golden.test.ts",
+  "server/drivers/agents-catalog-wire.test.ts",
+  "server/drivers/agents-proxy.test.ts",
+  "server/drivers/tool-scope-coverage.test.ts",
+];
+
+const LIGHT_CHECKS = [
+  ["lint", ["pnpm", "lint"]],
+  ["typecheck", ["pnpm", "typecheck"]],
+  ["locale catalogs", ["pnpm", "i18n:check"]],
+  ["source terms", ["pnpm", "check:terms"]],
+  ["skin contrast", ["pnpm", "check:contrast"]],
+];
+
+function parseArgs(argv) {
+  const options = { base: "origin/main", list: false, ios: false };
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--base") options.base = argv[++i];
+    else if (arg === "--list") options.list = true;
+    else if (arg === "--ios") options.ios = true;
+    else throw new Error(`unknown argument: ${arg}`);
+  }
+  return options;
+}
+
+function git(args) {
+  return execFileSync("git", args, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+}
+
+/** Files changed since the merge base with `base`: committed, staged,
+ * unstaged and untracked. */
+function changedFiles(base) {
+  let since = "HEAD";
+  try { since = git(["merge-base", "HEAD", base]); } catch { /* no such base: the working tree alone */ }
+  const lines = new Set();
+  for (const text of [git(["diff", "--name-only", since]), git(["ls-files", "--others", "--exclude-standard"])]) {
+    for (const line of text.split("\n")) if (line.trim()) lines.add(line.trim());
+  }
+  return [...lines].sort();
+}
+
+const isElectronTest = (file) => file.endsWith(".node-test.mjs");
+const isTest = (file) => /\.(test|e2e\.test)\.[cm]?[jt]sx?$/.test(file) || isElectronTest(file);
+const isVitestFile = (file) => /^(evals|server|electron|src|shared|companion|scripts)\//.test(file) && /\.test\.(ts|mjs)$/.test(file) && !isElectronTest(file);
+
+/** The tests beside a changed source: same folder, same stem. */
+function siblingTests(file) {
+  const dir = join(ROOT, dirname(file));
+  if (!existsSync(dir)) return [];
+  const stem = basename(file).replace(/\.(tsx?|mjs|js)$/, "");
+  return readdirSync(dir)
+    .filter((name) => (name.startsWith(`${stem}.`) && /\.test\.(ts|mjs)$/.test(name)) || name === `${stem}.node-test.mjs`)
+    .map((name) => relative(ROOT, join(dir, name)).split("\\").join("/"));
+}
+
+function plan(options) {
+  const changed = changedFiles(options.base);
+  const tests = new Set();
+  const electronTests = new Set();
+  for (const file of changed) {
+    if (!existsSync(join(ROOT, file))) continue;
+    const candidates = isTest(file) ? [file] : siblingTests(file);
+    for (const test of candidates) {
+      if (isElectronTest(test)) electronTests.add(test);
+      else if (isVitestFile(test)) tests.add(test);
+    }
+  }
+  const ios = options.ios || changed.some((file) => file.startsWith("ios/") || file.startsWith("shared/"));
+  return { changed, tests: [...tests].sort(), electronTests: [...electronTests].sort(), ios };
+}
+
+function run(label, command, { cwd = ROOT } = {}) {
+  const started = Date.now();
+  process.stdout.write(`\n== ${label}\n`);
+  const result = spawnSync(command[0], command.slice(1), { cwd, stdio: "inherit", env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" } });
+  const seconds = ((Date.now() - started) / 1000).toFixed(0);
+  const ok = result.status === 0;
+  process.stdout.write(`${ok ? "ok" : "FAILED"}: ${label} (${seconds}s)\n`);
+  return { label, ok, seconds };
+}
+
+function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const { changed, tests, electronTests, ios } = plan(options);
+  const guards = GUARD_TESTS.filter((file) => existsSync(join(ROOT, file)));
+  const diffTests = tests.filter((file) => !guards.includes(file));
+  console.log(`verify:merge against ${options.base}: ${changed.length} changed file(s)`);
+  console.log(`  light checks: ${LIGHT_CHECKS.map(([label]) => label).join(", ")}`);
+  console.log(`  guard tests: ${guards.length}`);
+  console.log(`  tests of the diff: ${diffTests.length ? diffTests.join(", ") : "none"}`);
+  if (electronTests.length) console.log(`  electron tests: ${electronTests.join(", ")}`);
+  console.log(`  iOS: ${ios ? "swift test + simulator build" : "skipped (no ios/ or shared/ change)"}`);
+  if (options.list) return;
+
+  const started = Date.now();
+  const results = [];
+  const stop = (result) => {
+    results.push(result);
+    if (!result.ok) {
+      console.log(`\nverify:merge FAILED at "${result.label}" after ${((Date.now() - started) / 1000).toFixed(0)}s`);
+      process.exit(1);
+    }
+  };
+  for (const [label, command] of LIGHT_CHECKS) stop(run(label, command));
+  stop(run(`guard tests (${guards.length} files)`, [process.execPath, VITEST, "run", "--reporter=dot", ...guards]));
+  if (diffTests.length) stop(run(`tests of the diff (${diffTests.length} files)`, [process.execPath, VITEST, "run", "--reporter=dot", ...diffTests]));
+  for (const test of electronTests) stop(run(`electron ${test}`, [process.execPath, "--test", test]));
+  if (ios) {
+    const iosDir = join(ROOT, "ios");
+    stop(run("swift test (CompanionCore)", ["swift", "test"], { cwd: iosDir }));
+    if (spawnSync("xcodegen", ["--version"], { stdio: "ignore" }).status === 0 && spawnSync("xcodebuild", ["-version"], { stdio: "ignore" }).status === 0) {
+      stop(run("xcodegen generate", ["xcodegen", "generate"], { cwd: iosDir }));
+      stop(run("iOS build (Sagax scheme, generic simulator)", ["xcodebuild", "-project", "Sagax.xcodeproj", "-scheme", "Sagax", "-sdk", "iphonesimulator",
+        "-destination", "generic/platform=iOS Simulator", "-quiet", "CODE_SIGNING_ALLOWED=NO", "build"], { cwd: iosDir }));
+    } else {
+      console.log("\n== iOS build: skipped, xcodegen or xcodebuild is not installed (swift test ran)");
+    }
+  }
+  console.log(`\nverify:merge OK in ${((Date.now() - started) / 1000).toFixed(0)}s: ${results.map((r) => `${r.label} ${r.seconds}s`).join("; ")}`);
+}
+
+main();
