@@ -1129,7 +1129,6 @@
   "connectors.aliasAriaAnother": "एक और {service} खाते का लेबल",
   "connectors.aliasAriaNew": "नए {service} खाते का लेबल",
   "connectors.noAppsFound": "कोई ऐप नहीं मिला",
-  "connectors.tryDifferentSearch": "कोई और खोज आज़माएँ।",
   "mcp.env.useKeyValue": "“{line}” के लिए KEY=value का उपयोग करें।",
   "mcp.env.invalidName": "“{key}” मान्य एनवायरनमेंट वेरिएबल नहीं है।",
   "mcp.env.duplicate": "“{key}” एक से ज़्यादा बार लिखा है।",

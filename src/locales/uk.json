@@ -1545,7 +1545,6 @@
   "connectors.aliasAriaAnother": "Мітка для іншого акаунта {service}",
   "connectors.aliasAriaNew": "Мітка для нового акаунта {service}",
   "connectors.noAppsFound": "Застосунків не знайдено",
-  "connectors.tryDifferentSearch": "Спробуйте інший пошук.",
   "mcp.env.useKeyValue": "Використовуйте KEY=value для «{line}».",
   "mcp.env.invalidName": "«{key}» — недійсна змінна середовища.",
   "mcp.env.duplicate": "«{key}» згадується більше одного разу.",

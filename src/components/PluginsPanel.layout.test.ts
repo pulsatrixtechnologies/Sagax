@@ -24,7 +24,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("Plugins panel views", () => {
   const discoverProps: DiscoverViewProps = {
-    items, search: "", onSearch: noop, filter: "all", onFilter: noop, type: "any", onType: noop,
+    items, filter: "all", onFilter: noop, type: "any", onType: noop,
     sourceLabel: (source: string) => source, onOpenItem: noop,
     renderAction: (item: PluginItem) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
   };
@@ -42,9 +42,22 @@ describe("Plugins panel views", () => {
     expect(html).not.toContain("Manage plugins and skills");
     expect(html).toMatch(/aria-label="Installed, 2 connected"[^>]*data-plugins-tab="installed"/);
     const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*><span data-plugins-tab-label="[^"]*">([^<]+)</g)].map((match) => [match[1], match[2]]);
-    expect(tabs).toEqual([["discover", "Discover"], ["installed", "Installed"], ["providers", "Providers"], ["pages", "Pages"], ["sources", "Sources"]]);
+    expect(tabs).toEqual([["discover", "Discover"], ["bots", "Bots"], ["installed", "Installed"], ["providers", "Providers"], ["pages", "Pages"], ["sources", "Sources"]]);
     expect(html).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
-    expect(html).toMatch(/id="plugins-title"[\s\S]*?role="tablist"[\s\S]*?placeholder="Search across apps and skills"/);
+    // one search (2026-10-29): under the title, above the tabs; none in Discover
+    const searched = page({ search: createElement("input", { "data-plugins-search": "", placeholder: "ONE SEARCH" }) });
+    expect(searched).toMatch(/id="plugins-title"[\s\S]*?data-plugins-search-slot[\s\S]*?ONE SEARCH[\s\S]*?role="tablist"/);
+    expect(searched.match(/data-plugins-search=""/g)).toHaveLength(1);
+    // with text, the results take the tab's place
+    const results = page({ results: "RESULTS" });
+    expect(results).toContain("data-plugins-results");
+    expect(results).toContain("RESULTS");
+    expect(results).not.toContain("data-plugins-discover");
+    // Bots: a pane of its own, like a page opened from a tab
+    const bots = page({ tab: "bots", bots: "BOTS" });
+    expect(bots).toContain("BOTS");
+    expect(bots).toMatch(/data-plugins-manage="bots"/);
+    expect(bots).not.toMatch(/data-plugins-list=""[^>]*data-plugins-manage="bots"/);
     expect(html).not.toContain("INSTALLED");
     expect(page({ tab: "sources" })).toContain("SOURCES");
     // a tab left out is not drawn; a tab not offered falls back to Discover
@@ -53,9 +66,10 @@ describe("Plugins panel views", () => {
     expect(noSources).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
   });
 
-  it("Discover: the search with Browse Bots beside it, every category pill, sections of two-column rows", () => {
+  it("Discover: no search of its own, every category pill with Browse Bots at their end, sections of two-column rows", () => {
     const html = renderToStaticMarkup(createElement(DiscoverView, discoverProps));
-    expect(html).toContain('placeholder="Search across apps and skills"');
+    expect(html).not.toContain("placeholder=");
+    expect(html).not.toContain("data-plugins-search");
     expect(html).not.toContain("Browse Bots");
     const chips = [...html.matchAll(/data-plugins-chip="([^"]+)"/g)].map((match) => match[1]);
     expect(chips[0]).toBe("all");
@@ -65,7 +79,7 @@ describe("Plugins panel views", () => {
     expect(html).toContain("md:grid-cols-2");
     expect(html).toMatch(/data-plugin-row="featured:linear"[\s\S]*?>Connect</);
     const withBots = renderToStaticMarkup(createElement(DiscoverView, { ...discoverProps, onBrowseBots: noop }));
-    expect(withBots).toMatch(/placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse bots/);
+    expect(withBots).toMatch(/data-plugins-chips[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse bots/);
   });
 
   it("Discover leaves out what is installed and the engines' connectors, keeps an app a conversation needs until it connects", () => {
@@ -123,7 +137,7 @@ describe("Plugins panel views", () => {
       grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" },
     });
     const html = renderToStaticMarkup(createElement(DiscoverView, {
-      items: withGrok, search: "gmail", onSearch: noop, filter: "all", onFilter: noop, type: "any", onType: noop,
+      items: withGrok, filter: "all", onFilter: noop, type: "any", onType: noop,
       sourceLabel: (source) => source, onOpenItem: noop,
       renderAction: (item) => grokRowAction(item) ?? (item.action ? createElement("button", { type: "button" }, "Connect") : null),
     }));

@@ -1129,7 +1129,6 @@
   "connectors.aliasAriaAnother": "另一个 {service} 账号的标签",
   "connectors.aliasAriaNew": "新 {service} 账号的标签",
   "connectors.noAppsFound": "未找到应用",
-  "connectors.tryDifferentSearch": "换个关键词试试。",
   "mcp.env.useKeyValue": "“{line}”请使用 KEY=value 格式。",
   "mcp.env.invalidName": "“{key}”不是有效的环境变量。",
   "mcp.env.duplicate": "“{key}”出现了不止一次。",

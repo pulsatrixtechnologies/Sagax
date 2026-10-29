@@ -174,7 +174,13 @@ const MANAGE_API: Record<string, unknown> = {
   "/api/webhooks": { webhooks: [], attempts: [] },
   // Browse Bots opened from Discover (2026-10-28): no bot of the person yet,
   // the built-in templates, an empty marketplace list
-  "/api/bot-catalog": { organization: true, viewer: { principalId: "p-1", admin, canCreate: true }, entries: [] },
+  // (2026-10-29: a few neutral bots, so the Bots tab and the search show rows)
+  "/api/bot-catalog": { organization: true, viewer: { principalId: "p-1", admin, canCreate: true }, entries: [
+    { id: "bot-a", name: "Rocket", title: "Planner", description: "Plans the week and keeps the to-do list", look: { color: "orange" }, owner: { principalId: "p-1", name: "Example member" }, source: "mine", archived: false, primary: true },
+    { id: "bot-b", name: "Atlas", title: "Research assistant", description: "Reads the sources and writes a short brief", look: { color: "blue" }, owner: { principalId: "p-1", name: "Example member" }, source: "mine", archived: false, primary: false, catalog: { published: true, category: "research" } },
+    { id: "bot-c", name: "Quill", title: "Release notes", description: "Turns merged changes into release notes", look: { color: "green" }, owner: { principalId: "p-2", name: "Example teammate" }, source: "shared", archived: false, primary: false },
+    { id: "bot-d", name: "Compass", title: "Onboarding guide", description: "Walks a new teammate through the first week", look: { color: "purple" }, owner: { principalId: "p-3", name: "Example admin" }, source: "organization", archived: false, primary: false, catalog: { published: true, category: "support", featured: true } },
+  ] },
   "/api/team-library/xai": { label: "xAI Bot Marketplace", url: "https://x.ai/bot/marketplace", fetchedAt: 1, bots: [] },
 };
 

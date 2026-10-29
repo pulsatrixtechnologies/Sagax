@@ -1345,8 +1345,9 @@ export interface AppState {
   routineFocus: { botId: string; routineId: string } | null;
   /** a link that opens Connect apps on one tab: Pages (the published
    * pages), Providers (once My accounts: the old name "accounts" still
-   * leads there, see the togglePlugins action) or Sources */
-  pluginsPage: "pages" | "providers" | "sources" | null;
+   * leads there, see the togglePlugins action), Sources or Bots (Browse
+   * Bots, 2026-10-29: openBotCatalog leads there) */
+  pluginsPage: "pages" | "providers" | "sources" | "bots" | null;
   /** The Triggers pop-up (webhooks, as a sentence: when this happens, that
    * bot should…). */
   triggersOpen: boolean;
@@ -1785,7 +1786,7 @@ export type Action =
    * notification of a routine run refused in another person's thread. */
   | { type: "openBotActivity"; botId: string; itemId: string }
   | { type: "botActivityOpened" }
-  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "pages" | "providers" | "accounts" | "sources" | null; focusApps?: string[] }
+  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "pages" | "providers" | "accounts" | "sources" | "bots" | null; focusApps?: string[] }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "openBotWizard"; botId?: string | null; redo?: boolean }
@@ -3067,6 +3068,9 @@ function reduce(state: AppState, action: Action): AppState {
         pluginsBotId: !open ? null : action.page ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
         pluginsPage: open ? (action.page === "accounts" ? "providers" : action.page ?? null) : null,
         pluginsFocusApps: !open ? null : action.focusApps?.length ? action.focusApps : state.pluginsOpen ? state.pluginsFocusApps : null,
+        // where a link to Browse Bots asked it to open (its Templates) lasts
+        // while Connect apps is open (2026-10-29)
+        ...(!open && state.botCatalogTarget && !state.botCatalogOpen ? { botCatalogTarget: null } : {}),
         ...(open ? { settingsOpen: false, appSettingsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
@@ -3186,11 +3190,16 @@ function reduce(state: AppState, action: Action): AppState {
         personaEditor: open ? null : state.personaEditor,
       };
     }
-    case "openBotCatalog":
-      if (action.section) {
-        return { ...state, botCatalogOpen: true, botCatalogTarget: { section: action.section, ...(action.installUrl ? { installUrl: action.installUrl } : {}) } };
-      }
-      return state.botCatalogOpen ? state : { ...state, botCatalogOpen: true, botCatalogTarget: null };
+    case "openBotCatalog": {
+      // Browse Bots is Connect apps' Bots tab (2026-10-29): every link to it
+      // opens that tab, on its Templates when it asks (a new object, so an
+      // open tab follows a later link). Its own window (botCatalogOpen) keeps
+      // its content for a window that is already open.
+      const target = action.section ? { section: action.section, ...(action.installUrl ? { installUrl: action.installUrl } : {}) } : null;
+      if (state.botCatalogOpen) return action.section ? { ...state, botCatalogTarget: target } : state;
+      const opened = reducer(state, { type: "togglePlugins", open: true, surface: "apps", page: "bots" });
+      return { ...opened, botCatalogTarget: target };
+    }
     case "closeBotCatalog":
       return state.botCatalogOpen ? { ...state, botCatalogOpen: false, botCatalogTarget: null } : state;
     case "openPersonaEditor":
