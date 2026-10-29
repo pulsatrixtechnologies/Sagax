@@ -108,3 +108,19 @@ export function materiallyDifferent(sent: string, final: string): boolean {
   if (!b.length) return false;
   return a.join(" ") !== b.join(" ");
 }
+
+/** The page's stages of one call turn, sent with it (voiceCall.timing) so
+ * the thread's Events lens shows them beside the server's: end of speech
+ * to the detector's call, to the words, to the send. Whole ms; a stage the
+ * turn did not reach is left out. */
+export function clientTurnTiming(m: TurnMetrics, sentAt: number): { endpointMs?: number; sttMs?: number; dispatchMs?: number } {
+  const span = (from: number | undefined, to: number | undefined) => (from === undefined || to === undefined ? undefined : Math.max(0, Math.round(to - from)));
+  const endpointMs = span(m.stoppedAt, m.endedAt);
+  const sttMs = span(m.endedAt, m.transcribedAt);
+  const dispatchMs = span(m.transcribedAt ?? m.endedAt, sentAt);
+  return {
+    ...(endpointMs !== undefined ? { endpointMs } : {}),
+    ...(sttMs !== undefined ? { sttMs } : {}),
+    ...(dispatchMs !== undefined ? { dispatchMs } : {}),
+  };
+}

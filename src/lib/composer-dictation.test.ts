@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DICTATION_BARS, DICTATION_HOLD_MS, dictationEngine, isDictationHold, dictationLevels, formatDictationTime, joinDictated } from "./composer-dictation";
+import { DICTATION_BARS, DICTATION_HOLD_MS, DICTATION_RATE, dictationEngine, dictationFrame, isDictationHold, dictationLevels, formatDictationTime, joinDictated } from "./composer-dictation";
 
 describe("composer dictation", () => {
   it("dictates with xAI whenever a key serves, the Mac's own only as a fallback, else none (2026-10-28)", () => {
@@ -35,5 +35,16 @@ describe("composer dictation", () => {
     expect(DICTATION_HOLD_MS).toBe(350);
     expect(isDictationHold(1000, 1200)).toBe(false);
     expect(isDictationHold(1000, 1350)).toBe(true);
+  });
+});
+
+describe("dictationFrame", () => {
+  it("passes 16 kHz frames through and brings 48 kHz down to it", () => {
+    const same = new Float32Array([0.1, 0.2]);
+    expect(dictationFrame(same, DICTATION_RATE)).toBe(same);
+    const high = new Float32Array(1024).fill(0.3);
+    const down = dictationFrame(high, 48_000);
+    expect(down.length).toBe(341);
+    expect(down[0]).toBeCloseTo(0.3);
   });
 });

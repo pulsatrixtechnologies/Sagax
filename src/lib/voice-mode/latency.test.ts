@@ -3,7 +3,7 @@
 // percentiles, and when final words differ enough to send a turn again.
 import { describe, expect, it } from "vitest";
 
-import { formatTimeline, materiallyDifferent, percentile, stageDurations } from "./latency";
+import { clientTurnTiming, formatTimeline, materiallyDifferent, percentile, stageDurations } from "./latency";
 
 describe("a turn's timeline", () => {
   const turn = {
@@ -36,5 +36,12 @@ describe("final words that differ", () => {
     expect(materiallyDifferent("call Max", "call Max about the invoice")).toBe(true);
     // no final words: nothing to correct
     expect(materiallyDifferent("call Max", "")).toBe(false);
+  });
+});
+
+describe("clientTurnTiming", () => {
+  it("gives the page's stages in whole ms and leaves out the ones not reached", () => {
+    expect(clientTurnTiming({ stoppedAt: 1_000, endedAt: 1_560.4, transcribedAt: 1_740 }, 1_760)).toEqual({ endpointMs: 560, sttMs: 180, dispatchMs: 20 });
+    expect(clientTurnTiming({ stoppedAt: 1_000, endedAt: 1_500 }, 1_700)).toEqual({ endpointMs: 500, dispatchMs: 200 });
   });
 });

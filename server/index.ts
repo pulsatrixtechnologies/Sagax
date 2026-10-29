@@ -941,6 +941,7 @@ import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultra
 import { routeTurnModel, type TurnModelSwitch } from "./turn-model-routing.ts";
 import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
+import { parseVoiceClientTiming } from "./voice-timing.ts";
 import { noteFirstResponse, noteTurnQueued, setTurnTimingWriter, turnTrace } from "./turn-trace.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
@@ -5030,11 +5031,17 @@ function requestedTaskBot(botId: string, rawThreadId: unknown): BotRecord {
 const stoppingThreads = new Map<string, ReturnType<typeof setTimeout>>();
 /** When a person last stopped each thread's turn (the call watchdog). */
 const threadStoppedAt = new Map<string, number>();
+/** The call utterance a stop was aimed at (a voice interrupt names the one
+ * it cancels): words of a newer utterance that joined the dying turn were
+ * not stopped on purpose, so the call watchdog still answers them. */
+const threadStoppedUtterance = new Map<string, string>();
 
-function markThreadStopping(threadId: string): void {
+function markThreadStopping(threadId: string, utteranceId?: string): void {
   const previous = stoppingThreads.get(threadId);
   if (previous) clearTimeout(previous);
   threadStoppedAt.set(threadId, Date.now());
+  if (utteranceId) threadStoppedUtterance.set(threadId, utteranceId);
+  else threadStoppedUtterance.delete(threadId);
   // a turn that never reports settling must not hold its words forever
   const timer = setTimeout(() => {
     if (stoppingThreads.get(threadId) !== timer) return;
@@ -5058,15 +5065,15 @@ function clearThreadStopping(threadId: string): void {
  *
  * A stuck-loop stop uses this too. Those words went into a turn that is
  * about to die, so they stay unreceived and the next turn can answer them. */
-async function stopDirectThread(botId: string, threadId: string): Promise<void> {
-  if (threadBusy(botId, threadId)) markThreadStopping(threadId);
+async function stopDirectThread(botId: string, threadId: string, utteranceId?: string): Promise<void> {
+  if (threadBusy(botId, threadId)) markThreadStopping(threadId, utteranceId);
   handoffs.stoppedByPerson(threadId);
   await interruptDirectThread(botId, threadId);
 }
 
 /** A person stops a thread's turn: what they sent into it is withdrawn,
  * and words sent while it stops wait for the next turn. */
-async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
+async function stopDirectThreadByPerson(botId: string, threadId: string, utteranceId?: string): Promise<void> {
   // #1329: Stop between two relaunches (no turn running) ends the run
   // here; a running turn ends it when it settles as stopped.
   if (!threadBusy(botId, threadId)) {
@@ -5075,7 +5082,7 @@ async function stopDirectThreadByPerson(botId: string, threadId: string): Promis
     finishUntilRuns.reset(threadId);
     if (spent > 0 && bot?.finishUntil) appendFinishUntilRow(threadId, { status: "stopped", condition: bot.finishUntil, round: spent, max: finishUntilRounds(bot.finishUntilMaxRounds) });
   }
-  await stopDirectThread(botId, threadId);
+  await stopDirectThread(botId, threadId, utteranceId);
   // the bot's own sub-agents of this conversation stop with it
   await stopOwnSubagents(botId, threadId);
 }
@@ -19213,8 +19220,26 @@ function finishVoiceCallRequestedByBot(threadId: string, settle: ReturnType<type
   void perspicaxMcp?.endWarm(threadId);
   broadcastVoiceCallEnded(threadId, ending.callId, "bot");
 }
-/** Each call turn's server stages, logged under its utterance id (server/voice-latency.ts). */
-const voiceLatency = new VoiceLatencyLog();
+/** Each call turn's server stages, logged under its utterance id
+ * (server/voice-latency.ts), and shown in the thread's Events lens. */
+const voiceLatency = new VoiceLatencyLog(undefined, undefined, (threadId, message) => publishVoiceNotice(threadId, message));
+
+/** A voice timing note (server/voice-timing.ts) into the thread's Events
+ * lens: a runtime.notice, never a chat row. Numbers only. */
+function publishVoiceNotice(threadId: string, message: string): void {
+  const selection = store.botByThread(threadId)?.modelSelection;
+  const instance = selection ? registry.get(selection.instanceId) : null;
+  bus.publish({
+    eventId: newId(),
+    provider: instance?.driverKind ?? "harness",
+    ...(instance && selection ? { providerInstanceId: selection.instanceId } : {}),
+    threadId,
+    ...(liveTurnByThread.get(threadId) ? { turnId: liveTurnByThread.get(threadId) } : {}),
+    createdAt: new Date().toISOString(),
+    type: "runtime.notice",
+    message,
+  } as RuntimeEvent);
+}
 
 const handoffs = new Handoffs({
   order: (threadId) => store.activePath(threadId).filter(isContextMessage).map((m) => m.id),
@@ -19748,7 +19773,7 @@ function scheduleVoiceCallWatchdog(botId: string, threadId: string): void {
       if (stoppingThreads.has(threadId) || activeGroupTurnForBot(botId) || botAtThreadCapacity(botId)) return;
       const bot = store.projectBotForTask(botId, threadId);
       if (!bot || !store.taskByThread(botId, threadId)) return;
-      const words = unansweredCallMessage(store.activePath(threadId), { stoppedAt: threadStoppedAt.get(threadId), retried: voiceCallRetried });
+      const words = unansweredCallMessage(store.activePath(threadId), { stoppedAt: threadStoppedAt.get(threadId), stoppedUtteranceId: threadStoppedUtterance.get(threadId), retried: voiceCallRetried });
       if (!words) return;
       voiceCallRetried.add(words.id);
       if (voiceCallRetried.size > 5_000) voiceCallRetried.delete(voiceCallRetried.values().next().value!);
@@ -38459,6 +38484,7 @@ ROUTES.push(createMailSettingsRoutes({
 // server; the spoken turn itself goes through the normal send route.
 const voiceModeDeps: VoiceModeDeps = {
   organization: IDENTITY.kind === "perspicax",
+  notice: (threadId, message) => publishVoiceNotice(threadId, message),
   speaker: (auth) => {
     if (auth.kind === "loopback" && auth.trust === "service") return null;
     const principalId = actorPrincipalId(auth);
@@ -50342,7 +50368,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (voiceCall?.utteranceId && sendId) {
         const claim = voiceCalls.claimUtterance(threadId, voiceCall.callId, voiceCall.utteranceId, sendId);
         if (!claim.first) sendId = claim.sendId;
-        else voiceLatency.received(threadId, voiceCall.utteranceId);
+        else voiceLatency.received(threadId, voiceCall.utteranceId, parseVoiceClientTiming((body.voiceCall as Record<string, unknown> | undefined)?.timing));
       }
       // The press becomes an ordinary message that replies to its widget:
       // the label, then one line per field. Nothing is written yet.
@@ -51246,7 +51272,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const run = routines!.activeBotRunForBot(bot.id);
         if (run?.threadId === own) await routines!.cancelRun(run.id);
-        else await stopDirectThreadByPerson(bot.id, own);
+        else await stopDirectThreadByPerson(bot.id, own, expectedUtteranceId);
         return json(res, 200, { ok: true });
       }
       if (stopper && body.threadId !== undefined) routeThreadId(bot, body.threadId);
@@ -51265,7 +51291,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (typeof expectedThreadId === "string" && store.taskByThread(bot.id, expectedThreadId)) {
         const routine = routines!.activeBotRunForBot(bot.id);
         if (routine?.threadId === expectedThreadId) await routines!.cancelRun(routine.id);
-        else await stopDirectThreadByPerson(bot.id, expectedThreadId);
+        else await stopDirectThreadByPerson(bot.id, expectedThreadId, expectedUtteranceId);
         return json(res, 200, { ok: true });
       }
       const directClaim = directTurnDispatchClaims.get(bot.threadId);
@@ -51303,7 +51329,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       ) {
         return json(res, 409, { error: "the bot switched tasks before it could be interrupted" });
       }
-      await stopDirectThreadByPerson(bot.id, expectedThreadId ?? bot.threadId);
+      await stopDirectThreadByPerson(bot.id, expectedThreadId ?? bot.threadId, expectedUtteranceId);
       return json(res, 200, { ok: true });
     }
 

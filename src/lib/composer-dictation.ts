@@ -1,11 +1,13 @@
 // Composer dictation (the grey mic beside the Voice button): the words heard
 // are written into the message field, never sent on their own. Two engines:
 //
-//   - "xai": voice mode's speech to text (POST /api/bots/:id/voice/transcribe,
-//     the xAI key of the person or the organization): the recording is sent
-//     once when it stops and its text joins the field. First whenever an
-//     xAI key serves this person (2026-10-28): the same ears as the call,
-//     with the call's keyterms and formatting, on every platform alike.
+//   - "xai": voice mode's streaming speech to text (GET /api/bots/:id/voice/listen,
+//     the xAI key of the person or the organization): the audio streams
+//     while the person speaks and the words join the field as they come;
+//     the stop only waits for the last ones. The whole recording is sent
+//     (POST .../voice/transcribe) only when the socket cannot open. First
+//     whenever an xAI key serves this person (2026-10-28): the same ears as
+//     the call, with the call's keyterms and formatting, on every platform alike.
 //   - "native": the macOS dictation helper (window.ogb.speechStart), whose
 //     partial transcripts stream into the field as they come. Only when no
 //     xAI key serves, and the mic's label says so (an announced fallback,
@@ -61,4 +63,24 @@ export const DICTATION_HOLD_MS = 350;
 /** Whether a press that began at `at` and ends at `now` was a hold. */
 export function isDictationHold(at: number, now: number): boolean {
   return now - at >= DICTATION_HOLD_MS;
+}
+
+/** What xAI's streaming speech to text hears: 16 kHz mono. */
+export const DICTATION_RATE = 16_000;
+
+/** One captured frame at 16 kHz: as is when the microphone already runs at
+ * that rate, else averaged down (a cheap low-pass, enough for speech). */
+export function dictationFrame(frame: Float32Array, rate: number): Float32Array {
+  if (rate === DICTATION_RATE || rate <= 0) return frame;
+  const ratio = rate / DICTATION_RATE;
+  const length = Math.floor(frame.length / ratio);
+  const out = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(frame.length, Math.max(start + 1, Math.floor((i + 1) * ratio)));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += frame[j]!;
+    out[i] = sum / (end - start);
+  }
+  return out;
 }

@@ -330,3 +330,40 @@ describe("a failed upload", () => {
     expect(await transcriber.finishHeard()).toEqual({ text: "got it" });
   });
 });
+
+describe("dictation over the stream (composer mic, 2026-10-29)", () => {
+  it("shows the words while the person speaks and has them right after the stop, with no upload", async () => {
+    const uploads = vi.fn(async () => "uploaded");
+    const socket = new Socket();
+    const transcriber = new LiveTranscriber({
+      botId: "b-1",
+      language: () => "auto",
+      threadId: () => "t-1",
+      socket: () => socket as unknown as WebSocket,
+      transcribe: uploads,
+      finalTimeoutMs: 1_500,
+    });
+    const shown: string[] = [];
+    transcriber.onPartial((text) => shown.push(text));
+    // the frames heard before the socket is ready wait and go out once it is
+    const ready = transcriber.connect();
+    transcriber.begin([]);
+    for (let i = 0; i < 20; i++) transcriber.push(new Float32Array(VAD_FRAME).fill(0.05));
+    expect(await ready).toBe(true);
+    expect(socket.audio).toBe(20);
+    socket.transcript("est-ce que j'ai", false, false);
+    socket.transcript("est-ce que j'ai des tâches en cours", false, false);
+    expect(shown.at(-1)).toBe("est-ce que j'ai des tâches en cours");
+    // a fake xAI answers the finalize 40 ms later
+    socket.onFinalize = (s) => setTimeout(() => s.transcript("Est-ce que j'ai des tâches en cours?", true, true), 40);
+    const stoppedAt = performance.now();
+    const heard = await transcriber.finishHeard();
+    const waited = performance.now() - stoppedAt;
+    expect(heard.text).toBe("Est-ce que j'ai des tâches en cours?");
+    expect(socket.finalizes).toBe(1);
+    expect(uploads).not.toHaveBeenCalled();
+    // the round trip only: no fixed wait, far under the 2 s target
+    expect(waited).toBeLessThan(500);
+    transcriber.close();
+  });
+});
