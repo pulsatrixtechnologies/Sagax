@@ -97,7 +97,9 @@ import { QuestionCard } from "./QuestionCard";
 import { useOnCall } from "@/lib/call";
 import { browserAvailable, builtInBrowserEnabled, dataWindowEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { requestBrowserTeach } from "@/lib/teach-request";
-import { TeachChooserDialog } from "./TeachStepsDialog";
+import { TeachChooserDialog, TeachStepsDialog } from "./TeachStepsDialog";
+import { MyChromeRecordDialog } from "./MyChromeRecordDialog";
+import { myChromeCall, type MyChromeRecordingResult } from "@/lib/my-chrome";
 import { useRetroSkin } from "./RetroChromeHost";
 import { mentionChoicesForQuery, mentionRowDescription } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
@@ -444,6 +446,18 @@ export function Composer({
   const browserTeach = Boolean(bot && !group && bot.browser !== false && canTeachInBrowser(config, bot, ownerOrAdmin)
     && (builtInBrowserEnabled(config) || browserAvailable(config)) && config?.browserEngine?.kind === "engine");
   const [teachChooser, setTeachChooser] = useState(false);
+  // ...or shown in the person's own Chrome (My Chrome's recorder), where this
+  // server offers My Chrome to this person (its status answers them only).
+  const [myChromeOffered, setMyChromeOffered] = useState(false);
+  const [myChromeRecord, setMyChromeRecord] = useState(false);
+  const [myChromeTaught, setMyChromeTaught] = useState<MyChromeRecordingResult | null>(null);
+  const myChromeBotId = bot && !group && !remoteClient ? bot.id : "";
+  useEffect(() => {
+    if (!myChromeBotId) { setMyChromeOffered(false); return; }
+    let live = true;
+    myChromeCall("status").then((status) => { if (live) setMyChromeOffered(status.offered); }, () => { if (live) setMyChromeOffered(false); });
+    return () => { live = false; };
+  }, [myChromeBotId]);
   const showInBrowser = () => {
     if (!bot) return;
     requestBrowserTeach(bot.id);
@@ -1220,7 +1234,7 @@ export function Composer({
   // bot's settings; typing /setup still sets the bot up.
   const plusItems: PlusMenuItem[] = [
     { id: "attach", group: "add", label: t("composer.plus.attach"), icon: ATTACH_ICON, onSelect: () => fileInput.current?.click() },
-    ...(learnAvailable || browserTeach ? [{
+    ...(learnAvailable || browserTeach || myChromeOffered ? [{
       id: "teach",
       group: "add" as const,
       label: t("composer.plus.teach"),
@@ -1228,7 +1242,8 @@ export function Composer({
       ...(learnAvailable ? { hint: "/learn" } : {}),
       // in words, the same as picking /learn in the "/" menu; with a
       // browser, a choice between that and showing it there
-      onSelect: () => browserTeach ? learnAvailable ? setTeachChooser(true) : showInBrowser() : startDraftWith("/learn "),
+      onSelect: () => [learnAvailable, browserTeach, myChromeOffered].filter(Boolean).length > 1 ? setTeachChooser(true)
+        : browserTeach ? showInBrowser() : myChromeOffered ? setMyChromeRecord(true) : startDraftWith("/learn "),
     }] : []),
   ];
   return (
@@ -1429,7 +1444,13 @@ export function Composer({
                   level as rows that open beside it (2026-10-15/16; the
                   model since 2026-10-18, no workspace row since #743). */}
               <ComposerPlusMenu items={plusItems} />
-              {teachChooser && bot && <TeachChooserDialog botName={bot.name} onShow={showInBrowser} onDescribe={() => startDraftWith("/learn ")} onClose={() => setTeachChooser(false)} />}
+              {teachChooser && bot && <TeachChooserDialog botName={bot.name} onShow={browserTeach ? showInBrowser : undefined}
+                onShowInMyChrome={myChromeOffered ? () => setMyChromeRecord(true) : undefined}
+                onDescribe={learnAvailable ? () => startDraftWith("/learn ") : undefined} onClose={() => setTeachChooser(false)} />}
+              {myChromeRecord && bot && <MyChromeRecordDialog botId={bot.id} botName={bot.name} dictationEngine={engine}
+                onDone={setMyChromeTaught} onClose={() => setMyChromeRecord(false)} />}
+              {myChromeTaught && bot && <TeachStepsDialog botId={bot.id} botName={bot.name} steps={myChromeTaught.steps} recordedAt={myChromeTaught.recordedAt}
+                replay={myChromeTaught.replay} onClose={() => setMyChromeTaught(null)} />}
               {/* /goal or the + menu's Goal mode starts it; the chip appears
                   only while it is on, says so, and turns it off
                   (2026-10-14: the chip only when it shows the current goal). */}

@@ -6,11 +6,11 @@
 // it. Also the small chooser the composer's "Teach a task" opens when the
 // bot has a browser: show it there, or describe it in words (/learn).
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Globe, MessageSquareText, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Globe, MousePointerClick, MessageSquareText, Plus, Trash2, X } from "lucide-react";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api } from "@/state/store";
-import { TEACH_TEXT_MAX, type TeachStep } from "../../shared/teach-recording";
+import { TEACH_TEXT_MAX, type TeachReplay, type TeachStep } from "../../shared/teach-recording";
 
 const input = "min-w-0 flex-1 rounded-md bg-inset px-2 py-1 text-[12px] outline-none focus:ring-1 focus:ring-accent";
 const iconButton = "rounded-md p-1 text-ink-secondary hover:bg-inset hover:text-ink disabled:opacity-30";
@@ -76,9 +76,14 @@ function StepFields({ step, onChange }: { step: TeachStep; onChange: (next: Teac
   return <span className="flex-1" />;
 }
 
-export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, onClose }: {
-  botId: string; botName: string; steps: TeachStep[]; recordedAt: string; onClose: () => void;
+export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, replay: recordedReplay, onClose }: {
+  botId: string; botName: string; steps: TeachStep[]; recordedAt: string;
+  /** Shown in the person's own Chrome: where the bot replays it (the
+   * person picks; the recorder's guess comes first). */
+  replay?: TeachReplay;
+  onClose: () => void;
 }) {
+  const [replay, setReplay] = useState<TeachReplay | undefined>(recordedReplay);
   const dialog = useRef<HTMLDialogElement>(null);
   const [steps, setSteps] = useState<TeachStep[]>(recorded);
   const [title, setTitle] = useState("");
@@ -104,7 +109,7 @@ export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, 
     try {
       const result = await api(`/api/bots/${encodeURIComponent(botId)}/shown-path`, {
         method: "POST",
-        body: JSON.stringify({ mode: "save", title, description, steps, recordedAt, replace }),
+        body: JSON.stringify({ mode: "save", title, description, steps, recordedAt, replace, ...(replay ? { replay } : {}) }),
       }) as { ok?: boolean; code?: string; name?: string; installed?: string };
       if (result.code === "exists") {
         setPhase("idle");
@@ -160,6 +165,14 @@ export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, 
         {!steps.length && <p className="text-[12px] text-ink-secondary">{t("teach.empty")}</p>}
         <button type="button" className="flex items-center gap-1.5 self-start rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-inset hover:text-ink"
           onClick={() => setSteps((list) => [...list, { id: crypto.randomUUID(), kind: "note", text: "" }])}><Plus size={13} />{t("teach.addNote")}</button>
+        {replay && <fieldset className="flex flex-col gap-1.5 text-[12px]" data-teach-replay={replay}>
+          <legend className="mb-1 font-medium">{t("teach.replay.title", { bot: botName })}</legend>
+          {(["background", "my-chrome"] as const).map((where) => <label key={where} className="flex items-start gap-2">
+            <input type="radio" name="teach-replay" className="mt-0.5" checked={replay === where} onChange={() => setReplay(where)} />
+            <span className="flex flex-col"><span>{t(where === "background" ? "teach.replay.background" : "teach.replay.myChrome")}</span>
+              <span className="text-[11px] text-ink-secondary">{t(where === "background" ? "teach.replay.backgroundHint" : "teach.replay.myChromeHint")}</span></span>
+          </label>)}
+        </fieldset>}
         <label className="flex items-start gap-2 text-[12px] text-ink-secondary">
           <input type="checkbox" className="mt-0.5" checked={keepRaw} onChange={(e) => setKeepRaw(e.target.checked)} />
           <span>{t("teach.keepRaw")}</span>
@@ -181,8 +194,14 @@ export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, 
 
 /** The composer's "Teach a task" when the bot has a browser: show the task
  * there (a recording), or describe it in words (/learn, as before). */
-export function TeachChooserDialog({ botName, onShow, onDescribe, onClose }: {
-  botName: string; onShow: () => void; onDescribe: () => void; onClose: () => void;
+export function TeachChooserDialog({ botName, onShow, onShowInMyChrome, onDescribe, onClose }: {
+  botName: string;
+  /** Show it in the bot's browser; absent when this bot has none. */
+  onShow?: () => void;
+  /** Show it in the person's own Chrome (My Chrome's recorder). */
+  onShowInMyChrome?: () => void;
+  onDescribe?: () => void;
+  onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { dialog.current?.showModal(); }, []);
@@ -192,16 +211,21 @@ export function TeachChooserDialog({ botName, onShow, onDescribe, onClose }: {
     <div className="mb-3 flex items-center justify-between"><h2 className="text-[15px] font-medium">{t("teach.chooser.title")}</h2>
       <button type="button" className={iconButton} aria-label={t("teach.close")} onClick={() => dialog.current?.close()}><X size={16} /></button></div>
     <div className="flex flex-col gap-2">
-      <button type="button" data-teach-show="" className={choice} onClick={() => { dialog.current?.close(); onShow(); }}>
+      {onShow && <button type="button" data-teach-show="" className={choice} onClick={() => { dialog.current?.close(); onShow(); }}>
         <Globe size={18} className="mt-0.5 shrink-0 text-accent-text" aria-hidden="true" />
         <span className="flex flex-col gap-0.5"><span className="text-[13px] font-medium">{t("teach.chooser.show")}</span>
           <span className="text-[12px] text-ink-secondary">{t("teach.chooser.showHint", { bot: botName })}</span></span>
-      </button>
-      <button type="button" data-teach-describe="" className={choice} onClick={() => { dialog.current?.close(); onDescribe(); }}>
+      </button>}
+      {onShowInMyChrome && <button type="button" data-teach-my-chrome="" className={choice} onClick={() => { dialog.current?.close(); onShowInMyChrome(); }}>
+        <MousePointerClick size={18} className="mt-0.5 shrink-0 text-accent-text" aria-hidden="true" />
+        <span className="flex flex-col gap-0.5"><span className="text-[13px] font-medium">{t("teach.chooser.myChrome")}</span>
+          <span className="text-[12px] text-ink-secondary">{t("teach.chooser.myChromeHint", { bot: botName })}</span></span>
+      </button>}
+      {onDescribe && <button type="button" data-teach-describe="" className={choice} onClick={() => { dialog.current?.close(); onDescribe(); }}>
         <MessageSquareText size={18} className="mt-0.5 shrink-0 text-ink-secondary" aria-hidden="true" />
         <span className="flex flex-col gap-0.5"><span className="text-[13px] font-medium">{t("teach.chooser.describe")}</span>
           <span className="text-[12px] text-ink-secondary">{t("teach.chooser.describeHint")}</span></span>
-      </button>
+      </button>}
     </div>
   </dialog>;
 }

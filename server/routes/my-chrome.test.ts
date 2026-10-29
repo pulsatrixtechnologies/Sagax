@@ -77,4 +77,22 @@ describe("/api/my-chrome", () => {
     expect((await post("address", { address: "9222" })).body.chromeAddress).toBe("9222");
     expect((await post("nope")).status).toBe(404);
   });
+
+  it("records only for the person, with My Chrome on and not stopped, and answers nothing when no recording runs", async () => {
+    allowed = false;
+    expect((await post("record/start")).status).toBe(403);
+    allowed = true;
+    const off = await post("record/start");
+    expect(off.status).toBe(409);
+    expect(off.body.error).toMatch(/My Chrome is off/);
+    expect((await post("record/start", { url: "file:///etc/passwd" })).status).toBe(409);
+    expect((await post("record/status")).body).toMatchObject({ recording: null });
+    expect((await post("record/note", { text: "hello" })).body).toMatchObject({ recording: null });
+    expect((await post("record/note", { text: 3 })).status).toBe(400);
+    expect((await post("record/stop")).body).toMatchObject({ result: null });
+    expect((await post("record/discard")).body).toMatchObject({ ok: true });
+    await post("enable", { enabled: true });
+    await post("stop");
+    expect((await post("record/start")).body.error).toMatch(/stopped/);
+  });
 });

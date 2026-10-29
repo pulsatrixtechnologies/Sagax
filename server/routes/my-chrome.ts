@@ -7,6 +7,11 @@
 //   POST /api/my-chrome/address  { address }         where Chrome listens, when not found by itself
 //   POST /api/my-chrome/stop                         end every bot's driving now
 //   POST /api/my-chrome/resume
+//   POST /api/my-chrome/record/start   { url? }     show a task: a new tab in the person's Chrome, recorded
+//   POST /api/my-chrome/record/status               the recording now (steps so far), or null
+//   POST /api/my-chrome/record/note    { text }     a narration note at this point
+//   POST /api/my-chrome/record/stop                 the steps once (then editable, saved via shown-path)
+//   POST /api/my-chrome/record/discard
 //
 // POST only, reads included: on the desktop a loopback change needs the app's
 // own capability, so a bot's shell on the same machine reaches none of it.
@@ -65,6 +70,22 @@ export function createMyChromeRoutes(deps: MyChromeRouteDeps): RouteHandler {
       if (raw && typeof raw === "object" && !Array.isArray(raw)) body = raw as Record<string, unknown>;
     } catch {
       return json(res, 400, { error: "Invalid request." });
+    }
+    if (action.startsWith("record/")) {
+      try {
+        switch (action) {
+          case "record/start": return json(res, 200, { recording: await service.startRecording(body.url) });
+          case "record/status": return json(res, 200, { recording: service.recordingStatus(), unavailable: service.recordingUnavailable() });
+          case "record/note":
+            if (typeof body.text !== "string") return json(res, 400, { error: "text must be a string" });
+            return json(res, 200, { recording: service.recordingNote(body.text) });
+          case "record/stop": return json(res, 200, { result: await service.stopRecording() });
+          case "record/discard": service.discardRecording(); return json(res, 200, { ok: true });
+          default: return json(res, 404, { error: "unknown My Chrome action" });
+        }
+      } catch (error) {
+        return json(res, 409, { error: error instanceof Error ? error.message : "My Chrome could not record." });
+      }
     }
     try {
       let status: MyChromeStatus;

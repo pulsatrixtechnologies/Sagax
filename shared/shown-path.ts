@@ -2,7 +2,7 @@
 // the bot can replay, or they refuse. Saving never replaces a skill the bot
 // already has unless they agree, and it never touches the other skills.
 // Uploaded skills stay on their own route (server/routes/bot-skill-upload.ts).
-import { buildTeachSkill, TEACH_MAX_STEPS, type TeachStep } from "./teach-recording.ts";
+import { buildTeachSkill, TEACH_MAX_STEPS, type TeachReplay, type TeachStep } from "./teach-recording.ts";
 
 export const SHOWN_PATH_MODES = ["preview", "save", "refuse"] as const;
 export type ShownPathMode = typeof SHOWN_PATH_MODES[number];
@@ -12,6 +12,8 @@ export interface ShownPathInput {
   description?: string;
   steps: readonly TeachStep[];
   recordedAt?: string;
+  /** Shown in the person's own Chrome: replayed in the background or there. */
+  replay?: TeachReplay;
   /** True only after the person agreed to replace the skill of this name. */
   replace?: boolean;
 }
@@ -35,6 +37,7 @@ export function planShownPath(input: ShownPathInput, mode: ShownPathMode, existi
     description: input.description?.trim() ?? "",
     steps,
     recordedAt: input.recordedAt,
+    ...(input.replay ? { replay: input.replay } : {}),
   });
   const exists = existing.has(built.name);
   if (mode === "preview") return { action: "preview", name: built.name, markdown: built.markdown, exists };

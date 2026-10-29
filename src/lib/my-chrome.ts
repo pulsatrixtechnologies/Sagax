@@ -2,6 +2,7 @@
 // and the calls that change it. Every call is a POST: on the desktop a loopback
 // change needs the app's own capability, so no other local process reads it.
 import { api } from "@/state/store";
+import type { TeachReplay, TeachStep } from "../../shared/teach-recording";
 
 export const MY_CHROME_PROFILE = "my-chrome";
 
@@ -33,4 +34,30 @@ export const MY_CHROME_CHANGED = "sagax:my-chrome-changed";
 
 export function announceMyChrome(status: MyChromeStatus): void {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent<MyChromeStatus>(MY_CHROME_CHANGED, { detail: status }));
+}
+
+/** Show a task in my Chrome (server/browser/my-chrome/recorder.ts): a
+ * recording in a new tab of the person's Chrome, as it runs. */
+export interface MyChromeRecording {
+  recording: boolean;
+  startedAt: string;
+  steps: number;
+  recent: TeachStep[];
+  ended: "person" | "tab" | "closed" | "stopped" | "idle" | null;
+}
+
+export interface MyChromeRecordingResult {
+  steps: TeachStep[];
+  recordedAt: string;
+  replay: TeachReplay;
+  ended: MyChromeRecording["ended"];
+}
+
+export function myChromeRecord(action: "start", body: { url?: string }): Promise<{ recording: MyChromeRecording }>;
+export function myChromeRecord(action: "status"): Promise<{ recording: MyChromeRecording | null; unavailable: string | null }>;
+export function myChromeRecord(action: "note", body: { text: string }): Promise<{ recording: MyChromeRecording | null }>;
+export function myChromeRecord(action: "stop"): Promise<{ result: MyChromeRecordingResult | null }>;
+export function myChromeRecord(action: "discard"): Promise<{ ok: true }>;
+export function myChromeRecord(action: string, body: Record<string, unknown> = {}): Promise<unknown> {
+  return api(`/api/my-chrome/record/${action}`, { method: "POST", body: JSON.stringify(body) });
 }
