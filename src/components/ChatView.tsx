@@ -56,6 +56,7 @@ import {
   currentTaskBot,
   useStore,
   formatTime,
+  openBot,
   openThread,
   openNotificationTarget,
   startNewTopic,
@@ -1238,7 +1239,9 @@ const MessagesList = memo(function MessagesList({
                     if (!exchangeJumpStays(target.run.party.id, botId)) return false;
                     const bot = bots.find((candidate) => candidate.id === target.run.party.id);
                     if (!bot) return false;
-                    return openThread(dispatch, { botId: bot.id, threadId: bot.threadId }, getState(), showThreads);
+                    // the other bot opens where its row would (its one conversation)
+                    openBot(dispatch, bot, showThreads, { landing: false });
+                    return true;
                   }}
                 />
               </div>
@@ -1260,7 +1263,9 @@ const MessagesList = memo(function MessagesList({
                   if (!exchangeJumpStays(item.run.party.id, botId)) return false;
                   const target = bots.find((candidate) => candidate.id === item.run.party.id);
                   if (!target) return false;
-                  return openThread(dispatch, { botId: target.id, threadId: target.threadId }, getState(), showThreads);
+                  // the other bot opens where its row would (its one conversation)
+                  openBot(dispatch, target, showThreads, { landing: false });
+                  return true;
                 }}
               />
             </div>
@@ -1542,12 +1547,16 @@ const noop = () => {};
  * the topic's own title and time are not stamped on the stream (they stayed
  * on the "Show the previous topic" pill and in search); the title rides along
  * as the hover tooltip so it is still reachable without crowding the line. */
+/** Between two topics of the one conversation: a quiet time line, like a
+ * day separator (the reference design draws one transcript; a topic is a
+ * fresh engine context underneath, not a new place). The topic's title
+ * stays in the tooltip. */
 function TopicDivider({ task }: { task: Pick<Task, "threadId" | "title" | "createdAt"> }) {
   return (
-    <div className="my-2 flex items-center gap-3 text-[11.5px] text-ink-tertiary" role="separator" data-topic-divider={task.threadId}>
-      <span className="h-px flex-1 bg-hairline/60" />
-      <span className="truncate" title={task.title}>{t("stream.newTopic")}</span>
-      <span className="h-px flex-1 bg-hairline/60" />
+    <div className="my-1 flex items-center gap-3 text-[11px] text-ink-tertiary/80" role="separator" data-topic-divider={task.threadId}>
+      <span className="h-px flex-1 bg-hairline/40" />
+      <span className="truncate" title={`${t("stream.newTopic")} · ${task.title}`}>{formatTime(task.createdAt)}</span>
+      <span className="h-px flex-1 bg-hairline/40" />
     </div>
   );
 }
@@ -1712,13 +1721,21 @@ function StreamEarlierTopics({ bot, rows, place, engine, scrollRef, followRef, r
   }, [bot.id, bot.threadId]);
   const focus = useStoreSelector((current) => current.focusMessage);
   const focusSegment = focus && !focus.consumed ? focus.threadId : undefined;
+  const dispatch = useStoreDispatch();
   useEffect(() => {
     if (!focusSegment || !focus) return;
     const needed = segmentsToReach(bot.tasks, bot.threadId, focusSegment);
     if (needed <= 0) return;
     setCount((current) => Math.max(current, needed));
+    // a topic, not a message (a notification or an activity row about an
+    // earlier topic): its start comes on screen once it is drawn
+    if (focus.segment) {
+      setPendingReach(focusSegment);
+      dispatch({ type: "focusMessageConsumed", nonce: focus.nonce });
+      return;
+    }
     setAround((current) => current[focusSegment] === focus.messageId ? current : { ...current, [focusSegment]: focus.messageId });
-  }, [focusSegment, focus?.nonce, focus?.messageId, bot.tasks, bot.threadId]);
+  }, [focusSegment, focus?.nonce, focus?.messageId, focus?.segment, bot.tasks, bot.threadId, dispatch]);
   useEffect(() => {
     if (!reach) return;
     const needed = segmentsToReach(bot.tasks, bot.threadId, reach.threadId);
@@ -2043,15 +2060,14 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const currentTask = bot.tasks?.find((task) => task.threadId === bot.threadId);
   const streamOn = !side && !showThreads && Boolean(currentTask && isStreamSegment(currentTask));
   const streamHasEarlier = streamOn && segmentsAbove(bot.tasks, bot.threadId).length > 0;
-  // A fresh topic drawn over this one (src/lib/fresh-topic.ts): an empty
-  // topic, created on the server with its first message; this topic and the
-  // earlier ones sit folded behind "Earlier topics".
+  // A fresh topic drafted over this one (src/lib/fresh-topic.ts): the next
+  // message starts a fresh engine context (a topic created on the server
+  // with that message). Nothing moves on screen: the conversation stays one
+  // timeline (2026-10-28, the reference design). A topic the person asked
+  // for ("New topic") shows one quiet line with Resume; an automatic one
+  // (back after a while) shows nothing.
   const freshDraft = useStoreSelector((current) => current.freshTopic[bot.id]);
   const fresh = streamOn && !preview && freshDraft?.threadId === bot.threadId && freshTopicCovers(bot, bot.threadId);
-  const [previousOpenFor, setPreviousOpenFor] = useState<string | null>(null);
-  const previousKey = `${bot.threadId}:${fresh ? "fresh" : "live"}`;
-  const previousOpen = previousOpenFor === previousKey;
-  const togglePrevious = useCallback(() => setPreviousOpenFor((current) => current === previousKey ? null : previousKey), [previousKey]);
   const resumeTopic = useCallback(() => dispatch({ type: "freshTopic", botId: bot.id, threadId: null }), [bot.id, dispatch]);
   // Coming back put the fresh topic there: it gives way the moment the topic
   // under it comes alive (another device's turn, an approval), never hiding
@@ -2088,20 +2104,20 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   }, [bot.id, bot.threadId]);
   const streamEngine = state.instances.find((i) => i.instanceId === bot.modelSelection.instanceId);
   const streamReadBack = streamHasEarlier && !olderPending && hiddenCount === 0 && !bot.hasMore;
-  // Earlier topics are folded behind one "Earlier topics" line at the top of
-  // the live topic, once it is read back to its start (2026-10-18); the
-  // line, a link, a search hit or the activity pill draws them.
-  const streamDrawn = !fresh && streamHasEarlier && (previousOpen || streamFocusEarlier || streamReach !== null || streamShownFor === bot.threadId);
-  // The bot-to-bot conversations older than the topic's first line fold behind
-  // the same line, listed once per bot; with no earlier topic to fold, they
-  // get a line of their own.
+  // One timeline (2026-10-28, the reference design): the earlier topics
+  // are drawn above the live one as soon as it is read back to its start,
+  // and the one before loads on scroll-up (StreamEarlierTopics). A link, a
+  // search hit or an activity row into an earlier topic draws them at once.
+  // No fold, no empty screen: history loads upward, as in a messaging app.
+  const streamDrawn = streamHasEarlier && (streamReadBack || streamFocusEarlier || streamReach !== null || streamShownFor === bot.threadId);
+  // The bot-to-bot conversations older than the topic's first line fold
+  // behind a line of their own, listed once per bot.
   const earlierConversations = useMemo(
     () => splitLeadingConversations(visibleConversationRows(bot, bot.threadId, messages), windowedMessages[0]?.at, Boolean(bot.hasMore)).leading,
     [bot, messages, windowedMessages],
   );
-  const showPreviousLine = fresh || (streamHasEarlier && (streamDrawn || streamReadBack));
   const [conversationsOpenFor, setConversationsOpenFor] = useState<string | null>(null);
-  const conversationsOpen = showPreviousLine ? (fresh ? previousOpen : streamDrawn) : conversationsOpenFor === bot.threadId;
+  const conversationsOpen = conversationsOpenFor === bot.threadId;
   const toggleConversations = useCallback(() => setConversationsOpenFor((current) => current === bot.threadId ? null : bot.threadId), [bot.threadId]);
   // A link, a search hit or the activity pill into an earlier topic is a
   // jump up: bottom-follow would pull the pane back at the next growth.
@@ -2365,10 +2381,10 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           aria-live="off"
           aria-label={t("chat.conversationWith", { name: bot.name })}
         >
-          {/* The single stream: earlier topics above the live one, once the
-              live one is read back to its first message. */}
-          {showPreviousLine && <PreviousTopicsLine open={fresh ? previousOpen : streamDrawn} onToggle={fresh || !streamDrawn ? togglePrevious : () => { setPreviousOpenFor(null); setStreamShownFor(null); clearStreamReach(); }} />}
-          {!showPreviousLine && earlierConversations.length > 0 && <PreviousTopicsLine open={conversationsOpen} onToggle={toggleConversations} />}
+          {/* The one conversation: the earlier topics above the live one,
+              once the live one is read back to its first message; the
+              topic before loads on scroll-up. */}
+          {earlierConversations.length > 0 && <PreviousTopicsLine open={conversationsOpen} onToggle={toggleConversations} />}
           {conversationsOpen && earlierConversations.length > 0 && <EarlierConversationList self={bot} rows={earlierConversations} bots={state.bots} showToolCalls={showToolCalls} />}
           {streamDrawn && (
             <>
@@ -2376,14 +2392,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
               {currentTask && <TopicDivider task={currentTask} />}
             </>
           )}
-          {fresh && previousOpen && (
-            <>
-              <StreamEarlierTopics bot={bot} rows={rows} place={place} engine={streamEngine} scrollRef={scrollRef} followRef={followRef} reach={null} onReached={clearStreamReach} onQuote={quoteEarlier} includeCurrent />
-              <FreshTopicDivider onResume={resumeTopic} />
-            </>
-          )}
-          {fresh && !previousOpen && <EmptyChat bot={bot} />}
-          {!fresh && <>
+          <>
           {/* Reverse infinite scroll sentinel and smooth loading indicator */}
           {olderPending ? (
             <div className="flex items-center justify-center gap-2 py-3 text-xs text-ink-tertiary">
@@ -2429,7 +2438,11 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
               </button>
             </div>
           )}
-          </>}
+          {/* "New topic" asked for here: the next message starts a fresh
+              engine context; one quiet line says so, with Resume. An
+              automatic fresh topic (back after a while) shows nothing. */}
+          {fresh && !freshDraft?.auto && <FreshTopicDivider onResume={resumeTopic} />}
+          </>
           {computerStarting && (
             <div className="flex justify-start">
               <div className="ui-pill">

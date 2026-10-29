@@ -6,31 +6,38 @@ const first = { threadId: "first", createdAt: 1 };
 const later = { threadId: "later", createdAt: 2 };
 const latest = { threadId: "latest", createdAt: 3 };
 
+// 2026-10-28: the main thread is the person's one conversation
+// (shared/single-stream.ts): its newest open segment, the same answer the
+// desktop and the phone give, whatever was written in last or selected.
 describe("a bot's main thread", () => {
-  it("is the open thread a person last wrote in, wherever the selection is", () => {
+  it("is the newest open conversation, wherever the selection is and whoever wrote last", () => {
     const tasks = [{ ...latest, askedAt: 10 }, { ...later, askedAt: 30 }, { ...first, askedAt: 20 }];
-    expect(mainThread(tasks, "first")).toBe("later");
-    expect(mainThread(tasks)).toBe("later");
+    expect(mainThread(tasks, "first")).toBe("latest");
+    expect(mainThread(tasks)).toBe("latest");
   });
 
-  it("is never a routine run or an archived thread, however recently written in", () => {
+  it("is never a routine run, a results, hidden, confidential, parallel, bot-opened or archived thread, however recently written in", () => {
     const tasks = [
       { ...latest, askedAt: 50, routineRunId: "run" },
       { ...later, askedAt: 40, archivedAt: 41 },
       { ...first, askedAt: 10 },
     ];
     expect(mainThread(tasks, "later")).toBe("first");
+    expect(mainThread([{ threadId: "job", createdAt: 9, openedBy: { botId: "b", name: "B", at: 1 } }, first])).toBe("first");
+    expect(mainThread([{ threadId: "par", createdAt: 9, parallelOf: { threadId: "first" } }, first])).toBe("first");
+    expect(mainThread([{ threadId: "hidden", createdAt: 9, hidden: true as const }, first])).toBe("first");
+    expect(mainThread([{ threadId: "results", createdAt: 9, routineResults: true as const }, first])).toBe("first");
   });
 
-  it("is the selected thread before anyone writes, while that is an open conversation", () => {
-    expect(mainThread([latest, later, first], "later")).toBe("later");
-    expect(mainThread([latest, { ...later, archivedAt: 5 }, first], "later")).toBe("first");
-    expect(mainThread([{ ...latest, routineRunId: "run" }, later, first], "latest")).toBe("first");
-    expect(mainThread([latest, later, first], "deleted")).toBe("first");
+  it("ignores the selection: the selection follows the conversation, never the reverse", () => {
+    expect(mainThread([latest, later, first], "later")).toBe("latest");
+    expect(mainThread([latest, { ...later, archivedAt: 5 }, first], "later")).toBe("latest");
+    expect(mainThread([{ ...latest, routineRunId: "run" }, later, first], "latest")).toBe("later");
+    expect(mainThread([latest, later, first], "deleted")).toBe("latest");
   });
 
-  it("is the oldest archived thread when every thread is archived, and nothing without threads", () => {
-    expect(mainThread([{ ...latest, archivedAt: 9, askedAt: 9 }, { ...later, archivedAt: 8 }], "latest")).toBe("later");
+  it("is nothing when every thread is archived or none is a conversation: one is started for the person then", () => {
+    expect(mainThread([{ ...latest, archivedAt: 9, askedAt: 9 }, { ...later, archivedAt: 8 }], "latest")).toBeUndefined();
     expect(mainThread([{ ...first, routineRunId: "run" }])).toBeUndefined();
     expect(mainThread([])).toBeUndefined();
   });
@@ -38,33 +45,20 @@ describe("a bot's main thread", () => {
 
 describe("the oldest thread", () => {
   it("is the oldest open conversation, else the oldest archived one, never a routine run", () => {
-    expect(oldestThread([latest, later, { ...first, routineRunId: "run" }])).toBe("later");
-    expect(oldestThread([latest, { ...first, archivedAt: 4 }])).toBe("latest");
-    expect(oldestThread([{ ...latest, archivedAt: 6 }, { ...later, archivedAt: 5 }])).toBe("later");
+    expect(oldestThread([latest, later, first])).toBe("first");
+    expect(oldestThread([latest, { ...later, archivedAt: 5 }, { ...first, archivedAt: 4 }])).toBe("latest");
+    expect(oldestThread([{ ...later, archivedAt: 5 }, { ...first, archivedAt: 4 }])).toBe("first");
+    expect(oldestThread([{ ...first, routineRunId: "run" }, later])).toBe("later");
+    expect(oldestThread([])).toBeUndefined();
   });
 });
 
-describe("a thread saved on a routine as the oldest one", () => {
-  it("is a conversation no open thread is older than, open still or archived since", () => {
+describe("a thread v0.1.98 to v0.1.107 may have saved on a routine", () => {
+  it("is one no open thread is older than, archived since or not", () => {
     expect(wasOldestThread([latest, later, first], "first")).toBe(true);
-    // Archived after it was saved: today's oldest open thread is another.
-    expect(wasOldestThread([latest, later, { ...first, archivedAt: 9 }], "first")).toBe(true);
-    expect(wasOldestThread([latest, { ...later, archivedAt: 9 }, { ...first, archivedAt: 8 }], "later")).toBe(true);
-    // An older open thread means a person chose this one.
     expect(wasOldestThread([latest, later, first], "later")).toBe(false);
-    expect(wasOldestThread([latest, { ...later, archivedAt: 9 }, first], "later")).toBe(false);
-    // An older routine run is no conversation; a run, a deleted thread never.
-    expect(wasOldestThread([latest, later, { ...first, routineRunId: "run" }], "later")).toBe(true);
-    expect(wasOldestThread([latest, { ...later, routineRunId: "run" }], "later")).toBe(false);
-    expect(wasOldestThread([latest, later], "deleted")).toBe(false);
-  });
-});
-
-// 2026-10-22: an automatic "<routine> · Results" thread is not where the person is.
-describe("a routine results thread", () => {
-  it("is never the main thread nor the oldest one", () => {
-    const results = { threadId: "results", createdAt: 0, askedAt: 99, routineResults: true as const };
-    expect(mainThread([results, { ...later, askedAt: 5 }])).toBe("later");
-    expect(oldestThread([results, later])).toBe("later");
+    expect(wasOldestThread([latest, { ...first, archivedAt: 5 }], "first")).toBe(true);
+    expect(wasOldestThread([{ ...first, routineRunId: "run" }, later], "first")).toBe(false);
+    expect(wasOldestThread([later], "gone")).toBe(false);
   });
 });

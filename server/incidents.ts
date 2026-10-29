@@ -6,7 +6,9 @@
 // already has a role for exactly this — the Primary Bot coordinates the section —
 // so an incident is delivered to the Primary Bot as a turn of its own, with a
 // link to the thread and the means to act (retry_thread, delegate_bot), and
-// the person reads one place: the Primary Bot's "Team incidents" thread.
+// the person reads one place: their one conversation with the Primary Bot,
+// where its answer about the incident arrives as its message (2026-10-28);
+// the "Team incidents" thread is where it works, beside that conversation.
 //
 // The policy here is pure so it can be read and tested on its own; the
 // harness (server/index.ts) supplies the store and starts the turns.

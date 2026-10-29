@@ -1,5 +1,67 @@
 # Single stream orchestration (thread mode off)
 
+## One conversation: THE rule (2026-10-28)
+
+After several fixes that did not hold (#719, #722, #763, #975, #1026, #1028,
+#1116, #1162, #1207, #1435), the maintainer asked for the reference design's
+experience once and for all: with threads hidden a bot is ONE continuous
+conversation, on every device. The reference design keeps exactly one
+transcript per bot (its "threads" are tasks opened beside it; the only
+"new" is "Reset this conversation"); routines, calls, notifications and
+other devices all write into that one transcript, in time order, and the
+history loads upward.
+
+Why the fixes did not hold: three clients had three definitions of "the
+conversation" (the server's `mainThread`: the thread the person last wrote
+in; the desktop's `streamHomeThread`: the newest segment with content; the
+phone: the thread last opened on that device), and each path that creates or
+opens a thread (routines, webhooks, send_prompt, peers, voice, notifications,
+search, activity rows, bot commands, continuation, incidents) had a chooser
+of its own. Every new feature added one more.
+
+Now there is one rule, in one file, `shared/single-stream.ts`:
+`conversationThread(tasks)` = the newest open segment of the person's
+stream. A segment is a conversation a person had with the bot: never a
+routine run, a results thread, a hidden AI-client conversation, a
+confidential thread, a bot-opened thread, a parallel task, an archived or a
+closed thread. The cases are `shared/single-stream.vectors.json`, run by the
+TypeScript test and by the phone's `SingleStreamTests.swift`.
+
+Who reads it:
+
+- Server, `conversationThreadFor(bot, person)` (`server/index.ts`): the
+  only chooser. `WireBot.mainThreadId` (per viewer on an organization
+  server), a routine's report (`resolveResultsThread`, and a run whose
+  destination is gone), a webhook's post, `send_prompt` and `sagax_send`,
+  `ask_bot` and `delegate_bot` (`peerThreadFor`), a call that names no
+  thread, a send that names no thread, the Primary Bot's incident answer
+  (mirrored as its message into its conversation at the end of its "Team
+  incidents" turn, with the link to that thread). A webhook's run works in
+  its own task like a scheduled run (it used to take the live chat: a new
+  topic per event). A run's task is tagged `routineRunId` at creation. A
+  turn continuation is a bot-opened job. A legacy "<name> · Results" thread
+  is marked `routineResults` when met. "New topic" over a topic nobody wrote
+  in yet answers with that topic (no empty topics pile up, on any device).
+- Desktop: `botOpensTo` reads `mainThreadId` first, then the same rule over
+  the window's tasks. `openBotThread` is the one gate for every way into a
+  thread: an earlier topic scrolls the conversation back to it
+  (`focusMessage` with `segment`), a thread outside the stream opens beside
+  it (`SideThreadPanel`), never in its place. The window follows the
+  conversation (a newer topic from another device, a reconnect). `newTask`
+  creates a stream topic. `ChatView` draws one timeline: the earlier topics
+  above the live one as soon as it is read back (no fold, no empty screen),
+  the topic before loading on scroll-up, a quiet time line between topics
+  (the title in the tooltip). A fresh topic on return is invisible: the
+  next message starts a fresh engine context, nothing moves on screen; an
+  asked-for "New topic" shows one quiet line with Resume.
+- Phone: `CompanionCore/SingleStream.swift` mirrors the rule; home is
+  `mainThreadId`, else the newest segment; every send carries
+  `singleStream`; a thread outside the stream opens in a sheet beside the
+  conversation; the earlier topics load above the live one.
+
+Captures: `docs/screenshots/unified-threads/` (before and after, made by
+`scripts/testing/capture-unified-threads.ts`, headless).
+
 Status: the default mode since 2026-10-17. Server and data model in #719;
 desktop stream UI and the default flip in the follow-up PR. iOS keeps thread
 mode for now (see "Clients"). Requested by the maintainer on 2026-10-17: with threads

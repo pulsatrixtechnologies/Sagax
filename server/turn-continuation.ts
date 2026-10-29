@@ -158,9 +158,13 @@ export function makeCapContinuationSubscriber(deps: CapContinuationDeps): (event
       const approvalMode = deadTask.approvalMode === "ask" || deadTask.approvalMode === "full" ? deadTask.approvalMode : undefined;
       const contTask = deps.store.createTask(
         // Not activated: the person's open thread stays theirs, and their next
-        // message goes where they were, not into the continuation.
+        // message goes where they were, not into the continuation. Opened by
+        // the bot itself (2026-10-28): a job beside the one conversation,
+        // never a new topic in it, and confidential like the thread it
+        // continues (shared/single-stream.ts, server/confidential-threads.ts).
         bot.id, `Continue: ${(deadTask.title ?? "task").slice(0, 90)}`, false,
-        deadTask.projectId, undefined, approvalMode, deadTask.ownerPrincipalId, deadTask.modelSelection,
+        deadTask.projectId, { botId: bot.id, name: bot.name, at: now }, approvalMode, deadTask.ownerPrincipalId, deadTask.modelSelection,
+        false, undefined, deadTask.confidential === true,
       );
       if (!contTask) return;
       rec.count += 1;

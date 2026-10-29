@@ -3,7 +3,7 @@
 // so the wrapper carries data-mid and its last child — the bubble/chip,
 // after any day separator — is what gets scrolled and highlighted.
 import { useEffect } from "react";
-import { api, openBot, useStore, type Action, type AppState } from "@/state/store";
+import { api, openBot, openBotThread, useStore, type Action, type AppState } from "@/state/store";
 import { isEarlierSegment } from "@/lib/single-stream";
 import type { SearchHit } from "@/lib/search-hit";
 import { scrollMotion } from "@/lib/motion";
@@ -49,7 +49,9 @@ export async function landOnSearchHit(
       dispatch({ type: "threadActive", threadId: hit.threadId, activeLeafId: branch.activeLeafId });
     }
   }
-  if (switchAlone) dispatch({ type: "switchTask", botId: switchAlone.id, threadId: hit.threadId, whole: true });
+  // a hit in a thread outside the stream (a job, a run, a confidential
+  // thread) opens it beside the conversation: the one-conversation gate
+  if (switchAlone) openBotThread(dispatch, switchAlone, hit.threadId, false);
   dispatch({
     type: "focusMessage",
     threadId: hit.threadId,
@@ -90,7 +92,8 @@ export function useFocusMessage(threadId: string, ready: boolean) {
   const { state, dispatch } = useStore();
   const focus = state.focusMessage;
   useEffect(() => {
-    if (!focus || focus.consumed || focus.threadId !== threadId || !ready) return;
+    // a segment focus scrolls to a topic's start (StreamEarlierTopics)
+    if (!focus || focus.consumed || focus.segment || focus.threadId !== threadId || !ready) return;
     // messages may land a tick after the task switch; try briefly
     let tries = 0;
     let cancelled = false;

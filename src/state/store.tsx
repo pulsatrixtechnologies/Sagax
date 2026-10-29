@@ -75,7 +75,7 @@ import { hiddenKeySet, readSidebarHidden, useSidebarHidden } from "@/lib/sidebar
 import { readLastBotSection, rememberBotSection } from "@/lib/last-bot-section";
 import { approvalWithdrawKey, showNotification, withdrawNotification, type NotificationTarget } from "@/lib/notify";
 import { singleStreamTurnField, useShowThreads } from "@/lib/thread-preferences";
-import { isEarlierSegment, isStreamSegment, streamHomeThread, streamUnreadReadWith } from "@/lib/single-stream";
+import { isEarlierSegment, isStreamSegment, opensBesideConversation, streamHomeThread, streamUnreadReadWith } from "@/lib/single-stream";
 import { openSideThread } from "@/lib/side-thread";
 import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreenBot } from "@/lib/fresh-topic";
 import { speaker } from "@/lib/tts";
@@ -1418,7 +1418,9 @@ export interface AppState {
   dataView: import("@/lib/composer-attachments").DataViewContext | null;
   /** a search hit to scroll to once its thread is on screen; nonce lets the
    * same message be focused twice in a row */
-  focusMessage: { threadId: string; messageId: string; matchText?: string; nonce: number; consumed: boolean } | null;
+  /** A message to land on (a search hit, a link); with `segment`, the
+   * start of that earlier topic of the one conversation (no message). */
+  focusMessage: { threadId: string; messageId: string; matchText?: string; segment?: true; nonce: number; consumed: boolean } | null;
   /** Fresh topic drafts (single stream, src/lib/fresh-topic.ts): per bot,
    * the topic a new, empty one is drawn over until the first message
    * creates it on the server. `auto` when coming back put it there (it
@@ -1775,7 +1777,7 @@ export type Action =
   | { type: "toggleComputer"; open?: boolean }
   | { type: "toggleInspector"; open?: boolean }
   | { type: "toggleActivity"; open?: boolean }
-  | { type: "focusMessage"; threadId: string; messageId: string; matchText?: string }
+  | { type: "focusMessage"; threadId: string; messageId: string; matchText?: string; segment?: true }
   /** Draw a fresh topic over `threadId` (null: show that topic again). */
   | { type: "freshTopic"; botId: string; threadId: string | null; auto?: boolean }
   | { type: "focusMessageConsumed"; nonce: number }
@@ -1886,19 +1888,10 @@ export function openNotificationTarget(
   const known =
     bot.threadId === target.threadId ||
     (bot.tasks ?? []).some((task) => task.threadId === target.threadId);
-  // The single stream: an older segment is part of the one conversation, so
-  // the bot opens at its newest segment and the stream scrolls back to it.
-  // A notification always opens the topic it is about, never a fresh one.
-  if (known && target.threadId && !threadsShown && isEarlierSegment(bot.tasks, target.threadId, bot.threadId)) openBot(dispatch, bot, threadsShown, { landing: false });
-  // Threads hidden: the one conversation never gives way to another thread
-  // (a parallel task's detail, a bot's job, a run). It stays where it is,
-  // scrolled where it was, and that thread opens in the side column beside
-  // it (SideThreadPanel); Close or Escape is the way back.
-  else if (known && target.threadId && !threadsShown && opensBesideStream(bot, target.threadId)) {
-    openBot(dispatch, bot, threadsShown, { landing: false });
-    openSideThread({ botId: bot.id, threadId: target.threadId });
-  }
-  else if (known && target.threadId) openBotThread(dispatch, bot, target.threadId, threadsShown);
+  // One conversation: openBotThread is the gate (an earlier segment scrolls
+  // the conversation back, a thread outside the stream opens beside it). A
+  // notification always opens the topic it is about, never a fresh one.
+  if (known && target.threadId) openBotThread(dispatch, bot, target.threadId, threadsShown);
   else openBot(dispatch, bot, threadsShown, { landing: false });
 }
 
@@ -1908,8 +1901,8 @@ export function openNotificationTarget(
  * and not the thread the bot already shows. */
 export function opensBesideStream(bot: Pick<NotificationThreadOwner, "threadId" | "tasks">, threadId: string): boolean {
   if (threadId === bot.threadId || !streamHomeThread(bot.tasks, bot.threadId)) return false;
-  const task = bot.tasks?.find((candidate) => candidate.threadId === threadId);
-  return Boolean(task && typeof task.createdAt === "number" && !isStreamSegment({ ...task, createdAt: task.createdAt }));
+  const tasks = (bot.tasks ?? []).filter((task): task is typeof task & { createdAt: number } => typeof task.createdAt === "number");
+  return opensBesideConversation(tasks, threadId);
 }
 
 /** The fresh topic drafts without the one of the bot that owns `threadId`. */
@@ -1949,11 +1942,14 @@ export function freshTopicCovers(bot: Pick<NotificationThreadOwner, "threadId" |
  * opened is left on the next open; one this window has no row for yet
  * keeps the selection. */
 export function botOpensTo(bot: Pick<NotificationThreadOwner, "threadId" | "mainThreadId" | "tasks">, threadsShown: boolean): string {
-  // The single stream opens at its newest segment (src/lib/single-stream.ts).
-  const home = threadsShown ? undefined : streamHomeThread(bot.tasks, bot.threadId);
-  if (home) return home;
-  return !threadsShown && bot.mainThreadId && bot.tasks?.some((task) => task.threadId === bot.mainThreadId)
-    ? bot.mainThreadId : bot.threadId;
+  if (threadsShown) return bot.threadId;
+  // The one conversation (shared/single-stream.ts): the server's answer
+  // first (WireBot.mainThreadId, the same rule, worked out over every
+  // thread it knows), else this window's over the threads it has.
+  const main = bot.mainThreadId;
+  const mainTask = main ? bot.tasks?.find((task) => task.threadId === main) : undefined;
+  if (mainTask && typeof mainTask.createdAt === "number" && isStreamSegment({ ...mainTask, createdAt: mainTask.createdAt })) return main!;
+  return streamHomeThread(bot.tasks, bot.threadId) ?? (main && mainTask ? main : bot.threadId);
 }
 
 /** With threads hidden the bot is one conversation, its main thread; a side
@@ -2029,10 +2025,34 @@ export function startNewTopic(
  * as read unseen, nor while the switch is under way (Bot.switchingTo). */
 export function openBotThread(
   dispatch: (action: Action) => void,
-  bot: Pick<NotificationThreadOwner, "id" | "threadId">,
+  bot: Pick<NotificationThreadOwner, "id" | "threadId" | "mainThreadId" | "tasks">,
   threadId: string,
   threadsShown: boolean,
 ) {
+  // THE gate with one conversation (shared/single-stream.ts): every way
+  // into one of a bot's threads (a notification, a chip, a link, a search
+  // hit, an activity row, a routine's run, a bot's remote command) passes
+  // here, so the conversation never gives way to another thread.
+  // - An earlier segment is part of the one conversation: the bot opens at
+  //   its newest segment and the timeline scrolls back to that topic.
+  // - A thread outside the stream (a parallel task's detail, a bot's job, a
+  //   run, a confidential thread) opens in the side column beside the
+  //   conversation (SideThreadPanel); Close or Escape is the way back.
+  // - The conversation itself, or a bot with no conversation: shown.
+  if (!threadsShown) {
+    // an earlier topic, even the one this window was left on: the
+    // conversation opens at its end and scrolls back to it
+    if (isEarlierSegment(bot.tasks, threadId, bot.threadId)) {
+      dispatch({ type: "focusMessage", threadId, messageId: "", segment: true });
+      openBot(dispatch, bot, false, { landing: false });
+      return;
+    }
+    if (threadId !== bot.threadId && opensBesideStream(bot, threadId)) {
+      openBot(dispatch, bot, false, { landing: false });
+      openSideThread({ botId: bot.id, threadId });
+      return;
+    }
+  }
   if (threadsShown || threadId === bot.threadId) dispatch({ type: "select", id: bot.id });
   dispatch({ type: "switchTask", botId: bot.id, threadId });
   // A thread opened by name is shown, never a fresh topic over it.
@@ -5122,7 +5142,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // A new task's thread is empty, so only the switch needs a page.
           void ready.then(() => api<{ bot: Bot }>(action.type === "newTask"
             ? `/api/bots/${action.botId}/tasks`
-            : `/api/bots/${action.botId}/tasks/${action.threadId}${action.whole ? "" : `?messages=${MESSAGE_PAGE_SIZE}`}`, { method: "POST", body: JSON.stringify(action.type === "newTask" ? { projectId: action.projectId, cwd: action.cwd, ...(action.confidential !== undefined ? { confidential: action.confidential } : {}), ...(action.stream ? { stream: true } : {}) } : {}) }))
+            : `/api/bots/${action.botId}/tasks/${action.threadId}${action.whole ? "" : `?messages=${MESSAGE_PAGE_SIZE}`}`, { method: "POST", body: JSON.stringify(action.type === "newTask" ? { projectId: action.projectId, cwd: action.cwd, ...(action.confidential !== undefined ? { confidential: action.confidential } : {}), ...(action.stream ?? singleStreamTurnField().singleStream ? { stream: true } : {}) } : {}) }))
             .then((r) => {
               if (action.type === "newTask") action.onCreated?.();
               if (!r?.bot || navigation.get(action.botId) !== revision) return;
@@ -5238,13 +5258,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // first snapshot. With threads shown the bot stays where it was.
   const launched = useRef(false);
   useEffect(() => {
-    if (!state.hydrated || launched.current) return;
-    launched.current = true;
+    if (!state.hydrated) return;
     const bot = state.bots.find((candidate) => candidate.id === state.selectedId);
-    if (bot && state.activeView === "chat" && botOpensTo(bot, showThreads) !== bot.threadId) openBot(dispatch, bot, showThreads);
+    const first = !launched.current;
+    launched.current = true;
+    if (!bot || state.activeView !== "chat") return;
+    // With one conversation the thread on screen is always the conversation
+    // (shared/single-stream.ts): at launch, after a reconnect that adopted
+    // the server's selection, and when another device or a routine started
+    // a newer topic, the window follows it (the reference design: one
+    // transcript per bot, on every device). Never while a switch is under
+    // way. With threads shown the bot stays where it was, once checked.
+    if ((first || !showThreads) && !bot.switchingTo && botOpensTo(bot, showThreads) !== bot.threadId) openBot(dispatch, bot, showThreads, first ? {} : { landing: false });
     // Launching the app is a return too: after the threshold (since the
     // conversation went quiet, or since the app closed) a fresh topic.
-    else if (bot && state.activeView === "chat" && !showThreads) landOnBot(dispatch, bot, bot.threadId, { force: true });
+    else if (first && !showThreads) landOnBot(dispatch, bot, bot.threadId, { force: true });
   }, [state.hydrated, state.bots, state.selectedId, state.activeView, showThreads, dispatch]);
 
   // Fresh topic on return (src/lib/fresh-topic.ts): which bot is on screen,
@@ -5726,6 +5754,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // module reads it, then announced like another tab's change
           if (command && command.action.type === "setPreference") {
             applyBotPreference(String(command.action.key), String(command.action.value));
+            break;
+          }
+          // a bot's "open that thread" passes the one-conversation gate like
+          // every other way in (openBotThread)
+          const commanded = command?.action as Action | undefined;
+          if (commanded && commanded.type === "switchTask") {
+            const target = stateRef.current.bots.find((candidate) => candidate.id === commanded.botId);
+            if (target) openBotThread(dispatch, target, commanded.threadId, !singleStreamTurnField().singleStream);
             break;
           }
           if (command) dispatch(command.action as Action);

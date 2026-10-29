@@ -109,6 +109,12 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   // call's tools stay the same from turn to turn (call-mark.ts, shared with
   // the older call in CallView)
   const callId = useVoiceCallMark(bot.id, bot.threadId);
+  // A call is said in the conversation as it is: a fresh topic drafted over
+  // it (src/lib/fresh-topic.ts) gives way, so the words typed after the
+  // call stay in the same context as the call.
+  useEffect(() => {
+    dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
+  }, [bot.id, dispatch]);
 
   const messages = visibleMessages(bot);
   const approval = pendingApprovals(messages)[0];

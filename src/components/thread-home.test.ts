@@ -38,12 +38,15 @@ describe("thread home while threads are hidden", () => {
     expect(openBotConversationActions(bot("older", [older, recent]), false).at(-1)).toEqual({ type: "freshTopic", botId: "vega", threadId: null });
   });
 
-  it("keeps a New topic just started here, and never strands the person in an empty one left elsewhere", () => {
+  // 2026-10-28: the newest topic is the conversation on every device, empty
+  // or not (shared/single-stream.ts): the timeline above it is drawn from
+  // the earlier topics, so an empty one never strands anybody.
+  it("opens at the newest topic, started here or left by another device", () => {
     // selected: the fresh topic is the end of the stream
     expect(threadsOffOpenTarget(bot("extra", [main, older, extra]))).toBeUndefined();
-    // another device left it: the newest topic with content is home
-    expect(threadsOffOpenTarget(bot("older", [main, older, extra]))).toBe("main");
-    expect(threadsOffReturnTarget(bot("older", [main, older, extra]))).toBe("main");
+    // another device left it: still the end of the stream
+    expect(threadsOffOpenTarget(bot("older", [main, older, extra]))).toBe("extra");
+    expect(threadsOffReturnTarget(bot("older", [main, older, extra]))).toBe("extra");
   });
 
   it("keeps the older rule for threads outside the stream", () => {

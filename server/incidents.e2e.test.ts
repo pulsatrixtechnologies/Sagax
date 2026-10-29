@@ -147,6 +147,20 @@ it("reports a crashed run to the Chief, who retries it from the incidents thread
     expect(retryLine?.peerAsk).toMatchObject({ botId: chief.id, name: "Clive" });
     expect(adaMessages.filter((m) => m.role === "bot" && m.kind === "text" && m.text).length).toBeGreaterThan(0);
     expect((await messages(incidents.threadId)).some((m) => m.kind === "activity" && (m.tool?.name ?? "").startsWith("Retried Ada's thread #") && m.threadRef?.threadId === ada.activeTaskId)).toBe(true);
+    // 2026-10-28 (one conversation, the reference design): what the Chief
+    // said about the incident arrives as its own message in the person's
+    // one conversation with it, with the link to the thread it worked in;
+    // the "Team incidents" thread stays beside, never a topic of the
+    // conversation, and the conversation is marked unread for it.
+    const chiefSaid = (await messages(incidents.threadId)).findLast((m) => m.role === "bot" && m.kind === "text" && m.text)?.text;
+    expect(chiefSaid).toBeTruthy();
+    const chiefNow = (await botsNow()).find((b) => b.id === chief.id);
+    const conversation = chiefNow.mainThreadId as string;
+    expect(conversation).toBe(chief.activeTaskId);
+    expect(conversation).not.toBe(incidents.threadId);
+    await expect.poll(async () => (await messages(conversation)).some((m) => m.role === "bot" && m.kind === "text" && m.text === chiefSaid && m.threadRef?.threadId === incidents.threadId && m.threadRef?.botId === chief.id), { timeout: 10_000 }).toBe(true);
+    expect(chiefNow.tasks.find((t: any) => t.threadId === conversation).unread).toBe(true);
+    expect(chiefNow.tasks.find((t: any) => t.threadId === incidents.threadId).openedBy?.botId).toBe(chief.id);
 
     // Only a Chief may retry: Ada's own token is refused.
     const adaRun = JSON.parse(readFileSync(file(ada.activeTaskId, "json"), "utf8"));

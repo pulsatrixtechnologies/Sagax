@@ -1,20 +1,24 @@
-// A bot's main thread is the conversation its person is in: the open thread
-// they last wrote in (TaskRecord.askedAt). A routine without a thread of its
-// own reports there, and with threads hidden the app opens the bot there
-// (WireBot.mainThreadId, worked out only here, never by a client), so the
-// one conversation a person sees is where its results land. Until someone
-// writes, it is the selected thread, then the oldest one.
+// A bot's main thread is the person's one conversation with it: the newest
+// segment of their stream (shared/single-stream.ts, THE rule, shared with the
+// desktop and the phone). A routine without a thread of its own reports
+// there, a peer's ask, a webhook's news and a call's turns land there, and
+// the app opens the bot there (WireBot.mainThreadId, worked out only here,
+// never by a client), so the one conversation a person sees is where
+// everything lands. Nothing when the person has no conversation yet (one is
+// started for them then).
+//
+// Before 2026-10-28 this was "the open thread the person last wrote in"
+// (askedAt) while the desktop opened the newest segment: two rules, and a
+// routine could report into a topic the person was not looking at.
+import { conversationThreadId, type StreamTaskFacts } from "../shared/single-stream.ts";
 
-interface MainThreadCandidate {
+interface MainThreadCandidate extends Omit<StreamTaskFacts, "createdAt"> {
   threadId: string;
   createdAt: number;
   askedAt?: number;
   archivedAt?: number;
   routineRunId?: string;
-  /** An automatic routine results thread is never the person's conversation. */
   routineResults?: true;
-  /** A confidential thread (server/confidential-threads.ts) is never a main
-   * thread: nothing reports into it. */
   confidential?: true;
 }
 
@@ -38,12 +42,9 @@ export function wasOldestThread(tasks: readonly MainThreadCandidate[], threadId:
   return saved !== undefined && !tasks.some((task) => !task.routineRunId && task.archivedAt === undefined && task.createdAt < saved.createdAt);
 }
 
-/** The open thread a person last wrote in; else `selectedId` while it is an
- * open conversation; else the oldest thread. */
-export function mainThread(tasks: readonly MainThreadCandidate[], selectedId?: string): string | undefined {
-  const open = tasks.filter((task) => !task.routineRunId && task.routineResults !== true && task.confidential !== true && task.archivedAt === undefined);
-  const asked = open.reduce<MainThreadCandidate | undefined>(
-    (latest, task) => ((task.askedAt ?? -1) > (latest?.askedAt ?? -1) ? task : latest), undefined,
-  );
-  return asked?.threadId ?? open.find((task) => task.threadId === selectedId)?.threadId ?? oldestThread(tasks);
+/** The person's one conversation with the bot (shared/single-stream.ts):
+ * the newest open segment. `selectedId` is ignored since 2026-10-28 (kept
+ * for callers): the selection follows the conversation, never the reverse. */
+export function mainThread(tasks: readonly MainThreadCandidate[], _selectedId?: string): string | undefined {
+  return conversationThreadId(tasks);
 }

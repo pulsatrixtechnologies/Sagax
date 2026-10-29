@@ -208,17 +208,20 @@ describe("opening a bot with threads hidden", () => {
     expect(unread("finished")).toBe(true);
   });
 
-  it("lands on a search hit in another thread by the switch alone, with the whole thread", async () => {
+  // 2026-10-28: with one conversation, a thread outside the stream (a job
+  // the bot opened) never takes the conversation's place: it opens in the
+  // side column beside it (the reference design's thread beside the chat).
+  it("lands on a search hit in a job thread beside the conversation, which stays at its newest topic", async () => {
     await threadsShown(false);
+    closeSideThread();
     await landOnSearchHit({
       botId: "scout", name: "Scout", threadId: "finished", messageId: "hit", role: "bot", kind: "text", at: 3,
       snippet: "the side job is done", matchStart: 4, matchLength: 8, onActivePath: true,
     }, state, dispatch, false);
     await settle();
-    // No page limit: the hit can be older than one page.
-    expect(sent().filter((request) => request.startsWith("/api/bots/scout/tasks/"))).toEqual(["/api/bots/scout/tasks/finished {}"]);
-    expect(reads()).toEqual(["finished"]);
-    expect(unread("left-behind")).toBe(true);
+    expect(sent().filter((request) => request.startsWith("/api/bots/scout/tasks/finished"))).toEqual([]);
+    expect(scoutNow().threadId).toBe("main-chat");
+    expect(currentSideThread()).toEqual({ botId: "scout", threadId: "finished" });
     expect(state.focusMessage).toMatchObject({ threadId: "finished", messageId: "hit" });
   });
 });

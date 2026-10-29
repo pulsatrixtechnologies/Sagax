@@ -7,7 +7,8 @@
 // this only asks for them, and asks again when a turn settles.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ListChecks, RefreshCw, X } from "lucide-react";
-import { useStore, type Bot } from "@/state/store";
+import { openBotThread, useStore, type Bot } from "@/state/store";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -99,10 +100,11 @@ export function ActivityPanel({ bot }: { bot: Bot }) {
 
   const days = useMemo(() => (rows ? groupActivityByDay(rows, new Date()) : []), [rows]);
 
+  const showThreads = useShowThreads();
   const jump = (row: ActivityRow) => {
-    if (row.threadId !== bot.threadId && threadIds.has(row.threadId)) {
-      dispatch({ type: "switchTask", botId: bot.id, threadId: row.threadId });
-    }
+    // the one-conversation gate: an earlier topic scrolls the conversation
+    // back, a job or a run opens beside it (openBotThread)
+    if (row.threadId !== bot.threadId && threadIds.has(row.threadId)) openBotThread(dispatch, bot, row.threadId, showThreads);
   };
 
   return (

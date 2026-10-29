@@ -418,7 +418,9 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
     await settled(bob, bobThread, "BOB-FIRST stream topic");
     // Bob's new topic: a fresh thread of his, with his own earlier topic only.
     const topic = await api("POST", `/api/bots/${botId}/tasks`, bob, { stream: true });
-    expect(topic.status, topic.text).toBe(201);
+    // 2026-10-28: a topic of Bob's nobody wrote in yet already is a new
+    // topic (200, that thread); otherwise a fresh one (201)
+    expect([200, 201], topic.text).toContain(topic.status);
     const topicThread = topic.body.task.threadId as string;
     expect(topic.body.task.ownerPrincipalId).toBe(ids.bob);
     expect(JSON.stringify(topic.body)).not.toContain("streamSegment");
