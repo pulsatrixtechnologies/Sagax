@@ -14,7 +14,7 @@
 //     threads opened from it that are still working. A parallel task a
 //     person asked for, a teammate's work and a routine are not the bot's
 //     own sub-agents and keep their own lifecycle.
-import type { Message } from "../shared/wire.ts";
+import type { WireMessage as Message } from "../shared/wire.ts";
 
 /** A call cut short by a person's Stop. */
 export const CUT_TOOL_OUTPUT = "Stopped before it finished.";

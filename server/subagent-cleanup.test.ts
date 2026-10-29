@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message } from "../shared/wire.ts";
+import type { WireMessage as Message } from "../shared/wire.ts";
 import {
   closedTool, closeRowsLeftByRestart, CUT_TOOL_OUTPUT, ENDED_TOOL_OUTPUT, endedToolOutput, openedThreadRefs,
   openToolRows, ownSubagentThreads, RESTART_TOOL_OUTPUT, type RowSweepStore,
