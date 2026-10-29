@@ -1093,6 +1093,7 @@
   "botPanel.model.hostServer": "Organization server",
   "botPanel.model.where": "Where this bot runs",
   "botPanel.model.whereHelp": "This bot answers only while this computer is on. Approvals stay on that computer.",
+  "botPanel.model.whereHelpServer": "This bot runs on the organization's server: it answers even when your computer is off.",
   "botPanel.model.effort": "Effort",
   "botPanel.model.effortDefault": " (Default: none sent)",
   "botPanel.model.effortHelp": "How hard it thinks in groups and new threads",

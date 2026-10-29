@@ -41,6 +41,9 @@ describe("where a bot runs", () => {
       onModel: () => undefined,
     }));
     expect(markup).toContain("Organization server");
+    // the organization server answers while the person's computer is off (#1542)
+    expect(markup).toContain("it answers even when your computer is off");
+    expect(markup).not.toContain("while this computer is on");
     expect(markup).not.toContain("data-bot-host=\"studio\"");
     expect(markup).toContain("disabled");
   });

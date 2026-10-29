@@ -873,6 +873,7 @@
   "botPanel.model.hostServer": "Serveur de l'organisation",
   "botPanel.model.where": "Où roule ce bot",
   "botPanel.model.whereHelp": "Ce bot ne répond que pendant que cet ordinateur est allumé. Les approbations restent sur cet ordinateur.",
+  "botPanel.model.whereHelpServer": "Ce bot roule sur le serveur de l'organisation : il répond même quand votre ordinateur est éteint.",
   "botPanel.model.effort": "Effort",
   "botPanel.model.effortDefault": " (Par défaut : aucun niveau envoyé)",
   "botPanel.model.effortHelp": "Sa réflexion dans les groupes et les nouvelles conversations",
