@@ -37,7 +37,8 @@ export interface OutboundWiringDeps {
    * line and key). Absent: no Perspicax on this server. */
   voice?(turn: { threadId: string; generation: string; botId: string }, args: Record<string, unknown>): ReturnType<PlaceCallDeps["twilio"]>;
   /** A conversation call is said to be made on behalf of the person who
-   * asked for it: their name. */
+   * asked for it: their name. Also a one-way message's when personName has
+   * none. */
   principalName?(principalId: string): string | undefined;
   /** The person's Perspicax id (the `sub` Perspicax signs), or null. */
   principalSub?(principalId: string): string | null;
@@ -163,8 +164,10 @@ export function outboundWiring(deps: OutboundWiringDeps) {
         names: {
           botName: deps.botName(context.botId),
           // a conversation is made on behalf of the person who asked for it
-          // (their own line); a one-way message keeps its earlier wording
-          personName: (conversation ? deps.principalName?.(context.principalId) : undefined) || deps.personName(context.botId, context.threadId),
+          // (their own line); a one-way message keeps its earlier wording,
+          // else the person who speaks (a direct chat on a server with no
+          // organization name and no bot that opened the thread, #1487)
+          personName: (conversation ? deps.principalName?.(context.principalId) : undefined) || deps.personName(context.botId, context.threadId) || deps.principalName?.(context.principalId) || "",
         },
         language: deps.language(),
         card: callRow,

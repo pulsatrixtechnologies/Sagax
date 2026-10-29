@@ -61,6 +61,24 @@ describe("outbound wiring", () => {
     expect(wake).not.toHaveBeenCalled();
   });
 
+  it("a direct chat with no thread opener and no organization name calls on behalf of the person who speaks (#1487)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "outbound-wiring-"));
+    dirs.push(dir);
+    const rows: Message[] = [];
+    const store = {
+      messagesFor: () => rows,
+      appendMessage: (_threadId: string, message: Omit<Message, "id" | "at">) => { const row = { ...message, id: `m${rows.length + 1}`, at: rows.length + 1 } as Message; rows.push(row); return row; },
+      patchMessage: () => null,
+    };
+    const twilio = vi.fn(async () => ({ ok: true as const, isError: false, value: { dry_run: true } }));
+    const wiring = outboundWiring({ dataDir: dir, store, botName: () => "Rocket", personName: () => "", principalName: (id) => (id === "jean" ? "Jean Tremblay" : undefined), language: () => "fr", twilio, wake: vi.fn() });
+    wiring.calls.updateSettings({ enabled: true, callbackNumber: "+14385550199" });
+    const answer = await wiring.placeCall({ principalId: "jean", botId: "bot-a", threadId: "t-1", generation: "g1", room: false }, ARGS);
+    expect(answer.text).not.toContain("on whose behalf");
+    expect(answer.isError).toBeUndefined();
+    expect(rows[0]!.outbound).toMatchObject({ kind: "call", status: "pending" });
+  });
+
   it("refuses rooms and a conversation with no person", async () => {
     const { wiring, twilio } = setup();
     expect((await wiring.placeCall({ principalId: "jean", botId: "bot-a", threadId: "t-1", generation: "g", room: true }, ARGS)).isError).toBe(true);
