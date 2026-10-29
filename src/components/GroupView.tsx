@@ -19,6 +19,7 @@ import {
   type Message,
 } from "@/state/store";
 import { BotAvatar } from "./Avatar";
+import { ClusterLabel } from "./ClusterLabel";
 import { PlaceIcon } from "./PlaceIcon";
 import { ScreenFrame } from "./ScreenFrame";
 import { effectivePlace, placeLabelKey } from "@/lib/place";
@@ -51,10 +52,11 @@ import { ReactionChips } from "./Reactions";
 import { myReactions, reactionSelfIds, useToggleReaction } from "@/lib/reactions";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
-import { mausInk, normalizeState } from "@/lib/mascot";
+import { normalizeState } from "@/lib/mascot";
 import { defaultResponderName, effectiveDefaultResponder, groupResponseHint, jevRoomRoutingOn } from "@/lib/group-routing";
 import { openSettings } from "@/lib/settings-link";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { CHAT_COLUMN_CLASS } from "@/lib/chat-bubble-width";
 import { VideoPlayerWidget } from "./video/VideoPlayerWidget";
 import { FailedTurnRow, MessageBoundary, type SideChat } from "./ChatView";
 import { MESSAGE_ROW, MessageActions, messageActionClass } from "./MessageActions";
@@ -197,25 +199,6 @@ export function RoomToolChip({ message, roomId }: { message: Message; roomId?: s
           }
         } : undefined}
       />
-    </div>
-  );
-}
-
-/** 16px profile avatar + name in the bot's color, shown once per sender cluster. */
-function ClusterLabel({ bot, name, color }: { bot?: Bot; name: string; color: string }) {
-  "use memo";
-  const tint = mausInk(bot?.color ?? color) ?? color;
-  return (
-    <div className="-mb-1.5 ms-1.5 mt-3 flex items-center gap-1.5 px-1.5">
-      <BotAvatar
-        bot={bot ?? { name, color: color as Bot["color"] }}
-        state={normalizeState(bot?.mascotExpression) ?? "happy"}
-        size={16}
-        motion="none"
-        motionKey={0}
-        animated={false}
-      />
-      <span className="text-[12px] font-normal leading-4" style={{ color: tint }}>{name}</span>
     </div>
   );
 }
@@ -1661,7 +1644,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
           ref={transcriptRef}
           // Same 960px column as a bot chat and the composer, so the
           // thread lines up with the field.
-          className="mx-auto flex w-full max-w-[960px] flex-col gap-3"
+          className={CHAT_COLUMN_CLASS}
           style={{ paddingBottom: composerDock.pad }}
           role="log"
           // off, as in ChatView: TranscriptAnnouncer speaks once per reply

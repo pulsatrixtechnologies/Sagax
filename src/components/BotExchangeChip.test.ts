@@ -102,6 +102,22 @@ describe("BotExchangeChip", () => {
     expect(markup).not.toContain("document.body");
   });
 
+  it("lays the lines out like a 1:1 chat: the shared column, Markdown, the header's first bot at the start and the other at the end in its colour", () => {
+    const markup = renderToStaticMarkup(createElement(BotExchangeChip, { run: run(), forceOpen: true }));
+    expect(markup).toContain("max-w-[960px]");
+    expect(markup).not.toContain("max-w-xl");
+    expect(markup).toContain("Close Chat");
+    expect(markup).toContain('data-testid="transcript-date"');
+    // unRAID opens the header: its line is a bot reply, start side, grey
+    expect(markup).toMatch(/data-side="start"[^>]*>(?:(?!data-side).)*bg-bubble-bot(?:(?!data-side).)*pour info/s);
+    // Quasar answers from the person's side, its bubble in its own colour
+    expect(markup).toMatch(/data-side="end"[^>]*style="[^"]*--color-bubble-user[^"]*"/);
+    expect(markup).toMatch(/data-side="end"[^>]*>(?:(?!data-side).)*bg-bubble-user(?:(?!data-side).)*Which database\?/s);
+    // name and mascot once per run, like a room
+    expect(markup).toContain(">unRAID<");
+    expect(markup).toContain(">Quasar<");
+  });
+
   it("stamps Aujourd'hui when the app language is French", () => {
     setLocale("fr");
     const markup = renderToStaticMarkup(createElement(BotExchangeChip, { run: run(), forceOpen: true }));

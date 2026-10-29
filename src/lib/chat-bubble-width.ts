@@ -2,6 +2,11 @@
 // tables, diagrams, charts, widgets and email drafts get a wide card; a live
 // terminal takes the whole transcript column (less the gutter the other rows
 // keep), so a shell prompt has its columns and the widget follows the column.
+/** The transcript column of a conversation: a 1:1 (ChatView), a room
+ * (GroupView) and an open bot-to-bot conversation (BotExchangeChip) share it,
+ * inside a scroll pane with a px-5 gutter. */
+export const CHAT_COLUMN_CLASS = "mx-auto flex w-full max-w-[960px] flex-col gap-3";
+
 export type ChatBubbleWidth = "fit" | "wide" | "column";
 
 export const CHAT_BUBBLE_WIDTH_CLASS: Record<ChatBubbleWidth, string> = {
