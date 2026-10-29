@@ -162,7 +162,7 @@ public enum RoutineCalendar {
                         items.append(upcoming(routine, at))
                     }
                 }
-            case .unknown:
+            case .webhook, .event, .unknown:
                 continue
             }
         }
@@ -244,7 +244,7 @@ public enum RoutineCalendar {
         _ schedule: RoutineSchedule, movingOccurrence occurrenceAt: Date, to nextAt: Date, calendar: Calendar = .current
     ) throws -> RoutineSchedule {
         switch schedule.type {
-        case .cron, .unknown:
+        case .cron, .webhook, .event, .unknown:
             throw MoveError.cron
         case .once:
             return .once(at: nextAt)

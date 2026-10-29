@@ -27,6 +27,12 @@ public enum RoutineRecurrence: String, CaseIterable, Hashable, Sendable {
     case interval
     /// A cron schedule no choice above can say: kept as it is.
     case advanced
+    /// "When a webhook arrives" (2026-10-29): the routine's own webhook
+    /// starts it. A bot routine only.
+    case webhook
+    /// "When email arrives": shown only for a routine that already starts
+    /// that way, kept as it is.
+    case email
 
     /// The model frequency behind a choice, nil for once, interval and advanced.
     public var frequency: RoutineScheduleFrequency? {
@@ -37,9 +43,16 @@ public enum RoutineRecurrence: String, CaseIterable, Hashable, Sendable {
         case .days: .days
         case .monthly: .monthly
         case .yearly: .yearly
-        case .none, .interval, .advanced: nil
+        case .none, .interval, .advanced, .webhook, .email: nil
         }
     }
+
+    /// Started by a webhook or an email instead of the clock.
+    public var isTrigger: Bool { self == .webhook || self == .email }
+
+    /// Repeats on the clock: what timing, overlap, auto pause, continuity
+    /// and a watch apply to.
+    public var repeatsOnClock: Bool { self != .none && !isTrigger }
 
     public init(_ frequency: RoutineScheduleFrequency) {
         switch frequency {
@@ -221,6 +234,8 @@ public struct RoutineScheduleForm: Hashable, Sendable {
         guard let schedule else { return .none }
         switch schedule.type {
         case .once, .unknown: return .none
+        case .webhook: return .webhook
+        case .event: return .email
         case .interval: return .interval
         case .daily: return RoutineRecurrence(model(for: schedule)?.frequency ?? .daily)
         case .cron: return model(for: schedule).map { RoutineRecurrence($0.frequency) } ?? .advanced
@@ -465,7 +480,9 @@ public struct RoutineScheduleForm: Hashable, Sendable {
         var timed = schedule
         timed.windowEarlyMinutes = nil
         timed.windowLateMinutes = nil
-        guard schedule.type != .once else {
+        // a one-time run carries no timing, nor does a trigger (the server
+        // takes `{ type: "webhook" }` as it is)
+        guard schedule.type != .once, !schedule.isTrigger else {
             timed.timing = nil
             return timed
         }
@@ -500,6 +517,11 @@ public struct RoutineScheduleForm: Hashable, Sendable {
             return schedule
         case .none:
             return .init(type: .once, at: exactAt)
+        case .webhook:
+            return .init(type: .webhook)
+        case .email:
+            guard let original, original.type == .event else { throw RoutineScheduleError("Choose a valid schedule.") }
+            return original
         case .hourly, .daily, .weekdays, .days, .monthly, .yearly, .advanced:
             guard let schedule = preview?.schedule else { throw RoutineScheduleError("Choose a valid schedule.") }
             return schedule

@@ -291,12 +291,12 @@ final class RoutinesUITests: XCTestCase {
         scrollTo(window, in: app)
         XCTAssertTrue(window.exists, "the window shows")
         choose("Never", in: "routine-editor-ends", app: app)
-        let advanced = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Advanced ·'")).firstMatch
+        let advanced = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'More options'")).firstMatch
         scrollTo(advanced, in: app)
         advanced.tap()
         let overlap = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'If the previous run is still working'")).firstMatch
         scrollTo(overlap, in: app)
-        XCTAssertTrue(overlap.exists, "the overlap choice shows under Advanced")
+        XCTAssertTrue(overlap.exists, "the overlap choice shows under More options")
         overlap.tap()
         app.buttons["Skip this occurrence"].firstMatch.tap()
         save(app)

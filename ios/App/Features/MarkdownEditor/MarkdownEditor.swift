@@ -34,18 +34,27 @@ struct MarkdownEditor: View {
     var identifier: String = "markdown-editor"
     /// Called when the text view gives up focus (a field that saves on blur).
     var onEndEditing: (() -> Void)? = nil
+    /// 2026-10-29 (routine instructions): writing straight away, Preview one
+    /// tap away, few buttons above the keyboard, no counts.
+    var compact = false
+    /// Shows "Full screen" (compact): long text gets the whole screen.
+    var onExpand: (() -> Void)? = nil
 
     @State private var preview = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker(String(localized: "View"), selection: $preview) {
-                Text("Write").tag(false)
-                Text("Preview").tag(true)
+            if compact {
+                compactBar
+            } else {
+                Picker(String(localized: "View"), selection: $preview) {
+                    Text("Write").tag(false)
+                    Text("Preview").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 240)
+                .accessibilityIdentifier("\(identifier).view")
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 240)
-            .accessibilityIdentifier("\(identifier).view")
 
             if preview {
                 ScrollView {
@@ -63,12 +72,13 @@ struct MarkdownEditor: View {
             } else {
                 MarkdownTextView(
                     text: $text, placeholder: placeholder, maxLength: maxLength, monospaced: monospaced,
-                    accessibilityLabel: accessibilityLabel, identifier: identifier, onEndEditing: onEndEditing
+                    accessibilityLabel: accessibilityLabel, identifier: identifier, onEndEditing: onEndEditing,
+                    fewButtons: compact
                 )
                 .frame(minHeight: minHeight)
             }
 
-            if showsCount || footer != nil {
+            if (showsCount && !compact) || footer != nil {
                 HStack(spacing: 8) {
                     if let footer {
                         Text(verbatim: footer)
@@ -81,6 +91,29 @@ struct MarkdownEditor: View {
                 .monospacedDigit()
             }
         }
+    }
+
+    /// Compact: Preview (or Write) and Full screen, small, on one line.
+    private var compactBar: some View {
+        HStack(spacing: 14) {
+            Spacer(minLength: 0)
+            Button {
+                preview.toggle()
+            } label: {
+                Label(preview ? String(localized: "Write") : String(localized: "Preview"), systemImage: preview ? "pencil" : "eye")
+            }
+            .accessibilityIdentifier("\(identifier).view")
+            if let onExpand {
+                Button(action: onExpand) {
+                    Label(String(localized: "Full screen"), systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+                .accessibilityIdentifier("\(identifier).full-screen")
+            }
+        }
+        .buttonStyle(.borderless)
+        .font(.footnote.weight(.medium))
+        .labelStyle(.titleAndIcon)
+        .foregroundStyle(Theme.accentText)
     }
 
     private var atCap: Bool { maxLength.map { text.count >= $0 } ?? false }
@@ -105,6 +138,8 @@ struct MarkdownTextView: UIViewRepresentable {
     var accessibilityLabel: String
     var identifier: String
     var onEndEditing: (() -> Void)?
+    /// The keyboard bar with the everyday marks only.
+    var fewButtons = false
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -120,7 +155,7 @@ struct MarkdownTextView: UIViewRepresentable {
         view.textContainerInset = UIEdgeInsets(top: 8, left: 4, bottom: 8, right: 4)
         view.accessibilityLabel = accessibilityLabel
         view.accessibilityIdentifier = identifier
-        view.inputAccessoryView = MarkdownToolbar(coordinator: context.coordinator)
+        view.inputAccessoryView = MarkdownToolbar(coordinator: context.coordinator, fewButtons: fewButtons)
         view.placeholder = placeholder
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapped(_:)))
         tap.delegate = context.coordinator
@@ -372,7 +407,7 @@ final class MarkdownUITextView: UITextView {
 final class MarkdownToolbar: UIInputView {
     private weak var coordinator: MarkdownTextView.Coordinator?
 
-    init(coordinator: MarkdownTextView.Coordinator) {
+    init(coordinator: MarkdownTextView.Coordinator, fewButtons: Bool = false) {
         self.coordinator = coordinator
         super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 46), inputViewStyle: .keyboard)
         autoresizingMask = .flexibleWidth
@@ -402,8 +437,9 @@ final class MarkdownToolbar: UIInputView {
             done.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             done.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
-        for (index, item) in Self.items.enumerated() {
-            if Self.dividersBefore.contains(index) {
+        let items = fewButtons ? Self.fewItems : Self.items
+        for (index, item) in items.enumerated() {
+            if !fewButtons && Self.dividersBefore.contains(index) {
                 let line = UIView()
                 line.backgroundColor = .separator
                 line.translatesAutoresizingMaskIntoConstraints = false
@@ -439,6 +475,12 @@ final class MarkdownToolbar: UIInputView {
         Item(action: .rule, symbol: "minus", label: String(localized: "Divider line")),
         Item(action: .format, symbol: "wand.and.stars", label: String(localized: "Tidy up the formatting")),
     ]
+    /// The everyday marks (routine instructions): bold, italic, heading,
+    /// a list, a checklist and a link.
+    private static var fewItems: [Item] {
+        let kept: [MarkdownTextView.Coordinator.Action] = [.bold, .italic, .heading, .bullet, .task, .link]
+        return items.filter { item in kept.contains { $0 == item.action } }
+    }
     /// A thin line before heading, quote, table and Format, as the desktop.
     private static let dividersBefore: Set<Int> = [2, 8, 11, 13]
 

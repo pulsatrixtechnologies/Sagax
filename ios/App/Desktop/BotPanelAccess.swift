@@ -32,6 +32,8 @@ struct BotPanelAccess: View {
     @State private var servers: [MCPServerListing]?
     @State private var serversFailed = false
     @State private var webhooks: [WebhookListing]?
+    /// A routine's webhook opens its routine, where it is managed.
+    @State private var openRoutine: Routine?
     @State private var saving = false
 
     /// An admin session, or the bot's owner on an organization server
@@ -50,6 +52,9 @@ struct BotPanelAccess: View {
             if !worksOnOnly { AnyView(rest) }
         }
         .onAppear { folder = bot.cwd ?? "" }
+        .sheet(item: $openRoutine) { routine in
+            NavigationStack { RoutineDetailView(routine: routine) }
+        }
         .task {
             config = await session.configStatus()
             instances = await DesktopModelCatalog.shared.instances(session)
@@ -319,20 +324,30 @@ struct BotPanelAccess: View {
     private var webhooksCard: some View {
         PanelCard {
             Text("Webhooks").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
-            Text("Inbound triggers wired to this bot.").panelText(13, 19.5).foregroundStyle(theme.inkSecondary).padding(.top, 2)
+            Text("A routine’s webhook is managed in that routine; a webhook of its own, in Automations.").panelText(13, 19.5).foregroundStyle(theme.inkSecondary).padding(.top, 2)
             if let webhooks, !webhooks.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(webhooks.enumerated()), id: \.element.id) { index, webhook in
                         HStack(spacing: 12) {
                             Text(verbatim: webhook.name).font(theme.font(13)).foregroundStyle(theme.ink).lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            Text(webhook.enabled ? "Active" : "Paused")
+                            let on = RoutineWebhook.status(webhook) != .paused
+                            Text(verbatim: RoutineWebhookPanel.statusLabel(RoutineWebhook.status(webhook)))
                                 .font(theme.font(11, .medium))
-                                .foregroundStyle(webhook.enabled ? theme.accentText : theme.inkSecondary)
+                                .foregroundStyle(on ? theme.accentText : theme.inkSecondary)
                                 .padding(.horizontal, 8)
                                 .frame(height: 20)
-                                .background(webhook.enabled ? theme.accent.opacity(0.15) : theme.control, in: Capsule())
+                                .background(on ? theme.accent.opacity(0.15) : theme.control, in: Capsule())
                             Text("\(webhook.deliveryCount) deliveries").font(theme.font(11.5)).foregroundStyle(theme.inkSecondary)
+                            Button {
+                                Task { await openWebhook(webhook) }
+                            } label: {
+                                Text(webhook.routineId != nil ? "Open the routine" : "Open in Automations")
+                                    .font(theme.font(11.5, .medium))
+                                    .foregroundStyle(theme.accentText)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("bot-webhook-open.\(webhook.id)")
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
@@ -346,6 +361,16 @@ struct BotPanelAccess: View {
                 quietLine("No webhooks for this bot.").padding(.top, 12)
             }
         }
+    }
+
+    /// A routine's webhook: its routine's page; one of its own: Automations.
+    private func openWebhook(_ webhook: WebhookListing) async {
+        guard let routineId = webhook.routineId else {
+            model.personaOpen = false
+            model.show(.automations)
+            return
+        }
+        openRoutine = await session.loadRoutines().routines.first { $0.id == routineId }
     }
 
     private var alwaysAllowedCard: some View {

@@ -467,7 +467,11 @@ async function seedThroughAPI(base) {
     botId: ara,
     runOn: "maus",
     // PARITY_ROUTINE_CRON (2026-10-29, the schedule editor's captures): another expression
-    schedule: { type: "cron", expression: process.env.PARITY_ROUTINE_CRON || "2 7 1-7 * 1", timeZone: "America/Toronto" },
+    // PARITY_ROUTINE_WEBHOOK=1 (2026-10-29, the routine editor's captures):
+    // the routine starts when a webhook arrives (the server binds its webhook)
+    schedule: process.env.PARITY_ROUTINE_WEBHOOK === "1"
+      ? { type: "webhook" }
+      : { type: "cron", expression: process.env.PARITY_ROUTINE_CRON || "2 7 1-7 * 1", timeZone: "America/Toronto" },
     durationMinutes: 30,
   });
   const weekly = await api(base, "POST", "/api/routines", {

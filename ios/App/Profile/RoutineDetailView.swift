@@ -141,13 +141,16 @@ struct RoutineDetailView: View {
                 ProfileRow(title: Text(verbatim: RoutineWording.schedule(routine.schedule)), height: Theme.Profile.singleRow) { EmptyView() }
                     
                     .accessibilityIdentifier("routine-schedule")
-                ProfileDivider(leading: Theme.Profile.textInset)
-                ProfileRow(title: Text("Next run"), height: Theme.Profile.row) {
-                    Text(verbatim: RoutineWording.nextRun(routine))
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.parity(Color(hex: 0x9C9BA0), Theme.textSecondary))
-                        .padding(.trailing, 18.7)
-                        .accessibilityIdentifier("routine-next-run")
+                // a webhook or an email starts it: no next run to tell
+                if !routine.schedule.isTrigger {
+                    ProfileDivider(leading: Theme.Profile.textInset)
+                    ProfileRow(title: Text("Next run"), height: Theme.Profile.row) {
+                        Text(verbatim: RoutineWording.nextRun(routine))
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.parity(Color(hex: 0x9C9BA0), Theme.textSecondary))
+                            .padding(.trailing, 18.7)
+                            .accessibilityIdentifier("routine-next-run")
+                    }
                 }
                 // #149: routines act in their owner's name, no consent
                 if let runAs = routine.runAs {
@@ -161,6 +164,20 @@ struct RoutineDetailView: View {
                     }
                 }
                 
+            }
+
+            // 2026-10-29: a webhook routine's own webhook, here and in the
+            // editor (no longer only in Edit bot)
+            if routine.schedule.type == .webhook {
+                ProfileSectionLabel(text: "Webhook", margin: margin)
+                    .padding(.top, Theme.Profile.cardGap)
+                ProfileCard(margin: margin) {
+                    RoutineWebhookPanel(routine: routine, bot: session.state.bot(routine.botId)) { updated in
+                        routine = updated
+                    }
+                    .padding(.horizontal, Theme.Profile.textInset)
+                    .padding(.vertical, 12)
+                }
             }
 
             ProfileCard(margin: margin) {

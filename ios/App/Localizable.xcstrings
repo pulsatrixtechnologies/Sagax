@@ -1,6 +1,342 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Not saved": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not saved" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non enregistré" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Não salvo" } }
+      }
+    },
+    "You have unsaved changes.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You have unsaved changes." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous avez des modifications non enregistrées." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Você tem alterações não salvas." } }
+      }
+    },
+    "Close without saving your changes?": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Close without saving your changes?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fermer sans enregistrer vos modifications ?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fechar sem salvar suas alterações?" } }
+      }
+    },
+    "Close without saving": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Close without saving" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fermer sans enregistrer" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Fechar sem salvar" } }
+      }
+    },
+    "Keep editing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Keep editing" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Continuer la modification" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Continuar editando" } }
+      }
+    },
+    "Results in the main thread": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Results in the main thread" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Résultats dans le fil principal" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Resultados no fio principal" } }
+      }
+    },
+    "Results in %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Results in %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Résultats dans %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Resultados em %@" } }
+      }
+    },
+    "As %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "As %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En tant que %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Como %@" } }
+      }
+    },
+    "What": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quoi" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O quê" } }
+      }
+    },
+    "Where results go": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Where results go" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Où vont les résultats" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Para onde vão os resultados" } }
+      }
+    },
+    "When a webhook arrives": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "When a webhook arrives" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quand un webhook arrive" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Quando um webhook chegar" } }
+      }
+    },
+    "When email arrives": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "When email arrives" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quand un courriel arrive" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Quando um e-mail chegar" } }
+      }
+    },
+    "When a webhook fires": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "When a webhook fires" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Quand un webhook se déclenche" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Quando um webhook disparar" } }
+      }
+    },
+    "Starts when an email arrives at the bot’s address.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Starts when an email arrives at the bot’s address." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Démarre quand un courriel arrive à l’adresse du bot." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Começa quando um e-mail chega ao endereço do bot." } }
+      }
+    },
+    "Hide help": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Hide help" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Masquer l’aide" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ocultar ajuda" } }
+      }
+    },
+    "Help": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Help" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aide" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ajuda" } }
+      }
+    },
+    "Stops after %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Stops after %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "S’arrête après %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Para após %@" } }
+      }
+    },
+    "Remember the last run": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Remember the last run" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Se souvenir de la dernière exécution" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Lembrar a última execução" } }
+      }
+    },
+    "Each run starts with the previous run's report, so the bot knows what it found last time. Good for checks like QA or monitoring.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Each run starts with the previous run's report, so the bot knows what it found last time. Good for checks like QA or monitoring." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque exécution commence par le compte rendu de la précédente, pour que le bot sache ce qu'il a trouvé la dernière fois. Utile pour des vérifications comme l'assurance qualité ou la surveillance." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cada execução começa com o relatório da anterior, para que o bot saiba o que encontrou da última vez. Bom para verificações como QA ou monitoramento." } }
+      }
+    },
+    "Mail tag": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mail tag" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mot du courriel" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Etiqueta de e-mail" } }
+      }
+    },
+    "reports": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "reports" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "rapports" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "relatorios" } }
+      }
+    },
+    "Added after + on this bot's mail address. Mail that arrives with this tag is marked for this routine. Sends still leave from the connector's address.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Added after + on this bot's mail address. Mail that arrives with this tag is marked for this routine. Sends still leave from the connector's address." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouté après le + de l'adresse courriel du bot. Un courriel qui arrive avec ce mot est marqué pour cette routine. Les envois partent toujours de l'adresse du connecteur." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Adicionada após o + no endereço de e-mail do bot. O e-mail que chega com essa etiqueta é marcado para esta rotina. Os envios ainda saem do endereço do conector." } }
+      }
+    },
+    "The address and the key appear once the routine is saved.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The address and the key appear once the routine is saved." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L’adresse et la clé apparaissent une fois la routine enregistrée." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O endereço e a chave aparecem depois que a rotina é salva." } }
+      }
+    },
+    "This routine has no webhook yet.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This routine has no webhook yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette routine n’a pas encore de webhook." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Esta rotina ainda não tem webhook." } }
+      }
+    },
+    "Create its webhook": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Create its webhook" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Créer son webhook" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Criar o webhook dela" } }
+      }
+    },
+    "Regenerate the key?": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Regenerate the key?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Régénérer la clé ?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Gerar a chave novamente?" } }
+      }
+    },
+    "Regenerate the key": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Regenerate the key" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Régénérer la clé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Gerar a chave novamente" } }
+      }
+    },
+    "The current key stops working immediately, so every sender using it must be updated.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The current key stops working immediately, so every sender using it must be updated." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La clé actuelle cesse de fonctionner tout de suite : chaque expéditeur qui l'utilise doit être mis à jour." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A chave atual para de funcionar imediatamente, então cada remetente que a usa precisa ser atualizado." } }
+      }
+    },
+    "POST to": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "POST to" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "POST vers" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "POST para" } }
+      }
+    },
+    "Key": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Key" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Clé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Chave" } }
+      }
+    },
+    "Header": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Header" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En-tête" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cabeçalho" } }
+      }
+    },
+    "Copy the address": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy the address" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier l’adresse" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Copiar o endereço" } }
+      }
+    },
+    "Copy the key": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy the key" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier la clé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Copiar a chave" } }
+      }
+    },
+    "Copy the header": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy the header" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier l’en-tête" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Copiar o cabeçalho" } }
+      }
+    },
+    "Copy a curl example": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy a curl example" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier un exemple curl" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Copiar um exemplo curl" } }
+      }
+    },
+    "The example uses <key> until you show the key.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The example uses <key> until you show the key." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L’exemple utilise <key> tant que la clé n’est pas affichée." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O exemplo usa <key> até você mostrar a chave." } }
+      }
+    },
+    "The webhook receiver is unavailable.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The webhook receiver is unavailable." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le récepteur de webhooks est indisponible." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O receptor de webhooks está indisponível." } }
+      }
+    },
+    "last %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "last %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "dernière : %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "última: %@" } }
+      }
+    },
+    "Waiting for test": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting for test" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente d'un test" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Aguardando teste" } }
+      }
+    },
+    "Ready to enable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ready to enable" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Prêt à activer" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pronto para ativar" } }
+      }
+    },
+    "Hide the key": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Hide the key" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Masquer la clé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ocultar a chave" } }
+      }
+    },
+    "Show the key": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show the key" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher la clé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mostrar a chave" } }
+      }
+    },
+    "Show a new key (the current one stops working)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show a new key (the current one stops working)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher une nouvelle clé (l’actuelle cesse de fonctionner)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mostrar uma nova chave (a atual para de funcionar)" } }
+      }
+    },
+    "A routine’s webhook is managed in that routine; a webhook of its own, in Automations.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A routine’s webhook is managed in that routine; a webhook of its own, in Automations." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le webhook d’une routine se gère dans cette routine ; un webhook autonome, dans Automatisations." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O webhook de uma rotina é gerenciado nessa rotina; um webhook próprio, em Automações." } }
+      }
+    },
+    "Open the routine": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open the routine" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la routine" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir a rotina" } }
+      }
+    },
+    "Open in Automations": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open in Automations" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir dans Automatisations" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir em Automações" } }
+      }
+    },
+    "A routine’s webhook is managed in that routine, its key included. A webhook of its own is created on the paired computer. Webhook run receipts still appear in Run logs.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A routine’s webhook is managed in that routine, its key included. A webhook of its own is created on the paired computer. Webhook run receipts still appear in Run logs." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le webhook d’une routine se gère dans cette routine, sa clé comprise. Un webhook autonome se crée sur l’ordinateur jumelé. Les reçus d’exécution des webhooks restent dans les journaux d’exécution." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O webhook de uma rotina é gerenciado nessa rotina, incluindo a chave. Um webhook próprio é criado no computador pareado. Os recibos de execução de webhooks continuam nos registros de execução." } }
+      }
+    },
+    "Post results in the conversation": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Post results in the conversation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Publier les résultats dans la conversation" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Publicar os resultados na conversa" } }
+      }
+    },
     "Allowed.": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Allowed." } },
@@ -6482,38 +6818,6 @@
         }
       }
     },
-    "Advanced · %@ run limit": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Avancé · limite de %@ par exécution"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Avançado · limite de execução de %@"
-          }
-        }
-      }
-    },
-    "Advanced · no run limit": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Avancé · aucune limite d'exécution"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Avançado · sem limite de execução"
-          }
-        }
-      }
-    },
     "Agent": {
       "localizations": {
         "fr": {
@@ -11534,22 +11838,6 @@
         }
       }
     },
-    "Run location": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lieu d'exécution"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Local de execução"
-          }
-        }
-      }
-    },
     "Run now": {
       "localizations": {
         "en": {
@@ -14048,22 +14336,6 @@
         }
       }
     },
-    "Where does it run?": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Où s'exécute-t-elle?"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Onde ela roda?"
-          }
-        }
-      }
-    },
     "Where to get this key": {
       "localizations": {
         "fr": {
@@ -14108,22 +14380,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Não vai"
-          }
-        }
-      }
-    },
-    "Work": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Travail"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Trabalho"
           }
         }
       }
@@ -28258,28 +28514,6 @@
         }
       }
     },
-    "Creating or rotating a webhook changes an internet-reachable trigger and signing secret, so webhook management remains on the paired computer. Webhook run receipts still appear in Run logs.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Creating or rotating a webhook changes an internet-reachable trigger and signing secret, so webhook management remains on the paired computer. Webhook run receipts still appear in Run logs."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Créer ou renouveler un webhook modifie un déclencheur accessible depuis Internet et son secret de signature : la gestion des webhooks reste donc sur l’ordinateur jumelé. Les reçus d’exécution des webhooks apparaissent quand même dans le journal des exécutions."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Criar ou renovar um webhook altera um gatilho acessível pela internet e seu segredo de assinatura, por isso o gerenciamento de webhooks fica no computador pareado. Os recibos de execução de webhooks ainda aparecem nos registros de execução."
-          }
-        }
-      }
-    },
     "Custom hours…": {
       "localizations": {
         "en": {
@@ -29006,28 +29240,6 @@
         }
       }
     },
-    "Runs on this computer": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Runs on this computer"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "S’exécute sur cet ordinateur"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Roda neste computador"
-          }
-        }
-      }
-    },
     "Runs while Sagax is open on this computer: it cannot wake a sleeping Mac. A run missed by less than 12 hours still happens when the app is back; for 24/7, run Sagax on a VPS.": {
       "localizations": {
         "en": {
@@ -29508,28 +29720,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Falha não vista"
-          }
-        }
-      }
-    },
-    "Use the group’s shared context": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use the group’s shared context"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Utiliser le contexte partagé du groupe"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Usar o contexto compartilhado do grupo"
           }
         }
       }
@@ -57184,28 +57374,6 @@
         }
       }
     },
-    "Inbound triggers wired to this bot.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Inbound triggers wired to this bot."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Déclencheurs entrants reliés à ce bot."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gatilhos de entrada ligados a este bot."
-          }
-        }
-      }
-    },
     "No webhooks for this bot.": {
       "localizations": {
         "en": {
@@ -63252,28 +63420,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Age em nome de"
-          }
-        }
-      }
-    },
-    "Runs as %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Runs as %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agit au nom de %@"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Age em nome de %@"
           }
         }
       }
