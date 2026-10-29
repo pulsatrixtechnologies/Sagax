@@ -9916,7 +9916,6 @@
   "sidebar.select.bar": "Actions for the selected bots",
   "sidebar.select.count": "{count} selected",
   "sidebar.select.markRead": "Mark as read",
-  "sidebar.select.model": "Model and effort",
   "sidebar.select.move": "Move {count} selected to a team",
   "sidebar.select.clear": "Clear selection",
   "sidebar.select.archiveTitle": "Archive {count} selected bots?",
