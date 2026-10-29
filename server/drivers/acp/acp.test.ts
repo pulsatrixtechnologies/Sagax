@@ -1871,11 +1871,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     const profile = JSON.parse(readFileSync(`${dump}.session.json`, "utf8"))._meta.agentProfile;
     expect(profile).toMatchObject({
       injectDefaultTools: false,
-      tools: ["search_tool", "use_tool", "image_to_video", "reference_to_video"],
+      // video (#1325) and images (#1569) stay: made with the turn's own Grok account, never the shell
+      tools: ["search_tool", "use_tool", "image_to_video", "reference_to_video", "image_gen", "image_edit"],
       model: "grok-4.7",
     });
     expect(profile.tools).not.toContain("run_terminal_command");
     expect(profile.disallowedTools).not.toContain("image_to_video");
+    expect(profile.disallowedTools).not.toContain("image_gen");
     for (const name of ["run_terminal_command", "read_file", "write", "web_search", "web_fetch", "spawn_subagent"]) {
       expect(profile.disallowedTools).toContain(name);
       expect(profile.tools).not.toContain(name);
@@ -1899,7 +1901,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     const loaded = readFileSync(join(NATIVE_DIR, "t-grok-withhold-b.ndjson"), "utf8")
       .trim().split("\n").map((line) => JSON.parse(line))
       .find((entry) => entry.dir === "out" && entry.msg.method === "session/load");
-    expect(loaded.msg.params._meta.agentProfile.tools).toEqual(["search_tool", "use_tool", "image_to_video", "reference_to_video"]);
+    expect(loaded.msg.params._meta.agentProfile.tools).toEqual(["search_tool", "use_tool", "image_to_video", "reference_to_video", "image_gen", "image_edit"]);
     expect(loaded.msg.params._meta.agentProfile.disallowedTools).toContain("run_terminal_command");
     const seenB = JSON.parse(readFileSync(resumeDump, "utf8")) as { env: Record<string, string> };
     expect(seenB.env.HOME).toBe(homeB);
