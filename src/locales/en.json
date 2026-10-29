@@ -10634,6 +10634,7 @@
   "routineCalendar.resizeSeries": "Resize this entire recurring series?",
   "routineCalendar.openRoutineForCron": "Open this routine to edit its repeating schedule and time zone.",
   "routineCalendar.teamGoalIn": "Team goal · {name}",
+  "routineCalendar.deletedRoutine": "Deleted routine",
   "routineCalendar.resizeEvent": "Resize event",
   "routineCalendar.calendarAria": "Routine and call calendar",
   "routineCalendar.dayCalendar": "{date} calendar",
