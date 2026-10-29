@@ -9,8 +9,8 @@
 // (botSectionLock); nothing is hidden for lack of a permission. Opened from
 // the bot's "..." menu in the bot panel, and on Appearance from a click on
 // the bot's avatar (store action openPersonaEditor).
-import { useEffect, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { LayoutDashboard, Lock, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { LayoutDashboard, Lock, Search, X } from "lucide-react";
 
 import { useStore, type Bot, type BotSettingsSection } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -19,6 +19,8 @@ import { simpleHidesBotSection } from "@/lib/interface-visibility";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import type { LocaleKey } from "@/locales";
 import { cn } from "@/lib/cn";
+import { personaPagesMatching, stepPersonaResult } from "@/lib/persona-search";
+import { applySettingsSearch, clearSettingsSearch, focusSettingsSearchLabel, settingsQuery, settingsSearchLabels } from "@/lib/settings-search";
 import { useRetroSkin } from "../RetroChromeHost";
 import { shortcutLabel } from "../ShortcutHint";
 import { CATEGORY_MODAL, categoryNavItemClass, nextCategory, useCategoryModalKeyboard } from "../category-modal";
@@ -85,6 +87,10 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
   const navRef = useRef<HTMLElement>(null);
   const paneRef = useRef<HTMLDivElement>(null);
   const focusNav = useRef(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [searchLabels, setSearchLabels] = useState<string[]>([]);
+  const q = settingsQuery(query);
   const { available, slackUrl, perspicaxOrg } = useBotSectionAvailability(bot.id);
 
   // Simple mode hides the same sections it hides in the bot panel; their
@@ -115,6 +121,86 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
   const goTo = (id: BotSettingsSection) => {
     const category = personaCategoryForSection(id);
     if (category && shown(category)) dispatch({ type: "personaEditorSection", section: id });
+  };
+
+  // Search (the box under the title, Settings' mechanism): the rail keeps the
+  // pages the query leads to, best first; the open page hides the rows that do
+  // not match and scrolls to the first one.
+  const results = useMemo(() => personaPagesMatching(pages, q, personaCategoryLabel), [pages, q]);
+  const resultSet = new Set(results);
+  useEffect(() => {
+    if (q && results.length > 0 && !resultSet.has(current)) choosePage(results[0]!);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, results.join("|")]);
+  useLayoutEffect(() => {
+    const root = paneRef.current?.querySelector<HTMLElement>(`[data-persona-section="${current}"]`);
+    const pane = paneRef.current;
+    if (!root || !pane || !q) {
+      if (pane) clearSettingsSearch(pane);
+      setSearchLabels((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    let scroll = true;
+    const apply = () => {
+      const hit = applySettingsSearch(root, q);
+      const labels = settingsSearchLabels(root);
+      setSearchLabels((prev) => (prev.length === labels.length && prev.every((label, index) => label === labels[index]) ? prev : labels));
+      if (scroll && hit) hit.scrollIntoView({ block: "center", inline: "nearest" });
+      scroll = false;
+    };
+    apply();
+    const observer = new MutationObserver(() => apply());
+    observer.observe(root, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      clearSettingsSearch(root);
+    };
+  }, [q, current]);
+
+  // Command-F or a slash goes to the field, from anywhere in the editor.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const dialog = dialogRef.current;
+      if (!dialog || (event.target instanceof Node && event.target !== document.body && !dialog.contains(event.target))) return;
+      const field = searchRef.current;
+      if (!field?.checkVisibility()) return;
+      const find = (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "f";
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const typing = target !== null && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+      const slash = event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !typing;
+      if (!find && !slash) return;
+      event.preventDefault();
+      field.focus();
+      field.select();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const onSearchKey = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      if (!query) return; // empty: the editor closes
+      event.stopPropagation();
+      setQuery("");
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      const next = stepPersonaResult(results, current, event.key);
+      if (next) choosePage(next);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      const pane = paneRef.current;
+      pane?.querySelector<HTMLElement>("[data-settings-search-hit]")?.scrollIntoView({ block: "center", inline: "nearest" });
+      return;
+    }
+    // The rail's own Up/Down/Home/End are for its buttons, not the field.
+    if (event.key === "Home" || event.key === "End") event.stopPropagation();
   };
 
   // The server overview loads on What it does, the history on Changes.
@@ -236,7 +322,27 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
           </div>
           {/* 2026-10-16: the rail of Settings (#605): each group a
               grey heading, every page an entry with its icon under it. */}
-          {groups.map(({ id, sections }) => {
+          <div className="mb-2 mt-1 flex shrink-0 items-center gap-2 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 focus-within:border-border-strong">
+            <Search size={14} className="shrink-0 text-ink-secondary" aria-hidden="true" />
+            <input
+              ref={searchRef}
+              data-persona-search=""
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={onSearchKey}
+              placeholder={t("persona.search")}
+              aria-label={t("persona.searchAria")}
+              className="w-full bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
+            />
+          </div>
+          {q && results.length === 0 && (
+            <div data-persona-no-match="" role="status" className="px-2.5 py-4 text-[12.5px] leading-relaxed text-ink-secondary">
+              {t("persona.noMatch", { query: query.trim() })}
+            </div>
+          )}
+          {groups.map(({ id, sections: groupSections }) => {
+            const sections = groupSections.filter((page) => resultSet.has(page));
+            if (sections.length === 0) return null;
             const headingId = `persona-nav-${id}`;
             return (
               <div key={id} role="group" aria-labelledby={headingId} data-persona-category={id} data-locked={groupLocked(sections) ? "" : undefined} className="flex shrink-0 flex-col gap-0.5">
@@ -247,8 +353,8 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
                   const Icon = ENTRY.get(page)?.icon ?? LayoutDashboard;
                   const pageLocked = lockOf(page) !== null || unavailable(page);
                   return (
+                    <div key={page} className="flex min-w-0 flex-col">
                     <button
-                      key={page}
                       type="button"
                       data-persona-page={page}
                       data-locked={pageLocked ? "" : undefined}
@@ -261,6 +367,25 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
                       <span className="min-w-0 flex-1 truncate">{personaCategoryLabel(page)}</span>
                       {pageLocked && <Lock size={12} aria-label={t("persona.lockedBadge")} className="shrink-0 text-ink-tertiary" />}
                     </button>
+                    {current === page && q && searchLabels.length > 0 && (
+                      <ul data-settings-search-hits="" className="mb-0.5 flex flex-col">
+                        {searchLabels.map((label) => (
+                          <li key={label}>
+                            <button
+                              type="button"
+                              className="w-full truncate rounded-md py-0.5 pl-[33px] pr-2 text-left text-[12px] leading-4 text-ink-secondary hover:bg-hover hover:text-ink"
+                              onClick={() => {
+                                const root = paneRef.current?.querySelector<HTMLElement>(`[data-persona-section="${current}"]`);
+                                if (root) focusSettingsSearchLabel(root, label);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    </div>
                   );
                 })}
               </div>
