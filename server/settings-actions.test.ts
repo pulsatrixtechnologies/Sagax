@@ -815,3 +815,44 @@ describe("sagax_settings: a bot's routines, every one and several at once (2026-
     expect(other.planned[0]!.effect).toBe("hold");
   });
 });
+
+describe("sagax_settings: the memory's topic files (2026-10-29)", () => {
+  it("lists, reads, writes, renames, deletes and undoes by the Memory panel's routes, on its own bot or another of the person's", async () => {
+    const h = harness({ mode: "full", answer: { index: { path: "MEMORY.md" }, topics: [{ path: "memory/clients.md" }], text: "# Clients", entries: [{ id: "c1" }] } });
+    const files = JSON.parse(String((await h.call({ action: "get", key: "bot.memoryFiles" })).body.text));
+    expect(files.value.topics).toEqual([{ path: "memory/clients.md" }]);
+    await h.call({ action: "get", key: "bot.memoryFile", target: "b2", value: { path: "memory/clients.md" } });
+    expect(h.planned.at(-1)).toMatchObject({ method: "GET", path: "/api/bots/b2/memory/file" });
+    const cases: Array<[unknown, { method: string; path: string; body?: unknown }]> = [
+      [{ path: "memory/clients.md", text: "# Clients\n" }, { method: "PUT", path: "/api/bots/b2/memory/file", body: { path: "memory/clients.md", text: "# Clients\n" } }],
+      [{ path: "memory/clients.md", renameTo: "memory/customers.md" }, { method: "POST", path: "/api/bots/b2/memory/rename", body: { from: "memory/clients.md", to: "memory/customers.md" } }],
+      [{ path: "memory/customers.md", delete: true }, { method: "DELETE", path: "/api/bots/b2/memory/file" }],
+    ];
+    for (const [value, route] of cases) {
+      const done = await h.call({ action: "set", key: "bot.memoryFile", target: "b2", value });
+      expect(String(done.body.text), JSON.stringify(value)).toMatch(/^Done/);
+      expect(h.planned.at(-1)).toMatchObject({ effect: "run", ...route });
+    }
+    await h.call({ action: "set", key: "bot.memoryUndo", target: "b2", value: "c1" });
+    expect(h.planned.at(-1)).toMatchObject({ effect: "run", method: "POST", path: "/api/bots/b2/memory/journal/c1/revert" });
+    expect(h.audits.length).toBe(4);
+    expect((await h.call({ action: "set", key: "bot.memoryFile", value: { text: "x" } })).body.error).toMatch(/value.path/);
+  });
+
+  it("matrix: admin and member, Ask, Approve for me and Full; another person's bot keeps its card; a refusal is the route's own", async () => {
+    for (const role of ["admin", "member"] as const) {
+      for (const mode of ["ask", "auto", "full"] as const) {
+        for (const value of [{ path: "memory/a.md", text: "a" }, { path: "memory/a.md", renameTo: "memory/b.md" }, { path: "memory/b.md", delete: true }]) {
+          // a member who may not change that bot's memory: the route answers 403
+          const h = harness({ mode, ...(role === "member" ? { routeStatus: (method: string) => method === "GET" ? 200 : 403 } : {}) });
+          const result = await h.call({ action: "set", key: "bot.memoryFile", target: "b2", value });
+          const expected = mode === "ask" ? "hold" : "run";
+          expect(h.planned.at(-1)?.effect, `${role} ${mode} ${JSON.stringify(value)}`).toBe(expected);
+          if (expected === "run") expect(result.status).toBe(role === "member" ? 403 : 200);
+        }
+        const theirs = harness({ mode });
+        expect((await theirs.call({ action: "set", key: "bot.memoryFile", target: "theirs", value: { path: "memory/a.md", text: "a" } })).body.text).toContain("Approval needed.");
+      }
+    }
+  });
+});

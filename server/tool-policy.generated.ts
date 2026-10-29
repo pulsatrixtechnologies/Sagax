@@ -435,6 +435,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/memory\\/reviewed$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/memory\\/semantic$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/memory\\/tidy$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
+  {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/memory\\/rename$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/memory\\/upkeep$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/memory$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/messages(?:\\/(guarded))?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},

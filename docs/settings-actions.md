@@ -186,6 +186,9 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Parallel work, recovery and turn limits ({maxConcurrentThreads, maxParallelPerPerson, busySend, automaticRecovery, turnLimits}) | Bot editor > Behaviour > Parallel tasks | `sagax_settings` get, set `bot.runtime` | simple |
 | Who pays for replies (owner, speaker = each person, default) | Bot editor > Model > Who pays for replies | `sagax_settings` get, set `bot.turnPayer` | simple |
 | Memory text | Bot editor > Memory | `sagax_settings` get, set `bot.memory` | simple |
+| The memory's files (read only: MEMORY.md and the topics memory/<topic>.md, their size; bot.memoryFile reads and changes one) | Bot editor > Memory | `sagax_settings` get, set `bot.memoryFiles` | simple |
+| One memory file (get: value its path, e.g. memory/clients.md; set: {path, text, expectedHash?} writes or creates it, {path, renameTo} renames a topic, {path, delete: true} deletes it) | Bot editor > Memory | `sagax_settings` get, set `bot.memoryFile` | simple |
+| Undo a change of the memory (get lists the last changes; set with a change's id puts the file back) | Bot editor > Memory > History | `sagax_settings` get, set `bot.memoryUndo` | simple |
 | Perspicax tools (profiles) | Bot editor > Perspicax | `sagax_settings` get, set `bot.perspicaxProfiles` | simple (élargit les droits pour le bot qui parle lui-même) |
 | A skill on or off ({name, enabled}) | Bot editor > Skills | `sagax_settings` get, set `bot.skill` | simple |
 | Share with a person or team ({target: user:<id>/team:<name>, level}, level null removes) | Bot editor > Visibility > Sharing | `sagax_settings` get, set `bot.share` | autrui |
