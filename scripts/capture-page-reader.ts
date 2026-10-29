@@ -147,8 +147,8 @@ async function shot(page: Page, name: string) {
 }
 
 try {
-  for (const scheme of ["light", "dark"] as const) {
-    for (const person of ["anon", "owner", "reader"] as const) {
+  for (const scheme of (process.env.CAPTURE_SCHEME === "light" || process.env.CAPTURE_SCHEME === "dark" ? [process.env.CAPTURE_SCHEME] : ["light", "dark"]) as Array<"light" | "dark">) {
+    for (const person of ["anon", "reader", "owner"] as const) {
       const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, locale: "fr-CA", extraHTTPHeaders: { "accept-language": "fr-CA" } });
       await context.addCookies([{ name: "who", value: person, url: base }]);
       const page = await context.newPage();
@@ -162,7 +162,36 @@ try {
         await page.pdf({ path: join(outDir, `${prefix}-${person}-${scheme}.pdf`), format: "A4", preferCSSPageSize: true });
         console.log(join(outDir, `${prefix}-${person}-${scheme}.pdf`));
       }
-      if (person === "reader" && await page.locator("[data-reader-annotate]").count()) {
+      if (KIND === "markdown" && person === "reader" && await page.locator("[data-reader-annotate]").count()) {
+        // a suggested edit (2026-10-28): select words, Suggest an edit, the new words
+        await page.locator("[data-reader-annotate]").click();
+        await page.waitForSelector("[data-reader-panel]");
+        await page.frames()[1]!.evaluate(() => {
+          const target = [...document.querySelectorAll("p")].find((p) => p.textContent?.startsWith("Résumé"))!;
+          const range = document.createRange();
+          range.setStart(target.firstChild!, 0);
+          range.setEnd(target.firstChild!, 39);
+          getSelection()!.removeAllRanges();
+          getSelection()!.addRange(range);
+          document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        });
+        await page.waitForSelector("[data-reader-draft]");
+        await page.locator("[data-reader-suggest]").check();
+        await page.locator("[data-reader-replacement]").fill("Résumé des activités du mois d'octobre et de septembre");
+        await page.locator("[data-reader-draft] textarea").last().fill("Le rapport couvre les deux mois.");
+        await shot(page, `${person}-${scheme}-suggest`);
+        await page.locator("[data-reader-draft] button[type=submit]").click();
+        await page.waitForSelector("[data-suggestion=open]");
+      }
+      if (KIND === "markdown" && person === "owner") {
+        await page.locator("[data-reader-annotate]").click();
+        await page.waitForSelector("[data-suggestion-accept]");
+        await shot(page, `${person}-${scheme}-suggestion`);
+        await Promise.all([page.waitForNavigation(), page.locator("[data-suggestion-accept]").first().click()]);
+        await page.waitForTimeout(600);
+        await shot(page, `${person}-${scheme}-accepted`);
+      }
+      if (KIND === "html" && person === "reader" && await page.locator("[data-reader-annotate]").count()) {
         await page.locator("[data-reader-annotate]").click();
         await page.waitForSelector("[data-reader-panel] [data-thread]");
         await shot(page, `${person}-${scheme}-annotate`);

@@ -2,7 +2,7 @@
 // frame are checked and cut; threads are ordered as the page shows them.
 import { describe, expect, it } from "vitest";
 
-import { commentsForModel, orderThreads, parseFocusMessage, parseFoundMessage, parsePageQuote, parseSelectMessage, parseThreadText, THREAD_LIMITS } from "./page-threads.ts";
+import { applySuggestion, commentsForModel, orderThreads, parseSuggestion, suggestable, parseFocusMessage, parseFoundMessage, parsePageQuote, parseSelectMessage, parseThreadText, THREAD_LIMITS } from "./page-threads.ts";
 
 describe("anchors and texts", () => {
   it("cuts every field and refuses a bad tag or an empty quote", () => {
@@ -55,5 +55,26 @@ describe("commentsForModel", () => {
       { threadId: "t2", on: "<tr> Réseau 31", by: "B", text: "Partie", at: new Date(500).toISOString(), resolved: true, new: true, replies: [{ by: "Scout", text: "Vu", at: new Date(3000).toISOString() }] },
     ]);
     expect(commentsForModel(threads, names).every((entry) => entry.new)).toBe(true);
+  });
+});
+
+describe("suggested edits", () => {
+  it("replaces the quoted words once, the right occurrence by its context", () => {
+    expect(applySuggestion("# Bilan\n\nLe volume a augmenté.", { quote: "a augmenté", prefix: "", suffix: "" }, "a doublé")).toEqual({ ok: true, content: "# Bilan\n\nLe volume a doublé." });
+    const twice = "Réseau : 12 postes.\n\nTotal : 12 postes.";
+    expect(applySuggestion(twice, { quote: "12 postes", prefix: "Total : ", suffix: "." }, "14 postes")).toEqual({ ok: true, content: "Réseau : 12 postes.\n\nTotal : 14 postes." });
+    expect(applySuggestion(twice, { quote: "12 postes", prefix: "", suffix: "." }, "x")).toEqual({ ok: false, reason: "ambiguous" });
+    // the rendered words no longer in the source (formatting, a later version)
+    expect(applySuggestion("Le **volume** a augmenté.", { quote: "volume a augmenté", prefix: "", suffix: "" }, "x")).toEqual({ ok: false, reason: "not_found" });
+  });
+
+  it("a suggestion is new words for Markdown and slides only", () => {
+    expect(parseSuggestion("a doublé", "a augmenté")).toBe("a doublé");
+    expect(parseSuggestion("", "a augmenté")).toBe("");
+    expect(parseSuggestion("a augmenté", "a augmenté")).toBeNull();
+    expect(parseSuggestion("x".repeat(THREAD_LIMITS.suggestionChars + 1), "q")).toBeNull();
+    expect(parseSuggestion("a\r\nb", "q")).toBe("a\nb");
+    expect(suggestable("markdown") && suggestable("presentation")).toBe(true);
+    expect(suggestable("html")).toBe(false);
   });
 });
