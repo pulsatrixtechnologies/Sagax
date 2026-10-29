@@ -18,6 +18,10 @@ struct TasksRoutinesView: View {
     @State private var runs: [RoutineRun] = []
     @State private var editor: RoutineEditorTarget?
     @State private var deleting: Routine?
+    /// 2026-10-29: the routine renamed (its menu's Rename, or the swipe) and
+    /// the one duplicated (the editor on a copy).
+    @State private var renaming: Routine?
+    @State private var duplicating: Routine?
     @State private var openRun: RoutineRun?
     @State private var loading = true
     @State private var section: RoutinesSection = .routines
@@ -296,6 +300,13 @@ struct TasksRoutinesView: View {
         .sheet(item: $editor) { target in
             RoutineEditorView(routine: target.routine, seed: target.seed) { await reload() }
         }
+        .sheet(item: $duplicating) { source in
+            RoutineEditorView(routine: nil, copyOf: source) { await reload() }
+        }
+        .routineRenamePrompt($renaming) { routine, name in
+            _ = await session.renameRoutine(routine, name: name)
+            await reload()
+        }
         .sheet(item: $quickSlot, onDismiss: {
             if let seed = pendingSeed {
                 pendingSeed = nil
@@ -453,22 +464,20 @@ struct TasksRoutinesView: View {
                 Button(String(localized: "Folder"), systemImage: "folder") { folderController.moving = routine }
                     .tint(Theme.textSecondary)
             }
+            if routine.mayEdit { Button("Rename", systemImage: "pencil") { renaming = routine }.tint(.indigo) }
         }
         .contextMenu {
-            if routine.mayRun {
-                Button("Run now", systemImage: "play.fill") { Task { await runNow(routine) } }
-            }
-            if canToggle {
-                Button(routine.enabled ? "Pause" : "Resume", systemImage: routine.enabled ? "pause" : "play") {
-                    Task { await toggle(routine) }
-                }
-            }
-            if routine.mayEdit { Button("Edit", systemImage: "pencil") { editor = .edit(routine) } }
-            if routine.mayEdit {
-                RoutineFolderMoveMenu(routine: routine, folders: folderOrder(of: routine.botId), controller: folderController, supported: foldersSupported) { folder in
-                    Task { await folderController.perform(.move(botId: routine.botId, routineIds: [routine.id], folder: folder), session: session) { await reload() } }
-                }
-            }
+            let live = runs.first { $0.routineId == routine.id && ($0.status == "running" || $0.status == "waiting" || $0.status == "queued") }
+            RoutineActionsMenu(
+                routine: routine,
+                runNow: routine.mayRun ? { Task { await runNow(routine) } } : nil,
+                stop: live != nil && routine.mayEdit ? { if let live { Task { await cancel(live) } } } : nil,
+                toggle: canToggle ? { Task { await toggle(routine) } } : nil,
+                rename: routine.mayEdit ? { renaming = routine } : nil,
+                open: { if routine.mayEdit { editor = .edit(routine) } else { showLogs(of: routine) } },
+                duplicate: routine.mayEdit ? { duplicating = routine } : nil
+            )
+            Divider()
             Button("Run logs", systemImage: "doc.text") {
                 routineFilter = routine.id
                 statusFilter = .all
@@ -480,6 +489,7 @@ struct TasksRoutinesView: View {
                 }
             }
             if routine.mayEdit {
+                Divider()
                 Button("Delete", systemImage: "trash", role: .destructive) { deleting = routine }
             }
         }

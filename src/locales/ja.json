@@ -3870,5 +3870,9 @@
   "task.sheet.status.waitingAnswer": "あなたの回答待ち",
   "task.sheet.status.elapsed": "経過 {duration}",
   "task.sheet.status.took": "{duration} で",
-  "task.sheet.details": "詳細"
+  "task.sheet.details": "詳細",
+  "routines.menu.open": "開く",
+  "routines.rename.label": "ルーティン名",
+  "routines.rename.empty": "ルーティンには名前が必要です。",
+  "routines.rename.hint": "ダブルクリックで名前を変更"
 }

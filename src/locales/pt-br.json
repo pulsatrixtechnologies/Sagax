@@ -2726,5 +2726,9 @@
   "routines.logs.period.day": "Últimas 24 horas",
   "routines.logs.period.week": "Últimos 7 dias",
   "routines.logs.period.month": "Últimos 30 dias",
-  "routines.list.next": "Próxima: {when}"
+  "routines.list.next": "Próxima: {when}",
+  "routines.menu.open": "Abrir",
+  "routines.rename.label": "Nome da rotina",
+  "routines.rename.empty": "Uma rotina precisa de um nome.",
+  "routines.rename.hint": "Clique duas vezes para renomear"
 }

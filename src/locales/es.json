@@ -1928,5 +1928,9 @@
   "task.sheet.status.waitingAnswer": "Espera tu respuesta",
   "task.sheet.status.elapsed": "desde hace {duration}",
   "task.sheet.status.took": "en {duration}",
-  "task.sheet.details": "Detalles"
+  "task.sheet.details": "Detalles",
+  "routines.menu.open": "Abrir",
+  "routines.rename.label": "Nombre de la rutina",
+  "routines.rename.empty": "Una rutina necesita un nombre.",
+  "routines.rename.hint": "Doble clic para cambiar el nombre"
 }

@@ -82,6 +82,10 @@ private struct PhoneBotPanelContent: View {
     @State private var addingRoutine = false
     @State private var runLogs = false
     @State private var deletingRoutine: Routine?
+    /// 2026-10-29: the routine renamed and the one duplicated from its menu.
+    @State private var renamingRoutine: Routine?
+    @State private var routineRuns: [RoutineRun] = []
+    @State private var duplicatingRoutine: Routine?
     /// 2026-10-28: this bot's folder order (RoutineFolders) and its prompts.
     @State private var routineFolders: [String] = []
     /// An older server has no routine folders (2026-10-28).
@@ -147,6 +151,13 @@ private struct PhoneBotPanelContent: View {
         }
         .sheet(isPresented: $addingRoutine) {
             RoutineEditorView(routine: nil, presetBotId: bot.id) { await loadRoutines() }
+        }
+        .sheet(item: $duplicatingRoutine) { source in
+            RoutineEditorView(routine: nil, copyOf: source) { await loadRoutines() }
+        }
+        .routineRenamePrompt($renamingRoutine) { routine, name in
+            _ = await session.renameRoutine(routine, name: name)
+            await loadRoutines()
         }
         .sheet(isPresented: $runLogs) { AutomationsSheet() }
         .sheet(isPresented: $pickingPrimary) {
@@ -691,14 +702,25 @@ private struct PhoneBotPanelContent: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if routine.mayEdit {
-                RoutineFolderMoveMenu(routine: routine, folders: folderOrder, controller: folderController,
-                                      supported: routineFoldersListed && !session.routineFoldersMissing) { folder in
-                    Task { await folderController.perform(.move(botId: bot.id, routineIds: [routine.id], folder: folder), session: session) { await loadRoutines() } }
-                }
+            // 2026-10-29: the desktop's row menu, then the folder choice.
+            let live = routineRuns.first { $0.routineId == routine.id && ($0.status == "running" || $0.status == "waiting" || $0.status == "queued") }
+            RoutineActionsMenu(
+                routine: routine,
+                runNow: routine.mayRun ? { Task { _ = await session.runRoutine(routine); await loadRoutines() } } : nil,
+                stop: live != nil && routine.mayEdit ? { if let live { Task { _ = await session.cancelRoutineRun(live); await loadRoutines() } } } : nil,
+                toggle: routine.mayEdit && routine.canToggle() ? { Task { _ = await session.setRoutineEnabled(routine, enabled: !routine.enabled); await loadRoutines() } } : nil,
+                rename: routine.mayEdit ? { renamingRoutine = routine } : nil,
+                open: { path.append(PanelRoutineRoute(id: routine.id, instruction: false)) },
+                duplicate: routine.mayEdit ? { duplicatingRoutine = routine } : nil,
+                delete: nil
+            )
+            // A phone has no drag and drop: the folder choice stays here.
+            if routine.mayEdit && routineFoldersListed && !session.routineFoldersMissing {
+                Button(String(localized: "Folder"), systemImage: "folder") { folderController.moving = routine }
             }
             if gate.allows(.routineDelete) {
-                Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { deletingRoutine = routine }
+                Divider()
+                Button("Delete", systemImage: "trash", role: .destructive) { deletingRoutine = routine }
             }
         }
         .accessibilityIdentifier("profile-routine.\(routine.name)")
@@ -802,6 +824,7 @@ private struct PhoneBotPanelContent: View {
     private func loadRoutines() async {
         let listing = await session.loadRoutineListing()
         routines = listing.routines
+        routineRuns = listing.runs
         routineFolders = listing.folders[bot.id] ?? []
         routineFoldersListed = listing.foldersSupported
         routinesLoaded = true

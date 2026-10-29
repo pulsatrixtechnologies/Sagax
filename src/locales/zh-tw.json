@@ -3759,5 +3759,9 @@
   "task.sheet.status.waitingAnswer": "等待你的回答",
   "task.sheet.status.elapsed": "已進行 {duration}",
   "task.sheet.status.took": "用時 {duration}",
-  "task.sheet.details": "詳細資料"
+  "task.sheet.details": "詳細資料",
+  "routines.menu.open": "開啟",
+  "routines.rename.label": "例行工作名稱",
+  "routines.rename.empty": "例行工作需要名稱。",
+  "routines.rename.hint": "按兩下即可重新命名"
 }

@@ -1918,5 +1918,9 @@
   "task.sheet.status.waitingAnswer": "आपके उत्तर की प्रतीक्षा में",
   "task.sheet.status.elapsed": "अब तक {duration}",
   "task.sheet.status.took": "{duration} में",
-  "task.sheet.details": "विवरण"
+  "task.sheet.details": "विवरण",
+  "routines.menu.open": "खोलें",
+  "routines.rename.label": "रूटीन का नाम",
+  "routines.rename.empty": "रूटीन का नाम होना ज़रूरी है।",
+  "routines.rename.hint": "नाम बदलने के लिए डबल-क्लिक करें"
 }
