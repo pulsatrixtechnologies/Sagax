@@ -39,3 +39,34 @@ describe("repeatsShownFailure", () => {
     expect(repeatsShownFailure(thread, { role: "bot", kind: "text" }, "bot")).toBe(false);
   });
 });
+
+describe("a failed row that only repeats the bot's reply", () => {
+  const table = [
+    "Everyone answered. Five bots synced their rules:",
+    "",
+    "| Bot | RULES.md | Status |",
+    "|---|---|---|",
+    "| Alpha | updated | ok |",
+    "| Beta | updated | ok |",
+    "",
+    "Nothing else is waiting on you.",
+  ].join("\n");
+  const said = (id: string, text: string): DedupMessage => ({ id, role: "bot", kind: "text", text });
+
+  it("is never drawn: the reply with its table stays the answer", () => {
+    // the engine flagged the turn after it answered: its reply, stored as the cause
+    const thread = [user("u1"), said("r1", table), error("e1", table)];
+    expect([...repeatedFailureIds(thread, "bot")]).toEqual(["e1"]);
+  });
+
+  it("is never drawn either as a requester's account, flattened and cut", () => {
+    const account = `${table.replace(/\s+/g, " ").slice(0, 120)}… No tool calls were seen before it stopped.`;
+    const thread = [user("u1"), said("r1", table), error("e1", account)];
+    expect([...repeatedFailureIds(thread, "bot")]).toEqual(["e1"]);
+  });
+
+  it("keeps a real failure with no reply as its card", () => {
+    const thread = [user("u1"), said("r1", table), user("u2"), error("e2", "Claude is overloaded right now. Try again in a few minutes.")];
+    expect(repeatedFailureIds(thread, "bot").size).toBe(0);
+  });
+});

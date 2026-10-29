@@ -29,16 +29,46 @@ public enum FailureDedup {
     public static func repeatedIds(_ messages: [Message], threadBotId: String = "") -> Set<String> {
         var hidden = Set<String>()
         var latest: [String: String] = [:]
+        var replies: [String] = []
         for message in messages {
             if let bot = answeredBy(message, threadBotId: threadBotId) {
                 latest = latest.filter { botOf(key: $0.key) != bot }
+                if let text = message.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    replies.append(text)
+                    if replies.count > recentReplies { replies.removeFirst() }
+                }
                 continue
             }
             guard let key = key(message, threadBotId: threadBotId) else { continue }
+            if key.hasPrefix("error\u{0}"), let name = message.tool?.name, let cause = failedTurnCause(name),
+               repeatsReply(cause, replies: replies) {
+                hidden.insert(message.id)
+                continue
+            }
             if let earlier = latest[key] { hidden.insert(earlier) }
             latest[key] = message.id
         }
         return hidden
+    }
+
+    /// The bot replies a failed row is compared with: the turn's own is among the latest.
+    static let recentReplies = 8
+
+    /// Whether a failed row's cause is only the bot's own reply, already in
+    /// the thread (shared/failed-turn.ts `failedTurnRepeatsReply`): a turn
+    /// the engine flagged after it answered. Such a row is never drawn; the
+    /// reply above it is the answer.
+    public static func repeatsReply(_ cause: String, replies: [String]) -> Bool {
+        var head = cause
+        for marker in ["\nIts last message, quoted:", " No tool calls were seen before it stopped.", " Before it stopped it made "] {
+            if let range = head.range(of: marker) { head = String(head[..<range.lowerBound]) }
+        }
+        var probe = collapse(head).lowercased()
+        if probe.hasSuffix("…") { probe.removeLast() }
+        while let last = probe.last, last == "." || last.isWhitespace { probe.removeLast() }
+        probe = String(probe.prefix(160))
+        guard probe.count >= 24 else { return false }
+        return replies.contains { collapse($0).lowercased().contains(probe) }
     }
 
     /// The cause a failed-turn row carries, without its `error:` marker;

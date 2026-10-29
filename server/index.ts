@@ -427,7 +427,7 @@ import {
   type SteerOutcome,
   newId,
 } from "./contracts.ts";
-import { RETRY_MAX_ATTEMPTS } from "./drivers/retry.ts";
+import { RETRY_MAX_ATTEMPTS, USAGE_LIMIT } from "./drivers/retry.ts";
 import { recoveryCapabilityError } from "./automatic-recovery.ts";
 import { LimitFailoverStore } from "./limit-failover.ts";
 import { createLimitFailoverHost, limitBackupRefusedText } from "./limit-failover-host.ts";
@@ -17580,7 +17580,9 @@ bus.subscribe((event: RuntimeEvent) => {
       // while; the engine's own error still shows below.
       const autoRan = autoTurnsByThread.get(event.threadId);
       const accessDisabled = event.message === MODEL_ACCESS_DISABLED_MESSAGE;
-      if (autoRan && (accessDisabled || isModelRefusal(event.message))) rememberAutoRefusal(autoRan.payer, autoRan.entry);
+      // A model at its usage limit is skipped the same way: Auto's next pick
+      // goes to one that can answer instead of hitting the same wall.
+      if (autoRan && (accessDisabled || isModelRefusal(event.message) || USAGE_LIMIT.test(event.message))) rememberAutoRefusal(autoRan.payer, autoRan.entry);
       // #1450: a model the paying account turned off leaves that payer's
       // model lists for a while: retrying it cannot help.
       if (accessDisabled && bot) {
