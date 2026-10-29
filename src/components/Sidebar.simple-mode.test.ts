@@ -165,8 +165,8 @@ describe("bot-first sidebar", () => {
     expect(markup).toContain('data-testid="waiting-dot"');
     if (density !== "icons") {
       expect(markup).toContain('aria-current="page"');
-      // the job's unread reply has no line of its own: it is the row's count
-      expect(markup).toMatch(/sr-only[^>]*>1 unread</);
+      // the job's unread reply has no line of its own: it is the row's dot
+      expect(markup).toMatch(/sr-only[^>]*>Unread threads</);
       // New thread beside the bot's "..." (owner, 2026-10-15)
       expect(markup).toContain('aria-label="New thread"');
     }
@@ -433,7 +433,7 @@ describe("one conversation per bot (threads off)", () => {
     ],
   };
 
-  it.each(densities)("draws no thread line under the bot, its unread joins the row's count, %s density", (density) => {
+  it.each(densities)("draws no thread line under the bot, its unread shows as the row's dot, %s density", (density) => {
     fixture.showThreads = false;
     for (const selectedId of ["other-bot", "helper"]) {
       fixture.state = { ...fixture.state, bots: [helper], selectedId };
@@ -443,7 +443,8 @@ describe("one conversation per bot (threads off)", () => {
       expect(markup).not.toContain(">hello<");
       expect(markup).not.toContain("Job report");
       // three unread messages on screen and two unread threads elsewhere
-      if (density !== "icons") expect(markup).toContain('data-unread-count="5"');
+      expect(markup).not.toContain("data-unread-count");
+      if (density !== "icons") expect(markup).toContain("data-sidebar-unread-dot");
     }
   });
 

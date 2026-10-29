@@ -1,5 +1,3 @@
-import { threadOpensUnread, threadReadCursor, unreadMessageCount } from "@/lib/unread-divider";
-
 /** A thread another bot opened on this one (pair, work or an agent ask): a
  * bot-to-bot conversation, never shown to the person (the rule): not in the
  * sidebar, typing dots, unread counts or notifications. A bot's own thread
@@ -30,39 +28,6 @@ export function botShowsUnread(bot: {
 }): boolean {
   if (!bot.tasks?.length) return Boolean(bot.unread);
   return bot.tasks.some((task) => Boolean(task.unread) && task.archivedAt === undefined && !taskHiddenFromSidebar(task, bot.id ?? ""));
-}
-
-type UnreadTask = { threadId: string; unread?: boolean; routineRunId?: string; routineResults?: true; hidden?: true; openedBy?: { botId?: string }; archivedAt?: number; lastReadMessageId?: string };
-
-/** The bot's unread threads other than the one it is on: those the
- * person can reach, the same rule as botShowsUnread. */
-export function unreadThreadsElsewhere(bot: { id: string; threadId: string; tasks?: ReadonlyArray<UnreadTask> | null }): UnreadTask[] {
-  return (bot.tasks ?? []).filter((task) => task.threadId !== bot.threadId && Boolean(task.unread)
-    && task.archivedAt === undefined && !taskHiddenFromSidebar(task, bot.id));
-}
-
-/** The number on the bot's sidebar row, or null for a plain dot.
- * Threads listed under the row (the sidebar mode, the bot folded open):
- * the unread messages of the thread the row shows; the other unread
- * threads mark their own rows. Otherwise (one conversation, the chat
- * header mode, or the bot folded shut) no thread has a row under the bot,
- * so every unread thread adds to this one number, each one at least one
- * message; the thread on screen adds its own count, and a dot stays when
- * its loaded lines do not show where unread starts. */
-export function botUnreadCount(
-  bot: { id: string; threadId: string; unread?: boolean; tasks?: ReadonlyArray<UnreadTask> | null },
-  visible: Parameters<typeof unreadMessageCount>[0],
-  threadsListed: boolean,
-): number | null {
-  if (!botShowsUnread(bot)) return null;
-  if (threadsListed) return unreadMessageCount(visible, threadReadCursor(bot));
-  const elsewhere = unreadThreadsElsewhere(bot).length;
-  // the thread's own flag when it has one: the bot's flag says any thread is
-  const shownTask = bot.tasks?.find((task) => task.threadId === bot.threadId);
-  const shownUnread = shownTask ? shownTask.unread === true && !shownTask.routineRunId : threadOpensUnread(bot);
-  if (!shownUnread) return elsewhere > 0 ? elsewhere : null;
-  const shown = unreadMessageCount(visible, threadReadCursor(bot));
-  return shown === null ? null : shown + elsewhere;
 }
 
 /** One sidebar row's place in the list, for the "more unread" pills. */

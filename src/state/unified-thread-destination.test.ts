@@ -2,7 +2,7 @@
 // conversation): no other thread is ever a destination nor a sidebar line.
 // A parallel task's detail, a bot's job or a run opens in the side column
 // beside the conversation, which stays on screen where it was; Close or
-// Escape is the way back. Every unread thread adds to the bot's one badge,
+// Escape is the way back. Every unread thread marks the bot's one dot,
 // and the conversation on screen reads the topics it holds.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Action, Bot } from "./store";
@@ -15,7 +15,7 @@ vi.mock("@/lib/thread-preferences", async (importOriginal) => {
 
 const { openThread, opensBesideStream, threadsReadOnScreen } = await import("./store");
 const { closeSideThread, currentSideThread } = await import("@/lib/side-thread");
-const { botUnreadCount } = await import("@/lib/bot-unread");
+const { botShowsUnread } = await import("@/lib/bot-unread");
 const { streamUnreadReadWith } = await import("@/lib/single-stream");
 
 afterEach(() => { closeSideThread(); prefs.singleStream = true; });
@@ -67,19 +67,9 @@ describe("a sub-task's detail with threads hidden", () => {
 });
 
 describe("unread with threads hidden", () => {
-  it("adds every unread thread to the bot's one count", () => {
+  it("shows the bot's row as unread, with no count", () => {
     const bot = helper();
-    // nothing unread on screen: the three unread threads elsewhere
-    expect(botUnreadCount(bot, [], false)).toBe(3);
-    // with threads shown, those threads have rows of their own
-    expect(botUnreadCount(bot, [], true)).toBeNull();
-    const onScreen = { ...bot, tasks: bot.tasks!.map((task) => task.threadId === "now" ? { ...task, unread: true } : task) };
-    const lines = [
-      { id: "u", role: "user" as const, text: "go" },
-      { id: "b1", role: "bot" as const, text: "one" },
-      { id: "b2", role: "bot" as const, text: "two" },
-    ];
-    expect(botUnreadCount(onScreen, lines, false)).toBe(5);
+    expect(botShowsUnread(bot)).toBe(true);
   });
 
   it("reads the topics and sub-tasks the conversation on screen holds, never a thread kept apart", () => {

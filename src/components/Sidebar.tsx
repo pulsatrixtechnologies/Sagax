@@ -177,7 +177,7 @@ import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsMode } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
 import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
-import { botShowsUnread, botUnreadCount, iconUnreadDotPosition, isInterBotThread, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
+import { botShowsUnread, iconUnreadDotPosition, isInterBotThread, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
 import { sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
 import { groupMemberBots } from "@/lib/group-members";
@@ -2044,7 +2044,6 @@ export function BotListItem({
   const teammateWait = !waiting && !working && (Boolean(bot.waitingForTeammates) || activityTasks.some((task) => Boolean(task.waitingForTeammates)));
   const queued = activityTasks.some((task) => task.queued);
   const unread = botShowsUnread(bot);
-  const unreadCount = botUnreadCount(bot, visible, threadsListed);
   // quiet rows drop the last-message preview but keep a line that reports
   // something happening now; an idle bot is just its name
   const statusLine = deleting || lineWorking || waiting || teammateWait || queued;
@@ -2110,7 +2109,7 @@ export function BotListItem({
             />
           </span>
           {title && !renaming && <BotRoleTag text={title} />}
-          {unread && <span className="sr-only">{unreadCount ? t("tray.unreadMany", { count: unreadCount }) : t("task.unreadMany")}</span>}
+          {unread && <span className="sr-only">{t("task.unreadMany")}</span>}
         </div>
         {(!quiet || statusLine) && <div className="flex min-h-[18px] min-w-0 items-center gap-1">
           {deleting ? (
@@ -2172,7 +2171,7 @@ export function BotListItem({
           !renaming && iconOnly
             ? deleting
               ? t("sidebar.bot.deletingAria", { name: bot.name })
-              : `${bot.name}${waiting ? ` · ${t("sidebar.preview.waiting")}` : working ? ` · ${t("chat.activity.working")}` : teammateWait ? ` · ${t("sidebar.preview.waitingOnTeammate")}` : queued ? ` · ${t("task.queued")}` : ""}${unread ? ` · ${unreadCount ? t("tray.unreadMany", { count: unreadCount }) : t("task.unread")}` : ""}`
+              : `${bot.name}${waiting ? ` · ${t("sidebar.preview.waiting")}` : working ? ` · ${t("chat.activity.working")}` : teammateWait ? ` · ${t("sidebar.preview.waitingOnTeammate")}` : queued ? ` · ${t("task.queued")}` : ""}${unread ? ` · ${t("task.unread")}` : ""}`
             : undefined
         }
         aria-busy={deleting || undefined}
@@ -2194,10 +2193,7 @@ export function BotListItem({
       >
         {body}
       </div>
-      {trailingDot && unreadCount != null && (
-        <span data-unread-count={unreadCount} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-semibold tabular-nums text-unread transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 max-md:opacity-0 touch:opacity-0">{unreadCount > 99 ? "99+" : unreadCount}</span>
-      )}
-      {trailingDot && unreadCount == null && (
+      {trailingDot && (
         <span data-sidebar-unread-dot aria-hidden="true" className="absolute right-2 top-1/2 size-2 -translate-y-1/2 rounded-full bg-unread pointer-events-none transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 max-md:opacity-0 touch:opacity-0" />
       )}
       {selection?.active && !renaming && (
