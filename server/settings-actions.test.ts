@@ -856,3 +856,41 @@ describe("sagax_settings: the memory's topic files (2026-10-29)", () => {
     }
   });
 });
+
+describe("sagax_settings: a skill from GitHub (2026-10-29)", () => {
+  it("imports by Persona > Skills' own route, on itself or another of the person's bots, then turns it on or off", async () => {
+    const h = harness({ mode: "full" });
+    const cases: Array<[unknown, string]> = [
+      [{ repo: "acme/skills", path: "skills/pdf" }, "acme/skills/skills/pdf"],
+      [{ repo: "acme/skills", path: "/skills/pdf/", ref: "v2" }, "https://github.com/acme/skills/tree/v2/skills/pdf"],
+      [{ repo: "acme/skills" }, "acme/skills"],
+      ["https://github.com/acme/skills/blob/main/pdf/SKILL.md", "https://github.com/acme/skills/blob/main/pdf/SKILL.md"],
+    ];
+    for (const [value, source] of cases) {
+      const done = await h.call({ action: "set", key: "bot.skillImport", target: "b2", value });
+      expect(String(done.body.text)).toMatch(/^Done/);
+      expect(h.planned.at(-1)).toMatchObject({ effect: "run", method: "POST", path: "/api/bots/b2/skills", body: { source } });
+    }
+    await h.call({ action: "set", key: "bot.skillImport", value: { repo: "acme/skills" } });
+    expect(h.planned.at(-1)).toMatchObject({ path: "/api/bots/b1/skills" });
+    await h.call({ action: "set", key: "bot.skill", target: "b2", value: { name: "pdf", enabled: true } });
+    expect(h.planned.at(-1)).toMatchObject({ method: "PATCH", path: "/api/bots/b2/skills/pdf", body: { enabled: true } });
+    expect((await h.call({ action: "set", key: "bot.skillImport", value: { repo: "not a repo" } })).body.error).toMatch(/owner\/repo/);
+  });
+
+  it("matrix: admin and member, Ask, Approve for me and Full; another person's bot keeps its card; a refusal is the route's own", async () => {
+    for (const role of ["admin", "member"] as const) {
+      for (const mode of ["ask", "auto", "full"] as const) {
+        for (const [key, value] of [["bot.skillImport", { repo: "acme/skills", path: "pdf" }], ["bot.skill", { name: "pdf", enabled: false }]] as const) {
+          const h = harness({ mode, ...(role === "member" ? { routeStatus: (method: string) => method === "GET" ? 200 : 403 } : {}) });
+          const result = await h.call({ action: "set", key, target: "b2", value });
+          const expected = mode === "ask" ? "hold" : "run";
+          expect(h.planned.at(-1)?.effect, `${key} ${role} ${mode}`).toBe(expected);
+          if (expected === "run") expect(result.status).toBe(role === "member" ? 403 : 200);
+        }
+        const theirs = harness({ mode });
+        expect((await theirs.call({ action: "set", key: "bot.skillImport", target: "theirs", value: { repo: "acme/skills" } })).body.text).toContain("Approval needed.");
+      }
+    }
+  });
+});

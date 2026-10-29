@@ -65,7 +65,7 @@ interface Target {
   skill?: string;
 }
 
-/** owner/repo, github.com/owner/repo[/tree/<ref>/<path>], a raw/blob URL
+/** owner/repo[/<folder>], github.com/owner/repo[/tree/<ref>/<path>], a raw/blob URL
  * straight to a SKILL.md, or a skills.sh/owner/repo[/skill] page. Anything
  * else is refused, loudly. */
 export function parseSkillSource(input: string): Target | { rawUrl: string } | { error: string } {
@@ -97,8 +97,16 @@ export function parseSkillSource(input: string): Target | { rawUrl: string } | {
     // the repo and remember the slug to filter discovery on.
     return { owner: registry[1]!, repo: registry[2]!, path: "", skill: registry[3] };
   }
-  const shorthand = text.match(/^([\w.-]+)\/([\w.-]+)$/);
-  if (shorthand) return { owner: shorthand[1]!, repo: shorthand[2]!, path: "" };
+  // owner/repo, or owner/repo/<folder> (2026-10-29: a bot imports one
+  // skill folder of a repository, e.g. owner/repo/skills/pdf)
+  const shorthand = text.match(/^([\w.-]+)\/([\w.-]+)(?:\/([\w./-]+?))?\/?$/);
+  if (shorthand) {
+    const path = shorthand[3] ?? "";
+    if ([shorthand[1], shorthand[2], ...path.split("/")].some((part) => part === "." || part === "..") || path.includes("//")) {
+      return { error: "that does not look like a GitHub repository or folder" };
+    }
+    return { owner: shorthand[1]!, repo: shorthand[2]!, path };
+  }
   return { error: "that does not look like a GitHub or skills.sh repository, folder, or SKILL.md URL" };
 }
 

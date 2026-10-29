@@ -318,6 +318,16 @@ before). The tabs' own filters (category pills) stay in their tab. Tests:
 `src/lib/connect-apps-search.test.ts`, `src/components/PluginsPanel.gestures.test.ts`,
 captures `scripts/capture-bots-tab.mjs`.
 
+## A bot imports a skill from GitHub (2026-10-29)
+
+`sagax_settings` `bot.skillImport` ({repo: owner/repo, path?, ref?}, or a
+GitHub, SKILL.md or skills.sh link) imports a skill onto the speaking bot or
+another of the person's bots by Persona > Skills' own route
+(`POST /api/bots/:id/skills`), with the person's own GitHub connection for a
+private repository (#1558, #1624); `bot.skill` {name, enabled} turns it on or
+off. `owner/repo/<folder>` is now a source of its own (server/skill-fetch.ts,
+the default branch). The level decides. Tests: `server/skill-fetch.test.ts`,
+`server/settings-actions.test.ts`.
 ## A bot writes the memory's topic files (2026-10-29)
 
 No bot could write `memory/*.md` beside MEMORY.md, not even the Primary Bot:
