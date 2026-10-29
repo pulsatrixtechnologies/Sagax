@@ -1,6 +1,12 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Search plugins, skills, MCP servers, bots, templates and sources": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search plugins, skills, MCP servers, bots, templates and sources" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rechercher des plugins, compétences, serveurs MCP, bots, modèles et sources" } }
+      }
+    },
     "Reading your email": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Reading your email" } },

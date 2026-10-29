@@ -3,12 +3,16 @@
 // (`ConnectApps` in CompanionCore, a port of plugins-model.ts):
 //
 // - Connect apps (2026-10-27, the desktop's one page): "N connected >" and
-//   the four tabs Discover, Installed, Providers, Sources, Discover
-//   open. Discover: search across what can still be added, one filter
+//   the tabs Discover, Bots, Installed, Providers, Sources, Discover open.
+//   One search over every tab (2026-10-29, CompanionCore
+//   ConnectAppsSearch): plugins, skills, MCP servers, bots, templates and
+//   marketplaces, grouped by kind, each opening its page, its card or its
+//   tab; an empty field shows the tab's own content. Discover: one filter
 //   button (the reference iOS app's marketplace) whose menu holds All, the
 //   desktop's categories in its order and the type filter, a section per
 //   category with View all, one row per app with Add or Connect, Browse
-//   Bots. Installed: one line per thing, deduplicated, with a "..." menu;
+//   Bots (to the Bots tab). Bots: Browse Bots' whole catalogue
+//   (BrowseBotsContent), its cards pushed on this stack. Installed: one line per thing, deduplicated, with a "..." menu;
 //   the private skills when there are some. Providers: a pill per
 //   service (All, Claude, Slack, My MCP servers), the engines' connectors,
 //   the person's own MCP servers. Sources: the person's GitHub connection
@@ -210,20 +214,17 @@ struct ConnectAppsPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.settingsPop) private var settingsPop
     @Environment(\.scenePhase) private var scenePhase
-    /// "Browse Bots" beside the search: where it leads, nil for no button.
-    private var botTemplates: BotTemplatesDestination? {
-        BotTemplatesEntry.destination(gate: session.surfaceGate)
+    /// Browse Bots' catalogue, the Bots tab's and the search's.
+    @StateObject private var bots = BrowseBotsModel()
+    /// The Bots tab (and Discover's Browse Bots) shows where Browse Bots
+    /// did: not on a pairing without the catalogue.
+    private var botsShown: Bool {
+        BotTemplatesEntry.destination(gate: session.surfaceGate) != nil
     }
 
     var body: some View {
         NavigationStack(path: $path) {
-            ConnectAppsMain(model: model, initialTab: initialTab, botTemplates: botTemplates.map { destination in
-                {
-                    // Connect apps closes, then Browse Bots opens
-                    if let settingsPop { settingsPop() } else { dismiss() }
-                    NotificationCenter.default.post(name: .sagaxOpenBotTemplates, object: destination.rawValue)
-                }
-            }) { path.append($0) }
+            ConnectAppsMain(model: model, bots: bots, botsShown: botsShown, initialTab: initialTab, openBot: openBot) { path.append($0) }
                 .navigationTitle(String(localized: "Connect apps"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -240,9 +241,12 @@ struct ConnectAppsPage: View {
                     case let .skill(name): LibrarySkillPage(model: model, name: name)
                     }
                 }
+                // the Bots tab's cards, View all, publish, the imports
+                .modifier(BrowseBotsPresenters(model: bots, open: openBot))
         }
         .tint(Theme.textPrimary)
         .task { await model.load(session) }
+        .task { if botsShown { await bots.load(session) } }
         // back from an authorization page in the browser
         .onValueChange(of: scenePhase) { phase in
             if phase == .active { Task { await model.load(session) } }
@@ -252,6 +256,12 @@ struct ConnectAppsPage: View {
         } message: {
             Text(verbatim: model.message ?? "")
         }
+    }
+
+    /// A bot opened from the Bots tab: Connect apps closes, its chat opens.
+    private func openBot(_ bot: Bot) {
+        if let settingsPop { settingsPop() } else { dismiss() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { session.openChat(threadId: bot.threadId) }
     }
 }
 
@@ -388,32 +398,50 @@ struct ConnectAppsMain: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @ObservedObject var model: ConnectAppsModel
-    /// "Browse Bots" (nil: no button), on the search's row of controls
-    var botTemplates: (() -> Void)? = nil
+    /// Browse Bots' catalogue: the Bots tab and the search's bots.
+    @ObservedObject var bots: BrowseBotsModel
+    /// The Bots tab and Discover's Browse Bots (BotTemplatesEntry).
+    let botsShown: Bool
+    /// A bot opened from Bots: Connect apps closes, its chat opens.
+    let openBot: (Bot) -> Void
     let push: (ConnectAppsRoute) -> Void
     @State private var expanded: Set<ConnectApps.SectionID> = []
+    /// The search's groups showing every hit.
+    @State private var expandedResults: Set<ConnectAppsSearchGroup> = []
     @State private var tab: ConnectAppsTab
 
-    init(model: ConnectAppsModel, initialTab: ConnectAppsTab? = nil, botTemplates: (() -> Void)? = nil, push: @escaping (ConnectAppsRoute) -> Void) {
+    init(model: ConnectAppsModel, bots: BrowseBotsModel, botsShown: Bool, initialTab: ConnectAppsTab? = nil, openBot: @escaping (Bot) -> Void, push: @escaping (ConnectAppsRoute) -> Void) {
         _model = ObservedObject(wrappedValue: model)
-        self.botTemplates = botTemplates
+        _bots = ObservedObject(wrappedValue: bots)
+        self.botsShown = botsShown
+        self.openBot = openBot
         self.push = push
         _tab = State(initialValue: initialTab ?? ConnectAppsTab.launch)
     }
 
-    /// Sources shows when the marketplaces can be read or changed from this
-    /// pairing, or the person has a GitHub connection to manage.
+    /// Discover, Bots, Installed, Providers, Sources. Bots shows where Browse
+    /// Bots did; Sources when the marketplaces can be read or changed from
+    /// this pairing, or the person has a GitHub connection to manage.
     private var shownTabs: [ConnectAppsTab] {
-        [.installed, .discover, .accounts]
+        [.discover] + (botsShown ? [.bots] : []) + [.installed, .accounts]
             + (session.canAdminister || !model.marketplaces.isEmpty || session.surfaceGate.allows(.myConnections) ? [.sources] : [])
     }
 
+    /// The tab in front; Bots without the catalogue is Discover.
+    private var current: ConnectAppsTab { tab == .bots && !botsShown ? .discover : tab }
+
+    private var searching: Bool { !model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     var body: some View {
-        if tab == .discover {
-            list.searchable(text: $model.query, prompt: Text(String(localized: "Search across apps and skills")))
-        } else {
-            list
-        }
+        // one search on every tab: it looks everywhere (ConnectAppsSearch)
+        list.searchable(text: $model.query, prompt: Text(String(localized: "Search plugins, skills, MCP servers, bots, templates and sources")))
+            .onValueChange(of: model.query) { _ in expandedResults = [] }
+            #if DEBUG
+            .onAppear {
+                // `-parityConnectAppsQuery research`: the search, for the captures
+                if let query = UserDefaults.standard.string(forKey: "parityConnectAppsQuery"), model.query.isEmpty { model.query = query }
+            }
+            #endif
     }
 
     private var list: some View {
@@ -426,24 +454,153 @@ struct ConnectAppsMain: View {
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("connect-apps-tabs")
             }
-            if tab == .discover {
-                discover
+            if searching {
+                // the tab's own filters stay above the results and narrow
+                // its groups
+                switch current {
+                case .discover: Section { filterBar }
+                case .bots: BrowseBotsFilters(model: bots)
+                default: EmptyView()
+                }
+                results
             } else {
-                ConnectAppsManage(model: model, tab: $tab, push: push)
+                switch current {
+                case .discover: discover
+                case .bots: BrowseBotsContent(model: bots, open: openBot, importRow: true)
+                default: ConnectAppsManage(model: model, tab: $tab, push: push)
+                }
             }
         }
-        .refreshable { await model.load(session) }
+        .refreshable {
+            await model.load(session)
+            if botsShown { await bots.load(session) }
+        }
         .accessibilityIdentifier("connect-apps")
+    }
+
+    // MARK: The one search
+
+    private var searchSections: [ConnectAppsSearchSection] {
+        let sources = ConnectAppsSearchSources(
+            apps: model.items,
+            bots: botsShown ? bots.data?.entries ?? [] : [],
+            templates: botsShown ? bots.templates : [],
+            marketplaces: model.marketplaces
+        )
+        var filters = ConnectAppsSearchFilters()
+        switch current {
+        case .discover:
+            filters.appFilter = model.filter
+            filters.appType = model.type
+        case .bots:
+            filters.botCategory = bots.filter.category
+            filters.showArchived = bots.filter.showArchived
+        default:
+            break
+        }
+        return ConnectAppsSearch.sections(query: model.query, sources: sources, filters: filters)
+    }
+
+    @ViewBuilder
+    private var results: some View {
+        let sections = searchSections
+        if sections.isEmpty {
+            Section {
+                if model.loading || (botsShown && bots.data == nil && !bots.failed) {
+                    HStack { Spacer(); ProgressView(); Spacer() }
+                } else {
+                    Text(String(localized: "Nothing matches")).foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .accessibilityIdentifier("connect-apps-search-empty")
+        }
+        ForEach(sections) { section in
+            Section {
+                let open = expandedResults.contains(section.group)
+                ForEach(open ? section.hits : Array(section.hits.prefix(ConnectAppsSearch.preview))) { hit in
+                    resultRow(hit)
+                }
+                if !open, section.hits.count > ConnectAppsSearch.preview {
+                    Button(String(localized: "Show all (\(section.hits.count))")) { expandedResults.insert(section.group) }
+                        .accessibilityIdentifier("connect-apps-search-show-all.\(section.group.rawValue)")
+                }
+            } header: {
+                Text(verbatim: Self.groupTitle(section.group))
+            }
+            .accessibilityIdentifier("connect-apps-search.\(section.group.rawValue)")
+        }
+    }
+
+    static func groupTitle(_ group: ConnectAppsSearchGroup) -> String {
+        switch group {
+        case .plugins: String(localized: "Plugins")
+        case .skills: String(localized: "Skills")
+        case .servers: String(localized: "MCP servers")
+        case .bots: String(localized: "Bots")
+        case .templates: String(localized: "Templates")
+        case .xai: XaiMarketplaceRules.label
+        case .marketplaces: String(localized: "Marketplaces")
+        }
+    }
+
+    /// An app, a server or a skill: its row (Add, Connect or its status) to
+    /// its page. A bot or a template: Bots' row to its card. A marketplace:
+    /// the Sources tab.
+    @ViewBuilder
+    private func resultRow(_ hit: ConnectAppsSearchHit) -> some View {
+        switch hit.target {
+        case let .app(key):
+            if let item = hit.app {
+                Button { push(.detail(key)) } label: {
+                    ConnectAppRow(item: item, busy: model.busy == item.key) { act(item) }
+                }
+                .buttonStyle(.plain)
+            }
+        case let .skill(name):
+            if let item = hit.app {
+                Button { push(.skill(name)) } label: {
+                    ConnectAppRow(item: item, busy: false) {}
+                }
+                .buttonStyle(.plain)
+            }
+        case let .catalog(item):
+            BrowseBotsItemRow(model: bots, item: item, open: openBot)
+        case let .marketplace(name):
+            Button {
+                model.query = ""
+                tab = .sources
+            } label: {
+                HStack(spacing: 12) {
+                    PluginsGlyphTile(systemImage: "shippingbox", size: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: name).font(.body.weight(.medium)).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                        if !hit.detail.isEmpty {
+                            Text(verbatim: hit.detail).font(.footnote).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("connect-apps-search-market.\(name)")
+        }
     }
 
     @ViewBuilder
     private var discover: some View {
         Section {
             filterBar
-            if let botTemplates {
-                // the desktop's button beside the search field: the
-                // phone's search sits in the bar, so it heads the list
-                Button(action: botTemplates) {
+            if botsShown {
+                // the desktop's button beside the search field, now the
+                // Bots tab: Connect apps stays open
+                Button {
+                    Haptics.selection()
+                    tab = .bots
+                } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "square.grid.2x2")
                             .foregroundStyle(Theme.textSecondary)
@@ -590,9 +747,9 @@ struct ConnectAppsMain: View {
 
 // MARK: - Manage
 
-/// The four tabs of Connect apps, as the desktop names them.
+/// The tabs of Connect apps, as the desktop names them.
 enum ConnectAppsTab: Hashable, Identifiable {
-    case installed, discover, accounts, sources
+    case installed, discover, bots, accounts, sources
 
     var id: Self { self }
 
@@ -600,6 +757,7 @@ enum ConnectAppsTab: Hashable, Identifiable {
         switch self {
         case .installed: String(localized: "Installed")
         case .discover: String(localized: "Discover")
+        case .bots: String(localized: "Bots")
         case .accounts: String(localized: "Providers")
         case .sources: String(localized: "Sources")
         }
@@ -611,6 +769,7 @@ enum ConnectAppsTab: Hashable, Identifiable {
         #if DEBUG
         switch UserDefaults.standard.string(forKey: "parityConnectAppsTab") {
         case "installed": return .installed
+        case "bots": return .bots
         case "accounts", "providers": return .accounts
         case "sources": return .sources
         default: return .discover
@@ -636,7 +795,7 @@ enum ConnectAccountsService: Hashable {
 }
 
 /// Installed, Providers and Sources: the sections each tab adds to the
-/// Connect apps list (Discover is the main view's own).
+/// Connect apps list (Discover and Bots are the main view's own).
 struct ConnectAppsManage: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
@@ -656,7 +815,7 @@ struct ConnectAppsManage: View {
             case .installed: installed
             case .accounts: accounts
             case .sources: sources
-            case .discover: EmptyView()
+            case .discover, .bots: EmptyView()
             }
         }
         .confirmationDialog(
@@ -1255,7 +1414,7 @@ struct LibrarySkillPage: View {
 }
 
 extension Notification.Name {
-    /// Connect apps' "Bot templates": the home opens Templates or the new
-    /// bot sheet (`object`: a BotTemplatesDestination raw value).
+    /// The old way to Browse Bots' home: it now opens Connect apps on its
+    /// Bots tab (`object`: a BotTemplatesDestination raw value).
     static let sagaxOpenBotTemplates = Notification.Name("sagax.openBotTemplates")
 }

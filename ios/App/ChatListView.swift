@@ -51,6 +51,8 @@ struct ChatListView: View {
     @State private var showingTeamMap = false
     /// Connect apps and Templates as sheets (the iPhone list shows no places: they live in the avatar menu).
     @State private var showingConnectedApps = false
+    /// The tab Connect apps opens on (Bots from the old Browse Bots link).
+    @State private var connectAppsTab: ConnectAppsTab?
     @State private var showingTemplates = false
     /// What the account menu opens besides Settings.
     @State private var accountSheet: HomeAccountSheet?
@@ -165,19 +167,22 @@ struct ChatListView: View {
             }
             .sheet(isPresented: $showingConnectedApps) {
                 // the desktop's Connect apps panel (#203, #218)
-                ConnectAppsPage()
+                ConnectAppsPage(initialTab: connectAppsTab)
                     .environmentObject(session)
             }
             .sheet(isPresented: $showingTemplates) {
                 DesktopTemplatesSheet { showingTemplates = false }
                     .environmentObject(session)
             }
-            // Connect apps' "Browse Bots": Connect apps (and Settings around
-            // it) closes, then Browse Bots opens
+            // the old link to Browse Bots' home: Settings closes, Connect
+            // apps opens on its Bots tab (the catalogue lives there now)
             .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { _ in
                 showingConnectedApps = false
                 showingSettings = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { showingTemplates = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    connectAppsTab = .bots
+                    showingConnectedApps = true
+                }
             }
             .sheet(item: $accountSheet) { sheet in
                 HomeAccountSheetView(sheet: sheet)

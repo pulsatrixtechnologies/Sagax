@@ -310,6 +310,8 @@ struct DesktopShell: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @StateObject private var model = DesktopShellModel()
+    /// Connect apps on its Bots tab, from the old link to Browse Bots.
+    @State private var connectAppsBots = false
 
     var body: some View {
         let theme = DesktopTheme.of(themePalette)
@@ -340,11 +342,16 @@ struct DesktopShell: View {
             BotWizardPresenter.shared.finishedBotId = nil
             model.open(.bot(bot))
         }
-        // Connect apps' "Browse Bots": Settings closes, Browse Bots opens
+        // the old link to Browse Bots' home: Settings closes, Connect apps
+        // opens on its Bots tab (the catalogue lives there now)
         .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { _ in
             model.menu = nil
             model.modal = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { model.modal = .templates }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { connectAppsBots = true }
+        }
+        .sheet(isPresented: $connectAppsBots) {
+            ConnectAppsPage(initialTab: .bots)
+                .environmentObject(session)
         }
         .onReceive(NotificationCenter.default.publisher(for: .desktopOpenSettings)) { _ in
             model.menu = nil
