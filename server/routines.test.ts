@@ -2249,6 +2249,25 @@ describe("RoutineManager", () => {
     }]);
   });
 
+  it("#1516: a team goal holds its room's conversation only while it runs", async () => {
+    const h = harness();
+    const routine = h.manager.create({
+      name: "Say hello",
+      prompt: "Everyone say hello.",
+      target: "room-goal",
+      botId: "chief-1",
+      groupId: "room-1",
+      schedule: { type: "daily", time: "23:59", weekdays: [1] },
+    });
+    const run = h.manager.runNow(routine.id)!;
+    await h.manager.tick();
+    expect(h.manager.runForThread("goal-thread-1")?.id).toBe(run.id);
+    h.manager.finishGoalRun(run.id, "completed", "Everyone said hello.");
+    // finished: later turns in that conversation are the room's own again
+    expect(h.manager.runForThread("goal-thread-1")).toBeNull();
+    expect(h.manager.listRuns().find((candidate) => candidate.id === run.id)).toMatchObject({ status: "completed", threadId: "goal-thread-1" });
+  });
+
   it("distinguishes direct bot work from room goals coordinated by the same bot", async () => {
     const h = harness();
     const roomRoutine = h.manager.create({

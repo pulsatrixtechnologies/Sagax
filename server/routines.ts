@@ -1796,8 +1796,10 @@ export class RoutineManager {
   /** The run of this thread: the active one first (a conversation several
    * runs joined), else the first recorded. */
   runForThread(threadId: string): RoutineRun | null {
+    // A team goal works in its room's own conversation (#1516): it holds
+    // that conversation only while it runs, never once it has finished.
     const run = this.runs.find((candidate) => candidate.threadId === threadId && ["running", "waiting"].includes(candidate.status)) ??
-      this.runs.find((candidate) => candidate.threadId === threadId);
+      this.runs.find((candidate) => candidate.threadId === threadId && candidate.target !== "room-goal");
     return run ? cloneRun(run) : null;
   }
 

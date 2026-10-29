@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { routineAutoPauseChoices, routineAutoPausedText, routineAutoPauseOption, routineRunError, routineRunsOn } from "./routine-display";
+import { setLocale } from "./i18n";
+import { routineAutoPauseChoices, routineAutoPausedText, routineAutoPauseOption, routineRunError, routineRunsOn, routineWeekRunsText, scheduleRepeatsEventDate } from "./routine-display";
+
+describe("a routine's details (#1516)", () => {
+  it("says one run in the singular", () => {
+    setLocale("fr");
+    try {
+      expect(routineWeekRunsText({ ok: 1, total: 1 })).toBe("1 exécution sur 1 réussie cette semaine");
+      expect(routineWeekRunsText({ ok: 2, total: 3 })).toBe("2 exécutions sur 3 réussies cette semaine");
+    } finally {
+      setLocale("en");
+    }
+    expect(routineWeekRunsText({ ok: 0, total: 1 })).toBe("0 of 1 run OK this week");
+  });
+
+  it("does not repeat a one-time event's date under its date", () => {
+    expect(scheduleRepeatsEventDate({ type: "once", at: 5 }, 5)).toBe(true);
+    expect(scheduleRepeatsEventDate({ type: "once", at: 5 }, 9)).toBe(false);
+    expect(scheduleRepeatsEventDate({ type: "daily" }, 5)).toBe(false);
+  });
+});
 
 describe("where a routine runs", () => {
   it("on My Cloud, every routine runs on schedule even when the person's computer is off", () => {

@@ -18193,6 +18193,15 @@ function routineScopeDeps(auth: RequestAuth, visible: VisibleSet, viewerId: stri
     teamName: (teamId) => orgTeams.name(teamId),
   };
 }
+/** #1516: a team goal's line in the room names the person the routine runs
+ * as (organization server), like a message they sent. */
+function routineGoalSender(run: { runAs?: string; botId: string }): { sender: ResolvedSender } | Record<string, never> {
+  if (IDENTITY.kind !== "perspicax") return {};
+  const principalId = effectiveRunAs(run);
+  if (!principalId) return {};
+  const name = personDisplayName(principals.byId(principalId));
+  return name ? { sender: { name, id: principalId } } : {};
+}
 /** The speaker of a routine run's turns. */
 function routineRunSpeaker(run: { runAs?: string; botId: string }): TurnSpeaker {
   const principalId = effectiveRunAs(run);
@@ -23776,7 +23785,13 @@ routines = new RoutineManager({
   // features.routinesInConversation switch is ignored.
   // A run joining a conversation that is working waits for it (queued).
   threadBusy: (botId, threadId) => threadBusy(botId, threadId),
-  createGoalTask: (groupId, title) => store.createGroupTask(groupId, title, false),
+  // #1516 (2026-10-28): a team goal works in the room's own visible
+  // conversation, where its people read the goal, the bots' work and the
+  // result, like any message in the room. Never a hidden task of its own.
+  createGoalTask: (groupId) => {
+    const group = store.group(groupId);
+    return group && !group.dm ? { threadId: group.threadId } : null;
+  },
   // 2026-10-15: "Disabled · 5 routines" in the conversation the change came
   // from (server/routine-chat-events.ts); each viewer sees their own.
   onEnabledChanged: (routine, change) => {
@@ -23869,11 +23884,13 @@ routines = new RoutineManager({
       ...(run ? { speaker: routineRunSpeaker(run) } : {}),
     });
   },
-  startGoal: async (groupId, threadId, prompt, coordinatorBotId, runId, _onDispatchError) => {
+  startGoal: async (groupId, threadId, prompt, coordinatorBotId, runId, _onDispatchError, run) => {
     startGroupTurn(groupId, prompt, undefined, undefined, "goal", undefined, {
       threadId,
       goalCoordinatorBotId: coordinatorBotId,
       goalRunId: runId,
+      // The goal reads in the room as written by the person it runs as.
+      ...(run ? routineGoalSender(run) : {}),
     });
   },
   interruptTurn: async (botId, threadId) => {

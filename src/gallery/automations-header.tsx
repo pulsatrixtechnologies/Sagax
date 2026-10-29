@@ -3,7 +3,8 @@
  * the organization scope). Neutral fictional bots and routines; a mocked fetch
  * answers the page's reads so nothing connects. Not shipped in the app.
  * ?view=calendar|list|logs&width=<px>&height=<px>&lang=<code>&skin=<id> (pulsatrix: dark, pulsatrix-light: light)
- * &deleted=1 adds a past run of a routine deleted since (#1506). */
+ * &deleted=1 adds a past run of a routine deleted since (#1506).
+ * &goal=1 adds a one-time team goal that ran once this week (#1516). */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -35,6 +36,7 @@ const routines = [
   { ...base, id: "r2", botId: "boreas", name: "Weekly planning digest", enabled: true, schedule: { type: "daily", time: "10:00", weekdays: [1] }, nextRunAt: NOW + 30 * H },
   { ...base, id: "r3", botId: "cirrus", name: "Release checklist", enabled: false, schedule: { type: "daily", time: "17:00", weekdays: [5] } },
   { ...base, id: "r4", botId: "atlas", name: "Hourly status sweep", enabled: false, schedule: { type: "daily", time: "09:00", weekdays: [1, 2, 3, 4, 5] } },
+  ...(params.get("goal") === "1" ? [{ ...base, id: "g1", target: "room-goal", groupId: "room1", botId: "atlas", name: "Team hello", prompt: "Everyone say hello.", enabled: true, schedule: { type: "once", at: NOW + 2 * H }, nextRunAt: NOW + 2 * H, weekRuns: { ok: 1, total: 1 } }] : []),
 ] as unknown as Routine[];
 const run = (id: string, routineId: string, status: RoutineRun["status"], at: number): RoutineRun => ({
   id, routineId, routineName: routines.find((routine) => routine.id === routineId)!.name, target: "bot",

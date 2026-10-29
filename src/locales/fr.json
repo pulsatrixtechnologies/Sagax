@@ -6705,6 +6705,7 @@
   "routines.searchLogs": "Chercher dans les journaux d'exécution",
   "routines.showAll": "Afficher toutes les routines",
   "routines.weekRuns": "{ok} exécutions sur {total} réussies cette semaine",
+  "routines.weekRunsOne": "{ok} exécution sur 1 réussie cette semaine",
   "routines.retried.stalled": "Relancée après un blocage du moteur · {status}",
   "routines.retried.restarted": "Relancée après un redémarrage de Sagax · {status}",
   "routines.retried.rate_limited": "Relancée après une limite de débit · {status}",
