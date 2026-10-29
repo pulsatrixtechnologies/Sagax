@@ -813,8 +813,10 @@ export interface WireMessage {
    * later reader sees the sender and the not-steering framing. */
   aside?: boolean;
   /** A user-role message that arrived through the server's HTTP API
-   * ("api"), or a request a person spoke on a Live call ("call"). */
-  via?: "api" | "call";
+   * ("api"), a request a person spoke on a Live call ("call"), or a text
+   * the person sent their bot from their own verified number ("sms",
+   * server/sms-conversation.ts). */
+  via?: "api" | "call" | "sms";
   /** The Live call a "call" line was spoken on (LiveCallState.callId). Set
    * only on user messages with `via: "call"`; a turn's own messages point
    * at their request through `requestMessageId` instead. */

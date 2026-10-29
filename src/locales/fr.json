@@ -6847,6 +6847,7 @@
   "chat.verify.verifiedCount": "{count} vérifiées",
   "chat.verify.verifiedTag": "vérifiée",
   "chat.viaCall": "par appel",
+  "chat.viaSms": "par texto",
   "chat.voiceNote.onLiveCall": "Les notes vocales ne peuvent pas être lues pendant un appel en direct.",
   "chat.voiceNote.pause": "Mettre la note vocale en pause",
   "chat.voiceNote.play": "Lire la note vocale",

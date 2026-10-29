@@ -1674,6 +1674,23 @@ only wakes a routine, like bot email. Covered by
   category `webhook`, action `bot-phone.delivered` or `bot-phone.notice`,
   actor the owner `via: "perspicax-voice"`: bot, event, masked number,
   PIN result, trigger counts.
+- Texting your own bot (2026-10-29, `server/sms-conversation.ts`): an
+  `sms` that is `authenticated` (Perspicax admits only a number listed AND
+  verified on the line, in a PIN session) with `person.id` equal to the
+  assertion's `sub` (the line owner) is the person themself. It becomes a
+  turn of their single conversation with the bot (`agentUnifiedThread`, the
+  one send_prompt lands in; a first conversation is opened, never a
+  confidential one), sent as the person through `performAsMember` (actor
+  `perspicax-voice`, every check of a typed line), the line marked
+  `via: "sms"` ("via text message" under it). When the turn ends, the
+  bot's own text replies after that line go back by `voice_sms` (the
+  person's own access, to the number it came from), one text of at most
+  1200 characters; a card waiting on them is said in one text; after 30
+  minutes, one text says the answer stays in Sagax. Nothing retries a send.
+  A carrier keyword alone (STOP, START, HELP, ARRÊT, AIDE) is never a turn.
+  Anyone else's text, or a turn that could not start, goes to the phone
+  triggers as before. 202 `{..., delivered: 1, conversation: true}`.
+  Tests: `server/sms-conversation.test.ts`, the route test.
 
 ## Reach me: one setting per bot to reach the person outside the app (2026-10-26)
 

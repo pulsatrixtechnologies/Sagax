@@ -2031,6 +2031,7 @@
   "chat.verify.verifiedCount": "{count} verified",
   "chat.verify.verifiedTag": "verified",
   "chat.viaCall": "via call",
+  "chat.viaSms": "via text message",
   "step.ask.bare.done": "Asked a teammate",
   "step.ask.bare.failed": "Could not ask a teammate",
   "step.ask.bare.running": "Asking a teammate",

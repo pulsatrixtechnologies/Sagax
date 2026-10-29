@@ -274,6 +274,8 @@ let state: ReturnType<typeof manager>;
 let owners: Map<string, { principalId: string; sub: string | null; active: boolean }>;
 let rows: Array<Record<string, unknown>>;
 let identity: "solo" | "perspicax" = "perspicax";
+/** The person texting their own bot (server/sms-conversation.ts); absent: refused, the triggers as before. */
+let ownTexts: Array<{ ownerPrincipalId: string; sub: string; botId: string; from: string; text: string }> | null = null;
 const deps: TelephonyRouteDeps = {
   identity: () => identity,
   publicOrigin: () => ORIGIN,
@@ -289,6 +291,11 @@ const deps: TelephonyRouteDeps = {
   owner: (id) => owners.get(id) ?? null,
   triggers: (botId) => state.hooks.list().filter((hook) => hook.enabled && hook.botId === botId && hook.source?.type === "telephony").map((hook) => hook.id),
   ingest: (id, event, key) => state.hooks.ingest(id, event, key),
+  ownText: async (input) => {
+    if (!ownTexts) return false;
+    ownTexts.push(input);
+    return true;
+  },
   record: (row) => rows.push(row as unknown as Record<string, unknown>),
 };
 
@@ -324,6 +331,7 @@ beforeEach(() => {
   ]);
   rows = [];
   identity = "perspicax";
+  ownTexts = null;
 });
 
 async function post(body: unknown, bearer?: string, raw?: string, method = "POST") {
@@ -471,3 +479,36 @@ describe(`POST ${TELEPHONY_PATH}`, () => {
     expect(lines.join("\n")).not.toMatch(/fournisseur|5145550100/);
   });
 });
+
+describe("the person texting their own bot", () => {
+  it("their own verified number: a turn of their conversation, not the phone triggers", async () => {
+    ownTexts = [];
+    state.hooks.create(phoneTrigger());
+    const got = await post(fresh(), token("u_123"));
+    expect(got).toMatchObject({ status: 202, header: "1", body: { event: "sms", delivered: 1, triggers: 0, conversation: true } });
+    expect(state.queued).toHaveLength(0);
+    expect(ownTexts).toEqual([{ ownerPrincipalId: "pr_owner", sub: "u_123", botId: "bot_abc", from: "+15145550100", text: "Rappelle le fournisseur pour la livraison de jeudi." }]);
+    expect(JSON.stringify(rows)).not.toContain("fournisseur");
+    // the same text twice: once
+    const again = fresh();
+    expect((await post(again, token("u_123"))).status).toBe(202);
+    expect((await post(again, token("u_123"))).body).toMatchObject({ reason: "duplicate" });
+    expect(ownTexts).toHaveLength(2);
+  });
+
+  it("someone else on the line, a text without the PIN session, or a carrier keyword: the triggers as before", async () => {
+    ownTexts = [];
+    state.hooks.create(phoneTrigger());
+    expect((await post(fresh("sms", { person: { id: "u_teammate", name: "Sam" } }), token("u_123"))).body).toMatchObject({ delivered: 1, triggers: 1 });
+    expect((await post(fresh("sms", { authenticated: false, person: undefined }), token("u_123"))).body).toMatchObject({ triggers: 1 });
+    expect((await post(fresh("sms", { content: { trust: "caller", text: "STOP" } }), token("u_123"))).body).toMatchObject({ triggers: 1 });
+    expect(ownTexts).toEqual([]);
+  });
+
+  it("a turn that could not start falls back to the triggers", async () => {
+    state.hooks.create(phoneTrigger());
+    expect((await post(fresh(), token("u_123"))).body).toMatchObject({ delivered: 1, triggers: 1 });
+    expect(state.queued).toHaveLength(1);
+  });
+});
+

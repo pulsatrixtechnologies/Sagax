@@ -298,8 +298,9 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
   /** user messages sent into a running turn — the model saw it mid-turn */
   steered?: boolean;
   /** a user message that did not come from typing here: through the
-   * server's API, or spoken during a Live call. */
-  via?: "api" | "call";
+   * server's API, spoken during a Live call, or texted from the person's
+   * own number. */
+  via?: "api" | "call" | "sms";
   /** Words said on a voice call. The thread draws every turn of one callId
    * as a single card; the send itself stays an ordinary message. */
   voiceCall?: VoiceCallMark;
