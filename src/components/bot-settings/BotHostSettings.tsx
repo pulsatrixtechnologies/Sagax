@@ -41,7 +41,8 @@ export function BotHostForm({
   return (
     <div className="px-3.5 py-2.5" data-bot-host-row="">
       <div className="text-[13px] leading-[18px] text-ink">{t("botPanel.model.where")}</div>
-      <p className="mt-0.5 text-[12px] leading-4 text-ink-secondary">{t("botPanel.model.whereHelp")}</p>
+      {/* "only while this computer is on" is true of a computer, never of the organization server */}
+      <p className="mt-0.5 text-[12px] leading-4 text-ink-secondary" data-bot-host-help={machineId ? "machine" : "fleet"}>{t(machineId ? "botPanel.model.whereHelp" : "botPanel.model.whereHelpServer")}</p>
       <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label={t("botPanel.model.where")}>
         <button
           type="button"
