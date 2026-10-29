@@ -13,7 +13,7 @@
 // The steps and the conversation come from the run's activity entry
 // (GET /api/bots/:id/activity/item?runId=, the same one History shows).
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, CircleAlert, ExternalLink, FileText, Loader2, Play, RotateCcw, Square } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronRight, CircleAlert, CirclePlay, FileText, History, Inbox, Loader2, MessageSquareText, RotateCcw, Square } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { api, type Bot, type Group } from "@/state/store";
@@ -148,7 +148,7 @@ export function RoutineRunDetail({ run, routine, bots, groups = [], viewerPrinci
     : waiting.length > 0 ? waiting
     : [{ kind: "note", text: run.attention || t("routineCalendar.runWaiting"), botId: run.botId, ...(threadId && onOpenThread ? { threadId } : {}) }];
   const stopButton = live && editable && onStop
-    ? <button type="button" data-run-stop onClick={onStop} disabled={working} className={cn(PILL, "gap-1.5 text-danger")}>{working ? <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Square size={12} aria-hidden="true" fill="currentColor" />}{t("routineRun.stop")}</button>
+    ? <button type="button" data-run-stop onClick={onStop} disabled={working} title={t("routineRun.stop")} className={cn(PILL, "gap-1.5 text-danger")}>{working ? <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Square size={12} aria-hidden="true" fill="currentColor" />}{t("routineRun.stop")}</button>
     : null;
 
   // The head is the task sheet's own (TaskStatusHeader): the bot's pill,
@@ -188,7 +188,7 @@ export function RoutineRunDetail({ run, routine, bots, groups = [], viewerPrinci
       {waitingItems.length > 0 && <div data-run-waiting><WaitingOnYou items={waitingItems} threadId={threadId ?? ""} botFor={(id) => bots.find((candidate) => candidate.id === id)} onCancel={() => onStop?.()} onOpenThread={onOpenThread} /></div>}
       {run.status === "queued" && run.attention && <div data-run-deferred className="rounded-xl border border-accent/30 bg-accent/10 px-3.5 py-2.5 text-[12.5px] text-accent-text"><span className="font-medium">{t("routineRun.deferred")}</span> · {run.attention}</div>}
       {run.status !== "waiting" && errorText && <div data-run-error role="alert" className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[12.5px] leading-relaxed text-danger"><CircleAlert size={15} className="mt-0.5 shrink-0" aria-hidden="true" /><span className="min-w-0 whitespace-pre-wrap">{errorText}</span></div>}
-      {run.autoPaused && <div data-run-auto-paused className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[12.5px] text-warning"><span className="font-medium">{routineAutoPausedText(run.autoPaused.failures)}</span>{onResume && <button type="button" data-routine-resume onClick={onResume} disabled={working} className="inline-flex items-center gap-1 rounded-md bg-warning/15 px-2 py-0.5 font-medium hover:bg-warning/25 disabled:opacity-50"><Play size={11} aria-hidden="true" />{t("routines.autoPause.resume")}</button>}</div>}
+      {run.autoPaused && <div data-run-auto-paused className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-[12.5px] text-warning"><span className="font-medium">{routineAutoPausedText(run.autoPaused.failures)}</span>{onResume && <button type="button" data-routine-resume onClick={onResume} disabled={working} className="inline-flex items-center gap-1 rounded-md bg-warning/15 px-2 py-0.5 font-medium hover:bg-warning/25 disabled:opacity-50"><CirclePlay size={11} aria-hidden="true" />{t("routines.autoPause.resume")}</button>}</div>}
       {detail?.note && run.status !== "waiting" && !errorText && <p className="rounded-lg bg-warning/10 px-3 py-2 text-[12.5px] text-ink">{detail.note}</p>}
       {error && <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[11.5px] text-danger">{error}</div>}
     </>
@@ -222,12 +222,12 @@ export function RoutineRunDetail({ run, routine, bots, groups = [], viewerPrinci
   const composer = canReply ? <div className="shrink-0 px-4 pb-1 pt-2"><TaskComposer key={run.id} onSend={onReply!} /></div> : null;
   const footer = (
     <div data-run-actions className="flex flex-wrap items-center gap-2 border-t border-hairline/40 px-4 py-3">
-      {!live && canRunAgain && onRunAgain && <button type="button" data-run-again onClick={onRunAgain} disabled={working || inFlight} title={inFlight ? t("routines.runNow.inFlight") : undefined} className={cn(PRIMARY_PILL, "gap-1.5")}>{working ? <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <RotateCcw size={13} aria-hidden="true" />}{t("routineRun.runAgain")}</button>}
-      {canContinue && onContinue && <button type="button" data-run-continue onClick={onContinue} className={cn(PILL, "gap-1.5")}><ExternalLink size={13} aria-hidden="true" />{isRoomGoal ? t("routineCalendar.openGroupThread") : t("routineRun.continue")}</button>}
-      {canOpenResults && onOpenResults && <button type="button" data-run-open-results onClick={onOpenResults} className={cn(PILL, "gap-1.5")}><ExternalLink size={13} aria-hidden="true" />{t("routines.results.open")}</button>}
+      {!live && canRunAgain && onRunAgain && <button type="button" data-run-again onClick={onRunAgain} disabled={working || inFlight} title={inFlight ? t("routines.runNow.inFlight") : t("routineRun.runAgain")} className={cn(PRIMARY_PILL, "gap-1.5")}>{working ? <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <RotateCcw size={13} aria-hidden="true" />}{t("routineRun.runAgain")}</button>}
+      {canContinue && onContinue && <button type="button" data-run-continue onClick={onContinue} title={isRoomGoal ? t("routineCalendar.openGroupThread") : t("routineRun.continue")} className={cn(PILL, "gap-1.5")}><MessageSquareText size={13} aria-hidden="true" />{isRoomGoal ? t("routineCalendar.openGroupThread") : t("routineRun.continue")}</button>}
+      {canOpenResults && onOpenResults && <button type="button" data-run-open-results onClick={onOpenResults} title={t("routines.results.open")} className={cn(PILL, "gap-1.5")}><Inbox size={13} aria-hidden="true" />{t("routines.results.open")}</button>}
       <div className="ml-auto flex items-center gap-1">
-        {routine && onOpenRoutine && <button type="button" data-run-open-routine onClick={onOpenRoutine} className="rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">{t("routineRun.openRoutine")}</button>}
-        {onLogs && <button type="button" data-run-logs onClick={onLogs} className="rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">{t("routines.logs")}</button>}
+        {routine && onOpenRoutine && <button type="button" data-run-open-routine onClick={onOpenRoutine} title={t("routineRun.openRoutine")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><CalendarClock size={13} aria-hidden="true" />{t("routineRun.openRoutine")}</button>}
+        {onLogs && <button type="button" data-run-logs onClick={onLogs} title={t("routines.logs")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><History size={13} aria-hidden="true" />{t("routines.logs")}</button>}
       </div>
     </div>
   );

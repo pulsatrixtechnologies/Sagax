@@ -54,6 +54,27 @@ try {
     console.log(`${prefix} ${skin.label}: ${await page.locator("[data-gallery-sample]").getAttribute("data-gallery-sample")}`);
     await page.close();
   }
+  // 2026-10-29: the action bars of a routine (bot panel, routine page) and
+  // of a run's detail, at a desktop width and a narrow one.
+  const routinesBase = `http://127.0.0.1:${port}/src/gallery/routines-ux.html`;
+  const bars = [
+    { name: "panel", query: "view=panel", width: 420, height: 760, selector: "[data-routine-detail-actions]" },
+    { name: "panel-tight", query: "view=panel", width: 300, height: 760, selector: "[data-routine-detail-actions]" },
+    { name: "routine-desktop", query: "view=routine", width: 1200, height: 760, selector: "[data-routine-actions]" },
+    { name: "routine-narrow", query: "view=routine", width: 430, height: 820, selector: "[data-routine-actions]" },
+    { name: "run-desktop", query: "view=run&case=completed", width: 1200, height: 760, selector: "[data-run-actions]" },
+    { name: "run-narrow", query: "view=run&case=completed", width: 430, height: 820, selector: "[data-run-actions]" },
+  ];
+  for (const skin of skins) {
+    for (const bar of bars) {
+      const page = await browser.newPage({ viewport: { width: bar.width, height: bar.height }, deviceScaleFactor: 2 });
+      await page.goto(`${routinesBase}?${bar.query}&skin=${skin.id}&width=${bar.width}&height=${bar.height}`, { waitUntil: "networkidle" });
+      await page.locator(bar.selector).first().waitFor({ timeout: 30_000 });
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: join(outDir, `${prefix}-bar-${bar.name}-${skin.label}.png`) });
+      await page.close();
+    }
+  }
 } catch (error) {
   console.error(error);
   console.error(log.slice(-4000));
