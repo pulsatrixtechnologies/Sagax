@@ -1857,5 +1857,7 @@
   "mascot.shape.chomp": "चबाना",
   "mascot.shape.nibble": "कुतरना",
   "mascot.shape.shield": "ढाल",
-  "mascot.shape.bubble": "बुलबुला"
+  "mascot.shape.bubble": "बुलबुला",
+  "chat.exchange.empty": "{name} के साथ अभी तक कोई संदेश नहीं।",
+  "chat.exchange.loadError": "यह बातचीत लोड नहीं हो सकी।"
 }

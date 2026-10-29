@@ -1867,5 +1867,7 @@
   "mascot.shape.chomp": "Mordisco",
   "mascot.shape.nibble": "Pellizco",
   "mascot.shape.shield": "Escudo",
-  "mascot.shape.bubble": "Burbuja"
+  "mascot.shape.bubble": "Burbuja",
+  "chat.exchange.empty": "Todavía no hay mensajes con {name}.",
+  "chat.exchange.loadError": "No se pudo cargar esta conversación."
 }

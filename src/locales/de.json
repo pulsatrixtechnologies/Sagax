@@ -1885,5 +1885,7 @@
   "mascot.shape.chomp": "Happs",
   "mascot.shape.nibble": "Knabber",
   "mascot.shape.shield": "Schild",
-  "mascot.shape.bubble": "Blase"
+  "mascot.shape.bubble": "Blase",
+  "chat.exchange.empty": "Noch keine Nachrichten mit {name}.",
+  "chat.exchange.loadError": "Diese Unterhaltung konnte nicht geladen werden."
 }

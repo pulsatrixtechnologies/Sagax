@@ -1,0 +1,67 @@
+// @vitest-environment happy-dom
+// #1502: a bot-to-bot conversation line opened a blank sheet when its thread
+// had no message, or when its messages could not be read.
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+const reply = vi.hoisted(() => ({ next: [] as Array<() => Promise<unknown>> }));
+
+vi.mock("@/state/store", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/state/store")>(),
+  api: () => (reply.next.shift() ?? (async () => ({ messages: [] })))(),
+}));
+
+import { setLocale } from "@/lib/i18n";
+import { BotConversationLine } from "./BotConversations";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+beforeAll(() => setLocale("en"));
+
+const self = { id: "kat", name: "Ottoline", color: "green" as const };
+const row = { threadId: "w1", otherBotId: "mel", otherName: "Melonie", direction: "out" as const, updatedAt: 1 };
+
+describe("bot-to-bot conversation sheet (#1502)", () => {
+  let host: HTMLDivElement;
+  let root: Root;
+  beforeEach(() => {
+    reply.next = [];
+    host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+  });
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    host.remove();
+  });
+
+  async function openLine() {
+    await act(async () => { root.render(createElement(BotConversationLine, { self, row, bots: [] })); });
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid=bot-exchange-chip]")!.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+
+  it("says there is no message yet instead of a blank sheet", async () => {
+    reply.next.push(async () => ({ messages: [], hasMore: false, activeLeafId: null }));
+    await openLine();
+    expect(host.querySelector("[data-testid=bot-exchange-sheet]")).not.toBeNull();
+    expect(host.querySelector("[data-testid=bot-exchange-empty]")?.textContent).toContain("Melonie");
+    expect(host.querySelector("[data-testid=bot-exchange-error]")).toBeNull();
+  });
+
+  it("shows a failed read and reads again on Retry", async () => {
+    reply.next.push(async () => { throw new Error("offline"); });
+    await openLine();
+    expect(host.querySelector("[data-testid=bot-exchange-error]")).not.toBeNull();
+    expect(host.querySelector("[data-testid=bot-exchange-empty]")).toBeNull();
+    reply.next.push(async () => ({ messages: [{ id: "m1", role: "user", kind: "text", text: "Which database?", at: Date.now() }] }));
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid=bot-exchange-retry]")!.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(host.querySelector("[data-testid=bot-exchange-error]")).toBeNull();
+    expect(host.textContent).toContain("Which database?");
+  });
+});

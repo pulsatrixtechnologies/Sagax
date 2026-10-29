@@ -2378,5 +2378,7 @@
   "mascot.shape.chomp": "Хрум",
   "mascot.shape.nibble": "Гриз",
   "mascot.shape.shield": "Щит",
-  "mascot.shape.bubble": "Бульбашка"
+  "mascot.shape.bubble": "Бульбашка",
+  "chat.exchange.empty": "Ще немає повідомлень з {name}.",
+  "chat.exchange.loadError": "Не вдалося завантажити цю розмову."
 }

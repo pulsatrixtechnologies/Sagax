@@ -1225,6 +1225,8 @@
   "chat.error.requestTooLarge": "Ce message est trop volumineux pour {model}. Commencez une nouvelle conversation ou choisissez un modèle qui en accepte davantage.",
   "chat.error.signedOut": "{name} n’est pas encore connecté. Connectez-vous ci-dessous, puis renvoyez votre message.",
   "chat.exchange.close": "Fermer la conversation",
+  "chat.exchange.empty": "Aucun message avec {name} pour l'instant.",
+  "chat.exchange.loadError": "Impossible de charger cette conversation.",
   "chat.exchange.open": "Ouvrir {count} messages avec {name}",
   "chat.exchange.with": "{count} messages avec",
   "chat.exchange.withOne": "1 message avec",

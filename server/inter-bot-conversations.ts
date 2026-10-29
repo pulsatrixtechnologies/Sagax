@@ -28,14 +28,22 @@ export interface ConversationBot { id: string; name?: string; tasks?: readonly C
 
 const LIMIT = 10;
 
+/**
+ * `hasMessages`: whether the thread holds a message yet. A thread that was
+ * opened but never written to (the other bot's turn never started) is not
+ * listed: its line opened a blank sheet (#1502). A running one is, since its
+ * first message is on its way. Asked only for the rows that could be shown,
+ * newest first, until LIMIT of them hold messages.
+ */
 export function interBotConversations(
   botId: string,
   bots: readonly ConversationBot[],
   mayRead: (owner: ConversationBot, task: ConversationTask, other: ConversationBot | undefined) => boolean = () => true,
   isRunning: (ownerId: string, threadId: string) => boolean = () => false,
+  hasMessages: (ownerId: string, threadId: string) => boolean = () => true,
 ): WireBotConversation[] {
   const byId = new Map(bots.map((bot) => [bot.id, bot]));
-  const out: WireBotConversation[] = [];
+  const out: Array<WireBotConversation & { ownerId: string }> = [];
   const add = (owner: ConversationBot, task: ConversationTask, otherId: string, direction: "in" | "out") => {
     if (task.routineRunId || task.confidential === true) return;
     const other = byId.get(otherId);
@@ -43,6 +51,7 @@ export function interBotConversations(
     const name = (direction === "in" ? other?.name ?? task.openedBy?.name : other?.name) ?? "";
     const kind = task.openedBy?.kind;
     out.push({
+      ownerId: owner.id,
       threadId: task.threadId,
       otherBotId: otherId,
       otherName: name.trim().slice(0, 120),
@@ -64,5 +73,11 @@ export function interBotConversations(
       if (task.openedBy?.botId === botId) add(bot, task, bot.id, "out");
     }
   }
-  return out.filter((row) => row.otherName).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, LIMIT);
+  const shown: WireBotConversation[] = [];
+  for (const { ownerId, ...row } of out.filter((row) => row.otherName).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))) {
+    if (shown.length >= LIMIT) break;
+    if (!row.running && !hasMessages(ownerId, row.threadId)) continue;
+    shown.push(row);
+  }
+  return shown;
 }

@@ -23,4 +23,21 @@ describe("interBotConversations", () => {
     expect(interBotConversations("a", bots, () => false)).toEqual([]);
     expect(interBotConversations("b", bots, (_owner, task) => task.threadId === "work").map((row) => row.threadId)).toEqual(["work"]);
   });
+  it("skips a thread nothing was written to, unless its turn is running (#1502)", () => {
+    const empty = new Set(["work"]);
+    const hasMessages = (_owner: string, threadId: string) => !empty.has(threadId);
+    expect(interBotConversations("a", bots, undefined, undefined, hasMessages)).toEqual([]);
+    expect(interBotConversations("b", bots, undefined, undefined, hasMessages).map((row) => row.threadId)).toEqual(["c-work"]);
+    const running = interBotConversations("a", bots, undefined, (_owner, threadId) => threadId === "work", hasMessages);
+    expect(running.map((row) => [row.threadId, row.running])).toEqual([["work", true]]);
+  });
+  it("keeps ten rows that hold messages when older empty ones sit among them", () => {
+    const many: ConversationBot[] = [
+      { id: "x", name: "Xray", tasks: [] },
+      { id: "y", name: "Yankee", tasks: Array.from({ length: 14 }, (_, index) => ({ threadId: `t${index}`, updatedAt: index, openedBy: { botId: "x" } })) },
+    ];
+    const rows = interBotConversations("x", many, undefined, undefined, (_owner, threadId) => Number(threadId.slice(1)) % 2 === 0);
+    expect(rows.map((row) => row.threadId)).toEqual(["t12", "t10", "t8", "t6", "t4", "t2", "t0"]);
+    expect(interBotConversations("x", many)).toHaveLength(10);
+  });
 });

@@ -61,7 +61,10 @@ export function TranscriptDate({ at }: { at: number }) {
   );
 }
 
-export function ExchangeSheet({ run, bots, showToolCalls, onClose }: { run: ExchangeRun; bots?: readonly Bot[]; showToolCalls: boolean; onClose: () => void }) {
+/** `loadError`: the thread's lines could not be read; `onRetry` reads them
+ * again. With no line to show, the sheet says so rather than staying blank
+ * (#1502). */
+export function ExchangeSheet({ run, bots, showToolCalls, onClose, loadError = false, onRetry }: { run: ExchangeRun; bots?: readonly Bot[]; showToolCalls: boolean; onClose: () => void; loadError?: boolean; onRetry?: () => void }) {
   const column = useContext(ExchangeColumnContext);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -104,6 +107,20 @@ export function ExchangeSheet({ run, bots, showToolCalls, onClose }: { run: Exch
         </div>
       </div>
       <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col gap-4 overflow-y-auto px-6 py-6" onClick={(event) => event.stopPropagation()}>
+        {loadError ? (
+          <div role="alert" data-testid="bot-exchange-error" className="flex flex-col items-center gap-2 py-8 text-center text-[13px] text-ink-secondary">
+            <p>{t("chat.exchange.loadError")}</p>
+            {onRetry && (
+              <button type="button" data-testid="bot-exchange-retry" onClick={onRetry} className="rounded-full bg-raised px-3 py-1 text-[12.5px] text-ink hover:bg-raised-hover">
+                {t("chat.retry")}
+              </button>
+            )}
+          </div>
+        ) : rows.length === 0 && (
+          <p role="status" data-testid="bot-exchange-empty" className="py-8 text-center text-[13px] text-ink-secondary">
+            {t("chat.exchange.empty", { name: run.party.name })}
+          </p>
+        )}
         {rows.map(({ message, shape }, index) => {
           const previous = rows[index - 1]?.message;
           const stamp = startsNewStretch(previous?.at, message.at) && <TranscriptDate at={message.at} />;

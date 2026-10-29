@@ -1869,6 +1869,8 @@
   "chat.error.dismiss": "Dismiss",
   "chat.error.signedOut": "{name} isn't signed in yet. Sign in below, then send your message again.",
   "chat.exchange.close": "Close Chat",
+  "chat.exchange.empty": "No messages with {name} yet.",
+  "chat.exchange.loadError": "This conversation could not be loaded.",
   "chat.exchange.open": "Open {count} messages with {name}",
   "chat.exchange.with": "{count} messages with",
   "chat.exchange.withOne": "1 message with",
