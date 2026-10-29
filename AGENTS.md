@@ -156,7 +156,12 @@ same routes and plan as the app (src/lib/page-share-plan.ts). Download PDF
 (every reader): the reading frame posts its height (`sagax-page-size`, by
 nonce on Markdown) and the wrapper prints only the frame at that height;
 the browser's Save as PDF writes it, a presentation one slide per sheet.
-Captures: `scripts/capture-page-reader.ts`.
+Annotate (anyone signed in who may read the page, its person always, no
+admin): `/api/pages/:id/threads` (shared/page-threads.ts), threads anchored
+on text or a part of the page, replies, resolved, deleted by their author
+or the page's person. The frame's bridge (`ANNOTATE_BRIDGE_SOURCE`) is
+dormant until the wrapper turns the mode on and only ever gets anchors
+back, never a comment or a name. Captures: `scripts/capture-page-reader.ts`.
 
 ## xAI Bot Marketplace in Browse Bots (2026-10-28)
 

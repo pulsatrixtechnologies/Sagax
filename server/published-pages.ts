@@ -34,6 +34,7 @@ import { join } from "node:path";
 import { writeFileAtomic } from "./atomic.ts";
 import { threadOwner } from "./thread-privacy.ts";
 import { pageAudienceOf, samePageAudience, type PageAudience } from "../shared/page-audience.ts";
+import { THREAD_LIMITS, type PageQuote, type PageThread, type PageThreadReply } from "../shared/page-threads.ts";
 import {
   DEFAULT_PAGES_POLICY,
   PAGE_FRAME_TICKET_MS,
@@ -115,6 +116,9 @@ export interface PageRecord {
   keepUpdated?: boolean;
   /** The people and teams the person invited to read it (Share). */
   invites?: PageInvites;
+  /** Annotations of the people who read it (2026-10-28): threads anchored
+   * on the page, with replies; seen by everyone who may read it. */
+  threads?: PageThread[];
 }
 
 export type PageError = { ok: false; status: 400 | 404 | 409; error: string; code: string };
@@ -300,14 +304,14 @@ export class PublishedPages {
     return text;
   }
 
-  private mutate(id: string, change: (page: PageRecord, now: number) => PageRecord | PageError): PageRecord | PageError {
+  private mutate(id: string, change: (page: PageRecord, now: number) => PageRecord | PageError, touch = true): PageRecord | PageError {
     const pages = this.snapshot();
     const page = pages.find((entry) => entry.id === id);
     if (!page) return refuse(404, "not_found", "This page does not exist.");
     const now = this.clock();
     const result = change(page, now);
     if ("ok" in result) return result;
-    page.updatedAt = now;
+    if (touch) page.updatedAt = now;
     this.save(pages);
     return page;
   }
@@ -462,6 +466,70 @@ export class PublishedPages {
       page.comments = comments.filter((entry) => entry.id !== commentId);
       return page;
     });
+  }
+
+  // ── annotations (2026-10-28): who may write them is the route's check ──
+
+  threads(id: string): PageThread[] {
+    return this.get(id)?.threads ?? [];
+  }
+
+  /** A new annotation on the version readers get. A comment never moves the
+   * page in its person's list. */
+  addThread(id: string, input: { by: string; anchor: PageQuote; text: string; version: number }): { ok: true; thread: PageThread } | PageError {
+    let made: PageThread | null = null;
+    const result = this.mutate(id, (page, now) => {
+      const threads = page.threads ?? [];
+      if (threads.length >= THREAD_LIMITS.threads) return refuse(409, "too_many_threads", `A page keeps at most ${THREAD_LIMITS.threads} annotations; resolve and delete some first.`);
+      made = { id: randomBytes(9).toString("base64url"), at: now, by: input.by, version: input.version, anchor: input.anchor, text: input.text, replies: [] };
+      page.threads = [...threads, made];
+      return page;
+    }, false);
+    return "ok" in result ? result : { ok: true, thread: made! };
+  }
+
+  reply(id: string, threadId: string, input: { by: string; text: string }): { ok: true; thread: PageThread; reply: PageThreadReply } | PageError {
+    let answer: { thread: PageThread; reply: PageThreadReply } | null = null;
+    const result = this.mutate(id, (page, now) => {
+      const thread = (page.threads ?? []).find((entry) => entry.id === threadId);
+      if (!thread) return refuse(404, "no_thread", "This annotation does not exist.");
+      if (thread.replies.length >= THREAD_LIMITS.replies) return refuse(409, "too_many_replies", `An annotation keeps at most ${THREAD_LIMITS.replies} replies.`);
+      const reply: PageThreadReply = { id: randomBytes(9).toString("base64url"), at: now, by: input.by, text: input.text };
+      thread.replies.push(reply);
+      answer = { thread, reply };
+      return page;
+    }, false);
+    return "ok" in result ? result : { ok: true, ...answer! };
+  }
+
+  /** Resolve or open again; anyone who may annotate. */
+  resolveThread(id: string, threadId: string, input: { by: string; resolved: boolean }): { ok: true; thread: PageThread } | PageError {
+    let found: PageThread | null = null;
+    const result = this.mutate(id, (page, now) => {
+      const thread = (page.threads ?? []).find((entry) => entry.id === threadId);
+      if (!thread) return refuse(404, "no_thread", "This annotation does not exist.");
+      if (input.resolved) thread.resolved = { at: now, by: input.by };
+      else delete thread.resolved;
+      found = thread;
+      return page;
+    }, false);
+    return "ok" in result ? result : { ok: true, thread: found! };
+  }
+
+  /** Delete a thread, or one reply of it (`replyId`). */
+  removeThreadPart(id: string, threadId: string, replyId?: string): PageRecord | PageError {
+    return this.mutate(id, (page) => {
+      const threads = page.threads ?? [];
+      const thread = threads.find((entry) => entry.id === threadId);
+      if (!thread) return refuse(404, "no_thread", "This annotation does not exist.");
+      if (replyId === undefined) {
+        page.threads = threads.filter((entry) => entry.id !== threadId);
+        return page;
+      }
+      if (!thread.replies.some((entry) => entry.id === replyId)) return refuse(404, "no_reply", "This reply does not exist.");
+      thread.replies = thread.replies.filter((entry) => entry.id !== replyId);
+      return page;
+    }, false);
   }
 
   /** The person's switch for reader comments on this page. */

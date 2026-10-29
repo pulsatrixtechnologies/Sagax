@@ -12,6 +12,7 @@
 // page in a frame sandboxed to scripts only, whose navigation the wrapper's
 // `frame-src` limits to the page's own frame path.
 import { READER_ACTIONS_ID, READER_BOOT_ID, readerNotice, type ReaderBoot } from "../shared/page-reader.ts";
+import { ANNOTATE_FOCUS_MESSAGE, ANNOTATE_FOUND_MESSAGE, ANNOTATE_MARKS_MESSAGE, ANNOTATE_MODE_MESSAGE, ANNOTATE_SELECT_MESSAGE, THREAD_LIMITS } from "../shared/page-threads.ts";
 import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_HEIGHT_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, PAGE_SIZE_ASK, PAGE_SIZE_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
 
 /** Server side, before every HTML version is served: no element that can
@@ -137,6 +138,58 @@ export const REPORT_SIZE_SOURCE = String.raw`(function(){"use strict";var last="
   + `window.addEventListener("message",function(e){if(e.source===window.parent&&e.data&&e.data.type==="${PAGE_SIZE_ASK}"){last="";send()}});`
   + "if(window.ResizeObserver){try{var o=new ResizeObserver(soon);o.observe(D.documentElement);if(D.body)o.observe(D.body)}catch(e){}}"
   + "})();";
+
+/** A reading frame's side of Annotate (2026-10-28, shared/page-threads.ts):
+ * dormant until the wrapper (its parent, never the page) turns annotation
+ * mode on. Then a text selection, or a click on a part of the page, is
+ * posted to the wrapper as an anchor (the page's own words, a little before
+ * and after, a CSS-like path). The wrapper sends back the anchors to
+ * highlight (ids and the page's own words, never a comment or a name); the
+ * frame draws them (CSS highlights, an outline on a part), tells the wrapper
+ * which it found in page order, and posts the id of a highlight the reader
+ * clicks. No network: messages to the parent only. */
+export const ANNOTATE_BRIDGE_SOURCE = String.raw`(function(){"use strict";
+var D=document,W=window,on=false,marks=[],hits=[],hover=null;
+var HL=!!(W.CSS&&W.CSS.highlights&&W.Highlight),H=HL?W.CSS.highlights:null;
+var st=D.createElement("style");
+st.textContent="::highlight(sagax-note){background-color:rgba(255,196,0,.38)}::highlight(sagax-note-active){background-color:rgba(255,150,0,.62)}::highlight(sagax-note-done){background-color:rgba(150,150,150,.2)}"
++"[data-sagax-mark]{outline:2px solid rgba(255,170,0,.85)!important;outline-offset:2px!important}[data-sagax-mark=active]{outline:3px solid #f59e0b!important}[data-sagax-mark=done]{outline:1px dashed rgba(150,150,150,.7)!important}"
++"html.sagax-annotating [data-sagax-hover]{outline:2px dashed #2f6feb!important;outline-offset:2px!important;cursor:crosshair!important}";
+(D.head||D.documentElement).appendChild(st);
+function post(m){try{W.parent.postMessage(m,"*")}catch(e){}}
+function path(el){var p=[],e=el;while(e&&e.nodeType===1&&p.length<8){var t=e.localName,i=1,s=e;if(t==="body"){p.unshift("body");break}while((s=s.previousElementSibling))if(s.localName===t)i++;p.unshift(i>1?t+":nth-of-type("+i+")":t);e=e.parentElement}return p.join(" > ")}
+function texts(){var b=D.body,out=[],pos=0;if(!b)return{list:out,text:""};var w=D.createTreeWalker(b,4,null),n;while((n=w.nextNode())){out.push({n:n,s:pos});pos+=n.data.length}return{list:out,text:out.map(function(x){return x.n.data}).join("")}}
+function at(node,off){var r=D.createRange();r.setStart(D.body,0);try{r.setEnd(node,off)}catch(e){return -1}return r.toString().length}
+function locate(t,pos,end){var l=t.list;for(var i=0;i<l.length;i++){var e=l[i],n=e.n.data.length;if(pos>=e.s&&(pos<e.s+n||(end&&pos===e.s+n)))return{n:e.n,o:pos-e.s}}var last=l[l.length-1];return last?{n:last.n,o:last.n.data.length}:null}
+function selected(){var sel=W.getSelection();if(!sel||sel.isCollapsed||!sel.rangeCount||!D.body)return null;var r=sel.getRangeAt(0);if(!D.body.contains(r.commonAncestorContainer))return null;
+var t=texts(),a=at(r.startContainer,r.startOffset),b=at(r.endContainer,r.endOffset);if(a<0||b<=a)return null;b=Math.min(b,a+${THREAD_LIMITS.quoteChars});var q=t.text.slice(a,b);if(!q.trim())return null;
+var el=r.commonAncestorContainer;if(el.nodeType!==1)el=el.parentElement;if(!el)return null;
+return{kind:"text",quote:q,prefix:t.text.slice(Math.max(0,a-${THREAD_LIMITS.contextChars}),a),suffix:t.text.slice(b,b+${THREAD_LIMITS.contextChars}),path:path(el),tag:el.localName}}
+function element(el){var s=String(el.innerText||el.textContent||"").replace(/\s+/g," ").trim();return{kind:"element",quote:s.slice(0,160),prefix:"",suffix:"",path:path(el),tag:el.localName}}
+function tail(a,b){var n=Math.min(a.length,b.length,24);return n>0&&a.slice(a.length-n)===b.slice(b.length-n)}
+function head(a,b){var n=Math.min(a.length,b.length,24);return n>0&&a.slice(0,n)===b.slice(0,n)}
+function find(a,t){if(!a)return null;if(a.kind==="element"){var el=null;try{el=D.querySelector(a.path)}catch(e){}return el&&el.localName===a.tag?{el:el}:null}
+var q=a.quote,txt=t.text,best=-1,score=-1,i=txt.indexOf(q);while(i>=0){var s=0;if(a.prefix&&tail(txt.slice(Math.max(0,i-a.prefix.length),i),a.prefix))s+=1;if(a.suffix&&head(txt.slice(i+q.length,i+q.length+a.suffix.length),a.suffix))s+=1;if(s>score){score=s;best=i}if(score>=2)break;i=txt.indexOf(q,i+1)}
+if(best<0)return null;var x=locate(t,best,false),y=locate(t,best+q.length,true);if(!x||!y)return null;var r=D.createRange();try{r.setStart(x.n,x.o);r.setEnd(y.n,y.o)}catch(e){return null}return{range:r}}
+function clear(){if(H){H.delete("sagax-note");H.delete("sagax-note-active");H.delete("sagax-note-done")}var l=D.querySelectorAll("[data-sagax-mark]");for(var i=0;i<l.length;i++)l[i].removeAttribute("data-sagax-mark")}
+function draw(scroll){clear();hits=[];var t=texts(),open=[],act=[],done=[],found=[];
+marks.forEach(function(m){var f=find(m.anchor,t);if(!f)return;var box;if(f.range){(m.active?act:m.resolved?done:open).push(f.range);box=f.range.getBoundingClientRect()}else{f.el.setAttribute("data-sagax-mark",m.active?"active":m.resolved?"done":"open");box=f.el.getBoundingClientRect()}
+found.push({id:m.id,top:box.top+W.scrollY,left:box.left,r:f.range||f.el});if(scroll&&m.id===scroll)W.scrollTo({top:Math.max(0,box.top+W.scrollY-120),behavior:"smooth"})});
+if(H){if(open.length)H.set("sagax-note",new W.Highlight(...open));if(done.length)H.set("sagax-note-done",new W.Highlight(...done));if(act.length)H.set("sagax-note-active",new W.Highlight(...act))}
+found.sort(function(a,b){return a.top-b.top||a.left-b.left});hits=found;post({type:"${ANNOTATE_FOUND_MESSAGE}",v:1,ids:found.map(function(f){return f.id})})}
+function caret(x,y){if(D.caretPositionFromPoint){var c=D.caretPositionFromPoint(x,y);return c?{n:c.offsetNode,o:c.offset}:null}if(D.caretRangeFromPoint){var r=D.caretRangeFromPoint(x,y);return r?{n:r.startContainer,o:r.startOffset}:null}return null}
+function hitAt(e){var c=null;for(var i=0;i<hits.length;i++){var h=hits[i];if(h.r.nodeType===1){if(h.r.contains(e.target))return h.id}else{c=c||caret(e.clientX,e.clientY);try{if(c&&h.r.isPointInRange(c.n,c.o))return h.id}catch(x){}}}return null}
+W.addEventListener("message",function(e){if(e.source!==W.parent||!e.data||e.data.v!==1)return;var d=e.data;
+if(d.type==="${ANNOTATE_MODE_MESSAGE}"){on=d.on===true;D.documentElement.classList.toggle("sagax-annotating",on);if(!on&&hover){hover.removeAttribute("data-sagax-hover");hover=null}}
+else if(d.type==="${ANNOTATE_MARKS_MESSAGE}"&&Array.isArray(d.marks)){marks=d.marks.slice(0,${THREAD_LIMITS.threads}).filter(function(m){return m&&typeof m.id==="string"&&m.anchor&&typeof m.anchor.quote==="string"});draw(typeof d.scroll==="string"?d.scroll:null)}});
+D.addEventListener("mouseover",function(e){if(!on)return;var el=e.target;if(!el||el.nodeType!==1||el===D.body||el===D.documentElement)return;if(hover)hover.removeAttribute("data-sagax-hover");hover=el;el.setAttribute("data-sagax-hover","")},true);
+D.addEventListener("mouseup",function(){if(!on)return;setTimeout(function(){var a=selected();if(a)post({type:"${ANNOTATE_SELECT_MESSAGE}",v:1,anchor:a})},0)},true);
+D.addEventListener("keyup",function(e){if(on&&e.shiftKey){var a=selected();if(a)post({type:"${ANNOTATE_SELECT_MESSAGE}",v:1,anchor:a})}},true);
+D.addEventListener("click",function(e){var id=hitAt(e);if(id){post({type:"${ANNOTATE_FOCUS_MESSAGE}",v:1,id:id});if(on){e.preventDefault();e.stopPropagation()}return}
+if(!on)return;var sel=W.getSelection();if(sel&&!sel.isCollapsed)return;var el=e.target;if(!el||el.nodeType!==1||el===D.documentElement)return;if(el===D.body)return;e.preventDefault();e.stopPropagation();
+post({type:"${ANNOTATE_SELECT_MESSAGE}",v:1,anchor:element(el)})},true);
+var redraw=0;W.addEventListener("resize",function(){clearTimeout(redraw);redraw=setTimeout(function(){if(marks.length)draw(null)},200)});
+})();`;
 
 /** A presentation prints one slide per sheet: each slide is this tall in
  * print, and the wrapper's sheet is 297 mm by this, with no margin. */
@@ -357,7 +410,7 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
     : nonce !== undefined ? `<script nonce="${escapeHtml(nonce)}">${source}</script>` : "";
   const annotate = options.annotateNonce === undefined ? "" : own(ANNOTATE_SOURCE);
   const keep = (options.keepScroll === undefined ? "" : own(keepScrollSource(options.keepScroll)))
-    + (options.reportSize ? own(REPORT_SIZE_SOURCE) : "");
+    + (options.reportSize ? own(REPORT_SIZE_SOURCE) + own(ANNOTATE_BRIDGE_SOURCE) : "");
   const scheme = options.theme ? `<meta name="color-scheme" content="${options.theme}">` : "";
   if (input.kind === "markdown" || input.kind === "presentation") {
     const presentation = input.kind === "presentation";

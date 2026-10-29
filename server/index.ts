@@ -8213,7 +8213,36 @@ ROUTES.push(createPublishedPageRoutes({
   audit: (auth, req, row) => appendAdminAction(DATA_DIR, { category: "security", ...row, actor: adminActorFor(auth, req) }),
   // a person's own edit loses secret-shaped text, as a bot's proposal does
   redact: redactSecretsInText,
+  // annotations from the reader's bar: the signed-in reader, as a reading
+  // link sees them (publishedPageViewer), and the names in a page's threads
+  reader: (auth) => pageReaderFor(auth),
+  teamsOf: (principalId) => IDENTITY.kind === "perspicax" ? (principals.byId(principalId)?.teams ?? []).map((team) => team.id) : [],
+  names: (ids) => Object.fromEntries(ids.map((id) => [id, pageThreadName(id)])),
+  ownerActive: (page) => {
+    if (IDENTITY.kind !== "perspicax" || !page.ownerId) return true;
+    const person = principals.byId(page.ownerId);
+    return Boolean(person && person.disabledAt === undefined && !person.consoleDisabled);
+  },
 }));
+
+/** The signed-in reader behind an API call (annotations on a page): a person
+ * of the organization who is not disabled, or this computer's owner on a
+ * one-person server. Nobody else annotates. */
+function pageReaderFor(auth: RequestAuth): PageViewer {
+  if (IDENTITY.kind !== "perspicax") return computerOwner(auth) ? { computerOwner: true } : null;
+  if (auth.kind !== "session" || !auth.session.principalId) return null;
+  const person = principals.byId(auth.session.principalId);
+  if (!person || person.kind !== "human" || person.disabledAt !== undefined || person.consoleDisabled) return null;
+  return { principalId: person.id, computerOwner: false };
+}
+
+/** A name in a page's threads: a person, this computer's owner, or a bot. */
+function pageThreadName(id: string): string {
+  if (id.startsWith("bot:")) return store.bot(id.slice(4))?.name?.trim() || "Bot";
+  if (id === "owner") return cfg.profile?.name?.trim() || "Sagax";
+  const person = principals.byId(id);
+  return person ? personDisplayName(person) : "";
+}
 
 /** A message sent from an open page (2026-10-28, shared/data-context.ts):
  * the page reference stays only when it is this person's own page of this
