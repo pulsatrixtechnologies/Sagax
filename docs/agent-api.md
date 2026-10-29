@@ -21,7 +21,7 @@ names, parameters and limits as the reference design's agent tools, plus `get_ag
 | `get_agent` | read | `agents.read` | `agent_id`: the full profile for an audit (see below) |
 | `create_agent` | admin | `agents.create` | one temporary agent per call (see below), `name` (≤ 80 chars, one line), optional `description` and `idle_hours` (1 to 720, default 24); it greets the person itself. Only on the person's explicit ask |
 | `delete_agent` | admin | `agents.create` | `agent_id` of a temporary agent: archives it (see below). A lasting agent answers 409 `not_temporary` |
-| `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `queue` (default since 2026-10-17: waits its turn) / `reject` / `supersede` (stops the running turn this caller started and the approval it waits on; never the person's own turn or another caller's), optional `priority` `now` or `normal` (default `normal`), up to 8 `files` (workspace-relative, 25 MiB each), optional `thread_id` (one of the caller's own conversations, 404 `unknown_thread` otherwise). Every send lands in the agent's single chat with the person the caller works for (#1170); `thread_id` continues one of the caller's conversations instead. Answers a `handle` and a short `label` (the agent's name and the prompt's first words). `now` wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn. Past 10 `now` sends an hour the answer is `priority: "normal"` with `downgraded: true` and `priority_note` |
+| `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `queue` (default since 2026-10-17: waits its turn) / `reject` / `supersede` (stops the running turn this caller started and the approval it waits on; never the person's own turn or another caller's), optional `priority` `now` or `normal` (default `normal`), up to 8 `files` (workspace-relative, 25 MiB each), optional `thread_id` (one of the caller's own conversations, 404 `unknown_thread` otherwise). A bot's send lands in the agent's single chat with the person the caller works for (#1170); a person's AI client's send lands in its own conversation with the agent (2026-10-29, see Guarantees); `thread_id` continues one of the caller's conversations instead. Answers a `handle` and a short `label` (the agent's name and the prompt's first words). `now` wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn. Past 10 `now` sends an hour the answer is `priority: "normal"` with `downgraded: true` and `priority_note` |
 | `await_turn` | read | `agents.read` | `agent_id`, `handle`, `timeout_ms`. The handle is the one `send_prompt` returned, or the `{threadId, handle}` a one-way `send_to_bot` included. Never send the prompt again: wait again with the same handle |
 | `read_transcript` | read | `agents.read` | the whole transcript (the newest 2,000 entries; `truncated` says when there were more) |
 | `read_transcript_page` | read | `agents.read` | one bounded page: `limit` (1 to 200) and `before_ms` required, `after_ms` optional (inclusive unix ms), `cursor` for the next older page |
@@ -107,6 +107,21 @@ reads the entries just before it.
   the agent's own approval level, read live (#1169). `supersede` interrupts
   only a turn this caller started. Hidden conversations made before this
   version are shown again on the next start, nothing deleted.
+- **An AI client is another agent** (2026-10-29): a person's AI client
+  attached to Perspicax (`send_prompt`, `sagax_send`) is not the person
+  typing. Its sends go to its own conversation with the agent, one per
+  agent, person and client, reused until `thread_id` names another or
+  `newThread` asks for a fresh one (`shared/agent-conversation.ts`). The
+  thread is the person's (`ownerPrincipalId`) and stamped
+  `openedBy: { kind: "agent", botId: "agent:<slug>", name }` from the
+  `client_name` Perspicax signs into the assertion ("AI client" when it
+  sends none). Every bot-to-bot rule then holds: it is out of the person's
+  stream, sidebar, unread counts and landing thread, and is listed in the
+  bot's `botConversations` (kind `agent`) as "<client> ⇆ <bot>" with a
+  neutral icon, on desktop and iOS. Nothing in it notifies the person (push,
+  watch, banner, sound) except an approval or a question, which follows
+  Reach me as usual. The turn still runs as the person, with their rights
+  and sign-ins; the handle and `thread_id` point at that conversation.
 - **Isolation**: a bot reaches only its peers. That means the same team and
   scope, the per-pair allow-list, and never a hidden bot. A person reaches
   what `GET /api/bots` shows them, and nothing else exists for them (404

@@ -22,6 +22,10 @@ public struct BotConversation: Codable, Hashable, Identifiable, Sendable {
     /// The bot whose thread it is: the one that was written to.
     public var destinationBotId: String? { direction == "in" ? nil : otherBotId }
 
+    /// The other end is an outside agent (a person's AI client over MCP,
+    /// kind "agent", an `agent:` id), not a bot: a neutral icon, no mascot.
+    public var isAgent: Bool { kind == "agent" || BotConversations.isAgentId(otherBotId) }
+
     /// The moment the line sits at.
     public var at: Double { startedAt ?? updatedAt ?? 0 }
 }
@@ -36,6 +40,9 @@ public struct BotConversationLine: Hashable, Identifiable, Sendable {
 }
 
 public enum BotConversations {
+    /// An outside agent's id (shared/agent-conversation.ts): never a bot id.
+    public static func isAgentId(_ id: String) -> Bool { id.hasPrefix("agent:") }
+
     /// Where each conversation line goes: before the first row that starts
     /// after it (keyed by that row's index), or after the last row. Rows
     /// older than the loaded window are left out while earlier pages remain.

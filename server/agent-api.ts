@@ -19,9 +19,12 @@
 //   - a person's AI client, through the member API
 //     (/api/org/member/agents/*, Perspicax's tools of the same names): it
 //     reaches the bots that person can use in Sagax.
-// Either way every send lands in the agent's single chat with the person
-// the caller works for (#1170, like the reference design), never a hidden conversation:
-// the sender rides on the line and the chat folds the exchange (#291).
+// A bot's send lands in the agent's single chat with the person the caller
+// works for (#1170, like the reference design): the sender rides on the line
+// and the chat folds the exchange (#291). A person's AI client is another
+// agent (2026-10-29): its send lands in its own conversation with the bot,
+// drawn like a bot-to-bot one and silent for the person
+// (shared/agent-conversation.ts); the turn still runs as the person.
 import type { GuardDecision, GuardPolicy, GuardTarget, ToolGuardMode } from "./tool-guard.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
@@ -153,6 +156,10 @@ export interface AgentCaller {
    * signed as an organization admin. */
   sub?: string;
   admin?: boolean;
+  /** A person caller: the AI client or connection that made the call, as
+   * Perspicax signed it (`client_name`); names the outside agent's
+   * conversation (shared/agent-conversation.ts). */
+  client?: string;
   /** Bot callers: the person the source turn spoke for, when known (the
    * transport fills it; the core only carries it to notify). */
   speakerPrincipalId?: string;
@@ -266,10 +273,10 @@ export interface AgentApiDeps {
   messages(threadId: string): StoredMessage[];
   /** The live state of one conversation. */
   turnState(agentId: string, threadId: string): TurnState;
-  /** #1170: the agent's single chat with the person the caller works for
-   * (the open conversation they last wrote in), else their first one. Never
-   * a hidden conversation: the person sees, closes and sets the level of
-   * every conversation their bot has. */
+  /** Where a send that names no thread goes. A bot caller: the agent's
+   * single chat with the person it works for (#1170). A person's AI client:
+   * its own conversation with the agent (2026-10-29,
+   * shared/agent-conversation.ts), reused across sends. */
   conversation(caller: AgentCaller, agentId: string): Promise<{ threadId: string } | Refusal>;
   /** Put the prompt (and the staged files) into the conversation and start or
    * queue its turn. messageId is the stored prompt's id, when known. */
@@ -771,8 +778,8 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       }
       const agent = await reachable(caller, agentId);
       if (isRefusal(agent)) return agent;
-      // #1170: the agent's single chat with the person, unless the caller
-      // names one of its own conversations to continue.
+      // The conversation the caller's sends go to (deps.conversation), unless
+      // it names one of its own conversations to continue.
       let conversation: { threadId: string } | Refusal;
       if (continued !== null) {
         if (!deps.threads(caller, agentId).some((thread) => thread.threadId === continued)) {

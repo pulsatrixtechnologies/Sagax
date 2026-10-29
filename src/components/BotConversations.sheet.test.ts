@@ -64,4 +64,27 @@ describe("bot-to-bot conversation sheet (#1502)", () => {
     expect(host.querySelector("[data-testid=bot-exchange-error]")).toBeNull();
     expect(host.textContent).toContain("Which database?");
   });
+
+  it("draws an outside agent's conversation (2026-10-29) with a neutral icon: its lines are the agent's, the replies the bot's", async () => {
+    const agentRow = { threadId: "g1", otherBotId: "agent:voice-assistant-phone", otherName: "Voice assistant (phone)", direction: "in" as const, kind: "agent" as const, updatedAt: 1 };
+    await act(async () => { root.render(createElement(BotConversationLine, { self, row: agentRow, bots: [] })); });
+    expect(host.querySelector("[data-testid=bot-exchange-chip] [data-agent-avatar]")).not.toBeNull();
+    reply.next.push(async () => ({ messages: [
+      { id: "m1", role: "user", kind: "text", text: "What is on my calendar?", at: Date.now() - 1000 },
+      { id: "m2", role: "bot", kind: "text", text: "Two meetings.", at: Date.now() },
+    ] }));
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>("[data-testid=bot-exchange-chip]")!.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const sheet = host.querySelector("[data-testid=bot-exchange-sheet]")!;
+    expect(sheet.textContent).toContain("Voice assistant (phone)");
+    expect(sheet.textContent).toContain("Ottoline");
+    // the header and the agent's line carry the icon, never a mascot
+    expect(sheet.querySelectorAll("[data-agent-avatar]").length).toBe(2);
+    const question = sheet.querySelector("[data-mid=m1]")!;
+    expect(question.textContent).toContain("Voice assistant (phone)");
+    expect(question.querySelector("[data-agent-avatar]")).not.toBeNull();
+    expect(sheet.querySelector("[data-mid=m2] [data-agent-avatar]")).toBeNull();
+  });
 });

@@ -2,6 +2,7 @@ import { newId, type ModelSelection } from "./contracts.ts";
 import { botMascotBody } from "../shared/mascot-bodies.ts";
 import { botMascotSkin } from "../shared/mascot-skins.ts";
 import { takeImportName } from "../shared/import-name.ts";
+import { isAgentConversation } from "../shared/agent-conversation.ts";
 import { MAX_TEAM_BACKUP_BYTES, parseTeamBackup, type BackupTask, type TeamBackup } from "../shared/team-backup.ts";
 import type { BotVisibility } from "../shared/wire.ts";
 import type { BotRecord, GroupRecord, Message, Store, TaskRecord } from "./store.ts";
@@ -283,7 +284,9 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
         // Same rule as a message's `from`: the opener is remapped to its
         // imported twin, and an opener outside this backup leaves no record
         // rather than a bot id that resolves to a stranger.
-        const opener = task.openedBy && botIds.get(task.openedBy.botId);
+        // An outside agent (shared/agent-conversation.ts) is no bot: its
+        // `agent:` id stays, so its conversation stays out of the stream.
+        const opener = task.openedBy && (isAgentConversation(task) ? task.openedBy.botId : botIds.get(task.openedBy.botId));
         if (task.openedBy && opener) record.openedBy = { botId: opener, name: task.openedBy.name, at: task.openedBy.at, ...(task.openedBy.kind ? { kind: task.openedBy.kind } : {}) };
         // A closed thread stays closed after import — the pile the person
         // tidied does not come back as a pile — with the closer remapped

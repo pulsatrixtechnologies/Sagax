@@ -111,6 +111,7 @@ export function BotConversationLine({ self, row, bots, showToolCalls = false, co
   return (
     <ConversationLink
       bot={other}
+      agentId={row.otherBotId}
       name={row.otherName}
       color={other.color}
       testId="bot-exchange-chip"

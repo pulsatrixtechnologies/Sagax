@@ -5,10 +5,11 @@ import type { ReactNode } from "react";
 import { t } from "@/lib/i18n";
 import { mausInk, type MausColor } from "@/lib/mascot";
 import type { Bot } from "@/state/store";
-import { BotAvatar } from "./Avatar";
+import { PartyAvatar } from "./PartyAvatar";
 
 export function ConversationLink({
   bot,
+  agentId,
   name,
   color,
   onClick,
@@ -20,6 +21,9 @@ export function ConversationLink({
   children,
 }: {
   bot: { name: string; color: MausColor } & Partial<Bot>;
+  /** The other end's id when it may be an outside agent (`agent:`): a
+   * neutral icon stands in for the mascot. */
+  agentId?: string;
   name: string;
   color: MausColor;
   onClick: () => void;
@@ -44,7 +48,7 @@ export function ConversationLink({
         className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-ink-secondary hover:bg-raised"
       >
         <span>{t("chat.goToConversation")}</span>
-        <BotAvatar bot={bot as Bot} state="happy" size={16} animated={false} />
+        <PartyAvatar id={agentId} bot={bot} size={16} />
         <span className="font-medium" style={{ color: mausInk(color) }}>{name}</span>
       </button>
       {children}

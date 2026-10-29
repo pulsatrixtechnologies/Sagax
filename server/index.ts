@@ -61,6 +61,7 @@ import { staleSessionReason, type StaleSessionReason } from "./stale-session.ts"
 import { isSmallTalk, SMALL_TALK_CLOUD_REFUSAL, SMALL_TALK_TURN_NOTE } from "./small-talk.ts";
 import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
 import { conversationThreadId, isStreamSegment } from "../shared/single-stream.ts";
+import { agentCallerLabel, agentConversationNotifies, agentOpenerId, isAgentConversation } from "../shared/agent-conversation.ts";
 import { alwaysDenyOffered } from "../shared/approval-rule-card.ts";
 import { isOpaqueId, quotedIdOr } from "../shared/human-id.ts";
 import { createRecallTopicInternalRoutes } from "./routes/recall-topic-internal.ts";
@@ -7626,7 +7627,12 @@ const outbound = outboundWiring({
   store,
   botName: (botId) => store.bot(botId)?.name || "Bot",
   // on whose behalf the call says it is made: the person, else the organization
-  personName: (botId, threadId) => store.taskByThread(botId, threadId)?.openedBy?.name || orgState.org?.name || "",
+  personName: (botId, threadId) => {
+    const task = store.taskByThread(botId, threadId);
+    // an outside agent's conversation runs for its person, not the agent
+    if (isAgentConversation(task)) return (task?.ownerPrincipalId ? adminPerson(task.ownerPrincipalId).name : "") || orgState.org?.name || "";
+    return task?.openedBy?.name || orgState.org?.name || "";
+  },
   language: () => (cfg.language === "en" ? "en" : "fr"),
   twilio: (turn, args) => perspicaxMcp
     ? perspicaxMcp.callTool({ ...turn, name: "twilio_api__write", args })
@@ -14336,6 +14342,9 @@ function notify(notification: Notification | null) {
   if (notification && notification.kind !== "approval" && notificationInHiddenThread(notification.threadId)) return;
   // a bot-to-bot thread never buzzes the person for its own replies
   if (notification && notificationIsInterBotChatter(notification)) return;
+  // 2026-10-29: an outside agent's conversation (a person's AI client over
+  // MCP) is silent for the person, but for what only they can answer
+  if (notification && notificationInAgentConversation(notification)) return;
   // the conversation on a live voice call is heard, not buzzed (notify.ts)
   if (notification && quietForCall(notification, lastPersonMessage(notification.threadId), Date.now(), Boolean(voiceCalls.active(notification.threadId)))) return;
   if (notification && QUIET_TURN_NEWS.has(notification.kind) && quietTurnThreads.has(notification.threadId)) return;
@@ -14410,6 +14419,14 @@ function notificationIsInterBotChatter(notification: Notification): boolean {
   const bot = notification.threadId ? store.botByThread(notification.threadId) : undefined;
   const task = bot && notification.threadId ? store.taskByThread(bot.id, notification.threadId) : undefined;
   return Boolean(bot && task && isInterBotThread(bot.id, task));
+}
+
+/** Whether a notification belongs to an outside agent's conversation with a
+ * bot and is not one the person must act on (shared/agent-conversation.ts). */
+function notificationInAgentConversation(notification: Notification): boolean {
+  if (!notification.threadId || agentConversationNotifies(notification.kind)) return false;
+  const bot = store.botByThread(notification.threadId);
+  return Boolean(bot && isAgentConversation(store.taskByThread(bot.id, notification.threadId)));
 }
 
 /** The person's latest message in a thread (a call turn carries voiceCall). */
@@ -36112,6 +36129,8 @@ function botForViewer<T extends Record<string, unknown>>(bot: T, viewerId: strin
   const viewerFacts = authzViewerFromId(viewerId);
   const conversations = interBotConversations(record.id, store.bots, (owner, task, other) => {
     const ownerRecord = store.bot(owner.id);
+    // an outside agent's conversation: its person's, like any thread of theirs
+    if (isAgentConversation(task)) return Boolean(ownerRecord) && botThreadReadable(ownerRecord!, task.threadId, viewerId) && canOnBot(viewerFacts, "bot.use", botFacts(ownerRecord!));
     const otherRecord = other ? store.bot(other.id) : undefined;
     return Boolean(ownerRecord && otherRecord)
       && botThreadReadable(ownerRecord!, task.threadId, viewerId)
@@ -40881,12 +40900,10 @@ const agentApi = createAgentApi({
     const target = store.bot(agentId);
     if (!target) return agentRefuse(404, "unknown_agent", "No such agent.");
     if (caller.kind === "person") {
-      const existing = agentUnifiedThread(target, caller.id);
-      if (existing) return { threadId: existing };
-      // their first conversation with the bot: an ordinary one, never confidential
-      const created = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/tasks`, body: { confidential: false } });
-      const threadId = (created.body as { task?: { threadId?: unknown } })?.task?.threadId;
-      if (created.status >= 300 || typeof threadId !== "string") return agentRefuse(created.status >= 400 ? created.status : 502, "not_started", "A conversation with this agent could not be opened.");
+      // 2026-10-29: a person's AI client is another agent: its own
+      // conversation with the bot, never the person's chat with it
+      const threadId = agentConversationFor(target, caller.id, caller.client, false);
+      if (!threadId) return agentRefuse(502, "not_started", "A conversation with this agent could not be opened.");
       return { threadId };
     }
     const from = agentApiCallerBot(caller);
@@ -40964,6 +40981,33 @@ const agentApi = createAgentApi({
 function agentUnifiedThread(target: BotRecord, principalId: string | undefined): string | undefined {
   return conversationThreadFor(target, principalId);
 }
+/** 2026-10-29: an outside agent's conversation with a bot (a person's AI
+ * client over MCP, shared/agent-conversation.ts): the person's open one with
+ * this client, the newest, else a new one (`fresh` always opens one). It is
+ * the person's thread (ownerPrincipalId), never selected, never
+ * confidential, stamped `openedBy` kind "agent" so every bot-to-bot rule
+ * holds: out of their stream, sidebar and unread counts, and silent. */
+function agentConversationFor(target: BotRecord, principalId: string, client: string | undefined, fresh: boolean): string | null {
+  const person = principalId.trim().toLowerCase();
+  const name = agentCallerLabel(client);
+  const opener = agentOpenerId(name);
+  if (!fresh) {
+    const at = (task: TaskRecord) => task.updatedAt ?? task.createdAt;
+    const open = store.tasks(target.id)
+      .filter((task) => isAgentConversation(task) && task.openedBy?.botId === opener && task.ownerPrincipalId === person
+        && task.archivedAt === undefined && !task.closedBy && task.confidential !== true && !task.routineRunId)
+      .sort((a, b) => at(b) - at(a))[0];
+    if (open) return open.threadId;
+  }
+  const task = store.createTask(target.id, undefined, false, undefined, { botId: opener, name, kind: "agent", at: Date.now() }, undefined,
+    isPrincipalId(person) ? person : undefined, undefined, false, undefined, false);
+  return task?.threadId ?? null;
+}
+/** The outside agents' conversations a person has with a bot. */
+function agentConversationsOf(target: BotRecord, principalId: string): string[] {
+  const person = principalId.trim().toLowerCase();
+  return store.tasks(target.id).filter((task) => isAgentConversation(task) && task.ownerPrincipalId === person && task.confidential !== true).map((task) => task.threadId);
+}
 /** The same for a bot caller: the conversation of the person its work is for. */
 function agentUnifiedThreadForBot(caller: AgentCaller, target: BotRecord): string | undefined {
   const from = agentApiCallerBot(caller);
@@ -40985,6 +41029,7 @@ function memberForAgentCaller(caller: AgentCaller): MemberPerson {
     name: caller.name,
     admin: caller.admin === true,
     actor: caller.via === "console" ? "console" : "perspicax-mcp",
+    ...(caller.client ? { client: caller.client } : {}),
   };
 }
 /** A person's scopes from their permissions (shared/permissions.ts). */
@@ -41000,6 +41045,7 @@ function agentApiForMember(person: MemberPerson, tool: string, args: unknown, si
   return agentApi.call({
     kind: "person", id: person.principalId, name: person.name, sub: person.sub, admin: person.admin,
     scopes: agentScopesFor(person), via: person.actor === "console" ? "console" : "perspicax-mcp",
+    ...(person.client ? { client: person.client } : {}),
   }, tool, args, signal);
 }
 const orgMember = createOrgMemberRoutes({
@@ -41059,6 +41105,14 @@ const orgMember = createOrgMemberRoutes({
   hiddenThreadOf: (botId, principalId) => {
     const bot = store.bot(botId);
     return bot ? agentUnifiedThread(bot, principalId) ?? null : null;
+  },
+  agentConversation: (botId, person, fresh) => {
+    const bot = store.bot(botId);
+    return bot ? agentConversationFor(bot, person.principalId, person.client, fresh) : null;
+  },
+  agentConversationsOf: (botId, principalId) => {
+    const bot = store.bot(botId);
+    return bot ? agentConversationsOf(bot, principalId) : [];
   },
   markAiClientLine,
   approvalAnswerer: (threadId, requestId) => {
@@ -46396,8 +46450,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const owner = store.bot(botId);
       if (threadId === undefined &&
         (auth.kind === "session" || req.headers["x-openmausbot-companion"] === "1") &&
-        // Organization server: only the caller's own threads count.
-        (owner ? threadsShownTo(owner, store.tasks(botId), scopedThreadViewer()) : store.tasks(botId)).length > 1) {
+        // Organization server: only the caller's own threads count, never an
+        // outside agent's conversation with the bot (shared/agent-conversation.ts).
+        (owner ? threadsShownTo(owner, store.tasks(botId), scopedThreadViewer()) : store.tasks(botId)).filter((task) => !isAgentConversation(task)).length > 1) {
         throw Object.assign(new Error("This bot has more than one thread. Update the Sagax app on this device, then choose a thread and try again."), { status: 409 });
       }
     };

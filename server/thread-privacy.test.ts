@@ -119,6 +119,13 @@ describe("listing and landing", () => {
     expect(viewerThread({ tasks, viewerId: ALICE, botOwnerPrincipalId: ALICE, current: "a1" })).toBe("a1");
     expect(viewerThread({ tasks, viewerId: GUS, botOwnerPrincipalId: ALICE, current: "a1" })).toBeUndefined();
   });
+
+  it("never lands on an outside agent's conversation with the bot (2026-10-29), even the newest", () => {
+    const agent = { threadId: "g1", ownerPrincipalId: GUS, createdAt: 5, updatedAt: 500, openedBy: { botId: "agent:voice", name: "Voice", kind: "agent", at: 5 } };
+    expect(viewerThread({ tasks: [...tasks, agent], viewerId: GUS, botOwnerPrincipalId: ALICE, current: "a1" })).toBeUndefined();
+    const own = { threadId: "g0", ownerPrincipalId: GUS, createdAt: 1, updatedAt: 2 };
+    expect(viewerThread({ tasks: [...tasks, agent, own], viewerId: GUS, botOwnerPrincipalId: ALICE, current: "a1" })).toBe("g0");
+  });
 });
 
 describe("narrowBotForViewer", () => {

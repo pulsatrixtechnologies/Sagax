@@ -19,6 +19,15 @@ describe("interBotConversations", () => {
     expect(interBotConversations("b", bots).map((row) => [row.threadId, row.direction, row.otherName])).toEqual([["c-work", "out", "Charlie"], ["work", "in", "Alpha"]]);
     expect(interBotConversations("c", bots)).toEqual([{ threadId: "c-work", otherBotId: "b", otherName: "Bravo", direction: "in", kind: "pair", updatedAt: 9 }]);
   });
+  it("names an outside agent's conversation (a person's AI client over MCP) on the bot only, kind agent", () => {
+    const withAgent: ConversationBot[] = [
+      ...bots,
+      { id: "d", name: "Delta", tasks: [{ threadId: "d-agent", updatedAt: 3, createdAt: 2, openedBy: { botId: "agent:voice-assistant-phone", name: "Voice assistant (phone)", kind: "agent" } }] },
+    ];
+    expect(interBotConversations("d", withAgent)).toEqual([{ threadId: "d-agent", otherBotId: "agent:voice-assistant-phone", otherName: "Voice assistant (phone)", direction: "in", kind: "agent", updatedAt: 3, startedAt: 2 }]);
+    // no bot sees it as one it opened
+    expect(interBotConversations("a", withAgent).some((row) => row.threadId === "d-agent")).toBe(false);
+  });
   it("drops what the viewer may not read", () => {
     expect(interBotConversations("a", bots, () => false)).toEqual([]);
     expect(interBotConversations("b", bots, (_owner, task) => task.threadId === "work").map((row) => row.threadId)).toEqual(["work"]);
