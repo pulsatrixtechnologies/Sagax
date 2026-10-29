@@ -611,6 +611,8 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"DELETE","kind":"pattern","route":"^\\/api\\/pages\\/([\\w-]+)\\/reader-comments\\/([\\w-]+)$","tier":"admin","readOnly":false,"scope":"pages:admin","defaultEnabled":false,"destructive":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/pages\\/([\\w-]+)\\/reader-comments$","tier":"read","readOnly":true,"scope":"pages:read","defaultEnabled":false},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/pages\\/([\\w-]+)\\/share$","tier":"write","readOnly":false,"scope":"pages:write","defaultEnabled":false},
+  {"method":"PUT","kind":"pattern","route":"^\\/api\\/pages\\/([\\w-]+)\\/state\\/lock$","tier":"write","readOnly":false,"scope":"pages:write","defaultEnabled":false},
+  {"method":"DELETE","kind":"pattern","route":"^\\/api\\/pages\\/([\\w-]+)\\/state$","tier":"admin","readOnly":false,"scope":"pages:admin","defaultEnabled":false,"destructive":true},
   {"method":"PUT","kind":"pattern","route":"^\\/api\\/pages\\/([\\w-]+)\\/state$","tier":"write","readOnly":false,"scope":"pages:write","defaultEnabled":false},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/pages\\/([\\w-]+)\\/threads\\/([\\w-]+)\\/accept$","tier":"write","readOnly":false,"scope":"pages:write","defaultEnabled":false},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/pages\\/([\\w-]+)\\/threads\\/([\\w-]+)\\/decline$","tier":"write","readOnly":false,"scope":"pages:write","defaultEnabled":false},
