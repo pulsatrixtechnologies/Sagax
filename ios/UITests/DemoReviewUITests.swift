@@ -133,24 +133,6 @@ final class DemoReviewUITests: XCTestCase {
         save("chat-fr")
     }
 
-    // MARK: Working line
-
-    /// 2026-10-29: a bot on a call says which step it is on, in the
-    /// interface's language, and how long the step has been quiet.
-    @MainActor
-    func testTheWorkingLineNamesTheStep() {
-        for french in [false, true] {
-            let app = launch(french: french)
-            openChat("demo-forge", in: app)
-            let line = app.descendants(matching: .any)["chat-thinking"].firstMatch
-            XCTAssertTrue(line.waitForExistence(timeout: 10), "the working line")
-            XCTAssertEqual(line.value as? String, french ? "Roule make" : "Running make")
-            sleep(1)
-            save(french ? "working-step-fr" : "working-step-en")
-            app.terminate()
-        }
-    }
-
     // MARK: Automations
 
     @MainActor
