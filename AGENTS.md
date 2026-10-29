@@ -240,6 +240,22 @@ and recipients outside the allowed list hold a call, and Sagax shows that
 itself. Below Full the card asks, never a typed word. The connectors
 section says the same for mail, Teams and calendar (`outwardRule`).
 
+## Work style: one section every turn reads (2026-10-29)
+
+Measured against the reference app, our bots asked for what one search
+would have found, stopped at the first failed call or repeated it unchanged,
+listed options instead of finishing, and opened with preamble. Every turn
+(direct, room, routine) now gets a "Work style" section
+(`WORK_STYLE_PROMPT`, server/system-prompt.ts, id `work-style`), placed
+after the persona, the soul and RULES.md and before memory, in the stable
+half: plan in one or two lines then keep going to the result (unfinished is
+reported as unfinished); search memory, session_search, files and tools
+before asking; on a failed call change the cause and retry once, then
+another route, then one line on what failed; name the one next step, no
+option lists; the answer first, in the person's language, no preamble, a
+one-line reply stays one line. The soul and the rules stay ahead of it and
+may sharpen it. Tests: `server/system-prompt.test.ts`.
+
 ## Grok's own connectors reach the person's Grok turn (2026-10-28)
 
 Grok's grok.com connectors (Outlook, Microsoft Teams, Gmail, SharePoint)

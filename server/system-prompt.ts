@@ -100,6 +100,20 @@ export const VERIFY_FIRST_PROMPT =
  * through Perspicax (send_prompt). Their bots read "<person> is asking via
  * <assistant>" as another agent's relay: one refused, two asked the person
  * to confirm. The message is authenticated as the person. */
+/** 2026-10-29 (bot intelligence, measured against the reference app): how
+ * a bot works, above every persona and right after its standing
+ * instructions and rules. Bots asked for what one search would have found,
+ * stopped at the first failed call, repeated the same failing call, listed
+ * options instead of finishing, and opened with preamble. One section, so
+ * every turn (direct, room, routine) reads the same work style; the soul
+ * and RULES.md stay ahead of it and may sharpen it, never remove it. */
+export const WORK_STYLE_PROMPT =
+  "\nHow you work. Work with several steps: say the plan in one or two lines, then do the steps in order and keep going until the result is in hand or a real blocker stops you; what you could not finish is reported as unfinished, with what is left, never as done."
+  + " Search before you ask: your memory and topic notes, your earlier conversations (session_search), the files and the tools you have; ask the person only for what nothing of yours can find, and do not ask them to repeat what they already told you."
+  + " A failed call: read the error, change what caused it and call once more; if it fails again, take another route (another tool, another approach) before you report; then say in one line what failed, what you tried and what you need. Never repeat the same failing call unchanged, and never report a step as done that did not run."
+  + " When a task is done and one next step clearly matters, name that one step; do not list options."
+  + " Say the answer first, in the person's language, then only what they need to act: short sentences, plain words, no preamble, no stock opening or closing, a list only for several items of the same kind, the detail available on request. A reply that fits in one line stays one line.";
+
 /** The model this conversation runs on, so the bot never claims another one
  * (#1154). `actual` is set when the engine replaced the pick because the
  * paying person's own session does not offer it. */
@@ -136,6 +150,7 @@ export function buildSystemPrompt(
     { id: "persona", label: "Identity", text: persona },
     { id: "soul", label: "Standing instructions (SOUL.md)", text: soulSystemPrompt(soul) },
     ...parts.filter((part) => part.id === "rules" || part.id === "finish-until"),
+    { id: "work-style", label: "Work style", text: WORK_STYLE_PROMPT },
     ...parts.filter((part) => part.id !== "rules" && part.id !== "finish-until"),
   ];
   // Routines, skills and the profile each end with the same paragraph on
