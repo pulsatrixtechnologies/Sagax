@@ -1103,7 +1103,7 @@ import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalMcpInputFromAgent, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
-import { readsGithubToken, withGithubToken } from "./github-mcp-token.ts";
+import { readsGithubToken, githubServersAsPerson, githubWithheldPrompt, withGithubToken } from "./github-mcp-token.ts";
 import { createGithubCredentialRoutes } from "./routes/github-credentials.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
 import { testStdioMcpCommand, testStdioMcpStream } from "./mcp-stdio-test.ts";
@@ -21692,6 +21692,7 @@ async function startTurn(
       if (!warmOnly && dispatchContext.handoff) handoffs.begin(threadId, dispatchClaimId, dispatchContext.handoff);
 
       const integrations: NonNullable<Parameters<typeof instance.adapter.sendTurn>[0]["integrations"]> = {};
+      let githubWithheld: string[] = [];
       let browser: Awaited<ReturnType<typeof browserIntegration>> = null;
       const selectedSkills = selectBundledSkills(
         providerText,
@@ -21710,7 +21711,9 @@ async function startTurn(
       // never pre-allowed, so every call rides the normal permission flow.
       if (instance.adapter.capabilities.customMcp === true) {
         await refreshMcpOAuth(bot);
-        attachCustomMcp(integrations, withGithubToken(engineMcpServers(bot, threadId), githubAccountToken(orgSpeakerPrincipal(bot, speaker))), cfg);
+        const mounted = mcpServersAsPerson(bot, orgSpeakerPrincipal(bot, speaker), threadId);
+        attachCustomMcp(integrations, mounted.servers, cfg);
+        githubWithheld = mounted.githubWithheld;
       }
       // Slice 5: the bot's Perspicax profiles, as the person who speaks.
       let perspicaxPrompt = "";
@@ -22464,7 +22467,7 @@ async function startTurn(
         { id: "cloud-home", label: "OMB Cloud", text: CLOUD_HOME ? cloudHomePrompt(Boolean(integrations.agents) && lendingEnabled()) : "" },
         // gated on the integration, not the key: the hint only goes to a
         // bot whose driver actually mounted the tools
-        { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
+        { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) + githubWithheldPrompt(githubWithheld) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
         // run_with_engine is shown to a person's own direct turn only (not one hop away)
         { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker, { level: promptApprovalLevel, relay: Boolean(integrations.agents) && commsDepth === 0 }) },
@@ -23508,7 +23511,8 @@ async function routineWatchCallTool(routine: WatchRoutine, tool: string, args: R
   const parsed = parseToolId(tool);
   if (parsed.server) {
     await refreshMcpOAuth(bot);
-    const spec = engineMcpServers(bot)[parsed.server];
+    const runAs = effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) }) || effectiveBotOwner(bot);
+    const spec = mcpServersAsPerson(bot, runAs.trim().toLowerCase()).servers[parsed.server];
     if (spec) {
       if (!("url" in spec)) return { error: "A watch reaches the bot's remote MCP servers and Perspicax; this server only runs inside a turn" };
       if (mcpDisabledTools(cfg)[parsed.server]?.includes(parsed.name)) return { error: "This tool is turned off for this workspace" };
@@ -25551,9 +25555,12 @@ async function runGroupMemberTurn(
   }
   if (messagesWanted()) integrations.messages = messagesIntegration(bot.id, threadId, internalGeneration);
   // user-configured MCP servers: same gating as the 1:1 site above.
+  let roomGithubWithheld: string[] = [];
   if (instance.adapter.capabilities.customMcp === true) {
     await refreshMcpOAuth(bot);
-    attachCustomMcp(integrations, withGithubToken(engineMcpServers(bot, threadId), githubAccountToken(orgSpeakerPrincipal(bot, roomAccessSpeaker))), cfg);
+    const mounted = mcpServersAsPerson(bot, orgSpeakerPrincipal(bot, roomAccessSpeaker), threadId);
+    attachCustomMcp(integrations, mounted.servers, cfg);
+    roomGithubWithheld = mounted.githubWithheld;
   }
   // Slice 5: the bot's Perspicax profiles, as the person who speaks in the room.
   let roomPerspicaxPrompt = "";
@@ -26035,7 +26042,7 @@ async function runGroupMemberTurn(
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, ...(roomStable ? { cwdElsewhere: true } : {}) }) : "" },
     { id: "files-cwd", label: "Current working folder", text: roomStable && workspace ? workspaceCwdPrompt(cwd) : "" },
     { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
-    { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
+    { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) + githubWithheldPrompt(roomGithubWithheld) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
     { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(readyBot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" }, { level: roomPromptLevel }) },
     { id: "approval-level", label: "Approval level", text: approvalLevelPrompt(roomPromptLevel) },
@@ -28682,6 +28689,17 @@ function engineMcpServers(bot: BotRecord, threadId?: string) {
   // (server/mcp-tool-filter.ts); listings only need the names.
   return threadId === undefined ? servers : withDisabledTools(servers, mcpDisabledTools(cfg), threadId);
 }
+/** The bot's MCP servers as `person` (server/github-mcp-token.ts): on an
+ * organization server each GitHub server carries that person's own GitHub
+ * connection, never the sign-in or header it was saved with, and is left
+ * out (named in githubWithheld) when they have none. */
+function mcpServersAsPerson(bot: BotRecord, person: string | null | undefined, threadId?: string): { servers: ReturnType<typeof engineMcpServers>; githubWithheld: string[] } {
+  const servers = engineMcpServers(bot, threadId);
+  const token = githubAccountToken(person);
+  if (IDENTITY.kind !== "perspicax") return { servers: withGithubToken(servers, token), githubWithheld: [] };
+  const asPerson = githubServersAsPerson(servers, token);
+  return { servers: asPerson.servers, githubWithheld: asPerson.withheld };
+}
 /** Organization server: a server-wide MCP server that is a command would
  * run on this host, where no person's tools run (withholdHostTools). It is
  * kept in config.json but never mounted; a person adds a command as their
@@ -30290,7 +30308,7 @@ const artifactRefresher = createArtifactRefresher({
       const bot = store.bot(botId);
       if (!bot) return undefined;
       await refreshMcpOAuth(bot);
-      return engineMcpServers(bot)[name];
+      return mcpServersAsPerson(bot, effectiveBotOwner(bot).trim().toLowerCase()).servers[name];
     },
     toolDisabled: (server, tool) => Boolean(mcpDisabledTools(cfg)[server]?.includes(tool)),
     workspaceRead: (botId, path) => readWorkspaceText(botId, path).text,
@@ -31328,7 +31346,9 @@ ROUTES.push(createBackgroundBriefRoutes({
   },
   reads: async (botId) => {
     const bot = store.bot(botId);
-    const servers = bot ? customMcpServers(cfg, bot.mcpServers) : {};
+    // a GitHub server reads as the bot's owner, never as whoever saved it
+    const saved = bot ? customMcpServers(cfg, bot.mcpServers) : {};
+    const servers = bot && IDENTITY.kind === "perspicax" ? githubServersAsPerson(saved, githubAccountToken(effectiveBotOwner(bot).trim().toLowerCase())).servers : saved;
     const signal = AbortSignal.timeout(12_000);
     const apps = await listBriefApps(servers, mcpDisabledTools(cfg), signal);
     return {
