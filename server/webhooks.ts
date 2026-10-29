@@ -1737,6 +1737,20 @@ export class WebhookManager {
     return { id: current.id };
   }
 
+  /** 2026-10-29: a new key a bot asked for on the person's behalf
+   * (sagax_settings routine.webhook): it waits for the person to copy it
+   * once (Show the token), never returned to the bot. */
+  rotatePending(id: string): { webhook: WebhookTrigger } | null {
+    const rotated = this.rotateSecret(id);
+    if (!rotated) return null;
+    const current = this.webhooks.find((candidate) => candidate.id === id);
+    if (!current) return null;
+    current.pendingToken = rotated.secret;
+    this.save();
+    this.emit(current);
+    return { webhook: this.toPublic(current) };
+  }
+
   /** The key waiting for the owner of this routine's trigger, once. */
   revealForRoutine(routineId: string): { id: string; secret: string } | null {
     const trigger = this.webhooks.find((candidate) => candidate.routineId === routineId);

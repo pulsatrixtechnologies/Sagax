@@ -894,3 +894,85 @@ describe("sagax_settings: a skill from GitHub (2026-10-29)", () => {
     }
   });
 });
+
+describe("sagax_settings: plugins, MCP servers and a routine's webhook (2026-10-29)", () => {
+  it("installs a plugin for one bot or for every bot, updates, turns off and removes it, by Connect apps' own routes", async () => {
+    const h = harness({ mode: "full" });
+    const cases: Array<[unknown, { method: string; path: string; body?: unknown }]> = [
+      [{ marketplace: "pulsatrix", plugin: "pulsatrix-flow" }, { method: "POST", path: "/api/bots/b2/plugins/install", body: { marketplace: "pulsatrix", plugin: "pulsatrix-flow" } }],
+      [{ marketplace: "acme", plugin: "acme-flow", everyone: true }, { method: "POST", path: "/api/marketplaces/acme/plugins/acme-flow", body: {} }],
+      [{ marketplace: "acme", plugin: "acme-flow", everyone: true, update: true }, { method: "POST", path: "/api/marketplaces/acme/plugins/acme-flow/update" }],
+      [{ key: "pulsatrix-flow@pulsatrix", enabled: false }, { method: "PATCH", path: "/api/bots/b2/plugins/pulsatrix-flow@pulsatrix", body: { enabled: false } }],
+      [{ key: "pulsatrix-flow@pulsatrix", uninstall: true }, { method: "DELETE", path: "/api/bots/b2/plugins/pulsatrix-flow@pulsatrix" }],
+      [{ marketplace: "acme", plugin: "acme-flow", everyone: true, uninstall: true }, { method: "DELETE", path: "/api/marketplaces/acme/plugins/acme-flow" }],
+    ];
+    for (const [value, route] of cases) {
+      const done = await h.call({ action: "set", key: "bot.plugin", target: "b2", value });
+      expect(String(done.body.text), JSON.stringify(value)).toMatch(/^Done/);
+      expect(h.planned.at(-1)).toMatchObject({ effect: "run", ...route });
+    }
+    expect((await h.call({ action: "set", key: "bot.plugin", value: { marketplace: "../x", plugin: "y" } })).body.error).toMatch(/marketplace, plugin/);
+    // Everyone on an organization server reaches other people's bots: the organization's card
+    const org = harness({ mode: "full", organization: () => true });
+    expect((await org.call({ action: "set", key: "bot.plugin", value: { marketplace: "acme", plugin: "acme-flow", everyone: true } })).body.text).toContain("Approval needed.");
+    expect((await org.call({ action: "set", key: "bot.plugin", value: { marketplace: "acme", plugin: "acme-flow" } })).body.text).toMatch(/^Done/);
+  });
+
+  it("attaches or detaches one MCP server on a bot from its current list", async () => {
+    const answer = (path: string) => path === "/api/mcp/servers"
+      ? { servers: [{ name: "crm" }, { name: "docs" }] }
+      : { bots: [{ id: "b2", mcpServers: ["docs"] }, { id: "b3" }] };
+    const h = harness({ mode: "full", answer });
+    await h.call({ action: "set", key: "bot.mcpServer", target: "b2", value: { name: "crm", attached: true } });
+    expect(h.planned.at(-1)).toMatchObject({ effect: "run", method: "PATCH", path: "/api/bots/b2", body: { mcpServers: ["docs", "crm"] } });
+    await h.call({ action: "set", key: "bot.mcpServer", target: "b2", value: { name: "docs", attached: false } });
+    expect(h.planned.at(-1)).toMatchObject({ body: { mcpServers: [] } });
+    // a bot on every server: detaching one keeps the others
+    await h.call({ action: "set", key: "bot.mcpServer", target: "b3", value: { name: "crm", attached: false } });
+    expect(h.planned.at(-1)).toMatchObject({ method: "PATCH", path: "/api/bots/b3", body: { mcpServers: ["docs"] } });
+    expect((await h.call({ action: "set", key: "bot.mcpServer", target: "b3", value: { name: "crm", attached: true } })).body.text).toMatch(/already attached/);
+    // attaching a server to the speaking bot itself widens it: the person's Allow, as for bot.mcpServers
+    const self = harness({ mode: "full", answer });
+    expect((await self.call({ action: "set", key: "bot.mcpServer", value: { name: "crm", attached: true } })).body.text).toBeDefined();
+  });
+
+  it("reads a webhook routine's address, never a key, and rotates its key for the person to copy", async () => {
+    const answer = { webhooks: [{ id: "wh1", routineId: "r1", endpointId: "wh_abc", enabled: true, tokenLast4: "9xQz", tokenPending: false }], ingress: { baseUrl: "https://hooks.example.test/" } };
+    const h = harness({ mode: "full", answer });
+    const read = JSON.parse(String((await h.call({ action: "get", key: "routine.webhook", target: "r1" })).body.text));
+    expect(read.value).toMatchObject({ webhookId: "wh1", url: "https://hooks.example.test/hooks/wh_abc", keyEndsWith: "9xQz", keyWaitingForThePerson: false });
+    const done = await h.call({ action: "set", key: "routine.webhook", target: "r1", value: "rotate" });
+    expect(String(done.body.text)).toMatch(/^Done.*waits for the person.*Show the token/);
+    expect(h.planned.at(-1)).toMatchObject({ effect: "run", method: "POST", path: "/api/webhooks/wh1/rotate" });
+    expect(JSON.stringify(done.body)).not.toMatch(/whsec_|Bearer [A-Za-z0-9]/);
+    const none = harness({ mode: "full", answer: { webhooks: [], ingress: {} } });
+    expect((await none.call({ action: "set", key: "routine.webhook", target: "r1", value: "rotate" })).status).toBe(404);
+  });
+
+  it("matrix: admin and member, Ask, Approve for me and Full; another person's bot keeps its card; a refusal is the route's own", async () => {
+    const answer = (path: string) => path === "/api/webhooks"
+      ? { webhooks: [{ id: "wh1", routineId: "r1", endpointId: "e" }, { id: "wh2", routineId: "r2", endpointId: "f" }] }
+      : { bots: [{ id: "b2", mcpServers: ["docs"] }] };
+    const cases: Array<{ key: string; target: string; value: unknown }> = [
+      { key: "bot.plugin", target: "b2", value: { marketplace: "acme", plugin: "acme-flow" } },
+      { key: "bot.plugin", target: "b2", value: { key: "acme-flow@acme", uninstall: true } },
+      { key: "bot.mcpServer", target: "b2", value: { name: "crm", attached: true } },
+      { key: "bot.mcpServer", target: "b2", value: { name: "docs", attached: false } },
+      { key: "routine.webhook", target: "r1", value: "rotate" },
+    ];
+    for (const role of ["admin", "member"] as const) {
+      for (const mode of ["ask", "auto", "full"] as const) {
+        for (const { key, target, value } of cases) {
+          const h = harness({ mode, answer, ...(role === "member" ? { routeStatus: (method: string) => method === "GET" ? 200 : 403 } : {}) });
+          const result = await h.call({ action: "set", key, target, value });
+          const expected = mode === "ask" ? "hold" : "run";
+          expect(h.planned.at(-1)?.effect, `${key} ${role} ${mode}`).toBe(expected);
+          if (expected === "run") expect(result.status, key).toBe(role === "member" ? 403 : 200);
+        }
+        const theirs = harness({ mode, answer });
+        expect((await theirs.call({ action: "set", key: "bot.plugin", target: "theirs", value: { marketplace: "acme", plugin: "acme-flow" } })).body.text).toContain("Approval needed.");
+        expect((await theirs.call({ action: "set", key: "routine.webhook", target: "r2", value: "rotate" })).body.text).toContain("Approval needed.");
+      }
+    }
+  });
+});

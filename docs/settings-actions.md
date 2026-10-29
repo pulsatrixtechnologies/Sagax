@@ -192,6 +192,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Perspicax tools (profiles) | Bot editor > Perspicax | `sagax_settings` get, set `bot.perspicaxProfiles` | simple (élargit les droits pour le bot qui parle lui-même) |
 | A skill on or off ({name, enabled}) | Bot editor > Skills | `sagax_settings` get, set `bot.skill` | simple |
 | Import a skill from GitHub onto a bot ({repo: owner/repo, path?: its folder, ref?: a branch or tag}, or a GitHub, SKILL.md or skills.sh link; then bot.skill {name, enabled} turns it on or off) | Bot editor > Persona > Skills > Import | `sagax_settings` get, set `bot.skillImport` | simple |
+| A plugin of a configured marketplace ({marketplace, plugin} installs or updates it for this bot; everyone: true for every bot; {marketplace, plugin, everyone: true, update: true}; uninstall: true removes; {key: plugin@marketplace, enabled} turns this bot's on or off); get lists the marketplaces and this bot's plugins | Connect apps > Plugins > For <bot> or Everyone | `sagax_settings` get, set `bot.plugin` | simple |
+| Attach or detach one MCP server on a bot ({name, attached: true/false}; connections.mcpServer lists the person's servers) | Bot editor > Access > Tools | `sagax_settings` get, set `bot.mcpServer` | simple |
 | Share with a person or team ({target: user:<id>/team:<name>, level}, level null removes) | Bot editor > Visibility > Sharing | `sagax_settings` get, set `bot.share` | autrui |
 | Tool access grant ({scope: area:read/write/admin, expiresAt}) | Bot editor > Tool access | `sagax_settings` get, set `bot.toolGrant` | élargit les droits |
 | Delete the bot (true) | Bot editor > ... > Delete | `sagax_settings` set `bot.delete` | suppression |
@@ -241,6 +243,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Runs as (a person) | Automations > routine > Runs as | `sagax_settings` get, set `routine.runAs` | autrui |
 | Run only when something changes ({kind: watch, source: {type: files, path} / {type: command, command} / {type: tool, tool, args}, condition?, wakeOn?, track?, firstRun?, whenAsleep?}; null: every due time) | Automations > routine > Only when something changes | `sagax_settings` get, set `routine.precheck` | simple |
 | New routine ({name, prompt, botId, schedule, ...}) | Automations > New routine | `sagax_settings` set `routine.create` | simple |
+| A webhook routine's address (get: its URL, never a key; set "rotate": a new key that waits for the person to copy it once, the old one stops) | Bot panel > Webhooks; Routines > Webhooks | `sagax_settings` get, set `routine.webhook` | secret |
 | Run now (true) | Automations > routine > Run now | `sagax_settings` set `routine.run` | simple |
 | A bot's routines, a page at a time (get; value {offset?, limit?, folder?}; nextOffset gives the next page; routine.prompt reads one whole) | Bot panel > Details > Routines; Automations | `sagax_settings` get, set `routine.list` | simple |
 | Several routines of a bot at once ({ids: [routine ids] or "all", enabled: true/false} or {ids, delete: true}) | Bot panel > Details > Routines; Automations | `sagax_settings` get, set `routine.bulk` | en lot |

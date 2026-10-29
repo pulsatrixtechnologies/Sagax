@@ -405,6 +405,20 @@ description, only a card they answered themselves), so `quote` works from a
 click and they never retype a line. Tests: `shared/routine-listing.test.ts`
 (23 routines), `server/routes/routine-bulk.test.ts`,
 `server/settings-actions.test.ts`, `shared/primary-request.test.ts`.
+## A bot installs plugins, attaches MCP servers, rotates a routine's webhook key (2026-10-29)
+
+`sagax_settings`: `bot.plugin` installs, updates, turns off or removes a
+plugin of a configured marketplace for one bot (`/api/bots/:id/plugins`) or
+for every bot (`everyone: true`, `/api/marketplaces/:m/plugins/:p`, the
+organization's card on an organization server), as Connect apps does.
+`bot.mcpServer` {name, attached} attaches or detaches one server (the handler
+reads the bot's list; none means every server). `routine.webhook` reads a
+webhook routine's address (no key in it: the key is a Bearer header) and,
+with "rotate", gives it a new key that waits for the person to copy once in
+the app (Show the token): a bot's replay of `POST /api/webhooks/:id/rotate`
+(`x-sagax-bot-act`, or a bot act session) keeps the key pending
+(`WebhookManager.rotatePending`) and never answers it. Tests:
+`server/settings-actions.test.ts`, `server/webhooks.test.ts`.
 
 ## Leave a group chat (#1480, 2026-10-28)
 
