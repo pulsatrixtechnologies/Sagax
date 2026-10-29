@@ -720,6 +720,8 @@ import { redactSecretsInText } from "./redact.ts";
 import { routineRunCard } from "./routine-run-card.ts";
 import { routineAutoPauseAfter } from "../shared/routine-auto-pause.ts";
 import { routineRunReportable } from "./routine-report.ts";
+import type { HeadlessBot } from "./headless-cli.ts";
+import { createHeadlessTaskRunner } from "./headless-task-runner.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
@@ -6380,7 +6382,7 @@ type AskBotOutcome = {
 const awaitedAsks = new Set<{ threadId: string }>();
 
 function askBotAndWait(targetBotId: string, message: string, depth: number, fromBotId?: string, fromThreadId?: string, targetThreadId?: string,
-  options: { timeoutMs?: number; selfRelay?: boolean } = {}): Promise<AskBotOutcome> {
+  options: { timeoutMs?: number; selfRelay?: boolean; speaker?: TurnSpeaker } = {}): Promise<AskBotOutcome> {
   const target = store.bot(targetBotId);
   if (!target) return Promise.resolve({ status: "error", text: "(no such bot)" });
   const threadId = targetThreadId ?? peerThreadFor(target);
@@ -6429,13 +6431,58 @@ function askBotAndWait(targetBotId: string, message: string, depth: number, from
           ? { botId: asker.id, name: asker.name, unattended: true }
           : { botId: asker.id, name: asker.name }
         : undefined,
-      ...(asker ? { speaker: peerSpeaker(asker.id, fromThreadId) } : {}),
+      ...(options.speaker ? { speaker: options.speaker } : asker ? { speaker: peerSpeaker(asker.id, fromThreadId) } : {}),
       onDispatchError: (reason) => finish({ status: "error", text: `(couldn't start that bot: ${reason})` }),
     }).catch((err) =>
       finish({ status: "error", text: `(couldn't start that bot: ${err instanceof Error ? err.message : String(err)})` }),
     );
   });
 }
+
+/** `sagax task give` (server/headless-cli.ts): this server takes the tasks
+ * queued in its data folder and runs each on the named bot in a conversation
+ * of its own, shown under the bot like any thread. The turn speaks for the
+ * owner of this computer, as a message typed here would. */
+function headlessBotByName(name: string): BotRecord | undefined {
+  const key = name.trim().toLowerCase();
+  return store.bots.find((bot) => bot.name.trim().toLowerCase() === key && !bot.temporary);
+}
+async function syncHeadlessTeam(bots: HeadlessBot[]): Promise<void> {
+  const missing = bots.filter((bot) => !headlessBotByName(bot.name));
+  if (!missing.length) return;
+  if (enginesRead) await enginesRead;
+  for (const entry of missing) {
+    if (headlessBotByName(entry.name)) continue;
+    if (store.bots.length >= MAX_WORKSPACE_BOTS) throw new Error(`this workspace is limited to ${MAX_WORKSPACE_BOTS} bots`);
+    const bot = store.createBot({ name: entry.name, ...(entry.title ? { title: entry.title } : {}), modelSelection: await defaultSelection() });
+    const approvalMode = newBotApprovalMode();
+    store.patchBot(bot.id, { approvalMode, autoApprove: approvalMode === "auto" });
+    store.patchTask(bot.id, bot.threadId, { approvalMode, autoApprove: approvalMode === "auto" });
+    console.log(`headless team: created bot ${bot.name}`);
+  }
+}
+const HEADLESS_TASK_WAIT_MS = Number(process.env.SAGAX_HEADLESS_TASK_WAIT_MS) || 60 * 60_000;
+const headlessTasks = createHeadlessTaskRunner({
+  dir: DATA_DIR,
+  bootId: newId(),
+  syncTeam: syncHeadlessTeam,
+  log: (line) => console.warn(line),
+  async run(task, place) {
+    const bot = headlessBotByName(task.bot);
+    if (!bot) return { ok: false, reason: `No bot named ${task.bot} here. Apply the team again (sagax team apply FILE).` };
+    const problem = teammateEngineProblem(bot);
+    if (problem) return { ok: false, reason: `${bot.name} cannot work: ${problem}.` };
+    const title = `Task: ${task.text.replace(/\s+/g, " ").trim()}`.slice(0, 60).trim();
+    const thread = store.createTask(bot.id, title, false);
+    if (!thread) return { ok: false, reason: "Could not open a conversation for the task." };
+    place({ botId: bot.id, threadId: thread.threadId });
+    const outcome = await askBotAndWait(bot.id, task.text, -1, undefined, undefined, thread.threadId,
+      { timeoutMs: HEADLESS_TASK_WAIT_MS, speaker: { origin: "operator" } });
+    if (outcome.status === "reply") return { ok: true, text: outcome.text };
+    if (outcome.status === "timeout") return { ok: false, reason: `${bot.name} did not finish within ${Math.round(HEADLESS_TASK_WAIT_MS / 60_000)} minutes; the conversation "${title}" keeps going in the app.` };
+    return { ok: false, reason: outcome.text };
+  },
+});
 
 /** Include configuration that the driver snapshot itself does not carry. */
 function selectableInstances<T extends SelectableInstance>(instances: readonly T[]): T[] {
@@ -53515,6 +53562,7 @@ const onListening = async () => {
   // States of watches whose routine is gone (deleted while stopped).
   try { routineWatchStates.prune(routines!.listRoutines().filter((routine) => routine.precheck?.kind === "watch").map((routine) => routine.id)); } catch { /* best effort */ }
   routines!.start();
+  headlessTasks.start();
   limitFailover.start();
   memoryUpkeep.start();
   const leftover = pendingThreads();
@@ -53691,6 +53739,7 @@ const gracefulShutdown = createGracefulShutdown({
       vps.closeAllVpsDesktopTunnels();
       watchdog.stop();
       routines?.stop();
+      headlessTasks.stop();
       calendarCalls?.stop();
       memoryUpkeep.stop();
       webhookIngress?.server.close();

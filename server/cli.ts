@@ -316,6 +316,12 @@ browser install: the bots' browser engine (agent-browser, pinned) into the
         the Linux libraries Chrome needs (run as root once). Then run
         browser install as the user running serve, from that user's home.
         status: what the current user and data directory have.
+team    apply FILE: the bots of a JSON file ({"bots":[{"name":..,"title":..}]});
+        the running server creates any that do not exist yet.
+task    give: queue work for a bot of the applied team; prints its id.
+        wait ID: the running server on the same data folder runs it as a
+        conversation of that bot; prints the reply (exit 0), the failure
+        (1), a timeout (2, default 3600 s) or that no server runs (3).
 fleet   many client workspaces on one Linux server, each its own account,
         service, data folder, brand, sign-in list and keys at NAME.HOST
         behind the system Caddy. Plans are printed unless run as root;
@@ -1300,10 +1306,14 @@ function runTaskGive(options: CliOptions): number {
 async function runTaskWait(options: CliOptions): Promise<number> {
   const id = options.taskId;
   if (!id) return 2;
-  const timeoutMs = (options.timeoutSec ?? 30) * 1000;
-  const result = await waitTask(options.dataDir, id, timeoutMs);
+  // A real turn can take minutes: wait up to an hour unless told otherwise.
+  const timeoutMs = (options.timeoutSec ?? 3600) * 1000;
+  // The Sagax server on this data folder runs the task; without one,
+  // say so instead of waiting in silence.
+  const result = await waitTask(options.dataDir, id, timeoutMs, undefined, { requireRunner: true });
   if (result.state === "done") return printHeadless(result, 0);
-  if (result.state === "failed") return printHeadless(result, 1);
+  if (result.state === "failed" || result.state === "not_found") return printHeadless(result, 1);
+  if (result.state === "no_server") return printHeadless(result, 3);
   return printHeadless(result, 2);
 }
 
