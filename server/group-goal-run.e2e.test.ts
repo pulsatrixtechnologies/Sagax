@@ -557,7 +557,9 @@ describe("goal-driven channel runs", () => {
     }
   });
 
-  it("stops a detached scheduled goal from the active room and cancels its routine run", async () => {
+  // A team goal routine publishes in the group (#1575, decision of #1516): it
+  // works in the group's visible conversation, never in a hidden task thread.
+  it("stops a scheduled goal working in the group conversation from the room's Stop and cancels its routine run", async () => {
     const lead = (await api("POST", "/api/bots", {
       name: "Detached scheduled lead",
       modelSelection: { instanceId: "directHang", model: "claude-sonnet-5" },
@@ -586,34 +588,31 @@ describe("goal-driven channel runs", () => {
       expect(started.status).toBe(201);
       const runId = started.body.run.id;
 
-      let backgroundThreadId = "";
       await expect.poll(async () => {
         const calendar = (await api("GET", "/api/routines")).body;
         const running = calendar.runs.find((run: { id: string }) => run.id === runId);
         const state = (await api("GET", "/api/bots?messages=0")).body;
         const current = state.groups.find((group: { id: string }) => group.id === room.id);
-        backgroundThreadId = running?.threadId ?? "";
         return {
           runStatus: running?.status,
-          detached: Boolean(running?.threadId && running.threadId !== originalThreadId),
+          runThreadId: running?.threadId,
           activeThreadId: current?.threadId,
-          hasBackgroundTask: current?.tasks.some(
-            (task: { threadId: string }) => task.threadId === running?.threadId,
-          ),
+          // no task thread opened beside the conversation for the run
+          otherTasks: current?.tasks.filter((task: { threadId: string }) => task.threadId !== originalThreadId).length,
           roomWorking: current?.working,
           leadBusy: state.bots.find((bot: { id: string }) => bot.id === lead.id)?.busy,
         };
       }, { timeout: 10_000 }).toEqual({
         runStatus: "running",
-        detached: true,
+        runThreadId: originalThreadId,
         activeThreadId: originalThreadId,
-        hasBackgroundTask: true,
+        otherTasks: 0,
         roomWorking: true,
         leadBusy: true,
       });
 
-      // No task switch and no explicit thread: the ordinary room Stop must
-      // discover the detached operation rather than targeting the visible task.
+      // No task switch and no explicit thread: the ordinary room Stop reaches
+      // the goal working in the group conversation.
       expect((await api("POST", `/api/groups/${room.id}/interrupt`)).status).toBe(200);
 
       await expect.poll(async () => {
@@ -630,13 +629,13 @@ describe("goal-driven channel runs", () => {
         };
       }, { timeout: 10_000 }).toEqual({
         runStatus: "cancelled",
-        runThreadId: backgroundThreadId,
+        runThreadId: originalThreadId,
         activeThreadId: originalThreadId,
         roomWorking: false,
         leadBusy: false,
       });
 
-      const opened = await api("POST", `/api/groups/${room.id}/tasks/${backgroundThreadId}`);
+      const opened = await api("POST", `/api/groups/${room.id}/tasks/${originalThreadId}`);
       expect(opened.status).toBe(200);
       expect(opened.body.group.messages.filter((message: { kind: string }) => message.kind === "goal.run"))
         .toEqual([
@@ -652,7 +651,7 @@ describe("goal-driven channel runs", () => {
     }
   });
 
-  it("stops a detached scheduled goal from the coordinator's ordinary Stop", async () => {
+  it("stops a scheduled goal working in the group conversation from the coordinator's ordinary Stop", async () => {
     const lead = (await api("POST", "/api/bots", {
       name: "Detached bot-stop lead",
       modelSelection: { instanceId: "directHang", model: "claude-sonnet-5" },
@@ -668,7 +667,7 @@ describe("goal-driven channel runs", () => {
     try {
       const created = await api("POST", "/api/routines", {
         name: "Coordinator-stopped scheduled goal",
-        prompt: "Keep this detached goal running until the coordinator is stopped",
+        prompt: "Keep this team goal running until the coordinator is stopped",
         target: "room-goal",
         groupId: room.id,
         botId: lead.id,
@@ -681,30 +680,27 @@ describe("goal-driven channel runs", () => {
       expect(started.status).toBe(201);
       const runId = started.body.run.id;
 
-      let backgroundThreadId = "";
       await expect.poll(async () => {
         const calendar = (await api("GET", "/api/routines")).body;
         const running = calendar.runs.find((run: { id: string }) => run.id === runId);
         const state = (await api("GET", "/api/bots?messages=0")).body;
         const current = state.groups.find((group: { id: string }) => group.id === room.id);
-        backgroundThreadId = running?.threadId ?? "";
         return {
           runStatus: running?.status,
-          detached: Boolean(running?.threadId && running.threadId !== originalThreadId),
+          runThreadId: running?.threadId,
           activeThreadId: current?.threadId,
           roomWorking: current?.working,
           leadBusy: state.bots.find((bot: { id: string }) => bot.id === lead.id)?.busy,
         };
       }, { timeout: 10_000 }).toEqual({
         runStatus: "running",
-        detached: true,
+        runThreadId: originalThreadId,
         activeThreadId: originalThreadId,
         roomWorking: true,
         leadBusy: true,
       });
 
-      // The visible room still points at originalThreadId. Bot Stop must use
-      // the detached operation's exact speaker thread, not that visible task.
+      // Bot Stop reaches the goal's speaker thread: the group conversation.
       expect((await api("POST", `/api/bots/${lead.id}/interrupt`)).status).toBe(200);
 
       await expect.poll(async () => {
@@ -721,13 +717,13 @@ describe("goal-driven channel runs", () => {
         };
       }, { timeout: 10_000 }).toEqual({
         runStatus: "cancelled",
-        runThreadId: backgroundThreadId,
+        runThreadId: originalThreadId,
         activeThreadId: originalThreadId,
         roomWorking: false,
         leadBusy: false,
       });
 
-      const opened = await api("POST", `/api/groups/${room.id}/tasks/${backgroundThreadId}`);
+      const opened = await api("POST", `/api/groups/${room.id}/tasks/${originalThreadId}`);
       expect(opened.status).toBe(200);
       expect(opened.body.group.messages.filter((message: { kind: string }) => message.kind === "goal.run"))
         .toEqual([
@@ -892,7 +888,7 @@ describe("goal-driven channel runs", () => {
     }
   });
 
-  it("runs a routine as a goal in a new background room task", async () => {
+  it("runs a routine as a goal in the group conversation (#1575)", async () => {
     const lead = (await api("POST", "/api/bots", {
       name: "Scheduled lead",
       modelSelection: { instanceId: "routineGoal", model: "claude-sonnet-5" },
@@ -976,11 +972,11 @@ describe("goal-driven channel runs", () => {
       const completedRun = calendar.runs.find((run: { id: string }) => run.id === runId);
       const state = (await api("GET", "/api/bots?messages=0")).body;
       const backgroundRoom = state.groups.find((group: { id: string }) => group.id === room.id);
-      expect(backgroundRoom.threadId).toBe(completedRun.threadId);
-      expect(backgroundRoom.tasks).toContainEqual(expect.objectContaining({
-        threadId: completedRun.threadId,
-        title: expect.stringMatching(/^Daily team review · [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} [AP]M$/),
-      }));
+      // the run worked in the group's own conversation: no task thread named after the run
+      expect(completedRun.threadId).toBe(originalThreadId);
+      expect(backgroundRoom.threadId).toBe(originalThreadId);
+      expect(backgroundRoom.tasks.map((task: { title: string }) => task.title))
+        .not.toContainEqual(expect.stringMatching(/^Daily team review · /));
 
       const switched = await api("POST", `/api/groups/${room.id}/tasks/${completedRun.threadId}`);
       expect(switched.status).toBe(200);
