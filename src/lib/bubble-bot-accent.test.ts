@@ -1,7 +1,7 @@
 // My bubble in a bot's colour (2026-10-28): on a skin whose accent is a
 // neutral (Midnight's #f5f5f5) the person's bubble was white in every
-// conversation. In a 1:1 with a bot it now takes the bot's colour (its hue,
-// its text at 4.5:1 or better), whatever "Use bot color as accent" says, and
+// conversation. In a 1:1 with a bot it now takes the bot's colour (exactly,
+// since 2026-10-29, with the accent button's ink at 4.5:1 or better), whatever "Use bot color as accent" says, and
 // the bot's own bubble stays grey. A room keeps the skin's accent, or the
 // brand's when the skin's is a neutral.
 import { readFileSync } from "node:fs";
@@ -9,22 +9,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MASCOT_COLOR_HEX } from "../../shared/mascot-colors";
-import { BUBBLE_MIN_CONTRAST, botBubbleVars, isNeutralAccent, roomBubbleColors } from "./bubble-colors";
-import { contrastHex, parseHex, toHsl } from "./switch-colors";
+import { BUBBLE_MIN_CONTRAST, accentInk, botBubbleVars, isNeutralAccent, roomBubbleColors } from "./bubble-colors";
+import { contrastHex } from "./switch-colors";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
 
 const MIDNIGHT_USER = "#f5f5f5";
-const hue = (hex: string) => toHsl(parseHex(hex)!)[0];
-/** Hue distance on the wheel, 0 to 0.5. */
-const hueGap = (a: string, b: string) => {
-  const d = Math.abs(hue(a) - hue(b));
-  return Math.min(d, 1 - d);
-};
 
 describe("my bubble in a 1:1 takes the bot's colour", () => {
-  it("is not Midnight's white, keeps the bot's hue and reads at 4.5:1", () => {
+  it("is not Midnight's white, is the bot's colour exactly and reads at 4.5:1", () => {
     const css = read("src/styles/skin-bubble.css");
     expect(css).toContain(`--color-bubble-user: var(--brand-bubble-user, ${MIDNIGHT_USER})`);
     for (const bot of ["#ff3b30", "#34c759", "#007aff", "#af52de", "#ff9500"]) {
@@ -32,7 +26,8 @@ describe("my bubble in a 1:1 takes the bot's colour", () => {
       const user = vars["--color-bubble-user"]!;
       const ink = vars["--color-bubble-user-ink"]!;
       expect(user).not.toBe(MIDNIGHT_USER);
-      expect(hueGap(user, bot), `${bot} -> ${user}`).toBeLessThan(0.02);
+      expect(user, bot).toBe(bot);
+      expect(ink, bot).toBe(accentInk(bot));
       expect(contrastHex(user, ink)).toBeGreaterThanOrEqual(BUBBLE_MIN_CONTRAST);
     }
   });
@@ -40,6 +35,7 @@ describe("my bubble in a 1:1 takes the bot's colour", () => {
   it("reads at 4.5:1 for every bot colour", () => {
     for (const [name, hex] of Object.entries(MASCOT_COLOR_HEX)) {
       const vars = botBubbleVars(hex);
+      expect(vars["--color-bubble-user"], name).toBe(hex.toLowerCase());
       expect(contrastHex(vars["--color-bubble-user"]!, vars["--color-bubble-user-ink"]!), name).toBeGreaterThanOrEqual(BUBBLE_MIN_CONTRAST);
     }
   });
@@ -71,7 +67,9 @@ describe("my bubble in a room", () => {
     const css = read("src/styles/skin-bubble.css");
     const at = css.indexOf('[data-skin="midnight"][data-skin="midnight"] [data-room-bubble] {');
     expect(at).toBeGreaterThan(0);
-    expect(css.slice(at, css.indexOf("}", at))).toContain("var(--brand-bubble-user, #2e6cf3)");
+    // Pulsatrix's dark accent exactly, with its button's ink
+    expect(css.slice(at, css.indexOf("}", at))).toContain("var(--brand-bubble-user, #3c76f4)");
+    expect(css.slice(at, css.indexOf("}", at))).toContain("var(--brand-bubble-user-ink, #030b17)");
     expect(read("src/components/GroupView.tsx")).toMatch(/data-room-bubble=""/);
   });
 });

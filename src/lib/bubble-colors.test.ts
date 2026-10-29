@@ -1,18 +1,19 @@
 // The conversation bubbles (2026-10-28): the person's own message is filled
 // with the accent, a bot's reply (and another person's message in a room) is a
 // neutral grey, and the text on the accent reads at 4.5:1 or better (WCAG 1.4.3)
+// (2026-10-29: the accent exactly, the accent button's ink on it)
 // on every skin, colour, Full colour, duo-tone, mood and Windows edition, plus
 // a brand accent over every skin.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { BRAND_BUBBLE_VARS, BUBBLE_MIN_CONTRAST, brandBubbleVars, bubbleColors, userBubble, type BubbleColors } from "./bubble-colors";
+import { BRAND_BUBBLE_VARS, BUBBLE_MIN_CONTRAST, accentInk, brandBubbleVars, bubbleColors, userBubble, type BubbleColors } from "./bubble-colors";
 import { contrastHex, parseHex, type Scheme } from "./switch-colors";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-type Context = { id: string; selector: string; scheme: Scheme; app: string; ink: string; accent: string; colors: BubbleColors };
+type Context = { id: string; selector: string; scheme: Scheme; app: string; ink: string; accent: string; buttonInk?: string; colors: BubbleColors };
 let contexts: Context[];
 let generated: string;
 let css: string;
@@ -64,15 +65,13 @@ describe("bubble colours", () => {
     expect(problems).toEqual([]);
   });
 
-  it("fills the person's bubble with the accent: its hue, never a neutral for a colour", () => {
+  it("fills the person's bubble with the accent exactly, the colour its accent buttons are filled with", () => {
     for (const c of contexts) {
-      const a = parseHex(c.accent)!;
-      const u = parseHex(c.colors.user)!;
-      if (Math.max(...a) - Math.min(...a) < 40) continue; // a grey accent stays grey
-      const dominant = a.indexOf(Math.max(...a));
-      expect(u[dominant], `${c.id} ${c.colors.user} for ${c.accent}`).toBe(Math.max(...u));
+      expect(c.colors.user, c.id).toBe(c.accent.toLowerCase());
+      // the skin's own button ink is kept wherever it reads on the accent
+      if (c.buttonInk && contrastHex(c.buttonInk, c.accent) >= BUBBLE_MIN_CONTRAST) expect(c.colors.userInk, c.id).toBe(c.buttonInk.toLowerCase());
+      else expect(c.colors.userInk, c.id).toBe(accentInk(c.accent));
     }
-    // an accent that already carries white is used as it is
     expect(userBubble("#2f62dd")).toEqual({ user: "#2f62dd", userInk: "#ffffff" });
   });
 
@@ -95,7 +94,9 @@ describe("bubble colours", () => {
     for (const accent of accents) {
       const hex = accent.startsWith("hsl:") ? hslHex(Number(accent.slice(4))) : accent;
       const { user, userInk } = userBubble(hex);
-      expect(contrastHex(userInk, user), `${hex} -> ${user}`).toBeGreaterThanOrEqual(BUBBLE_MIN_CONTRAST);
+      expect(user, hex).toBe(hex.toLowerCase());
+      expect(userInk, hex).toBe(accentInk(hex));
+      expect(contrastHex(userInk, user), `${hex} -> ${userInk}`).toBeGreaterThanOrEqual(BUBBLE_MIN_CONTRAST);
       const vars = brandBubbleVars(hex);
       expect(vars["--brand-bubble-user"]).toBe(user);
       expect(vars["--brand-bubble-user-ink"]).toBe(userInk);
@@ -105,12 +106,28 @@ describe("bubble colours", () => {
     expect(brandBubbleVars(undefined)).toEqual({});
   });
 
-  it("gives an orange accent light text on a darkened orange", () => {
-    const { user, userInk } = userBubble("#f97316");
-    expect(userInk).toBe("#ffffff");
-    const [r, g, b] = parseHex(user)!;
-    expect(r).toBeGreaterThan(g);
-    expect(g).toBeGreaterThan(b);
+  // Regression (2026-10-29): the orange bubble was a darker orange than the
+  // accent button beside it, its lightness moved so white could read on it.
+  it("keeps an orange accent its exact bright orange, with the button's dark ink", () => {
+    for (const orange of ["#f97316", "#ff9500", "#e78531"]) {
+      const { user, userInk } = userBubble(orange);
+      expect(user).toBe(orange);
+      expect(userInk).toBe("#111111");
+      expect(contrastHex(user, userInk)).toBeGreaterThanOrEqual(BUBBLE_MIN_CONTRAST);
+    }
+    // a dark accent keeps white
+    expect(userBubble("#5b21b6").userInk).toBe("#ffffff");
+    // a skin's own button ink wins where it reads
+    expect(userBubble("#f97316", "#1c150c").userInk).toBe("#1c150c");
+    expect(userBubble("#2f62dd", "#111111").userInk).toBe("#ffffff");
+  });
+
+  it("accentInk is white or near black, black only where neither reaches 4.5:1", () => {
+    for (let hue = 0; hue < 360; hue += 5) for (const hex of [hslHex(hue), "#808080", "#767676", "#949494"]) {
+      const ink = accentInk(hex);
+      expect(contrastHex(ink, hex), `${hex} ${ink}`).toBeGreaterThanOrEqual(BUBBLE_MIN_CONTRAST);
+      if (ink === "#000000") expect(Math.max(contrastHex(hex, "#ffffff"), contrastHex(hex, "#111111"))).toBeLessThan(BUBBLE_MIN_CONTRAST);
+    }
   });
 
   it("bubbleColors combines both", () => {

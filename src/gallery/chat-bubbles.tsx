@@ -17,6 +17,7 @@ import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { SkinTintId } from "../lib/skin-families";
 import type { Message } from "../state/store";
 import { brandBubbleVars } from "../lib/bubble-colors"; // before-strip
+import { accentInk } from "../lib/brand";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
@@ -47,7 +48,7 @@ const ORANGE = "#f97316";
 
 function Column({ label, tint, orange }: { label: string; tint?: SkinTintId; orange?: boolean }) {
   const style: CSSProperties | undefined = orange
-    ? ({ "--color-accent": ORANGE, "--color-accent-text": ORANGE, ...(before ? {} : brandBubbleVars(ORANGE)) } as CSSProperties)
+    ? ({ "--color-accent": ORANGE, "--color-accent-text": ORANGE, "--color-accent-ink": accentInk(ORANGE), ...(before ? {} : brandBubbleVars(ORANGE)) } as CSSProperties)
     : undefined;
   const userCls = before
     ? "bg-bubble-user px-3 py-[7px] text-ink"
@@ -55,6 +56,7 @@ function Column({ label, tint, orange }: { label: string; tint?: SkinTintId; ora
   return (
     <div data-skin={skin} data-skin-tint={tint} style={style} className="flex w-[360px] flex-col gap-2 bg-app p-4 text-ink" data-gallery-column={label}>
       <div className="text-[11px] text-ink-secondary">{label}</div>
+      <div><button type="button" className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-accent-ink">Connect (accent button)</button></div>
       <div className="flex flex-col items-end gap-1">
         <div className={`chat-text w-fit max-w-[92%] rounded-[18px] text-[13px] leading-5 ${userCls}`} data-chat-bubble data-who="user">
           <div className="mb-2"><ReplyQuote message={quoted} fallbackName="Bot" compact /></div>

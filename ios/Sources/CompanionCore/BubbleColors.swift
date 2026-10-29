@@ -1,37 +1,44 @@
 import Foundation
 
-/// The colours of the conversation bubbles (2026-10-28), the same derivation
-/// as the desktop's `src/lib/bubble-colors.ts`: the person's own message is
-/// filled with the accent, and the text on it reaches 4.5:1; a bot's reply is
-/// a neutral grey a step off the page.
+/// The colours of the conversation bubbles (2026-10-28, exact accent
+/// 2026-10-29), the same rule as the desktop's `src/lib/bubble-colors.ts`:
+/// the person's own message is filled with the accent itself, the value an
+/// accent button is filled with, and a bot's reply is a neutral grey a step
+/// off the page.
 ///
-/// - the text on the accent bubble is white. When the accent cannot carry it
-///   its lightness moves (the hue stays) to the nearest one that does; an
-///   accent too pale to carry white without a large shift takes dark text;
+/// - the text on the accent bubble is the accent button's ink (`accentInk`):
+///   white on a dark accent, near black on a light or bright one, black
+///   where neither reaches 4.5:1. A skin keeps its own button ink when it
+///   reads at 4.5:1 on the accent, so bubble and button match;
 /// - the grey is neutral in every skin, lighter than a dark page and darker
 ///   than a light one.
 public enum BubbleColors {
     /// WCAG 1.4.3, normal text.
     public static let minimumContrast = 4.5
-    /// What the derivation aims at, a little over the minimum.
-    private static let target = 4.6
     private static let lightInk = SkinColor(0xFFFFFF)
     private static let darkInk = SkinColor(0x111111)
-    /// How far (HSL lightness) an accent may move to carry white before dark text is used.
-    private static let maxShift = 0.28
+    private static let blackInk = SkinColor(0x000000)
 
-    /// The person's bubble and the text on it, for an accent.
-    public static func user(accent: SkinColor) -> (fill: SkinColor, ink: SkinColor) {
-        let light = fit(accent, ink: lightInk)
-        let dark = fit(accent, ink: darkInk)
-        if let light, light.shift <= maxShift || dark == nil || light.shift <= dark!.shift {
-            return (light.color, lightInk)
-        }
-        return (dark?.color ?? accent, darkInk)
+    /// `accentInk`: white or near black, whichever contrasts more on the
+    /// accent; black when the winner still falls under 4.5:1 (a mid tone).
+    public static func accentInk(on accent: SkinColor) -> SkinColor {
+        let fill = SkinColor(accent.hex)
+        let light = lightInk.contrast(on: fill), dark = darkInk.contrast(on: fill)
+        let best = light >= dark ? lightInk : darkInk
+        return max(light, dark) >= minimumContrast ? best : blackInk
+    }
+
+    /// The person's bubble and the text on it, for an accent: the accent
+    /// exactly, and `buttonInk` (the skin's accent button ink) when it reads
+    /// at 4.5:1 on it, else `accentInk`.
+    public static func user(accent: SkinColor, buttonInk: SkinColor? = nil) -> (fill: SkinColor, ink: SkinColor) {
+        let fill = SkinColor(accent.hex)
+        if let buttonInk, buttonInk.contrast(on: fill) >= minimumContrast { return (fill, SkinColor(buttonInk.hex)) }
+        return (fill, accentInk(on: fill))
     }
 
     /// The person's bubble in a bot's colour (a 1:1 with that bot, 2026-10-28):
-    /// the same derivation as the accent's, so a skin with a neutral accent
+    /// the bot's colour exactly, with the accent button's ink, so a skin with a neutral accent
     /// (Midnight's near white) no longer leaves it white. Nil for a name that
     /// is not a bot colour: the skin's bubble then stays.
     public static func user(botColor name: String?) -> (fill: SkinColor, ink: SkinColor)? {
@@ -45,20 +52,6 @@ public enum BubbleColors {
         let l = hsl(app).l
         let next = dark ? min(1, l + 0.075) : max(0, l - 0.065)
         return fromHSL(0, 0, next)
-    }
-
-    private static func fit(_ accent: SkinColor, ink: SkinColor) -> (color: SkinColor, shift: Double)? {
-        if ink.contrast(on: accent) >= target { return (accent, 0) }
-        let (h, s, l0) = hsl(accent)
-        var best: (color: SkinColor, shift: Double)?
-        for i in 0...400 {
-            let l = Double(i) / 400
-            let color = fromHSL(h, s, l)
-            guard ink.contrast(on: color) >= target else { continue }
-            let shift = abs(l - l0)
-            if best == nil || shift < best!.shift { best = (color, shift) }
-        }
-        return best
     }
 
     private static func hsl(_ c: SkinColor) -> (h: Double, s: Double, l: Double) {
@@ -96,7 +89,7 @@ public extension SkinPalette {
     /// This palette with the bubbles drawn from its accent and its page.
     func bubbled() -> SkinPalette {
         var p = self
-        let user = BubbleColors.user(accent: accent)
+        let user = BubbleColors.user(accent: accent, buttonInk: accentInk)
         p.bubbleUser = user.fill
         p.bubbleUserText = user.ink
         p.bubbleAssistant = BubbleColors.bot(app: bg, dark: isDark)

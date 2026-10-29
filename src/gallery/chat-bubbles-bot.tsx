@@ -44,11 +44,11 @@ function Column({ label, color, room }: { label: string; color?: MausColor; room
 }
 
 const COLUMNS: Array<{ label: string; color?: MausColor; room?: boolean }> = [
+  { label: "Bot: orange", color: "orange" },
   { label: "Bot: red", color: "red" },
   { label: "Bot: green", color: "green" },
   { label: "Bot: blue", color: "blue" },
   { label: "Bot: purple", color: "purple" },
-  { label: "Bot: yellow", color: "yellow" },
   { label: "Room (no colour)", room: true },
 ];
 

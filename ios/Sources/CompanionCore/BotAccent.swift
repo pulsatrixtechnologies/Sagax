@@ -6,7 +6,7 @@
 // A bot colour is chosen for a mascot, not for text: before it becomes the
 // accent it is darkened (light skins) or lifted (dark skins) until it holds
 // 3:1 as a fill and 4.5:1 as text on the skin's panel, and the text drawn on
-// it is white or black, whichever reads (WCAG AA). Same steps as the desktop.
+// it is the accent button's ink (BubbleColors.accentInk). Same steps as the desktop.
 import Foundation
 
 /// The accent family a bot colour gives on one skin.
@@ -47,9 +47,10 @@ public enum BotAccent {
         return hex(target.0, target.1, target.2)
     }
 
-    /// `inkOn`: white or black, whichever reads on `fill`.
+    /// `inkOn`: the accent button's ink (`BubbleColors.accentInk`), the same
+    /// rule as the person's bubble, so the two always match.
     public static func ink(on fill: SkinColor) -> SkinColor {
-        contrast(SkinColor(0xFFFFFF), fill) >= contrast(SkinColor(0x000000), fill) ? SkinColor(0xFFFFFF) : SkinColor(0x000000)
+        BubbleColors.accentInk(on: fill)
     }
 
     /// `botAccentVars`: the accent for a bot colour on a skin whose panel is
