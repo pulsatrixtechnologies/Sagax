@@ -237,18 +237,34 @@ public struct CompanionState: Sendable {
         SidebarBotPinning.isPinned(bot)
     }
 
-    /// Every unanswered approval or question, newest first. This is the
-    /// screen the whole companion exists for.
     /// The request ids of the asks still open: their banners stay until
     /// they are answered, whatever the conversation's read state.
     public var openRequestIds: Set<String> {
         Set(pendingApprovals.compactMap { $0.message.card?.requestId })
     }
 
+    /// Whether the server says a bot conversation no longer waits on the
+    /// person (its task's activity is something else): a card this phone
+    /// still holds as open there was answered, dismissed or expired on
+    /// another device while this one did not hear it. The server's word
+    /// wins; an older server that sends no activity keeps the card.
+    public func serverStoppedWaiting(threadId: String) -> Bool {
+        for bot in bots {
+            if let task = bot.tasks?.first(where: { $0.threadId == threadId }) {
+                guard let activity = task.activity else { return false }
+                return activity != "waiting-on-you"
+            }
+        }
+        return false
+    }
+
+    /// Every unanswered approval or question, newest first. This is the
+    /// screen the whole companion exists for. A card answered elsewhere
+    /// never stays here: the server's state of the conversation decides.
     public var pendingApprovals: [(threadId: String, message: Message)] {
         var out: [(threadId: String, message: Message)] = []
         let activeThreads = Set(bots.flatMap { [$0.threadId] + ($0.tasks ?? []).map(\.threadId) } + rooms.map(\.threadId))
-        for threadId in activeThreads {
+        for threadId in activeThreads where !serverStoppedWaiting(threadId: threadId) {
             for message in visibleTranscript(forThread: threadId) where message.card?.isPending == true {
                 out.append((threadId: threadId, message: message))
             }

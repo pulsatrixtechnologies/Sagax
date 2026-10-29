@@ -177,3 +177,48 @@ final class ApprovalNotificationTests: XCTestCase {
     }
     #endif
 }
+
+/// "Needs you" follows the server, shared by every device (2026-10-29): an
+/// ask answered on the Mac leaves the phone's Updates, badge and banners,
+/// even when the phone still holds the card as open.
+final class NeedsYouFollowsServerTests: XCTestCase {
+    private func state(activity: String?) throws -> CompanionState {
+        var task = BotTask(threadId: "t1", title: "Release", createdAt: 0)
+        task.activity = activity
+        let bot = Bot(
+            id: "b", threadId: "t1", name: "Scout", title: "Scout", description: "", notifications: true,
+            color: "cyan", unread: false, modelSelection: ModelSelection(instanceId: "engine", model: "default"),
+            createdAt: 0, tasks: [task]
+        )
+        var state = CompanionState()
+        state.hydrate(Fleet(bots: [bot], groups: []))
+        let card = try JSONDecoder().decode(Message.self, from: Data("""
+        {"id":"m1","role":"bot","kind":"options","at":1,
+         "card":{"title":"Approval needed","subtitle":"Publish version 2.4 to the team?","options":["Allow","Deny"],"requestId":"r1"}}
+        """.utf8))
+        state.apply(.message(threadId: "t1", message: card))
+        return state
+    }
+
+    func testAnAskTheServerStillWaitsOnIsAnAction() throws {
+        let waiting = try state(activity: "waiting-on-you")
+        XCTAssertEqual(waiting.pendingApprovals.count, 1)
+        XCTAssertEqual(waiting.updates.first?.kind, .needsYou)
+        XCTAssertEqual(waiting.openRequestIds, ["r1"])
+    }
+
+    func testAnAskAnsweredOnTheMacLeavesThePhonesActions() throws {
+        // the phone missed the card's patch; the server says the
+        // conversation no longer waits (answered on the Mac)
+        for activity in ["working", "idle"] {
+            let answered = try state(activity: activity)
+            XCTAssertTrue(answered.pendingApprovals.isEmpty, activity)
+            XCTAssertFalse(answered.updates.contains { $0.kind == .needsYou }, activity)
+            XCTAssertTrue(answered.openRequestIds.isEmpty, activity)
+        }
+    }
+
+    func testAnOlderServerWithoutActivityKeepsTheCard() throws {
+        XCTAssertEqual(try state(activity: nil).pendingApprovals.count, 1)
+    }
+}

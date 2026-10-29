@@ -88,7 +88,14 @@ struct CompanionApp: App {
                     switch phase {
                     case .active:
                         SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
+                        let kept = session.hasLiveStream
                         session.connect()
+                        // A stream kept through the background may have
+                        // missed what changed meanwhile (an ask answered on
+                        // the Mac, a conversation read there): the server's
+                        // state is read again, so Updates, the badge and the
+                        // banners follow it. A reconnect hydrates by itself.
+                        if kept { Task { await session.resyncOnForeground() } }
                         Task { await session.refreshNotificationAuthorization() }
                         // A photo changed in Perspicax shows on the way back.
                         Task { await session.loadAccount() }
