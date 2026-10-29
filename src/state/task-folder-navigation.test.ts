@@ -54,7 +54,8 @@ const submit = () => {
   flushSync(() => document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
 };
 const newBot = () => ({ ...profile("B"), threadId: "B-new", tasks: [{ threadId: "B-new", title: "New thread", cwd: "/projects/chosen", createdAt: 2 }] });
-const createWasSent = () => vi.waitFor(() => expect(requests).toHaveBeenCalledWith("/api/bots/B/tasks", expect.objectContaining({ body: JSON.stringify({ cwd: "/projects/chosen" }) })));
+// threads off is the default: a new thread is sent as a segment of the stream (#1586)
+const createWasSent = () => vi.waitFor(() => expect(requests).toHaveBeenCalledWith("/api/bots/B/tasks", expect.objectContaining({ body: JSON.stringify({ cwd: "/projects/chosen", stream: true }) })));
 
 beforeEach(() => {
   Object.assign(initialState, { bots: [profile("A"), profile("B"), profile("C")], selectedId: "A", activeView: "chat" });

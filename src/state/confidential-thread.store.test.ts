@@ -55,18 +55,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// Threads off is the default (single stream): every new thread is sent with
+// `stream: true` (#1586); the server never makes a confidential one a segment.
 describe("confidential threads in the store", () => {
   it("a new confidential thread says so", async () => {
     flushSync(() => dispatch({ type: "newTask", botId: "B", confidential: true }));
-    await vi.waitFor(() => expect(bodyOf("/api/bots/B/tasks", "POST")).toEqual({ confidential: true }));
+    await vi.waitFor(() => expect(bodyOf("/api/bots/B/tasks", "POST")).toEqual({ confidential: true, stream: true }));
   });
 
   it("an explicit ordinary thread says so, and the plain item leaves it to the default", async () => {
     flushSync(() => dispatch({ type: "newTask", botId: "B", confidential: false }));
-    await vi.waitFor(() => expect(bodyOf("/api/bots/B/tasks", "POST")).toEqual({ confidential: false }));
+    await vi.waitFor(() => expect(bodyOf("/api/bots/B/tasks", "POST")).toEqual({ confidential: false, stream: true }));
     requests.mockClear();
     flushSync(() => dispatch({ type: "newTask", botId: "B" }));
-    await vi.waitFor(() => expect(bodyOf("/api/bots/B/tasks", "POST")).toEqual({}));
+    await vi.waitFor(() => expect(bodyOf("/api/bots/B/tasks", "POST")).toEqual({ stream: true }));
   });
 
   it("making a thread confidential sends the confirmation and marks it", async () => {

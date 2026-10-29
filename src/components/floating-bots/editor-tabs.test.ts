@@ -215,9 +215,10 @@ describe("Shape grid thumbnails", () => {
         expect(span).not.toContain("skin-fx-live");
       }
     }
-    // the body is the bot's own colour, one flat fill (2026-10-18: no clay gradient any more)
+    // the body is the bot's own colour, one flat fill (2026-10-18: no clay gradient any more);
+    // since #1602 the face is drawn from the one outline kept in <defs>, so it carries data-shape-face
     const plain = render({ color: "mint", mascotLook: { character: "shape", skins: { shape: "plain" } } });
     const grid = plain.slice(plain.indexOf("data-character-shape"), plain.indexOf("data-color-tabs"));
-    expect(grid.match(new RegExp(`class="shape-fill" d="[^"]+" fill-rule="evenodd" data-shape-outline="" fill="${MASCOT_COLOR_HEX.mint}"`, "gi"))?.length).toBe(MASCOT_SHAPES.length);
+    expect(grid.match(new RegExp(`class="shape-fill" d="[^"]+" fill-rule="evenodd" data-shape-face="" fill="${MASCOT_COLOR_HEX.mint}"`, "gi"))?.length).toBe(MASCOT_SHAPES.length);
   });
 });
