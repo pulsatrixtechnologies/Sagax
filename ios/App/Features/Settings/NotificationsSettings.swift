@@ -70,6 +70,9 @@ final class AttentionCenter {
             }
             let shown: UNNotificationPresentationOptions = [.banner, .list]
             return rang ? shown : shown.union(sound)
+        case .settled, .read:
+            // a withdrawal is never shown: its banner is taken down instead
+            return []
         default:
             if !ForegroundNotification.showsSystemBanner(appActive: appActive, viewingThreadId: viewingThreadId, threadId: push.threadId) {
                 return []

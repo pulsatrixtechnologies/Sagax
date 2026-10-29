@@ -164,13 +164,18 @@ describe("APNs payload", () => {
 });
 
 describe("an approval push", () => {
-  it("shows the bot as sender and, under it, what it would allow; the tap carries the request", () => {
+  it("shows the bot as sender, nothing added to its name, and the question first; the tap carries the request", () => {
     const request = buildApnsRequest({
-      message: message({ kind: "approval", prompt: "approval", title: "Allow Quasar to run a command?", body: "Run echo hi.", senderName: "Quasar", botId: "b1", requestId: "req-1" }),
+      message: message({ kind: "approval", prompt: "approval", title: "Allow Quasar to run a command?", ask: "Allow Quasar to run a command?", body: "Run echo hi.", senderName: "Quasar", botId: "b1", requestId: "req-1", threadId: "t1" }),
       bundleId: "ca.pulsatrix.sagax", nowMs: 2_000_000,
     });
     const body = JSON.parse(request.body);
-    expect(body.aps.alert).toEqual({ title: "Quasar", subtitle: "Allow Quasar to run a command?", body: "Run echo hi." });
+    // no subtitle: a communication notification and the watch bury it
+    expect(body.aps.alert).toEqual({ title: "Quasar", body: "Allow Quasar to run a command?\nRun echo hi." });
+    // its own notification, at once, never replaced by the next line of t1
+    expect(request.headers["apns-collapse-id"]).toBe("sagax.r.t1.req-1");
+    expect(request.headers["apns-priority"]).toBe("10");
+    expect(body.aps["interruption-level"]).toBe("time-sensitive");
     expect(body.aps.category).toBe("SAGAX_APPROVAL");
     expect(body.aps.sound).toBe(APPROVAL_SOUND);
     expect(body.requestId).toBe("req-1");
@@ -192,6 +197,31 @@ describe("an approval push", () => {
     expect(question.aps.category).toBe("SAGAX_QUESTION");
     expect(question.aps.sound).toBe("default");
     expect(question.needsKey).toBeUndefined();
+  });
+  it("never says the question twice, and a plain ask keeps its line", () => {
+    const same = JSON.parse(buildApnsRequest({ message: message({ kind: "approval", prompt: "approval", ask: "Publish 2.4?", body: "Publish 2.4?", requestId: "r" }), bundleId: "x", nowMs: 0 }).body);
+    expect(same.aps.alert.body).toBe("Publish 2.4?");
+    const none = JSON.parse(buildApnsRequest({ message: message({ kind: "approval", prompt: "approval", body: "Publish 2.4?", requestId: "r" }), bundleId: "x", nowMs: 0 }).body);
+    expect(none.aps.alert.body).toBe("Publish 2.4?");
+  });
+  it("a question carries its choices for the banner's buttons, clipped and without repeats", () => {
+    const body = JSON.parse(buildApnsRequest({
+      message: message({ kind: "approval", prompt: "question", requestId: "q1", body: "Which color?", choices: ["Red", " Red ", "Blue", "x".repeat(200)] }),
+      bundleId: "x", nowMs: 0,
+    }).body);
+    expect(body.choices).toHaveLength(3);
+    expect(body.choices.slice(0, 2)).toEqual(["Red", "Blue"]);
+    expect(body.choices[2].length).toBeLessThanOrEqual(60);
+    expect(body.aps.category).toBe("SAGAX_QUESTION");
+    // an approval never carries choices
+    const approval = JSON.parse(buildApnsRequest({ message: message({ kind: "approval", prompt: "approval", requestId: "r", choices: ["A"] }), bundleId: "x", nowMs: 0 }).body);
+    expect(approval.choices).toBeUndefined();
+  });
+  it("one id per ask, the conversation's for the rest; the phone uses the same", () => {
+    expect(collapseId({ kind: "approval", threadId: "t1", requestId: "r1" })).toBe("sagax.r.t1.r1");
+    expect(collapseId({ kind: "message", threadId: "t1", requestId: "r1" })).toBe("sagax.t.t1");
+    expect(collapseId({ kind: "approval", threadId: "t1" })).toBe("sagax.t.t1");
+    expect(Buffer.byteLength(collapseId({ kind: "approval", threadId: "t".repeat(80), requestId: "r".repeat(80) }))).toBeLessThanOrEqual(64);
   });
   it("the approval chime follows the phone's switch, and silence wins", () => {
     const plain = JSON.parse(buildApnsRequest({

@@ -91,16 +91,25 @@ public enum PushKind: String, Sendable {
     /// Silent: the conversation was read on another device; withdraw its
     /// banner and recount the badge.
     case read
+    /// An approval or a question was answered (anywhere) or expired: its
+    /// banner leaves this phone and the watch (`requestId`).
+    case settled
 }
 
 /// One conversation, one notification: the server's `apns-collapse-id`
 /// (server/push/payload.ts collapseId) and this app's local notification
 /// identifier are the same string, so a push replaces the banner the live
 /// stream already showed instead of adding a second one.
+///
+/// An approval or a question is its own notification, one per request, so
+/// the next line of its conversation never replaces it and takes its
+/// buttons away; it is updated and withdrawn by that id.
 public enum PushCollapse {
-    public static func identifier(threadId: String?, kind: String) -> String {
+    public static func identifier(threadId: String?, kind: String, requestId: String? = nil) -> String {
         let thread = threadId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let key = thread.isEmpty ? "sagax.\(kind)" : "sagax.t.\(thread)"
+        let request = (kind == "approval" || kind == "question" || kind == "settled")
+            ? requestId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" : ""
+        let key = !request.isEmpty ? "sagax.r.\(thread).\(request)" : thread.isEmpty ? "sagax.\(kind)" : "sagax.t.\(thread)"
         if key.utf8.count <= 64 { return key }
         let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
         return "sagax.h.\(digest.prefix(48))"
@@ -211,6 +220,8 @@ public struct PushPayload: Equatable, Sendable {
     public var needsKey: Bool
     public var routineRunId: String?
     public var routineName: String?
+    /// A question's choices, the banner's buttons.
+    public var choices: [String]
     /// Milliseconds since 1970.
     public var at: Double?
 
@@ -259,6 +270,7 @@ public struct PushPayload: Equatable, Sendable {
         }
         routineRunId = string("routineRunId")
         routineName = string("routineName")
+        choices = NotificationChoices.choices(from: userInfo["choices"])
         at = (userInfo["at"] as? NSNumber)?.doubleValue
     }
 
@@ -279,6 +291,17 @@ public struct PushPayload: Equatable, Sendable {
     /// Where a tap goes (the same target a local notification carries).
     public var target: NotificationTarget? {
         NotificationTarget(botId: botId ?? groupId, threadId: threadId)
+    }
+
+    /// The id this push's banner has on the phone (its `apns-collapse-id`).
+    public var collapseIdentifier: String {
+        PushCollapse.identifier(threadId: threadId, kind: kind == .approval ? "approval" : kind.rawValue, requestId: requestId)
+    }
+
+    /// The category this push needs: a question's choices get their own.
+    public var questionChoicesLayout: NotificationChoices.Layout? {
+        guard kind == .approval, prompt == "question", requestId != nil, !choices.isEmpty else { return nil }
+        return NotificationChoices.layout(choices)
     }
 
     /// The same nudge from the live stream and from APNs share this key, so

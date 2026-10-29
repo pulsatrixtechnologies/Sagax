@@ -70,30 +70,18 @@ final class LiveActivityCoordinator {
             if lastSent[bot.id] == content { continue }
             defer { lastSent[bot.id] = content }
 
-            // A bot stopping for you is worth an alert: the island pops open
-            // on its own and the lock screen lights up. Working is not.
-            let alert: AlertConfiguration? = update.kind == .needsYou
-                ? AlertConfiguration(
-                    title: LocalizedStringResource(stringLiteral: content.headline),
-                    body: LocalizedStringResource(stringLiteral: content.line),
-                    sound: .default
-                )
-                : nil
+            // No alert of its own: the ask's notification already buzzes the
+            // phone and the watch once (an alert here was a second "needs
+            // you" for the same ask, full screen on the watch). The activity
+            // stays a quiet status with the answers on it.
             if let activity = Activity<BotActivityAttributes>.activities.first(where: { $0.attributes.botId == bot.id }) {
-                let newAsk = update.kind == .needsYou && (
-                    lastSent[bot.id]?.threadId != content.threadId || lastSent[bot.id]?.requestId != content.requestId
-                )
-                Task { await activity.update(.init(state: content, staleDate: nil), alertConfiguration: newAsk ? alert : nil) }
+                Task { await activity.update(.init(state: content, staleDate: nil)) }
             } else {
                 let attributes = BotActivityAttributes(
                     botId: bot.id, threadId: bot.threadId, name: bot.name, color: bot.color,
                     mascotLook: bot.mascotLook, mascotSkin: bot.mascotSkin
                 )
                 _ = try? Activity.request(attributes: attributes, content: .init(state: content, staleDate: nil), pushType: nil)
-                // a fresh activity cannot alert on request; one immediate alerting update does it
-                if let alert, let activity = Activity<BotActivityAttributes>.activities.first(where: { $0.attributes.botId == bot.id }) {
-                    Task { await activity.update(.init(state: content, staleDate: nil), alertConfiguration: alert) }
-                }
             }
         }
 

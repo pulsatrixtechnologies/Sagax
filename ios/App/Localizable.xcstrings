@@ -1,6 +1,55 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Allowed.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Allowed." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Permis." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Permitido." } }
+      }
+    },
+    "Allowed: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Allowed: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Permis : %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Permitido: %@" } }
+      }
+    },
+    "Denied.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Denied." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Refusé." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Negado." } }
+      }
+    },
+    "Denied: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Denied: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Refusé : %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Negado: %@" } }
+      }
+    },
+    "Answer sent: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Answer sent: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Réponse envoyée : %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Resposta enviada: %@" } }
+      }
+    },
+    "Your answer did not go through. Open Sagax to answer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your answer did not go through. Open Sagax to answer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ta réponse n'est pas passée. Ouvre Sagax pour répondre." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Sua resposta não foi enviada. Abra o Sagax para responder." } }
+      }
+    },
+    "Answered.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Answered." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Répondu." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Respondido." } }
+      }
+    },
     "%lld changed, %lld unchanged, %lld refused": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "%lld changed, %lld unchanged, %lld refused" } },

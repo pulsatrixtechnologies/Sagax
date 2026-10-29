@@ -436,7 +436,8 @@ Perspicax) is not the person typing: its turns go to its own conversation
 with the bot, drawn like a bot-to-bot one ("<client> ⇆ <bot>", neutral
 icon), never into the person's chat, and nothing in it notifies them
 (push, watch, banner, sound, red dot) except an approval or a question,
-which follows Reach me. One rule, one place: `shared/agent-conversation.ts`
+which reaches the desktop only: never a phone or a watch (`quietOnPhones`
+on the notification, 2026-10-29), since the client that asked carries it. One rule, one place: `shared/agent-conversation.ts`
 (opener `{ kind: "agent", botId: "agent:<slug>", name }`, the notification
 rule); `agentConversationFor` in server/index.ts opens or reuses it per bot,
 person and client; the name is the `client_name` Perspicax signs into the
@@ -444,6 +445,46 @@ member assertion. The turn still runs as the person. Tests:
 `shared/agent-conversation.test.ts`, `server/org-member-api.e2e.test.ts`
 (M1, M6, M7), `src/components/BotConversations.sheet.test.ts`, iOS
 `BotConversationsTests`.
+
+## Approval notifications on the phone and the watch (2026-10-29)
+
+One notification per ask, updated and withdrawn in place; the buttons always
+there; the question first.
+
+- Id: an approval or a question is its own notification,
+  `sagax.r.<thread>.<request>` (`collapseId` in server/push/payload.ts,
+  `PushCollapse.identifier` on iOS, the same string for a push and a local
+  banner). The conversation's next line keeps `sagax.t.<thread>` and never
+  replaces an ask (it used to, and took its buttons away). The push hub's
+  grace queue is keyed the same way.
+- Withdrawn everywhere: any card patched answered, dismissed or expired, by
+  any path (engine, safety hold, a bot's ask, the console) calls
+  `withdrawApprovalNotice` once (store `message.patch`): `notify-withdraw`
+  to every client (iOS reads it too), and `pushHub.noteSettled(thread,
+  request)` sends that ask's devices an alert push under the ask's own
+  collapse id (`buildSettledRequest`, passive, no sound, `kind: settled`):
+  the Notification Service Extension takes the ask down on the phone and the
+  watch and shows nothing. Never the whole conversation.
+- Buttons: Allow once and Deny; a question's own choices
+  (`Notification.choices`, push `choices`) up to `NotificationChoices.limit`
+  (4), past it three and Open; their category is made and registered by the
+  extension (or the app, for a local banner) before the banner shows
+  (`NotificationCategories`, CompanionCore). The extension always keeps the
+  category it chose after `updating(from:)`.
+- Answer from a banner or the watch: `NotificationApprovalRunner` (shared
+  keychain, in the background); then one quiet line in the conversation's
+  place ("Allowed: …", "Answer sent: …"), or a plain banner when it did not
+  go through. All in the app's catalog (en, fr, pt-BR).
+- Look: title is the bot's name, nothing added; the body says the plain
+  question first (`Notification.ask`), then the detail; no subtitle.
+  Approvals are priority 10 and time-sensitive. The in-app island
+  (`NeedsYouIsland`) sizes to its content (small face, name, question,
+  answers never cut off). The Live Activity has no alert of its own (the
+  notification is the one buzz) and a `.small` layout for the watch.
+- MCP: a conversation an AI client holds (outside agent or hidden) never
+  rings a phone or a watch (`quietOnPhones`), approvals included.
+- Tests: `server/push/*.test.ts`, `server/notify.test.ts`, iOS
+  `ApprovalNotificationTests`.
 
 ## Connect Apps: a Bots tab and one search (2026-10-29)
 
