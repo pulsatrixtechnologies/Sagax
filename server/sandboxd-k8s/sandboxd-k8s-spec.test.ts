@@ -414,7 +414,8 @@ describe("image scripts and manifests", () => {
     // or NetworkPolicies, no pods/log; the readiness check reads its namespace.
     expect(rbac).toMatch(/resources: \["pods\/exec"\]\r?\n\s+verbs: \["get", "create"\]/);
     expect(rbac).toMatch(/resources: \["pods"\]\r?\n\s+verbs: \["get", "list", "create", "delete"\]/);
-    expect(rbac).toMatch(/resources: \["networkpolicies"\]\r?\n\s+verbs: \["get", "list", "create", "delete"\]/);
+    // patch: the denied API address follows a cluster restart.
+    expect(rbac).toMatch(/resources: \["networkpolicies"\]\r?\n\s+verbs: \["get", "list", "create", "delete", "patch"\]/);
     expect(rbac).not.toContain("pods/log");
     expect(rbac).toMatch(/resourceNames: \["sandboxes"\]/);
     const deployment = readFileSync(new URL("../../deploy/k8s/provisioner/sandboxd-deployment.yaml", import.meta.url), "utf8");

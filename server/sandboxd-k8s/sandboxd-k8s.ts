@@ -28,6 +28,7 @@ import {
   spareReplicas,
   pvcSpec,
   sandboxKeyFromContainerName,
+  sandboxEgress,
   sandboxNetworkPolicy,
   storageClassEncrypts,
   type K8sGuards,
@@ -36,6 +37,7 @@ import {
 import { SandboxError, SandboxService } from "../sandboxd-core.ts";
 import { SANDBOX_STARTING_CODE } from "../sandbox-k8s-wake.ts";
 import { SPARE_TICK_MS, SpareScaler, spareConfigFromEnv } from "./sandboxd-k8s-spare.ts";
+import { DENY_HOSTS_TICK_MS, denyHostsFromEnv, resolveDenyHosts } from "./sandboxd-k8s-deny-hosts.ts";
 import { runsConfigFromEnv } from "../sandboxd-runs-spec.ts";
 import type { ContainerStats, ContainerSummary, DockerApi, ExecRequest, ExecResult, TtyExec, TtySize } from "../sandboxd-docker.ts";
 import { createSandboxdHandler, createSandboxdUpgradeHandler } from "../sandboxd.ts";
@@ -139,11 +141,16 @@ export interface KubernetesApiOptions {
 }
 
 /** DockerApi backed by the Kubernetes API. */
-export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, client: K8sClient, audit: SandboxAudit, options: KubernetesApiOptions = {}): DockerApi & { syncSpare(): Promise<void> } {
+export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, client: K8sClient, audit: SandboxAudit, options: KubernetesApiOptions = {}): DockerApi & { syncSpare(): Promise<void>; setHostDeny(cidrs: readonly string[]): Promise<number> } {
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => { setTimeout(resolve, ms); }));
   const now = options.now ?? Date.now;
   const ns = k8s.namespace;
   let encryptionOk: boolean | null = null;
+  // Addresses of SAGAX_SANDBOX_K8S_DENY_HOSTS (the cluster API), set by
+  // setHostDeny: denied beside sandbox.egressDeny in every person's policy.
+  let hostDeny: string[] = [];
+  let hostDenyApplied: string[] = [];
+  const denyNow = (): string[] => [...new Set([...sandbox.egressDeny, ...hostDeny])];
 
   const podPath = (name: string) => `/api/v1/namespaces/${ns}/pods/${name}`;
   const pvcPath = (name: string) => `/api/v1/namespaces/${ns}/persistentvolumeclaims/${name}`;
@@ -477,7 +484,7 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       const configs = (ipam.Config ?? []) as { Subnet?: string }[];
       const subnet = configs[0]?.Subnet ?? "";
       if (!SANDBOX_KEY_RE.test(key) || !subnet) throw new Error("sandbox network is missing its key or subnet");
-      await create(`/apis/networking.k8s.io/v1/namespaces/${ns}/networkpolicies`, sandboxNetworkPolicy(k8s, key, subnet, sandbox.egressDeny, labels));
+      await create(`/apis/networking.k8s.io/v1/namespaces/${ns}/networkpolicies`, sandboxNetworkPolicy(k8s, key, subnet, denyNow(), labels));
       audit.record({ action: "sandbox.net.create", outcome: "ok", key });
     },
     async removeNetwork(name: string) {
@@ -541,7 +548,28 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
       return { exitCode: 0, output: "sagax-egress-ok\n" };
     },
   };
-  return { ...api, syncSpare };
+  async function setHostDeny(cidrs: readonly string[]): Promise<number> {
+    const next = [...new Set(cidrs)].sort();
+    if (next.length === hostDenyApplied.length && next.every((cidr, index) => cidr === hostDenyApplied[index])) return 0;
+    // New policies take it at once; the existing ones are patched below, and
+    // a failed patch leaves hostDenyApplied behind so the next tick retries.
+    hostDeny = next;
+    // Every person's policy of this instance, the existing ones too: a
+    // cluster restart moves the API to a new address under them.
+    const policies = await listCollection(`/apis/networking.k8s.io/v1/namespaces/${ns}/networkpolicies`, { [SANDBOX_INSTANCE_LABEL]: sandbox.instance });
+    let patched = 0;
+    for (const policy of policies) {
+      const meta = metaOf(policy);
+      if (!SANDBOX_KEY_RE.test(meta.labels[SANDBOX_USER_LABEL] ?? "")) continue;
+      await merge(netPath(meta.name), { spec: { egress: sandboxEgress(denyNow()) } });
+      patched += 1;
+    }
+    hostDenyApplied = next;
+    audit.record({ action: "sandbox.net.deny_hosts", outcome: "ok", detail: { addresses: hostDeny.length, policies: patched } });
+    return patched;
+  }
+
+  return { ...api, syncSpare, setHostDeny };
 }
 
 async function collectReadiness(client: K8sClient, k8s: K8sSandboxConfig, guards: K8sGuards, sandbox: SandboxdConfig, auditWritable: boolean): Promise<string[]> {
@@ -612,6 +640,33 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
     return;
   }
   if (!(await backend.ping())) throw new Error(`sandboxd: kubernetes namespace ${k8s.namespace} is not reachable`);
+  const denyHosts = denyHostsFromEnv(env);
+  if (denyHosts.length) {
+    // Resolved before anything serves: no sandbox starts with a policy that
+    // lets it reach the API. A failure later keeps the last addresses.
+    const refresh = async () => backend.setHostDeny(await resolveDenyHosts(denyHosts));
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        await refresh();
+        lastError = null;
+        break;
+      } catch (error: unknown) {
+        lastError = error;
+        await new Promise((resolve) => { setTimeout(resolve, 3_000); });
+      }
+    }
+    if (lastError) {
+      audit.record({ action: "provisioner.start", outcome: "denied", detail: { reason: "deny_hosts" } });
+      throw new Error(`sandboxd: SAGAX_SANDBOX_K8S_DENY_HOSTS did not resolve: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+    }
+    const denyTick = setInterval(() => {
+      void refresh().then((patched) => {
+        if (patched) console.log(`sandboxd: the API moved, ${patched} sandbox polic(ies) updated`);
+      }, (error: unknown) => console.error(`sandboxd: deny hosts refresh failed: ${error instanceof Error ? error.message : String(error)}`));
+    }, DENY_HOSTS_TICK_MS);
+    denyTick.unref();
+  }
   ensureSandboxdKey(sandbox.keyFile);
   const sandboxKeys = sandboxdKeySource(sandbox.keyFile);
   const service = new SandboxService(backend, sandbox);

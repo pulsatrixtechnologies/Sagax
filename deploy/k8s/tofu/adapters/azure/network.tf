@@ -20,6 +20,25 @@ resource "azurerm_subnet" "nodes" {
   address_prefixes     = ["10.214.1.0/24"]
 }
 
+# API Server VNet Integration: the API server's private
+# address lives in this delegated /28. One way: turning it on restarts the
+# API server and it cannot be turned off.
+resource "azurerm_subnet" "api_server" {
+  count                = local.on && var.api_server_vnet_integration ? 1 : 0
+  name                 = "api-server"
+  resource_group_name  = azurerm_resource_group.this[0].name
+  virtual_network_name = azurerm_virtual_network.this[0].name
+  address_prefixes     = ["10.214.0.0/28"]
+
+  delegation {
+    name = "aks-api-server"
+    service_delegation {
+      name    = "Microsoft.ContainerService/managedClusters"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
+}
+
 # The sandbox pool has its own subnet and leaves through its own NAT gateway:
 # an address that no allow list trusts, distinct from the cluster's load
 # balancer and from any server of the operator. The NAT gateway wins over the

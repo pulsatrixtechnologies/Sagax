@@ -617,11 +617,16 @@ export function sandboxNetworkPolicy(k8s: K8sSandboxConfig, key: string, subnet:
       podSelector: { matchLabels: { [SANDBOX_USER_LABEL]: key, [SANDBOX_LABEL]: "1" } },
       policyTypes: ["Ingress", "Egress"],
       ingress: [],
-      egress: [{
-        to: [{ ipBlock: { cidr: "0.0.0.0/0", ...(deny.length ? { except: [...deny] } : {}) } }],
-      }],
+      egress: sandboxEgress(deny),
     },
   };
+}
+
+/** spec.egress of a person's policy: public IPv4 minus the deny list. */
+export function sandboxEgress(deny: readonly string[]): Obj[] {
+  return [{
+    to: [{ ipBlock: { cidr: "0.0.0.0/0", ...(deny.length ? { except: [...deny] } : {}) } }],
+  }];
 }
 
 /** Namespace backstop: any Pod that lost its own policy still has no ingress

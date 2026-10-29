@@ -48,6 +48,12 @@ variable "api_server_authorized_ip_ranges" {
   default     = []
 }
 
+variable "api_server_vnet_integration" {
+  type        = bool
+  description = "API Server VNet Integration: the API server gets a private address in a delegated /28 (10.214.0.0/28) and the sandbox NAT address leaves the authorized ranges, so a sandbox cannot reach the API. One way: it restarts the API server and cannot be turned off."
+  default     = false
+}
+
 variable "system_vm_size" {
   type        = string
   description = "Arm64 system pool SKU. It stays up so system pods and the warm-node CronJob have a place to run. It is not the sandbox pool. Required. No default: set it from the change record."
