@@ -61,6 +61,8 @@
 //   POST   /api/pages/:id/threads/:tid/resolve   { resolved }
 //   DELETE /api/pages/:id/threads/:tid      its author or the page's person
 //   DELETE /api/pages/:id/threads/:tid/replies/:rid   the same
+//   GET    /api/pages/:id/live             (2026-10-28) an event stream: who has
+//          the page open (presence) and "threads changed" (server/page-live.ts)
 import { randomBytes } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -69,6 +71,7 @@ import { join } from "node:path";
 import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from "../published-pages.ts";
 import { commentAnswerDocument, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
 import type { ReaderBoot } from "../../shared/page-reader.ts";
+import type { PageLive } from "../page-live.ts";
 import { parsePageQuote, parseThreadText, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
 import { geistFace } from "../geist-face.ts";
 import { decodeSkinTokens, encodeSkinTokens } from "../../src/lib/page-theme.ts";
@@ -590,6 +593,11 @@ export interface PublishedPageRouteDeps {
   names?(ids: readonly string[]): Record<string, string>;
   /** False when the page's person was disabled or deleted. */
   ownerActive?(page: PageRecord): boolean;
+  /** Who has a page open, and its annotations as they change. */
+  live?: PageLive;
+  /** Someone other than the page's person commented or replied: tell its
+   * person (a notification). */
+  onComment?(input: { page: PageRecord; by: string; text: string; reply: boolean }): void;
 }
 
 const LINK_SHARING_OFF = { error: "Your organization turned off public links for pages. Choose My organization instead.", code: "link_sharing_off" };
@@ -676,6 +684,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     // annotations: one route per line with its method, like the ones above
     const thread: ThreadRoute | null =
       (method === "GET" && /^\/api\/pages\/([\w-]+)\/threads$/.exec(path) && { route: "list", match: /^\/api\/pages\/([\w-]+)\/threads$/.exec(path)! })
+      || (method === "GET" && /^\/api\/pages\/([\w-]+)\/live$/.exec(path) && { route: "live", match: /^\/api\/pages\/([\w-]+)\/live$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads$/.exec(path) && { route: "add", match: /^\/api\/pages\/([\w-]+)\/threads$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies$/.exec(path) && { route: "reply", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/resolve$/.exec(path) && { route: "resolve", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/resolve$/.exec(path)! })
@@ -868,7 +877,7 @@ async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, extr
   return result.ok ? json(res, 201, { comment: result.comment }) : json(res, result.status, { error: result.error, code: result.code });
 }
 
-type ThreadRoute = { route: "list" | "add" | "reply" | "resolve" | "remove" | "removeReply"; match: RegExpExecArray };
+type ThreadRoute = { route: "list" | "live" | "add" | "reply" | "resolve" | "remove" | "removeReply"; match: RegExpExecArray };
 
 /** Who may annotate this page: its own person always; anyone else signed in
  * only while it is published, not expired, and readable by them. Null for
@@ -902,6 +911,22 @@ async function pageThreads(deps: PublishedPageRouteDeps, ctx: ExtrasContext, thr
     };
   };
   if (route === "list") return json(res, 200, answer());
+  if (route === "live") {
+    if (!deps.live) return json(res, 404, { error: "No live updates on this server.", code: "no_live" });
+    const name = deps.names?.([who.by])[who.by] ?? "";
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", "x-accel-buffering": "no", connection: "keep-alive" });
+    res.write(": open\n\n");
+    const leave = deps.live.join(page.id, { id: who.by, name }, res);
+    if (!leave) {
+      res.end();
+      return;
+    }
+    req.on("close", leave);
+    res.on("close", leave);
+    return;
+  }
+  // after a change: every open bar reads the threads again
+  const changed = () => deps.live?.changed(page.id);
   const threadId = match[2];
   if (route === "remove" || route === "removeReply") {
     const target = deps.pages.threads(page.id).find((entry) => entry.id === threadId);
@@ -909,24 +934,34 @@ async function pageThreads(deps: PublishedPageRouteDeps, ctx: ExtrasContext, thr
     if (!target || author === undefined) return json(res, 404, { error: route === "remove" ? "This annotation does not exist." : "This reply does not exist.", code: route === "remove" ? "no_thread" : "no_reply" });
     if (!who.owner && author.toLowerCase() !== who.by.toLowerCase()) return json(res, 403, { error: "Only its author or the page's person deletes it.", code: "not_author" });
     const result = deps.pages.removeThreadPart(page.id, threadId!, route === "removeReply" ? match[3] : undefined);
-    return failed(result) ? json(res, result.status, { error: result.error, code: result.code }) : json(res, 200, answer());
+    if (failed(result)) return json(res, result.status, { error: result.error, code: result.code });
+    changed();
+    return json(res, 200, answer());
   }
   const body = await readBody(req) as Record<string, unknown> | null;
   if (route === "resolve") {
     if (typeof body?.resolved !== "boolean") return json(res, 400, { error: "Send { resolved: true or false }.", code: "bad_body" });
     const result = deps.pages.resolveThread(page.id, threadId!, { by: who.by, resolved: body.resolved });
-    return result.ok ? json(res, 200, answer()) : json(res, result.status, { error: result.error, code: result.code });
+    if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
+    changed();
+    return json(res, 200, answer());
   }
   const text = parseThreadText(body?.text);
   if (text === null) return json(res, 400, { error: "text: 1 to 2000 characters.", code: "bad_text" });
   if (route === "reply") {
     const result = deps.pages.reply(page.id, threadId!, { by: who.by, text: clean(text) });
-    return result.ok ? json(res, 201, answer()) : json(res, result.status, { error: result.error, code: result.code });
+    if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
+    changed();
+    if (!who.owner) deps.onComment?.({ page, by: who.by, text: result.reply.text, reply: true });
+    return json(res, 201, answer());
   }
   // route === "add": on the version readers get (its person: the latest)
   const anchor = parsePageQuote(body?.anchor);
   if (!anchor) return json(res, 400, { error: "anchor: { kind, quote, prefix, suffix, path, tag }.", code: "bad_anchor" });
   const version = page.currentVersion ?? page.versions.at(-1)?.n ?? 1;
   const result = deps.pages.addThread(page.id, { by: who.by, anchor, text: clean(text), version });
-  return result.ok ? json(res, 201, answer()) : json(res, result.status, { error: result.error, code: result.code });
+  if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
+  changed();
+  if (!who.owner) deps.onComment?.({ page, by: who.by, text: result.thread.text, reply: false });
+  return json(res, 201, answer());
 }

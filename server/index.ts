@@ -358,6 +358,7 @@ import { reviewedSkillSha256 } from "../shared/skill-request.ts";
 import { checkPersonQuote } from "../shared/primary-request.ts";
 import { sessionIdlePolicy } from "./drivers/session-idle.ts";
 import { serveStaticUi } from "./static-ui.ts";
+import { PageLive } from "./page-live.ts";
 import { coalescedRun } from "./coalesced-run.ts";
 import type { EarlyListener } from "./early-listener.ts";
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
@@ -1385,6 +1386,8 @@ initMediaProxy(DATA_DIR);
 const templateLinks = new TemplateLinks(DATA_DIR);
 /** Pages a bot proposed and the person published (server/published-pages.ts). */
 const publishedPages = new PublishedPages(DATA_DIR);
+/** Who has a published page open, and its annotations as they change. */
+const pageLive = new PageLive();
 // The desktop parent owns the primary lease and delegates one private child
 // claim; a standalone/headless server owns the primary lease itself. Acquire
 // before any durable identity, sessions, config, or Store state is loaded.
@@ -8219,6 +8222,19 @@ ROUTES.push(createPublishedPageRoutes({
   reader: (auth) => pageReaderFor(auth),
   teamsOf: (principalId) => IDENTITY.kind === "perspicax" ? (principals.byId(principalId)?.teams ?? []).map((team) => team.id) : [],
   names: (ids) => Object.fromEntries(ids.map((id) => [id, pageThreadName(id)])),
+  live: pageLive,
+  // someone else commented: the page's person hears it (Annotate)
+  onComment: ({ page, by, text, reply }) => {
+    const bot = store.bot(page.botId);
+    const who = pageThreadName(by) || "Someone";
+    const title = summarize(page.title ?? page.versions.at(-1)?.title ?? "", 60);
+    notify({
+      kind: "page-comment", botId: page.botId, botName: bot?.name ?? "", threadId: page.threadId,
+      title: reply ? `${who} replied on “${title}”` : `${who} commented on “${title}”`,
+      body: summarize(text),
+      ...(page.ownerId ? { audience: [page.ownerId] } : {}),
+    });
+  },
   ownerActive: (page) => {
     if (IDENTITY.kind !== "perspicax" || !page.ownerId) return true;
     const person = principals.byId(page.ownerId);

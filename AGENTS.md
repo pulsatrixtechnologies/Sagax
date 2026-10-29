@@ -216,7 +216,11 @@ admin): `/api/pages/:id/threads` (shared/page-threads.ts), threads anchored
 on text or a part of the page, replies, resolved, deleted by their author
 or the page's person. The frame's bridge (`ANNOTATE_BRIDGE_SOURCE`) is
 dormant until the wrapper turns the mode on and only ever gets anchors
-back, never a comment or a name. Captures: `scripts/capture-page-reader.ts`.
+back, never a comment or a name. Live (server/page-live.ts):
+`GET /api/pages/:id/live` streams who has the page open and "threads
+changed" (never a comment) to the people who may annotate; a comment by
+someone else notifies the page's person (`page-comment`, audience the
+owner only). Captures: `scripts/capture-page-reader.ts`.
 
 ## xAI Bot Marketplace in Browse Bots (2026-10-28)
 
