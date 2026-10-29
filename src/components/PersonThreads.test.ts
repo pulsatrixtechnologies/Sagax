@@ -50,8 +50,11 @@ const person: Group = {
 let host: HTMLDivElement;
 let root: Root;
 const render = async (element: ReturnType<typeof createElement>) => { await act(async () => { root.render(element); }); };
-const button = (label: string) => [...host.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
+/** The header picker's list is drawn on <body> (AnchoredPopover, #1498), so
+ * controls are looked up on the whole document; `host` sits in it too. */
+const button = (label: string) => [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((candidate) =>
   candidate.getAttribute("aria-label") === label || candidate.textContent?.trim() === label);
+const pickerMenu = () => document.body.querySelector("[data-task-picker-menu]") ?? undefined;
 /** A row's ThreadMenu lives in a portal on the body, not under `host`. */
 const menuItem = (id: string) => document.body.querySelector(`[data-thread-menu-item="${id}"]`) ?? undefined;
 const menuPage = (page: string) => document.body.querySelector(`[data-thread-menu="${page}"]`) ?? undefined;
@@ -110,11 +113,13 @@ describe("threads location for a conversation with a person: one place at a time
 describe("the header picker on a person", () => {
   it("lists the pair's threads in folders, General first in its own name, the open one checked", async () => {
     await render(createElement(PersonThreadPicker, { group: person, initialOpen: true }));
-    const text = host.textContent ?? "";
+    const list = pickerMenu();
+    expect(list, "picker list on body").toBeTruthy();
+    const text = list!.textContent ?? "";
     expect(text).toContain("General");
     expect(text).toContain("Budget");
     expect(text).toContain("Finance");
-    expect(host.querySelector('[data-picker-folder="f1"]')).not.toBeNull();
+    expect(list!.querySelector('[data-picker-folder="f1"]')).not.toBeNull();
     // the folder of a row: the same Move menu as a bot's (Move ›, in the one flat menu)
     await click(button("Actions for Budget"));
     await click(menuItem("move"));
@@ -124,7 +129,7 @@ describe("the header picker on a person", () => {
 
   it("switches, pins, files, deletes and creates through the person conversation's own actions", async () => {
     await render(createElement(PersonThreadPicker, { group: person, initialOpen: true }));
-    await click([...host.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("Budget")));
+    await click([...pickerMenu()!.querySelectorAll("button")].find((candidate) => candidate.textContent?.includes("Budget")));
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "switchGroupTask", groupId: "dm", threadId: "budget" });
     // Pin waits behind the row's "..." menu now
     await click(button("Actions for Budget"));

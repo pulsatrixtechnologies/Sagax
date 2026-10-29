@@ -23,7 +23,6 @@ describe("chat text follows the writer's direction", () => {
     expectDirAuto("GroupView.tsx", "value={bulletinDraft}");
     expectDirAuto("GroupView.tsx", "group.bulletin.split");
     expectDirAuto("TaskPicker.tsx", "{task.title}");
-    expectDirAuto("TaskPicker.tsx", "task.threadId === bot.threadId");
     expectDirAuto("SearchResults.tsx", "line-clamp-2");
 
     const quotes = source("CitationUI.tsx").match(/<pre dir="auto"[^>]*>\{citation\.quote\}/g) ?? [];

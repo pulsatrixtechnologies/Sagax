@@ -156,9 +156,13 @@ describe("composer controls (Grok Bot's prompt bar)", () => {
     render(createElement(Composer, { bot: busy }));
     expect($('[aria-label="Stop this turn"]')).toBeNull();
     expect(host.querySelector(".lucide-square")).toBeNull();
+    // #1481: in the bot's own conversation the stop word is sent as is; the
+    // server stops the turn at once, keeps the words and answers "Stopped".
     type("Arrête !");
     flushSync(() => textarea().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "interrupt", botId: "bot", threadId: "selected" });
+    expect(fixture.dispatch).toHaveBeenCalledTimes(1);
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "send", botId: "bot", threadId: "selected", text: "Arrête !" }));
+    expect(fixture.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "interrupt" }));
     expect(textarea().value).toBe("");
     fixture.dispatch.mockClear();
     flushSync(() => textarea().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));

@@ -64,7 +64,8 @@ describe("ChatMarkdown YouTube artifact and invalid cw", () => {
 
   it("shows an invalid ```cw as its source plus the reason", () => {
     const html = render('```cw\n{"family":"widget","view":"custom","records":[{"id":1}]}\n```');
-    expect(html).toContain("Invalid ConnectWise widget: unknown family &quot;widget&quot;");
+    // #1278: the widget's brand is the server's to declare; the app says "service desk"
+    expect(html).toContain("Invalid service desk widget: unknown family &quot;widget&quot;");
     expect(html).toContain("custom");
   });
 });

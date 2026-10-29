@@ -1109,10 +1109,10 @@ describe("the organization's allowed model providers", () => {
     }
   });
 
-  it("2026-10-17: an empty list allows no provider (Perspicax saves none as [])", () => {
+  it("2026-10-17: an empty list allows no provider the organization pays for (Perspicax saves none as [])", () => {
     fixture.instances = [signedIn(), codex];
     fixture.org = orgFixture;
-    fixture.myEngines = [mine("claude", "claudeAgent", true), mine("codex", "codex", true)];
+    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false)];
     fixture.values = [];
     fixture.config = { allowedEngines: [] };
     const opened = open(bot("claude", "claude-opus-5-5"));
@@ -1121,10 +1121,12 @@ describe("the organization's allowed model providers", () => {
   });
 
   // 2026-10-18 (owner): "hidden from the Perspicax menu, still visible in a lot
-  // of menus": a provider the admin hid is listed nowhere, even connected.
-  it("never lists a provider the person connected once the organization hid it", () => {
+  // of menus": a provider the admin hid is listed nowhere while the
+  // organization's key is what runs it. 2026-10-27 (#1098, #1282): the one
+  // the person pays for with their own subscription or key stays theirs.
+  it("never lists a provider the organization hid unless the person pays for it themselves", () => {
     fixture.org = orgFixture;
-    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
+    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false)];
     fixture.config = { allowedEngines: ["claude"] };
     fixture.instances = [signedIn(), codex];
     const forBot = bot("claude", "claude-opus-5-5");
@@ -1141,13 +1143,17 @@ describe("the organization's allowed model providers", () => {
     const sections = lists(composer)[0]!.props.sections;
     expect(sections.map((section) => section.label ?? section.key)).toEqual(["top", "Claude"]);
     expect(composer.html).not.toContain('data-model-provider="codex"');
+    // their own subscription runs it: it is their bill, so it is offered
+    fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
+    fixture.values = [];
+    expect(rail(open(forBot))!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "codex"]);
   });
 
-  it("drops a favorite whose provider the organization hid; it comes back with the provider", () => {
+  it("drops a favorite whose provider the organization hid; it comes back with the provider, or on the person's own account", () => {
     fixture.storage["sagax.modelFavorites.v1"] = JSON.stringify([["codex", "gpt-5.6"], ["claude", "claude-opus-5-5"]]);
     try {
       fixture.org = orgFixture;
-      fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
+      fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false)];
       fixture.instances = [signedIn(), codex];
       const forBot = bot("claude", "claude-sonnet-5");
       const favoritesShown = () => {
@@ -1162,6 +1168,9 @@ describe("the organization's allowed model providers", () => {
       expect(favoritesShown()).toEqual(["gpt-5.6", "claude-opus-5-5"]);
       fixture.config = { allowedEngines: ["claude"] };
       expect(favoritesShown()).toEqual(["claude-opus-5-5"]);
+      // #1098: the person's own subscription keeps the favorite
+      fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
+      expect(favoritesShown()).toEqual(["gpt-5.6", "claude-opus-5-5"]);
     } finally {
       delete fixture.storage["sagax.modelFavorites.v1"];
     }
