@@ -23,6 +23,24 @@ struct BotEditActions {
     var close: () -> Void
 }
 
+extension LocalizedStringKey {
+    /// The English source text of a literal key (search labels).
+    var sourceText: String {
+        Mirror(reflecting: self).children.first { $0.label == "key" }?.value as? String ?? ""
+    }
+}
+
+extension BotEditActions {
+    /// What a search result does: the row's own action, else the page that holds it.
+    func open(_ item: BotEditItem, context: BotEditContext) {
+        if item == .avatar { editAvatar(); return }
+        if item == .routines { openRoutines(); return }
+        if let page = item.opens { openPage(page); return }
+        if let section = item.section { openSection(section); return }
+        if let page = BotEditTree.path(to: item, context)?.last { openPage(page) }
+    }
+}
+
 extension BotEditPageID {
     var title: LocalizedStringKey {
         switch self {
@@ -140,13 +158,24 @@ struct PhoneBotEditRoot: View {
     let actions: BotEditActions
 
     @State private var rules: [CustomRuleRow]?
+    @State private var query = ""
+
+    private var results: [BotEditItem] {
+        BotEditSearch.results(query, context: context) { $0.title.sourceText }
+    }
 
     private var summaries: BotEditSummaries { BotEditSummaries(bot: bot, rules: rules, routines: routines) }
 
     var body: some View {
         ScrollViewReader { proxy in
             SettingsPage(title: "Edit bot", leading: .close(actions.close)) {
-                BotEditCards(page: .root, bot: bot, context: context, summaries: summaries, actions: actions)
+                BotEditSearchField(query: $query)
+                SettingsSpacer(14)
+                if query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    BotEditCards(page: .root, bot: bot, context: context, summaries: summaries, actions: actions)
+                } else {
+                    BotEditSearchResults(query: query, items: results, context: context, actions: actions)
+                }
                 Color.clear.frame(height: 1).id("persona-end")
             }
             .task {
@@ -192,6 +221,66 @@ struct PhoneBotEditPage: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("panel-edit.\(page.rawValue)")
+    }
+}
+
+// MARK: - Search
+
+/// The box at the top of Edit bot: a word finds the row that holds it.
+private struct BotEditSearchField: View {
+    @Environment(\.themePalette) var themePalette
+    @Binding var query: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search", text: $query)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .accessibilityIdentifier("panel-edit-search")
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .accessibilityLabel(Text("Clear"))
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.06)))
+        .padding(.horizontal, SettingsMetrics.rowInset)
+    }
+}
+
+/// What the word found, or a clear line when nothing matches.
+private struct BotEditSearchResults: View {
+    let query: String
+    let items: [BotEditItem]
+    let context: BotEditContext
+    let actions: BotEditActions
+
+    var body: some View {
+        if items.isEmpty {
+            Text("Nothing matches “\(query.trimmingCharacters(in: .whitespaces))”")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .accessibilityIdentifier("panel-edit-search-empty")
+        } else {
+            SettingsCard {
+                ForEach(Array(items.enumerated()), id: \.element) { position, item in
+                    if position > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: item.title, subtitle: parent(of: item), accessory: .chevron, height: 56,
+                                identifier: "panel-edit-result.\(item.rawValue)") { actions.open(item, context: context) }
+                }
+            }
+        }
+    }
+
+    /// The page the row sits on, under its name.
+    private func parent(of item: BotEditItem) -> String? {
+        guard let page = BotEditTree.path(to: item, context)?.last else { return nil }
+        return page.title.sourceText
     }
 }
 

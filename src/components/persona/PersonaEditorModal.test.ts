@@ -119,7 +119,7 @@ describe("persona editor shell", () => {
     for (const label of ["Identity", "Bot folder", "Model", "Permissions", "Voice", "Usage", "Changes"]) {
       expect(html).toContain(`>${label}</span>`);
     }
-    expect(html).not.toContain("data-persona-search");
+    expect(html).toContain("data-persona-search");
     expect(html).toContain(">Edit bot<");
     expect(html).not.toContain(">Persona<");
     expect(html).toContain('aria-current="page"');

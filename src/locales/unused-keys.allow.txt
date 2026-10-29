@@ -489,12 +489,10 @@ personLabel.mine
 personLabel.mineHint
 persona.action.rename
 persona.files.new
-persona.noMatch
 persona.overview.actions
 persona.rules.editorLabel
 persona.rules.over
 persona.rules.sets.title
-persona.search
 persona.searchLabel
 phoneApp.android
 phoneApp.androidAction
