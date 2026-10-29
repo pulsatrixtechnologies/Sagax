@@ -596,6 +596,7 @@ import { createLiveSession, liveAttachUrl, liveHistoryFrom, LiveSessionError, ty
 import { LiveCallController, LiveCallSignedOutError, type LiveSocket } from "./live-call-controller.ts";
 import { recordLiveCall, spokenLineFields, titleLiveCall } from "./live-call-record.ts";
 import { narrateTool, toUtterances } from "./tts/speech-text.ts";
+import { toolWorkingStep } from "./working-step.ts";
 import { turnStartLogLine } from "./turn-log.ts";
 import {
   CONFIDENTIAL_CARD_REFUSED, CONFIDENTIAL_INCIDENT_TEXT, CONFIDENTIAL_NOTICE_BODY, CONFIDENTIAL_PEER_REFUSED, ConfidentialMemoryPasses, PERSPICAX_MEMORY_REFUSED, confidentialBrowserSession,
@@ -16538,12 +16539,17 @@ bus.subscribe((event: RuntimeEvent) => {
         // chip aloud without re-deriving it — and so the phrase a user
         // hears and the chip they see can never drift apart
         const approved = autoApprovals.takePending(event.threadId, name);
+        const product = declaredToolProduct(bot?.id, name, event.input);
+        // 2026-10-29: the step the working line names, the same for every
+        // engine (shared/working-step.ts); older clients ignore the field
+        const step = toolWorkingStep({ name, summary: event.summary, input: event.input, product: product?.product });
         const message = pushMessage({
           role: "bot",
           kind: "activity",
           tool: { name, spoken: narrateTool(name) ?? undefined, summary: event.summary, input: event.input, itemId: event.itemId ?? event.eventId, ...(event.files?.length ? { files: event.files } : {}),
             ...(approved ? { autoApproval: approved.approval, ...(approved.notice ? { ruleNotice: approved.notice } : {}) } : {}),
-            ...declaredToolProduct(bot?.id, name, event.input),
+            ...product,
+            ...(step ? { step } : {}),
             ...(event.parentItemId ? { parentItemId: event.parentItemId } : {}) },
           // attributed to its turn so the digest can count it
           turnId: liveTurnId,

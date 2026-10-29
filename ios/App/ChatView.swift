@@ -795,7 +795,8 @@ struct ChatView: View {
                             busy: current.busy,
                             color: current.color,
                             name: current.name,
-                            chat: current
+                            chat: current,
+                            step: current.busy ? WorkingStepLine.current(messages) : nil
                         )
 
                         // The bottom of the conversation: 26.3 pt from the
@@ -1113,6 +1114,9 @@ struct ChatLiveTail: View {
     let name: String
     /// The conversation, for its mascot on the thinking line.
     var chat: Chat? = nil
+    /// 2026-10-29: the running call's step, named on the line in place of
+    /// "Thinking…" (shared/working-step.ts); nil between calls.
+    var step: WorkingStepLine.Current? = nil
     /// Replies that finished streaming while this chat was open.
     @State private var finished = 0
 
@@ -1146,9 +1150,21 @@ struct ChatLiveTail: View {
                 if let chat, chat.isBot {
                     HStack(spacing: 10) {
                         ChatAvatarView(chat: chat, size: 28, state: .thinking, animated: true)
-                        Text("Thinking…")
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.textTertiary)
+                        if let step, let label = WorkingStepText.label(step.step) {
+                            // the step, and how long it has been quiet
+                            TimelineView(.periodic(from: .now, by: 15)) { context in
+                                Text([label, WorkingStepText.quiet(since: step.since, now: context.date)].compactMap { $0 }.joined(separator: " · "))
+                                    .font(Theme.Font.body)
+                                    .foregroundStyle(Theme.textTertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .accessibilityIdentifier("chat-working-step")
+                        } else {
+                            Text("Thinking…")
+                                .font(Theme.Font.body)
+                                .foregroundStyle(Theme.textTertiary)
+                        }
                     }
                     .padding(.leading, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1160,6 +1176,7 @@ struct ChatLiveTail: View {
             .padding(.top, ChatView.rowGap)
             .id(ChatView.liveBubbleId)
             .accessibilityLabel("\(name) is working")
+            .accessibilityValue(step.flatMap { WorkingStepText.label($0.step) } ?? "")
             .accessibilityIdentifier("chat-thinking")
         }
     }

@@ -272,6 +272,10 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     /// #1329: a "do not finish until" check (relaunch x/N, met, bound);
     /// the chat draws it in the reader's language.
     public var finishUntil: FinishUntilLine? = nil
+    /// 2026-10-29: the step this call is, for the working line ("Reading
+    /// your email", "Running scrape.py"), the same whatever the engine
+    /// (shared/working-step.ts). Absent from older servers.
+    public var step: WorkingStep? = nil
 
     public init(name: String, ok: Bool? = nil, spoken: String? = nil, setup: Bool? = nil, claudeUpdate: Bool? = nil, output: String? = nil, summary: String? = nil, widget: CwWidget? = nil) {
         self.name = name
@@ -285,7 +289,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId, autoApproval, finishUntil
+        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId, autoApproval, finishUntil, step
     }
 
     public init(from decoder: Decoder) throws {
@@ -303,6 +307,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         productId = try? box.decodeIfPresent(String.self, forKey: .productId)
         finishUntil = try? box.decodeIfPresent(FinishUntilLine.self, forKey: .finishUntil)
         autoApproval = try? box.decodeIfPresent(ToolAutoApproval.self, forKey: .autoApproval)
+        step = try? box.decodeIfPresent(WorkingStep.self, forKey: .step)
         do {
             widget = try box.decodeIfPresent(CwWidget.self, forKey: .widget)
         } catch {
@@ -325,6 +330,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         try box.encodeIfPresent(product, forKey: .product)
         try box.encodeIfPresent(productId, forKey: .productId)
         try box.encodeIfPresent(autoApproval, forKey: .autoApproval)
+        try box.encodeIfPresent(step, forKey: .step)
     }
 
     /// The output worth expanding the chip for; nil when there is none.

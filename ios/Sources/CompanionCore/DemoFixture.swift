@@ -102,6 +102,9 @@ struct DemoFixture {
                 "Building the signed archive and running the test suite on my computer. You can watch it live from the Computer view.",
                 "Je construis l'archive signée et je lance la suite de tests sur mon ordinateur. Tu peux suivre en direct dans la vue Ordinateur."
             ), parent: "forge-1"),
+            // the call it is on, named on the working line (2026-10-29)
+            ["id": "forge-3", "role": "bot", "kind": "activity", "at": ago(3), "parentId": "forge-2",
+             "tool": ["name": "Bash", "summary": "make release-check", "step": ["key": "run", "detail": "make"]]],
         ])
 
         let roomMessages: [[String: Any]] = [

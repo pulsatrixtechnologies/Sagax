@@ -8,6 +8,20 @@ import { useStreaming } from "@/state/store";
 import type { BotAvatarProps } from "@/components/Avatar";
 import { BotActivityIndicator, THINKING_PHASE } from "@/components/BotActivityIndicator";
 import { WorkingTimer } from "@/components/WorkingIndicator";
+import { quietAgeLabel } from "@/lib/working-step";
+
+/** 2026-10-29: "last output 2 min ago" once a named step runs a while. */
+function QuietAge({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, [since]);
+  const label = quietAgeLabel(since, now);
+  if (!label) return null;
+  return <span data-testid="turn-quiet-age" className="text-[11.5px] text-ink-tertiary">· {label}</span>;
+}
 
 export function TurnPresence({
   bot,
@@ -21,6 +35,7 @@ export function TurnPresence({
   ultracode = false,
   streamThreadId = null,
   typing,
+  quietSince = null,
 }: {
   bot: BotAvatarProps["bot"];
   visible: boolean;
@@ -41,6 +56,9 @@ export function TurnPresence({
   streamThreadId?: string | null;
   /** forces typing on or off (tests, gallery); otherwise read from the stream */
   typing?: boolean;
+  /** When the named step started (LiveActivityPhrases.stepSince): the line
+   * adds how long nothing has come out once it runs a while. */
+  quietSince?: number | null;
 }) {
   const { streaming } = useStreaming();
   const streamingText = streamThreadId ? Boolean(streaming[streamThreadId]) : false;
@@ -93,6 +111,7 @@ export function TurnPresence({
           {presencePhase === "think" && since != null && (
             <WorkingTimer since={since} className="text-[11.5px] text-ink-tertiary" />
           )}
+          {presencePhase === "think" && mode === "thinking" && quietSince != null && <QuietAge since={quietSince} />}
         </div>
       )}
     </div>

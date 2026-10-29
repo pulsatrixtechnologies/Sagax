@@ -24,6 +24,37 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## The working line names the step (2026-10-29)
+
+While a tool call runs, the line under the transcript names the step in
+plain words: "Reading your email", "Opening Chrome", "Searching the web",
+"Running scrape.py", "Writing a file". Once the step has been quiet for a
+minute it adds "last output 2 min ago". Nothing was taken off the line: the
+mascot, the dots and the elapsed time stay, and between calls it still reads
+Thinking.
+
+- One table, `shared/working-step.ts` (`workingStepFor`), maps a call to a
+  key and a short detail, whatever the engine: Claude Code's `Bash` with its
+  command, Codex's command line as the name, an ACP agent's own title, an
+  OpenAI-compatible function with JSON arguments, MCP mail, calendar, Teams,
+  browser, computer and file tools. Same key, same words on every engine.
+- The detail is only a file name, an app, a web host or a program (`python
+  scrape.py --key x` gives `scrape.py`), never arguments, queries or paths.
+  `server/working-step.ts` runs it through the redaction; a detail the
+  redaction touches is dropped.
+- The server sets `tool.step` on the activity row at `item.started`
+  (`server/index.ts`). Older clients ignore it. The desktop words it in
+  `src/lib/working-step.ts` (`chat.step.*` in every locale) through
+  `liveActivityPhrases`, so the sidebar's working label follows; the phone
+  in `ios/App/Features/Chat/WorkingStepText.swift` (String Catalog) from
+  `WorkingStepLine.current` in CompanionCore.
+- The quiet time counts from the step's row (`currentWorkingStep(...).since`):
+  any later output would be a newer row or streaming text, which takes the
+  line over.
+- End to end: `server/working-step.e2e.test.ts` (fake engine holds a call,
+  the event stream carries the step, the turn ends and the line names
+  nothing). Captures: `node scripts/capture-working-step.mjs`.
+
 ## Recall by meaning, on by default (#1327, 2026-10-29)
 
 Automatic recall also finds a note or a message by meaning, not only by its

@@ -1,6 +1,8 @@
 import type { Message } from "@/state/store";
 import { t } from "./i18n";
 import type { LocaleKey } from "@/locales";
+import { currentWorkingStep } from "../../shared/working-step";
+import { workingStepLabel } from "./working-step";
 
 // keys, not labels: t() reads the active pack when it is called, and this
 // array is built once at import time
@@ -66,6 +68,10 @@ export type LiveActivityPhrases = {
   phase: string;
   /** the plain label first, then gentle alternates */
   phrases: string[];
+  /** 2026-10-29: a named step (shared/working-step.ts) started then (epoch
+   * ms); nothing has come out of the turn since, so the line can say how
+   * long it has been quiet. */
+  stepSince?: number;
 };
 
 function phaseOf(key: LocaleKey): LiveActivityPhrases {
@@ -84,6 +90,11 @@ export function liveActivityPhrases(message?: Message): LiveActivityPhrases {
     message.comm
   ) {
     return phaseOf("chat.activity.thinking");
+  }
+  // 2026-10-29: the server's named step, the same on every engine
+  const step = currentWorkingStep(message);
+  if (step) {
+    return { phase: `step:${step.key}:${step.detail ?? ""}`, phrases: [workingStepLabel(step)], ...(step.since !== undefined ? { stepSince: step.since } : {}) };
   }
   return toolActivityPhrases(message.tool);
 }

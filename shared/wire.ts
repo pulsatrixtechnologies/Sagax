@@ -18,6 +18,7 @@ import type { DataBroadcast } from "./data-surface.ts";
 import type { AppliedApprovalLevel, ApprovalException, ApprovalMode } from "./approval-mode.ts";
 import type { ProactiveMode } from "./proactive-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
+import type { WorkingStep } from "./working-step.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { CustomRuleCandidate, CustomRuleNotice } from "./custom-rules.ts";
 import type { OrgEngineMove } from "./offered-engines.ts";
@@ -761,6 +762,10 @@ export interface WireMessage {
     name: string; ok?: boolean; spoken?: string; setup?: boolean; terminal?: boolean; summary?: string; input?: string; output?: string;
     /** how long the call ran, set when it settles (the step row's duration) */
     durationMs?: number;
+    /** 2026-10-29: the step this call is, for the working line ("Reading
+     * your email", "Running scrape.py"), the same whatever the engine
+     * (shared/working-step.ts). Set when the call starts. */
+    step?: WorkingStep;
     /** The product this tool serves, as the connector or the server
      * declared it at run time (a Perspicax API's display name or title);
      * the step row names it. Absent: the row reads a generic name from the

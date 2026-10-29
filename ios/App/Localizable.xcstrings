@@ -1,6 +1,223 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Reading your email": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reading your email" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lit tes courriels" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Lendo seus e-mails" } }
+      }
+    },
+    "Writing an email": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Writing an email" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrit un courriel" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escrevendo um e-mail" } }
+      }
+    },
+    "Checking your calendar": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Checking your calendar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Regarde ton agenda" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Olhando sua agenda" } }
+      }
+    },
+    "Updating your calendar": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Updating your calendar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Met ton agenda à jour" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Atualizando sua agenda" } }
+      }
+    },
+    "Reading your messages": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reading your messages" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lit tes messages" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Lendo suas mensagens" } }
+      }
+    },
+    "Reading %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reading %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lit %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Lendo %@" } }
+      }
+    },
+    "Writing a message": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Writing a message" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrit un message" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escrevendo uma mensagem" } }
+      }
+    },
+    "Writing in %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Writing in %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrit dans %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escrevendo no %@" } }
+      }
+    },
+    "Opening an app": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Opening an app" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvre une app" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrindo um app" } }
+      }
+    },
+    "Opening %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Opening %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvre %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrindo %@" } }
+      }
+    },
+    "Browsing the web": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Browsing the web" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Navigue sur le web" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Navegando na web" } }
+      }
+    },
+    "Browsing %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Browsing %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Navigue sur %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Navegando em %@" } }
+      }
+    },
+    "Reading a web page": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reading a web page" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lit une page web" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Lendo uma página web" } }
+      }
+    },
+    "Searching the web": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Searching the web" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cherche sur le web" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pesquisando na web" } }
+      }
+    },
+    "Running a command": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Running a command" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Roule une commande" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Executando um comando" } }
+      }
+    },
+    "Running %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Running %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Roule %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Executando %@" } }
+      }
+    },
+    "Reading a file": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reading a file" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lit un fichier" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Lendo um arquivo" } }
+      }
+    },
+    "Writing a file": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Writing a file" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrit un fichier" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escrevendo um arquivo" } }
+      }
+    },
+    "Writing %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Writing %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrit %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escrevendo %@" } }
+      }
+    },
+    "Editing a file": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Editing a file" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Modifie un fichier" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Editando um arquivo" } }
+      }
+    },
+    "Editing %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Editing %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Modifie %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Editando %@" } }
+      }
+    },
+    "Searching files": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Searching files" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cherche dans les fichiers" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Procurando nos arquivos" } }
+      }
+    },
+    "Looking at the screen": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Looking at the screen" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Regarde l'écran" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Olhando a tela" } }
+      }
+    },
+    "Using the computer": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Using the computer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Utilise l'ordinateur" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Usando o computador" } }
+      }
+    },
+    "Using %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Using %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Utilise %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Usando %@" } }
+      }
+    },
+    "Talking to a teammate": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Talking to a teammate" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Parle à un coéquipier" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Falando com um colega" } }
+      }
+    },
+    "Handing a part to a sub-agent": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Handing a part to a sub-agent" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Confie une partie à un sous-agent" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Passando uma parte para um subagente" } }
+      }
+    },
+    "Checking its memory": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Checking its memory" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Consulte sa mémoire" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Consultando a memória" } }
+      }
+    },
+    "Using a tool": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Using a tool" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Utilise un outil" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Usando uma ferramenta" } }
+      }
+    },
+    "last output %lld min ago": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "last output %lld min ago" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "dernière sortie il y a %lld min" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "última saída há %lld min" } }
+      }
+    },
+    "last output %lld h ago": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "last output %lld h ago" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "dernière sortie il y a %lld h" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "última saída há %lld h" } }
+      }
+    },
     "Or type a login for this turn only": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Or type a login for this turn only"}}, "fr": {"stringUnit": {"state": "translated", "value": "Ou tapez un identifiant pour ce tour seulement"}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "Ou digite um login só para este turno"}}}},
     "User name": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "User name"}}, "fr": {"stringUnit": {"state": "translated", "value": "Nom d'utilisateur"}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "Nome de usuário"}}}},
     "Password": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Password"}}, "fr": {"stringUnit": {"state": "translated", "value": "Mot de passe"}}, "pt-BR": {"stringUnit": {"state": "translated", "value": "Senha"}}}},
