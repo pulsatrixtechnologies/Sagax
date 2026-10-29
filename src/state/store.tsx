@@ -1849,6 +1849,31 @@ interface NotificationThreadOwner {
 interface NotificationRoutingState {
   bots: NotificationThreadOwner[];
   groups: NotificationThreadOwner[];
+  /** The runs this client knows; when given, a run it does not know opens
+   * its thread as before instead of an empty Routines page. */
+  routineRuns?: ReadonlyArray<{ id: string }>;
+}
+
+/** 2026-10-29: a routine run opens its run detail (the Routines page with
+ * the run open over its logs, its routine's page and history one click
+ * away), never a conversation beside the chat. A run of a deleted routine
+ * opens the same way, to read. Continue in the conversation stays in the
+ * detail. */
+export function openRoutineRun(
+  dispatch: (action: Action) => void,
+  run: { runId: string; routineId?: string },
+) {
+  dispatch({ type: "showRoutines", section: "logs", runId: run.runId, ...(run.routineId ? { routineId: run.routineId } : {}) });
+}
+
+/** The routine run a thread is the execution of, if any. */
+export function routineRunOfThread(state: NotificationRoutingState, threadId: string | undefined): string | undefined {
+  if (!threadId) return undefined;
+  for (const owner of [...state.bots, ...state.groups]) {
+    const task = owner.tasks?.find((candidate) => candidate.threadId === threadId);
+    if (task && typeof task.routineRunId === "string" && task.routineRunId) return task.routineRunId;
+  }
+  return undefined;
 }
 
 /** The exact conversation currently on screen. A focused window is not
@@ -1869,6 +1894,7 @@ export function openNotificationTarget(
   target: NotificationTarget,
   state: NotificationRoutingState,
   threadsShown: boolean,
+  options: { runDetail?: boolean } = {},
 ) {
   // A routine run refused in another person's private thread: the owner's
   // notification names no thread, only the run, which the bot's Coding
@@ -1876,6 +1902,16 @@ export function openNotificationTarget(
   if (!target.threadId && target.routineRunId) {
     dispatch({ type: "openBotActivity", botId: target.botId, itemId: `run:${target.routineRunId}` });
     return;
+  }
+  // 2026-10-29: a run's notification, or a link to a run's own execution
+  // thread (an Inbox entry, an activity line), opens the run detail, never
+  // a conversation beside the chat. openThread asks for the thread itself.
+  if (options.runDetail !== false) {
+    const runId = target.routineRunId ?? routineRunOfThread(state, target.threadId);
+    if (runId && (!state.routineRuns || state.routineRuns.some((run) => run.id === runId))) {
+      openRoutineRun(dispatch, { runId });
+      return;
+    }
   }
   // A room's approval/question notification carries the asker bot with the
   // GROUP's thread id; asking the bot to switch to that thread would 404.
@@ -2112,7 +2148,7 @@ export function openThread(
     owner.threadId === target.threadId || (owner.tasks ?? []).some((task) => task.threadId === target.threadId);
   if (state.groups.some(owns) || state.bots.some(owns)) {
     const threadReturn = threadReturnFor(state, target.threadId);
-    openNotificationTarget(dispatch, target, state, threadsShown);
+    openNotificationTarget(dispatch, target, state, threadsShown, { runDetail: false });
     dispatch({ type: "revealThread", threadId: target.threadId });
     // The way back is a thread chip: with threads hidden the switch alone opens it.
     if (threadReturn && threadsShown) dispatch({ type: "setThreadReturn", threadReturn });

@@ -65,7 +65,7 @@ export function RunNowButton({ routine, bot, className, labelClassName, onStarte
   };
   return (
     <button type="button" data-run-now onClick={run} disabled={disabled} aria-label={t("routines.runNow")} title={inFlight ? t("routines.runNow.inFlight") : t("routines.runNow")} className={className}>
-      {starting ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
+      {starting ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} fill="currentColor" />}
       <span className={labelClassName}>{starting ? t("routines.runNow.starting") : t("routines.runNow")}</span>
     </button>
   );

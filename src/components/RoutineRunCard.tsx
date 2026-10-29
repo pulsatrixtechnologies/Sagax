@@ -63,7 +63,8 @@ export function RoutineRunCard({
   onResume,
 }: {
   message: Message;
-  /** Opens the isolated execution task; absent when it no longer exists. */
+  /** Opens the run's detail (2026-10-29: never a conversation beside the
+   * chat; Continue in the conversation is in the detail). */
   onOpen?: () => void;
   /** 2026-10-26: the failure paused its routine (N in a row): turn it back
    * on in one click, the failure count from zero. Absent: no button. */
@@ -137,7 +138,7 @@ export function RoutineRunCard({
             {t("routines.autoPause.resume")}
           </button>
         </>}
-        {onOpen && run.executionThreadId && <>
+        {onOpen && <>
           <span aria-hidden="true">·</span>
           <button
             type="button"

@@ -39,6 +39,11 @@
 //   FAKE_CLAUDE_LIMITED_FILE path: while it exists, every turn plays
 //                      usage-limit with the file's JSON rate_limit_info
 //                      (port of OpenMausBot #3074's fixture).
+//   FAKE_CLAUDE_LIMIT_MID_TURN_FILE path: the first turn to run (on whatever
+//                      --model) takes one Bash step, then that model's own
+//                      weekly window refuses it (a usage limit mid-turn); the
+//                      model is written to the file and refuses every later
+//                      turn at once. Any other model answers as usual.
 //   FAKE_CLAUDE_RATE_LIMIT JSON rate_limit_info: each turn reports it in a
 //                      `rate_limit_event` after init, as the CLI does from the
 //                      API's headers ({status, rateLimitType, resetsAt, …}).
@@ -852,6 +857,27 @@ const playTurn = (prompt: JsonValue, late = false) => {
 
   const resumedError = process.env.FAKE_CLAUDE_RESUMED_API_ERROR === "1" && argv.includes("--resume") && !resumedErrorPlayed;
   if (resumedError) resumedErrorPlayed = true;
+  const midTurnFile = process.env.FAKE_CLAUDE_LIMIT_MID_TURN_FILE;
+  const midTurnModel = midTurnFile && existsSync(midTurnFile) ? readFileSync(midTurnFile, "utf8").trim() : null;
+  if (midTurnFile && (midTurnModel === null || midTurnModel === model)) {
+    if (midTurnModel === null) {
+      writeFileSync(midTurnFile, model);
+      const id = `toolu_mid_${Date.now()}`;
+      out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Bash", input: { command: "ls /srv/reports" } }] } });
+      out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: false, content: [{ type: "text", text: "q3.csv q4.csv" }] }] } });
+    }
+    const info = { status: "rejected", rateLimitType: "seven_day_opus", resetsAt: Math.floor(Date.now() / 1_000) + 3_600 };
+    const text = "You've hit your weekly Opus limit";
+    out({ type: "rate_limit_event", rate_limit_info: info, session_id: sessionId });
+    out({
+      type: "assistant", message: { model: "<synthetic>", stop_reason: "stop_sequence", content: [{ type: "text", text }] },
+      error: "rate_limit", is_api_error_message: true, api_error: "usage_limit_reached", api_error_params: { rate_limit_info: info },
+    });
+    out({ type: "result", subtype: "success", is_error: true, stop_reason: "stop_sequence", terminal_reason: "api_error", api_error: "usage_limit_reached", result: text });
+    turnRunning = false;
+    finishIfDone();
+    return;
+  }
   if (mode === "usage-limit" || limited !== null) {
     // captured from 2.1.295 for an account past its weekly limit
     const text = process.env.FAKE_CLAUDE_API_ERROR ?? "You've hit your weekly limit \u00b7 resets Oct 12 at 2:30pm (Asia/Calcutta)";

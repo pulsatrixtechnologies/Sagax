@@ -5,7 +5,7 @@
 // click away; and Configuration, everything the editor holds, read-only.
 // The actions: Run now, Pause or Resume, Edit, Duplicate, Delete, plus the
 // run logs filtered on it and where it reports.
-import { Copy, ExternalLink, Loader2, Pause, Pencil, Play, Trash2, UsersRound } from "lucide-react";
+import { CirclePlay, Copy, ExternalLink, History, Inbox, Loader2, Pause, Pencil, Play, Trash2, UsersRound } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { copyText } from "@/lib/copy-text";
@@ -144,15 +144,15 @@ export function RoutineDetail({ routine, runs, bots, groups = [], viewerPrincipa
       </div>
       {actions && (
         <div data-routine-actions className="flex flex-wrap items-center gap-2 border-t border-hairline/40 px-4 py-3">
-          {canRun && onRunNow && <button type="button" data-run-now onClick={onRunNow} disabled={working || inFlight} title={inFlight ? t("routines.runNow.inFlight") : undefined} className={cn(PRIMARY_PILL, "gap-1.5")}>{starting ? <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Play size={13} aria-hidden="true" />}{starting ? t("routines.runNow.starting") : t("routines.runNow")}</button>}
-          {editable && onToggle && <button type="button" data-routine-toggle onClick={onToggle} disabled={working} className={cn(PILL, "gap-1.5")}>{routine.enabled ? <Pause size={13} aria-hidden="true" /> : <Play size={13} aria-hidden="true" />}{routine.enabled ? t("routineCalendar.pauseRoutine") : t("routineCalendar.resumeRoutine")}</button>}
+          {canRun && onRunNow && <button type="button" data-run-now onClick={onRunNow} disabled={working || inFlight} title={inFlight ? t("routines.runNow.inFlight") : t("routines.runNow")} className={cn(PRIMARY_PILL, "gap-1.5")}>{starting ? <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Play size={13} fill="currentColor" aria-hidden="true" />}{starting ? t("routines.runNow.starting") : t("routines.runNow")}</button>}
+          {editable && onToggle && <button type="button" data-routine-toggle onClick={onToggle} disabled={working} title={routine.enabled ? t("routineCalendar.pauseRoutine") : t("routineCalendar.resumeRoutine")} className={cn(PILL, "gap-1.5")}>{routine.enabled ? <Pause size={13} aria-hidden="true" /> : <CirclePlay size={13} aria-hidden="true" />}{routine.enabled ? t("routineCalendar.pauseRoutine") : t("routineCalendar.resumeRoutine")}</button>}
           {isRoomGoal && onOpenGroup && <button type="button" onClick={onOpenGroup} className={cn(PILL, "gap-1.5")}><ExternalLink size={13} aria-hidden="true" />{t("routineCalendar.openGroup")}</button>}
-          {canOpenResults && onOpenResults && <button type="button" data-routine-open-results onClick={onOpenResults} className={cn(PILL, "gap-1.5")}><ExternalLink size={13} aria-hidden="true" />{t("routines.results.open")}</button>}
+          {canOpenResults && onOpenResults && <button type="button" data-routine-open-results onClick={onOpenResults} title={t("routines.results.open")} className={cn(PILL, "gap-1.5")}><Inbox size={13} aria-hidden="true" />{t("routines.results.open")}</button>}
           <div className="ml-auto flex items-center gap-1">
-            {onLogs && <button type="button" data-routine-logs onClick={onLogs} className="rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">{t("routines.logs")}</button>}
-            {editable && onEdit && <button type="button" data-routine-edit onClick={onEdit} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><Pencil size={13} aria-hidden="true" />{t("routines.edit")}</button>}
-            {onDuplicate && <button type="button" data-routine-duplicate onClick={onDuplicate} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={13} aria-hidden="true" />{t("routineDetail.duplicate")}</button>}
-            {editable && onDelete && <button type="button" data-routine-delete onClick={onDelete} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger" title={t("common.delete")} aria-label={t("common.delete")}><Trash2 size={15} aria-hidden="true" /></button>}
+            {onLogs && <button type="button" data-routine-logs onClick={onLogs} title={t("routines.logs")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><History size={13} aria-hidden="true" />{t("routines.logs")}</button>}
+            {editable && onEdit && <button type="button" data-routine-edit onClick={onEdit} title={t("routines.edit")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><Pencil size={13} aria-hidden="true" />{t("routines.edit")}</button>}
+            {onDuplicate && <button type="button" data-routine-duplicate onClick={onDuplicate} title={t("routineDetail.duplicate")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={13} aria-hidden="true" />{t("routineDetail.duplicate")}</button>}
+            {editable && onDelete && <button type="button" data-routine-delete onClick={onDelete} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-danger/10 hover:text-danger" title={t("common.delete")}><Trash2 size={13} aria-hidden="true" />{t("common.delete")}</button>}
           </div>
         </div>
       )}

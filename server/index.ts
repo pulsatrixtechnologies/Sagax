@@ -433,7 +433,9 @@ import { LimitFailoverStore } from "./limit-failover.ts";
 import { createLimitFailoverHost, limitBackupRefusedText } from "./limit-failover-host.ts";
 import { sendBlockFor, type SendBlock } from "../shared/send-state.ts";
 import { repeatsShownFailure } from "../shared/failure-dedup.ts";
-import { limitFailoverText, resetClockText } from "../shared/limit-failover.ts";
+import { limitFailoverText, resetClockText, type LimitFailoverLine } from "../shared/limit-failover.ts";
+import { isTechnicalNoticeName } from "../shared/chat-notices.ts";
+import { renewalPrompt, type RenewalStep } from "./context-renewal.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
 import { turnRunFor, type TurnRun } from "./turn-run.ts";
 import { attachmentsInText, autoModelRecord, bareModelId, concrete as concreteSelection, explainPick, familyOfModel, isModelRefusal, nextInChain, pickEquivalentModel, pickOrchestrationModel, pickWorkerModel, tierOfModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
@@ -14203,6 +14205,38 @@ function limitAfterResetMs(): number | undefined {
   return Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 const limitFailoverStore = new LimitFailoverStore({ file: join(DATA_DIR, "limit-failovers.json"), now: () => Date.now(), afterResetMs: limitAfterResetMs() });
+/** A usage-limit row. A switch to another engine and the return after the
+ * reset are transparent (the maintainer, 2026-10-29): a hidden `notice:` row the server
+ * still reads back, and a line in the Events lens. A wait the person must
+ * know of stays a `recovery:` row in the chat. */
+function limitFailoverRow(threadId: string, line: LimitFailoverLine): NonNullable<Message["tool"]> {
+  const quiet = line.kind === "switched" || line.kind === "back";
+  const words = line.kind === "switched" && line.to === "Auto"
+    ? `${line.from} reached its usage limit during this turn: Auto continued the same turn on another model that works, with the steps already taken; ${line.from} is picked again once its limit resets (around ${limitClockText(line.resetsAt)}).`
+    : limitFailoverText(line, limitClockText);
+  if (quiet) {
+    console.info(`[limit-failover] ${threadId}: ${words}`);
+    bus.publish({ eventId: newId(), provider: "harness" as RuntimeEvent["provider"], threadId, createdAt: new Date().toISOString(), type: "runtime.notice", message: words });
+  }
+  return { name: `${quiet ? "notice:" : "recovery:"} ${words}`, ok: true, limitFailover: line };
+}
+/** The person's message again, with what the turn a usage limit stopped had
+ * already done; the message alone when it had done nothing yet. */
+function limitResumeText(threadId: string, turnId: string, text: string): string {
+  const rows = store.messagesFor(threadId).filter((message) => message.turnId === turnId && message.role === "bot");
+  const steps: RenewalStep[] = rows
+    .filter((message) => message.kind === "activity" && message.tool && failedTurnCause(message.tool.name) === null &&
+      !isTechnicalNoticeName(message.tool.name) && !message.tool.name.startsWith("recovery:"))
+    .map((message) => ({
+      name: message.tool!.name,
+      ...(message.tool!.input ? { summary: message.tool!.input } : {}),
+      ...(message.tool!.ok !== undefined ? { ok: message.tool!.ok } : {}),
+      ...(message.tool!.output ? { output: message.tool!.output } : {}),
+    }));
+  const lastText = rows.findLast((message) => message.kind === "text")?.text;
+  if (!steps.length && !lastText?.trim()) return text;
+  return renewalPrompt({ base: text, steps, ...(lastText ? { lastText } : {}), cause: "limit" });
+}
 const limitFailover = createLimitFailoverHost({
   store: limitFailoverStore,
   now: () => Date.now(),
@@ -14265,10 +14299,10 @@ const limitFailover = createLimitFailoverHost({
     return null;
   },
   note: (threadId, line) => {
-    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: `recovery: ${limitFailoverText(line, limitClockText)}`, ok: true, limitFailover: line } });
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: limitFailoverRow(threadId, line) });
   },
   replaceFailure: (threadId, turnId, line, since) => {
-    const tool = { name: `recovery: ${limitFailoverText(line, limitClockText)}`, ok: true, limitFailover: line };
+    const tool = limitFailoverRow(threadId, line);
     // The engine's own error row for this turn becomes the line: one row,
     // not two. A runtime.error row may carry no turn id: then the last one
     // written since the turn was dispatched.
@@ -14278,7 +14312,11 @@ const limitFailover = createLimitFailoverHost({
     else store.appendMessage(threadId, { role: "bot", kind: "activity", tool });
   },
   request: (threadId) => directRequestOwners.get(threadId),
-  resend: async (botId, threadId, messageId, speaker, trigger) => {
+  autoRefuse: (threadId, payer, until) => {
+    const ran = autoTurnsByThread.get(threadId)?.entry;
+    if (ran) rememberAutoRefusal(payer, ran, until);
+  },
+  resend: async (botId, threadId, messageId, speaker, trigger, resume) => {
     const path = store.activePath(threadId);
     const message = path.find((candidate) => candidate.id === messageId);
     // Only the person's own latest line, never one a bot delivered.
@@ -14286,7 +14324,11 @@ const limitFailover = createLimitFailoverHost({
     if (path.findLast((candidate) => candidate.role === "user" && candidate.kind === "text")?.id !== messageId) return false;
     if (!store.taskByThread(botId, threadId) || threadBusy(botId, threadId)) return false;
     const replyTo = message.replyToId ? path.find((candidate) => candidate.id === message.replyToId) : undefined;
-    await startTurn(botId, message.text, {
+    // The same turn goes on: the next engine is told the steps it already
+    // took (as a fresh session is, server/context-renewal.ts), so it never
+    // runs them again. The person's message stays as they wrote it.
+    const text = resume?.turnId ? limitResumeText(threadId, resume.turnId, message.text) : message.text;
+    await startTurn(botId, text, {
       threadId, userMessage: message, ...(speaker ? { speaker: speaker as TurnSpeaker } : {}),
       ...(message.sender ? { sender: message.sender } : {}), ...(trigger ? { trigger: trigger as UsageTrigger } : {}),
       ...(replyTo ? { replyTo } : {}), ...(message.via === "call" ? { via: "call" as const, ...(message.callId ? { callId: message.callId } : {}) } : {}),
@@ -29810,8 +29852,8 @@ function ownerPaysForMember(bot: BotRecord, speaker: TurnSpeaker, asked?: string
   const who = (asked || speakerPrincipal(speaker, owner, peerOwnerPrincipal(speaker))).trim().toLowerCase();
   return owner !== "" && autoPayerKey(bot, speaker) === owner && who !== "" && who !== owner;
 }
-function rememberAutoRefusal(payer: string, entry: AutoChainEntry): void {
-  autoRefusals.set(`${payer}\u0000${entry.instanceId}\u0000${entry.model}`, Date.now() + AUTO_REFUSAL_TTL_MS);
+function rememberAutoRefusal(payer: string, entry: AutoChainEntry, until = Date.now() + AUTO_REFUSAL_TTL_MS): void {
+  autoRefusals.set(`${payer}\u0000${entry.instanceId}\u0000${entry.model}`, until);
 }
 function autoRefusalsFor(payer: string): AutoChainEntry[] {
   const now = Date.now();
@@ -29954,7 +29996,13 @@ function autoPickForTurn(input: {
   if (bot.modelSelection.auto !== true) return null;
   const payer = autoPayerKey(bot, input.speaker);
   const skip = [...autoRefusalsFor(payer), ...(input.skip ?? [])];
-  const engines = autoEnginesFor(bot, input.speaker, input.guestConfined === true);
+  const offered = autoEnginesFor(bot, input.speaker, input.guestConfined === true);
+  // An engine at its usage limit for this payer, and another sign-in to the
+  // same subscription, wait for the reset (server/limit-failover-host.ts);
+  // with nothing else left, Auto keeps its list and the limit says when.
+  const limited = limitFailover.autoExcluded(payer, offered);
+  const open = offered.filter((engine) => !limited.has(engine.instanceId));
+  const engines = open.length ? open : offered;
   const request = { base: bot.modelSelection, engines, catalog: autoCatalogLookup, skip };
   if (input.role === "continue") {
     const record = store.taskByThread(bot.id, input.threadId)?.autoModel;

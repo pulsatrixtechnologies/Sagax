@@ -5,13 +5,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ACTION_LABEL, ActionBar, ActionButton } from "./ActionBar";
+import { ACTION_LABEL, ACTION_LABEL_MAIN, ActionBar, ActionButton } from "./ActionBar";
 
 const noop = () => {};
 const markup = renderToStaticMarkup(createElement(ActionBar, { "data-routine-detail-actions": "" },
-  createElement(ActionButton, { icon: null, label: "Pause", onClick: noop }),
-  createElement(ActionButton, { icon: null, label: "Journal", wide: false, onClick: noop }),
-  createElement(ActionButton, { icon: null, label: "Delete", wide: false, danger: true, onClick: noop }),
+  createElement(ActionButton, { icon: null, label: "Pause", fold: "main", onClick: noop }),
+  createElement(ActionButton, { icon: null, label: "Journal", onClick: noop }),
+  createElement(ActionButton, { icon: null, label: "Delete", danger: true, onClick: noop }),
 ));
 
 describe("ActionBar", () => {
@@ -22,13 +22,15 @@ describe("ActionBar", () => {
     for (const label of ["Pause", "Journal", "Delete"]) expect(markup).toContain(`aria-label="${label}" title="${label}"`);
   });
   it("hides the label (never wraps or cuts it) and turns the button into a round icon when compact", () => {
-    expect(markup).toContain(`<span class="${ACTION_LABEL}">Pause</span>`);
+    expect(markup).toContain(`<span class="${ACTION_LABEL_MAIN}">Pause</span>`);
+    expect(markup).toContain(`<span class="${ACTION_LABEL}">Journal</span>`);
+    expect(ACTION_LABEL_MAIN).toContain("@max-[22rem]/actionbar:hidden");
     expect(ACTION_LABEL).toContain("whitespace-nowrap");
     expect(ACTION_LABEL).toContain("@max-[38rem]/actionbar:hidden");
     expect(markup).toContain("@max-[38rem]/actionbar:w-10");
   });
-  it("icon-only actions never carry a label, and Delete stays red and apart", () => {
-    expect(markup).not.toContain(">Journal</span>");
+  it("every action has its words while there is room (2026-10-29), and Delete stays red and apart", () => {
+    expect(markup).toContain(">Delete</span>");
     expect(markup).toMatch(/text-danger[^"]*"[^>]*>|class="[^"]*text-danger/);
     expect(markup).toContain("ml-1");
   });

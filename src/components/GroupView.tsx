@@ -11,7 +11,7 @@ import {
   api,
   useStore,
   formatTime,
-  openNotificationTarget,
+  openRoutineRun,
   openThread,
   type Bot,
   type ConfigStatus,
@@ -85,7 +85,7 @@ import { isPureLeakedSystemHarnessMessage, stripLeakedSystemHarnessMessages } fr
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
 import { SecretRequestCard } from "./SecretRequestCard";
-import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
+import { RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard, GoalRunHeaderChip, goalRunPlace } from "./GoalRunCard";
 import { AccessCard } from "./AccessCard";
 import { TransientNotice } from "./TransientNotice";
@@ -808,11 +808,8 @@ export const Transcript = memo(function Transcript({
         // Your own lines sit on the end side; everyone else's on the start side.
         const mine = author.kind === "self";
         const person = author.kind === "person" ? author : null;
-        const routineOwner = m.kind === "routine.run" ? memberOf(m.from?.botId) : undefined;
-        const routineExecutionThreadId = m.routineRun?.executionThreadId;
-        const routineTarget = routineOwner && hasRoutineExecutionTask(routineOwner.tasks, routineExecutionThreadId)
-          ? { botId: routineOwner.id, threadId: routineExecutionThreadId }
-          : undefined;
+        // 2026-10-29: View run opens the run's detail, never a conversation beside.
+        const routineRunRef = m.kind === "routine.run" && m.routineRun?.runId ? m.routineRun : undefined;
         const canRetryRoom = m.id === retryableId && retryRequest !== null && !roomBusy;
         // a member can hit a permission ask mid-turn; without this the
         // card never rendered here and the bot waited out its timeout.
@@ -882,8 +879,8 @@ export const Transcript = memo(function Transcript({
             <div className="flex justify-start">
               <RoutineRunCard
                 message={m}
-                onOpen={routineTarget
-                  ? () => openNotificationTarget(dispatch, routineTarget, state, showThreads)
+                onOpen={routineRunRef
+                  ? () => openRoutineRun(dispatch, { runId: routineRunRef.runId, routineId: routineRunRef.routineId })
                   : undefined}
               />
             </div>
@@ -1544,15 +1541,13 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
             onSignIn={() => { close(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}
           />
         );
-        const owner = state.bots.find((candidate) => candidate.id === m.from?.botId);
-        const runThread = m.routineRun?.executionThreadId;
-        const target = owner && hasRoutineExecutionTask(owner.tasks, runThread) ? { botId: owner.id, threadId: runThread } : undefined;
+        const runRef = m.routineRun?.runId ? m.routineRun : undefined;
         // 2026-10-26: the failure that paused its routine offers Resume.
         const paused = isRoutineAutoPausedNotice(m) ? state.routines.find((candidate) => candidate.id === m.routineRun?.routineId) : undefined;
         const onResume = paused && !paused.enabled && paused.canEdit !== false
           ? () => { close(); dispatch({ type: "updateRoutine", routineId: paused.id, patch: { enabled: true } }); }
           : undefined;
-        return <RoutineRunCard message={m} onResume={onResume} onOpen={target ? () => { close(); openNotificationTarget(dispatch, target, state, roomShowThreads); } : undefined} />;
+        return <RoutineRunCard message={m} onResume={onResume} onOpen={runRef ? () => { close(); openRoutineRun(dispatch, { runId: runRef.runId, routineId: runRef.routineId }); } : undefined} />;
       }} />
       {!pane && <ChatStaleBanner />}
       {!remoteClient && <><GroupCostNotice group={group} />{!pane && <WeeklyLimitNotice />}</>}

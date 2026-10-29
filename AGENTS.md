@@ -24,6 +24,24 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## A usage limit is transparent (2026-10-29)
+
+When a model or engine reaches its usage limit (or runs out of credits, or
+hits a rate limit) the person sees nothing: the same turn goes on at once on
+a model that works. On Auto, `limit-failover-host.ts` (`failed`, `auto`)
+skips the limited model until its reset (`autoRefuse`, and `autoExcluded`
+for an engine-wide limit and any other sign-in to the same subscription)
+and sends the message again; Auto picks the next model. A chosen model
+moves to a backup as before. Either way the next engine is told the steps
+the turn already took (`limitResumeText`, `renewalPrompt` with
+`cause: "limit"`) so it never runs them again, the failure row becomes a
+hidden `notice:` row, and the words go to the Events lens
+(`limitFailoverRow`, a `runtime.notice`). Only when nothing else can answer
+does the chat say when it comes back (`waiting`). Stored `recovery:` switch
+rows are hidden too (`isHiddenStatusActivity`). Test:
+`server/auto-limit-continue.e2e.test.ts` (fake CLI
+`FAKE_CLAUDE_LIMIT_MID_TURN_FILE`).
+
 ## A reply is never an error (2026-10-29)
 
 A bot's reply always reads as a reply, its Markdown whole. Claude Code can

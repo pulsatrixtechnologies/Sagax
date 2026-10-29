@@ -28,7 +28,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { ChevronRight, History, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Loader2, SquareTerminal } from "lucide-react";
 
-import { api, type Bot } from "@/state/store";
+import { api, openRoutineRun, type Bot } from "@/state/store";
+import { useStoreDispatch, useStoreGetter } from "@/state/store-selector";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { openExternalLink } from "@/lib/app-links";
@@ -351,7 +352,17 @@ export function ActivitySection({ bot }: { bot: Bot }) {
   const list = feed.list;
   const error = feed.error;
   const stop = feed.stop;
-  const actions: CardActions = { onOpen: setOpen, onStop: stop, stopping: feed.stopping, now: feed.now, fading: feed.live.fading };
+  const dispatch = useStoreDispatch();
+  const getState = useStoreGetter();
+  // 2026-10-29: a routine run opens its run detail (the Routines page), as
+  // View run does; a run this client does not hold keeps the task sheet.
+  const openItem = (item: BotActivityItem) => {
+    const runId = item.kind === "routine" && item.id.startsWith("run:") ? item.id.slice(4) : undefined;
+    const run = runId ? getState().routineRuns.find((candidate) => candidate.id === runId) : undefined;
+    if (run) openRoutineRun(dispatch, { runId: run.id, routineId: run.routineId });
+    else setOpen(item);
+  };
+  const actions: CardActions = { onOpen: openItem, onStop: stop, stopping: feed.stopping, now: feed.now, fading: feed.live.fading };
   // The branches this person archived from their Coding list (kept on the
   // server per person and bot; the branches themselves stay).
   const [archived, setArchived] = useState<ReadonlySet<string>>(() => new Set());

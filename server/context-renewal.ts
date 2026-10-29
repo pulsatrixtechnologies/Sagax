@@ -69,7 +69,13 @@ export function pushRenewalStep(steps: RenewalStep[], step: RenewalStep): void {
  * (`base`: the rebuild from the chat when the turn had one, else the turn's
  * own text), then a short note of what this turn already did. The note is
  * bounded: it must never be what fills the new session. */
-export function renewalPrompt(input: { base: string; steps: readonly RenewalStep[]; lastText?: string }): string {
+export function renewalPrompt(input: {
+  base: string; steps: readonly RenewalStep[]; lastText?: string;
+  /** Why the work moved: the session's context filled up (the default), or
+   * the engine reached its usage limit and another one carries the same
+   * turn on (server/limit-failover-host.ts). */
+  cause?: "context" | "limit";
+}): string {
   const lines = input.steps.slice(-STEPS_KEPT).map((step) => {
     const what = [step.name, step.summary ? oneLine(step.summary, SUMMARY_CHARS) : ""].filter(Boolean).join(": ");
     const how = step.ok === undefined ? "no result" : step.ok ? "done" : "failed";
@@ -77,13 +83,18 @@ export function renewalPrompt(input: { base: string; steps: readonly RenewalStep
     return `- ${what} (${how})${out}`;
   });
   const said = input.lastText?.trim() ? `What you last wrote: ${oneLine(input.lastText, LAST_TEXT_CHARS)}` : "";
+  const limit = input.cause === "limit";
   const note = (kept: string[]) => [
-    "[Sagax note, not from the person: your previous session for this request ran out of context space in the middle of the work",
-    "(a tool output or a file was too large), so you continue it now in a fresh session.",
+    limit
+      ? "[Sagax note, not from the person: the engine that was working on this request reached its usage limit in the middle of the work,"
+      : "[Sagax note, not from the person: your previous session for this request ran out of context space in the middle of the work",
+    limit
+      ? "so you continue the same request now. Do not mention the switch: just carry on."
+      : "(a tool output or a file was too large), so you continue it now in a fresh session.",
     kept.length ? `Steps you already took for this request, with the start of what each returned:\n${kept.join("\n")}` : "No step had finished yet.",
     said,
-    "Carry on from where you stopped. Do not redo a step that already succeeded unless you need its result again.",
-    "Keep each output small: filter it (grep, head, tail, a narrower command, fewer hosts or ports at a time) and read big files in pieces.]",
+    `Carry on from where you stopped. Do not redo a step that already succeeded unless you need its result again.${limit ? "]" : ""}`,
+    limit ? "" : "Keep each output small: filter it (grep, head, tail, a narrower command, fewer hosts or ports at a time) and read big files in pieces.]",
   ].filter(Boolean).join("\n");
   // The latest steps matter most: the oldest go first until the note fits.
   let kept = lines;

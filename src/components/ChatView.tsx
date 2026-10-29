@@ -59,7 +59,7 @@ import {
   formatTime,
   openBot,
   openThread,
-  openNotificationTarget,
+  openRoutineRun,
   startNewTopic,
   freshTopicCovers,
   visibleMessages,
@@ -136,7 +136,7 @@ import { WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
 import { SecretRequestCard } from "./SecretRequestCard";
-import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
+import { RoutineRunCard } from "./RoutineRunCard";
 import { CallRecordRow } from "./CallRecordRow";
 import { AttachmentGallery, collectMessageFiles, replyAttachmentGroup, splitMessageAttachments } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
@@ -967,24 +967,17 @@ const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { m
   return <ToolActivity tool={tool} place={toolPlace(tool.name, place)} nameOf={botNames(bots)} />;
 });
 
-/** A routine run's receipt. It opens the run's own thread, so it follows
- * the bots to know whether that thread is still there. */
-function RoutineRunRow({ message, botId, onResume }: { message: Message; botId: string; onResume?: () => void }) {
+/** A routine run's receipt. View run opens the run's detail (2026-10-29),
+ * a run of a deleted routine too, to read. */
+export function RoutineRunRow({ message, onResume }: { message: Message; botId: string; onResume?: () => void }) {
   "use memo";
   const dispatch = useStoreDispatch();
-  const getState = useStoreGetter();
-  const showThreads = useShowThreads();
-  const executionThreadId = message.routineRun?.executionThreadId;
-  const canOpen = useStoreSelector((current) => Boolean(executionThreadId) && current.bots.some((candidate) =>
-    candidate.threadId === executionThreadId || hasRoutineExecutionTask(candidate.tasks, executionThreadId!)
-  ));
+  const run = message.routineRun;
   return (
     <RoutineRunCard
       message={message}
       onResume={onResume}
-      onOpen={canOpen && executionThreadId
-        ? () => openNotificationTarget(dispatch, { botId, threadId: executionThreadId }, getState(), showThreads)
-        : undefined}
+      onOpen={run?.runId ? () => openRoutineRun(dispatch, { runId: run.runId, routineId: run.routineId }) : undefined}
     />
   );
 }
