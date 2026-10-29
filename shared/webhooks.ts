@@ -11,6 +11,9 @@ export interface WebhookTrigger {
   name: string;
   prompt: string;
   botId: string;
+  /** Set when this webhook belongs to a routine (it starts that routine).
+   * The routine's page and editor manage it (2026-10-29). */
+  routineId?: string;
   runOn: RoutineRunOn;
   enabled: boolean;
   createdAt: number;

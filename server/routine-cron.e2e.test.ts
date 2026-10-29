@@ -126,6 +126,18 @@ it("takes cron through the real routine tools, applying the bot's own routine at
     const persisted = JSON.parse(readFileSync(join(fixture.info.dataDir, "routines.json"), "utf8"));
     expect(persisted.routines.find((routine: any) => routine.id === routineId).schedule).toEqual(lastDay);
     evidence.push({ final: await api("GET", "/api/routines"), persisted });
+
+    // 2026-10-29: a routine made in the app to start from a webhook gets its
+    // webhook (managed in the routine); switching it to the clock removes it,
+    // and switching back attaches a new one.
+    const hooked = (await api("POST", "/api/routines", { botId: bot.id, name: "On delivery", prompt: "Use only the fixture.", enabled: false, runOn: "maus", schedule: { type: "webhook" } }, 201)).routine;
+    const owned = async () => (await api("GET", "/api/webhooks")).webhooks.filter((webhook: any) => webhook.routineId === hooked.id);
+    expect(await owned()).toHaveLength(1);
+    expect((await owned())[0]).toMatchObject({ botId: bot.id, enabled: false, tokenPending: true });
+    await api("PATCH", `/api/routines/${hooked.id}`, { schedule });
+    expect(await owned()).toHaveLength(0);
+    await api("PATCH", `/api/routines/${hooked.id}`, { schedule: { type: "webhook" } });
+    expect(await owned()).toHaveLength(1);
   } finally {
     const evidencePath = `${fixture.info.logPath}.cron.json`;
     writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));

@@ -24,6 +24,32 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Edit routine, redone (2026-10-29)
+
+The routine editor (`EventEditor`, `kind === "routine"`) is titled "Edit
+routine" (or "New routine"). The name sits up top with a one-line summary:
+the schedule sentence, where results go and who it runs as. Sections follow
+(`EditorSection`): When (the schedule in words, or "When a webhook
+arrives"), What (bot, instructions, attachments) and Where results go
+(compact rows `ResultsDestination compact` and `RunAsField compact`, their
+help behind a `HelpTip`, where it runs). Then More options, folded with a
+summary: run limit, overlap, auto-pause, continuity, only when I'm here,
+mail alias, post results. Nothing of the old modal is gone. The
+instructions use `MarkdownEditor compact expandable`: the five everyday
+buttons even in Advanced mode, Preview as one toggle and Full screen. Save
+and Cancel stay in the sticky footer. "Not saved" shows on a change (a
+snapshot of the fields), and closing over one asks first. A call keeps its
+old layout. A webhook routine manages its webhook where it is:
+`RoutineWebhookPanel` (in When and in the routine page's Configuration)
+shows the address, the masked key and header with Show and Copy, a curl
+example and Regenerate, over `/api/webhooks/:id/reveal|rotate`. The key
+stays in memory only. A routine created or switched to a webhook in the app
+gets its webhook (`bindOwnedTrigger`, server/index.ts, idempotent).
+Switching it to the clock removes the webhook. Edit bot > Webhooks only
+lists the bot's webhooks: a row opens its routine, or Automations >
+Webhooks for a webhook of its own. Gallery `src/gallery/routine-editor.html`,
+captures `node scripts/capture-routine-editor.mjs`.
+
 ## A routine's schedule in words (2026-10-29)
 
 The routine editor never shows cron. Repeat lists Once, Every hour, Every

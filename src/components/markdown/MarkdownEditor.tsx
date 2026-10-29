@@ -26,6 +26,8 @@ import {
   Italic,
   Link,
   List,
+  Maximize2,
+  Minimize2,
   ListChecks,
   ListOrdered,
   Minus,
@@ -205,6 +207,12 @@ export interface MarkdownEditorProps {
   /** a stable hook for tests and the docs, e.g. "soul" */
   dataField?: string;
   className?: string;
+  /** 2026-10-29: the everyday buttons only, even in Advanced mode (More
+   * keeps the rest), and Preview as one toggle. Routine instructions. */
+  compact?: boolean;
+  /** 2026-10-29: a Full screen button for long text; Escape or Exit full
+   * screen brings it back. */
+  expandable?: boolean;
 }
 
 export function MarkdownEditor({
@@ -228,8 +236,11 @@ export function MarkdownEditor({
   footer,
   dataField,
   className,
+  compact = false,
+  expandable = false,
 }: MarkdownEditorProps) {
-  const advanced = useAdvancedMode();
+  const advanced = useAdvancedMode() && !compact;
+  const [full, setFull] = useState(false);
   const [Core, setCore] = useState<CoreComponent | undefined>(() => coreReady);
   const [view, setView] = useState<ViewMode>(() => readView());
   const [more, setMore] = useState(false);
@@ -281,6 +292,10 @@ export function MarkdownEditor({
   // Escape leaves the editor: focus moves to the editor's frame (one Tab
   // from the next control), and the field may close itself.
   const leave = () => {
+    if (full) {
+      setFull(false);
+      return;
+    }
     shell.current?.focus();
     onEscape?.();
   };
@@ -303,7 +318,9 @@ export function MarkdownEditor({
 
   const words = useMemo(() => (showCount ? countWords(value) : 0), [value, showCount]);
   const characters = useMemo(() => (showCount ? countCharacters(value) : 0), [value, showCount]);
-  const shellStyle = { "--md-min-h": `${minHeight}px`, "--md-max-h": typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight } as CSSProperties;
+  const shellStyle = full
+    ? { "--md-min-h": "calc(100vh - 9rem)", "--md-max-h": "calc(100vh - 9rem)" } as CSSProperties
+    : { "--md-min-h": `${minHeight}px`, "--md-max-h": typeof maxHeight === "number" ? `${maxHeight}px` : maxHeight } as CSSProperties;
 
   const writing = (
     <div className="markdown-editor-surface min-w-0" style={shellStyle}>
@@ -398,7 +415,7 @@ export function MarkdownEditor({
         "markdown-editor flex min-w-0 flex-col rounded-lg border bg-inset outline-none focus-within:border-border-strong focus-visible:ring-2 focus-visible:ring-focus",
         invalid ? "border-danger/60 ring-1 ring-danger/50" : "border-hairline/40",
         disabled && "opacity-60",
-        className,
+        full ? "fixed inset-4 z-[80] bg-elevated shadow-2xl sm:inset-8" : className,
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-1 border-b border-hairline/40 px-1.5 py-1">
@@ -451,9 +468,26 @@ export function MarkdownEditor({
           )}
         </div>
         <div role="group" aria-label={t("markdownEditor.viewLabel")} className="flex items-center gap-0.5">
-          {viewButton("write", PenLine, t("markdownEditor.write"))}
-          {viewButton("preview", Eye, t("markdownEditor.preview"))}
-          {advanced && viewButton("split", Columns2, t("markdownEditor.split"))}
+          {compact
+            ? (mode === "preview" ? viewButton("write", PenLine, t("markdownEditor.write")) : viewButton("preview", Eye, t("markdownEditor.preview")))
+            : <>
+              {viewButton("write", PenLine, t("markdownEditor.write"))}
+              {viewButton("preview", Eye, t("markdownEditor.preview"))}
+              {advanced && viewButton("split", Columns2, t("markdownEditor.split"))}
+            </>}
+          {expandable && (
+            <button
+              type="button"
+              data-md-full=""
+              aria-pressed={full}
+              title={full ? t("markdownEditor.exitFull") : t("markdownEditor.full")}
+              aria-label={full ? t("markdownEditor.exitFull") : t("markdownEditor.full")}
+              onClick={() => setFull((open) => !open)}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+            >
+              {full ? <Minimize2 size={13} aria-hidden="true" /> : <Maximize2 size={13} aria-hidden="true" />}
+            </button>
+          )}
         </div>
       </div>
       {mode === "write" && writing}

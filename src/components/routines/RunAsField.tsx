@@ -9,6 +9,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { HelpTip } from "./EditorSection";
 import { personInitials } from "@/lib/people-dm";
 import { personAvatarSrc } from "@/lib/profile-management";
 import { PersonAvatar } from "../MessageAuthor";
@@ -50,11 +51,13 @@ export function runAsOptionLabel(person: RunAsOption): string {
   return person.selectable ? name : t("routines.runAsField.noRight", { name });
 }
 
-export function RunAsField({ options, value, onChange }: {
+export function RunAsField({ options, value, onChange, compact = false }: {
   options: RunAsOptions | null;
   /** The chosen principal id (undefined: the routine's current person). */
   value: string | undefined;
   onChange: (principalId: string) => void;
+  /** 2026-10-29: one row (label, value) with the help one click away. */
+  compact?: boolean;
 }) {
   const id = useId();
   const [query, setQuery] = useState("");
@@ -68,12 +71,19 @@ export function RunAsField({ options, value, onChange }: {
   const avatar = <PersonAvatar avatarUrl={personAvatarSrc(chosen?.avatarUrl)} initials={personInitials(chosenName || "?")} size={24} />;
   const pendingHint = chosen?.pending ? <p data-run-as-pending className="text-[11px] leading-relaxed text-ink-secondary">{t("routines.runAsField.pending", { name: chosenName })}</p> : null;
   if (!options.canChoose) {
+    if (compact) return <div data-run-as-field className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5">
+      <span className="w-48 shrink-0 text-[12px] font-medium text-ink">{t("routines.runAsField.label")}</span>
+      <span className="flex min-w-0 items-center gap-2 text-[12.5px] text-ink">{avatar}<span className="truncate">{chosenName}</span></span>
+    </div>;
     return <div data-run-as-field className="min-w-0 space-y-1.5">
       <div className="flex min-w-0 items-center gap-2 text-[12px] text-ink">{avatar}<span className="truncate">{t("routines.runAs", { name: chosenName })}</span></div>
     </div>;
   }
-  return <div data-run-as-field className="min-w-0 space-y-1.5">
-    <label htmlFor={id} className="block text-[12px] font-medium text-ink">{t("routines.runAsField.label")}</label>
+  return <div data-run-as-field className={compact ? "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5" : "min-w-0 space-y-1.5"}>
+    <span className={compact ? "flex w-48 shrink-0 items-center gap-1" : undefined}>
+      <label htmlFor={id} className="block text-[12px] font-medium text-ink">{t("routines.runAsField.label")}</label>
+      {compact && <HelpTip id={`${id}-help`} text={t("routines.runAsField.help")} />}
+    </span>
     {options.people.length > RUN_AS_SEARCH_AFTER && (
       <input
         type="search"
@@ -85,7 +95,7 @@ export function RunAsField({ options, value, onChange }: {
         className="w-full min-w-0 rounded-lg border border-hairline/50 bg-inset px-3 py-2 text-[12.5px] text-ink outline-none placeholder:text-ink-secondary focus:border-accent"
       />
     )}
-    <div className="flex min-w-0 items-center gap-2">
+    <div className={compact ? "flex min-w-0 flex-1 items-center gap-2" : "flex min-w-0 items-center gap-2"}>
       {avatar}
       <select id={id} aria-describedby={`${id}-help`} value={selected ?? ""}
         onChange={(event) => { if (event.target.value) onChange(event.target.value); }}
@@ -95,7 +105,7 @@ export function RunAsField({ options, value, onChange }: {
       </select>
     </div>
     {pendingHint}
-    <p id={`${id}-help`} className="text-[11px] leading-relaxed text-ink-secondary">{t("routines.runAsField.help")}</p>
+    {!compact && <p id={`${id}-help`} className="text-[11px] leading-relaxed text-ink-secondary">{t("routines.runAsField.help")}</p>}
   </div>;
 }
 
