@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 import type { ShapeSkin } from "../../../shared/mascot-look";
 import { EYE_INK, eyeInkOn } from "../../../shared/mascot-colors";
+import { GEOMETRY } from "../shape-art";
 import { mix, type FxKind } from "./skin-fx";
 
 export interface ShapeSkinBase {
@@ -29,36 +30,37 @@ export interface ShapeSkinBase {
 /** Mixes a hex color toward white (amount 0..1). */
 export const tint = (hex: string, amount: number) => mix(hex, "#ffffff", amount);
 
+/** A paint rule of the geometry file: the bot's colour, a tint of it toward white, a mix toward another colour, or a fixed hex. */
+type PaintRule = "bot" | { tint: number } | { hex: string } | { mix: { toward: string; t: number } };
+/** The eyes' rule: the ink that contrasts with the fill, the pastel's softer ink, or a paint rule. */
+type EyesRule = "auto" | "soft" | PaintRule;
+
+function paintOf(rule: PaintRule, hex: string): string {
+  if (rule === "bot") return hex;
+  if ("tint" in rule) return tint(hex, rule.tint);
+  if ("mix" in rule) return mix(hex, rule.mix.toward, rule.mix.t);
+  return rule.hex;
+}
+
+/**
+ * The base finish of a skin, from shared/mascot-geometry.json (the phone
+ * reads the same rules through its generated copy, so the two paint alike).
+ */
 export function shapeSkinBase(skin: ShapeSkin, hex: string): ShapeSkinBase {
-  switch (skin) {
-    case "glossy":
-      return { fill: hex, stroke: null, strokeWidth: 0, eyes: eyeInkOn(hex), glow: null, shine: true, fx: "plain" };
-    case "pastel":
-      return { fill: tint(hex, 0.55), stroke: null, strokeWidth: 0, eyes: eyeInkOn(tint(hex, 0.55)) === EYE_INK.dark ? "#3a3f4b" : EYE_INK.light, glow: null, shine: false, fx: "plain" };
-    case "night":
-      return { fill: "#1c2236", stroke: hex, strokeWidth: 2.5, eyes: "#f6f1e8", glow: null, shine: false, fx: "plain" };
-    case "outline":
-      return { fill: tint(hex, 0.93), stroke: "#1b1f27", strokeWidth: 4.4, eyes: "#1b1f27", glow: null, shine: false, fx: "ink" };
-    case "gold":
-      return { fill: "#e2ae34", stroke: "#7a4e08", strokeWidth: 1.4, eyes: "#3a2404", glow: null, shine: false, fx: "gold" };
-    case "neon":
-      return { fill: "#0d0f15", stroke: tint(hex, 0.2), strokeWidth: 3.6, eyes: tint(hex, 0.45), glow: tint(hex, 0.1), shine: false, fx: "neon" };
-    case "chrome":
-      return { fill: "#8c98a6", stroke: "#1f262d", strokeWidth: 1.4, eyes: "#10151b", glow: null, shine: false, fx: "chrome" };
-    case "crystal":
-      return { fill: tint(hex, 0.55), stroke: "#ffffff", strokeWidth: 1.5, eyes: "#1b1f27", glow: null, shine: false, fx: "crystal" };
-    case "circuit":
-      return { fill: "#08161b", stroke: mix(hex, "#7dffea", 0.45), strokeWidth: 2, eyes: mix(hex, "#ffffff", 0.6), glow: null, shine: false, fx: "circuit" };
-    case "holo":
-      return { fill: "#ece9fb", stroke: "#ffffff", strokeWidth: 1.2, eyes: "#2a2140", glow: null, shine: false, fx: "holo" };
-    case "molten":
-      return { fill: "#2a120c", stroke: "#ff6a1a", strokeWidth: 1.4, eyes: "#ffd36b", glow: null, shine: false, fx: "molten" };
-    case "galaxy":
-      return { fill: "#120a2e", stroke: tint(hex, 0.5), strokeWidth: 1.2, eyes: "#f3efff", glow: null, shine: false, fx: "galaxy" };
-    default:
-      // dark eyes, or light ones on a dark body (black, the deep palette): always readable
-      return { fill: hex, stroke: null, strokeWidth: 0, eyes: eyeInkOn(hex), glow: null, shine: false, fx: "plain" };
-  }
+  const rules = GEOMETRY.skins as unknown as Record<string, { fill: PaintRule; stroke: PaintRule | null; strokeWidth: number; eyes: EyesRule; glow: PaintRule | null; shine: boolean; fx: string }>;
+  const rule = rules[skin] ?? rules.plain;
+  const fill = paintOf(rule.fill, hex);
+  // dark eyes, or light ones on a dark body (black, the deep palette): always readable
+  const eyes = rule.eyes === "auto" ? eyeInkOn(fill) : rule.eyes === "soft" ? (eyeInkOn(fill) === EYE_INK.dark ? "#3a3f4b" : EYE_INK.light) : paintOf(rule.eyes, hex);
+  return {
+    fill,
+    stroke: rule.stroke ? paintOf(rule.stroke, hex) : null,
+    strokeWidth: rule.strokeWidth,
+    eyes,
+    glow: rule.glow ? paintOf(rule.glow, hex) : null,
+    shine: rule.shine,
+    fx: rule.fx as FxKind,
+  };
 }
 
 /* ------------------------------------------------ fixed art in 0..100 */

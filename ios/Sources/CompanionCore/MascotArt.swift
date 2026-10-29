@@ -1,8 +1,10 @@
 // The other two Sagax characters as data, and the bits of CSS the desktop
 // animates and tints them with:
 //
-// - `ShapeArt`: `SHAPE_ART` and `shapeSkinPaint` from
-//   `src/components/ShapeMascot.tsx`.
+// - `ShapeArt`: `SHAPE_ART` (src/components/shape-art.ts) and
+//   `shapeSkinBase` (skin-fx/shape-skins.tsx), both read from the one
+//   geometry file (`ShapeGeometryData`, generated from
+//   shared/mascot-geometry.json).
 // - `TrombiArt`: `src/components/retro-assistant/trombi-art.ts` (geometry and
 //   the pose shapes) plus the skins of `shape-mascot.css`.
 // - `CSSColorFilter`: the CSS filter functions Trombi's skins use, applied to
@@ -23,16 +25,19 @@ public enum ShapeArt {
         public let gap: CGFloat
     }
 
-    public static let art: [MascotShape: Art] = [
-        .circle: Art(d: "M50 8a42 42 0 1 1 0 84a42 42 0 1 1 0-84z", eyes: CGPoint(x: 50, y: 52), gap: 11),
-        .blob: Art(d: "M30 22C40 10 62 8 76 18C90 28 94 50 86 66C78 82 58 92 40 88C22 84 8 70 10 54C11 46 17 42 22 38C26 34 24 28 30 22z", eyes: CGPoint(x: 54, y: 50), gap: 11),
-        .squircle: Art(d: "M30 10H70C82 10 90 18 90 30V70C90 82 82 90 70 90H30C18 90 10 82 10 70V30C10 18 18 10 30 10z", eyes: CGPoint(x: 50, y: 52), gap: 12),
-        .pill: Art(d: "M30 26H70C83 26 94 37 94 50C94 63 83 74 70 74H30C17 74 6 63 6 50C6 37 17 26 30 26z", eyes: CGPoint(x: 50, y: 50), gap: 12),
-        .triangle: Art(d: "M44 14C47 9 53 9 56 14L91 76C94 82 90 88 84 88H16C10 88 6 82 9 76z", eyes: CGPoint(x: 50, y: 64), gap: 10),
-        .hexagon: Art(d: "M44 9C48 7 52 7 56 9L84 25C88 27 90 31 90 35V65C90 69 88 73 84 75L56 91C52 93 48 93 44 91L16 75C12 73 10 69 10 65V35C10 31 12 27 16 25z", eyes: CGPoint(x: 50, y: 52), gap: 12),
-        .cloud: Art(d: "M24 82C13 82 6 74 6 64C6 54 13 47 22 46C22 32 33 22 46 22C55 22 63 27 67 35C70 33 74 32 78 32C88 32 96 41 95 52C94 60 90 66 84 68C88 72 86 82 78 82z", eyes: CGPoint(x: 50, y: 58), gap: 12),
-        .drop: Art(d: "M50 6C58 22 82 42 82 62C82 80 68 92 50 92C32 92 18 80 18 62C18 42 42 22 50 6z", eyes: CGPoint(x: 50, y: 62), gap: 11),
-    ]
+    /// Every shape's resting outline and face (`SHAPE_ART`): the geometry
+    /// file's 64 radii smoothed into one closed path in the 0..100 box, and
+    /// its face anchor in box units.
+    public static let art: [MascotShape: Art] = Dictionary(uniqueKeysWithValues: MascotShape.allCases.map { shape in
+        let radii = ShapeGeometryData.radii[shape] ?? ShapeGeometryData.radii[.circle]!
+        let n = Double(radii.count)
+        let points = radii.enumerated().map { i, r -> CGPoint in
+            let a = Double(i) / n * Double.pi * 2
+            return ShapeMath.toBox(CGPoint(x: r * sin(a), y: -r * cos(a)))
+        }
+        let face = ShapeGeometryData.faceAnchor[shape] ?? ShapeEngineData.eyeShift
+        return (shape, Art(d: ShapeMath.smoothClosed(points), eyes: ShapeMath.toBox(CGPoint(x: face.x, y: face.y)), gap: 11))
+    })
 
     /// How a skin paints a shape (`shapeSkinPaint`).
     public struct Paint: Equatable, Sendable {
@@ -63,42 +68,36 @@ public enum ShapeArt {
         return RGB(r: ch(a.r, b.r), g: ch(a.g, b.g), b: ch(a.b, b.b)).hex
     }
 
+    /// A paint rule of the geometry file on a bot colour (`paintOf`): the
+    /// bot's colour, a tint of it toward white, a mix toward another colour,
+    /// or a fixed hex (upper case, as the phone has always written it).
+    public static func paintOf(_ rule: ShapePaintRule, hex: String) -> String {
+        switch rule {
+        case .bot: return hex
+        case let .tint(amount): return tint(hex, amount)
+        case let .hex(value): return RGB(hex: value).hex
+        case let .mix(toward, t): return mix(hex, toward, t)
+        }
+    }
+
     /// `shapeSkinBase` (skin-fx/shape-skins.tsx): the finish every size
-    /// draws. The premium editions add light, texture and effects on top on
-    /// the desktop (`shapeSkinLayers`); the phone draws this base finish,
-    /// which is the desktop's own still look minus those layers
+    /// draws, from the skin rules of the geometry file (`ShapeGeometryData.skins`).
+    /// The premium editions add light, texture and effects on top on the
+    /// desktop (`shapeSkinLayers`); the phone draws this base finish, which
+    /// is the desktop's own still look minus those layers
     /// (`MascotSubstitution` records it).
     public static func paint(_ skin: ShapeSkin, hex: String) -> Paint {
-        switch skin {
-        case .glossy:
-            return Paint(fill: hex, stroke: nil, strokeWidth: 0, eyes: MascotInk.eyeInkOn(hex), glow: nil, shine: true)
-        case .pastel:
-            let fill = tint(hex, 0.55)
-            return Paint(fill: fill, stroke: nil, strokeWidth: 0, eyes: MascotInk.eyeInkOn(fill) == MascotInk.dark ? "#3A3F4B" : MascotInk.light, glow: nil, shine: false)
-        case .night:
-            return Paint(fill: "#1C2236", stroke: hex, strokeWidth: 2.5, eyes: "#F6F1E8", glow: nil, shine: false)
-        case .outline:
-            return Paint(fill: tint(hex, 0.93), stroke: "#1B1F27", strokeWidth: 4.4, eyes: "#1B1F27", glow: nil, shine: false)
-        case .gold:
-            return Paint(fill: "#E2AE34", stroke: "#7A4E08", strokeWidth: 1.4, eyes: "#3A2404", glow: nil, shine: false)
-        case .neon:
-            return Paint(fill: "#0D0F15", stroke: tint(hex, 0.2), strokeWidth: 3.6, eyes: tint(hex, 0.45), glow: tint(hex, 0.1), shine: false)
-        case .chrome:
-            return Paint(fill: "#8C98A6", stroke: "#1F262D", strokeWidth: 1.4, eyes: "#10151B", glow: nil, shine: false)
-        case .crystal:
-            return Paint(fill: tint(hex, 0.55), stroke: "#FFFFFF", strokeWidth: 1.5, eyes: "#1B1F27", glow: nil, shine: false)
-        case .circuit:
-            return Paint(fill: "#08161B", stroke: mix(hex, "#7DFFEA", 0.45), strokeWidth: 2, eyes: mix(hex, "#FFFFFF", 0.6), glow: nil, shine: false)
-        case .holo:
-            return Paint(fill: "#ECE9FB", stroke: "#FFFFFF", strokeWidth: 1.2, eyes: "#2A2140", glow: nil, shine: false)
-        case .molten:
-            return Paint(fill: "#2A120C", stroke: "#FF6A1A", strokeWidth: 1.4, eyes: "#FFD36B", glow: nil, shine: false)
-        case .galaxy:
-            return Paint(fill: "#120A2E", stroke: tint(hex, 0.5), strokeWidth: 1.2, eyes: "#F3EFFF", glow: nil, shine: false)
-        case .plain:
-            // the clay finish: dark eyes, or light ones on a dark body
-            return Paint(fill: hex, stroke: nil, strokeWidth: 0, eyes: MascotInk.eyeInkOn(hex), glow: nil, shine: false)
+        let rule = ShapeGeometryData.skins[skin] ?? ShapeGeometryData.skins[.plain]!
+        let fill = paintOf(rule.fill, hex: hex)
+        // dark eyes, or light ones on a dark body (black, the deep palette): always readable
+        let eyes: String
+        switch rule.eyes {
+        case .auto: eyes = MascotInk.eyeInkOn(fill)
+        case .soft: eyes = MascotInk.eyeInkOn(fill) == MascotInk.dark ? "#3A3F4B" : MascotInk.light
+        case let .paint(paint): eyes = paintOf(paint, hex: hex)
         }
+        return Paint(fill: fill, stroke: rule.stroke.map { paintOf($0, hex: hex) }, strokeWidth: CGFloat(rule.strokeWidth), eyes: eyes,
+                     glow: rule.glow.map { paintOf($0, hex: hex) }, shine: rule.shine)
     }
 
     /// `clayStops` (shape-engine.ts): a light from the upper left fading to

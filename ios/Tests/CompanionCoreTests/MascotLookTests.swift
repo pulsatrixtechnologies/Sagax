@@ -274,19 +274,22 @@ final class MascotLookTests: XCTestCase {
     // MARK: shapes
 
     func testEveryShapeHasArtThatParses() {
-        // the hand-drawn outlines of the first eight (the engine's radii draw every shape: ShapeEngineTests)
-        for shape in MascotShape.allCases.prefix(8) {
+        // every shape's outline comes from the geometry file's radii (ShapeGeometryData), the engine's resting body
+        for shape in MascotShape.allCases {
             let art = ShapeArt.art[shape]
             XCTAssertNotNil(art, shape.rawValue)
             XCTAssertTrue(art?.d.hasPrefix("M") == true)
             let bounds = SVGPath.parse(art!.d).boundingBoxOfPath
-            XCTAssertGreaterThan(bounds.width, 50, shape.rawValue)
-            XCTAssertLessThanOrEqual(bounds.maxX, 96, shape.rawValue)
+            XCTAssertGreaterThan(bounds.width, 30, shape.rawValue)
+            XCTAssertLessThanOrEqual(bounds.maxX, 100, shape.rawValue)
+            XCTAssertGreaterThanOrEqual(bounds.minX, 0, shape.rawValue)
+            XCTAssertEqual(art!.d, ShapeStillArt.body[shape], shape.rawValue)
         }
-        // the circle is two relative arcs: 8...92 on both axes
+        // the circle is 64 radii of 1 R: 10...90 on both axes, its face at the anchor
         let circle = SVGPath.parse(ShapeArt.art[.circle]!.d).boundingBoxOfPath
-        XCTAssertEqual(circle.minX, 8, accuracy: 0.01)
-        XCTAssertEqual(circle.maxY, 92, accuracy: 0.01)
+        XCTAssertEqual(circle.minX, 10, accuracy: 0.01)
+        XCTAssertEqual(circle.maxY, 90, accuracy: 0.01)
+        XCTAssertEqual(ShapeArt.art[.circle]!.eyes, CGPoint(x: 54, y: 58))
     }
 
     func testShapeSkinPaintMatchesTheDesktop() {

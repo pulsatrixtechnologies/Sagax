@@ -151,9 +151,11 @@ describe("the gaze solver", () => {
     }
   });
 
-  it("fades an eye that turns away and moves the face toward the pointer", () => {
+  it("never fades or shrinks an eye, however far the face turns; the pair moves toward the pointer", () => {
     const away = solveEyes(SHAPE_RADII.circle, EXPRESSIONS.neutral, { yaw: 110, pitch: 0, roll: 0 }, { left: 1, right: 1 });
-    expect(Math.min(...away.map((eye) => eye.alpha))).toBe(0);
+    expect(away.every((eye) => eye.alpha === 1)).toBe(true);
+    expect(Math.abs(away[0].w - away[1].w)).toBeLessThan(1e-9);
+    expect(Math.abs(away[0].h - away[1].h)).toBeLessThan(1e-9);
     const rest = solveEyes(SHAPE_RADII.circle, EXPRESSIONS.neutral, { yaw: 0, pitch: 0, roll: 0 }, { left: 1, right: 1 });
     expect(rest.every((eye) => eye.alpha === 1)).toBe(true);
     const right = solveEyes(SHAPE_RADII.circle, EXPRESSIONS.neutral, { ...hoverGaze(1, 0), roll: 0 }, { left: 1, right: 1 });
@@ -179,13 +181,28 @@ describe("moves", () => {
     }
   });
 
-  it("turns the body into three dots while thinking, a mark for alerts, adds rings and ribbons", () => {
+  it("keeps the body whole in every move: thought dots beside it, a mark for alerts, rings and ribbons around it", () => {
     const thinking = moveAt("thinking", 1);
-    expect(thinking.eyes).toBe(0);
-    expect(thinking.dots).toHaveLength(2);
-    expect(thinking.radii).toBe(MOVE_RADII.dot);
-    expect(moveAt("exclaim", 1).radii).toBe(MOVE_RADII.bar);
-    expect(moveAt("alert", 1).rot).toBeGreaterThan(10);
+    expect(thinking.eyes).toBeUndefined();
+    expect(thinking.dots).toHaveLength(3);
+    expect(thinking.radii).toBeUndefined();
+    expect(moveAt("exclaim", 1).radii).toBeUndefined();
+    expect(moveAt("exclaim", 1).marks).toHaveLength(1);
+    expect(moveAt("alert", 1).marks).toHaveLength(1);
+    expect(moveAt("alert", 1).dots).toHaveLength(1);
+    expect(moveAt("sleep", 1).face?.left?.open).toBeLessThan(0.1);
+    for (const move of SHAPE_MOVES) {
+      for (const u of [0.1, 0.5, 1, 1.5, 2, 2.6]) {
+        const p = moveAt(move, u, SHAPE_RADII.drop);
+        expect(p.eyes ?? 1, `${move} ${u} eyes`).toBe(1);
+        if (p.radii) expect(Math.min(...p.radii), `${move} ${u} body`).toBeGreaterThan(0.4);
+      }
+    }
+    // a morph settles back into the shape's own body, never the circle's
+    const settled = moveAt("orbit", MOVE_TIMING.orbit.duration, SHAPE_RADII.drop);
+    expect(settled.radii).toBeUndefined();
+    const settling = moveAt("orbit", MOVE_TIMING.orbit.duration - 0.8, SHAPE_RADII.drop);
+    expect(settling.radii![0]).toBeGreaterThan(SHAPE_RADII.drop[0] - 0.2);
     expect(moveAt("notify", 1).badge).toBeTruthy();
     expect(moveAt("orbit", 1).rings).toHaveLength(6);
     expect(moveAt("swirl", 0.5).rings).toHaveLength(3);

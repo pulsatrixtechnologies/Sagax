@@ -102,8 +102,8 @@ Sagax. It is not part of the PolyForm Noncommercial grant.
 The desktop mascot characters (Owl, Shapes, Trombi) are original work of
 Pulsatrix Technologies inc., except the Shapes bodies below.
 
-The Shapes bodies (src/components/shape-tables.ts, their copies in
-ios/Sources/CompanionCore/ShapeEngineData.swift and ShapeStillArt.swift, and
+The Shapes bodies (shared/mascot-geometry.json, their copies in
+ios/Sources/CompanionCore/ShapeGeometryData.swift and ShapeStillArt.swift, and
 the iOS test fixtures generated from them) are the 64-radius tables of bloub,
 Copyright (c) 2026 Jérémy Perret, used under the MIT License
 (third_party/bloub/LICENSE), from https://github.com/jeremy-prt/bloub

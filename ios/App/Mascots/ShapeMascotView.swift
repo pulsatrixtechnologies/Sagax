@@ -1,9 +1,10 @@
 // The mascot shapes: a port of `src/components/ShapeMascot.tsx`. One body
-// in every shape of the set, drawn in volume as on the desktop since #786 (with the
-// depth fix of #1106): a few slices of one outline turned with the pose, one
-// flat colour, two opaque eyes in a solid ink on the face's dome (capsules at
-// rest, ovals while busy, arches when pleased), every shape on the same
-// ground. The Outline skin stays flat on purpose, eyes cut through it.
+// in every shape of the set, drawn in volume as on the desktop since #786 (one
+// drawing since 2026-10-28): a few slices of one outline turned with the pose,
+// one flat colour, two opaque eyes in a solid ink on the face, under the face's
+// own matrix (capsules at rest, ovals while busy, arches when pleased), every
+// shape on the same ground. The Outline skin stays flat on purpose, eyes cut
+// through it.
 //
 // What moves it is the desktop's own code, ported in CompanionCore with its
 // numbers generated from the desktop's modules: `ShapeEngine` (gaze, blinks,
@@ -130,10 +131,11 @@ final class ShapePlayer {
             pendingPointer = nil
         }
         sway.setMood(mood.motion, now: now)
-        let frame = run.frame(now)
         let swayed = sway.pose(now)
-        // at rest the turn out of the picture plane holds (no bend); a move plays its full turn
-        let pose = ShapeVolume.grounded(run.playing(now) ? swayed : ShapeVolume.upright(swayed), state.shape)
+        // the sway's lean moves the gaze; the outline keeps its resting turn (ShapeVolume.upright)
+        run.lean(yaw: swayed.yaw - ShapeVolume.rest.yaw, pitch: swayed.pitch - ShapeVolume.rest.pitch)
+        let frame = run.frame(now)
+        let pose = ShapeVolume.grounded(ShapeVolume.upright(swayed), state.shape)
         return (frame, pose)
     }
 
@@ -205,45 +207,48 @@ enum ShapeRenderer {
         }
     }
 
-    /// A body in volume: its slices, the face, and the eyes upright on it (shape-volume.ts).
+    /// A move's marks (the exclamation's bar) in the dots' colour, beside the body.
+    private static func marks(_ frame: ShapeFrame, fill: String, in ctx: GraphicsContext) {
+        for mark in frame.marks where mark.opacity > 0 {
+            let path = CGMutablePath()
+            ShapeMath.smoothClosedPath(mark.points, into: path)
+            var m = ctx
+            m.opacity = mark.opacity
+            m.fill(Path(path), with: .color(Color(hex: fill)))
+        }
+    }
+
+    /// A body in volume (shape-volume.ts drawShape): its slices in the
+    /// side's fill, then the face with the stem behind it, the dots, the
+    /// marks, the badge and the two eyes, all under the face's one matrix.
     private static func drawVolume(in ctx: GraphicsContext, box: CGFloat, frame: ShapeFrame, pose: ShapePose, skin: ShapeSkin, hex: String, style: ShapeEyeStyle) {
         let paint = ShapeArt.paint(skin, hex: hex)
         let solid = skin == .plain
         let ink = ShapeVolume.ink(solid ? frame.color : paint.fill)
         let fill = solid ? ink.fill : paint.fill
+        let sideFill = solid ? ink.side : paint.fill
         let detail = ShapeVolumeDetail.of(Double(box))
-        let m = ShapeVolume.matrices(detail, pose, depth: frame.depth)
-        // the turn out of the picture plane bends a plain body's outline and its eyes
-        guard let flat = ShapeOutline(points: frame.body) else { return }
-        let outline = solid ? ShapeVolume.warp(flat, pose) : flat
+        // the one drawing: a plain body bends with the resting turn; a skin's own art is drawn on the outline at rest
+        guard let drawing = ShapeVolume.drawShape(frame, pose, detail: detail, style: style, bend: solid) else { return }
         let bodyPath = CGMutablePath()
-        outline.add(to: bodyPath)
+        drawing.outline.add(to: bodyPath)
         let body = Path(bodyPath)
 
         // a move's motion (breath, drift, a move's turn) carries the whole body
         var moved = ctx
-        moved.concatenate(frame.affine)
-        if let edge = ink.edge {
-            // a near-white or near-black body keeps its silhouette on any ground
-            for t in m.slices + [m.face] {
-                var c = moved
-                c.concatenate(t)
-                c.opacity = 0.2
-                c.stroke(body, with: .color(Color(hex: edge)), style: StrokeStyle(lineWidth: detail == .tiny ? 2.4 : 1.6, lineJoin: .round))
-            }
-        }
-        for t in m.slices {
+        moved.concatenate(drawing.motion)
+        // the body behind its face: slices of the same outline, turned with it
+        for t in drawing.slices {
             var c = moved
             c.concatenate(t)
-            c.fill(body, with: .color(Color(hex: fill)))
+            c.fill(body, with: .color(Color(hex: sideFill)))
         }
         var face = moved
-        face.concatenate(m.face)
+        face.concatenate(drawing.face)
         // the pumpkin's stem: behind the face, its foot under the body's top
-        if let stem = frame.stem, let stalk = ShapeOutline(points: stem.points) {
-            let shown = solid ? ShapeVolume.warp(stalk, pose) : stalk
+        if let stem = drawing.stem {
             let path = CGMutablePath()
-            shown.add(to: path)
+            stem.outline.add(to: path)
             var c = face
             c.opacity = stem.opacity
             c.fill(Path(path), with: .color(Color(hex: ShapeMath.mixHex(ShapeEngineData.stemInk, fill.hasPrefix("#") && fill.count == 7 ? fill : ShapeEngineData.stemInk, 0.12))))
@@ -256,6 +261,12 @@ enum ShapeRenderer {
             g.fill(body, with: .color(Color(hex: glow)))
         }
         faceBody.fill(body, with: .color(Color(hex: fill)))
+        if let edge = ink.edge {
+            // a near-white or near-black face keeps its silhouette: one hairline, on the face only
+            var c = faceBody
+            c.opacity = 0.2
+            c.stroke(body, with: .color(Color(hex: edge)), style: StrokeStyle(lineWidth: detail == .tiny ? 2.4 : 1.6, lineJoin: .round))
+        }
         if paint.shine {
             let g = Gradient(stops: [
                 .init(color: .white.opacity(0.55), location: 0),
@@ -270,14 +281,13 @@ enum ShapeRenderer {
             faceBody.stroke(body, with: .color(Color(hex: stroke)), style: StrokeStyle(lineWidth: paint.strokeWidth, lineJoin: .round))
         }
         dots(frame, fill: fill, in: faceBody)
+        marks(frame, fill: fill, in: faceBody)
         badge(frame, in: face)
 
-        // the eyes in their ink: upright capsules placed on the posed body, drawn in the
-        // drawing's own space, never through the body's matrices (shape-volume.ts posedEyes)
-        let eyes = ShapeVolume.eyesOnPose(frame, pose, style: style, bend: solid)
-        guard !eyes.isEmpty else { return }
-        let ink2 = solid ? ink.eyes : paint.eyes
-        ctx.fill(Path(ShapeVolume.path(eyes)), with: .color(Color(hex: ink2)))
+        // the eyes in their ink (dark, or light on a dark body), on the face, under its
+        // matrix: they go through the very same transforms as the outline
+        guard !drawing.eyes.isEmpty else { return }
+        face.fill(Path(ShapeVolume.path(drawing.eyes)), with: .color(Color(hex: solid ? ink.eyes : paint.eyes)))
     }
 
     /// A flat skin (Outline): the eyes cut through the body, the bounce while working.
@@ -306,6 +316,7 @@ enum ShapeRenderer {
             shaped.stroke(cut, with: .color(Color(hex: stroke)), style: StrokeStyle(lineWidth: paint.strokeWidth, lineJoin: .round))
         }
         dots(frame, fill: paint.fill, in: shaped)
+        marks(frame, fill: paint.fill, in: shaped)
         badge(frame, in: group)
     }
 

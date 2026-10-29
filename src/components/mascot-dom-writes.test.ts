@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sameOgreShapes, writeOgreTransforms } from "./OgreMascot";
-import { shapeFrameWritable, writeShapeFrame } from "./ShapeMascot";
+import { shapeFrameWritable } from "./ShapeMascot";
+import { drawShape, REST_POSE, writeShape } from "./shape-volume";
 import { ogreFrameLayers, restFrame } from "./ogre-rig";
 import { stillFrame } from "./shape-engine";
 
@@ -41,14 +42,19 @@ describe("Ogre's rig writes a frame that only moves parts straight onto the draw
 describe("a shape's idle frame goes straight onto its drawing", () => {
   const still = stillFrame({ shape: "circle", expression: "neutral", color: "#3fb950" });
 
-  it("writes the outline, the transform and the light", () => {
+  it("writes the outline, the eyes, the transform and the light: one drawing, every part", () => {
     const moved = { ...still, transform: "translate(1 2)", light: { x: 30, y: 20, r: 70 } };
     expect(shapeFrameWritable(still, moved)).toBe(true);
     const cuts = [{}, {}] as Array<Record<string, string>>;
+    const faces = [{}] as Array<Record<string, string>>;
+    const eyes = [{}] as Array<Record<string, string>>;
     const motion = [{}] as Array<Record<string, string>>;
     const light = [{}] as Array<Record<string, string>>;
-    writeShapeFrame(fakeSvg({ "data-shape-cut": cuts, "data-shape-motion": motion, "data-shape-light": light }), moved);
+    const drawing = drawShape(moved, REST_POSE, "full");
+    writeShape(fakeSvg({ "data-shape-cut": cuts, "data-shape-face": faces, "data-shape-eyes": eyes, "data-shape-motion": motion, "data-shape-light": light }), drawing);
     expect(cuts.every((path) => path.d === moved.body + moved.eyes)).toBe(true);
+    expect(faces[0].d).toBe(drawing.outline);
+    expect(eyes[0].d).toBe(drawing.eyes);
     expect(motion[0].transform).toBe("translate(1 2)");
     expect(light[0]).toEqual({ cx: "30", cy: "20", r: "70" });
   });

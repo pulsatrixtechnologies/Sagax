@@ -1,17 +1,23 @@
-// The shapes' pose and paint (2026-10-18): our own outlines (shape-art.ts),
-// each drawn as a solid, softly rounded body in one flat colour, the bot's own
-// (no gradient, no highlight, no filter, no raster: crisp at any size).
-// - The body is a few slices of one outline, stacked in depth and turned with
-//   the pose (yaw, pitch, a little roll), so it shows a side when it turns.
-// - A turn out of the picture plane also bends the outline in a gentle
-//   perspective (warpPath): the shape rounds into the turn and its top stays
-//   on top, instead of rocking flat.
+// The shapes' pose and paint (2026-10-18, one drawing since 2026-10-28):
+// our own outlines (shape-art.ts), each drawn as a solid, softly rounded
+// body in one flat colour, the bot's own (no gradient, no highlight, no
+// filter, no raster: crisp at any size).
+// - The body is a few slices of one outline, stacked in depth and turned
+//   with the pose (a little roll; the yaw and pitch are the resting turn,
+//   always), so it shows a side.
+// - The resting turn bends the outline in a gentle perspective (warpPath):
+//   the shape rounds into it and its top stays on top. A sway or a move
+//   never bends it further: the body keeps its proportions.
 // - Two opaque eyes in a solid ink (dark, or light on a dark body), capsules
-//   at rest, wide ovals while busy, full arches when pleased (styledEyes).
+//   at rest, wide ovals while busy, full arches when pleased (styledEyes),
+//   drawn in the face's own group: they go through the very same transforms
+//   as the outline, so nothing can ever put them beside it.
 // - Every shape stands on the same ground (groundLift) at a size of its own
 //   (SHAPE_FIT), so a list of bots rests on one line.
-// ShapeMascot.tsx draws it and shape-motion.ts moves it.
-import { eyeOutline, mixHex } from "./shape-engine";
+// drawShape turns a frame and a pose into the one drawing both React
+// (ShapeMascot.tsx ShapeFrameSvg) and the live loop (writeShape) put on
+// screen; shape-motion.ts moves the pose.
+import { eyeOutline, mixHex, type ShapeFrame } from "./shape-engine";
 import { radiusAt, SHAPE_RADII, smoothClosed } from "./shape-art";
 import { MASCOT_SHAPES, type MascotShape } from "../../shared/mascot-look";
 
@@ -86,6 +92,20 @@ export const SHAPE_FIT: Readonly<Record<MascotShape, number>> = Object.fromEntri
 /** The resting pose. */
 export const REST_POSE: Pose = { yaw: POSE.yaw, pitch: POSE.pitch, roll: POSE.roll, scale: POSE.scale, lift: POSE.lift };
 
+/** A pose standing on the shared ground, at the shape's own size. */
+export const grounded = (pose: Pose, shape: MascotShape): Pose => ({ ...pose, scale: pose.scale * SHAPE_FIT[shape], lift: pose.lift + groundLift(shape) });
+
+/**
+ * The pose the body is drawn in: the resting turn out of the picture plane,
+ * whatever the sway or the move asks (2026-10-28). A yaw or a pitch of its
+ * own keystoned the outline (a square drawn as a trapezoid) and spread the
+ * slices beside the face; now a lean only moves the gaze (ShapeEngine.lean).
+ * The roll, the scale and the lift are the pose's own.
+ */
+export function uprightPose(pose: Pose): Pose {
+  return { ...pose, yaw: REST_POSE.yaw, pitch: REST_POSE.pitch };
+}
+
 /** The pose's rotation (x right, y down, z toward the viewer): pitch, then yaw, then roll. */
 export function poseRotation(pose: Pose = REST_POSE): M3 {
   const p = pose.pitch * RAD;
@@ -102,6 +122,9 @@ const round4 = (v: number) => Math.round(v * 10000) / 10000;
 /** How much a turn narrows the body (a fraction of 1 - cos(angle)): kept light so a shape never looks squashed. */
 export const TURN_SQUASH = 0;
 
+/** An SVG matrix as its six numbers (a b c d e f). */
+export type Affine = [number, number, number, number, number, number];
+
 /**
  * The slice of the body at depth z (box units), scaled by s, as an SVG matrix
  * around the box's middle. A soft 3D: the outline is never sheared, only
@@ -109,15 +132,12 @@ export const TURN_SQUASH = 0;
  * the yaw and the pitch, and moved along the depth's direction, so every
  * slice is the same clean shape and the silhouette stays the shape itself.
  */
-function sliceMatrix(z: number, s: number, pose: Pose, _R?: M3): string {
+function sliceMatrix(z: number, s: number, pose: Pose): string {
   const [a, b, c, d, e, f] = sliceNumbers(z, s, pose);
   return `matrix(${round4(a)} ${round4(b)} ${round4(c)} ${round4(d)} ${round4(e)} ${round4(f)})`;
 }
 
-/** An SVG matrix as its six numbers (a b c d e f). */
-export type Affine = [number, number, number, number, number, number];
-
-function sliceNumbers(z: number, s: number, pose: Pose): Affine {
+export function sliceNumbers(z: number, s: number, pose: Pose): Affine {
   const k = pose.scale;
   const yaw = pose.yaw * RAD;
   const pitch = pose.pitch * RAD;
@@ -143,43 +163,33 @@ function sliceNumbers(z: number, s: number, pose: Pose): Affine {
 const sliceScale = (z: number) => BODY_3D.core + (1 - BODY_3D.core) * Math.sqrt(Math.max(0, 1 - (z / BODY_3D.depth) ** 2));
 const FRONT = BODY_3D.depth * 0.82;
 
-/** The eyes sit on the face's dome, in front of the flat face: they move further up and right as the body turns. */
-export const EYE_DOME = 1.25;
-
-/** Every matrix of one pose: the slices behind the face (back to front), the face, and the eyes on its dome. */
+/** Every matrix of one pose: the slices behind the face (back to front) and the face. */
 export interface PoseMatrices {
   slices: string[];
   face: string;
-  eyes: string;
-  /** Where the face's outline sits seen from the eyes' own space (they are clipped to it, so a turn never lifts them off the body). */
-  eyesClip: string;
 }
 
 /**
- * `depth` is the body's thickness now as a share of its resting one
- * (ShapeFrame.depth): a body shrunk to a dot or a bar by a move is that much
- * thinner, so its slices stay inside its own outline instead of smearing it
- * along the turn (a thought dot drawn as a pill).
+ * `depth` is the body's thickness now (ShapeFrame.depth, 0..1): a thin body
+ * (a tube, a teardrop's tip) is that much thinner, so its slices stay inside
+ * its own outline instead of standing beside it. The pose's yaw and pitch
+ * are always the resting turn (uprightPose).
  */
 export function poseMatrices(detail: VolumeDetail, pose: Pose = REST_POSE, depth = 1): PoseMatrices {
-  const R = poseRotation(pose);
+  const p = uprightPose(pose);
   const n = BODY_3D.slices[detail];
   const k = Math.min(1, Math.max(0, Number.isFinite(depth) ? depth : 1));
   const slices = Array.from({ length: n - 1 }, (_, i) => {
     const z = -BODY_3D.depth + ((FRONT + BODY_3D.depth) * i) / (n - 1);
-    return sliceMatrix(z * k, sliceScale(z), pose, R);
+    return sliceMatrix(z * k, sliceScale(z), p);
   });
-  // the eyes and the face share their linear part and differ by a shift along the
-  // depth's direction; seen from the eyes' space the face's outline is that shift undone
-  const dz = FRONT * k * (1 - EYE_DOME);
-  const lx = (dz * Math.sin(pose.yaw * RAD)) / (sliceScale(FRONT) * (1 - TURN_SQUASH * (1 - Math.cos(pose.yaw * RAD))));
-  const ly = (-dz * Math.sin(pose.pitch * RAD)) / (sliceScale(FRONT) * (1 - TURN_SQUASH * (1 - Math.cos(pose.pitch * RAD))));
-  return {
-    slices,
-    face: sliceMatrix(FRONT * k, sliceScale(FRONT), pose, R),
-    eyes: sliceMatrix(FRONT * EYE_DOME * k, sliceScale(FRONT), pose, R),
-    eyesClip: `translate(${round4(lx)} ${round4(ly)})`,
-  };
+  return { slices, face: sliceMatrix(FRONT * k, sliceScale(FRONT), p) };
+}
+
+/** The face's matrix as numbers (the slice the eyes sit on). */
+export function faceNumbers(pose: Pose, depth = 1): Affine {
+  const k = Math.min(1, Math.max(0, Number.isFinite(depth) ? depth : 1));
+  return sliceNumbers(FRONT * k, sliceScale(FRONT), uprightPose(pose));
 }
 
 /** The resting face's matrix (skins, the badge and a move's extras sit on it). */
@@ -205,13 +215,16 @@ export function warpPoint(x: number, y: number, sy: number, cy: number, sp: numb
   return [50 + 40 * u * across * wide, 50 + 40 * v * down * tall];
 }
 
+/** The bend's sines and cosines for a pose (its resting turn). */
+function bendOf(pose: Pose): [number, number, number, number] {
+  const p = uprightPose(pose);
+  return [Math.sin(p.yaw * RAD), Math.cos(p.yaw * RAD), Math.sin(p.pitch * RAD), Math.cos(p.pitch * RAD)];
+}
+
 /** A path (absolute M/C/L/Q/Z with number pairs, as the engine writes them) under the pose's out-of-plane turn. */
 export function warpPath(d: string, pose: Pose): string {
   if (!d) return d;
-  const sy = Math.sin(pose.yaw * RAD);
-  const cy = Math.cos(pose.yaw * RAD);
-  const sp = Math.sin(pose.pitch * RAD);
-  const cp = Math.cos(pose.pitch * RAD);
+  const [sy, cy, sp, cp] = bendOf(pose);
   // the engine writes absolute commands with number pairs (x y): bend each pair
   const out: string[] = [];
   const re = /([A-Za-z])|(-?\d*\.?\d+(?:e-?\d+)?)/g;
@@ -237,12 +250,6 @@ export function warpPath(d: string, pose: Pose): string {
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
-/** The face's matrix as numbers (the slice the eyes sit on). */
-export function faceNumbers(pose: Pose, depth = 1): Affine {
-  const k = Math.min(1, Math.max(0, Number.isFinite(depth) ? depth : 1));
-  return sliceNumbers(FRONT * k, sliceScale(FRONT), pose);
-}
-
 /** The body's motion (ShapeFrame.motion: shift, turn about the middle, scale about the middle) as numbers. */
 export function motionNumbers(motion: { x: number; y: number; rot: number; sx: number; sy: number }): Affine {
   const r = motion.rot * RAD;
@@ -259,8 +266,10 @@ export function motionNumbers(motion: { x: number; y: number; rot: number; sx: n
   return [a, b, c, d, e, f];
 }
 
-const apply = (m: Affine, x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
-const compose = (p: Affine, q: Affine): Affine => [
+/** A point under an affine matrix. */
+export const applyAffine = (m: Affine, x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+/** Two affine matrices composed: p after q. */
+export const composeAffine = (p: Affine, q: Affine): Affine => [
   p[0] * q[0] + p[2] * q[1],
   p[1] * q[0] + p[3] * q[1],
   p[0] * q[2] + p[2] * q[3],
@@ -269,96 +278,9 @@ const compose = (p: Affine, q: Affine): Affine => [
   p[1] * q[4] + p[3] * q[5] + p[5],
 ];
 
-/** The face's matrix in the drawing's own space: the body's motion, then the face (where the posed eyes are measured). */
+/** The face's matrix in the drawing's own space: the body's motion, then the face. */
 export function faceInDrawing(motion: { x: number; y: number; rot: number; sx: number; sy: number }, pose: Pose, depth = 1): Affine {
-  return compose(motionNumbers(motion), faceNumbers(pose, depth));
-}
-
-/** One eye placed on the drawing: its middle, its size and the face's tilt (drawing units). */
-export interface PosedEye {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  tilt: number;
-}
-
-/**
- * The eyes on the posed body, in the drawing's own space (2026-10-28). Only
- * each eye's middle follows the body (the bend, the face's turn, the body's
- * motion); its shape is the engine's upright capsule at one even scale, so no
- * roll, squash or perspective of the body ever bends, tilts or splits the
- * eyes, and the two eyes stay one level pair of the same size.
- */
-export function posedEyes(frame: { body?: string; eyeShapes: readonly { x: number; y: number; w: number; h: number; tilt: number }[]; motion: { x: number; y: number; rot: number; sx: number; sy: number }; depth?: number }, pose: Pose, bend = true): PosedEye[] {
-  const eyes = frame.eyeShapes;
-  if (!eyes.length) return [];
-  const m = faceInDrawing(frame.motion, pose, frame.depth ?? 1);
-  const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
-  const sy = Math.sin(pose.yaw * RAD);
-  const cy = Math.cos(pose.yaw * RAD);
-  const sp = Math.sin(pose.pitch * RAD);
-  const cp = Math.cos(pose.pitch * RAD);
-  const centers = eyes.map((eye) => {
-    const [wx, wy] = bend ? warpPoint(eye.x, eye.y, sy, cy, sp, cp) : [eye.x, eye.y];
-    return apply(m, wx, wy);
-  });
-  let placed = eyes.map((eye, i) => ({ x: centers[i][0], y: centers[i][1], w: eye.w * scale, h: eye.h * scale, tilt: eye.tilt }));
-  if (placed.length === 2) {
-    // one level pair: same middle and the same distance apart as the turned body gives them
-    const midX = (placed[0].x + placed[1].x) / 2;
-    const midY = (placed[0].y + placed[1].y) / 2;
-    const half = Math.hypot(placed[1].x - placed[0].x, placed[1].y - placed[0].y) / 2;
-    const side = placed[0].x <= placed[1].x ? 1 : -1;
-    placed[0] = { ...placed[0], x: midX - half * side, y: midY };
-    placed[1] = { ...placed[1], x: midX + half * side, y: midY };
-  }
-  // the engine fits the eyes in the resting outline; a hard turn or squash can move the
-  // outline under them: gather the pair toward the body's middle, then shrink it, until
-  // both sit inside the outline the drawing shows
-  const onDrawing = (x: number, y: number) => {
-    const [wx, wy] = bend ? warpPoint(x, y, sy, cy, sp, cp) : [x, y];
-    return apply(m, wx, wy);
-  };
-  const body = outlinePoints(frame.body ?? "").map(([x, y]) => onDrawing(x, y));
-  if (body.length > 2) {
-    const [bx, by] = onDrawing(50, 50);
-    const fits = (pair: PosedEye[]) => pair.every((eye) => eyeOutline(eye.x, eye.y, eye.w * 1.1, eye.h * 1.06, eye.tilt).every(([x, y]) => insidePolygon(body, x, y)));
-    for (let i = 0; i < 24 && !fits(placed); i += 1) {
-      const pull = i < 12 ? 0.1 : 0;
-      const shrink = i < 12 ? 1 : 0.92;
-      const midX = placed.reduce((sum, eye) => sum + eye.x, 0) / placed.length;
-      const midY = placed.reduce((sum, eye) => sum + eye.y, 0) / placed.length;
-      const nx = midX + (bx - midX) * pull;
-      const ny = midY + (by - midY) * pull;
-      placed = placed.map((eye) => ({ ...eye, x: nx + (eye.x - midX) * shrink, y: ny, w: eye.w * shrink, h: eye.h * shrink }));
-    }
-  }
-  return placed;
-}
-
-/** The on-curve points of a path the engine wrote (M, then C's end points). */
-function outlinePoints(d: string): [number, number][] {
-  if (!d) return [];
-  const n = d.match(/-?\d*\.?\d+(?:e-?\d+)?/g)?.map(Number) ?? [];
-  const pts: [number, number][] = [[n[0], n[1]]];
-  for (let i = 2; i + 5 < n.length; i += 6) pts.push([n[i + 4], n[i + 5]]);
-  return pts;
-}
-
-function insidePolygon(poly: readonly [number, number][], x: number, y: number): boolean {
-  let hit = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
-    const [xi, yi] = poly[i];
-    const [xj, yj] = poly[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
-  }
-  return hit;
-}
-
-/** The posed eyes as one path (closed capsules). */
-export function posedEyesPath(eyes: readonly PosedEye[]): string {
-  return eyes.map((eye) => smoothClosed(eyeOutline(eye.x, eye.y, eye.w, eye.h, eye.tilt))).join("");
+  return composeAffine(motionNumbers(motion), faceNumbers(pose, depth));
 }
 
 /** How a mood draws the eyes: the capsules, wide ovals (busy), or arcs (pleased, ^ ^). */
@@ -368,6 +290,139 @@ export function eyeStyleFor(mood: string): EyeStyle {
   if (mood === "working" || mood === "streaming") return "oval";
   if (mood === "happy" || mood === "done") return "arc";
   return "capsule";
+}
+
+type Point = [number, number];
+
+/** The on-curve points of a path the engine wrote (M, then each C's end point), first subpath. */
+export function outlinePoints(d: string): Point[] {
+  if (!d) return [];
+  const n = d.split("M")[1]?.match(/-?\d*\.?\d+(?:e-?\d+)?/g)?.map(Number) ?? [];
+  if (n.length < 2) return [];
+  const pts: Point[] = [[n[0], n[1]]];
+  for (let i = 2; i + 5 < n.length; i += 6) pts.push([n[i + 4], n[i + 5]]);
+  return pts;
+}
+
+function insidePolygon(poly: readonly Point[], x: number, y: number): boolean {
+  let hit = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+
+/** One eye as the drawing shows it: a capsule (the engine's own), a wide oval (busy) or an arch (pleased), about its middle. */
+export type StyledEye =
+  | { kind: "capsule"; cx: number; cy: number; w: number; h: number; tilt: number }
+  | { kind: "oval"; cx: number; cy: number; rx: number; ry: number }
+  /** The pleased arch: a half ellipse hw x hh over its baseline y, `t` thick (ix, iy the inner half ellipse); cy is the eye's own middle, which a shrink is measured from. */
+  | { kind: "arc"; cx: number; cy: number; y: number; hw: number; hh: number; ix: number; iy: number };
+
+/** The eye scaled by `k` about its middle (an arch about the middle of its baseline). */
+function scaledEye(eye: StyledEye, k: number): StyledEye {
+  switch (eye.kind) {
+    case "capsule":
+      return { ...eye, w: eye.w * k, h: eye.h * k };
+    case "oval":
+      return { ...eye, rx: eye.rx * k, ry: eye.ry * k };
+    default:
+      return { ...eye, y: eye.cy + (eye.y - eye.cy) * k, hw: eye.hw * k, hh: eye.hh * k, ix: eye.ix * k, iy: eye.iy * k };
+  }
+}
+
+/** Points along the eye's edge, to test it against the outline. */
+export function eyePoints(eye: StyledEye): Point[] {
+  if (eye.kind === "capsule") return eyeOutline(eye.cx, eye.cy, eye.w, eye.h, eye.tilt);
+  const pts: Point[] = [];
+  if (eye.kind === "oval") {
+    for (let i = 0; i < 24; i += 1) {
+      const a = (i / 24) * Math.PI * 2;
+      pts.push([eye.cx + eye.rx * Math.cos(a), eye.cy + eye.ry * Math.sin(a)]);
+    }
+    return pts;
+  }
+  for (let i = 0; i <= 24; i += 1) {
+    const a = Math.PI + (i / 24) * Math.PI;
+    pts.push([eye.cx + eye.hw * Math.cos(a), eye.y + eye.hh * Math.sin(a)]);
+  }
+  return pts;
+}
+
+/** The eye as a closed path (box units). */
+export function eyePath(eye: StyledEye): string {
+  if (eye.kind === "capsule") return smoothClosed(eyeOutline(eye.cx, eye.cy, eye.w, eye.h, eye.tilt));
+  if (eye.kind === "oval") {
+    const { cx, cy, rx, ry } = eye;
+    return `M${round2(cx - rx)} ${round2(cy)}A${round2(rx)} ${round2(ry)} 0 1 0 ${round2(cx + rx)} ${round2(cy)}A${round2(rx)} ${round2(ry)} 0 1 0 ${round2(cx - rx)} ${round2(cy)}Z`;
+  }
+  const { cx, y, hw, hh, ix, iy } = eye;
+  return `M${round2(cx - hw)} ${round2(y)}A${round2(hw)} ${round2(hh)} 0 0 1 ${round2(cx + hw)} ${round2(y)}L${round2(cx + ix)} ${round2(y)}A${round2(ix)} ${round2(iy)} 0 0 0 ${round2(cx - ix)} ${round2(y)}Z`;
+}
+
+/** The pleased arch and the busy oval, built on an eye's box (its width holds through a blink; its height follows the lid). */
+function styledEye(box: { cx: number; cy: number; w: number; h: number }, style: EyeStyle, gap: number): StyledEye | null {
+  const { cx, cy, w, h } = box;
+  const size = Math.max(w * 2.2, 0.01);
+  const open = Math.min(1, h / Math.max(w * 1.6, 0.01));
+  if (style === "oval") {
+    const rx = Math.min(size * 0.46, gap * 0.44);
+    const ry = Math.max(0.4, size * 0.33 * open);
+    return { kind: "oval", cx, cy, rx, ry };
+  }
+  if (style === "arc") {
+    // (∩ ∩): a full, thick half-moon arch, low in the face and centred on the eye
+    const hw = Math.min(Math.max(w * 1.35, h * 0.44), gap * 0.42);
+    const hh = hw * 0.9 * Math.max(0.25, open);
+    const t = Math.max(1.2, hw * 0.72);
+    return { kind: "arc", cx, cy, y: cy + size * 0.36, hw, hh, ix: Math.max(0.2, hw - t), iy: Math.max(0.15, hh - t) };
+  }
+  return null;
+}
+
+/**
+ * The eyes on the face, in the face's own space (box units, before the
+ * face's and the motion's matrices, which the drawing applies to the outline
+ * and the eyes alike): each capsule's middle bent with the outline, the
+ * capsule itself upright on screen (the pose's roll undone), the two eyes
+ * one level pair of the same size, in the mood's style; then both shrunk
+ * alike, about their middles, until every point of them sits inside the
+ * outline the drawing shows (an oval or an arch is wider than the capsule
+ * the engine fitted).
+ */
+export function faceEyes(frame: Pick<ShapeFrame, "eyeShapes">, pose: Pose, bend: boolean, style: EyeStyle = "capsule", outline: readonly Point[] = []): StyledEye[] {
+  if (!frame.eyeShapes.length) return [];
+  const [sy, cy, sp, cp] = bendOf(pose);
+  const tilt = bend ? -pose.roll : 0;
+  const centers = frame.eyeShapes.map((eye) => (bend ? warpPoint(eye.x, eye.y, sy, cy, sp, cp) : ([eye.x, eye.y] as Point)));
+  const level = centers.length === 2 ? (centers[0][1] + centers[1][1]) / 2 : null;
+  const capsules: StyledEye[] = frame.eyeShapes.map((eye, i) => ({ kind: "capsule", cx: centers[i][0], cy: level ?? centers[i][1], w: eye.w, h: eye.h, tilt: eye.tilt + tilt }));
+  const gap = capsules.length > 1 ? Math.abs(capsules[1].cx - capsules[0].cx) : Infinity;
+  let eyes: StyledEye[] = capsules.map((eye) => {
+    if (eye.kind !== "capsule" || style === "capsule") return eye;
+    const pts = eyeOutline(eye.cx, eye.cy, eye.w, eye.h, eye.tilt);
+    const xs = pts.map(([x]) => x);
+    const ys = pts.map(([, y]) => y);
+    return styledEye({ cx: eye.cx, cy: eye.cy, w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }, style, gap) ?? eye;
+  });
+  if (outline.length > 2) {
+    const fits = (k: number) => eyes.every((eye) => eyePoints(scaledEye(eye, k)).every(([x, y]) => insidePolygon(outline, x, y)));
+    if (!fits(1)) {
+      // the largest share of the size that fits, by bisection (an eye point moves out monotonically as it grows)
+      let lo = 0;
+      let hi = 1;
+      for (let i = 0; i < 8; i += 1) {
+        const mid = (lo + hi) / 2;
+        if (fits(mid)) lo = mid;
+        else hi = mid;
+      }
+      // a hair under the largest share found, so a point between two samples stays inside too
+      eyes = eyes.map((eye) => scaledEye(eye, lo * 0.98));
+    }
+  }
+  return eyes;
 }
 
 /** Each eye's box from the eyes' path (one closed subpath per eye). */
@@ -392,101 +447,89 @@ function eyeBoxes(eyes: string): { cx: number; cy: number; w: number; h: number 
     .filter((b) => Number.isFinite(b.w));
 }
 
-/** The eyes drawn in a style. Capsules are the engine's own; ovals and arcs are built on each eye's box, so they follow it (pose, gaze, blink). */
+/** The eyes of a path drawn in a style (the flat skins, the phone's fixtures): capsules are the path's own; ovals and arcs are built on each eye's box. */
 export function styledEyes(eyes: string, style: EyeStyle): string {
   if (style === "capsule" || !eyes) return eyes;
   const boxes = eyeBoxes(eyes);
   // two eyes never touch: an oval or an arch stays within its share of the gap between them
   const gap = boxes.length > 1 ? Math.abs(boxes[1].cx - boxes[0].cx) : Infinity;
   return boxes
-    .map(({ cx, cy, w, h }) => {
-      // the eye's width holds through a blink (its height closes), so the size follows the width
-      const size = Math.max(w * 2.2, 0.01);
-      // a blink still closes them: the box's height follows the lid
-      const open = Math.min(1, h / Math.max(w * 1.6, 0.01));
-      if (style === "oval") {
-        const rx = Math.min(size * 0.46, gap * 0.44);
-        const ry = Math.max(0.4, size * 0.33 * open);
-        return `M${round2(cx - rx)} ${round2(cy)}A${round2(rx)} ${round2(ry)} 0 1 0 ${round2(cx + rx)} ${round2(cy)}A${round2(rx)} ${round2(ry)} 0 1 0 ${round2(cx - rx)} ${round2(cy)}Z`;
-      }
-      // pleased (∩ ∩): a full, thick half-moon arch, low in the face and centred on the eye
-      const hw = Math.min(Math.max(w * 1.35, h * 0.44), gap * 0.42);
-      const hh = hw * 0.9 * Math.max(0.25, open);
-      const t = Math.max(1.2, hw * 0.72);
-      const y = cy + size * 0.36;
-      const ix = Math.max(0.2, hw - t);
-      const iy = Math.max(0.15, hh - t);
-      return `M${round2(cx - hw)} ${round2(y)}A${round2(hw)} ${round2(hh)} 0 0 1 ${round2(cx + hw)} ${round2(y)}L${round2(cx + ix)} ${round2(y)}A${round2(ix)} ${round2(iy)} 0 0 0 ${round2(cx - ix)} ${round2(y)}Z`;
-    })
+    .map((box) => styledEye(box, style, gap))
+    .filter((eye): eye is StyledEye => eye !== null)
+    .map(eyePath)
     .join("");
 }
 
-/** What writePose last wrote on each drawing (it skips unchanged outlines and eyes). */
-const written = new WeakMap<object, { key: string; body: string; eyesKey: string; eyes: string }>();
-
 /**
- * Forget what writePose wrote on a drawing: React drew it again (its own
- * outline and eyes), so the next writePose writes everything, never trusting
- * a memo of a drawing React has since replaced.
+ * One drawing of a shape: everything the SVG shows, in the face's own space
+ * (box units) plus the matrices that place it. The same drawing comes out of
+ * React and of the live loop, so the two can never disagree.
  */
-export function forgetPose(svg: object): void {
-  written.delete(svg);
-}
-
-/** The frame writePose draws: the outline, the eyes as capsules, the body's motion and thickness. */
-export interface PoseFrame {
-  body: string;
-  stem?: { d: string; opacity: number } | null;
-  eyeShapes: readonly { x: number; y: number; w: number; h: number; tilt: number }[];
-  motion: { x: number; y: number; rot: number; sx: number; sy: number };
-  depth?: number;
-}
-
-/** The eyes of a frame on a pose, in a style, as the drawing shows them. */
-export function eyesOnPose(frame: PoseFrame, pose: Pose, style: EyeStyle, bend: boolean): string {
-  return styledEyes(posedEyesPath(posedEyes(frame, pose, bend)), style);
+export interface ShapeDrawing {
+  /** The outline, bent with the resting turn (a plain body) or flat (a skin's own art). */
+  outline: string;
+  /** The eyes on the outline, in the face's space, in the mood's style. */
+  eyes: string;
+  /** The pumpkin's stem in the face's space, or null. */
+  stem: { d: string; opacity: number } | null;
+  /** A flat skin's body with the eyes cut through it (fill-rule evenodd). */
+  cut: string;
+  /** The body's motion (drift, breath, a move's turn and size). */
+  motion: string;
+  /** The slices behind the face (back to front) and the face, as SVG matrices. */
+  slices: string[];
+  face: string;
+  /** The clay light's place (flat skins). */
+  light: { x: number; y: number; r: number };
 }
 
 /**
- * Write a pose onto a drawing of ShapeFrameSvg: the turned outline, the eyes
- * on it, and the slices' and the face's matrices. The only writer of the
- * outline and the eyes between two React draws (writeShapeFrame leaves them).
+ * The one drawing of a frame in a pose. `bend` is true for a plain body (its
+ * outline takes the resting turn's perspective; a skin's own art is drawn on
+ * the outline at rest).
  */
-export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: VolumeDetail, pose: Pose, frame?: PoseFrame, style: EyeStyle = "capsule", bend = true): void {
-  const depth = frame?.depth ?? 1;
-  if (frame) {
-    // at rest the turn holds still: the bent outline is kept and only rewritten when it changes
-    const memo = written.get(svg) ?? { key: "", body: "", eyesKey: "", eyes: "" };
-    const key = bend ? `${pose.yaw.toFixed(2)}|${pose.pitch.toFixed(2)}|` : "";
-    if (memo.key !== key + frame.body) {
-      memo.key = key + frame.body;
-      memo.body = bend ? warpPath(frame.body, pose) : frame.body;
-      svg.querySelectorAll("[data-shape-outline]").forEach((node) => node.setAttribute("d", memo.body));
-    }
-    if (frame.stem) {
-      const stem = bend ? warpPath(frame.stem.d, pose) : frame.stem.d;
-      const opacity = String(frame.stem.opacity);
-      svg.querySelectorAll("[data-shape-stem]").forEach((node) => {
-        node.setAttribute("d", stem);
-        node.setAttribute("opacity", opacity);
-      });
-    }
-    const m = frame.motion;
-    const eyesKey = `${key}${pose.roll.toFixed(2)}|${pose.scale.toFixed(4)}|${pose.lift.toFixed(3)}|${depth.toFixed(3)}|${m.x.toFixed(3)} ${m.y.toFixed(3)} ${m.rot.toFixed(2)} ${m.sx.toFixed(4)} ${m.sy.toFixed(4)}|${style}|${JSON.stringify(frame.eyeShapes)}`;
-    if (memo.eyesKey !== eyesKey) {
-      memo.eyesKey = eyesKey;
-      memo.eyes = eyesOnPose(frame, pose, style, bend);
-      svg.querySelectorAll("[data-shape-eyes]").forEach((node) => node.setAttribute("d", memo.eyes));
-    }
-    written.set(svg, memo);
-  }
-  const m = poseMatrices(detail, pose, depth);
+export function drawShape(frame: ShapeFrame, pose: Pose, detail: VolumeDetail, style: EyeStyle = "capsule", bend = true): ShapeDrawing {
+  const m = poseMatrices(detail, pose, frame.depth);
+  const outline = bend ? warpPath(frame.body, pose) : frame.body;
+  return {
+    outline,
+    eyes: faceEyes(frame, pose, bend, style, outlinePoints(outline)).map(eyePath).join(""),
+    stem: frame.stem ? { d: bend ? warpPath(frame.stem.d, pose) : frame.stem.d, opacity: frame.stem.opacity } : null,
+    cut: frame.body + frame.eyes,
+    motion: frame.transform,
+    slices: m.slices,
+    face: m.face,
+    light: frame.light,
+  };
+}
+
+/**
+ * Write a drawing onto the SVG ShapeFrameSvg rendered: every part, every
+ * time (no memo of what was written before: React may have drawn its own
+ * since, and a memo that trusted it left the outline and the eyes of two
+ * frames on screen). The only live writer.
+ */
+export function writeShape(svg: Pick<SVGSVGElement, "querySelectorAll">, drawing: ShapeDrawing): void {
+  svg.querySelectorAll("[data-shape-outline]").forEach((node) => node.setAttribute("d", drawing.outline));
+  svg.querySelectorAll("[data-shape-face]").forEach((node) => node.setAttribute("d", drawing.outline));
+  svg.querySelectorAll("[data-shape-eyes]").forEach((node) => node.setAttribute("d", drawing.eyes));
+  svg.querySelectorAll("[data-shape-stem]").forEach((node) => {
+    node.setAttribute("d", drawing.stem?.d ?? "");
+    node.setAttribute("opacity", String(drawing.stem?.opacity ?? 0));
+  });
+  svg.querySelectorAll("[data-shape-cut]").forEach((node) => node.setAttribute("d", drawing.cut));
+  svg.querySelectorAll("[data-shape-motion]").forEach((node) => node.setAttribute("transform", drawing.motion));
   svg.querySelectorAll("[data-pose-slice]").forEach((node) => {
     const i = Number(node.getAttribute("data-pose-slice"));
-    const t = i < 0 ? m.face : m.slices[i];
+    const t = i < 0 ? drawing.face : drawing.slices[i];
     if (t) node.setAttribute("transform", t);
   });
-  svg.querySelectorAll("[data-pose-face]").forEach((node) => node.setAttribute("transform", m.face));
+  svg.querySelectorAll("[data-pose-face]").forEach((node) => node.setAttribute("transform", drawing.face));
+  svg.querySelectorAll("[data-shape-light]").forEach((light) => {
+    light.setAttribute("cx", String(drawing.light.x));
+    light.setAttribute("cy", String(drawing.light.y));
+    light.setAttribute("r", String(drawing.light.r));
+  });
 }
 
 const relativeLuminance = (hex: string): number => {
@@ -502,20 +545,28 @@ const relativeLuminance = (hex: string): number => {
 export const EYE_INK = "#16181d";
 export const EYE_INK_ON_DARK = "#f4f1ea";
 
-/** One body colour's paints: the flat fill, a hairline for a near-white or near-black body (null otherwise) and the eyes' ink. */
+/** How far a near-white or near-black body's side is tinted toward the other ink (its slices), so the side reads without a hairline on each slice. */
+export const SIDE_TINT = 0.09;
+
+/** One body colour's paints: the flat fill, the side's fill (the slices), a hairline for a near-white or near-black face (null otherwise) and the eyes' ink. */
 export interface InkPaint {
   fill: string;
+  side: string;
   edge: string | null;
   eyes: string;
 }
 
 export function inkPaint(hex: string): InkPaint {
   const lum = relativeLuminance(hex);
+  // a near-white body would vanish on a light ground, a near-black one on a dark ground:
+  // a faint hairline around the face keeps its silhouette, and its side is tinted a
+  // little toward the other ink (2026-10-28: a hairline on every slice drew grey rings
+  // peeking out under a white body)
+  const edge = lum > 0.7 ? "#000000" : lum < 0.03 ? "#ffffff" : null;
   return {
     fill: mixHex(hex, hex, 0),
-    // a near-white body would vanish on a light ground, a near-black one on a dark ground:
-    // a faint hairline of the other ink keeps its silhouette
-    edge: lum > 0.7 ? "#000000" : lum < 0.03 ? "#ffffff" : null,
+    side: edge ? mixHex(hex, edge, SIDE_TINT) : mixHex(hex, hex, 0),
+    edge,
     eyes: lum < 0.05 ? EYE_INK_ON_DARK : EYE_INK,
   };
 }
