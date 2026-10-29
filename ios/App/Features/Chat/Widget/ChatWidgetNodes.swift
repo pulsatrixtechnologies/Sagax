@@ -147,6 +147,10 @@ struct ChatWidgetNodeView: View {
                 ChatWidgetBadge(node: node)
             case "Progress":
                 ChatWidgetProgress(node: node)
+            case "Carousel":
+                ChatWidgetCarousel(node: node)
+            case "Product":
+                ChatWidgetProduct(node: node)
             case "Button":
                 ChatWidgetButton(
                     actionRef: node.id, label: node.string("label"), look: node.string("style") ?? "secondary",

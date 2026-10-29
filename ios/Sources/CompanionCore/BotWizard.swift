@@ -142,7 +142,7 @@ public struct WizardSuggestions: Codable, Hashable, Sendable {
 /// The six roles the wizard starts from (src/lib/bot-roles.ts ids; the
 /// server's kits carry their suggestions).
 public enum WizardRole: String, CaseIterable, Hashable, Sendable {
-    case assistant, inbox, research, coder, community, ops
+    case assistant, inbox, research, coder, community, ops, subscriptions
 
     /// The role's title and one sentence (BOT_ROLES), sent to the bot when
     /// it is still empty.
@@ -154,6 +154,7 @@ public enum WizardRole: String, CaseIterable, Hashable, Sendable {
         case .coder: ("Coding partner", "Works inside a project folder: reads, edits, runs tests, explains changes.")
         case .community: ("Community monitor", "Watches Discord, Slack, or forums and reports what matters, on a schedule.")
         case .ops: ("Operations", "Keeps calendars, tasks, and follow-ups moving; nudges you before things slip.")
+        case .subscriptions: ("Subscriptions", "Watches your free trials and subscriptions, flags the unused ones and price rises, and cancels the ones you say.")
         }
     }
 }

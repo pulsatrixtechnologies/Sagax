@@ -13,13 +13,16 @@
 // result: how it ended, how long, the summary, the commitments and the
 // transcript behind a toggle. The other party's words stay plain text.
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Phone, PhoneCall, PhoneOff, Plane, ShoppingBag } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, Phone, PhoneCall, PhoneOff, Plane, ShoppingBag, TriangleAlert, Truck } from "lucide-react";
 
 import { answerPurchase } from "@/lib/credential-vault";
 import { activeLocale, t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api, type Message } from "@/state/store";
 import type { OutboundCallResult, OutboundCard as OutboundCardData } from "../../shared/wire";
+import { ORDER_STEPPER, orderStepIndex, type OrderStep, type OrderTracking } from "../../shared/order-tracking";
+import { cn } from "@/lib/cn";
+import { openExternalLink } from "@/lib/app-links";
 
 export function formatMoney(amount: string | undefined, currency: string | undefined, locale = activeLocale()): string {
   if (!amount) return "";
@@ -204,6 +207,7 @@ export function OutboundCard({ message, transcriptOpen = false }: { message: Mes
             )}
             {done && card.declared && <p className="text-[12px] text-ink-secondary">{t("outbound.purchase.declared")}</p>}
             {done && card.mismatchTotal && <p role="alert" className="text-[12px] text-warning">{t("outbound.purchase.mismatch", { total: formatMoney(card.mismatchTotal, card.currency), amount: formatMoney(card.amount, card.currency) })}</p>}
+            {done && card.tracking && <OrderTrackingView tracking={card.tracking} />}
             {card.cardLabel && !done && <p className="text-[12px] text-ink-secondary">{t("outbound.purchase.card", { card: card.cardLabel })}</p>}
             {status === "pending" && <p className="text-[12px] text-ink-secondary">{t("outbound.purchase.never")}</p>}
           </>
@@ -336,4 +340,59 @@ function CallResult({ result, botName, initialOpen }: { result: OutboundCallResu
       )}
     </div>
   );
+}
+
+const STEP_KEY: Record<OrderStep, LocaleKey> = {
+  ordered: "outbound.tracking.step.ordered",
+  shipped: "outbound.tracking.step.shipped",
+  in_transit: "outbound.tracking.step.inTransit",
+  out_for_delivery: "outbound.tracking.step.outForDelivery",
+  delivered: "outbound.tracking.step.delivered",
+  exception: "outbound.tracking.step.exception",
+};
+
+/** Where the parcel is: four steps (ordered, shipped, out for delivery,
+ * delivered), the carrier and its number, the expected day, the tracking
+ * page. As the bot declared it; a problem shows in the warning ink. */
+export function OrderTrackingView({ tracking }: { tracking: OrderTracking }) {
+  const at = orderStepIndex(tracking.step);
+  const problem = tracking.step === "exception";
+  const carrier = [tracking.carrier, tracking.number].filter(Boolean).join(" · ");
+  return (
+    <section data-order-tracking={tracking.step} aria-label={t("outbound.tracking.title")} className="space-y-2 rounded-lg bg-raised/40 px-2.5 py-2">
+      <div className="flex items-center gap-1.5 text-[12px] font-medium text-ink">
+        {problem ? <TriangleAlert size={13} aria-hidden="true" className="text-warning" /> : <Truck size={13} aria-hidden="true" className="text-ink-secondary" />}
+        <span className={cn("min-w-0 flex-1 truncate", problem && "text-warning")}>{t(STEP_KEY[tracking.step])}</span>
+        {tracking.eta && tracking.step !== "delivered" && <span className="shrink-0 text-ink-secondary">{t("outbound.tracking.eta", { date: formatDay(tracking.eta) })}</span>}
+      </div>
+      <ol className="grid grid-cols-4 gap-1" aria-label={t("outbound.tracking.progress")}>
+        {ORDER_STEPPER.map((step, index) => {
+          const reached = !problem && index <= at;
+          return (
+            <li key={step} aria-current={!problem && index === at ? "step" : undefined} className="min-w-0">
+              <span aria-hidden="true" className={cn("block h-1 rounded-full", reached ? "bg-success" : "bg-ink/10")} />
+              <span className={cn("mt-1 block truncate text-[11px]", reached ? "text-ink" : "text-ink-tertiary")}>{t(STEP_KEY[step])}</span>
+            </li>
+          );
+        })}
+      </ol>
+      {(carrier || tracking.note) && (
+        <p className="text-[12px] text-ink-secondary">{[carrier, tracking.note].filter(Boolean).join(" · ")}</p>
+      )}
+      {tracking.url && (
+        <button type="button" data-order-tracking-link onClick={() => void openExternalLink(tracking.url!).catch(() => undefined)} className="inline-flex items-center gap-1 text-[12px] font-medium text-accent-text hover:underline">
+          {t("outbound.tracking.open")}<ExternalLink size={12} aria-hidden="true" />
+        </button>
+      )}
+    </section>
+  );
+}
+
+function formatDay(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  try {
+    return new Intl.DateTimeFormat(activeLocale(), { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year!, month! - 1, day!)));
+  } catch {
+    return iso;
+  }
 }

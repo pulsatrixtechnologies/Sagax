@@ -55,8 +55,8 @@ it("shows, replaces and answers a widget on a bot's own conversation, once per p
       catch { return false; }
       return Boolean(token);
     }, { timeout: 15_000 }).toBe(true);
-    expect(await card({ tool: "show_widget", widget: { type: "Card", children: [{ type: "Carousel" }] } }, 400, token))
-      .toMatchObject({ error: expect.stringMatching(/^widget\.children\[0\]: unknown type "Carousel"/) });
+    expect(await card({ tool: "show_widget", widget: { type: "Card", children: [{ type: "Hologram" }] } }, 400, token))
+      .toMatchObject({ error: expect.stringMatching(/^widget\.children\[0\]: unknown type "Hologram"/) });
     expect(await card({ tool: "show_widget", widget: { type: "Card", children: [{ type: "Input", name: "pw", inputType: "password" }] } }, 400, token))
       .toMatchObject({ error: expect.stringContaining("use request_credential for secrets") });
     const draft = await card({ tool: "show_widget", widget: { type: "Card", title: "Looking for open pull requests", children: [{ type: "Progress", value: 0.3 }] } }, 201, token);

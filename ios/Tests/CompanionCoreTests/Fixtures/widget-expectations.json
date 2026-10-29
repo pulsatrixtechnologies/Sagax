@@ -198,6 +198,27 @@
     "settles": [],
     "scopes": {}
   },
+  "widget-shopping": {
+    "pressable": [
+      "n5",
+      "n9"
+    ],
+    "onDevice": [
+      "n6",
+      "n13"
+    ],
+    "settles": [],
+    "scopes": {
+      "n5": {
+        "fields": [],
+        "initial": {}
+      },
+      "n9": {
+        "fields": [],
+        "initial": {}
+      }
+    }
+  },
   "widget-kitchenSink": {
     "pressable": [
       "n25",

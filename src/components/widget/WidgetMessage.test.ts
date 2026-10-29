@@ -155,7 +155,7 @@ describe("drawing a widget", () => {
     const odd = {
       type: "Card", id: "n1", title: "Odd one",
       children: [
-        { type: "Carousel", id: "n2", children: [{ type: "Text", id: "n3", value: "Inside the unknown" }] },
+        { type: "Hologram", id: "n2", children: [{ type: "Text", id: "n3", value: "Inside the unknown" }] },
         { type: "Hologram", id: "n4" },
         { type: "Row", id: "n5" },
         { type: "Table", id: "n6" },

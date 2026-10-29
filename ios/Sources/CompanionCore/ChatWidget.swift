@@ -271,7 +271,7 @@ public enum ChatWidgetRules {
 
     /// Every pressable thing in a canonical widget, in document order.
     public static func actions(_ root: ChatWidgetNode) -> [ChatWidgetActionEntry] {
-        var found: [(entry: ChatWidgetActionEntry, row: String?)] = []
+        var found: [(entry: ChatWidgetActionEntry, row: String?, product: Bool)] = []
         root.walk { node, ancestors in
             if node.type == "Button" {
                 if node.flag("disabled") { return }
@@ -279,30 +279,32 @@ public enum ChatWidgetRules {
                 let own = action(node["onClickAction"])
                 let submitted = node.flag("submit") ? action(form?["onSubmitAction"]) : nil
                 guard let picked = own ?? submitted else { return }
-                let row = ancestors.last { ["ListViewItem", "Table.Row", "Row"].contains($0.type) }
+                let row = ancestors.last { ["ListViewItem", "Table.Row", "Row", "Product"].contains($0.type) }
+                // a product's button always names its product: "Buy now: Trail shoes"
+                let product = row?.type == "Product" ? row?.string("title") : nil
                 found.append((ChatWidgetActionEntry(
                     ref: node.id, label: node.string("label") ?? "", type: picked.type, payload: picked.payload,
                     tone: node.flag("submit") ? "submit" : nil, client: false, kind: "button"
-                ), row.map(firstText)))
+                ), product ?? row.map(firstText), product != nil))
             } else if node.type == "ListViewItem", let picked = action(node["onClickAction"]) {
                 found.append((ChatWidgetActionEntry(
                     ref: node.id, label: firstText(node), type: picked.type, payload: picked.payload,
                     tone: nil, client: false, kind: "item"
-                ), nil))
+                ), nil, false))
             }
         }
         for key in ["confirm", "cancel"] {
             guard let spec = root[key]?.object, let label = spec["label"]?.string, let picked = action(spec["action"]) else { continue }
             found.append((ChatWidgetActionEntry(
                 ref: key, label: label, type: picked.type, payload: picked.payload, tone: key, client: false, kind: key
-            ), nil))
+            ), nil, false))
         }
         var counts: [String: Int] = [:]
         for item in found { counts[item.entry.label, default: 0] += 1 }
         return found.map { item in
             var entry = item.entry
             entry.client = entry.type == "open_url"
-            if let row = item.row, !entry.label.isEmpty, (counts[entry.label] ?? 0) > 1 {
+            if let row = item.row, !entry.label.isEmpty, item.product || (counts[entry.label] ?? 0) > 1 {
                 entry.label = String("\(entry.label): \(row)".prefix(labelLimit * 2))
             }
             return entry

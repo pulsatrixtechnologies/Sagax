@@ -10,6 +10,7 @@
 import { formatPhone } from "../shared/outbound-call.ts";
 import { purchaseContents } from "../shared/payment-vault.ts";
 import { walletName } from "../shared/single-use-card.ts";
+import { trackingLine } from "../shared/order-tracking.ts";
 import type { OutboundCallResult, OutboundCard } from "../shared/wire.ts";
 import type { PurchaseListing } from "./credential-vault.ts";
 import {
@@ -67,12 +68,13 @@ export function purchaseOutboundCard(listing: PurchaseListing, botName: string):
     ...(listing.receipt ? { declared: true } : {}),
     ...(listing.mismatch && listing.receipt?.total ? { mismatchTotal: listing.receipt.total } : {}),
     ...(listing.via ? { via: listing.via } : {}),
+    ...(listing.tracking ? { tracking: listing.tracking } : {}),
   };
 }
 
 export function purchaseCardFallback(listing: PurchaseListing): string {
   const contents = purchaseContents(listing);
-  if (listing.doneAt) return `Purchased${contents ? ` ${contents}` : ""} at ${listing.merchant}, ${listing.amount} ${listing.currency}${listing.orderRef ? `, order ${listing.orderRef}` : ""}.`;
+  if (listing.doneAt) return `Purchased${contents ? ` ${contents}` : ""} at ${listing.merchant}, ${listing.amount} ${listing.currency}${listing.orderRef ? `, order ${listing.orderRef}` : ""}.${listing.tracking ? ` ${trackingLine(listing.tracking)}.` : ""}`;
   if (listing.status === "denied") return `Purchase at ${listing.merchant} declined.`;
   if (listing.status === "pending") return `${listing.title} ${listing.line}`;
   return `Purchase at ${listing.merchant}, ${listing.amount} ${listing.currency}: allowed.`;
@@ -250,6 +252,13 @@ export function outboundWiring(deps: OutboundWiringDeps) {
     /** request_purchase and record_purchase: the card in the conversation. */
     purchaseCard(listing: PurchaseListing): void {
       upsert(listing.threadId, purchaseOutboundCard(listing, deps.botName(listing.botId)), purchaseCardFallback(listing));
+    },
+
+    /** An order's follow-up is due (server/order-follow-ups.ts): the card is
+     * brought up to date and the bot is asked to check the parcel. */
+    orderFollowUp(listing: PurchaseListing, note: string): void {
+      const messageId = upsert(listing.threadId, purchaseOutboundCard(listing, deps.botName(listing.botId)), purchaseCardFallback(listing));
+      deps.wake(listing.botId, listing.threadId, messageId ?? listing.id, note);
     },
 
     /** The person answered a purchase: the card says so, the bot is told. */

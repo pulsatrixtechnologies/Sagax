@@ -19,7 +19,13 @@ export const WIDGET_LIMITS = {
   tableCols: 8,
   chartRows: 100,
   chartSeries: 4,
-  images: 6,
+  images: 8,
+  /** Products side by side in one Carousel. */
+  carouselItems: 8,
+  /** Badges on one Product ("Best seller", "Free shipping"). */
+  productBadges: 3,
+  /** A product page's address: short enough that Buy now's payload fits. */
+  productUrl: 1_000,
   text: 2_000,
   markdown: 6_000,
   title: 120,
@@ -353,6 +359,65 @@ const inputType: Reader = (raw, path) => {
 
 const imageSrc: Reader = (raw, path) => (isWebUrl(raw, ["https:"]) ? raw : fail(path, "must be an https url"));
 
+// ── Products ────────────────────────────────────────────────────────────────
+// A Product is a shopping card: picture, name, price, store, rating, badges
+// and Buy now. Its picture and buttons are ordinary Image and Button children
+// written here, so a press is checked, recorded and sent like any other one,
+// and a client that does not know Product still draws the picture and Buy now.
+
+/** A price as the card shows it: digits with two decimals ("49.99"). */
+const price: Reader = (raw) => {
+  const value = typeof raw === "string" ? Number(raw.replace(/[\s,$€£¥]/g, "")) : raw;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value < 1e9 ? value.toFixed(2) : undefined;
+};
+const currency: Reader = (raw) => (typeof raw === "string" && /^[A-Za-z]{3}$/.test(raw.trim()) ? raw.trim().toUpperCase() : undefined);
+const productUrl: Reader = (raw, path) => {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (typeof raw === "string" && raw.length > WIDGET_LIMITS.productUrl) return fail(path, `must be at most ${WIDGET_LIMITS.productUrl} characters`);
+  return isWebUrl(raw, ["http:", "https:"]) ? raw : fail(path, "must be an http or https url");
+};
+const badges: Reader = (raw, path) => {
+  if (raw === undefined || raw === null) return undefined;
+  const list = Array.isArray(raw) ? raw : [raw];
+  const kept = list.slice(0, WIDGET_LIMITS.productBadges)
+    .map((item, index) => line(WIDGET_LIMITS.label)(isRecord(item) ? item.label : item, `${path}[${index}]`))
+    .filter((item): item is string => typeof item === "string");
+  return kept.length ? kept : undefined;
+};
+
+/** What Buy now says the person picked when the bot gave it no action of its own. */
+export const PRODUCT_BUY_ACTION = "buy_now";
+export const PRODUCT_BUY_LABEL = "Buy now";
+export const PRODUCT_VIEW_LABEL = "View";
+
+/** The Product's own children: its picture, Buy now and View. Whatever the
+ * bot put under it is replaced: a product card has one layout. */
+function productChildren(raw: Record<string, unknown>, path: string): unknown[] {
+  const title = line(WIDGET_LIMITS.title, "nonEmpty")(raw.title ?? raw.name, `${path}.title`) as string;
+  const url = productUrl(raw.url, `${path}.url`) as string | undefined;
+  const children: unknown[] = [];
+  if (raw.src !== undefined || raw.image !== undefined) {
+    children.push({ type: "Image", src: raw.src ?? raw.image, alt: line(WIDGET_LIMITS.caption)(raw.alt, `${path}.alt`) ?? title, fit: "contain", aspectRatio: 1, radius: 12 });
+  }
+  const given = action(raw.buyAction, `${path}.buyAction`) as WidgetAction | undefined;
+  const payload: Record<string, JsonValue> = { title };
+  for (const [key, read] of [["price", price], ["currency", currency], ["store", line(WIDGET_LIMITS.label)]] as const) {
+    const value = read(key === "store" ? raw.store ?? raw.seller ?? raw.merchant : raw[key], `${path}.${key}`);
+    if (typeof value === "string") payload[key] = value;
+  }
+  if (url) payload.url = url;
+  children.push({
+    type: "Button",
+    label: line(WIDGET_LIMITS.label)(raw.buyLabel, `${path}.buyLabel`) ?? PRODUCT_BUY_LABEL,
+    style: "primary",
+    block: true,
+    ...(raw.inStock === false ? { disabled: true } : {}),
+    onClickAction: given ?? { type: PRODUCT_BUY_ACTION, payload },
+  });
+  if (url) children.push({ type: "Button", label: PRODUCT_VIEW_LABEL, style: "secondary", block: true, iconEnd: "external-link", onClickAction: { type: "open_url", payload: { url } } });
+  return children;
+}
+
 const CHART_MAX = 1e12;
 const CHART_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -433,7 +498,7 @@ const PLACEHOLDER = line(WIDGET_LIMITS.title);
 
 interface NodeSpec {
   props: Record<string, Reader>;
-  children?: "any" | "items" | "rows" | "cells" | "one";
+  children?: "any" | "items" | "rows" | "cells" | "one" | "products";
 }
 
 const SPECS: Record<string, NodeSpec> = {
@@ -481,6 +546,17 @@ const SPECS: Record<string, NodeSpec> = {
   Input: { props: { ...FIELD, inputType, placeholder: PLACEHOLDER, defaultValue: text(WIDGET_LIMITS.fieldValue), pattern: text(200) } },
   Textarea: { props: { ...FIELD, placeholder: PLACEHOLDER, defaultValue: text(WIDGET_LIMITS.fieldValue), rows: integer(1, 12), maxRows: integer(1, 20), autoResize: on } },
   Transition: { props: {}, children: "one" },
+  // Shopping: products side by side, in stock first, and one product's card.
+  Carousel: { props: { title: line(WIDGET_LIMITS.title) }, children: "products" },
+  Product: {
+    props: {
+      title: (raw, path) => line(WIDGET_LIMITS.title, "nonEmpty")(raw, path),
+      price, compareAtPrice: price, currency,
+      store: line(WIDGET_LIMITS.label), rating: decimal(0, 5), reviews: integer(0, 1e9),
+      badges, inStock: off, url: productUrl, delivery: line(WIDGET_LIMITS.caption),
+    },
+    children: "any",
+  },
 };
 
 /** Every node type a widget may contain, roots first. */
@@ -503,7 +579,7 @@ function typeOf(raw: Record<string, unknown>): string {
   return typeof raw.type === "string" ? TYPE_ALIASES[raw.type] ?? raw.type : "";
 }
 
-function normalize(input: unknown, path: string, depth: number, slot: "root" | "any" | "items" | "rows" | "cells", context: Context): WidgetNode {
+function normalize(input: unknown, path: string, depth: number, slot: "root" | "any" | "items" | "rows" | "cells" | "products", context: Context): WidgetNode {
   if (!isRecord(input)) return fail(path, "must be an object with a type");
   let raw = input;
   let type = typeOf(raw);
@@ -511,6 +587,8 @@ function normalize(input: unknown, path: string, depth: number, slot: "root" | "
   if (slot === "items" && type !== "ListViewItem") [raw, type] = [{ type: "ListViewItem", children: [raw] }, "ListViewItem"];
   if (slot === "cells" && type !== "Table.Cell") [raw, type] = [{ type: "Table.Cell", children: [raw] }, "Table.Cell"];
   if (slot === "rows" && type !== "Table.Row") return fail(path, "a Table takes Table.Row children");
+  if (slot === "products" && type !== "Product") return fail(path, "a Carousel takes Product children");
+  if (type === "Product") raw = { ...raw, title: raw.title ?? raw.name, store: raw.store ?? raw.seller ?? raw.merchant, children: productChildren(raw, path) };
   if (slot !== "root" && ROOT_TYPES.has(type)) return fail(path, `${type} is a root and cannot be nested`);
   if (slot === "any" && (type === "Table.Row" || type === "Table.Cell")) return fail(path, `${type} belongs inside a Table`);
   if (depth > WIDGET_LIMITS.depth) return fail(path, `is nested deeper than ${WIDGET_LIMITS.depth} levels`);
@@ -562,6 +640,11 @@ function normalize(input: unknown, path: string, depth: number, slot: "root" | "
     if (type === "ListView" && kept.length > WIDGET_LIMITS.listItems) return fail(`${path}.children`, `a list takes at most ${WIDGET_LIMITS.listItems} items`);
     if (type === "Table" && kept.length > WIDGET_LIMITS.tableRows) return fail(`${path}.children`, `a table takes at most ${WIDGET_LIMITS.tableRows} rows`);
     if (type === "Table.Row" && kept.length > WIDGET_LIMITS.tableCols) return fail(`${path}.children`, `a row takes at most ${WIDGET_LIMITS.tableCols} cells`);
+    if (type === "Carousel") {
+      if (kept.length < 1 || kept.length > WIDGET_LIMITS.carouselItems) return fail(`${path}.children`, `a Carousel takes 1 to ${WIDGET_LIMITS.carouselItems} products`);
+      // in stock first, the bot's order kept otherwise
+      kept.sort((a, b) => Number(isRecord(a) && a.inStock === false) - Number(isRecord(b) && b.inStock === false));
+    }
     const childSlot = spec.children === "one" ? "any" : spec.children;
     node.children = kept.map((child, index) => normalize(child, `${path}.children[${index}]`, depth + 1, childSlot, context));
   }
@@ -686,8 +769,11 @@ export interface WidgetActionEntry {
   kind: "button" | "item" | "confirm" | "cancel";
 }
 
+/** What a button inside is named after when its label repeats. */
+const ROW_TYPES = new Set(["ListViewItem", "Table.Row", "Row", "Product"]);
+
 function collectActions(root: WidgetRoot, strict: boolean): WidgetActionEntry[] {
-  const found: Array<WidgetActionEntry & { row?: string }> = [];
+  const found: Array<WidgetActionEntry & { row?: string; product?: true }> = [];
   walk(root, (node, ancestors) => {
     if (node.type === "Button") {
       if (node.disabled === true) return;
@@ -699,8 +785,9 @@ function collectActions(root: WidgetRoot, strict: boolean): WidgetActionEntry[] 
         if (strict && node.submit === true) throw new WidgetInputError(`widget: the submit Button at ${node.id} needs a Form with onSubmitAction around it`);
         return;
       }
-      const row = lastOf(ancestors, (ancestor) => ancestor.type === "ListViewItem" || ancestor.type === "Table.Row" || ancestor.type === "Row");
-      found.push({ ref: node.id, label: widgetString(node, "label") ?? "", action: picked, kind: "button", ...(node.submit === true ? { tone: "submit" as const } : {}), ...(row ? { row: firstText(row) } : {}) });
+      const row = lastOf(ancestors, (ancestor) => ROW_TYPES.has(ancestor.type));
+      const product = row?.type === "Product" ? widgetString(row, "title") : undefined;
+      found.push({ ref: node.id, label: widgetString(node, "label") ?? "", action: picked, kind: "button", ...(node.submit === true ? { tone: "submit" as const } : {}), ...(row ? { row: product ?? firstText(row) } : {}), ...(product ? { product: true } : {}) });
     } else if (node.type === "ListViewItem" && isRecord(node.onClickAction)) {
       found.push({ ref: node.id, label: firstText(node), action: node.onClickAction as unknown as WidgetAction, kind: "item" });
     }
@@ -712,10 +799,11 @@ function collectActions(root: WidgetRoot, strict: boolean): WidgetActionEntry[] 
   // "View" on three rows is three presses: each takes its row's name.
   const counts = new Map<string, number>();
   for (const entry of found) counts.set(entry.label, (counts.get(entry.label) ?? 0) + 1);
-  return found.map(({ row, ...entry }) => ({
+  // A product's button always names its product: "Buy now: Trail shoes".
+  return found.map(({ row, product, ...entry }) => ({
     ...entry,
     ...(entry.action.type === "open_url" ? { client: true as const } : {}),
-    label: row && entry.label && (counts.get(entry.label) ?? 0) > 1 ? `${entry.label}: ${row}`.slice(0, WIDGET_LIMITS.label * 2) : entry.label,
+    label: row && entry.label && (product || (counts.get(entry.label) ?? 0) > 1) ? `${entry.label}: ${row}`.slice(0, WIDGET_LIMITS.label * 2) : entry.label,
   }));
 }
 
@@ -921,6 +1009,8 @@ function inlineText(node: WidgetNode): string {
       const cite = [pieces.join(", "), asOf ? `as of ${asOf}` : ""].filter(Boolean).join(", ");
       return `[chart: ${series}${cite ? ` (${cite})` : ""}]`;
     }
+    case "Product":
+      return productLine(node);
     case "Checkbox":
       return `[ ] ${widgetString(node, "label") ?? String(node.name)}`;
     case "Select": case "RadioGroup":
@@ -934,8 +1024,28 @@ function inlineText(node: WidgetNode): string {
   }
 }
 
+/** One product on one line: name, price, store, rating, stock, badges. */
+export function productLine(node: WidgetNode): string {
+  const amount = widgetString(node, "price");
+  const money = amount ? [amount, widgetString(node, "currency")].filter(Boolean).join(" ") : "";
+  const was = widgetString(node, "compareAtPrice");
+  const rating = widgetNumber(node, "rating");
+  const reviews = widgetNumber(node, "reviews");
+  return [
+    widgetString(node, "title"),
+    money && was ? `${money} (was ${was})` : money,
+    widgetString(node, "store"),
+    rating !== undefined ? `${rating.toFixed(1)}/5${reviews !== undefined ? ` (${reviews})` : ""}` : "",
+    node.inStock === false ? "Out of stock" : "",
+    widgetString(node, "delivery"),
+    ...(Array.isArray(node.badges) ? node.badges as string[] : []),
+  ].filter(Boolean).join(" · ");
+}
+
 function blockLines(node: WidgetNode): string[] {
   const children = Array.isArray(node.children) ? node.children : [];
+  if (node.type === "Carousel") return [...(widgetString(node, "title") ? [widgetString(node, "title")!] : []), ...children.map((product) => `- ${productLine(product)}`)];
+  if (node.type === "Product") return [`- ${productLine(node)}`];
   if (node.type === "ListViewItem") return [`- ${inlineText(node)}`];
   if (node.type === "Table") return children.map((row) => (Array.isArray(row.children) ? row.children : []).map(inlineText).join(" | "));
   if (node.type === "Markdown") return [widgetString(node, "value") ?? ""];

@@ -10,6 +10,7 @@ import {
   type PurchaseCategory, type PurchaseFlightLeg, type PurchaseItem,
 } from "../shared/payment-vault.ts";
 import { redactCardNumbers, type SingleUseWallet } from "../shared/single-use-card.ts";
+import { parseUpdateTrackingCall, UPDATE_ORDER_TRACKING_TOOL, UPDATE_ORDER_TRACKING_TOOL_SPEC, type TrackingInput } from "../shared/order-tracking.ts";
 import { clearScript, loginOutcomeText, loginStateScript, markerScript, MAX_LOGIN_STEPS, parseLoginState, stepFields, submitScript, type LoginField, type LoginOutcome, type LoginPageState } from "./login-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
@@ -92,7 +93,9 @@ export interface CredentialFillAccess {
   /** Ask the person to approve a payment. The value never comes back. */
   requestPurchase?(input: { pageUrl: string; amount: string; currency: string; cardId?: string; wallet?: SingleUseWallet; category?: PurchaseCategory; merchant?: string; addressId?: string; contactId?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
   /** The shop confirmed the order: the receipt for the person. */
-  recordPurchase?(input: { pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
+  recordPurchase?(input: { pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[]; tracking?: TrackingInput }): { ok: true; message: string } | { ok: false; message: string };
+  /** Where an order the bot recorded is now (update_order_tracking). */
+  updateTracking?(input: { orderRef?: string; tracking: TrackingInput; checkAgainHours: number }): { ok: true; message: string } | { ok: false; message: string };
 }
 
 /** Argument names that address an element. On a browser where a login was
@@ -657,6 +660,15 @@ export class BrowserRuntime {
         }
         if (method === "tools/call" && toolName === RECORD_PURCHASE_TOOL) {
           return await this.recordPurchase(session, entry.client, params, beforeDispatch, credentials);
+        }
+        if (method === "tools/call" && toolName === UPDATE_ORDER_TRACKING_TOOL) {
+          // read from a carrier's page or an email: no page of its own to check
+          const call = parseUpdateTrackingCall(params);
+          if (typeof call === "string") return toolText(call, true);
+          if (!credentials?.updateTracking) return toolText("Order tracking is not available in this browser.", true);
+          beforeDispatch?.();
+          const updated = credentials.updateTracking(call);
+          return toolText(updated.message, !updated.ok);
         }
         let guardedParams = params;
         if (method === "tools/call" && scriptTool(toolName)) {
@@ -1589,7 +1601,7 @@ function firstText(result: unknown): string {
  * fill_credential. An engine tool with either name is replaced. */
 function withRestartTool(result: unknown): unknown {
   if (!result || typeof result !== "object" || !Array.isArray((result as { tools?: unknown }).tools)) return result;
-  const own = new Set<unknown>([BROWSER_RESTART_TOOL, FILL_CREDENTIAL_TOOL, REQUEST_PURCHASE_TOOL, RECORD_PURCHASE_TOOL]);
+  const own = new Set<unknown>([BROWSER_RESTART_TOOL, FILL_CREDENTIAL_TOOL, REQUEST_PURCHASE_TOOL, RECORD_PURCHASE_TOOL, UPDATE_ORDER_TRACKING_TOOL]);
   const tools = ((result as { tools: unknown[] }).tools).filter((tool) => !own.has((tool as { name?: unknown } | null)?.name));
-  return { ...result, tools: [...tools, BROWSER_RESTART_TOOL_SPEC, FILL_CREDENTIAL_TOOL_SPEC, REQUEST_PURCHASE_TOOL_SPEC, RECORD_PURCHASE_TOOL_SPEC] };
+  return { ...result, tools: [...tools, BROWSER_RESTART_TOOL_SPEC, FILL_CREDENTIAL_TOOL_SPEC, REQUEST_PURCHASE_TOOL_SPEC, RECORD_PURCHASE_TOOL_SPEC, UPDATE_ORDER_TRACKING_TOOL_SPEC] };
 }

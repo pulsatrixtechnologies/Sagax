@@ -6,6 +6,7 @@
 // Pure: no disk, no clock, no node built-ins.
 
 import { isSingleUseWallet, walletName, type SingleUseWallet } from "./single-use-card.ts";
+import { ORDER_TRACKING_SCHEMA, parseTracking, type TrackingInput } from "./order-tracking.ts";
 
 export const CARD_BRANDS = ["visa", "mastercard", "amex", "discover", "card"] as const;
 export type CardBrand = (typeof CARD_BRANDS)[number];
@@ -421,6 +422,8 @@ export interface PurchaseReceiptCall {
   total?: string;
   items?: PurchaseItem[];
   flights?: PurchaseFlightLeg[];
+  /** Shipping as the confirmation page shows it (shared/order-tracking.ts). */
+  tracking?: TrackingInput;
 }
 
 /** record_purchase arguments. A string is the refusal. */
@@ -434,7 +437,9 @@ export function parseReceiptCall(params: unknown): PurchaseReceiptCall | string 
   if (typeof items === "string") return items;
   const flights = parsePurchaseFlights(row.flights);
   if (typeof flights === "string") return flights;
-  return { ...(orderRef ? { orderRef } : {}), ...(total ? { total } : {}), ...(items ? { items } : {}), ...(flights ? { flights } : {}) };
+  const tracking = parseTracking(row.tracking, "ordered");
+  if (typeof tracking === "string") return tracking;
+  return { ...(orderRef ? { orderRef } : {}), ...(total ? { total } : {}), ...(items ? { items } : {}), ...(flights ? { flights } : {}), ...(tracking ? { tracking } : {}) };
 }
 
 export const RECORD_PURCHASE_TOOL = "record_purchase";
@@ -442,7 +447,7 @@ export const RECORD_PURCHASE_TOOL = "record_purchase";
 export const RECORD_PURCHASE_TOOL_SPEC = {
   name: RECORD_PURCHASE_TOOL,
   description:
-    "After the shop confirmed the order, on its confirmation page, record the purchase the person approved with request_purchase: the order number the page shows, and what was bought (items or flights) if it changed. The person sees the receipt in the conversation. A purchase approved once is closed by it: a new payment asks again.",
+    "After the shop confirmed the order, on its confirmation page, record the purchase the person approved with request_purchase: the order number the page shows, and what was bought (items or flights) if it changed. The person sees the receipt in the conversation. A purchase approved once is closed by it: a new payment asks again. A parcel is then followed on the card: pass tracking if the page shows it, and Sagax asks you later to check it with update_order_tracking.",
   inputSchema: {
     type: "object",
     properties: {
@@ -450,6 +455,7 @@ export const RECORD_PURCHASE_TOOL_SPEC = {
       total: { type: "string", description: "The total the confirmation page shows, such as 52.00. A total that is not the approved amount is shown to the person." },
       items: REQUEST_PURCHASE_TOOL_SPEC.inputSchema.properties.items,
       flights: REQUEST_PURCHASE_TOOL_SPEC.inputSchema.properties.flights,
+      tracking: ORDER_TRACKING_SCHEMA,
     },
     additionalProperties: false,
   },

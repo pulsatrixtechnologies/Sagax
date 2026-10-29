@@ -11,6 +11,7 @@ import { WidgetChart } from "./WidgetChart";
 import { WidgetBadge, WidgetImage, WidgetProgress } from "./WidgetContent";
 import { useWidgetForm, widgetActionUrl, widgetCanPress, widgetFieldId, WidgetButton, WidgetGlyph, type WidgetForm } from "./WidgetControls";
 import { WIDGET_CAPTION, WIDGET_FIELD_TYPES, WidgetFieldView } from "./WidgetFields";
+import { WidgetCarousel, WidgetProduct } from "./WidgetProduct";
 import { WidgetTable } from "./WidgetTable";
 import {
   ALIGN, BACKGROUND, boxStyle, CAPTION_SIZE, ICON_SIZE, INK, JUSTIFY, kids, TEXT_ALIGN, TEXT_SIZE, TITLE_SIZE, WEIGHT, widthStyle,
@@ -86,6 +87,10 @@ export function WidgetNodeView({ node, where }: { node: WidgetNode; where: Widge
       return <WidgetBadge node={node} />;
     case "Progress":
       return <WidgetProgress node={node} />;
+    case "Carousel":
+      return <WidgetCarousel node={node} draw={drawChild} />;
+    case "Product":
+      return <WidgetProduct node={node} draw={drawChild} />;
     case "Button":
       return (
         <WidgetButton
@@ -231,6 +236,9 @@ function Divider({ node, where }: { node: WidgetNode; where: WidgetWhere }) {
   const edge = node.flush === true ? where.card : undefined;
   return <div role="separator" className={cn("h-px shrink-0", RULE)} style={{ marginTop: before, marginBottom: after, ...(edge ? { marginLeft: -edge.left, marginRight: -edge.right } : {}) }} />;
 }
+
+/** A Product's picture or button, drawn as the rest of the widget is. */
+const drawChild = (child: WidgetNode, where: WidgetWhere): ReactNode => <WidgetNodeView node={child} where={where} />;
 
 /** What a table cell holds, drawn as the rest of the widget is. */
 const CELL: WidgetWhere = { axis: "col", gap: 0, cell: true };

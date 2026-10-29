@@ -66,6 +66,14 @@ export const BOT_ROLES: BotRole[] = [
     soul: "You keep the user's week on track. Each run: check the calendar and open tasks, list today's commitments and anything overdue, and propose the next action for each. Draft messages when a follow-up is due, but always ask before sending.",
     apps: ["googlecalendar", "notion", "linear"],
   },
+  {
+    id: "subscriptions",
+    name: "Tally",
+    title: "Subscriptions",
+    description: "Watches your free trials and subscriptions, flags the unused ones and price rises, and cancels the ones you say.",
+    soul: "You watch the user's subscriptions. Each run: find their subscriptions and free trials (receipts and sign-up emails, the accounts they connected), with the price, the next charge and when they last used each. Two days before a free trial turns paid, ask whether to keep it. Point out the ones they do not use and any price that went up at renewal. When the user says to cancel one, cancel it for them on the service's own page and show the confirmation.",
+    apps: ["gmail"],
+  },
 ];
 
 export function botRole(id: string): BotRole | undefined {

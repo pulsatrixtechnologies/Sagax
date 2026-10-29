@@ -429,6 +429,9 @@ struct OutboundCardView: View {
                 .font(ink.font(12, .regular)).foregroundStyle(Theme.warning)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        if done, let tracking = card.tracking {
+            OrderTrackingView(tracking: tracking, ink: ink)
+        }
         if !done, let label = card.cardLabel, !label.isEmpty {
             Text("Pay with \(label)").font(ink.font(12, .regular)).foregroundStyle(ink.secondary)
         }
@@ -508,5 +511,84 @@ private struct OutboundCheckboxStyle: ToggleStyle {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+    }
+}
+
+/// Where the parcel is (the desktop's OrderTrackingView): the step, four
+/// bars, the carrier and its number, the expected day, the tracking page.
+struct OrderTrackingView: View {
+    let tracking: OutboundCardData.Tracking
+    let ink: ApprovalInk
+    @Environment(\.openURL) private var openURL
+
+    private func label(_ step: String) -> String {
+        switch step {
+        case "ordered": String(localized: "Ordered")
+        case "shipped": String(localized: "Shipped")
+        case "in_transit": String(localized: "In transit")
+        case "out_for_delivery": String(localized: "Out for delivery")
+        case "delivered": String(localized: "Delivered")
+        default: String(localized: "Delivery problem")
+        }
+    }
+
+    private var eta: String? {
+        guard let eta = tracking.eta, tracking.step != "delivered" else { return nil }
+        let parser = DateFormatter()
+        parser.calendar = Calendar(identifier: .gregorian)
+        parser.timeZone = TimeZone(identifier: "UTC")
+        parser.dateFormat = "yyyy-MM-dd"
+        guard let date = parser.date(from: eta) else { return eta }
+        var style = Date.FormatStyle.dateTime.weekday(.abbreviated).month(.abbreviated).day()
+        style.timeZone = TimeZone(identifier: "UTC") ?? .current
+        return date.formatted(style)
+    }
+
+    var body: some View {
+        let at = tracking.stepIndex
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: tracking.isProblem ? "exclamationmark.triangle" : "shippingbox")
+                    .foregroundStyle(tracking.isProblem ? Theme.warning : ink.secondary)
+                Text(verbatim: label(tracking.step))
+                    .foregroundStyle(tracking.isProblem ? Theme.warning : ink.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let eta {
+                    Text("Expected \(eta)").foregroundStyle(ink.secondary).lineLimit(1)
+                }
+            }
+            .font(ink.font(12, .medium))
+            HStack(alignment: .top, spacing: 4) {
+                ForEach(Array(OutboundCardData.Tracking.stepper.enumerated()), id: \.offset) { index, step in
+                    let reached = !tracking.isProblem && index <= at
+                    VStack(alignment: .leading, spacing: 4) {
+                        Capsule().fill(reached ? ink.success : ink.ink.opacity(0.1)).frame(height: 4)
+                        Text(verbatim: label(step))
+                            .font(ink.font(11, .regular))
+                            .foregroundStyle(reached ? ink.ink : ink.tertiary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("Delivery progress"))
+            .accessibilityValue(Text(verbatim: label(tracking.step)))
+            let carrier = [tracking.carrier, tracking.number, tracking.note].compactMap { $0 }.filter { !$0.isEmpty }
+            if !carrier.isEmpty {
+                Text(verbatim: carrier.joined(separator: " · ")).font(ink.font(12, .regular)).foregroundStyle(ink.secondary)
+            }
+            if let link = tracking.url, let url = URL(string: link), url.scheme == "https" || url.scheme == "http" {
+                Button { openURL(url) } label: {
+                    Label("Track the parcel", systemImage: "arrow.up.right.square").font(ink.font(12, .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(ink.accent)
+                .accessibilityIdentifier("order-tracking-link")
+            }
+        }
+        .padding(10)
+        .background(ink.inset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }

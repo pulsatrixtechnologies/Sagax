@@ -101,6 +101,7 @@ const ROLE_CATEGORY: Record<string, string> = {
   coder: "engineering",
   community: "marketing",
   ops: "operations",
+  subscriptions: "personal",
 };
 
 function roleColor(index: number): MascotColorName {
