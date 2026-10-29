@@ -7,7 +7,8 @@ import { t } from "@/lib/i18n";
 import { dictationLevels, frameLevel, joinDictated, type DictationEngine } from "@/lib/composer-dictation";
 import { encodeWav, toPcm16 } from "@/lib/voice-mode/audio";
 import { attachVoiceCapture, type CaptureContext, type CaptureSource, type VoiceCapture } from "@/lib/voice-mode/capture-worklet";
-import { transcribeVoiceMode } from "@/lib/voice-mode/api";
+import { transcribeVoiceMode, voiceFailureKind } from "@/lib/voice-mode/api";
+import { voiceErrorNote } from "@/lib/voice-mode/failure";
 import { openPreferredMicrophone } from "@/lib/audio-input";
 
 export type DictationPhase = "idle" | "recording" | "processing";
@@ -104,7 +105,12 @@ export function useComposerDictation({
       const heard = await transcribeVoiceMode(botId, new Blob([wav.buffer as ArrayBuffer], { type: "audio/wav" }), "auto", threadId);
       editRef.current(joinDictated(base.current, heard));
     } catch (failure) {
-      setError(failure instanceof Error && failure.message ? failure.message : t("composer.dictation.failed"));
+      // the reason and the key it is about (failure.ts), never a raw line
+      const kind = voiceFailureKind(failure);
+      if (kind) {
+        const shown = voiceErrorNote("transcribe-failed", kind, failure, t);
+        setError(t(shown.key, shown.params));
+      } else setError(failure instanceof Error && failure.message ? failure.message : t("composer.dictation.failed"));
     } finally {
       setPhase("idle");
     }

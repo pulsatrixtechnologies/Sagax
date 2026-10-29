@@ -22,7 +22,7 @@
 // a sentence at a time. Changing the voice, speed or language opens a new
 // socket between answers (an utterance begun while one is in flight goes
 // over POST).
-import { streamVoiceModeSpeech, voiceModeSpeechUrl } from "./api";
+import { noteVoiceKeyFrame, streamVoiceModeSpeech, voiceModeSpeechUrl } from "./api";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
 /** The socket must be ready this soon, else POST for the call. */
@@ -38,7 +38,7 @@ type Audio = { body: ReadableStream<Uint8Array>; sampleRate: number } | null;
 type Speak = typeof streamVoiceModeSpeech;
 
 type Frame =
-  | { type: "ready"; sampleRate?: number }
+  | { type: "ready"; sampleRate?: number; key?: unknown; skipped?: unknown }
   | { type: "start"; id: string }
   | { type: "done"; id: string }
   | { type: "skip"; id: string }
@@ -159,6 +159,8 @@ export class SpeechSocket {
         if (frame.type === "ready") {
           if (this.timer) clearTimeout(this.timer);
           this.timer = null;
+          // which key speaks, and the ones xAI refused on the way
+          noteVoiceKeyFrame(frame);
           if (typeof frame.sampleRate === "number" && frame.sampleRate > 0) this.sampleRate = frame.sampleRate;
           this.state = "open";
           resolve(true);

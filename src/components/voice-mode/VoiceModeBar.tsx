@@ -15,7 +15,8 @@ import { useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { speaker } from "@/lib/tts";
-import { fetchVoiceModeVoices, type VoiceOption } from "@/lib/voice-mode/api";
+import { fetchVoiceModeVoices, useVoiceModeStatus, type VoiceOption } from "@/lib/voice-mode/api";
+import { voiceKeyLabel } from "@/lib/voice-mode/failure";
 import type { VoiceCall } from "@/lib/voice-mode/call";
 import type { CallState } from "@/lib/voice-mode/call-machine";
 import { notifyCallSettings, useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
@@ -179,6 +180,9 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
   const { dispatch } = useStore();
   const settings = useVoiceModeSettings();
   const callSettings = useCallSettings();
+  // which xAI key the voice runs on (its source and last four, never more)
+  const voiceStatus = useVoiceModeStatus(bot.id);
+  const keyLine = voiceStatus?.key ? t("voiceMode.keyLine", { key: voiceKeyLabel(voiceStatus.key, t) }) : null;
   const [panel, setPanel] = useState<Panel>(defaultPanel ?? null);
   const settingsOpen = panel === "settings";
   const transcriptOpen = panel === "transcript";
@@ -334,6 +338,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
         onEnroll={enroll}
         onForget={forget}
         latency={callDebug() ? metrics?.stages ?? null : null}
+        keyLine={keyLine}
       />
       <button
         type="button"

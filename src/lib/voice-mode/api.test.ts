@@ -2,7 +2,7 @@
 // or no next chunk, for SPEECH_STALL_MS errors the request (and aborts it).
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { SPEECH_RETRY_MS, SPEECH_STALL_MS, streamVoiceModeSpeech, TRANSCRIBE_TIMEOUT_MS, transcribeVoiceMode, VoiceModeRefused, VoiceProviderError, voiceFailureKind } from "./api";
+import { SPEECH_RETRY_MS, SPEECH_STALL_MS, TRANSCRIBE_TIMEOUT_MS, type VoiceKeyEvent, VoiceModeRefused, VoiceProviderError, noteVoiceKeyFrame, noteVoiceKeyHeaders, onVoiceKeyEvent, parseVoiceKeyHeader, streamVoiceModeSpeech, transcribeVoiceMode, voiceFailureKind } from "./api";
 
 const voice = { voice: "ara", speed: 1, language: "fr" };
 
@@ -114,5 +114,45 @@ describe("a voice the provider failed", () => {
     const refused = await transcribeVoiceMode("b-1", new Blob([new Uint8Array(4)]), "fr").catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(VoiceModeRefused);
     expect(voiceFailureKind(refused)).toBeNull();
+  });
+});
+
+describe("which key the voice runs on (2026-10-28)", () => {
+  const failing = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+  it("a provider failure names the key it is about and every key tried", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => failing(502, {
+      error: "The xAI account needs credits to generate speech.", code: "voice_provider", failure: "quota",
+      key: { source: "org-key", last4: "t6Yb" },
+      tried: [{ source: "voice-key", last4: "Wez8", failure: "quota" }, { source: "org-key", last4: "t6Yb", failure: "quota" }],
+    })));
+    const error = await transcribeVoiceMode("b-1", new Blob([new Uint8Array(4)]), "fr").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(VoiceProviderError);
+    expect((error as VoiceProviderError).key).toEqual({ source: "org-key", last4: "t6Yb" });
+    expect((error as VoiceProviderError).tried).toEqual([{ source: "voice-key", last4: "Wez8", failure: "quota" }, { source: "org-key", last4: "t6Yb", failure: "quota" }]);
+    // a malformed key is dropped, never trusted
+    vi.stubGlobal("fetch", vi.fn(async () => failing(502, { error: "x", code: "voice_provider", failure: "key", key: { source: "mine", last4: "x".repeat(40) } })));
+    const odd = await transcribeVoiceMode("b-1", new Blob([new Uint8Array(4)]), "fr").catch((e: unknown) => e);
+    expect((odd as VoiceProviderError).key).toBeUndefined();
+  });
+
+  it("an answer on another key than the first is told once, from the headers or the socket's ready frame", async () => {
+    const events: VoiceKeyEvent[] = [];
+    const off = onVoiceKeyEvent((event) => events.push(event));
+    const headers = new Headers({ "x-voice-key": "perspicax-key:c0Je", "x-voice-key-skipped": "voice-key:Wez8:quota" });
+    expect(noteVoiceKeyHeaders(headers)).toEqual({ used: { source: "perspicax-key", last4: "c0Je" }, skipped: [{ source: "voice-key", last4: "Wez8", failure: "quota" }] });
+    // the first key served: nothing to tell
+    expect(noteVoiceKeyHeaders(new Headers({ "x-voice-key": "voice-key:Wez8" }))).toEqual({ used: { source: "voice-key", last4: "Wez8" }, skipped: [] });
+    expect(noteVoiceKeyHeaders(new Headers())).toBeNull();
+    expect(noteVoiceKeyFrame({ key: { source: "org-key", last4: null }, skipped: [{ source: "perspicax-key", last4: "c0Je", failure: "key" }] })).toEqual({
+      used: { source: "org-key", last4: null }, skipped: [{ source: "perspicax-key", last4: "c0Je", failure: "key" }],
+    });
+    off();
+    expect(events).toEqual([
+      { used: { source: "perspicax-key", last4: "c0Je" }, skipped: [{ source: "voice-key", last4: "Wez8", failure: "quota" }] },
+      { used: { source: "org-key", last4: null }, skipped: [{ source: "perspicax-key", last4: "c0Je", failure: "key" }] },
+    ]);
+    expect(parseVoiceKeyHeader("server:")).toEqual({ source: "server", last4: null });
+    expect(parseVoiceKeyHeader("nope:abcd")).toBeUndefined();
   });
 });

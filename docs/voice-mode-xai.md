@@ -737,15 +737,27 @@ xAI's refusal is never hidden behind "didn't come through" (2026-10-28):
   limit. Another 400 keeps xAI's category ("Client specified an invalid
   argument"), never its message.
 - Every 502 of a voice route answers `{ error, code: "voice_provider",
-  failure }`, `failure` being `key`, `quota`, `busy`, `down`, `voice` or
-  `other` (`grokVoiceFailure`), and the server log says which request failed
-  and with which kind of key (`[voice-mode] xAI stream failed (speaker-key):
-  ...`), never the key.
+  failure, key, tried? }`, `failure` being `key`, `quota`, `busy`, `down`,
+  `voice` or `other` (`grokVoiceFailure`), `key` the key it is about (its
+  source and last four characters, `{ source: "voice-key" | "perspicax-key"
+  | "org-key" | "server", last4 }`, never more) and `tried` every key refused
+  on the way when more than one was. The server log says which request
+  failed and on which key (`[voice-mode] xAI stream failed (speaker-key,
+  person's voice key ···Wez8): ...`), never the key.
 - The page tries a sentence once more after a busy or failing xAI or a
-  stall (`streamVoiceModeSpeech`, 400 ms), then says the reason in the bar
+  stall (`streamVoiceModeSpeech`, 400 ms), then says the reason in the bar,
+  naming the key and what to do about it when the server named one
+  ("xAI has no credits left for your voice key ···Wez8. Add credits to that
+  xAI account, or change the key in Settings > Models and voice > My voice
+  keys.", `voiceMode.provider.<failure>.named`, `voiceMode.key.*`,
+  `voiceMode.keyAction.*`), else the plain line
   (`voiceMode.provider.<failure>`). That line goes away as soon as the voice
   is heard again; "Try again" is offered only for the microphone, the one
   thing it reopens (`voiceErrorNote` in `src/lib/voice-mode/failure.ts`).
+  A 403 mid-call (no key serves the person any more) shows the access card
+  in the bar, as before the call. The call's settings show which key the
+  voice runs on ("Voice: xAI with your voice key ···Wez8",
+  `voiceMode.keyLine`, from `status.key`).
 - The bar's transcript shows the bot's words as they are said: the spoken
   part, without markdown (`transcriptText` in `src/lib/voice-mode/spoken.ts`,
   `SpokenText.transcriptText` on iOS).
@@ -755,11 +767,22 @@ xAI's refusal is never hidden behind "didn't come through" (2026-10-28):
   the fallback when no voice provider is set up (a group call, the demo, a
   server without voice mode). The call's transcript header says which one
   ("Voice: xAI, with your key").
+- Composer dictation (the grey mic, `src/lib/composer-dictation.ts`) hears
+  through xAI (POST /voice/transcribe) whenever a key serves the person, on
+  every platform alike; the Mac's own recognizer is the fallback only when
+  none does, and the mic's label says so ("Start dictation (this Mac's own,
+  no xAI key)", `composer.dictation.startApple`). A failed transcription
+  names the key and what to do (`voiceErrorNote`).
+- Reading a reply aloud on an organization server (the Speak button, "Read
+  replies aloud", a summary) goes through voice mode's xAI voice too, with
+  the person's Voice, Speed and Language and the same key order
+  (`src/lib/tts/index.ts` `organizationVoiceMode`), instead of the
+  installation's engine; a solo server keeps the engine picked in Settings.
 
 ## Who pays, and the key
 
 The key never reaches the client. Order for the person who speaks
-(`server/voice-mode.ts` `resolveVoiceKey`):
+(`server/voice-mode.ts` `resolveVoiceKeys`, `server/voice-keys.ts`):
 
 - Organization server: the xAI key they saved in Sagax for their own voice
   (Settings > Models and voice > My voice keys, `server/person-voice-keys.ts`,
@@ -770,6 +793,25 @@ The key never reaches the client. Order for the person who speaks
   person it is about; the organization's key hint only for an admin).
   A disabled person is refused and never falls back on the organization.
 - Solo server: the server's xAI key.
+
+**The key that has funds (2026-10-28).** Every request starts with the
+first key of that order. When xAI refuses it for credits (`quota`) or for
+the key itself (`key`: invalid, revoked, no voice permission), the next key
+is tried at once (`withVoiceKeys`), on REST and on the sockets alike; a
+rate limit, xAI down or an unknown voice stays with the key that got it,
+another key would not help. The refusal is remembered per person for
+`VOICE_KEY_REFUSAL_TTL_MS` (5 minutes), so the following sentences skip
+straight to the key that works instead of paying a 402 round trip each,
+and a refilled key is tried first again after that. The answer names the
+key that served (`x-voice-key: perspicax-key:c0Je` on HTTP, `key` on the
+sockets' `ready` frame) and the ones skipped (`x-voice-key-skipped:
+voice-key:Wez8:quota`, `skipped`); the page says it once in the bar ("your
+voice key ···Wez8 was refused (no credits). The voice now runs on your xAI
+key in Perspicax ···c0Je.", `voiceMode.keyFallback`), never a silent
+switch. `GET /voice/status` lists every key in its order with the refusals
+remembered (`keys[].refused`) and the one the next request starts with
+(`key`). If Perspicax cannot be reached, the person's own voice key still
+serves; `perspicax_unreachable` is refused only when no other key exists.
 
 Since 2026-10-14 Grok voice has no key of its own: it uses the xAI key, the
 one bots on Grok use. A Grok voice key saved by an older build

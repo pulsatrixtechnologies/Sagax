@@ -1602,6 +1602,7 @@ export function Composer({
             onRelease={releaseMic}
             hidden={dictating || voiceNoting}
             needsSetup={!engine}
+            engine={engine}
             shortcut={dictationShortcut}
           />
         )}

@@ -18,7 +18,7 @@
 // upload that fails is tried once more, then the turn reports `failed` so
 // the call tells the person; a turn is never dropped silently.
 import { encodeWav, TARGET_RATE, toPcm16 } from "./audio";
-import { transcribeVoiceMode, VoiceModeRefused, voiceModeListenUrl } from "./api";
+import { noteVoiceKeyFrame, transcribeVoiceMode, VoiceModeRefused, voiceModeListenUrl } from "./api";
 import { normalizedWords } from "./latency";
 
 /** Confident silence before one `finalize` probe. Four 32 ms frames. */
@@ -81,7 +81,7 @@ export interface Heard {
   failed?: boolean;
 }
 
-type Frame = { type: "ready" } | { type: "reconnected" } | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number; endOfTurnConfidence?: number } | { type: "error"; message: string };
+type Frame = { type: "ready"; key?: unknown; skipped?: unknown } | { type: "reconnected" } | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number; endOfTurnConfidence?: number } | { type: "error"; message: string };
 
 /** After a finalize xAI can send again a final chunk it had already closed
  * (then the rest). Appended, that resend doubled the sentence ("Yeah, but I
@@ -182,6 +182,8 @@ export class LiveTranscriber {
         try { frame = JSON.parse(event.data) as Frame; } catch { return; }
         if (frame.type === "ready") {
           clearTimeout(timer);
+          // which key hears, and the ones xAI refused on the way
+          noteVoiceKeyFrame(frame);
           this.open = true;
           this.streaming = true;
           this.everOpened = true;

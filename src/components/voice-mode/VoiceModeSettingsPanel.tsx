@@ -45,6 +45,8 @@ export interface VoiceModeSettingsPanelProps {
   /** the last answer's stages (ms), shown while the call's debug switch
    * (localStorage "omb.voiceCall.debug") is on */
   latency?: Partial<Record<LatencyStage | "total", number>> | null;
+  /** "Voice: xAI with your voice key ···Wez8": which key the voice runs on */
+  keyLine?: string | null;
 }
 
 /** An on/off row: the app's standard switch (SettingsPrimitives). */
@@ -286,6 +288,7 @@ export function VoiceModeSettingsPanel(props: VoiceModeSettingsPanelProps) {
       ) : (
         props.latency && <LatencyLine latency={props.latency} />
       )}
+      {props.keyLine && <p className="px-2 pt-1.5 text-[11.5px] text-ink-tertiary" data-voice-key-line>{props.keyLine}</p>}
     </div>
   );
 }

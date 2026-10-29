@@ -38,6 +38,9 @@
 //   refused with an access card shown only to that person; a disabled
 //   person is refused. Solo server: the server's xAI key. Since
 //   2026-10-14 Grok voice and bots on Grok share that one key.
+//   A key xAI refuses for credits or for itself gives way to the next one
+//   at once (server/voice-keys.ts), and every answer says which key served
+//   or failed: its source and last four characters, never more.
 // Every request names a bot the person may use (the visibility gate already
 // hides the others) and, when given, a thread they may post to. Each speak
 // and transcribe is recorded in the usage ledger with `access` (the via).
@@ -54,6 +57,8 @@ import {
   stripFillers,
   sttRequest,
   ttsLanguage,
+  type VoiceKeyInfo,
+  type VoiceKeyState,
   type VoiceModeRefusalCause,
   type VoiceModeStatus,
   type VoiceModeVia,
@@ -65,8 +70,20 @@ import { webSocketSession } from "./ws-session.ts";
 import { readForVoice } from "./tts/voice-reading.ts";
 import { speakableDelta } from "./tts/speech-text.ts";
 import { createListenSession } from "./voice-listen-session.ts";
-import { grokVoiceFailure, type SpeechStream, type SpeechStreamHandlers, type SynthesizeOptions, type TranscriptionHandlers, type TranscriptionStream } from "./tts/grok.ts";
+import { grokVoiceFailure, type GrokVoiceFailure, type SpeechStream, type SpeechStreamHandlers, type SynthesizeOptions, type TranscriptionHandlers, type TranscriptionStream } from "./tts/grok.ts";
 import { createSpeechSession } from "./voice-speech-session.ts";
+import {
+  describeVoiceKey,
+  keyLast4,
+  VoiceKeyFailure,
+  VoiceKeyRefusals,
+  voiceKeyFailureIsFinal,
+  voiceKeyRef,
+  withVoiceKeys,
+  type VoiceKeyCandidate,
+  type VoiceKeyRefusal,
+  type VoiceKeys,
+} from "./voice-keys.ts";
 import type { ProviderKeyResult } from "./perspicax-link.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
@@ -178,25 +195,43 @@ export interface VoiceModeDeps {
   now?: () => number;
 }
 
-/** The order above, for one person. Never returns a key to anyone but the caller of xAI. */
-export async function resolveVoiceKey(deps: Pick<VoiceModeDeps, "organization" | "serverKey" | "hasOwnKey" | "resolveOwnKey" | "serverKeyAllowed" | "personalKey">, speaker: VoiceSpeaker): Promise<VoiceKey> {
+type KeyDeps = Pick<VoiceModeDeps, "organization" | "serverKey" | "hasOwnKey" | "resolveOwnKey" | "serverKeyAllowed" | "personalKey">;
+
+/** Every key that may serve this person, in the order above (the person's
+ * voice key, their Perspicax key, the organization's), or why none does.
+ * Never returns a key to anyone but the caller of xAI. */
+export async function resolveVoiceKeys(deps: KeyDeps, speaker: VoiceSpeaker): Promise<VoiceKeys> {
   const serverKey = deps.serverKey()?.trim();
-  if (!deps.organization) return serverKey ? { ok: true, key: serverKey, via: "server" } : { ok: false, cause: "no_credentials" };
+  if (!deps.organization) return serverKey ? { ok: true, keys: [{ key: serverKey, via: "server", source: "server", last4: keyLast4(serverKey) }] } : { ok: false, cause: "no_credentials" };
   if (speaker.disabled) return { ok: false, cause: "payer_disabled" };
+  const keys: VoiceKeyCandidate[] = [];
   // the person's own voice key (My voice keys): theirs, no grant needed
   const personal = speaker.principalId ? deps.personalKey?.(speaker)?.trim() : undefined;
-  if (personal) return { ok: true, key: personal, via: "speaker-key", payerPrincipalId: speaker.principalId };
+  if (personal) keys.push({ key: personal, via: "speaker-key", source: "voice-key", last4: keyLast4(personal), payerPrincipalId: speaker.principalId });
+  let perspicax: VoiceModeRefusalCause | null = null;
   if (speaker.sub && deps.hasOwnKey(speaker.sub)) {
     const own = await deps.resolveOwnKey(speaker.sub);
-    if (own.ok) return { ok: true, key: own.key, via: "speaker-key", payerPrincipalId: speaker.principalId };
-    if (own.error === "user_inactive") return { ok: false, cause: "payer_disabled" };
-    if (own.error !== "no_key") return { ok: false, cause: "perspicax_unreachable" };
+    if (own.ok) keys.push({ key: own.key, via: "speaker-key", source: "perspicax-key", last4: keyLast4(own.key), payerPrincipalId: speaker.principalId });
+    else if (own.error === "user_inactive") return { ok: false, cause: "payer_disabled" };
+    else if (own.error !== "no_key") perspicax = "perspicax_unreachable";
   }
-  if (!serverKey) return { ok: false, cause: "no_credentials" };
   // 2026-10-16: the organization's xAI key serves voice only for the
   // people it was given to (`sagax_server_engines` lists VOICE_SERVER_ENGINE).
-  if (deps.serverKeyAllowed && !deps.serverKeyAllowed(speaker)) return { ok: false, cause: "server_engine_not_allowed" };
-  return { ok: true, key: serverKey, via: "org-key" };
+  const orgAllowed = !deps.serverKeyAllowed || deps.serverKeyAllowed(speaker);
+  if (serverKey && orgAllowed) keys.push({ key: serverKey, via: "org-key", source: "org-key", last4: keyLast4(serverKey) });
+  if (keys.length) return { ok: true, keys };
+  // Perspicax could not say: their key there may well exist
+  if (perspicax) return { ok: false, cause: perspicax };
+  if (!serverKey) return { ok: false, cause: "no_credentials" };
+  return { ok: false, cause: "server_engine_not_allowed" };
+}
+
+/** The first key of the order above, for one person (the meeting notetaker). */
+export async function resolveVoiceKey(deps: KeyDeps, speaker: VoiceSpeaker): Promise<VoiceKey> {
+  const resolved = await resolveVoiceKeys(deps, speaker);
+  if (!resolved.ok) return resolved;
+  const first = resolved.keys[0]!;
+  return { ok: true, key: first.key, via: first.via, ...(first.payerPrincipalId ? { payerPrincipalId: first.payerPrincipalId } : {}) };
 }
 
 const REFUSAL_TEXT: Record<VoiceModeRefusalCause, string> = {
@@ -255,6 +290,8 @@ function scrub(message: string, key: string): string {
 }
 
 type Usage = (model: VoiceUsage["model"], input: number) => void;
+/** The usage booker for the key a request ends up on. */
+type UsageFor = (candidate: VoiceKeyCandidate) => Usage;
 type Json = (res: import("node:http").ServerResponse, status: number, body: unknown) => unknown;
 
 /** What the listen socket says to the page (JSON text frames). */
@@ -265,12 +302,30 @@ export { listenTranscriptFrame } from "./voice-listen-session.ts";
  * fillers included, xAI's confidence and Smart Turn's end of turn
  * confidence when it gives them. */
 
+/** What a provider failure says about the keys: the one it is about and
+ * every one tried (a refusal each), so the page can name them. */
+export interface VoiceProviderKeys {
+  key: VoiceKeyInfo;
+  tried?: VoiceKeyRefusal[];
+}
+
 /** xAI failed a voice request: the page gets the reason in this side's own
  * words and its kind (`failure`: key, quota, busy, down, voice, other), so
- * it can say what is wrong instead of "didn't come through", and the server
- * log keeps the line (which request, whose key kind, never the key). */
-export function providerFailureBody(message: string): { error: string; code: "voice_provider"; failure: ReturnType<typeof grokVoiceFailure> } {
-  return { error: message, code: "voice_provider", failure: grokVoiceFailure(message) };
+ * it can say what is wrong instead of "didn't come through", and which key
+ * it was (source and last four, never more; `tried` lists every key that
+ * was refused on the way). The server log keeps the line. */
+export function providerFailureBody(message: string, keys?: VoiceProviderKeys): { error: string; code: "voice_provider"; failure: GrokVoiceFailure; key?: VoiceKeyInfo; tried?: VoiceKeyRefusal[] } {
+  return {
+    error: message,
+    code: "voice_provider",
+    failure: grokVoiceFailure(message),
+    ...(keys ? { key: keys.key, ...(keys.tried && keys.tried.length > 1 ? { tried: keys.tried } : {}) } : {}),
+  };
+}
+
+/** A key as the page sees it in a response header: `source:last4`. */
+export function voiceKeyHeader(key: VoiceKeyInfo): string {
+  return `${key.source}:${key.last4 ?? ""}`;
 }
 
 /** A same-origin, well formed WebSocket handshake: its key, or why not. */
@@ -289,12 +344,22 @@ export const VOICE_CALL_KEYTERM_MAX = 100;
 
 export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
   const now = deps.now ?? Date.now;
+  /** keys xAI refused lately, per person (server/voice-keys.ts) */
+  const refusals = new VoiceKeyRefusals({ now });
+
+  /** A failed socket open as the page and the log get it. */
+  function socketRefusal(what: "speech" | "listen", lastError: string | undefined, fallback: string, used: VoiceKeyCandidate, tried: VoiceKeyRefusal[]) {
+    const message = lastError ?? fallback;
+    (deps.log ?? console.warn)(`[voice-mode] xAI ${what} socket failed (${describeVoiceKey(used)}): ${message}`);
+    return providerFailureBody(message, { key: voiceKeyRef(used), tried: [...tried, { ...voiceKeyRef(used), failure: grokVoiceFailure(message) }] });
+  }
 
   /** GET /voice/speech: one live call's streaming voice
    * (voice-speech-session.ts). Opens xAI's speech socket first; when it is
    * not open within SPEECH_READY_MS the page gets a 502 and speaks over
-   * POST /voice/stream. The key stays here. */
-  async function speech(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, key: string, usage: Usage): Promise<void> {
+   * POST /voice/stream. A key refused for credits or for itself gives way
+   * to the next one before that. The keys stay here. */
+  async function speech(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, keys: VoiceKeyCandidate[], refusals: VoiceKeyRefusals, who: string, usageFor: UsageFor): Promise<void> {
     const upgrade = deps.upgrade?.(req);
     if (!upgrade || !deps.xai.openSpeech) { json(res, 426, { error: "WebSocket upgrade required" }); return; }
     const shake = handshake(req);
@@ -310,55 +375,76 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     }
     const openSpeech = deps.xai.openSpeech;
     let page: ReturnType<typeof webSocketSession> | null = null;
-    const session = createSpeechSession({
-      open: (handlers) => openSpeech(key, { voice, speed, language: ttsLanguage(language) }, handlers),
-      speakable: (text) => {
-        if (text.length > VOICE_MODE_MAX_TEXT * 4) return "";
-        const joined = deps.utterances(text).join(" ").trim();
-        const read = readForVoice(language, joined);
-        return read.slice(0, VOICE_MODE_MAX_TEXT);
-      },
-      // words appended to an open utterance: their edges kept, read as
-      // French or English when the utterance so far is (voice-reading.ts)
-      speakableDelta: (text, before) => {
-        const clean = speakableDelta(text);
-        return clean ? readForVoice(language, clean, before) : clean;
-      },
-      usage: (characters) => usage("grok-tts", characters),
-      sendText: (frame) => page?.sendText(JSON.stringify(frame)),
-      sendBinary: (pcm) => page?.sendBinary(pcm),
-      closePage: (code) => page?.close(code),
-      log: (line) => (deps.log ?? console.warn)(line),
-      sampleRate: VOICE_SPEECH_RATE,
-    });
-    const opened = await Promise.race([
-      session.ready,
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SPEECH_READY_MS).unref()),
-    ]);
     const { socket } = upgrade;
-    if (!opened || socket.destroyed) {
-      session.close();
-      if (!socket.destroyed) json(res, 502, providerFailureBody(session.lastError ?? "Grok streaming speech is not reachable."));
+    const tried: VoiceKeyRefusal[] = [];
+    const ordered = refusals.order(who, keys).map((entry) => entry.candidate);
+    for (let i = 0; i < ordered.length; i += 1) {
+      const candidate = ordered[i]!;
+      const usage = usageFor(candidate);
+      const session = createSpeechSession({
+        open: (handlers) => openSpeech(candidate.key, { voice, speed, language: ttsLanguage(language) }, handlers),
+        speakable: (text) => {
+          if (text.length > VOICE_MODE_MAX_TEXT * 4) return "";
+          const joined = deps.utterances(text).join(" ").trim();
+          const read = readForVoice(language, joined);
+          return read.slice(0, VOICE_MODE_MAX_TEXT);
+        },
+        // words appended to an open utterance: their edges kept, read as
+        // French or English when the utterance so far is (voice-reading.ts)
+        speakableDelta: (text, before) => {
+          const clean = speakableDelta(text);
+          return clean ? readForVoice(language, clean, before) : clean;
+        },
+        usage: (characters) => usage("grok-tts", characters),
+        sendText: (frame) => page?.sendText(JSON.stringify(frame)),
+        sendBinary: (pcm) => page?.sendBinary(pcm),
+        closePage: (code) => page?.close(code),
+        log: (line) => (deps.log ?? console.warn)(line),
+        sampleRate: VOICE_SPEECH_RATE,
+      });
+      const opened = await Promise.race([
+        session.ready,
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SPEECH_READY_MS).unref()),
+      ]);
+      if (!opened || socket.destroyed) {
+        session.close();
+        if (socket.destroyed) return;
+        const message = scrub(session.lastError ?? "", candidate.key);
+        const failure = grokVoiceFailure(message || "not reachable");
+        if (session.lastError && voiceKeyFailureIsFinal(failure)) {
+          refusals.remember(who, voiceKeyRef(candidate), failure);
+          if (i < ordered.length - 1) {
+            tried.push({ ...voiceKeyRef(candidate), failure });
+            (deps.log ?? console.warn)(`[voice-mode] xAI speech socket refused the ${describeVoiceKey(candidate)} (${failure}): trying the ${describeVoiceKey(ordered[i + 1]!)}`);
+            continue;
+          }
+        }
+        json(res, 502, socketRefusal("speech", session.lastError ? message : undefined, "Grok streaming speech is not reachable.", candidate, tried));
+        return;
+      }
+      refusals.forget(who, voiceKeyRef(candidate));
+      upgrade.release();
+      const head = upgrade.head;
+      res.detachSocket(socket as import("node:net").Socket);
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${websocketAccept(shake.key)}\r\n\r\n`);
+      page = webSocketSession(socket, {
+        onBinary: () => page?.close(1003),
+        onText: (text) => session.message(text),
+        onClose: () => session.close(),
+      });
+      if (head.length) socket.unshift(head);
+      page.sendText(JSON.stringify({ type: "ready", sampleRate: VOICE_SPEECH_RATE, key: voiceKeyRef(candidate), ...(tried.length ? { skipped: tried } : {}) }));
       return;
     }
-    upgrade.release();
-    const head = upgrade.head;
-    res.detachSocket(socket as import("node:net").Socket);
-    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${websocketAccept(shake.key)}\r\n\r\n`);
-    page = webSocketSession(socket, {
-      onBinary: () => page?.close(1003),
-      onText: (text) => session.message(text),
-      onClose: () => session.close(),
-    });
-    if (head.length) socket.unshift(head);
-    page.sendText(JSON.stringify({ type: "ready", sampleRate: VOICE_SPEECH_RATE }));
+    json(res, 502, { error: "no voice key" });
   }
 
   /** GET /voice/listen: one live call's streaming speech to text. The page
    * sends 16 kHz 16-bit PCM frames while the person speaks (its own voice
    * activity detector decides when) and `{"type":"finalize"}` when they
-   * stop; xAI's transcripts come back as they are made. The key stays here. */
-  async function listen(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, key: string, usage: Usage, keyterms: readonly string[]): Promise<void> {
+   * stop; xAI's transcripts come back as they are made. A key refused for
+   * credits or for itself gives way to the next one. The keys stay here. */
+  async function listen(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, keys: VoiceKeyCandidate[], refusals: VoiceKeyRefusals, who: string, usageFor: UsageFor, keyterms: readonly string[]): Promise<void> {
     const upgrade = deps.upgrade?.(req);
     if (!upgrade || !deps.xai.openTranscription) { json(res, 426, { error: "WebSocket upgrade required" }); return; }
     const shake = handshake(req);
@@ -369,72 +455,92 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     let session: ReturnType<typeof webSocketSession> | null = null;
     let heard = 0;
     let total = 0;
-    const book = () => {
-      if (heard > 0) usage("grok-stt", heard);
-      heard = 0;
-    };
-    deps.xai.warm?.(key);
-    let warmedAt = now();
     const openTranscription = deps.xai.openTranscription;
     // "auto" on a French computer is French with formatting (sttRequest)
     const stt = sttRequest(language, url.searchParams.get("locale") ?? undefined);
-    // xAI's socket is reopened behind the page's when it drops, and rotated
-    // before its session limit (voice-listen-session.ts)
-    const ears = createListenSession({
-      // the page's own detector ends turns (and sends finalize); xAI's
-      // endpointing is only a backstop for a very long pause
-      open: (handlers) => openTranscription(key, { ...stt, endpointingMs: 1500, keyterms }, handlers),
-      sendText: (frame) => session?.sendText(JSON.stringify(frame)),
-      closePage: (code) => session?.close(code),
-      log: (line) => (deps.log ?? console.warn)(line),
-      onUpstreamClosed: book,
-      scrub: (message) => scrub(message, key),
-      now,
-    });
-    const opened = await Promise.race([
-      ears.ready,
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LISTEN_READY_MS).unref()),
-    ]);
     const { socket } = upgrade;
-    if (!opened || socket.destroyed) {
-      ears.close();
-      if (!socket.destroyed) json(res, 502, providerFailureBody(ears.lastError ?? "Grok speech to text is not reachable. Try again."));
-      return;
-    }
-    upgrade.release();
-    const head = upgrade.head;
-    res.detachSocket(socket as import("node:net").Socket);
-    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${websocketAccept(wsKey)}\r\n\r\n`);
-    session = webSocketSession(socket, {
-      onBinary: (data) => {
-        total += data.byteLength;
-        if (total > VOICE_LISTEN_MAX_BYTES) { session?.close(1009); return; }
-        heard += data.byteLength;
-        ears.audio(new Uint8Array(data));
-      },
-      onText: (text) => {
-        let message: { type?: unknown } | null = null;
-        try { message = JSON.parse(text) as { type?: unknown }; } catch { /* ignored */ }
-        // The page's keepalive keeps a proxy from dropping the listen
-        // socket. It is never forwarded to xAI.
-        if (message?.type === "keepalive") return;
-        if (message?.type === "finalize") {
-          ears.finalize();
-          book();
-          // the answer's first sentence goes to xAI's speech a second or
-          // two from now: have a connection open by then (a pooled one
-          // idles out in a few seconds, and the person spoke longer)
-          const at = now();
-          if (at - warmedAt >= LISTEN_WARM_EVERY_MS) {
-            warmedAt = at;
-            deps.xai.warm?.(key);
+    const tried: VoiceKeyRefusal[] = [];
+    const ordered = refusals.order(who, keys).map((entry) => entry.candidate);
+    for (let i = 0; i < ordered.length; i += 1) {
+      const candidate = ordered[i]!;
+      const key = candidate.key;
+      const usage = usageFor(candidate);
+      const book = () => {
+        if (heard > 0) usage("grok-stt", heard);
+        heard = 0;
+      };
+      deps.xai.warm?.(key);
+      let warmedAt = now();
+      // xAI's socket is reopened behind the page's when it drops, and rotated
+      // before its session limit (voice-listen-session.ts)
+      const ears = createListenSession({
+        // the page's own detector ends turns (and sends finalize); xAI's
+        // endpointing is only a backstop for a very long pause
+        open: (handlers) => openTranscription(key, { ...stt, endpointingMs: 1500, keyterms }, handlers),
+        sendText: (frame) => session?.sendText(JSON.stringify(frame)),
+        closePage: (code) => session?.close(code),
+        log: (line) => (deps.log ?? console.warn)(line),
+        onUpstreamClosed: book,
+        scrub: (message) => scrub(message, key),
+        now,
+      });
+      const opened = await Promise.race([
+        ears.ready,
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LISTEN_READY_MS).unref()),
+      ]);
+      if (!opened || socket.destroyed) {
+        ears.close();
+        if (socket.destroyed) return;
+        const failure = grokVoiceFailure(ears.lastError ?? "not reachable");
+        if (ears.lastError && voiceKeyFailureIsFinal(failure)) {
+          refusals.remember(who, voiceKeyRef(candidate), failure);
+          if (i < ordered.length - 1) {
+            tried.push({ ...voiceKeyRef(candidate), failure });
+            (deps.log ?? console.warn)(`[voice-mode] xAI listen socket refused the ${describeVoiceKey(candidate)} (${failure}): trying the ${describeVoiceKey(ordered[i + 1]!)}`);
+            continue;
           }
         }
-      },
-      onClose: () => { book(); ears.close(); },
-    });
-    if (head.length) socket.unshift(head);
-    session.sendText(JSON.stringify({ type: "ready" }));
+        json(res, 502, socketRefusal("listen", ears.lastError, "Grok speech to text is not reachable. Try again.", candidate, tried));
+        return;
+      }
+      refusals.forget(who, voiceKeyRef(candidate));
+      upgrade.release();
+      const head = upgrade.head;
+      res.detachSocket(socket as import("node:net").Socket);
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${websocketAccept(wsKey)}\r\n\r\n`);
+      session = webSocketSession(socket, {
+        onBinary: (data) => {
+          total += data.byteLength;
+          if (total > VOICE_LISTEN_MAX_BYTES) { session?.close(1009); return; }
+          heard += data.byteLength;
+          ears.audio(new Uint8Array(data));
+        },
+        onText: (text) => {
+          let message: { type?: unknown } | null = null;
+          try { message = JSON.parse(text) as { type?: unknown }; } catch { /* ignored */ }
+          // The page's keepalive keeps a proxy from dropping the listen
+          // socket. It is never forwarded to xAI.
+          if (message?.type === "keepalive") return;
+          if (message?.type === "finalize") {
+            ears.finalize();
+            book();
+            // the answer's first sentence goes to xAI's speech a second or
+            // two from now: have a connection open by then (a pooled one
+            // idles out in a few seconds, and the person spoke longer)
+            const at = now();
+            if (at - warmedAt >= LISTEN_WARM_EVERY_MS) {
+              warmedAt = at;
+              deps.xai.warm?.(key);
+            }
+          }
+        },
+        onClose: () => { book(); ears.close(); },
+      });
+      if (head.length) socket.unshift(head);
+      session.sendText(JSON.stringify({ type: "ready", key: voiceKeyRef(candidate), ...(tried.length ? { skipped: tried } : {}) }));
+      return;
+    }
+    json(res, 502, { error: "no voice key" });
   }
 
   const hits = new Map<string, number[]>();
@@ -493,23 +599,44 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
 
     const keysUrl = deps.keysUrl?.();
     const admin = deps.isAdmin?.(auth) === true;
-    const resolved = await resolveVoiceKey(deps, speaker);
+    const resolved = await resolveVoiceKeys(deps, speaker);
+    const who = speaker.principalId || "operator";
     if (action === "status") {
       const org = deps.organization ? { organization: true } : {};
-      const status: VoiceModeStatus = resolved.ok
-        ? { provider: "xai", available: true, ...org, via: resolved.via }
-        : { provider: "xai", available: false, ...org, refusal: { cause: resolved.cause, ...(admin ? { admin: true } : {}), ...(keysUrl ? { keysUrl } : {}) } };
+      let status: VoiceModeStatus;
+      if (resolved.ok) {
+        const ordered = refusals.order(who, resolved.keys);
+        const first = ordered[0]!.candidate;
+        const keys: VoiceKeyState[] = ordered.map((entry) => ({ ...voiceKeyRef(entry.candidate), ...(entry.refused ? { refused: entry.refused } : {}) }));
+        status = { provider: "xai", available: true, ...org, via: first.via, key: voiceKeyRef(first), keys };
+      } else {
+        status = { provider: "xai", available: false, ...org, refusal: { cause: resolved.cause, ...(admin ? { admin: true } : {}), ...(keysUrl ? { keysUrl } : {}) } };
+      }
       return json(res, 200, status);
     }
     if (!resolved.ok) return json(res, 403, refusalBody(resolved.cause, keysUrl, target, speaker, admin));
-    const who = speaker.principalId || "operator";
-    /** xAI refused or failed this request: logged (the kind of key, never
-     * the key) and answered with its reason and kind. */
+    const keys = resolved.keys;
+    /** a provider error without any of this person's keys */
+    const scrubAll = (message: string): string => keys.reduce((out, candidate) => scrub(out, candidate.key), message);
+    /** xAI refused or failed this request on every key it could: logged
+     * (the kind of key, never the key) and answered with its reason, its
+     * kind and the key it is about. */
     const failed = (what: string, error: unknown) => {
-      const message = scrub(error instanceof Error ? error.message : String(error), resolved.key);
-      (deps.log ?? console.warn)(`[voice-mode] xAI ${what} failed (${resolved.via}): ${message}`);
-      return providerFailureBody(message);
+      if (error instanceof VoiceKeyFailure) {
+        (deps.log ?? console.warn)(`[voice-mode] xAI ${what} failed (${error.used.via}, ${describeVoiceKey(error.used)}): ${error.message}`);
+        return providerFailureBody(error.message, { key: voiceKeyRef(error.used), tried: error.tried });
+      }
+      const message = scrubAll(error instanceof Error ? error.message : String(error));
+      (deps.log ?? console.warn)(`[voice-mode] xAI ${what} failed (${keys[0]!.via}): ${message}`);
+      return providerFailureBody(message, { key: voiceKeyRef(keys[0]!) });
     };
+    /** run `attempt` on the first key that takes it (server/voice-keys.ts) */
+    const tryKeys = <T,>(what: string, attempt: (candidate: VoiceKeyCandidate) => Promise<T>) => withVoiceKeys(who, keys, refusals, attempt, { log: deps.log ?? console.warn, what, scrub: scrubAll });
+    /** which key answered, for the page: a header on an HTTP answer */
+    const keyHeaders = (used: VoiceKeyCandidate, skipped: VoiceKeyRefusal[]): Record<string, string> => ({
+      "x-voice-key": voiceKeyHeader(voiceKeyRef(used)),
+      ...(skipped.length ? { "x-voice-key-skipped": skipped.map((entry) => `${voiceKeyHeader(entry)}:${entry.failure}`).join(",") } : {}),
+    });
 
     if (action === "prepare") {
       const text = String((body as Record<string, unknown>).text ?? "");
@@ -525,22 +652,24 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
 
     if (action === "voices") {
       try {
-        return json(res, 200, { voices: await deps.xai.listVoices(resolved.key) });
+        const { value, used, skipped } = await tryKeys("voices", (candidate) => deps.xai.listVoices(candidate.key));
+        for (const [name, value_] of Object.entries(keyHeaders(used, skipped))) res.setHeader(name, value_);
+        return json(res, 200, { voices: value, key: voiceKeyRef(used), ...(skipped.length ? { skipped } : {}) });
       } catch (error) {
         return json(res, 502, { voices: [], ...failed("voices", error) });
       }
     }
 
-    const usage: Usage = (model, input) => deps.recordUsage({
-      target, speaker, via: resolved.via, model, input,
-      ...(resolved.payerPrincipalId ? { payerPrincipalId: resolved.payerPrincipalId } : {}),
+    const usageFor: UsageFor = (candidate) => (model, input) => deps.recordUsage({
+      target, speaker, via: candidate.via, model, input,
+      ...(candidate.payerPrincipalId ? { payerPrincipalId: candidate.payerPrincipalId } : {}),
     });
 
     const keyterms = (): string[] => {
       try { return deps.keyterms?.(target, speaker) ?? []; } catch { return []; }
     };
-    if (action === "listen") return listen(req, res, url, json, resolved.key, usage, keyterms());
-    if (action === "speech") return speech(req, res, url, json, resolved.key, usage);
+    if (action === "listen") return listen(req, res, url, json, keys, refusals, who, usageFor, keyterms());
+    if (action === "speech") return speech(req, res, url, json, keys, refusals, who, usageFor);
 
     if (action === "speak" || action === "stream") {
       const record = body as Record<string, unknown>;
@@ -565,17 +694,20 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       if (action === "stream") {
         // nothing to say once made speakable (a code block, a link): silence
         if (!text) { res.writeHead(204, { "cache-control": "no-store" }); res.end(); return; }
-        if (!deps.xai.synthesizeStream) return json(res, 404, { error: "streaming speech is not available" });
+        const synthesizeStream = deps.xai.synthesizeStream;
+        if (!synthesizeStream) return json(res, 404, { error: "streaming speech is not available" });
         const controller = new AbortController();
         res.once("close", () => controller.abort());
         let audio: { body: ReadableStream<Uint8Array>; sampleRate: number };
+        let used: VoiceKeyCandidate;
+        let skipped: VoiceKeyRefusal[];
         try {
-          audio = await deps.xai.synthesizeStream(text, voice as string | undefined, resolved.key, { speed, language: ttsLanguage(language) }, controller.signal);
+          ({ value: audio, used, skipped } = await tryKeys(action, (candidate) => synthesizeStream(text, voice as string | undefined, candidate.key, { speed, language: ttsLanguage(language) }, controller.signal)));
         } catch (error) {
           return json(res, 502, failed(action, error));
         }
-        usage("grok-tts", text.length);
-        res.writeHead(200, { "content-type": "audio/pcm", "x-voice-sample-rate": String(audio.sampleRate), "cache-control": "no-store" });
+        usageFor(used)("grok-tts", text.length);
+        res.writeHead(200, { "content-type": "audio/pcm", "x-voice-sample-rate": String(audio.sampleRate), "cache-control": "no-store", ...keyHeaders(used, skipped) });
         // flush every chunk at once: the first one is the first thing heard
         res.flushHeaders?.();
         try {
@@ -592,9 +724,9 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
         return;
       }
       try {
-        const audio = await deps.xai.synthesize(text, voice, resolved.key, { speed, language: ttsLanguage(language) });
-        usage("grok-tts", text.length);
-        res.writeHead(200, { "content-type": audio.mime, "content-length": String(audio.bytes.byteLength), "cache-control": "no-store" });
+        const { value: audio, used, skipped } = await tryKeys(action, (candidate) => deps.xai.synthesize(text, voice, candidate.key, { speed, language: ttsLanguage(language) }));
+        usageFor(used)("grok-tts", text.length);
+        res.writeHead(200, { "content-type": audio.mime, "content-length": String(audio.bytes.byteLength), "cache-control": "no-store", ...keyHeaders(used, skipped) });
         res.end(Buffer.from(audio.bytes));
         return;
       } catch (error) {
@@ -612,10 +744,12 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     if (!mime) return json(res, 415, { error: "send WAV, Ogg or WebM audio" });
     try {
       const stt = sttRequest(language, url.searchParams.get("locale") ?? undefined);
-      const heard = await deps.xai.transcribe(new Uint8Array(audio), mime, resolved.key, stt.language, keyterms(), { format: stt.format });
-      usage("grok-stt", audio.byteLength);
+      const terms = keyterms();
+      const { value: heard, used, skipped } = await tryKeys(action, (candidate) => deps.xai.transcribe(new Uint8Array(audio), mime, candidate.key, stt.language, terms, { format: stt.format }));
+      usageFor(used)("grok-stt", audio.byteLength);
+      for (const [name, value] of Object.entries(keyHeaders(used, skipped))) res.setHeader(name, value);
       // xAI keeps fillers (filler_words); whoever reads this text does not need them
-      return json(res, 200, { text: stripFillers(heard.text) });
+      return json(res, 200, { text: stripFillers(heard.text), key: voiceKeyRef(used), ...(skipped.length ? { skipped } : {}) });
     } catch (error) {
       return json(res, 502, failed(action, error));
     }
