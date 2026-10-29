@@ -1,6 +1,7 @@
 // Where "is Claude signed in?" is answered. These tests inject the CLI
 // runner, so they never read or mutate the developer's real credentials.
 import { describe, expect, it } from "vitest";
+import { contextFullMessage } from "../context-renewal.ts";
 
 import { claudeApiErrorMessage, claudeAuthFailure, claudeLimitFields, claudeLimitMessage, claudeLimitRefusal, claudeResultError, claudeSignedIn, claudeUsageLimit, claudeVersionTooOld } from "./claude.ts";
 import { classifyError } from "./retry.ts";
@@ -194,7 +195,10 @@ describe("claudeApiErrorMessage", () => {
       [{ error: "rate_limit" }, "Opus is experiencing high load, please use /model to switch to Sonnet",
         'Claude hit a rate limit (Claude says: "Opus is experiencing high load, please use /model to switch to Sonnet"). Wait a minute, then run it again.', "rate_limited"],
       [{ error: "invalid_request" }, 'API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 215000 tokens > 200000 maximum"}}',
-        'Claude stopped with an error (HTTP 400; Claude says: "prompt is too long: 215000 tokens > 200000 maximum").', "invalid_request"],
+        contextFullMessage("Claude"), "unknown"],
+      // 2.1.312's compaction breaker: never its "/clear" advice
+      [{ error: "invalid_request" }, "Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row. A file being read or a tool output is likely too large for the context window. Try reading in smaller chunks, or use /clear to start fresh.",
+        contextFullMessage("Claude"), "unknown"],
     ];
     for (const [frame, text, words, kind] of cases) {
       expect(claudeApiErrorMessage(frame, text), text).toBe(words);

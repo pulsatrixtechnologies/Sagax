@@ -9,6 +9,7 @@
 // the same vocabulary as a cloud computer (server/drivers/chat-boat-tools.ts).
 // The desktop starts on the first such call (deploy/sandbox/sagax-desktop).
 import { MISUSE_MAX_COMMAND_SECONDS } from "../shared/misuse-guardrails.ts";
+import { boundToolResult, readOnHint } from "./tool-output-bound.ts";
 import { wrapUntrusted } from "../shared/safety-review.ts";
 import type { SandboxExecInput, SandboxExecOutput } from "./sandboxd-core.ts";
 import { procSecretPath, resolvedReadRefusal, type ResolvedEnvironmentPath } from "./sensitive-path.ts";
@@ -579,7 +580,13 @@ export async function handleUserSandboxMcp(method: string, params: unknown, exec
     const call = (params ?? {}) as { name?: unknown; arguments?: unknown };
     if (typeof call.name !== "string") throw Object.assign(new Error("tools/call needs a tool name"), { status: 400 });
     const args = call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments) ? call.arguments as Record<string, unknown> : {};
-    return callUserSandboxTool(call.name, args, exec);
+    const result = await callUserSandboxTool(call.name, args, exec);
+    // What the model reads of a machine answer (tool-output-bound.ts): the
+    // transport allows 256 KB of output and 1 MB of file, far past what a
+    // conversation can keep. A screen or a tool catalog is left whole.
+    if (call.name === "read_file") return boundToolResult(result, { hint: readOnHint() });
+    if (call.name === "run_command" || call.name === "list_files" || call.name === "browse") return boundToolResult(result);
+    return result;
   }
   throw Object.assign(new Error("method not found"), { status: 404 });
 }

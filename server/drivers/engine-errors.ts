@@ -3,8 +3,9 @@
 // sentence keeps the words classifyError (retry.ts) reads, so retries, account switching and health codes are unchanged.
 import { redactSecretsInText } from "../redact.ts";
 import { USAGE_LIMIT } from "./retry.ts";
+import { contextFullMessage, isContextFullText } from "../context-renewal.ts";
 
-export type EngineFailureKind = "credits" | "usage_limit" | "rate_limit" | "overloaded" | "server" | "refused";
+export type EngineFailureKind = "credits" | "usage_limit" | "context_full" | "rate_limit" | "overloaded" | "server" | "refused";
 
 /** A provider refusing for want of credit or payment, in its own words (402 is read from the status). */
 const OUT_OF_CREDITS = /\bpayment required\b|\binsufficient (?:account )?(?:funds|balance|credits?)\b|\b(?:credit|account) balance is too low\b|\bout of credits?\b|\bno credits? (?:left|remaining)\b|\bused all (?:available |of (?:your|its) )?credits\b/i;
@@ -66,6 +67,9 @@ export function providerReason(text: string): string | null {
 export function engineFailureKind(text: string, status = httpStatusOf(text)): EngineFailureKind | null {
   if (status === 402 || OUT_OF_CREDITS.test(text)) return "credits";
   if (USAGE_LIMIT.test(text)) return "usage_limit";
+  // The engine's context filled up (Claude Code's compaction breaker, an API's 400 for a prompt past the window):
+  // a fresh session continues, so the person never reads the engine's own advice to type /clear.
+  if (isContextFullText(text)) return "context_full";
   if (status === 529 || /\boverloaded\b/i.test(text)) return "overloaded";
   if (status === 429) return "rate_limit";
   if (status !== null) return status >= 500 ? "server" : "refused";
@@ -87,6 +91,7 @@ export function engineFailureMessage(
   const code = http ? `HTTP ${http}` : null;
   switch (what) {
     case "credits": return `Your ${provider} account is out of credits${detail(says)}. Add credits with ${provider}, then run it again.`;
+    case "context_full": return contextFullMessage(provider);
     case "usage_limit": return `This ${provider} account has reached its usage limit${detail(says)}. Wait for it to reset, or switch this bot to another engine.`;
     case "rate_limit": return `${provider} hit a rate limit${detail(code, says)}. Wait a minute, then run it again.`;
     case "overloaded": return `${provider} is overloaded right now${detail(code, says)}. This is usually temporary, so try again in a few minutes.`;

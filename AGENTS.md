@@ -97,6 +97,30 @@ Thinking.
   the event stream carries the step, the turn ends and the line names
   nothing). Captures: `node scripts/capture-working-step.mjs`.
 
+## A full context goes on in a fresh session (2026-10-29)
+
+A turn never shows an engine's "context is full" words ("Autocompact is
+thrashing … use /clear", a prompt past the window, Codex's
+contextWindowExceeded). Two halves:
+
+- Machine tools Sagax serves are cut to 30,000 characters where the harness
+  answers them (`server/tool-output-bound.ts`): the person's computer
+  (`desktop-bridge-tools.ts`), the server environment
+  (`user-sandbox-tools.ts`), the cloud computer's `exec` and a lent computer
+  (`boundSharedComputerResult`, index.ts). Start and end kept, the cut says
+  how many lines and how to ask for the rest; a base64 file and images stay
+  whole. Their transport bounds (256 KB to 1 MB) were what refilled a Claude
+  Code session right after it compacted.
+- Claude Code (`server/drivers/claude.ts`, `claudeContextFull`): the turn
+  closes its process and goes on in a fresh session with the chat's rebuild
+  and a bounded note of the steps it took (`server/context-renewal.ts`); the
+  Events lens gets `contextRenewedNotice`, the chat nothing. A second
+  overflow in that session is one plain error (`contextFullMessage`) and the
+  next send starts fresh (`freshNextTurn`), as Codex does after its own.
+  Fake CLI: `[fake:context-thrash]`, `FAKE_CLAUDE_THRASH_AGAIN=1`. Tests:
+  `server/drivers/claude.test.ts` ("fresh session"),
+  `server/tool-output-bound.test.ts`, `server/context-renewal.test.ts`.
+
 ## Recall by meaning, on by default (#1327, 2026-10-29)
 
 Automatic recall also finds a note or a message by meaning, not only by its

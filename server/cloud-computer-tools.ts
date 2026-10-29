@@ -4,6 +4,7 @@
 // capability, so the Boat credential never leaves this server. The same tools
 // and the same calls on a desktop, a headless server and an OMB Cloud.
 import type { ValidateFunction } from "ajv";
+import { boundToolResult } from "./tool-output-bound.ts";
 import { isolatedRemoteCommand, runCommand, screenshotBoat } from "./boat.ts";
 import type { AppConfig } from "./config.ts";
 import { controlRefusal, type ControlState } from "./control-client.ts";
@@ -85,7 +86,10 @@ export async function runCloudComputerTool(
   const result = await runCommand(cfg, boxId, isolatedRemoteCommand(command), { signal });
   signal.throwIfAborted();
   if (name === "open_url" && result.ok) return { content: [{ type: "text", text: "Browser launch requested. Page loading is not confirmed; inspect the screen before continuing." }] };
-  return { isError: !result.ok, content: [{ type: "text", text: JSON.stringify(result) }] };
+  // A command's output is what the model reads: cut to what a conversation
+  // can keep (tool-output-bound.ts), start and end kept, the cut said.
+  const answer = { isError: !result.ok, content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  return name === "exec" ? boundToolResult(answer) : answer;
 }
 
 /** One JSON-RPC request from harness-mcp-proxy, answered with its MCP

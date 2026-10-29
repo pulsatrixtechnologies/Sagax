@@ -1352,6 +1352,7 @@ import { isDesktopInjectModel, isLocalModelId, setDesktopInjectModels } from "./
 import { isPiLocalModel, piLocalKeyRefusalLifted } from "./pi-local-model.ts";
 import { defaultTurnPayerMode, effectiveTurnPayerMode, type TurnPayerMode } from "../shared/turn-payer.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
+import { boundToolResult, readOnHint } from "./tool-output-bound.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
 import { TypingPrewakeThrottle } from "./sandbox-typing-prewake.ts";
 import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
@@ -1514,6 +1515,15 @@ const userComputers = createUserComputerRouter([{
   owns: (person: string, computerId: string) => sharedComputers.list(person).some((computer) => computer.id === computerId),
   request: (person: string, operation: z.infer<typeof sharedComputerOperation>, active: () => boolean) => sharedComputers.request(operation, person, active),
 }]);
+/** What the model reads of a lent computer's answer (tool-output-bound.ts):
+ * a command's output or a text file cut to what a conversation can keep; a
+ * base64 file stays whole to decode, a screen is no machine dump. */
+function boundSharedComputerResult(operation: z.infer<typeof sharedComputerOperation>, result: unknown): unknown {
+  if (operation.action === "run_command" || operation.action === "list_files" || operation.action === "read_copy") return boundToolResult(result);
+  if (operation.action === "read_file" && operation.encoding !== "base64") return boundToolResult(result, { hint: readOnHint() });
+  return result;
+}
+
 /** The person a live session is signed in as right now (lowercased), or
  * null when it ended: the desktop bridge re-reads it on every call, so a
  * session that changed hands or ended never relays for anyone. */
@@ -43309,9 +43319,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (terminalHeld) return json(res, 403, { error: terminalHeld, code: "safety_blocked" });
         if (IDENTITY.kind === "perspicax") {
           const { speaker: computerSpeaker, context: computerContext } = userComputerSpeaking(principal, internalCapability);
-          return json(res, 200, { result: await userComputers.request(computerSpeaker, parsed.data, active, computerContext) });
+          return json(res, 200, { result: boundSharedComputerResult(parsed.data, await userComputers.request(computerSpeaker, parsed.data, active, computerContext)) });
         }
-        return json(res, 200, { result: await sharedComputers.request(parsed.data, principal, active) });
+        return json(res, 200, { result: boundSharedComputerResult(parsed.data, await sharedComputers.request(parsed.data, principal, active)) });
       }
       if (method === "GET" && path === "/api/internal/agents") {
         const sender = internalSender;
