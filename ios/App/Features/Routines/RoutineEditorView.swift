@@ -297,24 +297,18 @@ struct RoutineEditorView: View {
         }
     }
 
-    /// "Every weekday at 9:00 AM · Results in the main thread · As Alex".
+    /// "Every weekday at 9:00 AM · Results in the conversation · As Alex".
+    /// 2026-10-29: a bot routine reports into the bot's one conversation.
     private var summaryLine: String {
         let scheduleText = (try? form.schedule(savedAt: Date())).map(RoutineWording.compact)
         let place: String?
         if isTeamGoal {
             place = room?.name
         } else {
-            switch RoutineEditorRules.resultsPlace(results, original: routine, threadTitle: threadTitle) {
-            case .main: place = String(localized: "Results in the main thread")
-            case let .thread(title): place = String(localized: "Results in \(title)")
-            }
+            place = postResults ? String(localized: "Results in the conversation") : nil
         }
         let person = runAsName.map { String(localized: "As \($0)") }
         return RoutineEditorRules.summary(schedule: scheduleText, results: place, runAs: person)
-    }
-
-    private func threadTitle(_ id: String) -> String? {
-        RoutineResults.groups(for: session.state.bot(botId)).flatMap(\.threads).first { $0.threadId == id }?.title
     }
 
     private var runAsName: String? {
@@ -515,7 +509,6 @@ struct RoutineEditorView: View {
                     .accessibilityIdentifier("routine-editor-owner")
             }
             Group {
-                if advanced && !isTeamGoal { resultsRow }
                 if RoutineRunAsField.shown(runAsOptions) { runAsRows }
                 runOnRows
             }
@@ -543,11 +536,7 @@ struct RoutineEditorView: View {
     private var whereHelpText: some View {
         VStack(alignment: .leading, spacing: 6) {
             if advanced && !isTeamGoal {
-                if threadPrefs.threads.shown {
-                    Text("Each run starts with fresh context. Dated results collect in the bot's main thread unless you choose another; full execution details stay in Run logs.")
-                } else {
-                    Text("Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs.")
-                }
+                Text("Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs.")
             }
             if runAsOptions?.canChoose == true {
                 Text("The routine acts with this person's access and their rights on the bot. Every change is recorded in the admin activity log.")
@@ -563,30 +552,6 @@ struct RoutineEditorView: View {
             }
         }
         .accessibilityIdentifier("routine-editor-where-help-text")
-    }
-
-    private var resultsRow: some View {
-        let bot = session.state.bot(botId)
-        return Picker(String(localized: "Results"), selection: $results) {
-            if routine != nil { Text("Keep current destination").tag(RoutineResultsDestination.keep) }
-            Text("The bot's main thread").tag(RoutineResultsDestination.newThread)
-            // One conversation (threads hidden): the main thread is the
-            // only destination the person can see, so it is the only one.
-            if threadPrefs.threads.shown {
-                if RoutineResults.isMissing(results, bot: bot) {
-                    Text("Thread unavailable. Choose another").tag(results).rowSelectionDisabled()
-                }
-                ForEach(RoutineResults.groups(for: bot), id: \.self) { group in
-                    Section(group.folder ?? String(localized: "No folder")) {
-                        ForEach(group.threads, id: \.threadId) { thread in
-                            Text(verbatim: thread.title).tag(RoutineResultsDestination.thread(thread.threadId))
-                        }
-                    }
-                }
-            }
-        }
-        .disabled(bot == nil)
-        .accessibilityIdentifier("routine-editor-results")
     }
 
     @ViewBuilder

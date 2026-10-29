@@ -512,7 +512,6 @@ routineField("routine.name", "name", "string", "Name", "Automations > routine");
 routineField("routine.prompt", "prompt", "text", "Instructions", "Automations > routine");
 routineField("routine.schedule", "schedule", "object", "Schedule ({type: once|daily|cron|interval, ...})", "Automations > routine > Schedule");
 routineField("routine.enabled", "enabled", "boolean", "On or off", "Bot panel > Details > Routines; Automations");
-routineField("routine.thread", "resultsThreadId", "string?", "Conversation its results go to (null: the bot's main one)", "Automations > routine > Results");
 routineField("routine.engine", "runOn", "enum:maus|cloud", "Where it runs", "Automations > routine > Runs on");
 routineField("routine.bot", "botId", "string", "Bot that runs it", "Automations > routine > Bot");
 routineField("routine.room", "groupId", "string?", "Room of a room routine", "Automations > routine > Target");

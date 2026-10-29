@@ -102,14 +102,6 @@ struct RoutineDetailView: View {
                     Button(routine.mayEdit ? String(localized: "Edit routine") : String(localized: "Routine"), systemImage: routine.mayEdit ? "pencil" : "eye") { editing = true }
                     Button(String(localized: "Duplicate"), systemImage: "plus.square.on.square") { duplicating = true }
                         .accessibilityIdentifier("routine-duplicate")
-                    // AU15: the results thread, as the desktop's routine
-                    // details offer it (EventDetails "Open results thread").
-                    if let results = RoutineResults.openTarget(for: routine, bots: session.state.bots, rooms: session.state.rooms) {
-                        Button(String(localized: "Open results thread"), systemImage: "arrow.up.right.square") {
-                            Task { await session.openNotification(results) }
-                        }
-                        .accessibilityIdentifier("routine-open-results")
-                    }
                     if session.surfaceGate.allows(.routineDelete) {
                         Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { confirmingDelete = true }
                             .accessibilityIdentifier("routine-delete")

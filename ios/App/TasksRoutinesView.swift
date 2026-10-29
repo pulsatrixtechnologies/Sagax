@@ -483,11 +483,6 @@ struct TasksRoutinesView: View {
                 statusFilter = .all
                 section = .logs
             }
-            if let results = RoutineResults.openTarget(for: routine, bots: session.state.bots, rooms: session.state.rooms) {
-                Button("Open results thread", systemImage: "arrow.up.right.square") {
-                    Task { await session.openNotification(results) }
-                }
-            }
             if routine.mayEdit {
                 Divider()
                 Button("Delete", systemImage: "trash", role: .destructive) { deleting = routine }

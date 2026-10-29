@@ -33,7 +33,7 @@ const { RoutineEditor } = await import("./RoutineCalendarPage");
 const bot = { id: "runner", threadId: "main", name: "Runner", color: "green", tasks: [], modelSelection: { instanceId: "t", model: "t" } } as unknown as Bot;
 const routine = (schedule: Routine["schedule"]): Routine => ({
   id: "r1", name: "Weekly digest", prompt: "Summarise the week", target: "bot", botId: bot.id,
-  runOn: "maus", enabled: true, schedule, durationMinutes: 30, nextRunAt: null, createdAt: 1, updatedAt: 1,
+  runOn: "maus", enabled: true, schedule, durationMinutes: 30, nextRunAt: null, createdAt: 1, updatedAt: 1, postResults: true,
 });
 
 let host: HTMLDivElement;
@@ -57,11 +57,11 @@ afterEach(() => {
 });
 
 describe("Edit routine", () => {
-  it("reads as a routine: title, name, summary, then When, What, Where results go, More options", () => {
+  it("reads as a routine: title, name, summary, then When, What, Where it runs, More options", () => {
     mount(routine({ type: "cron", expression: "30 8,12,16 * * 1-5", timeZone: "America/Toronto" }));
     expect(host.querySelector("[data-editor-title]")?.textContent).toBe("Edit routine");
     expect(host.querySelector<HTMLInputElement>("[data-routine-editor-name]")?.value).toBe("Weekly digest");
-    expect(host.querySelector("[data-routine-editor-summary]")?.textContent).toBe("Weekdays, at 8:30 AM, 12:30 PM and 4:30 PM (Toronto time) · Results in the main thread");
+    expect(host.querySelector("[data-routine-editor-summary]")?.textContent).toBe("Weekdays, at 8:30 AM, 12:30 PM and 4:30 PM (Toronto time) · Results in the conversation");
     const sections = [...host.querySelectorAll("[data-routine-editor-section]")].map((section) => section.getAttribute("data-routine-editor-section"));
     expect(sections).toEqual(["when", "what", "where"]);
     const more = host.querySelector<HTMLDetailsElement>("[data-routine-editor-more]")!;

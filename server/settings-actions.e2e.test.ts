@@ -65,9 +65,9 @@ it("applies the owner's own settings at once, holds the sensitive ones on a card
     // ── routine family ───────────────────────────────────────────────────
     const routine = (await api("POST", "/api/routines", { name: "Morning", prompt: "Say hi", botId: helper.id, schedule: { type: "daily", time: "08:00", weekdays: [1, 2, 3, 4, 5] } }, 201)).routine;
     expect((await settings(comms, { action: "set", key: "routine.schedule", target: routine.id, value: { type: "daily", time: "09:30", weekdays: [1] } })).text).toMatch(/^Done/);
-    expect((await settings(comms, { action: "set", key: "routine.thread", target: routine.id, value: helper.threadId })).text).toMatch(/^Done/);
+    expect((await settings(comms, { action: "set", key: "routine.name", target: routine.id, value: "Morning report" })).text).toMatch(/^Done/);
     const saved = (await api("GET", "/api/routines")).routines.find((row: any) => row.id === routine.id);
-    expect(saved).toMatchObject({ schedule: { type: "daily", time: "09:30", weekdays: [1] }, resultsThreadId: helper.threadId });
+    expect(saved).toMatchObject({ schedule: { type: "daily", time: "09:30", weekdays: [1] }, name: "Morning report" });
 
     // ── group family ─────────────────────────────────────────────────────
     const group = (await api("POST", "/api/groups", { memberIds: [scout.id, helper.id], name: "Desk" }, 201)).group;
@@ -79,7 +79,7 @@ it("applies the owner's own settings at once, holds the sensitive ones on a card
 
     // ── journal: one row per applied change, with the bot that made it ───
     await expect.poll(async () => (await journal()).map((row) => row.changed[0]), { timeout: 5_000 })
-      .toEqual(["bot.approvalMode", "bot.title", "routine.schedule", "routine.thread", "group.name", "server.showToolCalls"]);
+      .toEqual(["bot.approvalMode", "bot.title", "routine.schedule", "routine.name", "group.name", "server.showToolCalls"]);
     expect((await journal())[0]).toMatchObject({ what: "setting", after: { "bot.approvalMode": "auto", how: "run", bot: scout.id } });
 
     // ── the person's own routine: deleted at once (2026-10-26) ──────────

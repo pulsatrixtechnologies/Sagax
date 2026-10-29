@@ -1,5 +1,5 @@
 // Routine runs on the phone (matrix AU8-AU10, AU15): a log row, the run's
-// detail with Cancel run, Open thread and Open results thread, and the
+// detail with Cancel run and Continue in the conversation, and the
 // wording the desktop uses (src/components/routines/RoutineLogs.tsx,
 // RoutineCalendarPage.tsx EventDetails, src/lib/routine-display.ts).
 //
@@ -146,8 +146,9 @@ struct RoutineLogRow: View {
 /// desktop's RoutineRunDetail.tsx): the state in words with its time and
 /// cost; what waits on the person first, with a box to answer; the result
 /// rendered as Markdown (tables are tables); the steps grouped and folded;
-/// the routine's settings folded under Configuration; then Stop, Run again,
-/// Continue in the conversation and Open results thread. Opening a failed
+/// the routine's settings folded under Configuration; then Stop, Run again
+/// and Continue in the conversation (the bot's one conversation, never a
+/// separate thread, 2026-10-29). Opening a failed
 /// or missed run marks it seen, as on the desktop. A run of a deleted
 /// routine keeps all of it, minus Run again.
 struct RoutineRunDetailView: View {
@@ -356,15 +357,15 @@ struct RoutineRunDetailView: View {
                 }
                 .accessibilityIdentifier("routine-run-open-thread")
             }
-            if let target = RoutineResults.openTarget(for: run, routine: routine, bots: session.state.bots, rooms: session.state.rooms) {
-                Button(String(localized: "Open results thread"), systemImage: "arrow.up.right.square") { open(target) }
-                    .accessibilityIdentifier("routine-run-open-results")
-            }
         }
     }
 
+    /// A team goal opens its group's thread; a bot's run, the bot's one
+    /// conversation where its report is (2026-10-29), never its own task.
     private var executionTarget: NotificationTarget? {
-        NotificationTarget(botId: run.botId, threadId: threadId)
+        run.target == "room-goal"
+            ? NotificationTarget(botId: run.botId, threadId: threadId)
+            : RoutineResults.conversationTarget(for: run, bots: session.state.bots)
     }
 
     private func open(_ target: NotificationTarget) {

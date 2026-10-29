@@ -208,6 +208,20 @@ public enum RoutineResults {
                    botId: run.botId, bots: bots, rooms: rooms)
     }
 
+    /// 2026-10-29 ("we are in a unified chat"): Continue in the
+    /// conversation opens the bot's one conversation (desktop
+    /// `continueRoutineRunInConversation`): the topic the run's report went
+    /// to when it is part of the conversation, else the conversation itself.
+    /// Never the run's own task, never an older version's results thread.
+    public static func conversationTarget(for run: RoutineRun, bots: [Bot]) -> NotificationTarget? {
+        guard let bot = bots.first(where: { $0.id == run.botId }) else { return nil }
+        if let reported = run.resultsThreadId ?? run.sourceThreadId,
+           let task = bot.tasks?.first(where: { $0.threadId == reported }), SingleStream.isSegment(task) {
+            return NotificationTarget(botId: bot.id, threadId: reported)
+        }
+        return NotificationTarget(botId: bot.id, threadId: SingleStream.home(of: bot) ?? bot.threadId)
+    }
+
     /// One folder of the "Post results to" picker.
     public struct Group: Hashable, Sendable {
         /// The folder's name; nil for threads outside any folder.

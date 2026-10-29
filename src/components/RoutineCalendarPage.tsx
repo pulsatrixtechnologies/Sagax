@@ -54,7 +54,6 @@ import { RoutineLogs } from "@/components/routines/RoutineLogs";
 import { RoutineOwnerBadge, RoutineScopeBar } from "@/components/routines/RoutineScopeBar";
 import { useRoutineScope } from "@/lib/use-routine-scope";
 import { useAdvancedMode } from "@/lib/interface-mode";
-import { ResultsDestination } from "@/components/routines/ResultsDestination";
 import { RunAsField, useRunAsOptions } from "@/components/routines/RunAsField";
 import { WatchFields, draftFromWatch, watchFromDraft } from "@/components/routines/WatchFields";
 import { RoutineAwayBanner } from "@/components/routines/RoutineAwayBanner";
@@ -65,7 +64,6 @@ import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunN
 import { AdvancedScheduleFields, HumanScheduleFields } from "@/components/routines/HumanScheduleFields";
 import { EditorSection } from "@/components/routines/EditorSection";
 import { RoutineWebhookPanel } from "@/components/routines/RoutineWebhookPanel";
-import { resultsThreadName } from "@/components/routines/RoutineConfiguration";
 import { personLabel } from "@/lib/human-label";
 import { everyMinutesOf, keptScheduleValue, PICKER_FREQUENCIES, savedPatternSchedule, scheduleDraftFor, scheduleEditorValue, type ScheduleDraft } from "@/components/routines/schedule-editor";
 import { defaultScheduleModel, type ScheduleFrequency } from "../../shared/schedule-model";
@@ -120,7 +118,7 @@ import {
   type RoutineScheduleInput,
   type RoutineTarget,
 } from "@/lib/routines";
-import { api, openBotThread, openNotificationTarget, useStore, type Bot, type Group } from "@/state/store";
+import { api, continueRoutineRunInConversation, openBotThread, useStore, type Bot, type Group } from "@/state/store";
 import { viewerCanCreateBots } from "@/lib/viewer";
 import { answerWasLost, isRawStatusText, routineCreatedBy } from "@/lib/routine-save-recovery";
 import { RoutineScheduleNote } from "./RoutineScheduleNote";
@@ -164,7 +162,6 @@ type EventSeed = {
   botIds: string[];
   name?: string;
   description?: string;
-  resultsThreadId?: string | null;
   anchor?: { x: number; y: number };
   routine?: Routine;
   /** 2026-10-29: a new routine prefilled from this one (Duplicate). */
@@ -199,11 +196,6 @@ function nextHour(): number {
   const date = new Date(Date.now() + 60 * 60_000);
   date.setMinutes(0, 0, 0);
   return date.getTime();
-}
-
-/** "Results in the main thread", "Results in Weekly report". */
-function resultsSummary(name: string): string {
-  return name === t("routines.results.main") ? t("routineEditor.summary.resultsMain") : t("routineEditor.summary.results", { name });
 }
 
 /** "15 minutes", "2 hours": an interval preset in words. */
@@ -462,12 +454,7 @@ function EventEditor({
     ? toLocalDateInput(schedule.endsAt)
     : toLocalDateInput(addDays(startOfDay(Math.max(Date.now(), initialAt)), 7)));
   const [botIds, setBotIds] = useState(lockedBotId ? [lockedBotId] : template ? [template.botId] : existingCall?.botIds ?? seed.botIds);
-  // A routine without a thread of its own reports into the bot's main thread.
-  const [resultsThreadId, setResultsThreadId] = useState<string | null | undefined>((template ? template.resultsThreadId : seed.resultsThreadId) ?? null);
-  const selectBots = (ids: string[]) => {
-    if (ids[0] !== botIds[0]) setResultsThreadId(null);
-    setBotIds(ids);
-  };
+  const selectBots = (ids: string[]) => setBotIds(ids);
   const [routineTarget, setRoutineTarget] = useState<RoutineTarget>(template?.target ?? "bot");
   const [groupId, setGroupId] = useState(template?.groupId ?? "");
   const [runOn, setRunOn] = useState<RoutineRunOn>(template?.runOn ?? defaultRunOn ?? "maus");
@@ -674,7 +661,6 @@ function EventEditor({
           // Sent when on, or to remove a watch the routine had.
           ...(watchAllowed && watchBuilt.watch ? { precheck: watchBuilt.watch } : existingWatch ? { precheck: null } : {}),
           attachments: routineTarget === "room-goal" ? [] : attachments as RoutineContextAttachment[],
-          ...(routineTarget === "bot" ? { resultsThreadId } : {}),
           // Sent only when the person was changed in the dropdown.
           ...(runAs && runAs !== runAsOptions?.current?.principalId ? { runAs } : {}),
           ...(!existingRoutine && seed.folder ? { folder: seed.folder } : {}),
@@ -760,14 +746,15 @@ function EventEditor({
           : recurrence === "interval"
             ? intervalLabel(intervalMinutes || 5)
             : scheduleLabelCompact({ type: "once", at }),
-    !isRoomGoal ? resultsSummary(resultsThreadName(selectedBots[0], undefined, resultsThreadId ?? undefined)) : selectedRoom?.name,
+    // 2026-10-29: a bot routine reports into the bot's one conversation.
+    !isRoomGoal ? (postResults ? t("routineEditor.summary.resultsMain") : null) : selectedRoom?.name,
     runAsName ? t("routineEditor.summary.runAs", { name: runAsName }) : null,
   ].filter(Boolean).join(" · ") : "";
   const moreSummary = [
     timeoutMinutes == null ? t("routineCalendar.noTimeLimit") : t("routineCalendar.stopsAfter", { duration: durationLabel(timeoutMinutes) }),
     repeatsOnClock ? (overlap === "queue" ? t("routines.overlapQueue") : t("routines.overlapSkip")) : null,
   ].filter(Boolean).join(" · ");
-  const editorSnapshot = JSON.stringify([kind, name, description, recurrence, scheduleDraft, date, startTime, weekdays, durationMinutes, timeoutMinutes, overlap, autoPauseAfter, continuity, onlyWhenPresent, watchDraft, postResults, mailAlias, timingMode, earlyMinutes, lateMinutes, intervalMinutes, intervalDays, intervalWeekdays, intervalWindow, intervalWindowStart, intervalWindowEnd, intervalEnd, intervalEndDate, botIds, resultsThreadId, routineTarget, groupId, runOn, attachments.map((attachment) => attachment.id), runAs]);
+  const editorSnapshot = JSON.stringify([kind, name, description, recurrence, scheduleDraft, date, startTime, weekdays, durationMinutes, timeoutMinutes, overlap, autoPauseAfter, continuity, onlyWhenPresent, watchDraft, postResults, mailAlias, timingMode, earlyMinutes, lateMinutes, intervalMinutes, intervalDays, intervalWeekdays, intervalWindow, intervalWindowStart, intervalWindowEnd, intervalEnd, intervalEndDate, botIds, routineTarget, groupId, runOn, attachments.map((attachment) => attachment.id), runAs]);
   const openedSnapshot = useRef(editorSnapshot);
   const dirty = editorSnapshot !== openedSnapshot.current;
   const requestClose = () => {
@@ -1099,10 +1086,10 @@ function EventEditor({
               </div>
             </EditorSection>
             <EditorSection icon={Send} title={t("routineEditor.where")} data-routine-editor-section="where">
-              <div className="divide-y divide-hairline/40 rounded-xl border border-hairline/40 bg-inset/30">
-                {kind === "routine" && !isRoomGoal && <ResultsDestination compact bot={bots.find((bot) => bot.id === botIds[0])} value={resultsThreadId} allowCurrent={Boolean(existingRoutine)} onChange={setResultsThreadId} />}
-                {kind === "routine" && runAsOptions && (runAsOptions.canChoose || runAsOptions.current) && <RunAsField compact options={runAsOptions} value={runAs} onChange={setRunAs} />}
-              </div>
+              {/* 2026-10-29: no "Post results to"; reports go to the bot's one conversation. */}
+              {kind === "routine" && runAsOptions && (runAsOptions.canChoose || runAsOptions.current) && <div className="divide-y divide-hairline/40 rounded-xl border border-hairline/40 bg-inset/30">
+                <RunAsField compact options={runAsOptions} value={runAs} onChange={setRunAs} />
+              </div>}
           {/* Routines run on the bot's current setup. The Boat runner is
                 offered only behind the experimental Boat flag (or to switch a
                 routine already set to it back). */}
@@ -1522,11 +1509,7 @@ export function QuickComposer({
   const [name, setName] = useState(seed.name ?? "");
   const [description, setDescription] = useState(seed.description ?? "");
   const [botIds, setBotIds] = useState(seed.botIds.length ? seed.botIds : bots[0] ? [bots[0].id] : []);
-  const [resultsThreadId, setResultsThreadId] = useState<string | null>(seed.resultsThreadId ?? null);
-  const selectBots = (ids: string[]) => {
-    if (ids[0] !== botIds[0]) setResultsThreadId(null);
-    setBotIds(ids);
-  };
+  const selectBots = (ids: string[]) => setBotIds(ids);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -1573,7 +1556,6 @@ export function QuickComposer({
             schedule: { type: "once", at: seed.at },
             durationMinutes,
             attachments: [],
-            resultsThreadId,
           } satisfies RoutineInput),
         });
         onSavedRoutine(response.routine);
@@ -1637,11 +1619,10 @@ export function QuickComposer({
           <FileText size={16} className="mt-2.5 shrink-0 text-ink-secondary" />
           <MarkdownEditor value={description} onChange={setDescription} minHeight={72} maxHeight={220} showCount={false} dataField="routine-instructions-quick" className="min-w-0 flex-1" ariaLabel={kind === "routine" ? t("routineCalendar.botDo") : t("routineCalendar.descOptional")} placeholder={kind === "routine" ? t("routineCalendar.botDo") : t("routineCalendar.descOptional")} />
         </div>
-        {kind === "routine" && <ResultsDestination bot={bots.find((bot) => bot.id === botIds[0])} value={resultsThreadId} onChange={(threadId) => setResultsThreadId(threadId ?? null)} />}
         {error && <div className="rounded-lg bg-danger/10 px-3 py-2 text-[11.5px] text-danger">{error}</div>}
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-hairline/40 px-4 py-3">
-        <button onClick={() => onMore({ ...seed, kind, botIds, name, description, durationMinutes, resultsThreadId })} title={t("routineCalendar.moreOptionsTitle")} className="rounded-lg px-3 py-2 text-[12px] font-medium text-accent hover:bg-accent/10">{t("routines.editor.more")}</button>
+        <button onClick={() => onMore({ ...seed, kind, botIds, name, description, durationMinutes })} title={t("routineCalendar.moreOptionsTitle")} className="rounded-lg px-3 py-2 text-[12px] font-medium text-accent hover:bg-accent/10">{t("routines.editor.more")}</button>
         <button onClick={save} disabled={!valid || working} className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-[12px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-40">{working && <Loader2 size={13} className="animate-spin" />}{t("common.save")}</button>
       </div>
     </div>
@@ -1994,12 +1975,6 @@ export function EventDetails({
   const editable = !routine || routine.canEdit !== false;
   const executionOwner = isRoomGoal ? goalGroup : primary;
   const canOpenExecution = Boolean(executionThreadId && (executionOwner?.threadId === executionThreadId || executionOwner?.tasks?.some((task) => task.threadId === executionThreadId)));
-  // A run snapshots where it reported (older runs: the chat that made the
-  // routine). A routine without a chosen thread reports to the main thread,
-  // which its own view opens; a run never redirects to it.
-  const resultsThreadId = run ? run.resultsThreadId ?? run.sourceThreadId : routine?.resultsThreadId;
-  const openResultsId = resultsThreadId ?? (!run && routine?.target === "bot" ? primary?.mainThreadId : undefined);
-  const canOpenResults = Boolean(openResultsId && [...state.bots, ...state.groups].some((owner) => owner.threadId === openResultsId || owner.tasks?.some((task) => task.threadId === openResultsId)));
   const title = call?.name ?? run?.routineName ?? routine?.name ?? t("botPanel.coding.kind.routine");
   const description = call?.description ?? "";
   const attachments = call?.attachments ?? [];
@@ -2010,18 +1985,14 @@ export function EventDetails({
   const goBack = () => { setOpenedRun(null); setShowRoutinePage(false); setSubmittedRun(undefined); };
 
   const openRunTask = () => {
-    if (!executionThreadId) return;
-    if (isRoomGoal && goalGroupId) {
+    if (isRoomGoal && goalGroupId && executionThreadId) {
       dispatch({ type: "switchGroupTask", groupId: goalGroupId, threadId: executionThreadId });
       onOpenRoom(goalGroupId);
-    } else if (primary) {
-      openBotThread(dispatch, primary, executionThreadId, showThreads);
+    } else if (primary && run) {
+      // 2026-10-29: the bot's one conversation, the report quoted, never
+      // the run's own task in a column beside it.
+      continueRoutineRunInConversation(dispatch, primary, run, showThreads);
     }
-    onClose();
-  };
-  const openResults = () => {
-    if (!openResultsId) return;
-    openNotificationTarget(dispatch, { botId: botIds[0]!, threadId: openResultsId }, state, showThreads);
     onClose();
   };
 
@@ -2167,14 +2138,12 @@ export function EventDetails({
               canRunAgain={Boolean(routine && canRunRoutineNow(state.config, routine, primary))}
               inFlight={routineInFlight}
               working={working || starting}
-              canContinue={canOpenExecution}
-              canOpenResults={canOpenResults}
+              canContinue={isRoomGoal ? canOpenExecution : Boolean(primary && run.target === "bot")}
               onReply={executionThreadId && !isRoomGoal ? reply : undefined}
               onStop={() => void invoke(`/api/routine-runs/${run.id}/cancel`)}
               onRunAgain={runRoutineNow}
               onResume={routine && run.autoPaused && !routine.enabled ? toggleRoutine : undefined}
               onContinue={openRunTask}
-              onOpenResults={openResults}
               onOpenRoutine={routine ? () => { setOpenedRun(null); setSubmittedRun(undefined); setShowRoutinePage(true); } : undefined}
               onLogs={openLogs}
               renderConversation={(target) => conversation(target, () => { if (primary) openBotThread(dispatch, primary, target.threadId, showThreads); onClose(); })}
@@ -2193,7 +2162,6 @@ export function EventDetails({
             inFlight={routineInFlight}
             starting={starting}
             working={working}
-            canOpenResults={canOpenResults}
             error={error}
             onOpenRun={(opened) => { setSubmittedRun(undefined); setOpenedRun(opened); if (["failed", "missed"].includes(opened.status) && !opened.seenAt && !opened.redacted) dispatch({ type: "markRoutineRunSeen", runId: opened.id }); }}
             onRunNow={runRoutineNow}
@@ -2202,7 +2170,6 @@ export function EventDetails({
             onDuplicate={onDuplicate ? () => onDuplicate(routine) : undefined}
             onDelete={() => void deleteEvent()}
             onLogs={openLogs}
-            onOpenResults={openResults}
             onOpenGroup={goalGroup ? () => { onOpenRoom(goalGroup.id); onClose(); } : undefined}
             onConfigure={onEdit}
           />

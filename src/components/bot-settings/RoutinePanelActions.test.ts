@@ -76,12 +76,14 @@ describe("a routine's action bar", () => {
 
     const run = { id: "x1", routineId: "r1", routineName: "Project health watch", prompt: "Check.", target: "bot", botId: "atlas", runOn: "maus", scheduledFor: 1, createdAt: 1, status: "completed", manual: false, executionThreadId: "e", resultsThreadId: "t", output: "ok" };
     const detail = renderToStaticMarkup(createElement(RoutineRunDetail, {
-      run: run as never, routine: routine(true), bots: [bot], canRunAgain: true, canContinue: true, canOpenResults: true,
-      onRunAgain: noop, onContinue: noop, onOpenResults: noop, onOpenRoutine: noop, onLogs: noop,
+      run: run as never, routine: routine(true), bots: [bot], canRunAgain: true, canContinue: true,
+      onRunAgain: noop, onContinue: noop, onOpenRoutine: noop, onLogs: noop,
     }));
     const runButtons = buttons(detail.slice(detail.indexOf("data-run-actions")));
     const runIcons = runButtons.map(iconOf);
-    expect(runIcons.length).toBeGreaterThanOrEqual(5);
+    // 2026-10-29: no "Open results thread" any more (one conversation).
+    expect(runIcons.length).toBeGreaterThanOrEqual(4);
+    expect(detail).not.toContain("Open results thread");
     expect(new Set(runIcons).size).toBe(runIcons.length);
     for (const button of runButtons) expect(button).toMatch(/title="[^"]+"/);
   });

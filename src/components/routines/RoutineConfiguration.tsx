@@ -25,15 +25,6 @@ function Row({ label, children, ...rest }: { label: string; children: React.Reac
   return <div {...rest}><div className={LABEL}>{label}</div><div className={VALUE}>{children}</div></div>;
 }
 
-/** The thread a routine posts its results to, by name. */
-export function resultsThreadName(bot: Bot | undefined, group: Group | undefined, threadId: string | undefined): string {
-  if (!threadId) return t("routines.results.main");
-  const owner = bot ?? group;
-  if (owner?.threadId === threadId) return t("routines.results.main");
-  const task = owner?.tasks?.find((candidate) => candidate.threadId === threadId);
-  return task?.title?.trim() || t("routines.results.missing");
-}
-
 export function RoutineConfiguration({ routine, run, bots, groups = [], viewerPrincipalId, compact = false }: {
   routine?: Routine | null;
   run?: RoutineRun | null;
@@ -54,7 +45,6 @@ export function RoutineConfiguration({ routine, run, bots, groups = [], viewerPr
   const attachments = run?.attachments ?? routine?.attachments ?? [];
   const otherOwner = routine?.owner?.id && routine.owner.id.toLowerCase() !== viewerPrincipalId?.toLowerCase() ? routine.owner : null;
   const runOn = run?.runOn ?? routine?.runOn;
-  const resultsThreadId = run ? run.resultsThreadId ?? run.sourceThreadId : routine?.resultsThreadId;
   return (
     <div data-routine-configuration className={cn("grid gap-4", !compact && "min-[560px]:grid-cols-2")}>
       <Row label={t("routines.drawer.what")} data-routine-config-prompt="">
@@ -79,7 +69,6 @@ export function RoutineConfiguration({ routine, run, bots, groups = [], viewerPr
         </Row>}
         <Row label={t("routines.drawer.runLimit")}>{limit == null ? t("routineCalendar.noTimeLimit") : t("routineCalendar.stopsAfter", { duration: durationLabel(limit) })}</Row>
         {runOn && <Row label={t("routines.drawer.runsOn")}>{runOn === "cloud" ? t("routines.runsOn.boat") : t("routines.runsOn.local")}</Row>}
-        {!roomGoal && (routine || run) && <Row label={t("routines.results.label")}>{resultsThreadName(bot, group, resultsThreadId)}</Row>}
         {routine?.runAs && <Row label={t("routines.runAsField.label")} data-routine-config-run-as="">{personLabel(routine.runAs.name, routine.runAs.principalId)}</Row>}
         {otherOwner && <Row label={t("routines.scope.owner")} data-routine-config-owner=""><RoutineOwnerBadge owner={otherOwner} size={18} className="text-[12.5px] text-ink" />{(routine?.canEdit === false || routine?.redacted) && <div className="mt-1 text-[11.5px] text-ink-secondary">{routine.redacted ? t("routines.scope.redacted") : t("routines.scope.readOnly")}</div>}</Row>}
         {routine && <Row label={t("routineDetail.options")} data-routine-config-options="">

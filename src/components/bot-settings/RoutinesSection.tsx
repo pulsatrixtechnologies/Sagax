@@ -4,7 +4,7 @@
 import { CalendarClock, ChevronLeft, CirclePlay, Copy as CopyIcon, History, MoreHorizontal, PanelRight, Pause, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useServerFeature } from "@/lib/server-features";
-import { api, openBotThread, openNotificationTarget, useStore, type Bot } from "@/state/store";
+import { api, continueRoutineRunInConversation, openBotThread, useStore, type Bot } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { routineDateTime } from "@/lib/routine-display";
 import type { Routine, RoutineRun, RoutineRunOn } from "@/lib/routines";
@@ -71,10 +71,6 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
     dispatch({ type: "routineFocused" });
   }, [focus, bot.id, routines, dispatch]);
 
-  const openResults = (routine: Routine) => {
-    const threadId = routine.resultsThreadId ?? bot.mainThreadId ?? bot.threadId;
-    openNotificationTarget(dispatch, { botId: bot.id, threadId }, state, showThreads);
-  };
   const openLogs = (routineId: string) => dispatch({ type: "showRoutines", section: "logs", routineId, botId: bot.id });
 
   // 2026-10-29: a run opened from the routine's history (or Run now) opens
@@ -84,9 +80,7 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
   if (detail && openedRun) {
     const run = state.routineRuns.find((candidate) => candidate.id === openedRun.id) ?? openedRun;
     const executionThreadId = run.executionThreadId ?? run.threadId;
-    const canContinue = Boolean(executionThreadId && (bot.threadId === executionThreadId || bot.tasks?.some((task) => task.threadId === executionThreadId)));
-    const resultsId = run.resultsThreadId ?? run.sourceThreadId;
-    const canOpenResults = Boolean(resultsId && (bot.threadId === resultsId || bot.tasks?.some((task) => task.threadId === resultsId)));
+    const canContinue = run.target === "bot";
     const live = ["queued", "running", "waiting"].includes(run.status);
     runModal = <RunDetailModal title={detail.name} subtitle={t("routineDetail.runOf", { date: routineDateTime(run.scheduledFor) })} onClose={() => setOpenedRun(null)}>{(wide) => (
       <ConnectedRunActivity key={run.id} run={run}>{({ detail: activity, error: activityError, waiting }) => (
@@ -106,13 +100,11 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
           inFlight={Boolean(routineRunInFlight(state.routineRuns, detail.id))}
           working={working}
           canContinue={canContinue}
-          canOpenResults={canOpenResults}
           onReply={executionThreadId && run.target !== "room-goal" ? async (text) => { await api(`/api/bots/${bot.id}/messages`, { method: "POST", body: JSON.stringify({ text, threadId: executionThreadId, busyMode: "steer", sendId: crypto.randomUUID() }) }); } : undefined}
           onStop={live ? () => void cancelRun(run.id) : undefined}
           onRunAgain={() => { setOpenedRun(null); dispatch({ type: "runRoutine", routineId: detail.id, onStarted: (started) => setOpenedRun(started) }); }}
           onResume={run.autoPaused && !detail.enabled ? () => toggle(detail) : undefined}
-          onContinue={() => { if (executionThreadId) openBotThread(dispatch, bot, executionThreadId, showThreads); }}
-          onOpenResults={() => { if (resultsId) openNotificationTarget(dispatch, { botId: bot.id, threadId: resultsId }, state, showThreads); }}
+          onContinue={() => continueRoutineRunInConversation(dispatch, bot, run, showThreads)}
           onLogs={() => openLogs(detail.id)}
         />
       )}</ConnectedRunActivity>
@@ -141,8 +133,6 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
         canRun={canRun}
         inFlight={inFlight}
         onOpenRun={(run) => { setOpenedRun(run); if (["failed", "missed"].includes(run.status) && !run.seenAt && !run.redacted) dispatch({ type: "markRoutineRunSeen", runId: run.id }); }}
-        onOpenResults={() => openResults(detail)}
-        canOpenResults
         onConfigure={() => setEditing(detail)}
       />
       <RoutinePanelActions

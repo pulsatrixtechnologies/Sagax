@@ -14,6 +14,18 @@ function run(overrides: Partial<RoutineRun> = {}): RoutineRun {
 }
 
 describe("routineRunCard", () => {
+  // 2026-10-29: the conversation gets the whole report (read from the run's
+  // task), not the 2 000 characters the run's record keeps, so nobody opens
+  // the run's own task to read the rest.
+  it("carries the whole report when the run's task holds it", () => {
+    const whole = `${"Draft. ".repeat(600)}End.`;
+    const card = routineRunCard(run({ output: whole.slice(0, 2_000) }), "main", whole);
+    expect(card.summary).toBe(whole);
+    expect(routineRunCard(run(), "main", "x".repeat(30_000)).summary).toHaveLength(20_000);
+    // a wait keeps its short line
+    expect(routineRunCard(run({ status: "waiting", attention: "Approve" }), "main", whole).summary).toBe("Approve");
+  });
+
   it("carries the report when the run worked in its own task", () => {
     expect(routineRunCard(run(), "main").summary).toBe(REPORT);
   });

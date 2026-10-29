@@ -711,6 +711,16 @@ describe("persistent routine results destinations", () => {
     };
     return { ...h, visible, created: () => created };
   }
+  /** A destination saved on the routine by an older version ("Post results
+   * to", gone 2026-10-29: the API leaves a chosen thread out), or a Cloud
+   * guest's own results thread: written in the file, then read back. */
+  function withDestination(h: ReturnType<typeof resultsHarness>, routineId: string, threadId: string) {
+    const saved = JSON.parse(readFileSync(h.options.file!, "utf8"));
+    saved.routines.find((record: { id: string }) => record.id === routineId).resultsThreadId = threadId;
+    writeFileSync(h.options.file!, JSON.stringify(saved));
+    h.manager = new RoutineManager(h.options);
+    return h.manager.listRoutines().find((routine) => routine.id === routineId)!;
+  }
   const request = <Action extends "create" | "run_now">(action: Action, threadId: string) => ({
     action, threadId, requestId: `request-${action}`, messageId: `message-${action}`, botId: "maus-1",
     fingerprintVersion: 1 as const, fingerprint: "a".repeat(64),
@@ -741,15 +751,18 @@ describe("persistent routine results destinations", () => {
     expect(loaded.listRuns().every((run) => run.resultsThreadId === first.resultsThreadId)).toBe(true);
   });
 
-  it("validates choices, preserves omitted updates, and explicitly creates a new dedicated destination", () => {
+  it("leaves a chosen thread out (2026-10-29), preserves omitted updates, and allocates only where the resolver says", () => {
     const h = resultsHarness();
-    for (const resultsThreadId of ["foreign", "internal", " ", 42]) {
-      expect(() => h.manager.create({ ...input(), resultsThreadId } as any)).toThrow(/visible results thread/);
+    // "Post results to" is gone: a thread an older app still sends is no
+    // destination, accepted and left out.
+    for (const resultsThreadId of ["chosen", "foreign", "internal", " ", 42]) {
+      expect(h.manager.create({ ...input(), resultsThreadId } as any).resultsThreadId).toBeUndefined();
     }
-    const routine = h.manager.create({ ...input(), resultsThreadId: "chosen" });
+    const created = h.manager.create(input());
+    expect(h.manager.update(created.id, { resultsThreadId: "chosen" })?.resultsThreadId).toBeUndefined();
+    const routine = withDestination(h, created.id, "chosen");
     const first = h.manager.runNow(routine.id)!;
     expect(h.manager.update(routine.id, { name: "Renamed" })?.resultsThreadId).toBe("chosen");
-    expect(() => h.manager.update(routine.id, { resultsThreadId: "foreign" })).toThrow(/visible results thread/);
     const updated = h.manager.update(routine.id, { resultsThreadId: null })!;
     expect(updated.resultsThreadId).toBe("results-1");
     expect(h.manager.listRuns().find((run) => run.id === first.id)?.resultsThreadId).toBe("chosen");
@@ -758,7 +771,7 @@ describe("persistent routine results destinations", () => {
 
   it.each(["create", "update"])("discards only a newly allocated empty destination when %s cannot commit", (action) => {
     const h = resultsHarness();
-    const routine = action === "update" ? h.manager.create({ ...input(), resultsThreadId: "chosen" }) : undefined;
+    const routine = action === "update" ? withDestination(h, h.manager.create(input()).id, "chosen") : undefined;
     const discard = vi.fn((_botId: string, threadId: string) => h.visible.delete(threadId));
     h.options.discardResultsThread = discard;
     rmSync(h.options.file!, { force: true });
@@ -782,10 +795,10 @@ describe("persistent routine results destinations", () => {
       const h = resultsHarness();
       h.setBot("busy");
       const due = h.options.now!() + 60_000;
-      const routine = h.manager.create({
+      const created = h.manager.create({
         ...input(), enabled: trigger !== "manual", schedule: { type: "once", at: due },
-        ...(["chosen", "deleted"].includes(destination) ? { resultsThreadId: "chosen" } : {}),
       }, destination === "trusted" ? request("create", "trusted-source") : undefined);
+      const routine = ["chosen", "deleted"].includes(destination) ? withDestination(h, created.id, "chosen") : created;
       if (destination === "deleted") h.visible.delete("chosen");
       h.setNow(trigger === "missed" ? due + 13 * 3_600_000 : due);
       const beforeRoutines = h.manager.listRoutines();
@@ -906,7 +919,7 @@ describe("persistent routine results destinations", () => {
     let main = "first-chat";
     h.options.resolveResultsThread = (routine, forceNew) => !forceNew && h.visible.get(routine.resultsThreadId ?? "") === routine.botId
       ? { threadId: routine.resultsThreadId! } : { threadId: main, main: true };
-    const routine = h.manager.create({ ...input(), resultsThreadId: "chosen" });
+    const routine = withDestination(h, h.manager.create(input()).id, "chosen");
     const chosen = h.manager.runNow(routine.id)!;
     await h.manager.tick();
     complete(h, "thread-1");
@@ -921,7 +934,7 @@ describe("persistent routine results destinations", () => {
     const second = h.manager.runNow(routine.id)!;
     expect([chosen, first, second].map((run) => run.resultsThreadId)).toEqual(["chosen", "first-chat", "later-chat"]);
     h.visible.set("chosen", "maus-1");
-    expect(h.manager.update(routine.id, { resultsThreadId: "chosen" })?.resultsThreadId).toBe("chosen");
+    expect(h.manager.update(routine.id, { resultsThreadId: "chosen" })?.resultsThreadId).toBeUndefined();
     expect(h.manager.update(routine.id, { resultsThreadId: null })?.resultsThreadId).toBeUndefined();
     expect(JSON.parse(readFileSync(h.options.file!, "utf8")).routines[0]).not.toHaveProperty("resultsThreadId");
     expect(h.created()).toBe(0);
@@ -931,8 +944,8 @@ describe("persistent routine results destinations", () => {
     const h = resultsHarness();
     h.visible.set("first-chat", "maus-1");
     h.options.frozenResultsThread = (botId, threadId) => botId === "maus-1" && threadId === "first-chat";
-    const frozen = h.manager.create({ ...input(), resultsThreadId: "first-chat" });
-    const chosen = h.manager.create({ ...input(), name: "Chosen report", resultsThreadId: "chosen" });
+    const frozen = withDestination(h, h.manager.create(input()).id, "first-chat");
+    const chosen = withDestination(h, h.manager.create({ ...input(), name: "Chosen report" }).id, "chosen");
     const saved = JSON.parse(readFileSync(h.options.file!, "utf8"));
     expect(saved.frozenResultsCleared).toBe(true);
     // A file those versions wrote has no marker.
@@ -950,8 +963,10 @@ describe("persistent routine results destinations", () => {
     expect(destination(upgraded, frozen.id)).toBeUndefined();
     expect(destination(upgraded, chosen.id)).toBe("chosen");
     expect(JSON.parse(readFileSync(h.options.file!, "utf8")).frozenResultsCleared).toBe(true);
-    // Picked after the upgrade, the same thread is a person's choice.
-    upgraded.update(frozen.id, { resultsThreadId: "first-chat" });
+    // Saved after the upgrade, the same thread stays.
+    const after = JSON.parse(readFileSync(h.options.file!, "utf8"));
+    after.routines.find((record: { id: string }) => record.id === frozen.id).resultsThreadId = "first-chat";
+    writeFileSync(h.options.file!, JSON.stringify(after));
     const later = new RoutineManager(h.options);
     later.clearFrozenResultsThreads();
     expect(destination(later, frozen.id)).toBe("first-chat");
@@ -959,7 +974,7 @@ describe("persistent routine results destinations", () => {
 
   it("replaces a deleted destination only for future runs without rewriting active snapshots", async () => {
     const h = resultsHarness();
-    const routine = h.manager.create({ ...input(), resultsThreadId: "chosen" });
+    const routine = withDestination(h, h.manager.create(input()).id, "chosen");
     const first = h.manager.runNow(routine.id)!;
     await h.manager.tick();
     h.visible.delete("chosen");
@@ -972,12 +987,28 @@ describe("persistent routine results destinations", () => {
   it("runs a bot routine inside the conversation it reports to when asked", async () => {
     const h = resultsHarness();
     h.options.joinConversation = (run) => run.resultsThreadId === "chosen" ? "chosen" : null;
-    const routine = h.manager.create({ ...input(), resultsThreadId: "chosen" });
+    const routine = withDestination(h, h.manager.create(input()).id, "chosen");
     h.manager.runNow(routine.id);
     await h.manager.tick();
     expect(h.taskActivations).toEqual([]);
     expect(h.started).toEqual([expect.objectContaining({ botId: "maus-1", threadId: "chosen" })]);
     expect(h.manager.listRuns()[0]).toMatchObject({ status: "running", threadId: "chosen" });
+  });
+
+  // 2026-10-29 (maintainer: "we are in a unified chat"): a destination an
+  // older version saved is cleared at start, except where the server keeps
+  // one (a Cloud guest's results thread); a room goal is left alone.
+  it("clears saved destinations at start except the ones the server keeps", () => {
+    const h = resultsHarness();
+    const old = withDestination(h, h.manager.create(input()).id, "chosen");
+    const guest = withDestination(h, h.manager.create({ ...input(), name: "Guest report" }).id, "results-guest");
+    h.manager.clearChosenResultsThreads((routine) => routine.id === guest.id);
+    const destination = (id: string) => h.manager.listRoutines().find((routine) => routine.id === id)?.resultsThreadId;
+    expect(destination(old.id)).toBeUndefined();
+    expect(destination(guest.id)).toBe("results-guest");
+    const saved = JSON.parse(readFileSync(h.options.file!, "utf8")).routines;
+    expect(saved.find((record: { id: string }) => record.id === old.id)).not.toHaveProperty("resultsThreadId");
+    expect(saved.find((record: { id: string }) => record.id === guest.id).resultsThreadId).toBe("results-guest");
   });
 
   it("does not route webhook or room-goal executions through bot results tasks", async () => {

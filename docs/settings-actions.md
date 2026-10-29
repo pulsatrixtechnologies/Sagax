@@ -231,7 +231,6 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Instructions | Automations > routine | `sagax_settings` get, set `routine.prompt` | simple |
 | Schedule ({type: once/daily/cron/interval, ...}) | Automations > routine > Schedule | `sagax_settings` get, set `routine.schedule` | simple |
 | On or off | Bot panel > Details > Routines; Automations | `sagax_settings` get, set `routine.enabled` | simple |
-| Conversation its results go to (null: the bot's main one) | Automations > routine > Results | `sagax_settings` get, set `routine.thread` | simple |
 | Where it runs | Automations > routine > Runs on | `sagax_settings` get, set `routine.engine` | simple |
 | Bot that runs it | Automations > routine > Bot | `sagax_settings` get, set `routine.bot` | simple |
 | Room of a room routine | Automations > routine > Target | `sagax_settings` get, set `routine.room` | simple |
