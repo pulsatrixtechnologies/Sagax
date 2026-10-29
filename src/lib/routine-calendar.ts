@@ -5,7 +5,8 @@ import { activeLocale } from "@/lib/i18n";
 export const CALENDAR_SLOT_MINUTES = 5;
 const ROUTINE_MARKER_MINUTES = 30;
 const MAX_RECEIPTS_PER_ROUTINE_PER_RANGE = 12;
-const MAX_CRON_PROJECTIONS_PER_DAY = 12;
+/** nextCronRuns answers at most this many runs per call. */
+const CRON_BATCH = 1000;
 
 export type RoutineCalendarItem = {
   id: string;
@@ -222,28 +223,47 @@ export function projectedRoutineItems(
       run,
     }));
 
-  const hasReceipt = (routineId: string, at: number) =>
-    runs.some((run) => run.routineId === routineId && Math.abs(run.scheduledFor - at) < 60_000);
+  // Runs by routine and minute, so a dense cron does not scan every run per occurrence.
+  const receiptMinutes = new Map<string, number[]>();
+  for (const run of runs) {
+    const key = `${run.routineId}:${Math.floor(run.scheduledFor / 60_000)}`;
+    receiptMinutes.set(key, [...(receiptMinutes.get(key) ?? []), run.scheduledFor]);
+  }
+  const hasReceipt = (routineId: string, at: number) => {
+    const minute = Math.floor(at / 60_000);
+    return [minute - 1, minute, minute + 1].some((bucket) =>
+      (receiptMinutes.get(`${routineId}:${bucket}`) ?? []).some((scheduledFor) => Math.abs(scheduledFor - at) < 60_000));
+  };
 
   for (const routine of routines) {
     if (!routine.enabled) continue;
     if (routine.schedule.type === "cron") {
       // Never reconstruct skipped work before the scheduler's next occurrence.
-      // Bound dense expressions per visible day, not per range: daily routines
-      // must still appear throughout a month, not vanish after the 12th.
+      // Every run of each visible day shows, up to midnight (#1483: an hourly
+      // routine used to stop at 11:00). A denser expression keeps one marker
+      // per calendar slot, so a per-minute cron still covers the whole day.
       if (routine.nextRunAt == null) continue;
       for (let day = startOfDay(Math.max(from, routine.nextRunAt)); day < to; day = addDays(day, 1)) {
-        const after = Math.max(day, from, routine.createdAt, routine.nextRunAt) - 1;
-        const upcoming = nextCronRuns(routine.schedule, after, MAX_CRON_PROJECTIONS_PER_DAY);
-        if (!upcoming.length || upcoming[0]! >= to) break;
+        let after = Math.max(day, from, routine.createdAt, routine.nextRunAt) - 1;
+        const first = nextCronRuns(routine.schedule, after, 1);
+        if (!first.length || first[0]! >= to) break;
         // Jump over empty days for sparse monthly/yearly schedules.
-        day = startOfDay(upcoming[0]!);
+        day = startOfDay(first[0]!);
         const end = Math.min(to, addDays(day, 1));
-        for (const at of upcoming) {
-          if (at >= end) break;
-          if (!hasReceipt(routine.id, at)) items.push({
-            id: `next-${routine.id}-${at}`, at, durationMinutes: ROUTINE_MARKER_MINUTES, routine, run: null,
-          });
+        let lastSlot = -1;
+        while (after < end) {
+          const upcoming = nextCronRuns(routine.schedule, after, CRON_BATCH);
+          for (const at of upcoming) {
+            if (at >= end) break;
+            const slot = Math.floor(at / (CALENDAR_SLOT_MINUTES * 60_000));
+            if (slot === lastSlot) continue;
+            lastSlot = slot;
+            if (!hasReceipt(routine.id, at)) items.push({
+              id: `next-${routine.id}-${at}`, at, durationMinutes: ROUTINE_MARKER_MINUTES, routine, run: null,
+            });
+          }
+          if (upcoming.length < CRON_BATCH) break;
+          after = upcoming[upcoming.length - 1]!;
         }
       }
       continue;
