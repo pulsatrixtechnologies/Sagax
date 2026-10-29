@@ -189,8 +189,11 @@ function main() {
     }
   };
   for (const [label, command] of LIGHT_CHECKS) stop(run(label, command));
-  stop(run(`guard tests (${guards.length} files)`, [process.execPath, VITEST, "run", "--reporter=dot", ...guards]));
-  if (diffTests.length) stop(run(`tests of the diff (${diffTests.length} files)`, [process.execPath, VITEST, "run", "--reporter=dot", ...diffTests]));
+  // a source scan (data-keys, dialogs-close) reads the whole tree: under
+  // load (the full suite beside it) 20 s is not enough, 60 s is
+  const vitest = [process.execPath, VITEST, "run", "--reporter=dot", "--testTimeout=60000"];
+  stop(run(`guard tests (${guards.length} files)`, [...vitest, ...guards]));
+  if (diffTests.length) stop(run(`tests of the diff (${diffTests.length} files)`, [...vitest, ...diffTests]));
   for (const test of electronTests) stop(run(`electron ${test}`, [process.execPath, "--test", test]));
   if (ios) {
     const iosDir = join(ROOT, "ios");
