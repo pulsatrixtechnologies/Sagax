@@ -61,8 +61,10 @@ routine run detail and any other sheet of work draw from the same ones.
 - Gallery `src/gallery/task-sheet.html` (a long run of the same action, a
   question, four sub-agents of which one waits on an approval); captures
   `node scripts/capture-task-sheet.mjs` (desktop and narrow, light and
-  dark). iOS: `BotActivityDetailView` follows the same order with
-  `BotActivityStepGroup` (CompanionCore).
+  dark). iOS: `BotActivityDetailView` follows the same order (head with
+  Stop and Open thread, "Waiting on you", sub-agents sorted by
+  `BotActivitySubagents`, steps grouped by `BotActivityStepGroup`, facts
+  folded under Details, the steer box last), both in CompanionCore.
 
 ## The working line names the step (2026-10-29)
 

@@ -146,9 +146,9 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
   const actions = (running && detail?.canStop) || shown.threadId ? (
     <>
       {running && detail?.canStop && (
-        <button type="button" data-activity-stop onClick={onStop} disabled={stopping} className={cn(PILL, "gap-1.5 text-danger")}>
+        <button type="button" data-activity-stop onClick={onStop} disabled={stopping} title={t("botPanel.activity.stop")} className={cn(PILL, "gap-1.5 text-danger")}>
           {stopping ? <Loader2 size={13} aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : <Square size={12} aria-hidden="true" fill="currentColor" />}
-          {t("botPanel.activity.stop")}
+          <span className="max-sm:sr-only">{t("botPanel.activity.stop")}</span>
         </button>
       )}
       {shown.threadId && (

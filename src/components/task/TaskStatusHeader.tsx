@@ -86,7 +86,7 @@ export function TaskStatusHeader({ title, titleId = "activity-detail-title", bot
   const name = bot?.name ?? botName;
   return (
     <header data-task-header={status} className={cn(DIALOG.header, "flex flex-col gap-2 pb-3", className)}>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         {onBack && (
           <button type="button" data-activity-back onClick={onBack} aria-label={backLabel ?? t("activity.back")} title={backLabel ?? t("activity.back")} className="-ml-1.5 flex size-7 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">
             <ChevronLeft size={16} aria-hidden="true" />

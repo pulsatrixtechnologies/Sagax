@@ -556,6 +556,91 @@ public enum BotActivityStepLabel: Hashable, Sendable {
     }
 }
 
+// MARK: - Step groups
+
+/// The steps of a task as the sheet lists them (`groupActivitySteps`,
+/// src/lib/activity-step-groups.ts): the same step repeated back to back
+/// reads once with a count, a running step or a sub-agent's step never
+/// merges, a failure never hides inside a run of successes, and the place a
+/// step ran is marked once, then only when it changes.
+public struct BotActivityStepGroup: Hashable, Identifiable, Sendable {
+    public enum Phase: String, Hashable, Sendable { case running, done, failed }
+
+    /// The first step's id.
+    public var id: String
+    public var label: BotActivityStepLabel
+    public var steps: [BotActivityStep]
+    public var phase: Phase
+    /// The one summary when every step inside shares it.
+    public var summary: String?
+    public var place: BotActivityStep.Where?
+    /// Draw the place: the first group with one, or a place other than the previous one's.
+    public var placeChanged: Bool
+    public var subagent: Bool
+    /// A sub-agent's own calls, grouped the same way.
+    public var substeps: [BotActivityStepGroup]
+
+    public var count: Int { steps.count }
+
+    public static func phase(_ step: BotActivityStep) -> Phase {
+        step.ok == nil ? .running : step.ok == true ? .done : .failed
+    }
+
+    /// The top-level steps grouped, each sub-agent's calls grouped under it.
+    public static func groups(_ steps: [BotActivityStep]) -> [BotActivityStepGroup] {
+        let tree = BotActivityStepLabel.tree(steps)
+        return list(tree.top, children: tree.children)
+    }
+
+    private static func list(_ steps: [BotActivityStep], children: [String: [BotActivityStep]]) -> [BotActivityStepGroup] {
+        var groups: [BotActivityStepGroup] = []
+        var lastPlace: BotActivityStep.Where?
+        for step in steps {
+            let phase = phase(step)
+            let subagent = BotActivityStepLabel.isSubagent(step)
+            let label = BotActivityStepLabel.of(step)
+            if var last = groups.last, !subagent, !last.subagent, last.label == label, last.phase == phase, phase != .running, last.place == step.where {
+                last.steps.append(step)
+                if last.summary != step.summary { last.summary = nil }
+                groups[groups.count - 1] = last
+                continue
+            }
+            let changed = step.where != nil && step.where != lastPlace
+            if let place = step.where { lastPlace = place }
+            let own = children[step.id] ?? []
+            groups.append(BotActivityStepGroup(
+                id: step.id, label: label, steps: [step], phase: phase,
+                summary: step.summary?.isEmpty == false ? step.summary : nil,
+                place: step.where, placeChanged: changed, subagent: subagent,
+                substeps: subagent && !own.isEmpty ? list(own, children: children) : []
+            ))
+        }
+        return groups
+    }
+}
+
+/// The sub-agents as the sheet lists them (`sortSubagents`,
+/// src/components/task/SubagentList.tsx): waiting first, then running,
+/// queued, failed, finished, stopped; newest first inside a state.
+public enum BotActivitySubagents {
+    private static func rank(_ status: BotActivityStatus) -> Int {
+        switch status {
+        case .waiting: 0
+        case .running: 1
+        case .queued: 2
+        case .failed: 3
+        case .finished: 4
+        case .stopped: 5
+        }
+    }
+
+    public static func sorted(_ items: [BotActivityItem]) -> [BotActivityItem] {
+        items.sorted { a, b in
+            rank(a.status) != rank(b.status) ? rank(a.status) < rank(b.status) : a.updatedAt > b.updatedAt
+        }
+    }
+}
+
 // MARK: - Client
 
 public extension CompanionClient {
