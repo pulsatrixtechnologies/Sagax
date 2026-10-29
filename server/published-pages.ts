@@ -34,7 +34,7 @@ import { join } from "node:path";
 import { writeFileAtomic } from "./atomic.ts";
 import { threadOwner } from "./thread-privacy.ts";
 import { pageAudienceOf, samePageAudience, type PageAudience } from "../shared/page-audience.ts";
-import { THREAD_LIMITS, type PageQuote, type PageThread, type PageThreadReply } from "../shared/page-threads.ts";
+import { THREAD_LIMITS, type PageQuote, type PageSuggestion, type PageThread, type PageThreadReply } from "../shared/page-threads.ts";
 import {
   DEFAULT_PAGES_POLICY,
   PAGE_FRAME_TICKET_MS,
@@ -479,12 +479,13 @@ export class PublishedPages {
 
   /** A new annotation on the version readers get. A comment never moves the
    * page in its person's list. */
-  addThread(id: string, input: { by: string; anchor: PageQuote; text: string; version: number }): { ok: true; thread: PageThread } | PageError {
+  addThread(id: string, input: { by: string; anchor: PageQuote; text: string; version: number; suggestion?: string }): { ok: true; thread: PageThread } | PageError {
     let made: PageThread | null = null;
     const result = this.mutate(id, (page, now) => {
       const threads = page.threads ?? [];
       if (threads.length >= THREAD_LIMITS.threads) return refuse(409, "too_many_threads", `A page keeps at most ${THREAD_LIMITS.threads} annotations; resolve and delete some first.`);
-      made = { id: randomBytes(9).toString("base64url"), at: now, by: input.by, version: input.version, anchor: input.anchor, text: input.text, replies: [] };
+      made = { id: randomBytes(9).toString("base64url"), at: now, by: input.by, version: input.version, anchor: input.anchor, text: input.text, replies: [],
+        ...(input.suggestion !== undefined ? { suggestion: { text: input.suggestion, state: "open" as const } } : {}) };
       page.threads = [...threads, made];
       return page;
     }, false);
@@ -503,6 +504,23 @@ export class PublishedPages {
       return page;
     }, false);
     return "ok" in result ? result : { ok: true, ...answer! };
+  }
+
+  /** The page's person accepted or declined a suggestion: it is decided
+   * once, and its thread is resolved. */
+  decideSuggestion(id: string, threadId: string, input: { by: string; state: "accepted" | "declined"; version?: number }): { ok: true; thread: PageThread } | PageError {
+    let found: PageThread | null = null;
+    const result = this.mutate(id, (page, now) => {
+      const thread = (page.threads ?? []).find((entry) => entry.id === threadId);
+      if (!thread?.suggestion) return refuse(404, "no_suggestion", "This suggestion does not exist.");
+      if (thread.suggestion.state !== "open") return refuse(409, "decided", "This suggestion was already decided.");
+      const decided: PageSuggestion = { ...thread.suggestion, state: input.state, decided: { at: now, by: input.by }, ...(input.version !== undefined ? { version: input.version } : {}) };
+      thread.suggestion = decided;
+      thread.resolved = { at: now, by: input.by };
+      found = thread;
+      return page;
+    }, false);
+    return "ok" in result ? result : { ok: true, thread: found! };
   }
 
   /** The page's bot read its annotations now. */

@@ -6,7 +6,7 @@
 // page's own words), never a comment or a name (shared/page-threads.ts).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, CornerDownRight, MessageSquarePlus, RotateCcw, Trash2, X } from "lucide-react";
+import { Check, CornerDownRight, MessageSquarePlus, PencilLine, RotateCcw, Trash2, X } from "lucide-react";
 
 import { initialsOf } from "@/lib/page-share-plan";
 import { readerText, type ReaderBoot, type ReaderStringKey } from "../../shared/page-reader";
@@ -21,8 +21,9 @@ import {
   type PageQuote,
   type PageThreadsAnswer,
   type PageThreadView,
+  suggestable,
 } from "../../shared/page-threads";
-import { readerApi } from "./api";
+import { readerApi, ReaderApiError } from "./api";
 
 /** "just now", "5 min", "3 h", else the date. Pure. */
 export function ago(at: number, now: number, lang: ReaderBoot["lang"]): string {
@@ -55,6 +56,9 @@ export function AnnotatePanel({ boot, pageId, frame, changes = 0, onClose }: { b
   const [answer, setAnswer] = useState<PageThreadsAnswer | null>(null);
   const [draft, setDraft] = useState<PageQuote | null>(null);
   const [comment, setComment] = useState("");
+  // a suggested edit (Markdown and slides): the words that replace the quote
+  const [suggesting, setSuggesting] = useState(false);
+  const [replacement, setReplacement] = useState("");
   const [replies, setReplies] = useState<Record<string, string>>({});
   const [active, setActive] = useState<string | null>(null);
   const [found, setFound] = useState<string[] | null>(null);
@@ -71,11 +75,12 @@ export function AnnotatePanel({ boot, pageId, frame, changes = 0, onClose }: { b
     setBusy(true);
     setError("");
     try {
-      const next = await readerApi<PageThreadsAnswer>(`${base}${path}`, init);
+      const next = await readerApi<PageThreadsAnswer & { version?: number }>(`${base}${path}`, init);
       setAnswer(next);
       return next;
-    } catch {
-      setError(text("failed"));
+    } catch (cause) {
+      // the server's words when it says why (a suggestion that no longer applies)
+      setError(cause instanceof ReaderApiError && cause.status === 409 ? cause.message : text("failed"));
       return null;
     } finally {
       setBusy(false);
@@ -150,13 +155,17 @@ export function AnnotatePanel({ boot, pageId, frame, changes = 0, onClose }: { b
   const nameOf = (id: string) => names[id] || (id === boot.me?.id ? boot.me.name : "") || text("someoneElse");
   const now = Date.now();
 
+  const canSuggest = suggestable(boot.kind) && draft?.kind === "text";
+  const suggestion = suggesting && canSuggest;
+  const ready = suggestion ? replacement !== draft?.quote : Boolean(comment.trim());
   const submit = async () => {
-    if (!draft || !comment.trim()) return;
-    const next = await call("", { method: "POST", body: { anchor: draft, text: comment } });
+    if (!draft || !ready) return;
+    const next = await call("", { method: "POST", body: { anchor: draft, text: comment, ...(suggestion ? { suggestion: replacement } : {}) } });
     if (!next) return;
     const made = next.threads.at(-1);
     setDraft(null);
     setComment("");
+    setSuggesting(false);
     if (made) {
       scrollTo.current = made.id;
       setActive(made.id);
@@ -197,7 +206,24 @@ export function AnnotatePanel({ boot, pageId, frame, changes = 0, onClose }: { b
             )}
           </span>
         </div>
-        <p className="sr-thread-text">{thread.text}</p>
+        {thread.text && <p className="sr-thread-text">{thread.text}</p>}
+        {thread.suggestion && (
+          <div className="sr-suggestion" data-suggestion={thread.suggestion.state}>
+            <p className="sr-label"><PencilLine size={12} aria-hidden="true" /> {text("suggestion")}</p>
+            <p className="sr-suggestion-old">{thread.anchor.quote}</p>
+            <p className="sr-suggestion-new">{thread.suggestion.text || "∅"}</p>
+            {thread.suggestion.state === "open" && answer?.owner && (
+              <span className="sr-confirm-actions">
+                <button type="button" className="sr-button sr-button-primary sr-button-small" disabled={busy} data-suggestion-accept
+                  onClick={() => void call(`/${encodeURIComponent(thread.id)}/accept`, { method: "POST", body: {} }).then((next) => { if (next?.version) location.reload(); })}>{text("accept")}</button>
+                <button type="button" className="sr-button sr-button-small" disabled={busy}
+                  onClick={() => void call(`/${encodeURIComponent(thread.id)}/decline`, { method: "POST", body: {} })}>{text("decline")}</button>
+              </span>
+            )}
+            {thread.suggestion.state === "accepted" && <p className="sr-muted">{text("accepted", { n: String(thread.suggestion.version ?? "") })}</p>}
+            {thread.suggestion.state === "declined" && <p className="sr-muted">{text("declined")}</p>}
+          </div>
+        )}
         {thread.replies.map((entry) => (
           <div key={entry.id} className="sr-reply">
             <div className="sr-thread-head">
@@ -239,12 +265,23 @@ export function AnnotatePanel({ boot, pageId, frame, changes = 0, onClose }: { b
         <form className="sr-draft" data-reader-draft onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <p className="sr-label">{text("newComment")}</p>
           <Quote anchor={draft} text={text} />
-          <textarea ref={draftField} value={comment} maxLength={2000} rows={3} placeholder={text("write")} aria-label={text("write")}
+          {canSuggest && (
+            <label className="sr-toggle">
+              <input type="checkbox" checked={suggesting} data-reader-suggest
+                onChange={(event) => { setSuggesting(event.target.checked); setReplacement(draft.quote); }} />
+              <PencilLine size={13} aria-hidden="true" /> {text("suggest")}
+            </label>
+          )}
+          {suggestion && (
+            <textarea value={replacement} maxLength={8000} rows={3} aria-label={text("suggestWith")} placeholder={text("suggestWith")} data-reader-replacement
+              onChange={(event) => setReplacement(event.target.value)} />
+          )}
+          <textarea ref={draftField} value={comment} maxLength={2000} rows={suggestion ? 2 : 3} placeholder={suggestion ? text("suggestNote") : text("write")} aria-label={suggestion ? text("suggestNote") : text("write")}
             onChange={(event) => setComment(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); void submit(); } }} />
           <span className="sr-confirm-actions">
-            <button type="submit" className="sr-button sr-button-primary" disabled={busy || !comment.trim()}>{text("send")}</button>
-            <button type="button" className="sr-button" onClick={() => { setDraft(null); setComment(""); }}>{text("cancel")}</button>
+            <button type="submit" className="sr-button sr-button-primary" disabled={busy || !ready}>{suggestion ? text("suggest") : text("send")}</button>
+            <button type="button" className="sr-button" onClick={() => { setDraft(null); setComment(""); setSuggesting(false); }}>{text("cancel")}</button>
           </span>
         </form>
       )}

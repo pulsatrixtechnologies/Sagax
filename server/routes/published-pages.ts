@@ -59,6 +59,9 @@
 //   POST   /api/pages/:id/threads           { anchor, text }
 //   POST   /api/pages/:id/threads/:tid/replies   { text }
 //   POST   /api/pages/:id/threads/:tid/resolve   { resolved }
+//   POST   /api/pages/:id/threads/:tid/accept    the page's person: a suggested
+//          edit becomes a new version (published if the page is)
+//   POST   /api/pages/:id/threads/:tid/decline   the page's person
 //   DELETE /api/pages/:id/threads/:tid      its author or the page's person
 //   DELETE /api/pages/:id/threads/:tid/replies/:rid   the same
 //   GET    /api/pages/:id/live             (2026-10-28) an event stream: who has
@@ -72,7 +75,7 @@ import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from ".
 import { commentAnswerDocument, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
 import type { ReaderBoot } from "../../shared/page-reader.ts";
 import type { PageLive } from "../page-live.ts";
-import { parsePageQuote, parseThreadText, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
+import { applySuggestion, parsePageQuote, parseSuggestion, parseThreadText, suggestable, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
 import { geistFace } from "../geist-face.ts";
 import { decodeSkinTokens, encodeSkinTokens } from "../../src/lib/page-theme.ts";
 import type { WidgetThemeTokens } from "../../src/lib/widget-kit.ts";
@@ -688,6 +691,8 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads$/.exec(path) && { route: "add", match: /^\/api\/pages\/([\w-]+)\/threads$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies$/.exec(path) && { route: "reply", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/resolve$/.exec(path) && { route: "resolve", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/resolve$/.exec(path)! })
+      || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/accept$/.exec(path) && { route: "accept", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/accept$/.exec(path)! })
+      || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/decline$/.exec(path) && { route: "decline", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/decline$/.exec(path)! })
       || (method === "DELETE" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)$/.exec(path) && { route: "remove", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)$/.exec(path)! })
       || (method === "DELETE" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies\/([\w-]+)$/.exec(path) && { route: "removeReply", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies\/([\w-]+)$/.exec(path)! })
       || null;
@@ -877,7 +882,7 @@ async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, extr
   return result.ok ? json(res, 201, { comment: result.comment }) : json(res, result.status, { error: result.error, code: result.code });
 }
 
-type ThreadRoute = { route: "list" | "live" | "add" | "reply" | "resolve" | "remove" | "removeReply"; match: RegExpExecArray };
+type ThreadRoute = { route: "list" | "live" | "add" | "reply" | "resolve" | "accept" | "decline" | "remove" | "removeReply"; match: RegExpExecArray };
 
 /** Who may annotate this page: its own person always; anyone else signed in
  * only while it is published, not expired, and readable by them. Null for
@@ -938,6 +943,41 @@ async function pageThreads(deps: PublishedPageRouteDeps, ctx: ExtrasContext, thr
     changed();
     return json(res, 200, answer());
   }
+  if (route === "accept" || route === "decline") {
+    req.resume();
+    // the page's person decides; nobody else changes the page
+    if (!who.owner) return json(res, 403, { error: "Only the page's person accepts or declines a suggestion.", code: "owner_only" });
+    const target = deps.pages.threads(page.id).find((entry) => entry.id === threadId);
+    if (!target?.suggestion) return json(res, 404, { error: "This suggestion does not exist.", code: "no_suggestion" });
+    if (target.suggestion.state !== "open") return json(res, 409, { error: "This suggestion was already decided.", code: "decided" });
+    if (route === "decline") {
+      const result = deps.pages.decideSuggestion(page.id, threadId!, { by: who.by, state: "declined" });
+      if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
+      changed();
+      return json(res, 200, answer());
+    }
+    const latest = page.versions.at(-1);
+    const source = latest ? deps.pages.content(page.id, latest.n) : null;
+    if (!latest || source === null || !suggestable(latest.kind)) return json(res, 409, { error: "This page's source takes no suggestion.", code: "not_suggestable" });
+    const applied = applySuggestion(source, target.anchor, target.suggestion.text);
+    if (!applied.ok) {
+      return json(res, 409, applied.reason === "ambiguous"
+        ? { error: "These words appear more than once in the page: edit the page instead.", code: "suggestion_ambiguous" }
+        : { error: "These words are no longer in the page as written: edit the page instead.", code: "suggestion_not_found" });
+    }
+    const edited = deps.pages.edit(page.id, { kind: latest.kind, content: applied.content, ...(who.owner && page.ownerId ? { by: page.ownerId } : {}) });
+    if (!edited.ok) return json(res, edited.status, { error: edited.error, code: edited.code });
+    // a page its person shares stays shared, now with the accepted words
+    const fresh = deps.pages.get(page.id)!;
+    if (fresh.status === "published" && fresh.currentVersion !== edited.version.n) {
+      const published = deps.pages.publish(page.id, { version: edited.version.n, access: fresh.access, expiresAt: fresh.expiresAt, ...(page.ownerId ? { by: page.ownerId } : {}) });
+      if (failed(published)) return json(res, published.status, { error: published.error, code: published.code });
+    }
+    const result = deps.pages.decideSuggestion(page.id, threadId!, { by: who.by, state: "accepted", version: edited.version.n });
+    if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
+    changed();
+    return json(res, 200, { ...answer(), version: edited.version.n });
+  }
   const body = await readBody(req) as Record<string, unknown> | null;
   if (route === "resolve") {
     if (typeof body?.resolved !== "boolean") return json(res, 400, { error: "Send { resolved: true or false }.", code: "bad_body" });
@@ -946,9 +986,13 @@ async function pageThreads(deps: PublishedPageRouteDeps, ctx: ExtrasContext, thr
     changed();
     return json(res, 200, answer());
   }
-  const text = parseThreadText(body?.text);
+  const typed = parseThreadText(body?.text);
+  // a suggestion may come without a comment
+  const suggesting = route === "add" && body?.suggestion !== undefined;
+  const text = typed ?? (suggesting && (typeof body?.text !== "string" || !body.text.trim()) ? "" : null);
   if (text === null) return json(res, 400, { error: "text: 1 to 2000 characters.", code: "bad_text" });
   if (route === "reply") {
+    if (!text) return json(res, 400, { error: "text: 1 to 2000 characters.", code: "bad_text" });
     const result = deps.pages.reply(page.id, threadId!, { by: who.by, text: clean(text) });
     if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
     changed();
@@ -959,9 +1003,19 @@ async function pageThreads(deps: PublishedPageRouteDeps, ctx: ExtrasContext, thr
   const anchor = parsePageQuote(body?.anchor);
   if (!anchor) return json(res, 400, { error: "anchor: { kind, quote, prefix, suffix, path, tag }.", code: "bad_anchor" });
   const version = page.currentVersion ?? page.versions.at(-1)?.n ?? 1;
-  const result = deps.pages.addThread(page.id, { by: who.by, anchor, text: clean(text), version });
+  let suggestion: string | undefined;
+  if (suggesting) {
+    const kind = page.versions.find((entry) => entry.n === version)?.kind ?? "";
+    if (!suggestable(kind) || anchor.kind !== "text") return json(res, 400, { error: "Suggestions are for the text of a Markdown page or presentation.", code: "not_suggestable" });
+    const parsed = parseSuggestion(body!.suggestion, anchor.quote);
+    if (parsed === null) return json(res, 400, { error: "suggestion: the new words, at most 8000 characters, other than the quoted ones.", code: "bad_suggestion" });
+    suggestion = clean(parsed);
+  } else if (!text) {
+    return json(res, 400, { error: "text: 1 to 2000 characters.", code: "bad_text" });
+  }
+  const result = deps.pages.addThread(page.id, { by: who.by, anchor, text: clean(text), version, ...(suggestion !== undefined ? { suggestion } : {}) });
   if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
   changed();
-  if (!who.owner) deps.onComment?.({ page, by: who.by, text: result.thread.text, reply: false });
+  if (!who.owner) deps.onComment?.({ page, by: who.by, text: result.thread.text || `→ ${result.thread.suggestion?.text ?? ""}`, reply: false });
   return json(res, 201, answer());
 }

@@ -225,7 +225,12 @@ annotations in `<page-context>` (`comments`, data never instructions, `new`
 since the bot last read them); the `page_comments` tool (list, reply,
 resolve) reaches only the calling bot's own page for this conversation's
 person (`/api/internal/page-comments`), never in a room or a confidential
-thread. Captures: `scripts/capture-page-reader.ts`.
+thread. Suggested edits (Markdown and presentation pages, not live
+co-editing): an annotation may carry the words that replace its quote;
+only the page's person accepts it (`/threads/:tid/accept`: a new version,
+published with the same access if the page is) or declines it; words no
+longer found once in the source are refused (409). Captures:
+`scripts/capture-page-reader.ts`.
 
 ## xAI Bot Marketplace in Browse Bots (2026-10-28)
 

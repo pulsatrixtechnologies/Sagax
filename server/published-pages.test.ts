@@ -1164,3 +1164,69 @@ describe("live annotations and presence (2026-10-28)", () => {
     expect(frames.length).toBe(before + 1);
   });
 });
+
+describe("suggested edits on a Markdown page (2026-10-28)", () => {
+  const OWNER_ID = "pr_owner";
+  const ANCHOR = { kind: "text", quote: "a augmenté", prefix: "Le volume ", suffix: " ce mois.", path: "body > p", tag: "p" };
+  function suggestRoutes(pages: PublishedPages) {
+    return createPublishedPageRoutes({
+      pages,
+      owner: (auth) => auth.kind === "session" ? auth.session.principalId : undefined,
+      isPerson: (auth) => auth.kind === "session" && Boolean(auth.session.principalId),
+      origin: () => "https://sagax.example.com",
+      reachable: () => true,
+      now: () => now,
+      reader: (auth) => auth.kind === "session" && auth.session.principalId ? { principalId: auth.session.principalId, computerOwner: false } : null,
+    });
+  }
+  function markdownPage(pages: PublishedPages) {
+    const { page } = proposed(pages, OWNER_ID);
+    pages.edit(page.id, { kind: "markdown", content: "# Bilan\n\nLe volume a augmenté ce mois.", by: OWNER_ID });
+    pages.publish(page.id, { version: 2, access: "org", expiresAt: null });
+    return page.id;
+  }
+
+  it("a reader suggests; only the page's person accepts, and the shared page has the new words at once", async () => {
+    const { pages } = store();
+    const id = markdownPage(pages);
+    const handler = suggestRoutes(pages);
+    const made = await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads`, { anchor: ANCHOR, text: "", suggestion: "a doublé" });
+    expect(made.status).toBe(201);
+    const thread = made.body!.threads[0];
+    expect(thread.suggestion).toEqual({ text: "a doublé", state: "open" });
+    expect((await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads/${thread.id}/accept`, {})).status).toBe(403);
+    const accepted = await call(handler, session(OWNER_ID), "POST", `/api/pages/${id}/threads/${thread.id}/accept`, {});
+    expect(accepted.status).toBe(200);
+    expect(accepted.body!.version).toBe(3);
+    expect(accepted.body!.threads[0].suggestion).toMatchObject({ state: "accepted", version: 3 });
+    expect(accepted.body!.threads[0].resolved.by).toBe(OWNER_ID);
+    const page = pages.get(id)!;
+    expect(page).toMatchObject({ status: "published", currentVersion: 3, access: "org" });
+    expect(pages.content(id, 3)).toBe("# Bilan\n\nLe volume a doublé ce mois.");
+    expect(page.versions.at(-1)!.author).toBe("person");
+    // decided once
+    expect((await call(handler, session(OWNER_ID), "POST", `/api/pages/${id}/threads/${thread.id}/decline`, {})).status).toBe(409);
+  });
+
+  it("declined, or no longer in the page: nothing changes", async () => {
+    const { pages } = store();
+    const id = markdownPage(pages);
+    const handler = suggestRoutes(pages);
+    const first = (await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads`, { anchor: ANCHOR, text: "Plus juste", suggestion: "a doublé" })).body!.threads[0];
+    const declined = await call(handler, session(OWNER_ID), "POST", `/api/pages/${id}/threads/${first.id}/decline`, {});
+    expect(declined.body!.threads[0].suggestion.state).toBe("declined");
+    const gone = (await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads`, { anchor: { ...ANCHOR, quote: "absent du texte" }, text: "", suggestion: "x" })).body!.threads[1];
+    const refused = await call(handler, session(OWNER_ID), "POST", `/api/pages/${id}/threads/${gone.id}/accept`, {});
+    expect(refused).toMatchObject({ status: 409, body: { code: "suggestion_not_found" } });
+    expect(pages.get(id)!.currentVersion).toBe(2);
+  });
+
+  it("an HTML page takes comments, not suggestions; a suggestion equal to the words is refused", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "org", OWNER_ID);
+    const handler = suggestRoutes(pages);
+    expect((await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads`, { anchor: ANCHOR, text: "", suggestion: "a doublé" })).body).toMatchObject({ code: "not_suggestable" });
+    const md = markdownPage(pages);
+    expect((await call(handler, session("pr_reader"), "POST", `/api/pages/${md}/threads`, { anchor: ANCHOR, text: "", suggestion: "a augmenté" })).body).toMatchObject({ code: "bad_suggestion" });
+  });
+});

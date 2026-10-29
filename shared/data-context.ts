@@ -45,6 +45,8 @@ export interface PageContextComment {
   at: string;
   resolved: boolean;
   new?: boolean;
+  /** A suggested edit of the words in `on` (Markdown pages). */
+  suggestion?: { replaceWith: string; state: "open" | "accepted" | "declined" };
   replies: Array<{ by: string; text: string; at: string }>;
 }
 

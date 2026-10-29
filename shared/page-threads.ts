@@ -43,6 +43,18 @@ export interface PageThread {
   text: string;
   replies: PageThreadReply[];
   resolved?: { at: number; by: string };
+  /** A suggested edit (2026-10-28, Markdown and presentation pages): the
+   * words that replace the quoted text, until the page's person accepts it
+   * (a new version, published if the page is) or declines it. */
+  suggestion?: PageSuggestion;
+}
+
+export interface PageSuggestion {
+  text: string;
+  state: "open" | "accepted" | "declined";
+  decided?: { at: number; by: string };
+  /** The version accepting it made. */
+  version?: number;
 }
 
 export const THREAD_LIMITS = {
@@ -55,6 +67,8 @@ export const THREAD_LIMITS = {
   contextChars: 64,
   pathChars: 240,
   tagChars: 32,
+  /** A suggested replacement. */
+  suggestionChars: 8000,
 } as const;
 
 function line(value: unknown, max: number): string {
@@ -107,9 +121,50 @@ export function commentsForModel(threads: readonly PageThread[], names: (id: str
       at: when(thread.at),
       resolved: Boolean(thread.resolved),
       ...(botReadAt === undefined || latest > botReadAt ? { new: true } : {}),
+      ...(thread.suggestion ? { suggestion: { replaceWith: thread.suggestion.text, state: thread.suggestion.state } } : {}),
       replies: thread.replies.map((reply) => ({ by: names(reply.by), text: reply.text, at: when(reply.at) })),
     };
   });
+}
+
+/** A suggested replacement as typed: a string (empty removes the quoted
+ * words) of at most suggestionChars, other than the quote itself. Pure. */
+export function parseSuggestion(value: unknown, quote: string): string | null {
+  if (typeof value !== "string" || value.length > THREAD_LIMITS.suggestionChars) return null;
+  const text = value.replace(/\r\n?/g, "\n");
+  return text === quote ? null : text;
+}
+
+/** Whether a page's source takes suggestions: our own Markdown and slides
+ * (an HTML page's words are not its source). Pure. */
+export function suggestable(kind: string): boolean {
+  return kind === "markdown" || kind === "presentation";
+}
+
+/** The source with one suggestion applied: the quoted words found in the
+ * source (where what came before or after tells them apart when they occur
+ * more than once) and replaced. Not found, or still ambiguous: refused, the
+ * person edits the page instead. Pure. */
+export function applySuggestion(source: string, anchor: Pick<PageQuote, "quote" | "prefix" | "suffix">, replacement: string): { ok: true; content: string } | { ok: false; reason: "not_found" | "ambiguous" } {
+  const quote = anchor.quote;
+  if (!quote) return { ok: false, reason: "not_found" };
+  const at: number[] = [];
+  for (let index = source.indexOf(quote); index >= 0 && at.length < 50; index = source.indexOf(quote, index + 1)) at.push(index);
+  if (!at.length) return { ok: false, reason: "not_found" };
+  const words = (text: string) => text.replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const before = words(anchor.prefix).split(" ").slice(-3).join(" ");
+  const after = words(anchor.suffix).split(" ").slice(0, 3).join(" ");
+  const score = (index: number) => (before && words(source.slice(Math.max(0, index - 200), index)).endsWith(before) ? 1 : 0)
+    + (after && words(source.slice(index + quote.length, index + quote.length + 200)).startsWith(after) ? 1 : 0);
+  let chosen = at[0]!;
+  if (at.length > 1) {
+    const scores = at.map(score);
+    const best = Math.max(...scores);
+    const winners = at.filter((_index, position) => scores[position] === best);
+    if (winners.length !== 1) return { ok: false, reason: "ambiguous" };
+    chosen = winners[0]!;
+  }
+  return { ok: true, content: `${source.slice(0, chosen)}${replacement}${source.slice(chosen + quote.length)}` };
 }
 
 // ── between the reader's bar and the page's frame ────────────────────────
