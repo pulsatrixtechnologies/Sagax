@@ -26,6 +26,7 @@ import { join, posix, win32 } from "node:path";
 import { engineStartGate } from "./engine-start-gate.ts";
 import { markOomVictim, memoryGuardSettings } from "./engine-memory-guard.ts";
 import { resolveCliSpawn, splitCliString, type ResolvedSpawn } from "./env-path.ts";
+import { noteEngineGroupEnded, noteEngineGroupStarted } from "./engine-groups.ts";
 
 export function resolveCli(cli: string, args: string[] = [], env?: NodeJS.ProcessEnv): ResolvedSpawn {
   return resolveCliSpawn(cli, args, env);
@@ -172,7 +173,11 @@ export function spawnCli(
     // win32: taskkill /T does the reaping instead (see killCliTree)
     ...(process.platform === "win32" ? { windowsHide: true } : { detached: true }),
   }) as ChildProcessByStdio<Writable, Readable, Readable>; // callers always pipe all three
-  if (process.platform !== "win32") cliGroups.add(child);
+  if (process.platform !== "win32") {
+    cliGroups.add(child);
+    noteEngineGroupStarted(child.pid);
+    reapGroupAfterExit(child);
+  }
   if (process.platform !== "win32" && owner === "bot") rememberEngineSession(child);
   // An engine dies before the server when the container runs out of memory
   // (server/engine-memory-guard.ts); its MCP proxies inherit the score.
@@ -191,6 +196,28 @@ export function spawnCli(
   // logged.
   child.stdin?.on("error", () => {});
   return child;
+}
+
+/** After a CLI's own process exits, what it started has this long to exit on
+ * its own (an MCP server reads the closed stdin and stops) before the group
+ * is stopped: TERM, then KILL after REAP_GRACE_MS. */
+export const REAP_AFTER_EXIT_MS = 2_000;
+const REAP_GRACE_MS = 3_000;
+
+/** A CLI that exits, on its own or stopped, takes its whole group along:
+ * the sub-agents, MCP servers and commands it started would otherwise run
+ * on, re-parented to init, with nothing left to stop them. Only the CLI's
+ * own end triggers this, so work that runs as long as its session does is
+ * never cut short. */
+function reapGroupAfterExit(child: ChildProcess): void {
+  const pid = child.pid;
+  if (!pid) return;
+  child.once("exit", () => {
+    const timer = setTimeout(() => {
+      void killCliTree(child, REAP_GRACE_MS).then((gone) => { if (gone) noteEngineGroupEnded(pid); }, () => {});
+    }, REAP_AFTER_EXIT_MS);
+    timer.unref?.();
+  });
 }
 
 const EXEC_KILL_GRACE_MS = 2_000;

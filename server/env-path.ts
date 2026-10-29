@@ -9,7 +9,7 @@
 // the inherited PATH, plus the well-known install locations that exist
 // on this machine, plus (async, best-effort) whatever PATH the user's
 // real login shell reports.
-import { execFile } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, extname, join } from "node:path";
@@ -150,22 +150,47 @@ function mergePaths(parts: string[]): string {
   return [...new Set(parts.filter(Boolean))].join(delimiter);
 }
 
+/** How long the login shell may take to print its PATH. */
+const LOGIN_SHELL_PROBE_MS = 5_000;
+
 function probeLoginShellPath(): void {
-  const shell = process.env.SHELL || "/bin/zsh";
-  // -l -i: nvm and friends live in .zshrc/.bashrc, which only interactive
-  // shells read. A marker isolates $PATH from any rc-file noise.
-  execFile(
-    shell,
-    ["-l", "-i", "-c", 'printf "__OMB_PATH__%s" "$PATH"'],
-    { timeout: 5000 },
-    (err, stdout) => {
-      if (err || !stdout) return;
-      const m = /__OMB_PATH__([^\n]*)/.exec(stdout);
-      if (!m || !m[1]) return;
-      loginShellPath = m[1];
-      cached = mergePaths([...(cached ?? "").split(delimiter), ...m[1].split(delimiter)]);
-    },
-  );
+  runLoginShellProbe(process.env.SHELL || "/bin/zsh", LOGIN_SHELL_PROBE_MS, (path) => {
+    loginShellPath = path;
+    cached = mergePaths([...(cached ?? "").split(delimiter), ...path.split(delimiter)]);
+  });
+}
+
+/** Run the login shell once for its PATH. -l -i: nvm and friends live in
+ * .zshrc/.bashrc, which only interactive shells read. A marker isolates
+ * $PATH from any rc-file noise. An interactive shell ignores SIGTERM, so a
+ * plain timeout left a shell stuck in an rc file running for good, with
+ * whatever that file had started: the shell runs in a group of its own,
+ * with no terminal input, and the whole group is killed at the deadline. */
+export function runLoginShellProbe(shell: string, timeoutMs: number, found: (path: string) => void, args: readonly string[] = ["-l", "-i", "-c", 'printf "__OMB_PATH__%s" "$PATH"']): ChildProcess | null {
+  let child: ChildProcess;
+  try {
+    child = spawn(shell, [...args], { stdio: ["ignore", "pipe", "ignore"], detached: true });
+  } catch {
+    return null;
+  }
+  let stdout = "";
+  const timer = setTimeout(() => {
+    try { if (child.pid) process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
+    try { child.kill("SIGKILL"); } catch { /* already gone */ }
+  }, timeoutMs);
+  timer.unref?.();
+  child.on("error", () => clearTimeout(timer));
+  child.stdout?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => { if (stdout.length < 1_000_000) stdout += chunk; });
+  child.on("close", (code) => {
+    clearTimeout(timer);
+    // what the rc files started in the shell's group goes with it
+    try { if (child.pid) process.kill(-child.pid, "SIGKILL"); } catch { /* group gone */ }
+    if (code !== 0 || !stdout) return;
+    const m = /__OMB_PATH__([^\n]*)/.exec(stdout);
+    if (m?.[1]) found(m[1]);
+  });
+  return child;
 }
 
 /** Test hook — the cache is process-wide otherwise. */

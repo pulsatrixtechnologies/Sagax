@@ -2,7 +2,7 @@
 // well-known install dir — or an nvm bin dir — must be findable even
 // when the process itself started with a bare GUI PATH.
 import { execFile } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +14,7 @@ import {
   registerPathDir,
   resetPathCache,
   resetPathCacheForTests,
+  runLoginShellProbe,
   splitCliString,
   userHome,
 } from "./env-path.ts";
@@ -539,6 +540,36 @@ describe("registerPathDir", () => {
       expect(augmentedPath().split(delimiter)[0]).toBe(missing);
       registerPathDir(missing);
       expect(augmentedPath().split(delimiter).filter((d) => d === missing)).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(process.platform === "win32")("the login shell probe", () => {
+  it("reads PATH off the shell's marker", async () => {
+    const found = await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("no PATH read")), 10_000);
+      runLoginShellProbe("/bin/sh", 5_000, (path) => { clearTimeout(timer); resolve(path); }, ["-c", 'printf "__OMB_PATH__%s" "/opt/one:/opt/two"']);
+    });
+    expect(found).toBe("/opt/one:/opt/two");
+  });
+
+  it("kills a shell stuck in its rc files, and what it started, at the deadline", async () => {
+    // an interactive shell ignores SIGTERM: a plain timeout left it running
+    const dir = mkdtempSync(join(tmpdir(), "sagax-shell-probe-"));
+    try {
+      const pidFile = join(dir, "pid");
+      const child = runLoginShellProbe("/bin/sh", 300, () => { throw new Error("no PATH expected"); },
+        ["-c", `trap '' TERM; sleep 30 & echo $! > ${JSON.stringify(pidFile)}; wait`]);
+      expect(child).not.toBeNull();
+      await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true), { timeout: 5_000 });
+      const sleeper = Number(readFileSync(pidFile, "utf8").trim());
+      const gone = (pid: number) => { try { process.kill(pid, 0); return false; } catch { return true; } };
+      await vi.waitFor(() => {
+        expect(child!.exitCode !== null || child!.signalCode !== null).toBe(true);
+        expect(gone(sleeper)).toBe(true);
+      }, { timeout: 5_000, interval: 50 });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

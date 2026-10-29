@@ -16,7 +16,7 @@ import { basename, isAbsolute, join, sep } from "node:path";
 /** A process as the system lists it; `started` tells it apart from a later
  * process that reused its pid. A zombie has exited and only waits for its
  * parent to collect it, so it counts as gone. `args` only when asked for. */
-type ListedProcess = { ppid: number; pgid: number; zombie: boolean; started: string; args?: string };
+export type ListedProcess = { ppid: number; pgid: number; zombie: boolean; started: string; args?: string };
 
 /** One browser session's processes, read before anything was asked to stop. */
 export interface BrowserProcessTree {
@@ -79,7 +79,7 @@ async function processArgs(pid: number): Promise<string | null> {
 /** Every process on this machine, or null where none can be listed (Windows).
  * Linux reads /proc, so an image without procps still sees its processes;
  * one file at a time, so a busy host cannot run this out of descriptors. */
-async function processTable(withArgs = false): Promise<Map<number, ListedProcess> | null> {
+export async function processTable(withArgs = false): Promise<Map<number, ListedProcess> | null> {
   if (process.platform === "win32") return null;
   const table = new Map<number, ListedProcess>();
   if (process.platform === "linux") {
@@ -105,6 +105,20 @@ async function processTable(withArgs = false): Promise<Map<number, ListedProcess
     table.set(Number(pid), { ppid: Number(ppid), pgid: Number(pgid), zombie: stat?.startsWith("Z") === true, started: rest.slice(0, 5).join(" "), ...withArgs ? { args: rest.slice(5).join(" ") } : {} });
   }
   return table;
+}
+
+/** One process's start time, in the form processTable gives it, or null
+ * when it is gone or cannot be read. */
+export async function processStarted(pid: number): Promise<string | null> {
+  if (process.platform === "win32" || !Number.isInteger(pid) || pid <= 1) return null;
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] ?? null;
+    } catch { return null; }
+  }
+  const started = (await execText(PS, ["-o", "lstart=", "-p", String(pid)]))?.trim();
+  return started ? started.split(/\s+/).join(" ") : null;
 }
 
 /** A process's environment, or null when it cannot be read. */

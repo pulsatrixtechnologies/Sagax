@@ -220,6 +220,9 @@ import { isEffortLevel, ROUTINE_CONVERSATION_HEADER, type BotVisibility, type Ca
 import { isPersistentQuestionCard, QUESTION_DISMISS_MESSAGE, shouldSettleRequestCard } from "../shared/ask-question.ts";
 import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts";
 import { resumeOpening, resumeRefusal, subagentRequest } from "./subagent-threads.ts";
+import { closedTool, closeRowsLeftByRestart, CUT_TOOL_OUTPUT, endedToolOutput, openedThreadRefs, ownSubagentThreads, toolRowOpen } from "./subagent-cleanup.ts";
+import { reapOrphanEngineGroups } from "./engine-groups.ts";
+import { BOT_ACTIVITY_WINDOW_MS as SUBAGENT_SWEEP_WINDOW_MS } from "../shared/bot-activity.ts";
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
 import { boatCreateRecoverySnapshot, retireDeletedBoatCreate } from "./boat-create-idempotency.ts";
 import { boatDeletionSnapshot } from "./boat-delete-journal.ts";
@@ -1412,6 +1415,10 @@ const STATIC_DIR = process.env.SAGAX_STATIC_DIR || null;
 
 ensureDirs();
 initMediaProxy(DATA_DIR);
+// Engine process groups an earlier run left running (a crash, a kill): their
+// sub-agents, MCP servers and commands stop now (server/engine-groups.ts).
+void reapOrphanEngineGroups(join(DATA_DIR, "engine-groups.json"), { log: (line) => console.log(line) })
+  .catch((error) => console.warn(`[engines] leftover process groups not checked: ${error instanceof Error ? error.message : String(error)}`));
 /** Public share links for bot templates (server/template-links.ts). */
 const templateLinks = new TemplateLinks(DATA_DIR);
 /** Pages a bot proposed and the person published (server/published-pages.ts). */
@@ -5069,6 +5076,8 @@ async function stopDirectThreadByPerson(botId: string, threadId: string): Promis
     if (spent > 0 && bot?.finishUntil) appendFinishUntilRow(threadId, { status: "stopped", condition: bot.finishUntil, round: spent, max: finishUntilRounds(bot.finishUntilMaxRounds) });
   }
   await stopDirectThread(botId, threadId);
+  // the bot's own sub-agents of this conversation stop with it
+  await stopOwnSubagents(botId, threadId);
 }
 
 async function interruptDirectThread(botId: string, threadId: string, options?: { preserveComputerResume?: boolean }): Promise<void> {
@@ -13771,26 +13780,43 @@ onSteeredQueueChange(() => broadcast({ kind: "bot.queued", queues: publicBotQueu
 // once can collide on a bare id and patch each other's messages.
 const toolMessageByItem = new Map<string, string>(); // threadId:itemId -> messageId
 
-/** Text a call's row keeps when a stop cut it short. */
-const CUT_TOOL_OUTPUT = "Stopped before it finished.";
-
 /** A stop ended the turn while these calls ran: their rows say they were cut
  * short instead of spinning, so nothing is left half done without saying so.
- * A late completion from the engine finds no row to patch. */
-function closeCutToolRows(threadId: string): number {
+ * A turn that settled any other way (an error, a usage limit, a sub-agent
+ * the engine never reported back) closes them too, with `output`
+ * (server/subagent-cleanup.ts). A late completion from the engine finds no
+ * row to patch. */
+function closeCutToolRows(threadId: string, output: string = CUT_TOOL_OUTPUT): number {
   const prefix = `${threadId}:`;
   let closed = 0;
   for (const [key, messageId] of toolMessageByItem) {
     if (!key.startsWith(prefix)) continue;
     toolMessageByItem.delete(key);
     const row = store.messagesFor(threadId).find((m) => m.id === messageId);
-    if (!row?.tool || row.tool.ok !== undefined) continue;
-    store.patchMessage(threadId, messageId, {
-      tool: { ...row.tool, ok: false, output: CUT_TOOL_OUTPUT, durationMs: Math.max(0, Date.now() - row.at) },
-    });
+    if (!row || !toolRowOpen(row)) continue;
+    store.patchMessage(threadId, messageId, { tool: closedTool(row, output, Date.now()) });
     closed += 1;
   }
   return closed;
+}
+
+/** A person's Stop on a conversation: the bot's own sub-agent threads opened
+ * from it stop too (server/subagent-cleanup.ts ownSubagentThreads). */
+async function stopOwnSubagents(botId: string, threadId: string): Promise<number> {
+  const { parallel, threads } = ownSubagentThreads({
+    botId, threadId, tasks: store.tasks(botId),
+    opened: openedThreadRefs(store.messagesFor(threadId), botId),
+    active: (child) => threadBusy(botId, child) || hasQueuedSteeredMessages(botId, child),
+  });
+  for (const child of parallel) await stopParallelTask(botId, child).catch(() => "not_pending");
+  for (const child of threads) {
+    cancelThreadQueue(botId, child);
+    if (threadBusy(botId, child)) {
+      await stopDirectThread(botId, child).catch(() => {});
+      closeCutToolRows(child);
+    }
+  }
+  return parallel.length + threads.length;
 }
 
 /** Tool calls of this thread's turn still running. */
@@ -14594,6 +14620,8 @@ const watchdog = new TurnWatchdog({
       .catch(() => {})
       .then(() => { if (stillStalledTurn()) closeOpenApprovals(turn.threadId); });
     const minutes = Math.round(silentMs / 60_000), cause = stallCause(silentMs);
+    // its calls and sub-agents end with it, even if the engine never settles
+    closeCutToolRows(turn.threadId, endedToolOutput({ stopped: false }));
     const stalled = stoppedTurnText(turn.threadId, liveTurnByThread.get(turn.threadId), cause);
     if (routineRun?.target === "bot") {
       routines?.failThread(turn.threadId, `No activity for ${minutes} minutes — the routine was stopped`, { cause: "stalled" });
@@ -17777,6 +17805,8 @@ bus.subscribe((event: RuntimeEvent) => {
         && (stoppedTurnId === undefined || completedTurnId === undefined || stoppedTurnId === completedTurnId);
       stoppedTurns.delete(event.threadId);
       const stopped = event.stopReason === "interrupted" || clientStopped;
+      // The turn is over: no call or sub-agent of it can still be at work.
+      closeCutToolRows(event.threadId, endedToolOutput({ stopped }));
       // Hang up only when the goodbye finished. A failed or interrupted
       // turn drops the request so a later turn does not inherit it.
       finishVoiceCallRequestedByBot(event.threadId, voiceCallTurnSettle(event, stopped));
@@ -54232,6 +54262,13 @@ settleMemberAutoLevelsFor(store.bots.map((bot) => bot.id), "at start");
 hideEarlierAgentThreads();
 hideBotThreadsOnce();
 migrateBotRuntimeSettings();
+
+try {
+  const closedRows = closeRowsLeftByRestart(store, Date.now() - SUBAGENT_SWEEP_WINDOW_MS, Date.now());
+  if (closedRows) console.log(`[startup] closed ${closedRows} call(s) and sub-agent(s) an earlier run left open`);
+} catch (error) {
+  console.warn(`[startup] calls left open were not closed: ${error instanceof Error ? error.message : String(error)}`);
+}
 
 const onListening = async () => {
   companyRuntimeReady();

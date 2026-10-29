@@ -23,6 +23,8 @@
 //                        call: the api-error frame and result 2.1.295 sends,
 //                        code usage_limit_reached, carrying the refused window)
 //   A prompt carrying [fake:api-error] plays that one turn as api-error.
+//   A prompt carrying [fake:subagent-api-error] starts a sub-agent (Agent)
+//                      that never reports back, then fails as api-error.
 //   A prompt carrying [fake:context-thrash] (or FAKE_CLAUDE_MODE=context-thrash)
 //                      runs one Bash call, then stops the turn the way 2.1.312's
 //                      compaction breaker does: an api-error frame with
@@ -900,6 +902,18 @@ const playTurn = (prompt: JsonValue, late = false) => {
     const text = "Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row. A file being read or a tool output is likely too large for the context window. Try reading in smaller chunks, or use /clear to start fresh.";
     out({ type: "assistant", message: { model: "<synthetic>", stop_reason: "stop_sequence", content: [{ type: "text", text }] }, error: "invalid_request", is_api_error_message: true, api_error: "autocompact_thrashing" });
     out({ type: "result", subtype: "success", is_error: true, stop_reason: "stop_sequence", terminal_reason: "rapid_refill_breaker", api_error: "autocompact_thrashing", total_cost_usd: 0.05, result: text });
+    turnRunning = false;
+    finishIfDone();
+    return;
+  }
+  // [fake:subagent-api-error]: the turn starts a sub-agent (Agent tool) that
+  // never reports back, then fails on an API error.
+  if (promptText(prompt).includes("[fake:subagent-api-error]")) {
+    const id = `toolu_subagent_${Date.now()}`;
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Agent", input: { description: "Look around", prompt: "Read the folder and report.", subagent_type: "general-purpose" } }] } });
+    const text = "API Error: 529 Overloaded. This is a server-side issue, usually temporary.";
+    out({ type: "assistant", message: { model: "<synthetic>", stop_reason: "stop_sequence", content: [{ type: "text", text }] }, error: "unknown", is_api_error_message: true });
+    out({ type: "result", subtype: "success", is_error: true, stop_reason: "stop_sequence", terminal_reason: "api_error", result: text });
     turnRunning = false;
     finishIfDone();
     return;
