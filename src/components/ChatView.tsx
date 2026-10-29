@@ -2467,6 +2467,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
             visible={presenceVisible}
             phrases={activity.phrases}
             phase={activity.phase}
+            quietSince={activity.stepSince ?? null}
             seed={`${bot.id}:${bot.threadId ?? ""}:${busySince ?? ""}`}
             since={busySince}
             answering={popping !== null}

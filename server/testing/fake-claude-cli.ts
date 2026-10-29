@@ -140,6 +140,8 @@
 //   FAKE_CLAUDE_SLOW_FINISH_GATE path: `slow` replies once this file exists;
 //                      a body of exactly "fail" then ends the turn as an
 //                      engine error (is_error) instead of a success.
+//   FAKE_CLAUDE_HOLD_TOOL JSON {name, input}: the call FAKE_CLAUDE_HOLD_AFTER_TOOL
+//                      holds open, in place of `Bash sleep 30`.
 //   FAKE_CLAUDE_SLOW_TAIL_TOOL 1: `slow` makes one more tool call right
 //                      before its reply — a fold seam the harness sees after
 //                      a steer that was already too late to be folded.
@@ -1279,7 +1281,8 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
     if (process.env.FAKE_CLAUDE_HOLD_AFTER_TOOL) {
       // emit tool_use and wait: interrupt must abort this in-flight call
       heldToolId = `tu-${process.pid}-${++toolUseCount}`;
-      out({ type: "assistant", message: { content: [{ type: "tool_use", id: heldToolId, name: "Bash", input: { command: "sleep 30" } }] } });
+      const held = process.env.FAKE_CLAUDE_HOLD_TOOL ? JSON.parse(process.env.FAKE_CLAUDE_HOLD_TOOL) as { name?: string; input?: unknown } : {};
+      out({ type: "assistant", message: { content: [{ type: "tool_use", id: heldToolId, name: held.name ?? "Bash", input: held.input ?? { command: "sleep 30" } }] } });
     }
     const finishSlowTurn = () => {
       if (heldToolId) {
