@@ -5,6 +5,7 @@
 // real handlers (server/routes/published-pages.ts) over a temporary store;
 // the built reader script comes from SAGAX_STATIC_DIR (default dist/, run
 // `pnpm exec vite build` first). Nothing touches the person's data.
+// CAPTURE_LANG=en and CAPTURE_SCALE=2 give the README's English, retina shots.
 //
 //   node --experimental-strip-types scripts/capture-page-reader.ts <outDir> [prefix]
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -24,6 +25,11 @@ import { PageLive } from "../server/page-live.ts";
 
 const outDir = resolve(process.argv[2] ?? "captures");
 const prefix = process.argv[3] ?? "page-reader";
+// CAPTURE_LANG=en: the same report and comments in English (the README);
+// CAPTURE_SCALE=2: retina captures.
+const EN = process.env.CAPTURE_LANG === "en";
+const LOCALE = EN ? "en-US" : "fr-CA";
+const SCALE = Number(process.env.CAPTURE_SCALE ?? 1) || 1;
 const staticDir = resolve(process.env.SAGAX_STATIC_DIR ?? "dist");
 mkdirSync(outDir, { recursive: true });
 
@@ -32,7 +38,20 @@ const READER = "pr_reader_capture";
 const data = mkdtempSync(join(tmpdir(), "sagax-page-reader-capture-"));
 const pages = new PublishedPages(data);
 
-const HTML = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport mensuel</title>
+const HTML_EN = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Monthly report</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:48rem;margin:2.5rem auto;padding:0 1.25rem;color:#1f2328;background:#fff}
+h1{font-size:2rem;margin:0 0 .25rem}.lead{color:#57606a;margin-top:0}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:1.5rem 0}.card{border:1px solid #d0d7de;border-radius:10px;padding:12px}
+.card b{display:block;font-size:1.6rem}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #d0d7de;padding:.45rem .5rem;text-align:left}
+@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}.lead{color:#9198a1}.card,th,td{border-color:#30363d}}</style></head>
+<body><h1>Monthly report</h1><p class="lead">What the support team did in October.</p>
+<div class="cards"><div class="card"><b>128</b>Requests handled</div><div class="card"><b>96%</b>Resolved on time</div><div class="card"><b>4.7</b>Satisfaction</div></div>
+<h2>Highlights</h2><p>Request volume grew 12% over the previous month. The average time to resolution dropped under four hours.</p>
+<table><thead><tr><th>Category</th><th>Requests</th><th>Average time</th></tr></thead><tbody>
+<tr><td>Workstations</td><td>54</td><td>2 h 40</td></tr><tr><td>Network</td><td>31</td><td>5 h 10</td></tr><tr><td>Accounts and access</td><td>43</td><td>1 h 55</td></tr></tbody></table>
+<h2>Next steps</h2><p>Replace the oldest workstations and document the onboarding procedure for new employees.</p>
+${"<p>Detailed follow-up notes for the team.</p>".repeat(12)}</body></html>`;
+const HTML_FR = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Rapport mensuel</title>
 <style>body{font:16px/1.6 system-ui,sans-serif;max-width:48rem;margin:2.5rem auto;padding:0 1.25rem;color:#1f2328;background:#fff}
 h1{font-size:2rem;margin:0 0 .25rem}.lead{color:#57606a;margin-top:0}
 .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:1.5rem 0}.card{border:1px solid #d0d7de;border-radius:10px;padding:12px}
@@ -45,6 +64,7 @@ h1{font-size:2rem;margin:0 0 .25rem}.lead{color:#57606a;margin-top:0}
 <tr><td>Postes de travail</td><td>54</td><td>2 h 40</td></tr><tr><td>Réseau</td><td>31</td><td>5 h 10</td></tr><tr><td>Comptes et accès</td><td>43</td><td>1 h 55</td></tr></tbody></table>
 <h2>Prochaines étapes</h2><p>Renouveler les postes les plus anciens et documenter la procédure d'accueil des nouveaux employés.</p>
 ${"<p>Notes de suivi détaillées pour l'équipe.</p>".repeat(12)}</body></html>`;
+const HTML = EN ? HTML_EN : HTML_FR;
 
 // CAPTURE_KIND=markdown|presentation: the same report in our own Markdown
 const KIND = process.env.CAPTURE_KIND === "markdown" || process.env.CAPTURE_KIND === "presentation" ? process.env.CAPTURE_KIND : "html";
@@ -65,7 +85,7 @@ else if(window.sagax.page.canWrite()){var b=document.createElement("button");b.t
 q.appendChild(li)})}
 window.sagax.page.subscribe(draw);window.sagax.page.ready.then(draw);
 </script></body></html>`;
-const made = pages.propose({ ownerId: OWNER, botId: "bot_capture", threadId: "t_capture", title: process.env.CAPTURE_STATE === "1" ? "File À traiter" : "Rapport mensuel", kind: KIND, content: KIND === "html" ? (process.env.CAPTURE_STATE === "1" ? QUEUE : HTML) : MARKDOWN });
+const made = pages.propose({ ownerId: OWNER, botId: "bot_capture", threadId: "t_capture", title: process.env.CAPTURE_STATE === "1" ? "File À traiter" : EN ? "Monthly report" : "Rapport mensuel", kind: KIND, content: KIND === "html" ? (process.env.CAPTURE_STATE === "1" ? QUEUE : HTML) : MARKDOWN });
 if (!made.ok) throw new Error(made.error);
 // CAPTURE_ACCESS=org: a page a reader who is not signed in cannot open (#1486)
 pages.publish(made.page.id, { version: 1, access: process.env.CAPTURE_ACCESS === "org" ? "org" : "link", expiresAt: null, by: OWNER });
@@ -73,13 +93,16 @@ pages.setInvites(made.page.id, { people: [READER], teams: [] }, OWNER);
 const pageId = made.page.id;
 // two annotations already there (2026-10-28, Annotate), on the HTML report
 if (KIND === "html") {
-  const first = pages.addThread(pageId, { by: READER, version: 1, text: "Peut-on ajouter la comparaison avec le trimestre précédent ?",
-    anchor: { kind: "text", quote: "Le volume de demandes a augmenté de 12 %", prefix: "Faits saillants", suffix: " par rapport au mois précédent", path: "body > p:nth-of-type(2)", tag: "p" } });
-  if (first.ok) pages.reply(pageId, first.thread.id, { by: OWNER, text: "Oui, je demande au bot de l'ajouter." });
+  const first = EN
+    ? pages.addThread(pageId, { by: READER, version: 1, text: "Can we add the comparison with the previous quarter?",
+      anchor: { kind: "text", quote: "Request volume grew 12%", prefix: "Highlights", suffix: " over the previous month", path: "body > p:nth-of-type(2)", tag: "p" } })
+    : pages.addThread(pageId, { by: READER, version: 1, text: "Peut-on ajouter la comparaison avec le trimestre précédent ?",
+      anchor: { kind: "text", quote: "Le volume de demandes a augmenté de 12 %", prefix: "Faits saillants", suffix: " par rapport au mois précédent", path: "body > p:nth-of-type(2)", tag: "p" } });
+  if (first.ok) pages.reply(pageId, first.thread.id, { by: OWNER, text: EN ? "Yes, I am asking the bot to add it." : "Oui, je demande au bot de l'ajouter." });
   // the page's bot answers too (page_comments, 2026-10-28)
-  if (first.ok) pages.reply(pageId, first.thread.id, { by: "bot:bot_capture", text: "C'est fait : la version 2 compare avec le trimestre précédent." });
-  pages.addThread(pageId, { by: OWNER, version: 1, text: "Vérifier le délai du réseau avant l'envoi.",
-    anchor: { kind: "element", quote: "Réseau 31 5 h 10", prefix: "", suffix: "", path: "body > table > tbody > tr:nth-of-type(2)", tag: "tr" } });
+  if (first.ok) pages.reply(pageId, first.thread.id, { by: "bot:bot_capture", text: EN ? "Done: version 2 compares with the previous quarter." : "C'est fait : la version 2 compare avec le trimestre précédent." });
+  pages.addThread(pageId, { by: OWNER, version: 1, text: EN ? "Check the network delay before sending." : "Vérifier le délai du réseau avant l'envoi.",
+    anchor: { kind: "element", quote: EN ? "Network 31 5 h 10" : "Réseau 31 5 h 10", prefix: "", suffix: "", path: "body > table > tbody > tr:nth-of-type(2)", tag: "tr" } });
 }
 const viewPath = pages.path(pages.get(pageId)!.linkId!);
 
@@ -166,7 +189,7 @@ async function shot(page: Page, name: string) {
 try {
   for (const scheme of (process.env.CAPTURE_SCHEME === "light" || process.env.CAPTURE_SCHEME === "dark" ? [process.env.CAPTURE_SCHEME] : ["light", "dark"]) as Array<"light" | "dark">) {
     for (const person of ["anon", "reader", "owner"] as const) {
-      const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, locale: "fr-CA", extraHTTPHeaders: { "accept-language": "fr-CA" } });
+      const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: SCALE, colorScheme: scheme, locale: LOCALE, extraHTTPHeaders: { "accept-language": LOCALE } });
       await context.addCookies([{ name: "who", value: person, url: base }]);
       const page = await context.newPage();
       page.on("pageerror", (error) => console.error(`[${person}/${scheme}] ${error.message}`));
@@ -223,7 +246,7 @@ try {
         await shot(page, `${person}-${scheme}-annotate`);
         // a new selection in the page: the composer opens in the panel
         await page.frames()[1]!.evaluate(() => {
-          const target = [...document.querySelectorAll("p")].find((p) => p.textContent?.startsWith("Renouveler"))!;
+          const target = [...document.querySelectorAll("p")].find((p) => p.textContent?.startsWith("Renouveler") || p.textContent?.startsWith("Replace"))!;
           const range = document.createRange();
           range.setStart(target.firstChild!, 0);
           range.setEnd(target.firstChild!, 33);
@@ -232,13 +255,13 @@ try {
           document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
         });
         await page.waitForSelector("[data-reader-draft]");
-        await page.locator("[data-reader-draft] textarea").fill("Préciser l'échéancier.");
+        await page.locator("[data-reader-draft] textarea").fill(EN ? "Add the timeline." : "Préciser l'échéancier.");
         await shot(page, `${person}-${scheme}-draft`);
       }
       if (person === "owner" && KIND === "html" && process.env.CAPTURE_STATE !== "1") {
         // live: an invited reader has the page open and comments; the
         // owner's bar shows them and the panel takes the comment at once
-        const other = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, locale: "fr-CA", extraHTTPHeaders: { "accept-language": "fr-CA" } });
+        const other = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: SCALE, colorScheme: scheme, locale: LOCALE, extraHTTPHeaders: { "accept-language": LOCALE } });
         await other.addCookies([{ name: "who", value: "reader", url: base }]);
         const readerPage = await other.newPage();
         await readerPage.goto(`${base}${viewPath}`);
