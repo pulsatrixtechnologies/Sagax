@@ -483,6 +483,14 @@ there; the question first.
   notification is the one buzz) and a `.small` layout for the watch.
 - MCP: a conversation an AI client holds (outside agent or hidden) never
   rings a phone or a watch (`quietOnPhones`), approvals included.
+- "Needs you" is the server's, shared by every device: a settled card
+  (any path) moves its conversation off `waiting-on-you` once no card is
+  open there (`settleWaitingActivity`); iOS counts a card it still holds as
+  open only while the server says the conversation waits
+  (`serverStoppedWaiting`, Updates, island, widgets, banners, badge) and
+  reads the server again when it comes back to the front with a kept stream
+  (`resyncOnForeground`). Tests: `server/needs-you-settled.e2e.test.ts`,
+  iOS `NeedsYouFollowsServerTests`.
 - Tests: `server/push/*.test.ts`, `server/notify.test.ts`, iOS
   `ApprovalNotificationTests`.
 
