@@ -2178,7 +2178,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // itself (agents-proxy.ts); Claude Code's own tool search is off.
         const agentsEnv = turn.compactPrompt
           ? { ...turn.integrations.agents.env, SAGAX_COMPACT_TOOLS: JSON.stringify({ core: turn.compactPrompt.agents.core, pinned: [...new Set(turn.compactPrompt.agents.pinned)].sort() }) }
-          : toolSearch ? { ...turn.integrations.agents.env, SAGAX_DEFER_RARE_TOOLS: "1" } : turn.integrations.agents.env;
+          // The whole catalog, with each family of tools as one tool
+          // (agents-merged.ts): a family call is asked about as the tool it
+          // runs (permission broker, searched-tool-call.ts).
+          : toolSearch ? { ...turn.integrations.agents.env, SAGAX_DEFER_RARE_TOOLS: "1", SAGAX_MERGED_TOOLS: "1" } : { ...turn.integrations.agents.env, SAGAX_MERGED_TOOLS: "1" };
         mcpServers.agents = { ...turn.integrations.agents, env: agentsEnv, alwaysLoad: true };
         // The process is kept from turn to turn: the turn's comms token and
         // depth (new every turn) ride a file the proxy reads on each call,
@@ -2400,6 +2403,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         settings.autoMemoryDirectory = turn.compactPrompt.memoryDir;
       }
       if (turn.compactPrompt) env.ENABLE_TOOL_SEARCH = "false";
+      // Otherwise tool search is always on where the turn can search: MCP
+      // tools Sagax does not load up front (alwaysLoad) wait for ToolSearch.
+      // The CLI's own default ("auto") sends every schema while they fit in
+      // the model's window, which on a 1M-token model is always, and flips
+      // when they stop fitting, so the cached tool list is rewritten.
+      // A value the person set for the engine stays theirs.
+      else if (!env.ENABLE_TOOL_SEARCH && !turn.guestConfined && (config.tools === undefined || config.tools.includes("ToolSearch"))) env.ENABLE_TOOL_SEARCH = "true";
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;
       if (authSettingsPath) args.push("--settings", authSettingsPath);

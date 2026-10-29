@@ -23,6 +23,27 @@ normal deferred loading. This prevents the deferred-lookup dependency; it
 does not magically reconnect a crashed server or override a user's denied
 tool policy.
 
+Outside a compact prompt, Sagax starts Claude Code with
+`ENABLE_TOOL_SEARCH=true` wherever the turn can search (not a guest's
+confined turn, not an instance tool list without ToolSearch), unless the
+person set the variable themselves. Every MCP server Sagax does not load up
+front then waits for ToolSearch, every turn the same way. The CLI's own
+default (`auto`) sends every schema while they fit in the model's window,
+which on a 1M-token model is always, and changes its mind once they stop
+fitting, so the cached tool list is rewritten. A compact prompt keeps
+`ENABLE_TOOL_SEARCH=false`: Sagax lists and searches its own tools there.
+
+Where an engine is shown Sagax's whole agents catalog (Claude Code outside a
+compact prompt, Codex outside a tool selection), each family of tools is
+listed as one tool (`shared/merged-agent-tools.ts`): `cloud_agents`,
+`artifacts`, `routines`, `conversation_history`, `workspace_files`, `rooms`,
+`team_setup`, `computer_sharing`, `terminals`, `skills`. Its `tool` argument
+names the tool to run, beside that tool's own arguments, and each tool keeps
+its whole description. A family call is read everywhere as the tool it runs:
+the approval card and its rules, Always allow, the MCP guard, the misuse
+guardrails and the activity row (`readBridgeCall`). The family tool itself is
+never pre-allowed.
+
 Sources:
 
 - [Claude MCP server loading](https://code.claude.com/docs/en/mcp#exempt-a-server-from-deferral)

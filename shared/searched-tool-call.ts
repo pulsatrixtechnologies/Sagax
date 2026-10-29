@@ -5,6 +5,8 @@
 // tool's widget, which tools a bot uses) reads the tool that call runs, as if
 // the model had called it by its own name.
 
+import { isMergedAgentTool, readMergedCall } from "./merged-agent-tools.ts";
+
 export const SEARCH_CALL_TOOL = "call_tool";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,12 +44,15 @@ export type BridgeCall =
  * Null for any other tool. */
 export function readBridgeCall(tool: string, input: unknown): BridgeCall | null {
   if (tool === BRIDGE_FIND_TOOL) return { kind: "find" };
+  // A family tool (shared/merged-agent-tools.ts) is read as the tool its
+  // action names, with that tool's own arguments, like a use_tool.
+  if (isMergedAgentTool(tool)) return readMergedCall(tool, input);
   if (tool !== BRIDGE_USE_TOOL) return null;
   if (!isRecord(input)) return { kind: "refused", reason: BRIDGE_REFUSED_TEXT };
   const raw = typeof input.name === "string" ? input.name.trim() : "";
   const spelled = AGENTS_SPELLING.exec(raw);
   const target = spelled ? spelled[2]! : raw;
-  if (!AGENT_TOOL.test(target) || META_TOOLS.has(target)) return { kind: "refused", reason: BRIDGE_REFUSED_TEXT };
+  if (!AGENT_TOOL.test(target) || META_TOOLS.has(target) || isMergedAgentTool(target)) return { kind: "refused", reason: BRIDGE_REFUSED_TEXT };
   if (input.arguments !== undefined && input.arguments !== null && !isRecord(input.arguments)) return { kind: "refused", reason: BRIDGE_REFUSED_TEXT };
   return { kind: "call", tool: target, arguments: isRecord(input.arguments) ? input.arguments : {} };
 }

@@ -1730,6 +1730,8 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.argv.join(" ")).toContain("SAGAX_COMMS_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("peer-comms-secret");
     expect(seen.env.SAGAX_COMMS_TOKEN).toBe("peer-comms-secret");
+    // the whole catalog, each family of tools as one tool (agents-merged.ts)
+    expect(seen.env.SAGAX_MERGED_TOOLS).toBe("1");
     expect(instance.adapter.capabilities.agentsMcp).toBe(true);
   });
 

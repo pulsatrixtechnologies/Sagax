@@ -1860,6 +1860,26 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.mcpConfig.mcpServers.agents.env.SAGAX_DEFER_RARE_TOOLS).toBe(expected);
+    // Tool search on where the turn can search (not the CLI's "auto", which
+    // sends every schema on a large window and flips later), and the whole
+    // catalog listed by family on every non-compact turn.
+    expect(seen.env.ENABLE_TOOL_SEARCH).toBe(expected === "1" ? "true" : undefined);
+    expect(seen.mcpConfig.mcpServers.agents.env.SAGAX_MERGED_TOOLS).toBe("1");
+  });
+
+  it("keeps tool search off and the catalog unmerged on a compact prompt", async () => {
+    await create(undefined, { FAKE_CLAUDE_VERSION: "2.1.284" });
+    const dump = join(scratch, "compact-dump.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await instance.adapter.sendTurn({
+      threadId: "t-compact-search", text: "hi",
+      compactPrompt: { agents: { core: "default", pinned: [] }, pinned: {} },
+      integrations: { agents: { command: process.execPath, args: ["/fake/agents-proxy.js"], env: { SAGAX_BOT_ID: "b1", SAGAX_COMMS_TOKEN: "tok" } } },
+    } as Parameters<typeof instance.adapter.sendTurn>[0]);
+    await recorder.until((e) => e.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.env.ENABLE_TOOL_SEARCH).toBe("false");
+    expect(seen.mcpConfig.mcpServers.agents.env.SAGAX_MERGED_TOOLS).toBeUndefined();
   });
 
   // The harness hands the same per-session bearer to every turn; rewriting
