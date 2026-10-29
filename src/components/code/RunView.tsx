@@ -20,6 +20,8 @@ import {
   type CodeEvent, type CodeRun, type FollowUpMode,
 } from "@/lib/code-runs";
 import { cn } from "@/lib/cn";
+import { MAUS_COLORS } from "@/lib/mascot";
+import { useStoreSelector } from "@/state/store-selector";
 import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import { readableErrorMessage } from "@/lib/readable-error";
@@ -180,6 +182,9 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
   const lastStats = useRef<string>("");
   const activeRef = useRef(true);
   useEffect(() => { activeRef.current = run ? runActive(run) : true; }, [run]);
+  // the task's bubble in the colour of the bot that launched the run
+  const botColorName = useStoreSelector((state) => (run?.botId ? state.bots.find((bot) => bot.id === run.botId)?.color : undefined));
+  const botColor = botColorName ? MAUS_COLORS[botColorName] : undefined;
 
   const reloadRun = useCallback(async () => {
     try {
@@ -275,6 +280,7 @@ export function RunView({ runId, consoleUrl, onBack }: { runId: string; consoleU
             events={events}
             workedMinutes={workedMinutes(run, now)}
             working={working}
+            botColor={botColor}
             onApprove={(approvalId, option) => void act(() => approveRun(run.id, approvalId, option))}
           />
           {run.error && <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[13px] text-danger">{run.error}</p>}

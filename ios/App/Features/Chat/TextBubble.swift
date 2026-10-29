@@ -81,7 +81,7 @@ struct TextBubble: View {
                 // Sent while a page was open: the page as a chip over the
                 // words (PageComposerParts.tsx PageRefChip); a tap opens it.
                 if mine, let ref = message.dataContext?.page, ref.isDrawable {
-                    PageRefChip(ref: ref, foreground: desktop?.bubbleUserInk ?? BubbleColor.mineText) { openPage(ref) }
+                    PageRefChip(ref: ref, foreground: mineInk) { openPage(ref) }
                         .fullScreenCover(isPresented: Binding(get: { chipPage != nil }, set: { if !$0 { chipPage = nil } })) {
                             if let chipPage { PageFullScreen(pageId: chipPage.pageId, title: chipPage.title) }
                         }
@@ -113,7 +113,7 @@ struct TextBubble: View {
                     ForEach(message.generatedImages, id: \.path) { attachment in
                         TranscriptAttachmentView(
                             attachment: attachment, threadId: chat.threadId,
-                            messageId: message.id, foreground: mine ? BubbleColor.mineText : BubbleColor.theirsText
+                            messageId: message.id, foreground: mine ? mineInk : BubbleColor.theirsText
                         )
                     }
                 }
@@ -162,7 +162,7 @@ struct TextBubble: View {
                             .font(desktop?.font(DesktopChatMetrics.textSize) ?? Theme.Font.body)
                             .lineSpacing(desktop.map(DesktopChatMetrics.lineSpacing) ?? Theme.bodyLineSpacing)
                             .modifier(DesktopLineBox(theme: desktop))
-                            .foregroundStyle(desktop?.bubbleUserInk ?? BubbleColor.mineText)
+                            .foregroundStyle(mineInk)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .modifier(CollapsedText(collapsed: collapsible && !expanded))
@@ -257,9 +257,22 @@ struct TextBubble: View {
         #endif
     }
 
+    /// My bubble in a 1:1 takes the bot's colour (BubbleColors.user(botColor:)),
+    /// whatever the skin's accent; a room keeps the skin's.
+    private var botPaint: (fill: SkinColor, ink: SkinColor)? {
+        chat.isBot ? BubbleColors.user(botColor: chat.color) : nil
+    }
+
+    /// The text on my bubble.
+    private var mineInk: Color {
+        if let botPaint { return botPaint.ink.color }
+        return desktop?.bubbleUserInk ?? BubbleColor.mineText
+    }
+
     private func bubbleFill(mine: Bool) -> Color {
         _ = bubblePrefs.botBubble
         _ = openBot.openBotColor
+        if mine, let botPaint { return botPaint.fill.color }
         if !mine, let paint = BotBubblePaint.current { return paint.fill }
         if let desktop { return mine ? desktop.bubbleUser : (message.webhookContent == nil ? desktop.bubbleBot : desktop.card) }
         return mine ? BubbleColor.mine : BubbleColor.theirs

@@ -8,6 +8,7 @@
 // desktop window (FloatingBotWindow.tsx) and in the in-app overlay.
 import "./floating-bots.css";
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type Ref } from "react";
+import { botBubbleVars } from "@/lib/bubble-colors";
 import { cn } from "@/lib/cn";
 import type { OwlState } from "@/lib/owl/owl-art";
 import { MAUS_COLORS } from "@/lib/mascot";
@@ -799,7 +800,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         (desk ? side.right : balloon && side.right) && "fb-left",
         className,
       )}
-      style={{ ...style, ...((desk ? side.right : balloon && side.right) ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px`, "--fb-stage-h": `${STAGE.height}px` } as React.CSSProperties}
+      // the question I asked (.fb-asked) in this bot's colour (bubble-colors.ts, botBubbleVars)
+      style={{ ...style, ...botBubbleVars(owlHex(snapshot.color)), ...((desk ? side.right : balloon && side.right) ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px`, "--fb-stage-h": `${STAGE.height}px` } as React.CSSProperties}
       data-reduced={snapshot.reduced ? "" : undefined}
       data-retro={retro ? "" : undefined}
       data-chatting={balloon ? "" : undefined}

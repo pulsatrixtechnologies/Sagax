@@ -1454,7 +1454,9 @@ export function GroupView({ group: stored }: { group: Group }) {
   return (
     // data-room-view: a navigation into or out of a room never animates
     // (src/lib/view-transitions.ts), it opens in place like a 1:1.
-    <main data-room-view="" className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
+    // data-room-bubble: my bubble keeps the skin's accent, or the brand's when
+    // the skin's is a neutral (src/styles/skin-bubble.css, roomBubbleColors).
+    <main data-room-view="" data-room-bubble="" className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
       <ExchangeColumnProvider node={exchangeColumnNode}>
       <div ref={exchangeColumnRef} className="relative isolate flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />

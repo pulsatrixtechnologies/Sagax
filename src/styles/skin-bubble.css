@@ -711,3 +711,195 @@
   --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
   --color-bubble-bot: #d4d4d4;
 }
+
+/* A room on a skin whose accent is a neutral: the brand's accent (src/lib/bubble-colors.ts, roomBubbleColors). */
+
+[data-skin="midnight"][data-skin="midnight"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #2e6cf3);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="graphite"][data-skin="graphite"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #2e6cf3);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="linen"][data-skin="linen"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #2f62dd);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #2f62dd);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="red"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #e90c0c);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="pink"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #e0117d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="blue"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #086fef);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="green"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #188640);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="yellow"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #8e7203);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="red"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #b91c1c);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="pink"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #be185d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="blue"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #1d4ed8);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="green"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #15803d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="yellow"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #a16207);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="aurore"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #e0117d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="aurore"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #be185d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="ocean"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #086fef);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="ocean"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #1d4ed8);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="neon"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #7e55f8);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="neon"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #7c3aed);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="foret"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #188640);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="foret"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #15803d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="cyberpunk"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #da00aa);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="sunset"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #fdba74);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #111111);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="sunset"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #c2410c);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="nordic"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #7dd3fc);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #111111);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="nordic"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #1f5f8b);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="candy"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #be185d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="red"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #e90c0c);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="pink"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #e0117d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="blue"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #086fef);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="green"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #188640);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="midnight"][data-skin="midnight"][data-skin-tint="yellow"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #8e7203);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="red"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #b91c1c);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="pink"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #be185d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="blue"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #1d4ed8);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="green"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #15803d);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}
+
+[data-skin="daylight"][data-skin="daylight"][data-skin-tint="yellow"][data-skin-depth="full"] [data-room-bubble] {
+  --color-bubble-user: var(--brand-bubble-user, #a16207);
+  --color-bubble-user-ink: var(--brand-bubble-user-ink, #ffffff);
+}

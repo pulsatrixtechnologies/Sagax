@@ -90,7 +90,8 @@ import { TurnPresence } from "./TurnPresence";
 import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { isAppleMobileWebClient, showToolCallRows } from "@/lib/tool-activity-rows";
-import { normalizeState, stateForBot } from "@/lib/mascot";
+import { MAUS_COLORS, normalizeState, stateForBot } from "@/lib/mascot";
+import { botBubbleVars } from "@/lib/bubble-colors";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { peerLine, peerRequest, type PeerLine } from "@/lib/peer-message";
 import { autoWorkerLine } from "@/lib/auto-model";
@@ -2216,10 +2217,13 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const latestPageVersion = useMemo(() => (openPage ? latestPageVersionIn(messages, openPage.pageId) : undefined), [openPage, messages]);
 
   const Root = side ? "section" : "main";
+  // My bubble (and its inline editor) in the bot's colour, whatever the
+  // skin's accent (src/lib/bubble-colors.ts, botBubbleVars).
+  const bubbleStyle = botBubbleVars(MAUS_COLORS[bot.color]) as React.CSSProperties;
   return (
     <ThreadLinkContext value={threadLink}>
     <ExchangeColumnProvider node={exchangeColumnNode}>
-    <Root ref={exchangeColumnRef} aria-label={side?.label} data-side-chat={side ? "" : undefined} className="app-glow relative isolate flex h-full min-w-0 flex-1 flex-col bg-app">
+    <Root ref={exchangeColumnRef} aria-label={side?.label} data-side-chat={side ? "" : undefined} style={bubbleStyle} className="app-glow relative isolate flex h-full min-w-0 flex-1 flex-col bg-app">
       {/* The older call mode covers the thread while the bot is on the line;
           a voice mode call docks at the top of the banner stack below */}
       {!side && <>
