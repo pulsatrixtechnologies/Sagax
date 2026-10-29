@@ -21559,9 +21559,15 @@ async function startTurn(
   // Auto: the pick is this thread's now that the turn is admitted, and
   // work handed out gets its activity row (which model, and why).
   if (autoTurn) {
+    const earlierPick = store.taskByThread(bot.id, threadId)?.autoModel;
     store.patchTask(bot.id, threadId, { autoModel: autoModelRecord(autoTurn.pick, Date.now()) });
     autoTurnsByThread.set(threadId, { payer: autoTurn.payer, entry: { instanceId: autoTurn.pick.selection.instanceId, model: autoTurn.pick.selection.model } });
-    if (autoTurn.pick.role === "worker" && !warmOnly && !autoContinuing) {
+    // The person's own turn (2026-10-29): the words decide the model, so a
+    // turn that runs on another model than the last one says so in one
+    // line (the chip and the picker say it on the first turn).
+    const ownTurnMoved = autoTurn.pick.role === "orchestration" && earlierPick !== undefined &&
+      (earlierPick.instanceId !== autoTurn.pick.selection.instanceId || earlierPick.model !== autoTurn.pick.selection.model);
+    if ((autoTurn.pick.role === "worker" || ownTurnMoved) && !warmOnly && !autoContinuing) {
       store.appendMessage(threadId, {
         role: "bot",
         kind: "activity",

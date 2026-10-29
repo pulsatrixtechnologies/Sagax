@@ -156,6 +156,21 @@ cards and banner, replay in the background with no gate, final page state),
 `shared/teach-recording.test.ts`, `server/routes/my-chrome.test.ts`,
 `src/components/MyChromeRecordDialog.dom.test.ts`. Captures:
 `scripts/capture-my-chrome-recorder.mjs`.
+## Auto picks the person's own turn by its words (2026-10-29)
+
+A bot on Auto classifies the person's own message like a worker's task
+(`classifyTask`) and runs it on the tier the words ask for
+(`ORCHESTRATION_TIER`, server/model-auto.ts): a quick question on the fast
+tier (the bot's fast model when set, else the engine's own, Haiku on Claude
+Code), an image on a model that reads images, a long document or a big
+paste on the largest context; reasoning, coding, tool-heavy and general work
+stay on the strongest model. A refusal climbs the chain toward the strongest
+model, never down. A turn that lands on another model than the thread's
+last pick gets one activity line (`explainPick`, "Auto: ... for this quick
+question, ..."); the chip and the picker's Auto row say it on the first turn
+(`model.auto.why.quickTier|vision|long`). A pin always wins. Tests:
+`server/model-auto.test.ts` ("the person's own turn runs on the tier its
+words ask for").
 
 ## Leave a group chat (#1480, 2026-10-28)
 

@@ -97,9 +97,18 @@ an engine that confines it. The pick is recorded on the task after the turn is a
 
 ## Orchestration rule
 
-"Auto: Claude Fable 5.1 for this bot, because it is the strongest general model your subscription
-can run on Claude Code, the engine this bot runs on." The `top` tier on the bot's own engine when
-the payer can use it, else on the first engine of the order the payer can use.
+Since 2026-10-29 the person's own turn is classified like a worker's task and runs on the tier
+its words ask for (`ORCHESTRATION_TIER`): `quick` on the `fast` tier (the fast model set for the
+bot when it has one, else the engine's own fast model), `vision` on a model that reads images,
+`long-reading` and `large-context` on the largest context; `reasoning`, `coding`, `automation`
+and `general` stay on `top` (the conversation is where the person's judgment matters most). The
+chain still climbs toward the strongest model on a refusal, never down. Without words (the
+preview of the next turn) the `top` tier on the bot's own engine when the payer can use it,
+else on the first engine of the order the payer can use: "Auto: Claude Fable 5.1 for this bot,
+because it is the strongest general model your subscription can run on Claude Code, the engine
+this bot runs on." A turn that lands on another model than the thread's last pick gets one
+activity line saying why ("Auto: Claude Haiku 4.5 for this quick question, ..."); the chip and
+the picker say it on the first turn. A person's pin always wins: Auto never runs on a pinned bot.
 
 ## Who sees what
 

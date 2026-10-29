@@ -33,6 +33,13 @@ export function autoWorkerLine(record: AutoModelRecord): string {
 export function autoReasonSentence(record: AutoModelRecord): string {
   if (record.role === "worker") return autoWorkerLine(record);
   const params = { model: record.modelLabel, engine: record.engineLabel, payer: payerPhrase(record.via), from: record.fromEngineLabel ?? "" };
+  // The person's own turn, when its words moved it off the strongest tier
+  // (2026-10-29): say what in the message decided it.
+  if (record.reason !== "base" && record.reason !== "fast") {
+    if (record.tier === "fast" && record.taskClass === "quick") return t("model.auto.why.quickTier", params);
+    if (record.tier === "vision" && record.taskClass === "vision") return t("model.auto.why.vision", params);
+    if (record.tier === "long" && (record.taskClass === "long-reading" || record.taskClass === "large-context")) return t("model.auto.why.long", params);
+  }
   switch (record.reason) {
     case "strongest-own": return t("model.auto.why.strongestOwn", params);
     case "strongest-other": return t("model.auto.why.strongestOther", params);

@@ -11801,5 +11801,8 @@
   "teach.replay.background": "En arrière-plan",
   "teach.replay.backgroundHint": "Dans son propre navigateur, sans fenêtre à votre écran. Les connexions viennent du coffre, sinon il vous les demande.",
   "teach.replay.myChrome": "Dans mon Chrome (ma session connectée)",
-  "teach.replay.myChromeHint": "Il l'annonce dans la conversation avant de commencer, et la bannière avec Arrêter reste affichée pendant toute la relecture. Vos approbations habituelles s'appliquent."
+  "teach.replay.myChromeHint": "Il l'annonce dans la conversation avant de commencer, et la bannière avec Arrêter reste affichée pendant toute la relecture. Vos approbations habituelles s'appliquent.",
+  "model.auto.why.quickTier": "Auto : {model} pour cette question courte, le modèle rapide que {payer} sur {engine}; une question plus dure tourne sur le modèle le plus puissant.",
+  "model.auto.why.vision": "Auto : {model} pour cette image, un modèle qui lit les images que {payer} sur {engine}.",
+  "model.auto.why.long": "Auto : {model} pour cette longue lecture, le plus grand contexte que {payer} sur {engine}."
 }
