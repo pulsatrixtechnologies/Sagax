@@ -23,6 +23,8 @@ const shots = [
   { query: "view=editor&trigger=webhook", label: "editor-webhook", full: false },
   { query: "view=page&trigger=webhook", label: "page-webhook", full: true },
   { query: "view=bot", label: "bot-webhooks", full: true },
+  { query: "view=panel&trigger=clock", label: "panel-routine", full: false },
+  { query: "view=panel&trigger=clock", label: "panel-run", full: false, click: "[data-run-row]" },
 ];
 
 const vite = spawn("pnpm", ["exec", "vite", "--config", "vite.gallery.config.ts", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
@@ -50,7 +52,8 @@ try {
         await page.waitForSelector("[data-routine-editor-more]");
         await page.evaluate(() => document.querySelector("[data-routine-editor-more]")?.setAttribute("open", ""));
       }
-      await page.waitForSelector(shot.full ? "[data-gallery-card]" : "[role=dialog]", { state: "visible" });
+      await page.waitForSelector(shot.full || shot.query.includes("view=panel") ? "[data-gallery-card]" : "[role=dialog]", { state: "visible" });
+      if (shot.click) { await page.waitForSelector(shot.click); await page.click(shot.click); }
       await page.waitForTimeout(500);
       await page.screenshot({ path: join(outDir, `${prefix}-${shot.label}-${size}-${label}.png`), fullPage: shot.full });
       console.log(size, label, shot.label);

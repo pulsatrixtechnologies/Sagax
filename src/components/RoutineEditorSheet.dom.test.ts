@@ -102,4 +102,15 @@ describe("Edit routine", () => {
     expect(when.textContent).toContain("Copy a curl example");
     expect(host.querySelector("[data-routine-editor-summary]")?.textContent).toContain("When a webhook fires");
   });
+
+  it("opens read-only for a routine the person cannot change: fields off, no Save, its owner named", () => {
+    mount({ ...routine({ type: "cron", expression: "0 9 * * *", timeZone: "UTC" }), canEdit: false, owner: { id: "pr_other", name: "Alex" } } as Routine);
+    expect(host.querySelector("[data-editor-title]")?.textContent).toBe("Routine");
+    expect(host.querySelector("[data-routine-editor-readonly]")).not.toBeNull();
+    expect(host.querySelector("[data-routine-editor-owner]")?.textContent).toBe("Owner: Alex");
+    expect(host.querySelector<HTMLFieldSetElement>("fieldset")?.disabled).toBe(true);
+    const labels = [...host.querySelectorAll("button")].map((button) => button.textContent);
+    expect(labels).toContain("Close");
+    expect(labels).not.toContain("Save");
+  });
 });

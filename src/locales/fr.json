@@ -12052,5 +12052,10 @@
   "botWebhooks.listHelp": "Le webhook d’une routine se gère dans cette routine ; un webhook autonome, dans Automatisations.",
   "botWebhooks.openRoutine": "Ouvrir la routine",
   "botWebhooks.openAutomations": "Ouvrir dans Automatisations",
-  "routineEditor.summary.resultsMain": "Résultats dans le fil principal"
+  "routineEditor.summary.resultsMain": "Résultats dans le fil principal",
+  "routineDetail.openConfiguration": "Voir et modifier la configuration",
+  "routineEditor.titleView": "Routine",
+  "routineEditor.readOnly": "Vous voyez la configuration de cette routine, sans pouvoir la modifier.",
+  "routineEditor.owner": "Propriétaire : {name}",
+  "routineEditor.redacted": "Ses consignes sont privées à son propriétaire."
 }

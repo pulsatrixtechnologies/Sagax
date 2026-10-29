@@ -66,6 +66,7 @@ import { AdvancedScheduleFields, HumanScheduleFields } from "@/components/routin
 import { EditorSection } from "@/components/routines/EditorSection";
 import { RoutineWebhookPanel } from "@/components/routines/RoutineWebhookPanel";
 import { resultsThreadName } from "@/components/routines/RoutineConfiguration";
+import { personLabel } from "@/lib/human-label";
 import { everyMinutesOf, keptScheduleValue, PICKER_FREQUENCIES, savedPatternSchedule, scheduleDraftFor, scheduleEditorValue, type ScheduleDraft } from "@/components/routines/schedule-editor";
 import { defaultScheduleModel, type ScheduleFrequency } from "../../shared/schedule-model";
 import { routineAutoPauseChoices, routineAutoPauseOption, routineDateTime, routineRunLabel, scheduleRepeatsEventDate, upcomingRoutines } from "@/lib/routine-display";
@@ -742,6 +743,10 @@ function EventEditor({
   const canSwitchKind = !routinesOnly && !existingRoutine && !existingCall && !lockedBotId;
 
   const isCallKind = kind === "call";
+  // 2026-10-29: the configuration lives here only; a routine the person
+  // cannot change opens read-only (every field disabled, no Save).
+  const readOnly = Boolean(existingRoutine && (existingRoutine.canEdit === false || existingRoutine.redacted));
+  const otherOwner = existingRoutine?.owner?.id && existingRoutine.owner.id.toLowerCase() !== (state.config?.viewer?.principalId ?? "").toLowerCase() ? existingRoutine.owner : null;
   const isRoutineKind = !isCallKind;
   // 2026-10-29: "Edit routine" reads its summary up top, says when a change
   // is not saved yet, and asks before closing over one.
@@ -776,8 +781,8 @@ function EventEditor({
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={existingRoutine || existingCall ? t("routineCalendar.editEventAria") : t("routineCalendar.createEventAria")} tabIndex={-1} className="max-h-[94vh] w-full max-w-[760px] overflow-y-auto rounded-[14px] border border-border bg-elevated">
         <div className="sticky top-0 z-20 flex items-center justify-between border-b border-hairline/40 bg-elevated px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-2">
-            <div data-editor-title className="truncate text-[15px] font-semibold text-ink">{kind === "routine" ? (existingRoutine ? t("routineEditor.titleEdit") : t("routineEditor.titleNew")) : existingRoutine || existingCall ? t("routineCalendar.editEvent") : t("routineCalendar.newEvent")}</div>
-            {dirty && <span data-editor-dirty className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-text"><span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />{t("routineEditor.unsaved")}</span>}
+            <div data-editor-title className="truncate text-[15px] font-semibold text-ink">{kind === "routine" ? (readOnly ? t("routineEditor.titleView") : existingRoutine ? t("routineEditor.titleEdit") : t("routineEditor.titleNew")) : existingRoutine || existingCall ? t("routineCalendar.editEvent") : t("routineCalendar.newEvent")}</div>
+            {dirty && !readOnly && <span data-editor-dirty className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-text"><span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />{t("routineEditor.unsaved")}</span>}
           </div>
           <button onClick={requestClose} className="rounded-full p-2 text-ink-secondary hover:bg-raised hover:text-ink" aria-label={t("common.close")}><X size={18} /></button>
         </div>
@@ -818,7 +823,10 @@ function EventEditor({
             <div className="space-y-2">
               <input autoFocus data-routine-editor-name value={name} onChange={(event) => setName(event.target.value)} aria-label={t("routineEditor.name")} placeholder={t("routineCalendar.addTitle")} className="w-full min-w-0 border-b border-hairline/60 bg-transparent px-1 pb-2 text-[22px] font-medium text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong" />
               {routineSummary && <p data-routine-editor-summary className="px-1 text-[12.5px] leading-relaxed text-ink-secondary">{routineSummary}</p>}
+              {otherOwner && <p data-routine-editor-owner className="px-1 text-[12px] text-ink-secondary">{t("routineEditor.owner", { name: personLabel(otherOwner.name, otherOwner.id) })}</p>}
+              {readOnly && <p data-routine-editor-readonly className="rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("routineEditor.readOnly")}</p>}
             </div>
+            <fieldset disabled={readOnly} className="m-0 min-w-0 space-y-5 border-0 p-0">
             <EditorSection icon={Clock3} title={t("routineEditor.when")} data-routine-editor-section="when">
               <div className="flex flex-wrap items-center gap-2">
                 <Repeat2 size={14} className="text-ink-secondary" />
@@ -861,8 +869,8 @@ function EventEditor({
               )}
               {recurrence === "webhook" && <RoutineWebhookPanel routine={existingRoutine?.schedule.type === "webhook" ? existingRoutine : undefined} bot={bots.find((bot) => bot.id === botIds[0])} />}
               {recurrence === "email" && <p className="text-[11.5px] leading-relaxed text-ink-secondary">{t("routineEditor.emailTrigger")}</p>}
-              {kind === "routine" && recurrence === "pattern" && pattern && <HumanScheduleFields draft={scheduleDraft} value={pattern} onChange={changeScheduleDraft} />}
-              {kind === "routine" && recurrence === "advanced" && pattern && <AdvancedScheduleFields value={pattern} onSimplify={simplifySchedule} />}
+              {kind === "routine" && recurrence === "pattern" && pattern && <HumanScheduleFields draft={scheduleDraft} value={pattern} onChange={changeScheduleDraft} paused={Boolean(existingRoutine && !existingRoutine.enabled)} />}
+              {kind === "routine" && recurrence === "advanced" && pattern && <AdvancedScheduleFields value={pattern} onSimplify={simplifySchedule} paused={Boolean(existingRoutine && !existingRoutine.enabled)} />}
               {kind === "routine" && repeatsOnClock && (
                 <RoutineTimingFields
                   mode={timingMode}
@@ -1067,7 +1075,8 @@ function EventEditor({
                 </>
               )}
               </div>}
-              <MarkdownEditor compact expandable value={description} onChange={setDescription} minHeight={140} maxHeight="40vh" dataField="routine-instructions" className="min-w-0" ariaLabel={isRoomGoal ? t("routineCalendar.teamAccomplish") : kind === "routine" ? t("routineCalendar.botInstructions") : t("routineCalendar.addAgenda")} placeholder={isRoomGoal ? t("routineCalendar.teamAccomplish") : kind === "routine" ? t("routineCalendar.botInstructions") : t("routineCalendar.addAgenda")} />
+              {existingRoutine?.redacted && <p className="text-[12px] text-ink-secondary">{t("routineEditor.redacted")}</p>}
+              <MarkdownEditor compact expandable readOnly={readOnly} value={description} onChange={setDescription} minHeight={140} maxHeight="40vh" dataField="routine-instructions" className="min-w-0" ariaLabel={isRoomGoal ? t("routineCalendar.teamAccomplish") : kind === "routine" ? t("routineCalendar.botInstructions") : t("routineCalendar.addAgenda")} placeholder={isRoomGoal ? t("routineCalendar.teamAccomplish") : kind === "routine" ? t("routineCalendar.botInstructions") : t("routineCalendar.addAgenda")} />
               <div className="min-w-0 space-y-2">
             {isRoomGoal ? (
               <div className="min-w-0 flex-1 rounded-xl border border-hairline/50 bg-inset px-3.5 py-3">
@@ -1191,6 +1200,7 @@ function EventEditor({
 
               </div>
             </details>
+            </fieldset>
           </> : <>
           <div className="flex items-start gap-4">
             <span className="mt-3 size-4 shrink-0 rounded bg-accent" />
@@ -1481,8 +1491,8 @@ function EventEditor({
 
         <div className="sticky bottom-0 z-20 flex items-center justify-end gap-2 border-t border-hairline/40 bg-elevated px-5 py-3.5">
           {dirty && <span className="mr-auto text-[11.5px] text-ink-secondary">{t("routineEditor.unsavedHint")}</span>}
-          <button onClick={requestClose} className="rounded-lg px-4 py-2 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink">{t("common.cancel")}</button>
-          <button onClick={save} disabled={saving || attachmentPending || !valid} className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-40">{(saving || attachmentPending) && <Loader2 size={14} className="animate-spin" />}{attachmentPending ? t("routineCalendar.attaching") : existingRoutine || existingCall ? t("common.save") : kind === "call" ? t("routineCalendar.scheduleCall") : isRoomGoal ? t("routineCalendar.scheduleGoal") : t("routineCalendar.scheduleRoutine")}</button>
+          <button onClick={requestClose} className="rounded-lg px-4 py-2 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink">{readOnly ? t("common.close") : t("common.cancel")}</button>
+          {!readOnly && <button onClick={save} disabled={saving || attachmentPending || !valid} className="flex items-center gap-2 rounded-lg bg-accent px-5 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-40">{(saving || attachmentPending) && <Loader2 size={14} className="animate-spin" />}{attachmentPending ? t("routineCalendar.attaching") : existingRoutine || existingCall ? t("common.save") : kind === "call" ? t("routineCalendar.scheduleCall") : isRoomGoal ? t("routineCalendar.scheduleGoal") : t("routineCalendar.scheduleRoutine")}</button>}
         </div>
       </div>
     </div>
@@ -2194,6 +2204,7 @@ export function EventDetails({
             onLogs={openLogs}
             onOpenResults={openResults}
             onOpenGroup={goalGroup ? () => { onOpenRoom(goalGroup.id); onClose(); } : undefined}
+            onConfigure={onEdit}
           />
         ) : null}
       </div>

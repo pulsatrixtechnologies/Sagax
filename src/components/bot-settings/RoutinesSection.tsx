@@ -19,6 +19,7 @@ import { ACTION_LABEL_MAIN, ActionBar, ActionButton, actionButtonClass } from ".
 import { canRunRoutineNow, routineRunInFlight, RunNowButton } from "../routines/RunNowButton";
 import { RoutineDetail } from "../routines/RoutineDetail";
 import { ConnectedRunActivity, RoutineRunDetail } from "../routines/RoutineRunDetail";
+import { RunDetailModal } from "../routines/RunDetailModal";
 
 // The routine page covers the whole panel, so it draws its own top bar the way
 // the panel's does (BotSettingsDialog): a .content-topbar row, whose buttons
@@ -76,8 +77,10 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
   };
   const openLogs = (routineId: string) => dispatch({ type: "showRoutines", section: "logs", routineId, botId: bot.id });
 
-  // 2026-10-29: a run opened from the routine's history, the panel's own
-  // page over it (back returns to the routine).
+  // 2026-10-29: a run opened from the routine's history (or Run now) opens
+  // in a large modal over the app, not in the narrow panel; the routine's
+  // page stays under it.
+  let runModal: React.ReactNode = null;
   if (detail && openedRun) {
     const run = state.routineRuns.find((candidate) => candidate.id === openedRun.id) ?? openedRun;
     const executionThreadId = run.executionThreadId ?? run.threadId;
@@ -85,14 +88,10 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
     const resultsId = run.resultsThreadId ?? run.sourceThreadId;
     const canOpenResults = Boolean(resultsId && (bot.threadId === resultsId || bot.tasks?.some((task) => task.threadId === resultsId)));
     const live = ["queued", "running", "waiting"].includes(run.status);
-    return <div className="absolute inset-0 z-20 flex flex-col bg-panel">
-      <RoutineDetailHeader
-        name={t("routineDetail.runOf", { date: routineDateTime(run.scheduledFor) })}
-        onBack={() => setOpenedRun(null)}
-        onClose={() => { dispatch({ type: "toggleSettings", open: false }); dispatch({ type: "toggleComputer", open: false }); }}
-      />
+    runModal = <RunDetailModal title={detail.name} subtitle={t("routineDetail.runOf", { date: routineDateTime(run.scheduledFor) })} onClose={() => setOpenedRun(null)}>{(wide) => (
       <ConnectedRunActivity key={run.id} run={run}>{({ detail: activity, error: activityError, waiting }) => (
         <RoutineRunDetail
+          wide={wide}
           run={run}
           waiting={waiting}
           onOpenThread={(_botId, threadId) => openBotThread(dispatch, bot, threadId, showThreads)}
@@ -117,7 +116,7 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
           onLogs={() => openLogs(detail.id)}
         />
       )}</ConnectedRunActivity>
-    </div>;
+    )}</RunDetailModal>;
   }
 
   if (detail) {
@@ -144,6 +143,7 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
         onOpenRun={(run) => { setOpenedRun(run); if (["failed", "missed"].includes(run.status) && !run.seenAt && !run.redacted) dispatch({ type: "markRoutineRunSeen", runId: run.id }); }}
         onOpenResults={() => openResults(detail)}
         canOpenResults
+        onConfigure={() => setEditing(detail)}
       />
       <RoutinePanelActions
         routine={detail}
@@ -155,6 +155,7 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
         onLogs={() => openLogs(detail.id)}
         onDelete={() => { dispatch({ type: "deleteRoutine", routineId: detail.id }); setDetailId(null); }}
       />
+      {runModal}
       {editing && editing !== "new" && !("copyOf" in editing) && <RoutineEditor key={detail.id} routine={detail} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} onClose={() => setEditing(null)} />}
       {editing && editing !== "new" && "copyOf" in editing && <RoutineEditor key={`${detail.id}-copy`} copyOf={editing.copyOf} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} folder={detail.folder} onClose={() => setEditing(null)} />}
     </div>;

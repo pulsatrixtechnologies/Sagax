@@ -47,8 +47,12 @@ stays in memory only. A routine created or switched to a webhook in the app
 gets its webhook (`bindOwnedTrigger`, server/index.ts, idempotent).
 Switching it to the clock removes the webhook. Edit bot > Webhooks only
 lists the bot's webhooks: a row opens its routine, or Automations >
-Webhooks for a webhook of its own. Gallery `src/gallery/routine-editor.html`,
-captures `node scripts/capture-routine-editor.mjs`.
+Webhooks for a webhook of its own. The routine's page keeps no Configuration tab: its summary (trigger, next
+run, bot) opens this editor, read-only (`fieldset disabled`, no Save, its
+owner named) for a routine the person cannot change. A run opened from the
+bot panel's routine page opens in a large modal (`RunDetailModal`), not in
+the narrow panel. Gallery `src/gallery/routine-editor.html`, captures
+`node scripts/capture-routine-editor.mjs`.
 
 ## A routine's schedule in words (2026-10-29)
 

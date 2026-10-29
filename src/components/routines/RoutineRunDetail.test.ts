@@ -112,17 +112,20 @@ describe("a routine's page", () => {
   const runs = [run("completed", { id: "a", output: table, scheduledFor: NOW - 60 * MIN }), run("failed", { id: "b", error: "rpc_error", scheduledFor: NOW - 120 * MIN })];
   it("lists its runs newest first, each with its state, its time and its first line", () => {
     const markup = renderToStaticMarkup(createElement(RoutineDetail, { routine, runs, bots: [bot], now: NOW, onOpenRun: () => {} }));
-    expect(markup).toContain('data-routine-view="runs"');
+    expect(markup).toContain("data-routine-history");
     expect(markup.indexOf('data-run-row="a"')).toBeLessThan(markup.indexOf('data-run-row="b"'));
     expect(markup).toContain("Three items today.");
     expect(markup).not.toContain("Write the morning briefing.");
   });
 
-  it("holds the prompt, the bot and the schedule under Configuration", () => {
-    const markup = renderToStaticMarkup(createElement(RoutineDetail, { routine, runs, bots: [bot], now: NOW, onOpenRun: () => {}, initialView: "configuration" }));
-    expect(markup).toContain("data-routine-config-prompt");
-    expect(markup).toContain("Write the morning briefing.");
-    expect(markup).toContain("data-routine-config-bot");
+  it("keeps no second copy of the configuration: its summary opens the editor (2026-10-29)", () => {
+    const markup = renderToStaticMarkup(createElement(RoutineDetail, { routine, runs, bots: [bot], now: NOW, onOpenRun: () => {}, onConfigure: () => {} }));
+    expect(markup).not.toContain("data-routine-config-prompt");
+    expect(markup).not.toContain('role="tab"');
+    expect(markup).toContain("data-routine-summary");
+    expect(markup).toContain("See and edit the configuration");
+    const plain = renderToStaticMarkup(createElement(RoutineDetail, { routine, runs, bots: [bot], now: NOW, onOpenRun: () => {} }));
+    expect(plain).not.toContain("See and edit the configuration");
   });
 });
 

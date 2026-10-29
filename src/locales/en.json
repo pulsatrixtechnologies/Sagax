@@ -12052,5 +12052,10 @@
   "botWebhooks.listHelp": "A routine’s webhook is managed in that routine; a webhook of its own, in Automations.",
   "botWebhooks.openRoutine": "Open the routine",
   "botWebhooks.openAutomations": "Open in Automations",
-  "routineEditor.summary.resultsMain": "Results in the main thread"
+  "routineEditor.summary.resultsMain": "Results in the main thread",
+  "routineDetail.openConfiguration": "See and edit the configuration",
+  "routineEditor.titleView": "Routine",
+  "routineEditor.readOnly": "You can see this routine’s configuration but not change it.",
+  "routineEditor.owner": "Owner: {name}",
+  "routineEditor.redacted": "Its instructions are private to its owner."
 }

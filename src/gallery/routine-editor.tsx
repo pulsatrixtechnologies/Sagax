@@ -8,6 +8,8 @@ import { createRoot } from "react-dom/client";
 import { RoutineEditor } from "../components/RoutineCalendarPage";
 import { RoutineConfiguration } from "../components/routines/RoutineConfiguration";
 import { BotWebhooks } from "../components/bot-settings/BotWebhooks";
+import { RoutinesSection } from "../components/bot-settings/RoutinesSection";
+import type { RoutineRun } from "../lib/routines";
 import { setLocale } from "../lib/i18n";
 import type { Routine } from "../lib/routines";
 import type { WebhookTrigger } from "../lib/webhooks";
@@ -48,11 +50,21 @@ const webhooks = [
   { id: "wh-2", endpointId: "wh_a1b2c3d4", name: "Alerte de surveillance", prompt: "Analyse l'alerte reçue.", botId: bot.id, runOn: "maus", enabled: false, createdAt: 1, updatedAt: 1, deliveryCount: 0, tokenLast4: "m2Lk" },
 ] as unknown as WebhookTrigger[];
 
+const now = Date.now();
+const runs = [0, 1, 2].map((index) => ({
+  id: `run-${index}`, routineId: routine.id, routineName: routine.name, botId: bot.id, target: "bot", status: index === 1 ? "failed" : "succeeded",
+  scheduledFor: now - (index + 1) * 4 * 3_600_000, startedAt: now - (index + 1) * 4 * 3_600_000, finishedAt: now - (index + 1) * 4 * 3_600_000 + 95_000,
+  output: index === 1 ? undefined : "## Résumé\n\n- 3 billets ouverts depuis hier\n- 1 billet en attente du client", error: index === 1 ? "Le connecteur n'a pas répondu à temps." : undefined,
+  prompt, runOn: "maus", trigger: "schedule",
+})) as unknown as RoutineRun[];
+
 function Seed({ children }: { children: ReactNode }) {
   const { state, dispatch } = useStore();
   useEffect(() => {
+    dispatch({ type: "hydrate", bots: [bot], groups: [], sections: [], computerControl: {} } as never);
     dispatch({ type: "webhooksHydrated", webhooks, attempts: [], ingress: { available: true, baseUrl: "https://hooks.example.test" } } as never);
-    dispatch({ type: "routinePatched", routine } as never);
+    dispatch({ type: "routinesHydrated", routines: [routine], runs } as never);
+    if (view === "panel") dispatch({ type: "openRoutine", botId: bot.id, routineId: routine.id } as never);
   }, [dispatch]);
   return state.webhooks.length ? <>{children}</> : null;
 }
@@ -61,7 +73,9 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <StoreProvider>
       <Seed>
-        {view === "page"
+        {view === "panel"
+          ? <aside data-gallery-card style={{ width: 400 }} className="relative h-[820px] border border-hairline/40 bg-panel text-ink"><RoutinesSection bot={bot} routines={[routine]} runs={runs} grouped /></aside>
+          : view === "page"
           ? <div style={{ maxWidth: 720, padding: 16 }} data-gallery-card className="bg-canvas"><RoutineConfiguration routine={routine} bots={[bot]} /></div>
           : view === "bot"
             ? <div style={{ maxWidth: 560, padding: 16 }} data-gallery-card className="bg-canvas"><BotWebhooks bot={bot} /></div>

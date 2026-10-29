@@ -15945,7 +15945,12 @@
       "botWebhooks.listHelp": "9589062e74473a947b3a512410b99695d34d54b1607132cbbdf731371016b3c1",
       "botWebhooks.openRoutine": "55daf9697996255930ea294239b126726db20912c4836dde866deb0e99292578",
       "botWebhooks.openAutomations": "34fcf7332d1a4c6ec95ee421680a6a62b7ce4ce825c3643844b1ad643d21e969",
-      "routineEditor.summary.resultsMain": "aad76e2c82a7cbe914cb5797c7e7f392fe42f5758143cb0d44a14c59488ed8df"
+      "routineEditor.summary.resultsMain": "aad76e2c82a7cbe914cb5797c7e7f392fe42f5758143cb0d44a14c59488ed8df",
+      "routineDetail.openConfiguration": "fe9d1f70ec68eb13d7964e8ed9375ef08594b4ac834f375a58546c74b1b7b104",
+      "routineEditor.titleView": "0b5baf309897ec7e2def5db089f1f4ec5b15d5912296577d655d00ca0fc40b59",
+      "routineEditor.readOnly": "b4e9ccf494eb0189a49bca2cd6921854827d65c1f6f1d40661ce1c84a302bb69",
+      "routineEditor.owner": "a69e3f5118964104b6dec07a4157ea43336d61193e638ce5e7bd80f9c79d5a4b",
+      "routineEditor.redacted": "c062a8f3581fc6610016fd9321341ef3e832fc9485afdd49ffaabb83e3367572"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
