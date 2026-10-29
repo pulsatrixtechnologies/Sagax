@@ -62,18 +62,28 @@ function Loading({ error }: { error: string | null }) {
 }
 
 /** Connect apps > Providers > GitHub: the person's own GitHub connection,
- * inside GithubAccountSection. `onEnableApp` is the link to where an admin
- * sets the OAuth App, shown when Connect GitHub has no app (a member reads
- * the sentence without a link). */
-export function MyGithubConnection({ initial, onEnableApp }: { initial?: MyConnections; onEnableApp?: () => void }) {
+ * inside GithubAccountSection. Connect GitHub is everyone's, with no admin
+ * step (owner, 2026-10-28): the device flow when the server has a GitHub
+ * OAuth App, else a token the person pastes. */
+export function MyGithubConnection({ initial }: { initial?: MyConnections }) {
   const { data, error, refresh } = useMyConnections(initial, (value) => value.github.state === "pending");
   if (!data) return <Loading error={error} />;
   return (
     <div className="flex flex-col gap-3" data-my-github>
       {data.managedByAdmin && <IntegrationsManagedNotice />}
-      <GithubCard data={data} onChanged={refresh} onEnableApp={onEnableApp} />
+      <GithubCard data={data} onChanged={refresh} />
     </div>
   );
+}
+
+/** The GitHub card's account line in Connect apps > Providers (All):
+ * connected as, or not connected. Nothing while it reads. */
+export function MyGithubSummary({ initial }: { initial?: MyConnections }) {
+  const { data } = useMyConnections(initial, () => false);
+  if (!data) return null;
+  return data.github.state === "connected"
+    ? <>{t("myConnections.github.connectedAs", { login: data.github.login })}</>
+    : <>{t("myConnections.github.notConnected")}</>;
 }
 
 /** Connect apps > Providers: the person's own MCP servers. */
@@ -99,7 +109,7 @@ export function IntegrationsManagedNotice() {
   );
 }
 
-function GithubCard({ data, onChanged, onEnableApp }: { data: MyConnections; onChanged: () => Promise<void>; onEnableApp?: () => void }) {
+function GithubCard({ data, onChanged }: { data: MyConnections; onChanged: () => Promise<void> }) {
   const github = data.github;
   const locked = data.managedByAdmin === true;
   const [busy, setBusy] = useState(false);
@@ -148,21 +158,14 @@ function GithubCard({ data, onChanged, onEnableApp }: { data: MyConnections; onC
           <>
             {github.state === "error" && <p role="alert" className="text-[12px] text-danger">{github.error}</p>}
             <div className="flex flex-wrap gap-2">
-              {/* One Connect GitHub: the device flow when the organization's
-                  OAuth App is set, else a token. */}
+              {/* One Connect GitHub, for everyone: the device flow when the
+                  server has a GitHub OAuth App, else a token. */}
               <button type="button" className="ui-button ui-button-primary" disabled={busy} data-github-connect={github.deviceFlow ? "device" : "token"}
                 onClick={() => (github.deviceFlow ? void run(startGithubDevice) : setTokenOpen((open) => !open))}>{t("myConnections.github.connect")}</button>
               {github.deviceFlow && (
                 <button type="button" className="ui-button" disabled={busy} onClick={() => setTokenOpen((open) => !open)}>{t("myConnections.github.useToken")}</button>
               )}
             </div>
-            {!github.deviceFlow && (
-              <p className="text-[12px] leading-relaxed text-ink-secondary" data-github-app-missing>
-                {onEnableApp
-                  ? <button type="button" className="text-accent-text underline-offset-2 hover:underline" onClick={onEnableApp}>{t("sources.github.enableApp")}</button>
-                  : t("sources.github.enableApp")}
-              </p>
-            )}
           </>
         )}
         {!locked && tokenOpen && github.state !== "connected" && (

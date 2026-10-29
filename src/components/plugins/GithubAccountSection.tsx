@@ -4,8 +4,8 @@
 // bots, and the GitHub plugin's MCP server (its token placeholder is that
 // account, server/github-mcp-token.ts). Sources lists marketplaces only.
 //
-//   - Connection: Connect GitHub (the device flow when the organization's
-//     OAuth App is set, else a token), the account connected and what it is
+//   - Connection: Connect GitHub (the device flow when the server has a
+//     GitHub OAuth App, else a token), the account connected and what it is
 //     for. Organization server only (`connection`).
 //   - Other credentials, only where the account cannot reach: another
 //     GitHub organization, a group of repositories, another git host. The
@@ -15,9 +15,10 @@
 //     Sources picks one of them in a small selector; by default it reads
 //     with the GitHub account.
 //
-// The OAuth App's client id is a server setting: it is in Settings >
-// Organization (admins). Here, when it is missing, one sentence says an
-// admin can turn Connect GitHub on (a link for an admin).
+// Connect GitHub is every person's, with no admin step (owner, 2026-10-28):
+// the device flow when the server has a GitHub OAuth App, else a token.
+// In Providers > All, GitHub is one card (AccountsView); this is what
+// opening it shows.
 import { useState, type ReactNode } from "react";
 import { GitBranch } from "lucide-react";
 

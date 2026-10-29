@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setGithubCredentialsForTest, type GithubCredentialsView } from "@/lib/github-credentials";
 import { setLocale } from "@/lib/i18n";
 import { GithubAccountSection } from "./GithubAccountSection";
-import { MyGithubConnection } from "../settings/MyConnectionsSettings";
+import { MyGithubConnection, MyGithubSummary } from "../settings/MyConnectionsSettings";
 
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
@@ -81,19 +81,33 @@ describe("Providers > GitHub", () => {
     expect(host.textContent).toContain("The whole organization");
   });
 
-  it("one Connect GitHub: a token when the OAuth App is missing, with the sentence for an admin's link", () => {
+  it("one Connect GitHub for everyone: a token when the OAuth App is missing, never an admin step", () => {
     const initial = { github: { state: "none" as const, deviceFlow: false }, servers: [], sandbox: true };
-    const admin = renderToStaticMarkup(createElement(MyGithubConnection, { initial, onEnableApp: () => {} }));
-    expect(admin).toContain('data-github-connect="token"');
-    expect(admin).toContain("An admin can turn on Connect GitHub");
-    expect(admin).toMatch(/<button[^>]*>An admin can turn on Connect GitHub/);
-    expect(admin).not.toContain("Use a token");
     const member = renderToStaticMarkup(createElement(MyGithubConnection, { initial }));
-    expect(member).not.toMatch(/<button[^>]*>An admin can turn on/);
+    expect(member).toMatch(/<button[^>]*data-github-connect="token"/);
+    expect(member).not.toMatch(/<button[^>]*data-github-connect="token"[^>]*disabled/);
+    expect(member).not.toMatch(/admin/i);
+    expect(member).not.toContain("Use a token");
     const withApp = renderToStaticMarkup(createElement(MyGithubConnection, { initial: { ...initial, github: { state: "none" as const, deviceFlow: true } } }));
     expect(withApp).toContain('data-github-connect="device"');
     expect(withApp).toContain("Use a token");
-    expect(withApp).not.toContain("An admin can turn on");
+    expect(withApp).not.toMatch(/admin/i);
+  });
+
+  it("with no OAuth App, Connect GitHub opens the token form", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const initial = { github: { state: "none" as const, deviceFlow: false }, servers: [], sandbox: true };
+    flushSync(() => createRoot(host).render(createElement(MyGithubConnection, { initial })));
+    flushSync(() => (host.querySelector("[data-github-connect]") as HTMLElement).click());
+    expect(host.querySelector('input[type="password"]')).not.toBeNull();
+  });
+
+  it("the card's account line: connected as, or not connected", () => {
+    const none = renderToStaticMarkup(createElement(MyGithubSummary, { initial: { github: { state: "none" as const, deviceFlow: false }, servers: [], sandbox: true } }));
+    expect(none).toBe("GitHub is not connected.");
+    const connected = renderToStaticMarkup(createElement(MyGithubSummary, { initial: { github: { state: "connected" as const, deviceFlow: false, login: "octo", via: "token" as const, connectedAt: 1 }, servers: [], sandbox: true } }));
+    expect(connected).toBe("Connected as @octo");
   });
 
   it("says it in French", () => {
