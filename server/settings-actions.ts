@@ -6,7 +6,7 @@
 // the person's rights, the route's checks, security keys and the audit
 // journal apply exactly as by hand. Nothing here writes a setting itself.
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import type { AppliedApprovalLevel, ApprovalMode } from "../shared/approval-mode.ts";
 import type { TurnFacts } from "../shared/bot-act.ts";
@@ -57,6 +57,10 @@ export type SettingsActionDeps = {
    * organization's default model, uses this engine (organization server);
    * undefined when it cannot be told (the card stays). */
   engineShared?: (instanceId: string, speaker: string | null) => boolean | undefined;
+  /** #1545 (2026-10-28): one field of the person's own vault item, read on
+   * the server to copy a secret by reference ({$secret: copy}); never
+   * returned to the bot. Throws when it is not theirs or has no value. */
+  vaultValue?: (person: string, itemId: string, field: string) => string;
   /** A record's name for a card (never its id), or undefined. */
   targetName?: (kind: string, id: string, botId?: string) => string | undefined;
 };
@@ -283,6 +287,68 @@ function listText(family: unknown): string {
   return lines.join("\n");
 }
 
+/** #1545 (2026-10-28): a strong secret the server makes, letters, digits
+ * and symbols, never shown to the bot. */
+export function generateSecret(length = 24): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_.!@#%";
+  const size = Math.min(Math.max(Math.trunc(length) || 24, 12), 128);
+  const limit = 256 - (256 % alphabet.length);
+  let out = "";
+  // rejection sampling: every character equally likely
+  while (out.length < size) {
+    for (const byte of randomBytes(size * 2)) {
+      if (byte < limit) out += alphabet[byte % alphabet.length];
+      if (out.length === size) break;
+    }
+  }
+  return out;
+}
+
+/** #1545 (2026-10-28): the model never sees a secret's value. A value may
+ * carry a reference instead, resolved here on the server just before the
+ * route is replayed: {"$secret": "generate", length?} or {"$secret":
+ * "copy", from: <vault item id>, field: password|apiKey|notes|totp}. A
+ * string is why it could not be resolved; `used` says a reference was
+ * found (the change then counts as a secret). */
+export function resolveSecretRefs(value: unknown, copy: ((itemId: string, field: string) => string) | undefined, depth = 0): { value: unknown; used: boolean } | string {
+  if (depth > 6 || !value || typeof value !== "object") return { value, used: false };
+  if (Array.isArray(value)) {
+    let used = false;
+    const out: unknown[] = [];
+    for (const item of value) {
+      const one = resolveSecretRefs(item, copy, depth + 1);
+      if (typeof one === "string") return one;
+      used ||= one.used;
+      out.push(one.value);
+    }
+    return { value: out, used };
+  }
+  const record = value as Record<string, unknown>;
+  if ("$secret" in record) {
+    if (record.$secret === "generate") return { value: generateSecret(typeof record.length === "number" ? record.length : 24), used: true };
+    if (record.$secret === "copy") {
+      if (typeof record.from !== "string" || typeof record.field !== "string") return "{$secret: copy} needs from (a vault item's id) and field (password, apiKey, notes or totp).";
+      if (!copy) return "Copying a secret is not available here.";
+      try {
+        const copied = copy(record.from, record.field);
+        return copied ? { value: copied, used: true } : "That vault item has no value in that field.";
+      } catch (error) {
+        return error instanceof Error ? error.message : "That vault item could not be read.";
+      }
+    }
+    return "$secret is generate or copy.";
+  }
+  let used = false;
+  const out: Record<string, unknown> = {};
+  for (const [name, child] of Object.entries(record)) {
+    const one = resolveSecretRefs(child, copy, depth + 1);
+    if (typeof one === "string") return one;
+    used ||= one.used;
+    out[name] = one.value;
+  }
+  return { value: out, used };
+}
+
 export function createSettingsActions(deps: SettingsActionDeps) {
   /** Fill the ids a setting needs: this bot or this conversation by default. */
   function resolve(spec: SettingSpec, raw: unknown, input: SettingsActionInput, speaker: string | null): SettingIds | string {
@@ -326,7 +392,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     // the person's own bot, conversation, routine, model, computers and MCP
     // servers work in their own environment
     // and the person's own device (#1545)
-    if (["bot", "thread", "routine", "models", "computer", "connections", "device"].includes(spec.family)) return false;
+    if (["bot", "thread", "routine", "models", "computer", "connections", "device", "credentials"].includes(spec.family)) return false;
     return undefined;
   }
 
@@ -452,6 +518,15 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     if (!valueFits(spec.value, value)) return text(400, `${spec.key} takes ${spec.value}.`);
     let built = spec.write(ids, value);
     if (typeof built === "string") return text(400, built);
+    // #1545 (2026-10-28): a secret given by reference is resolved here, on
+    // the server; the bot, the card and the journal keep the reference
+    let refSecret = false;
+    if ("method" in built && built.body !== undefined) {
+      const resolved = resolveSecretRefs(built.body, speaker && deps.vaultValue ? (itemId, field) => deps.vaultValue!(speaker, itemId, field) : undefined);
+      if (typeof resolved === "string") return text(400, resolved);
+      if (resolved.used) built = { ...built, body: resolved.value };
+      refSecret = resolved.used;
+    }
     if (spec.key === "bot.effort" && "method" in built) {
       // effort lives in the model selection: keep the model, change the effort
       const current = await readValue(facts, input, "/api/bots", { messages: "0" }, "bots", ids.target!, "modelSelection");
@@ -461,7 +536,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     const organization = deps.organization();
     const self = spec.target === "bot" && ids.target === input.botId;
     const shared = spec.target === "engine" && organization && ids.target ? deps.engineShared?.(ids.target, speaker) : undefined;
-    const classes = spec.classes ? spec.classes(value, { organization, self, ...(shared === undefined ? {} : { shared }) }) : (["own"] as SettingClass[]);
+    const classes: SettingClass[] = spec.classes ? [...spec.classes(value, { organization, self, ...(shared === undefined ? {} : { shared }) })] : ["own"];
+    if (refSecret && !classes.includes("secret")) classes.push("secret");
     const approvalTo = spec.approvalTo?.(value) as ApprovalMode | undefined;
     const actingOwner = deps.botOwner(input.botId);
     const targetOwner = ownerOf(spec, ids, speaker);

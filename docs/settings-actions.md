@@ -17,8 +17,9 @@ parties hors tableau du script.
   peut pas faire à la main : la route répond son refus, que le bot relaie.
 - Décision (`shared/settings-actions-policy.ts`), dans l'ordre :
   1. une classe que la personne protège par clé de sécurité : carte signée ;
-  2. secret, autrui, en lot, suppression, organisation : carte, à tout
-     niveau, Full compris (comme un paiement ou un changement de masse) ;
+  2. autrui, organisation : carte, à tout niveau, Full compris (comme un
+     paiement) ; secret, en lot et suppression aussi, sauf quand ils ne
+     touchent que l'environnement de la personne (le niveau décide) ;
   3. pas le travail du propriétaire (la personne ne possède pas le bot qui
      parle ou ce qui change) : carte ;
   4. bot à Ask ou Auto-accept edits : carte ;
@@ -28,6 +29,15 @@ parties hors tableau du script.
      un niveau est appliqué jusqu'à celui du bot qui parle, jamais Full ni
      Custom sans carte ; le reste demande la carte ;
   6. sinon appliqué tout de suite.
+- Secrets (#1545, 2026-10-28) : le bot ne voit jamais la valeur d'un secret.
+  Il pose, remplace ou utilise un secret par référence :
+  `{"$secret": "generate", "length": 32}` (fait par le serveur) ou
+  `{"$secret": "copy", "from": <id d'un élément du coffre>, "field":
+  "password"}` (pris dans le coffre de la personne), résolus sur le serveur
+  juste avant la route ; la carte et le journal gardent la référence. Les
+  secrets de la personne (coffre, clés, 1Password, portefeuilles, secrets
+  de webhook) suivent le niveau du bot comme le reste de son
+  environnement ; les secrets de l'organisation gardent sa carte.
 - Moteurs d'un serveur d'organisation (#1545, 2026-10-28) : ajouter un
   compte, installer, vérifier de nouveau, mettre Claude Code à jour,
   renommer et libérer l'espace ne touchent que la personne : le niveau du
@@ -359,7 +369,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Post the sign-in card of an engine or account (value true): the person signs in themselves, the bot never sees the sign-in | Settings > Models > engine > Sign in | `sagax_settings` set `models.engineSignIn` | simple |
 | Sign an engine or account out (value true) | Settings > Models > engine > Sign out | `sagax_settings` set `models.engineSignOut` | simple + suppression; organisation : autrui + suppression |
 | Remove an added account (value true) | Settings > Models > account > Remove | `sagax_settings` set `models.engineRemove` | simple + suppression; organisation : autrui + suppression |
-| Whether an engine's access key is saved (read only; the key itself is pasted by the person in Settings) | Settings > Models > engine > Access key | `sagax_settings` get, set `models.engineKeySaved` | simple |
+| An engine's access key (get says whether one is saved, never the key; set {key} saves one, key a reference: {$secret: generate/copy}) | Settings > Models > engine > Access key | `sagax_settings` get, set `models.engineKeySaved` | secret; organisation : secret + organisation |
 | Install an engine (value true) | Settings > Models > engine > Install | `sagax_settings` set `models.engineInstall` | simple |
 | Check an engine again (its models) (value true) | Settings > Models > Check again | `sagax_settings` set `models.engineRefresh` | simple |
 | Update Claude Code (value true) | Settings > Models > Claude > Advanced > Update | `sagax_settings` set `models.claudeUpdate` | simple |
@@ -379,7 +389,9 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Your MCP server on or off ({name, enabled}) | Connect apps > Providers | `sagax_settings` get, set `connections.mcpServerEnabled` | simple |
 | Remove your MCP server (its name) | Connect apps > Providers | `sagax_settings` set `connections.mcpServerRemove` | suppression |
 | Disconnect GitHub (true) | Connect apps > Sources > GitHub | `sagax_settings` set `connections.githubDisconnect` | suppression + secret |
-| Your web search provider ({provider: brave/exa/parallel/firecrawl/searxng, baseUrl}; null forgets it). The key is pasted in Settings only: the answer says whether one is saved, never the key | Settings > Models > Web search | `sagax_settings` get, set `connections.webSearch` | simple |
+| Your web search provider ({provider: brave/exa/parallel/firecrawl/searxng, baseUrl, key?}; null forgets it). get says whether a key is saved, never the key | Settings > Models > Web search | `sagax_settings` get, set `connections.webSearch` | simple |
+| The person's webhooks (read only: names, bots, on or off; never a signing secret) | Routines > Webhooks | `sagax_settings` get, set `connections.webhooks` | simple |
+| Give a webhook a new signing secret (its id; the secret is never returned to the bot: the person sees it with Reveal) | Routines > Webhooks > webhook > Rotate | `sagax_settings` set `connections.webhookSecretRotate` | secret |
 | Test web search with the saved settings (value true) | Settings > Models > Web search > Test | `sagax_settings` set `connections.webSearchTest` | simple |
 
 ### Coffre et clés
@@ -391,6 +403,12 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | A vault item ({name, username, password, apiKey, notes, domains}); no target creates one | Settings > Vault | `sagax_settings` get, set `credentials.item` | secret |
 | Let a bot use an item ({botId, allow: true/false}) | Settings > Vault > item | `sagax_settings` get, set `credentials.botAccess` | secret |
 | Delete a vault item (true) | Settings > Vault | `sagax_settings` set `credentials.delete` | suppression + secret |
+| The person's security keys and which approvals ask for one (read only: names, ids, classes; security.keyName, device.securityKey* change them) | Settings > Security | `sagax_settings` get, set `security.keys` | simple |
+| Which approvals ask for a security key (the full list; adding runs here, removing one needs the key: device.securityKeyClasses) | Settings > Security > Ask for my key | `sagax_settings` get, set `security.keyClasses` | secret |
+| Rename a security key ({id, name}) | Settings > Security > key | `sagax_settings` get, set `security.keyName` | simple |
+| One-time card wallets the person uses ({wallet: shop_pay/link, chosen}) | Settings > Vault > One-time card | `sagax_settings` get, set `credentials.wallets` | secret |
+| Purchases waiting for the person (read only; sagax_approvals answers them) | Settings > Vault > Purchases | `sagax_settings` get, set `credentials.purchases` | simple |
+| Add an item of the person's 1Password to the vault as a reference ({vaultId, itemId, name?, domains?}; get lists names, vaults and sites, never a value) | Settings > Vault > 1Password | `sagax_settings` get, set `credentials.onePassword` | secret |
 | The person's own voice keys ({<elevenlabs/fish/xai>: {key}}, key null removes; get says which are saved, never a key) | Settings > Voice > Your voice keys | `sagax_settings` get, set `models.myVoiceKeys` | secret |
 | Remove the OpenAI Live key (value true) | Settings > Voice > Live calls | `sagax_settings` set `models.liveKeyRemove` | suppression; organisation : suppression + organisation |
 
@@ -426,7 +444,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Public links for published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesLinkSharing` | organisation |
 | Reader comments on published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesReaderComments` | organisation |
 | Phone calls ({enabled, callbackNumber, addDoNotCall, removeDoNotCall}) | Settings > Experimental > Phone calls | `sagax_settings` get, set `org.phoneCalls` | organisation |
-| Organization bot secrets (read only: their names; a secret is entered by the person) | Settings > Organization > Bots > Team secrets | `sagax_settings` get, set `org.botSecrets` | simple |
+| Organization bot secrets ({op: add, kind, label, value, injection, botIds} / {op: replace, id, value} / {op: assign, id, botIds} / {op: remove, id}; value a {$secret} reference; get lists names and ids, never a value) | Settings > Organization > Bots > Team secrets | `sagax_settings` get, set `org.botSecrets` | secret + organisation |
 | People's tool access (get lists it; set with a grant's id revokes it) | Settings > Account > Advanced > People's tool access | `sagax_settings` get, set `org.toolGrants` | autrui + suppression |
 | Reports (get lists them; set with a report's id resolves it) | Settings > Notifications > Privacy > Reports | `sagax_settings` get, set `org.reports` | autrui |
 | Attach a person from before to a member ({interimPrincipalId, principalId}) | Settings > Organization > People from before | `sagax_settings` set `org.interimAttach` | autrui + organisation |
@@ -466,6 +484,10 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Remove a paired phone (its id, from device.remoteAccess) | Settings > Phone > paired device > Remove | `sagax_settings` get, set `device.pairedDeviceRemove` | simple + suppression |
 | Share this computer with a saved organization server ({server, terminal?, computer?, folders?: [{path, write}]}, or {server, revoke: true}; get lists each server's sharing). A new folder is chosen by the person; the desktop app confirms the change on its own screen | Settings > Servers > server > Computer access | `sagax_settings` get, set `device.computerSharing` | simple |
 | Server mode of the desktop app (get: the server it is locked to; leave signs out of it and returns to the launch screen) | Settings > General > Server > Change | `sagax_settings` get, set `device.serverMode` | simple |
+| Export the vault to a file saved on the person's device (chrome-csv, bitwarden-csv, bitwarden-json; the values never reach the bot; their security key or a fresh sign-in is asked on their screen) | Settings > Vault > Export | `sagax_settings` set `device.vaultExport` | secret |
+| Add a security key (its name): the ceremony opens on the person's screen, they touch the key | Settings > Security > Add a key | `sagax_settings` set `device.securityKeyAdd` | secret |
+| Remove a security key (its id, from security.keys): confirmed with a key on the person's screen | Settings > Security > key > Remove | `sagax_settings` set `device.securityKeyRemove` | secret + suppression |
+| Which approvals ask for a security key (the full list; removing one is confirmed with the key on the person's screen) | Settings > Security > Ask for my key | `sagax_settings` set `device.securityKeyClasses` | secret |
 | Haptic feedback (iPhone app) | iPhone: Settings > Appearance > Haptics | `sagax_settings` get, set `device.haptics` | simple |
 | Vibrate on a nudge (iPhone app) | iPhone: Settings > Notifications > Nudges | `sagax_settings` get, set `device.nudgeHaptic` | simple |
 
@@ -476,8 +498,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Plugins d'un bot | Connecter des applications | `act` avec `plugins` (list, install, setEnabled, uninstall) |
 | Écran, navigation, envoi | partout | `act` avec `ui` (commandes d'écran) |
 | Toute autre route /api | partout | `act` avec `method` et `path`, mêmes droits, carte pour une écriture |
-| Clés de sécurité (ajout, retrait, classes) | Réglages > Sécurité | la clé physique de la personne : l'outil ouvre l'écran (`act` ui toggleAppSettings section security) |
-| Export et import du coffre | Réglages > Identifiants | la personne seule (données en clair) ; les éléments du coffre restent modifiables (`credentials.*`) |
+| Toucher une clé de sécurité | écran de la personne | geste physique : le bot lance la cérémonie (`device.securityKeyAdd`, `device.securityKeyRemove`, `device.securityKeyClasses`) et gère le reste (`security.*`) |
+| Choisir le fichier d'un import du coffre | Réglages > Coffre > Importer | le fichier est sur l'appareil de la personne et se choisit dans son sélecteur ; l'export passe par `device.vaultExport` (fichier sur son appareil) |
 | Full ou Custom sur un serveur personnel | Éditeur du bot > Permissions | canal de confirmation de l'app de bureau ; sur un serveur d'organisation `bot.approvalMode` full passe tout de suite à la demande de la personne à son bot principal (`quote`), sinon par une carte |
 | Diagnostics | Réglages > Système | IPC de l'app de bureau, pas de route |
 | Répondre à une carte | conversation | la personne, ou un bot qu'elle possède à sa demande (`sagax_approvals`), fil confidentiel compris ; jamais le texte d'un autre agent ou d'un outil ; une carte à clé de sécurité reste à la personne |

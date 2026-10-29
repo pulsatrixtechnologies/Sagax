@@ -33405,6 +33405,8 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       return rule ? [rule.description, ...Object.values(rule.scope ?? {})].join(" ") : undefined;
     },
     instanceName: (instanceId) => registry.get(instanceId)?.displayName,
+    // #1545 (2026-10-28): a secret copied by reference stays on the server
+    vaultValue: (person, itemId, field) => credentialVault.reveal(IDENTITY.kind === "perspicax" ? person : LOCAL_VAULT_PRINCIPAL, itemId, field),
     // #1545 (2026-10-28): an engine another person's bot, or the
     // organization's default model, uses: changing it stops their work
     engineShared: (instanceId, speaker) => {

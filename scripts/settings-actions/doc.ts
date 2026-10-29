@@ -62,8 +62,9 @@ parties hors tableau du script.
   peut pas faire à la main : la route répond son refus, que le bot relaie.
 - Décision (\`shared/settings-actions-policy.ts\`), dans l'ordre :
   1. une classe que la personne protège par clé de sécurité : carte signée ;
-  2. secret, autrui, en lot, suppression, organisation : carte, à tout
-     niveau, Full compris (comme un paiement ou un changement de masse) ;
+  2. autrui, organisation : carte, à tout niveau, Full compris (comme un
+     paiement) ; secret, en lot et suppression aussi, sauf quand ils ne
+     touchent que l'environnement de la personne (le niveau décide) ;
   3. pas le travail du propriétaire (la personne ne possède pas le bot qui
      parle ou ce qui change) : carte ;
   4. bot à Ask ou Auto-accept edits : carte ;
@@ -73,6 +74,15 @@ parties hors tableau du script.
      un niveau est appliqué jusqu'à celui du bot qui parle, jamais Full ni
      Custom sans carte ; le reste demande la carte ;
   6. sinon appliqué tout de suite.
+- Secrets (#1545, 2026-10-28) : le bot ne voit jamais la valeur d'un secret.
+  Il pose, remplace ou utilise un secret par référence :
+  \`{"$secret": "generate", "length": 32}\` (fait par le serveur) ou
+  \`{"$secret": "copy", "from": <id d'un élément du coffre>, "field":
+  "password"}\` (pris dans le coffre de la personne), résolus sur le serveur
+  juste avant la route ; la carte et le journal gardent la référence. Les
+  secrets de la personne (coffre, clés, 1Password, portefeuilles, secrets
+  de webhook) suivent le niveau du bot comme le reste de son
+  environnement ; les secrets de l'organisation gardent sa carte.
 - Moteurs d'un serveur d'organisation (#1545, 2026-10-28) : ajouter un
   compte, installer, vérifier de nouveau, mettre Claude Code à jour,
   renommer et libérer l'espace ne touchent que la personne : le niveau du
@@ -181,8 +191,8 @@ const TAIL = `
 | Plugins d'un bot | Connecter des applications | \`act\` avec \`plugins\` (list, install, setEnabled, uninstall) |
 | Écran, navigation, envoi | partout | \`act\` avec \`ui\` (commandes d'écran) |
 | Toute autre route /api | partout | \`act\` avec \`method\` et \`path\`, mêmes droits, carte pour une écriture |
-| Clés de sécurité (ajout, retrait, classes) | Réglages > Sécurité | la clé physique de la personne : l'outil ouvre l'écran (\`act\` ui toggleAppSettings section security) |
-| Export et import du coffre | Réglages > Identifiants | la personne seule (données en clair) ; les éléments du coffre restent modifiables (\`credentials.*\`) |
+| Toucher une clé de sécurité | écran de la personne | geste physique : le bot lance la cérémonie (\`device.securityKeyAdd\`, \`device.securityKeyRemove\`, \`device.securityKeyClasses\`) et gère le reste (\`security.*\`) |
+| Choisir le fichier d'un import du coffre | Réglages > Coffre > Importer | le fichier est sur l'appareil de la personne et se choisit dans son sélecteur ; l'export passe par \`device.vaultExport\` (fichier sur son appareil) |
 | Full ou Custom sur un serveur personnel | Éditeur du bot > Permissions | canal de confirmation de l'app de bureau ; sur un serveur d'organisation \`bot.approvalMode\` full passe tout de suite à la demande de la personne à son bot principal (\`quote\`), sinon par une carte |
 | Diagnostics | Réglages > Système | IPC de l'app de bureau, pas de route |
 | Répondre à une carte | conversation | la personne, ou un bot qu'elle possède à sa demande (\`sagax_approvals\`), fil confidentiel compris ; jamais le texte d'un autre agent ou d'un outil ; une carte à clé de sécurité reste à la personne |

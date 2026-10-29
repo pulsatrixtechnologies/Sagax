@@ -79,11 +79,13 @@ describe("sagax_settings", () => {
     expect(h.planned[1]).toMatchObject({ path: "/api/routines/r1", body: { resultsThreadId: "th1" } });
   });
 
-  it("keeps a card for Full, a secret, another person and the organization", async () => {
+  it("keeps a card for Full, another person and the organization; the person's own secret follows the level (#1545, 2026-10-28)", async () => {
+    const own = harness({ mode: "full" });
+    expect((await own.call({ action: "set", key: "credentials.item", value: { name: "x", password: "y" } })).body.text).toMatch(/^Done/);
+    expect(own.audits).toEqual([expect.objectContaining({ key: "credentials.item", secret: true })]);
     const h = harness({ mode: "full" });
     for (const args of [
       { key: "bot.approvalMode", value: "full" },
-      { key: "credentials.item", value: { name: "x", password: "y" } },
       { key: "bot.share", value: { target: "user:pr_x", level: "use" } },
       { key: "org.allowFullAccess", value: true },
     ]) {
@@ -250,8 +252,8 @@ describe("sagax_settings", () => {
     // a provider key block carries its key only
     expect((await h.call({ action: "set", key: "models.providerKey", value: { anthropic: { key: "k" }, signIn: { admins: ["x"] } } })).status).toBe(400);
     expect((await h.call({ action: "set", key: "models.providerKey", value: { anthropic: { key: "k", baseUrl: "http://x" } } })).status).toBe(400);
-    // a key or an address in a model setting is a secret
-    expect(await held({ key: "models.decider", value: { key: "sk-x" } })).toContain("Approval needed.");
+    // a key or an address in a model setting is a secret: the organization's keeps its card
+    expect(await held({ key: "models.decider", value: { key: "sk-x" } })).toMatch(/^Done/);
     // the speaking bot widening its own tools; another own bot is simple
     expect(await held({ key: "bot.mcpServers", value: null })).toContain("Approval needed.");
     expect(await held({ key: "bot.mcpServers", target: "b2", value: null })).toContain("Done");
@@ -526,7 +528,7 @@ describe("sagax_settings: the rest of Settings (#1545, lot 2)", () => {
   });
 
   it("every setting has a get, or is an action the screen offers (create, delete, run, test, sign-in)", () => {
-    const actions = /(?:update|reset|power|Action|Attach|Revoke|create|delete|remove|Delete|Remove|run|Run|Test|SignIn|SignOut|Install|Refresh|Update|Account|Disconnect|Telegram|WhatsApp|commandAllow|template\.|section\.bots|account\.avatar|computer\.rename|liveKeyRemove)/;
+    const actions = /(?:update|reset|power|Action|Attach|Revoke|create|delete|remove|Delete|Remove|run|Run|Test|SignIn|SignOut|Install|Refresh|Update|Account|Disconnect|Telegram|WhatsApp|commandAllow|template\.|section\.bots|account\.avatar|computer\.rename|liveKeyRemove|Export|Add|Classes|Rotate)/;
     const missing = SETTINGS.filter((spec) => !spec.read && !actions.test(spec.key)).map((spec) => spec.key);
     expect(missing).toEqual([]);
   });
@@ -554,7 +556,7 @@ describe("sagax_settings: the rest of Settings (#1545, lot 2)", () => {
       { key: "bot.host", value: null },
       { key: "models.ttsModel", value: "v2" },
       { key: "org.phoneCalls", value: { enabled: true }, card: true },
-      { key: "models.myVoiceKeys", value: { fish: { key: "k" } }, card: true },
+      { key: "models.myVoiceKeys", value: { fish: { key: "k" } } },
     ];
     for (const mode of ["ask", "auto", "full"] as const) {
       for (const { key, value, target, card } of cases) {
@@ -673,5 +675,79 @@ describe("sagax_settings: the settings kept only in the person's open app (#1545
   it("says when a synced preference was saved for the person with no app open", async () => {
     const h = harness({ organization: () => true, answer: { device: "server" } });
     expect((await h.call({ action: "set", key: "notifications.readReceipts", value: false })).body.text).toMatch(/no app was open/);
+  });
+});
+
+describe("sagax_settings: secrets and purchases, by reference (#1545, 2026-10-28)", () => {
+  const changes: Array<{ key: string; value: unknown; target?: string; path: string }> = [
+    { key: "credentials.item", value: { name: "Bank", password: { $secret: "generate", length: 20 } }, path: "/api/me/credentials" },
+    { key: "credentials.item", target: "it1", value: { password: { $secret: "copy", from: "it2", field: "password" } }, path: "/api/me/credentials/it1" },
+    { key: "credentials.delete", target: "it1", value: true, path: "/api/me/credentials/it1" },
+    { key: "credentials.botAccess", target: "it1", value: { botId: "b2", allow: true }, path: "/api/me/credentials/it1/grants" },
+    { key: "credentials.wallets", value: { wallet: "link", chosen: true }, path: "/api/me/credentials/wallets" },
+    { key: "credentials.onePassword", value: { vaultId: "v1", itemId: "i1" }, path: "/api/me/credentials/onepassword/import" },
+    { key: "security.keyClasses", value: ["destructive"], path: "/api/security-keys/classes" },
+    { key: "security.keyName", value: { id: "k1", name: "Blue key" }, path: "/api/security-keys/k1" },
+    { key: "connections.webhookSecretRotate", value: "wh1", path: "/api/webhooks/wh1/rotate" },
+    { key: "connections.webSearch", value: { provider: "brave", key: { $secret: "copy", from: "it2", field: "apiKey" } }, path: "/api/me/web-search" },
+    { key: "models.engineKeySaved", target: "openai", value: { key: { $secret: "copy", from: "it2", field: "apiKey" } }, path: "/api/instances/openai/api-key" },
+    { key: "connections.cloudAgentKey", value: { provider: "cursor", token: { $secret: "copy", from: "it2", field: "apiKey" } }, path: "/api/me/cloud-agent-providers/cursor" },
+    { key: "device.vaultExport", value: "bitwarden-json", path: "/api/me/device-settings/apply" },
+    { key: "device.securityKeyAdd", value: "Blue key", path: "/api/me/device-settings/apply" },
+    { key: "device.securityKeyRemove", value: "k1", path: "/api/me/device-settings/apply" },
+  ];
+
+  it("matrix: admin and member, Ask, Approve for me and Full: the bot's level is the only gate for the person's own secrets", async () => {
+    for (const role of ["admin", "member"] as const) {
+      for (const mode of ["ask", "auto", "full"] as const) {
+        for (const { key, value, target, path } of changes) {
+          const h = harness({ mode, vaultValue: () => "copied-secret", ...(role === "member" ? { operatorId: () => "pr_member" } : {}) });
+          const result = await h.call({ action: "set", key, value, ...(target ? { target } : {}) });
+          const label = `${key} ${role} ${mode}`;
+          expect(result.body.error ?? "", label).not.toMatch(/person's to|never through a bot|stays the person's|UI only/);
+          expect(h.planned.at(-1), label).toMatchObject({ effect: mode === "ask" ? "hold" : "run", path });
+          // the bot is never told a secret's value
+          expect(JSON.stringify(result), label).not.toMatch(/copied-secret/);
+          if (mode !== "ask") expect(h.audits, label).toEqual([expect.objectContaining({ key, how: "run" })]);
+        }
+      }
+    }
+  });
+
+  it("resolves a reference on the server: generated, or copied from the person's own vault", async () => {
+    const copies: string[] = [];
+    const h = harness({ vaultValue: (person, item, field) => { copies.push(`${person} ${item} ${field}`); return "copied-secret"; } });
+    await h.call({ action: "set", key: "credentials.item", value: { name: "Bank", password: { $secret: "generate", length: 20 } } });
+    const made = (h.planned.at(-1)!.body as { password: string }).password;
+    expect(made).toMatch(/^.{20}$/);
+    await h.call({ action: "set", key: "credentials.item", target: "it1", value: { password: { $secret: "copy", from: "it2", field: "password" } } });
+    expect(h.planned.at(-1)!.body).toEqual({ password: "copied-secret" });
+    expect(copies).toEqual(["pr_owner it2 password"]);
+    // the journal keeps the reference hidden, never the value
+    expect(h.audits.every((row) => (row as { secret: boolean }).secret)).toBe(true);
+    // a reference the server cannot resolve is refused before any route
+    const bad = harness({ vaultValue: () => { throw new Error("No such item"); } });
+    expect((await bad.call({ action: "set", key: "credentials.item", target: "it1", value: { password: { $secret: "copy", from: "nope", field: "password" } } })).body.error).toMatch(/No such item/);
+    expect((await bad.call({ action: "set", key: "credentials.item", value: { password: { $secret: "steal" } } })).body.error).toMatch(/generate or copy/);
+    expect(bad.planned).toEqual([]);
+    // a reference turns any change into a secret one (hidden in the journal)
+    const ws = harness();
+    await ws.call({ action: "set", key: "connections.webSearch", value: { provider: "brave", key: { $secret: "generate" } } });
+    expect(ws.audits).toEqual([expect.objectContaining({ secret: true })]);
+  });
+
+  it("keeps the organization's card for the organization's secrets, at every level", async () => {
+    for (const mode of ["auto", "full"] as const) {
+      for (const args of [
+        { key: "org.botSecrets", value: { op: "replace", id: "s1", value: { $secret: "generate" } } },
+        { key: "models.providerKey", value: { anthropic: { key: { $secret: "copy", from: "it2", field: "apiKey" } } } },
+        { key: "models.decider", value: { key: "sk-x" } },
+      ]) {
+        const h = harness({ mode, organization: () => true, vaultValue: () => "copied-secret" });
+        const result = await h.call({ action: "set", ...args });
+        expect(h.planned.at(-1)?.effect, `${args.key} ${mode}`).toBe("hold");
+        expect(String(result.body.text)).not.toMatch(/copied-secret/);
+      }
+    }
   });
 });

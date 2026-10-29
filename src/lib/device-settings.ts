@@ -35,6 +35,28 @@ export interface DeviceEnv {
   audioInputs(): Promise<Array<{ id: string; label: string }>>;
   preferredAudioInput(): string | undefined;
   setPreferredAudioInput(id: string | null): void;
+  /** #1545: secrets, done here so no value reaches a bot. Each may wait for
+   * the person's security key on this screen. */
+  exportVault?(format: string): Promise<number>;
+  addSecurityKey?(name: string): Promise<void>;
+  removeSecurityKey?(id: string): Promise<void>;
+  setSecurityKeyClasses?(classes: string[]): Promise<void>;
+}
+
+/** How long an answer waits for a step the person finishes on screen (a key
+ * to touch) before saying it started. */
+export const ON_SCREEN_WAIT_MS = 3_500;
+
+async function finishedOrStarted(work: Promise<string>, waitMs = ON_SCREEN_WAIT_MS): Promise<string> {
+  // a failure after the answer was sent stays on the person's screen
+  work.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const started = new Promise<string>((resolve) => { timer = setTimeout(() => resolve("started: the person finishes it on their screen (security key or sign-in)"), waitMs); });
+  try {
+    return await Promise.race([work, started]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const bool = (value: string | undefined): boolean | null => value === "true" ? true : value === "false" ? false : null;
@@ -205,6 +227,36 @@ export async function answerDeviceRequest(request: Pick<DeviceSettingRequestWire
         }
         const state = await bridge.state();
         return { device, value: JSON.stringify(state.active ? { active: true, name: state.label || state.name, origin: state.origin } : { active: false }) };
+      }
+      // #1545: secrets, in the person's own app
+      case "device.vaultExport": {
+        if (!env.exportVault || op !== "set") return unsupported;
+        if (typeof value !== "string" || !value) return fail(device, "value is an export format.");
+        const exportVault = env.exportVault;
+        return { device, value: await finishedOrStarted(exportVault(value).then((count) => `saved on this device: ${count} item(s)`)) };
+      }
+      case "device.securityKeyAdd":
+      case "device.securityKeyRemove":
+      case "device.securityKeyClasses": {
+        if (op !== "set") return unsupported;
+        if (key === "device.securityKeyAdd") {
+          if (!env.addSecurityKey) return unsupported;
+          return { device, value: await finishedOrStarted(env.addSecurityKey(value || "Security key").then(() => "added")) };
+        }
+        if (key === "device.securityKeyRemove") {
+          if (!env.removeSecurityKey) return unsupported;
+          if (!value) return fail(device, "value is a key's id.");
+          return { device, value: await finishedOrStarted(env.removeSecurityKey(value).then(() => "removed")) };
+        }
+        if (!env.setSecurityKeyClasses) return unsupported;
+        let classes: unknown;
+        try {
+          classes = JSON.parse(value ?? "");
+        } catch {
+          classes = null;
+        }
+        if (!Array.isArray(classes) || classes.some((name) => typeof name !== "string")) return fail(device, "value is the list of classes.");
+        return { device, value: await finishedOrStarted(env.setSecurityKeyClasses(classes as string[]).then(() => "saved")) };
       }
       default:
         return unsupported;
