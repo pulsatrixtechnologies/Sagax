@@ -125,9 +125,9 @@ if (bulk) {
   for (const member of team) member.ownerUserId ??= "pr_me";
 }
 const PROFILES = [
-  { id: "pf_cw", slug: "connectwise", name: "ConnectWise", description: "Billets et temps" },
-  { id: "pf_s1", slug: "sentinelone", name: "SentinelOne", description: "Postes et menaces" },
-  { id: "pf_bs", slug: "bookstack", name: "BookStack", description: "Documentation" },
+  { id: "pf_cw", slug: "tickets", name: "Billets", description: "Billets et temps" },
+  { id: "pf_s1", slug: "security", name: "Sécurité", description: "Postes et menaces" },
+  { id: "pf_bs", slug: "docs", name: "Documentation", description: "Pages et guides" },
 ];
 const botProfiles: Record<string, string[]> = { atlas: ["pf_cw"], iris: ["pf_cw", "pf_s1"], lina: ["pf_cw"] };
 
