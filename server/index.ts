@@ -17839,14 +17839,20 @@ bus.subscribe((event: RuntimeEvent) => {
         // transcript per bot), with the link to the thread it worked in.
         const incidentsReport = reply && settledTask?.openedBy?.botId === bot.id && settledTask.title === INCIDENTS_THREAD_TITLE
           ? conversationOrStart(bot, privateThreads() ? effectiveBotOwner(bot) : undefined) : undefined;
-        if (incidentsReport && incidentsReport !== event.threadId) {
-          store.appendMessage(incidentsReport, {
+        const incidentsCopied = Boolean(incidentsReport && incidentsReport !== event.threadId);
+        if (incidentsCopied) {
+          store.appendMessage(incidentsReport!, {
             role: "bot", kind: "text", text: reply,
             threadRef: { botId: bot.id, threadId: event.threadId, title: settledTask!.title },
           });
-          store.patchTask(bot.id, incidentsReport, { unread: true });
-          if (!computerSelectionTurns.get(event.threadId)?.selected) {
-            notify(deliverableNotification("done", bot, incidentsReport, reply, { avatarUrl: bot.avatarUrl }));
+          store.patchTask(bot.id, incidentsReport!, { unread: true });
+          // The copy lands in the conversation, but its push follows the
+          // turn's own rule: a quiet turn (turnAnswers: only reports that
+          // waited, about failures that already buzzed the person) rings
+          // nothing here either. notify() checks quietTurnThreads by the
+          // notice's thread, and this one names the conversation.
+          if (!computerSelectionTurns.get(event.threadId)?.selected && !quietTurnThreads.has(event.threadId)) {
+            notify(deliverableNotification("done", bot, incidentsReport!, reply, { avatarUrl: bot.avatarUrl }));
           }
         }
         const routineReportThread = routineRun ? routineSourceThread(routineRun) : null;
@@ -17862,7 +17868,9 @@ bus.subscribe((event: RuntimeEvent) => {
         // here as well would ring twice for one piece of news.
         // A routine run with nothing to report, or one whose routine does not
         // post results to the conversation, rings nothing (2026-10-22).
-        if ((!routineRun || (routineRun.status === "completed" && !routineRun.quiet && routineEffectivePostResults(routineRun))) && !internal && !computerSelectionTurns.get(event.threadId)?.selected) {
+        // A Team incidents report rang once above, on the conversation it was
+        // copied to: one piece of news, one push.
+        if ((!routineRun || (routineRun.status === "completed" && !routineRun.quiet && routineEffectivePostResults(routineRun))) && !internal && !incidentsCopied && !computerSelectionTurns.get(event.threadId)?.selected) {
           // the frame carries the bot's avatar so every desktop client can
           // show the notification under that bot's own face
           const completionDetail = routineRun
