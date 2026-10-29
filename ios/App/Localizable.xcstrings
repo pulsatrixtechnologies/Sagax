@@ -1,6 +1,118 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Deleted routine": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Deleted routine" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Routine supprimée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Rotina excluída" } }
+      }
+    },
+    "Nothing for you this time; nothing was posted.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nothing for you this time; nothing was posted." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rien pour toi cette fois ; rien n'a été publié." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nada para você desta vez; nada foi publicado." } }
+      }
+    },
+    "Working; the result shows here when it is done.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Working; the result shows here when it is done." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En cours ; le résultat s'affichera ici à la fin." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Em andamento; o resultado aparece aqui quando terminar." } }
+      }
+    },
+    "Resume routine": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Resume routine" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Reprendre la routine" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Retomar a rotina" } }
+      }
+    },
+    "No steps were kept for this run.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No steps were kept for this run." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune étape n'a été gardée pour cette exécution." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhuma etapa foi guardada para esta execução." } }
+      }
+    },
+    "Loading the steps…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Loading the steps…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chargement des étapes…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Carregando as etapas…" } }
+      }
+    },
+    "Configuration": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Configuration" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Configuration" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Configuração" } }
+      }
+    },
+    "Run again": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Run again" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Relancer" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Executar de novo" } }
+      }
+    },
+    "Continue in the conversation": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Continue in the conversation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Continuer dans la conversation" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Continuar na conversa" } }
+      }
+    },
+    "%@ (copy)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ (copy)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ (copie)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%@ (cópia)" } }
+      }
+    },
+    "All routines": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "All routines" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toutes les routines" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Todas as rotinas" } }
+      }
+    },
+    "Filter runs by routine": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Filter runs by routine" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Filtrer les exécutions par routine" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Filtrar execuções por rotina" } }
+      }
+    },
+    "Any time": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Any time" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toute période" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Qualquer período" } }
+      }
+    },
+    "Last 24 hours": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Last 24 hours" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dernières 24 heures" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Últimas 24 horas" } }
+      }
+    },
+    "Last 7 days": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Last 7 days" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "7 derniers jours" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Últimos 7 dias" } }
+      }
+    },
+    "Someone else's run: status and timing only.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Someone else's run: status and timing only." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Exécution de quelqu'un d'autre : état et horaire seulement." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Execução de outra pessoa: apenas status e horário." } }
+      }
+    },
     "Search plugins, skills, MCP servers, bots, templates and sources": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Search plugins, skills, MCP servers, bots, templates and sources" } },

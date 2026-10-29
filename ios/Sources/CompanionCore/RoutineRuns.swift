@@ -31,6 +31,73 @@ public extension RoutineRun {
         }
         return nil
     }
+    /// 2026-10-29 (`routineRunPreview`): the first line worth reading of the
+    /// preview, without Markdown marks or a table's pipes ("Area · Open").
+    var previewLine: String? {
+        guard let text = preview else { return nil }
+        let line = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty && !Self.isTableRule($0) } ?? ""
+        let plain = line.hasPrefix("|")
+            ? line.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " · ")
+            : line
+        let cleaned = plain.filter { !"*_`#>".contains($0) }.trimmingCharacters(in: .whitespaces)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    private static func isTableRule(_ line: String) -> Bool {
+        let body = line.filter { !" |".contains($0) }
+        return !body.isEmpty && body.allSatisfy { "-:".contains($0) } && body.contains("--")
+    }
+
+    /// The run's state in the task sheet's words (`runActivityStatus`).
+    var activityStatus: BotActivityStatus {
+        switch status {
+        case "queued": .queued
+        case "running": .running
+        case "waiting": .waiting
+        case "failed", "missed": .failed
+        case "cancelled": .stopped
+        default: .finished
+        }
+    }
+
+    /// How long the run took, or has been going, in milliseconds (nil before
+    /// it started, or when it ended without a finish time).
+    func elapsedMs(now: Double) -> Double? {
+        guard let startedAt, startedAt > 0 else { return nil }
+        if let finishedAt { return max(0, finishedAt - startedAt) }
+        return ["running", "waiting"].contains(status) ? max(0, now - startedAt) : nil
+    }
+}
+
+public extension RoutineRunLog {
+    /// The logs' period (2026-10-29): any time or the last day, week, month.
+    enum Period: String, CaseIterable, Sendable {
+        case all, day, week, month
+        public var milliseconds: Double? {
+            switch self {
+            case .all: nil
+            case .day: 86_400_000
+            case .week: 7 * 86_400_000
+            case .month: 30 * 86_400_000
+            }
+        }
+    }
+
+    /// The bot and period filters on top of `filter`.
+    static func narrowed(_ runs: [RoutineRun], botId: String?, period: Period, now: Double) -> [RoutineRun] {
+        runs.filter { run in
+            (botId == nil || run.botId == botId) && (period.milliseconds.map { run.logTime >= now - $0 } ?? true)
+        }
+    }
+
+    /// The routines the logs can narrow to, a deleted one included (its runs
+    /// stay): id and name, by name.
+    static func routineChoices(_ runs: [RoutineRun]) -> [(id: String, name: String)] {
+        var seen: [String: String] = [:]
+        for run in runs where seen[run.routineId] == nil { seen[run.routineId] = run.routineName }
+        return seen.map { (id: $0.key, name: $0.value) }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
 }
 
 /// The logs' status picker (`RoutineRunStatusFilter`).

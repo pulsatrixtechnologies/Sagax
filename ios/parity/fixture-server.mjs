@@ -68,6 +68,8 @@ import {
 import { composerLabHook } from "./composer-lab.mjs";
 // PARITY_ROUTINES=1: a desktop-made routine and its runs for the WP8 UI tests (routine-lab.mjs).
 import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.mjs";
+// PARITY_ROUTINE_RUNS=1: Ara's monthly routine with a run of every outcome (routine-ux-lab.mjs).
+import { ROUTINE_RUNS_LAB, seedRoutineRunsLab } from "./routine-ux-lab.mjs";
 // PARITY_RICH=1: a bot whose transcript holds every rich block, for the WP14 UI tests (rich-lab.mjs).
 import { RICH_LAB, seedRichLabBot, seedRichLabTranscript } from "./rich-lab.mjs";
 // PARITY_WIDGETS=1: every chat widget sample for the widget UI tests (widget-lab.mjs).
@@ -777,6 +779,7 @@ async function main() {
   seedTranscripts(dataDir, seeded);
   if (CARD_LAB) seedCardLabTranscripts(dataDir);
   if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
+  if (ROUTINE_RUNS_LAB && seeded.routines[0]) seedRoutineRunsLab(dataDir, seeded.routines[0]);
   if (RICH_LAB) seedRichLabTranscript(dataDir, png);
   if (WIDGET_LAB) seedWidgetLabTranscript(dataDir);
   if (LINKS_LAB) seedLinksLabTranscript(dataDir);

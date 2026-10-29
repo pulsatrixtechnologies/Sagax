@@ -2195,6 +2195,10 @@ public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
     public var redacted: Bool? = nil
     /// This failure paused its routine (failed runs in a row).
     public var autoPaused: RoutineRunAutoPause? = nil
+    /// What the run cost in dollars, when the engine said (2026-10-29).
+    public var cost: Double? = nil
+    /// A completed run with nothing for the person: it posted nothing.
+    public var quiet: Bool? = nil
 }
 
 /// Where a routine posts its dated results (`ResultsDestination.tsx`).

@@ -62,43 +62,78 @@ enum RoutineRunWording {
     }
 }
 
-/// One run in the logs: routine, bot, when, how it started, its status, an
-/// unseen-failure dot and the first lines of what it said.
+extension RoutineRunWording {
+    /// "38s", "4m", "1h 12m" (`formatActivityDuration`).
+    static func duration(_ run: RoutineRun, now: Date = Date()) -> String? {
+        run.elapsedMs(now: now.timeIntervalSince1970 * 1_000).map(BotActivityRules.duration)
+    }
+
+    static func cost(_ run: RoutineRun) -> String? {
+        guard let cost = run.cost, cost > 0 else { return nil }
+        return BotUsageTotal.formatUsd(cost)
+    }
+
+    /// The head's status line (`taskStatusWords`): "Finished · 4m",
+    /// "Working · 6m", "Waiting for you · 29m".
+    static func statusLine(_ run: RoutineRun, now: Date = Date()) -> String {
+        var words = [label(run)]
+        if run.status == "waiting" { words = [String(localized: "Waiting for you")] }
+        if run.status == "running" { words = [String(localized: "Working")] }
+        if let duration = duration(run, now: now) { words.append(duration) }
+        return words.joined(separator: " · ")
+    }
+}
+
+/// One run in the logs (2026-10-29): its state icon, routine, bot, when, how
+/// it started, how long and what it cost, an unseen-failure dot, and the
+/// first line of what it said, without a table's pipes.
 struct RoutineLogRow: View {
     @Environment(\.themePalette) var themePalette
     let run: RoutineRun
     let bot: Bot?
     var showsUnseen = true
 
+    private var meta: String {
+        var parts = [bot?.name ?? String(localized: "Bot unavailable"), RoutineRunWording.date(run.scheduledFor), RoutineRunWording.trigger(run)]
+        if let duration = RoutineRunWording.duration(run) { parts.append(duration) }
+        if let cost = RoutineRunWording.cost(run) { parts.append(cost) }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: run.routineName)
-                        .font(Theme.Font.bodyMedium)
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                    Text(verbatim: "\(bot?.name ?? String(localized: "Bot unavailable")) · \(RoutineRunWording.date(run.scheduledFor)) · \(RoutineRunWording.trigger(run))")
-                        .font(Theme.Font.label)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                HStack(spacing: 6) {
-                    if showsUnseen && run.isUnseenProblem {
-                        Circle().fill(Theme.danger).frame(width: 6, height: 6)
-                            .accessibilityLabel(Text("Unseen failure"))
-                            .accessibilityIdentifier("routine-run-unseen.\(run.id)")
+        HStack(alignment: .top, spacing: 10) {
+            BotActivityStatusIcon(status: run.activityStatus, size: 15)
+                .frame(width: 18)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(verbatim: run.routineName)
+                            .font(Theme.Font.bodyMedium)
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                        Text(verbatim: meta)
+                            .font(Theme.Font.label)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
                     }
-                    Text(verbatim: RoutineRunWording.label(run))
-                        .font(Theme.Font.labelMedium)
-                        .foregroundStyle(RoutineRunWording.tone(run))
+                    Spacer(minLength: 8)
+                    HStack(spacing: 6) {
+                        if showsUnseen && run.isUnseenProblem {
+                            Circle().fill(Theme.danger).frame(width: 6, height: 6)
+                                .accessibilityLabel(Text("Unseen failure"))
+                                .accessibilityIdentifier("routine-run-unseen.\(run.id)")
+                        }
+                        Text(verbatim: RoutineRunWording.label(run))
+                            .font(Theme.Font.labelMedium)
+                            .foregroundStyle(RoutineRunWording.tone(run))
+                    }
                 }
+                Text(verbatim: run.quiet == true ? String(localized: "Nothing for you this time; nothing was posted.") : run.previewLine ?? String(localized: "No output recorded yet."))
+                    .font(Theme.Font.preview)
+                    .foregroundStyle(run.error?.isEmpty == false && run.attention?.isEmpty != false ? Theme.danger : Theme.textSecondary)
+                    .lineLimit(1)
             }
-            Text(verbatim: run.preview ?? String(localized: "No output recorded yet."))
-                .font(Theme.Font.preview)
-                .foregroundStyle(run.error?.isEmpty == false && run.attention?.isEmpty != false ? Theme.danger : Theme.textSecondary)
-                .lineLimit(2)
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
@@ -107,8 +142,14 @@ struct RoutineLogRow: View {
     }
 }
 
-/// A run, opened from the logs or a routine's history. Opening a failed or
-/// missed run marks it seen, as on the desktop.
+/// A run, opened from the logs or a routine's history (2026-10-29, as the
+/// desktop's RoutineRunDetail.tsx): the state in words with its time and
+/// cost; what waits on the person first, with a box to answer; the result
+/// rendered as Markdown (tables are tables); the steps grouped and folded;
+/// the routine's settings folded under Configuration; then Stop, Run again,
+/// Continue in the conversation and Open results thread. Opening a failed
+/// or missed run marks it seen, as on the desktop. A run of a deleted
+/// routine keeps all of it, minus Run again.
 struct RoutineRunDetailView: View {
     @Environment(\.themePalette) var themePalette
     @State var run: RoutineRun
@@ -119,61 +160,28 @@ struct RoutineRunDetailView: View {
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
     @State private var working = false
+    @State private var detail: BotActivityDetail?
+    @State private var stepsFailed = false
+    @State private var replyText = ""
+    @State private var replyState: BotActivitySteerState = .idle
+    @State private var showsConfiguration = false
+
+    private var bot: Bot? { session.state.bot(run.botId) }
+    private var threadId: String? { run.executionThreadId ?? run.threadId }
+    private var reported: Bool { run.output?.isEmpty == false && run.redacted != true }
 
     var body: some View {
         NavigationStack {
             ThemedList {
-                Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: run.routineName).font(.headline)
-                        Text(verbatim: "\(RoutineRunWording.date(run.scheduledFor)) · \(RoutineRunWording.trigger(run))")
-                            .font(.caption).foregroundStyle(Theme.textSecondary)
-                    }
-                    HStack(spacing: 8) {
-                        if run.status == "running" { ProgressView().controlSize(.small) }
-                        Text(verbatim: RoutineRunWording.label(run))
-                            .foregroundStyle(RoutineRunWording.tone(run))
-                            .accessibilityIdentifier("routine-run-status")
-                    }
-                    if let bot = session.state.bot(run.botId) {
-                        LabeledContent(run.target == "room-goal" ? String(localized: "Lead coordinator") : String(localized: "Assigned bot"), value: bot.name)
-                    }
-                    LabeledContent(String(localized: "Run limit"), value: run.timeoutMinutes.map { String(localized: "Stops if still running after \(RoutineDurations.label($0))") } ?? String(localized: "No time limit"))
-                }
-
-                if let attention = run.attention, !attention.isEmpty {
-                    Section { Label(attention, systemImage: "exclamationmark.circle").foregroundStyle(Theme.warning) }
-                } else if run.status == "waiting" {
-                    Section { Text("This run is waiting. Open its execution thread for more context.").foregroundStyle(Theme.warning) }
-                }
-                if let output = run.output, !output.isEmpty {
-                    Section { Text(verbatim: output).textSelection(.enabled).font(.subheadline) }
-                }
-                if let error = run.error, !error.isEmpty {
-                    Section { Text(verbatim: error).textSelection(.enabled).font(.subheadline).foregroundStyle(Theme.danger) }
-                }
-
-                Section {
-                    if let target = executionTarget {
-                        Button(run.target == "room-goal" ? String(localized: "Open group thread") : String(localized: "Open thread"), systemImage: "arrow.up.right.square") {
-                            open(target)
-                        }
-                        .accessibilityIdentifier("routine-run-open-thread")
-                    }
-                    if let target = RoutineResults.openTarget(for: run, routine: routine, bots: session.state.bots, rooms: session.state.rooms) {
-                        Button(String(localized: "Open results thread"), systemImage: "arrow.up.right.square") { open(target) }
-                            .accessibilityIdentifier("routine-run-open-results")
-                    }
-                    if run.isActive && session.surfaceGate.allows(.routineRunCancel) {
-                        Button(String(localized: "Cancel run"), systemImage: "xmark", role: .destructive) {
-                            Task { await cancel() }
-                        }
-                        .disabled(working)
-                        .accessibilityIdentifier("routine-run-cancel")
-                    }
-                }
+                head
+                waiting
+                result
+                problems
+                steps
+                configuration
+                actions
             }
-            .navigationTitle(Text("Run"))
+            .navigationTitle(Text(verbatim: run.routineName))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -182,15 +190,196 @@ struct RoutineRunDetailView: View {
             }
         }
         .task { await markSeen() }
+        .task(id: run.status) { await loadSteps() }
+    }
+
+    // The head: the bot, the state in words, when, how it started, its cost.
+    private var head: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    if let bot {
+                        HStack(spacing: 6) {
+                            BotMascotView(bot: bot, size: 22, state: run.isActive ? .working : .idle, animated: false)
+                            Text(verbatim: bot.name).font(Theme.Font.labelMedium).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                        }
+                    }
+                    if routine == nil {
+                        Text("Deleted routine")
+                            .font(Theme.Font.label)
+                            .foregroundStyle(Theme.textSecondary)
+                            .accessibilityIdentifier("routine-run-deleted")
+                    }
+                }
+                HStack(spacing: 6) {
+                    BotActivityStatusIcon(status: run.activityStatus, size: 15)
+                    Text(verbatim: RoutineRunWording.statusLine(run))
+                        .font(Theme.Font.body)
+                        .foregroundStyle(RoutineRunWording.tone(run))
+                        .accessibilityIdentifier("routine-run-status")
+                }
+                Text(verbatim: [RoutineRunWording.date(run.scheduledFor), RoutineRunWording.trigger(run), RoutineRunWording.cost(run)].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("routine-run-meta")
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    // What waits on the person, and the box to answer it; while it works,
+    // the same box nudges it.
+    @ViewBuilder
+    private var waiting: some View {
+        if run.status == "waiting" {
+            Section {
+                Label(run.attention?.isEmpty == false ? run.attention! : String(localized: "This run is waiting. Open its execution thread for more context."), systemImage: "hand.raised")
+                    .foregroundStyle(Theme.warning)
+                    .accessibilityIdentifier("routine-run-waiting")
+            } header: {
+                Text("Waiting for you")
+            }
+        } else if run.status == "queued", let attention = run.attention, !attention.isEmpty {
+            Section { Label(attention, systemImage: "clock").foregroundStyle(Theme.accent) }
+        }
+        if ["running", "waiting"].contains(run.status), run.target != "room-goal", run.redacted != true, let threadId {
+            BotActivitySteerSection(botId: run.botId, threadId: threadId, text: $replyText, state: $replyState) { await loadSteps() }
+        }
+    }
+
+    // The result first, rendered as Markdown.
+    @ViewBuilder
+    private var result: some View {
+        if run.redacted == true {
+            Section { Text("Someone else's run: status and timing only.").foregroundStyle(Theme.textSecondary) }
+        } else if reported, let output = run.output {
+            Section {
+                MarkdownText(source: output)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("routine-run-result")
+            } header: {
+                Text("Result")
+            }
+        } else if run.quiet == true {
+            Section { Text("Nothing for you this time; nothing was posted.").foregroundStyle(Theme.textSecondary) }
+        } else if run.status == "running" {
+            Section { Label("Working; the result shows here when it is done.", systemImage: "hourglass").foregroundStyle(Theme.textSecondary) }
+        }
+    }
+
+    @ViewBuilder
+    private var problems: some View {
+        if let error = run.error, !error.isEmpty, run.status != "waiting" {
+            Section { Text(verbatim: error).textSelection(.enabled).font(.subheadline).foregroundStyle(Theme.danger) }
+                .accessibilityIdentifier("routine-run-error")
+        }
+        if let paused = run.autoPaused {
+            Section {
+                Label(paused.failures.map { String(localized: "Paused after \($0) failures in a row") } ?? String(localized: "Paused"), systemImage: "pause.circle")
+                    .foregroundStyle(Theme.warning)
+                if let routine, !routine.enabled, routine.mayEdit, routine.canToggle() {
+                    Button(String(localized: "Resume routine"), systemImage: "play") {
+                        Task { await resume(routine) }
+                    }
+                    .disabled(working)
+                    .accessibilityIdentifier("routine-run-resume")
+                }
+            }
+        }
+    }
+
+    // The steps, grouped, each group folded (the task sheet's own rows).
+    @ViewBuilder
+    private var steps: some View {
+        if run.redacted != true {
+            Section {
+                if let detail {
+                    if detail.steps.isEmpty {
+                        Text("No steps were kept for this run.").foregroundStyle(Theme.textSecondary)
+                    } else {
+                        ForEach(BotActivityStepGroup.groups(detail.steps)) { group in
+                            BotActivityStepGroupRow(group: group)
+                        }
+                    }
+                } else if stepsFailed {
+                    Text("No steps were kept for this run.").foregroundStyle(Theme.textSecondary)
+                } else {
+                    HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Loading the steps…").foregroundStyle(Theme.textSecondary) }
+                }
+            } header: {
+                Text("Steps")
+            }
+            .accessibilityIdentifier("routine-run-steps")
+        }
+    }
+
+    // What it ran with: folded, one tap away.
+    private var configuration: some View {
+        Section {
+            DisclosureGroup(isExpanded: $showsConfiguration) {
+                if let prompt = run.prompt ?? routine?.prompt, !prompt.isEmpty, run.redacted != true {
+                    Text(verbatim: prompt).font(.subheadline).textSelection(.enabled)
+                }
+                if let bot {
+                    LabeledContent(run.target == "room-goal" ? String(localized: "Lead coordinator") : String(localized: "Assigned bot"), value: bot.name)
+                }
+                if let routine {
+                    LabeledContent(String(localized: "Schedule"), value: RoutineWording.schedule(routine.schedule))
+                }
+                LabeledContent(String(localized: "Run limit"), value: run.timeoutMinutes.map { String(localized: "Stops if still running after \(RoutineDurations.label($0))") } ?? String(localized: "No time limit"))
+            } label: {
+                Text("Configuration")
+            }
+            .accessibilityIdentifier("routine-run-configuration")
+        }
+    }
+
+    private var actions: some View {
+        Section {
+            if run.isActive && session.surfaceGate.allows(.routineRunCancel) {
+                Button(String(localized: "Stop"), systemImage: "stop.fill", role: .destructive) {
+                    Task { await cancel() }
+                }
+                .disabled(working)
+                .accessibilityIdentifier("routine-run-cancel")
+            }
+            if !run.isActive, let routine, routine.mayRun {
+                Button(String(localized: "Run again"), systemImage: "arrow.clockwise") {
+                    Task { await runAgain(routine) }
+                }
+                .disabled(working)
+                .accessibilityIdentifier("routine-run-again")
+            }
+            if let target = executionTarget {
+                Button(run.target == "room-goal" ? String(localized: "Open group thread") : String(localized: "Continue in the conversation"), systemImage: "arrow.up.right.square") {
+                    open(target)
+                }
+                .accessibilityIdentifier("routine-run-open-thread")
+            }
+            if let target = RoutineResults.openTarget(for: run, routine: routine, bots: session.state.bots, rooms: session.state.rooms) {
+                Button(String(localized: "Open results thread"), systemImage: "arrow.up.right.square") { open(target) }
+                    .accessibilityIdentifier("routine-run-open-results")
+            }
+        }
     }
 
     private var executionTarget: NotificationTarget? {
-        NotificationTarget(botId: run.botId, threadId: run.executionThreadId ?? run.threadId)
+        NotificationTarget(botId: run.botId, threadId: threadId)
     }
 
     private func open(_ target: NotificationTarget) {
         dismiss()
         Task { await session.openNotification(target) }
+    }
+
+    private func loadSteps() async {
+        guard run.redacted != true, let client = session.profileClient else { return }
+        do {
+            detail = try await client.botActivityDetail(botId: run.botId, itemId: "run:\(run.id)")
+            stepsFailed = false
+        } catch {
+            stepsFailed = true
+        }
     }
 
     private func cancel() async {
@@ -200,6 +389,22 @@ struct RoutineRunDetailView: View {
             run = updated
             onChange(updated)
         }
+    }
+
+    private func runAgain(_ routine: Routine) async {
+        working = true
+        defer { working = false }
+        if let started = await session.runRoutine(routine) {
+            run = started
+            detail = nil
+            onChange(started)
+        }
+    }
+
+    private func resume(_ routine: Routine) async {
+        working = true
+        defer { working = false }
+        _ = await session.setRoutineEnabled(routine, enabled: true)
     }
 
     private func markSeen() async {
