@@ -1678,7 +1678,7 @@ only wakes a routine, like bot email. Covered by
   `sms` that is `authenticated` (Perspicax admits only a number listed AND
   verified on the line, in a PIN session) with `person.id` equal to the
   assertion's `sub` (the line owner) is the person themself. It becomes a
-  turn of their single conversation with the bot (`agentUnifiedThread`, the
+  turn of their single conversation with the bot (`conversationOrStart`, the
   one send_prompt lands in; a first conversation is opened, never a
   confidential one), sent as the person through `performAsMember` (actor
   `perspicax-voice`, every check of a typed line), the line marked

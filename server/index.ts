@@ -30979,14 +30979,9 @@ const smsConversation = new SmsConversation({
     const bot = store.bot(botId);
     if (!bot) return { ok: false, error: "no such bot" };
     const member: MemberPerson = { principalId: person, sub, name: personDisplayName(principals.byId(person)) || "", admin: false, actor: "perspicax-voice" };
-    let threadId = agentUnifiedThread(bot, person);
-    if (!threadId) {
-      // their first conversation with the bot: an ordinary one, never confidential
-      const created = await performAsMember(member, { method: "POST", path: `/api/bots/${encodeURIComponent(botId)}/tasks`, body: { confidential: false } });
-      const id = (created.body as { task?: { threadId?: unknown } })?.task?.threadId;
-      if (created.status >= 300 || typeof id !== "string") return { ok: false, error: `no conversation (${created.status})` };
-      threadId = id;
-    }
+    // the bot's one conversation with the person (#1586), started when they have none
+    const threadId = conversationOrStart(bot, person);
+    if (!threadId) return { ok: false, error: "no conversation" };
     if (store.isConfidentialThread(threadId)) return { ok: false, error: "confidential conversation" };
     const sent = await performAsMember(member, { method: "POST", path: `/api/bots/${encodeURIComponent(botId)}/messages`, body: { text, threadId } });
     if (sent.status >= 300) return { ok: false, error: String((sent.body as { error?: unknown })?.error ?? `refused (${sent.status})`) };

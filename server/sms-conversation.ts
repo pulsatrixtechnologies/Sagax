@@ -13,7 +13,7 @@
 // verified number) keeps the phone triggers, as before.
 //
 // Where it lands: the bot's single conversation with that person, the
-// one an AI client's send_prompt also lands in (agentUnifiedThread in
+// one an AI client's send_prompt also lands in (conversationOrStart in
 // server/index.ts), never a confidential, hidden, routine or parallel one.
 // It is sent through the same route the app uses, as the person
 // (performAsMember), so every check of a typed line applies. The line is
