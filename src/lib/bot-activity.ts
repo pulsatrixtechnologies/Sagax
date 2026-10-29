@@ -109,6 +109,11 @@ export class LiveActivity {
 
 const SHOW_ALL: LiveView = { visible: () => true, fading: () => false };
 
+/** An entry's title as shown: a retried request says so ("Retry · ..."). */
+export function activityTitle(item: Pick<BotActivityItem, "title" | "retry">): string {
+  return item.retry ? `${t("chat.retry")} · ${item.title}` : item.title;
+}
+
 /** Details > Coding: running coding jobs only (the server's `coding`, never
  * a title), and those that just finished while they leave. */
 export function codingLive(items: readonly BotActivityItem[], live: LiveView = SHOW_ALL): BotActivityItem[] {
@@ -162,7 +167,9 @@ export function codingWork(items: readonly BotActivityItem[], archived?: Readonl
     if (!before || before.at < value.at) map.set(key, value);
   };
   for (const item of items) {
-    if (!item.coding || !item.code) continue;
+    // Code work rides on any entry that did coding work, even when its
+    // newest turn is not a coding job (the server's `code`).
+    if (!item.code) continue;
     for (const pull of item.code.pullRequests) {
       newer(pulls, pull.url ?? (pull.number !== undefined ? `${pull.repo ?? ""}#${pull.number}` : `${item.id}:${pull.title ?? pull.at}`), pull);
     }
@@ -251,7 +258,7 @@ export function historyItems(items: readonly BotActivityItem[], status: HistoryS
       if (status === "finished" && item.status !== "finished") return false;
       if (status === "failed" && item.status !== "failed" && item.status !== "stopped") return false;
       if (!words.length) return true;
-      const text = [item.title, item.botName, item.startedBy?.name, item.currentStep].filter(Boolean).join(" ").toLowerCase();
+      const text = [item.title, item.threadTitle, item.botName, item.startedBy?.name, item.currentStep].filter(Boolean).join(" ").toLowerCase();
       return words.every((word) => text.includes(word));
     })
     .sort((a, b) => b.startedAt - a.startedAt);

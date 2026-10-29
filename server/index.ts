@@ -11049,6 +11049,14 @@ const coordinator: Coordinator = createCoordinator({
     // conversation the person started the work in gets it too.
     park: (node, question, restored) => postInputRequest(node, question, false, restored),
     remind: (node, question) => postInputRequest(node, question, true),
+    // A parked delegation whose conversation was deleted or archived has
+    // nowhere left to be answered: closed (at the restart too), so it stops
+    // reading as waiting on the person under its requester's turns.
+    parkedGone: (node) => {
+      if (node.groupId) return false;
+      const task = store.taskByThread(node.botId, node.threadId);
+      return !task || Boolean(task.archivedAt);
+    },
     // The level the target thread really runs with (invariant I6): the same
     // decision a coordinated turn makes at dispatch — the thread's own bot
     // (a delegated level is stored on it by applyDelegatedLevel), as a peer-
@@ -33478,7 +33486,10 @@ function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
       botId: node.botId,
       threadId: node.threadId,
       title: store.taskByThread(node.botId, node.threadId)?.title || node.text.slice(0, 120),
-      status: node.status === "source" || node.status === "resume" ? "running" : node.status,
+      // "waiting" is the person's turn only when the teammate is parked on
+      // their answer; a teammate waiting on its own teammates still works.
+      status: node.status === "source" || node.status === "resume" ? "running"
+        : node.status === "waiting" && !coordinator.awaitingAnswer(node.threadId) ? "running" : node.status,
       startedAt: node.startedAt ?? node.createdAt,
     });
   }

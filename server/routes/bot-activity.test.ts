@@ -335,3 +335,104 @@ describe("bot activity API", () => {
     expect(detail.body.item!.children).toEqual([expect.objectContaining({ threadId: "t-par", parallel: true, canStop: true })]);
   });
 });
+
+// 2026-10-29: a Retry in a bot's main chat (its turn only listed routines)
+// showed under Details > Coding as « hello · Running · 27 sub-agents », and
+// its sheet piled up every earlier turn: old git work, a usage-limit error,
+// and the teammates an earlier turn handed work to, all « Waiting on you ».
+describe("a conversation's entry is its newest turn", () => {
+  const main: ActivityTask = { threadId: "t-main", title: "hello", createdAt: NOW - 8 * 3_600_000, updatedAt: NOW - 1_000, busy: true, activity: "working", turnStartedAt: NOW - 22_000, ownerPrincipalId: "alice" };
+  const earlier = NOW - 6 * 3_600_000;
+  const history: ActivityMessage[] = [
+    { id: "h1", role: "user", kind: "text", at: earlier - 60_000, text: "hello", parentId: null },
+    { id: "h2", role: "bot", kind: "activity", at: earlier - 50_000, tool: { name: "Bash", ok: true, input: "{\"command\":\"git commit -am wip && git push\"}" } },
+    { id: "h3", role: "bot", kind: "activity", at: earlier - 40_000, tool: { name: "Edit", ok: true, files: ["/srv/app/src/a.ts"] } },
+    { id: "h4", role: "user", kind: "text", at: earlier, text: "Hand the routine review to the team\nand wait for them", parentId: "h3" },
+    { id: "h5", role: "bot", kind: "activity", at: earlier + 10_000, tool: { name: "mcp__agents__handoff", ok: true } },
+    { id: "h6", role: "bot", kind: "activity", at: earlier + 20_000, tool: { name: "Error: Claude stopped with an error (HTTP 400 usage limits)", ok: false } },
+    // Retry: the same words forked beside the first try
+    { id: "h7", role: "user", kind: "text", at: NOW - 22_000, text: "Hand the routine review to the team\nand wait for them", parentId: "h3" },
+    { id: "h8", role: "bot", kind: "activity", at: NOW - 15_000, tool: { name: "mcp__agents__list_routines", summary: "mcp__agents__list_routines" } },
+  ];
+  const teammates = Array.from({ length: 27 }, (_, index) => ({
+    botId: "echo", threadId: `t-echo-${index}`, title: "@echo · work", status: "waiting" as const, startedAt: earlier + 10_000,
+  }));
+  const mainDeps = (overrides: Partial<BotActivityRouteDeps> = {}) => deps({
+    tasks: (botId) => (botId === "pepper" ? [main] : []),
+    threadReadable: (botId, threadId, viewerId) => !viewerId || (botId === "pepper" ? threadId === "t-main" : viewerId === "alice"),
+    threadWritable: (_botId, threadId, viewerId) => !viewerId || threadId === "t-main",
+    runs: () => [],
+    messages: (threadId, limit) => ({ messages: (threadId === "t-main" ? history : []).slice(-limit), hasMore: false }),
+    children: (_botId, threadId) => (threadId === "t-main" ? [...teammates, { botId: "echo", threadId: "t-echo-now", title: "Check the schedule", status: "running", startedAt: NOW - 10_000 }] : []),
+    inRepository: () => false,
+    ...overrides,
+  });
+
+  it("is not Coding for an earlier turn's git work, and keeps that code work", async () => {
+    const base = await serve(mainDeps());
+    const list = await get(base, "/api/bots/pepper/activity", "alice");
+    const entry = list.body.items!.find((item) => item.id === "thread:t-main")!;
+    expect(entry).not.toHaveProperty("coding");
+    expect(entry.code).toBeDefined();
+    expect((await get(base, "/api/bots/pepper/activity?filter=coding", "alice")).body.items).toEqual([]);
+  });
+
+  it("is Coding while its own turn does code work", async () => {
+    const coding = [...history, { id: "h9", role: "bot", kind: "activity", at: NOW - 5_000, tool: { name: "Edit", files: ["/srv/app/src/b.ts"] } } as ActivityMessage];
+    const base = await serve(mainDeps({ messages: (threadId, limit) => ({ messages: (threadId === "t-main" ? coding : []).slice(-limit), hasMore: false }) }));
+    const entry = (await get(base, "/api/bots/pepper/activity", "alice")).body.items!.find((item) => item.id === "thread:t-main")!;
+    expect(entry).toMatchObject({ coding: true });
+  });
+
+  it("stays Coding as a whole when its folder is a repository", async () => {
+    const base = await serve(mainDeps({
+      tasks: (botId) => (botId === "pepper" ? [{ ...main, cwd: "/srv/app" }] : []),
+      inRepository: (cwd) => cwd === "/srv/app",
+    }));
+    const entry = (await get(base, "/api/bots/pepper/activity", "alice")).body.items!.find((item) => item.id === "thread:t-main")!;
+    expect(entry).toMatchObject({ coding: true });
+  });
+
+  it("is titled by the request its turn answers, says it is a retry, and keeps the thread's title", async () => {
+    const base = await serve(mainDeps());
+    const entry = (await get(base, "/api/bots/pepper/activity", "alice")).body.items!.find((item) => item.id === "thread:t-main")!;
+    expect(entry).toMatchObject({ title: "Hand the routine review to the team", threadTitle: "hello", retry: true });
+  });
+
+  it("is titled by a new request without the retry mark", async () => {
+    const asked = [...history.slice(0, 6), { id: "h7", role: "user", kind: "text", at: NOW - 22_000, text: "  list my routines  ", parentId: "h6" } as ActivityMessage];
+    const base = await serve(mainDeps({ messages: (threadId, limit) => ({ messages: (threadId === "t-main" ? asked : []).slice(-limit), hasMore: false }) }));
+    const entry = (await get(base, "/api/bots/pepper/activity", "alice")).body.items!.find((item) => item.id === "thread:t-main")!;
+    expect(entry.title).toBe("list my routines");
+    expect(entry).not.toHaveProperty("retry");
+  });
+
+  it("lists only its own turn's steps, files and sub-agents in the sheet", async () => {
+    const base = await serve(mainDeps());
+    const { body } = await get(base, "/api/bots/pepper/activity/item?threadId=t-main", "alice");
+    expect(body.item!.steps.map((step) => step.id)).toEqual(["h8"]);
+    expect(body.item!.stepsTruncated).toBe(true);
+    expect(body.item!.files).toEqual([]);
+    expect(body.item!.children.map((child) => child.threadId)).toEqual(["t-echo-now"]);
+    expect(body.item!.childCount).toBe(1);
+    expect(JSON.stringify(body)).not.toContain("usage limits");
+  });
+
+  it("moves an earlier turn's teammates to the list's sub-agents, each opening its own conversation", async () => {
+    const base = await serve(mainDeps());
+    const list = await get(base, "/api/bots/pepper/activity", "alice");
+    const waiting = list.body.subagents!.filter((item) => item.status === "waiting");
+    expect(waiting.length).toBeGreaterThan(0);
+    expect(waiting.every((item) => item.threadId?.startsWith("t-echo-") && item.parentId === "thread:t-main")).toBe(true);
+    expect(list.body.items!.find((item) => item.id === "thread:t-main")!.childCount).toBe(1);
+  });
+
+  it("does not count a teammate the viewer cannot open as waiting on them", async () => {
+    const base = await serve(mainDeps({
+      threadReadable: (botId, threadId, viewerId) => !viewerId || (botId === "pepper" && threadId === "t-main"),
+    }));
+    const list = await get(base, "/api/bots/pepper/activity", "alice");
+    expect(list.body.subagents!.some((item) => item.status === "waiting")).toBe(false);
+    expect(list.body.subagents!.every((item) => !item.threadId)).toBe(true);
+  });
+});

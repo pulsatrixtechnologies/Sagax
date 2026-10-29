@@ -8,7 +8,7 @@ import { AlertCircle, CheckCircle2, ChevronRight, CircleSlash, Clock, Hand, Load
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { activityStatusActive, activitySubtitle, type BotActivityItem, type BotActivityStatus } from "@/lib/bot-activity";
+import { activityStatusActive, activitySubtitle, activityTitle, type BotActivityItem, type BotActivityStatus } from "@/lib/bot-activity";
 
 export function ActivityStatusIcon({ status, size = 16 }: { status: BotActivityStatus; size?: number }) {
   const common = { size, strokeWidth: 1.9, "aria-hidden": true as const, className: "shrink-0" };
@@ -47,12 +47,12 @@ export function ActivityCard({ item, onOpen, now, onStop, stopping = false, wher
         aria-current={current ? "true" : undefined}
         data-activity-status={item.status}
         onClick={() => onOpen(item)}
-        aria-label={t("botPanel.coding.openAria", { title: item.title })}
+        aria-label={t("botPanel.coding.openAria", { title: activityTitle(item) })}
         className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
       >
         <ActivityStatusIcon status={item.status} />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] leading-[18px] text-ink">{item.title}</span>
+          <span className="block truncate text-[13px] leading-[18px] text-ink">{activityTitle(item)}</span>
           <span data-activity-subtitle className="block truncate text-[12px] leading-[17px] text-ink-secondary">
             {item.parallel ? `${t("botPanel.activity.parallel")} · ` : ""}{activitySubtitle(item, now)}
             {item.childCount ? ` · ${t("botPanel.coding.subagents", { count: item.childCount })}` : ""}
@@ -67,7 +67,7 @@ export function ActivityCard({ item, onOpen, now, onStop, stopping = false, wher
           data-activity-stop={item.id}
           onClick={() => onStop?.(item)}
           disabled={stopping}
-          aria-label={t("botPanel.activity.stopAria", { title: item.title })}
+          aria-label={t("botPanel.activity.stopAria", { title: activityTitle(item) })}
           title={t("botPanel.activity.stop")}
           className="mr-2 flex size-7 shrink-0 items-center justify-center rounded-lg text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-60"
         >

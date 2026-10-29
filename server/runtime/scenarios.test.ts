@@ -516,7 +516,9 @@ describe("§4b a question waits for the person (bot quality 2026-10-19)", () => 
   });
 
   it("S07d reminds once a day while it waits, and expires only after the week", async () => {
-    const w = world();
+    // A host that lets a delegation's question wait the whole week (the
+    // default closes a delegation sooner, S07e).
+    const w = world({ delegationInputWaitMs: 8 * 24 * 60 * 60_000 });
     const root = beginChief(w);
     const child = ok(enqueueFrom(w, root, workFor("dev", "Pick a colour")));
     w.runner.script("dev", needsInput("Which colour?"), complete("never"));
@@ -529,6 +531,65 @@ describe("§4b a question waits for the person (bot quality 2026-10-19)", () => 
     expect(get(w, child.id).status).toBe("needs_input");
     expect(w.runner.callsOf("remind", child.id).length).toBe(6);
     w.clock.advance(25 * 60 * 60_000);
+    await drain(w);
+    expect(get(w, child.id)).toMatchObject({ status: "failed", outcome: "expired" });
+    invariants(w);
+  });
+
+  // 2026-10-29: a bot handed work to teammates that each waited hours on a
+  // GO in their own conversation; every one stayed "waiting on you" under
+  // each new turn of the requester. A stale delegation closes.
+  it("S07e closes a delegation parked longer than delegationInputWaitMs, and tells the requester", async () => {
+    const w = world();
+    const root = beginChief(w);
+    const child = ok(enqueueFrom(w, root, workFor("dev", "Pick a colour")));
+    w.runner.script("dev", needsInput("GO?"), complete("never"));
+    w.rt.end(root.id, { ok: true, text: "" });
+    await drain(w);
+    expect(get(w, child.id).status).toBe("needs_input");
+    w.clock.advance(3 * 60 * 60_000);
+    await drain(w);
+    expect(get(w, child.id).status).toBe("needs_input");
+    w.clock.advance(61 * 60_000);
+    await drain(w);
+    expect(get(w, child.id)).toMatchObject({ status: "failed", outcome: "expired" });
+    expect(get(w, child.id).result).toMatch(/did not answer within 240m/);
+    expect(w.runner.reports(child.id)).toHaveLength(1);
+    invariants(w);
+  });
+
+  it("S07f a restart closes a stale delegation instead of parking it again", async () => {
+    const w = world();
+    const root = beginChief(w);
+    const child = ok(enqueueFrom(w, root, workFor("dev", "Pick a colour")));
+    w.runner.script("dev", needsInput("GO?"), complete("never"));
+    w.rt.end(root.id, { ok: true, text: "" });
+    await drain(w);
+    const parks = w.runner.callsOf("park", child.id).length;
+    // the server was down for five hours
+    w.rt.close();
+    w.clock.advance(5 * 60 * 60_000);
+    reopen(w);
+    expect(get(w, child.id)).toMatchObject({ status: "failed", outcome: "expired" });
+    expect(w.runner.callsOf("park", child.id)).toHaveLength(parks);
+    await drain(w);
+    invariants(w);
+  });
+
+  it("S07g closes a park whose question can no longer be answered (runner.parkedGone)", async () => {
+    const w = world();
+    const gone = new Set<string>();
+    (w.runner as unknown as { parkedGone: (a: { id: string }) => boolean }).parkedGone = (a) => gone.has(a.id);
+    const root = beginChief(w);
+    const child = ok(enqueueFrom(w, root, workFor("dev", "Pick a colour")));
+    w.runner.script("dev", needsInput("GO?"), complete("never"));
+    w.rt.end(root.id, { ok: true, text: "" });
+    await drain(w);
+    w.clock.advance(60_000);
+    await drain(w);
+    expect(get(w, child.id).status).toBe("needs_input");
+    gone.add(child.id);
+    w.clock.advance(60_000);
     await drain(w);
     expect(get(w, child.id)).toMatchObject({ status: "failed", outcome: "expired" });
     invariants(w);

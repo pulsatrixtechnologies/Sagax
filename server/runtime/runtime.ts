@@ -127,6 +127,14 @@ export class Runtime {
         const n = this.store.get(snapshot.id);
         if (!n || isTerminal(n)) continue;
         if (n.status === "needs_input") {
+          // A stale delegation is closed, not parked again (its card would
+          // come back after every restart).
+          const stale = this.parkedStale(n, now);
+          if (stale) {
+            this.store.update(n, { kind: "restart_reconciled", at: now, detail: `needs_input: closed (${stale})` });
+            this.cancelTree(n, stale, "failed", "expired");
+            continue;
+          }
           this.store.update(n, { kind: "restart_reconciled", at: now, detail: "needs_input: parked again" });
           this.touch(n);
           this.safe("park", () => this.runner.park(n, n.question ?? "", true));
@@ -330,7 +338,11 @@ export class Runtime {
         this.reminded.delete(n.id);
         this.cancelTree(n, "the person did not answer", "failed", "expired");
       } else if (n.status === "needs_input") {
-        this.remindIfDue(n, now);
+        const stale = this.parkedStale(n, now);
+        if (stale) {
+          this.reminded.delete(n.id);
+          this.cancelTree(n, stale, "failed", "expired");
+        } else this.remindIfDue(n, now);
       } else if (n.status === "running") {
         const turn = this.turns.get(n.id);
         if (turn && mono - turn.activeAt > this.limits.turnStallMs) {
@@ -785,6 +797,22 @@ export class Runtime {
   private renew(root: Assignment, now: number): void {
     root.lastActivityAt = now;
     if (root.budgets) root.budgets = { since: now, requests: 0, executions: 0, wakes: 0 };
+  }
+
+  /** Why a parked assignment is closed before inputWaitMs, if it is: a
+   * delegation (a child outside a room) parked longer than
+   * delegationInputWaitMs on the wall clock, or a park with no place left
+   * to answer it (runner.parkedGone). */
+  private parkedStale(n: Assignment, now: number): string | undefined {
+    if (n.status !== "needs_input") return undefined;
+    const delegation = n.parentId !== undefined && n.assignee.destination.groupId === undefined;
+    if (delegation && now - n.lastActivityAt > this.limits.delegationInputWaitMs) {
+      return `the person did not answer within ${duration(this.limits.delegationInputWaitMs)}`;
+    }
+    if (this.runner.parkedGone && this.safe("parkedGone", () => this.runner.parkedGone!(n)) === true) {
+      return "its question can no longer be answered";
+    }
+    return undefined;
   }
 
   /** A parked question still unanswered: remind the person after

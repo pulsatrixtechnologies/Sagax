@@ -4,7 +4,7 @@
 // only), with the approvals its conversations wait on first. The window gets
 // short texts and opaque ids ("a0", "r1"); the thread and the request stay
 // here, so a window can only answer what the brain listed.
-import { activityLive, activityStatusActive, activitySubtitle, codingLive, type BotActivityList } from "@/lib/bot-activity";
+import { activityLive, activityStatusActive, activitySubtitle, activityTitle, codingLive, type BotActivityList } from "@/lib/bot-activity";
 import type { FloatingTray, FloatingTrayItem } from "./protocol";
 import { readableOr } from "../../../shared/human-id";
 import { t } from "@/lib/i18n";
@@ -57,7 +57,7 @@ export function buildTray({ botId, list, approvals, loading, now, title }: {
       .filter((item) => activityStatusActive(item.status) && !seen.has(item.id) && Boolean(seen.add(item.id)));
     running.slice(0, Math.max(0, TRAY_MAX - items.length)).forEach((item, index) => {
       const id = `r${index}`;
-      items.push({ id, kind: "running", title: cut(readableOr(item.title || item.id, t("ids.untitled")), 80), detail: cut(activitySubtitle(item, now)), canStop: Boolean(item.canStop && item.threadId), canOpen: Boolean(item.threadId) });
+      items.push({ id, kind: "running", title: cut(readableOr(activityTitle(item) || item.id, t("ids.untitled")), 80), detail: cut(activitySubtitle(item, now)), canStop: Boolean(item.canStop && item.threadId), canOpen: Boolean(item.threadId) });
       targets.set(id, { kind: "running", botId: item.botId, threadId: item.threadId ?? null, canStop: Boolean(item.canStop && item.threadId) });
     });
   }

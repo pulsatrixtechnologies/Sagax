@@ -24,6 +24,7 @@ import { t } from "@/lib/i18n";
 import { engineLabel } from "@/lib/human-label";
 import {
   activityStatusActive,
+  activityTitle,
   activityViaLabel,
   formatActivityDuration,
   loadBotActivityDetail,
@@ -162,7 +163,7 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
 
   const header = (
     <TaskStatusHeader
-      title={shown.title}
+      title={activityTitle(shown)}
       bot={bot ? { ...bot, name: bot.name } : undefined}
       botName={shown.botName}
       status={shown.status}
@@ -196,6 +197,7 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
     botName: shown.botName && shown.kind === "subagent" ? shown.botName : undefined,
     engine: detail?.engine ? [engineLabel(engineName?.(detail.engine.instanceId), detail.engine.instanceId), detail.engine.model].filter(Boolean).join(" · ") : undefined,
     via: detail?.via ? activityViaLabel(detail.via) : undefined,
+    conversation: shown.threadTitle,
   });
 
   const summary = (
@@ -253,7 +255,7 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
   // The right column (or the one column's view other than Summary).
   const panel = view === "conversation" && threadId && renderConversation ? (
     <div id="activity-view-panel" role="tabpanel" aria-labelledby="activity-view-conversation" className="flex min-h-0 flex-1 flex-col border-t border-hairline-weak">
-      {renderConversation({ botId: shown.botId, threadId, title: shown.title })}
+      {renderConversation({ botId: shown.botId, threadId, title: shown.threadTitle ?? shown.title })}
     </div>
   ) : view === "steps" ? (
     <div id="activity-view-panel" role="tabpanel" aria-labelledby="activity-view-steps" data-activity-steps-panel className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-1">
