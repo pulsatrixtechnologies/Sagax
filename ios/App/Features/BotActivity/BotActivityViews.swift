@@ -125,7 +125,7 @@ private struct LaunchedAgentRow: View {
                 BotActivityStatusIcon(status: item.status)
                     .frame(width: Theme.Profile.iconColumn, alignment: .center)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: BotActivityWording.title(item))
+                    Text(verbatim: item.title)
                         .font(Theme.Font.body)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
