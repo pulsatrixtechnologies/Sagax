@@ -11938,7 +11938,7 @@
   "routines.logs.period.week": "Last 7 days",
   "routines.logs.period.month": "Last 30 days",
   "routines.list.next": "Next: {when}",
-  "sidebar.select.edit": "Edit {count} selected bots: model, sharing, workspace, access, voice, permissions",
+  "sidebar.select.edit": "Edit {count} selected bots: model, sharing, folder, access, voice, permissions",
   "sidebar.select.editShort": "Edit",
   "bulkEdit.title": "Edit {count} bots",
   "bulkEdit.intro": "Every setting stays as it is unless you change it. Open a section to change it for all the selected bots.",
