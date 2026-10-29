@@ -435,6 +435,22 @@ async function storeAddress(dir: string, code: string, address: string): Promise
   return true;
 }
 
+/** The address a status already handed this computer for a code, while the
+ * session is not closed: Perspicax hands it out once, so a later status
+ * (Sagax's own watch, or the bot calling again) pings the kept one. */
+async function keptAddress(dir: string, code: string): Promise<string> {
+  const compact = compactCode(code);
+  if (!compact) return "";
+  const folder = join(dir, "sessions", compact);
+  if (await exists(join(folder, "closed"))) return "";
+  try {
+    const kept = readFileSync(join(folder, "address"), "utf8").trim();
+    return isTailcatAddress(kept) ? kept : "";
+  } catch {
+    return "";
+  }
+}
+
 export async function forgetAddress(dir: string, code: string): Promise<void> {
   const compact = compactCode(code);
   if (!compact) return;
@@ -471,7 +487,10 @@ export async function absorbStatus(input: {
     return { text, markConnected: false };
   }
   const leaked = typeof obj.fetch_ip_count === "number" && obj.fetch_ip_count > 1;
-  const address = typeof obj.address === "string" ? obj.address : "";
+  // started without an address: the one handed out earlier is kept here
+  const address = typeof obj.address === "string" && obj.address
+    ? obj.address
+    : obj.state === "started" && !leaked ? await keptAddress(input.dir, input.code) : "";
   delete obj.address;
   delete obj.nodekey;
   if (leaked) {
