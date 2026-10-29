@@ -62,13 +62,6 @@ async function addSupervisingChief(f: any, section = "") {
   return chief;
 }
 
-// A result is withheld when the server revalidates the running child, not
-// when access changes, so keep the child held until that has failed it.
-async function releaseAfterWithhold(f: any, gateFile: string) {
-  await expect.poll(() => f.nodes().find((n: any) => n.parentId)?.status, { timeout: 30_000 }).toBe("failed");
-  writeFileSync(gateFile, "release");
-}
-
 it.each(["", "Leadership"])("lists and coordinates with a supervising Chief and same-section peer in the same room (Chief section %j)", section => withRooms(async f => {
   const chief = await addSupervisingChief(f, section);
   f.plan[f.sender.id].steps = [{ arguments: { bot_ids: [chief.id, f.target.id], message: "Review the work here" } }];
@@ -84,7 +77,13 @@ it.each(["", "Leadership"])("lists and coordinates with a supervising Chief and 
   expect(children.every((node: any) => node.status === "completed" && node.groupId === f.source.id && node.threadId === f.source.activeTaskId)).toBe(true);
 }), 45_000);
 
-it.each(["unmanaged", "outsider", "disallowed-peer"])("refuses supervisor room coordination with %s", reason => withRooms(async f => {
+// #1098 (2026-10-27, decisions 27 and 29): one person's bots keep no section
+// boundary between them, in a room or across rooms, and each of them reaches
+// its Primary Bot whatever the managed teams or the peer list. Every bot of
+// this solo fixture is the operator's, so supervision, sections and peer
+// lists never withhold work or a result here; rooms that mix several
+// people's bots keep the boundary (peer-roster.test.ts, post-to-room.test.ts).
+it.each(["unmanaged", "outsider", "disallowed-peer"])("coordinates with its Primary Bot in the same room whatever the %s", reason => withRooms(async f => {
   const chief = await addSupervisingChief(f);
   if (reason === "unmanaged") await f.api(`/api/bots/${chief.id}`, { managedSections: [] }, "PATCH");
   if (reason === "outsider") {
@@ -92,30 +91,30 @@ it.each(["unmanaged", "outsider", "disallowed-peer"])("refuses supervisor room c
     await f.tool("update_channel", { channel_id: f.source.id, member_ids: [f.sender.id, f.target.id, chief.id, outsider.id] });
   }
   if (reason === "disallowed-peer") await f.api(`/api/bots/${f.sender.id}`, { peers: [] }, "PATCH");
-  f.plan[f.sender.id].steps = [{ expectError: true, arguments: { bot_ids: [chief.id], message: "Do not bypass the room boundary" } }];
+  f.plan[f.sender.id].steps = [{ arguments: { bot_ids: [chief.id], message: "Review the work here" } }];
   await f.start(); expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes()).toEqual([]);
+  expect(f.nodes().find((node: any) => node.parentId)).toMatchObject({ botId: chief.id, status: "completed", groupId: f.source.id });
+  expect(f.provider().some((turn: any) => turn.botId === chief.id)).toBe(true);
   const turn = f.provider().find((entry: any) => entry.botId === f.sender.id);
-  expect(turn.evidence.find((entry: any) => entry.step).response.result.isError).toBe(true);
-  if (reason === "disallowed-peer") expect(JSON.parse(turn.evidence[1].result.content[0].text).rooms).toEqual([]);
-  else expect(turn.evidence[1].result.isError).toBe(true);
+  expect(turn.evidence.find((entry: any) => entry.step).response.result.isError).toBeFalsy();
+  expect(JSON.parse(turn.evidence[1].result.content[0].text).rooms.some((room: any) => room.id === f.source.id)).toBe(true);
 }), 45_000);
 
-it("does not extend supervisor access to a different room", () => withRooms(async f => {
+it("reaches its Primary Bot in another room of the same person", () => withRooms(async f => {
   const chief = await addSupervisingChief(f);
   await f.tool("update_channel", { channel_id: f.destination.id, member_ids: [chief.id] });
-  f.plan[f.sender.id].steps = [{ expectError: true, arguments: { group_id: f.destination.id, bot_ids: [chief.id], message: "Keep supervisor access in the shared conversation" } }];
+  f.plan[f.sender.id].steps = [{ arguments: { group_id: f.destination.id, bot_ids: [chief.id], message: "Review this in your own room" } }];
   await f.start(); expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes()).toEqual([]);
-  expect(await f.messages(f.destination.activeTaskId)).toEqual([]);
+  expect(f.nodes().find((node: any) => node.parentId)).toMatchObject({ botId: chief.id, status: "completed", groupId: f.destination.id });
+  expect((await f.messages(f.destination.activeTaskId)).some((m: any) => m.text?.includes("Review this in your own room"))).toBe(true);
   const discovery = JSON.parse(f.provider().find((turn: any) => turn.botId === f.sender.id).evidence[1].result.content[0].text);
-  expect(discovery.rooms.some((room: any) => room.id === f.destination.id)).toBe(false);
+  expect(discovery.rooms.some((room: any) => room.id === f.destination.id)).toBe(true);
 }), 45_000);
 
-it("refuses queued same-room supervisor work when the owner revokes supervision", () => withRooms(async f => {
+it("keeps queued same-room work for a Primary Bot whose managed teams are withdrawn meanwhile", () => withRooms(async f => {
   const chief = await addSupervisingChief(f);
   const gateFile = join(f.session.info.dataDir, "supervisor-result.gate");
-  f.plan[chief.id] = { reply: "PRIVATE_SUPERVISOR_RESULT" };
+  f.plan[chief.id] = { reply: "SUPERVISOR_RESULT_DELIVERED" };
   f.plan[f.sender.id].gateFile = gateFile;
   f.plan[f.sender.id].steps = [{ arguments: { bot_ids: [chief.id], message: "Review this work" } }];
   await f.start();
@@ -123,10 +122,11 @@ it("refuses queued same-room supervisor work when the owner revokes supervision"
   await request(`/api/bots/${chief.id}`, { method: "PATCH", headers: { Origin: f.session.info.url }, body: JSON.stringify({ managedSections: [] }) }, f.session.info.url);
   writeFileSync(gateFile, "release");
   expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes().find((node: any) => node.parentId).status).toBe("failed");
-  expect(f.provider().some((turn: any) => turn.botId === chief.id)).toBe(false);
-  expect(JSON.stringify(await f.messages(f.source.activeTaskId))).not.toContain("PRIVATE_SUPERVISOR_RESULT");
-  expect((await f.messages(f.source.activeTaskId)).some((message: any) => message.tool?.name.includes("Result withheld"))).toBe(true);
+  expect(f.nodes().find((node: any) => node.parentId).status).toBe("completed");
+  expect(f.provider().some((turn: any) => turn.botId === chief.id)).toBe(true);
+  const messages = await f.messages(f.source.activeTaskId);
+  expect(messages.some((message: any) => message.tool?.name.includes("Result withheld"))).toBe(false);
+  expect(JSON.stringify(messages)).toContain("SUPERVISOR_RESULT_DELIVERED");
 }), 45_000);
 
 it("refuses a disallowed peer without starting the recipient", () => withRooms(async f => {
@@ -207,42 +207,42 @@ it("lets an explicitly authorized Chief coordinate another team, which can consu
   expect(bots.find((b: any) => b.id === reviewer.id).managedSections).toBeUndefined();
 }), 45_000);
 
-it("does not let a Chief's grant expose a foreign room transcript to its specialist", () => withRooms(async f => {
+it("lets work reach a room that mixes the same person's teams", () => withRooms(async f => {
   await f.api(`/api/bots/${f.target.id}`, { section: "Engineering" }, "PATCH");
   const finance = (await f.cli("new-bot", "--name", "Finance", "--section", "Finance")).bot;
   await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: true, managedSections: ["Engineering", "Finance"], acknowledgePeerScope: true }, "PATCH");
   await f.tool("update_channel", { channel_id: f.destination.id, member_ids: [f.target.id, finance.id] });
-  f.plan[f.sender.id].steps[0].expectError = true;
   await f.start(); expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes()).toEqual([]);
-  expect(await f.messages(f.destination.activeTaskId)).toEqual([]);
+  expect(f.nodes().find((node: any) => node.parentId)).toMatchObject({ botId: f.target.id, status: "completed", groupId: f.destination.id });
+  expect((await f.messages(f.destination.activeTaskId)).some((m: any) => m.text?.includes("Please build CSV"))).toBe(true);
+  expect((await f.messages(f.source.activeTaskId)).some((m: any) => m.text === "Reviewed downstream outcome")).toBe(true);
 }), 45_000);
 
-it("withholds a cross-team result if the owner revokes access while it runs", () => withRooms(async f => {
+// The sender's Primary Bot role goes while its teammate works: the two bots
+// are still one person's, so the result is delivered, nothing is withheld.
+it("delivers a cross-team result although the sender lost its Primary Bot role while it ran", () => withRooms(async f => {
   await f.api(`/api/bots/${f.target.id}`, { section: "Engineering" }, "PATCH");
   await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: true, managedSections: ["Engineering"], acknowledgePeerScope: true }, "PATCH");
-  const gateFile = join(f.session.info.dataDir, "cross-team-revocation.gate");
-  f.plan[f.target.id] = { gateFile, reply: "PRIVATE_RESULT_AFTER_REVOCATION" };
+  const gateFile = join(f.session.info.dataDir, "cross-team-demotion.gate");
+  f.plan[f.target.id] = { gateFile, reply: "RESULT_AFTER_DEMOTION" };
   await f.start();
   await expect.poll(() => f.nodes().find((n: any) => n.parentId)?.status, { timeout: 30_000 }).toBe("running");
-  // A Primary Bot covers every bot its person owns whatever the team (#897),
-  // so taking back the managed team alone no longer cuts the access: the
-  // owner demotes the bot, which also clears its saved grants.
   await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: false }, "PATCH");
   expect((await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.sender.id).managedSections ?? []).toEqual([]);
-  await releaseAfterWithhold(f, gateFile);
+  writeFileSync(gateFile, "release");
   expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes().find((n: any) => n.parentId).status).toBe("failed");
+  expect(f.nodes().find((n: any) => n.parentId).status).toBe("completed");
   const messages = await f.messages(f.source.activeTaskId);
-  expect(JSON.stringify(messages)).not.toContain("PRIVATE_RESULT_AFTER_REVOCATION");
-  expect(messages.some((m: any) => m.tool?.name.includes("Result withheld"))).toBe(true);
+  expect(messages.some((m: any) => m.tool?.name.includes("Result withheld"))).toBe(false);
+  expect(messages.some((m: any) => m.text === "Reviewed downstream outcome")).toBe(true);
+  expect((await f.messages(f.destination.activeTaskId)).some((m: any) => m.text === "RESULT_AFTER_DEMOTION")).toBe(true);
 }), 60_000);
 
-it.each(["rename", "delete"])("withholds an in-flight result after team %s and recreation", mode => withRooms(async f => {
+it.each(["rename", "delete"])("delivers an in-flight result after team %s and recreation", mode => withRooms(async f => {
   await f.api(`/api/bots/${f.target.id}`, { section: "Engineering" }, "PATCH");
   await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: true, managedSections: ["Engineering"], acknowledgePeerScope: true }, "PATCH");
   const gateFile = join(f.session.info.dataDir, "team-recreation.gate");
-  f.plan[f.target.id] = { gateFile, reply: "PRIVATE_RESULT_AFTER_TEAM_RECREATION" };
+  f.plan[f.target.id] = { gateFile, reply: "RESULT_AFTER_TEAM_RECREATION" };
   await f.start();
   await expect.poll(() => f.nodes().find((n: any) => n.parentId)?.status, { timeout: 30_000 }).toBe("running");
   // A team cannot be renamed while its chief still works: wait for the
@@ -261,43 +261,42 @@ it.each(["rename", "delete"])("withholds an in-flight result after team %s and r
   await move("Engineering");
   const chief = (await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.sender.id);
   expect(chief.managedSections).toEqual([]);
-  // The saved grant is gone, but a Primary Bot still covers every bot its
-  // person owns (#897): the owner demotes it to cut the access.
+  // The saved grant is gone and the role too; the bots stay one person's.
   await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: false }, "PATCH");
-  await releaseAfterWithhold(f, gateFile);
+  writeFileSync(gateFile, "release");
   expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes().find((n: any) => n.parentId).status).toBe("failed");
+  expect(f.nodes().find((n: any) => n.parentId).status).toBe("completed");
   const messages = await f.messages(f.source.activeTaskId);
-  expect(JSON.stringify(messages)).not.toContain("PRIVATE_RESULT_AFTER_TEAM_RECREATION");
-  expect(messages.some((m: any) => m.tool?.name.includes("Result withheld"))).toBe(true);
+  expect(messages.some((m: any) => m.tool?.name.includes("Result withheld"))).toBe(false);
+  expect(messages.some((m: any) => m.text === "Reviewed downstream outcome")).toBe(true);
+  expect((await f.messages(f.destination.activeTaskId)).some((m: any) => m.text === "RESULT_AFTER_TEAM_RECREATION")).toBe(true);
 }), 60_000);
 
-it.each(["recipient", "source-reader", "destination-reader"])("refuses cross-section work involving a %s without leaking room history", role => withRooms(async f => {
-  if (role === "recipient") await f.api(`/api/bots/${f.target.id}`, { section: "Other company" }, "PATCH");
+it.each(["recipient", "source-reader", "destination-reader"])("coordinates across the same person's sections with a %s in another one", role => withRooms(async f => {
+  if (role === "recipient") await f.api(`/api/bots/${f.target.id}`, { section: "Other team" }, "PATCH");
   else {
-    const outsider = (await f.cli("new-bot", "--name", "Outsider", "--section", "Other company")).bot;
+    const outsider = (await f.cli("new-bot", "--name", "Outsider", "--section", "Other team")).bot;
     const room = role === "source-reader" ? f.source : f.destination;
     await f.tool("update_channel", { channel_id: room.id, member_ids: [...room.memberIds, outsider.id] });
   }
-  f.plan[f.sender.id].steps[0].expectError = true;
   await f.start(); expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes()).toEqual([]);
-  expect(await f.messages(f.destination.activeTaskId)).toEqual([]);
-  expect((await f.messages(f.source.activeTaskId)).some((m: any) => m.text === "Assigned")).toBe(true);
+  expect(f.nodes().find((n: any) => n.parentId)).toMatchObject({ botId: f.target.id, status: "completed", groupId: f.destination.id });
+  expect((await f.messages(f.destination.activeTaskId)).some((m: any) => m.text?.includes("Please build CSV"))).toBe(true);
+  expect((await f.messages(f.source.activeTaskId)).some((m: any) => m.text === "Reviewed downstream outcome")).toBe(true);
   const discovery = f.provider().find((turn: any) => turn.botId === f.sender.id).evidence[1];
-  if (role === "source-reader") expect(discovery.result.isError).toBe(true);
-  else expect(JSON.parse(discovery.result.content[0].text).rooms).toEqual([]);
+  expect(discovery.result.isError).toBeFalsy();
+  expect(JSON.parse(discovery.result.content[0].text).rooms.some((room: any) => room.id === f.destination.id)).toBe(true);
 }), 45_000);
 
-it("refuses same-room coordination in a mixed section room", () => withRooms(async f => {
-  await f.api(`/api/bots/${f.target.id}`, { section: "Other company" }, "PATCH");
+it("coordinates in the same room across the same person's sections", () => withRooms(async f => {
+  await f.api(`/api/bots/${f.target.id}`, { section: "Other team" }, "PATCH");
   await f.tool("update_channel", { channel_id: f.source.id, member_ids: [f.sender.id, f.target.id] });
-  f.plan[f.sender.id].steps = [{ expectError: true, arguments: { bot_ids: [f.target.id], message: "Review CSV" } }];
+  f.plan[f.sender.id].steps = [{ arguments: { bot_ids: [f.target.id], message: "Review CSV" } }];
   await f.start(); expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes()).toEqual([]);
+  expect(f.nodes().find((n: any) => n.parentId)).toMatchObject({ botId: f.target.id, status: "completed", groupId: f.source.id });
 }), 45_000);
 
-it("rechecks section membership before queued work dispatch and withholds its result", () => withRooms(async f => {
+it("dispatches queued work to a recipient moved to another of the same person's sections meanwhile", () => withRooms(async f => {
   const gateFile = join(f.session.info.dataDir, "recipient-section-change.gate");
   f.plan[f.target.id].gateFile = gateFile; f.savePlan();
   await f.cli("send", "--bot", f.target.id, "--text", "Independent task");
@@ -305,12 +304,12 @@ it("rechecks section membership before queued work dispatch and withholds its re
   await expect.poll(() => f.nodes().find((n: any) => n.parentId)?.status, { timeout: 10_000 }).toBe("queued");
   // Model a user changing the fixture's settings from its served UI mid-turn.
   await request(`/api/bots/${f.target.id}`, { method: "PATCH", headers: { Origin: f.session.info.url },
-    body: JSON.stringify({ section: "Other company" }) }, f.session.info.url);
+    body: JSON.stringify({ section: "Other team" }) }, f.session.info.url);
   writeFileSync(gateFile, "release");
   expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes().find((n: any) => n.parentId).status).toBe("failed");
-  expect(await f.messages(f.destination.activeTaskId)).toEqual([]);
-  expect((await f.messages(f.source.activeTaskId)).some((m: any) => m.tool?.name.includes("Result withheld"))).toBe(true);
+  expect(f.nodes().find((n: any) => n.parentId).status).toBe("completed");
+  expect((await f.messages(f.destination.activeTaskId)).some((m: any) => m.text?.includes("Please build CSV"))).toBe(true);
+  expect((await f.messages(f.source.activeTaskId)).some((m: any) => m.tool?.name.includes("Result withheld"))).toBe(false);
   await f.cli("wait", "--bot", f.target.id, "--timeout", "15");
 }), 45_000);
 

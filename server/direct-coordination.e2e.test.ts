@@ -153,6 +153,11 @@ it.each([false, true])("starts independent work immediately and frees the Chief 
 it("coordinates a lead and its specialist from ordinary chat, returns to Clive, and leaves unrelated tasks untouched", () => fixture(async f => {
   const originalLead = await f.messages(f.lead.activeTaskId);
   const originalSpecialist = await f.messages(f.specialist.activeTaskId);
+  // 2026-10-27 (#1314): a Claude Code turn lists the compact core and keeps
+  // the rest of the catalog behind search; start_thread, deferred in a
+  // coordinating turn (agents-catalog.ts DEFERRED_WHEN_COORDINATING), is
+  // read through describe_tool. The Chief asks for it before coordinating.
+  f.plan[f.chief.id].steps.unshift({ tool: "describe_tool", arguments: { name: "start_thread" } });
   await f.start();
   expect((await f.wait()).status).toBe("settled");
   expect(f.evidence().map((turn: any) => turn.botId)).toEqual([f.chief.id, f.lead.id, f.specialist.id, f.lead.id, f.chief.id]);
@@ -171,8 +176,15 @@ it("coordinates a lead and its specialist from ordinary chat, returns to Clive, 
   expect(tools).toContain("coordinate_bots");
   expect(tools).not.toContain("delegate_bot");
   expect(tools).not.toContain("start_thread");
-  const chiefTools = f.evidence()[0].evidence[0].result.tools;
-  const selfThread = chiefTools.find((tool: any) => tool.name === "start_thread");
+  const chiefTurn = f.evidence()[0];
+  const chiefTools = chiefTurn.evidence[0].result.tools.map((tool: any) => tool.name);
+  expect(chiefTools).toContain("coordinate_bots");
+  expect(chiefTools).toContain("describe_tool");
+  expect(chiefTools).not.toContain("start_thread");
+  const described = chiefTurn.evidence.find((entry: any) => entry.step?.tool === "describe_tool").response;
+  expect(described.result.isError).toBeFalsy();
+  const selfThread = JSON.parse(described.result.content[0].text);
+  expect(selfThread.name).toBe("start_thread");
   expect(selfThread.description).toContain("separate job on yourself");
   expect(selfThread.inputSchema.properties.bot_id.enum).toEqual([f.chief.id]);
   expect(bots.find((bot: any) => bot.id === f.lead.id).tasks.find((task: any) => task.threadId === receipt.threadRef.threadId).openedBy)

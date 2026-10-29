@@ -712,6 +712,18 @@ function driveMcp(entry: McpEntry, calls: Array<{ name: string | (() => string);
   });
 }
 
+/** Whether this turn's agents server lists any peer tool. Since 2026-10-28
+ * (#1443) a teammate's turn one hop away keeps its agents server without the
+ * peer tools (SAGAX_PEER_HOP); like a real agent, which calls only what it
+ * is listed, a peer mode there plays an ordinary turn. Elsewhere it calls its
+ * tool as before, even one this turn replaced (the removed-tool fixture). A
+ * listing that fails keeps the call. */
+const PEER_TOOL_NAMES = ["ask_bot", "delegate_bot", "coordinate_bots", "send_to_bot"];
+function agentsOffersPeers(entry: McpEntry): Promise<boolean> {
+  return listMcpTools({ name: "agents", ...entry }, GROK_MCP_HANDSHAKE)
+    .then((tools) => tools.some((tool) => PEER_TOOL_NAMES.includes(tool)), () => true);
+}
+
 function playTurn() {
   out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: "hello from fake acp" } } } });
   out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "tool_call", toolCallId: "tc-1", title: "run", rawInput: { path: "/fixture/readme.md", password: "acp-input-secret" } } } });
@@ -1420,8 +1432,11 @@ function handle(msg: any) {
       if (mode === "ask-peer" && agentsMcp) {
         // the comms e2e: reach a peer bot through the injected agents proxy
         // and reply with whatever it said (the peer's fake runs plain happy
-        // — its depth-1 turn gets no agents server, so no recursion)
-        void driveMcp(agentsMcp, [
+        // : its depth-1 turn is listed no peer tool, so no recursion)
+        const entry = agentsMcp;
+        void agentsOffersPeers(entry).then((listed) => {
+          if (!listed) { playTurn(); complete(); return; }
+          return driveMcp(entry, [
           { name: "list_bots", args: () => ({}) },
           {
             name: "ask_bot",
@@ -1436,6 +1451,7 @@ function handle(msg: any) {
             out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: `peer error: ${(e as Error).message}` } } } });
             complete();
           });
+        });
         return;
       }
       if (mode === "create-peer" && agentsMcp) {
@@ -1515,8 +1531,12 @@ function handle(msg: any) {
         // async peer-handoff e2e: queue the delegation and return
         // immediately; the harness fires the peer's depth-1 turn after our
         // turn settles. We don't need the peer's reply in our text — the
-        // comms e2e verifies the channel mirroring on its own.
-        void driveMcp(agentsMcp, [
+        // comms e2e verifies the channel mirroring on its own. A teammate's
+        // turn one hop away is listed no peer tool: an ordinary turn.
+        const entry = agentsMcp;
+        void agentsOffersPeers(entry).then((listed) => {
+          if (!listed) { playTurn(); complete(); return; }
+          return driveMcp(entry, [
           { name: "list_bots", args: () => ({}) },
           {
             name: "delegate_bot",
@@ -1535,6 +1555,7 @@ function handle(msg: any) {
             out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: `delegate error: ${(e as Error).message}` } } } });
             complete();
           });
+        });
         return;
       }
       if (mode === "image") {

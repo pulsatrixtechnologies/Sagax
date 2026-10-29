@@ -13,7 +13,7 @@
 // consults and reviews; Eli (OpenAI-compatible) implements. Every level is the
 // default, Ask. Each scenario runs on its own isolated server.
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -25,6 +25,7 @@ import { CONTROL_WAITED } from "./control-client.ts";
 import { CONSENT_RULE } from "./peer-provenance.ts";
 import { ENVELOPE_MARK } from "./runtime/envelope.ts";
 import { waitForExit } from "./testing/cleanup.ts";
+import { handDesktopComputer } from "./testing/desktop-computer.ts";
 import { handoffOutcome, readHandoffs } from "./testing/handoff-rows.ts";
 import { hostTimeout } from "./testing/host-timeout.ts";
 import { openSse, type SseRecorder } from "./testing/sse.ts";
@@ -176,7 +177,9 @@ async function chiefJob(test: (f: any) => Promise<void>) {
       await waitForExit(server, { signal });
       const env = { ...verificationServerEnvironment(parentEnv, dataDir, Number(new URL(url).port)), ...extraEnv };
       const log = openSync(session.info.logPath, "a", 0o600);
-      server = spawn(process.execPath, verificationServerArgs(env), { cwd: ROOT, env, stdio: ["ignore", log, log] });
+      // SAGAX_TEST_DESKTOP_IPC: the server runs as the desktop app runs it, with
+      // a parent port this test feeds (server/testing/desktop-parent.mjs).
+      server = spawn(process.execPath, verificationServerArgs(env), { cwd: ROOT, env, stdio: env.SAGAX_TEST_DESKTOP_IPC === "1" ? ["ignore", log, log, "ipc"] : ["ignore", log, log] });
       restarted = true;
       closeSync(log);
       await expect.poll(async () => {
@@ -184,8 +187,10 @@ async function chiefJob(test: (f: any) => Promise<void>) {
       }, { timeout: 30_000 }).toBe(true);
       await listen();
     };
+    /** This computer, handed to the server the way the desktop app does (#1594). */
+    const handComputer = (connection: object | null) => handDesktopComputer(server, connection);
     await test({ api, bot, dataDir, clive, mira, eli, compat, script, newJob, say, tree, root, child, turns, turn, prompt,
-      messages, rows, final, cards, openCard, respond, tasks, gate, open, expireApprovals, stallSilentTurns, restart, notifications,
+      messages, rows, final, cards, openCard, respond, tasks, gate, open, expireApprovals, stallSilentTurns, restart, handComputer, notifications,
       model: { requests, answer: (next: typeof answer) => { answer = next; } } });
     // No bot ever ran a turn its script did not plan: no duplicate
     // dispatch, no resume nobody expected.
@@ -586,7 +591,10 @@ it("tells a teammate the person's job is its task, and a routine's handoff is no
     { key: "T1", match: ["PHASE-TRUST-ROUTINE"], steps: [{ tool: "start_thread", arguments: { bot_id: f.mira.id, title: "Nightly QA",
       message: "SENDWORK-ROUTINE: run the nightly QA checks and report back." } }], reply: "T1: opened the nightly QA on Mira." },
     { key: "T2", match: ["[A delegated task just completed]", "@Mira"], reply: "T2: the nightly QA is reported." });
-  f.script(f.mira.id, { key: "MT1", match: ["SENDWORK-PERSON"], reply: "QA-OWNED" });
+  f.script(f.mira.id,
+    { key: "MT1", match: ["SENDWORK-PERSON"], reply: "QA-OWNED" },
+    // the routine's hop is a turn of its own on the nightly thread, planned like any other
+    { key: "MT2", match: ["SENDWORK-ROUTINE"], reply: "QA-NIGHTLY-REPORTED" });
   const job = await f.newJob("Release QA");
   await f.say(job, request);
   await expect.poll(() => f.turn("MT1"), { timeout: 20_000 }).toBeTruthy();
@@ -622,13 +630,13 @@ it("tells a teammate the person's job is its task, and a routine's handoff is no
 // ("call again"), and Kai's next call acts. Both jobs finish. Auto reaches
 // the person's own desktop only on macOS and Windows.
 (process.platform === "linux" ? it.skip : it)("holds a teammate's screen call while another job has the computer, and both jobs finish", () => chiefJob(async (f) => {
-  // This computer, as the desktop app describes it to the server.
-  const userData = join(f.dataDir, "user-data");
-  mkdirSync(userData, { recursive: true });
-  writeFileSync(join(userData, "cua-connection.json"), JSON.stringify({ mode: "embedded", status: "ready", socketPath: join(f.dataDir, "cua.sock"),
-    mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {} }), { mode: 0o600 });
   // A call acts only if it got the computer within a second (production: 5).
-  await f.restart("SIGTERM", { SAGAX_USER_DATA: userData, SAGAX_COMPUTER_CALL_ACT_WITHIN_MS: "1000" });
+  // 2026-10-29 (#1594): the server is started as the desktop app starts it,
+  // and this computer's connection is handed over its parent port; no file
+  // or environment variable gives the computer any more.
+  await f.restart("SIGTERM", { SAGAX_TEST_DESKTOP_IPC: "1", SAGAX_COMPUTER_CALL_ACT_WITHIN_MS: "1000" });
+  await f.handComputer({ mode: "embedded", status: "ready", socketPath: join(f.dataDir, "cua.sock"),
+    mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {} });
   const kai = await f.bot("Kai", "Engineering");
   f.script(f.clive.id,
     { key: "S0", match: ["PHASE-SCREEN-MARCH"], steps: [{ arguments: { bot_ids: [f.mira.id], message: "EXPORT-MARCH: export March from the invoice app on screen." } }], reply: "S0: Mira is exporting March." },

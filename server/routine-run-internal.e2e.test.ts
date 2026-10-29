@@ -146,10 +146,18 @@ describe("the other internal MCP routes (real server)", () => {
     const record = { at: new Date().toISOString(), principal: "p", role: "viewer", tool: "cw_psa__write", permission: "api:write", scope: "self", decision: "denied", reason: "not_granted", enforced: true, args: { secret: "hunter2" } };
     expect((await post(token, "/api/internal/mcp-audit", record)).status).toBe(200);
     expect((await post(token, "/api/internal/mcp-audit", { nothing: 1 })).status).toBe(400);
+    // The rows are sealed on disk (#1263): read back through the
+    // admin-activity route, the way the Activity view reads them.
+    const rows = async (): Promise<any[]> => {
+      const activity = await api("GET", "/api/admin-activity?what=all&limit=5000");
+      return activity.status === 200 ? activity.body.entries : [];
+    };
+    await expect.poll(async () => (await rows()).map((row) => row.action), { timeout: 15_000 }).toContain("mcp.deny");
+    const row = (await rows()).find((entry) => entry.action === "mcp.deny");
+    expect(JSON.stringify(row)).toContain(bot.id);
+    expect(JSON.stringify(row)).not.toContain("hunter2");
+    // and never the arguments on disk, sealed or not
     const dir = join(data, "admin-activity");
-    await expect.poll(() => readdirSync(dir).map((f) => readFileSync(join(dir, f), "utf8")).join("")).toContain("mcp.deny");
-    const log = readdirSync(dir).map((f) => readFileSync(join(dir, f), "utf8")).join("");
-    expect(log).toContain(bot.id);
-    expect(log).not.toContain("hunter2");
+    expect(readdirSync(dir).map((f) => readFileSync(join(dir, f), "utf8")).join("")).not.toContain("hunter2");
   });
 });

@@ -2030,21 +2030,25 @@ function catalogTools(profile: CatalogProfile) {
 }
 
 /** Every name Sagax's own `agents` server can list, on any turn (#1426):
- * the catalog of the widest profile, on a call and off one, plus the
- * person's own OpenAPI operations. A name outside it is one the model made
- * up (`image_gen` after a native image tool was withheld): no card, no
+ * the catalog of the widest profile, on a call and off one, coordinating
+ * (a room or a direct chat: coordinate_bots, send_to_bot) and not (a
+ * routine or a webhook turn: ask_bot, delegate_bot, check_delegation,
+ * wait_delegation, which a coordinating turn replaces), plus the person's
+ * own OpenAPI operations. A name outside it is one the model made up
+ * (`image_gen` after a native image tool was withheld): no card, no
  * approval, it can only fail. */
 let everyAgentTool: ReadonlySet<string> | undefined;
 export function knownAgentToolName(name: string): boolean {
   if (isOpenApiTool(name)) return true;
   if (!everyAgentTool) {
-    const widest: CatalogProfile = {
-      externalRuntime: false, coordinating: true, ownThreadCreation: true, skillAuthoring: true, sharedComputers: true,
+    const widest: Omit<CatalogProfile, "coordinating" | "voiceCall"> = {
+      externalRuntime: false, ownThreadCreation: true, skillAuthoring: true, sharedComputers: true,
       voiceNotes: true, meetings: true, singleStream: true, routeMessages: true, githubConnect: true, cloudHome: false,
       memoryEnabled: true, groupMemory: true, chief: true, createBots: true, botId: WATCHER_OPTIONS_CARD_BOT_ID,
       agentApi: true, perspicax: true, claims: true, phoneTools: [...PHONE_TOOLS], webSearch: true, vaultHttp: true,
     };
-    everyAgentTool = new Set([false, true].flatMap((voiceCall) => availableTools({ ...widest, voiceCall }).map((tool) => tool.name)));
+    everyAgentTool = new Set([false, true].flatMap((voiceCall) => [false, true].flatMap((coordinating) =>
+      availableTools({ ...widest, voiceCall, coordinating }).map((tool) => tool.name))));
   }
   return everyAgentTool.has(name);
 }
