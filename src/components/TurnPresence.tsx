@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { useStreaming } from "@/state/store";
+import { useStreamReplies } from "@/lib/stream-replies-preference";
+import { liveReplyText } from "@/components/LiveReply";
 import type { BotAvatarProps } from "@/components/Avatar";
 import { BotActivityIndicator, THINKING_PHASE } from "@/components/BotActivityIndicator";
 import { WorkingTimer } from "@/components/WorkingIndicator";
@@ -63,6 +65,9 @@ export function TurnPresence({
   const { streaming } = useStreaming();
   const streamingText = streamThreadId ? Boolean(streaming[streamThreadId]) : false;
   const mode = (typing ?? streamingText) ? "typing" : "thinking";
+  // the words themselves are on screen (LiveReply): no "Typing…" line under them
+  const liveReply = useStreamReplies() && typing === undefined && streamingText &&
+    Boolean(liveReplyText(streaming[streamThreadId!]));
   const [mounted, setMounted] = useState(visible);
   const [presencePhase, setPhase] = useState<"think" | "answer" | "out">(answering ? "answer" : "think");
   const wasAnswering = useRef(answering);
@@ -86,7 +91,7 @@ export function TurnPresence({
     return () => clearTimeout(timer);
   }, [visible, answering, mounted]);
 
-  if (!mounted) return null;
+  if (!mounted || liveReply) return null;
   const showWorking = presencePhase !== "answer";
   const list = phrases && phrases.length > 0 ? phrases : label ? [label] : undefined;
   return (

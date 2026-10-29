@@ -102,6 +102,13 @@ struct AppearanceSettingsView: View {
                 )
                 CardHairline(leadingInset: SettingsMetrics.rowInset)
                 SettingsRow(
+                    title: "Show replies as they are written",
+                    subtitle: "Show a bot reply word by word while it is written, instead of all at once when it is finished",
+                    accessory: .toggle(Binding(get: { prefs.streamReplies }, set: { prefs.setStreamReplies(session, $0) })),
+                    identifier: "settings.streamReplies"
+                )
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(
                     title: "Show suggestions",
                     subtitle: "Show the Suggestions card in the bot panel",
                     accessory: .toggle(Binding(get: { prefs.showSuggestions }, set: { prefs.setShowSuggestions(session, $0) })),

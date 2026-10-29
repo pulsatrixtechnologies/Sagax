@@ -3868,5 +3868,7 @@
   "routines.menu.open": "開く",
   "routines.rename.label": "ルーティン名",
   "routines.rename.empty": "ルーティンには名前が必要です。",
-  "routines.rename.hint": "ダブルクリックで名前を変更"
+  "routines.rename.hint": "ダブルクリックで名前を変更",
+  "settings.streamReplies.title": "返信を書きながら表示",
+  "settings.streamReplies.show": "ボットの返信を完了後にまとめて表示するのではなく、書かれるそばから表示します"
 }

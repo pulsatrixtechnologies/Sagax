@@ -21,6 +21,7 @@ import { FRESH_TOPIC_AFTER_CHOICES, useFreshTopicAfter, writeFreshTopicAfter, ty
 import { setShowUnreadyProviders, useShowUnreadyProviders } from "@/lib/unready-providers-preference";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
+import { setStreamReplies, useStreamReplies } from "@/lib/stream-replies-preference";
 import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@/lib/send-key";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
@@ -415,6 +416,7 @@ export function AppearanceSettings() {
   const routinesBadge = useShowRoutinesBadge();
   const suggestions = useShowSuggestions();
   const allHistory = useShowAllHistory();
+  const streamReplies = useStreamReplies();
   return (
     <>
       <SettingsGroup title={t("settings.group.interface")} groupId="interface">
@@ -438,6 +440,7 @@ export function AppearanceSettings() {
         <ThreadsViewRow />
         <FreshTopicRow />
         <SendKeyRow />
+        <SwitchLine label={t("settings.streamReplies.title")} ariaLabel={t("settings.streamReplies.show")} checked={streamReplies} onChange={setStreamReplies} rowId="streamReplies" />
         {advanced && (personalSettings || (!remoteActive && editConfig)) && <ToolCallsRow />}
         {advanced && <SwitchLine label={t("settings.runCard.title")} ariaLabel={t("settings.runCard.show")} checked={runCard} onChange={setShowRunCard} rowId="runCard" />}
         {advanced && <SwitchLine label={t("settings.inspectorButton.title")} ariaLabel={t("settings.inspectorButton.show")} checked={inspector} onChange={setShowInspectorButton} rowId="inspectorButton" />}

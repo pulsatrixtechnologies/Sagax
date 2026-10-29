@@ -812,6 +812,7 @@ pref("appearance.floatingBots", "appearance", "omb.floatingBots.prefs.v1", "obje
 pref("appearance.botAccent", "appearance", "sagax.botAccent.v1", "enum:1|0", "The open bot's colour as the accent (1 on, 0 off)", "Settings > Appearance");
 pref("appearance.sidebarHidden", "appearance", "sagax.sidebarHidden.v1", "object", "Rows hidden from the sidebar ({items: [{kind, id, at}], unhideOnMessage: {people, bots}})", "Settings > Appearance > Hidden from the sidebar");
 pref("appearance.busySend", "appearance", "sagax.busySend.v1", "string", "Sending to a busy bot", "Settings > Appearance");
+pref("appearance.streamReplies", "appearance", "sagax.streamReplies.v1", "enum:on|off", "Show replies as they are written (on, the default; off shows each reply once it is finished)", "Settings > Appearance > Conversation");
 pref("notifications.sounds", "notifications", "omb-notification-sounds", "boolean", "Notification sounds", "Settings > Notifications");
 pref("notifications.soundChoice", "notifications", "sagax.notificationSound.v1", "enum:system|tick|double-tick|chime-a|chime-b|blip", "Notification sound (the system's, Tick, Double tick, Chime A, Chime B, Blip)", "Settings > Notifications");
 pref("notifications.persistent", "notifications", "omb-notification-persistent", "boolean", "Persistent notifications", "Settings > Notifications");

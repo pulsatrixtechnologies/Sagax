@@ -4233,6 +4233,12 @@ export function useStreaming() {
   return useContext(StreamContext);
 }
 
+/** The in-flight text a gallery or a test draws, without the whole store. */
+export function StreamingPreview({ streaming, children }: { streaming: Record<string, string>; children?: ReactNode }) {
+  const value = useMemo(() => ({ streaming, reasoning: {} }), [streaming]);
+  return <StreamContext.Provider value={value}>{children}</StreamContext.Provider>;
+}
+
 const StoreContext = createContext<{
   state: AppState;
   dispatch: React.Dispatch<Action>;

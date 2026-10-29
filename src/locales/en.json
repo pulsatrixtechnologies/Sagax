@@ -6382,6 +6382,8 @@
   "settings.toolCalls.show": "Show tool calls",
   "settings.toolCalls.title": "Tool calls",
   "settings.unreadyProviders.show": "Show unconfigured providers",
+  "settings.streamReplies.title": "Show replies as they are written",
+  "settings.streamReplies.show": "Show a bot reply word by word while it is written, instead of all at once when it is finished",
   "settings.unreadyProviders.title": "Unconfigured providers",
   "settings.universalPins.subtitle": "Keep pinned bots from every group at the top of the sidebar, including a group's chief. They stay there while the rest of the list scrolls.",
   "settings.universalPins.title": "Universal pins",

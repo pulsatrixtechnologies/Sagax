@@ -1932,5 +1932,7 @@
   "routines.menu.open": "Abrir",
   "routines.rename.label": "Nombre de la rutina",
   "routines.rename.empty": "Una rutina necesita un nombre.",
-  "routines.rename.hint": "Doble clic para cambiar el nombre"
+  "routines.rename.hint": "Doble clic para cambiar el nombre",
+  "settings.streamReplies.title": "Mostrar las respuestas mientras se escriben",
+  "settings.streamReplies.show": "Mostrar la respuesta de un bot palabra por palabra mientras se escribe, en lugar de toda de una vez al terminar"
 }

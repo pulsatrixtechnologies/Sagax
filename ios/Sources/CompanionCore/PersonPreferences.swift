@@ -28,8 +28,11 @@ public enum PersonPrefKey {
     public static let notificationSound = NotificationSoundChoice.key
     /// The Automations page's scope and filters, per person (src/lib/routine-scope-prefs.ts).
     public static let routineScope = RoutineScopePrefs.key
+    /// "on" | "off"; absent is on: a reply grows as it is written
+    /// (src/lib/stream-replies-preference.ts).
+    public static let streamReplies = "sagax.streamReplies.v1"
 
-    public static let all = [language, skinTint, skinDepth, botAccent, botBubble, hdMascots, showSuggestions, readReceipts, notificationSound, routineScope]
+    public static let all = [language, skinTint, skinDepth, botAccent, botBubble, hdMascots, showSuggestions, readReceipts, notificationSound, routineScope, streamReplies]
 }
 
 public extension SidebarPrefKey {
@@ -69,6 +72,13 @@ public extension SidebarPrefs {
 
     mutating func setHdMascots(_ on: Bool) {
         values[PersonPrefKey.hdMascots] = on ? "on" : "off"
+    }
+
+    /// Replies shown as they are written: on unless "off".
+    var streamReplies: Bool { values[PersonPrefKey.streamReplies] != "off" }
+
+    mutating func setStreamReplies(_ on: Bool) {
+        values[PersonPrefKey.streamReplies] = on ? "on" : "off"
     }
 
     /// The Suggestions card: shown unless "0".

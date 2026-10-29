@@ -4711,6 +4711,8 @@
   "settings.toolCalls.show": "Afficher les appels d'outils",
   "settings.toolCalls.title": "Appels d'outils",
   "settings.unreadyProviders.show": "Afficher les fournisseurs non configurés",
+  "settings.streamReplies.title": "Afficher les réponses au fur et à mesure",
+  "settings.streamReplies.show": "Afficher la réponse d'un bot au fil de l'écriture, plutôt que d'un coup une fois terminée",
   "settings.unreadyProviders.title": "Fournisseurs non configurés",
   "settings.updates.check": "Rechercher des mises à jour",
   "settings.updates.checking": "Vérification…",

@@ -33,6 +33,7 @@ import { StepRow } from "./StepRow";
 import { stepLabel } from "@/lib/step-label";
 import { ThreadRefText } from "./ThreadRefs";
 import { TurnPresence } from "./TurnPresence";
+import { LiveReply } from "./LiveReply";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { showToolCallRows } from "@/lib/tool-activity-rows";
 import { CompactionChip, DigestChip } from "./DigestChip";
@@ -1316,6 +1317,8 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
   const waiting =
     Boolean(speaker && showWorkingDots(true, group.messages.at(-1), speaker.id)) || awaited !== undefined;
   const wasWaiting = useRef(false);
+  // the reply was drawn as it was written (LiveReply): it settles in place
+  const liveShown = useRef(false);
   const [popping, setPopping] = useState<{ id: string; botId?: string } | null>(null);
   const poppingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -1325,6 +1328,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
     if (poppingTimer.current) clearTimeout(poppingTimer.current);
     poppingTimer.current = null;
     wasWaiting.current = false;
+    liveShown.current = false;
     setPopping(null);
   }, [group.id, group.threadId]);
   useEffect(() => {
@@ -1333,6 +1337,10 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
   useLayoutEffect(() => {
     if (lastGroupMessage?.role !== "bot" || lastGroupMessage.kind !== "text" || !wasWaiting.current) return;
     wasWaiting.current = false;
+    if (liveShown.current) {
+      liveShown.current = false;
+      return;
+    }
     setPopping({
       id: lastGroupMessage.id,
       botId: lastGroupMessage.from?.botId,
@@ -1710,6 +1718,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
               </button>
             </div>
           )}
+          {speaker && <LiveReply threadId={group.threadId} botId={speaker.id} mentionPeers={members} label={speaker.name} room shownRef={liveShown} />}
           {(speaker || presenceVisible) && (
             <TurnPresence
               // the speaker's colour and mascot, as in ChatView

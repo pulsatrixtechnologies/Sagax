@@ -791,6 +791,8 @@ struct ChatView: View {
                             store: session.streamingStore,
                             threadId: threadId,
                             onCall: call.active && call.isOnCall(current),
+                            // Settings > Appearance: off, the reply appears once finished
+                            streams: sidebarPrefs.streamReplies,
                             showsReasoning: activityDetail != ActivityDetail.hidden.rawValue,
                             busy: current.busy,
                             color: current.color,
@@ -1108,6 +1110,9 @@ struct ChatLiveTail: View {
     let threadId: String
     /// On a call the words are spoken, not typed out.
     let onCall: Bool
+    /// "Show replies as they are written" (StreamReplies): off, the working
+    /// line stays until the settled reply arrives whole.
+    var streams: Bool = true
     let showsReasoning: Bool
     let busy: Bool
     let color: String
@@ -1132,7 +1137,7 @@ struct ChatLiveTail: View {
 
     @ViewBuilder
     private var tail: some View {
-        if !onCall, let live = store.text[threadId], !live.isEmpty {
+        if !onCall, streams, let live = store.text[threadId], !live.isEmpty {
             StreamingBubble(text: live, reasoning: nil, color: color)
                 .padding(.top, ChatView.rowGap)
                 .id(ChatView.liveBubbleId)

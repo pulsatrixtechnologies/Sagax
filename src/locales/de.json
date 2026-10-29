@@ -1950,5 +1950,7 @@
   "routines.menu.open": "Öffnen",
   "routines.rename.label": "Name der Routine",
   "routines.rename.empty": "Eine Routine braucht einen Namen.",
-  "routines.rename.hint": "Zum Umbenennen doppelklicken"
+  "routines.rename.hint": "Zum Umbenennen doppelklicken",
+  "settings.streamReplies.title": "Antworten beim Schreiben anzeigen",
+  "settings.streamReplies.show": "Die Antwort eines Bots Wort für Wort beim Schreiben anzeigen, statt erst vollständig am Ende"
 }
