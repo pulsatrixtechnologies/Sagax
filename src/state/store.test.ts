@@ -1040,8 +1040,11 @@ describe("notification routing", () => {
       expect(opened).toMatchObject({ selectedId: "bot-1", activeView: "chat" });
       expect(opened.bots[0]!.tasks!.find((task) => task.threadId === "routine-report")!.unread).toBe(true);
       // An earlier topic of the single stream opens the stream at its newest
-      // topic, where the earlier one is drawn above.
-      expect(followed("routine-report", false)).toEqual([{ type: "switchTask", botId: "bot-1", threadId: "later-chat" }]);
+      // topic, where the earlier one is drawn above, scrolled back to it.
+      expect(followed("routine-report", false)).toEqual([
+        { type: "focusMessage", threadId: "routine-report", messageId: "", segment: true },
+        { type: "switchTask", botId: "bot-1", threadId: "later-chat" },
+      ]);
     });
 
     it("opens a thread a notification names as before while threads are shown", () => {

@@ -59,7 +59,7 @@ import { finishUntilPrompt, remindAfterCompaction } from "./finish-until.ts";
 import { staleSessionReason, type StaleSessionReason } from "./stale-session.ts";
 import { isSmallTalk, SMALL_TALK_CLOUD_REFUSAL, SMALL_TALK_TURN_NOTE } from "./small-talk.ts";
 import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
-import { isStreamSegment } from "../shared/single-stream.ts";
+import { conversationThreadId, isStreamSegment } from "../shared/single-stream.ts";
 import { alwaysDenyOffered } from "../shared/approval-rule-card.ts";
 import { isOpaqueId, quotedIdOr } from "../shared/human-id.ts";
 import { createRecallTopicInternalRoutes } from "./routes/recall-topic-internal.ts";
@@ -542,7 +542,7 @@ import {
 import { EventBus, withoutPrivateFields } from "./harness/bus.ts";
 import { ProviderRegistry } from "./harness/registry.ts";
 import { ManagedDesktopProviders } from "./managed-desktop.ts";
-import { mainThread, wasOldestThread } from "./main-thread.ts";
+import { wasOldestThread } from "./main-thread.ts";
 import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import { holdIncludedServices } from "./included-services.ts";
@@ -12572,15 +12572,16 @@ function wipeConfidentialThread(botId: string, threadId: string, attachmentNames
  * turn its owner did not start. Then its newest ordinary open conversation
  * of the bot owner's, else a new one, never selected. */
 function peerThreadFor(bot: BotRecord): string {
-  if (!store.isConfidentialThread(bot.threadId)) return bot.threadId;
+  // 2026-10-28: the bot's one conversation with its owner
+  // (conversationThreadFor), never whatever thread happened to be selected
+  // (a job, a run, a confidential thread), so a peer's ask shows up where
+  // the person reads.
   const owner = effectiveBotOwner(bot);
-  const at = (task: TaskRecord) => task.updatedAt ?? task.createdAt;
-  const open = store.tasks(bot.id)
-    .filter((task) => task.confidential !== true && !task.routineRunId && task.hidden !== true && task.archivedAt === undefined
-      && !task.openedBy && ownsThread(owner, task, owner))
-    .sort((a, b) => at(b) - at(a))[0];
-  if (open) return open.threadId;
-  return store.createTask(bot.id, undefined, false)?.threadId ?? bot.threadId;
+  const conversation = conversationThreadFor(bot, privateThreads() ? owner : undefined);
+  if (conversation) return conversation;
+  // no conversation yet (every thread archived, confidential or a job):
+  // one is started for the owner, never selected
+  return store.createTask(bot.id, undefined, false, undefined, undefined, undefined, privateThreads() ? owner : undefined)?.threadId ?? bot.threadId;
 }
 /** The person a confidential thread belongs to, else null. */
 function confidentialThreadOwner(threadId: string): string | null {
@@ -17672,6 +17673,23 @@ bus.subscribe((event: RuntimeEvent) => {
           }) : Promise.resolve();
         if (resourceOwner) settlingResourceOwners.set(resourceOwner.threadId, resourceOwner.generation);
         liveTurnByThread.delete(event.threadId);
+        // A Team incidents report (server/incidents.ts): the Primary Bot
+        // worked in its "Team incidents" thread, beside its conversation;
+        // what it has to say arrives as its own message in the person's one
+        // conversation with it (2026-10-28, the reference design: one
+        // transcript per bot), with the link to the thread it worked in.
+        const incidentsReport = reply && settledTask?.openedBy?.botId === bot.id && settledTask.title === INCIDENTS_THREAD_TITLE
+          ? conversationOrStart(bot, privateThreads() ? effectiveBotOwner(bot) : undefined) : undefined;
+        if (incidentsReport && incidentsReport !== event.threadId) {
+          store.appendMessage(incidentsReport, {
+            role: "bot", kind: "text", text: reply,
+            threadRef: { botId: bot.id, threadId: event.threadId, title: settledTask!.title },
+          });
+          store.patchTask(bot.id, incidentsReport, { unread: true });
+          if (!computerSelectionTurns.get(event.threadId)?.selected) {
+            notify(deliverableNotification("done", bot, incidentsReport, reply, { avatarUrl: bot.avatarUrl }));
+          }
+        }
         const routineReportThread = routineRun ? routineSourceThread(routineRun) : null;
         // A routine's result belongs to its reporting thread's unread state.
         // Its internal execution should not light up the sidebar as well.
@@ -18279,8 +18297,10 @@ function wakeDelegationSource(source: BotRecord, threadId: string, targetName: s
 // from a phone, by opening the desktop and reading every thread. The team
 // already has a role for this — the Primary Bot coordinates the section — so the
 // incident becomes a turn of the Primary Bot's, in its "Team incidents" thread,
-// with a link to the broken thread and retry_thread to act on it. The person
-// reads one place. Policy in server/incidents.ts.
+// with a link to the broken thread and retry_thread to act on it. What the
+// Primary Bot has to say then arrives as its message in the person's one
+// conversation with it (turn end, `incidentsReport`), so the person reads
+// one place: their conversation. Policy in server/incidents.ts.
 const incidentLedger = new IncidentLedger();
 
 /** What the broken thread was about: the last thing asked there
@@ -23179,8 +23199,38 @@ function routineSourceOwner(run: Pick<RoutineRun, "botId" | "sourceThreadId" | "
  * to (WireBot.mainThreadId). On a Cloud home a conversation someone else
  * opened never counts. */
 function botMainThread(botId: string): string | undefined {
-  const tasks = store.tasks(botId);
-  return mainThread(CLOUD_HOME ? tasks.filter((task) => !cloudGuestOpened(task.threadId)) : tasks, store.bot(botId)?.threadId);
+  const bot = store.bot(botId);
+  return bot ? conversationThreadFor(bot) : undefined;
+}
+
+/** THE one conversation a person has with a bot (shared/single-stream.ts,
+ * the rule the desktop and the phone read too): the newest open segment of
+ * their stream. Every path that needs "the person's conversation" reads
+ * this one function (WireBot.mainThreadId, a routine's report, a peer's
+ * ask, a webhook's news, a call's turns, an AI client's work, a send
+ * without a thread), so none of them can land elsewhere again. With a
+ * person on an organization server, their own threads only; on a solo
+ * server, the bot's; on a Cloud home, never a guest's conversation.
+ * Undefined when they have no conversation yet (the caller starts one). */
+function conversationThreadFor(bot: BotRecord, personId?: string): string | undefined {
+  const person = personId?.trim().toLowerCase() || undefined;
+  const own = threadsShownTo(bot, store.tasks(bot.id), person);
+  return conversationThreadId(CLOUD_HOME ? own.filter((task) => !cloudGuestOpened(task.threadId)) : own);
+}
+/** A conversation started for the bot's owner when they have none (every
+ * thread archived, confidential or a job): a plain segment, never selected
+ * here (the app selects it when it opens the bot). Not on a Cloud home,
+ * where who opens a thread matters (the caller keeps its own fallback). */
+function startConversationFor(bot: BotRecord): string | undefined {
+  if (CLOUD_HOME) return undefined;
+  const owner = privateThreads() ? effectiveBotOwner(bot) : undefined;
+  return store.createTask(bot.id, undefined, false, undefined, undefined, undefined, owner)?.threadId;
+}
+/** The one conversation of the person a request acts for, else the bot
+ * owner's: where a send, a call or a peer's ask lands when it names no
+ * thread. Started when there is none. */
+function conversationOrStart(bot: BotRecord, personId?: string): string | undefined {
+  return conversationThreadFor(bot, personId) ?? (personId && privateThreads() ? ensureViewerThread(bot, personId) : startConversationFor(bot));
 }
 
 /** Routines without a chosen thread used to get an automatic "<name> ·
@@ -23194,9 +23244,7 @@ function legacyResultsThread(routineName: string, task: TaskRecord): boolean {
  * open thread of theirs they last wrote in (main-thread.ts), never a run's
  * task, a results thread, a hidden, confidential, parallel or bot-opened one. */
 function personMainThread(bot: BotRecord, principalId: string): string | undefined {
-  const own = threadsShownTo(bot, store.tasks(bot.id), principalId)
-    .filter((task) => !task.routineRunId && task.routineResults !== true && task.hidden !== true && task.confidential !== true && !task.openedBy && !task.parallelOf);
-  return own.length ? mainThread(own, viewerThreadOf(bot, principalId)) : undefined;
+  return conversationThreadFor(bot, principalId);
 }
 
 /** Automatic "<name> · Results" threads made before 2026-10-22 get the
@@ -23278,10 +23326,12 @@ function routineEffectivePostResults(run: Pick<RoutineRun, "routineId">): boolea
  * posts ONE message, upserted in place by run id, and that conversation
  * turns unread. Replaying a transition never adds another message. */
 function syncRoutineRunToSource(run: RoutineRun): string | null {
-  const source = routineSourceOwner(run);
+  const known = routineSourceOwner(run);
   const reportable = routineRunReportable({ ...run, needsPerson: run.status === "waiting" && routineRunNeedsPerson(run), postResults: routineEffectivePostResults(run) });
   // A bot run's task stays hidden (Automations, Open run) from its start.
-  const execution = run.target === "bot" && run.triggerSource !== "webhook" && run.threadId && run.threadId !== source?.threadId
+  // 2026-10-28: a webhook's run too (it used to take the bot's live chat;
+  // now it runs in its own task and reports into the one conversation).
+  const execution = run.target === "bot" && run.threadId && run.threadId !== known?.threadId
     ? store.taskByThread(run.botId, run.threadId)
     : null;
   if (execution && run.status === "running" && !execution.routineRunId && store.messagesFor(execution.threadId).length === 0) {
@@ -23289,18 +23339,26 @@ function syncRoutineRunToSource(run: RoutineRun): string | null {
     // can later promote it by writing in it; replaying or marking the old
     // receipt seen must never hide that conversation again.
     store.patchTask(run.botId, execution.threadId, { routineRunId: run.id, unread: false });
-  } else if (source && execution?.routineRunId === run.id && execution.unread) {
+  } else if (known && execution?.routineRunId === run.id && execution.unread) {
     // Already this run. Clear the dot without rewriting the tag, so a
     // promoted thread (tag cleared, transcript present) stays visible.
     store.patchTask(run.botId, execution.threadId, { unread: false });
   }
-  if (!source) {
-    // Nowhere to report: a run with something for the person becomes a
-    // conversation of its own; a quiet one stays in Automations.
+  // Its destination gone (deleted, or never one): the run reports into the
+  // bot's one conversation (2026-10-28, shared/single-stream.ts), never as
+  // a conversation of its own (that made a new topic out of a run's task).
+  const runBot = !known && run.target === "bot" ? store.bot(run.botId) : undefined;
+  const conversation = runBot && !runBot.hidden ? conversationOrStart(runBot, privateThreads() && run.runAs ? run.runAs : undefined) : undefined;
+  const target = known ?? (runBot && conversation && conversation !== run.threadId ? { bot: runBot, group: undefined, threadId: conversation } : null);
+  if (!target) {
+    // Nowhere at all to report (a Cloud guest's run): a run with something
+    // for the person becomes a conversation of its own; a quiet one stays
+    // in Automations.
     const own = run.threadId ? store.taskByThread(run.botId, run.threadId) : null;
     if (reportable && own?.routineRunId === run.id) store.patchTask(run.botId, own.threadId, { routineRunId: undefined, unread: true });
     return null;
   }
+  const source = target;
   const sourceThreadId = source.threadId;
   const existing = store.messagesFor(sourceThreadId).find(
     (message) => message.kind === "routine.run" && message.routineRun?.runId === run.id,
@@ -23721,6 +23779,12 @@ routines = new RoutineManager({
   createTask: (botId, title, activate = false, run) => {
     // Private threads: the run's thread is the person it runs as (else the bot owner's).
     const task = store.createTask(botId, title, activate, undefined, undefined, undefined, privateThreads() && run?.runAs ? run.runAs : undefined);
+    // Tagged from its first instant (2026-10-28): an execution task that
+    // stayed untagged until dispatch was, for a moment, the newest plain
+    // thread, which the one-conversation rule (shared/single-stream.ts)
+    // would take for the person's conversation. syncRoutineRunToSource
+    // keeps the tag; a person writing in it later still promotes it.
+    if (task && run && !activate) store.patchTask(botId, task.threadId, { routineRunId: run.id, unread: false });
     // On a Cloud home a run's conversation is opened, like its results
     // conversation, by whoever wrote the routine: a run of one that is
     // nobody's is confined to a folder of its own, never the bot's project.
@@ -23845,6 +23909,13 @@ routines = new RoutineManager({
     const bot = store.bot(routine.botId);
     const chosen = !forceNew && routine.resultsThreadId && bot && !bot.hidden
       ? store.taskByThread(bot.id, routine.resultsThreadId) : undefined;
+    // An automatic "<name> · Results" thread is never the person's
+    // conversation (2026-10-22): marked once, as markRoutineResultsThreads
+    // does at startup, so the one-conversation rule never takes it for the
+    // newest topic.
+    if (chosen && bot && legacyResultsThread(routine.name, chosen) && chosen.routineResults !== true && !chosen.routineRunId) {
+      store.patchTask(bot.id, chosen.threadId, { routineResults: true });
+    }
     // On a Cloud home a routine reports only where its writer may write: a
     // guest's (or nobody's) keeps a results conversation opened as theirs.
     const opener = CLOUD_HOME ? routineOpener(routine.id) : undefined;
@@ -23853,7 +23924,9 @@ routines = new RoutineManager({
     // the bot, the one they last wrote in, not a "<name> · Results" thread.
     // A person with no conversation with this bot yet gets theirs, as
     // opening the bot would start it.
-    const main = bot && !bot.hidden ? (runAs ? personMainThread(bot, runAs) ?? ensureViewerThread(bot, runAs) : botMainThread(bot.id)) : undefined;
+    // 2026-10-28: the one conversation (conversationThreadFor, the rule the
+    // desktop and the phone read), never a thread nobody looks at.
+    const main = bot && !bot.hidden ? (runAs ? personMainThread(bot, runAs) ?? ensureViewerThread(bot, runAs) : botMainThread(bot.id) ?? startConversationFor(bot)) : undefined;
     const mainAllowed = main && !store.isConfidentialThread(main) && (!CLOUD_HOME || (opener === CLOUD_OWNER_KEY && !cloudGuestOpened(main)));
     const keepChosen = chosen && !chosen.routineRunId && chosen.confidential !== true &&
       !(mainAllowed && (chosen.routineResults === true || legacyResultsThread(routine.name, chosen)));
@@ -25109,6 +25182,13 @@ const webhooks = new WebhookManager({
   // live selection the way POST /api/bots/:id/tasks does), reused forever
   // after via trigger.resultsThreadId.
   resolvePostThread: (trigger, forceNew) => {
+    // 2026-10-28: news lands in the bot's one conversation
+    // (conversationThreadFor), like a routine's report, never in an
+    // "Updates" thread the person is not looking at; one of its own only
+    // when the bot has no conversation to post into.
+    const bot = store.bot(trigger.botId);
+    const conversation = bot ? conversationOrStart(bot) : undefined;
+    if (conversation) return conversation;
     if (!forceNew && trigger.resultsThreadId && store.taskByThread(trigger.botId, trigger.resultsThreadId)) return trigger.resultsThreadId;
     return store.createTask(trigger.botId, "Updates", false)?.threadId;
   },
@@ -35502,8 +35582,11 @@ function routeThreadIdUnguarded(bot: BotRecord, rawThreadId: unknown, action: Th
     }
     return rawThreadId;
   }
-  if (!viewerId) return bot.threadId;
-  const mine = ensureViewerThread(bot, viewerId);
+  // No thread named (a phone's share sheet, a relay, an older client): the
+  // person's one conversation (shared/single-stream.ts), never whatever
+  // thread the bot happened to be left on.
+  if (!viewerId) return conversationOrStart(bot) ?? bot.threadId;
+  const mine = conversationThreadFor(bot, viewerId) ?? ensureViewerThread(bot, viewerId);
   if (!mine) throw Object.assign(new Error("no such task"), { status: 404 });
   return mine;
 }
@@ -37632,9 +37715,11 @@ const voiceModeDeps: VoiceModeDeps = {
       if (threadId && (!store.taskByThread(bot.id, threadId) || !botThreadReadable(bot, threadId, viewerId, "thread.post"))) {
         return { status: 404, error: "no such conversation" };
       }
-      return { botId: bot.id, botName: bot.name, threadId: threadId ?? viewerThreadOf(bot, viewerId) ?? bot.threadId, ownerPrincipalId: effectiveBotOwner(bot) };
+      // a call named no thread: the person's one conversation (the rule the
+      // desktop and the phone read), where its turns show up as they happen
+      return { botId: bot.id, botName: bot.name, threadId: threadId ?? conversationOrStart(bot, viewerId) ?? viewerThreadOf(bot, viewerId) ?? bot.threadId, ownerPrincipalId: effectiveBotOwner(bot) };
     }
-    return { botId: bot.id, botName: bot.name, threadId: threadId ?? bot.threadId };
+    return { botId: bot.id, botName: bot.name, threadId: threadId ?? conversationOrStart(bot) ?? bot.threadId };
   },
   serverKey: () => cfg.xai?.key,
   hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
@@ -40320,11 +40405,7 @@ const agentApi = createAgentApi({
  * (main-thread.ts), never a hidden, confidential, bot-opened, parallel or
  * routine thread. Undefined when they have none yet. */
 function agentUnifiedThread(target: BotRecord, principalId: string | undefined): string | undefined {
-  const person = principalId?.trim().toLowerCase() || undefined;
-  const own = threadsShownTo(target, store.tasks(target.id), person)
-    .filter((task) => isStreamSegment(task) && task.archivedAt === undefined && !task.closedBy);
-  if (!own.length) return undefined;
-  return mainThread(own, person && privateThreads() ? viewerThreadOf(target, person) : target.threadId);
+  return conversationThreadFor(target, principalId);
 }
 /** The same for a bot caller: the conversation of the person its work is for. */
 function agentUnifiedThreadForBot(caller: AgentCaller, target: BotRecord): string | undefined {
@@ -50548,6 +50629,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Organization server: the new thread is its creator's, and only their
       // selection moves (the bot's own selection is its owner's).
       const creator = scopedThreadViewer();
+      // "New topic" over a conversation nobody wrote in yet: that one already
+      // is a new topic (no empty segments pile up, on any device).
+      if (body.stream === true && !hidden && !confidentialChoice.confidential && cwd === undefined) {
+        const current = conversationThreadFor(bot, creator);
+        const task = current ? store.taskByThread(bot.id, current) : undefined;
+        if (task && store.messagesFor(task.threadId).length === 0) {
+          if (creator) selectViewerThread(bot.id, creator, task.threadId);
+          if ((!creator || viewerBotLevel(auth, bot) === "owner") && bot.threadId !== task.threadId) store.switchTask(bot.id, task.threadId);
+          const same = publicBot(store.projectBotForTask(bot.id, task.threadId) ?? store.bot(bot.id)!);
+          return json(res, 200, { bot: projectBotTranscript(same, viewerForApproval(auth)), task: wireTask(task, store.bot(bot.id)!.modelSelection) });
+        }
+      }
       const ownerCreates = !creator || viewerBotLevel(auth, bot) === "owner";
       const task = store.createTask(bot.id, typeof body.title === "string" ? body.title : undefined, ownerCreates && !startedAside, body.projectId, undefined, body.approvalMode, creator && isPrincipalId(creator) ? creator : undefined, undefined, hidden, cwd, confidentialChoice.confidential);
       if (!task) return json(res, 500, { error: "couldn't create that task" });

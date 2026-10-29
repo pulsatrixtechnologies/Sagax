@@ -5654,11 +5654,55 @@ none optional:
   `src/lib/single-stream.test.ts`, `src/components/ChatView.stream.test.ts`,
   `src/lib/use-segment-transcript.test.ts`.
 
-## Fresh topic on return (single stream, 2026-10-18)
+## One conversation: THE rule (2026-10-28)
 
-Decision: coming back to a bot's conversation lands on a new, empty topic, with
-less on screen; the bot keeps everything (the "Earlier topics" digest and
-`recall_topic`). Rules, none optional (`shared/fresh-topic.ts`, desktop
+The maintainer, 2026-10-28, after several fixes that did not hold: with threads
+hidden a bot is ONE continuous conversation, as in the reference design (one
+transcript per bot; "threads" there are tasks opened beside it). The rule is
+`shared/single-stream.ts` and nowhere else: `conversationThread(tasks)` is
+the newest open segment (never a routine run, a results thread, a hidden
+AI-client conversation, a confidential thread, a bot-opened thread, a
+parallel task, an archived or closed thread). Cases in
+`shared/single-stream.vectors.json`, run by `shared/single-stream.test.ts`
+and `ios/Tests/CompanionCoreTests/SingleStreamTests.swift`.
+
+- Server: `conversationThreadFor(bot, person)` (`server/index.ts`) is the
+  only reader. It feeds `WireBot.mainThreadId` (per viewer on an organization
+  server, `server/thread-privacy.ts`), `personMainThread`,
+  `agentUnifiedThread` (`send_prompt`, `sagax_send`), `peerThreadFor`
+  (`ask_bot`, `delegate_bot`, asides), a routine's report
+  (`resolveResultsThread`; a run whose destination is gone reports there
+  too, `syncRoutineRunToSource`), a webhook's post (`resolvePostThread`), a
+  call that names no thread (voice `target`), a send without a thread
+  (`routeThreadId`), and the Primary Bot's incident answer (mirrored into
+  its conversation at turn end, `incidentsReport`). `server/main-thread.ts`
+  delegates to it. A webhook's run works in its own task like a scheduled
+  run (never the live chat); a run's task is tagged `routineRunId` at
+  creation; a turn continuation is a bot-opened job; a legacy "<name> ·
+  Results" thread is marked `routineResults` when met. Do not add a thread
+  chooser of your own: call `conversationThreadFor`.
+- Desktop: `botOpensTo` reads the server's `mainThreadId` first, else
+  `streamHomeThread` (the same rule); `openBotThread` is THE gate for every
+  way into a thread (notification, chip, link, search hit, activity row,
+  routine run, a bot's remote command): an earlier topic scrolls the one
+  conversation back (`focusMessage` with `segment`), a thread outside the
+  stream opens beside it (`SideThreadPanel`), never in its place. With
+  threads hidden the window follows the conversation (a newer topic from
+  another device or a reconnect), `newTask` creates a stream topic, and
+  `ChatView` draws one timeline: the earlier topics above the live one as
+  soon as it is read back (no fold, no empty screen), under quiet time
+  dividers, history loading upward.
+- Phone: `CompanionCore/SingleStream.swift` mirrors the rule; home is the
+  server's `mainThreadId`, else the newest segment; sends carry
+  `singleStream`; a thread outside the stream opens in a sheet beside.
+
+## Fresh topic on return (single stream, 2026-10-18; invisible since 2026-10-28)
+
+Decision: coming back to a bot's conversation after a while starts a fresh
+engine context; the bot keeps everything (the "Earlier topics" digest and
+`recall_topic`). Since 2026-10-28 nothing moves on screen for it: the
+timeline stays one conversation (an asked-for "New topic" shows one quiet
+line with Resume; an automatic one shows nothing). Rules, none optional (`shared/fresh-topic.ts`, desktop
 `src/lib/fresh-topic.ts`, iOS `ios/Sources/CompanionCore/FreshTopic.swift`
 and `ios/App/Session+FreshTopic.swift`; shared cases in
 `shared/fresh-topic.vectors.json`, run by both test suites):
@@ -5849,8 +5893,8 @@ default of its own, so the renderer fallback is the single source of truth.
 The switch writes "1" or "0"; unset (key missing, storage unreadable, no
 storage) is off, "1" is on, any other stored value is off, so whoever turned
 threads on keeps them. Do not seed the key at first run or in onboarding;
-leave it unset. The phone apps keep their own fallback (`ios/`, still on until
-their stream UI lands).
+leave it unset. The phone apps share the default (`SidebarPrefs.showThreadsDefault
+= false`) and the rule (section "One conversation: THE rule").
 
 ## Sidebar sections are personal
 

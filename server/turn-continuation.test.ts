@@ -128,6 +128,11 @@ describe("makeCapContinuationSubscriber", () => {
     expect(h.calls.createTask[0][1]).toBe("Continue: Build the thing");
     // The continuation never takes over the person's open thread.
     expect(h.calls.createTask[0][2]).toBe(false);
+    // 2026-10-28: opened by the bot itself, so with one conversation it is a
+    // job beside the conversation, never a new topic in it; and it is not
+    // confidential when the thread it continues is not.
+    expect(h.calls.createTask[0][4]).toMatchObject({ botId: "bot-1", name: expect.any(String) });
+    expect(h.calls.createTask[0][10]).toBe(false);
     await vi.waitFor(() => expect(h.calls.startTurn.length).toBe(1));
     expect(h.calls.startTurn[0][1]).toContain("/tmp/handoff.md");
     expect(h.calls.startTurn[0][2]).toEqual({ threadId: "thread-cont", unattended: true });

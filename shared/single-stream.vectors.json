@@ -1,0 +1,78 @@
+{
+  "about": "The one-conversation rule (shared/single-stream.ts), the same cases on the server, the desktop and the phone (CompanionCore/SingleStream.swift). conversation: the thread the bot's one conversation is (newest segment). segments: the timeline, oldest first. beside: threads that open beside the conversation, never in its place. earlier: earlier segments of the stream (a link there scrolls back).",
+  "cases": [
+    {
+      "name": "a person's conversations, oldest first; the newest one is the conversation",
+      "tasks": [
+        { "threadId": "c", "createdAt": 30 },
+        { "threadId": "a", "createdAt": 10 },
+        { "threadId": "b", "createdAt": 20 }
+      ],
+      "segments": ["a", "b", "c"],
+      "conversation": "c",
+      "earlier": ["a", "b"],
+      "beside": []
+    },
+    {
+      "name": "never a routine run, a results thread, a hidden AI-client conversation, a confidential thread, a bot-opened thread or a parallel task",
+      "tasks": [
+        { "threadId": "chat", "createdAt": 1 },
+        { "threadId": "run", "createdAt": 2, "routineRunId": "r1" },
+        { "threadId": "results", "createdAt": 3, "routineResults": true },
+        { "threadId": "hidden", "createdAt": 4, "hidden": true },
+        { "threadId": "conf", "createdAt": 5, "confidential": true },
+        { "threadId": "job", "createdAt": 6, "openedBy": { "botId": "b", "name": "B", "at": 6 } },
+        { "threadId": "par", "createdAt": 7, "parallelOf": { "threadId": "chat" } }
+      ],
+      "segments": ["chat"],
+      "conversation": "chat",
+      "earlier": [],
+      "beside": ["run", "results", "hidden", "conf", "job", "par"]
+    },
+    {
+      "name": "an archived or closed thread leaves the timeline (Reset history), kept with threads shown",
+      "tasks": [
+        { "threadId": "old", "createdAt": 1, "archivedAt": 50 },
+        { "threadId": "closed", "createdAt": 2, "closedBy": { "botId": "b", "name": "B", "at": 3 } },
+        { "threadId": "live", "createdAt": 3 }
+      ],
+      "segments": ["live"],
+      "conversation": "live",
+      "earlier": [],
+      "beside": ["old", "closed"]
+    },
+    {
+      "name": "a new empty topic is the conversation: the timeline above it comes from the earlier segments",
+      "tasks": [
+        { "threadId": "a", "createdAt": 10, "updatedAt": 15 },
+        { "threadId": "new", "createdAt": 40, "updatedAt": 40 }
+      ],
+      "segments": ["a", "new"],
+      "conversation": "new",
+      "earlier": ["a"],
+      "beside": []
+    },
+    {
+      "name": "no segment at all: no conversation yet (one is started for the person)",
+      "tasks": [
+        { "threadId": "conf", "createdAt": 1, "confidential": true },
+        { "threadId": "run", "createdAt": 2, "routineRunId": "r" }
+      ],
+      "segments": [],
+      "conversation": null,
+      "earlier": [],
+      "beside": ["conf", "run"]
+    },
+    {
+      "name": "same creation time: the thread id breaks the tie, the same way everywhere",
+      "tasks": [
+        { "threadId": "t-b", "createdAt": 5 },
+        { "threadId": "t-a", "createdAt": 5 }
+      ],
+      "segments": ["t-a", "t-b"],
+      "conversation": "t-b",
+      "earlier": ["t-a"],
+      "beside": []
+    }
+  ]
+}

@@ -987,7 +987,8 @@ describe("persistent routine results destinations", () => {
     h.manager.runNow(goal.id);
     await h.manager.tick();
     expect(h.created()).toBe(0);
-    expect(h.taskActivations).toEqual([true]);
+    // the webhook's own task, never the live chat (2026-10-28)
+    expect(h.taskActivations).toEqual([false]);
     expect(h.startedGoals).toHaveLength(1);
   });
 });
@@ -2668,7 +2669,10 @@ describe("RoutineManager", () => {
     expect(h.manager.listRoutines()[0]).toMatchObject({ runOn: "maus" });
   });
 
-  it("opens webhook jobs in the assigned bot's live chat", async () => {
+  // 2026-10-28: a webhook's run works in its own task like a scheduled one
+  // and reports into the bot's one conversation; it never takes the live
+  // chat (that made a new topic per event, and the selection followed).
+  it("runs webhook jobs in their own task, never the assigned bot's live chat", async () => {
     const h = harness();
     const receivedAt = new Date(2026, 7, 17, 8, 2).getTime();
     const queued = h.manager.enqueueWebhook({
@@ -2693,7 +2697,7 @@ describe("RoutineManager", () => {
     expect(h.started).toEqual([{ botId: "maus-webhook", threadId: "thread-1", prompt: "Handle ticket 42" }]);
     expect(h.runOns).toEqual(["cloud"]);
     expect(h.triggerSources).toEqual(["webhook"]);
-    expect(h.taskActivations).toEqual([true]);
+    expect(h.taskActivations).toEqual([false]);
   });
 
   it("defers webhook deliveries behind the same busy admission as scheduled runs", async () => {

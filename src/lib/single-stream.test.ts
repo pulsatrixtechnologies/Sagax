@@ -33,10 +33,16 @@ describe("single stream navigation", () => {
     expect(segmentsAbove(tasks, "conf")).toEqual([]);
   });
 
-  it("keeps a New topic just started here, and never strands the person on an empty one from elsewhere", () => {
+  // 2026-10-28: the newest segment is the conversation on every device,
+  // empty or not (shared/single-stream.ts); the timeline above it is drawn
+  // from the earlier segments, so an empty one never strands anybody.
+  it("opens at the newest topic even when nobody wrote there yet, wherever it was started", () => {
     const fresh = [...tasks, { threadId: "new", createdAt: 40, updatedAt: 40 }];
     expect(streamHomeThread(fresh, "new")).toBe("new");
-    expect(streamHomeThread(fresh, "c")).toBe("c");
+    expect(streamHomeThread(fresh, "c")).toBe("new");
     expect(streamHomeThread([...tasks, { threadId: "new", createdAt: 40, updatedAt: 40, busy: true }], "c")).toBe("new");
+    // archived or closed: out of the timeline
+    expect(streamHomeThread([...tasks, { threadId: "gone", createdAt: 50, archivedAt: 51 }])).toBe("c");
+    expect(streamHomeThread([...tasks, { threadId: "done", createdAt: 50, closedBy: { botId: "x", name: "X", at: 51 } }])).toBe("c");
   });
 });

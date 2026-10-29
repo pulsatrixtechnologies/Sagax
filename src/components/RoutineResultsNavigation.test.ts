@@ -1,3 +1,4 @@
+import { closeSideThread, currentSideThread } from "@/lib/side-thread";
 import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -139,18 +140,25 @@ describe("routine results navigation", () => {
     ]);
   });
 
-  it("with threads hidden opens the run's thread or its results by the switch alone, leaving the thread the bot was on unread", () => {
+  it("with threads hidden opens the run's results in the one conversation, scrolled back, and the run's thread beside it", () => {
     fixture.showThreads = false;
     const { buttons } = details();
     buttons.get("Open results thread")!.onClick!();
     // "original-source" is an earlier topic of the single stream: the stream
-    // opens at its newest topic, the earlier one drawn above.
-    expect(navigationCalls()).toEqual([[{ type: "switchTask", botId: bot.id, threadId: "new-results" }]]);
+    // opens at its newest topic, the earlier one drawn above, scrolled to.
+    expect(navigationCalls()).toEqual([
+      [{ type: "focusMessage", threadId: "original-source", messageId: "", segment: true }],
+      [{ type: "switchTask", botId: bot.id, threadId: "new-results" }],
+    ]);
     fixture.dispatch.mockClear();
-    // Open thread, from a run whose bot is on its results thread.
+    // Open thread, from a run whose bot is on its results thread: the run's
+    // thread is not part of the conversation, so it opens beside it
+    // (SideThreadPanel) and the conversation stays.
     fixture.state!.bots = [{ ...bot, threadId: "new-results" }];
     details().buttons.get("Open thread")!.onClick!();
-    expect(navigationCalls()).toEqual([[{ type: "switchTask", botId: bot.id, threadId: "execution" }]]);
+    expect(navigationCalls()).toEqual([[{ type: "select", id: bot.id }]]);
+    expect(currentSideThread()).toEqual({ botId: bot.id, threadId: "execution" });
+    closeSideThread();
     // With threads shown, as before.
     fixture.showThreads = true;
     fixture.dispatch.mockClear();

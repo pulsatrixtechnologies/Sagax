@@ -1,6 +1,8 @@
-// ChatView as the single stream (Show threads off, the default): earlier
-// topics above the live one under their dividers, New topic in the header,
-// nothing of it with threads on or in a thread outside the stream.
+// ChatView as the single stream (Show threads off, the default): one
+// continuous timeline (2026-10-28, the reference design): the earlier topics
+// drawn above the live one as soon as it is read back, under quiet time
+// dividers, New topic in the header, nothing of it with threads on or in a
+// thread outside the stream.
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -81,32 +83,46 @@ const bot: Bot = {
 const render = (value: Bot) => renderToStaticMarkup(createElement(ChatView, { bot: value }));
 
 describe("the single stream in the main chat", () => {
-  it("folds the earlier topics behind one Earlier topics line once the live one is read back", () => {
+  it("draws the earlier topic above the live one as soon as the live one is read back: one timeline, no fold", () => {
     preferences.setShowThreads(false);
     const markup = render(bot);
     expect(markup).toContain('data-new-topic="bot"');
-    expect(markup).toContain('data-previous-topics="closed"');
-    expect(markup).not.toContain("data-stream-segment");
+    // never a fold: no "Earlier topics" line, the history is just there
+    expect(markup).not.toContain("data-previous-topics");
+    expect(markup).toContain('data-stream-segment="first"');
+    expect(markup).toContain('data-topic-divider="now"');
     expect(markup).toContain("Live answer");
-    // nothing earlier: no line
-    expect(render({ ...bot, tasks: bot.tasks!.filter((task) => task.threadId !== "first") })).not.toContain("data-previous-topics");
+    expect(markup.indexOf('data-stream-segment="first"')).toBeLessThan(markup.indexOf("Live answer"));
+    // nothing earlier: nothing above
+    const alone = render({ ...bot, tasks: bot.tasks!.filter((task) => task.threadId !== "first") });
+    expect(alone).not.toContain("data-stream-segment");
+    expect(alone).not.toContain("data-topic-divider");
   });
 
-  it("lands on a fresh, empty topic over the live one: Earlier topics folded, nothing of the old topic drawn", () => {
+  it("keeps the whole timeline on screen under a fresh topic: an automatic one shows nothing, an asked-for one a quiet line with Resume", () => {
     preferences.setShowThreads(false);
     fixture.fresh = { bot: { threadId: "now", auto: true } };
     try {
+      // back after a while: the next message starts a fresh context, and
+      // nothing moves on screen (no empty chat, no fold, no line)
       const markup = render(bot);
-      expect(markup).toContain('data-previous-topics="closed"');
-      expect(markup).not.toContain("Live answer");
-      expect(markup).not.toContain("data-stream-segment");
-      expect(markup).toContain("Pepper");
+      expect(markup).toContain("Live answer");
+      expect(markup).toContain('data-stream-segment="first"');
+      expect(markup).not.toContain("data-previous-topics");
+      expect(markup).not.toContain("data-fresh-topic-divider");
+      // "New topic" asked for here: one quiet line at the end, with Resume
+      fixture.fresh = { bot: { threadId: "now", auto: false } };
+      const asked = render(bot);
+      expect(asked).toContain("Live answer");
+      expect(asked).toContain("data-fresh-topic-divider");
+      expect(asked).toContain("data-fresh-topic-resume");
+      expect(asked.indexOf("Live answer")).toBeLessThan(asked.indexOf("data-fresh-topic-divider"));
       // a draft over another thread than the one on screen draws nothing
-      fixture.fresh = { bot: { threadId: "first", auto: true } };
-      expect(render(bot)).toContain("Live answer");
+      fixture.fresh = { bot: { threadId: "first", auto: false } };
+      expect(render(bot)).not.toContain("data-fresh-topic-divider");
       // never over a confidential thread, shown alone
-      fixture.fresh = { bot: { threadId: "conf", auto: true } };
-      expect(render({ ...bot, threadId: "conf" })).not.toContain("data-previous-topics");
+      fixture.fresh = { bot: { threadId: "conf", auto: false } };
+      expect(render({ ...bot, threadId: "conf" })).not.toContain("data-fresh-topic-divider");
     } finally {
       fixture.fresh = {};
     }
@@ -135,7 +151,7 @@ describe("the single stream in the main chat", () => {
     } finally {
       fixture.focus = null;
     }
-    expect(markup).toContain('data-previous-topics="open"');
+    expect(markup).not.toContain("data-previous-topics");
     expect(markup).toContain('data-stream-segment="first"');
     expect(markup).toContain('data-topic-divider="now"');
     // the oldest topic opens the stream: no divider above it
@@ -161,7 +177,7 @@ describe("the single stream in the main chat", () => {
     expect(cls).not.toContain("bg-bubble-user");
   });
 
-  it("draws the topic divider as Grok Bot's quiet New topic marker, not the topic's title and time", () => {
+  it("draws the topic divider as a quiet time line, like a day separator; the topic's name only as the tooltip", () => {
     preferences.setShowThreads(false);
     fixture.focus = { threadId: "first", messageId: "old", nonce: 1, consumed: false };
     let markup = "";
@@ -170,11 +186,13 @@ describe("the single stream in the main chat", () => {
     } finally {
       fixture.focus = null;
     }
-    // one generic "New topic" label, the topic name only as the hover tooltip
-    expect(markup).toContain('title="Backups">New topic<');
-    // never the old titled, timestamped divider ("New topic: Backups · 00:00")
-    expect(markup).not.toContain("New topic: Backups");
-    expect(markup).not.toMatch(/New topic\b[^<]*·/);
+    const divider = markup.slice(markup.indexOf('data-topic-divider="now"'), markup.indexOf("Live answer"));
+    // no "New topic" words in the timeline: a new topic is a fresh context
+    // underneath, not a new place (the reference design's one transcript)
+    expect(divider).not.toMatch(/>New topic/);
+    expect(divider).not.toContain("New topic: Backups");
+    // the name and what the line is stay one hover away
+    expect(divider).toContain('title="New topic · Backups"');
   });
 
   it("waits for the live topic to be read back to its start", () => {

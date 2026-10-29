@@ -30,6 +30,7 @@
 // everywhere in server/authz.ts. A solo server never calls this.
 //
 // Pure: no store, no request. server/index.ts supplies the records.
+import { conversationThreadId, type StreamTaskFacts } from "../shared/single-stream.ts";
 import { canOnBot, type BotFacts, type Viewer } from "./authz.ts";
 
 export type ThreadAction =
@@ -50,6 +51,20 @@ export interface ThreadRecord {
   archivedAt?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
+  // read by the one-conversation rule (shared/single-stream.ts)
+  routineResults?: unknown;
+  confidential?: unknown;
+  openedBy?: unknown;
+  parallelOf?: unknown;
+  closedBy?: unknown;
+}
+
+/** The viewer's one conversation among the threads they see
+ * (shared/single-stream.ts); threads without a creation time are not
+ * conversations the rule can order. */
+function viewerConversation(tasks: readonly ThreadRecord[]): string | undefined {
+  const facts = tasks.filter((task): task is ThreadRecord & { createdAt: number } => typeof task.createdAt === "number");
+  return conversationThreadId(facts as StreamTaskFacts[]);
 }
 
 const key = (value: string) => value.trim().toLowerCase();
@@ -146,14 +161,19 @@ export function narrowBotForViewer<T extends Record<string, unknown>>(
   const threadIsMine = threadId !== undefined && (shownTasks
     ? shownTasks.some((task) => task.threadId === threadId)
     : threadId === input.mine);
-  // The bot's main thread (WireBot.mainThreadId) may be someone else's:
-  // a viewer is told only a thread of their own.
+  // The bot's main thread (WireBot.mainThreadId) is the viewer's own one
+  // conversation (shared/single-stream.ts, the same rule the server applies
+  // for its owner): worked out over the threads they see, so a shared bot
+  // tells each person their own conversation, never someone else's.
   const main = typeof bot.mainThreadId === "string" ? bot.mainThreadId : undefined;
-  const mainHidden = main !== undefined
-    && !(shownTasks ? shownTasks.some((task) => task.threadId === main) : main === input.mine);
+  const viewerMain = shownTasks ? viewerConversation(shownTasks) : (main === input.mine ? main : undefined);
+  const mainHidden = main !== viewerMain;
   if (threadIsMine && !mainHidden && (!tasks || shownTasks!.length === tasks.length)) return bot;
   const out: Record<string, unknown> = { ...bot };
-  if (mainHidden) delete out.mainThreadId;
+  if (mainHidden) {
+    if (viewerMain !== undefined) out.mainThreadId = viewerMain;
+    else delete out.mainThreadId;
+  }
   if (shownTasks) out.tasks = shownTasks;
   if (!threadIsMine && threadId !== undefined) {
     for (const field of TRANSCRIPT_FIELDS) delete out[field];

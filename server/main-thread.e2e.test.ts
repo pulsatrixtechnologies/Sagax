@@ -95,8 +95,10 @@ it("stamps askedAt where a person writes, never for a routine, a webhook, start_
     const { run } = await api("POST", `/api/routines/${routine.id}/run`, undefined, 201);
     const routineThread = await finished((candidate) => candidate.id === run.id);
     await replied(bot.id, routineThread, "Routine report.");
-    // It reported into the one thread a person wrote in.
-    expect(run.resultsThreadId).toBe(first);
+    // It reported into the one conversation: its newest topic, the thread
+    // Slack's relay opened (2026-10-28, shared/single-stream.ts), not the
+    // side job, the run's task or the hand-off's thread.
+    expect(run.resultsThreadId).toBe(relayed.threadId);
 
     const hook = await api("POST", "/api/webhooks", { name: "Build", prompt: "Handle the build event.", botId: bot.id, runOn: "maus" }, 201);
     const delivered = await fetch(hook.credential.endpointUrl, {
@@ -118,7 +120,10 @@ it("stamps askedAt where a person writes, never for a routine, a webhook, start_
     // job, the Slack thread, the routine's or webhook's run, or the hand-off.
     expect(stamps(bot.id)).toEqual(asked);
     const after = await wire(bot.id);
-    expect(after.mainThreadId).toBe(first);
+    // the main thread is the newest conversation, never a job, a run or a
+    // hand-off (bot-opened), whatever was written in last
+    expect(after.mainThreadId).toBe(relayed.threadId);
+    expect([side.threadId, routineThread, webhookThread, handoff.threadId]).not.toContain(after.mainThreadId);
     expect(JSON.stringify(after)).not.toContain("askedAt");
   } finally {
     await fixture.close();
@@ -210,13 +215,21 @@ it("marks a job's review answer and a webhook post unread where they land", asyn
     expect(await unread(asker.id, asker.activeTaskId)).toBe(true);
 
     const hook = await api("POST", "/api/webhooks", { name: "Deploys", prompt: "", botId: asker.id, delivery: "post" }, 201);
+    // read before the post lands: the post itself must turn it unread again
+    await api("POST", `/api/bots/${asker.id}/read`, { threadId: asker.activeTaskId });
+    expect(await unread(asker.id, asker.activeTaskId)).toBe(false);
     const delivered = await fetch(hook.credential.endpointUrl, {
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": "deploy-finished", authorization: `Bearer ${hook.credential.token}` },
       body: JSON.stringify({ text: "Deploy finished." }),
     });
     expect(delivered.ok).toBe(true);
-    await expect.poll(async () => (await tasks(asker.id)).find((task) => task.title === "Updates")?.unread, { timeout: 20_000 }).toBe(true);
+    // 2026-10-28: the post lands in the one conversation (the newest topic),
+    // never in an "Updates" thread of its own, and marks it unread
+    await expect.poll(async () => ((await api("GET", `/api/threads/${asker.activeTaskId}/messages?limit=50`)).messages as any[])
+      .some((message) => message.webhookPost === true && message.text === "Deploy finished."), { timeout: 20_000 }).toBe(true);
+    await expect.poll(() => unread(asker.id, asker.activeTaskId), { timeout: 10_000 }).toBe(true);
+    expect((await tasks(asker.id)).some((task) => task.title === "Updates")).toBe(false);
   } finally {
     await fixture.close();
   }

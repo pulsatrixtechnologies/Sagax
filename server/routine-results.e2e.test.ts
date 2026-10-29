@@ -82,7 +82,8 @@ it("reports every run into the bot's main thread while fresh executions, approva
     const promoted = (await currentBot()).tasks.find((task: any) => task.threadId === completed[0].threadId);
     expect(promoted.routineRunId).toBeUndefined();
     expect(promoted.unread).toBe(true);
-    // The person wrote there last, so it is the bot's main thread now.
+    // The newest conversation (shared/single-stream.ts: the one the desktop
+    // and the phone show), so it is the bot's main thread now.
     const live = completed[0].threadId as string;
     expect((await currentBot()).mainThreadId).toBe(live);
     // A thread the person chooses keeps winning; null goes back to the main
@@ -94,15 +95,20 @@ it("reports every run into the bot's main thread while fresh executions, approva
     expect((await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: null })).routine.resultsThreadId).toBeUndefined();
     // A legacy automatic "<name> · Results" thread is not a choice: the next
     // run moves to the main thread and the old thread and its reports stay.
+    // The main thread is the newest conversation: "Chosen reports" now, the
+    // topic the person opened last (2026-10-28, one conversation).
     const { task: legacy } = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Retained destination · Results" }, 201);
     await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: legacy.threadId });
     const { run: moved } = await api("POST", `/api/routines/${routine.id}/run`, undefined, 201);
-    expect(moved.resultsThreadId).toBe(live);
+    expect(moved.resultsThreadId).toBe(dedicated);
     await expect.poll(async () => (await runState(moved.id))?.status, { timeout: 15_000 }).toBe("completed");
     expect((await api("GET", "/api/routines")).routines.find((candidate: any) => candidate.id === routine.id).resultsThreadId).toBeUndefined();
     expect((await currentBot()).tasks.some((task: any) => task.threadId === legacy.threadId)).toBe(true);
-    expect((await messages(live)).filter((message) => message.kind === "routine.run")).toHaveLength(1);
+    expect((await messages(dedicated)).filter((message) => message.kind === "routine.run")).toHaveLength(1);
+    expect((await messages(live)).filter((message) => message.kind === "routine.run")).toHaveLength(0);
     expect((await messages(originalThread)).filter((message) => message.kind === "routine.run")).toHaveLength(2);
+    // the legacy results thread is marked as such, never a topic of the conversation
+    expect((await currentBot()).tasks.find((task: any) => task.threadId === legacy.threadId).routineResults).toBe(true);
     await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: dedicated });
 
     const gate = join(fixture.info.dataDir, "results-finish");
@@ -136,9 +142,13 @@ it("reports every run into the bot's main thread while fresh executions, approva
     expect(approval?.card.tool).toBe("mcp__perspicax__bulk_update");
 
     await api("DELETE", `/api/bots/${bot.id}/tasks/${dedicated}`);
+    // 2026-10-28: a run whose destination is gone reports into the one
+    // conversation (the newest topic, "live"); its execution stays a run's
+    // task, never a conversation of its own.
     const fallback = (await currentBot()).tasks.find((task: any) => task.threadId === active.threadId);
-    expect(fallback.routineRunId).toBeUndefined();
-    expect(fallback.unread).toBe(true);
+    expect(fallback.routineRunId).toBe(pending.id);
+    await expect.poll(async () => (await messages(live)).some((message) => message.routineRun?.runId === pending.id), { timeout: 10_000 }).toBe(true);
+    expect((await currentBot()).tasks.find((task: any) => task.threadId === live).unread).toBe(true);
     expect((await runState(pending.id)).resultsThreadId).toBe(dedicated);
     await api("POST", `/api/bots/${bot.id}/respond`, { threadId: active.threadId, requestId: approval.card.requestId, behavior: "deny" });
     writeFileSync(gate, "complete the isolated turn");

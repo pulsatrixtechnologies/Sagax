@@ -18,7 +18,8 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ExternalLink, FileText, Loader2, Send, Square } from "lucide-react";
 
-import { api, useStore } from "@/state/store";
+import { api, openBotThread, useStore } from "@/state/store";
+import { useShowThreads } from "@/lib/thread-preferences";
 import { t, activeLocale } from "@/lib/i18n";
 import { engineLabel } from "@/lib/human-label";
 import {
@@ -383,9 +384,13 @@ export function ActivityDetailPane({ item, wide, onClose, onChanged, onBack }: {
     else dispatch({ type: "interrupt", botId: detail.botId, threadId: detail.threadId, onError: () => setStopping(false) });
     window.setTimeout(finish, 1_500);
   };
+  const showThreads = useShowThreads();
   const openThread = (threadBotId: string, threadId: string) => {
-    if (threadBotId !== state.selectedId) dispatch({ type: "select", id: threadBotId });
-    dispatch({ type: "switchTask", botId: threadBotId, threadId });
+    const target = state.bots.find((candidate) => candidate.id === threadBotId);
+    // the one-conversation gate (openBotThread): an earlier topic scrolls
+    // the conversation back, a job or a run opens beside it
+    if (target) openBotThread(dispatch, target, threadId, showThreads);
+    else dispatch({ type: "select", id: threadBotId });
     onClose();
   };
   const engineName = (instanceId: string) => state.instances.find((instance) => instance.instanceId === instanceId)?.displayName;
