@@ -98,7 +98,8 @@ struct RoutineEditorView: View {
         _overlap = State(initialValue: source?.overlap ?? "skip")
         _results = State(initialValue: routine == nil ? .newThread : .keep)
         _attachments = State(initialValue: source?.target == "room-goal" ? [] : source?.attachments ?? [])
-        _moreExpanded = State(initialValue: Self.debugFlag("parityRoutineMoreOpen"))
+        // read only, everything shows at once
+        _moreExpanded = State(initialValue: Self.debugFlag("parityRoutineMoreOpen") || RoutineEditorRules.readOnly(routine) || Self.debugFlag("parityRoutineReadOnly"))
         _onlyWhenPresent = State(initialValue: source?.onlyWhenPresent == true)
         // Default silent for a new routine; an existing one keeps its choice.
         _postResults = State(initialValue: source?.postResults == true)
@@ -111,6 +112,9 @@ struct RoutineEditorView: View {
     }
 
     private var advanced: Bool { session.surfaceGate.allows(.routineAdvancedEditor) }
+    /// Someone else's routine (canEdit false or redacted): seen, not changed.
+    /// DEBUG captures: `-parityRoutineReadOnly YES`.
+    private var readOnly: Bool { RoutineEditorRules.readOnly(routine) || Self.debugFlag("parityRoutineReadOnly") }
     private var isTeamGoal: Bool { target == "room-goal" }
     /// As on the desktop: a bot routine that repeats on the clock.
     private var watchAllowed: Bool { RoutineWatchRules.allowed(target: target, repeats: form.recurrence.repeatsOnClock) }
@@ -166,11 +170,11 @@ struct RoutineEditorView: View {
         NavigationStack {
             ScrollViewReader { proxy in
                 ThemedForm {
-                    if watchFirst && watchAllowed { watchSection }
-                    headerSection
+                    if watchFirst && watchAllowed { watchSection.disabled(readOnly) }
+                    headerSection.disabled(readOnly)
                     whenSection.id("when")
-                    if watchAllowed && !watchFirst { watchSection }
-                    whatSection.id("what")
+                    if watchAllowed && !watchFirst { watchSection.disabled(readOnly) }
+                    whatSection.disabled(readOnly).id("what")
                     whereSection.id("where")
                     moreSection.id("more")
                 }
@@ -180,18 +184,25 @@ struct RoutineEditorView: View {
                     proxy.scrollTo(place, anchor: .top)
                 }
             }
-            .navigationTitle(routine == nil ? Text("New routine") : Text("Edit routine"))
+            .navigationTitle(readOnly ? Text("Routine") : routine == nil ? Text("New routine") : Text("Edit routine"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { requestClose() }
-                        .accessibilityIdentifier("routine-editor-cancel")
-                }
                 ToolbarItem(placement: .principal) { titleView }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(saveLabel) { Task { await save() } }
-                        .disabled(saving || attaching > 0 || !valid)
-                        .accessibilityIdentifier("routine-editor-save")
+                if readOnly {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                            .accessibilityIdentifier("routine-editor-done")
+                    }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { requestClose() }
+                            .accessibilityIdentifier("routine-editor-cancel")
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(saveLabel) { Task { await save() } }
+                            .disabled(saving || attaching > 0 || !valid)
+                            .accessibilityIdentifier("routine-editor-save")
+                    }
                 }
             }
             // a swipe down never loses a change: Cancel asks first
@@ -225,7 +236,7 @@ struct RoutineEditorView: View {
     /// "Edit routine" and, while a change waits, "Not saved".
     private var titleView: some View {
         VStack(spacing: 1) {
-            (routine == nil ? Text("New routine") : Text("Edit routine"))
+            (readOnly ? Text("Routine") : routine == nil ? Text("New routine") : Text("Edit routine"))
                 .font(.headline)
                 .lineLimit(1)
             if dirty {
@@ -322,6 +333,7 @@ struct RoutineEditorView: View {
                 }
             }
             .accessibilityIdentifier("routine-editor-repeat")
+            .disabled(readOnly)
             switch form.recurrence {
             case .webhook:
                 RoutineWebhookPanel(
@@ -334,8 +346,11 @@ struct RoutineEditorView: View {
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
             default:
-                RoutineScheduleFields(form: $form)
-                if form.recurrence.repeatsOnClock { RoutineTimingFields(form: $form) }
+                Group {
+                    RoutineScheduleFields(form: $form)
+                    if form.recurrence.repeatsOnClock { RoutineTimingFields(form: $form) }
+                }
+                .disabled(readOnly)
             }
             if let problem = form.problem {
                 Text(verbatim: RoutineEditorWording.problem(problem))
@@ -494,9 +509,17 @@ struct RoutineEditorView: View {
 
     private var whereSection: some View {
         Section {
-            if advanced && !isTeamGoal { resultsRow }
-            if RoutineRunAsField.shown(runAsOptions) { runAsRows }
-            runOnRows
+            // someone else's routine says whose it is
+            if let owner = routine?.foreignOwnerName {
+                LabeledContent(String(localized: "Owner"), value: owner)
+                    .accessibilityIdentifier("routine-editor-owner")
+            }
+            Group {
+                if advanced && !isTeamGoal { resultsRow }
+                if RoutineRunAsField.shown(runAsOptions) { runAsRows }
+                runOnRows
+            }
+            .disabled(readOnly)
         } header: {
             HStack {
                 Label("Where results go", systemImage: "paperplane")
@@ -643,6 +666,22 @@ struct RoutineEditorView: View {
     private var moreSection: some View {
         Section {
             DisclosureGroup(isExpanded: $moreExpanded) {
+                moreFields.disabled(readOnly)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("More options")
+                    Text(verbatim: moreSummary)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("routine-editor-more-summary")
+                }
+            }
+            .accessibilityIdentifier("routine-editor-advanced")
+        }
+    }
+
+    @ViewBuilder
+    private var moreFields: some View {
                 Picker("Stop if still running after", selection: $timeoutMinutes) {
                     Text("No limit").tag(nil as Int?)
                     ForEach(RoutineDurations.options, id: \.self) { minutes in
@@ -701,17 +740,6 @@ struct RoutineEditorView: View {
                            "When on, this routine posts its result as a message in the conversation. When off, it runs in the background and the result stays in Automations. Questions, approvals and errors always reach you, and the routine's instructions are never posted.",
                            id: "routine-editor-post-results")
                 }
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("More options")
-                    Text(verbatim: moreSummary)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textSecondary)
-                        .accessibilityIdentifier("routine-editor-more-summary")
-                }
-            }
-            .accessibilityIdentifier("routine-editor-advanced")
-        }
     }
 
     private func moreHelp(_ text: LocalizedStringKey) -> some View {

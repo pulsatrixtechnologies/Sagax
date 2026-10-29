@@ -160,7 +160,7 @@ struct MessageRow: View {
         .sheet(item: $digest) {
             DigestSheet(summary: $0)
         }
-        .sheet(item: $openedRun) { opened in
+        .routineRunDetail(item: $openedRun) { opened in
             RoutineRunDetailView(run: opened.run, routine: opened.routine)
                 .environmentObject(session)
         }

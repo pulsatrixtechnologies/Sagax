@@ -119,3 +119,17 @@ public struct RoutineEditorSnapshot: Equatable, Sendable {
         return self != base
     }
 }
+
+public extension RoutineEditorRules {
+    /// The routine page's one line (2026-10-29): what starts it, the next
+    /// run (none for a webhook or an email) and the bot.
+    static func pageSummary(trigger: String, nextRun: String?, bot: String?) -> String {
+        summary(schedule: trigger, results: nextRun, runAs: bot)
+    }
+
+    /// Someone else's routine (or one the caller may not change) opens in
+    /// the editor read only: fields off, no Save, titled "Routine".
+    static func readOnly(_ routine: Routine?) -> Bool {
+        routine.map { !$0.mayEdit } ?? false
+    }
+}

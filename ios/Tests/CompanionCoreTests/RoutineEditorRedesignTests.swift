@@ -158,6 +158,25 @@ final class RoutineEditorRedesignTests: XCTestCase {
         XCTAssertEqual(RoutineMailTag.clean("Hé-llo_World 123456789012345678901234567890"), "hlloworld12345678901234567890123")
     }
 
+    // MARK: The routine page
+
+    func testThePageSaysTriggerNextRunAndBotOnOneLine() {
+        XCTAssertEqual(RoutineEditorRules.pageSummary(trigger: "Every Monday at 7:02 AM", nextRun: "in 3 days", bot: "Ara"),
+                       "Every Monday at 7:02 AM · in 3 days · Ara")
+        XCTAssertEqual(RoutineEditorRules.pageSummary(trigger: "When a webhook fires", nextRun: nil, bot: "Ara"), "When a webhook fires · Ara")
+        XCTAssertEqual(RoutineEditorRules.pageSummary(trigger: "Every hour", nextRun: "Paused", bot: nil), "Every hour · Paused")
+    }
+
+    func testSomeoneElsesRoutineOpensReadOnly() throws {
+        XCTAssertFalse(RoutineEditorRules.readOnly(nil))
+        XCTAssertFalse(RoutineEditorRules.readOnly(try routine(#"{"type":"webhook"}"#)))
+        XCTAssertFalse(RoutineEditorRules.readOnly(try routine(#"{"type":"webhook"}"#, extra: #","canEdit":true"#)))
+        let foreign = try routine(#"{"type":"webhook"}"#, extra: #","canEdit":false,"owner":{"id":"pr_2","name":"Sam"}"#)
+        XCTAssertTrue(RoutineEditorRules.readOnly(foreign))
+        XCTAssertEqual(foreign.foreignOwnerName, "Sam")
+        XCTAssertTrue(RoutineEditorRules.readOnly(try routine(#"{"type":"webhook"}"#, extra: #","redacted":true"#)))
+    }
+
     // MARK: The routine's webhook
 
     private func listing() throws -> WebhooksResponse {

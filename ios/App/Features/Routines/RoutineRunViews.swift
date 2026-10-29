@@ -426,3 +426,14 @@ enum RoutineDurations {
         return String(localized: "\(minutes / 60) hr \(minutes % 60) min")
     }
 }
+
+// MARK: - Presented large
+
+extension View {
+    /// A run's detail opens large (2026-10-29): the whole screen, on the
+    /// phone and on the iPad, never a narrow sheet over the page; its result,
+    /// steps, Stop, Run again and Continue have the room they need.
+    func routineRunDetail<Item: Identifiable, Content: View>(item: Binding<Item?>, @ViewBuilder content: @escaping (Item) -> Content) -> some View {
+        fullScreenCover(item: item, content: content)
+    }
+}
